@@ -22,6 +22,7 @@
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "third_party/skia/include/core/SkBitmap.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 
 namespace blink {
 
@@ -72,7 +73,7 @@ ImageOrientation GetSourceOrientation(
   if (!params.orientation_from_image) {
     return ImageOrientationEnum::kOriginTopLeft;
   }
-  return source->CurrentFrameOrientation();
+  return source->Orientation();
 }
 
 // Return the oriented size of `source`.
@@ -144,9 +145,11 @@ scoped_refptr<StaticBitmapImage> StaticBitmapImageTransform::ApplyUsingPixmap(
     }
     const auto bm_color_space = options.dest_color_space
                                     ? options.dest_color_space
-                                    : source->GetSkColorSpace();
+                                    : source->GetColorSpace().ToSkColorSpace();
     const auto bm_info = SkImageInfo::Make(
-        source_rect.size(), GetDestColorType(source->GetSkColorType()),
+        source_rect.size(),
+        GetDestColorType(
+            viz::ToClosestSkColorType(source->GetSharedImageFormat())),
         bm_alpha_type, bm_color_space);
     if (!bm.tryAllocPixels(bm_info)) {
       return nullptr;
@@ -310,7 +313,7 @@ scoped_refptr<StaticBitmapImage> StaticBitmapImageTransform::Apply(
     return nullptr;
   }
 
-  const auto source_color_space = source->GetSkColorSpace();
+  const auto source_color_space = source->GetColorSpace();
   const bool needs_flip = options.flip_y;
   const bool needs_crop =
       options.source_rect != gfx::Rect(GetSourceSize(source, options));
@@ -320,9 +323,7 @@ scoped_refptr<StaticBitmapImage> StaticBitmapImageTransform::Apply(
   const bool needs_convert_color_space =
       options.dest_color_space &&
       !SkColorSpace::Equals(options.dest_color_space.get(),
-                            source_color_space
-                                ? source_color_space.get()
-                                : SkColorSpace::MakeSRGB().get());
+                            source_color_space.ToSkColorSpace().get());
   const bool needs_alpha_change =
       (source->GetAlphaType() == kUnpremul_SkAlphaType) !=
       (!options.premultiply_alpha);
@@ -369,7 +370,6 @@ StaticBitmapImageTransform::ConvertToColorSpace(
   options.source_rect = gfx::Rect(GetSourceSize(source, options));
   options.dest_size = GetSourceSize(source, options);
   options.premultiply_alpha = source->GetAlphaType() != kUnpremul_SkAlphaType;
-  options.force_copy = true;
   options.dest_color_space = color_space;
   return Apply(flush_reason, source, options);
 }

@@ -83,8 +83,11 @@ class BLINK_EXPORT WebNode {
 
   bool IsConnected() const;
 
+  bool Contains(const WebNode*) const;
+
   WebNode ParentNode() const;
   WebNode ParentOrShadowHostNode() const;
+  bool IsInUserAgentShadowRoot() const;
   WebString NodeValue() const;
   WebDocument GetDocument() const;
   WebNode FirstChild() const;

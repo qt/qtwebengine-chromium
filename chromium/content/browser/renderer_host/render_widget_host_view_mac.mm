@@ -13,6 +13,7 @@
 #include <tuple>
 #include <utility>
 
+#include "base/apple/foundation_util.h"
 #include "base/apple/owned_objc.h"
 #include "base/apple/scoped_cftyperef.h"
 #include "base/auto_reset.h"
@@ -21,6 +22,8 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
+#include "base/notreached.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #import "base/task/single_thread_task_runner.h"
@@ -175,8 +178,9 @@ id RenderWidgetHostViewMac::GetAccessibilityFocusedUIElement() {
   // the UX acts as if focus is in the popup.
   gfx::NativeViewAccessible popup_focus_override =
       ui::AXPlatformNode::GetPopupFocusOverride();
-  if (popup_focus_override)
-    return popup_focus_override;
+  if (popup_focus_override) {
+    return popup_focus_override.Get();
+  }
 
   ui::BrowserAccessibilityManager* manager =
       host()->GetRootBrowserAccessibilityManager();
@@ -184,11 +188,8 @@ id RenderWidgetHostViewMac::GetAccessibilityFocusedUIElement() {
     ui::BrowserAccessibility* focused_item = manager->GetFocus();
     DCHECK(focused_item);
     if (focused_item) {
-      BrowserAccessibilityCocoa* focused_item_cocoa =
-          focused_item->GetNativeViewAccessible();
-      DCHECK(focused_item_cocoa);
-      if (focused_item_cocoa)
-        return focused_item_cocoa;
+      return base::apple::ObjCCastStrict<BrowserAccessibilityCocoa>(
+          focused_item->GetNativeViewAccessible().Get());
     }
   }
   return nil;
@@ -199,7 +200,6 @@ id RenderWidgetHostViewMac::GetAccessibilityFocusedUIElement() {
 
 RenderWidgetHostViewMac::RenderWidgetHostViewMac(RenderWidgetHost* widget)
     : RenderWidgetHostViewBase(widget),
-      page_at_minimum_scale_(true),
       mouse_wheel_phase_handler_(this),
       is_loading_(false),
       popup_parent_host_view_(nullptr),
@@ -576,7 +576,7 @@ gfx::NativeView RenderWidgetHostViewMac::GetNativeView() {
 }
 
 gfx::NativeViewAccessible RenderWidgetHostViewMac::GetNativeViewAccessible() {
-  return GetInProcessNSView();
+  return gfx::NativeViewAccessible(GetInProcessNSView());
 }
 
 void RenderWidgetHostViewMac::Focus() {
@@ -1308,7 +1308,7 @@ void RenderWidgetHostViewMac::ResetFallbackToFirstNavigationSurface() {
       ->ResetFallbackToFirstNavigationSurface();
 }
 
-bool RenderWidgetHostViewMac::RequestRepaintForTesting() {
+bool RenderWidgetHostViewMac::RequestRepaintOnNewSurface() {
   return browser_compositor_->ForceNewSurfaceId();
 }
 
@@ -1628,14 +1628,16 @@ void RenderWidgetHostViewMac::OverrideDisplayFeatureForEmulation(
 
 gfx::NativeViewAccessible
 RenderWidgetHostViewMac::AccessibilityGetNativeViewAccessible() {
-  return GetInProcessNSView();
+  return gfx::NativeViewAccessible(GetInProcessNSView());
 }
 
 gfx::NativeViewAccessible
 RenderWidgetHostViewMac::AccessibilityGetNativeViewAccessibleForWindow() {
-  if (remote_window_accessible_)
-    return remote_window_accessible_;
-  return [GetInProcessNSView() window];
+  if (remote_window_accessible_) {
+    return gfx::NativeViewAccessible(
+        (id<NSAccessibility>)remote_window_accessible_);
+  }
+  return gfx::NativeViewAccessible([GetInProcessNSView() window]);
 }
 
 void RenderWidgetHostViewMac::SetTextInputActive(bool active) {
@@ -1669,12 +1671,15 @@ void RenderWidgetHostViewMac::ShowSharePicker(
 // implementation:
 
 id RenderWidgetHostViewMac::GetAccessibilityElement() {
-  return GetNativeViewAccessible();
+  return nil;
 }
 
 id RenderWidgetHostViewMac::GetRootBrowserAccessibilityElement() {
-  if (auto* manager = host()->GetRootBrowserAccessibilityManager())
-    return manager->GetBrowserAccessibilityRoot()->GetNativeViewAccessible();
+  if (auto* manager = host()->GetRootBrowserAccessibilityManager()) {
+    return manager->GetBrowserAccessibilityRoot()
+        ->GetNativeViewAccessible()
+        .Get();
+  }
   return nil;
 }
 
@@ -1851,7 +1856,7 @@ void RenderWidgetHostViewMac::RouteOrProcessWheelEvent(
   ui::LatencyInfo latency_info;
   latency_info.AddLatencyNumber(ui::INPUT_EVENT_LATENCY_UI_COMPONENT);
   mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
-      web_event, ShouldRouteEvents());
+      web_event, ShouldRouteEvents(), /*is_fling_capable=*/true);
   if (web_event.phase == blink::WebMouseWheelEvent::kPhaseEnded) {
     // A wheel end event is scheduled and will get dispatched if momentum
     // phase doesn't start in 100ms. Don't sent the wheel end event
@@ -1878,67 +1883,43 @@ void RenderWidgetHostViewMac::ForwardMouseEvent(
 void RenderWidgetHostViewMac::ForwardWheelEvent(
     const blink::WebMouseWheelEvent& const_web_event) {
   blink::WebMouseWheelEvent web_event = const_web_event;
-  mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(web_event,
-                                                                 false);
+  mouse_wheel_phase_handler_.AddPhaseIfNeededAndScheduleEndEvent(
+      web_event,
+      /*should_route_event=*/false,
+      /*is_fling_capable=*/true);
 }
 
-void RenderWidgetHostViewMac::GestureBegin(blink::WebGestureEvent begin_event,
-                                           bool is_synthetically_injected) {
-  gesture_begin_event_ = std::make_unique<WebGestureEvent>(begin_event);
+void RenderWidgetHostViewMac::PinchEvent(blink::WebGestureEvent event,
+                                         bool is_synthetically_injected) {
+  switch (event.GetType()) {
+    case WebInputEvent::Type::kGesturePinchBegin:
+      // Require a threshold be reached before the pinch has an effect.
+      // Synthetic pinches are not subject to this threshold.
+      pinch_has_reached_zoom_threshold_ = is_synthetically_injected;
+      pinch_unused_amount_ = 1;
+      break;
+    case WebInputEvent::Type::kGesturePinchUpdate:
+      if (!pinch_has_reached_zoom_threshold_) {
+        pinch_unused_amount_ *= event.data.pinch_update.scale;
+        if (pinch_unused_amount_ < 0.667 || pinch_unused_amount_ > 1.5) {
+          pinch_has_reached_zoom_threshold_ = true;
+        }
+      }
 
-  // If the page is at the minimum zoom level, require a threshold be reached
-  // before the pinch has an effect. Synthetic pinches are not subject to this
-  // threshold.
-  // TODO(crbug.com/40666440): |page_at_minimum_scale_| is always true, should
-  // it be removed or correctly set based on RenderFrameMetadata?
-  if (page_at_minimum_scale_) {
-    pinch_has_reached_zoom_threshold_ = is_synthetically_injected;
-    pinch_unused_amount_ = 1;
+      event.data.pinch_update.zoom_disabled =
+          !pinch_has_reached_zoom_threshold_;
+      break;
+    case WebInputEvent::Type::kGesturePinchEnd:
+      // Expected; no special handling required, just send the event.
+      break;
+    default:
+      NOTREACHED();
   }
+
+  SendTouchpadZoomEvent(&event);
 }
 
-void RenderWidgetHostViewMac::GestureUpdate(
-    blink::WebGestureEvent update_event) {
-  // If, due to nesting of multiple gestures (e.g, from multiple touch
-  // devices), the beginning of the gesture has been lost, skip the remainder
-  // of the gesture.
-  if (!gesture_begin_event_)
-    return;
-
-  if (!pinch_has_reached_zoom_threshold_) {
-    pinch_unused_amount_ *= update_event.data.pinch_update.scale;
-    if (pinch_unused_amount_ < 0.667 || pinch_unused_amount_ > 1.5)
-      pinch_has_reached_zoom_threshold_ = true;
-  }
-
-  // Send a GesturePinchBegin event if none has been sent yet.
-  if (!gesture_begin_pinch_sent_) {
-    // Before starting a pinch sequence, send the pending wheel end event to
-    // finish scrolling.
-    mouse_wheel_phase_handler_.DispatchPendingWheelEndEvent();
-    WebGestureEvent begin_event(*gesture_begin_event_);
-    begin_event.SetType(WebInputEvent::Type::kGesturePinchBegin);
-    begin_event.SetSourceDevice(blink::WebGestureDevice::kTouchpad);
-    begin_event.SetNeedsWheelEvent(true);
-    SendTouchpadZoomEvent(&begin_event);
-    gesture_begin_pinch_sent_ = YES;
-  }
-
-  // Send a GesturePinchUpdate event.
-  update_event.data.pinch_update.zoom_disabled =
-      !pinch_has_reached_zoom_threshold_;
-  SendTouchpadZoomEvent(&update_event);
-}
-
-void RenderWidgetHostViewMac::GestureEnd(blink::WebGestureEvent end_event) {
-  gesture_begin_event_.reset();
-  if (gesture_begin_pinch_sent_) {
-    SendTouchpadZoomEvent(&end_event);
-    gesture_begin_pinch_sent_ = false;
-  }
-}
-
-void RenderWidgetHostViewMac::SmartMagnify(
+void RenderWidgetHostViewMac::SmartMagnifyEvent(
     const blink::WebGestureEvent& smart_magnify_event) {
   SendTouchpadZoomEvent(&smart_magnify_event);
 }
@@ -2212,7 +2193,7 @@ void RenderWidgetHostViewMac::StopSpeaking() {
 void RenderWidgetHostViewMac::GetRenderWidgetAccessibilityToken(
     GetRenderWidgetAccessibilityTokenCallback callback) {
   base::ProcessId pid = getpid();
-  id element_id = GetNativeViewAccessible();
+  id element_id = GetNativeViewAccessible().Get();
   std::vector<uint8_t> token =
       ui::RemoteAccessibility::GetTokenForLocalElement(element_id);
   std::move(callback).Run(pid, token);
@@ -2316,7 +2297,7 @@ void RenderWidgetHostViewMac::ForwardWheelEvent(
   ForwardWheelEvent(wheel_event);
 }
 
-void RenderWidgetHostViewMac::GestureBegin(
+void RenderWidgetHostViewMac::PinchEvent(
     std::unique_ptr<blink::WebCoalescedInputEvent> input_event,
     bool is_synthetically_injected) {
   if (!input_event || !blink::WebInputEvent::IsGestureEventType(
@@ -2326,12 +2307,10 @@ void RenderWidgetHostViewMac::GestureBegin(
   }
   blink::WebGestureEvent gesture_event =
       static_cast<const blink::WebGestureEvent&>(input_event->Event());
-  // Strip the gesture type, because it is not known.
-  gesture_event.SetType(blink::WebInputEvent::Type::kUndefined);
-  GestureBegin(gesture_event, is_synthetically_injected);
+  PinchEvent(gesture_event, is_synthetically_injected);
 }
 
-void RenderWidgetHostViewMac::GestureUpdate(
+void RenderWidgetHostViewMac::SmartMagnifyEvent(
     std::unique_ptr<blink::WebCoalescedInputEvent> input_event) {
   if (!input_event || !blink::WebInputEvent::IsGestureEventType(
                           input_event->Event().GetType())) {
@@ -2340,31 +2319,7 @@ void RenderWidgetHostViewMac::GestureUpdate(
   }
   const blink::WebGestureEvent& gesture_event =
       static_cast<const blink::WebGestureEvent&>(input_event->Event());
-  GestureUpdate(gesture_event);
-}
-
-void RenderWidgetHostViewMac::GestureEnd(
-    std::unique_ptr<blink::WebCoalescedInputEvent> input_event) {
-  if (!input_event || !blink::WebInputEvent::IsGestureEventType(
-                          input_event->Event().GetType())) {
-    DLOG(ERROR) << "Absent or non-GestureEventType event.";
-    return;
-  }
-  blink::WebGestureEvent gesture_event =
-      static_cast<const blink::WebGestureEvent&>(input_event->Event());
-  GestureEnd(gesture_event);
-}
-
-void RenderWidgetHostViewMac::SmartMagnify(
-    std::unique_ptr<blink::WebCoalescedInputEvent> input_event) {
-  if (!input_event || !blink::WebInputEvent::IsGestureEventType(
-                          input_event->Event().GetType())) {
-    DLOG(ERROR) << "Absent or non-GestureEventType event.";
-    return;
-  }
-  const blink::WebGestureEvent& gesture_event =
-      static_cast<const blink::WebGestureEvent&>(input_event->Event());
-  SmartMagnify(gesture_event);
+  SmartMagnifyEvent(gesture_event);
 }
 
 void RenderWidgetHostViewMac::OnGotStringForDictionaryOverlay(

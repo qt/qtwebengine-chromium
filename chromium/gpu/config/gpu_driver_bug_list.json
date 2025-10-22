@@ -282,7 +282,11 @@
       "description": "Disable D3D11 on older nVidia drivers",
       "cr_bugs": [349929],
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.22000.0"
+        }
       },
       "vendor_id": "0x10de",
       "driver_version": {
@@ -327,7 +331,11 @@
       "description": "Disable use of Direct3D 11 on Matrox video cards",
       "cr_bugs": [395861],
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.22000.0"
+        }
       },
       "vendor_id": "0x102b",
       "features": [
@@ -339,7 +347,11 @@
       "description": "Disable use of Direct3D 11 on older AMD drivers",
       "cr_bugs": [402134],
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.22000.0"
+        }
       },
       "vendor_id": "0x1002",
       "driver_version": {
@@ -383,7 +395,11 @@
       "description": "Old Intel drivers cannot reliably support D3D11",
       "cr_bugs": [363721],
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.22000.0"
+        }
       },
       "vendor_id": "0x8086",
       "driver_version": {
@@ -811,9 +827,13 @@
     },
     {
       "id": 147,
-      "description": "Limit max texure size to 4096 on all of Android",
+      "description": "Limit max texure size to 4096 on older Android devices.",
       "os": {
-        "type": "android"
+        "type": "android",
+        "version": {
+          "op": "<",
+          "value": "14.0"
+        }
       },
       "features": [
         "webgl_or_caps_max_texture_size_limit_4096"
@@ -2201,11 +2221,13 @@
     },
     {
       "id": 346,
-      "cr_bugs": [1062184],
-      "description": "Enable HDR video playing through overlay on Intel",
+      "cr_bugs": [1062184, 344343039],
+      "description": "Enable HDR video playing through overlay on older Intel Graphics drivers",
       "os": {
         "type": "win"
       },
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "any",
       "intel_gpu_series": [
         "icelake",
         "tigerlake",
@@ -2218,16 +2240,24 @@
         "lunarlake",
         "battlemage"
       ],
+      "driver_version": {
+        "op": "<",
+        "value": "32.0.101.6314"
+      },
       "features": [
         "force_rgb10a2_overlay_support"
       ]
     },
     {
       "id": 347,
-      "cr_bugs": [1119491],
-      "description": "Intel GPUs fail to report BGRA8 overlay support",
+      "cr_bugs": [1119491, 344343039],
+      "description": "Older Windows fails to report BGRA8 overlay support for Intel GPUs",
       "os": {
-        "type": "win"
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.26100.4061"
+        }
       },
       "vendor_id": "0x8086",
       "features": [
@@ -2841,18 +2871,6 @@
       ]
     },
     {
-      "id": 401,
-      "description": "Disable DrDc on multiple gpus.",
-      "cr_bugs": [1354201, 1356906, 1362720],
-      "os": {
-        "type": "android"
-      },
-      "gl_renderer": ".*PowerVR Rogue.*|Adreno \\(TM\\) 730|Mali-G57 MC2|Mali-G68 MC4|Mali-G77 MC9",
-      "features": [
-        "disable_drdc"
-      ]
-    },
-    {
       "id": 404,
       "description": "Disable EGL_EXT_image_dma_buf_import_modifiers for Exo KMS modifier discovery on kms_swrast/llvmpipe",
       "os": {
@@ -3376,14 +3394,24 @@
       "vendor_id": "0x8086",
       "multi_gpu_category": "any",
       "intel_gpu_series": [
+            "tigerlake",
+            "rocketlake",
+            "dg1",
+            "alderlake",
+            "alchemist",
+            "raptorlake",
             "meteorlake",
             "arrowlake",
             "lunarlake",
             "battlemage"
       ],
       "features": [
-        "use_current_picture_for_av1_invalid_ref"
-      ]
+        "use_first_valid_ref_for_av1_invalid_ref"
+      ],
+      "driver_version": {
+        "op": "<",
+        "value": "32.0.101.6557"
+      }
     },
     {
       "id": 438,
@@ -3401,21 +3429,6 @@
       },
       "features": [
         "disable_dml_meta_commands_for_gpu"
-      ]
-    },
-    {
-      "id": 439,
-      "cr_bugs": [ 315860185 ],
-      "description": "Disable hardware secure decryption on AMD GPUs with higher error rates to achieve better playback results.",
-      "os": {
-        "type": "win"
-      },
-      "vendor_id": "0x1002",
-      "device_id": [
-        "0x744c", "0x73a5", "0x73ef", "0x7480", "0x73bf"
-      ],
-      "features": [
-        "disable_media_foundation_hardware_security"
       ]
     },
     {
@@ -3454,6 +3467,219 @@
       "vendor_id": "0x1002",
       "features": [
         "force_rgb10a2_overlay_support"
+      ]
+    },
+    {
+      "id": 443,
+      "cr_bugs": [385039726],
+      "description": "Disable DComp texture support on older Windows versions",
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.26100.3624"
+        }
+      },
+      "features": [
+        "disable_dcomp_texture"
+      ]
+    },
+    {
+      "id": 445,
+      "description": "Disable shared D3D device for MFVEA on Intel ",
+      "comment":[
+        "Video encoder MFT acquires device lock and does not release it, leading to",
+        "gpu process stall."
+      ],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "features": [
+        "disable_mfvea_shared_device"
+      ]
+    },
+    {
+      "id": 446,
+      "description": "Video jitter happens during letterboxing on old Qualcomm GPUs",
+      "cr_bugs": [406175378],
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x4d4f4351",
+      "device_id": ["0x36333630"],
+      "features": [
+        "disable_direct_composition_letterbox_video_optimization"
+      ]
+    },
+    {
+      "id": 448,
+      "cr_bugs": [
+        390581539
+      ],
+      "description": "Disable software bitrate control for H.264 encoding on Qualcomm GPUs on Windows.",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x4d4f4351",
+      "features": [
+        "disable_h264_accelerator_sw_brc"
+      ]
+    },
+    {
+      "id": 449,
+      "cr_bugs": [
+        417752242
+      ],
+      "description": "Disable software bitrate control for H.264 encoding on AMD GPUs on Windows.",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x1002",
+      "features": [
+        "disable_h264_accelerator_sw_brc"
+      ]
+    },
+    {
+      "id": 450,
+      "cr_bugs": [425487302],
+      "description": "Video decoded into array texture may show artifacts on some Intel GPUs.",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "intel_gpu_series": [
+        "meteorlake",
+        "arrowlake"
+      ],
+      "features": [
+        "disable_decode_into_array_texture"
+      ],
+      "driver_version": {
+        "op": "between",
+        "value": "32.0.101.6079",
+        "value2": "32.0.101.6971"
+      }
+    },
+    {
+      "id": 451,
+      "cr_bugs": [1119491, 344343039],
+      "description": "Older Intel GPU drivers fail to report BGRA8 overlay support on Windows",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "any",
+      "driver_version": {
+            "op": "<",
+            "value": "32.0.101.6314"
+      },
+      "features": [
+        "enable_bgra8_overlays_with_yuv_overlay_support"
+      ]
+    },
+    {
+      "id": 452,
+      "cr_bugs": [1062184, 344343039],
+      "description": "Older Windows fails to report RGB10A2 overlay support for Intel GPUs",
+      "os": {
+        "type": "win",
+        "version": {
+          "op": "<",
+          "value": "10.0.26100.4061"
+        }
+      },
+      "intel_gpu_series": [
+        "icelake",
+        "tigerlake",
+        "rocketlake",
+        "alderlake",
+        "alchemist",
+        "raptorlake",
+        "meteorlake",
+        "arrowlake",
+        "lunarlake",
+        "battlemage"
+      ],
+      "features": [
+        "force_rgb10a2_overlay_support"
+      ]
+    },
+    {
+      "id": 453,
+      "cr_bugs": [415086846, 423655169, 423663681],
+      "description": "NV12 upload (creating a texture with init data or using UpdateSubresource) fails on a range of NVidia drivers",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+            "op": "between",
+            "value": "32.0.15.7500",
+            "value2": "32.0.15.7658"
+      },
+      "features": [
+        "disable_nv12_upload"
+      ]
+    },
+    {
+      "id": 454,
+      "cr_bugs": [415086846, 423655169, 423663681],
+      "description": "NV12 upload (creating a texture with init data or using UpdateSubresource) fails on a range of NVidia drivers",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+            "op": "between",
+            "value": "32.0.15.7216",
+            "value2": "32.0.15.7327"
+      },
+      "features": [
+        "disable_nv12_upload"
+      ]
+    },
+    {
+      "id": 455,
+      "cr_bugs": [431004512],
+      "description": "D3D12 HEVC hardware encoding produces bad images on Intel GPUs when long term reference is used",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "multi_gpu_category": "any",
+      "driver_version": {
+        "op": "<",
+        "value": "32.0.101.6913"
+      },
+      "features": [
+        "disable_d3d12_hevc_encoding"
+      ]
+    },
+    {
+      "id": 456,
+      "description": "Limit max texure size to 8192 on Android.",
+      "os": {
+        "type": "android"
+      },
+      "features": [
+        "webgl_or_caps_max_texture_size_limit_8192"
+      ]
+    },
+    {
+      "id": 457,
+      "cr_bugs": [40275246],
+      "description": "D3D12 AVC hardware encoding produces corrupted bitstream on NVidia GPUs with old drivers",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x10de",
+      "driver_version": {
+          "op": "<",
+          "value": "32.0.15.7602"
+      },
+      "features": [
+        "disable_d3d12_h264_encoding"
       ]
     }
   ]

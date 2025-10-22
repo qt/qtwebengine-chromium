@@ -15,6 +15,7 @@
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkPoint_impl.h"
 #include "include/private/base/SkSpan_impl.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/base/SkVx.h"
 #include "src/core/SkGeometry.h"
 #include "src/core/SkSLTypeShared.h"
@@ -89,14 +90,15 @@ static constexpr SkSpan<const Attribute> kAttributes[2] = {kAttributesWithCurveT
 
 TessellateStrokesRenderStep::TessellateStrokesRenderStep(bool infinitySupport)
         : RenderStep(RenderStepID::kTessellateStrokes,
-                     Flags::kRequiresMSAA | Flags::kPerformsShading,
+                     Flags::kRequiresMSAA | Flags::kPerformsShading |
+                     Flags::kAppendDynamicInstances,
                      /*uniforms=*/{{"affineMatrix", SkSLType::kFloat4},
                                    {"translate", SkSLType::kFloat2},
                                    {"maxScale", SkSLType::kFloat}},
                      PrimitiveType::kTriangleStrip,
                      kDirectDepthGreaterPass,
-                     /*vertexAttrs=*/  {},
-                     /*instanceAttrs=*/kAttributes[infinitySupport])
+                     /*staticAttrs=*/ {},
+                     /*appendAttrs=*/kAttributes[infinitySupport])
         , fInfinitySupport(infinitySupport) {}
 
 TessellateStrokesRenderStep::~TessellateStrokesRenderStep() {}
@@ -249,6 +251,7 @@ void TessellateStrokesRenderStep::writeVertices(DrawWriter* dw,
 
 void TessellateStrokesRenderStep::writeUniformsAndTextures(const DrawParams& params,
                                                            PipelineDataGatherer* gatherer) const {
+    SkDEBUGCODE(gatherer->checkRewind());
     // TODO: Implement perspective
     SkASSERT(params.transform().type() < Transform::Type::kPerspective);
 

@@ -21,6 +21,7 @@
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
+#include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "ui/base/cursor/cursor.h"
 #include "ui/base/cursor/mojom/cursor_type.mojom.h"
@@ -134,6 +135,13 @@ WaylandWindow::~WaylandWindow() {
 
   for (auto bubble : child_bubbles_) {
     bubble->set_parent_window(nullptr);
+  }
+
+  if (focus_client_) {
+    focus_client_->OnKeyboardFocusChanged(false);
+    if (connection_->SupportsTextInputFocus()) {
+      focus_client_->OnTextInputFocusChanged(false);
+    }
   }
 }
 
@@ -319,6 +327,18 @@ void WaylandWindow::OnPointerFocusChanged(bool focused) {
   }
 }
 
+void WaylandWindow::OnKeyboardFocusChanged(bool focused) {
+  if (focus_client_) {
+    focus_client_->OnKeyboardFocusChanged(focused);
+  }
+}
+
+void WaylandWindow::OnTextInputFocusChanged(bool focused) {
+  if (focus_client_) {
+    focus_client_->OnTextInputFocusChanged(focused);
+  }
+}
+
 bool WaylandWindow::HasPointerFocus() const {
   return this ==
          connection_->window_manager()->GetCurrentPointerFocusedWindow();
@@ -380,6 +400,9 @@ void WaylandWindow::CancelDrag() {
 }
 
 void WaylandWindow::Show(bool inactive) {
+  // Initially send the window geometry. After this, we only update window
+  // geometry when the value in latched_state_ updates.
+  SetWindowGeometry(latched_state_);
   frame_manager_->MaybeProcessPendingFrame();
 }
 
@@ -905,6 +928,7 @@ bool WaylandWindow::Initialize(PlatformWindowInitProperties properties) {
   SetWaylandExtension(this, this);
 
   PlatformWindowDelegate::State state;
+  state.window_state = PlatformWindowState::kUnknown;
   state.bounds_dip = properties.bounds;
 
   // Make sure we don't store empty bounds, or else later on we might send an
@@ -1294,9 +1318,10 @@ void WaylandWindow::ProcessPendingConfigureState(uint32_t serial) {
 
   // If we get a configure which is immediately applied and latched (meaning
   // that the configure does nothing), we will have immediately acked it, and we
-  // can immediately commit it. See crbug.com/340500574.
+  // can immediately commit it if the window is already mapped. See
+  // crbug.com/340500574.
   if (state == applied_state_ && state == latched_state_ &&
-      in_flight_requests_.empty()) {
+      in_flight_requests_.empty() && root_surface()->has_buffer()) {
     root_surface_->Commit(/*flush=*/true);
   }
 }
@@ -1498,25 +1523,20 @@ gfx::Rect WaylandWindow::AdjustBoundsToConstraintsDIP(
 
 void WaylandWindow::LatchStateRequest(const StateRequest& req) {
   // Latch the most up to date state we have a frame back for.
-  auto old_state = std::exchange(latched_state_, req.state);
-  // Ack is sent when the state request holds a valid serial value.
-  const bool ack_configure = req.serial != -1;
+  auto old_state = latched_state_;
+  latched_state_ = req.state;
 
   // Update the geometry if:
   // - either bounds, tiling or insets has changed since the latest latched
-  //   request; or
-  // - acking state corresponding to the very first configure sequence.
+  //   request.
   if (req.state.bounds_dip.size() != old_state.bounds_dip.size() ||
       req.state.tiled_edges != old_state.tiled_edges ||
       delegate()->CalculateInsetsInDIP(req.state.window_state) !=
-          delegate()->CalculateInsetsInDIP(old_state.window_state) ||
-      (ack_configure &&
-       old_state.window_state == PlatformWindowState::kUnknown &&
-       req.state.window_state != PlatformWindowState::kUnknown)) {
+          delegate()->CalculateInsetsInDIP(old_state.window_state)) {
     SetWindowGeometry(req.state);
   }
   UpdateWindowMask();
-  if (ack_configure) {
+  if (req.serial != -1) {
     AckConfigure(req.serial);
   }
 }

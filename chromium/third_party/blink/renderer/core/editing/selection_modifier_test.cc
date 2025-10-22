@@ -213,7 +213,7 @@ TEST_F(SelectionModifierTest, MoveCaretWithShadow) {
   Element* host = GetDocument().getElementById(AtomicString("host"));
   ShadowRoot& shadow_root =
       host->AttachShadowRootForTesting(ShadowRootMode::kOpen);
-  shadow_root.setInnerHTML(shadow_content);
+  shadow_root.SetInnerHTMLWithoutTrustedTypes(shadow_content);
   UpdateAllLifecyclePhasesForTest();
 
   Element* body = GetDocument().body();
@@ -429,8 +429,8 @@ TEST_F(SelectionModifierTest, OptgroupAndTable) {
       "<optgroup></optgroup><table><tbody><tr><td></td></tr></tbody></table>",
       GetSelectionTextFromBody(selection));
 
-  HTMLOptGroupElement* optgroup = To<HTMLOptGroupElement>(
-      GetDocument().QuerySelector(AtomicString("optgroup")));
+  HTMLOptGroupElement* optgroup =
+      To<HTMLOptGroupElement>(QuerySelector("optgroup"));
   ShadowRoot* shadow_root = optgroup->GetShadowRoot();
   HTMLDivElement* label = &optgroup->OptGroupLabelElement();
   EXPECT_EQ(Position(label, 0), selection.Anchor());

@@ -4,9 +4,8 @@
 
 from __future__ import annotations
 
-import argparse
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Self, Sequence
+from typing import TYPE_CHECKING, Any, Iterable, Self, Sequence
 
 from typing_extensions import override
 
@@ -16,6 +15,8 @@ from crossbench.config import ConfigObject
 from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
+  import argparse
+
   import crossbench.path as pth
   from crossbench.probes.probe import Probe
 
@@ -29,7 +30,7 @@ class ProbeListConfig(ConfigObject):
       if not args.probe_config:
         return config_from_args
       probe_config_path: pth.LocalPath = args.probe_config
-      config_from_file = cls.parse_path(probe_config_path)
+      config_from_file = cls.parse(probe_config_path)
       with exception.annotate(
           f"Merging probe config ({probe_config_path.name}) with cli --probe:"):
         return config_from_file.merge(config_from_args, should_override=True)
@@ -42,8 +43,8 @@ class ProbeListConfig(ConfigObject):
     return super().parse_other(value)
 
   @classmethod
-  def parse_sequence(cls, config: Sequence[Dict[str, Any]]) -> Self:
-    probe_configs: List[ProbeConfig] = []
+  def parse_sequence(cls, config: Sequence[dict[str, Any]]) -> Self:
+    probe_configs: list[ProbeConfig] = []
     for index, probe_config in enumerate(config):
       with exception.annotate(f"Parsing probes[{index}]"):
         probe_configs.append(ProbeConfig.parse(probe_config))
@@ -51,7 +52,7 @@ class ProbeListConfig(ConfigObject):
 
   @classmethod
   @override
-  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> Self:
+  def parse_dict(cls, config: dict[str, Any], **kwargs) -> Self:
     # Support global configs with {"probes": ...}
     if "probes" in config:
       config = config["probes"]
@@ -60,7 +61,7 @@ class ProbeListConfig(ConfigObject):
     elif "browsers" in config or "flags" in config:
       raise ProbeConfigError("Missing 'probes' property in global config.")
     config = ObjectParser.dict(config, "probes")
-    probe_configs: List[ProbeConfig] = []
+    probe_configs: list[ProbeConfig] = []
     for probe_name, config_data in config.items():
       with exception.annotate(f"Parsing probe config probes['{probe_name}']"):
         probe_configs.append(
@@ -77,7 +78,7 @@ class ProbeListConfig(ConfigObject):
       probe_configs: Iterable[ProbeConfig] = tuple(),
       probes: Iterable[Probe] = tuple()
   ) -> None:
-    self._probes: Dict[str, Probe] = {}
+    self._probes: dict[str, Probe] = {}
     if not probe_configs and not probes:
       return
     for probe_config in probe_configs:
@@ -87,7 +88,7 @@ class ProbeListConfig(ConfigObject):
       self._add_probe(probe)
 
   @property
-  def probes(self) -> List[Probe]:
+  def probes(self) -> list[Probe]:
     return list(self._probes.values())
 
   def _add_probe_config(self, probe_config: ProbeConfig) -> None:

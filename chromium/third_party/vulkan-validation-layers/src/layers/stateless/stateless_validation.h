@@ -2,6 +2,7 @@
  * Copyright (c) 2015-2025 Valve Corporation
  * Copyright (c) 2015-2025 LunarG, Inc.
  * Copyright (C) 2015-2025 Google Inc.
+ * Copyright (C) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,8 +22,6 @@
 #include <vulkan/vulkan_core.h>
 #include <vulkan/utility/vk_struct_helper.hpp>
 #include "generated/error_location_helper.h"
-#include "sync/sync_utils.h"
-#include "utils/vk_layer_utils.h"
 #include "chassis/validation_object.h"
 #include "generated/device_features.h"
 
@@ -277,6 +276,8 @@ class Context {
 
     bool ValidateReservedFlags(const Location &loc, VkFlags value, const char *vuid) const;
 
+    bool ValidateReservedFlags(const Location &loc, VkFlags64 value, const char *vuid) const;
+
     // helper to implement validation of both 32 bit and 64 bit flags.
     template <typename FlagTypedef>
     bool ValidateFlagsImplementation(const Location &loc, vvl::FlagBitmask flag_bitmask, FlagTypedef all_flags, FlagTypedef value,
@@ -449,6 +450,10 @@ class Device : public vvl::base::Device {
     uint32_t discard_rectangles_extension_version = 0;
     uint32_t scissor_exclusive_extension_version = 0;
 
+    // maintenance9 allows creating devices with zero queues, this is for doing things like compiling shaders/pipelines, so we need
+    // to catch if those workflows try and create other objects that actually require a queue
+    bool has_zero_queues = false;
+
     // Override chassis read/write locks for this validation object
     // This override takes a deferred lock. i.e. it is not acquired.
     ReadLockGuard ReadLock() const override;
@@ -498,7 +503,8 @@ class Device : public vvl::base::Device {
     bool ValidateAccelerationStructureInfoNV(const Context &context, const VkAccelerationStructureInfoNV &info,
                                              VkAccelerationStructureNV object_handle, const Location &loc) const;
     bool ValidateSwapchainCreateInfoMaintenance1(const VkSwapchainCreateInfoKHR &create_info, const Location &loc) const;
-    bool ValidateSwapchainCreateInfo(const Context &context, const VkSwapchainCreateInfoKHR &create_info, const Location &loc) const;
+    bool ValidateSwapchainCreateInfo(const Context &context, const VkSwapchainCreateInfoKHR &create_info,
+                                     const Location &loc) const;
 
     bool manual_PreCallValidateCreateQueryPool(VkDevice device, const VkQueryPoolCreateInfo *pCreateInfo,
                                                const VkAllocationCallbacks *pAllocator, VkQueryPool *pQueryPool,
@@ -522,12 +528,18 @@ class Device : public vvl::base::Device {
     bool ValidateCreateImageDrmFormatModifiers(const VkImageCreateInfo &create_info, const Location &create_info_loc,
                                                std::vector<uint64_t> &image_create_drm_format_modifiers) const;
 
+    bool ValidateImageViewCreateInfo(const VkImageViewCreateInfo &create_info, const Location &create_info_loc) const;
     bool manual_PreCallValidateCreateImageView(VkDevice device, const VkImageViewCreateInfo *pCreateInfo,
                                                const VkAllocationCallbacks *pAllocator, VkImageView *pView,
                                                const Context &context) const;
 
     bool manual_PreCallValidateGetDeviceImageSubresourceLayout(VkDevice device, const VkDeviceImageSubresourceInfo *pInfo,
                                                                VkSubresourceLayout2 *pLayout, const Context &context) const;
+
+    bool manual_PreCallValidateCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM *pCreateInfo,
+                                               const VkAllocationCallbacks *pAllocator, VkTensorARM *pTensor,
+                                               const Context &context) const;
+    bool ValidateTensorDescriptionARM(const VkTensorDescriptionARM &description, const Location &description_loc) const;
 
     bool ValidateViewport(const VkViewport &viewport, VkCommandBuffer object, const Location &loc) const;
 
@@ -546,12 +558,12 @@ class Device : public vvl::base::Device {
                                     const Location &loc) const;
     bool ValidatePipelineRenderingCreateInfo(const Context &context, const VkPipelineRenderingCreateInfo &rendering_struct,
                                              const Location &loc) const;
-    bool ValidateCreateGraphicsPipelinesFlags(const VkPipelineCreateFlags2KHR flags, const Location &flags_loc) const;
+    bool ValidateCreateGraphicsPipelinesFlags(const VkPipelineCreateFlags2 flags, const Location &flags_loc) const;
     bool manual_PreCallValidateCreateGraphicsPipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                        const VkGraphicsPipelineCreateInfo *pCreateInfos,
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                                        const Context &context) const;
-    bool ValidateCreateComputePipelinesFlags(const VkPipelineCreateFlags2KHR flags, const Location &flags_loc) const;
+    bool ValidateCreateComputePipelinesFlags(const VkPipelineCreateFlags2 flags, const Location &flags_loc) const;
     bool manual_PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                       const VkComputePipelineCreateInfo *pCreateInfos,
                                                       const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
@@ -561,6 +573,8 @@ class Device : public vvl::base::Device {
     bool ValidateSamplerCustomBoarderColor(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateSamplerSubsampled(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
     bool ValidateSamplerImageProcessingQCOM(const VkSamplerCreateInfo &create_info, const Location &create_info_loc) const;
+    bool ValidateSamplerCreateInfo(const VkSamplerCreateInfo &create_info, const Location &create_info_loc,
+                                   const Context &context) const;
     bool manual_PreCallValidateCreateSampler(VkDevice device, const VkSamplerCreateInfo *pCreateInfo,
                                              const VkAllocationCallbacks *pAllocator, VkSampler *pSampler,
                                              const Context &context) const;
@@ -654,6 +668,8 @@ class Device : public vvl::base::Device {
     bool manual_PreCallValidateCreateSwapchainKHR(VkDevice device, const VkSwapchainCreateInfoKHR *pCreateInfo,
                                                   const VkAllocationCallbacks *pAllocator, VkSwapchainKHR *pSwapchain,
                                                   const Context &context) const;
+    bool manual_PreCallValidateReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR *pReleaseInfo,
+                                                         const Context &context) const;
     bool manual_PreCallValidateReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT *pReleaseInfo,
                                                          const Context &context) const;
     bool manual_PreCallValidateCreateSharedSwapchainsKHR(VkDevice device, uint32_t swapchainCount,
@@ -714,8 +730,8 @@ class Device : public vvl::base::Device {
                                                                           const VkAccelerationStructureNV *pAccelerationStructures,
                                                                           VkQueryType queryType, VkQueryPool queryPool,
                                                                           uint32_t firstQuery, const Context &context) const;
-    bool ValidateCreateRayTracingPipelinesFlagsNV(const VkPipelineCreateFlags2KHR flags, const Location &flags_loc) const;
-    bool ValidateCreateRayTracingPipelinesFlagsKHR(const VkPipelineCreateFlags2KHR flags, const Location &flags_loc) const;
+    bool ValidateCreateRayTracingPipelinesFlagsNV(const VkPipelineCreateFlags2 flags, const Location &flags_loc) const;
+    bool ValidateCreateRayTracingPipelinesFlagsKHR(const VkPipelineCreateFlags2 flags, const Location &flags_loc) const;
     bool manual_PreCallValidateCreateRayTracingPipelinesNV(VkDevice device, VkPipelineCache pipelineCache, uint32_t createInfoCount,
                                                            const VkRayTracingPipelineCreateInfoNV *pCreateInfos,
                                                            const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
@@ -793,6 +809,16 @@ class Device : public vvl::base::Device {
 
     bool manual_PreCallValidateGetDescriptorEXT(VkDevice device, const VkDescriptorGetInfoEXT *pDescriptorInfo, size_t dataSize,
                                                 void *pDescriptor, const Context &context) const;
+
+    bool ValidateCmdSetDescriptorBufferOffsets(VkCommandBuffer commandBuffer, VkPipelineLayout layout, uint32_t setCount,
+                                               const uint32_t *pBufferIndices, const VkDeviceSize *pOffsets,
+                                               const Location &loc) const;
+
+    bool manual_PreCallValidateCmdSetDescriptorBufferOffsetsEXT(VkCommandBuffer commandBuffer,
+                                                                VkPipelineBindPoint pipelineBindPoint, VkPipelineLayout layout,
+                                                                uint32_t firstSet, uint32_t setCount,
+                                                                const uint32_t *pBufferIndices, const VkDeviceSize *pOffsets,
+                                                                const Context &context) const;
     bool manual_PreCallValidateCmdSetDescriptorBufferOffsets2EXT(
         VkCommandBuffer commandBuffer, const VkSetDescriptorBufferOffsetsInfoEXT *pSetDescriptorBufferOffsetsInfo,
         const Context &context) const;
@@ -1002,6 +1028,8 @@ class Device : public vvl::base::Device {
     bool manual_PreCallValidateCmdBeginRendering(VkCommandBuffer commandBuffer, const VkRenderingInfo *pRenderingInfo,
                                                  const Context &context) const;
 
+    bool ValidateRenderingAttachmentFeedbackLoopInfo(VkCommandBuffer commandBuffer, const VkRenderingAttachmentInfo &attachment,
+                                                     const Location &rendering_attachment_loc) const;
     bool ValidateBeginRenderingColorAttachment(VkCommandBuffer commandBuffer, const VkRenderingInfo &rendering_info,
                                                const Location &rendering_info_loc) const;
     bool ValidateBeginRenderingDepthAttachment(VkCommandBuffer commandBuffer, const VkRenderingInfo &rendering_info,

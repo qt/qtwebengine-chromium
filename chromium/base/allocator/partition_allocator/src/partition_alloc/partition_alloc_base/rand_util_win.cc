@@ -2,16 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/partition_alloc_base/rand_util.h"
 
 #include <windows.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 
 #include "partition_alloc/partition_alloc_base/check.h"
+#include "partition_alloc/partition_alloc_base/cxx_wrapper/algorithm.h"
 
 // Prototype for ProcessPrng.
 // See: https://learn.microsoft.com/en-us/windows/win32/seccng/processprng

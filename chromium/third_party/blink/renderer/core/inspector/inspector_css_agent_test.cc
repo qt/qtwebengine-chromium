@@ -12,6 +12,7 @@
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/inspector/inspector_style_resolver.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
@@ -45,8 +46,16 @@ class InspectorCSSAgentTest : public PageTestBase {
     HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>
         function_rules;
     InspectorCSSAgent::CollectReferencedFunctionRules(
-        GetDocument(), sheets, *resolver.MatchedRules(), function_rules);
+        sheets, *resolver.MatchedRules(), function_rules);
     return function_rules;
+  }
+
+  CSSFunctionRule* FindFunctionRule(
+      const HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>&
+          function_rules,
+      const ScopedCSSName* scoped_name) {
+    auto it = function_rules.find(scoped_name);
+    return it != function_rules.end() ? it->value.Get() : nullptr;
   }
 
   CSSFunctionRule* FindFunctionRule(
@@ -55,8 +64,7 @@ class InspectorCSSAgentTest : public PageTestBase {
       const char* name) {
     auto* scoped_name = MakeGarbageCollected<ScopedCSSName>(
         AtomicString(name), /*tree_scope=*/&GetDocument());
-    auto it = function_rules.find(scoped_name);
-    return it != function_rules.end() ? it->value.Get() : nullptr;
+    return FindFunctionRule(function_rules, scoped_name);
   }
 
   String GetComputedStyle(Element* element, CSSPropertyID property_id) {
@@ -81,12 +89,12 @@ class InspectorCSSAgentTest : public PageTestBase {
     const CSSValue* value = css_test_helpers::ParseValue(
         *document, "<length-percentage>", value_str);
     return InspectorCSSAgent::ResolvePercentagesValues(element, property_name,
-                                                       value);
+                                                       value, value_str);
   }
 };
 
 TEST_F(InspectorCSSAgentTest, NoFunctions) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       #e { width: 1px; }
     </style>
@@ -99,7 +107,7 @@ TEST_F(InspectorCSSAgentTest, NoFunctions) {
 }
 
 TEST_F(InspectorCSSAgentTest, UnreferencedFunction) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       #e { width: 1px; }
@@ -113,7 +121,7 @@ TEST_F(InspectorCSSAgentTest, UnreferencedFunction) {
 }
 
 TEST_F(InspectorCSSAgentTest, ElementSpecificFunctionReferences) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       #e1 { width: 1px; }
@@ -133,7 +141,7 @@ TEST_F(InspectorCSSAgentTest, ElementSpecificFunctionReferences) {
 }
 
 TEST_F(InspectorCSSAgentTest, MultipleFunctions_Declaration) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       @function --b() { result: 2px; }
@@ -152,7 +160,7 @@ TEST_F(InspectorCSSAgentTest, MultipleFunctions_Declaration) {
 }
 
 TEST_F(InspectorCSSAgentTest, KeyNameVsFunctionName) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       @function --b() { result: 2px; }
@@ -176,7 +184,7 @@ TEST_F(InspectorCSSAgentTest, KeyNameVsFunctionName) {
 }
 
 TEST_F(InspectorCSSAgentTest, MultipleFunctions_Rules) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       @function --b() { result: 2px; }
@@ -196,7 +204,7 @@ TEST_F(InspectorCSSAgentTest, MultipleFunctions_Rules) {
 }
 
 TEST_F(InspectorCSSAgentTest, FunctionsInShorthand) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       #e { padding: --a(); }
@@ -211,7 +219,7 @@ TEST_F(InspectorCSSAgentTest, FunctionsInShorthand) {
 }
 
 TEST_F(InspectorCSSAgentTest, DashedFunctionInMedia) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       @media (width) {
@@ -228,7 +236,7 @@ TEST_F(InspectorCSSAgentTest, DashedFunctionInMedia) {
 }
 
 TEST_F(InspectorCSSAgentTest, DashedFunctionNested) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       #e {
@@ -247,7 +255,7 @@ TEST_F(InspectorCSSAgentTest, DashedFunctionNested) {
 }
 
 TEST_F(InspectorCSSAgentTest, TransitiveFunction) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() {
         result: --b();
@@ -272,7 +280,7 @@ TEST_F(InspectorCSSAgentTest, TransitiveFunction) {
 }
 
 TEST_F(InspectorCSSAgentTest, TransitiveFunctionBranches) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() {
         @media (width > 0px) {
@@ -308,7 +316,7 @@ TEST_F(InspectorCSSAgentTest, TransitiveFunctionBranches) {
 }
 
 TEST_F(InspectorCSSAgentTest, DashedFunctionDedup) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       #e { left: --a(); }
@@ -325,7 +333,7 @@ TEST_F(InspectorCSSAgentTest, DashedFunctionDedup) {
 }
 
 TEST_F(InspectorCSSAgentTest, DashedFunctionUnknown) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       @function --a() { result: 1px; }
       #e { left: --unknown(); right: --a(); }
@@ -339,6 +347,62 @@ TEST_F(InspectorCSSAgentTest, DashedFunctionUnknown) {
   EXPECT_TRUE(FindFunctionRule(function_rules, "--a"));
   // The presence of a reference to a function that does not exist
   // should not cause a crash.
+}
+
+TEST_F(InspectorCSSAgentTest, SameFunctionNamesAcrossShadows) {
+  GetDocument().body()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
+    <style>
+      @function --a() {
+        result: 10px;
+      }
+      @function --b() {
+        result: --a(); /* Outer --a() */
+      }
+    </style>
+    <div id=host>
+      <template shadowrootmode=open>
+        <style>
+          @function --a() {
+            result: --b();
+          }
+          :host {
+             width: --a(); /* Inner --a() */
+          }
+        </style>
+      </template>
+    </div>
+  )HTML");
+  UpdateAllLifecyclePhasesForTest();
+  HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>
+      function_rules = CollectReferencedFunctionRules("#host");
+  EXPECT_EQ(3u, function_rules.size());
+
+  Element* host = GetDocument().getElementById(AtomicString("host"));
+  ASSERT_TRUE(host);
+  const TreeScope* document_scope = &GetDocument();
+  const TreeScope* inner_scope = host->GetShadowRoot();
+  ASSERT_TRUE(inner_scope);
+
+  CSSFunctionRule* inner_a = FindFunctionRule(
+      function_rules,
+      MakeGarbageCollected<ScopedCSSName>(AtomicString("--a"), inner_scope));
+  CSSFunctionRule* outer_a = FindFunctionRule(
+      function_rules,
+      MakeGarbageCollected<ScopedCSSName>(AtomicString("--a"), document_scope));
+  CSSFunctionRule* outer_b = FindFunctionRule(
+      function_rules,
+      MakeGarbageCollected<ScopedCSSName>(AtomicString("--b"), inner_scope));
+
+  EXPECT_TRUE(inner_a);
+  EXPECT_TRUE(outer_a);
+  EXPECT_TRUE(outer_b);
+  EXPECT_NE(inner_a, outer_a);
+
+  // `function_rules` maps invocations to the corresponding invoked functions,
+  // and there was no invocation of --b() in the outer scope.
+  EXPECT_FALSE(FindFunctionRule(
+      function_rules, MakeGarbageCollected<ScopedCSSName>(AtomicString("--b"),
+                                                          document_scope)));
 }
 
 const CSSPropertyID DirectionAwareConverterTestData[] = {
@@ -369,7 +433,7 @@ INSTANTIATE_TEST_SUITE_P(InspectorCSSAgentTest,
                          testing::ValuesIn(DirectionAwareConverterTestData));
 
 TEST_P(PercentageResolutionTest, ResolvePercentagesSimple) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       #outer {
         width: 100px;
@@ -392,7 +456,44 @@ TEST_P(PercentageResolutionTest, ResolvePercentagesSimple) {
   html_string.Append(": ");
   html_string.Append(value);
   html_string.Append(";\"></div>");
-  GetElementById("outer")->setInnerHTML(html_string.ToString());
+  GetElementById("outer")->SetInnerHTMLWithoutTrustedTypes(
+      html_string.ToString());
+
+  UpdateAllLifecyclePhasesForTest();
+
+  Element* element = GetElementById("inner");
+  String expected = GetComputedStyle(element, property_id);
+  String actual = InspectorResolvePercentageValues(element, property_id, value);
+  EXPECT_EQ(actual, expected);
+}
+
+TEST_P(PercentageResolutionTest, ResolvePercentagesEffectiveZoom) {
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <style>
+      #outer {
+        width: 100px;
+        height: 300px;
+        zoom: 3;
+      }
+    </style>
+    <div id=outer>
+    </div>
+  )HTML");
+
+  String value("10%");
+
+  CSSPropertyID property_id = GetParam();
+  AtomicString property_name =
+      CSSProperty::Get(property_id).GetCSSPropertyName().ToAtomicString();
+
+  StringBuilder html_string;
+  html_string.Append("<div id=inner style=\"position: absolute; ");
+  html_string.Append(property_name);
+  html_string.Append(": ");
+  html_string.Append(value);
+  html_string.Append(";\"></div>");
+  GetElementById("outer")->SetInnerHTMLWithoutTrustedTypes(
+      html_string.ToString());
 
   UpdateAllLifecyclePhasesForTest();
 
@@ -403,7 +504,7 @@ TEST_P(PercentageResolutionTest, ResolvePercentagesSimple) {
 }
 
 TEST_F(InspectorCSSAgentTest, ResolvePercentagesSizingProperties) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       #outer {
         width: 100px;
@@ -441,7 +542,7 @@ TEST_F(InspectorCSSAgentTest, ResolvePercentagesSizingProperties) {
 }
 
 TEST_F(InspectorCSSAgentTest, ResolvePercentagesAnchorPositioning) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       #cb {
         width: 300px;
@@ -495,7 +596,7 @@ TEST_F(InspectorCSSAgentTest, ResolvePercentagesAnchorPositioning) {
 }
 
 TEST_F(InspectorCSSAgentTest, ResolvePercentagesDisplayTable) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       .table {
         display: table;
@@ -536,10 +637,10 @@ TEST_F(InspectorCSSAgentTest, ResolvePercentagesDisplayTable) {
 
   EXPECT_EQ(
       InspectorResolvePercentageValues(element, CSSPropertyID::kWidth, value),
-      g_empty_string);
+      value);
   EXPECT_EQ(
       InspectorResolvePercentageValues(element, CSSPropertyID::kHeight, value),
-      g_empty_string);
+      value);
 }
 
 }  // namespace blink

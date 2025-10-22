@@ -63,9 +63,9 @@ Pre-built data files are generated and checked in with the following steps
      viii) cast/patch_locale.sh
        Modify the file for cast, android, ios and flutter.
 
-     ix) Repeat step iii) - vi) for cast, andriod and ios to produce
+     ix) Repeat step iii) - vi) for cast, android and ios to produce
        cast/icudtl.dat
-       andriod/icudtl.dat
+       android/icudtl.dat
        ios/icudtl.dat
 
      x) flutter/patch_brkitr.sh
@@ -299,3 +299,8 @@ D. Local Modifications
   - https://g-issues.chromium.org/issues/393989622
   - https://patch-diff.githubusercontent.com/raw/unicode-org/icu/pull/3416.diff
   - https://patch-diff.githubusercontent.com/raw/unicode-org/icu/pull/3420.diff
+
+18. Patch unnecessary uses of the virtual keyword.
+    patches/unnecessary_virtual_specifier.patch
+  - https://issues.chromium.org/issues/403236787
+  - https://patch-diff.githubusercontent.com/raw/unicode-org/icu/pull/3489.diff

@@ -19,10 +19,10 @@ BEGIN_FUNCTION xnn_f32_gemm_minmax_ukernel_10x32__asm_amd64_avx512f_broadcast
       push r13
       push r12
 
-      # load params to free up a GP registers
+      # load params to free up GP registers
       mov r13, [rsp + 96] # params
-      vbroadcastss zmm0, DWORD PTR [r13]
-      vbroadcastss zmm1, DWORD PTR [r13 + 4]
+      vbroadcastss zmm0, dword ptr [r13]
+      vbroadcastss zmm1, dword ptr [r13 + 4]
 
       # Load c pointer.
       mov r10, [rsp + 72]
@@ -193,81 +193,82 @@ BEGIN_FUNCTION xnn_f32_gemm_minmax_ukernel_10x32__asm_amd64_avx512f_broadcast
       vmovaps  zmm7, [r9 + 0]
       vmovaps  zmm8, [r9 + 64]
       add r9, 128
-      vbroadcastss zmm2, DWORD PTR [rcx + r11]
+      vbroadcastss zmm2, dword ptr [rcx + r11]
       vfmadd231ps  zmm11, zmm2, zmm7
       vfmadd231ps  zmm21, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [rax + r11]
+      vbroadcastss zmm2, dword ptr [rax + r11]
       vfmadd231ps  zmm12, zmm2, zmm7
       vfmadd231ps  zmm22, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [r15 + r11]
+      vbroadcastss zmm2, dword ptr [r15 + r11]
       vfmadd231ps  zmm13, zmm2, zmm7
       vfmadd231ps  zmm23, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [r14 + r11]
+      vbroadcastss zmm2, dword ptr [r14 + r11]
       vfmadd231ps  zmm14, zmm2, zmm7
       vfmadd231ps  zmm24, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [r12 + r11]
+      vbroadcastss zmm2, dword ptr [r12 + r11]
       vfmadd231ps  zmm15, zmm2, zmm7
       vfmadd231ps  zmm25, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [r10 + r11]
+      vbroadcastss zmm2, dword ptr [r10 + r11]
       vfmadd231ps  zmm16, zmm2, zmm7
       vfmadd231ps  zmm26, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [r13 + r11]
+      vbroadcastss zmm2, dword ptr [r13 + r11]
       vfmadd231ps  zmm17, zmm2, zmm7
       vfmadd231ps  zmm27, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [rbx + r11]
+      vbroadcastss zmm2, dword ptr [rbx + r11]
       vfmadd231ps  zmm18, zmm2, zmm7
       vfmadd231ps  zmm28, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [rbp + r11]
+      vbroadcastss zmm2, dword ptr [rbp + r11]
       vfmadd231ps  zmm19, zmm2, zmm7
       vfmadd231ps  zmm29, zmm2, zmm8
-      vbroadcastss zmm2, DWORD PTR [r8 + r11]
+      vbroadcastss zmm2, dword ptr [r8 + r11]
       vfmadd231ps  zmm20, zmm2, zmm7
       vfmadd231ps  zmm30, zmm2, zmm8
 
       add r11, 4
       cmp rdx, r11
       jne .Linner_loop
+
 .Linner_loop_end:
       # Min/max clamping.
       vminps  zmm11, zmm1, zmm11
-      vminps  zmm12, zmm1, zmm12
       vminps  zmm13, zmm1, zmm13
-      vminps  zmm14, zmm1, zmm14
       vminps  zmm15, zmm1, zmm15
-      vminps  zmm16, zmm1, zmm16
       vminps  zmm17, zmm1, zmm17
-      vminps  zmm18, zmm1, zmm18
       vminps  zmm19, zmm1, zmm19
-      vminps  zmm20, zmm1, zmm20
       vminps  zmm21, zmm1, zmm21
-      vminps  zmm22, zmm1, zmm22
       vminps  zmm23, zmm1, zmm23
-      vminps  zmm24, zmm1, zmm24
       vminps  zmm25, zmm1, zmm25
-      vminps  zmm26, zmm1, zmm26
       vminps  zmm27, zmm1, zmm27
-      vminps  zmm28, zmm1, zmm28
       vminps  zmm29, zmm1, zmm29
+      vminps  zmm12, zmm1, zmm12
+      vminps  zmm14, zmm1, zmm14
+      vminps  zmm16, zmm1, zmm16
+      vminps  zmm18, zmm1, zmm18
+      vminps  zmm20, zmm1, zmm20
+      vminps  zmm22, zmm1, zmm22
+      vminps  zmm24, zmm1, zmm24
+      vminps  zmm26, zmm1, zmm26
+      vminps  zmm28, zmm1, zmm28
       vminps  zmm30, zmm1, zmm30
       vmaxps  zmm11, zmm0, zmm11
-      vmaxps  zmm12, zmm0, zmm12
       vmaxps  zmm13, zmm0, zmm13
-      vmaxps  zmm14, zmm0, zmm14
       vmaxps  zmm15, zmm0, zmm15
-      vmaxps  zmm16, zmm0, zmm16
       vmaxps  zmm17, zmm0, zmm17
-      vmaxps  zmm18, zmm0, zmm18
       vmaxps  zmm19, zmm0, zmm19
-      vmaxps  zmm20, zmm0, zmm20
       vmaxps  zmm21, zmm0, zmm21
-      vmaxps  zmm22, zmm0, zmm22
       vmaxps  zmm23, zmm0, zmm23
-      vmaxps  zmm24, zmm0, zmm24
       vmaxps  zmm25, zmm0, zmm25
-      vmaxps  zmm26, zmm0, zmm26
       vmaxps  zmm27, zmm0, zmm27
-      vmaxps  zmm28, zmm0, zmm28
       vmaxps  zmm29, zmm0, zmm29
+      vmaxps  zmm12, zmm0, zmm12
+      vmaxps  zmm14, zmm0, zmm14
+      vmaxps  zmm16, zmm0, zmm16
+      vmaxps  zmm18, zmm0, zmm18
+      vmaxps  zmm20, zmm0, zmm20
+      vmaxps  zmm22, zmm0, zmm22
+      vmaxps  zmm24, zmm0, zmm24
+      vmaxps  zmm26, zmm0, zmm26
+      vmaxps  zmm28, zmm0, zmm28
       vmaxps  zmm30, zmm0, zmm30
 
       # Pop output pointers from the stack.
@@ -340,26 +341,26 @@ BEGIN_FUNCTION xnn_f32_gemm_minmax_ukernel_10x32__asm_amd64_avx512f_broadcast
       kmovw k1, r11d
       shr r11d, 16
       kmovw k2, r11d
-      vmovups  ZMMWORD PTR [rcx]{k1}, zmm11
-      vmovups  ZMMWORD PTR [rcx + 64]{k2}, zmm21
-      vmovups  ZMMWORD PTR [rax]{k1}, zmm12
-      vmovups  ZMMWORD PTR [rax + 64]{k2}, zmm22
-      vmovups  ZMMWORD PTR [r15]{k1}, zmm13
-      vmovups  ZMMWORD PTR [r15 + 64]{k2}, zmm23
-      vmovups  ZMMWORD PTR [r14]{k1}, zmm14
-      vmovups  ZMMWORD PTR [r14 + 64]{k2}, zmm24
-      vmovups  ZMMWORD PTR [r12]{k1}, zmm15
-      vmovups  ZMMWORD PTR [r12 + 64]{k2}, zmm25
-      vmovups  ZMMWORD PTR [r10]{k1}, zmm16
-      vmovups  ZMMWORD PTR [r10 + 64]{k2}, zmm26
-      vmovups  ZMMWORD PTR [r13]{k1}, zmm17
-      vmovups  ZMMWORD PTR [r13 + 64]{k2}, zmm27
-      vmovups  ZMMWORD PTR [rbx]{k1}, zmm18
-      vmovups  ZMMWORD PTR [rbx + 64]{k2}, zmm28
-      vmovups  ZMMWORD PTR [rbp]{k1}, zmm19
-      vmovups  ZMMWORD PTR [rbp + 64]{k2}, zmm29
-      vmovups  ZMMWORD PTR [r8]{k1}, zmm20
-      vmovups  ZMMWORD PTR [r8 + 64]{k2}, zmm30
+      vmovups  zmmword ptr [rcx]{k1}, zmm11
+      vmovups  zmmword ptr [rcx + 64]{k2}, zmm21
+      vmovups  zmmword ptr [rax]{k1}, zmm12
+      vmovups  zmmword ptr [rax + 64]{k2}, zmm22
+      vmovups  zmmword ptr [r15]{k1}, zmm13
+      vmovups  zmmword ptr [r15 + 64]{k2}, zmm23
+      vmovups  zmmword ptr [r14]{k1}, zmm14
+      vmovups  zmmword ptr [r14 + 64]{k2}, zmm24
+      vmovups  zmmword ptr [r12]{k1}, zmm15
+      vmovups  zmmword ptr [r12 + 64]{k2}, zmm25
+      vmovups  zmmword ptr [r10]{k1}, zmm16
+      vmovups  zmmword ptr [r10 + 64]{k2}, zmm26
+      vmovups  zmmword ptr [r13]{k1}, zmm17
+      vmovups  zmmword ptr [r13 + 64]{k2}, zmm27
+      vmovups  zmmword ptr [rbx]{k1}, zmm18
+      vmovups  zmmword ptr [rbx + 64]{k2}, zmm28
+      vmovups  zmmword ptr [rbp]{k1}, zmm19
+      vmovups  zmmword ptr [rbp + 64]{k2}, zmm29
+      vmovups  zmmword ptr [r8]{k1}, zmm20
+      vmovups  zmmword ptr [r8 + 64]{k2}, zmm30
 
 .Lreturn:
       add rsp, 256

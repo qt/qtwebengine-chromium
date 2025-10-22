@@ -6,8 +6,10 @@
 
 #include <memory>
 
+#include "base/check.h"
 #include "base/check_is_test.h"
 #include "base/check_op.h"
+#include "base/debug/alias.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram_functions.h"
@@ -35,11 +37,13 @@
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
 #include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
+#include "components/autofill/core/browser/webdata/payments/server_cvc.h"
 #include "components/autofill/core/browser/webdata/valuables/valuables_table.h"
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/form_field_data.h"
 #include "components/sync/base/data_type.h"
+#include "components/sync/protocol/autofill_specifics.pb.h"
 #include "components/webdata/common/web_database_backend.h"
 
 namespace autofill {
@@ -119,15 +123,16 @@ enum class Result {
   kUpdateServerIbanMetadata_Failure = 275,
   kClearAllCreditCardBenefits_Success = 276,
   kClearAllCreditCardBenefits_Failure = 277,
-  kAddEntityInstance_Success = 280,
-  kAddEntityInstance_Failure = 281,
-  kUpdateEntityInstance_Success = 290,
-  kUpdateEntityInstance_Failure = 291,
+  // Adding-but-not-updating entity instances (280, 281) is deprecated.
+  kAddOrUpdateEntityInstance_Success = 290,
+  kAddOrUpdateEntityInstance_Failure = 291,
   kRemoveEntityInstance_Success = 300,
   kRemoveEntityInstance_Failure = 301,
   kRemoveEntityInstancesModifiedBetween_Success = 310,
   kRemoveEntityInstancesModifiedBetween_Failure = 311,
-  kMaxValue = kRemoveEntityInstancesModifiedBetween_Failure,
+  kCleanupForCrbug411681430_Success = 312,
+  kCleanupForCrbug411681430_Failure = 313,
+  kMaxValue = kCleanupForCrbug411681430_Failure,
 };
 // LINT.ThenChange(/tools/metrics/histograms/metadata/autofill/enums.xml:AutofillWebDataBackendImplOperationResult)
 
@@ -192,9 +197,13 @@ WebDatabase* AutofillWebDataBackendImpl::GetDatabase() {
 }
 
 void AutofillWebDataBackendImpl::CommitChanges() {
-  DCHECK(web_database_backend_->database()
-             ->GetSQLConnection()
-             ->HasActiveTransactions());
+  DCHECK(owning_task_runner()->RunsTasksInCurrentSequence());
+  // TODO(crbug.com/410101523): Investigate the transaction errors. There should
+  // always be a pending sql transaction.
+  sql::Database* sql = web_database_backend_->database()->GetSQLConnection();
+  base::debug::Alias(&sql);
+  DCHECK(sql->is_open());
+  DCHECK(sql->HasActiveTransactions());
   web_database_backend_->database()->CommitTransaction();
   web_database_backend_->database()->BeginTransaction();
 }
@@ -374,7 +383,7 @@ WebDatabase::State AutofillWebDataBackendImpl::AddAutofillProfile(
     return WebDatabase::COMMIT_NOT_NEEDED;
   }
 
-  // Send GUID-based notification.
+  // Notify observers.
   // The `db_profile` is not guaranteed to be equivalent to `profile`, since the
   // database might perform operations like `FinalizeAfterImport()`. Notify
   // observers with `db_profile`.
@@ -411,7 +420,7 @@ WebDatabase::State AutofillWebDataBackendImpl::UpdateAutofillProfile(
     return WebDatabase::COMMIT_NOT_NEEDED;
   }
 
-  // Send GUID-based notification.
+  // Notify observers.
   // The `db_profile` is not guaranteed to be equivalent to `profile`, since the
   // database might perform operations like `FinalizeAfterImport()`. Notify
   // observers with `db_profile`.
@@ -435,9 +444,7 @@ WebDatabase::State AutofillWebDataBackendImpl::RemoveAutofillProfile(
     WebDatabase* db) {
   DCHECK(owning_task_runner()->RunsTasksInCurrentSequence());
   CHECK(change_type == AutofillProfileChange::REMOVE ||
-        (change_type == AutofillProfileChange::HIDE_IN_AUTOFILL &&
-         base::FeatureList::IsEnabled(
-             features::kAutofillDeduplicateAccountAddresses)));
+        change_type == AutofillProfileChange::HIDE_IN_AUTOFILL);
 
   std::optional<AutofillProfile> profile =
       AddressAutofillTable::FromWebDatabase(db)->GetAutofillProfile(guid);
@@ -451,9 +458,8 @@ WebDatabase::State AutofillWebDataBackendImpl::RemoveAutofillProfile(
     return WebDatabase::COMMIT_NOT_NEEDED;
   }
 
-  // Send GUID-based notification.
-  // TODO(crbug.com/40258814): The change event for removal operations shouldn't
-  // need to include the deleted profile. The GUID should suffice.
+  // Notify observers. Even for removals the profile is a necessary part of the
+  // AutofillProfileChange, so downstream code an distinguish by RecordType.
   AutofillProfileChange change(change_type, guid, *profile);
   for (auto& db_observer : db_observer_list_)
     db_observer.AutofillProfileChanged(change);
@@ -482,7 +488,7 @@ WebDatabase::State AutofillWebDataBackendImpl::AddOrUpdateEntityInstance(
   DCHECK(owning_task_runner()->RunsTasksInCurrentSequence());
   EntityTable* table = EntityTable::FromWebDatabase(db);
   if (!table->AddOrUpdateEntityInstance(entity)) {
-    ReportResult(Result::kUpdateEntityInstance_Failure);
+    ReportResult(Result::kAddOrUpdateEntityInstance_Failure);
     return WebDatabase::COMMIT_NOT_NEEDED;
   }
   base::Uuid guid = entity.guid();
@@ -491,7 +497,7 @@ WebDatabase::State AutofillWebDataBackendImpl::AddOrUpdateEntityInstance(
       base::BindOnce(std::move(on_success),
                      EntityInstanceChange(EntityInstanceChange::UPDATE,
                                           std::move(guid), std::move(entity))));
-  ReportResult(Result::kUpdateEntityInstance_Success);
+  ReportResult(Result::kAddOrUpdateEntityInstance_Success);
   return WebDatabase::COMMIT_NEEDED;
 }
 
@@ -676,8 +682,8 @@ WebDatabase::State AutofillWebDataBackendImpl::UpdateServerCardMetadata(
     WebDatabase* db) {
   DCHECK(owning_task_runner()->RunsTasksInCurrentSequence());
   DCHECK_NE(CreditCard::RecordType::kLocalCard, card.record_type());
-  if (!PaymentsAutofillTable::FromWebDatabase(db)->UpdateServerCardMetadata(
-          card)) {
+  if (!PaymentsAutofillTable::FromWebDatabase(db)
+           ->AddOrUpdateServerCardMetadata(card.GetMetadata())) {
     ReportResult(Result::kUpdateServerCardMetadata_Failure);
     return WebDatabase::COMMIT_NOT_NEEDED;
   }
@@ -886,6 +892,17 @@ WebDatabase::State AutofillWebDataBackendImpl::ClearLocalCvcs(WebDatabase* db) {
     return WebDatabase::COMMIT_NEEDED;
   }
   ReportResult(Result::kClearLocalCvcs_Failure);
+  return WebDatabase::COMMIT_NOT_NEEDED;
+}
+
+WebDatabase::State AutofillWebDataBackendImpl::CleanupForCrbug411681430(
+    WebDatabase* db) {
+  CHECK(owning_task_runner()->RunsTasksInCurrentSequence());
+  if (PaymentsAutofillTable::FromWebDatabase(db)->CleanupForCrbug411681430()) {
+    ReportResult(Result::kCleanupForCrbug411681430_Success);
+    return WebDatabase::COMMIT_NEEDED;
+  }
+  ReportResult(Result::kCleanupForCrbug411681430_Failure);
   return WebDatabase::COMMIT_NOT_NEEDED;
 }
 

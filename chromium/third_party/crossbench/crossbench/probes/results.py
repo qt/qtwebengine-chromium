@@ -6,8 +6,7 @@ from __future__ import annotations
 
 import abc
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Tuple,
-                    cast)
+from typing import TYPE_CHECKING, Any, Iterable, Optional, cast
 
 from immutabledict import immutabledict
 from ordered_set import OrderedSet
@@ -16,10 +15,10 @@ from typing_extensions import override
 from crossbench import path as pth
 from crossbench.parse import ObjectParser
 from crossbench.probes.helper import INTERNAL_NAME_PREFIX
-from crossbench.probes.probe_result_key import ProbeResultKey
-from crossbench.runner.probe_result_origin import ProbeResultOrigin
 
 if TYPE_CHECKING:
+  from crossbench.probes.probe_result_key import ProbeResultKey
+  from crossbench.runner.probe_result_origin import ProbeResultOrigin
   from crossbench.types import JsonDict
 
 
@@ -41,15 +40,15 @@ class ProbeResult(abc.ABC):
                file: Optional[Iterable[pth.LocalPath]] = None,
                trace: Optional[Iterable[pth.LocalPath]] = None,
                **kwargs: Iterable[pth.LocalPath]) -> None:
-    self._url_list: Tuple[str, ...] = ()
+    self._url_list: tuple[str, ...] = ()
     if url:
       self._url_list = ObjectParser.unique_sequence(
           tuple(url), "urls", DuplicateProbeResult)
-    self._trace_list: Tuple[pth.LocalPath, ...] = ()
+    self._trace_list: tuple[pth.LocalPath, ...] = ()
     if trace:
       self._trace_list = ObjectParser.unique_sequence(
           tuple(trace), "traces", DuplicateProbeResult)
-    tmp_files: Dict[str, OrderedSet[pth.LocalPath]] = {}
+    tmp_files: dict[str, OrderedSet[pth.LocalPath]] = {}
     if file:
       self._extend(tmp_files, file, suffix=None, allow_duplicates=False)
     for suffix, files in kwargs.items():
@@ -58,7 +57,7 @@ class ProbeResult(abc.ABC):
     # Do last and allow duplicated
     self._extend(
         tmp_files, self._trace_list, suffix=None, allow_duplicates=True)
-    self._files: immutabledict[str, Tuple[pth.LocalPath, ...]] = immutabledict({
+    self._files: immutabledict[str, tuple[pth.LocalPath, ...]] = immutabledict({
         suffix: tuple(files) for suffix, files in tmp_files.items()
     })
     # TODO: Add Metric object for keeping metrics in-memory instead of reloading
@@ -67,7 +66,7 @@ class ProbeResult(abc.ABC):
     self._validate()
 
   def _append(self,
-              tmp_files: Dict[str, OrderedSet[pth.LocalPath]],
+              tmp_files: dict[str, OrderedSet[pth.LocalPath]],
               file: pth.LocalPath,
               suffix: Optional[str] = None,
               allow_duplicates: bool = False) -> None:
@@ -88,7 +87,7 @@ class ProbeResult(abc.ABC):
       tmp_files[suffix] = OrderedSet((file,))
 
   def _extend(self,
-              tmp_files: Dict[str, OrderedSet[pth.LocalPath]],
+              tmp_files: dict[str, OrderedSet[pth.LocalPath]],
               files: Iterable[pth.LocalPath],
               suffix: Optional[str] = None,
               allow_duplicates: bool = False) -> None:
@@ -107,7 +106,7 @@ class ProbeResult(abc.ABC):
       choices = "Empty ProbeResult."
     raise ValueError(f"No files with suffix '.{suffix}'. {choices}")
 
-  def get_all(self, suffix: str) -> List[pth.LocalPath]:
+  def get_all(self, suffix: str) -> list[pth.LocalPath]:
     if files_with_suffix := self._files.get(suffix):
       return list(files_with_suffix)
     return []
@@ -170,7 +169,7 @@ class ProbeResult(abc.ABC):
     return self._url_list[0]
 
   @property
-  def url_list(self) -> List[str]:
+  def url_list(self) -> list[str]:
     return list(self._url_list)
 
   @property
@@ -182,7 +181,7 @@ class ProbeResult(abc.ABC):
     raise ValueError("ProbeResult has no files.")
 
   @property
-  def file_list(self) -> List[pth.LocalPath]:
+  def file_list(self) -> list[pth.LocalPath]:
     return list(self.all_files())
 
   @property
@@ -192,7 +191,7 @@ class ProbeResult(abc.ABC):
     return self._trace_list[0]
 
   @property
-  def trace_list(self) -> List[pth.LocalPath]:
+  def trace_list(self) -> list[pth.LocalPath]:
     return list(self._trace_list)
 
   @property
@@ -200,7 +199,7 @@ class ProbeResult(abc.ABC):
     return self.get("json")
 
   @property
-  def json_list(self) -> List[pth.LocalPath]:
+  def json_list(self) -> list[pth.LocalPath]:
     return self.get_all("json")
 
   @property
@@ -208,7 +207,7 @@ class ProbeResult(abc.ABC):
     return self.get("csv")
 
   @property
-  def csv_list(self) -> List[pth.LocalPath]:
+  def csv_list(self) -> list[pth.LocalPath]:
     return self.get_all("csv")
 
 
@@ -239,7 +238,7 @@ class BrowserProbeResult(ProbeResult):
                **kwargs: Iterable[pth.AnyPath]) -> None:
     self._browser_file = file
     local_file: Iterable[pth.LocalPath] | None = None
-    local_kwargs: Dict[str, Iterable[pth.LocalPath]] = {}
+    local_kwargs: dict[str, Iterable[pth.LocalPath]] = {}
     self._is_remote = result_origin.is_remote
     if self._is_remote:
       if file:
@@ -249,7 +248,7 @@ class BrowserProbeResult(ProbeResult):
     else:
       # Keep local files as is.
       local_file = cast(Iterable[pth.LocalPath], file)
-      local_kwargs = cast(Dict[str, Iterable[pth.LocalPath]], kwargs)
+      local_kwargs = cast(dict[str, Iterable[pth.LocalPath]], kwargs)
 
     super().__init__(url, local_file, **local_kwargs)
 
@@ -265,7 +264,7 @@ class BrowserProbeResult(ProbeResult):
     browser_platform = result_origin.browser_platform
     remote_tmp_dir = result_origin.browser_tmp_dir
     out_dir = result_origin.out_dir
-    local_result_paths: List[pth.LocalPath] = []
+    local_result_paths: list[pth.LocalPath] = []
     for remote_path in paths:
       try:
         relative_path = remote_path.relative_to(remote_tmp_dir)
@@ -288,7 +287,7 @@ class ProbeResultDict:
 
   def __init__(self, path: pth.AnyPath) -> None:
     self._path = path
-    self._dict: Dict[str, ProbeResult] = {}
+    self._dict: dict[str, ProbeResult] = {}
 
   def __setitem__(self, probe: ProbeResultKey, result: ProbeResult) -> None:
     assert isinstance(result, ProbeResult)

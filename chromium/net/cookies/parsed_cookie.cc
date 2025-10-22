@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 // Portions of this code based on Mozilla:
 //   (netwerk/cookie/src/nsCookieService.cpp)
 /* ***** BEGIN LICENSE BLOCK *****
@@ -49,7 +44,8 @@
 
 #include "net/cookies/parsed_cookie.h"
 
-#include "base/logging.h"
+#include <utility>
+
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/checked_math.h"
 #include "base/strings/string_util.h"
@@ -70,16 +66,17 @@ const char kSameSiteTokenName[] = "samesite";
 const char kPriorityTokenName[] = "priority";
 const char kPartitionedTokenName[] = "partitioned";
 
-const char kTerminator[] = "\n\r\0";
-const int kTerminatorLen = sizeof(kTerminator) - 1;
-const char kWhitespace[] = " \t";
-const char kValueSeparator = ';';
-const char kTokenSeparator[] = ";=";
+constexpr char kTerminatorRawString[] = "\n\r\0";
+constexpr std::string_view kTerminator(kTerminatorRawString,
+                                       sizeof(kTerminatorRawString) - 1);
+constexpr std::string_view kWhitespace = " \t";
+constexpr char kValueSeparator = ';';
+constexpr std::string_view kTokenSeparator = ";=";
 
 // Returns true if |c| occurs in |chars|
 // TODO(erikwright): maybe make this take an iterator, could check for end also?
-inline bool CharIsA(const char c, const char* chars) {
-  return strchr(chars, c) != nullptr;
+inline bool CharIsA(const char c, std::string_view chars) {
+  return chars.find(c) != std::string_view::npos;
 }
 
 // Seek the iterator to the first occurrence of |character|.
@@ -96,7 +93,7 @@ inline bool SeekToCharacter(std::string_view::iterator* it,
 // Returns true if it hit the end, false otherwise.
 inline bool SeekTo(std::string_view::iterator* it,
                    const std::string_view::iterator& end,
-                   const char* chars) {
+                   std::string_view chars) {
   for (; *it != end && !CharIsA(**it, chars); ++(*it)) {
   }
   return *it == end;
@@ -105,14 +102,14 @@ inline bool SeekTo(std::string_view::iterator* it,
 // Returns true if it hit the end, false otherwise.
 inline bool SeekPast(std::string_view::iterator* it,
                      const std::string_view::iterator& end,
-                     const char* chars) {
+                     std::string_view chars) {
   for (; *it != end && CharIsA(**it, chars); ++(*it)) {
   }
   return *it == end;
 }
 inline bool SeekBackPast(std::string_view::iterator* it,
                          const std::string_view::iterator& end,
-                         const char* chars) {
+                         std::string_view chars) {
   for (; *it != end && CharIsA(**it, chars); --(*it)) {
   }
   return *it == end;
@@ -161,16 +158,11 @@ bool ParsedCookie::IsValid() const {
   return !pairs_.empty();
 }
 
-CookieSameSite ParsedCookie::SameSite(
-    CookieSameSiteString* samesite_string) const {
-  CookieSameSite samesite = CookieSameSite::UNSPECIFIED;
+std::pair<CookieSameSite, CookieSameSiteString> ParsedCookie::SameSite() const {
   if (same_site_index_ != 0) {
-    samesite = StringToCookieSameSite(pairs_[same_site_index_].second,
-                                      samesite_string);
-  } else if (samesite_string) {
-    *samesite_string = CookieSameSiteString::kUnspecified;
+    return StringToCookieSameSite(pairs_[same_site_index_].second);
   }
-  return samesite;
+  return {CookieSameSite::UNSPECIFIED, CookieSameSiteString::kUnspecified};
 }
 
 CookiePriority ParsedCookie::Priority() const {
@@ -301,8 +293,7 @@ std::string ParsedCookie::ToCookieLine() const {
 std::string_view::iterator ParsedCookie::FindFirstTerminator(
     std::string_view s) {
   std::string_view::iterator end = s.end();
-  size_t term_pos =
-      s.find_first_of(std::string_view(kTerminator, kTerminatorLen));
+  size_t term_pos = s.find_first_of(kTerminator);
   if (term_pos != std::string_view::npos) {
     // We found a character we should treat as an end of string.
     end = s.begin() + term_pos;
@@ -461,7 +452,7 @@ bool ParsedCookie::CookieAttributeValueHasValidCharSet(
 }
 
 // static
-bool ParsedCookie::CookieAttributeValueHasValidSize(const std::string& value) {
+bool ParsedCookie::CookieAttributeValueHasValidSize(std::string_view value) {
   return (value.size() <= kMaxCookieAttributeValueSize);
 }
 
@@ -507,6 +498,18 @@ bool ParsedCookie::IsValidCookieNameValuePair(
   return true;
 }
 
+bool ParsedCookie::ForEachAttribute(
+    base::FunctionRef<bool(std::string_view, std::string_view)> functor) const {
+  // The first element in `pairs_` is the name and value, so skip that one.
+  for (const auto& [attribute, value] : base::span(pairs_).subspan(1u)) {
+    if (!functor(attribute, value)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 // Parse all token/value pairs and populate pairs_.
 void ParsedCookie::ParseTokenValuePairs(std::string_view cookie_line,
                                         CookieInclusionStatus& status_out) {
@@ -536,7 +539,7 @@ void ParsedCookie::ParseTokenValuePairs(std::string_view cookie_line,
   }
 
   for (int pair_num = 0; it != end; ++pair_num) {
-    TokenValuePair pair;
+    std::pair<std::string, std::string> pair;
 
     std::string_view::iterator token_start, token_end;
     if (!ParseToken(&it, end, &token_start, &token_end)) {

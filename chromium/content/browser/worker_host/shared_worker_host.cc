@@ -10,7 +10,7 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
-#include "base/metrics/histogram_macros.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/unguessable_token.h"
 #include "content/browser/broadcast_channel/broadcast_channel_provider.h"
 #include "content/browser/broadcast_channel/broadcast_channel_service.h"
@@ -24,6 +24,7 @@
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/security/dip/document_isolation_policy_reporter.h"
 #include "content/browser/service_worker/service_worker_client.h"
+#include "content/browser/service_worker/service_worker_context_core.h"
 #include "content/browser/service_worker/service_worker_main_resource_handle.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/url_loader_factory_params_helper.h"
@@ -36,6 +37,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/service_worker_context.h"
 #include "content/public/browser/worker_type.h"
 #include "content/public/common/content_client.h"
@@ -62,6 +64,33 @@
 #include "third_party/blink/public/mojom/use_counter/metrics/web_feature.mojom.h"
 #include "third_party/blink/public/mojom/worker/shared_worker_info.mojom.h"
 #include "third_party/blink/public/mojom/worker/worker_content_settings_proxy.mojom.h"
+
+namespace {
+
+// TODO(crbug.com/400473072): revisit the duration.
+// Also, we may want to use the same constant we use for service workers.
+// Current value come from `ServiceWorkerVersion::kRequestTimeout`.
+constexpr base::TimeDelta kSharedWorkerDestructionDelay = base::Minutes(5);
+
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// LINT.IfChange(SharedWorkerHostDestructionSource)
+enum class SharedWorkerHostDestructionSource {
+  kUnknown = 0,
+  kOnContextClosed = 1,
+  kRenderProcessHostDestroyed = 2,
+  kNoClients = 3,
+  kWorkerConnectionLost = 4,
+  kMaxValue = kWorkerConnectionLost,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/content/enums.xml:SharedWorkerHostDestructionSource)
+
+void RecordDestructionSource(SharedWorkerHostDestructionSource source) {
+  base::UmaHistogramEnumeration("Content.SharedWorker.Host.DestructionSource",
+                                source);
+}
+
+}  // namespace
 
 namespace content {
 
@@ -317,7 +346,7 @@ void SharedWorkerHost::Start(
       instance_.url(), std::move(options),
       mojo::Clone(content_security_policies_),
       std::move(outside_fetch_client_settings_object),
-      instance_.same_site_cookies()));
+      instance_.same_site_cookies(), instance_.extended_lifetime()));
 
   auto renderer_preferences = blink::RendererPreferences();
   GetContentClient()->browser()->UpdateRendererPreferencesForWorker(
@@ -471,7 +500,8 @@ SharedWorkerHost::CreateNetworkFactoryParamsForSubresources() {
           mojo::Clone(worker_client_security_state_),
           /*debug_tag=*/
           "SharedWorkerHost::CreateNetworkFactoryForSubresource",
-          instance_.DoesRequireCrossSiteRequestForCookies());
+          instance_.DoesRequireCrossSiteRequestForCookies(),
+          /*is_for_service_worker=*/false);
   return factory_params;
 }
 
@@ -484,8 +514,10 @@ blink::mojom::PermissionStatus SharedWorkerHost::GetPermissionStatus(
   return GetProcessHost()
       ->GetBrowserContext()
       ->GetPermissionController()
-      ->GetPermissionStatusForWorker(permission_type, GetProcessHost(),
-                                     GetStorageKey().origin());
+      ->GetPermissionStatusForWorker(
+          content::PermissionDescriptorUtil::
+              CreatePermissionDescriptorForPermissionType(permission_type),
+          GetProcessHost(), GetStorageKey().origin());
 }
 
 void SharedWorkerHost::BindCacheStorageForBucket(
@@ -534,14 +566,14 @@ void SharedWorkerHost::AllowFileSystem(
     base::OnceCallback<void(bool)> callback) {
   GetContentClient()->browser()->AllowWorkerFileSystem(
       url, GetProcessHost()->GetBrowserContext(), GetRenderFrameIDsForWorker(),
-      std::move(callback));
+      GetStorageKey(), std::move(callback));
 }
 
 void SharedWorkerHost::AllowIndexedDB(const GURL& url,
                                       base::OnceCallback<void(bool)> callback) {
   std::move(callback).Run(GetContentClient()->browser()->AllowWorkerIndexedDB(
-      url, GetProcessHost()->GetBrowserContext(),
-      GetRenderFrameIDsForWorker()));
+      url, GetProcessHost()->GetBrowserContext(), GetRenderFrameIDsForWorker(),
+      GetStorageKey()));
 }
 
 void SharedWorkerHost::AllowCacheStorage(
@@ -550,14 +582,14 @@ void SharedWorkerHost::AllowCacheStorage(
   std::move(callback).Run(
       GetContentClient()->browser()->AllowWorkerCacheStorage(
           url, GetProcessHost()->GetBrowserContext(),
-          GetRenderFrameIDsForWorker()));
+          GetRenderFrameIDsForWorker(), GetStorageKey()));
 }
 
 void SharedWorkerHost::AllowWebLocks(const GURL& url,
                                      base::OnceCallback<void(bool)> callback) {
   std::move(callback).Run(GetContentClient()->browser()->AllowWorkerWebLocks(
-      url, GetProcessHost()->GetBrowserContext(),
-      GetRenderFrameIDsForWorker()));
+      url, GetProcessHost()->GetBrowserContext(), GetRenderFrameIDsForWorker(),
+      GetStorageKey()));
 }
 
 void SharedWorkerHost::CreateWebTransportConnector(
@@ -604,6 +636,17 @@ void SharedWorkerHost::CreateBlobUrlStoreProvider(
   storage_partition_impl->GetBlobUrlRegistry()->AddReceiver(
       GetStorageKey(), instance().renderer_origin(),
       GetProcessHost()->GetDeprecatedID(), std::move(receiver),
+      /*context_type_for_debugging=*/"Shared Worker",
+      base::BindRepeating(
+          [](base::WeakPtr<SharedWorkerHost> host) -> std::string {
+            if (!host) {
+              return "destroyed SharedWorkerHost";
+            }
+            return host->GetStorageKey().GetDebugString();
+          },
+          weak_factory_.GetWeakPtr()),
+      // Storage access can only be granted to dedicated workers.
+      base::BindRepeating([]() -> bool { return false; }),
       !(GetContentClient()->browser()->IsBlobUrlPartitioningEnabled(
           GetProcessHost()->GetBrowserContext())),
       storage::BlobURLValidityCheckBehavior::
@@ -705,6 +748,7 @@ void SharedWorkerHost::OnContextClosed() {
   // be called.
   DCHECK(started_);
 
+  RecordDestructionSource(SharedWorkerHostDestructionSource::kOnContextClosed);
   Destruct();
 }
 
@@ -763,6 +807,8 @@ void SharedWorkerHost::RenderProcessHostDestroyed(RenderProcessHost* host) {
   // also calls RemoveObserver, but the process may be cleared by the time that
   // call is reached, so call it here first.
   host->RemoveObserver(this);
+  RecordDestructionSource(
+      SharedWorkerHostDestructionSource::kRenderProcessHostDestroyed);
   Destruct();
 }
 
@@ -932,8 +978,24 @@ void SharedWorkerHost::OnClientConnectionLost() {
       break;
     }
   }
+  if (instance_.extended_lifetime()) {
+    if (!clients_.empty()) {  // Early return.
+      return;
+    }
+    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&SharedWorkerHost::DestructIfNoClients,
+                       weak_factory_.GetWeakPtr()),
+        kSharedWorkerDestructionDelay);
+    return;
+  }
+  DestructIfNoClients();
+}
+
+void SharedWorkerHost::DestructIfNoClients() {
   // If there are no clients left, then it's cleanup time.
   if (clients_.empty()) {
+    RecordDestructionSource(SharedWorkerHostDestructionSource::kNoClients);
     Destruct();
   }
 }
@@ -941,6 +1003,8 @@ void SharedWorkerHost::OnClientConnectionLost() {
 void SharedWorkerHost::OnWorkerConnectionLost() {
   // This will destroy |this| resulting in client's observing their mojo
   // connection being dropped.
+  RecordDestructionSource(
+      SharedWorkerHostDestructionSource::kWorkerConnectionLost);
   Destruct();
 }
 

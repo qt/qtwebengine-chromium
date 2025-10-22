@@ -5,6 +5,7 @@
 package org.chromium.components.webauthn;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
@@ -29,10 +30,12 @@ import org.robolectric.annotation.Config;
 
 import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Batch;
+import org.chromium.base.test.util.Features.EnableFeatures;
 import org.chromium.blink.mojom.Authenticator;
 import org.chromium.blink.mojom.WebAuthnClientCapability;
 import org.chromium.content_public.browser.RenderFrameHost;
 import org.chromium.content_public.browser.WebContents;
+import org.chromium.device.DeviceFeatureList;
 import org.chromium.url.GURL;
 import org.chromium.url.Origin;
 
@@ -41,6 +44,7 @@ import org.chromium.url.Origin;
 @Config(manifest = Config.NONE)
 @Batch(Batch.UNIT_TESTS)
 @SmallTest
+@EnableFeatures(DeviceFeatureList.WEBAUTHN_PASSKEY_UPGRADE)
 public class AuthenticatorImplTest {
     private AuthenticatorImpl mAuthenticator;
     private Origin mOrigin;
@@ -107,7 +111,7 @@ public class AuthenticatorImplTest {
         mAuthenticator.getClientCapabilities(callback);
 
         verify(callback).call(mCapabilitiesCaptor.capture());
-        assertEquals(5, mCapabilitiesCaptor.getValue().length);
+        assertEquals(6, mCapabilitiesCaptor.getValue().length);
     }
 
     @Test
@@ -132,6 +136,12 @@ public class AuthenticatorImplTest {
     public void testGetClientCapabilities_ConditionalGet_Supported_WhenUvpaaAvailable() {
         GmsCoreUtils.setGmsCoreVersionForTesting(GmsCoreUtils.GMSCORE_MIN_VERSION);
         testCapability(AuthenticatorConstants.CAPABILITY_CONDITIONAL_GET, true);
+    }
+
+    @Test
+    public void testGetClientCapabilities_ConditionalCreate_Supported_WhenUvpaaAvailable() {
+        GmsCoreUtils.setGmsCoreVersionForTesting(GmsCoreUtils.GMSCORE_MIN_VERSION);
+        testCapability(AuthenticatorConstants.CAPABILITY_CONDITIONAL_CREATE, true);
     }
 
     @Test
@@ -160,9 +170,11 @@ public class AuthenticatorImplTest {
 
         verify(callback).call(mCapabilitiesCaptor.capture());
         WebAuthnClientCapability[] capabilities = mCapabilitiesCaptor.getValue();
-        assertEquals(5, capabilities.length);
+        assertEquals(6, capabilities.length);
         assertCapabilitySupported(
                 capabilities, AuthenticatorConstants.CAPABILITY_CONDITIONAL_GET, false);
+        assertCapabilitySupported(
+                capabilities, AuthenticatorConstants.CAPABILITY_CONDITIONAL_CREATE, false);
         assertCapabilitySupported(capabilities, AuthenticatorConstants.CAPABILITY_UVPAA, false);
         assertCapabilitySupported(
                 capabilities, AuthenticatorConstants.CAPABILITY_RELATED_ORIGINS, true);
@@ -190,5 +202,81 @@ public class AuthenticatorImplTest {
             }
         }
         throw new AssertionError("Capability '" + name + "' not found.");
+    }
+
+    /** Test that makeCredential() throws when the renderFrameHost is not set. */
+    @Test
+    public void testMakeCredential_requiresRenderFrameHost() {
+        AuthenticatorImpl authenticator =
+                new AuthenticatorImpl(
+                        ApplicationProvider.getApplicationContext(),
+                        mWebContents,
+                        mIntentSender,
+                        /* createConfirmationUiDelegate= */ null,
+                        /* renderFrameHost= */ null,
+                        mTopOrigin);
+
+        assertThrows(
+                AssertionError.class,
+                () -> {
+                    authenticator.makeCredential(/* options= */ null, /* callback= */ null);
+                });
+    }
+
+    /** Test that makeCredential() throws when the intenSender is not set. */
+    @Test
+    public void testMakeCredential_requiresIntentSender() {
+        AuthenticatorImpl authenticator =
+                new AuthenticatorImpl(
+                        ApplicationProvider.getApplicationContext(),
+                        mWebContents,
+                        /* intentSender= */ null,
+                        /* createConfirmationUiDelegate= */ null,
+                        mRenderFrameHost,
+                        mTopOrigin);
+
+        assertThrows(
+                AssertionError.class,
+                () -> {
+                    authenticator.makeCredential(/* options= */ null, /* callback= */ null);
+                });
+    }
+
+    /** Test that getCredential() throws when the renderFrameHost is not set. */
+    @Test
+    public void testGetCredential_requiresRenderFrameHost() {
+        AuthenticatorImpl authenticator =
+                new AuthenticatorImpl(
+                        ApplicationProvider.getApplicationContext(),
+                        mWebContents,
+                        mIntentSender,
+                        /* createConfirmationUiDelegate= */ null,
+                        /* renderFrameHost= */ null,
+                        mTopOrigin);
+
+        assertThrows(
+                AssertionError.class,
+                () -> {
+                    authenticator.getCredential(/* options= */ null, /* callback= */ null);
+                });
+    }
+
+    /** Test that getCredential() throws when the intentSender is not set. */
+    @Test
+    public void testGetCredential_requiresIntentSender() {
+        AuthenticatorImpl authenticator =
+                new AuthenticatorImpl(
+                        ApplicationProvider.getApplicationContext(),
+                        mWebContents,
+                        /* intentSender= */ null,
+                        /* createConfirmationUiDelegate= */ null,
+                        mRenderFrameHost,
+                        mTopOrigin);
+
+        assertThrows(
+                AssertionError.class,
+                () -> {
+                    authenticator.getCredential(/* options= */ null, /* callback= */ null);
+                });
     }
 }

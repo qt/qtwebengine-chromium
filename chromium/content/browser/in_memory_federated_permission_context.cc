@@ -11,7 +11,9 @@
 #include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "content/browser/webid/flags.h"
+#include "content/public/browser/webid/constants.h"
 #include "content/public/common/content_features.h"
+#include "content/public/common/content_switches.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "third_party/blink/public/common/webid/login_status_account.h"
 #include "third_party/blink/public/common/webid/login_status_options.h"
@@ -55,7 +57,11 @@ void InMemoryFederatedPermissionContext::RecordIgnoreAndEmbargo(
 
 bool InMemoryFederatedPermissionContext::ShouldCompleteRequestImmediately()
     const {
-  return base::CommandLine::ForCurrentProcess()->HasSwitch("run-web-tests");
+  const base::CommandLine* current_command_line =
+      base::CommandLine::ForCurrentProcess();
+  return current_command_line->HasSwitch("run-web-tests") ||
+         current_command_line->HasSwitch(switches::kBrowserTest) ||
+         current_command_line->HasSwitch(switches::kTestType);
 }
 
 bool InMemoryFederatedPermissionContext::HasThirdPartyCookiesAccess(
@@ -242,26 +248,34 @@ std::optional<bool> InMemoryFederatedPermissionContext::GetIdpSigninStatus(
   }
 }
 
-// TODO(crbug.com/405194067) Clean up account types in Lightweight FedCM.
-std::vector<scoped_refptr<IdentityRequestAccount>>
-InMemoryFederatedPermissionContext::GetAccounts(const url::Origin& idp_origin) {
+base::Value::List InMemoryFederatedPermissionContext::GetAccounts(
+    const url::Origin& idp_origin) {
+  base::Value::List result;
+
   auto options = idp_login_status_options_.find(idp_origin.Serialize());
   if (options == idp_login_status_options_.end()) {
-    return {};
+    return result;
   }
-  const std::vector<blink::common::webid::LoginStatusAccount>&
-      login_status_accounts = options->second.accounts;
-  std::vector<scoped_refptr<IdentityRequestAccount>> request_accounts;
 
-  request_accounts.reserve(request_accounts.size());
-  std::transform(login_status_accounts.begin(), login_status_accounts.end(),
-                 std::inserter(request_accounts, request_accounts.begin()),
-                 [](const auto& login_status_account) {
-                   return base::MakeRefCounted<IdentityRequestAccount>(
-                       login_status_account);
-                 });
+  for (const auto& account : options->second.accounts) {
+    base::Value::Dict new_account =
+        base::Value::Dict()
+            .Set(webid::kAccountIdKey, account.id)
+            .Set(webid::kAccountEmailKey, account.email)
+            .Set(webid::kAccountNameKey, account.name);
 
-  return request_accounts;
+    if (account.given_name.has_value()) {
+      new_account.Set(webid::kAccountGivenNameKey, account.given_name.value());
+    }
+
+    if (account.picture.has_value()) {
+      new_account.Set(webid::kAccountPictureKey,
+                      account.picture.value().spec());
+    }
+    result.Append(std::move(new_account));
+  }
+
+  return result;
 }
 
 void InMemoryFederatedPermissionContext::SetIdpSigninStatus(
@@ -299,9 +313,7 @@ void InMemoryFederatedPermissionContext::RegisterIdP(const ::GURL& configURL) {
 
 void InMemoryFederatedPermissionContext::UnregisterIdP(
     const ::GURL& configURL) {
-  idp_registry_.erase(
-      std::remove(idp_registry_.begin(), idp_registry_.end(), configURL),
-      idp_registry_.end());
+  std::erase(idp_registry_, configURL);
 }
 
 std::vector<GURL> InMemoryFederatedPermissionContext::GetRegisteredIdPs() {

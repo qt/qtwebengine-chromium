@@ -8,6 +8,7 @@
 #include <memory>
 #include <optional>
 
+#include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/image_fetcher/image_decoder_impl.h"
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
@@ -83,7 +84,7 @@ class CustomizeChromeUI
   void ScrollToSection(CustomizeChromeSection section);
 
   // Passthrough that calls the CustomizeChromePage's AttachedTabStateUpdated.
-  void AttachedTabStateUpdated(bool is_attached_tab_first_party_ntp);
+  void AttachedTabStateUpdated(const GURL& url);
 
   // Passthrough that calls to CustomizeChromePage's UpdateThemeEditable.
   void UpdateThemeEditable(bool is_theme_editable);
@@ -125,7 +126,7 @@ class CustomizeChromeUI
           side_panel::customize_chrome::mojom::CustomizeToolbarHandlerFactory>
           receiver);
 
-  static constexpr std::string GetWebUIName() { return "CustomizeChrome"; }
+  static constexpr std::string_view GetWebUIName() { return "CustomizeChrome"; }
 
  private:
   // side_panel::mojom::CustomizeChromePageHandlerFactory
@@ -187,7 +188,7 @@ class CustomizeChromeUI
   // Caches a request to scroll to a section in case the request happens before
   // the front-end is ready to receive the request.
   std::optional<CustomizeChromeSection> section_;
-  std::optional<bool> is_source_tab_first_party_ntp_;
+  GURL source_tab_url_;
   std::optional<bool> is_theme_editable_;
 
   std::unique_ptr<user_education::HelpBubbleHandler> help_bubble_handler_;

@@ -28,6 +28,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/posix/eintr_wrapper.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "components/viz/common/gpu/vulkan_context_provider.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
@@ -192,10 +193,10 @@ std::optional<uint64_t> GetRecommendedAHBUsage(VkPhysicalDevice device,
   return ahb_usage.androidHardwareBufferUsage;
 }
 
-constexpr viz::SharedImageFormat kSupportedFormats[6]{
-    viz::SinglePlaneFormat::kRGBA_8888, viz::SinglePlaneFormat::kRGB_565,
-    viz::SinglePlaneFormat::kBGR_565,   viz::SinglePlaneFormat::kRGBA_F16,
-    viz::SinglePlaneFormat::kRGBX_8888, viz::SinglePlaneFormat::kRGBA_1010102};
+constexpr viz::SharedImageFormat kSupportedFormats[5]{
+    viz::SinglePlaneFormat::kRGBA_8888, viz::SinglePlaneFormat::kBGR_565,
+    viz::SinglePlaneFormat::kRGBA_F16, viz::SinglePlaneFormat::kRGBX_8888,
+    viz::SinglePlaneFormat::kRGBA_1010102};
 
 // Returns whether the format is supported by AHardwareBuffer.
 // TODO(vikassoni): In future we will need to expose the set of formats and
@@ -216,8 +217,6 @@ unsigned int AHardwareBufferFormat(viz::SharedImageFormat format) {
 
   if (format == viz::SinglePlaneFormat::kRGBA_8888) {
     return AHARDWAREBUFFER_FORMAT_R8G8B8A8_UNORM;
-  } else if (format == viz::SinglePlaneFormat::kRGB_565) {
-    return AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM;
   } else if (format == viz::SinglePlaneFormat::kBGR_565) {
     return AHARDWAREBUFFER_FORMAT_R5G6B5_UNORM;
   } else if (format == viz::SinglePlaneFormat::kRGBA_F16) {

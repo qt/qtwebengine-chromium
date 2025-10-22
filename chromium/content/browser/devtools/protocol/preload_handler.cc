@@ -51,8 +51,6 @@ Preload::PrerenderFinalStatus PrerenderFinalStatusToProtocol(
       return Preload::PrerenderFinalStatusEnum::LoginAuthRequested;
     case PrerenderFinalStatus::kLowEndDevice:
       return Preload::PrerenderFinalStatusEnum::LowEndDevice;
-    case PrerenderFinalStatus::kMainFrameNavigation:
-      return Preload::PrerenderFinalStatusEnum::MainFrameNavigation;
     case PrerenderFinalStatus::kMemoryLimitExceeded:
       return Preload::PrerenderFinalStatusEnum::MemoryLimitExceeded;
     case PrerenderFinalStatus::kMixedContent:
@@ -161,10 +159,10 @@ Preload::PrerenderFinalStatus PrerenderFinalStatusToProtocol(
     case PrerenderFinalStatus::kActivatedWithAuxiliaryBrowsingContexts:
       return Preload::PrerenderFinalStatusEnum::
           ActivatedWithAuxiliaryBrowsingContexts;
-    case PrerenderFinalStatus::kMaxNumOfRunningEagerPrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningImmediatePrerendersExceeded:
       return Preload::PrerenderFinalStatusEnum::
           MaxNumOfRunningEagerPrerendersExceeded;
-    case PrerenderFinalStatus::kMaxNumOfRunningNonEagerPrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningNonImmediatePrerendersExceeded:
       return Preload::PrerenderFinalStatusEnum::
           MaxNumOfRunningNonEagerPrerendersExceeded;
     case PrerenderFinalStatus::kMaxNumOfRunningEmbedderPrerendersExceeded:
@@ -193,6 +191,8 @@ Preload::PrerenderFinalStatus PrerenderFinalStatusToProtocol(
       return Preload::PrerenderFinalStatusEnum::PrerenderFailedDuringPrefetch;
     case PrerenderFinalStatus::kBrowsingDataRemoved:
       return Preload::PrerenderFinalStatusEnum::BrowsingDataRemoved;
+    case PrerenderFinalStatus::kPrerenderHostReused:
+      return Preload::PrerenderFinalStatusEnum::PrerenderHostReused;
   }
 }
 
@@ -516,6 +516,8 @@ void PreloadHandler::SendInitialPreloadEnabledState() {
       config.ShouldHoldback(
           PreloadingType::kPrerender,
           content::content_preloading_predictor::kSpeculationRules));
+  // TODO(https://crbug.com/428500219): Set holdback status for
+  // prerender-until-script.
 }
 
 void PreloadHandler::SendCurrentPreloadStatus() {
@@ -543,8 +545,13 @@ void PreloadHandler::SendCurrentPreloadStatus() {
       continue;
     }
 
+    std::optional<base::UnguessableToken> maybe_navigation_token =
+        document->GetDevToolsNavigationToken();
+    if (!maybe_navigation_token.has_value()) {
+      continue;
+    }
     const base::UnguessableToken initiator_devtools_navigation_token =
-        document->GetDevToolsNavigationToken().value();
+        maybe_navigation_token.value();
     const std::string initiating_frame_id =
         document->GetDevToolsFrameToken().ToString();
     for (const auto& [key, data] : preload_storage->prefetch_data_map()) {

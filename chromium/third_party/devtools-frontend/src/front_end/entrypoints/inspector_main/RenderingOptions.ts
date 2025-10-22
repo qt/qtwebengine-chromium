@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -159,6 +161,10 @@ const UIStrings = {
    */
   forcesVisionDeficiencyEmulation: 'Forces vision deficiency emulation',
   /**
+   * @description Explanation text for the 'Emulate OS text scale' setting in the Rendering tool.
+   */
+  forcesOsTextScaleEmulation: 'Forces OS text scale emulation',
+  /**
    * @description The name of a checkbox setting in the Rendering tool. This setting disables the
    * page from loading images with the AVIF format.
    */
@@ -205,7 +211,7 @@ const supportsPrefersContrast = (): boolean => {
 
 export class RenderingOptionsView extends UI.Widget.VBox {
   constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(renderingOptionsStyles);
 
     this.element.setAttribute('jslog', `${VisualLogging.panel('rendering').track({resize: true})}`);
@@ -279,6 +285,12 @@ export class RenderingOptionsView extends UI.Widget.VBox {
 
     this.contentElement.createChild('div').classList.add('panel-section-separator');
 
+    this.#appendSelect(
+        i18nString(UIStrings.forcesOsTextScaleEmulation),
+        Common.Settings.Settings.instance().moduleSetting('emulated-os-text-scale'));
+
+    this.contentElement.createChild('div').classList.add('panel-section-separator');
+
     this.#appendCheckbox(
         i18nString(UIStrings.disableAvifImageFormat), i18nString(UIStrings.requiresAPageReloadToApplyAnd),
         Common.Settings.Settings.instance().moduleSetting('avif-format-disabled'));
@@ -294,7 +306,7 @@ export class RenderingOptionsView extends UI.Widget.VBox {
       label: Common.UIString.LocalizedString, subtitle: Common.UIString.LocalizedString,
       setting: Common.Settings.Setting<boolean>, metric?: UI.SettingsUI.UserMetricOptions): UI.UIUtils.CheckboxLabel {
     const checkbox = UI.UIUtils.CheckboxLabel.create(label, false, subtitle, setting.name);
-    UI.SettingsUI.bindCheckbox(checkbox.checkboxElement, setting, metric);
+    UI.SettingsUI.bindCheckbox(checkbox, setting, metric);
     this.contentElement.appendChild(checkbox);
     return checkbox;
   }

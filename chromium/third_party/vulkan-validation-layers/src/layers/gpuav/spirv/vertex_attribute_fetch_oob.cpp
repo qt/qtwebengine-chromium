@@ -17,7 +17,7 @@
 
 #include "vertex_attribute_fetch_oob.h"
 #include "module.h"
-#include "generated/instrumentation_vertex_attribute_fetch_oob_vert.h"
+#include "generated/gpuav_offline_spirv.h"
 
 #include <iostream>
 
@@ -26,12 +26,15 @@
 namespace gpuav {
 namespace spirv {
 
-const static OfflineLinkInfo link_info = {instrumentation_vertex_attribute_fetch_oob_vert,
-                                          instrumentation_vertex_attribute_fetch_oob_vert_size, "inst_vertex_attribute_fetch_oob"};
+const static OfflineModule kOfflineModule = {instrumentation_vertex_attribute_fetch_oob_vert,
+                                             instrumentation_vertex_attribute_fetch_oob_vert_size};
 
-VertexAttributeFetchOob::VertexAttributeFetchOob(Module& module) : Pass(module) {}
+const static OfflineFunction kOfflineFunction = {"inst_vertex_attribute_fetch_oob",
+                                                 instrumentation_vertex_attribute_fetch_oob_vert_function_0_offset};
 
-uint32_t VertexAttributeFetchOob::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+VertexAttributeFetchOob::VertexAttributeFetchOob(Module& module) : Pass(module, kOfflineModule) {}
+
+uint32_t VertexAttributeFetchOob::GetLinkFunctionId() { return GetLinkFunction(link_function_id_, kOfflineFunction); }
 
 bool VertexAttributeFetchOob::Instrument() {
     for (const auto& entry_point_inst : module_.entry_points_) {
@@ -41,7 +44,7 @@ bool VertexAttributeFetchOob::Instrument() {
         const uint32_t vertex_shader_entry_point_id = entry_point_inst->Word(2);
         for (const auto& function : module_.functions_) {
             if (function->instrumentation_added_) continue;
-            const uint32_t function_id = function->GetDef().Word(2);
+            const uint32_t function_id = function->GetDef().ResultId();
             if (vertex_shader_entry_point_id != function_id) continue;
 
             BasicBlock& first_block = function->GetFirstBlock();

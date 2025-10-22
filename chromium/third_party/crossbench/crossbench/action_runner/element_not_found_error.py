@@ -3,6 +3,9 @@
 # found in the LICENSE file.
 
 
+from __future__ import annotations
+
+
 class ElementNotFoundError(RuntimeError):
 
   def __init__(self, selector: str) -> None:

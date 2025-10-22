@@ -28,6 +28,7 @@
 #include "net/third_party/quiche/src/quiche/quic/core/quic_connection.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_types.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_utils.h"
+#include "net/third_party/quiche/src/quiche/web_transport/web_transport_headers.h"
 #include "net/url_request/url_request_context.h"
 #include "url/scheme_host_port.h"
 
@@ -365,6 +366,7 @@ DedicatedWebTransportHttp3Client::DedicatedWebTransportHttp3Client(
     : url_(url),
       origin_(origin),
       anonymization_key_(anonymization_key),
+      application_protocols_(parameters.application_protocols),
       context_(context),
       visitor_(visitor),
       quic_context_(context->quic_context()),
@@ -506,6 +508,11 @@ int DedicatedWebTransportHttp3Client::DoInit() {
   if (!IsPortAllowedForScheme(url_.EffectiveIntPort(), url_.scheme_piece()))
     return ERR_UNSAFE_PORT;
 
+  if (!application_protocols_.empty() &&
+      !webtransport::ValidateSubprotocolList(application_protocols_)) {
+    return ERR_INVALID_ARGUMENT;
+  }
+
   // TODO(vasilvv): check if QUIC is disabled by policy.
 
   // Ensure that RFC 9000 is always supported.
@@ -563,7 +570,7 @@ int DedicatedWebTransportHttp3Client::DoResolveHostComplete(int rv) {
   if (rv != OK)
     return rv;
 
-  DCHECK(resolve_host_request_->GetAddressResults());
+  DCHECK(!resolve_host_request_->GetAddressResults().empty());
   next_connect_state_ = CONNECT_STATE_CONNECT;
   return OK;
 }
@@ -582,7 +589,8 @@ int DedicatedWebTransportHttp3Client::DoConnect() {
   socket_->UseNonBlockingIO();
 
   IPEndPoint server_address =
-      *resolve_host_request_->GetAddressResults()->begin();
+      resolve_host_request_->GetAddressResults().front();
+  visitor_->OnBeforeConnect(server_address);
   return socket_->ConnectAsync(
       server_address, base::BindOnce(&DedicatedWebTransportHttp3Client::DoLoop,
                                      base::Unretained(this)));
@@ -595,7 +603,7 @@ void DedicatedWebTransportHttp3Client::CreateConnection() {
   packet_reader_ = nullptr;
 
   IPEndPoint server_address =
-      *resolve_host_request_->GetAddressResults()->begin();
+      resolve_host_request_->GetAddressResults().front();
   quic::QuicConnectionId connection_id =
       quic::QuicUtils::CreateRandomConnectionId(
           quic_context_->random_generator());
@@ -624,7 +632,7 @@ void DedicatedWebTransportHttp3Client::CreateConnection() {
       kQuicYieldAfterPacketsRead,
       quic::QuicTime::Delta::FromMilliseconds(
           kQuicYieldAfterDurationMilliseconds),
-      quic_context_->params()->report_ecn, net_log_);
+      net_log_);
 
   event_logger_ = std::make_unique<QuicEventLogger>(session_.get(), net_log_);
   connection_->set_debug_visitor(event_logger_.get());
@@ -748,6 +756,14 @@ int DedicatedWebTransportHttp3Client::DoSendRequest() {
   headers[":protocol"] = "webtransport";
   headers["sec-webtransport-http3-draft02"] = "1";
   headers["origin"] = origin_.Serialize();
+  if (!application_protocols_.empty()) {
+    absl::StatusOr<std::string> protocols_header =
+        webtransport::SerializeSubprotocolRequestHeader(application_protocols_);
+    if (protocols_header.ok()) {
+      headers[webtransport::kSubprotocolRequestHeader] =
+          *std::move(protocols_header);
+    }
+  }
   stream->WriteHeaders(std::move(headers), /*fin=*/false, nullptr);
 
   web_transport_session_ = stream->web_transport();

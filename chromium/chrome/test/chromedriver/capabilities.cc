@@ -14,7 +14,7 @@
 #include <utility>
 
 #include "base/containers/contains.h"
-#include "base/containers/fixed_flat_set.h"
+#include "base/containers/fixed_flat_map.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/json/string_escape.h"
@@ -855,6 +855,10 @@ Status ParseChromeOptions(
   // sent if not parsed correctly.
   parser_map["w3c"] = base::BindRepeating(&IgnoreCapability);
 
+  parser_map["localState"] =
+      base::BindRepeating(&ParseDict, &capabilities->local_state);
+  parser_map["prefs"] = base::BindRepeating(&ParseDict, &capabilities->prefs);
+
   if (is_android) {
     parser_map["androidActivity"] =
         base::BindRepeating(&ParseString, &capabilities->android_activity);
@@ -895,13 +899,10 @@ Status ParseChromeOptions(
         &ParseTimeDelta, &capabilities->extension_load_timeout);
     parser_map["loadAsync"] =
         base::BindRepeating(&IgnoreDeprecatedOption, "loadAsync");
-    parser_map["localState"] =
-        base::BindRepeating(&ParseDict, &capabilities->local_state);
     parser_map["logPath"] = base::BindRepeating(&ParseLogPath);
     parser_map["minidumpPath"] =
         base::BindRepeating(&ParseString, &capabilities->minidump_path);
     parser_map["mobileEmulation"] = base::BindRepeating(&ParseMobileEmulation);
-    parser_map["prefs"] = base::BindRepeating(&ParseDict, &capabilities->prefs);
     parser_map["useAutomationExtension"] =
         base::BindRepeating(&IgnoreDeprecatedOption, "useAutomationExtension");
     parser_map["browserStartupTimeout"] = base::BindRepeating(
@@ -982,17 +983,18 @@ void Switches::SetSwitch(const std::string& name, const base::FilePath& value) {
 }
 
 void Switches::SetMultivaluedSwitch(const std::string& name,
-                                    const std::string& value) {
+                                    const std::string& value,
+                                    const std::string_view& delimiter) {
 #if BUILDFLAG(IS_WIN)
   auto native_value = base::UTF8ToWide(value);
-  auto delimiter = L',';
+  auto native_delimiter = base::UTF8ToWide(delimiter);
 #else
   const auto& native_value = value;
-  const auto delimiter = ',';
+  const auto& native_delimiter = delimiter;
 #endif
   NativeString& switch_value = switch_map_[name];
-  if (switch_value.size() > 0 && switch_value.back() != delimiter) {
-    switch_value += delimiter;
+  if (switch_value.size() > 0 && !switch_value.ends_with(native_delimiter)) {
+    switch_value += native_delimiter;
   }
   switch_value += native_value;
 }
@@ -1005,9 +1007,16 @@ void Switches::SetFromSwitches(const Switches& switches) {
 }
 
 namespace {
-constexpr auto kMultivaluedSwitches = base::MakeFixedFlatSet<std::string_view>(
-    {"enable-blink-features", "disable-blink-features", "enable-features",
-     "disable-features"});
+
+constexpr auto kMultivaluedSwitches =
+    base::MakeFixedFlatMap<std::string_view, std::string_view>({
+        {"enable-blink-features", ","},
+        {"disable-blink-features", ","},
+        {"enable-features", ","},
+        {"disable-features", ","},
+        {"js-flags", " "},
+    });
+
 }  // namespace
 
 void Switches::SetUnparsedSwitch(const std::string& unparsed_switch) {
@@ -1022,10 +1031,12 @@ void Switches::SetUnparsedSwitch(const std::string& unparsed_switch) {
     start_index = 2;
   name = unparsed_switch.substr(start_index, equals_index - start_index);
 
-  if (kMultivaluedSwitches.contains(name))
-    SetMultivaluedSwitch(name, value);
-  else
+  const auto iter = kMultivaluedSwitches.find(name);
+  if (iter != kMultivaluedSwitches.end()) {
+    SetMultivaluedSwitch(name, value, iter->second);
+  } else {
     SetSwitch(name, value);
+  }
 }
 
 void Switches::RemoveSwitch(const std::string& name) {

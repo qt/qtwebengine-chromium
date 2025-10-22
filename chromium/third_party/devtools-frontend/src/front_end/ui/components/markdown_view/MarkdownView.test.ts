@@ -2,6 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as i18n from '../../../core/i18n/i18n.js';
+import * as Deprecation from '../../../generated/Deprecation.js';
+/* eslint-disable rulesdir/es-modules-import */
+// @ts-expect-error
+import ISSUE_DESCRIPTIONS from '../../../models/issues_manager/description_list.json' with {type : 'json'};
+/* eslint-enable rulesdir/es-modules-import */
+import * as IssuesManager from '../../../models/issues_manager/issues_manager.js';
 import {renderElementIntoDOM} from '../../../testing/DOMHelpers.js';
 import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
 import * as Marked from '../../../third_party/marked/marked.js';
@@ -190,34 +197,34 @@ describeWithEnvironment('MarkdownView', () => {
     it('renders link as texts', () => {
       const result =
           renderer.renderToken({type: 'link', text: 'learn more', href: 'https://example.test'} as Marked.Marked.Token);
-      assert(result.values[0] === 'learn more');
+      assert.strictEqual(result.values[0], 'learn more');
     });
     it('renders link urls as texts', () => {
       const result = renderer.renderToken({type: 'link', href: 'https://example.test'} as Marked.Marked.Token);
-      assert(result.values[0] === 'https://example.test');
+      assert.strictEqual(result.values[0], 'https://example.test');
     });
     it('does not render URLs with "javascript:"', () => {
       const result = renderer.renderToken(
           {type: 'link', text: 'learn more', href: 'javascript:alert("test")'} as Marked.Marked.Token);
-      assert(result.values[0] === undefined);
+      assert.isUndefined(result.values[0]);
     });
     it('does not render chrome:// URLs', () => {
       const result =
           renderer.renderToken({type: 'link', text: 'learn more', href: 'chrome://settings'} as Marked.Marked.Token);
-      assert(result.values[0] === undefined);
+      assert.isUndefined(result.values[0]);
     });
     it('does not render invalid URLs', () => {
       const result = renderer.renderToken({type: 'link', text: 'learn more', href: '123'} as Marked.Marked.Token);
-      assert(result.values[0] === undefined);
+      assert.isUndefined(result.values[0]);
     });
     it('renders images as text', () => {
       const result = renderer.renderToken(
           {type: 'image', text: 'learn more', href: 'https://example.test'} as Marked.Marked.Token);
-      assert(result.values[0] === 'learn more');
+      assert.strictEqual(result.values[0], 'learn more');
     });
     it('renders image urls as text', () => {
       const result = renderer.renderToken({type: 'image', href: 'https://example.test'} as Marked.Marked.Token);
-      assert(result.values[0] === 'https://example.test');
+      assert.strictEqual(result.values[0], 'https://example.test');
     });
     it('renders headings as headings with the `insight` class', () => {
       const renderResult = renderer.renderToken(getFakeToken({type: 'heading', text: 'a heading text', depth: 3}));
@@ -274,6 +281,15 @@ describeWithEnvironment('MarkdownView', () => {
       assert.strictEqual(result, 'css');
       result = renderer.detectCodeLanguage({text: '.foo::[name="bar"] {}', lang: ''} as Marked.Marked.Tokens.Code);
       assert.strictEqual(result, 'css');
+    });
+
+    it('doesn`t detects JSON as CSS language', () => {
+      let result = renderer.detectCodeLanguage({text: '{ "test": "test" }', lang: ''} as Marked.Marked.Tokens.Code);
+      assert.strictEqual(result, '');
+      result = renderer.detectCodeLanguage({text: '{}', lang: ''} as Marked.Marked.Tokens.Code);
+      assert.strictEqual(result, '');
+      result = renderer.detectCodeLanguage({text: '{\n"test": "test"\n}', lang: ''} as Marked.Marked.Tokens.Code);
+      assert.strictEqual(result, '');
     });
   });
 
@@ -358,6 +374,72 @@ console.log('test')
     it('renders basic escaped tag inside codespan', () => {
       const codeBlock = renderString('`<123>`', 'code');
       assert.strictEqual(codeBlock.innerText, '<123>');
+    });
+  });
+});
+
+// eslint-disable-next-line rulesdir/l10n-filename-matches
+const strDeprecation = i18n.i18n.registerUIStrings('generated/Deprecation.ts', Deprecation.UIStrings);
+const i18nDeprecationString = i18n.i18n.getLocalizedString.bind(undefined, strDeprecation);
+
+describeWithEnvironment('Issue description smoke test', () => {
+  // These tests load all the markdown issue descriptions and render each of them once, to make sure
+  // syntax and links are valid.
+  (ISSUE_DESCRIPTIONS as string[]).forEach(descriptionFile => {
+    it(`renders ${descriptionFile} without throwing`, async () => {
+      let descriptionContent = await IssuesManager.MarkdownIssueDescription.getMarkdownFileContent(descriptionFile);
+      descriptionContent = descriptionContent.replaceAll(
+          /\{(PLACEHOLDER_[a-zA-Z][a-zA-Z0-9]*)\}/g, '$1');  // Identity substitute placeholders.
+      const issueDescription =
+          IssuesManager.MarkdownIssueDescription.createIssueDescriptionFromRawMarkdown(descriptionContent, {
+            file: descriptionFile,
+            links: [],
+          });
+
+      assert.isNotEmpty(issueDescription.title, 'Title of a markdown description must never be empty');
+
+      if (issueDescription.markdown.length === 0) {
+        // Some markdown descriptions only have a title and no text. In that case
+        // we don't have anything to render anyway.
+        return;
+      }
+
+      const component = new MarkdownView.MarkdownView.MarkdownView();
+      renderElementIntoDOM(component);
+      component.data = {tokens: issueDescription.markdown};
+
+      assert.isNotEmpty(component.shadowRoot!.deepTextContent());
+    });
+  });
+
+  Object.keys(Deprecation.DEPRECATIONS_METADATA).forEach(deprecation => {
+    // TODO(crbug.com/430801230): Re-enable these tests once the descriptions are fixed on the chromium side.
+    if ([
+          'CanRequestURLHTTPContainingNewline', 'CookieWithTruncatingChar', 'H1UserAgentFontSizeInSection',
+          'RequestedSubresourceWithEmbeddedCredentials'
+        ].includes(deprecation)) {
+      return;
+    }
+
+    it(`renders the deprecation description for ${deprecation} without throwing`, async () => {
+      const description = (Deprecation.UIStrings as Record<string, string>)[deprecation];
+      const issueDescription = await IssuesManager.MarkdownIssueDescription.createIssueDescriptionFromMarkdown({
+        file: 'deprecation.md',
+        links: [],
+        substitutions: new Map([
+          ['PLACEHOLDER_title', 'Deprecated feature used'],
+          ['PLACEHOLDER_message', i18nDeprecationString(description)],
+        ]),
+      });
+
+      assert.isNotEmpty(issueDescription.title);
+      assert.isNotEmpty(issueDescription.markdown);
+
+      const component = new MarkdownView.MarkdownView.MarkdownView();
+      renderElementIntoDOM(component);
+      component.data = {tokens: issueDescription.markdown};
+
+      assert.isNotEmpty(component.shadowRoot!.deepTextContent());
     });
   });
 });

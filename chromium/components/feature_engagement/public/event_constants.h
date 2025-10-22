@@ -123,6 +123,12 @@ extern const char kNonModalDefaultBrowserPromoAppSwitcherTrigger[];
 // The non-modal default browser promo from share was triggered.
 extern const char kNonModalDefaultBrowserPromoShareTrigger[];
 
+// The non-modal sign-in promo was triggered for save password.
+extern const char kNonModalSigninPromoPasswordTrigger[];
+
+// The non-modal sign-in promo was triggered for add bookmark.
+extern const char kNonModalSigninPromoBookmarkTrigger[];
+
 // The Password Manager widget promo was triggered.
 extern const char kPasswordManagerWidgetPromoTriggered[];
 
@@ -287,6 +293,9 @@ extern const char kHomeCustomizationMenuUsed[];
 // The user has tapped on the lens overlay entrypoint.
 extern const char kLensOverlayEntrypointUsed[];
 
+// The user has tapped the Lens button.
+extern const char kIOSLensButtonUsed[];
+
 // The user has scheduled a tab reminder.
 extern const char kIOSTabReminderScheduled[];
 
@@ -307,6 +316,33 @@ extern const char kIOSScrolledOnFeed[];
 
 // The user has taken action on the feed.
 extern const char kIOSActionOnFeed[];
+
+// The Welcome Back promo was triggered.
+extern const char kIOSWelcomeBackPromoTrigger[];
+
+// The Welcome Back promo was used.
+extern const char kIOSWelcomeBackPromoUsed[];
+
+// The BWG promo was triggered.
+extern const char kIOSBWGPromoTrigger[];
+
+// The BWG promo was used.
+extern const char kIOSBWGPromoUsed[];
+
+// The page action menu IPH(In-Product Help) was triggered.
+extern const char kIOSPageActionMenuIPHTrigger[];
+
+// The page action menu IPH(In-Product Help) was used.
+extern const char kIOSPageActionMenuIPHUsed[];
+
+// The entry point of the import Safari data workflow has been displayed.
+extern const char kIOSSafariImportRemindMeLater[];
+
+// Event fired when the First Run Experience (FRE) is completed on iOS.
+extern const char kIOSFirstRunComplete[];
+
+// Event fired after the quiet period following FRE completion has elapsed.
+extern const char kIOSFREBadgeHoldbackPeriodElapsed[];
 
 #endif  // BUILDFLAG(IS_IOS)
 

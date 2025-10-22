@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "ui/ozone/platform/wayland/host/wayland_data_source.h"
 
@@ -17,6 +13,7 @@
 
 #include "base/files/file_util.h"
 #include "base/logging.h"
+#include "base/notimplemented.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/events/base_event_utils.h"
 #include "ui/ozone/platform/wayland/host/wayland_connection.h"

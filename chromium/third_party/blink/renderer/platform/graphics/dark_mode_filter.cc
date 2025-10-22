@@ -76,8 +76,9 @@ sk_sp<cc::ColorFilter> GetDarkModeFilterForImageOnMainThread(
     // default frame is completely received. This will help get correct
     // classification results for incremental content received for the given
     // image.
-    if (!image->IsBitmapImage() || image->CurrentFrameIsComplete())
+    if (!image->IsBitmapImage() || image->FirstFrameIsComplete()) {
       cache->Add(rounded_src, color_filter);
+    }
   }
   return color_filter;
 }
@@ -206,11 +207,6 @@ void DarkModeFilter::ApplyFilterToImage(Image* image,
   DCHECK(flags);
   DCHECK_NE(GetDarkModeImagePolicy(), DarkModeImagePolicy::kFilterNone);
 
-  if (GetDarkModeImagePolicy() == DarkModeImagePolicy::kFilterAll) {
-    flags->setColorFilter(GetImageFilter());
-    return;
-  }
-
   // Raster-side dark mode path - Just set the dark mode on flags and dark
   // mode will be applied at compositor side during rasterization.
   if (ShouldUseRasterSidePath(image)) {
@@ -231,8 +227,6 @@ bool DarkModeFilter::ShouldApplyFilterToImage(ImageType type) const {
   DarkModeImagePolicy image_policy = GetDarkModeImagePolicy();
   if (image_policy == DarkModeImagePolicy::kFilterNone)
     return false;
-  if (image_policy == DarkModeImagePolicy::kFilterAll)
-    return true;
 
   // kIcon: Do not consider images being drawn into bigger rect as these
   // images are not meant for icons or representing smaller widgets. These

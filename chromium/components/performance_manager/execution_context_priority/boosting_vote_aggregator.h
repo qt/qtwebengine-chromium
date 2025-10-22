@@ -8,6 +8,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/task/task_traits.h"
@@ -254,11 +255,7 @@ class BoostingVoteAggregator : public VoteObserver {
     Edge& operator=(const Edge&) = default;
     Edge& operator=(Edge&&) = delete;
 
-    bool operator==(const Edge& rhs) const {
-      return std::tie(src_, dst_) == std::tie(rhs.src_, rhs.dst_);
-    }
-
-    bool operator!=(const Edge& rhs) const { return !(*this == rhs); }
+    friend bool operator==(const Edge&, const Edge&) = default;
 
     // Forward edges sort by (src, dst), while reverse edges sort by (dst, src).
     bool operator<(const Edge& rhs) const {

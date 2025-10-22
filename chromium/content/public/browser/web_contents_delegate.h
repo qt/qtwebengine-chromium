@@ -22,11 +22,13 @@
 #include "content/public/browser/fullscreen_types.h"
 #include "content/public/browser/invalidate_type.h"
 #include "content/public/browser/media_stream_request.h"
+#include "content/public/browser/navigation_controller.h"
+#include "content/public/browser/preloading.h"
 #include "content/public/browser/preloading_trigger_type.h"
 #include "content/public/browser/preview_cancel_reason.h"
 #include "content/public/browser/select_audio_output_request.h"
 #include "content/public/browser/serial_chooser.h"
-#include "content/public/browser/web_contents.h"
+#include "content/public/browser/storage_partition_config.h"
 #include "content/public/common/window_container_type.mojom-forward.h"
 #include "third_party/blink/public/common/input/web_mouse_event.h"
 #include "third_party/blink/public/common/mediastream/media_stream_request.h"
@@ -104,6 +106,7 @@ class RenderFrameHost;
 class RenderWidgetHost;
 class SessionStorageNamespace;
 class SiteInstance;
+class WebContents;
 struct ContextMenuParams;
 struct DropData;
 struct MediaPlayerWatchTime;
@@ -308,6 +311,10 @@ class CONTENT_EXPORT WebContentsDelegate {
   // false.
   virtual bool PreHandleMouseEvent(WebContents* source,
                                    const blink::WebMouseEvent& event);
+  virtual void PreHandleDragUpdate(const DropData& drop_data,
+                                   const gfx::PointF& client_pt) {}
+  virtual void PreHandleDragExit() {}
+  virtual void HandleDragEnded() {}
 
   // Allows delegates to handle keyboard events before sending to the renderer.
   // See enum for description of return values.
@@ -351,6 +358,7 @@ class CONTENT_EXPORT WebContentsDelegate {
   // If an delegate returns true, it can optionally also override
   // CreateCustomWebContents() below to provide their own WebContents.
   virtual bool IsWebContentsCreationOverridden(
+      RenderFrameHost* opener,
       SiteInstance* source_site_instance,
       mojom::WindowContainerType window_container_type,
       const GURL& opener_url,
@@ -649,10 +657,6 @@ class CONTENT_EXPORT WebContentsDelegate {
   // delegate doesn't provide a size, the current WebContentsView's size will be
   // used.
   virtual gfx::Size GetSizeForNewRenderView(WebContents* web_contents);
-
-  // Returns true if the WebContents is never user-visible, thus the renderer
-  // never needs to produce pixels for display.
-  virtual bool IsNeverComposited(WebContents* web_contents);
 
   // Askss |guest_web_contents| to perform the same. If this returns true, the
   // default behavior is suppressed.

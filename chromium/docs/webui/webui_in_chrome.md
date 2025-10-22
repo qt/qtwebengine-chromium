@@ -117,7 +117,7 @@ export class HelloWorldAppElement extends CrLitElement {
     };
   }
 
-  protected message_: string = loadTimeData.getString('message');
+  protected accessor message_: string = loadTimeData.getString('message');
 }
 
 declare global {
@@ -141,7 +141,7 @@ build_webui("build") {
 
   static_files = [ "hello_world.html", "hello_world.css" ]
 
-  non_web_component_files = [ "app.ts", "app.html.ts" ]
+  ts_files = [ "app.ts", "app.html.ts" ]
   css_files = [ "app.css" ]
 
   # Enable the proper webui_context_type depending on whether implementing
@@ -269,9 +269,7 @@ HelloWorldUI::HelloWorldUI(content::WebUI* web_ui)
       chrome::kChromeUIHelloWorldHost);
 
   // Add required resources.
-  webui::SetupWebUIDataSource(
-      source,
-      base::span(kHelloWorldResources),
+  webui::SetupWebUIDataSource(source, kHelloWorldResources,
       IDR_HELLO_WORLD_HELLO_WORLD_HTML);
 
   // As a demonstration of passing a variable for JS to use we pass in some
@@ -349,7 +347,26 @@ if the approach above using `WebUIConfig` does not work, and notify WebUI
 You're done! Assuming no errors (because everyone gets their code perfect the first time) you should be able to compile
 and run chrome and navigate to `chrome://hello-world/` and see your nifty welcome text!
 
+### Registering the URL for Metrics
+To track overall usage, a core metric `WebUI.CreatedForUrl` is automatically
+recorded when a new WebUIController instance is created.
 
+To support this, you must add your new URL's hash to a central list located in
+[tools/metrics/histograms/metadata/ui/enums.xml][enums-xml].
+
+[WebUIUrlHashesBrowserTest][hashes-test] includes a check that ensures all known
+URLs are in this list. The easiest way to calculate the hash for your new WebUI
+page is to run this test and look at the error output.
+
+```
+autoninja -C out/Default browser_tests && ./out/Default/browser_tests --gtest_filter="WebUIUrlHashesBrowserTest.UrlsInHistogram"
+```
+
+The test is expected to fail. The error message will provide the exact line you
+need. Copy the line and add it to `<enum name="WebUIUrlHashes">`
+
+[enums-xml]: https://source.chromium.org/chromium/chromium/src/+/main:tools/metrics/histograms/metadata/ui/enums.xml;drc=d31ce80b7f6c4a57ee7964be72fcfe761588c776;l=579
+[hashes-test]: https://source.chromium.org/chromium/chromium/src/+/main:chrome/browser/ui/webui/webui_url_hashes_browsertest.cc
 ## Making a WebUI Dialog
 
 Instead of having a full page for your WebUI, you might want a dialog in order to have a fully independent window.  To
@@ -468,16 +485,14 @@ In the snippet below:
 HelloWorldUI::HelloWorldUI(content::WebUI* web_ui)
     : content::WebUIController(web_ui) {
   // ...
-  webui::SetupWebUIDataSource(
-      source,
-      base::span(kHelloWorldResources),
+  webui::SetupWebUIDataSource(source, kHelloWorldResources,
       IDR_HELLO_WORLD_HELLO_WORLD_CONTAINER_HTML);
 }
 ```
 
-`kHelloWorldResources` and `kHelloWorldResourcesSize` come from from the
-imported grit-generated files, as configured by the build target, and reference
-the files listed in it so they can be served out of the given host name.
+`kHelloWorldResources` comes from from the imported grit-generated
+files, as configured by the build target, and reference the files listed
+in it so they can be served out of the given host name.
 For example, they would contain values like:
 
 ```cpp
@@ -505,8 +520,7 @@ HelloWorldUI::HelloWorldUI(content::WebUI* web_ui) {
   source->AddResourcePaths(kResources);
 
   // Add all shared resources from bar_shared
-  source->AddResourcePaths(
-      base::span(kBarSharedResources));
+  source->AddResourcePaths(kBarSharedResources);
 }
 ```
 

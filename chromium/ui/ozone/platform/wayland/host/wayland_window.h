@@ -68,6 +68,13 @@ class WaylandWindow : public PlatformWindow,
                       public WaylandExtension,
                       public EventTarget {
  public:
+  // An interface to receive window focus change events.
+  class FocusClient {
+   public:
+    virtual void OnKeyboardFocusChanged(bool focused) = 0;
+    virtual void OnTextInputFocusChanged(bool focused) = 0;
+  };
+
   WaylandWindow(const WaylandWindow&) = delete;
   WaylandWindow& operator=(const WaylandWindow&) = delete;
 
@@ -127,8 +134,18 @@ class WaylandWindow : public PlatformWindow,
                       const gfx::FrameData& data,
                       std::vector<wl::WaylandOverlayConfig>& overlays);
 
-  // Called when the focus changed on this window.
+  void set_focus_client(FocusClient* focus_client) {
+    focus_client_ = focus_client;
+  }
+
+  // Called when the pointer focus changed on this window.
   void OnPointerFocusChanged(bool focused);
+
+  // Called when the keyboard focus changed on this window.
+  void OnKeyboardFocusChanged(bool focused);
+
+  // Called when the text input focus changed on this window.
+  void OnTextInputFocusChanged(bool focused);
 
   // Returns the focus status of this window.
   bool HasPointerFocus() const;
@@ -576,12 +593,12 @@ class WaylandWindow : public PlatformWindow,
   raw_ptr<WaylandBubble> active_bubble_ = nullptr;
   std::vector<raw_ptr<WaylandBubble>> child_bubbles_;
 
-  std::unique_ptr<WaylandFrameManager> frame_manager_;
-  bool received_configure_event_ = false;
-
   // |root_surface_| is a surface for the opaque background. Its z-order is
   // INT32_MIN.
   std::unique_ptr<WaylandSurface> root_surface_;
+
+  std::unique_ptr<WaylandFrameManager> frame_manager_;
+  bool received_configure_event_ = false;
   // |primary_subsurface| is the primary that shows the widget content.
   std::unique_ptr<WaylandSubsurface> primary_subsurface_;
   // Subsurfaces excluding the primary_subsurface
@@ -618,6 +635,10 @@ class WaylandWindow : public PlatformWindow,
   // The bounds of the platform window before it went maximized or fullscreen in
   // dip.
   gfx::Rect restored_bounds_dip_;
+
+  // A focus client that, once set, is expected to live at least as long as this
+  // window.
+  raw_ptr<FocusClient> focus_client_ = nullptr;
 
   // This holds the currently applied state. When in doubt, use this as the
   // source of truth for this window's state. Whenever applied_state_ is

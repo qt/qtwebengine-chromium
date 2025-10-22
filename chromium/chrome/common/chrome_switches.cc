@@ -5,7 +5,7 @@
 #include "chrome/common/chrome_switches.h"
 
 #include "build/build_config.h"
-#include "ppapi/buildflags/buildflags.h"
+#include "extensions/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 
 namespace switches {
@@ -91,6 +91,19 @@ const char kAutoOpenDevToolsForTabs[] = "auto-open-devtools-for-tabs";
 // would match "Built-in display" and "External display", whichever comes first.
 const char kAutoSelectDesktopCaptureSource[] =
     "auto-select-desktop-capture-source";
+
+// This flag makes Chrome auto-select any screen when an extension asks
+// permission to start desktop capture. Should only be used for tests.
+// kAutoSelectDesktopCaptureSource (see above) can be also be used to
+// auto-select screens. But it have the problem that you need to know the name
+// of a screen to auto-select it. The name of screens can't be set, are
+// different for different platforms, and are different if you have one or
+// several screens. So it's hard to use for auto-selecting screens.
+// This flag does not care what the screen name is, but it also gives no
+// control. Any screen could be chosen. It is useful in tests where we don't
+// care which screen is auto-selected.
+const char kAutoSelectScreenCaptureSource[] =
+    "auto-select-screen-capture-source";
 
 // This flag makes Chrome auto-select a tab with the provided title when
 // the media-picker should otherwise be displayed to the user. This switch
@@ -198,17 +211,8 @@ const char kDisableDefaultApps[] = "disable-default-apps";
 // Disables Domain Reliability Monitoring.
 const char kDisableDomainReliability[] = "disable-domain-reliability";
 
-// Disable extensions.
-const char kDisableExtensions[] = "disable-extensions";
-
-// Disable extensions except those specified in a comma-separated list.
-const char kDisableExtensionsExcept[] = "disable-extensions-except";
-
 // Disables lazy loading of images and frames.
 const char kDisableLazyLoading[] = "disable-lazy-loading";
-
-// Disables NaCl. If kEnableNaCl is also set, this switch takes precedence.
-const char kDisableNaCl[] = "disable-nacl";
 
 // Disables print preview (For testing, and for users who don't like us. :[ )
 const char kDisablePrintPreview[] = "disable-print-preview";
@@ -237,6 +241,10 @@ const char kDiskCacheDir[] = "disk-cache-dir";
 
 // Forces the maximum disk space to be used by the disk cache, in bytes.
 const char kDiskCacheSize[] = "disk-cache-size";
+
+// Do not de-elevate the browser on launch. Used after de-elevating to prevent
+// infinite loops.
+const char kDoNotDeElevateOnLaunch[] = "do-not-de-elevate";
 
 // Requests that a running browser process dump its collected histograms to a
 // given file. The file is overwritten if it exists.
@@ -272,10 +280,6 @@ const char kEnableUnsafeExtensionDebugging[] =
 const char kEnableHangoutServicesExtensionForTesting[] =
     "enable-hangout-services-extension-for-testing";
 
-// Allows NaCl to run in all contexts (such as open web). Note that
-// kDisableNaCl disables NaCl in all contexts and takes precedence.
-const char kEnableNaCl[] = "enable-nacl";
-
 // Enables the network-related benchmarking extensions.
 const char kEnableNetBenchmarking[] = "enable-net-benchmarking";
 
@@ -283,6 +287,10 @@ const char kEnableNetBenchmarking[] = "enable-net-benchmarking";
 // content mode, powerful feature restrictions, etc.)
 const char kEnablePotentiallyAnnoyingSecurityFeatures[] =
     "enable-potentially-annoying-security-features";
+
+// Allows experimental ai extension APIs to be used in stable channel.
+// This disables chrome sign-in if set, regardless of channel.
+const char kExperimentalAiStableChannel[] = "experimental-ai-stable-channel";
 
 // Allows overriding the list of restricted ports by passing a comma-separated
 // list of port numbers.
@@ -300,6 +308,9 @@ const char kExtensionContentVerification[] = "extension-content-verification";
 const char kExtensionContentVerificationBootstrap[] = "bootstrap";
 const char kExtensionContentVerificationEnforce[] = "enforce";
 const char kExtensionContentVerificationEnforceStrict[] = "enforce_strict";
+
+// Name of the command line flag to allow the experimental actor API.
+const char kExtensionExperimentalActor[] = "enable-extension-actor-api";
 
 // Turns on extension install verification if it would not otherwise have been
 // turned on.
@@ -476,11 +487,6 @@ const char kPackExtension[] = "pack-extension";
 // Optional PEM private key to use in signing packaged .crx.
 const char kPackExtensionKey[] = "pack-extension-key";
 
-// This switch allows testing password change feature on provided URL. Password
-// change will be offered by submitting password form on any URL with matching
-// eTLD+1.
-const char kPasswordChangeUrl[] = "password-change-url";
-
 // Causes the browser process to crash very early in startup, just before
 // crashpad (or breakpad) is initialized.
 const char kPreCrashpadCrashTest[] = "pre-crashpad-crash-test";
@@ -512,9 +518,15 @@ const char kIgnoreProfileDirectoryIfNotExists[] =
 
 // Like kProfileDirectory, but selects the profile by email address. If the
 // email is not found in any existing profile, this switch has no effect. If
-// both kProfileDirectory and kProfileUserName are specified, kProfileDirectory
+// both kProfileDirectory and kProfileEmail are specified, kProfileDirectory
 // takes priority.
 const char kProfileEmail[] = "profile-email";
+
+// If provided with kProfileEmail, prompts the user to create a new profile with
+// kProfileEmail as the email address if that email is not found in any existing
+// profile.
+const char kCreateProfileEmailIfNotExists[] =
+    "create-profile-email-if-not-exists";
 
 // Forces proxy auto-detection.
 const char kProxyAutoDetect[] = "proxy-auto-detect";
@@ -535,6 +547,10 @@ const char kProxyServer[] = "proxy-server";
 // The format is <host>:<port>,...,<host>:port.
 const char kRemoteDebuggingTargets[] = "remote-debugging-targets";
 
+// Indicates that all corrupted extensions should be repaired if they are
+// are enabled by policy. This is mainly used after a user data downgrade.
+const char kRepairAllValidExtensions[] = "repair-all-valid-extensions";
+
 // Indicates that Chrome was restarted (e.g., after a flag change). This is used
 // to ignore the launch when recording the Launch.Mode2 metric.
 const char kRestart[] = "restart";
@@ -550,11 +566,6 @@ const char kRestoreLastSession[] = "restore-last-session";
 // instead of a new tab. In case of multiple URLS given as arguments, the
 // first one will replace the active tab.
 const char kSameTab[] = "same-tab";
-
-// This flag sets the checkboxes for sharing audio during screen capture to off
-// by default. It is primarily intended to be used for tests.
-const char kScreenCaptureAudioDefaultUnchecked[] =
-    "screen-capture-audio-default-unchecked";
 
 // Does not show an infobar when an extension attaches to a page using
 // chrome.debugger page. Required to attach to extension background pages.
@@ -616,14 +627,28 @@ const char kStartStackProfilerBrowserTest[] = "browser-test";
 const char kStoragePressureNotificationInterval[] =
     "storage-pressure-notification-interval";
 
+// This flag sets the checkboxes for sharing system audio during window or
+// screen capture to on by default. It is primarily intended to be used for
+// tests.
+const char kSystemAudioCaptureDefaultChecked[] =
+    "system-audio-capture-default_checked";
+
 // Frequency in Milliseconds for system log uploads. Should only be used for
 // testing purposes.
 const char kSystemLogUploadFrequency[] = "system-log-upload-frequency";
 
-// This flag makes Chrome auto-accept/reject requests to capture the current
+// This flag sets the checkboxes for sharing audio during tab capture to off
+// by default. It is primarily intended to be used for tests.
+const char kTabCaptureAudioDefaultUnchecked[] =
+    "tab-capture-audio-default-unchecked";
+
+// These flags make Chrome auto-accept/reject requests to capture the current
 // tab. It should only be used for tests.
 const char kThisTabCaptureAutoAccept[] = "auto-accept-this-tab-capture";
 const char kThisTabCaptureAutoReject[] = "auto-reject-this-tab-capture";
+
+// This flag makes Chrome auto-reject requests capture a tab/window/screen.
+const char kCaptureAutoReject[] = "auto-reject-capture";
 
 // Custom delay for memory log. This should be used only for testing purpose.
 const char kTestMemoryLogDelayInMinutes[] = "test-memory-log-delay-in-minutes";
@@ -732,6 +757,15 @@ const char kMarketUrlForTesting[] = "market-url-for-testing";
 // Force enable user agent overrides to request desktop sites in Clank.
 const char kRequestDesktopSites[] = "request-desktop-sites";
 #endif  // BUILDFLAG(IS_ANDROID)
+
+#if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+// If enabled, overrides the target playout delay for a casting mirroring
+// session. The value will be parsed as milliseconds. Lowering this value will
+// result in a lower end to end latency, but could come at the cost of other
+// quality standards such as dropped frames or FPS.
+const char kCastMirroringTargetPlayoutDelay[] =
+    "cast-mirroring-target-playout-delay";
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS)
 // Custom crosh command.
@@ -844,6 +878,11 @@ const char kNotificationLaunchId[] = "notification-launch-id";
 // See kHideIcons.
 const char kShowIcons[] = "show-icons";
 
+// When rendezvousing with an existing process, used to indicate that the
+// StartupInfoW of the new Chrome process had dwFlags == STARTF_TITLEISAPPID.
+// This is used to record launch metrics.
+const char kSourceAppId[] = "source-app-id";
+
 // When rendezvousing with an existing process, used to pass the path of the
 // shortcut that launched the new Chrome process. This is used to record launch
 // metrics.
@@ -868,20 +907,6 @@ const char kPwaLauncherVersion[] = "pwa-launcher-version";
 const char kDebugPrint[] = "debug-print";
 #endif
 
-#if BUILDFLAG(ENABLE_PLUGINS)
-// Specifies comma-separated list of extension ids or hosts to grant
-// access to CRX file system APIs.
-const char kAllowNaClCrxFsAPI[] = "allow-nacl-crxfs-api";
-
-// Specifies comma-separated list of extension ids or hosts to grant
-// access to file handle APIs.
-const char kAllowNaClFileHandleAPI[] = "allow-nacl-file-handle-api";
-
-// Specifies comma-separated list of extension ids or hosts to grant
-// access to TCP/UDP socket APIs.
-const char kAllowNaClSocketAPI[] = "allow-nacl-socket-api";
-#endif
-
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_WIN)
 const char kEnableNewAppMenuIcon[] = "enable-new-app-menu-icon";
@@ -898,6 +923,7 @@ const char kForceNtpMobilePromo[] = "force-ntp-mobile-promo";
 const char kGlicGuestURL[] = "glic-guest-url";
 const char kGlicAlwaysOpenFre[] = "glic-always-open-fre";
 const char kGlicFreURL[] = "glic-fre-url";
+const char kGlicShortcutsLearnMoreURL[] = "glic-shortcuts-learn-more-url";
 // Use --glic-open-on-startup=attached or --glic-open-on-startup=detached.
 const char kGlicOpenOnStartup[] = "glic-open-on-startup";
 // List of allowed origins in the glic webview, as a space-separated list.

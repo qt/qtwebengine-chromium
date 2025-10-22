@@ -2078,13 +2078,6 @@ CallCapture ParseCallCapture(const Token &nameToken,
                 paramTokens, strings);
         return CallCapture(EntryPoint::GLEGLImageTargetTexture2DOES, std::move(params));
     }
-    if (strcmp(nameToken, "glEGLImageTargetTextureStorageEXT") == 0)
-    {
-        ParamBuffer params =
-            ParseParameters<std::remove_pointer<PFNGLEGLIMAGETARGETTEXTURESTORAGEEXTPROC>::type>(
-                paramTokens, strings);
-        return CallCapture(EntryPoint::GLEGLImageTargetTextureStorageEXT, std::move(params));
-    }
     if (strcmp(nameToken, "glEnable") == 0)
     {
         ParamBuffer params =
@@ -2316,6 +2309,13 @@ CallCapture ParseCallCapture(const Token &nameToken,
             ParseParameters<std::remove_pointer<PFNGLFRAMEBUFFERRENDERBUFFEROESPROC>::type>(
                 paramTokens, strings);
         return CallCapture(EntryPoint::GLFramebufferRenderbufferOES, std::move(params));
+    }
+    if (strcmp(nameToken, "glFramebufferShadingRateEXT") == 0)
+    {
+        ParamBuffer params =
+            ParseParameters<std::remove_pointer<PFNGLFRAMEBUFFERSHADINGRATEEXTPROC>::type>(
+                paramTokens, strings);
+        return CallCapture(EntryPoint::GLFramebufferShadingRateEXT, std::move(params));
     }
     if (strcmp(nameToken, "glFramebufferTexture") == 0)
     {
@@ -2731,6 +2731,13 @@ CallCapture ParseCallCapture(const Token &nameToken,
             ParseParameters<std::remove_pointer<PFNGLGETFRAGDATALOCATIONPROC>::type>(paramTokens,
                                                                                      strings);
         return CallCapture(EntryPoint::GLGetFragDataLocation, std::move(params));
+    }
+    if (strcmp(nameToken, "glGetFragmentShadingRatesEXT") == 0)
+    {
+        ParamBuffer params =
+            ParseParameters<std::remove_pointer<PFNGLGETFRAGMENTSHADINGRATESEXTPROC>::type>(
+                paramTokens, strings);
+        return CallCapture(EntryPoint::GLGetFragmentShadingRatesEXT, std::move(params));
     }
     if (strcmp(nameToken, "glGetFramebufferAttachmentParameteriv") == 0)
     {
@@ -4241,6 +4248,13 @@ CallCapture ParseCallCapture(const Token &nameToken,
                                                                                       strings);
         return CallCapture(EntryPoint::GLMultiDrawArraysANGLE, std::move(params));
     }
+    if (strcmp(nameToken, "glMultiDrawArraysEXT") == 0)
+    {
+        ParamBuffer params =
+            ParseParameters<std::remove_pointer<PFNGLMULTIDRAWARRAYSEXTPROC>::type>(paramTokens,
+                                                                                    strings);
+        return CallCapture(EntryPoint::GLMultiDrawArraysEXT, std::move(params));
+    }
     if (strcmp(nameToken, "glMultiDrawArraysIndirectEXT") == 0)
     {
         ParamBuffer params =
@@ -4277,6 +4291,13 @@ CallCapture ParseCallCapture(const Token &nameToken,
                 paramTokens, strings);
         return CallCapture(EntryPoint::GLMultiDrawElementsBaseVertexEXT, std::move(params));
     }
+    if (strcmp(nameToken, "glMultiDrawElementsEXT") == 0)
+    {
+        ParamBuffer params =
+            ParseParameters<std::remove_pointer<PFNGLMULTIDRAWELEMENTSEXTPROC>::type>(paramTokens,
+                                                                                      strings);
+        return CallCapture(EntryPoint::GLMultiDrawElementsEXT, std::move(params));
+    }
     if (strcmp(nameToken, "glMultiDrawElementsIndirectEXT") == 0)
     {
         ParamBuffer params =
@@ -4310,13 +4331,6 @@ CallCapture ParseCallCapture(const Token &nameToken,
         ParamBuffer params = ParseParameters<std::remove_pointer<PFNGLMULTITEXCOORD4XPROC>::type>(
             paramTokens, strings);
         return CallCapture(EntryPoint::GLMultiTexCoord4x, std::move(params));
-    }
-    if (strcmp(nameToken, "glNamedBufferStorageExternalEXT") == 0)
-    {
-        ParamBuffer params =
-            ParseParameters<std::remove_pointer<PFNGLNAMEDBUFFERSTORAGEEXTERNALEXTPROC>::type>(
-                paramTokens, strings);
-        return CallCapture(EntryPoint::GLNamedBufferStorageExternalEXT, std::move(params));
     }
     if (strcmp(nameToken, "glNormal3f") == 0)
     {
@@ -5337,6 +5351,19 @@ CallCapture ParseCallCapture(const Token &nameToken,
             ParseParameters<std::remove_pointer<PFNGLSHADERSOURCEPROC>::type>(paramTokens, strings);
         return CallCapture(EntryPoint::GLShaderSource, std::move(params));
     }
+    if (strcmp(nameToken, "glShadingRateCombinerOpsEXT") == 0)
+    {
+        ParamBuffer params =
+            ParseParameters<std::remove_pointer<PFNGLSHADINGRATECOMBINEROPSEXTPROC>::type>(
+                paramTokens, strings);
+        return CallCapture(EntryPoint::GLShadingRateCombinerOpsEXT, std::move(params));
+    }
+    if (strcmp(nameToken, "glShadingRateEXT") == 0)
+    {
+        ParamBuffer params = ParseParameters<std::remove_pointer<PFNGLSHADINGRATEEXTPROC>::type>(
+            paramTokens, strings);
+        return CallCapture(EntryPoint::GLShadingRateEXT, std::move(params));
+    }
     if (strcmp(nameToken, "glShadingRateQCOM") == 0)
     {
         ParamBuffer params = ParseParameters<std::remove_pointer<PFNGLSHADINGRATEQCOMPROC>::type>(
@@ -5656,12 +5683,6 @@ CallCapture ParseCallCapture(const Token &nameToken,
         ParamBuffer params = ParseParameters<std::remove_pointer<PFNGLTEXPARAMETERXVPROC>::type>(
             paramTokens, strings);
         return CallCapture(EntryPoint::GLTexParameterxv, std::move(params));
-    }
-    if (strcmp(nameToken, "glTexStorage1DEXT") == 0)
-    {
-        ParamBuffer params = ParseParameters<std::remove_pointer<PFNGLTEXSTORAGE1DEXTPROC>::type>(
-            paramTokens, strings);
-        return CallCapture(EntryPoint::GLTexStorage1DEXT, std::move(params));
     }
     if (strcmp(nameToken, "glTexStorage2D") == 0)
     {
@@ -6347,6 +6368,12 @@ CallCapture ParseCallCapture(const Token &nameToken,
         ParamBuffer params = ParseParameters<decltype(FenceSync2)>(paramTokens, strings);
         return CallCapture("FenceSync2", std::move(params));
     }
+    if (strcmp(nameToken, "InitializeBinaryDataLoader") == 0)
+    {
+        ParamBuffer params =
+            ParseParameters<decltype(InitializeBinaryDataLoader)>(paramTokens, strings);
+        return CallCapture("InitializeBinaryDataLoader", std::move(params));
+    }
     if (strcmp(nameToken, "InitializeReplay") == 0)
     {
         ParamBuffer params = ParseParameters<decltype(InitializeReplay)>(paramTokens, strings);
@@ -6366,6 +6393,11 @@ CallCapture ParseCallCapture(const Token &nameToken,
     {
         ParamBuffer params = ParseParameters<decltype(InitializeReplay4)>(paramTokens, strings);
         return CallCapture("InitializeReplay4", std::move(params));
+    }
+    if (strcmp(nameToken, "InitializeReplay5") == 0)
+    {
+        ParamBuffer params = ParseParameters<decltype(InitializeReplay5)>(paramTokens, strings);
+        return CallCapture("InitializeReplay5", std::move(params));
     }
     if (strcmp(nameToken, "MapBufferOES") == 0)
     {
@@ -6544,6 +6576,12 @@ CallCapture ParseCallCapture(const Token &nameToken,
     return CallCapture(nameToken, ParamBuffer());
 }
 
+template <typename Fn, EnableIfNArgs<Fn, 0> = 0>
+void DispatchCallCapture(Fn *fn, const Captures &cap)
+{
+    (*fn)();
+}
+
 template <typename Fn, EnableIfNArgs<Fn, 1> = 0>
 void DispatchCallCapture(Fn *fn, const Captures &cap)
 {
@@ -6699,6 +6737,11 @@ void ReplayCustomFunctionCall(const CallCapture &call, const TraceFunctionMap &c
         DispatchCallCapture(FenceSync2, captures);
         return;
     }
+    if (call.customFunctionName == "InitializeBinaryDataLoader")
+    {
+        DispatchCallCapture(InitializeBinaryDataLoader, captures);
+        return;
+    }
     if (call.customFunctionName == "InitializeReplay")
     {
         DispatchCallCapture(InitializeReplay, captures);
@@ -6717,6 +6760,11 @@ void ReplayCustomFunctionCall(const CallCapture &call, const TraceFunctionMap &c
     if (call.customFunctionName == "InitializeReplay4")
     {
         DispatchCallCapture(InitializeReplay4, captures);
+        return;
+    }
+    if (call.customFunctionName == "InitializeReplay5")
+    {
+        DispatchCallCapture(InitializeReplay5, captures);
         return;
     }
     if (call.customFunctionName == "MapBufferOES")

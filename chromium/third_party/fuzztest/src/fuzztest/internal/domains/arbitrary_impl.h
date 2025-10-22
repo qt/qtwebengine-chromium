@@ -35,6 +35,7 @@
 #include "absl/time/time.h"
 #include "./fuzztest/internal/domains/absl_helpers.h"
 #include "./fuzztest/internal/domains/aggregate_of_impl.h"
+#include "./fuzztest/internal/domains/bit_gen_ref.h"
 #include "./fuzztest/internal/domains/container_of_impl.h"
 #include "./fuzztest/internal/domains/domain.h"
 #include "./fuzztest/internal/domains/domain_base.h"
@@ -457,7 +458,9 @@ class ArbitraryImpl<
                         // Monostates have their own domain.
                         !is_monostate_v<T> &&
                         // std::array uses the Tuple domain.
-                        !is_array_v<T>>>
+                        !is_array_v<T> &&
+                        // Flatbuffers tables have their own domain.
+                        !is_flatbuffers_table_v<T>>>
     : public decltype(DetectAggregateOfImpl<T>()) {};
 
 // Arbitrary for std::pair.
@@ -576,6 +579,18 @@ class ArbitraryImpl<absl::Time>
               return std::optional{std::tuple{time - absl::UnixEpoch()}};
             },
             ArbitraryImpl<absl::Duration>()) {}
+};
+
+// Arbitrary for absl::BitGenRef.
+template <>
+class ArbitraryImpl<absl::BitGenRef>
+    : public BitGenRefDomain<SequenceContainerOfImpl<std::vector<uint8_t>,
+                                                     ArbitraryImpl<uint8_t>>> {
+  using InnerContainer =
+      SequenceContainerOfImpl<std::vector<uint8_t>, ArbitraryImpl<uint8_t>>;
+
+ public:
+  ArbitraryImpl() : BitGenRefDomain(InnerContainer{}.WithMinSize(8)) {}
 };
 
 }  // namespace fuzztest::internal

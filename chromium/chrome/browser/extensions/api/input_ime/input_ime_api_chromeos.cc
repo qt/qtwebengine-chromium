@@ -12,7 +12,9 @@
 #include "ash/constants/ash_features.h"
 #include "ash/public/cpp/keyboard/keyboard_config.h"
 #include "base/feature_list.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ash/input_method/assistive_window_properties.h"
 #include "chrome/browser/ash/input_method/input_method_engine.h"
 #include "chrome/browser/ash/input_method/native_input_method_engine.h"
@@ -989,7 +991,7 @@ ExtensionFunction::ResponseAction InputImeClearCompositionFunction::Run() {
   results.Append(success);
   return RespondNow(success
                         ? ArgumentList(std::move(results))
-                        : ErrorWithArguments(
+                        : ErrorWithArgumentsDoNotUse(
                               std::move(results),
                               InformativeError(error, static_function_name())));
 }
@@ -1080,7 +1082,7 @@ InputImeSetCandidateWindowPropertiesFunction::Run() {
       !engine->SetCandidateWindowVisible(*properties.visible, &error)) {
     base::Value::List results;
     results.Append(false);
-    return RespondNow(ErrorWithArguments(
+    return RespondNow(ErrorWithArgumentsDoNotUse(
         std::move(results), InformativeError(error, static_function_name())));
   }
 
@@ -1173,7 +1175,7 @@ ExtensionFunction::ResponseAction InputImeSetCandidatesFunction::Run() {
   results.Append(success);
   return RespondNow(success
                         ? ArgumentList(std::move(results))
-                        : ErrorWithArguments(
+                        : ErrorWithArgumentsDoNotUse(
                               std::move(results),
                               InformativeError(error, static_function_name())));
 }
@@ -1197,7 +1199,7 @@ ExtensionFunction::ResponseAction InputImeSetCursorPositionFunction::Run() {
   results.Append(success);
   return RespondNow(success
                         ? ArgumentList(std::move(results))
-                        : ErrorWithArguments(
+                        : ErrorWithArgumentsDoNotUse(
                               std::move(results),
                               InformativeError(error, static_function_name())));
 }

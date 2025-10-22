@@ -6,6 +6,8 @@
 #define GPU_COMMAND_BUFFER_SERVICE_COPY_SHARED_IMAGE_HELPER_H_
 
 #include <stdint.h>
+
+#include <array>
 #include <string>
 
 #include "base/memory/raw_ptr.h"
@@ -57,7 +59,7 @@ class GPU_GLES2_EXPORT CopySharedImageHelper {
       GLint src_y,
       GLsizei width,
       GLsizei height,
-      GLboolean flip_y,
+      GrSurfaceOrigin dst_origin,
       const volatile GLbyte* src_mailbox);
   base::expected<void, GLError> ReadPixels(
       GLint src_x,

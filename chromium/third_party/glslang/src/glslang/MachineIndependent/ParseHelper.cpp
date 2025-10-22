@@ -645,9 +645,13 @@ TIntermTyped* TParseContext::handleBracketDereference(const TSourceLoc& loc, TIn
         if (base->getBasicType() == EbtBlock) {
             if (base->getQualifier().storage == EvqBuffer)
                 requireProfile(base->getLoc(), ~EEsProfile, "variable indexing buffer block array");
-            else if (base->getQualifier().storage == EvqUniform)
+            else if (base->getQualifier().storage == EvqUniform) {
                 profileRequires(base->getLoc(), EEsProfile, 320, Num_AEP_gpu_shader5, AEP_gpu_shader5,
                                 "variable indexing uniform block array");
+                profileRequires(base->getLoc(), ECoreProfile, 400, Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5,
+                                "variable indexing uniform block array");
+
+            }
             else {
                 // input/output blocks either don't exist or can't be variably indexed
             }
@@ -657,7 +661,8 @@ TIntermTyped* TParseContext::handleBracketDereference(const TSourceLoc& loc, TIn
             const char* explanation = "variable indexing sampler array";
             requireProfile(base->getLoc(), EEsProfile | ECoreProfile | ECompatibilityProfile, explanation);
             profileRequires(base->getLoc(), EEsProfile, 320, Num_AEP_gpu_shader5, AEP_gpu_shader5, explanation);
-            profileRequires(base->getLoc(), ECoreProfile | ECompatibilityProfile, 400, nullptr, explanation);
+            profileRequires(base->getLoc(), ECoreProfile | ECompatibilityProfile, 400, Num_AEP_core_gpu_shader5,
+                            AEP_core_gpu_shader5, explanation);
         }
 
         result = intermediate.addIndex(EOpIndexIndirect, base, index, loc);
@@ -906,7 +911,9 @@ TIntermTyped* TParseContext::handleBinaryMath(const TSourceLoc& loc, const char*
 
     if (((left->getType().contains16BitFloat() || right->getType().contains16BitFloat()) && !float16Arithmetic()) ||
         ((left->getType().contains16BitInt() || right->getType().contains16BitInt()) && !int16Arithmetic()) ||
-        ((left->getType().contains8BitInt() || right->getType().contains8BitInt()) && !int8Arithmetic())) {
+        ((left->getType().contains8BitInt() || right->getType().contains8BitInt()) && !int8Arithmetic()) ||
+        (left->getType().containsBFloat16() || right->getType().containsBFloat16()) ||
+        (left->getType().contains8BitFloat() || right->getType().contains8BitFloat())) {
         allowed = false;
     }
 
@@ -933,7 +940,9 @@ TIntermTyped* TParseContext::handleUnaryMath(const TSourceLoc& loc, const char* 
     bool allowed = true;
     if ((childNode->getType().contains16BitFloat() && !float16Arithmetic()) ||
         (childNode->getType().contains16BitInt() && !int16Arithmetic()) ||
-        (childNode->getType().contains8BitInt() && !int8Arithmetic())) {
+        (childNode->getType().contains8BitInt() && !int8Arithmetic()) ||
+        (childNode->getType().containsBFloat16()) ||
+        (childNode->getType().contains8BitFloat())) {
         allowed = false;
     }
 
@@ -1398,6 +1407,24 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
                     // At this early point there is a slight ambiguity between whether an aggregate 'arguments'
                     // is the single argument itself or its children are the arguments.  Only one argument
                     // means take 'arguments' itself as the one argument.
+                    if ((*fnCandidate)[i].defaultValue) {
+                        if (!aggregate) {
+                            // Only one argument was passed (rest are default arguments) so arguments isn't a TIntermAggregate.
+                            // But the function takes at least one more argument, so a TIntermAggregate is needed.
+                            aggregate = new TIntermAggregate;
+                            aggregate->getSequence().push_back(arguments);
+                            arguments = aggregate;
+                        }
+                        if (i >= static_cast<int>(aggregate->getSequence().size())) {
+                            // Append the default value if there are no more arguments left in the aggregate.
+                            TIntermConstantUnion *defaultValue = nullptr;
+                            if (const auto *constUnion = (*fnCandidate)[i].defaultValue->getAsConstantUnion()) {
+                                defaultValue = new TIntermConstantUnion(constUnion->getConstArray(), constUnion->getType());
+                            }
+                            assert(defaultValue && "unsupported default value construct");
+                            aggregate->getSequence().push_back(defaultValue);
+                        }
+                    }
                     TIntermNode* arg = fnCandidate->getParamCount() == 1 ? arguments : (aggregate ? aggregate->getSequence()[i] : arguments);
                     TQualifier& formalQualifier = (*fnCandidate)[i].type->getQualifier();
                     if (formalQualifier.isParamOutput()) {
@@ -1519,6 +1546,11 @@ TIntermTyped* TParseContext::handleFunctionCall(const TSourceLoc& loc, TFunction
                     result->setType(unaryNode->getOperand()->getAsTyped()->getType());
                 else
                     result->setType(result->getAsAggregate()->getSequence()[0]->getAsTyped()->getType());
+            }
+
+            if (fnCandidate->getBuiltInOp() == EOpConstructSaturated) {
+                // result type is taken from the first parameter
+                result->setType(result->getAsAggregate()->getSequence()[0]->getAsTyped()->getType());
             }
         }
     }
@@ -1866,6 +1898,7 @@ void TParseContext::computeBuiltinPrecisions(TIntermTyped& node, const TFunction
         case EOpDebugPrintf:
         case EOpCooperativeMatrixPerElementOpNV:
         case EOpCooperativeMatrixReduceNV:
+        case EOpConstructSaturated:
             numArgs = 0;
             break;
         default:
@@ -1874,6 +1907,8 @@ void TParseContext::computeBuiltinPrecisions(TIntermTyped& node, const TFunction
         // find the maximum precision from the arguments and parameters
         for (unsigned int arg = 0; arg < numArgs; ++arg) {
             operationPrecision = std::max(operationPrecision, sequence[arg]->getAsTyped()->getQualifier().precision);
+        }
+        for (int arg = 0; arg < function.getParamCount(); ++arg) {
             operationPrecision = std::max(operationPrecision, function[arg].type->getQualifier().precision);
         }
         // compute the result precision
@@ -2070,7 +2105,7 @@ void TParseContext::addInputArgumentConversions(const TFunction& function, TInte
         TIntermTyped* arg = function.getParamCount() == 1 ? arguments->getAsTyped() : (aggregate ? aggregate->getSequence()[i]->getAsTyped() : arguments->getAsTyped());
         if (*function[i].type != arg->getType()) {
             if (function[i].type->getQualifier().isParamInput() &&
-               !function[i].type->isCoopMat()) {
+               !function[i].type->isCoopMat() && !function[i].type->isTensorARM()) {
                 // In-qualified arguments just need an extra node added above the argument to
                 // convert to the correct type.
                 arg = intermediate.addConversion(EOpFunctionCall, *function[i].type, arg);
@@ -2197,6 +2232,9 @@ void TParseContext::memorySemanticsCheck(const TSourceLoc& loc, const TFunction&
     const int gl_StorageSemanticsImage    = 0x800;
     const int gl_StorageSemanticsOutput   = 0x1000;
 
+    const int nonRelaxedMemoryOrder = gl_SemanticsAcquire |
+                                      gl_SemanticsRelease |
+                                      gl_SemanticsAcquireRelease;
 
     unsigned int semantics = 0, storageClassSemantics = 0;
     unsigned int semantics2 = 0, storageClassSemantics2 = 0;
@@ -2263,22 +2301,6 @@ void TParseContext::memorySemanticsCheck(const TSourceLoc& loc, const TFunction&
         break;
     }
 
-    if ((semantics & gl_SemanticsAcquire) &&
-        (callNode.getOp() == EOpAtomicStore || callNode.getOp() == EOpImageAtomicStore)) {
-        error(loc, "gl_SemanticsAcquire must not be used with (image) atomic store",
-              fnCandidate.getName().c_str(), "");
-    }
-    if ((semantics & gl_SemanticsRelease) &&
-        (callNode.getOp() == EOpAtomicLoad || callNode.getOp() == EOpImageAtomicLoad)) {
-        error(loc, "gl_SemanticsRelease must not be used with (image) atomic load",
-              fnCandidate.getName().c_str(), "");
-    }
-    if ((semantics & gl_SemanticsAcquireRelease) &&
-        (callNode.getOp() == EOpAtomicStore || callNode.getOp() == EOpImageAtomicStore ||
-         callNode.getOp() == EOpAtomicLoad  || callNode.getOp() == EOpImageAtomicLoad)) {
-        error(loc, "gl_SemanticsAcquireRelease must not be used with (image) atomic load/store",
-              fnCandidate.getName().c_str(), "");
-    }
     if (((semantics | semantics2) & ~(gl_SemanticsAcquire |
                                       gl_SemanticsRelease |
                                       gl_SemanticsAcquireRelease |
@@ -2287,6 +2309,7 @@ void TParseContext::memorySemanticsCheck(const TSourceLoc& loc, const TFunction&
                                       gl_SemanticsVolatile))) {
         error(loc, "Invalid semantics value", fnCandidate.getName().c_str(), "");
     }
+
     if (((storageClassSemantics | storageClassSemantics2) & ~(gl_StorageSemanticsBuffer |
                                                               gl_StorageSemanticsShared |
                                                               gl_StorageSemanticsImage |
@@ -2294,57 +2317,101 @@ void TParseContext::memorySemanticsCheck(const TSourceLoc& loc, const TFunction&
         error(loc, "Invalid storage class semantics value", fnCandidate.getName().c_str(), "");
     }
 
-    if (callNode.getOp() == EOpMemoryBarrier) {
-        if (!IsPow2(semantics & (gl_SemanticsAcquire | gl_SemanticsRelease | gl_SemanticsAcquireRelease))) {
-            error(loc, "Semantics must include exactly one of gl_SemanticsRelease, gl_SemanticsAcquire, or "
-                       "gl_SemanticsAcquireRelease", fnCandidate.getName().c_str(), "");
-        }
-    } else {
-        if (semantics & (gl_SemanticsAcquire | gl_SemanticsRelease | gl_SemanticsAcquireRelease)) {
-            if (!IsPow2(semantics & (gl_SemanticsAcquire | gl_SemanticsRelease | gl_SemanticsAcquireRelease))) {
-                error(loc, "Semantics must not include multiple of gl_SemanticsRelease, gl_SemanticsAcquire, or "
-                           "gl_SemanticsAcquireRelease", fnCandidate.getName().c_str(), "");
-            }
-        }
-        if (semantics2 & (gl_SemanticsAcquire | gl_SemanticsRelease | gl_SemanticsAcquireRelease)) {
-            if (!IsPow2(semantics2 & (gl_SemanticsAcquire | gl_SemanticsRelease | gl_SemanticsAcquireRelease))) {
-                error(loc, "semUnequal must not include multiple of gl_SemanticsRelease, gl_SemanticsAcquire, or "
-                           "gl_SemanticsAcquireRelease", fnCandidate.getName().c_str(), "");
-            }
-        }
-    }
-    if (callNode.getOp() == EOpMemoryBarrier) {
-        if (storageClassSemantics == 0) {
-            error(loc, "Storage class semantics must not be zero", fnCandidate.getName().c_str(), "");
-        }
-    }
-    if (callNode.getOp() == EOpBarrier && semantics != 0 && storageClassSemantics == 0) {
-        error(loc, "Storage class semantics must not be zero", fnCandidate.getName().c_str(), "");
-    }
-    if ((callNode.getOp() == EOpAtomicCompSwap || callNode.getOp() == EOpImageAtomicCompSwap) &&
-        (semantics2 & (gl_SemanticsRelease | gl_SemanticsAcquireRelease))) {
-        error(loc, "semUnequal must not be gl_SemanticsRelease or gl_SemanticsAcquireRelease",
+    if (((semantics & nonRelaxedMemoryOrder) && !IsPow2(semantics & nonRelaxedMemoryOrder)) ||
+        ((semantics2 & nonRelaxedMemoryOrder) && !IsPow2(semantics2 & nonRelaxedMemoryOrder))) {
+        error(loc,
+              "Semantics must not include multiple of gl_SemanticsRelease, gl_SemanticsAcquire, or "
+              "gl_SemanticsAcquireRelease",
               fnCandidate.getName().c_str(), "");
     }
-    if ((semantics & gl_SemanticsMakeAvailable) &&
-        !(semantics & (gl_SemanticsRelease | gl_SemanticsAcquireRelease))) {
+
+    if (((semantics & nonRelaxedMemoryOrder) && !storageClassSemantics) ||
+        ((semantics2 & nonRelaxedMemoryOrder) && !storageClassSemantics2)) {
+        error(loc,
+              "Storage class semantics must not be zero when used with gl_SemanticsRelease, "
+              "gl_SemanticsAcquire, or gl_SemanticsAcquireRelease",
+              fnCandidate.getName().c_str(), "");
+    }
+
+    if ((storageClassSemantics && !(semantics & nonRelaxedMemoryOrder)) ||
+        (storageClassSemantics2 && !(semantics2 & nonRelaxedMemoryOrder))) {
+        error(loc,
+              "Semantics must be gl_SemanticsRelease, gl_SemanticsAcquire, or gl_SemanticsAcquireRelease when used "
+              "with non-zero storage class semantics",
+              fnCandidate.getName().c_str(), "");
+    }
+
+    if (((semantics & gl_SemanticsMakeAvailable) &&
+         !(semantics & (gl_SemanticsRelease | gl_SemanticsAcquireRelease))) ||
+        ((semantics2 & gl_SemanticsMakeAvailable) &&
+         !(semantics2 & (gl_SemanticsRelease | gl_SemanticsAcquireRelease)))) {
         error(loc, "gl_SemanticsMakeAvailable requires gl_SemanticsRelease or gl_SemanticsAcquireRelease",
               fnCandidate.getName().c_str(), "");
     }
-    if ((semantics & gl_SemanticsMakeVisible) &&
-        !(semantics & (gl_SemanticsAcquire | gl_SemanticsAcquireRelease))) {
+
+    if (((semantics & gl_SemanticsMakeVisible) && !(semantics & (gl_SemanticsAcquire | gl_SemanticsAcquireRelease))) ||
+        ((semantics2 & gl_SemanticsMakeVisible) &&
+         !(semantics2 & (gl_SemanticsAcquire | gl_SemanticsAcquireRelease)))) {
         error(loc, "gl_SemanticsMakeVisible requires gl_SemanticsAcquire or gl_SemanticsAcquireRelease",
               fnCandidate.getName().c_str(), "");
     }
-    if ((semantics & gl_SemanticsVolatile) &&
-        (callNode.getOp() == EOpMemoryBarrier || callNode.getOp() == EOpBarrier)) {
+
+    if ((callNode.getOp() == EOpAtomicStore || callNode.getOp() == EOpImageAtomicStore) &&
+        (semantics & gl_SemanticsAcquire)) {
+        error(loc, "gl_SemanticsAcquire must not be used with (image) atomic store", fnCandidate.getName().c_str(), "");
+    }
+
+    if ((callNode.getOp() == EOpAtomicLoad || callNode.getOp() == EOpImageAtomicLoad) &&
+        (semantics & gl_SemanticsRelease)) {
+        error(loc, "gl_SemanticsRelease must not be used with (image) atomic load", fnCandidate.getName().c_str(), "");
+    }
+
+    if ((callNode.getOp() == EOpAtomicStore || callNode.getOp() == EOpImageAtomicStore ||
+         callNode.getOp() == EOpAtomicLoad || callNode.getOp() == EOpImageAtomicLoad) &&
+        (semantics & gl_SemanticsAcquireRelease)) {
+        error(loc, "gl_SemanticsAcquireRelease must not be used with (image) atomic load/store",
+              fnCandidate.getName().c_str(), "");
+    }
+
+    if (callNode.getOp() == EOpMemoryBarrier &&
+        !(semantics & (gl_SemanticsAcquire | gl_SemanticsRelease | gl_SemanticsAcquireRelease))) {
+        error(loc,
+              "Semantics must include exactly one of gl_SemanticsRelease, gl_SemanticsAcquire, or "
+              "gl_SemanticsAcquireRelease when used with memoryBarrier",
+              fnCandidate.getName().c_str(), "");
+    }
+
+    if ((callNode.getOp() == EOpMemoryBarrier || callNode.getOp() == EOpBarrier) &&
+        (semantics & gl_SemanticsVolatile)) {
         error(loc, "gl_SemanticsVolatile must not be used with memoryBarrier or controlBarrier",
               fnCandidate.getName().c_str(), "");
     }
-    if ((callNode.getOp() == EOpAtomicCompSwap || callNode.getOp() == EOpImageAtomicCompSwap) &&
-        ((semantics ^ semantics2) & gl_SemanticsVolatile)) {
-        error(loc, "semEqual and semUnequal must either both include gl_SemanticsVolatile or neither",
-              fnCandidate.getName().c_str(), "");
+
+    if (callNode.getOp() == EOpAtomicCompSwap || callNode.getOp() == EOpImageAtomicCompSwap) {
+        if (semantics2 & (gl_SemanticsRelease | gl_SemanticsAcquireRelease)) {
+            error(loc, "semUnequal must not be gl_SemanticsRelease or gl_SemanticsAcquireRelease",
+                  fnCandidate.getName().c_str(), "");
+        }
+        if ((semantics2 & gl_SemanticsAcquire) && !(semantics & (gl_SemanticsAcquire | gl_SemanticsAcquireRelease))) {
+            error(loc,
+                  "semUnequal must not be gl_SemanticsAcquire unless semEqual is gl_SemanticsAcquire "
+                  "or gl_SemanticsAcquireRelease",
+                  fnCandidate.getName().c_str(), "");
+        }
+        if ((semantics2 & gl_SemanticsMakeVisible) && !(semantics & gl_SemanticsMakeVisible)) {
+            error(loc,
+                  "semUnequal must not include gl_SemanticsMakeVisible unless semEqual also includes "
+                  "gl_SemanticsMakeVisible",
+                  fnCandidate.getName().c_str(), "");
+        }
+        if (storageClassSemantics2 & ~(storageClassSemantics)) {
+            error(loc, "semStorageUnequal must not include any option that is not present in semStorageEqual",
+                  fnCandidate.getName().c_str(), "");
+        }
+        if ((semantics ^ semantics2) & gl_SemanticsVolatile) {
+            error(loc, "semEqual and semUnequal must either both include gl_SemanticsVolatile or neither",
+                  fnCandidate.getName().c_str(), "");
+        }
     }
 }
 
@@ -2387,23 +2454,27 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
         feature = featureString.c_str();
         profileRequires(loc, EEsProfile, 310, nullptr, feature);
         int compArg = -1;  // track which argument, if any, is the constant component argument
+        const int numTexGatherExts = 3;
+        const char* texGatherExts[numTexGatherExts] = { E_GL_ARB_texture_gather,
+                                                        E_GL_ARB_gpu_shader5,
+                                                        E_GL_NV_gpu_shader5};
         switch (callNode.getOp()) {
         case EOpTextureGather:
             // More than two arguments needs gpu_shader5, and rectangular or shadow needs gpu_shader5,
             // otherwise, need GL_ARB_texture_gather.
             if (fnCandidate.getParamCount() > 2 || fnCandidate[0].type->getSampler().dim == EsdRect || fnCandidate[0].type->getSampler().shadow) {
-                profileRequires(loc, ~EEsProfile, 400, E_GL_ARB_gpu_shader5, feature);
+                profileRequires(loc, ~EEsProfile, 400, Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5, feature);
                 if (! fnCandidate[0].type->getSampler().shadow)
                     compArg = 2;
             } else
-                profileRequires(loc, ~EEsProfile, 400, E_GL_ARB_texture_gather, feature);
+                profileRequires(loc, ~EEsProfile, 400, numTexGatherExts, texGatherExts, feature);
             break;
         case EOpTextureGatherOffset:
             // GL_ARB_texture_gather is good enough for 2D non-shadow textures with no component argument
             if (fnCandidate[0].type->getSampler().dim == Esd2D && ! fnCandidate[0].type->getSampler().shadow && fnCandidate.getParamCount() == 3)
-                profileRequires(loc, ~EEsProfile, 400, E_GL_ARB_texture_gather, feature);
+                profileRequires(loc, ~EEsProfile, 400, numTexGatherExts, texGatherExts, feature);
             else
-                profileRequires(loc, ~EEsProfile, 400, E_GL_ARB_gpu_shader5, feature);
+                profileRequires(loc, ~EEsProfile, 400, Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5, feature);
             if (! (*argp)[fnCandidate[0].type->getSampler().shadow ? 3 : 2]->getAsConstantUnion())
                 profileRequires(loc, EEsProfile, 320, Num_AEP_gpu_shader5, AEP_gpu_shader5,
                                 "non-constant offset argument");
@@ -2411,11 +2482,13 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
                 compArg = 3;
             break;
         case EOpTextureGatherOffsets:
-            profileRequires(loc, ~EEsProfile, 400, E_GL_ARB_gpu_shader5, feature);
+            profileRequires(loc, ~EEsProfile, 400, Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5, feature);
             if (! fnCandidate[0].type->getSampler().shadow)
                 compArg = 3;
             // check for constant offsets
-            if (! (*argp)[fnCandidate[0].type->getSampler().shadow ? 3 : 2]->getAsConstantUnion())
+            if (! (*argp)[fnCandidate[0].type->getSampler().shadow ? 3 : 2]->getAsConstantUnion() 
+                // NV_gpu_shader5 relaxes this limitation and allows for non-constant offsets
+                && !extensionTurnedOn(E_GL_NV_gpu_shader5))
                 error(loc, "must be a compile-time constant:", feature, "offsets argument");
             break;
         default:
@@ -2593,8 +2666,15 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
                                     arg0->getType().getSampler().shadow;
             if (f16ShadowCompare)
                 ++arg;
+            // Allow non-constant offsets for certain texture ops
+            bool variableOffsetSupport = extensionTurnedOn(E_GL_NV_gpu_shader5) && 
+                (callNode.getOp() == EOpTextureOffset || 
+                 callNode.getOp() == EOpTextureFetchOffset ||
+                 callNode.getOp() == EOpTextureProjOffset || 
+                 callNode.getOp() == EOpTextureLodOffset ||
+                 callNode.getOp() == EOpTextureProjLodOffset);
             if (! (*argp)[arg]->getAsTyped()->getQualifier().isConstant()) {
-                if (!extensionTurnedOn(E_GL_EXT_texture_offset_non_const))
+				if (!extensionTurnedOn(E_GL_EXT_texture_offset_non_const) && !variableOffsetSupport)
                     error(loc, "argument must be compile-time constant", "texel offset", "");
             }
             else if ((*argp)[arg]->getAsConstantUnion()) {
@@ -2982,7 +3062,7 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
     case EOpEmitStreamVertex:
     case EOpEndStreamPrimitive:
         if (version == 150)
-            requireExtensions(loc, 1, &E_GL_ARB_gpu_shader5, "if the version is 150 , the EmitStreamVertex and EndStreamPrimitive only support at extension GL_ARB_gpu_shader5");
+            requireExtensions(loc, Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5, "if the verison is 150 , the EmitStreamVertex and EndStreamPrimitive only support at extension GL_ARB_gpu_shader5/GL_NV_gpu_shader5");
         intermediate.setMultiStream();
         break;
 
@@ -3046,6 +3126,28 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
         }
 
         break;
+    case EOpLessThan:
+    case EOpLessThanEqual:
+    case EOpGreaterThan:
+    case EOpGreaterThanEqual:
+    case EOpEqual:
+    case EOpNotEqual:
+        if (profile != EEsProfile && version >= 150 && version < 450) {
+            if ((*argp)[1]->getAsTyped()->getBasicType() == EbtInt64 ||                 
+                (*argp)[1]->getAsTyped()->getBasicType() == EbtUint64)
+                requireExtensions(loc, 1, &E_GL_NV_gpu_shader5, fnCandidate.getName().c_str());
+        }
+    break;
+    case EOpFma:
+    case EOpFrexp:
+    case EOpLdexp:
+        if (profile != EEsProfile && version < 400) {
+            if ((*argp)[0]->getAsTyped()->getBasicType() == EbtFloat) {
+                requireExtensions(loc, Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5, fnCandidate.getName().c_str());
+            }
+        }
+
+        break;
     case EOpCooperativeVectorMatMulNV:
     case EOpCooperativeVectorMatMulAddNV:
         {
@@ -3081,6 +3183,30 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
         if (!(*argp)[6]->getAsTyped()->getType().getQualifier().isConstant())
             error(loc, "argument must be compile-time constant", "matrixInterpretation", "");
         break;
+
+    case EOpCooperativeMatrixLoad:
+    case EOpCooperativeMatrixLoadNV:
+    case EOpCooperativeMatrixLoadTensorNV:
+    case EOpCooperativeMatrixStore:
+    case EOpCooperativeMatrixStoreNV:
+    case EOpCooperativeMatrixStoreTensorNV:
+    {
+        const TIntermTyped *arg1 = (*argp)[1]->getAsTyped();
+        const TIntermTyped* base = TIntermediate::traverseLValueBase(arg1, true, true);
+        const char* errMsg = "Only l-values corresponding to storage block or shared variables can be used with "
+                             "cooperative matrix load/store functions.";
+        if (base) {
+            const TType* refType = (base->getType().isReference()) ? base->getType().getReferentType() : nullptr;
+            const TQualifier& qualifier =
+                (refType != nullptr) ? refType->getQualifier() : base->getType().getQualifier();
+            if (qualifier.storage != EvqShared && qualifier.storage != EvqBuffer)
+                error(loc, errMsg, fnCandidate.getName().c_str(), "");
+        } else {
+            error(loc, errMsg, fnCandidate.getName().c_str(), "");
+        }
+    }
+    break;
+
     default:
         break;
     }
@@ -3103,6 +3229,102 @@ void TParseContext::builtInOpCheck(const TSourceLoc& loc, const TFunction& fnCan
         if (isTexture && (!isBuffer || !isFetch))
             requireExtensions(loc, 1, &E_GL_EXT_samplerless_texture_functions, fnCandidate.getName().c_str());
 
+        break;
+    }
+
+    case EOpConstructSaturated:
+    {
+        auto &sequence = callNode.getAsAggregate()->getSequence();
+        if (sequence.size() != 2) {
+            error(loc, "requires exactly two parameters", "", "");
+        }
+        auto &op0Type = sequence[0]->getAsTyped()->getType();
+        auto &op1Type = sequence[1]->getAsTyped()->getType();
+        if (op0Type.getBasicType() != EbtFloatE5M2 && op0Type.getBasicType() != EbtFloatE4M3) {
+            error(loc, "first parameter must have floate5m2 or floate4m3 basic type", "", "");
+        }
+        if (op1Type.getBasicType() == EbtFloatE5M2 || op1Type.getBasicType() == EbtFloatE4M3) {
+            error(loc, "second parameter must not have floate5m2 or floate4m3 basic type", "", "");
+        }
+
+        if (!(op0Type.isScalar() || op0Type.isVector() || op0Type.isCoopMatKHR())) {
+            error(loc, "first parameter must be scalar, vector, or cooperative matrix", "", "");
+        }
+        if (!(op1Type.isScalar() || op1Type.isVector() || op1Type.isCoopMatKHR())) {
+            error(loc, "second parameter must be scalar, vector, or cooperative matrix", "", "");
+        }
+        if (!(op0Type.sameElementShape(op1Type) || op0Type.sameCoopMatShape(op1Type))) {
+            error(loc, "types must match other than scalar type and coopmat Use", "", "");
+        }
+        break;
+    }
+    case EOpTensorReadARM:
+    case EOpTensorWriteARM:
+    {
+        const TType &tensorType = (*argp)[0]->getAsTyped()->getType();
+
+        // Check that coordinates argument length matches rank of tensor argument.
+        int tensorRank = tensorType.getTensorRankARM();
+        const TArraySizes *coordArgArrayTy = (*argp)[1]->getAsTyped()->getType().getArraySizes();
+        assert(coordArgArrayTy->getNumDims() == 1 && "expecting 1D coordinate array");
+        if (coordArgArrayTy->getDimSize(0) != tensorRank) {
+            error(loc, "number of coordinates does not match tensor rank", "coord", "");
+        }
+
+        // Check that tensor element type matches data argument.
+        TBasicType eltTy = tensorType.getBasicType();
+        TBasicType argTy = (*argp)[2]->getAsTyped()->getType().getBasicType();
+        if (eltTy != argTy) {
+            error(loc, "", "data", "data argument type (%s) does not match tensor element type (%s)",
+                  TType::getBasicString(argTy), TType::getBasicString(eltTy));
+        }
+
+        // Check optional tensor operands.
+        if (argp->size() > 3) {
+            const TIntermConstantUnion* opArg = (*argp)[3]->getAsConstantUnion();
+            if (!opArg) {
+                error(loc, "tensor operands argument must be a constant integral expression", "tensorOps", "");
+            }
+            const unsigned int ops = opArg ? opArg->getConstArray()[0].getUConst() : 0;
+            const int gl_TensorOperandsOutOfBoundsValueARM = 0x2;
+            if (ops & gl_TensorOperandsOutOfBoundsValueARM) {
+                // Out-of-bounds values can only be used with reads.
+                if (callNode.getOp() != EOpTensorReadARM) {
+                    error(loc, "out-of-bounds value is only valid with tensorReadARM", "tensorOps", "");
+                }
+                // Check that an out-of-bounds value is present.
+                if (argp->size() == 4) {
+                    error(loc, "expecting out-of-bounds value as next argument", "tensorOps", "");
+                } else {
+                    // Check constantness of out-of-bounds value.
+                    const TIntermConstantUnion* oobArg = (*argp)[4]->getAsConstantUnion();
+                    if (!oobArg) {
+                        error(loc, "argument following gl_TensorOperandsOutOfBoundsValueARM must be constant", "vararg",
+                              "");
+                    } else if (oobArg->getType().getBasicType() != tensorType.getBasicType()) {
+                        // The type of the OOB value does not match the tensor type.
+                        error(loc, "", "vararg",
+                            "out-of-bounds value type (%s) does not match tensor element type (%s)",
+                            TType::getBasicString(oobArg->getBasicType()), TType::getBasicString(eltTy));
+
+                    }
+                }
+            }
+        }
+        break;
+    }
+
+    case EOpTensorSizeARM:
+    {
+        unsigned int tensorRank = (*argp)[0]->getAsTyped()->getType().getTensorRankARM();
+        const TIntermConstantUnion *dimArg = (*argp)[1]->getAsConstantUnion();
+        if (dimArg) {
+            if (dimArg->getConstArray()[0].getUConst() >= tensorRank) {
+                error(loc, "dimension argument exceeds tensor rank", "dim", "");
+            }
+        } else {
+            error(loc, "dimension argument must be constant", "dim", "");
+        }
         break;
     }
 
@@ -3191,7 +3413,7 @@ void TParseContext::nonOpBuiltInCheck(const TSourceLoc& loc, const TFunction& fn
                     compArg = 3;
                 // check for constant offsets
                 int offsetArg = fnCandidate[0].type->getSampler().shadow ? 3 : 2;
-                if (! callNode.getSequence()[offsetArg]->getAsConstantUnion())
+                if (! callNode.getSequence()[offsetArg]->getAsConstantUnion() && !extensionTurnedOn(E_GL_NV_gpu_shader5))
                     error(loc, "must be a compile-time constant:", feature, "offsets argument");
             } else if (fnCandidate.getName().compare("textureGather") == 0) {
                 // More than two arguments needs gpu_shader5, and rectangular or shadow needs gpu_shader5,
@@ -4121,10 +4343,16 @@ bool TParseContext::constructorTextureSamplerError(const TSourceLoc& loc, const 
         error(loc, "sampler-constructor first argument must be a scalar *texture* type", token, "");
         return true;
     }
+
     // simulate the first argument's impact on the result type, so it can be compared with the encapsulated operator!=()
     TSampler texture = function.getType().getSampler();
     texture.setCombined(false);
     texture.shadow = false;
+    if (function[0].type->getSampler().isTileAttachmentQCOM()) {
+      //TSampler& texture = const_cast<TFunction&>(function).getWritableType().getSampler();
+      texture.image = true;
+      texture.tileQCOM = true;
+    }
     if (texture != function[0].type->getSampler()) {
         error(loc, "sampler-constructor first argument must be a *texture* type"
                    " matching the dimensionality and sampled type of the constructor", token, "");
@@ -4216,9 +4444,12 @@ void TParseContext::samplerCheck(const TSourceLoc& loc, const TType& type, const
             // if (! initializer)
             if (type.getSampler().isAttachmentEXT() && type.getQualifier().storage != EvqTileImageEXT)
                  error(loc, "can only be used in tileImageEXT variables or function parameters:", type.getBasicTypeString().c_str(), identifier.c_str());
-             else if (type.getQualifier().storage != EvqTileImageEXT)
+            else if (type.getQualifier().storage != EvqTileImageEXT)
                  error(loc, "sampler/image types can only be used in uniform variables or function parameters:", type.getBasicTypeString().c_str(), identifier.c_str());
         }
+    }
+    else if (type.isTensorARM() && type.getQualifier().storage != EvqUniform) {
+        error(loc, "tensorARM types can only be used in uniform variables or function parameters:", "tensorARM", identifier.c_str());
     }
 }
 
@@ -4286,6 +4517,10 @@ void TParseContext::memberQualifierCheck(glslang::TPublicType& publicType)
     if (publicType.qualifier.isNonUniform()) {
         error(publicType.loc, "not allowed on block or structure members", "nonuniformEXT", "");
         publicType.qualifier.nonUniform = false;
+    }
+    if (publicType.qualifier.isPatch()) {
+        error(publicType.loc, "not allowed on block or structure members",
+              "patch", "");
     }
 }
 
@@ -4372,7 +4607,7 @@ void TParseContext::globalQualifierTypeCheck(const TSourceLoc& loc, const TQuali
     if (! symbolTable.atGlobalLevel())
         return;
 
-    if (!(publicType.userDef && publicType.userDef->isReference()) && !parsingBuiltins) {
+    if (!(publicType.userDef && publicType.userDef->isReference()) && !publicType.isTensorARM() && !parsingBuiltins) {
         if (qualifier.isMemoryQualifierImageAndSSBOOnly() && ! publicType.isImage() && publicType.qualifier.storage != EvqBuffer) {
             error(loc, "memory qualifiers cannot be used on this type", "", "");
         } else if (qualifier.isMemory() && (publicType.basicType != EbtSampler) && !publicType.qualifier.isUniformOrBuffer()) {
@@ -4398,11 +4633,6 @@ void TParseContext::globalQualifierTypeCheck(const TSourceLoc& loc, const TQuali
 
     // now, knowing it is a shader in/out, do all the in/out semantic checks
 
-    if (publicType.basicType == EbtBool && !parsingBuiltins) {
-        error(loc, "cannot be bool", GetStorageQualifierString(qualifier.storage), "");
-        return;
-    }
-
     if (isTypeInt(publicType.basicType) || publicType.basicType == EbtDouble) {
         profileRequires(loc, EEsProfile, 300, nullptr, "non-float shader input/output");
         profileRequires(loc, ~EEsProfile, 130, nullptr, "non-float shader input/output");
@@ -4427,6 +4657,12 @@ void TParseContext::globalQualifierTypeCheck(const TSourceLoc& loc, const TQuali
     if (qualifier.isPatch() && qualifier.isInterpolation())
         error(loc, "cannot use interpolation qualifiers with patch", "patch", "");
 
+    // Only "patch in" is supported via GL_NV_gpu_shader5
+    if (! symbolTable.atBuiltInLevel() && qualifier.isPatch() && 
+        (language == EShLangGeometry) && qualifier.storage != EvqVaryingIn &&
+        extensionTurnedOn(E_GL_NV_gpu_shader5))
+            error(loc, "only 'patch in' is supported in this stage:", "patch", "geometry");
+
     if (qualifier.isTaskPayload() && publicType.basicType == EbtBlock)
         error(loc, "taskPayloadSharedEXT variables should not be declared as interface blocks", "taskPayloadSharedEXT", "");
 
@@ -4444,8 +4680,11 @@ void TParseContext::globalQualifierTypeCheck(const TSourceLoc& loc, const TQuali
                 requireProfile(loc, ~EEsProfile, "vertex input arrays");
                 profileRequires(loc, ENoProfile, 150, nullptr, "vertex input arrays");
             }
-            if (publicType.basicType == EbtDouble)
-                profileRequires(loc, ~EEsProfile, 410, E_GL_ARB_vertex_attrib_64bit, "vertex-shader `double` type input");
+            if (publicType.basicType == EbtDouble) {
+            	const char* const float64_attrib[] = {E_GL_NV_gpu_shader5, E_GL_ARB_vertex_attrib_64bit};
+                const int Num_float64_attrib = sizeof(float64_attrib) / sizeof(float64_attrib[0]);        
+                profileRequires(loc, ~EEsProfile, 410, Num_float64_attrib, float64_attrib, "vertex-shader `double` type input");
+			}
             if (qualifier.isAuxiliary() || qualifier.isInterpolation() || qualifier.isMemory() || qualifier.invariant)
                 error(loc, "vertex input cannot be further qualified", "", "");
             break;
@@ -4714,7 +4953,7 @@ TPrecisionQualifier TParseContext::getDefaultPrecision(TPublicType& publicType)
         return defaultPrecision[publicType.basicType];
 }
 
-void TParseContext::precisionQualifierCheck(const TSourceLoc& loc, TBasicType baseType, TQualifier& qualifier, bool isCoopMatOrVec)
+void TParseContext::precisionQualifierCheck(const TSourceLoc& loc, TBasicType baseType, TQualifier& qualifier, bool hasTypeParameter)
 {
     // Built-in symbols are allowed some ambiguous precisions, to be pinned down
     // later by context.
@@ -4724,7 +4963,7 @@ void TParseContext::precisionQualifierCheck(const TSourceLoc& loc, TBasicType ba
     if (baseType == EbtAtomicUint && qualifier.precision != EpqNone && qualifier.precision != EpqHigh)
         error(loc, "atomic counters can only be highp", "atomic_uint", "");
 
-    if (isCoopMatOrVec)
+    if (hasTypeParameter)
         return;
 
     if (baseType == EbtFloat || baseType == EbtUint || baseType == EbtInt || baseType == EbtSampler || baseType == EbtAtomicUint) {
@@ -6256,6 +6495,16 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
             publicType.qualifier.layoutFullQuads = true;
             return;
         }
+        if (id == "non_coherent_attachment_readqcom") {
+            requireExtensions(loc, 1, &E_GL_QCOM_tile_shading, "tile shading QCOM");
+            publicType.shaderQualifiers.layoutNonCoherentTileAttachmentReadQCOM = true;
+            return;
+        }
+        if (id == "tile_attachmentqcom") {
+            requireExtensions(loc, 1, &E_GL_QCOM_tile_shading, "tile shading QCOM");
+            publicType.qualifier.layoutTileAttachmentQCOM = true;
+            return;
+        }
     }
     if (language == EShLangVertex ||
         language == EShLangTessControl ||
@@ -6296,6 +6545,11 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
                 publicType.shaderQualifiers.layoutDerivativeGroupLinear = true;
                 return;
             }
+        }
+        if (id == "tile_attachmentqcom") {
+            requireExtensions(loc, 1, &E_GL_QCOM_tile_shading, "tile shading QCOM");
+            publicType.qualifier.layoutTileAttachmentQCOM = true;
+            return;
         }
     }
 
@@ -6538,7 +6792,9 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
 
     case EShLangGeometry:
         if (id == "invocations") {
-            profileRequires(loc, ECompatibilityProfile | ECoreProfile, 400, nullptr, "invocations");
+            profileRequires(loc, ECompatibilityProfile | ECoreProfile, 400,
+                Num_AEP_core_gpu_shader5, AEP_core_gpu_shader5, "invocations");
+
             if (value == 0)
                 error(loc, "must be at least 1", "invocations", "");
             else
@@ -6664,6 +6920,38 @@ void TParseContext::setLayoutQualifier(const TSourceLoc& loc, TPublicType& publi
                 }
             }
         }
+        if (id.compare(0, 18, "shading_rate_xqcom") == 0 ||
+            id.compare(0, 18, "shading_rate_yqcom") == 0 ||
+            id.compare(0, 18, "shading_rate_zqcom") == 0) {
+            requireExtensions(loc, 1, &E_GL_QCOM_tile_shading, "tile shading QCOM");
+            if (nonLiteral)
+                error(loc, "needs a literal integer", "shading_rate_*QCOM", "");
+            if (id.size() == 18 && value == 0) {
+                error(loc, "must be at least 1", id.c_str(), "");
+                return;
+            }
+            if (id == "shading_rate_xqcom") {
+                publicType.shaderQualifiers.layoutTileShadingRateQCOM[0] = value;
+                publicType.shaderQualifiers.layoutTileShadingRateQCOMNotDefault[0] = true;
+                if (! IsPow2(value))
+                    error(loc, "must be a power of 2", id.c_str(), "");
+                return;
+            }
+            if (id == "shading_rate_yqcom") {
+                publicType.shaderQualifiers.layoutTileShadingRateQCOM[1] = value;
+                publicType.shaderQualifiers.layoutTileShadingRateQCOMNotDefault[1] = true;
+                if (! IsPow2(value))
+                    error(loc, "must be a power of 2", id.c_str(), "");
+                return;
+            }
+            if (id == "shading_rate_zqcom") {
+                publicType.shaderQualifiers.layoutTileShadingRateQCOM[2] = value;
+                publicType.shaderQualifiers.layoutTileShadingRateQCOMNotDefault[2] = true;
+                if (value <= 0)
+                    error(loc, "must be a positive value", id.c_str(), "");
+                return;
+            }
+        }
         break;
 
     default:
@@ -6757,6 +7045,7 @@ void TParseContext::mergeObjectLayoutQualifiers(TQualifier& dst, const TQualifie
             dst.pervertexEXT = true;
         if (src.layoutHitObjectShaderRecordNV)
             dst.layoutHitObjectShaderRecordNV = true;
+        dst.layoutTileAttachmentQCOM |= src.layoutTileAttachmentQCOM;
     }
 }
 
@@ -6829,6 +7118,22 @@ void TParseContext::layoutObjectCheck(const TSourceLoc& loc, const TSymbol& symb
             break;
         default:
             // these were already filtered by layoutTypeCheck() (or its callees)
+            break;
+        }
+    }
+
+    // Check that an in/out variable or block doesn't contain a boolean member
+    // Don't enforce if redeclaring a builtin, which are allowed to contain bool
+    if (!parsingBuiltins && type.containsBasicType(EbtBool) && !builtInName(symbol.getName())) {
+        switch(qualifier.storage) {
+        case EvqVaryingIn:
+        case EvqVaryingOut:
+        {
+            const char *reason = type.getBasicType() == EbtBool ? "cannot be bool" : "cannot contain bool";
+            error(loc, reason, GetStorageQualifierString(qualifier.storage), "");
+            break;
+        }
+        default:
             break;
         }
     }
@@ -7102,6 +7407,9 @@ void TParseContext::layoutTypeCheck(const TSourceLoc& loc, const TType& type)
         case EbtFloat:
         case EbtDouble:
         case EbtFloat16:
+        case EbtBFloat16:
+        case EbtFloatE5M2:
+        case EbtFloatE4M3:
             break;
         default:
             error(loc, "cannot be applied to this type", "constant_id", "");
@@ -7200,8 +7508,8 @@ void TParseContext::layoutQualifierCheck(const TSourceLoc& loc, const TQualifier
     }
 
     if (qualifier.hasBinding()) {
-        if (! qualifier.isUniformOrBuffer() && !qualifier.isTaskMemory())
-            error(loc, "requires uniform or buffer storage qualifier", "binding", "");
+        if (! qualifier.isUniformOrBuffer() && !qualifier.isTaskMemory() && !qualifier.isTileAttachmentQCOM())
+            error(loc, "requires uniform or buffer or tile image storage qualifier", "binding", "");
     }
     if (qualifier.hasStream()) {
         if (!qualifier.isPipeOutput())
@@ -7306,6 +7614,15 @@ void TParseContext::checkNoShaderLayouts(const TSourceLoc& loc, const TShaderQua
         error(loc, message, TQualifier::getInterlockOrderingString(shaderQualifiers.interlockOrdering), "");
     if (shaderQualifiers.layoutPrimitiveCulling)
         error(loc, "can only be applied as standalone", "primitive_culling", "");
+
+    if (shaderQualifiers.layoutNonCoherentTileAttachmentReadQCOM)
+        error(loc, message, "non_coherent_attachment_readQCOM", "");
+    if (shaderQualifiers.layoutTileShadingRateQCOM[0] >= 1)
+        error(loc, message, "shading_rate_xQCOM", "");
+    if (shaderQualifiers.layoutTileShadingRateQCOM[1] >= 1)
+        error(loc, message, "shading_rate_yQCOM", "");
+    if (shaderQualifiers.layoutTileShadingRateQCOM[2] >= 1)
+        error(loc, message, "shading_rate_zQCOM", "");
 }
 
 // Correct and/or advance an object's offset layout qualifier.
@@ -7377,6 +7694,12 @@ const TFunction* TParseContext::findFunction(const TSourceLoc& loc, const TFunct
             return symbol->getAsFunction();
     }
 
+    if (call.getName() == "saturatedConvertEXT") {
+        TSymbol* symbol = symbolTable.find("saturatedConvertEXT(", &builtIn);
+        if (symbol)
+            return symbol->getAsFunction();
+    }
+
     bool explicitTypesEnabled = extensionTurnedOn(E_GL_EXT_shader_explicit_arithmetic_types) ||
                                 extensionTurnedOn(E_GL_EXT_shader_explicit_arithmetic_types_int8) ||
                                 extensionTurnedOn(E_GL_EXT_shader_explicit_arithmetic_types_int16) ||
@@ -7395,7 +7718,9 @@ const TFunction* TParseContext::findFunction(const TSourceLoc& loc, const TFunct
     else if (version < 120)
         function = findFunctionExact(loc, call, builtIn);
     else if (version < 400) {
-        bool needfindFunction400 = extensionTurnedOn(E_GL_ARB_gpu_shader_fp64) || extensionTurnedOn(E_GL_ARB_gpu_shader5);
+        bool needfindFunction400 = extensionTurnedOn(E_GL_ARB_gpu_shader_fp64)
+                                  || extensionTurnedOn(E_GL_ARB_gpu_shader5)
+                                  || extensionTurnedOn(E_GL_NV_gpu_shader5);
         function = needfindFunction400 ? findFunction400(loc, call, builtIn) : findFunction120(loc, call, builtIn);
     }
     else if (explicitTypesEnabled)
@@ -7559,8 +7884,7 @@ const TFunction* TParseContext::findFunction400(const TSourceLoc& loc, const TFu
             TType toElementType(to, 0);
             // Load/store tensor functions allow any element type for the pointer
             if ((op == EOpCooperativeMatrixLoadTensorNV || op == EOpCooperativeMatrixStoreTensorNV) &&
-                param == 1 &&
-                (from.getQualifier().storage == EvqBuffer || from.getQualifier().storage == EvqShared)) {
+                param == 1) {
                 return true;
             }
             if (fromElementType == toElementType)
@@ -7572,19 +7896,43 @@ const TFunction* TParseContext::findFunction400(const TSourceLoc& loc, const TFu
             return from.sameCoopMatBaseType(to);
         if (from.isCoopVecNV() && to.isCoopVecNV())
             return from.sameCoopVecBaseType(to);
+        if (from.isTensorARM() && to.isTensorARM())
+            return from.sameTensorBaseTypeARM(to);
         return intermediate.canImplicitlyPromote(from.getBasicType(), to.getBasicType());
     };
 
     // Is 'to2' a better conversion than 'to1'?
     // Ties should not be considered as better.
     // Assumes 'convertible' already said true.
-    const auto better = [](const TType& from, const TType& to1, const TType& to2) -> bool {
+    const auto better = [&](const TType& from, const TType& to1, const TType& to2) -> bool {
         // 1. exact match
         if (from == to2)
             return from != to1;
         if (from == to1)
             return false;
-
+        if (extensionTurnedOn(E_GL_NV_gpu_shader5)) {
+            // This map refers to the conversion table mentioned under the 
+            // section "Modify Section 6.1, Function Definitions, p. 63" in NV_gpu_shader5 spec
+            const static std::map<int, std::vector<int>> conversionTable = {
+                {EbtInt8,   {EbtInt, EbtInt64}},
+                {EbtInt16,  {EbtInt, EbtInt64}},
+                {EbtInt,    {EbtInt64}},
+                {EbtUint8,  {EbtUint, EbtUint64}}, 
+                {EbtUint16, {EbtUint, EbtUint64}}, 
+                {EbtUint,   {EbtUint64}},
+            };
+            auto source = conversionTable.find(from.getBasicType());
+            if (source != conversionTable.end()) {
+                for (auto destination : source->second) {
+                    if (to2.getBasicType() == destination &&
+                        to1.getBasicType() != destination) // to2 is better then to1
+                        return true;
+                    else if (to1.getBasicType() == destination &&
+                             to2.getBasicType() != destination) // This means to1 is better then to2
+                        return false;
+                }
+            }
+        }
         // 2. float -> double is better
         if (from.getBasicType() == EbtFloat) {
             if (to2.getBasicType() == EbtDouble && to1.getBasicType() != EbtDouble)
@@ -7649,8 +7997,7 @@ const TFunction* TParseContext::findFunctionExplicitTypes(const TSourceLoc& loc,
             TType toElementType(to, 0);
             // Load/store tensor functions allow any element type for the pointer
             if ((op == EOpCooperativeMatrixLoadTensorNV || op == EOpCooperativeMatrixStoreTensorNV) &&
-                param == 1 &&
-                (from.getQualifier().storage == EvqBuffer || from.getQualifier().storage == EvqShared)) {
+                param == 1) {
                 return true;
             }
             if (fromElementType == toElementType)
@@ -7662,6 +8009,8 @@ const TFunction* TParseContext::findFunctionExplicitTypes(const TSourceLoc& loc,
             return from.sameCoopMatBaseType(to);
         if (from.isCoopVecNV() && to.isCoopVecNV())
             return from.sameCoopVecBaseType(to);
+        if (from.isTensorARM() && to.isTensorARM())
+            return from.sameTensorBaseTypeARM(to);
         return intermediate.canImplicitlyPromote(from.getBasicType(), to.getBasicType());
     };
 
@@ -7809,6 +8158,9 @@ void TParseContext::typeParametersCheck(const TSourceLoc& loc, const TPublicType
         switch (publicType.typeParameters->basicType) {
         case EbtFloat:
         case EbtFloat16:
+        case EbtBFloat16:
+        case EbtFloatE5M2:
+        case EbtFloatE4M3:
         case EbtInt:
         case EbtInt8:
         case EbtInt16:
@@ -7863,6 +8215,24 @@ void TParseContext::typeParametersCheck(const TSourceLoc& loc, const TPublicType
                 publicType.typeParameters->arraySizes->addInnerSize(dim);
                 numDims++;
             }
+        }
+    }
+    if (publicType.isTensorARM()) {
+        if (publicType.typeParameters == nullptr) {
+            error(loc, "tensor type is missing type parameters", "", "");
+            return;
+        }
+        if (publicType.typeParameters->arraySizes == nullptr) {
+            error(loc, "tensor type is missing rank information", "", "");
+            return;
+        }
+        if (publicType.typeParameters->arraySizes->getNumDims() != 1) {
+            error(loc, "tensor type requires exactly 1 rank specifier", "", "");
+            return;
+        }
+        if (publicType.typeParameters->arraySizes->getDimSize(0) < 1) {
+            error(loc, "tensor rank must be greater than or equal to 1", "", "");
+            return;
         }
     }
 }
@@ -8287,6 +8657,29 @@ TIntermNode* TParseContext::declareVariable(const TSourceLoc& loc, TString& iden
         } else if (publicType.typeParameters->arraySizes->getDimSize(0) <= 0) {
             error(loc, "expected positive number of components", identifier.c_str(), "");
         }
+    } else if (type.isTensorARM()) {
+        intermediate.setUseStorageBuffer();
+
+        if (!publicType.typeParameters || publicType.typeParameters->arraySizes->getNumDims() != 1) {
+            error(loc, "expected two type parameters", identifier.c_str(), "");
+        }
+        if (publicType.typeParameters) {
+            if (publicType.typeParameters->basicType != EbtBool &&
+                publicType.typeParameters->basicType != EbtInt8 &&
+                publicType.typeParameters->basicType != EbtInt16 &&
+                publicType.typeParameters->basicType != EbtInt &&
+                publicType.typeParameters->basicType != EbtInt64 &&
+                publicType.typeParameters->basicType != EbtUint8 &&
+                publicType.typeParameters->basicType != EbtUint16 &&
+                publicType.typeParameters->basicType != EbtUint &&
+                publicType.typeParameters->basicType != EbtUint64 &&
+                publicType.typeParameters->basicType != EbtFloat16 &&
+                publicType.typeParameters->basicType != EbtFloat &&
+                publicType.typeParameters->basicType != EbtDouble) {
+                error(loc, "expected bool, integer or floating point type parameter", identifier.c_str(), "");
+            }
+
+        }
     } else {
         if (publicType.typeParameters && publicType.typeParameters->arraySizes->getNumDims() != 0) {
             error(loc, "unexpected type parameters", identifier.c_str(), "");
@@ -8319,6 +8712,13 @@ TIntermNode* TParseContext::declareVariable(const TSourceLoc& loc, TString& iden
         if (type.contains8BitInt())
             requireInt8Arithmetic(loc, "qualifier", "(u)int8 types can only be in uniform block or buffer storage");
     }
+    if (type.getBasicType() == EbtBFloat16 &&
+        (type.getQualifier().storage == EvqVaryingIn || type.getQualifier().storage == EvqVaryingOut))
+        error(loc, "qualifier", "bfloat16 types not allowed as input/output", "");
+
+    if ((type.getBasicType() == EbtFloatE5M2 || type.getBasicType() == EbtFloatE4M3) &&
+        (type.getQualifier().storage == EvqVaryingIn || type.getQualifier().storage == EvqVaryingOut))
+        error(loc, "qualifier", "fp8 types not allowed as input/output", "");
 
     if (type.getQualifier().storage == EvqtaskPayloadSharedEXT)
         intermediate.addTaskPayloadEXTCount();
@@ -8989,6 +9389,27 @@ TIntermTyped* TParseContext::constructBuiltIn(const TType& type, TOperator op, T
         }
         break;
 
+    case EOpConstructBF16Vec2:
+    case EOpConstructBF16Vec3:
+    case EOpConstructBF16Vec4:
+    case EOpConstructBFloat16:
+        basicOp = EOpConstructBFloat16;
+        break;
+
+    case EOpConstructFloatE5M2Vec2:
+    case EOpConstructFloatE5M2Vec3:
+    case EOpConstructFloatE5M2Vec4:
+    case EOpConstructFloatE5M2:
+        basicOp = EOpConstructFloatE5M2;
+        break;
+
+    case EOpConstructFloatE4M3Vec2:
+    case EOpConstructFloatE4M3Vec3:
+    case EOpConstructFloatE4M3Vec4:
+    case EOpConstructFloatE4M3:
+        basicOp = EOpConstructFloatE4M3;
+        break;
+
     case EOpConstructI8Vec2:
     case EOpConstructI8Vec3:
     case EOpConstructI8Vec4:
@@ -9212,6 +9633,34 @@ TIntermTyped* TParseContext::constructBuiltIn(const TType& type, TOperator op, T
 
     // setAggregateOperator will insert a new node for the constructor, as needed.
     return intermediate.setAggregateOperator(newNode, op, type, loc);
+}
+
+void TParseContext::makeVariadic(TFunction *F, const TSourceLoc &loc) {
+    if (parsingBuiltins) {
+        F->setVariadic();
+    } else {
+        error(loc, "variadic argument specifier is only available for builtins", "...", "");
+    }
+}
+
+TParameter TParseContext::getParamWithDefault(const TPublicType& ty, TString* identifier, TIntermTyped* initializer,
+                                              const TSourceLoc& loc)
+{
+    if (!parsingBuiltins) {
+        error(loc, "default argument values are only available for builtins", "=", "");
+        initializer = nullptr;
+    }
+    if (ty.arraySizes) {
+        error(loc, "array arguments cannot be default-initialized", identifier->c_str(), "");
+        initializer = nullptr;
+    }
+    if (ty.basicType == EbtVoid) {
+        error(loc, "illegal use of type 'void'", identifier->c_str(), "");
+        initializer = nullptr;
+    }
+    reservedErrorCheck(loc, *identifier);
+    TParameter param = {identifier, new TType(ty), initializer};
+    return param;
 }
 
 // This function tests for the type of the parameters to the structure or array constructor. Raises
@@ -10260,6 +10709,12 @@ void TParseContext::updateStandaloneQualifierDefaults(const TSourceLoc& loc, con
         else
             error(loc, "can only apply to 'in'", "non_coherent_stencil_attachment_readEXT", "");
     }
+    if (publicType.shaderQualifiers.layoutNonCoherentTileAttachmentReadQCOM) {
+        if (publicType.qualifier.storage == EvqVaryingIn)
+            intermediate.setNonCoherentTileAttachmentReadQCOM();
+        else
+            error(loc, "can only apply to 'in'", "non_coherent_attachment_readQCOM", "");
+    }
     if (publicType.shaderQualifiers.hasBlendEquation()) {
         if (publicType.qualifier.storage != EvqVaryingOut)
             error(loc, "can only apply to 'out'", "blend equation", "");
@@ -10321,6 +10776,16 @@ void TParseContext::updateStandaloneQualifierDefaults(const TSourceLoc& loc, con
         }
         // Exit early as further checks are not valid
         return;
+    }
+
+    for (int i = 0; i < 3; ++i) {
+        if (publicType.shaderQualifiers.layoutTileShadingRateQCOMNotDefault[i]) {
+            if (publicType.qualifier.storage == EvqVaryingIn) {
+                if (! intermediate.setTileShadingRateQCOM(i, publicType.shaderQualifiers.layoutTileShadingRateQCOM[i]))
+                    error(loc, "cannot change previously set size", (i==0?"shading_rate_xQCOM":(i==1?"shading_rate_yQCOM":"shading_rate_zQCOM")), "");
+            } else
+                error(loc, "can only apply to 'in'", (i==0?"shading_rate_xQCOM":(i==1?"shading_rate_yQCOM":"shading_rate_zQCOM")), "");
+        }
     }
 
     const TQualifier& qualifier = publicType.qualifier;

@@ -77,12 +77,11 @@ export class BreadcrumbItem extends LitElement {
   /**
    * @export
    */
-  label: string;
+  declare label: string;
   /**
    * @export
    */
-  variant: 'text'|'icon';
-
+  declare variant: 'text'|'icon';
   constructor() {
     super();
     this.label = '';

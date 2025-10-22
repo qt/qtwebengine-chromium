@@ -22,13 +22,11 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/transforms/transform_operations.h"
 
+#include <array>
+
+#include "base/compiler_specific.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/transforms/interpolated_transform_operation.h"
 #include "third_party/blink/renderer/platform/transforms/matrix_3d_transform_operation.h"
@@ -123,7 +121,7 @@ TEST(TransformOperationsTest, EmpiricalAnimatedTranslatedBoundsTest) {
   // All progressions for animations start and end at 0, 1 respectively,
   // we can go outside of these bounds, but will always at least contain
   // [0,1].
-  float progress[][2] = {{0, 1}, {-.25, 1.25}};
+  auto progress = std::to_array<std::array<float, 2>>({{0, 1}, {-.25, 1.25}});
 
   for (size_t i = 0; i < std::size(test_transforms); ++i) {
     for (size_t j = 0; j < std::size(progress); ++j) {
@@ -131,13 +129,15 @@ TEST(TransformOperationsTest, EmpiricalAnimatedTranslatedBoundsTest) {
       TransformOperations to_ops;
       from_ops.Operations().push_back(
           MakeGarbageCollected<TranslateTransformOperation>(
-              Length::Fixed(test_transforms[i][0][0]),
-              Length::Fixed(test_transforms[i][0][1]), test_transforms[i][0][2],
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[0][0]),
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[0][1]),
+              UNSAFE_TODO(test_transforms[i])[0][2],
               TransformOperation::kTranslate3D));
       to_ops.Operations().push_back(
           MakeGarbageCollected<TranslateTransformOperation>(
-              Length::Fixed(test_transforms[i][1][0]),
-              Length::Fixed(test_transforms[i][1][1]), test_transforms[i][1][2],
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[1][0]),
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[1][1]),
+              UNSAFE_TODO(test_transforms[i])[1][2],
               TransformOperation::kTranslate3D));
       EmpiricallyTestBounds(from_ops, to_ops, progress[j][0], progress[j][1]);
     }
@@ -183,7 +183,7 @@ TEST(TransformOperationsTest, EmpiricalAnimatedScaleBoundsTest) {
   // All progressions for animations start and end at 0, 1 respectively,
   // we can go outside of these bounds, but will always at least contain
   // [0,1].
-  float progress[][2] = {{0, 1}, {-.25f, 1.25f}};
+  auto progress = std::to_array<std::array<float, 2>>({{0, 1}, {-.25f, 1.25f}});
 
   for (size_t i = 0; i < std::size(test_transforms); ++i) {
     for (size_t j = 0; j < std::size(progress); ++j) {
@@ -191,13 +191,15 @@ TEST(TransformOperationsTest, EmpiricalAnimatedScaleBoundsTest) {
       TransformOperations to_ops;
       from_ops.Operations().push_back(
           MakeGarbageCollected<TranslateTransformOperation>(
-              Length::Fixed(test_transforms[i][0][0]),
-              Length::Fixed(test_transforms[i][0][1]), test_transforms[i][0][2],
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[0][0]),
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[0][1]),
+              UNSAFE_TODO(test_transforms[i])[0][2],
               TransformOperation::kTranslate3D));
       to_ops.Operations().push_back(
           MakeGarbageCollected<TranslateTransformOperation>(
-              Length::Fixed(test_transforms[i][1][0]),
-              Length::Fixed(test_transforms[i][1][1]), test_transforms[i][1][2],
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[1][0]),
+              Length::Fixed(UNSAFE_TODO(test_transforms[i])[1][1]),
+              UNSAFE_TODO(test_transforms[i])[1][2],
               TransformOperation::kTranslate3D));
       EmpiricallyTestBounds(from_ops, to_ops, progress[j][0], progress[j][1]);
     }
@@ -315,14 +317,15 @@ TEST(TransformOperationsTest, AbsoluteAnimatedProblematicAxisRotationBounds) {
   float dim2 = sqrt(2.0f);
   float dim3 = 2 * dim2;
 
-  ProblematicAxisTest tests[] = {
+  auto tests = std::to_array<ProblematicAxisTest>({
       {0, 0, 0, gfx::BoxF(1, 1, 1, 0, 0, 0)},
       {1, 0, 0, gfx::BoxF(1, -dim2, -dim2, 0, dim3, dim3)},
       {0, 1, 0, gfx::BoxF(-dim2, 1, -dim2, dim3, 0, dim3)},
       {0, 0, 1, gfx::BoxF(-dim2, -dim2, 1, dim3, dim3, 0)},
       {1, 1, 0, gfx::BoxF(dim1, dim1, -1, dim2, dim2, 2)},
       {0, 1, 1, gfx::BoxF(-1, dim1, dim1, 2, dim2, dim2)},
-      {1, 0, 1, gfx::BoxF(dim1, -1, dim1, dim2, 2, dim2)}};
+      {1, 0, 1, gfx::BoxF(dim1, -1, dim1, dim2, 2, dim2)},
+  });
 
   for (size_t i = 0; i < std::size(tests); ++i) {
     float x = tests[i].x;
@@ -345,17 +348,41 @@ TEST(TransformOperationsTest, AbsoluteAnimatedProblematicAxisRotationBounds) {
 }
 
 TEST(TransformOperationsTest, BlendedBoundsForRotationEmpiricalTests) {
-  float axes[][3] = {{1, 1, 1},  {-1, -1, -1}, {-1, 2, 3},  {1, -2, 3},
-                     {0, 0, 0},  {1, 0, 0},    {0, 1, 0},   {0, 0, 1},
-                     {1, 1, 0},  {0, 1, 1},    {1, 0, 1},   {-1, 0, 0},
-                     {0, -1, 0}, {0, 0, -1},   {-1, -1, 0}, {0, -1, -1},
-                     {-1, 0, -1}};
+  auto axes = std::to_array<std::array<float, 3>>({
+      {1, 1, 1},
+      {-1, -1, -1},
+      {-1, 2, 3},
+      {1, -2, 3},
+      {0, 0, 0},
+      {1, 0, 0},
+      {0, 1, 0},
+      {0, 0, 1},
+      {1, 1, 0},
+      {0, 1, 1},
+      {1, 0, 1},
+      {-1, 0, 0},
+      {0, -1, 0},
+      {0, 0, -1},
+      {-1, -1, 0},
+      {0, -1, -1},
+      {-1, 0, -1},
+  });
 
-  float angles[][2] = {{5, 100},     {10, 5},       {0, 360},   {20, 180},
-                       {-20, -180},  {180, -220},   {220, 320}, {1020, 1120},
-                       {-3200, 120}, {-9000, -9050}};
+  auto angles = std::to_array<std::array<float, 2>>({
+      {5, 100},
+      {10, 5},
+      {0, 360},
+      {20, 180},
+      {-20, -180},
+      {180, -220},
+      {220, 320},
+      {1020, 1120},
+      {-3200, 120},
+      {-9000, -9050},
+  });
 
-  float progress[][2] = {{0, 1}, {-0.25f, 1.25f}};
+  auto progress =
+      std::to_array<std::array<float, 2>>({{0, 1}, {-0.25f, 1.25f}});
 
   for (size_t i = 0; i < std::size(axes); ++i) {
     for (size_t j = 0; j < std::size(angles); ++j) {
@@ -402,10 +429,13 @@ TEST(TransformOperationsTest, AbsoluteAnimatedPerspectiveBoundsTest) {
 }
 
 TEST(TransformOperationsTest, EmpiricalAnimatedPerspectiveBoundsTest) {
-  float depths[][2] = {
-      {600, 400}, {800, 1000}, {800, std::numeric_limits<float>::infinity()}};
+  auto depths = std::to_array<std::array<float, 2>>({
+      {600, 400},
+      {800, 1000},
+      {800, std::numeric_limits<float>::infinity()},
+  });
 
-  float progress[][2] = {{0, 1}, {-0.1f, 1.1f}};
+  auto progress = std::to_array<std::array<float, 2>>({{0, 1}, {-0.1f, 1.1f}});
 
   for (size_t i = 0; i < std::size(depths); ++i) {
     for (size_t j = 0; j < std::size(progress); ++j) {

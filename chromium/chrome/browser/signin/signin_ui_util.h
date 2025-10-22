@@ -11,7 +11,6 @@
 #include "base/auto_reset.h"
 #include "base/functional/callback_forward.h"
 #include "build/buildflag.h"
-#include "chrome/browser/signin/reauth_result.h"
 #include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "components/signin/public/base/signin_buildflags.h"
 #include "components/signin/public/base/signin_metrics.h"
@@ -32,7 +31,7 @@ namespace signin_ui_util {
 class SigninUiDelegate;
 
 // Returns the username of the primary account or an empty string if there is
-// no primary account or the account has not consented to browser sync.
+// no primary account.
 std::u16string GetAuthenticatedUsername(Profile* profile);
 
 // Shows a learn more page for signin errors.
@@ -132,11 +131,13 @@ std::u16string GetShortProfileIdentityToDisplay(
 std::string GetAllowedDomain(std::string signin_pattern);
 
 // Returns whether Chrome should show the identity of the user (using a brief
-// animation) on opening a new window. IdentityManager's refresh tokens must be
-// loaded when this function gets called.
-bool ShouldShowAnimatedIdentityOnOpeningWindow(
-    const ProfileAttributesStorage& profile_attributes_storage,
-    Profile* profile);
+// animation) on opening a new window.
+bool ShouldShowAnimatedIdentityOnOpeningWindow(Profile& profile);
+
+// Creates a scoped override that makes the delay for cross window animation
+// replay zero.
+base::AutoReset<std::optional<base::TimeDelta>>
+CreateZeroOverrideDelayForCrossWindowAnimationReplayForTesting();
 
 #if BUILDFLAG(ENABLE_DICE_SUPPORT)
 base::AutoReset<SigninUiDelegate*> SetSigninUiDelegateForTesting(
@@ -151,7 +152,7 @@ void RecordAnimatedIdentityTriggered(Profile* profile);
 void RecordProfileMenuViewShown(Profile* profile);
 
 // Called when a button/link in the profile menu was clicked.
-void RecordProfileMenuClick(Profile* profile);
+void RecordProfileMenuClick(const Profile& profile);
 
 }  // namespace signin_ui_util
 

@@ -84,7 +84,7 @@ void RedirectHeuristicTabHelper::MaybeRecordRedirectHeuristic(
   }
   size_t third_party_site_index = third_party_site_info->first;
   ukm::SourceId third_party_source_id =
-      third_party_site_info->second->redirecting_url.source_id;
+      third_party_site_info->second->redirector.source_id;
   bool is_current_interaction =
       detector_->CommittedRedirectContext().SiteHadUserActivationOrAuthn(
           third_party_site);
@@ -207,11 +207,11 @@ void RedirectHeuristicTabHelper::CreateAllRedirectHeuristicGrants(
   }
 
   std::map<std::string, std::pair<GURL, bool>>
-      sites_to_url_and_current_interaction =
-          detector_->CommittedRedirectContext().GetRedirectHeuristicURLs(
-              first_party_url, sites_with_aba_flow,
-              content_settings::features::
-                  kTpcdRedirectHeuristicRequireCurrentInteraction.Get());
+      sites_to_url_and_current_interaction = GetRedirectHeuristicURLs(
+          detector_->CommittedRedirectContext(), first_party_url,
+          sites_with_aba_flow,
+          content_settings::features::
+              kTpcdRedirectHeuristicRequireCurrentInteraction.Get());
 
   for (const auto& kv : sites_to_url_and_current_interaction) {
     auto [url, is_current_interaction] = kv.second;

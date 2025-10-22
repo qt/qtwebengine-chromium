@@ -29,7 +29,7 @@ class GURL;
 
 namespace content {
 class NavigationHandle;
-class NavigationThrottle;
+class NavigationThrottleRegistry;
 class Page;
 class RenderFrameHost;
 }  // namespace content
@@ -142,9 +142,8 @@ class ThrottleManager : public base::SupportsUserData::Data,
   // navigation is a root frame navigation, or if the parent frame is activated.
   //
   // Note that there are currently no constraints on the ordering of throttles.
-  void MaybeAppendNavigationThrottles(
-      content::NavigationHandle* navigation_handle,
-      std::vector<std::unique_ptr<content::NavigationThrottle>>* throttles);
+  void MaybeCreateAndAddNavigationThrottles(
+      content::NavigationThrottleRegistry& registry);
 
   // On a DISALLOW or WOULD_DISALLOW load policy decision, notify the throttle
   // manager to log the associated ukm metrics, i.e. `ActivationDecision`,
@@ -159,6 +158,8 @@ class ThrottleManager : public base::SupportsUserData::Data,
   FRIEND_TEST_ALL_PREFIXES(
       ThrottleManagerEnabledTest,
       ThrottleManagerLifetime_DidFinishInFrameNavigationSucceeds);
+  FRIEND_TEST_ALL_PREFIXES(ThrottleManagerEnabledTest,
+                           NotifyBlockedSubresourceBeforePageCommitSucceeds);
 
   // These look like WebContentsObserver overrides but they are not, they're
   // called explicitly from the WebContentsHelper, which is a
@@ -273,7 +274,6 @@ class ThrottleManager : public base::SupportsUserData::Data,
 
   // mojom::FingerprintingProtectionHost:
   void DidDisallowFirstSubresource() override;
-  void CheckActivation(CheckActivationCallback callback) override;
 
   void SetDocumentLoadStatistics(
       subresource_filter::mojom::DocumentLoadStatisticsPtr statistics) override;

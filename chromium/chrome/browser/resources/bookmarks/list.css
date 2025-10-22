@@ -11,7 +11,6 @@
 
 :host {
   color: var(--cr-secondary-text-color);
-  min-width: 300px;
   overflow-y: auto;
   padding-bottom: 24px;
   padding-inline-end: var(--card-padding-side);
@@ -20,13 +19,19 @@
   padding-top: 24px;
 }
 
-#list {
+.card {
   background-color: var(--cr-card-background-color);
   border-radius: var(--cr-card-border-radius);
   box-shadow: var(--cr-card-shadow);
   margin: 0 auto;
+  min-width: 300px;
   max-width: var(--card-max-width);
   padding: 8px 0;
+}
+
+#promoCard {
+  margin-bottom: 18px;
+  padding: 0px;
 }
 
 .centered-message {

@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "api/field_trials.h"
 #include "api/field_trials_view.h"
 #include "api/rtc_event_log/rtc_event.h"
 #include "api/rtc_event_log/rtc_event_log.h"
@@ -70,12 +71,10 @@
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/random.h"
 #include "rtc_base/time_utils.h"
-#include "test/explicit_key_value_config.h"
+#include "test/create_test_field_trials.h"
 #include "test/gtest.h"
 
 namespace webrtc {
-
-using test::ExplicitKeyValueConfig;
 
 class RtcEventLogEncoderTest
     : public ::testing::TestWithParam<
@@ -92,7 +91,7 @@ class RtcEventLogEncoderTest
   ~RtcEventLogEncoderTest() override = default;
 
   std::unique_ptr<RtcEventLogEncoder> CreateEncoder(
-      const FieldTrialsView& field_trials = ExplicitKeyValueConfig("")) {
+      const FieldTrialsView& field_trials = CreateTestFieldTrials()) {
     std::unique_ptr<RtcEventLogEncoder> encoder;
     switch (encoding_type_) {
       case RtcEventLog::EncodingType::Legacy:
@@ -983,7 +982,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpReceiverReport) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewReceiverReport();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1023,7 +1022,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpSenderReport) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewSenderReport();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1063,7 +1062,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpExtendedReports) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewExtendedReports();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1103,7 +1102,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpFir) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewFir();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1142,7 +1141,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpPli) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewPli();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1181,7 +1180,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpBye) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewBye();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1220,7 +1219,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpNack) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewNack();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1259,7 +1258,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpRemb) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events[i] = gen_.NewRemb();
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1299,7 +1298,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpTransportFeedback) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events.emplace_back(gen_.NewTransportFeedback());
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1341,7 +1340,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtcpLossNotification) {
     for (size_t i = 0; i < event_count_; ++i) {
       timestamps_ms[i] = TimeMillis();
       events.emplace_back(gen_.NewLossNotification());
-      rtc::Buffer buffer = events[i].Build();
+      Buffer buffer = events[i].Build();
       if (direction == kIncomingPacket) {
         history_.push_back(
             std::make_unique<RtcEventRtcpPacketIncoming>(buffer));
@@ -1377,7 +1376,7 @@ TEST_P(RtcEventLogEncoderTest, RtcEventRtpPacketOutgoing) {
 
 TEST_P(RtcEventLogEncoderTest,
        RtcEventRtpPacketIncomingNoDependencyDescriptor) {
-  ExplicitKeyValueConfig no_dd(
+  FieldTrials no_dd = CreateTestFieldTrials(
       "WebRTC-RtcEventLogEncodeDependencyDescriptor/Disabled/");
   std::unique_ptr<RtcEventLogEncoder> encoder = CreateEncoder(no_dd);
   verifier_.ExpectDependencyDescriptorExtensionIsSet(false);
@@ -1386,7 +1385,7 @@ TEST_P(RtcEventLogEncoderTest,
 
 TEST_P(RtcEventLogEncoderTest,
        RtcEventRtpPacketOutgoingNoDependencyDescriptor) {
-  ExplicitKeyValueConfig no_dd(
+  FieldTrials no_dd = CreateTestFieldTrials(
       "WebRTC-RtcEventLogEncodeDependencyDescriptor/Disabled/");
   std::unique_ptr<RtcEventLogEncoder> encoder = CreateEncoder(no_dd);
   verifier_.ExpectDependencyDescriptorExtensionIsSet(false);
@@ -1447,7 +1446,7 @@ class RtcEventLogEncoderSimpleTest
         break;
       case RtcEventLog::EncodingType::NewFormat:
         encoder_ = std::make_unique<RtcEventLogEncoderNewFormat>(
-            ExplicitKeyValueConfig(""));
+            CreateTestFieldTrials());
         break;
       case RtcEventLog::EncodingType::ProtoFree:
         encoder_ = std::make_unique<RtcEventLogEncoderV3>();
@@ -1466,7 +1465,7 @@ class RtcEventLogEncoderSimpleTest
 
 TEST_P(RtcEventLogEncoderSimpleTest, RtcEventLargeCompoundRtcpPacketIncoming) {
   // Create a compound packet containing multiple Bye messages.
-  rtc::Buffer packet;
+  Buffer packet;
   size_t index = 0;
   for (int i = 0; i < 8; i++) {
     rtcp::Bye bye;

@@ -17,6 +17,7 @@
 #include "base/test/gmock_callback_support.h"
 #include "base/test/task_environment.h"
 #include "base/threading/thread.h"
+#include "base/trace_event/memory_allocator_dump_guid.h"
 #include "base/uuid.h"
 #include "components/services/storage/dom_storage/async_dom_storage_database.h"
 #include "components/services/storage/dom_storage/session_storage_data_map.h"
@@ -25,6 +26,7 @@
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
+#include "storage/common/database/db_status.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
@@ -38,7 +40,7 @@ std::vector<uint8_t> StdStringToUint8Vector(const std::string& s) {
   return std::vector<uint8_t>(s.begin(), s.end());
 }
 
-MATCHER(OKStatus, "Equality matcher for type OK leveldb::Status") {
+MATCHER(OKStatus, "Equality matcher for type OK DbStatus") {
   return arg.ok();
 }
 
@@ -50,7 +52,7 @@ class MockListener : public SessionStorageDataMap::Listener {
                void(const std::vector<uint8_t>& map_id,
                     SessionStorageDataMap* map));
   MOCK_METHOD1(OnDataMapDestruction, void(const std::vector<uint8_t>& map_id));
-  MOCK_METHOD1(OnCommitResult, void(leveldb::Status));
+  MOCK_METHOD1(OnCommitResult, void(DbStatus));
 };
 
 class SessionStorageAreaImplTest : public testing::Test {
@@ -64,7 +66,7 @@ class SessionStorageAreaImplTest : public testing::Test {
         base::ThreadPool::CreateSequencedTaskRunner({base::MayBlock()}),
         base::DoNothing());
     leveldb_database_->RunDatabaseTask(
-        base::BindOnce([](const DomStorageDatabase& db) {
+        base::BindOnce([](DomStorageDatabase& db) {
           return db.Put(StdStringToUint8Vector("map-0-key1"),
                         StdStringToUint8Vector("data1"));
         }),
@@ -76,8 +78,8 @@ class SessionStorageAreaImplTest : public testing::Test {
         metadata_.GetOrCreateNamespaceEntry(test_namespace_id1_),
         test_storage_key1_, &save_tasks);
     DCHECK(map_id->KeyPrefix() == StdStringToUint8Vector("map-0-"));
-    leveldb_database_->RunBatchDatabaseTasks(std::move(save_tasks),
-                                             base::DoNothing());
+    leveldb_database_->RunBatchDatabaseTasks(
+        RunBatchTasksContext::kTest, std::move(save_tasks), base::DoNothing());
   }
   ~SessionStorageAreaImplTest() override = default;
 
@@ -87,8 +89,8 @@ class SessionStorageAreaImplTest : public testing::Test {
     std::vector<AsyncDomStorageDatabase::BatchDatabaseTask> save_tasks;
     auto map_data =
         metadata_.RegisterNewMap(namespace_entry, storage_key, &save_tasks);
-    leveldb_database_->RunBatchDatabaseTasks(std::move(save_tasks),
-                                             base::DoNothing());
+    leveldb_database_->RunBatchDatabaseTasks(
+        RunBatchTasksContext::kTest, std::move(save_tasks), base::DoNothing());
     return map_data;
   }
 
@@ -227,8 +229,8 @@ TEST_F(SessionStorageAreaImplTest, Cloning) {
   metadata_.RegisterShallowClonedNamespace(
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id1_),
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id2_), &save_tasks);
-  leveldb_database_->RunBatchDatabaseTasks(std::move(save_tasks),
-                                           base::DoNothing());
+  leveldb_database_->RunBatchDatabaseTasks(
+      RunBatchTasksContext::kTest, std::move(save_tasks), base::DoNothing());
   auto ss_leveldb_impl2 = ss_leveldb_impl1->Clone(
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id2_));
 
@@ -332,8 +334,8 @@ TEST_F(SessionStorageAreaImplTest, DeleteAllOnShared) {
   metadata_.RegisterShallowClonedNamespace(
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id1_),
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id2_), &save_tasks);
-  leveldb_database_->RunBatchDatabaseTasks(std::move(save_tasks),
-                                           base::DoNothing());
+  leveldb_database_->RunBatchDatabaseTasks(
+      RunBatchTasksContext::kTest, std::move(save_tasks), base::DoNothing());
   auto ss_leveldb_impl2 = ss_leveldb_impl1->Clone(
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id2_));
 
@@ -421,8 +423,8 @@ TEST_F(SessionStorageAreaImplTest, DeleteAllWithoutBindingOnShared) {
   metadata_.RegisterShallowClonedNamespace(
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id1_),
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id2_), &save_tasks);
-  leveldb_database_->RunBatchDatabaseTasks(std::move(save_tasks),
-                                           base::DoNothing());
+  leveldb_database_->RunBatchDatabaseTasks(
+      RunBatchTasksContext::kTest, std::move(save_tasks), base::DoNothing());
   auto ss_leveldb_impl2 = ss_leveldb_impl1->Clone(
       metadata_.GetOrCreateNamespaceEntry(test_namespace_id2_));
 

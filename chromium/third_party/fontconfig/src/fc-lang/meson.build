@@ -279,6 +279,9 @@ orth_files = [
   'wae.orth',
   'yue.orth',
   'yuw.orth',
+  'got.orth',
+  'cop.orth',
+  'suz.orth',
 ]
 
 fclang_h = custom_target('fclang.h',

@@ -15,6 +15,7 @@
 
 #include "base/check.h"
 #include "base/check_deref.h"
+#include "base/containers/to_vector.h"
 #include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/json/json_reader.h"
@@ -104,7 +105,6 @@ class UpdateCheckerTest : public testing::TestWithParam<bool> {
   scoped_refptr<UpdateContext> MakeMockUpdateContext() const;
 
   base::OnceClosure quit_closure_;
-  base::ScopedTempDir temp_dir_;
 };
 
 // This test is parameterized for |is_foreground|.
@@ -130,7 +130,6 @@ void UpdateCheckerTest::SetUp() {
 
   error_ = 0;
   retry_after_sec_ = 0;
-  EXPECT_TRUE(temp_dir_.CreateUniqueTempDir());
   update_context_ = MakeMockUpdateContext();
   update_context_->is_foreground = is_foreground_;
   update_context_->components_to_check_for_updates = {kUpdateItemId};
@@ -173,9 +172,8 @@ void UpdateCheckerTest::UpdateCheckComplete(
 
 scoped_refptr<UpdateContext> UpdateCheckerTest::MakeMockUpdateContext() const {
   return base::MakeRefCounted<UpdateContext>(
-      config_, base::MakeRefCounted<CrxCache>(temp_dir_.GetPath()), false,
-      false, std::vector<std::string>(), UpdateClient::CrxStateChangeCallback(),
-      UpdateEngine::Callback(), nullptr,
+      config_, false, false, std::vector<std::string>(),
+      UpdateClient::CrxStateChangeCallback(), UpdateEngine::Callback(), nullptr,
       /*is_update_check_only=*/false);
 }
 
@@ -199,7 +197,7 @@ std::unique_ptr<Component> UpdateCheckerTest::MakeComponent(
   crx_component.lang = lang;
   crx_component.install_data_index = install_data_index;
   crx_component.name = "test_jebg";
-  crx_component.pk_hash.assign(std::begin(jebg_hash), std::end(jebg_hash));
+  crx_component.pk_hash = base::ToVector(jebg_hash);
   crx_component.installer = nullptr;
   crx_component.version = base::Version("0.9");
   crx_component.allow_updates_on_metered_connection =
@@ -284,7 +282,8 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccess) {
   ASSERT_TRUE(request->FindString("@updater"));
   EXPECT_EQ("fake_prodid", *request->FindString("@updater"));
   ASSERT_TRUE(request->FindString("acceptformat"));
-  EXPECT_EQ("crx3,download,puff,run", *request->FindString("acceptformat"));
+  EXPECT_EQ("crx3,download,puff,run,xz,zucc",
+            *request->FindString("acceptformat"));
   EXPECT_TRUE(request->contains("arch"));
   ASSERT_TRUE(request->FindString("dedup"));
   EXPECT_EQ("cr", *request->FindString("dedup"));
@@ -292,7 +291,7 @@ TEST_P(UpdateCheckerTest, UpdateCheckSuccess) {
   EXPECT_EQ("params", *request->FindString("extra"));
   ASSERT_TRUE(request->FindIntByDottedPath("hw.physmemory").has_value());
   EXPECT_LT(0, *request->FindIntByDottedPath("hw.physmemory"));
-  EXPECT_TRUE(request->contains("nacl_arch"));
+  EXPECT_FALSE(request->contains("nacl_arch"));
   ASSERT_TRUE(request->FindString("prodchannel"));
   EXPECT_EQ("fake_channel_string", *request->FindString("prodchannel"));
   ASSERT_TRUE(request->FindString("prodversion"));

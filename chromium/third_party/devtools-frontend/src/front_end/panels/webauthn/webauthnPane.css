@@ -47,12 +47,16 @@
 }
 
 .authenticator-option {
-  > select, > devtools-button {
+  > select {
     margin: 0 var(--sys-size-9) var(--sys-size-3) var(--sys-size-9);
   }
 
-  > dt-checkbox {
-    margin: 0 var(--sys-size-9) 0 var(--sys-size-8);
+  > devtools-button {
+    margin: var(--sys-size-3) var(--sys-size-9);
+  }
+
+  > input[type="checkbox"] {
+    margin: var(--sys-size-5) var(--sys-size-9);
   }
 }
 
@@ -117,11 +121,6 @@
   line-height: 18px;
 }
 
-.authenticator-option-checkbox {
-  position: relative;
-  top: 2px;
-}
-
 .authenticator-field {
   margin: var(--sys-size-3) 0;
 }
@@ -137,13 +136,13 @@
   font: var(--sys-typescale-body5-medium);
   padding-right: var(--sys-size-6);
   text-align: left;
-  min-width: 150px;
+  min-width: 152px;
   line-height: 18px;
 }
 
-td .text-button {
+::part(action-button) {
   min-width: 20px;
-  margin: auto;
+  margin: 4px;
 }
 
 .active-button-container {
@@ -162,11 +161,12 @@ td .text-button {
 }
 /* Credentials Table */
 
-.data-grid-data-grid-node.centered {
-  text-align: center;
-}
-
-.data-grid td {
+::part(credentialId-column),
+::part(isResidentCredential-column),
+::part(rpId-column),
+::part(userHandle-column),
+::part(signCount-column),
+::part(actions-column) {
   vertical-align: middle;
 }
 

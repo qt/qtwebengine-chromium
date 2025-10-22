@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Final, Optional
 from typing_extensions import override
 
 import crossbench.path as pth
-from crossbench.helper.spinner import Spinner
+from crossbench.cli import ui
 from crossbench.probes.profiling.context.base import PosixProfilingContext
 from crossbench.probes.profiling.enum import TargetMode
 
@@ -88,7 +88,7 @@ class MacOSProfilingContext(PosixProfilingContext):
     trace_xml_path = self.result_path.with_name("profile.trace.xml")
     with self.run.actions(
         f"Probe {self.probe.name}: Exporting {trace_xml_path.name}",
-        verbose=True), Spinner():
+        verbose=True), ui.spinner():
       self.browser_platform.sh("xctrace", "export", "--input", self.result_path,
                                "--output", trace_xml_path, "--xpath",
                                _XPATH_EXPRESSION)
@@ -98,7 +98,7 @@ class MacOSProfilingContext(PosixProfilingContext):
     if not self._profiling_process:
       return
     logging.info("  Waiting for xctrace profiles (slow)...")
-    with Spinner():
+    with ui.spinner():
       self.browser_platform.terminate_gracefully(
           self._profiling_process,
           signal=self.browser_platform.signals.SIGINT,

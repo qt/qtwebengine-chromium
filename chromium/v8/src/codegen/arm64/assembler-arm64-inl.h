@@ -201,7 +201,7 @@ struct ImmediateInitializer {
   static inline RelocInfo::Mode rmode_for(T) { return RelocInfo::NO_INFO; }
   static inline int64_t immediate_for(T t) {
     static_assert(sizeof(T) <= 8);
-    static_assert(std::is_integral<T>::value || std::is_enum<T>::value);
+    static_assert(std::is_integral_v<T> || std::is_enum_v<T>);
     return t;
   }
 };
@@ -240,7 +240,7 @@ Immediate::Immediate(T t)
 template <typename T>
 Immediate::Immediate(T t, RelocInfo::Mode rmode)
     : value_(ImmediateInitializer<T>::immediate_for(t)), rmode_(rmode) {
-  static_assert(std::is_integral<T>::value);
+  static_assert(std::is_integral_v<T>);
 }
 
 template <typename T>
@@ -290,6 +290,22 @@ HeapNumberRequest Operand::heap_number_request() const {
 
 bool Operand::IsImmediate() const {
   return reg_ == NoReg && !IsHeapNumberRequest();
+}
+
+bool Operand::IsPlainRegister() const {
+  return reg_.is_valid() &&
+         (((shift_ == NO_SHIFT) && (extend_ == NO_EXTEND)) ||
+          // No-op shifts.
+          ((shift_ != NO_SHIFT) && (shift_amount_ == 0)) ||
+          // No-op extend operations.
+          // We can't include [US]XTW here without knowing more about the
+          // context; they are only no-ops for 32-bit operations.
+          //
+          // For example, this operand could be replaced with w1:
+          //   __ Add(w0, w0, Operand(w1, UXTW));
+          // However, no plain register can replace it in this context:
+          //   __ Add(x0, x0, Operand(w1, UXTW));
+          (((extend_ == UXTX) || (extend_ == SXTX)) && (shift_amount_ == 0)));
 }
 
 bool Operand::IsShiftedRegister() const {
@@ -655,8 +671,7 @@ Tagged<HeapObject> RelocInfo::target_object(PtrComprCageBase cage_base) {
     Tagged_t compressed =
         Assembler::target_compressed_address_at(pc_, constant_pool_);
     DCHECK(!HAS_SMI_TAG(compressed));
-    Tagged<Object> obj(
-        V8HeapCompressionScheme::DecompressTagged(cage_base, compressed));
+    Tagged<Object> obj(V8HeapCompressionScheme::DecompressTagged(compressed));
     return Cast<HeapObject>(obj);
   } else {
     return Cast<HeapObject>(

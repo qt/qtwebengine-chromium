@@ -43,7 +43,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
-#include "base/not_fatal_until.h"
+#include "base/notimplemented.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
@@ -59,6 +59,7 @@
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/optional_util.h"
 #include "base/values.h"
 #include "build/build_config.h"
@@ -76,7 +77,6 @@
 #include "net/base/prioritized_dispatcher.h"
 #include "net/base/request_priority.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/base/url_util.h"
 #include "net/dns/dns_alias_utility.h"
 #include "net/dns/dns_client.h"
@@ -801,7 +801,7 @@ void HostResolverManager::InitializeJobKeyAndIPAddress(
   // `https_svcb_options_.enable` has precedence, so if enabled, ignore any
   // other related features.
   if (https_svcb_options_.enable && out_job_key.host.HasScheme()) {
-    static const char* const kSchemesForHttpsQuery[] = {
+    static constexpr std::string_view kSchemesForHttpsQuery[] = {
         url::kHttpScheme, url::kHttpsScheme, url::kWsScheme, url::kWssScheme};
     if (base::Contains(kSchemesForHttpsQuery, out_job_key.host.GetScheme())) {
       effective_types.Put(DnsQueryType::HTTPS);
@@ -826,6 +826,14 @@ HostCache::Entry HostResolverManager::ResolveLocally(
   *out_stale_info = std::nullopt;
 
   CreateTaskSequence(job_key, cache_usage, secure_dns_policy, out_tasks);
+  source_net_log.AddEvent(
+      NetLogEventType::HOST_RESOLVER_MANAGER_TASK_SEQUENCE_CREATED, [&] {
+        base::Value::List tasks_list;
+        for (TaskType task : *out_tasks) {
+          tasks_list.Append(static_cast<int>(task));
+        }
+        return base::Value::Dict().Set("tasks", std::move(tasks_list));
+      });
 
   if (!ip_address.IsValid()) {
     // Check that the caller supplied a valid hostname to resolve. For
@@ -1162,12 +1170,14 @@ HostResolverManager::ServeFromHosts(std::string_view hostname,
     }
   }
 
-  // If got only loopback addresses and the family was restricted, resolve
-  // again, without restrictions. See SystemHostResolverCall for rationale.
+  // If got only loopback addresses (or no addresses) and the family was
+  // restricted, resolve again, without restrictions. See SystemHostResolverCall
+  // for rationale.
   if (default_family_due_to_no_ipv6 && ipv4_result &&
-      ipv4_result->type() == HostResolverInternalResult::Type::kData &&
-      std::ranges::all_of(ipv4_result->AsData().endpoints(),
-                          &IPAddress::IsLoopback, &IPEndPoint::address)) {
+      (ipv4_result->type() == HostResolverInternalResult::Type::kError ||
+       (ipv4_result->type() == HostResolverInternalResult::Type::kData &&
+        std::ranges::all_of(ipv4_result->AsData().endpoints(),
+                            &IPAddress::IsLoopback, &IPEndPoint::address)))) {
     CHECK(!ipv6_result) << "Requesting AAAA is incompatible with "
                            "`default_family_due_to_no_ipv6`.";
     query_types.Put(DnsQueryType::AAAA);
@@ -1220,7 +1230,7 @@ void HostResolverManager::CacheResult(HostCache* cache,
 
 std::unique_ptr<HostResolverManager::Job> HostResolverManager::RemoveJob(
     JobMap::iterator job_it) {
-  CHECK(job_it != jobs_.end(), base::NotFatalUntil::M130);
+  CHECK(job_it != jobs_.end());
   CHECK(job_it->second);
   CHECK(jobs_.find(job_it->first) != jobs_.end());
 

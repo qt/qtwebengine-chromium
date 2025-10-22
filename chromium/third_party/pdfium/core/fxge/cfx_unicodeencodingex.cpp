@@ -26,27 +26,28 @@ constexpr fxge::FontEncoding kEncodingIDs[] = {
 };
 
 std::unique_ptr<CFX_UnicodeEncodingEx> FXFM_CreateFontEncoding(
-    CFX_Font* pFont,
+    CFX_Font* font,
     fxge::FontEncoding encoding_id) {
-  if (!pFont->GetFace()->SelectCharMap(encoding_id)) {
+  if (!font->GetFace()->SelectCharMap(encoding_id)) {
     return nullptr;
   }
-  return std::make_unique<CFX_UnicodeEncodingEx>(pFont, encoding_id);
+  return std::make_unique<CFX_UnicodeEncodingEx>(font, encoding_id);
 }
 
 }  // namespace
 
-CFX_UnicodeEncodingEx::CFX_UnicodeEncodingEx(CFX_Font* pFont,
+CFX_UnicodeEncodingEx::CFX_UnicodeEncodingEx(CFX_Font* font,
                                              fxge::FontEncoding encoding_id)
-    : CFX_UnicodeEncoding(pFont), encoding_id_(encoding_id) {}
+    : CFX_UnicodeEncoding(font), encoding_id_(encoding_id) {}
 
 CFX_UnicodeEncodingEx::~CFX_UnicodeEncodingEx() = default;
 
 uint32_t CFX_UnicodeEncodingEx::GlyphFromCharCode(uint32_t charcode) {
-  RetainPtr<CFX_Face> face = m_pFont->GetFace();
+  RetainPtr<CFX_Face> face = font_->GetFace();
   FT_UInt nIndex = face->GetCharIndex(charcode);
-  if (nIndex > 0)
+  if (nIndex > 0) {
     return nIndex;
+  }
 
   size_t map_index = 0;
   while (map_index < face->GetCharMapCount()) {
@@ -73,7 +74,7 @@ uint32_t CFX_UnicodeEncodingEx::CharCodeFromUnicode(wchar_t Unicode) const {
       encoding_id_ == fxge::FontEncoding::kSymbol) {
     return Unicode;
   }
-  RetainPtr<CFX_Face> face = m_pFont->GetFace();
+  RetainPtr<CFX_Face> face = font_->GetFace();
   for (size_t i = 0; i < face->GetCharMapCount(); i++) {
     fxge::FontEncoding encoding_id = face->GetCharMapEncodingByIndex(i);
     if (encoding_id == fxge::FontEncoding::kUnicode ||
@@ -84,16 +85,16 @@ uint32_t CFX_UnicodeEncodingEx::CharCodeFromUnicode(wchar_t Unicode) const {
   return kInvalidCharCode;
 }
 
-std::unique_ptr<CFX_UnicodeEncodingEx> FX_CreateFontEncodingEx(
-    CFX_Font* pFont) {
-  if (!pFont || !pFont->GetFace()) {
+std::unique_ptr<CFX_UnicodeEncodingEx> FX_CreateFontEncodingEx(CFX_Font* font) {
+  if (!font || !font->GetFace()) {
     return nullptr;
   }
 
   for (fxge::FontEncoding id : kEncodingIDs) {
-    auto pFontEncoding = FXFM_CreateFontEncoding(pFont, id);
-    if (pFontEncoding)
-      return pFontEncoding;
+    auto font_encoding = FXFM_CreateFontEncoding(font, id);
+    if (font_encoding) {
+      return font_encoding;
+    }
   }
   return nullptr;
 }

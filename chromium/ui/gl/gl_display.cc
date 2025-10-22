@@ -19,6 +19,7 @@
 #include "base/strings/string_split.h"
 #include "base/synchronization/atomic_flag.h"
 #include "base/system/sys_info.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "gl_display.h"
 #include "gl_switches.h"
@@ -31,111 +32,11 @@
 #include "ui/gl/gl_features.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface.h"
-#include "ui/gl/startup_trace.h"
+#include "ui/gl/gpu_switching_manager.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/build_info.h"
 #endif
-
-// From ANGLE's egl/eglext.h.
-
-#ifndef EGL_ANGLE_platform_angle
-#define EGL_ANGLE_platform_angle 1
-#define EGL_PLATFORM_ANGLE_ANGLE 0x3202
-#define EGL_PLATFORM_ANGLE_TYPE_ANGLE 0x3203
-#define EGL_PLATFORM_ANGLE_MAX_VERSION_MAJOR_ANGLE 0x3204
-#define EGL_PLATFORM_ANGLE_MAX_VERSION_MINOR_ANGLE 0x3205
-#define EGL_PLATFORM_ANGLE_TYPE_DEFAULT_ANGLE 0x3206
-#define EGL_PLATFORM_ANGLE_DEBUG_LAYERS_ENABLED_ANGLE 0x3451
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE 0x3209
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_EGL_ANGLE 0x348E
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_HARDWARE_ANGLE 0x320A
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_NULL_ANGLE 0x345E
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_SWIFTSHADER_ANGLE 0x3487
-#define EGL_PLATFORM_ANGLE_NATIVE_PLATFORM_TYPE_ANGLE 0x348F
-#endif /* EGL_ANGLE_platform_angle */
-
-#ifndef EGL_ANGLE_platform_angle_d3d
-#define EGL_ANGLE_platform_angle_d3d 1
-#define EGL_PLATFORM_ANGLE_TYPE_D3D9_ANGLE 0x3207
-#define EGL_PLATFORM_ANGLE_TYPE_D3D11_ANGLE 0x3208
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_WARP_ANGLE 0x320B
-#define EGL_PLATFORM_ANGLE_DEVICE_TYPE_D3D_REFERENCE_ANGLE 0x320C
-#endif /* EGL_ANGLE_platform_angle_d3d */
-
-#ifndef EGL_ANGLE_platform_angle_d3d_luid
-#define EGL_ANGLE_platform_angle_d3d_luid 1
-#define EGL_PLATFORM_ANGLE_D3D_LUID_HIGH_ANGLE 0x34A0
-#define EGL_PLATFORM_ANGLE_D3D_LUID_LOW_ANGLE 0x34A1
-#endif /* EGL_ANGLE_platform_angle_d3d_luid */
-
-#ifndef EGL_ANGLE_platform_angle_d3d11on12
-#define EGL_ANGLE_platform_angle_d3d11on12 1
-#define EGL_PLATFORM_ANGLE_D3D11ON12_ANGLE 0x3488
-#endif /* EGL_ANGLE_platform_angle_d3d11on12 */
-
-#ifndef EGL_ANGLE_platform_angle_opengl
-#define EGL_ANGLE_platform_angle_opengl 1
-#define EGL_PLATFORM_ANGLE_TYPE_OPENGL_ANGLE 0x320D
-#define EGL_PLATFORM_ANGLE_TYPE_OPENGLES_ANGLE 0x320E
-#endif /* EGL_ANGLE_platform_angle_opengl */
-
-#ifndef EGL_ANGLE_platform_angle_null
-#define EGL_ANGLE_platform_angle_null 1
-#define EGL_PLATFORM_ANGLE_TYPE_NULL_ANGLE 0x33AE
-#endif /* EGL_ANGLE_platform_angle_null */
-
-#ifndef EGL_ANGLE_platform_angle_vulkan
-#define EGL_ANGLE_platform_angle_vulkan 1
-#define EGL_PLATFORM_ANGLE_TYPE_VULKAN_ANGLE 0x3450
-#define EGL_PLATFORM_VULKAN_DISPLAY_MODE_HEADLESS_ANGLE 0x34A5
-#endif /* EGL_ANGLE_platform_angle_vulkan */
-
-#ifndef EGL_ANGLE_platform_angle_metal
-#define EGL_ANGLE_platform_angle_metal 1
-#define EGL_PLATFORM_ANGLE_TYPE_METAL_ANGLE 0x3489
-#endif /* EGL_ANGLE_platform_angle_metal */
-
-#ifndef EGL_ANGLE_x11_visual
-#define EGL_ANGLE_x11_visual 1
-#define EGL_X11_VISUAL_ID_ANGLE 0x33A3
-#endif /* EGL_ANGLE_x11_visual */
-
-#ifndef EGL_ANGLE_direct_composition
-#define EGL_ANGLE_direct_composition 1
-#define EGL_DIRECT_COMPOSITION_ANGLE 0x33A5
-#endif /* EGL_ANGLE_direct_composition */
-
-#ifndef EGL_ANGLE_display_robust_resource_initialization
-#define EGL_ANGLE_display_robust_resource_initialization 1
-#define EGL_DISPLAY_ROBUST_RESOURCE_INITIALIZATION_ANGLE 0x3453
-#endif /* EGL_ANGLE_display_robust_resource_initialization */
-
-#ifndef EGL_ANGLE_display_power_preference
-#define EGL_ANGLE_display_power_preference 1
-#define EGL_POWER_PREFERENCE_ANGLE 0x3482
-#define EGL_LOW_POWER_ANGLE 0x0001
-#define EGL_HIGH_POWER_ANGLE 0x0002
-#endif /* EGL_ANGLE_power_preference */
-
-#ifndef EGL_ANGLE_platform_angle_device_id
-#define EGL_ANGLE_platform_angle_device_id
-#define EGL_PLATFORM_ANGLE_DEVICE_ID_HIGH_ANGLE 0x34D6
-#define EGL_PLATFORM_ANGLE_DEVICE_ID_LOW_ANGLE 0x34D7
-#define EGL_PLATFORM_ANGLE_DISPLAY_KEY_ANGLE 0x34DC
-#endif /* EGL_ANGLE_platform_angle_device_id */
-
-// From ANGLE's egl/eglext.h.
-#ifndef EGL_ANGLE_feature_control
-#define EGL_ANGLE_feature_control 1
-#define EGL_FEATURE_NAME_ANGLE 0x3460
-#define EGL_FEATURE_CATEGORY_ANGLE 0x3461
-#define EGL_FEATURE_STATUS_ANGLE 0x3464
-#define EGL_FEATURE_COUNT_ANGLE 0x3465
-#define EGL_FEATURE_OVERRIDES_ENABLED_ANGLE 0x3466
-#define EGL_FEATURE_OVERRIDES_DISABLED_ANGLE 0x3467
-#define EGL_FEATURE_ALL_DISABLED_ANGLE 0x3469
-#endif /* EGL_ANGLE_feature_control */
 
 using ui::GetLastEGLErrorString;
 
@@ -164,7 +65,7 @@ EGLDisplay GetPlatformANGLEDisplay(
     const std::vector<std::string>& enabled_features,
     const std::vector<std::string>& disabled_features,
     const std::vector<EGLAttrib>& extra_display_attribs) {
-  GPU_STARTUP_TRACE_EVENT("gl_display::GetPlatformANGLEDisplay");
+  TRACE_EVENT("gpu,startup", "gl_display::GetPlatformANGLEDisplay");
   std::vector<EGLAttrib> display_attribs(extra_display_attribs);
 
   display_attribs.push_back(EGL_PLATFORM_ANGLE_TYPE_ANGLE);
@@ -468,49 +369,6 @@ const char* DisplayTypeString(DisplayType display_type) {
   }
 }
 
-const char* GetDebugMessageTypeString(EGLint source) {
-  switch (source) {
-    case EGL_DEBUG_MSG_CRITICAL_KHR:
-      return "Critical";
-    case EGL_DEBUG_MSG_ERROR_KHR:
-      return "Error";
-    case EGL_DEBUG_MSG_WARN_KHR:
-      return "Warning";
-    case EGL_DEBUG_MSG_INFO_KHR:
-      return "Info";
-    default:
-      return "UNKNOWN";
-  }
-}
-
-void EGLAPIENTRY LogEGLDebugMessage(EGLenum error,
-                                    const char* command,
-                                    EGLint message_type,
-                                    EGLLabelKHR thread_label,
-                                    EGLLabelKHR object_label,
-                                    const char* message) {
-  std::string formatted_message = std::string("EGL Driver message (") +
-                                  GetDebugMessageTypeString(message_type) +
-                                  ") " + command + ": " + message;
-
-  // Assume that all labels that have been set are strings
-  if (thread_label) {
-    formatted_message += " thread: ";
-    formatted_message += static_cast<const char*>(thread_label);
-  }
-  if (object_label) {
-    formatted_message += " object: ";
-    formatted_message += static_cast<const char*>(object_label);
-  }
-
-  if (message_type == EGL_DEBUG_MSG_CRITICAL_KHR ||
-      message_type == EGL_DEBUG_MSG_ERROR_KHR) {
-    LOG(ERROR) << formatted_message;
-  } else {
-    DVLOG(1) << formatted_message;
-  }
-}
-
 void SetEglDebugMessageControl() {
   static bool egl_debug_message_control_is_set = false;
   if (!egl_debug_message_control_is_set) {
@@ -527,7 +385,7 @@ void SetEglDebugMessageControl() {
         EGL_NONE,
     };
 
-    eglDebugMessageControlKHR(&LogEGLDebugMessage, controls);
+    eglDebugMessageControlKHR(&ui::LogEGLDebugMessage, controls);
   }
 }
 
@@ -599,7 +457,8 @@ void GLDisplayEGL::Shutdown() {
     gpu_switching_observer_.reset();
   }
 
-  angle::ResetPlatform(display_);
+  DCHECK(g_driver_egl.fn.eglGetProcAddressFn);
+  angle::ResetPlatform(display_, g_driver_egl.fn.eglGetProcAddressFn);
   DCHECK(g_driver_egl.fn.eglTerminateFn);
   eglTerminate(display_);
 
@@ -719,7 +578,7 @@ bool GLDisplayEGL::InitializeDisplay(bool supports_angle,
                                      std::vector<DisplayType> init_displays,
                                      EGLDisplayPlatform native_display,
                                      gl::GLDisplayEGL* existing_display) {
-  GPU_STARTUP_TRACE_EVENT("gl::GLDisplayEGL::InitializeDisplay");
+  TRACE_EVENT("gpu,startup", "gl::GLDisplayEGL::InitializeDisplay");
   if (display_ != EGL_NO_DISPLAY)
     return true;
 
@@ -755,7 +614,8 @@ bool GLDisplayEGL::InitializeDisplay(bool supports_angle,
     if (!existing_display) {
       // Init ANGLE platform now that we have the global display.
       if (supports_angle) {
-        if (!angle::InitializePlatform(display)) {
+        if (!angle::InitializePlatform(display,
+                                       g_driver_egl.fn.eglGetProcAddressFn)) {
           LOG(ERROR) << "ANGLE Platform initialization failed.";
         }
 
@@ -773,7 +633,7 @@ bool GLDisplayEGL::InitializeDisplay(bool supports_angle,
     }
 
     {
-      GPU_STARTUP_TRACE_EVENT("eglInitializeFn display");
+      TRACE_EVENT("gpu,startup", "eglInitializeFn display");
       if (!eglInitialize(display, nullptr, nullptr)) {
         bool is_last = disp_index == init_displays.size() - 1;
 
@@ -818,7 +678,7 @@ bool GLDisplayEGL::InitializeDisplay(bool supports_angle,
 }
 
 void GLDisplayEGL::InitializeCommon(bool for_testing) {
-  GPU_STARTUP_TRACE_EVENT("gl::GLDisplayEGL::InitializeCommon");
+  TRACE_EVENT("gpu,startup", "gl::GLDisplayEGL::InitializeCommon");
   // According to https://source.android.com/compatibility/android-cdd.html the
   // EGL_IMG_context_priority extension is mandatory for Virtual Reality High
   // Performance support, but due to a bug in Android Nougat the extension

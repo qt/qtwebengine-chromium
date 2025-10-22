@@ -4,6 +4,8 @@
 
 #include "content/browser/preloading/prerender/prerender_features.h"
 
+#include "content/public/common/content_features.h"
+
 namespace features {
 
 // Allows activation in background tab. For now, this is used only on web
@@ -18,28 +20,15 @@ BASE_FEATURE(kPrerender2AllowActivationInBackground,
 
 // Enables fallback from prerender to prefetch for Speculation Rules.
 // See https://crbug.com/342089123 for more details.
+//
+// Effects:
+//
+// - Use code paths for prefetch/prerender integration. (The effect of
+//   `kPrefetchPrerenderIntegration`).
+// - Trigger prefetch ahead of prerender.
 BASE_FEATURE(kPrerender2FallbackPrefetchSpecRules,
              "Prerender2FallbackPrefetchSpecRules",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-constexpr base::FeatureParam<Prerender2FallbackPrefetchReusablePolicy>::Option
-    kPrerender2FallbackPrefetchReusablePolicyOptions[] = {
-        {Prerender2FallbackPrefetchReusablePolicy::kNotUse, "NotUse"},
-        {Prerender2FallbackPrefetchReusablePolicy::
-             kUseIfIsLikelyAheadOfPrerender,
-         "UseIfIsLikelyAheadOfPrerender"},
-        {Prerender2FallbackPrefetchReusablePolicy::kUseAlways, "UseAlways"},
-};
-const base::FeatureParam<Prerender2FallbackPrefetchReusablePolicy>
-    kPrerender2FallbackPrefetchReusablePolicy{
-        &kPrerender2FallbackPrefetchSpecRules,
-        "kPrerender2FallbackPrefetchReusablePolicy",
-        Prerender2FallbackPrefetchReusablePolicy::kNotUse,
-        &kPrerender2FallbackPrefetchReusablePolicyOptions};
-
-const base::FeatureParam<size_t> kPrerender2FallbackBodySizeLimit{
-    &kPrerender2FallbackPrefetchSpecRules, "kPrerender2FallbackBodySizeLimit",
-    65536};
 
 const base::FeatureParam<bool>
     kPrerender2FallbackPrefetchUseBlockUntilHeadTimetout{
@@ -93,5 +82,24 @@ const base::FeatureParam<base::TimeDelta>
     kSuppressesPrerenderingOnSlowNetworkThreshold{
         &kSuppressesPrerenderingOnSlowNetwork,
         "slow_network_threshold_for_prerendering", base::Milliseconds(208)};
+
+// If enabled, disallows non-trustworthy plaintext HTTP prerendering.
+// See https://crbug.com/340895233 for more details.
+BASE_FEATURE(kPrerender2DisallowNonTrustworthyHttp,
+             "Prerender2DisallowNonTrustworthyHttp",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPrerender2WarmUpCompositorForImmediate,
+             "Prerender2WarmUpCompositorForImmediate",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kPrerender2WarmUpCompositorForNonImmediate,
+             "Prerender2WarmUpCompositorForNonImmediate",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+bool UsePrefetchPrerenderIntegration() {
+  return base::FeatureList::IsEnabled(
+             features::kPrerender2FallbackPrefetchSpecRules) ||
+         base::FeatureList::IsEnabled(features::kPrefetchPrerenderIntegration);
+}
 
 }  // namespace features

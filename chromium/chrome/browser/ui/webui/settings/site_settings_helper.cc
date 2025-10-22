@@ -66,6 +66,7 @@
 #include "components/url_formatter/elide_url.h"
 #include "components/url_formatter/url_formatter.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/permission_result.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
@@ -79,6 +80,11 @@
 #include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/origin.h"
+
+#if BUILDFLAG(IS_CHROMEOS)
+#include "chrome/browser/smart_card/smart_card_permission_context.h"
+#include "chrome/browser/smart_card/smart_card_permission_context_factory.h"
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(ENABLE_VR)
 #include "device/vr/public/cpp/features.h"
@@ -100,6 +106,7 @@ const char kUsbChooserDataGroupType[] = "usb-devices-data";
 const char kSerialChooserDataGroupType[] = "serial-ports-data";
 const char kHidChooserDataGroupType[] = "hid-devices-data";
 const char kBluetoothChooserDataGroupType[] = "bluetooth-devices-data";
+const char kSmartCardChooserDataGroupType[] = "smart-card-readers-data";
 
 constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     const ContentSettingsTypeNameEntry>({
@@ -149,9 +156,6 @@ constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     {ContentSettingsType::FILE_SYSTEM_ACCESS_CHOOSER_DATA,
      "file-system-access-handles-data"},
     {ContentSettingsType::FEDERATED_IDENTITY_API, "federated-identity-api"},
-    {ContentSettingsType::PRIVATE_NETWORK_GUARD, "private-network-devices"},
-    {ContentSettingsType::PRIVATE_NETWORK_CHOOSER_DATA,
-     "private-network-devices-data"},
     {ContentSettingsType::ANTI_ABUSE, "anti-abuse"},
     {ContentSettingsType::STORAGE_ACCESS, "storage-access"},
     {ContentSettingsType::AUTO_PICTURE_IN_PICTURE, "auto-picture-in-picture"},
@@ -164,7 +168,7 @@ constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     {ContentSettingsType::TOP_LEVEL_STORAGE_ACCESS, "top-level-storage-access"},
     {ContentSettingsType::WEB_APP_INSTALLATION, "web-app-installation"},
     {ContentSettingsType::SMART_CARD_GUARD, "smart-card-readers"},
-    {ContentSettingsType::SMART_CARD_DATA, "smart-card-readers-data"},
+    {ContentSettingsType::SMART_CARD_DATA, kSmartCardChooserDataGroupType},
     {ContentSettingsType::LOCAL_NETWORK_ACCESS, "local-network-access"},
 
     // Add new content settings here if a corresponding Javascript string
@@ -197,7 +201,6 @@ constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     {ContentSettingsType::SAFE_BROWSING_URL_CHECK_DATA, nullptr},
     {ContentSettingsType::FILE_SYSTEM_READ_GUARD, nullptr},
     {ContentSettingsType::CAMERA_PAN_TILT_ZOOM, nullptr},
-    {ContentSettingsType::INSECURE_PRIVATE_NETWORK, nullptr},
     {ContentSettingsType::PERMISSION_AUTOREVOCATION_DATA, nullptr},
     {ContentSettingsType::FILE_SYSTEM_LAST_PICKED_DIRECTORY, nullptr},
     {ContentSettingsType::DISPLAY_CAPTURE, nullptr},
@@ -249,6 +252,13 @@ constexpr auto kContentSettingsTypeGroupNames = std::to_array<
     // POINTER_LOCK has been deprecated.
     {ContentSettingsType::POINTER_LOCK, nullptr},
     {ContentSettingsType::REVOKED_DISRUPTIVE_NOTIFICATION_PERMISSIONS, nullptr},
+    {ContentSettingsType::ON_DEVICE_SPEECH_RECOGNITION_LANGUAGES_DOWNLOADED,
+     nullptr},
+    {ContentSettingsType::INITIALIZED_TRANSLATIONS, nullptr},
+    {ContentSettingsType::SUSPICIOUS_NOTIFICATION_IDS, nullptr},
+    // TODO(crbug.com/430494524): Implement the WebUI
+    {ContentSettingsType::GEOLOCATION_WITH_OPTIONS, nullptr},
+    {ContentSettingsType::DEVICE_ATTRIBUTES, nullptr},
 });
 
 static_assert(
@@ -432,8 +442,8 @@ SiteSettingSource GetSourceForChooserException(Profile* profile,
   content_settings::SettingInfo info;
   info.source = source;
 
-  // Chooser exceptions do not use a PermissionContextBase for their
-  // permissions.
+  // Chooser exceptions do not use a ContentSettingPermissionContextBase for
+  // their permissions.
   content::PermissionResult permission_result(
       PermissionStatus::ASK, content::PermissionStatusSource::UNSPECIFIED);
 
@@ -475,11 +485,25 @@ permissions::ObjectPermissionContextBase* GetBluetoothChooserContext(
   return nullptr;
 }
 
+#if BUILDFLAG(IS_CHROMEOS)
+permissions::ObjectPermissionContextBase* GetSmartCardChooserContext(
+    Profile* profile) {
+  if (base::FeatureList::IsEnabled(blink::features::kSmartCard)) {
+    return &SmartCardPermissionContextFactory::GetForProfile(*profile);
+  }
+  return nullptr;
+}
+#endif  // BUILDFLAG(IS_CHROMEOS)
+
 const ChooserTypeNameEntry kChooserTypeGroupNames[] = {
     {&GetUsbChooserContext, kUsbChooserDataGroupType},
     {&GetSerialChooserContext, kSerialChooserDataGroupType},
     {&GetHidChooserContext, kHidChooserDataGroupType},
-    {&GetBluetoothChooserContext, kBluetoothChooserDataGroupType}};
+    {&GetBluetoothChooserContext, kBluetoothChooserDataGroupType},
+#if BUILDFLAG(IS_CHROMEOS)
+    {&GetSmartCardChooserContext, kSmartCardChooserDataGroupType}
+#endif  // BUILDFLAG(IS_CHROMEOS)
+};
 
 // These variables represent different formatting options for default (i.e. not
 // extension or IWA) URLs as well as fallbacks for when the IWA/extension is not
@@ -611,11 +635,6 @@ std::vector<ContentSettingsType> GetVisiblePermissionCategories(
     }
 
     if (base::FeatureList::IsEnabled(
-            network::features::kPrivateNetworkAccessPermissionPrompt)) {
-      base_types->push_back(ContentSettingsType::PRIVATE_NETWORK_GUARD);
-    }
-
-    if (base::FeatureList::IsEnabled(
             blink::features::kMediaSessionEnterPictureInPicture)) {
       base_types->push_back(ContentSettingsType::AUTO_PICTURE_IN_PICTURE);
     }
@@ -703,6 +722,7 @@ SiteSettingSource ProviderTypeToSiteSettingsSource(
     const ProviderType provider_type) {
   switch (provider_type) {
     case ProviderType::kWebuiAllowlistProvider:
+    case ProviderType::kComponentExtensionProvider:
       return SiteSettingSource::kAllowlist;
     case ProviderType::kPolicyProvider:
     case ProviderType::kSupervisedProvider:
@@ -739,6 +759,7 @@ std::string ProviderToDefaultSettingSourceString(const ProviderType provider) {
       return "preference";
     case ProviderType::kInstalledWebappProvider:
     case ProviderType::kWebuiAllowlistProvider:
+    case ProviderType::kComponentExtensionProvider:
     case ProviderType::kDefaultProvider:
       return "default";
     case ProviderType::kJavascriptOptimizerAndroidProvider:
@@ -746,7 +767,7 @@ std::string ProviderToDefaultSettingSourceString(const ProviderType provider) {
     case ProviderType::kNotificationAndroidProvider:
     case ProviderType::kProviderForTests:
     case ProviderType::kOtherProviderForTests:
-      NOTREACHED();
+      NOTREACHED() << provider;
   }
 }
 
@@ -1075,23 +1096,6 @@ void GetRawExceptionsForContentSettingsType(
   }
 }
 
-void Append3pcExceptions(Profile* profile,
-                         content::WebUI* web_ui,
-                         base::Value::List* exceptions) {
-  base::Value::List cookie_exceptions;
-  GetExceptionsForContentType(ContentSettingsType::COOKIES, profile, web_ui,
-                              /*incognito=*/false, &cookie_exceptions);
-  for (auto& cookie_exception : cookie_exceptions) {
-    auto& dict = cookie_exception.GetDict();
-    if (dict.contains(kOrigin) && *dict.FindString(kOrigin) == "*") {
-      dict.Set(kDescription,
-               l10n_util::GetStringUTF16(
-                   IDS_SETTINGS_THIRD_PARTY_COOKIES_ONLY_EXCEPTION_LABEL));
-      exceptions->Append(std::move(cookie_exception));
-    }
-  }
-}
-
 void GetExceptionsForContentType(ContentSettingsType type,
                                  Profile* profile,
                                  content::WebUI* web_ui,
@@ -1153,11 +1157,6 @@ void GetExceptionsForContentType(ContentSettingsType type,
     for (auto& exception : one_provider_exceptions.second) {
       exceptions->Append(std::move(exception));
     }
-  }
-
-  // The TP exceptions list should also contain 3PC exceptions.
-  if (type == ContentSettingsType::TRACKING_PROTECTION) {
-    Append3pcExceptions(profile, web_ui, exceptions);
   }
 }
 
@@ -1247,8 +1246,11 @@ ContentSetting GetContentSettingForOrigin(Profile* profile,
     if (permissions::PermissionUtil::IsPermission(content_type)) {
       result = profile->GetPermissionController()
                    ->GetPermissionResultForOriginWithoutContext(
-                       permissions::PermissionUtil::
-                           ContentSettingsTypeToPermissionType(content_type),
+                       content::PermissionDescriptorUtil::
+                           CreatePermissionDescriptorForPermissionType(
+                               permissions::PermissionUtil::
+                                   ContentSettingsTypeToPermissionType(
+                                       content_type)),
                        url::Origin::Create(origin));
     } else {
       permissions::PermissionDecisionAutoBlocker* auto_blocker =

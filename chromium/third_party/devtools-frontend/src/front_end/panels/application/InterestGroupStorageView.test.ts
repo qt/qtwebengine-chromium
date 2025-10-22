@@ -74,24 +74,18 @@ describeWithMockConnection('InterestGroupStorageView', () => {
         'No interest group selectedSelect any interest group event to display the group\'s current state');
   });
 
-  // Disabled due to flakiness
-  it.skip(
-      '[crbug.com/1473557]: updates sidebarWidget upon receiving cellFocusedEvent when InterestGroupGetter succeeds',
-      async function() {
-        if (this.timeout() > 0) {
-          this.timeout(10000);
-        }
-
+  it(
+      'updates sidebarWidget upon receiving cellFocusedEvent when InterestGroupGetter succeeds', async function() {
         const view = new View.InterestGroupStorageView(new InterestGroupDetailsGetter());
         events.forEach(event => {
           view.addEvent(event);
         });
         const grid = view.getInterestGroupGridForTesting();
         const spy = sinon.spy(view, 'setSidebarWidget');
-        assert.isTrue(spy.notCalled);
+        sinon.assert.notCalled(spy);
         grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
         await raf();
-        assert.isTrue(spy.calledOnce);
+        sinon.assert.calledOnce(spy);
         assert.deepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
       });
 
@@ -111,57 +105,51 @@ describeWithMockConnection('InterestGroupStorageView', () => {
       const grid = view.getInterestGroupGridForTesting();
       const sideBarUpdateDone = expectCall(sinon.stub(view, 'sidebarUpdatedForTesting'));
       const spy = sinon.spy(view, 'setSidebarWidget');
-      assert.isTrue(spy.notCalled);
+      sinon.assert.notCalled(spy);
       grid.dispatchEvent(new CustomEvent('select', {detail: {...events[0], type: eventType}}));
       await sideBarUpdateDone;
-      assert.isTrue(spy.calledOnce);
+      sinon.assert.calledOnce(spy);
       assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
       assert.isTrue(view.sidebarWidget()?.contentElement.firstChild?.textContent?.includes('No details'));
     }
   });
 
-  // Disabled due to flakiness
-  it.skip(
-      '[crbug.com/1473557]: updates sidebarWidget upon receiving cellFocusedEvent when InterestGroupDetailsGetter failsupdates sidebarWidget upon receiving cellFocusedEvent when InterestGroupDetailsGetter fails',
-      async function() {
-        if (this.timeout() > 0) {
-          this.timeout(10000);
-        }
+  it('updates sidebarWidget upon receiving cellFocusedEvent when InterestGroupDetailsGetter failsupdates sidebarWidget upon receiving cellFocusedEvent when InterestGroupDetailsGetter fails',
+     async function() {
+       if (this.timeout() > 0) {
+         this.timeout(10000);
+       }
 
-        const view = new View.InterestGroupStorageView(new InterestGroupDetailsGetterFails());
-        events.forEach(event => {
-          view.addEvent(event);
-        });
-        const grid = view.getInterestGroupGridForTesting();
-        const spy = sinon.spy(view, 'setSidebarWidget');
-        assert.isTrue(spy.notCalled);
-        grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
-        await raf();
-        assert.isTrue(spy.calledOnce);
-        assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
-        assert.isTrue(view.sidebarWidget()?.contentElement.firstChild?.textContent?.includes('No details'));
-      });
+       const view = new View.InterestGroupStorageView(new InterestGroupDetailsGetterFails());
+       events.forEach(event => {
+         view.addEvent(event);
+       });
+       const grid = view.getInterestGroupGridForTesting();
+       const spy = sinon.spy(view, 'setSidebarWidget');
+       sinon.assert.notCalled(spy);
+       grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
+       await raf();
+       sinon.assert.calledOnce(spy);
+       assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
+       assert.isTrue(view.sidebarWidget()?.contentElement.firstChild?.textContent?.includes('No details'));
+     });
 
-  // Disabled due to flakiness
-  it.skip('[crbug.com/1473557]: clears sidebarWidget upon clearEvents', async function() {
-    if (this.timeout() > 0) {
-      this.timeout(10000);
-    }
-
+  it('clears sidebarWidget upon clearEvents', async function() {
     const view = new View.InterestGroupStorageView(new InterestGroupDetailsGetter());
     events.forEach(event => {
       view.addEvent(event);
     });
     const grid = view.getInterestGroupGridForTesting();
     const spy = sinon.spy(view, 'setSidebarWidget');
-    assert.isTrue(spy.notCalled);
+    sinon.assert.notCalled(spy);
     grid.dispatchEvent(new CustomEvent('select', {detail: events[0]}));
     await raf();
-    assert.isTrue(spy.calledOnce);
+    sinon.assert.calledOnce(spy);
     assert.deepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
     view.clearEvents();
-    assert.isTrue(spy.calledTwice);
+    sinon.assert.calledTwice(spy);
     assert.notDeepEqual(view.sidebarWidget()?.constructor.name, 'SearchableView');
-    assert.isTrue(view.sidebarWidget()?.contentElement.firstChild?.textContent?.includes('Click'));
+    assert.isTrue(view.sidebarWidget()?.contentElement.textContent?.includes(
+        'No interest group selectedSelect any interest group event to display the group\'s current state'));
   });
 });

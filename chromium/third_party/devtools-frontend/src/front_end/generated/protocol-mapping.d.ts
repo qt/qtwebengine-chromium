@@ -287,6 +287,38 @@ export namespace ProtocolMapping {
      */
     'Network.directTCPSocketClosed': [Protocol.Network.DirectTCPSocketClosedEvent];
     /**
+     * Fired when data is sent to tcp direct socket stream.
+     */
+    'Network.directTCPSocketChunkSent': [Protocol.Network.DirectTCPSocketChunkSentEvent];
+    /**
+     * Fired when data is received from tcp direct socket stream.
+     */
+    'Network.directTCPSocketChunkReceived': [Protocol.Network.DirectTCPSocketChunkReceivedEvent];
+    /**
+     * Fired upon direct_socket.UDPSocket creation.
+     */
+    'Network.directUDPSocketCreated': [Protocol.Network.DirectUDPSocketCreatedEvent];
+    /**
+     * Fired when direct_socket.UDPSocket connection is opened.
+     */
+    'Network.directUDPSocketOpened': [Protocol.Network.DirectUDPSocketOpenedEvent];
+    /**
+     * Fired when direct_socket.UDPSocket is aborted.
+     */
+    'Network.directUDPSocketAborted': [Protocol.Network.DirectUDPSocketAbortedEvent];
+    /**
+     * Fired when direct_socket.UDPSocket is closed.
+     */
+    'Network.directUDPSocketClosed': [Protocol.Network.DirectUDPSocketClosedEvent];
+    /**
+     * Fired when message is sent to udp direct socket stream.
+     */
+    'Network.directUDPSocketChunkSent': [Protocol.Network.DirectUDPSocketChunkSentEvent];
+    /**
+     * Fired when message is received from udp direct socket stream.
+     */
+    'Network.directUDPSocketChunkReceived': [Protocol.Network.DirectUDPSocketChunkReceivedEvent];
+    /**
      * Fired when additional information about a requestWillBeSent event is available from the
      * network stack. Not every requestWillBeSent event will have an additional
      * requestWillBeSentExtraInfo fired for it, and there is no guarantee whether requestWillBeSent
@@ -475,8 +507,7 @@ export namespace ProtocolMapping {
      */
     'Page.windowOpen': [Protocol.Page.WindowOpenEvent];
     /**
-     * Issued for every compilation cache generated. Is only available
-     * if Page.setGenerateCompilationCache is enabled.
+     * Issued for every compilation cache generated.
      */
     'Page.compilationCacheProduced': [Protocol.Page.CompilationCacheProducedEvent];
     /**
@@ -543,10 +574,17 @@ export namespace ProtocolMapping {
      * The following parameters are included in all events.
      */
     'Storage.sharedStorageAccessed': [Protocol.Storage.SharedStorageAccessedEvent];
+    /**
+     * A shared storage run or selectURL operation finished its execution.
+     * The following parameters are included in all events.
+     */
+    'Storage.sharedStorageWorkletOperationExecutionFinished': [Protocol.Storage.SharedStorageWorkletOperationExecutionFinishedEvent];
     'Storage.storageBucketCreatedOrUpdated': [Protocol.Storage.StorageBucketCreatedOrUpdatedEvent];
     'Storage.storageBucketDeleted': [Protocol.Storage.StorageBucketDeletedEvent];
     'Storage.attributionReportingSourceRegistered': [Protocol.Storage.AttributionReportingSourceRegisteredEvent];
     'Storage.attributionReportingTriggerRegistered': [Protocol.Storage.AttributionReportingTriggerRegisteredEvent];
+    'Storage.attributionReportingReportSent': [Protocol.Storage.AttributionReportingReportSentEvent];
+    'Storage.attributionReportingVerboseDebugReportSent': [Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent];
     /**
      * Issued when attached to target because of auto-attach or `attachToTarget` command.
      */
@@ -743,6 +781,18 @@ export namespace ProtocolMapping {
      * happened.
      */
     'BluetoothEmulation.gattOperationReceived': [Protocol.BluetoothEmulation.GattOperationReceivedEvent];
+    /**
+     * Event for when a characteristic operation of |type| to the characteristic
+     * respresented by |characteristicId| happened. |data| and |writeType| is
+     * expected to exist when |type| is write.
+     */
+    'BluetoothEmulation.characteristicOperationReceived': [Protocol.BluetoothEmulation.CharacteristicOperationReceivedEvent];
+    /**
+     * Event for when a descriptor operation of |type| to the descriptor
+     * respresented by |descriptorId| happened. |data| is expected to exist when
+     * |type| is write.
+     */
+    'BluetoothEmulation.descriptorOperationReceived': [Protocol.BluetoothEmulation.DescriptorOperationReceivedEvent];
     /**
      * Fired when breakpoint is resolved to an actual script and location.
      * Deprecated in favor of `resolvedBreakpoints` in the `scriptParsed` event.
@@ -1213,6 +1263,13 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Set size of the browser contents resizing browser window as necessary.
+     */
+    'Browser.setContentsSize': {
+      paramsType: [Protocol.Browser.SetContentsSizeRequest];
+      returnType: void;
+    };
+    /**
      * Set dock tile details, platform-specific.
      */
     'Browser.setDockTile': {
@@ -1312,6 +1369,11 @@ export namespace ProtocolMapping {
      * For example, a value of '1em' is evaluated according to the computed
      * 'font-size' of the element and a value 'calc(1px + 2px)' will be
      * resolved to '3px'.
+     * If the `propertyName` was specified the `values` are resolved as if
+     * they were property's declaration. If a value cannot be parsed according
+     * to the provided property syntax, the value is parsed using combined
+     * syntax as if null `propertyName` was provided. If the value cannot be
+     * resolved even then, return the provided value without any changes.
      */
     'CSS.resolveValues': {
       paramsType: [Protocol.CSS.ResolveValuesRequest];
@@ -1343,6 +1405,13 @@ export namespace ProtocolMapping {
     'CSS.getMatchedStylesForNode': {
       paramsType: [Protocol.CSS.GetMatchedStylesForNodeRequest];
       returnType: Protocol.CSS.GetMatchedStylesForNodeResponse;
+    };
+    /**
+     * Returns the values of the default UA-defined environment variables used in env()
+     */
+    'CSS.getEnvironmentVariables': {
+      paramsType: [];
+      returnType: Protocol.CSS.GetEnvironmentVariablesResponse;
     };
     /**
      * Returns all media queries parsed by the rendering engine.
@@ -1965,9 +2034,9 @@ export namespace ProtocolMapping {
     /**
      * Returns the query container of the given node based on container query
      * conditions: containerName, physical and logical axes, and whether it queries
-     * scroll-state. If no axes are provided and queriesScrollState is false, the
-     * style container is returned, which is the direct parent or the closest
-     * element with a matching container-name.
+     * scroll-state or anchored elements. If no axes are provided and
+     * queriesScrollState is false, the style container is returned, which is the
+     * direct parent or the closest element with a matching container-name.
      */
     'DOM.getContainerForNode': {
       paramsType: [Protocol.DOM.GetContainerForNodeRequest];
@@ -1988,6 +2057,14 @@ export namespace ProtocolMapping {
     'DOM.getAnchorElement': {
       paramsType: [Protocol.DOM.GetAnchorElementRequest];
       returnType: Protocol.DOM.GetAnchorElementResponse;
+    };
+    /**
+     * When enabling, this API force-opens the popover identified by nodeId
+     * and keeps it open until disabled.
+     */
+    'DOM.forceShowPopover': {
+      paramsType: [Protocol.DOM.ForceShowPopoverRequest];
+      returnType: Protocol.DOM.ForceShowPopoverResponse;
     };
     /**
      * Returns event listeners of the given object.
@@ -2295,8 +2372,15 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Overrides the Geolocation Position or Error. Omitting any of the parameters emulates position
-     * unavailable.
+     * Emulates the given OS text scale.
+     */
+    'Emulation.setEmulatedOSTextScale': {
+      paramsType: [Protocol.Emulation.SetEmulatedOSTextScaleRequest?];
+      returnType: void;
+    };
+    /**
+     * Overrides the Geolocation Position or Error. Omitting latitude, longitude or
+     * accuracy emulates position unavailable.
      */
     'Emulation.setGeolocationOverride': {
       paramsType: [Protocol.Emulation.SetGeolocationOverrideRequest?];
@@ -2336,12 +2420,22 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * TODO: OBSOLETE: To remove when setPressureDataOverride is merged.
      * Provides a given pressure state that will be processed and eventually be
      * delivered to PressureObserver users. |source| must have been previously
      * overridden by setPressureSourceOverrideEnabled.
      */
     'Emulation.setPressureStateOverride': {
       paramsType: [Protocol.Emulation.SetPressureStateOverrideRequest];
+      returnType: void;
+    };
+    /**
+     * Provides a given pressure data set that will be processed and eventually be
+     * delivered to PressureObserver users. |source| must have been previously
+     * overridden by setPressureSourceOverrideEnabled.
+     */
+    'Emulation.setPressureDataOverride': {
+      paramsType: [Protocol.Emulation.SetPressureDataOverrideRequest];
       returnType: void;
     };
     /**
@@ -2421,6 +2515,13 @@ export namespace ProtocolMapping {
       paramsType: [Protocol.Emulation.SetDisabledImageTypesRequest];
       returnType: void;
     };
+    /**
+     * Override the value of navigator.connection.saveData
+     */
+    'Emulation.setDataSaverOverride': {
+      paramsType: [Protocol.Emulation.SetDataSaverOverrideRequest?];
+      returnType: void;
+    };
     'Emulation.setHardwareConcurrencyOverride': {
       paramsType: [Protocol.Emulation.SetHardwareConcurrencyOverrideRequest];
       returnType: void;
@@ -2438,6 +2539,14 @@ export namespace ProtocolMapping {
      */
     'Emulation.setAutomationOverride': {
       paramsType: [Protocol.Emulation.SetAutomationOverrideRequest];
+      returnType: void;
+    };
+    /**
+     * Allows overriding the difference between the small and large viewport sizes, which determine the
+     * value of the `svh` and `lvh` unit, respectively. Only supported for top-level frames.
+     */
+    'Emulation.setSmallViewportHeightDifferenceOverride': {
+      paramsType: [Protocol.Emulation.SetSmallViewportHeightDifferenceOverrideRequest];
       returnType: void;
     };
     /**
@@ -3093,7 +3202,7 @@ export namespace ProtocolMapping {
     };
     /**
      * Sets Controls for third-party cookie access
-     * Page reload is required before the new cookie bahavior will be observed
+     * Page reload is required before the new cookie behavior will be observed
      */
     'Network.setCookieControls': {
       paramsType: [Protocol.Network.SetCookieControlsRequest];
@@ -3411,9 +3520,9 @@ export namespace ProtocolMapping {
       paramsType: [];
       returnType: Protocol.Page.GetAppIdResponse;
     };
-    'Page.getAdScriptId': {
-      paramsType: [Protocol.Page.GetAdScriptIdRequest];
-      returnType: Protocol.Page.GetAdScriptIdResponse;
+    'Page.getAdScriptAncestry': {
+      paramsType: [Protocol.Page.GetAdScriptAncestryRequest];
+      returnType: Protocol.Page.GetAdScriptAncestryResponse;
     };
     /**
      * Returns present frame tree structure.
@@ -3831,10 +3940,6 @@ export namespace ProtocolMapping {
       paramsType: [];
       returnType: void;
     };
-    'ServiceWorker.inspectWorker': {
-      paramsType: [Protocol.ServiceWorker.InspectWorkerRequest];
-      returnType: void;
-    };
     'ServiceWorker.setForceUpdateOnPageLoad': {
       paramsType: [Protocol.ServiceWorker.SetForceUpdateOnPageLoadRequest];
       returnType: void;
@@ -4122,6 +4227,10 @@ export namespace ProtocolMapping {
       paramsType: [Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataRequest];
       returnType: Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataResponse;
     };
+    'Storage.setProtectedAudienceKAnonymity': {
+      paramsType: [Protocol.Storage.SetProtectedAudienceKAnonymityRequest];
+      returnType: void;
+    };
     /**
      * Returns information about the system.
      */
@@ -4246,11 +4355,14 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
-     * Controls whether to automatically attach to new targets which are considered to be related to
-     * this one. When turned on, attaches to all existing related targets as well. When turned off,
+     * Controls whether to automatically attach to new targets which are considered
+     * to be directly related to this one (for example, iframes or workers).
+     * When turned on, attaches to all existing related targets as well. When turned off,
      * automatically detaches from all currently attached targets.
      * This also clears all targets added by `autoAttachRelated` from the list of targets to watch
      * for creation of related targets.
+     * You might want to call this recursively for auto-attached targets to attach
+     * to all available targets.
      */
     'Target.setAutoAttach': {
       paramsType: [Protocol.Target.SetAutoAttachRequest];
@@ -4282,6 +4394,13 @@ export namespace ProtocolMapping {
     'Target.setRemoteLocations': {
       paramsType: [Protocol.Target.SetRemoteLocationsRequest];
       returnType: void;
+    };
+    /**
+     * Opens a DevTools window for the target.
+     */
+    'Target.openDevTools': {
+      paramsType: [Protocol.Target.OpenDevToolsRequest];
+      returnType: Protocol.Target.OpenDevToolsResponse;
     };
     /**
      * Request browser port binding.
@@ -4623,15 +4742,30 @@ export namespace ProtocolMapping {
       returnType: Protocol.PWA.GetOsAppStateResponse;
     };
     /**
-     * Installs the given manifest identity, optionally using the given install_url
-     * or IWA bundle location.
+     * Installs the given manifest identity, optionally using the given installUrlOrBundleUrl
      *
-     * TODO(crbug.com/337872319) Support IWA to meet the following specific
-     * requirement.
-     * IWA-specific install description: If the manifest_id is isolated-app://,
-     * install_url_or_bundle_url is required, and can be either an http(s) URL or
-     * file:// URL pointing to a signed web bundle (.swbn). The .swbn file's
-     * signing key must correspond to manifest_id. If Chrome is not in IWA dev
+     * IWA-specific install description:
+     * manifestId corresponds to isolated-app:// + web_package::SignedWebBundleId
+     *
+     * File installation mode:
+     * The installUrlOrBundleUrl can be either file:// or http(s):// pointing
+     * to a signed web bundle (.swbn). In this case SignedWebBundleId must correspond to
+     * The .swbn file's signing key.
+     *
+     * Dev proxy installation mode:
+     * installUrlOrBundleUrl must be http(s):// that serves dev mode IWA.
+     * web_package::SignedWebBundleId must be of type dev proxy.
+     *
+     * The advantage of dev proxy mode is that all changes to IWA
+     * automatically will be reflected in the running app without
+     * reinstallation.
+     *
+     * To generate bundle id for proxy mode:
+     * 1. Generate 32 random bytes.
+     * 2. Add a specific suffix 0x00 at the end.
+     * 3. Encode the entire sequence using Base32 without padding.
+     *
+     * If Chrome is not in IWA dev
      * mode, the installation will fail, regardless of the state of the allowlist.
      */
     'PWA.install': {
@@ -4744,6 +4878,28 @@ export namespace ProtocolMapping {
       returnType: void;
     };
     /**
+     * Simulates the response from the characteristic with |characteristicId| for a
+     * characteristic operation of |type|. The |code| value follows the Error
+     * Codes from Bluetooth Core Specification Vol 3 Part F 3.4.1.1 Error Response.
+     * The |data| is expected to exist when simulating a successful read operation
+     * response.
+     */
+    'BluetoothEmulation.simulateCharacteristicOperationResponse': {
+      paramsType: [Protocol.BluetoothEmulation.SimulateCharacteristicOperationResponseRequest];
+      returnType: void;
+    };
+    /**
+     * Simulates the response from the descriptor with |descriptorId| for a
+     * descriptor operation of |type|. The |code| value follows the Error
+     * Codes from Bluetooth Core Specification Vol 3 Part F 3.4.1.1 Error Response.
+     * The |data| is expected to exist when simulating a successful read operation
+     * response.
+     */
+    'BluetoothEmulation.simulateDescriptorOperationResponse': {
+      paramsType: [Protocol.BluetoothEmulation.SimulateDescriptorOperationResponseRequest];
+      returnType: void;
+    };
+    /**
      * Adds a service with |serviceUuid| to the peripheral with |address|.
      */
     'BluetoothEmulation.addService': {
@@ -4751,8 +4907,7 @@ export namespace ProtocolMapping {
       returnType: Protocol.BluetoothEmulation.AddServiceResponse;
     };
     /**
-     * Removes the service respresented by |serviceId| from the peripheral with
-     * |address|.
+     * Removes the service respresented by |serviceId| from the simulated central.
      */
     'BluetoothEmulation.removeService': {
       paramsType: [Protocol.BluetoothEmulation.RemoveServiceRequest];
@@ -4760,7 +4915,7 @@ export namespace ProtocolMapping {
     };
     /**
      * Adds a characteristic with |characteristicUuid| and |properties| to the
-     * service represented by |serviceId| in the peripheral with |address|.
+     * service represented by |serviceId|.
      */
     'BluetoothEmulation.addCharacteristic': {
       paramsType: [Protocol.BluetoothEmulation.AddCharacteristicRequest];
@@ -4768,10 +4923,32 @@ export namespace ProtocolMapping {
     };
     /**
      * Removes the characteristic respresented by |characteristicId| from the
-     * service respresented by |serviceId| in the peripheral with |address|.
+     * simulated central.
      */
     'BluetoothEmulation.removeCharacteristic': {
       paramsType: [Protocol.BluetoothEmulation.RemoveCharacteristicRequest];
+      returnType: void;
+    };
+    /**
+     * Adds a descriptor with |descriptorUuid| to the characteristic respresented
+     * by |characteristicId|.
+     */
+    'BluetoothEmulation.addDescriptor': {
+      paramsType: [Protocol.BluetoothEmulation.AddDescriptorRequest];
+      returnType: Protocol.BluetoothEmulation.AddDescriptorResponse;
+    };
+    /**
+     * Removes the descriptor with |descriptorId| from the simulated central.
+     */
+    'BluetoothEmulation.removeDescriptor': {
+      paramsType: [Protocol.BluetoothEmulation.RemoveDescriptorRequest];
+      returnType: void;
+    };
+    /**
+     * Simulates a GATT disconnection from the peripheral with |address|.
+     */
+    'BluetoothEmulation.simulateGATTDisconnection': {
+      paramsType: [Protocol.BluetoothEmulation.SimulateGATTDisconnectionRequest];
       returnType: void;
     };
     /**

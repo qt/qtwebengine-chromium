@@ -413,7 +413,6 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
                               const BIGNUM *m, BN_CTX *ctx,
                               const BN_MONT_CTX *mont) {
   int i, ret = 0, wvalue;
-  BN_MONT_CTX *new_mont = NULL;
 
   void *powerbuf_free = NULL;
   size_t powerbuf_len = 0;
@@ -449,12 +448,13 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
 
   // Allocate a montgomery context if it was not supplied by the caller.
   int top, num_powers, window;
-  if (mont == NULL) {
-    new_mont = BN_MONT_CTX_new_consttime(m, ctx);
-    if (new_mont == NULL) {
+  bssl::UniquePtr<BN_MONT_CTX> new_mont;
+  if (mont == nullptr) {
+    new_mont.reset(BN_MONT_CTX_new_consttime(m, ctx));
+    if (new_mont == nullptr) {
       goto err;
     }
-    mont = new_mont;
+    mont = new_mont.get();
   }
 
   // Use the width in |mont->N|, rather than the copy in |m|. The assembly
@@ -560,9 +560,9 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   // |bn_mul_mont_gather5| and |bn_power5| implement the "almost" reduction
   // variant, so the values here may not be fully reduced. They are bounded by R
   // (i.e. they fit in |top| words), not |m|. Additionally, we pass these
-  // "almost" reduced inputs into |bn_mul_mont|, which implements the normal
-  // reduction variant. Given those inputs, |bn_mul_mont| may not give reduced
-  // output, but it will still produce "almost" reduced output.
+  // "almost" reduced inputs into |bn_mul_mont_words|, which implements the
+  // normal reduction variant. Given those inputs, |bn_mul_mont_words| may not
+  // give reduced output, but it will still produce "almost" reduced output.
   //
   // TODO(davidben): Using "almost" reduction complicates analysis of this code,
   // and its interaction with other parts of the project. Determine whether this
@@ -578,12 +578,12 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
     const BN_ULONG *n0 = mont->n0;
     bn_scatter5(tmp.d, top, powerbuf, 0);
     bn_scatter5(am.d, am.width, powerbuf, 1);
-    bn_mul_mont(tmp.d, am.d, am.d, np, n0, top);
+    bn_mul_mont_words(tmp.d, am.d, am.d, np, n0, top);
     bn_scatter5(tmp.d, top, powerbuf, 2);
 
     // Square to compute powers of two.
     for (i = 4; i < 32; i *= 2) {
-      bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
+      bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
       bn_scatter5(tmp.d, top, powerbuf, i);
     }
     // Compute odd powers |i| based on |i - 1|, then all powers |i * 2^j|.
@@ -591,7 +591,7 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
       bn_mul_mont_gather5(tmp.d, am.d, powerbuf, np, n0, top, i - 1);
       bn_scatter5(tmp.d, top, powerbuf, i);
       for (int j = 2 * i; j < 32; j *= 2) {
-        bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
+        bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
         bn_scatter5(tmp.d, top, powerbuf, j);
       }
     }
@@ -614,11 +614,11 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
           wvalue = (wvalue << 1) + BN_is_bit_set(p, bits);
         }
 
-        bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
-        bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
-        bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
-        bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
-        bn_mul_mont(tmp.d, tmp.d, tmp.d, np, n0, top);
+        bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
+        bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
+        bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
+        bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
+        bn_mul_mont_words(tmp.d, tmp.d, tmp.d, np, n0, top);
         bn_mul_mont_gather5(tmp.d, tmp.d, powerbuf, np, n0, top, wvalue);
       }
     } else {
@@ -731,7 +731,6 @@ int BN_mod_exp_mont_consttime(BIGNUM *rr, const BIGNUM *a, const BIGNUM *p,
   ret = 1;
 
 err:
-  BN_MONT_CTX_free(new_mont);
   if (powerbuf != NULL && powerbuf_free == NULL) {
     OPENSSL_cleanse(powerbuf, powerbuf_len);
   }

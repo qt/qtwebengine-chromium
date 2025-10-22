@@ -10,6 +10,7 @@
 #include "base/auto_reset.h"
 #include "third_party/blink/renderer/platform/bindings/v8_throw_exception.h"
 #include "third_party/blink/renderer/platform/platform_export.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/stack_util.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
@@ -47,7 +48,17 @@ class PLATFORM_EXPORT ScriptForbiddenScope final {
   };
 
   static bool IsScriptForbidden() {
-    if (!WTF::MayNotBeMainThread()) [[likely]] {
+#if DCHECK_IS_ON()
+    bool extended_check = true;
+#else
+    bool extended_check =
+        RuntimeEnabledFeatures::BlinkLifecycleScriptForbiddenEnabled();
+#endif
+
+    if (extended_check && WillBeScriptForbidden()) {
+      return true;
+    }
+    if (!MayNotBeMainThread()) [[likely]] {
       return g_main_thread_counter_ > 0;
     }
     return GetMutableCounter() > 0;
@@ -76,7 +87,7 @@ class PLATFORM_EXPORT ScriptForbiddenScope final {
 
  private:
   static void Enter() {
-    if (!WTF::MayNotBeMainThread()) [[likely]] {
+    if (!MayNotBeMainThread()) [[likely]] {
       ++g_main_thread_counter_;
     } else {
       ++GetMutableCounter();
@@ -84,7 +95,7 @@ class PLATFORM_EXPORT ScriptForbiddenScope final {
   }
   static void Exit() {
     DCHECK(IsScriptForbidden());
-    if (!WTF::MayNotBeMainThread()) [[likely]] {
+    if (!MayNotBeMainThread()) [[likely]] {
       --g_main_thread_counter_;
     } else {
       --GetMutableCounter();
@@ -111,6 +122,7 @@ class PLATFORM_EXPORT ScriptForbiddenScope final {
   // V8GCController is exceptionally allowed to call Enter/Exit.
   friend class V8GCController;
   friend class BlinkLifecycleScopeWillBeScriptForbidden;
+  friend class ThreadState;
 };
 
 // Temporarily separate class for identifying cases in which adding a script

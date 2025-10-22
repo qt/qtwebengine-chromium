@@ -4,28 +4,29 @@
 
 from __future__ import annotations
 
+import datetime as dt
 import logging
 import multiprocessing
 import os
 import re
 import subprocess
-from typing import TYPE_CHECKING, Iterable, List, Optional, Self, Type, cast
+from typing import TYPE_CHECKING, Iterable, Optional, Self, Type, cast
 
 from typing_extensions import override
 
 from crossbench import plt
+from crossbench.cli import ui
 from crossbench.flags.js_flags import JSFlags
 from crossbench.helper import fs_helper
 from crossbench.helper.path_finder import V8ToolsFinder
-from crossbench.helper.spinner import Spinner
-from crossbench.parse import PathParser
+from crossbench.parse import DurationParser, PathParser
 from crossbench.probes.chromium_probe import ChromiumProbe
 from crossbench.probes.probe import ProbeConfigParser, ProbeContext, ProbeKeyT
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.groups.browsers import BrowsersRunGroup
@@ -87,6 +88,11 @@ class V8LogProbe(ChromiumProbe):
         help="Path to a V8 checkout for extended log processing."
         "If not specified it is auto inferred from either the provided"
         "d8_binary or standard installation locations.")
+    parser.add_argument(
+        "prof_sampling_interval",
+        aliases=("sampling_interval",),
+        type=DurationParser.positive_duration_ms,
+        help="Set the --prof_sampling_interval in millis.")
     return parser
 
   def __init__(
@@ -95,11 +101,14 @@ class V8LogProbe(ChromiumProbe):
       prof: bool = True,
       profview: bool = True,
       js_flags: Optional[Iterable[str]] = None,
+      prof_sampling_interval: Optional[dt.timedelta] = None,
       # TODO: support remote platform
       d8_binary: Optional[LocalPath] = None,
       v8_checkout: Optional[LocalPath] = None) -> None:
     super().__init__()
     self._profview: bool = profview
+    self._prof_sampling_interval: dt.timedelta = (
+        prof_sampling_interval or dt.timedelta())
     self._js_flags = JSFlags()
     self._d8_binary: LocalPath | None = d8_binary
     self._v8_checkout: LocalPath | None = v8_checkout
@@ -112,6 +121,12 @@ class V8LogProbe(ChromiumProbe):
       self._js_flags.set(_PROF_FLAG)
     elif profview:
       raise ValueError(f"{self}: Need prof:true with profview:true")
+    if self._prof_sampling_interval:
+      if not prof:
+        logging.error("prof_sampling_interval has no effect without prof==True")
+      # The v8 internal unit is microseconds:
+      self._js_flags["--prof-sampling-interval"] = str(
+          round(self._prof_sampling_interval / dt.timedelta(microseconds=1)))
     js_flags = js_flags or []
     for flag in js_flags:
       if self._FLAG_RE.match(flag):
@@ -126,6 +141,7 @@ class V8LogProbe(ChromiumProbe):
   def key(self) -> ProbeKeyT:
     return super().key + (
         ("profview", self._profview),
+        ("prof_sampling_interval", self._prof_sampling_interval),
         ("js_flags", str(self.js_flags)),
         ("d8_binary", str(self._d8_binary)),
         ("v8_checkout", str(self._v8_checkout)),
@@ -136,14 +152,14 @@ class V8LogProbe(ChromiumProbe):
     return self._js_flags.copy()
 
   @override
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     super().validate_env(env)
     if env.repetitions != 1:
       env.handle_warning(f"Probe({self.NAME}) cannot merge data over multiple "
                          f"repetitions={env.repetitions}.")
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     # --prof sometimes causes issues on enterprise chrome on linux.
     if _PROF_FLAG not in self._js_flags:
@@ -163,7 +179,7 @@ class V8LogProbe(ChromiumProbe):
     browser.flags.set("--no-sandbox")
     browser.js_flags.update(self._js_flags)
 
-  def process_log_files(self, log_files: List[AnyPath]) -> List[AnyPath]:
+  def process_log_files(self, log_files: list[AnyPath]) -> list[AnyPath]:
     if not self._profview:
       return []
     platform = self.host_platform
@@ -195,7 +211,7 @@ class V8LogProbe(ChromiumProbe):
 
   @override
   def log_browsers_result(self, group: BrowsersRunGroup) -> None:
-    runs: List[Run] = list(run for run in group.runs if self in run.results)
+    runs: list[Run] = list(run for run in group.runs if self in run.results)
     if not runs:
       return
     logging.info("-" * 80)
@@ -212,7 +228,7 @@ class V8LogProbe(ChromiumProbe):
         continue
       logging.info("Run %d: %s", i + 1, run.name)
       largest_log_file = log_files[-1]
-      logging.critical("    %s : %s", largest_log_file,
+      logging.critical("    %s [%s]", largest_log_file,
                        fs_helper.get_file_size(largest_log_file))
       if len(log_files) > 1:
         logging.info("    %s/.*v8.log: %d files", largest_log_file.parent,
@@ -221,7 +237,7 @@ class V8LogProbe(ChromiumProbe):
       if not profview_files:
         continue
       largest_profview_file = profview_files[-1]
-      logging.critical("    %s : %s", largest_profview_file,
+      logging.critical("    %s [%s]", largest_profview_file,
                        fs_helper.get_file_size(largest_profview_file))
       if len(profview_files) > 1:
         logging.info("    %s/*.profview.json: %d more files",
@@ -251,10 +267,10 @@ class V8LogProbeContext(ProbeContext[V8LogProbe]):
     log_files = fs_helper.sort_by_file_size(
         self.browser_platform.glob(log_dir, "*-v8.log"), self.browser_platform)
     # Only convert a v8.log file with profile ticks.
-    json_list: List[AnyPath] = []
+    json_list: list[AnyPath] = []
     maybe_js_flags = getattr(self.browser, "js_flags", {})
     if _PROF_FLAG in maybe_js_flags or _LOG_ALL_FLAG in maybe_js_flags:
-      with Spinner():
+      with ui.spinner():
         json_list = self.probe.process_log_files(log_files)
     return self.browser_result(file=tuple(log_files), json=json_list)
 

@@ -18,7 +18,9 @@
 
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
-#include "utils/vk_layer_utils.h"
+#include "containers/container_utils.h"
+#include "utils/math_utils.h"
+#include "utils/vk_api_utils.h"
 
 namespace stateless {
 static inline bool IsMeshCommand(VkIndirectCommandsTokenTypeEXT type) {
@@ -500,8 +502,8 @@ bool Device::ValidateGeneratedCommandsInfo(VkCommandBuffer command_buffer,
     }
 
     if (generated_commands_info.indirectAddress == 0) {
-        skip |= LogError("VUID-VkGeneratedCommandsInfoEXT-indirectAddress-11076", command_buffer,
-                         info_loc.dot(Field::indirectAddress), "is NULL.");
+        skip |= LogError("VUID-VkGeneratedCommandsInfoEXT-indirectAddress-parameter", command_buffer,
+                         info_loc.dot(Field::indirectAddress), "is zero.");
     } else if (SafeModulo(generated_commands_info.indirectAddress, 4) != 0) {
         skip |=
             LogError("VUID-VkGeneratedCommandsInfoEXT-indirectAddress-11074", command_buffer, info_loc.dot(Field::indirectAddress),

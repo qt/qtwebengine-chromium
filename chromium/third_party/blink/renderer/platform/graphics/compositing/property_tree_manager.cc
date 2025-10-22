@@ -460,7 +460,7 @@ int PropertyTreeManager::EnsureCompositorTransformNode(
 
   compositor_node.should_undo_overscroll =
       transform_node.RequiresCompositingForFixedToViewport();
-  if (transform_node.NodeChangeAffectsRaster()) {
+  if (transform_node.NodeChanged() != PaintPropertyChangeType::kUnchanged) {
     compositor_node.SetTransformChanged(cc::DamageReason::kUntracked);
   } else {
     compositor_node.ClearTransformChanged();
@@ -475,13 +475,9 @@ int PropertyTreeManager::EnsureCompositorTransformNode(
     compositor_node.moved_by_outer_viewport_bounds_delta_y = true;
     transform_tree_.AddNodeAffectedByOuterViewportBoundsDelta(id);
   }
-
-  if (base::FeatureList::IsEnabled(
-          features::kDynamicSafeAreaInsetsSupportedByCC)) {
-    if (transform_node.IsAffectedBySafeAreaBottom()) {
-      compositor_node.moved_by_safe_area_bottom = true;
-      transform_tree_.AddNodeAffectedBySafeAreaInsetBottom(id);
-    }
+  if (transform_node.IsAffectedBySafeAreaBottom()) {
+    compositor_node.moved_by_safe_area_bottom = true;
+    transform_tree_.AddNodeAffectedBySafeAreaInsetBottom(id);
   }
 
   compositor_node.in_subtree_of_page_scale_layer =
@@ -988,8 +984,9 @@ int PropertyTreeManager::SynthesizeCcEffectsForClipsIfNeeded(
     // Exit all synthetic effect node if the next child has backdrop effect
     // (exotic blending mode or backdrop filter) because it has to access the
     // backdrop of enclosing effect.
-    while (IsCurrentCcEffectSynthetic())
+    while (IsCurrentCcEffectSynthetic()) {
       CloseCcEffect();
+    }
 
     // An effect node can't omit render surface if it has child with backdrop
     // effect, in order to define the scope of the backdrop.
@@ -1050,6 +1047,9 @@ int PropertyTreeManager::SynthesizeCcEffectsForClipsIfNeeded(
     cc::EffectNode& synthetic_effect = *effect_tree_.Node(
         effect_tree_.Insert(cc::EffectNode(), current_.effect_id));
 
+    const auto& clip_transform =
+        pending_clip.clip->LocalTransformSpace().Unalias();
+
     const auto& transform =
         should_realize_backdrop_effect
             ? next_effect->LocalTransformSpace().Unalias()
@@ -1095,9 +1095,12 @@ int PropertyTreeManager::SynthesizeCcEffectsForClipsIfNeeded(
       // For non-trivial clip, isolation_effect.element_id will be assigned
       // later when the effect is closed. For now the default value ElementId()
       // is used. See PropertyTreeManager::EmitClipMaskLayer().
-      if (std::optional<gfx::RRectF> rrect = ShaderBasedRRect(
-              *pending_clip.clip, pending_clip.type, transform, next_effect)) {
+      if (std::optional<gfx::RRectF> rrect =
+              ShaderBasedRRect(*pending_clip.clip, pending_clip.type,
+                               clip_transform, next_effect)) {
         synthetic_effect.mask_filter_info = gfx::MaskFilterInfo(*rrect);
+        synthetic_effect.mask_filter_info.set_clip_id(
+            EnsureCompositorClipNode(*pending_clip.clip));
         synthetic_effect.is_fast_rounded_corner = true;
 
         // Nested rounded corner clips need to force render surfaces for
@@ -1306,7 +1309,8 @@ void PropertyTreeManager::PopulateCcEffectNode(
   effect_node.opacity = effect.Opacity();
   const auto& transform = effect.LocalTransformSpace().Unalias();
   effect_node.transform_id = EnsureCompositorTransformNode(transform);
-  effect_node.has_2d_scale_transform = effect.Has2DScaleTransform();
+  effect_node.needs_effect_for_2d_scale_transform =
+      effect.NeedsEffectFor2DScaleTransform();
   if (effect.MayHaveBackdropEffect()) {
     effect_node.may_have_backdrop_effect = true;
     // We never have backdrop effect and filter on the same effect node.
@@ -1321,7 +1325,8 @@ void PropertyTreeManager::PopulateCcEffectNode(
     effect_node.filters = filter->AsCcFilterOperations();
   }
   effect_node.double_sided = !transform.IsBackfaceHidden();
-  effect_node.effect_changed = effect.NodeChangeAffectsRaster();
+  effect_node.effect_changed =
+      effect.NodeChanged() != PaintPropertyChangeType::kUnchanged;
 
   effect_node.view_transition_element_resource_id =
       effect.ViewTransitionElementResourceId();
@@ -1339,7 +1344,6 @@ void PropertyTreeManager::UpdateConditionalRenderSurfaceReasons(
   Vector<int> effect_layer_counts(tree_size);
   Vector<bool> has_text(tree_size);
   Vector<bool> has_child_surface(tree_size);
-  Vector<bool> has_backdrop_effect_descendant(tree_size);
   // Initialize the vector to count directly controlled layers.
   for (const auto& layer : layers) {
     if (layer->draws_content()) {
@@ -1357,23 +1361,24 @@ void PropertyTreeManager::UpdateConditionalRenderSurfaceReasons(
 
     if (RuntimeEnabledFeatures::RenderSurfaceFor2DScaleTransformEnabled() &&
         effect->render_surface_reason == cc::RenderSurfaceReason::kNone &&
-        !has_backdrop_effect_descendant[id] &&
-        !effect->may_have_backdrop_effect && effect->has_2d_scale_transform &&
+        effect->needs_effect_for_2d_scale_transform &&
         effect_layer_counts[id] >= 2 && !has_text[id]) {
       effect->render_surface_reason =
           cc::RenderSurfaceReason::k2DScaleTransformWithCompositedDescendants;
     }
 
+    // The conditional render surface can be omitted because it controls less
+    // than two layers or render surfaces.
     if (effect_layer_counts[id] < 2 &&
-        IsConditionalRenderSurfaceReason(effect->render_surface_reason) &&
-        // kBlendModeDstIn should create a render surface if the mask itself
-        // has any child render surface.
-        !(effect->render_surface_reason ==
-              cc::RenderSurfaceReason::kBlendModeDstIn &&
-          has_child_surface[id])) {
-      // The conditional render surface can be omitted because it controls less
-      // than two layers or render surfaces.
-      effect->render_surface_reason = cc::RenderSurfaceReason::kNone;
+        IsConditionalRenderSurfaceReason(effect->render_surface_reason)) {
+      // However, kBlendModeDstIn should create a render surface if the mask
+      // itself has any child render surface or we have fast rounded corner and
+      // a mask on the same effect node.
+      if (effect->render_surface_reason !=
+              cc::RenderSurfaceReason::kBlendModeDstIn ||
+          !(has_child_surface[id] || effect->is_fast_rounded_corner)) {
+        effect->render_surface_reason = cc::RenderSurfaceReason::kNone;
+      }
     }
 
     // We should not have visited the parent.
@@ -1386,13 +1391,9 @@ void PropertyTreeManager::UpdateConditionalRenderSurfaceReasons(
       // Otherwise all layers count as controlled layers of the parent.
       effect_layer_counts[effect->parent_id] += effect_layer_counts[id];
       has_child_surface[effect->parent_id] |= has_child_surface[id];
-      has_text[effect->parent_id] |= has_text[id];
     }
 
-    if (effect->may_have_backdrop_effect ||
-        has_backdrop_effect_descendant[id]) {
-      has_backdrop_effect_descendant[effect->parent_id] = true;
-    }
+    has_text[effect->parent_id] |= has_text[id];
 
 #if DCHECK_IS_ON()
     // Mark we have visited this effect.

@@ -37,17 +37,24 @@
 #endif  // CENTIPEDE_DISABLE_RIEGELI
 
 #if defined(__APPLE__)
-#if (defined(__MAC_OS_X_VERSION_MIN_REQUIRED) &&       \
-     __MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_10_15) || \
-    (defined(__IPHONE_OS_VERSION_MIN_REQUIRED) &&      \
-     __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_13_0)
-// std::filesystem requires macOS 10.15+ or iOS 13+.
+#include <TargetConditionals.h>
+
+#if (defined(TARGET_OS_OSX) && TARGET_OS_OSX &&           \
+     defined(__MAC_OS_X_VERSION_MIN_REQUIRED) &&          \
+     __MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_10_15) ||    \
+    (defined(TARGET_OS_IOS) && TARGET_OS_IOS &&           \
+     defined(__IPHONE_OS_VERSION_MIN_REQUIRED) &&         \
+     __IPHONE_OS_VERSION_MIN_REQUIRED < __IPHONE_13_0) || \
+    (defined(TARGET_OS_TV) && TARGET_OS_TV &&             \
+     defined(__TV_OS_VERSION_MIN_REQUIRED) &&             \
+     __TV_OS_VERSION_MIN_REQUIRED < __TVOS_13_0)
+// std::filesystem requires macOS 10.15+ or iOS 13+ or tvOS 13+.
 // Use this macro to stub out code that depends on std::filesystem.
 #define FUZZTEST_STUB_STD_FILESYSTEM
 #endif
 #endif
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // An opaque file handle.
 struct RemoteFile {};
@@ -58,35 +65,33 @@ absl::StatusOr<RemoteFile *> RemoteFileOpen(std::string_view file_path,
                                             const char *mode);
 
 // Closes the file previously opened by RemoteFileOpen.
-absl::Status RemoteFileClose(absl::Nonnull<RemoteFile *> f);
+absl::Status RemoteFileClose(RemoteFile *absl_nonnull f);
 
 // Adjusts the buffered I/O capacity for a file opened for writing. By default,
 // the internal buffer of size `BUFSIZ` is used. May only be used after opening
 // a file, but before performing any other operations on it. Violating this
 // requirement in general can cause undefined behavior.
-absl::Status RemoteFileSetWriteBufferSize(absl::Nonnull<RemoteFile *> f,
+absl::Status RemoteFileSetWriteBufferSize(RemoteFile *absl_nonnull f,
                                           size_t size);
 
 // Appends bytes from 'ba' to 'f'.
-absl::Status RemoteFileAppend(absl::Nonnull<RemoteFile *> f,
-                              const ByteArray &ba);
+absl::Status RemoteFileAppend(RemoteFile *absl_nonnull f, const ByteArray &ba);
 
 // Appends characters from 'contents' to 'f'.
-absl::Status RemoteFileAppend(absl::Nonnull<RemoteFile *> f,
+absl::Status RemoteFileAppend(RemoteFile *absl_nonnull f,
                               const std::string &contents);
 
 // Flushes the file's internal buffer. Some dynamic results of a running
 // pipeline are consumed by itself (e.g. shard cross-pollination) and can be
 // consumed by external processes (e.g. monitoring): for such files, call this
 // API after every write to ensure that they are in a valid state.
-absl::Status RemoteFileFlush(absl::Nonnull<RemoteFile *> f);
+absl::Status RemoteFileFlush(RemoteFile *absl_nonnull f);
 
 // Reads all current contents of 'f' into 'ba'.
-absl::Status RemoteFileRead(absl::Nonnull<RemoteFile *> f, ByteArray &ba);
+absl::Status RemoteFileRead(RemoteFile *absl_nonnull f, ByteArray &ba);
 
 // Reads all current contents of 'f' into 'contents'.
-absl::Status RemoteFileRead(absl::Nonnull<RemoteFile *> f,
-                            std::string &contents);
+absl::Status RemoteFileRead(RemoteFile *absl_nonnull f, std::string &contents);
 
 // Creates a (potentially remote) directory 'dir_path', as well as any missing
 // parent directories. No-op if the directory already exists.
@@ -139,6 +144,9 @@ absl::StatusOr<std::vector<std::string>> RemoteListFiles(std::string_view path,
 // Renames a file from `from` to `to`.
 absl::Status RemoteFileRename(std::string_view from, std::string_view to);
 
+// Copies a file from `from` to `to`.
+absl::Status RemoteFileCopy(std::string_view from, std::string_view to);
+
 // Updates the last-modified time of `path` to the current time.
 absl::Status RemotePathTouchExistingFile(std::string_view path);
 
@@ -158,6 +166,6 @@ absl::StatusOr<std::unique_ptr<riegeli::Writer>> CreateRiegeliFileWriter(
     std::string_view file_path, bool append);
 #endif  // CENTIPEDE_DISABLE_RIEGELI
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // FUZZTEST_COMMON_REMOTE_FILE_H_

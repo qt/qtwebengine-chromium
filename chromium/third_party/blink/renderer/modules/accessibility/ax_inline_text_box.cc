@@ -47,6 +47,7 @@
 #include "third_party/blink/renderer/core/layout/inline/offset_mapping.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_block_flow_iterator.h"
+#include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_position.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_range.h"
@@ -140,7 +141,7 @@ void AXInlineTextBox::TextCharacterOffsets(Vector<int>& offsets) const {
 void AXInlineTextBox::GetWordBoundaries(Vector<int>& word_starts,
                                         Vector<int>& word_ends) const {
   ax::mojom::blink::NameFrom name_not_used;
-  if (GetName(name_not_used, /*name_objects=*/nullptr)
+  if (GetName(name_not_used, /*name_objects=*/nullptr, /*name_sources=*/nullptr)
           .ContainsOnlyWhitespaceOrEmpty()) {
     return;
   }
@@ -209,7 +210,8 @@ int AXInlineTextBox::TextOffsetInContainer(int offset) const {
 }
 
 String AXInlineTextBox::GetName(ax::mojom::blink::NameFrom& name_from,
-                                AXObject::AXObjectVector* name_objects) const {
+                                AXObject::AXObjectVector* name_objects,
+                                NameSources* name_sources) const {
   if (IsDetached())
     return String();
 
@@ -287,7 +289,35 @@ AXObject* AXInlineTextBox::PreviousOnLine() const {
     return nullptr;
 
   if (IsPartOfAListItem()) {
-    return ParentObject()->PreviousOnLine();
+    AXObject* candidate = ParentObject()->PreviousOnLine();
+    if (candidate) {
+      return candidate;
+    }
+    // It may be that the previous item has ignored content we must step over.
+    // Ignored content isn't guarenteed to have its line attributes serialized,
+    // so we must step over them.
+    // TODO: Investigate whether this should be applied more broadly.
+    candidate = ParentObject()->PreviousSiblingIncludingIgnored();
+    // Shadow content does not bubble its line breaking status to the host.
+    // TODO: Investigate if this should be refactored into IsLineBreakingObject.
+    // This could be considered breaking if this is in the same tree, so
+    // any future refactoring of IsLineBreakingObject would need this additional
+    // context to work as expected.
+    if (candidate && candidate->IsLineBreakingObject() &&
+        (candidate->GetClosestNode()->GetTreeScope() ==
+         GetClosestNode()->GetTreeScope())) {
+      return nullptr;
+    }
+    while (candidate && candidate->IsIgnored()) {
+      if (candidate->IsLineBreakingObject() &&
+          (candidate->GetClosestNode()->GetTreeScope() ==
+           GetClosestNode()->GetTreeScope())) {
+        // If the candidate is a line breaking object, we need to return.
+        return nullptr;
+      }
+      candidate = candidate->PreviousSiblingIncludingIgnored();
+    }
+    return candidate;
   }
 
   if (GetInlineTextBox()) {
@@ -398,10 +428,12 @@ void AXInlineTextBox::SerializeMarkerAttributes(
     // offsets.
     const auto start_position = AXPosition::FromPosition(
         Position(*ParentObject()->GetNode(), marker->StartOffset()),
-        TextAffinity::kDownstream, AXPositionAdjustmentBehavior::kMoveLeft);
+        AXObjectCache(), TextAffinity::kDownstream,
+        AXPositionAdjustmentBehavior::kMoveLeft);
     const auto end_position = AXPosition::FromPosition(
         Position(*ParentObject()->GetNode(), marker->EndOffset()),
-        TextAffinity::kDownstream, AXPositionAdjustmentBehavior::kMoveRight);
+        AXObjectCache(), TextAffinity::kDownstream,
+        AXPositionAdjustmentBehavior::kMoveRight);
     if (!start_position.IsValid() || !end_position.IsValid())
       continue;
 
@@ -455,10 +487,6 @@ void AXInlineTextBox::Init(AXObject* parent) {
   // necessary to again recompute this part of the tree.
   parent_ = parent;
   UpdateCachedAttributeValuesIfNeeded(false);
-
-#if DCHECK_IS_ON()
-  is_initialized_ = true;
-#endif
 }
 
 void AXInlineTextBox::Detach() {
@@ -517,7 +545,7 @@ bool AXInlineTextBox::IsPartOfAListItem() const {
   // An AXInlineTextBox that is part of a list item needs special handling, as
   // the list marker content is rendered in a separate box than the list item
   // content, but accessibility still wants to connect the two in the same line.
-  if (ParentObject()->ParentObject()->RoleValue() ==
+  if (ParentObjectIncludedInTree()->ParentObjectIncludedInTree()->RoleValue() ==
       ax::mojom::blink::Role::kListItem) {
     return true;
   }
@@ -622,11 +650,6 @@ AXObject* AXInlineTextBox::NeighboringOnLineWithAXBlockFlowIterator(
              ? nullptr
          : direction == Direction::kNext ? ParentObject()->NextOnLine()
                                          : ParentObject()->PreviousOnLine();
-}
-
-bool AXInlineTextBox::ComputeIsOffScreen() const {
-  CHECK(parent_);
-  return parent_->ComputeIsOffScreen();
 }
 
 }  // namespace blink

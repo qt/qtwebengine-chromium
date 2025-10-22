@@ -168,51 +168,51 @@ export class MenuItem extends LitElement implements MenuItemType {
    * md-menu-item.
    * @export
    */
-  headline: string;
+  declare headline: string;
   /**
    * Item to be placed in the start slot if any. 'icon' exposes the start slot.
    * @export
    */
-  itemStart: 'icon'|'';
+  declare itemStart: 'icon'|'';
   /**
    * Item to be placed in the end slot if any. Shortcut allows a text label (set
    * via `shortcutText`), switch uses cros-switch and 'icon' exposes the end
    * slot.
    * @export
    */
-  itemEnd: 'shortcut'|'icon'|'switch'|'';
+  declare itemEnd: 'shortcut'|'icon'|'switch'|'';
 
   /**
    * If true, keeps the menu open when clicked. (used by submenu)
    *
    * @export
    */
-  keepOpen: boolean;
+  declare keepOpen: boolean;
   // The following properties are necessary for wrapping and keyboard
   // navigation
   /**
    * Whether or not the menu-item is disabled.
    * @export
    */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  readonly isMenuItem: boolean;
+  declare readonly isMenuItem: boolean;
   /**
    * If true, this will result in a checkmark icon used in the end slot. This
    * overrides any other components in end slot if otherwise specified.
    * @export
    */
-  checked: boolean;
+  declare checked: boolean;
   /**
    * The text that will appear in the end slot if menu-item is of `shortcut`
    * type. Defaults to 'Shortcut' if text is not given.
    * @export
    */
-  shortcutText: string;
+  declare shortcutText: string;
   /**
    * Sets the behavior and role of the menu item, defaults to "menuitem".
    */
-  type: 'menuitem'|'option'|'button'|'link';
+  declare type: 'menuitem'|'option'|'button'|'link';
 
   /**
    * For properties menu-item proxies to a child element via a setter, any

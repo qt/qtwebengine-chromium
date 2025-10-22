@@ -9,7 +9,6 @@
 #include <utility>
 #include <variant>
 
-#include "base/functional/overloaded.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/rand_util.h"
@@ -17,6 +16,7 @@
 #include "components/viz/common/quads/frame_interval_inputs.h"
 #include "components/viz/service/surfaces/surface.h"
 #include "components/viz/service/surfaces/surface_manager.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 namespace viz {
 
@@ -47,7 +47,7 @@ FrameIntervalDecider::~FrameIntervalDecider() = default;
 void FrameIntervalDecider::UpdateSettings(
     Settings settings,
     std::vector<std::unique_ptr<FrameIntervalMatcher>> matchers) {
-  std::visit(base::Overloaded(
+  std::visit(absl::Overload(
                  [](const std::monostate& monostate) {},
                  [](const FixedIntervalSettings& fixed_interval_settings) {
                    CHECK(!fixed_interval_settings.supported_intervals.empty());
@@ -62,17 +62,17 @@ void FrameIntervalDecider::UpdateSettings(
   matchers_ = std::move(matchers);
 }
 
-std::unique_ptr<FrameIntervalDecider::ScopedAggregate>
-FrameIntervalDecider::WrapAggregate(SurfaceManager& surface_manager,
-                                    base::TimeTicks frame_time) {
-  return base::WrapUnique(new FrameIntervalDecider::ScopedAggregate(
-      *this, surface_manager, frame_time));
+FrameIntervalDecider::ScopedAggregate FrameIntervalDecider::WrapAggregate(
+    SurfaceManager& surface_manager,
+    base::TimeTicks frame_time) {
+  return FrameIntervalDecider::ScopedAggregate(*this, surface_manager,
+                                               frame_time);
 }
 
 void FrameIntervalDecider::Decide(
     base::TimeTicks frame_time,
     base::flat_map<FrameSinkId, FrameIntervalInputs> inputs_map) {
-  FrameIntervalMatcher::Inputs matcher_inputs(settings_);
+  FrameIntervalMatcher::Inputs matcher_inputs(settings_, frame_id_++);
   matcher_inputs.aggregated_frame_time = frame_time;
   matcher_inputs.inputs_map = std::move(inputs_map);
 
@@ -94,10 +94,10 @@ void FrameIntervalDecider::Decide(
     base::UmaHistogramEnumeration("Viz.FrameIntervalDecider.ResultMatcherType",
                                   matcher_type);
     if (match_result &&
-        std::holds_alternative<base::TimeDelta>(match_result.value())) {
+        std::holds_alternative<ResultInterval>(match_result.value())) {
       base::UmaHistogramCustomTimes(
           "Viz.FrameIntervalDecider.ResultTimeDelta",
-          std::get<base::TimeDelta>(match_result.value()),
+          std::get<ResultInterval>(match_result.value()).interval,
           base::Milliseconds(0), base::Milliseconds(500), 50);
     }
   }
@@ -105,16 +105,16 @@ void FrameIntervalDecider::Decide(
   // If nothing matched, use the default.
   if (!match_result) {
     match_result = std::visit(
-        base::Overloaded(
+        absl::Overload(
             [](const std::monostate& monostate) -> Result {
               return FrameIntervalClass::kDefault;
             },
             [](const FixedIntervalSettings& fixed_interval_settings) -> Result {
-              return fixed_interval_settings.default_interval;
+              return ResultInterval{fixed_interval_settings.default_interval};
             },
             [](const ContinuousRangeSettings& continuous_range_settings)
                 -> Result {
-              return continuous_range_settings.default_interval;
+              return ResultInterval{continuous_range_settings.default_interval};
             }),
         settings_.interval_settings);
   }
@@ -127,11 +127,12 @@ void FrameIntervalDecider::Decide(
 
   // Same as above but using epsilon comparison for frame interval.
   if (current_result_ && match_result &&
-      std::holds_alternative<base::TimeDelta>(current_result_.value()) &&
-      std::holds_alternative<base::TimeDelta>(match_result.value()) &&
+      std::holds_alternative<ResultInterval>(current_result_.value()) &&
+      std::holds_alternative<ResultInterval>(match_result.value()) &&
       FrameIntervalMatcher::AreAlmostEqual(
-          std::get<base::TimeDelta>(current_result_.value()),
-          std::get<base::TimeDelta>(match_result.value()), settings_.epsilon)) {
+          std::get<ResultInterval>(current_result_.value()).interval,
+          std::get<ResultInterval>(match_result.value()).interval,
+          settings_.epsilon)) {
     current_result_frame_time_ = frame_time;
     return;
   }
@@ -163,7 +164,7 @@ bool FrameIntervalDecider::MayDecreaseFrameInterval(
     return true;
   }
   return std::visit(
-      base::Overloaded(
+      absl::Overload(
           [&](FrameIntervalClass from_frame_interval_class) {
             if (!std::holds_alternative<FrameIntervalClass>(to.value())) {
               return true;
@@ -173,12 +174,12 @@ bool FrameIntervalDecider::MayDecreaseFrameInterval(
             return static_cast<int>(from_frame_interval_class) >
                    static_cast<int>(to_frame_interval_class);
           },
-          [&](base::TimeDelta from_interval) {
-            if (!std::holds_alternative<base::TimeDelta>(to.value())) {
+          [&](ResultInterval from_interval) {
+            if (!std::holds_alternative<ResultInterval>(to.value())) {
               return true;
             }
-            base::TimeDelta to_interval = std::get<base::TimeDelta>(to.value());
-            return from_interval > to_interval;
+            ResultInterval to_interval = std::get<ResultInterval>(to.value());
+            return from_interval.interval > to_interval.interval;
           }),
       from.value());
 }

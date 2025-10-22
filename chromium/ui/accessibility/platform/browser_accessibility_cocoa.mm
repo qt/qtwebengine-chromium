@@ -4,6 +4,7 @@
 
 #import "ui/accessibility/platform/browser_accessibility_cocoa.h"
 
+#include <Availability.h>
 #include <execinfo.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -18,6 +19,7 @@
 
 #include "base/apple/foundation_util.h"
 #include "base/apple/scoped_cftyperef.h"
+#include "base/auto_reset.h"
 #include "base/compiler_specific.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
@@ -73,8 +75,15 @@ NSString* const
     NSAccessibilityUIElementCountForSearchPredicateParameterizedAttribute =
         @"AXUIElementCountForSearchPredicate";
 NSString* const
-    NSAccessibilityUIElementsForSearchPredicateParameterizedAttribute =
+    CrNSAccessibilityUIElementsForSearchPredicateParameterizedAttribute =
+#if !defined(__MAC_26_0) || __MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_26_0
         @"AXUIElementsForSearchPredicate";
+#else
+        // This is public as of the macOS 26 SDK. When macOS 26 is the minimum,
+        // eliminate the compatibility Cr* name and transition use sites
+        // directly to the NS* name.
+    NSAccessibilityUIElementsForSearchPredicateParameterizedAttribute;
+#endif
 
 // Private attributes for text markers.
 NSString* const NSAccessibilityStartTextMarkerAttribute = @"AXStartTextMarker";
@@ -200,7 +209,15 @@ NSString* const NSAccessibilityValueAutofillAvailableAttribute =
 // const NSAccessibilityValueAutofillTypeAttribute = @"AXValueAutofillType";
 
 // Actions.
-NSString* const NSAccessibilityScrollToVisibleAction = @"AXScrollToVisible";
+NSString* const CrNSAccessibilityScrollToVisibleAction =
+#if !defined(__MAC_26_0) || __MAC_OS_X_VERSION_MIN_REQUIRED < __MAC_26_0
+    @"AXScrollToVisible";
+#else
+    // This is public as of the macOS 26 SDK. When macOS 26 is the minimum,
+    // eliminate the compatibility Cr* name and transition use sites directly to
+    // the NS* name.
+    NSAccessibilityScrollToVisibleAction;
+#endif
 
 // A mapping from an accessibility attribute to its method name.
 NSDictionary* gAttributeToMethodNameMap = nil;
@@ -509,8 +526,6 @@ bool ui::IsNSRange(id value) {
   raw_ptr<ui::BrowserAccessibility, DanglingUntriaged> _owner;
   // An array of children of this object. Cached to avoid re-computing.
   NSMutableArray* __strong _children;
-  // Whether the children have changed and need to be updated.
-  bool _needsToUpdateChildren;
   // Whether _children is currently being computed.
   bool _gettingChildren;
   // Stores the previous value of an edit field.
@@ -580,7 +595,6 @@ bool ui::IsNSRange(id value) {
               withPlatformNode:(ui::AXPlatformNodeMac*)platform_node {
   if ((self = [super initWithNode:platform_node])) {
     _owner = accessibility;
-    _needsToUpdateChildren = true;
     _gettingChildren = false;
   }
   return self;
@@ -602,52 +616,117 @@ bool ui::IsNSRange(id value) {
       "childrenChanged");
   base::UmaHistogramBoolean("Accessibility.Performance."
                             "BrowserAccessibilityCocoa::needsToUpdateChildren",
-                            _needsToUpdateChildren);
+                            !!_children);
 
   if (![self instanceActive])
     return nil;
-  if (_needsToUpdateChildren) {
+
+  // Check to see if any of the Cocoa wrappers refer to an invalid backing
+  // AXPlatformNode. If so, then we need to re-create the _children Cocoa
+  // wrappers.
+  BrowserAccessibility* browserAccessibility =
+      static_cast<BrowserAccessibility*>([self nodeDelegate]);
+  const std::vector<int32_t>& indirectChildIds = _owner->GetIntListAttribute(
+      ax::mojom::IntListAttribute::kIndirectChildIds);
+
+  if (_children) {
+    size_t child_count = [_children count];
+    if ((browserAccessibility->PlatformChildCount() +
+         indirectChildIds.size()) != child_count) {
+      // Number of children have changed.
+      // TODO(crbug.com/425758499): investigate why this occurs; once ready,
+      // CHECK above condition along with experiment.
+      _children = nil;
+      child_count = 0;
+    }
+
+    for (size_t child_index = 0; child_index < child_count; child_index++) {
+      BrowserAccessibilityCocoa* child = _children[child_index];
+      BrowserAccessibility* browserAccessibilityChild =
+          static_cast<BrowserAccessibility*>([child nodeDelegate]);
+      if (![child instanceActive] || !browserAccessibilityChild ||
+          browserAccessibilityChild->PlatformGetParent() !=
+              [self nodeDelegate]) {
+        // Child unexpectedly refers to a deleted browser accessibility or a
+        // reparented node.
+        // TODO(crbug.com/425758499): investigate why this occurs; once ready,
+        // CHECK above condition along with experiment.
+        _children = nil;
+        break;
+      }
+    }
+  }
+
+  if (!_children) {
     base::AutoReset<bool> set_getting_children(&_gettingChildren, true);
-    // PlatformChildCount may add extra mac nodes if the node requires them.
+    // PlatformChildCount adds extra mac nodes if the node requires them.
     uint32_t childCount = _owner->PlatformChildCount();
     _children = [[NSMutableArray alloc] initWithCapacity:childCount];
     for (auto it = _owner->PlatformChildrenBegin();
          it != _owner->PlatformChildrenEnd(); ++it) {
-      AXPlatformNodeCocoa* child = it->GetNativeViewAccessible();
-      if ([child isIncludedInPlatformTree])
-        [_children addObject:child];
-      else
-        [_children addObjectsFromArray:[child accessibilityChildren]];
+      AXPlatformNodeCocoa* cocoa_child =
+          base::apple::ObjCCastStrict<AXPlatformNodeCocoa>(
+              it->GetNativeViewAccessible().Get());
+      if (![cocoa_child instanceActive]) {
+        // TODO(crbug.com/425758499): change to CHECK once root cause addressed.
+        DCHECK(false) << "Tried to add destroyed child, parent = "
+                      << _owner->ToString();
+        continue;
+      }
+      if (![cocoa_child nodeDelegate]) {
+        // TODO(crbug.com/425758499): change to CHECK once root cause addressed.
+        DCHECK(false) << "No delegate for child, parent = "
+                      << _owner->ToString();
+        continue;
+      }
+      [_children addObject:cocoa_child];
     }
 
     // Also, add indirect children (if any).
-    const std::vector<int32_t>& indirectChildIds = _owner->GetIntListAttribute(
-        ax::mojom::IntListAttribute::kIndirectChildIds);
-    for (uint32_t i = 0; i < indirectChildIds.size(); ++i) {
-      int32_t child_id = indirectChildIds[i];
-      BrowserAccessibility* child = _owner->manager()->GetFromID(child_id);
-
-      // This only became necessary as a result of crbug.com/93095. It should be
-      // a DCHECK in the future.
-      if (child)
-        [_children addObject:child->GetNativeViewAccessible()];
+    for (ui::AXNodeID childId : indirectChildIds) {
+      BrowserAccessibility* child = _owner->manager()->GetFromID(childId);
+      if (!child) {
+        // This only became necessary as a result of https://crbug.com/41440696.
+        // It should be a DCHECK in the future.
+        DCHECK(false) << "Tried to add null indirect child, parent = "
+                      << _owner->ToString();
+        continue;
+      }
+      AXPlatformNodeCocoa* cocoa_child =
+          base::apple::ObjCCastStrict<AXPlatformNodeCocoa>(
+              child->GetNativeViewAccessible().Get());
+      if (![cocoa_child instanceActive]) {
+        // TODO(crbug.com/425758499): change to CHECK once root cause addressed.
+        DCHECK(false) << "Tried to add destroyed indirect child, parent = "
+                      << _owner->ToString();
+        continue;
+      }
+      if (![cocoa_child nodeDelegate]) {
+        // TODO(crbug.com/425758499): change to CHECK once root cause addressed.
+        DCHECK(false) << "No delegate for indirect child, parent = "
+                      << _owner->ToString();
+        continue;
+      }
+      [_children addObject:cocoa_child];
     }
-    _needsToUpdateChildren = false;
   }
-  return _children;
+  return NSAccessibilityUnignoredChildren(_children);
 }
 
 - (void)childrenChanged {
   // This function may be called in the middle of -accessibilityChildren if
   // this node adds extra mac nodes while its children are being requested. If
   // _gettingChildren is true, we don't need to do anything here.
-  if (![self instanceActive] || _gettingChildren)
+  if (![self instanceActive] || _gettingChildren) {
     return;
-  _needsToUpdateChildren = true;
-  if (![self isIncludedInPlatformTree]) {
-    BrowserAccessibility* parent = _owner->PlatformGetParent();
-    if (parent)
-      [parent->GetNativeViewAccessible() childrenChanged];
+  }
+  _children = nil;
+  BrowserAccessibility* parent = _owner->PlatformGetParent();
+  if (parent) {
+    BrowserAccessibilityCocoa* parentCocoa =
+        base::apple::ObjCCastStrict<BrowserAccessibilityCocoa>(
+            parent->GetNativeViewAccessible().Get());
+    [parentCocoa childrenChanged];
   }
 }
 
@@ -746,7 +825,7 @@ bool ui::IsNSRange(id value) {
     if (childCount > 0) {
       BrowserAccessibility* tableHeader = _owner->PlatformGetLastChild();
       if (tableHeader->GetRole() == ax::mojom::Role::kTableHeaderContainer)
-        return tableHeader->GetNativeViewAccessible();
+        return tableHeader->GetNativeViewAccessible().Get();
     }
   } else if ([self internalRole] == ax::mojom::Role::kColumn) {
     _owner->GetIntAttribute(ax::mojom::IntAttribute::kTableColumnHeaderId,
@@ -760,7 +839,7 @@ bool ui::IsNSRange(id value) {
     BrowserAccessibility* headerObject =
         _owner->manager()->GetFromID(headerElementId);
     if (headerObject)
-      return headerObject->GetNativeViewAccessible();
+      return headerObject->GetNativeViewAccessible().Get();
   }
   return nil;
 }
@@ -805,7 +884,8 @@ bool ui::IsNSRange(id value) {
     return nil;
 
   const BrowserAccessibilityCocoa* cocoaContainer =
-      container->GetNativeViewAccessible();
+      base::apple::ObjCCastStrict<BrowserAccessibilityCocoa>(
+          container->GetNativeViewAccessible().Get());
   int currentIndex = 0;
   if ([cocoaContainer findRowIndex:self withCurrentIndex:&currentIndex]) {
     return @(currentIndex);
@@ -945,7 +1025,7 @@ bool ui::IsNSRange(id value) {
     BrowserAccessibility* target =
         _owner->manager()->GetFromID(static_cast<int32_t>(target_id));
     if (target) {
-      [elements addObject:target->GetNativeViewAccessible()];
+      [elements addObject:target->GetNativeViewAccessible().Get()];
     }
   }
 
@@ -1022,7 +1102,7 @@ bool ui::IsNSRange(id value) {
   }
   if (_owner->PlatformGetParent()) {
     id unignored_parent = NSAccessibilityUnignoredAncestor(
-        _owner->PlatformGetParent()->GetNativeViewAccessible());
+        _owner->PlatformGetParent()->GetNativeViewAccessible().Get());
     DCHECK(unignored_parent);
     return unignored_parent;
   }
@@ -1157,9 +1237,6 @@ bool ui::IsNSRange(id value) {
   } else if (ui::IsImage(_owner->GetRole()) && _owner->GetChildCount()) {
     // An image map is an image with children, and exposed on Mac as a group.
     cocoa_role = NSAccessibilityGroupRole;
-  } else if (ui::IsImage(_owner->GetRole()) &&
-             _owner->HasExplicitlyEmptyName()) {
-    cocoa_role = NSAccessibilityUnknownRole;
   } else if (_owner->IsRootWebAreaForPresentationalIframe()) {
     cocoa_role = NSAccessibilityGroupRole;
   } else if (role == ax::mojom::Role::kListBoxOption && _owner->IsWebContent()) {
@@ -1169,13 +1246,64 @@ bool ui::IsNSRange(id value) {
     // children. For now, only do this for web content, and not UI, where
     // there are not interesting descendants of list box options.
     cocoa_role = NSAccessibilityMenuItemRole;
+  } else if (role == ax::mojom::Role::kMenu && ![self hasMenuItemDescendant]) {
+    // A menu without menu item descendants should be exposed as a group rather
+    // than a menu to avoid confusing assistive technologies. This ensures
+    // VoiceControl can properly display number labels when the container
+    // doesn't actually contain menu items.
+    cocoa_role = NSAccessibilityGroupRole;
   } else {
     cocoa_role = [AXPlatformNodeCocoa nativeRoleFromAXRole:role];
   }
 
   TRACE_EVENT1("accessibility", "BrowserAccessibilityCocoa::role",
                "role=", base::SysNSStringToUTF8(cocoa_role));
+  DCHECK(cocoa_role != NSAccessibilityUnknownRole);
   return cocoa_role;
+}
+
+// internal, matches WebKit's implementation of
+// updateRoleAfterChildrenCreation(see
+// https://github.com/WebKit/WebKit/blob/main/Source/WebCore/accessibility/AccessibilityRenderObject.cpp#L2655).
+- (BOOL)hasMenuItemDescendant {
+  if (![self instanceActive]) {
+    return NO;
+  }
+
+  // Check direct children for menu items.
+  for (id child in [self accessibilityChildren]) {
+    if (![child isKindOfClass:[BrowserAccessibilityCocoa class]]) {
+      continue;
+    }
+
+    BrowserAccessibilityCocoa* childCocoa = (BrowserAccessibilityCocoa*)child;
+    ax::mojom::Role childRole = [childCocoa internalRole];
+    // Check if child is a menu item.
+    if (ui::IsMenuItem(childRole)) {
+      return YES;
+    }
+
+    // Per the ARIA spec, groups with menuitem children are allowed as
+    // children of menus. https://w3c.github.io/aria/#menu.
+    if (childRole != ax::mojom::Role::kGroup) {
+      continue;
+    }
+
+    // Check grandchildren in groups for menu items.
+    for (id grandchild in [childCocoa accessibilityChildren]) {
+      if (![grandchild isKindOfClass:[BrowserAccessibilityCocoa class]]) {
+        continue;
+      }
+
+      BrowserAccessibilityCocoa* grandchildCocoa =
+          (BrowserAccessibilityCocoa*)grandchild;
+      if (ui::IsMenuItem([grandchildCocoa internalRole])) {
+        return YES;
+      }
+    }
+  }
+
+  return NO;
 }
 
 // LINT.IfChange(accessibilityRowHeaderUIElements)
@@ -1220,7 +1348,7 @@ bool ui::IsNSRange(id value) {
     for (int32_t headerId : headerIds) {
       BrowserAccessibility* cell = _owner->manager()->GetFromID(headerId);
       if (cell) {
-        [rowHeaders addObject:cell->GetNativeViewAccessible()];
+        [rowHeaders addObject:cell->GetNativeViewAccessible().Get()];
       }
     }
   } else {
@@ -1228,7 +1356,7 @@ bool ui::IsNSRange(id value) {
     for (int32_t nodeId : _owner->node()->GetTableCellRowHeaderNodeIds()) {
       BrowserAccessibility* cell = _owner->manager()->GetFromID(nodeId);
       if (cell) {
-        [rowHeaders addObject:cell->GetNativeViewAccessible()];
+        [rowHeaders addObject:cell->GetNativeViewAccessible().Get()];
       }
     }
   }
@@ -1265,7 +1393,7 @@ bool ui::IsNSRange(id value) {
     // selection is tethered to the focus.
     if (!GetState(_owner, ax::mojom::State::kMultiselectable) &&
         focusedChild->GetBoolAttribute(ax::mojom::BoolAttribute::kSelected)) {
-      [ret addObject:focusedChild->GetNativeViewAccessible()];
+      [ret addObject:focusedChild->GetNativeViewAccessible().Get()];
       return ret;
     }
 
@@ -1280,7 +1408,7 @@ bool ui::IsNSRange(id value) {
     // Safari always append the focused item, whether selected or not, to the
     // list of selected items.
     if (GetState(_owner, ax::mojom::State::kMultiselectable))
-      [ret addObject:focusedChild->GetNativeViewAccessible()];
+      [ret addObject:focusedChild->GetNativeViewAccessible().Get()];
   }
 
   // If this container is multi-selectable, we need to return any additional
@@ -1292,7 +1420,7 @@ bool ui::IsNSRange(id value) {
     BrowserAccessibility* child = it.get();
     if (child->GetBoolAttribute(ax::mojom::BoolAttribute::kSelected) &&
         child != focusedChild) {
-      [ret addObject:child->GetNativeViewAccessible()];
+      [ret addObject:child->GetNativeViewAccessible().Get()];
     }
   }
 
@@ -1640,7 +1768,7 @@ bool ui::IsNSRange(id value) {
   for (int32_t id : _owner->node()->GetTableUniqueCellIds()) {
     BrowserAccessibility* cell = _owner->manager()->GetFromID(id);
     if (cell)
-      [ret addObject:cell->GetNativeViewAccessible()];
+      [ret addObject:cell->GetNativeViewAccessible().Get()];
   }
   return ret;
 }
@@ -1820,8 +1948,9 @@ bool ui::IsNSRange(id value) {
       return nil;
 
     BrowserAccessibility* cell = _owner->manager()->GetFromID(cellNode->id());
-    if (cell)
-      return cell->GetNativeViewAccessible();
+    if (cell) {
+      return cell->GetNativeViewAccessible().Get();
+    }
   }
   // LINT.ThenChange(ui/accessibility/platform/ax_platform_node_cocoa.mm:accessibilityCellForColumn)
 
@@ -1832,8 +1961,9 @@ bool ui::IsNSRange(id value) {
     if (!position->IsNullPosition()) {
       BrowserAccessibility* ui_element =
           _owner->manager()->GetFromAXNode(position->GetAnchor());
-      if (ui_element)
-        return ui_element->GetNativeViewAccessible();
+      if (ui_element) {
+        return ui_element->GetNativeViewAccessible().Get();
+      }
     }
 
     return nil;
@@ -2182,14 +2312,14 @@ bool ui::IsNSRange(id value) {
 
   if ([attribute
           isEqualToString:
-              NSAccessibilityUIElementsForSearchPredicateParameterizedAttribute]) {
+              CrNSAccessibilityUIElementsForSearchPredicateParameterizedAttribute]) {
     OneShotAccessibilityTreeSearch search(_owner);
     if (InitializeAccessibilityTreeSearch(&search, parameter)) {
       size_t count = search.CountMatches();
       NSMutableArray* result = [NSMutableArray arrayWithCapacity:count];
       for (size_t i = 0; i < count; ++i) {
         BrowserAccessibility* match = search.GetMatchAtIndex(i);
-        [result addObject:match->GetNativeViewAccessible()];
+        [result addObject:match->GetNativeViewAccessible().Get()];
       }
       return result;
     }
@@ -2362,7 +2492,7 @@ bool ui::IsNSRange(id value) {
     NSAccessibilityBoundsForRangeParameterizedAttribute,
     NSAccessibilityStringForRangeParameterizedAttribute,
     NSAccessibilityUIElementCountForSearchPredicateParameterizedAttribute,
-    NSAccessibilityUIElementsForSearchPredicateParameterizedAttribute,
+    CrNSAccessibilityUIElementsForSearchPredicateParameterizedAttribute,
     NSAccessibilitySelectTextWithCriteriaParameterizedAttribute
   ] mutableCopy];
 
@@ -2410,7 +2540,7 @@ bool ui::IsNSRange(id value) {
 
   NSMutableArray* actions = [NSMutableArray
       arrayWithObjects:NSAccessibilityShowMenuAction,
-                       NSAccessibilityScrollToVisibleAction, nil];
+                       CrNSAccessibilityScrollToVisibleAction, nil];
 
   // VoiceOver expects the "press" action to be first.
   if (_owner->IsClickable())
@@ -2713,8 +2843,11 @@ bool ui::IsNSRange(id value) {
     // LINT.ThenChange(accessibilityPerformPress)
   } else if ([action isEqualToString:NSAccessibilityShowMenuAction]) {
     manager->ShowContextMenu(*actionTarget);
-  } else if ([action isEqualToString:NSAccessibilityScrollToVisibleAction]) {
-    manager->ScrollToMakeVisible(*actionTarget, gfx::Rect());
+  } else if ([action isEqualToString:CrNSAccessibilityScrollToVisibleAction]) {
+    ui::AXPlatformNodeBase* mac_obj =
+        [base::apple::ObjCCastStrict<BrowserAccessibilityCocoa>(
+            actionTarget->GetNativeViewAccessible().Get()) node];
+    mac_obj->ScrollToNode(ui::AXPlatformNodeMac::ScrollType::Anywhere);
   } else if ([action isEqualToString:NSAccessibilityIncrementAction]) {
     manager->Increment(*actionTarget);
   } else if ([action isEqualToString:NSAccessibilityDecrementAction]) {
@@ -2845,7 +2978,7 @@ bool ui::IsNSRange(id value) {
     return nil;
 
   ui::AXPlatformNodeDelegate* focus_node = _owner->manager()->GetFocus();
-  return focus_node ? focus_node->GetNativeViewAccessible() : nullptr;
+  return focus_node ? focus_node->GetNativeViewAccessible().Get() : nullptr;
 }
 
 // Returns the deepest accessibility child that should not be ignored.
@@ -2883,7 +3016,7 @@ bool ui::IsNSRange(id value) {
   if (!hit)
     return nil;
 
-  return NSAccessibilityUnignoredAncestor(hit->GetNativeViewAccessible());
+  return NSAccessibilityUnignoredAncestor(hit->GetNativeViewAccessible().Get());
 }
 
 - (BOOL)isEqual:(id)object {
@@ -2929,18 +3062,6 @@ bool ui::IsNSRange(id value) {
     return focus;
 
   return _owner;
-}
-
-- (BOOL)isAccessibilityElement {
-  if (![self instanceActive])
-    return NO;
-
-  if ([self internalRole] == ax::mojom::Role::kImage &&
-      _owner->HasExplicitlyEmptyName()) {
-    return NO;
-  }
-
-  return [super isAccessibilityElement];
 }
 
 @end

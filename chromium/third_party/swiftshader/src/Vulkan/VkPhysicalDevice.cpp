@@ -395,6 +395,13 @@ static void getPhysicalDeviceGraphicsPipelineLibraryFeatures(T *features)
 }
 
 template<typename T>
+static void getPhysicalDeviceUnifiedImageLayoutsFeatures(T *features)
+{
+	features->unifiedImageLayouts = VK_TRUE;
+	features->unifiedImageLayoutsVideo = VK_FALSE;
+}
+
+template<typename T>
 static void getPhysicalDeviceGlobalPriorityQueryFeatures(T *features)
 {
 	features->globalPriorityQuery = VK_TRUE;
@@ -481,6 +488,13 @@ static void getPhysicalDeviceBlendOperationAdvancedFeaturesEXT(VkPhysicalDeviceB
 static void getPhysicalDeviceExtendedDynamicStateFeaturesEXT(VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *features)
 {
 	features->extendedDynamicState = VK_TRUE;
+}
+
+static void getPhysicalDeviceExtendedDynamicState2FeaturesEXT(VkPhysicalDeviceExtendedDynamicState2FeaturesEXT *features)
+{
+	features->extendedDynamicState2 = VK_TRUE;
+	features->extendedDynamicState2LogicOp = VK_FALSE;
+	features->extendedDynamicState2PatchControlPoints = VK_FALSE;
 }
 
 static void getPhysicalDeviceVertexInputDynamicStateFeaturesEXT(VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *features)
@@ -618,6 +632,9 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
 			getPhysicalDeviceExtendedDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceExtendedDynamicStateFeaturesEXT *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT:
+			getPhysicalDeviceExtendedDynamicState2FeaturesEXT(reinterpret_cast<VkPhysicalDeviceExtendedDynamicState2FeaturesEXT *>(curExtension));
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
 			getPhysicalDeviceVertexInputDynamicStateFeaturesEXT(reinterpret_cast<VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT *>(curExtension));
 			break;
@@ -654,14 +671,14 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT:
 			getPhysicalDevicePrimitiveTopologyListRestartFeatures(reinterpret_cast<struct VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES_EXT:
-			getPhysicalDevicePipelineRobustnessFeatures(reinterpret_cast<struct VkPhysicalDevicePipelineRobustnessFeaturesEXT *>(curExtension));
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES:
+			getPhysicalDevicePipelineRobustnessFeatures(reinterpret_cast<struct VkPhysicalDevicePipelineRobustnessFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT:
 			getPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT(reinterpret_cast<struct VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES_KHR:
-			getPhysicalDeviceGlobalPriorityQueryFeatures(reinterpret_cast<struct VkPhysicalDeviceGlobalPriorityQueryFeaturesKHR *>(curExtension));
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES:
+			getPhysicalDeviceGlobalPriorityQueryFeatures(reinterpret_cast<struct VkPhysicalDeviceGlobalPriorityQueryFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT:
 			getPhysicalDeviceDepthClipControlFeaturesExt(reinterpret_cast<struct VkPhysicalDeviceDepthClipControlFeaturesEXT *>(curExtension));
@@ -669,11 +686,14 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT:
 			getPhysicalDeviceGraphicsPipelineLibraryFeatures(reinterpret_cast<struct VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT *>(curExtension));
 			break;
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR:
+			getPhysicalDeviceUnifiedImageLayoutsFeatures(reinterpret_cast<struct VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR *>(curExtension));
+			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT:
 			getPhysicalDeviceSwapchainMaintenance1FeaturesKHR(reinterpret_cast<struct VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(curExtension));
 			break;
-		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES_EXT:
-			getPhysicalDeviceHostImageCopyFeatures(reinterpret_cast<struct VkPhysicalDeviceHostImageCopyFeaturesEXT *>(curExtension));
+		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES:
+			getPhysicalDeviceHostImageCopyFeatures(reinterpret_cast<struct VkPhysicalDeviceHostImageCopyFeatures *>(curExtension));
 			break;
 		case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT:
 			getPhysicalDeviceIndexTypeUint8Features(reinterpret_cast<VkPhysicalDeviceIndexTypeUint8FeaturesEXT *>(curExtension));
@@ -681,7 +701,6 @@ void PhysicalDevice::getFeatures2(VkPhysicalDeviceFeatures2 *features) const
 		case VK_STRUCTURE_TYPE_MAX_ENUM:  // TODO(b/176893525): This may not be legal. dEQP tests that this value is ignored.
 			break;
 		default:
-			UNSUPPORTED("curExtension->sType: %s", vk::Stringify(curExtension->sType).c_str());
 			break;
 		}
 		curExtension = reinterpret_cast<VkBaseOutStructure *>(curExtension->pNext);
@@ -1560,6 +1579,15 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceLineRasterization
 	       CheckFeature(requested, supported, stippledSmoothLines);
 }
 
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceExtendedDynamicState2FeaturesEXT *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, extendedDynamicState2) &&
+	       CheckFeature(requested, supported, extendedDynamicState2LogicOp) &&
+	       CheckFeature(requested, supported, extendedDynamicState2PatchControlPoints);
+}
+
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceProvokingVertexFeaturesEXT *requested) const
 {
 	auto supported = getSupportedFeatures(requested);
@@ -1759,6 +1787,14 @@ bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceGraphicsPipelineL
 	auto supported = getSupportedFeatures(requested);
 
 	return CheckFeature(requested, supported, graphicsPipelineLibrary);
+}
+
+bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR *requested) const
+{
+	auto supported = getSupportedFeatures(requested);
+
+	return CheckFeature(requested, supported, unifiedImageLayouts) &&
+	       CheckFeature(requested, supported, unifiedImageLayoutsVideo);
 }
 
 bool PhysicalDevice::hasExtendedFeatures(const VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *requested) const

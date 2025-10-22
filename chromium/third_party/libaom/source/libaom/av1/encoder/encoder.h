@@ -834,6 +834,11 @@ typedef struct {
   int sharpness;
 
   /*!
+   * Indicates if sharpness is adapted based on frame QP
+   */
+  bool enable_adaptive_sharpness;
+
+  /*!
    * Indicates the trellis optimization mode of quantized coefficients.
    * 0: disabled
    * 1: enabled
@@ -885,6 +890,11 @@ typedef struct {
    * on reconstructed frame.
    */
   bool skip_postproc_filtering;
+
+  /*!
+   * Controls screen content detection mode
+   */
+  aom_screen_detection_mode screen_detection_mode;
 } AlgoCfg;
 /*!\cond */
 
@@ -1470,7 +1480,8 @@ typedef struct ThreadData {
   PC_TREE_SHARED_BUFFERS shared_coeff_buf;
   SIMPLE_MOTION_DATA_TREE *sms_tree;
   SIMPLE_MOTION_DATA_TREE *sms_root;
-  uint32_t *hash_value_buffer[2][2];
+  // buffers are AOM_BUFFER_SIZE_FOR_BLOCK_HASH elements long
+  uint32_t *hash_value_buffer[2];
   OBMCBuffer obmc_buffer;
   PALETTE_BUFFER *palette_buffer;
   CompoundTypeRdBuffers comp_rd_buffer;
@@ -2675,7 +2686,11 @@ typedef struct AV1_PRIMARY {
   /*!
    * Sequence parameters have been transmitted already and locked
    * or not. Once locked av1_change_config cannot change the seq
-   * parameters.
+   * parameters. Note that for SVC encoding the sequence parameters
+   * (operating_points_cnt_minus_1, operating_point_idc[],
+   * has_nonzero_operating_point_idc) should be updated whenever the
+   * number of layers is changed. This is done in the
+   * ctrl_set_svc_params().
    */
   int seq_params_locked;
 
@@ -3677,6 +3692,11 @@ typedef struct AV1_COMP {
    * so scaling is not needed for last_source.
    */
   int scaled_last_source_available;
+
+  /*!
+   * ROI map.
+   */
+  aom_roi_map_t roi;
 } AV1_COMP;
 
 /*!
@@ -3869,6 +3889,10 @@ void av1_set_frame_size(AV1_COMP *cpi, int width, int height);
 
 void av1_set_mv_search_params(AV1_COMP *cpi);
 
+int av1_set_roi_map(AV1_COMP *cpi, unsigned char *map, unsigned int rows,
+                    unsigned int cols, int delta_q[8], int delta_lf[8],
+                    int skip[8], int ref_frame[8]);
+
 int av1_set_active_map(AV1_COMP *cpi, unsigned char *map, int rows, int cols);
 
 int av1_get_active_map(AV1_COMP *cpi, unsigned char *map, int rows, int cols);
@@ -3889,6 +3913,12 @@ void av1_alloc_mb_wiener_var_pred_buf(AV1_COMMON *cm, ThreadData *td);
 
 void av1_dealloc_mb_wiener_var_pred_buf(ThreadData *td);
 
+uint8_t av1_find_dominant_value(const uint8_t *src, int stride, int rows,
+                                int cols);
+
+void av1_dilate_block(const uint8_t *src, int src_stride, uint8_t *dilated,
+                      int dilated_stride, int rows, int cols);
+
 // Set screen content options.
 // This function estimates whether to use screen content tools, by counting
 // the portion of blocks that have few luma colors.
@@ -3904,6 +3934,8 @@ void av1_set_screen_content_options(struct AV1_COMP *cpi,
                                     FeatureFlags *features);
 
 void av1_update_frame_size(AV1_COMP *cpi);
+
+void av1_set_svc_seq_params(AV1_PRIMARY *const ppi);
 
 typedef struct {
   int pyr_level;
@@ -4102,8 +4134,8 @@ static inline int has_no_stats_stage(const AV1_COMP *const cpi) {
 /*!\cond */
 
 static inline int is_one_pass_rt_params(const AV1_COMP *cpi) {
-  return has_no_stats_stage(cpi) && cpi->oxcf.mode == REALTIME &&
-         cpi->oxcf.gf_cfg.lag_in_frames == 0;
+  return has_no_stats_stage(cpi) && cpi->oxcf.gf_cfg.lag_in_frames == 0 &&
+         (cpi->oxcf.mode == REALTIME || cpi->svc.number_spatial_layers > 1);
 }
 
 // Use default/internal reference structure for single-layer RTC.

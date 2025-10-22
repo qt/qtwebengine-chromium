@@ -26,8 +26,7 @@ namespace {
 
 bool AreBeginFrameAcksEqual(const BeginFrameAck& a, const BeginFrameAck& b) {
   return a.frame_id == b.frame_id && a.trace_id == b.trace_id &&
-         a.has_damage == b.has_damage &&
-         a.preferred_frame_interval == b.preferred_frame_interval;
+         a.has_damage == b.has_damage;
 }
 
 bool AreLatencyInfosEqual(const ui::LatencyInfo& a, const ui::LatencyInfo& b) {
@@ -72,8 +71,6 @@ TEST(CompositorFrameMetadata, Clone) {
   metadata.deadline = FrameDeadline(base::TimeTicks() + base::Seconds(123), 15,
                                     base::Milliseconds(16), true);
   metadata.begin_frame_ack = BeginFrameAck(999, 888, true, 777);
-  metadata.begin_frame_ack.preferred_frame_interval.emplace(
-      base::Milliseconds(11));
   metadata.frame_token = 6;
   metadata.send_frame_token_to_embedder = true;
   metadata.min_page_scale_factor = 123.3f;

@@ -71,6 +71,9 @@ class BASE_EXPORT PickleIterator {
   // mutated). Do not keep the pointer around!
   [[nodiscard]] bool ReadBytes(const char** data, size_t length);
 
+  // Similar, but using span for convenience.
+  [[nodiscard]] std::optional<span<const uint8_t>> ReadBytes(size_t length);
+
   // A version of ReadInt() that checks for the result not being negative. Use
   // it for reading the object sizes.
   [[nodiscard]] bool ReadLength(size_t* result) {
@@ -316,7 +319,7 @@ class BASE_EXPORT Pickle {
   // The protected constructor. Note that this creates a Pickle that does not
   // own its own data.
   enum UnownedData { kUnownedData };
-  explicit Pickle(UnownedData, span<const uint8_t> data);
+  Pickle(UnownedData, span<const uint8_t> data);
 
   // Returns size of the header, which can have default value, set by user or
   // calculated by passed raw data.

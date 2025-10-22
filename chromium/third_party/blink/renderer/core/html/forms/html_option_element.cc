@@ -133,19 +133,64 @@ void HTMLOptionElement::Trace(Visitor* visitor) const {
 
 FocusableState HTMLOptionElement::SupportsFocus(
     UpdateBehavior update_behavior) const {
-  HTMLSelectElement* select = OwnerSelectElement();
-  if (select && select->UsesMenuList()) {
-    auto* popover = select->PopoverForAppearanceBase();
-    if (popover && popover->popoverOpen()) {
+  // Run SupportsFocus from the parent class first so it can do a style update
+  // if appropriate, which we will make use of here.
+  FocusableState superclass_focusable =
+      HTMLElement::SupportsFocus(update_behavior);
+  if (auto* select = OwnerSelectElement()) {
+    auto* popover = select->PopoverPickerElement();
+    bool base_with_picker =
+        select->UsesMenuList() && popover && popover->popoverOpen();
+    bool base_in_page =
+        RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() &&
+        !select->UsesMenuList() && select->IsAppearanceBase();
+    if (base_with_picker || base_in_page) {
       // If this option is being rendered as regular web content inside a
-      // base-select <select> popover, then we need this element to be
-      // focusable.
-      return IsDisabledFormControl() ? FocusableState::kNotFocusable
-                                     : FocusableState::kFocusable;
+      // base-select <select>, then we need this element to be focusable.
+      return IsDisabledFormControl() || select->IsDisabledFormControl()
+                 ? FocusableState::kNotFocusable
+                 : FocusableState::kFocusable;
+    } else if (select->UsesMenuList()) {
+      // appearance:auto ListBox <select>s have focusable <option>s, and
+      // MenuList ones don't have focusable <option>s.
+      return FocusableState::kNotFocusable;
     }
-    return FocusableState::kNotFocusable;
   }
-  return HTMLElement::SupportsFocus(update_behavior);
+  return superclass_focusable;
+}
+
+bool HTMLOptionElement::IsKeyboardFocusableSlow(
+    UpdateBehavior update_behavior) const {
+  if (!HTMLElement::IsKeyboardFocusableSlow(update_behavior)) {
+    return false;
+  }
+  if (!RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() ||
+      !OwnerSelectElement() || OwnerSelectElement()->UsesMenuList()) {
+    return true;
+  }
+
+  // In an in-page customizable <select>, pressing tab should go to the next
+  // focusable element in the page after the end of the <select> instead of the
+  // next focusable <option>. In order to implement this, we make the option
+  // elements which aren't currently focused not keyboard focusable so they are
+  // skipped by FocusController. This same trick is used in
+  // RadioInputType::IsKeyboardFocusableSlow.
+  if (auto* focused_option =
+          DynamicTo<HTMLOptionElement>(GetDocument().FocusedElement())) {
+    if (focused_option == this) {
+      // Keep the currently focused option focusable in order to prevent issues
+      // with invalidation and other things.
+      return true;
+    }
+    if (focused_option->OwnerSelectElement() == OwnerSelectElement()) {
+      return false;
+    }
+  }
+
+  // TODO(crbug.com/357649033): consider implementing "memory" to only make only
+  // the last focused option in a select focusable, so that tabbing out and back
+  // into an in-page select results in the same <option> being focused.
+  return true;
 }
 
 bool HTMLOptionElement::MatchesDefaultPseudoClass() const {
@@ -156,6 +201,9 @@ bool HTMLOptionElement::MatchesEnabledPseudoClass() const {
   return !IsDisabledFormControl();
 }
 
+// The logic in this method to choose rendering the label attribute or the text
+// content should be kept in sync with the ::-internal-option-label-container
+// rules in the UA stylesheet.
 String HTMLOptionElement::DisplayLabel() const {
   if (RuntimeEnabledFeatures::OptionLabelAttributeWhitespaceEnabled()) {
     // If the label attribute is set and is not an empty string, then use its
@@ -372,13 +420,8 @@ HTMLDataListElement* HTMLOptionElement::OwnerDataListElement() const {
   return Traversal<HTMLDataListElement>::FirstAncestor(*this);
 }
 
-HTMLSelectElement* HTMLOptionElement::OwnerSelectElement(
-    bool skip_check) const {
+HTMLSelectElement* HTMLOptionElement::OwnerSelectElement() const {
   if (HTMLSelectElement::SelectParserRelaxationEnabled(this)) {
-    if (!skip_check) {
-      DCHECK_EQ(nearest_ancestor_select_,
-                HTMLSelectElement::NearestAncestorSelectNoNesting(*this));
-    }
     return nearest_ancestor_select_;
   } else {
     if (!parentNode()) {
@@ -416,7 +459,7 @@ void HTMLOptionElement::setLabel(const AtomicString& label) {
 String HTMLOptionElement::TextIndentedToRespectGroupLabel() const {
   ContainerNode* parent = parentNode();
   if (parent && IsA<HTMLOptGroupElement>(*parent))
-    return "    " + DisplayLabel();
+    return StrCat({"    ", DisplayLabel()});
   return DisplayLabel();
 }
 
@@ -495,35 +538,13 @@ Node::InsertionNotificationRequest HTMLOptionElement::InsertedInto(
     return return_value;
   }
 
-  auto* parent_select = DynamicTo<HTMLSelectElement>(parentNode());
-  if (!parent_select) {
-    if (auto* optgroup = DynamicTo<HTMLOptGroupElement>(parentNode())) {
-      parent_select = DynamicTo<HTMLSelectElement>(optgroup->parentNode());
-    }
-  }
-  if (parent_select) {
-    // Don't call OptionInserted because HTMLSelectElement::ChildrenChanged or
-    // HTMLOptGroupElement::ChildrenChanged will call it for us in this case. If
-    // insertion_point is an ancestor of parent_select, then we shouldn't really
-    // be doing anything here and OptionInserted was already called in a
-    // previous insertion.
-    // TODO(crbug.com/1511354): When the CustomizableSelect flag is removed, we
-    // can remove the code in HTMLSelectElement::ChildrenChanged and
-    // HTMLOptGroupElement::ChildrenChanged which handles this case as well as
-    // the code here which avoids handling it.
-    SetOwnerSelectElement(parent_select);
-    return return_value;
-  }
-
-  // If there is a <select> in between this and insertion_point, then don't call
-  // OptionInserted. Otherwise, if this option is being inserted into a <select>
-  // ancestor, then we must call OptionInserted on it.
-  bool passed_insertion_point = false;
+  HTMLSelectElement* old_ancestor_select = nearest_ancestor_select_;
   HTMLSelectElement* new_ancestor_select =
-      HTMLSelectElement::NearestAncestorSelectNoNesting(
-          *this, &insertion_point, &passed_insertion_point);
+      HTMLSelectElement::NearestAncestorSelectNoNesting(*this);
   SetOwnerSelectElement(new_ancestor_select);
-  if (new_ancestor_select && passed_insertion_point) {
+
+  if (new_ancestor_select && new_ancestor_select != old_ancestor_select) {
+    CHECK(!old_ancestor_select);
     new_ancestor_select->OptionInserted(*this, Selected());
   }
 
@@ -537,50 +558,15 @@ void HTMLOptionElement::RemovedFrom(ContainerNode& insertion_point) {
     return;
   }
 
-  // This code determines the value of was_removed_from_select_parent, which
-  // should be true in the case that this <option> was a child of a <select> and
-  // got removed, or there was an <optgroup> directly in between this <option>
-  // and a <select> and either the optgroup-option or select-optgroup child
-  // relationship was disconnected.
-  bool insertion_point_passed = false;
-  bool is_parent_select_or_optgroup = false;
-  ContainerNode* parent = parentNode();
-  if (!parent) {
-    parent = &insertion_point;
-    insertion_point_passed = true;
-  }
-  if (IsA<HTMLSelectElement>(parent)) {
-    is_parent_select_or_optgroup = true;
-  } else if (IsA<HTMLOptGroupElement>(parent)) {
-    parent = parent->parentNode();
-    if (!parent) {
-      parent = &insertion_point;
-      insertion_point_passed = true;
-    }
-    is_parent_select_or_optgroup = IsA<HTMLSelectElement>(parent);
-  }
-  bool was_removed_from_select_parent =
-      insertion_point_passed && is_parent_select_or_optgroup;
-
-  if (was_removed_from_select_parent) {
-    SetOwnerSelectElement(nullptr);
-    // Don't call select->OptionRemoved() in this case because
-    // HTMLSelectElement::ChildrenChanged or
-    // HTMLOptGroupElement::ChildrenChanged will call it for us.
-    // TODO(crbug.com/1511354): When the SelectParserRelaxation flag is removed,
-    // we can remove this and the code in HTMLSelectElement::ChildrenChanged and
-    // HTMLOptGroupElement::ChildrenChanged.
-    return;
-  }
-
   HTMLSelectElement* new_ancestor_select =
       HTMLSelectElement::NearestAncestorSelectNoNesting(*this);
-  if (new_ancestor_select != nearest_ancestor_select_) {
+  HTMLSelectElement* old_ancestor_select = nearest_ancestor_select_;
+  if (new_ancestor_select != old_ancestor_select) {
     // We should only get here if we are being removed from a <select>
     CHECK(!new_ancestor_select);
-    CHECK(nearest_ancestor_select_);
-    nearest_ancestor_select_->OptionRemoved(*this);
+    CHECK(old_ancestor_select);
     SetOwnerSelectElement(new_ancestor_select);
+    old_ancestor_select->OptionRemoved(*this);
   }
 }
 
@@ -608,7 +594,7 @@ void HTMLOptionElement::DefaultEventHandler(Event& event) {
 namespace {
 bool OptionIsVisible(HTMLOptionElement& option) {
   PhysicalRect popover_rect =
-      option.OwnerSelectElement()->PopoverForAppearanceBase()->BoundingBox();
+      option.OwnerSelectElement()->PopoverPickerElement()->BoundingBox();
   PhysicalRect option_rect = option.BoundingBox();
   LayoutUnit popover_top = popover_rect.Y();
   LayoutUnit option_top = option_rect.Y();
@@ -619,36 +605,55 @@ bool OptionIsVisible(HTMLOptionElement& option) {
 
 void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
   auto* select = OwnerSelectElement();
-  if (!select || !select->IsAppearanceBasePicker()) {
-    // We only want to apply mouse/keyboard behavior for appearance:base-select
-    // select pickers.
+  if (!select) {
     return;
   }
-  const auto* mouse_event = DynamicTo<MouseEvent>(event);
-  if (mouse_event && event.type() == event_type_names::kMouseup &&
-      mouse_event->button() ==
-          static_cast<int16_t>(WebPointerProperties::Button::kLeft)) {
-    // We leave the picker open, and do not "pick" an option, only if:
-    //  1. The mousedown was on the <select> button, so we have a mousedown
-    //     location stored, and
-    //  2. The mouseup on this <option> was within kEpsilon layout units
-    //     (post zoom, page-relative) of the location of the mousedown. I.e.
-    //     the mouse was not dragged between mousedown and mouseup.
-    std::optional<gfx::PointF> mouse_down_loc =
-        GetDocument().CustomizableSelectMousedownLocation();
-    constexpr float kEpsilon = 5;  // 5 pixels in any direction
-    bool mouse_moved = !mouse_down_loc.has_value() ||
-                       !mouse_down_loc->IsWithinDistance(
-                           mouse_event->AbsoluteLocation(), kEpsilon);
-    if (mouse_moved) {
-      select->SelectOptionByPopup(this);
-      select->HidePopup(SelectPopupHideBehavior::kNormal);
-      event.SetDefaultHandled();
-    }
-    GetDocument().SetCustomizableSelectMousedownLocation(std::nullopt);
+
+  const bool appearance_base_in_page =
+      RuntimeEnabledFeatures::CustomizableSelectInPageEnabled() &&
+      !select->UsesMenuList() && select->IsAppearanceBase();
+
+  if (!appearance_base_in_page && !select->PickerIsPopover()) {
+    // Select elements use this code for event handling on their options in
+    // these cases:
+    // - <select> with appearance:base-select on itself and its ::picker(select)
+    // - <select size={not 1}> with appearance:base-select
+    // - <select size=1 multiple> on platforms which don't delegate MenuList
+    //   rendering (only Android currently delegates MenuList rendering)
     return;
-  } else if (event.type() == event_type_names::kMousedown) {
-    GetDocument().SetCustomizableSelectMousedownLocation(std::nullopt);
+  }
+
+  if (appearance_base_in_page) {
+    // TODO(crbug.com/411598949): Consider using mouseup/mousedown instead of
+    // click here to support click and drag to select multiple options.
+    if (event.type() == event_type_names::kClick) {
+      ChooseOption(event);
+    }
+  } else {
+    const auto* mouse_event = DynamicTo<MouseEvent>(event);
+    if (mouse_event && event.type() == event_type_names::kMouseup &&
+        mouse_event->button() ==
+            static_cast<int16_t>(WebPointerProperties::Button::kLeft)) {
+      // We leave the picker open, and do not "pick" an option, only if:
+      //  1. The mousedown was on the <select> button, so we have a mousedown
+      //     location stored, and
+      //  2. The mouseup on this <option> was within kEpsilon layout units
+      //     (post zoom, page-relative) of the location of the mousedown. I.e.
+      //     the mouse was not dragged between mousedown and mouseup.
+      std::optional<gfx::PointF> mouse_down_loc =
+          GetDocument().CustomizableSelectMousedownLocation();
+      constexpr float kEpsilon = 5;  // 5 pixels in any direction
+      bool mouse_moved = !mouse_down_loc.has_value() ||
+                         !mouse_down_loc->IsWithinDistance(
+                             mouse_event->AbsoluteLocation(), kEpsilon);
+      if (mouse_moved) {
+        ChooseOption(event);
+      }
+      GetDocument().SetCustomizableSelectMousedownLocation(std::nullopt);
+      return;
+    } else if (event.type() == event_type_names::kMousedown) {
+      GetDocument().SetCustomizableSelectMousedownLocation(std::nullopt);
+    }
   }
 
   auto* keyboard_event = DynamicTo<KeyboardEvent>(event);
@@ -661,9 +666,7 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
     const AtomicString key(keyboard_event->key());
     if (!(keyboard_event->GetModifiers() & ignore_modifiers)) {
       if ((key == " " || key == keywords::kCapitalEnter)) {
-        select->SelectOptionByPopup(this);
-        select->HidePopup(SelectPopupHideBehavior::kNormal);
-        event.SetDefaultHandled();
+        ChooseOption(event);
         return;
       }
       OptionList options = select->GetOptionList();
@@ -674,6 +677,12 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
       if (key == keywords::kArrowUp) {
         if (auto* previous_option = options.PreviousFocusableOption(*this)) {
           previous_option->Focus(focus_params);
+        } else if ((RuntimeEnabledFeatures::
+                        SelectAccessibilityReparentInputEnabled() ||
+                    RuntimeEnabledFeatures::
+                        SelectAccessibilityNestedInputEnabled()) &&
+                   select->FirstDescendantTextInput()) {
+          select->FirstDescendantTextInput()->Focus(focus_params);
         }
         event.SetDefaultHandled();
         return;
@@ -755,13 +764,27 @@ void HTMLOptionElement::DefaultEventHandlerInternal(Event& event) {
     if (key == keywords::kTab &&
         !(keyboard_event->GetModifiers() & tab_ignore_modifiers) &&
         !select->IsInDialogMode()) {
-      // TODO(http://crbug.com/1511354): Consider focusing something in this
-      // case. https://github.com/openui/open-ui/issues/1016
-      select->HidePopup(SelectPopupHideBehavior::kNormal);
-      event.SetDefaultHandled();
+      if (!appearance_base_in_page) {
+        // TODO(http://crbug.com/1511354): Consider focusing something in this
+        // case. https://github.com/openui/open-ui/issues/1016
+        select->HidePopup(SelectPopupHideBehavior::kNormal);
+        event.SetDefaultHandled();
+      }
       return;
     }
   }
+}
+
+void HTMLOptionElement::ChooseOption(Event& event) {
+  HTMLSelectElement* select = OwnerSelectElement();
+  CHECK(select);
+  if (IsDisabledFormControl() || select->IsDisabledFormControl()) {
+    return;
+  }
+  CHECK(HTMLSelectElement::CustomizableSelectEnabled(this));
+  CHECK(select->IsAppearanceBase() || select->PickerIsPopover());
+  select->SelectOptionFromPopoverPickerOrBaseListbox(this);
+  event.SetDefaultHandled();
 }
 
 void HTMLOptionElement::FinishParsingChildren() {
@@ -782,6 +805,12 @@ bool HTMLOptionElement::IsLabelContainerElement(const Element& element) {
   return IsA<HTMLOptionElement>(element.OwnerShadowHost()) &&
          element.ShadowPseudoId() ==
              shadow_element_names::kOptionLabelContainer;
+}
+
+bool HTMLOptionElement::WasOptionInsertedCalled() const {
+  return HTMLSelectElement::SelectParserRelaxationEnabled(this)
+             ? nearest_ancestor_select_
+             : was_option_inserted_called_;
 }
 
 }  // namespace blink

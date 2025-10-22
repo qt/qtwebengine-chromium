@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -44,14 +45,14 @@ import * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import type * as HAR from '../../models/har/har.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as Workspace from '../../models/workspace/workspace.js';
 import * as NetworkForward from '../../panels/network/forward/forward.js';
-import * as FloatingButton from '../../ui/components/floating_button/floating_button.js';
+import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as PerfUI from '../../ui/legacy/components/perf_ui/perf_ui.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
+import {render} from '../../ui/lit/lit.js';
 import {PanelUtils} from '../utils/utils.js';
 
 import type {NetworkTimeCalculator} from './NetworkTimeCalculator.js';
@@ -99,6 +100,26 @@ const UIStrings = {
    *@description Reason in Network Data Grid Node of the Network panel
    */
   origin: 'origin',
+  /**
+   * @description Reason why a request was blocked shown in the Network panel
+   */
+  coepFrameResourceNeedsCoepHeader: 'COEP-framed resource needs COEP header',
+  /**
+   * @description Reason why a request was blocked shown in the Network panel
+   */
+  coopSandboxedIframeCannotNavigateToCoopPage: 'Sandboxed iframe\'s popup cannot navigate to COOP page',
+  /**
+   * @description Reason why a request was blocked shown in the Network panel
+   */
+  corpNotSameOrigin: 'CORP not "same-origin"',
+  /**
+   * @description Reason why a request was blocked shown in the Network panel
+   */
+  corpNotSameSite: 'CORP not "same-site"',
+  /**
+   * @description Reason why a request was blocked shown in the Network panel
+   */
+  corpNotSameOriginAfterDefaultedToSameOriginByCoep: 'CORP not "same-origin" after defaulted to "same-origin" by COEP',
   /**
    *@description Noun. Shown in a table cell as the reason why a network request failed. "integrity" here refers to the integrity of the network request itself in a cryptographic sense: signature verification might have failed, for instance.
    */
@@ -189,6 +210,19 @@ const UIStrings = {
    *@description Text of a DOM element in Network Data Grid Node of the Network panel
    */
   serviceWorker: '(`ServiceWorker`)',
+  /**
+   *@description Cell title in Network Data Grid Node of the Network panel
+   *@example {4 B} PH1
+   *@example {10 B} PH2
+   */
+  servedFromNetwork: '{PH1} transferred over network, resource size: {PH2}',
+  /**
+   *@description Cell title in Network Data Grid Node of the Network panel
+   *@example {4 B} PH1
+   *@example {10 B} PH2
+   */
+  servedFromNetworkMissingServiceWorkerRoute:
+      '{PH1} transferred over network, resource size: {PH2}, no matching ServiceWorker routes',
   /**
    *@description Cell title in Network Data Grid Node of the Network panel
    *@example {4 B} PH1
@@ -302,6 +336,10 @@ const UIStrings = {
    *@example {Low} PH2
    */
   initialPriorityToolTip: '{PH1}, Initial priority: {PH2}',
+  /**
+   * @description Tooltip to explain why the request has an IPP icon
+   */
+  responseIsIpProtectedToolTip: 'This request was sent through IP Protection proxies.',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/network/NetworkDataGridNode.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -444,14 +482,14 @@ export class NetworkNode extends DataGrid.SortableDataGrid.SortableDataGridNode<
     this.updateBackgroundColor();
   }
 
-  override select(supressSelectedEvent?: boolean): void {
-    super.select(supressSelectedEvent);
+  override select(suppressSelectedEvent?: boolean): void {
+    super.select(suppressSelectedEvent);
     this.updateBackgroundColor();
     this.parentViewInternal.updateNodeSelectedClass(/* isSelected */ true);
   }
 
-  override deselect(supressSelectedEvent?: boolean): void {
-    super.deselect(supressSelectedEvent);
+  override deselect(suppressSelectedEvent?: boolean): void {
+    super.deselect(suppressSelectedEvent);
     this.updateBackgroundColor();
     this.parentViewInternal.updateNodeSelectedClass(/* isSelected */ false);
   }
@@ -537,9 +575,7 @@ export class NetworkNode extends DataGrid.SortableDataGrid.SortableDataGridNode<
   }
 }
 
-export const _backgroundColors: {
-  [x: string]: string,
-} = {
+export const _backgroundColors: Record<string, string> = {
   Default: '--color-grid-default',
   Stripe: '--color-grid-stripe',
   Navigation: '--network-grid-navigation-color',
@@ -554,7 +590,6 @@ export const _backgroundColors: {
 };
 
 export class NetworkRequestNode extends NetworkNode {
-  private nameCell: Element|null;
   private initiatorCell: Element|null;
   private requestInternal: SDK.NetworkRequest.NetworkRequest;
   private readonly isNavigationRequestInternal: boolean;
@@ -565,7 +600,6 @@ export class NetworkRequestNode extends NetworkNode {
 
   constructor(parentView: NetworkLogViewInterface, request: SDK.NetworkRequest.NetworkRequest) {
     super(parentView);
-    this.nameCell = null;
     this.initiatorCell = null;
     this.requestInternal = request;
     this.isNavigationRequestInternal = false;
@@ -764,17 +798,29 @@ export class NetworkRequestNode extends NetworkNode {
     return aURL > bURL ? 1 : -1;
   }
 
-  static ResponseHeaderStringComparator(propertyName: string, a: NetworkNode, b: NetworkNode): number {
-    // TODO(allada) Handle this properly for group nodes.
+  static HeaderStringComparator(
+      getHeaderValue: (request: SDK.NetworkRequest.NetworkRequest, propertyName: string) => string | undefined,
+      propertyName: string, a: NetworkNode, b: NetworkNode): number {
     const aRequest = a.requestOrFirstKnownChildRequest();
     const bRequest = b.requestOrFirstKnownChildRequest();
     if (!aRequest || !bRequest) {
       return !aRequest ? -1 : 1;
     }
-    const aValue = String(aRequest.responseHeaderValue(propertyName) || '');
-    const bValue = String(bRequest.responseHeaderValue(propertyName) || '');
+    // Use the provided callback to get the header value
+    const aValue = String(getHeaderValue(aRequest, propertyName) || '');
+    const bValue = String(getHeaderValue(bRequest, propertyName) || '');
     return aValue.localeCompare(bValue) || aRequest.identityCompare(bRequest);
   }
+
+  static readonly ResponseHeaderStringComparator = NetworkRequestNode.HeaderStringComparator.bind(
+      null,
+      (req: SDK.NetworkRequest.NetworkRequest, name: string) => req.responseHeaderValue(name),
+  );
+
+  static readonly RequestHeaderStringComparator = NetworkRequestNode.HeaderStringComparator.bind(
+      null,
+      (req: SDK.NetworkRequest.NetworkRequest, name: string) => req.requestHeaderValue(name),
+  );
 
   static ResponseHeaderNumberComparator(propertyName: string, a: NetworkNode, b: NetworkNode): number {
     // TODO(allada) Handle this properly for group nodes.
@@ -911,7 +957,6 @@ export class NetworkRequestNode extends NetworkNode {
   }
 
   override createCells(element: Element): void {
-    this.nameCell = null;
     this.initiatorCell = null;
 
     element.classList.toggle('network-warning-row', this.isWarning());
@@ -1055,7 +1100,21 @@ export class NetworkRequestNode extends NetworkNode {
         break;
       }
       default: {
-        this.setTextAndTitle(cell, this.requestInternal.responseHeaderValue(columnId) || '');
+        const columnConfig = this.dataGrid?.columns[columnId];
+        if (columnConfig) {
+          let headerName = '';
+          let headerValue = '';
+          if (columnConfig.id.startsWith('request-header-')) {
+            headerName = columnId.substring('request-header-'.length);
+            headerValue = this.requestInternal.requestHeaderValue(headerName) || '';
+          } else {
+            headerName = columnId.substring('response-header-'.length);
+            headerValue = this.requestInternal.responseHeaderValue(headerName) || '';
+          }
+          this.setTextAndTitle(cell, headerValue);
+        } else {
+          this.setTextAndTitle(cell, '');
+        }
         break;
       }
     }
@@ -1065,8 +1124,8 @@ export class NetworkRequestNode extends NetworkNode {
     return array ? String(array.length) : '';
   }
 
-  override select(supressSelectedEvent?: boolean): void {
-    super.select(supressSelectedEvent);
+  override select(suppressSelectedEvent?: boolean): void {
+    super.select(suppressSelectedEvent);
     this.parentView().dispatchEventToListeners(Events.RequestSelected, this.requestInternal);
   }
 
@@ -1085,7 +1144,6 @@ export class NetworkRequestNode extends NetworkNode {
       const leftPadding = this.leftPadding ? this.leftPadding + 'px' : '';
       cell.style.setProperty('padding-left', leftPadding);
       cell.tabIndex = -1;
-      this.nameCell = cell;
       cell.addEventListener('dblclick', this.openInNewTab.bind(this), false);
       cell.addEventListener('mousedown', () => {
         // When the request panel isn't visible yet, firing the RequestActivated event
@@ -1096,8 +1154,16 @@ export class NetworkRequestNode extends NetworkNode {
       cell.addEventListener('focus', () => this.parentView().resetFocus());
 
       // render icons
+      if (this.requestInternal.isIpProtectionUsed()) {
+        const ippIcon = IconButton.Icon.create('shield', 'icon');
+        ippIcon.title = i18nString(UIStrings.responseIsIpProtectedToolTip);
+        ippIcon.style.color = 'var(--sys-color-on-surface-subtle);';
+        cell.appendChild(ippIcon);
+      }
+
       const iconElement = PanelUtils.getIconForNetworkRequest(this.requestInternal);
-      cell.appendChild(iconElement);
+      // eslint-disable-next-line rulesdir/no-lit-render-outside-of-view
+      render(iconElement, cell);
 
       // render Ask AI button
       const aiButtonContainer = this.createAiButtonIfAvailable();
@@ -1109,12 +1175,9 @@ export class NetworkRequestNode extends NetworkNode {
     if (columnId === 'name') {
       const webBundleInnerRequestInfo = this.requestInternal.webBundleInnerRequestInfo();
       if (webBundleInnerRequestInfo) {
-        const iconData = {
-          iconName: 'bundle',
-          color: 'var(--icon-info)',
-        };
-        const secondIconElement = PanelUtils.createIconElement(iconData, i18nString(UIStrings.webBundleInnerRequest));
-        secondIconElement.classList.add('icon');
+        const secondIconElement = IconButton.Icon.create('bundle', 'icon');
+        secondIconElement.style.color = 'var(--icon-info)';
+        secondIconElement.title = i18nString(UIStrings.webBundleInnerRequest);
 
         const networkManager = SDK.NetworkManager.NetworkManager.forRequest(this.requestInternal);
         if (webBundleInnerRequestInfo.bundleRequestId && networkManager) {
@@ -1195,23 +1258,23 @@ export class NetworkRequestNode extends NetworkNode {
           break;
         case Protocol.Network.BlockedReason.CoepFrameResourceNeedsCoepHeader:
           displayShowHeadersLink = true;
-          reason = i18n.i18n.lockedString('CoepFrameResourceNeedsCoepHeader');
+          reason = i18nString(UIStrings.coepFrameResourceNeedsCoepHeader);
           break;
         case Protocol.Network.BlockedReason.CoopSandboxedIframeCannotNavigateToCoopPage:
           displayShowHeadersLink = true;
-          reason = i18n.i18n.lockedString('CoopSandboxedIframeCannotNavigateToCoopPage');
+          reason = i18nString(UIStrings.coopSandboxedIframeCannotNavigateToCoopPage);
           break;
         case Protocol.Network.BlockedReason.CorpNotSameOrigin:
           displayShowHeadersLink = true;
-          reason = i18n.i18n.lockedString('NotSameOrigin');
+          reason = i18nString(UIStrings.corpNotSameOrigin);
           break;
         case Protocol.Network.BlockedReason.CorpNotSameSite:
           displayShowHeadersLink = true;
-          reason = i18n.i18n.lockedString('NotSameSite');
+          reason = i18nString(UIStrings.corpNotSameSite);
           break;
         case Protocol.Network.BlockedReason.CorpNotSameOriginAfterDefaultedToSameOriginByCoep:
           displayShowHeadersLink = true;
-          reason = i18n.i18n.lockedString('NotSameOriginAfterDefaultedToSameOriginByCoep');
+          reason = i18nString(UIStrings.corpNotSameOriginAfterDefaultedToSameOriginByCoep);
           break;
         case Protocol.Network.BlockedReason.SriMessageSignatureMismatch:
           displayShowHeadersLink = true;
@@ -1238,6 +1301,8 @@ export class NetworkRequestNode extends NetworkNode {
       const statusText = this.requestInternal.getInferredStatusText();
       this.appendSubtitle(cell, statusText);
       UI.Tooltip.Tooltip.install(cell, this.requestInternal.statusCode + ' ' + statusText);
+    } else if (this.requestInternal.statusText) {
+      this.setTextAndTitle(cell, this.requestInternal.statusText);
     } else if (this.requestInternal.finished) {
       this.setTextAndTitle(cell, i18nString(UIStrings.finished));
     } else if (this.requestInternal.preserved) {
@@ -1311,13 +1376,7 @@ export class NetworkRequestNode extends NetworkNode {
     }
     switch (initiator.type) {
       case SDK.NetworkRequest.InitiatorType.PARSER: {
-        const uiSourceCode = Workspace.Workspace.WorkspaceImpl.instance().uiSourceCodeForURL(initiator.url);
-        const displayName = uiSourceCode?.displayName();
-        const text = displayName !== undefined && initiator.lineNumber !== undefined ?
-            `${displayName}:${initiator.lineNumber}` :
-            undefined;
         cell.appendChild(Components.Linkifier.Linkifier.linkifyURL(initiator.url, {
-          text,
           lineNumber: initiator.lineNumber,
           columnNumber: initiator.columnNumber,
           userMetric: this.#getLinkifierMetric(),
@@ -1345,7 +1404,7 @@ export class NetworkRequestNode extends NetworkNode {
       case SDK.NetworkRequest.InitiatorType.SCRIPT: {
         const target = SDK.NetworkManager.NetworkManager.forRequest(request)?.target() || null;
         const linkifier = this.parentView().linkifier();
-        if (initiator.stack) {
+        if (initiator.stack?.callFrames.length) {
           this.linkifiedInitiatorAnchor = linkifier.linkifyStackTraceTopFrame(target, initiator.stack);
         } else {
           this.linkifiedInitiatorAnchor = linkifier.linkifyScriptLocation(
@@ -1406,13 +1465,13 @@ export class NetworkRequestNode extends NetworkNode {
       UI.UIUtils.createTextChild(cell, i18nString(UIStrings.memoryCache));
       UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromMemoryCacheResource, {PH1: resourceSize}));
       cell.classList.add('network-dim-cell');
-    } else if (this.requestInternal.serviceWorkerRouterInfo) {
-      const {serviceWorkerRouterInfo} = this.requestInternal;
-      // If `serviceWorkerRouterInfo.ruleIdMatched` is undefined,store 0 to indicate invalid ID.
-      const ruleIdMatched = serviceWorkerRouterInfo.ruleIdMatched ?? 0;
+    } else if (this.requestInternal.hasMatchingServiceWorkerRouter()) {
+      const ruleIdMatched = this.requestInternal.serviceWorkerRouterInfo?.ruleIdMatched as number;
+      const matchedSourceType =
+          this.requestInternal.serviceWorkerRouterInfo?.matchedSourceType as Protocol.Network.ServiceWorkerRouterSource;
       UI.UIUtils.createTextChild(cell, i18n.i18n.lockedString('(ServiceWorker router)'));
       let tooltipText;
-      if (serviceWorkerRouterInfo.matchedSourceType === Protocol.Network.ServiceWorkerRouterSource.Network) {
+      if (matchedSourceType === Protocol.Network.ServiceWorkerRouterSource.Network) {
         const transferSize = i18n.ByteUtilities.formatBytesToKb(this.requestInternal.transferSize);
         tooltipText = i18nString(
             UIStrings.matchedToServiceWorkerRouterWithNetworkSource,
@@ -1422,6 +1481,14 @@ export class NetworkRequestNode extends NetworkNode {
       }
       UI.Tooltip.Tooltip.install(cell, tooltipText);
       cell.classList.add('network-dim-cell');
+    } else if (this.requestInternal.serviceWorkerRouterInfo) {
+      // ServiceWorker routers are registered, but the request fallbacks to network
+      // because no matching router rules found.
+      const transferSize = i18n.ByteUtilities.formatBytesToKb(this.requestInternal.transferSize);
+      UI.UIUtils.createTextChild(cell, transferSize);
+      UI.Tooltip.Tooltip.install(
+          cell,
+          i18nString(UIStrings.servedFromNetworkMissingServiceWorkerRoute, {PH1: transferSize, PH2: resourceSize}));
     } else if (this.requestInternal.fetchedViaServiceWorker) {
       UI.UIUtils.createTextChild(cell, i18nString(UIStrings.serviceWorker));
       UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromServiceWorkerResource, {PH1: resourceSize}));
@@ -1445,7 +1512,7 @@ export class NetworkRequestNode extends NetworkNode {
     } else {
       const transferSize = i18n.ByteUtilities.formatBytesToKb(this.requestInternal.transferSize);
       UI.UIUtils.createTextChild(cell, transferSize);
-      UI.Tooltip.Tooltip.install(cell, `${transferSize} transferred over network, resource size: ${resourceSize}`);
+      UI.Tooltip.Tooltip.install(cell, i18nString(UIStrings.servedFromNetwork, {PH1: transferSize, PH2: resourceSize}));
     }
     this.appendSubtitle(cell, resourceSize);
   }
@@ -1482,10 +1549,7 @@ export class NetworkRequestNode extends NetworkNode {
       const action = UI.ActionRegistry.ActionRegistry.instance().getAction('drjones.network-floating-button');
       const aiButtonContainer = document.createElement('span');
       aiButtonContainer.classList.add('ai-button-container');
-      const floatingButton = new FloatingButton.FloatingButton.FloatingButton({
-        title: action.title(),
-        iconName: 'smart-assistant',
-      });
+      const floatingButton = Buttons.FloatingButton.create('smart-assistant', action.title(), 'ask-ai');
       floatingButton.addEventListener('click', ev => {
         ev.stopPropagation();
         this.select();
@@ -1521,8 +1585,8 @@ export class NetworkGroupNode extends NetworkNode {
     }
   }
 
-  override select(supressSelectedEvent?: boolean): void {
-    super.select(supressSelectedEvent);
+  override select(suppressSelectedEvent?: boolean): void {
+    super.select(suppressSelectedEvent);
     const firstChildNode = (this.traverseNextNode(false, undefined, true) as NetworkNode);
     const request = firstChildNode?.request();
     if (request) {

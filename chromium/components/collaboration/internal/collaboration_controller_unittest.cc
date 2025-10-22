@@ -11,15 +11,20 @@
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
 #include "base/test/task_environment.h"
+#include "base/time/time.h"
 #include "components/collaboration/internal/metrics.h"
 #include "components/collaboration/public/collaboration_controller_delegate.h"
 #include "components/collaboration/public/collaboration_flow_type.h"
+#include "components/collaboration/public/collaboration_service.h"
+#include "components/collaboration/public/service_status.h"
 #include "components/collaboration/test_support/mock_collaboration_controller_delegate.h"
 #include "components/collaboration/test_support/mock_collaboration_service.h"
+#include "components/data_sharing/public/data_sharing_service.h"
 #include "components/data_sharing/public/group_data.h"
 #include "components/data_sharing/test_support/mock_data_sharing_service.h"
 #include "components/saved_tab_groups/public/saved_tab_group.h"
 #include "components/saved_tab_groups/public/tab_group_sync_service.h"
+#include "components/saved_tab_groups/public/types.h"
 #include "components/saved_tab_groups/test_support/mock_tab_group_sync_service.h"
 #include "components/saved_tab_groups/test_support/saved_tab_group_test_utils.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
@@ -65,6 +70,8 @@ class CollaborationControllerTest : public testing::Test {
     tab_group_sync_service_ =
         std::make_unique<tab_groups::MockTabGroupSyncService>();
     sync_service_ = std::make_unique<syncer::MockSyncService>();
+    EXPECT_CALL(*data_sharing_service_, GetLogger())
+        .Times(::testing::AnyNumber());
   }
 
   void TearDown() override {}
@@ -83,6 +90,7 @@ class CollaborationControllerTest : public testing::Test {
         base::BindOnce(&CollaborationControllerTest::FinishFlow,
                        weak_ptr_factory_.GetWeakPtr(),
                        std::move(run_on_flow_exit)));
+    task_environment_.RunUntilIdle();
   }
 
   void InitializeJoinController(OnceClosure run_on_flow_exit) {
@@ -91,9 +99,20 @@ class CollaborationControllerTest : public testing::Test {
         Flow(FlowType::kJoin, GroupToken(kGroupId, kAccessToken)));
   }
 
-  void FinishFlow(OnceClosure run_on_flow_exit) {
+  void FinishFlow(OnceClosure run_on_flow_exit, const void* controller) {
     controller_.reset();
     std::move(run_on_flow_exit).Run();
+  }
+
+  void SetUpJoinRequirements() {
+    GroupToken token =
+        GroupToken(data_sharing::GroupId(kGroupId), kAccessToken);
+    EXPECT_CALL(*data_sharing_service_,
+                ReadNewGroup(token, IsNotNullCallback()))
+        .WillOnce(MoveArg<1>(&group_data_callback_));
+    EXPECT_CALL(*data_sharing_service_,
+                GetSharedEntitiesPreview(token, IsNotNullCallback()))
+        .WillOnce(MoveArg<1>(&preview_callback_));
   }
 
  protected:
@@ -101,6 +120,12 @@ class CollaborationControllerTest : public testing::Test {
       base::test::TaskEnvironment::TimeSource::MOCK_TIME};
   signin::IdentityTestEnvironment identity_test_env_;
   base::OnceCallback<void(Outcome)> prepare_ui_callback_;
+  base::OnceCallback<void(
+      const data_sharing::DataSharingService::GroupDataOrFailureOutcome&)>
+      group_data_callback_;
+  base::OnceCallback<void(const data_sharing::DataSharingService::
+                              SharedDataPreviewOrFailureOutcome&)>
+      preview_callback_;
   MockCollaborationControllerDelegate* delegate_;
   std::unique_ptr<MockCollaborationService> collaboration_service_;
   std::unique_ptr<data_sharing::MockDataSharingService> data_sharing_service_;
@@ -112,10 +137,14 @@ class CollaborationControllerTest : public testing::Test {
 
 TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
   base::HistogramTester histogram_tester;
+  base::TimeDelta authentication_time = base::Milliseconds(10);
+  base::TimeDelta service_initialization_time = base::Milliseconds(11);
+  base::TimeDelta tab_group_fetch_time = base::Milliseconds(12);
 
   RunLoop run_loop;
 
   // Start Join flow.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
   InitializeJoinController(run_loop.QuitClosure());
 
   // 1. Pending state.
@@ -155,6 +184,7 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
       .WillOnce(SaveArg<0>(&sync_observer));
 
   // 3. Authenticating -> WaitingForServicesToInitialize state.
+  task_environment_.FastForwardBy(authentication_time);
   std::move(authentication_ui_calback).Run(Outcome::kSuccess);
   EXPECT_EQ(controller_->GetStateForTesting(),
             StateId::kWaitingForServicesToInitialize);
@@ -162,18 +192,15 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
   // Simulate that the user is not already in the tab group.
   EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(sync_observer));
   const GroupToken& token = GroupToken(kGroupId, kAccessToken);
-  base::OnceCallback<void(
-      const data_sharing::DataSharingService::GroupDataOrFailureOutcome&)>
-      group_data_callback;
   EXPECT_CALL(*collaboration_service_, GetCurrentUserRoleForGroup(kGroupId))
       .WillRepeatedly(Return(data_sharing::MemberRole::kUnknown));
-  EXPECT_CALL(*data_sharing_service_, ReadNewGroup(token, IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&group_data_callback));
+  SetUpJoinRequirements();
 
-  // 4. WaitingForServicesToInitialize -> CheckingFlowRequirementsState state.
+  // 4. WaitingForServicesToInitialize -> CheckingFlowRequirementsState ->
+  // AddingUserToGroup state.
+  task_environment_.FastForwardBy(service_initialization_time);
   sync_observer->OnInitialized();
-  EXPECT_EQ(controller_->GetStateForTesting(),
-            StateId::kCheckingFlowRequirements);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kAddingUserToGroup);
 
   // The user should be shown invitation screen for joining a collaboration
   // group.
@@ -181,21 +208,13 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
       GroupData(kGroupId, /*display_name=*/"",
                 /*members=*/{}, /*former_members=*/{}, kAccessToken);
   base::OnceCallback<void(Outcome)> join_ui_callback;
-  base::OnceCallback<void(const data_sharing::DataSharingService::
-                              SharedDataPreviewOrFailureOutcome&)>
-      preview_callback;
-  EXPECT_CALL(*data_sharing_service_,
-              GetSharedEntitiesPreview(token, IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&preview_callback));
   EXPECT_CALL(*delegate_, ShowJoinDialog(_, _, IsNotNullCallback()))
       .WillOnce(MoveArg<2>(&join_ui_callback));
 
-  // 5. CheckingFlowRequirements -> AddingUserToGroup state.
-  std::move(group_data_callback).Run(group_data);
-  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kAddingUserToGroup);
+  std::move(group_data_callback_).Run(group_data);
   data_sharing::SharedDataPreview preview;
   preview.shared_tab_group_preview = data_sharing::SharedTabGroupPreview();
-  std::move(preview_callback).Run(preview);
+  std::move(preview_callback_).Run(preview);
 
   // Simulate the user accepts the join invitation. Wait for tab group to be
   // added in sync.
@@ -205,6 +224,8 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
   std::vector<SavedTabGroup> all_tab_groups;
   EXPECT_CALL(*tab_group_sync_service_, GetAllGroups())
       .WillRepeatedly(Return(all_tab_groups));
+  EXPECT_CALL(*data_sharing_service_,
+              ReadGroupDeprecated(kGroupId, IsNotNullCallback()));
 
   data_sharing::DataSharingService::Observer* data_sharing_observer;
   EXPECT_CALL(*tab_group_sync_service_, AddObserver(_))
@@ -212,7 +233,7 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
   EXPECT_CALL(*data_sharing_service_, AddObserver(_))
       .WillOnce(SaveArg<0>(&data_sharing_observer));
 
-  // 6. AddingUserToGroup -> WaitingForSyncAndDataSharingGroup state.
+  // 5. AddingUserToGroup -> WaitingForSyncAndDataSharingGroup state.
   std::move(join_ui_callback).Run(Outcome::kSuccess);
   EXPECT_EQ(controller_->GetStateForTesting(),
             StateId::kWaitingForSyncAndDataSharingGroup);
@@ -225,6 +246,7 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
             StateId::kWaitingForSyncAndDataSharingGroup);
 
   // Simulate added in both tab group and data_sharing group.
+  task_environment_.FastForwardBy(tab_group_fetch_time);
   base::OnceCallback<void(Outcome)> promote_ui_callback;
   EXPECT_CALL(*collaboration_service_, GetCurrentUserRoleForGroup(kGroupId))
       .WillOnce(Return(data_sharing::MemberRole::kMember));
@@ -233,7 +255,7 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
   EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(sync_observer));
   EXPECT_CALL(*data_sharing_service_, RemoveObserver(data_sharing_observer));
 
-  // 7. WaitingForSyncAndDataSharingGroup -> OpeningLocalTabGroup state.
+  // 6. WaitingForSyncAndDataSharingGroup -> OpeningLocalTabGroup state.
   // TODO(crbug.com/373403973): Remove data sharing observer when sync service
   // starts observing data sharing.
   sync_observer->OnTabGroupAdded(tab_group, tab_groups::TriggerSource::REMOTE);
@@ -241,18 +263,31 @@ TEST_F(CollaborationControllerTest, FullJoinFlowAllStates) {
 
   // Upon successfully promoting the tab group, the flow ends and exit.
   EXPECT_CALL(*delegate_, OnFlowFinished());
+  EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(_));
   std::move(promote_ui_callback).Run(Outcome::kSuccess);
   run_loop.Run();
 
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.JoinFlow",
-      metrics::CollaborationServiceJoinEvent::kFlowRequirementsMet, 1);
+      "CollaborationService.JoinFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kFlowRequirementsMet, 1);
   histogram_tester.ExpectBucketCount(
       "CollaborationService.JoinFlow",
       metrics::CollaborationServiceJoinEvent::kAccepted, 1);
   histogram_tester.ExpectBucketCount(
       "CollaborationService.JoinFlow",
       metrics::CollaborationServiceJoinEvent::kOpenedNewGroup, 1);
+  histogram_tester.ExpectBucketCount(
+      "CollaborationService.JoinFlow",
+      metrics::CollaborationServiceJoinEvent::kAddedUserToGroup, 1);
+  histogram_tester.ExpectTimeBucketCount(
+      "CollaborationService.Latency.AuthenticationInitToSuccess",
+      authentication_time, 1);
+  histogram_tester.ExpectTimeBucketCount(
+      "CollaborationService.Latency.WaitingForServicesInitialization",
+      service_initialization_time, 1);
+  histogram_tester.ExpectTimeBucketCount(
+      "CollaborationService.Latency.TabGroupFetchedAfterPeopleGroupJoined",
+      tab_group_fetch_time, 1);
 }
 
 TEST_F(CollaborationControllerTest, JoinFlowManagedDevice) {
@@ -264,7 +299,7 @@ TEST_F(CollaborationControllerTest, JoinFlowManagedDevice) {
 
   // Simulate managed device.
   ServiceStatus status;
-  status.signin_status = SigninStatus::kNotSignedIn;
+  status.signin_status = SigninStatus::kSigninDisabled;
   status.sync_status = SyncStatus::kNotSyncing;
   status.collaboration_status = CollaborationStatus::kDisabledForPolicy;
   EXPECT_CALL(*collaboration_service_, GetServiceStatus())
@@ -288,7 +323,7 @@ TEST_F(CollaborationControllerTest, JoinFlowSignedInManagedAccountAsync) {
   // Simulate managed account signed in.
   ServiceStatus status;
   status.signin_status = SigninStatus::kSignedIn;
-  status.sync_status = SyncStatus::kSyncEnabled;
+  status.sync_status = SyncStatus::kSyncDisabledByEnterprise;
   status.collaboration_status = CollaborationStatus::kDisabledPending;
   EXPECT_CALL(*collaboration_service_, GetServiceStatus())
       .WillRepeatedly(Return(status));
@@ -321,20 +356,24 @@ TEST_F(CollaborationControllerTest, JoinFlowSignedOutManagedAccountAsync) {
 
   // Simulate managed account with info not ready.
   ServiceStatus status;
-  status.signin_status = SigninStatus::kNotSignedIn;
+  status.signin_status = SigninStatus::kSigninDisabled;
   status.sync_status = SyncStatus::kNotSyncing;
   status.collaboration_status = CollaborationStatus::kDisabledPending;
   EXPECT_CALL(*collaboration_service_, GetServiceStatus())
       .WillRepeatedly(Return(status));
+
+  // Get the last added observer which should be the one added by the current
+  // state.
   CollaborationService::Observer* observer;
   EXPECT_CALL(*collaboration_service_, AddObserver(_))
-      .WillOnce(SaveArg<0>(&observer));
+      .WillRepeatedly(SaveArg<0>(&observer));
 
   std::move(prepare_ui_callback_).Run(Outcome::kSuccess);
   EXPECT_EQ(controller_->GetStateForTesting(),
             StateId::kWaitingForPolicyUpdate);
 
   // The managed account info become available.
+  EXPECT_CALL(*collaboration_service_, RemoveObserver(_)).Times(2);
   EXPECT_CALL(*delegate_,
               ShowError(ErrorInfo(ErrorInfo::Type::kSigninDisabledByPolicy),
                         IsNotNullCallback()));
@@ -346,7 +385,7 @@ TEST_F(CollaborationControllerTest, JoinFlowSignedOutManagedAccountAsync) {
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
 }
 
-TEST_F(CollaborationControllerTest, JoinFlowManagedAccount) {
+TEST_F(CollaborationControllerTest, JoinFlowManagedAccountSharingDisabled) {
   // Start Join flow.
   InitializeJoinController(base::DoNothing());
 
@@ -380,11 +419,43 @@ TEST_F(CollaborationControllerTest, JoinFlowManagedAccount) {
   ASSERT_TRUE(status.IsAuthenticationValid());
 
   EXPECT_CALL(*delegate_,
-              ShowError(ErrorInfo(ErrorInfo::Type::kSyncDisabledByPolicy),
+              ShowError(ErrorInfo(ErrorInfo::Type::kSharingDisabledByPolicy),
                         IsNotNullCallback()));
 
   std::move(authentication_ui_calback).Run(Outcome::kSuccess);
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
+}
+
+TEST_F(CollaborationControllerTest, ManageFlowManagedAccountSharingDisabled) {
+  // Start manage flow with a local shared tab group.
+  tab_groups::LocalTabGroupID local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+  tab_groups::EitherGroupID either_id = local_id;
+  SavedTabGroup tab_group(std::u16string(u"title"),
+                          tab_groups::TabGroupColorId::kGrey, {});
+  tab_group.SetLocalGroupId(local_id);
+  tab_group.SetCollaborationId(tab_groups::CollaborationId(kGroupId.value()));
+  EXPECT_CALL(*tab_group_sync_service_, GetGroup(either_id))
+      .WillRepeatedly(Return(tab_group));
+
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, local_id));
+
+  // 1. Pending state.
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  // Simulate managed device sharing disabled.
+  ServiceStatus status;
+  status.signin_status = SigninStatus::kSignedIn;
+  status.sync_status = SyncStatus::kSyncEnabled;
+  status.collaboration_status = CollaborationStatus::kDisabledForPolicy;
+  EXPECT_CALL(*collaboration_service_, GetServiceStatus())
+      .WillRepeatedly(Return(status));
+
+  // The share flow is allowed to proceed to share screen.
+  // 2. Pending -> Showing share screen state.
+  std::move(prepare_ui_callback_).Run(Outcome::kSuccess);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kShowingManageScreen);
 }
 
 TEST_F(CollaborationControllerTest, UrlHandlingError) {
@@ -407,6 +478,67 @@ TEST_F(CollaborationControllerTest, UrlHandlingError) {
   EXPECT_CALL(*delegate_, OnFlowFinished());
   std::move(error_ui_callback).Run(Outcome::kSuccess);
   run_loop.Run();
+}
+
+TEST_F(CollaborationControllerTest, JoinFlowVersionOutOfDate) {
+  // Start Join flow.
+  InitializeJoinController(base::DoNothing());
+
+  // 1. Pending state.
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  // Simulate version out of date.
+  ServiceStatus status;
+  status.signin_status = SigninStatus::kSignedIn;
+  status.sync_status = SyncStatus::kSyncEnabled;
+  status.collaboration_status =
+      CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi;
+  EXPECT_CALL(*collaboration_service_, GetServiceStatus())
+      .WillRepeatedly(Return(status));
+
+  EXPECT_CALL(
+      *delegate_,
+      ShowError(ErrorInfo(ErrorInfo::Type::kUpdateChromeUiForVersionOutOfDate,
+                          FlowType::kJoin),
+                IsNotNullCallback()));
+
+  std::move(prepare_ui_callback_).Run(Outcome::kSuccess);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
+}
+
+TEST_F(CollaborationControllerTest, ShareFlowVersionOutOfDate) {
+  // Start Share flow.
+  tab_groups::LocalTabGroupID local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+  tab_groups::EitherGroupID either_id = local_id;
+  SavedTabGroup tab_group(std::u16string(u"title"),
+                          tab_groups::TabGroupColorId::kGrey, {});
+  tab_group.SetLocalGroupId(local_id);
+  EXPECT_CALL(*tab_group_sync_service_, GetGroup(either_id))
+      .WillRepeatedly(Return(tab_group));
+
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, local_id));
+
+  // 1. Pending state.
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  // Simulate version out of date.
+  ServiceStatus status;
+  status.signin_status = SigninStatus::kSignedIn;
+  status.sync_status = SyncStatus::kSyncEnabled;
+  status.collaboration_status =
+      CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi;
+  EXPECT_CALL(*collaboration_service_, GetServiceStatus())
+      .WillRepeatedly(Return(status));
+
+  EXPECT_CALL(
+      *delegate_,
+      ShowError(ErrorInfo(ErrorInfo::Type::kUpdateChromeUiForVersionOutOfDate,
+                          FlowType::kShareOrManage),
+                IsNotNullCallback()));
+  std::move(prepare_ui_callback_).Run(Outcome::kSuccess);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
 }
 
 TEST_F(CollaborationControllerTest, DelegateOutcomeError) {
@@ -433,20 +565,15 @@ TEST_F(CollaborationControllerTest, DelegateOutcomeError) {
 TEST_F(CollaborationControllerTest, ReadNewGroupError) {
   // Start Join flow.
   InitializeJoinController(base::DoNothing());
+  SetUpJoinRequirements();
 
-  base::OnceCallback<void(
-      const data_sharing::DataSharingService::GroupDataOrFailureOutcome&)>
-      callback;
-  EXPECT_CALL(
-      *data_sharing_service_,
-      ReadNewGroup(GroupToken(kGroupId, kAccessToken), IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&callback));
-
-  controller_->SetStateForTesting(StateId::kCheckingFlowRequirements);
-
-  std::move(callback).Run(
-      base::unexpected(data_sharing::DataSharingService::
-                           PeopleGroupActionFailure::kPersistentFailure));
+  controller_->SetStateForTesting(StateId::kAddingUserToGroup);
+  data_sharing::SharedDataPreview preview;
+  preview.shared_tab_group_preview = data_sharing::SharedTabGroupPreview();
+  std::move(preview_callback_).Run(preview);
+  std::move(group_data_callback_)
+      .Run(base::unexpected(data_sharing::DataSharingService::
+                                PeopleGroupActionFailure::kPersistentFailure));
 
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
 }
@@ -455,15 +582,8 @@ TEST_F(CollaborationControllerTest, ReadNewGroupAlreadyExist) {
   // Start Join flow.
   InitializeJoinController(base::DoNothing());
 
-  base::OnceCallback<void(
-      const data_sharing::DataSharingService::GroupDataOrFailureOutcome&)>
-      callback;
-  EXPECT_CALL(
-      *data_sharing_service_,
-      ReadNewGroup(GroupToken(kGroupId, kAccessToken), IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&callback));
-
-  controller_->SetStateForTesting(StateId::kCheckingFlowRequirements);
+  SetUpJoinRequirements();
+  controller_->SetStateForTesting(StateId::kAddingUserToGroup);
 
   CoreAccountInfo account = identity_test_env_.SetPrimaryAccount(
       kUserEmail, signin::ConsentLevel::kSignin);
@@ -473,7 +593,10 @@ TEST_F(CollaborationControllerTest, ReadNewGroupAlreadyExist) {
   GroupData group_data =
       GroupData(kGroupId, /*display_name=*/"",
                 /*members=*/{self}, /*former_members=*/{}, kAccessToken);
-  std::move(callback).Run(group_data);
+  std::move(group_data_callback_).Run(group_data);
+  std::move(preview_callback_)
+      .Run(base::unexpected(data_sharing::DataSharingService::
+                                DataPreviewActionFailure::kGroupFull));
 
   // Fix this to expect error when SDK implementation is done.
   EXPECT_EQ(controller_->GetStateForTesting(),
@@ -483,23 +606,19 @@ TEST_F(CollaborationControllerTest, ReadNewGroupAlreadyExist) {
 TEST_F(CollaborationControllerTest, PreviewDataUrlInvalidFailure) {
   // Start Join flow.
   InitializeJoinController(base::DoNothing());
+  SetUpJoinRequirements();
 
-  base::OnceCallback<void(const data_sharing::DataSharingService::
-                              SharedDataPreviewOrFailureOutcome&)>
-      preview_callback;
-  EXPECT_CALL(*data_sharing_service_,
-              GetSharedEntitiesPreview(GroupToken(kGroupId, kAccessToken),
-                                       IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&preview_callback));
   controller_->SetStateForTesting(StateId::kAddingUserToGroup);
   base::OnceCallback<void(Outcome)> error_ui_callback;
   EXPECT_CALL(*delegate_, ShowError(ErrorInfo(ErrorInfo::Type::kInvalidUrl),
                                     IsNotNullCallback()))
       .WillOnce(MoveArg<1>(&error_ui_callback));
 
-  std::move(preview_callback)
+  std::move(preview_callback_)
       .Run(base::unexpected(data_sharing::DataSharingService::
                                 DataPreviewActionFailure::kPermissionDenied));
+  std::move(group_data_callback_).Run(GroupData());
+
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
 }
 
@@ -507,23 +626,20 @@ TEST_F(CollaborationControllerTest, PreviewDataGroupFullFailure) {
   // Start Join flow.
   InitializeJoinController(base::DoNothing());
 
-  base::OnceCallback<void(const data_sharing::DataSharingService::
-                              SharedDataPreviewOrFailureOutcome&)>
-      preview_callback;
-  EXPECT_CALL(*data_sharing_service_,
-              GetSharedEntitiesPreview(
-                  GroupToken(data_sharing::GroupId(kGroupId), kAccessToken),
-                  IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&preview_callback));
+  SetUpJoinRequirements();
   controller_->SetStateForTesting(StateId::kAddingUserToGroup);
   base::OnceCallback<void(Outcome)> error_ui_callback;
   EXPECT_CALL(*delegate_, ShowError(ErrorInfo(ErrorInfo::Type::kGroupFull),
                                     IsNotNullCallback()))
       .WillOnce(MoveArg<1>(&error_ui_callback));
+  EXPECT_CALL(*collaboration_service_, GetCurrentUserRoleForGroup(kGroupId))
+      .WillRepeatedly(Return(data_sharing::MemberRole::kUnknown));
 
-  std::move(preview_callback)
+  std::move(preview_callback_)
       .Run(base::unexpected(data_sharing::DataSharingService::
                                 DataPreviewActionFailure::kGroupFull));
+  std::move(group_data_callback_).Run(GroupData());
+
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
 }
 
@@ -562,14 +678,14 @@ TEST_F(CollaborationControllerTest, AuthenticationCanceledBeforeSignIn) {
 
   // Verify the not signed in metrics are recorded properly.
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.JoinFlow",
-      metrics::CollaborationServiceJoinEvent::kNotSignedIn, 1);
+      "CollaborationService.JoinFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kNotSignedIn, 1);
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.JoinFlow",
-      metrics::CollaborationServiceJoinEvent::kCanceledNotSignedIn, 1);
+      "CollaborationService.JoinFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kCanceledNotSignedIn, 1);
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.JoinFlow",
-      metrics::CollaborationServiceJoinEvent::kFlowRequirementsMet, 0);
+      "CollaborationService.JoinFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kFlowRequirementsMet, 0);
 }
 
 TEST_F(CollaborationControllerTest, AuthenticationCanceledAfterSignIn) {
@@ -579,16 +695,10 @@ TEST_F(CollaborationControllerTest, AuthenticationCanceledAfterSignIn) {
 
   // Start Join flow.
   InitializeJoinController(run_loop.QuitClosure());
+  SetUpJoinRequirements();
 
   // Simulate getting to the Adding User To Group state.
   base::OnceCallback<void(Outcome)> join_ui_callback;
-  base::OnceCallback<void(const data_sharing::DataSharingService::
-                              SharedDataPreviewOrFailureOutcome&)>
-      preview_callback;
-  EXPECT_CALL(*data_sharing_service_,
-              GetSharedEntitiesPreview(GroupToken(kGroupId, kAccessToken),
-                                       IsNotNullCallback()))
-      .WillOnce(MoveArg<1>(&preview_callback));
   EXPECT_CALL(*delegate_, ShowJoinDialog(_, _, IsNotNullCallback()))
       .WillOnce(MoveArg<2>(&join_ui_callback));
   controller_->SetStateForTesting(StateId::kAddingUserToGroup);
@@ -596,7 +706,8 @@ TEST_F(CollaborationControllerTest, AuthenticationCanceledAfterSignIn) {
   // Show group preview screen.
   data_sharing::SharedDataPreview preview;
   preview.shared_tab_group_preview = data_sharing::SharedTabGroupPreview();
-  std::move(preview_callback).Run(preview);
+  std::move(preview_callback_).Run(preview);
+  std::move(group_data_callback_).Run(GroupData());
 
   // Cancel the join flow.
   EXPECT_CALL(*delegate_, OnFlowFinished);
@@ -607,6 +718,44 @@ TEST_F(CollaborationControllerTest, AuthenticationCanceledAfterSignIn) {
   histogram_tester.ExpectBucketCount(
       "CollaborationService.JoinFlow",
       metrics::CollaborationServiceJoinEvent::kCanceled, 1);
+}
+
+TEST_F(CollaborationControllerTest, SimulateFailureToAddUserToGroup) {
+  base::HistogramTester histogram_tester;
+
+  RunLoop run_loop;
+
+  // Start Join flow.
+  InitializeJoinController(run_loop.QuitClosure());
+  SetUpJoinRequirements();
+
+  // Simulate getting to the Adding User To Group state.
+  base::OnceCallback<void(Outcome)> join_ui_callback;
+  EXPECT_CALL(*delegate_, ShowJoinDialog(_, _, IsNotNullCallback()))
+      .WillOnce(MoveArg<2>(&join_ui_callback));
+
+  base::OnceCallback<void(Outcome)> error_ui_callback;
+  EXPECT_CALL(*delegate_, ShowError(ErrorInfo(ErrorInfo::Type::kGenericError),
+                                    IsNotNullCallback()))
+      .WillOnce(MoveArg<1>(&error_ui_callback));
+  controller_->SetStateForTesting(StateId::kAddingUserToGroup);
+
+  // Show group preview screen.
+  data_sharing::SharedDataPreview preview;
+  preview.shared_tab_group_preview = data_sharing::SharedTabGroupPreview();
+  std::move(preview_callback_).Run(preview);
+  std::move(group_data_callback_).Run(GroupData());
+
+  // Simulate failure on the join flow.
+  EXPECT_CALL(*delegate_, OnFlowFinished);
+  std::move(join_ui_callback).Run(Outcome::kFailure);
+  std::move(error_ui_callback).Run(Outcome::kSuccess);
+
+  run_loop.Run();
+
+  histogram_tester.ExpectBucketCount(
+      "CollaborationService.JoinFlow",
+      metrics::CollaborationServiceJoinEvent::kFailedAddingUserToGroup, 1);
 }
 
 TEST_F(CollaborationControllerTest, AuthenticationError) {
@@ -666,9 +815,11 @@ TEST_F(CollaborationControllerTest, AuthenticationSuccessObserved) {
   EXPECT_CALL(*collaboration_service_, GetServiceStatus())
       .WillRepeatedly(Return(status));
 
+  // Get the last added observer which should be the one added by the current
+  // state.
   CollaborationService::Observer* observer;
   EXPECT_CALL(*collaboration_service_, AddObserver(_))
-      .WillOnce(SaveArg<0>(&observer));
+      .WillRepeatedly(SaveArg<0>(&observer));
   std::move(authentication_ui_calback).Run(Outcome::kSuccess);
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kAuthenticating);
 
@@ -679,7 +830,7 @@ TEST_F(CollaborationControllerTest, AuthenticationSuccessObserved) {
   update.new_status.sync_status = SyncStatus::kSyncEnabled;
   ASSERT_TRUE(update.new_status.IsAuthenticationValid());
   EXPECT_CALL(*delegate_, NotifySignInAndSyncStatusChange());
-  EXPECT_CALL(*collaboration_service_, RemoveObserver(observer));
+  EXPECT_CALL(*collaboration_service_, RemoveObserver(_)).Times(2);
   EXPECT_CALL(*data_sharing_service_, IsGroupDataModelLoaded());
   observer->OnServiceStatusChanged(update);
   EXPECT_EQ(controller_->GetStateForTesting(),
@@ -688,6 +839,7 @@ TEST_F(CollaborationControllerTest, AuthenticationSuccessObserved) {
 
 TEST_F(CollaborationControllerTest, FullShareFlowAllStates) {
   base::HistogramTester histogram_tester;
+  base::TimeDelta url_ready_time = base::Milliseconds(10);
 
   // Start Share flow.
   tab_groups::LocalTabGroupID local_id =
@@ -719,7 +871,8 @@ TEST_F(CollaborationControllerTest, FullShareFlowAllStates) {
       tab_group_sharing_callback;
   EXPECT_CALL(
       *tab_group_sync_service_,
-      MakeTabGroupShared(local_id, kGroupId.value(), IsNotNullCallback()))
+      MakeTabGroupShared(local_id, syncer::CollaborationId(kGroupId.value()),
+                         IsNotNullCallback()))
       .WillOnce(MoveArg<2>(&tab_group_sharing_callback));
   base::OnceCallback<void(
       const data_sharing::DataSharingService::GroupDataOrFailureOutcome&)>
@@ -741,23 +894,32 @@ TEST_F(CollaborationControllerTest, FullShareFlowAllStates) {
       GroupData(kGroupId, /*display_name=*/"",
                 /*members=*/{}, /*former_members=*/{}, kAccessToken);
   std::move(group_data_callback).Run(group_data);
+  task_environment_.FastForwardBy(url_ready_time);
   std::move(tab_group_sharing_callback)
       .Run(tab_groups::TabGroupSyncService::TabGroupSharingResult::kSuccess);
   EXPECT_EQ(controller_->GetStateForTesting(), StateId::kSharingTabGroupUrl);
 
   // Verify the manage flow metrics are recorded properly.
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.ShareOrManageFlow",
-      metrics::CollaborationServiceShareOrManageEvent::kFlowRequirementsMet, 1);
+      "CollaborationService.ShareOrManageFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kFlowRequirementsMet, 1);
   histogram_tester.ExpectBucketCount(
       "CollaborationService.ShareOrManageFlow",
       metrics::CollaborationServiceShareOrManageEvent::kShareDialogShown, 1);
+  histogram_tester.ExpectBucketCount(
+      "CollaborationService.ShareOrManageFlow",
+      metrics::CollaborationServiceShareOrManageEvent::
+          kCollaborationGroupCreated,
+      1);
   histogram_tester.ExpectBucketCount(
       "CollaborationService.ShareOrManageFlow",
       metrics::CollaborationServiceShareOrManageEvent::kTabGroupShared, 1);
   histogram_tester.ExpectBucketCount(
       "CollaborationService.ShareOrManageFlow",
       metrics::CollaborationServiceShareOrManageEvent::kUrlReadyToShare, 1);
+  histogram_tester.ExpectTimeBucketCount(
+      "CollaborationService.Latency.LinkReadyAfterGroupCreation",
+      url_ready_time, 1);
 }
 
 TEST_F(CollaborationControllerTest, CheckingFlowRequirementsManageFlow) {
@@ -790,8 +952,8 @@ TEST_F(CollaborationControllerTest, CheckingFlowRequirementsManageFlow) {
 
   // Verify the manage flow metrics are recorded properly.
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.ShareOrManageFlow",
-      metrics::CollaborationServiceShareOrManageEvent::kFlowRequirementsMet, 1);
+      "CollaborationService.ShareOrManageFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kFlowRequirementsMet, 1);
   histogram_tester.ExpectBucketCount(
       "CollaborationService.ShareOrManageFlow",
       metrics::CollaborationServiceShareOrManageEvent::kManageDialogShown, 1);
@@ -802,7 +964,7 @@ TEST_F(CollaborationControllerTest, CheckingFlowRequirementsManageFlow) {
       OnCollaborationRemoved(syncer::CollaborationId(kGroupId.value())));
   EXPECT_CALL(*data_sharing_service_, OnCollaborationGroupRemoved(kGroupId));
   EXPECT_CALL(*delegate_, OnFlowFinished());
-  std::move(manage_dialog_callback).Run(Outcome::kDeleteOrLeaveGroup);
+  std::move(manage_dialog_callback).Run(Outcome::kGroupLeftOrDeleted);
 }
 
 TEST_F(CollaborationControllerTest, ShareFlowCanceledBeforeSignin) {
@@ -847,14 +1009,240 @@ TEST_F(CollaborationControllerTest, ShareFlowCanceledBeforeSignin) {
 
   // Verify the not signed in metrics are recorded properly.
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.ShareOrManageFlow",
-      metrics::CollaborationServiceShareOrManageEvent::kNotSignedIn, 1);
+      "CollaborationService.ShareOrManageFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kNotSignedIn, 1);
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.ShareOrManageFlow",
-      metrics::CollaborationServiceShareOrManageEvent::kCanceledNotSignedIn, 1);
+      "CollaborationService.ShareOrManageFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kCanceledNotSignedIn, 1);
   histogram_tester.ExpectBucketCount(
-      "CollaborationService.ShareOrManageFlow",
-      metrics::CollaborationServiceShareOrManageEvent::kFlowRequirementsMet, 0);
+      "CollaborationService.ShareOrManageFlow.Events",
+      metrics::CollaborationServiceFlowEvent::kFlowRequirementsMet, 0);
+}
+
+TEST_F(CollaborationControllerTest, LeaveFlow) {
+  // Start leave flow.
+  tab_groups::LocalTabGroupID local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+  tab_groups::EitherGroupID either_id = local_id;
+  SavedTabGroup tab_group(std::u16string(u"title"),
+                          tab_groups::TabGroupColorId::kGrey, {});
+  tab_group.SetLocalGroupId(local_id);
+  tab_group.SetCollaborationId(tab_groups::CollaborationId(kGroupId.value()));
+  EXPECT_CALL(*tab_group_sync_service_, GetGroup(either_id))
+      .WillRepeatedly(Return(tab_group));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kLeaveOrDelete, either_id));
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  // Simulate that the user is part of the group as member.
+  EXPECT_CALL(*collaboration_service_, GetCurrentUserRoleForGroup(kGroupId))
+      .WillRepeatedly(Return(data_sharing::MemberRole::kMember));
+  base::OnceCallback<void(Outcome)> leave_dialog_callback;
+  EXPECT_CALL(*delegate_, ShowLeaveDialog(either_id, IsNotNullCallback()))
+      .WillOnce(MoveArg<1>(&leave_dialog_callback));
+
+  controller_->SetStateForTesting(StateId::kCheckingFlowRequirements);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kLeavingGroup);
+
+  // Leave the collaboration group.
+  base::OnceCallback<void(
+      data_sharing::DataSharingService::PeopleGroupActionOutcome)>
+      people_group_action_callback;
+  EXPECT_CALL(*data_sharing_service_, LeaveGroup(kGroupId, IsNotNullCallback()))
+      .WillOnce(MoveArg<1>(&people_group_action_callback));
+  std::move(leave_dialog_callback).Run(Outcome::kSuccess);
+
+  // Clean up the tab group.
+  EXPECT_CALL(
+      *tab_group_sync_service_,
+      OnCollaborationRemoved(syncer::CollaborationId(kGroupId.value())));
+  EXPECT_CALL(*data_sharing_service_, OnCollaborationGroupRemoved(kGroupId));
+  EXPECT_CALL(*delegate_, OnFlowFinished());
+  std::move(people_group_action_callback)
+      .Run(
+          data_sharing::DataSharingService::PeopleGroupActionOutcome::kSuccess);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnServiceStatusChanged_SyncDisabledByEnterprise) {
+  InitializeJoinController(base::DoNothing());
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  CollaborationService::Observer* observer = controller_.get();
+  CollaborationService::Observer::ServiceStatusUpdate update;
+  update.old_status.collaboration_status =
+      CollaborationStatus::kEnabledCreateAndJoin;
+  update.new_status.collaboration_status =
+      CollaborationStatus::kDisabledForPolicy;
+  update.new_status.sync_status = SyncStatus::kSyncDisabledByEnterprise;
+
+  EXPECT_CALL(*delegate_,
+              ShowError(ErrorInfo(ErrorInfo::Type::kSyncDisabledByPolicy),
+                        IsNotNullCallback()));
+
+  observer->OnServiceStatusChanged(update);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnServiceStatusChanged_SigninDisabledByEnterprise) {
+  InitializeJoinController(base::DoNothing());
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  CollaborationService::Observer* observer = controller_.get();
+  CollaborationService::Observer::ServiceStatusUpdate update;
+  update.old_status.collaboration_status =
+      CollaborationStatus::kEnabledCreateAndJoin;
+  update.new_status.collaboration_status =
+      CollaborationStatus::kDisabledForPolicy;
+  update.new_status.signin_status = SigninStatus::kSigninDisabled;
+
+  EXPECT_CALL(*delegate_,
+              ShowError(ErrorInfo(ErrorInfo::Type::kSigninDisabledByPolicy),
+                        IsNotNullCallback()));
+
+  observer->OnServiceStatusChanged(update);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnServiceStatusChanged_SharingDisabledByEnterprise) {
+  InitializeJoinController(base::DoNothing());
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kPending);
+
+  CollaborationService::Observer* observer = controller_.get();
+  CollaborationService::Observer::ServiceStatusUpdate update;
+  update.old_status.collaboration_status =
+      CollaborationStatus::kEnabledCreateAndJoin;
+  update.new_status.collaboration_status =
+      CollaborationStatus::kDisabledForPolicy;
+  // Neither signin nor sync is the reason for policy disabling.
+  update.new_status.signin_status = SigninStatus::kSignedIn;
+  update.new_status.sync_status = SyncStatus::kSyncEnabled;
+
+  EXPECT_CALL(*delegate_,
+              ShowError(ErrorInfo(ErrorInfo::Type::kSharingDisabledByPolicy),
+                        IsNotNullCallback()));
+
+  observer->OnServiceStatusChanged(update);
+  EXPECT_EQ(controller_->GetStateForTesting(), StateId::kError);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnTabGroupRemoved_LocalId_CancelsFlowIfMatching) {
+  tab_groups::LocalTabGroupID local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+
+  // Start Share flow associated with local_id.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, local_id));
+
+  EXPECT_CALL(*delegate_, Cancel(_));
+  EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(_));
+
+  // Removing the tab group associated with local_id cancels the flow.
+  controller_->OnTabGroupRemoved(local_id, tab_groups::TriggerSource::REMOTE);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnTabGroupRemoved_LocalId_DoesNotCancelFlowIfNotMatching) {
+  tab_groups::LocalTabGroupID flow_local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+  tab_groups::LocalTabGroupID removed_local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+  ASSERT_NE(flow_local_id, removed_local_id);
+
+  // Start Share flow associated with flow_local_id.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, flow_local_id));
+
+  EXPECT_CALL(*delegate_, Cancel(_)).Times(0);
+
+  // Removing a different tab group (removed_local_id) does not cancel the
+  // flow.
+  controller_->OnTabGroupRemoved(removed_local_id,
+                                 tab_groups::TriggerSource::REMOTE);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnTabGroupRemoved_SyncId_CancelsFlowIfMatching) {
+  base::Uuid sync_id = base::Uuid::GenerateRandomV4();
+
+  // Start Share flow associated with sync_id.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, sync_id));
+
+  EXPECT_CALL(*delegate_, Cancel(_));
+  EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(_));
+
+  // Removing the tab group associated with sync_id cancels the flow.
+  controller_->OnTabGroupRemoved(sync_id, tab_groups::TriggerSource::REMOTE);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnTabGroupRemoved_SyncId_DoesNotCancelFlowIfNotMatching) {
+  base::Uuid flow_sync_id = base::Uuid::GenerateRandomV4();
+  base::Uuid removed_sync_id = base::Uuid::GenerateRandomV4();
+  ASSERT_NE(flow_sync_id, removed_sync_id);
+
+  // Start Share flow associated with flow_sync_id.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, flow_sync_id));
+
+  EXPECT_CALL(*delegate_, Cancel(_)).Times(0);
+
+  // Removing a different tab group (removed_sync_id) does not cancel the
+  // flow.
+  controller_->OnTabGroupRemoved(removed_sync_id,
+                                 tab_groups::TriggerSource::REMOTE);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnTabGroupMigrated_CancelsFlowForOldSyncId) {
+  base::Uuid old_sync_id = base::Uuid::GenerateRandomV4();
+
+  // Start Share flow at pending state.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, old_sync_id));
+
+  SavedTabGroup new_group(std::u16string(u"new_title"),
+                          tab_groups::TabGroupColorId::kBlue, {});
+
+  EXPECT_CALL(*delegate_, Cancel(_));
+  EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(_));
+
+  // Migrating the tab group associated with the old_sync_id cancels the flow.
+  controller_->OnTabGroupMigrated(new_group, old_sync_id,
+                                  tab_groups::TriggerSource::REMOTE);
+}
+
+TEST_F(CollaborationControllerTest,
+       OnTabGroupMigrated_CancelsFlowForNewLocalId) {
+  tab_groups::LocalTabGroupID local_id =
+      tab_groups::test::GenerateRandomTabGroupID();
+  base::Uuid old_sync_id = base::Uuid::GenerateRandomV4();
+
+  // Start Share flow with a local_id.
+  EXPECT_CALL(*tab_group_sync_service_, AddObserver(_));
+  InitializeController(base::DoNothing(),
+                       Flow(FlowType::kShareOrManage, local_id));
+
+  SavedTabGroup new_group(std::u16string(u"new_title"),
+                          tab_groups::TabGroupColorId::kBlue, {});
+  new_group.SetLocalGroupId(local_id);
+
+  EXPECT_CALL(*delegate_, Cancel(_));
+  EXPECT_CALL(*tab_group_sync_service_, RemoveObserver(_));
+
+  // Migrating a different tab group (old_sync_id) to a new group
+  // that has the same local_id as the current flow should cancel the flow.
+  controller_->OnTabGroupMigrated(new_group, old_sync_id,
+                                  tab_groups::TriggerSource::REMOTE);
 }
 
 }  // namespace collaboration

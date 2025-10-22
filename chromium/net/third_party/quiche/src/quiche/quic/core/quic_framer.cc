@@ -228,7 +228,7 @@ QuicPacketNumberLength GetLongHeaderPacketNumberLength(uint8_t type) {
 // Used to get packet number space before packet gets decrypted.
 PacketNumberSpace GetPacketNumberSpace(const QuicPacketHeader& header) {
   switch (header.form) {
-    case GOOGLE_QUIC_PACKET:
+    case GOOGLE_QUIC_Q043_PACKET:
       QUIC_BUG(quic_bug_10850_5)
           << "Try to get packet number space of Google QUIC packet";
       break;
@@ -257,7 +257,7 @@ PacketNumberSpace GetPacketNumberSpace(const QuicPacketHeader& header) {
 
 EncryptionLevel GetEncryptionLevel(const QuicPacketHeader& header) {
   switch (header.form) {
-    case GOOGLE_QUIC_PACKET:
+    case GOOGLE_QUIC_Q043_PACKET:
       QUIC_BUG(quic_bug_10850_7)
           << "Cannot determine EncryptionLevel from Google QUIC header";
       break;
@@ -385,6 +385,13 @@ size_t AckEcnCountSize(const QuicAckFrame& ack_frame) {
           QuicDataWriter::GetVarInt62Len(ack_frame.ecn_counters->ce));
 }
 
+// A version of QuicFramer::set_detailed_error() for static methods.
+void set_detailed_error_static(std::string* out, const char* detailed_error) {
+  if (out != nullptr) {
+    *out = detailed_error;
+  }
+}
+
 }  // namespace
 
 QuicFramer::QuicFramer(const ParsedQuicVersionVector& supported_versions,
@@ -392,7 +399,6 @@ QuicFramer::QuicFramer(const ParsedQuicVersionVector& supported_versions,
                        uint8_t expected_server_connection_id_length)
     : visitor_(nullptr),
       error_(QUIC_NO_ERROR),
-      last_serialized_server_connection_id_(EmptyQuicConnectionId()),
       version_(ParsedQuicVersion::Unsupported()),
       supported_versions_(supported_versions),
       decrypter_level_(ENCRYPTION_INITIAL),
@@ -621,10 +627,10 @@ size_t QuicFramer::GetAckFrequencyFrameSize(
     const QuicAckFrequencyFrame& frame) {
   return QuicDataWriter::GetVarInt62Len(IETF_ACK_FREQUENCY) +
          QuicDataWriter::GetVarInt62Len(frame.sequence_number) +
-         QuicDataWriter::GetVarInt62Len(frame.packet_tolerance) +
-         QuicDataWriter::GetVarInt62Len(frame.max_ack_delay.ToMicroseconds()) +
-         // One byte for encoding boolean
-         1;
+         QuicDataWriter::GetVarInt62Len(frame.ack_eliciting_threshold) +
+         QuicDataWriter::GetVarInt62Len(
+             frame.requested_max_ack_delay.ToMicroseconds()) +
+         QuicDataWriter::GetVarInt62Len(frame.reordering_threshold);
 }
 
 // static
@@ -1722,7 +1728,7 @@ bool QuicFramer::ProcessIetfDataPacket(QuicDataReader* encrypted_reader,
                                        const QuicEncryptedPacket& packet,
                                        char* decrypted_buffer,
                                        size_t buffer_length) {
-  QUICHE_DCHECK_NE(GOOGLE_QUIC_PACKET, header->form);
+  QUICHE_DCHECK_NE(GOOGLE_QUIC_Q043_PACKET, header->form);
   QUICHE_DCHECK(!header->has_possible_stateless_reset_token);
   header->length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_0;
   header->remaining_packet_length = 0;
@@ -2046,8 +2052,6 @@ bool QuicFramer::AppendIetfPacketHeader(const QuicPacketHeader& header,
           writer)) {
     return false;
   }
-
-  last_serialized_server_connection_id_ = server_connection_id;
 
   // TODO(b/141924462) Remove this QUIC_BUG once we do support sending RETRY.
   QUIC_BUG_IF(quic_bug_12975_7,
@@ -2404,17 +2408,22 @@ bool QuicFramer::ProcessIetfPacketHeader(QuicDataReader* reader,
     QuicVersionLabel version_label;
     bool has_length_prefix;
     std::string detailed_error;
+    absl::string_view destination_connection_id;
+    absl::string_view source_connection_id;
     QuicErrorCode parse_result = QuicFramer::ParsePublicHeader(
-        reader, expected_destination_connection_id_length, /*ietf_format=*/true,
-        &header->type_byte, &header->form, &header->version_flag,
-        &has_length_prefix, &version_label, &header->version,
-        &header->destination_connection_id, &header->source_connection_id,
+        reader, expected_destination_connection_id_length,
+        /*ietf_format=*/true, &header->type_byte, &header->form,
+        &header->version_flag, &has_length_prefix, &version_label,
+        &header->version, &destination_connection_id, &source_connection_id,
         &header->long_packet_type, &header->retry_token_length_length,
         &header->retry_token, &detailed_error);
     if (parse_result != QUIC_NO_ERROR) {
       set_detailed_error(detailed_error);
       return false;
     }
+    header->destination_connection_id =
+        QuicConnectionId(destination_connection_id);
+    header->source_connection_id = QuicConnectionId(source_connection_id);
     header->destination_connection_id_included = CONNECTION_ID_PRESENT;
     header->source_connection_id_included =
         header->version_flag ? CONNECTION_ID_PRESENT : CONNECTION_ID_ABSENT;
@@ -3363,12 +3372,8 @@ bool QuicFramer::ProcessAckFrequencyFrame(QuicDataReader* reader,
     return false;
   }
 
-  if (!reader->ReadVarInt62(&frame->packet_tolerance)) {
+  if (!reader->ReadVarInt62(&frame->ack_eliciting_threshold)) {
     set_detailed_error("Unable to read packet tolerance.");
-    return false;
-  }
-  if (frame->packet_tolerance == 0) {
-    set_detailed_error("Invalid packet tolerance.");
     return false;
   }
   uint64_t max_ack_delay_us;
@@ -3381,19 +3386,13 @@ bool QuicFramer::ProcessAckFrequencyFrame(QuicDataReader* reader,
     set_detailed_error("Invalid max_ack_delay_us.");
     return false;
   }
-  frame->max_ack_delay = QuicTime::Delta::FromMicroseconds(max_ack_delay_us);
+  frame->requested_max_ack_delay =
+      QuicTime::Delta::FromMicroseconds(max_ack_delay_us);
 
-  uint8_t ignore_order;
-  if (!reader->ReadUInt8(&ignore_order)) {
-    set_detailed_error("Unable to read ignore_order.");
+  if (!reader->ReadVarInt62(&frame->reordering_threshold)) {
+    set_detailed_error("Unable to read reordering_threshold.");
     return false;
   }
-  if (ignore_order > 1) {
-    set_detailed_error("Invalid ignore_order.");
-    return false;
-  }
-  frame->ignore_order = ignore_order;
-
   return true;
 }
 
@@ -4536,9 +4535,9 @@ bool QuicFramer::DecryptPayload(size_t udp_packet_length,
   bool key_phase;
   bool attempt_key_update = false;
   if (version().KnowsWhichDecrypterToUse()) {
-    if (header.form == GOOGLE_QUIC_PACKET) {
+    if (header.form == GOOGLE_QUIC_Q043_PACKET) {
       QUIC_BUG(quic_bug_10850_68)
-          << "Attempted to decrypt GOOGLE_QUIC_PACKET with a version that "
+          << "Attempted to decrypt GOOGLE_QUIC_Q043_PACKET with a version that "
              "knows which decrypter to use";
       return false;
     }
@@ -5242,17 +5241,17 @@ bool QuicFramer::AppendAckFrequencyFrame(const QuicAckFrequencyFrame& frame,
     set_detailed_error("Writing sequence number failed.");
     return false;
   }
-  if (!writer->WriteVarInt62(frame.packet_tolerance)) {
+  if (!writer->WriteVarInt62(frame.ack_eliciting_threshold)) {
     set_detailed_error("Writing packet tolerance failed.");
     return false;
   }
-  if (!writer->WriteVarInt62(
-          static_cast<uint64_t>(frame.max_ack_delay.ToMicroseconds()))) {
+  if (!writer->WriteVarInt62(static_cast<uint64_t>(
+          frame.requested_max_ack_delay.ToMicroseconds()))) {
     set_detailed_error("Writing max_ack_delay_us failed.");
     return false;
   }
-  if (!writer->WriteUInt8(static_cast<uint8_t>(frame.ignore_order))) {
-    set_detailed_error("Writing ignore_order failed.");
+  if (!writer->WriteVarInt62(frame.reordering_threshold)) {
+    set_detailed_error("Writing reordering_threshold failed.");
     return false;
   }
 
@@ -6426,13 +6425,13 @@ QuicErrorCode QuicFramer::ParsePublicHeaderDispatcher(
     PacketHeaderFormat* format, QuicLongHeaderType* long_packet_type,
     bool* version_present, bool* has_length_prefix,
     QuicVersionLabel* version_label, ParsedQuicVersion* parsed_version,
-    QuicConnectionId* destination_connection_id,
-    QuicConnectionId* source_connection_id,
+    absl::string_view* destination_connection_id,
+    absl::string_view* source_connection_id,
     std::optional<absl::string_view>* retry_token,
     std::string* detailed_error) {
   QuicDataReader reader(packet.data(), packet.length());
   if (reader.IsDoneReading()) {
-    *detailed_error = "Unable to read first byte.";
+    set_detailed_error_static(detailed_error, "Unable to read first byte.");
     return QUIC_INVALID_PACKET_HEADER;
   }
   const uint8_t first_byte = reader.PeekByte();
@@ -6451,7 +6450,7 @@ QuicErrorCode QuicFramer::ParsePublicHeaderDispatcher(
     // from an unknown future version that allows the other two bits to be set
     // to zero. Based on this, packets that have all three of those bits set
     // to zero are known to be invalid.
-    *detailed_error = "Invalid flags.";
+    set_detailed_error_static(detailed_error, "Invalid flags.");
     return QUIC_INVALID_PACKET_HEADER;
   }
   const bool ietf_format = QuicUtils::IsIetfPacketHeader(first_byte);
@@ -6478,14 +6477,15 @@ QuicErrorCode QuicFramer::ParsePublicHeaderDispatcherShortHeaderLengthUnknown(
     QuicLongHeaderType* long_packet_type, bool* version_present,
     bool* has_length_prefix, QuicVersionLabel* version_label,
     ParsedQuicVersion* parsed_version,
-    QuicConnectionId* destination_connection_id,
-    QuicConnectionId* source_connection_id,
+    absl::string_view* destination_connection_id,
+    absl::string_view* source_connection_id,
     std::optional<absl::string_view>* retry_token, std::string* detailed_error,
     ConnectionIdGeneratorInterface& generator) {
   QuicDataReader reader(packet.data(), packet.length());
   // Get the first two bytes.
   if (reader.BytesRemaining() < 2) {
-    *detailed_error = "Unable to read first two bytes.";
+    set_detailed_error_static(detailed_error,
+                              "Unable to read first two bytes.");
     return QUIC_INVALID_PACKET_HEADER;
   }
   uint8_t two_bytes[2];
@@ -6614,21 +6614,22 @@ QuicErrorCode QuicFramer::ParsePublicHeaderGoogleQuic(
     QuicDataReader* reader, uint8_t* first_byte, PacketHeaderFormat* format,
     bool* version_present, QuicVersionLabel* version_label,
     ParsedQuicVersion* parsed_version,
-    QuicConnectionId* destination_connection_id, std::string* detailed_error) {
-  *format = GOOGLE_QUIC_PACKET;
+    absl::string_view* destination_connection_id, std::string* detailed_error) {
+  *format = GOOGLE_QUIC_Q043_PACKET;
   *version_present = (*first_byte & PACKET_PUBLIC_FLAGS_VERSION) != 0;
   uint8_t destination_connection_id_length = 0;
   if ((*first_byte & PACKET_PUBLIC_FLAGS_8BYTE_CONNECTION_ID) != 0) {
     destination_connection_id_length = kQuicDefaultConnectionIdLength;
   }
-  if (!reader->ReadConnectionId(destination_connection_id,
-                                destination_connection_id_length)) {
-    *detailed_error = "Unable to read ConnectionId.";
+  if (!reader->ReadStringPiece(destination_connection_id,
+                               destination_connection_id_length)) {
+    set_detailed_error_static(detailed_error, "Unable to read ConnectionId.");
     return QUIC_INVALID_PACKET_HEADER;
   }
   if (*version_present) {
     if (!ProcessVersionLabel(reader, version_label)) {
-      *detailed_error = "Unable to read protocol version.";
+      set_detailed_error_static(detailed_error,
+                                "Unable to read protocol version.");
       return QUIC_INVALID_PACKET_HEADER;
     }
     *parsed_version = ParseQuicVersionLabel(*version_label);
@@ -6677,14 +6678,16 @@ inline bool PacketHasLengthPrefixedConnectionIds(
 
 inline bool ParseLongHeaderConnectionIds(
     QuicDataReader& reader, bool has_length_prefix,
-    QuicVersionLabel version_label, QuicConnectionId& destination_connection_id,
-    QuicConnectionId& source_connection_id, std::string& detailed_error) {
+    QuicVersionLabel version_label,
+    absl::string_view* destination_connection_id,
+    absl::string_view* source_connection_id, std::string* detailed_error) {
   if (has_length_prefix) {
-    if (!reader.ReadLengthPrefixedConnectionId(&destination_connection_id)) {
-      detailed_error = "Unable to read destination connection ID.";
+    if (!reader.ReadStringPiece8(destination_connection_id)) {
+      set_detailed_error_static(detailed_error,
+                                "Unable to read destination connection ID.");
       return false;
     }
-    if (!reader.ReadLengthPrefixedConnectionId(&source_connection_id)) {
+    if (!reader.ReadStringPiece8(source_connection_id)) {
       if (version_label == kProxVersionLabel) {
         // The "PROX" version does not follow the length-prefixed invariants,
         // and can therefore attempt to read a payload byte and interpret it
@@ -6693,14 +6696,16 @@ inline bool ParseLongHeaderConnectionIds(
         // parsing as successful.
         return true;
       }
-      detailed_error = "Unable to read source connection ID.";
+      set_detailed_error_static(detailed_error,
+                                "Unable to read source connection ID.");
       return false;
     }
   } else {
     // Parse connection ID lengths.
     uint8_t connection_id_lengths_byte;
     if (!reader.ReadUInt8(&connection_id_lengths_byte)) {
-      detailed_error = "Unable to read connection ID lengths.";
+      set_detailed_error_static(detailed_error,
+                                "Unable to read connection ID lengths.");
       return false;
     }
     uint8_t destination_connection_id_length =
@@ -6715,16 +6720,18 @@ inline bool ParseLongHeaderConnectionIds(
     }
 
     // Read destination connection ID.
-    if (!reader.ReadConnectionId(&destination_connection_id,
-                                 destination_connection_id_length)) {
-      detailed_error = "Unable to read destination connection ID.";
+    if (!reader.ReadStringPiece(destination_connection_id,
+                                destination_connection_id_length)) {
+      set_detailed_error_static(detailed_error,
+                                "Unable to read destination connection ID.");
       return false;
     }
 
     // Read source connection ID.
-    if (!reader.ReadConnectionId(&source_connection_id,
-                                 source_connection_id_length)) {
-      detailed_error = "Unable to read source connection ID.";
+    if (!reader.ReadStringPiece(source_connection_id,
+                                source_connection_id_length)) {
+      set_detailed_error_static(detailed_error,
+                                "Unable to read source connection ID.");
       return false;
     }
   }
@@ -6739,8 +6746,8 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
     bool ietf_format, uint8_t* first_byte, PacketHeaderFormat* format,
     bool* version_present, bool* has_length_prefix,
     QuicVersionLabel* version_label, ParsedQuicVersion* parsed_version,
-    QuicConnectionId* destination_connection_id,
-    QuicConnectionId* source_connection_id,
+    absl::string_view* destination_connection_id,
+    absl::string_view* source_connection_id,
     QuicLongHeaderType* long_packet_type,
     quiche::QuicheVariableLengthIntegerLength* retry_token_length_length,
     absl::string_view* retry_token, std::string* detailed_error) {
@@ -6748,14 +6755,14 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
   *has_length_prefix = false;
   *version_label = 0;
   *parsed_version = UnsupportedQuicVersion();
-  *source_connection_id = EmptyQuicConnectionId();
+  *source_connection_id = absl::string_view();
   *long_packet_type = INVALID_PACKET_TYPE;
   *retry_token_length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_0;
   *retry_token = absl::string_view();
-  *detailed_error = "";
+  set_detailed_error_static(detailed_error, "");
 
   if (!reader->ReadUInt8(first_byte)) {
-    *detailed_error = "Unable to read first byte.";
+    set_detailed_error_static(detailed_error, "Unable to read first byte.");
     return QUIC_INVALID_PACKET_HEADER;
   }
 
@@ -6768,9 +6775,10 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
   *format = GetIetfPacketHeaderFormat(*first_byte);
 
   if (*format == IETF_QUIC_SHORT_HEADER_PACKET) {
-    if (!reader->ReadConnectionId(destination_connection_id,
-                                  expected_destination_connection_id_length)) {
-      *detailed_error = "Unable to read destination connection ID.";
+    if (!reader->ReadStringPiece(destination_connection_id,
+                                 expected_destination_connection_id_length)) {
+      set_detailed_error_static(detailed_error,
+                                "Unable to read destination connection ID.");
       return QUIC_INVALID_PACKET_HEADER;
     }
     return QUIC_NO_ERROR;
@@ -6779,7 +6787,8 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
   QUICHE_DCHECK_EQ(IETF_QUIC_LONG_HEADER_PACKET, *format);
   *version_present = true;
   if (!ProcessVersionLabel(reader, version_label)) {
-    *detailed_error = "Unable to read protocol version.";
+    set_detailed_error_static(detailed_error,
+                              "Unable to read protocol version.");
     return QUIC_INVALID_PACKET_HEADER;
   }
 
@@ -6796,8 +6805,8 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
 
   // Parse connection IDs.
   if (!ParseLongHeaderConnectionIds(*reader, *has_length_prefix, *version_label,
-                                    *destination_connection_id,
-                                    *source_connection_id, *detailed_error)) {
+                                    destination_connection_id,
+                                    source_connection_id, detailed_error)) {
     return QUIC_INVALID_PACKET_HEADER;
   }
 
@@ -6811,7 +6820,8 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
 
   switch (*long_packet_type) {
     case INVALID_PACKET_TYPE:
-      *detailed_error = "Unable to parse long packet type.";
+      set_detailed_error_static(detailed_error,
+                                "Unable to parse long packet type.");
       return QUIC_INVALID_PACKET_HEADER;
     case INITIAL:
       if (!parsed_version->SupportsRetry()) {
@@ -6827,12 +6837,13 @@ QuicErrorCode QuicFramer::ParsePublicHeader(
   uint64_t retry_token_length;
   if (!reader->ReadVarInt62(&retry_token_length)) {
     *retry_token_length_length = quiche::VARIABLE_LENGTH_INTEGER_LENGTH_0;
-    *detailed_error = "Unable to read retry token length.";
+    set_detailed_error_static(detailed_error,
+                              "Unable to read retry token length.");
     return QUIC_INVALID_PACKET_HEADER;
   }
 
   if (!reader->ReadStringPiece(retry_token, retry_token_length)) {
-    *detailed_error = "Unable to read retry token.";
+    set_detailed_error_static(detailed_error, "Unable to read retry token.");
     return QUIC_INVALID_PACKET_HEADER;
   }
 

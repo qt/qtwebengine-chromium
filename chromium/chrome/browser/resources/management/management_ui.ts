@@ -88,6 +88,11 @@ export class ManagementUiElement extends ManagementUiElementBase {
 
       managedWebsitesSubtitle_: {type: String},
 
+      /**
+       * Whether the promotion banner should be shown.
+       */
+      shouldShowPromotion_: {type: Boolean},
+
       // <if expr="is_chromeos">
       /**
        * List of messages related to device reporting.
@@ -111,11 +116,13 @@ export class ManagementUiElement extends ManagementUiElementBase {
       eolAdminMessage_: {type: String},
       eolMessage_: {type: String},
       showMonitoredNetworkPrivacyDisclosure_: {type: Boolean},
+      showWindowsNoticeForDeskSync_: {type: Boolean},
+      showCookiesNoticeForDeskSync_: {type: Boolean},
       // </if>
 
       subtitle_: {type: String},
 
-      // <if expr="not chromeos_ash">
+      // <if expr="not is_chromeos">
       managementNoticeHtml_: {type: String},
       // </if>
 
@@ -130,6 +137,7 @@ export class ManagementUiElement extends ManagementUiElementBase {
   protected accessor extensions_: Extension[]|null = null;
   protected accessor managedWebsites_: string[]|null = null;
   protected accessor managedWebsitesSubtitle_: string = '';
+  protected accessor shouldShowPromotion_: boolean = false;
 
   // <if expr="is_chromeos">
   protected accessor deviceReportingInfo_: DeviceReportingResponse[]|null =
@@ -142,11 +150,13 @@ export class ManagementUiElement extends ManagementUiElementBase {
   protected accessor eolAdminMessage_: string = '';
   protected accessor eolMessage_: string = '';
   protected accessor showMonitoredNetworkPrivacyDisclosure_: boolean = false;
+  protected accessor showWindowsNoticeForDeskSync_: boolean = false;
+  protected accessor showCookiesNoticeForDeskSync_: boolean = false;
   // </if>
 
   protected accessor subtitle_: string = '';
 
-  // <if expr="not chromeos_ash">
+  // <if expr="not is_chromeos">
   protected accessor managementNoticeHtml_: TrustedHTML =
       window.trustedTypes!.emptyHTML;
   // </if>
@@ -194,6 +204,10 @@ export class ManagementUiElement extends ManagementUiElementBase {
     this.getExtensions_();
     this.getManagedWebsites_();
     this.getApplications_();
+    // Assign the promise result directly to the property
+    this.browserProxy_.shouldShowPromotion().then(shouldShowPromotion => {
+      this.shouldShowPromotion_ = shouldShowPromotion;
+    });
     // <if expr="is_chromeos">
     this.getDeviceReportingInfo_();
     this.getPluginVmDataCollectionStatus_();
@@ -209,8 +223,8 @@ export class ManagementUiElement extends ManagementUiElementBase {
         reportingInfo => this.onProfileReportingInfoReceived_(reportingInfo));
   }
 
-  private onBrowserReportingInfoReceived_(reportingInfo:
-                                              BrowserReportingResponse[]) {
+  private onBrowserReportingInfoReceived_(
+      reportingInfo: BrowserReportingResponse[]) {
     const reportingInfoMap = reportingInfo.reduce((info, response) => {
       info[response.reportingType] = info[response.reportingType] || {
         icon: this.getIconForReportingType_(response.reportingType),
@@ -238,8 +252,8 @@ export class ManagementUiElement extends ManagementUiElementBase {
   }
 
 
-  private onProfileReportingInfoReceived_(reportingInfo:
-                                              BrowserReportingResponse[]) {
+  private onProfileReportingInfoReceived_(
+      reportingInfo: BrowserReportingResponse[]) {
     this.profileReportingInfo_ =
         reportingInfo.map((info) => ({
                             messageIds: [info.messageId],
@@ -303,6 +317,14 @@ export class ManagementUiElement extends ManagementUiElementBase {
         pluginVmDataCollectionEnabled => {
           this.pluginVmDataCollectionEnabled_ = pluginVmDataCollectionEnabled;
         });
+  }
+
+  /**
+   * @return Whether Desk sync section should be shown.
+   */
+  protected showDeskSyncSection_(): boolean {
+    return this.showWindowsNoticeForDeskSync_ ||
+        this.showCookiesNoticeForDeskSync_;
   }
 
   /**
@@ -417,7 +439,6 @@ export class ManagementUiElement extends ManagementUiElementBase {
     return !!this.managedWebsites_ && this.managedWebsites_.length > 0;
   }
 
-
   /**
    * @return The associated icon.
    */
@@ -461,6 +482,18 @@ export class ManagementUiElement extends ManagementUiElementBase {
     }
   }
 
+  protected onDismissPromotion_() {
+    this.shouldShowPromotion_ = false;
+    this.browserProxy_.setBannerDismissed();
+  }
+
+  protected onPromotionRedirect_() {
+    window.open(
+        'https://admin.google.com/ac/chrome/guides/?ref=browser&utm_source=chrome_policy_cec',
+        '_blank');
+    this.browserProxy_.recordBannerRedirected();
+  }
+
   private updateManagedFields_() {
     this.browserProxy_.getContextualManagedData().then(data => {
       this.managed_ = data.managed;
@@ -468,12 +501,14 @@ export class ManagementUiElement extends ManagementUiElementBase {
       this.managedWebsitesSubtitle_ = data.managedWebsitesSubtitle;
       this.applicationReportingSubtitle_ = data.applicationReportingSubtitle;
       this.subtitle_ = data.pageSubtitle;
-      // <if expr="chromeos_ash">
+      // <if expr="is_chromeos">
       this.customerLogo_ = data.customerLogo;
       this.managementOverview_ = data.overview;
       this.eolMessage_ = data.eolMessage;
       this.showMonitoredNetworkPrivacyDisclosure_ =
           data.showMonitoredNetworkPrivacyDisclosure;
+      this.showWindowsNoticeForDeskSync_ = data.showWindowsNoticeForDeskSync;
+      this.showCookiesNoticeForDeskSync_ = data.showCookiesNoticeForDeskSync;
       try {
         // Sanitizing the message could throw an error if it contains non
         // supported markup.
@@ -483,7 +518,7 @@ export class ManagementUiElement extends ManagementUiElementBase {
         this.eolAdminMessage_ = '';
       }
       // </if>
-      // <if expr="not chromeos_ash">
+      // <if expr="not is_chromeos">
       this.managementNoticeHtml_ = sanitizeInnerHtml(
           data.browserManagementNotice, {attrs: ['aria-label']});
       // </if>

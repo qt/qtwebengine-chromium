@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <inttypes.h>
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -33,12 +29,13 @@
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/numerics/clamped_math.h"
+#include "base/notreached.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/task_traits.h"
 #include "base/task/updateable_sequenced_task_runner.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/mock_callback.h"
@@ -50,6 +47,7 @@
 #include "build/build_config.h"
 #include "components/services/storage/indexed_db/locks/partitioned_lock_id.h"
 #include "components/services/storage/privileged/cpp/bucket_client_info.h"
+#include "components/services/storage/privileged/mojom/indexed_db_client_state_checker.mojom.h"
 #include "components/services/storage/privileged/mojom/indexed_db_control.mojom.h"
 #include "components/services/storage/public/cpp/buckets/bucket_id.h"
 #include "components/services/storage/public/cpp/buckets/bucket_info.h"
@@ -61,15 +59,13 @@
 #include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/indexed_db/indexed_db_data_format_version.h"
 #include "content/browser/indexed_db/indexed_db_leveldb_coding.h"
-#include "content/browser/indexed_db/indexed_db_leveldb_operations.h"
-#include "content/browser/indexed_db/instance/backing_store.h"
-#include "content/browser/indexed_db/instance/backing_store_pre_close_task_queue.h"
 #include "content/browser/indexed_db/instance/bucket_context.h"
 #include "content/browser/indexed_db/instance/bucket_context_handle.h"
 #include "content/browser/indexed_db/instance/connection.h"
+#include "content/browser/indexed_db/instance/leveldb/backing_store.h"
 #include "content/browser/indexed_db/mock_mojo_indexed_db_database_callbacks.h"
 #include "content/browser/indexed_db/mock_mojo_indexed_db_factory_client.h"
-#include "content/public/common/content_features.h"
+#include "content/browser/indexed_db/status.h"
 #include "env_chromium.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
@@ -890,12 +886,9 @@ TEST_P(IndexedDBTest, DISABLED_PutWithInvalidBlob) {
       blink::mojom::IDBBlobInfo::New(std::move(blob), std::u16string(), 100,
                                      nullptr)));
 
-  std::string value = "hello";
-  const char* value_data = value.data();
-  std::vector<uint8_t> value_vector(value_data, value_data + value.length());
-
   auto new_value = blink::mojom::IDBValue::New();
-  new_value->bits = std::move(value_vector);
+  auto value = base::span_from_cstring("hello");
+  new_value->bits.assign(value.begin(), value.end());
   new_value->external_objects = std::move(external_objects);
 
   connection->version_change_transaction->Put(
@@ -991,9 +984,10 @@ TEST_P(IndexedDBTest, NotifyIndexedDBListChanged) {
     ASSERT_TRUE(connection1->database.is_bound());
     connection1->version_change_transaction->CreateObjectStore(
         kObjectStoreId, kObjectStoreName, blink::IndexedDBKeyPath(), false);
-    connection1->database->CreateIndex(kTransactionId1, kObjectStoreId,
-                                       kIndexId, kIndexName,
-                                       blink::IndexedDBKeyPath(), false, false);
+    connection1->database->CreateIndex(
+        kTransactionId1, kObjectStoreId,
+        blink::IndexedDBIndexMetadata(kIndexName, kIndexId,
+                                      blink::IndexedDBKeyPath(), false, false));
     connection1->version_change_transaction->Commit(0);
 
     loop.Run();
@@ -1210,12 +1204,9 @@ TEST_P(IndexedDBTest, NotifyIndexedDBContentChanged) {
   connection1->version_change_transaction->CreateObjectStore(
       kObjectStoreId, kObjectStoreName, blink::IndexedDBKeyPath(), false);
 
-  std::string value = "value";
-  const char* value_data = value.data();
-  std::vector<uint8_t> value_vector(value_data, value_data + value.length());
-
   auto new_value = blink::mojom::IDBValue::New();
-  new_value->bits = std::move(value_vector);
+  auto value = base::span_from_cstring("value");
+  new_value->bits.assign(value.begin(), value.end());
 
   connection1->version_change_transaction->Put(
       kObjectStoreId, std::move(new_value), IndexedDBKey(u"key"),
@@ -1563,8 +1554,11 @@ TEST_P(IndexedDBTestFirstOrThirdParty, ForceCloseOpenDatabasesOnCommitFailure) {
           [](IndexedDBContextImpl* context, storage::BucketInfo* bucket_info) {
             context->GetBucketContextForTesting(bucket_info->id)
                 ->AsyncCall(&BucketContext::OnDatabaseError)
-                .WithArgs(Status::NotSupported("operation not supported"),
-                          std::string());
+                .WithArgs(
+                    // SQLite will need the correct pointer passed here.
+                    /*database=*/nullptr,
+                    Status::InvalidArgument("operation not supported"),
+                    std::string());
           },
           context(), &bucket_info),
       &bucket_info);
@@ -1591,35 +1585,14 @@ TEST_P(IndexedDBTestFirstOrThirdParty,
   EXPECT_TRUE(base::DirectoryExists(test_path));
 }
 
-TEST(PartitionedLockManager, TestRangeDifferences) {
-  PartitionedLockId lock_id_db1;
-  PartitionedLockId lock_id_db2;
-  PartitionedLockId lock_id_db1_os1;
-  PartitionedLockId lock_id_db1_os2;
-  for (int64_t i = 0; i < 512; ++i) {
-    lock_id_db1 = GetDatabaseLockId(
-        base::ASCIIToUTF16(base::StringPrintf("%" PRIx64, i)));
-    lock_id_db2 = GetDatabaseLockId(
-        base::ASCIIToUTF16(base::StringPrintf("%" PRIx64, i + 1)));
-    lock_id_db1_os1 = GetObjectStoreLockId(i, i);
-    lock_id_db1_os2 = GetObjectStoreLockId(i, i + 1);
-    EXPECT_NE(lock_id_db1, lock_id_db2);
-    EXPECT_NE(lock_id_db1, lock_id_db1_os1);
-    EXPECT_NE(lock_id_db1, lock_id_db1_os2);
-    EXPECT_NE(lock_id_db1_os1, lock_id_db1_os2);
-    EXPECT_NE(lock_id_db1_os1, lock_id_db2);
-    EXPECT_NE(lock_id_db1_os2, lock_id_db2);
-  }
-}
-
 TEST_P(IndexedDBTest, BasicFactoryCreationAndTearDown) {
   const blink::StorageKey storage_key_1 =
       blink::StorageKey::CreateFromStringForTesting("http://localhost:81");
   storage::BucketInfo bucket_1 = GetOrCreateBucket(
       storage::BucketInitParams::ForDefaultBucket(storage_key_1));
   BucketLocator bucket_locator_1 = bucket_1.ToBucketLocator();
-  auto file_1 =
-      context_->GetLevelDBPath(bucket_locator_1).AppendASCII("1.json");
+  base::FilePath file_1 =
+      GetFilePathForTesting(bucket_locator_1).AppendASCII("1.json");
   ASSERT_TRUE(CreateDirectory(file_1.DirName()));
   ASSERT_TRUE(base::WriteFile(file_1, std::string(10, 'a')));
 
@@ -1628,8 +1601,8 @@ TEST_P(IndexedDBTest, BasicFactoryCreationAndTearDown) {
   storage::BucketInfo bucket_2 = GetOrCreateBucket(
       storage::BucketInitParams::ForDefaultBucket(storage_key_2));
   BucketLocator bucket_locator_2 = bucket_2.ToBucketLocator();
-  auto file_2 =
-      context_->GetLevelDBPath(bucket_locator_2).AppendASCII("2.json");
+  base::FilePath file_2 =
+      GetFilePathForTesting(bucket_locator_2).AppendASCII("2.json");
   ASSERT_TRUE(CreateDirectory(file_2.DirName()));
   ASSERT_TRUE(base::WriteFile(file_2, std::string(100, 'a')));
 
@@ -1638,8 +1611,8 @@ TEST_P(IndexedDBTest, BasicFactoryCreationAndTearDown) {
   storage::BucketInfo bucket_3 = GetOrCreateBucket(
       storage::BucketInitParams::ForDefaultBucket(storage_key_3));
   BucketLocator bucket_locator_3 = bucket_3.ToBucketLocator();
-  auto file_3 =
-      context_->GetLevelDBPath(bucket_locator_3).AppendASCII("3.json");
+  base::FilePath file_3 =
+      GetFilePathForTesting(bucket_locator_3).AppendASCII("3.json");
   ASSERT_TRUE(CreateDirectory(file_3.DirName()));
   ASSERT_TRUE(base::WriteFile(file_3, std::string(1000, 'a')));
 
@@ -1649,8 +1622,8 @@ TEST_P(IndexedDBTest, BasicFactoryCreationAndTearDown) {
   storage::BucketInfo bucket_4 = GetOrCreateBucket(
       storage::BucketInitParams::ForDefaultBucket(storage_key_4));
   BucketLocator bucket_locator_4 = bucket_4.ToBucketLocator();
-  auto file_4 =
-      context_->GetLevelDBPath(bucket_locator_4).AppendASCII("4.json");
+  base::FilePath file_4 =
+      GetFilePathForTesting(bucket_locator_4).AppendASCII("4.json");
   ASSERT_TRUE(CreateDirectory(file_4.DirName()));
   ASSERT_TRUE(base::WriteFile(file_4, std::string(10000, 'a')));
 
@@ -1658,8 +1631,8 @@ TEST_P(IndexedDBTest, BasicFactoryCreationAndTearDown) {
   storage::BucketInitParams params(storage_key_5, "inbox");
   storage::BucketInfo bucket_5 = GetOrCreateBucket(params);
   BucketLocator bucket_locator_5 = bucket_5.ToBucketLocator();
-  auto file_5 =
-      context_->GetLevelDBPath(bucket_locator_5).AppendASCII("5.json");
+  base::FilePath file_5 =
+      GetFilePathForTesting(bucket_locator_5).AppendASCII("5.json");
   ASSERT_TRUE(CreateDirectory(file_5.DirName()));
   ASSERT_TRUE(base::WriteFile(file_5, std::string(20000, 'a')));
   EXPECT_NE(file_5.DirName(), file_1.DirName());
@@ -1838,15 +1811,14 @@ TEST_P(IndexedDBTest, PreCloseTasksStart) {
     // The pre-close tasks should be running now.
     EXPECT_EQ(BucketContext::ClosingState::kRunningPreCloseTasks,
               bucket_context->closing_stage());
-    ASSERT_TRUE(bucket_context->pre_close_task_queue());
-    EXPECT_TRUE(bucket_context->pre_close_task_queue()->started());
   }
 
   {
     // Stop sweep by opening a connection.
     BucketContextHandle bucket_context_handle(*bucket_context);
     storage::BucketId bucket_id = bucket_context_handle->bucket_locator().id;
-    EXPECT_FALSE(bucket_context_handle->pre_close_task_queue());
+    EXPECT_NE(BucketContext::ClosingState::kRunningPreCloseTasks,
+              bucket_context->closing_stage());
 
     // Move clock forward to trigger next sweep, but storage key has longer
     // sweep minimum, so no tasks should execute.
@@ -1878,56 +1850,7 @@ TEST_P(IndexedDBTest, PreCloseTasksStart) {
     ASSERT_TRUE(context_->BucketContextExists(bucket_id));
     EXPECT_EQ(BucketContext::ClosingState::kRunningPreCloseTasks,
               bucket_context->closing_stage());
-    ASSERT_TRUE(bucket_context->pre_close_task_queue());
-    EXPECT_TRUE(bucket_context->pre_close_task_queue()->started());
   }
-}
-
-TEST_P(IndexedDBTest, TombstoneSweeperTiming) {
-  // Open a connection.
-  BucketContextHandle bucket_context_handle = CreateBucketHandle();
-  BackingStore* backing_store = bucket_context_handle->backing_store();
-  EXPECT_FALSE(backing_store->ShouldRunTombstoneSweeper());
-
-  // Move the clock to run the tasks in the next close sequence.
-  task_environment_.FastForwardBy(kMaxGlobalSweepDelay);
-
-  EXPECT_TRUE(backing_store->ShouldRunTombstoneSweeper());
-
-  // Move clock forward to trigger next sweep, but storage key has longer
-  // sweep minimum, so no tasks should execute.
-  task_environment_.FastForwardBy(kMaxGlobalSweepDelay);
-
-  EXPECT_FALSE(backing_store->ShouldRunTombstoneSweeper());
-
-  //  Finally, move the clock forward so the storage key should allow a sweep.
-  task_environment_.FastForwardBy(kMaxBucketSweepDelay);
-
-  EXPECT_TRUE(backing_store->ShouldRunTombstoneSweeper());
-}
-
-TEST_P(IndexedDBTest, CompactionTaskTiming) {
-  // Open a connection.
-  BucketContextHandle bucket_context_handle = CreateBucketHandle();
-  BackingStore* backing_store = bucket_context_handle->backing_store();
-  EXPECT_FALSE(backing_store->ShouldRunCompaction());
-
-  // Move the clock to run the tasks in the next close sequence.
-  task_environment_.FastForwardBy(kMaxGlobalCompactionDelay);
-
-  EXPECT_TRUE(backing_store->ShouldRunCompaction());
-
-  // Move clock forward to trigger next compaction, but storage key has longer
-  // compaction minimum, so no tasks should execute.
-  task_environment_.FastForwardBy(kMaxGlobalCompactionDelay);
-
-  EXPECT_FALSE(backing_store->ShouldRunCompaction());
-
-  // Finally, move the clock forward so the storage key should allow a
-  // compaction.
-  task_environment_.FastForwardBy(kMaxBucketCompactionDelay);
-
-  EXPECT_TRUE(backing_store->ShouldRunCompaction());
 }
 
 TEST_P(IndexedDBTest, InMemoryFactoriesStay) {
@@ -1936,7 +1859,7 @@ TEST_P(IndexedDBTest, InMemoryFactoriesStay) {
   BucketContextHandle bucket_context_handle = CreateBucketHandle();
   BucketLocator bucket_locator = bucket_context_handle->bucket_locator();
 
-  EXPECT_TRUE(bucket_context_handle->backing_store()->in_memory());
+  EXPECT_TRUE(bucket_context_handle->in_memory());
   BucketContext* bucket_context = bucket_context_handle.bucket_context();
   bucket_context_handle.Release();
   RunPostedTasks();
@@ -1994,7 +1917,8 @@ TEST_P(IndexedDBTest, FactoryForceClose) {
   BucketContextHandle bucket_context_handle = CreateBucketHandle();
   BucketLocator bucket_locator = bucket_context_handle->bucket_locator();
 
-  bucket_context_handle->ForceClose(/*doom=*/false);
+  bucket_context_handle->ForceClose(
+      /*doom=*/false, "The database is force-closed for testing.");
   BucketContext* bucket_context = bucket_context_handle.bucket_context();
   bucket_context_handle.Release();
 

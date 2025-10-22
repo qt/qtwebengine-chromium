@@ -22,13 +22,18 @@ wheel: <
 >
 
 wheel: <
+  name: "infra/python/wheels/types-psutil-py3"
+  version: "version:5.8.23"
+>
+
+wheel: <
   name: "infra/python/wheels/selenium-py3"
-  version: "version:4.28.1"
+  version: "version:4.34.0"
 >
 
 wheel: <
   name: "infra/python/wheels/psutil/${vpython_platform}"
-  version: "version:5.9.8"
+  version: "version:5.8.0.chromium.3"
 >
 
 wheel: <
@@ -49,6 +54,11 @@ wheel: <
 wheel: <
   name: "infra/python/wheels/py-py2_py3"
   version: "version:1.11.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/isort-py3"
+  version: "version:5.10.1"
 >
 
 wheel: <
@@ -123,7 +133,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/typing-extensions-py3"
-  version: "version:4.12.2"
+  version: "version:4.14.0"
 >
 
 wheel: <
@@ -153,12 +163,12 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/trio-py3"
-  version: "version:0.22.1"
+  version: "version:0.30.0"
 >
 
 wheel: <
   name: "infra/python/wheels/trio-websocket-py3"
-  version: "version:0.10.3"
+  version: "version:0.12.2"
 >
 
 wheel: <
@@ -168,7 +178,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/urllib3-py3"
-  version: "version:2.1.0"
+  version: "version:2.4.0"
 >
 
 wheel: <
@@ -203,7 +213,7 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/certifi-py3"
-  version: "version:2024.7.4"
+  version: "version:2025.6.15"
 >
 
 wheel: <
@@ -284,12 +294,12 @@ wheel: <
 
 wheel: <
   name: "infra/python/wheels/perfetto-py3"
-  version: "version:0.11.0"
+  version: "version:0.13.1"
 >
 
 wheel: <
   name: "infra/python/wheels/protobuf-py3"
-  version: "version:4.25.3"
+  version: "version:5.29.3"
 >
 
 wheel: <
@@ -345,4 +355,70 @@ wheel: <
 wheel: <
   name: "infra/python/wheels/greenlet/${vpython_platform}"
   version: "version:3.0.1"
+>
+
+wheel: <
+  name: "infra/python/wheels/xlsxwriter-py3"
+  version: "version:3.2.2"
+>
+
+wheel: <
+  name: "infra/python/wheels/pywin32/${vpython_platform}"
+  version: "version:308"
+  match_tag: <
+    platform: "win32"
+  >
+  match_tag: <
+    platform: "win_amd64"
+  >
+>
+
+wheel: <
+  name: "infra/python/wheels/mobly-py3"
+  version: "version:1.12.4"
+>
+
+wheel: <
+  name: "infra/python/wheels/snippet-uiautomator-py3"
+  version: "version:1.1.2"
+>
+
+wheel: <
+  name: "infra/python/wheels/portpicker-py3"
+  version: "version:1.6.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/google-cloud-storage-py3"
+  version: "version:2.1.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/google-api-core-py3"
+  version: "version:2.24.2"
+>
+
+wheel: <
+  name: "infra/python/wheels/google-cloud-core-py3"
+  version: "version:2.3.3"
+>
+
+wheel: <
+  name: "infra/python/wheels/google-crc32c/${vpython_platform}"
+  version: "version:1.5.0.chromium.1"
+>
+
+wheel: <
+  name: "infra/python/wheels/google-resumable-media-py3"
+  version: "version:2.3.0"
+>
+
+wheel: <
+  name: "infra/python/wheels/googleapis-common-protos-py2_py3"
+  version: "version:1.69.2"
+>
+
+wheel: <
+  name: "infra/python/wheels/proto-plus-py3"
+  version: "version:1.26.1"
 >

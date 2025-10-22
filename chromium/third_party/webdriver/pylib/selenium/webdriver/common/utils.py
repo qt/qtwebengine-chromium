@@ -14,27 +14,21 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
-"""
-The Utils methods.
-"""
-
-from typing import Iterable, List, Optional, Union
+"""The Utils methods."""
 
 import socket
+from typing import Iterable, List, Optional, Union
+
 from selenium.types import AnyKey
 from selenium.webdriver.common.keys import Keys
-
 
 _is_connectable_exceptions = (socket.error, ConnectionResetError)
 
 
 def free_port() -> int:
-    """
-    Determines a free port using sockets.
-    """
+    """Determines a free port using sockets."""
     free_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    free_socket.bind(('127.0.0.1', 0))
+    free_socket.bind(("127.0.0.1", 0))
     free_socket.listen(5)
     port: int = free_socket.getsockname()[1]
     free_socket.close()
@@ -59,7 +53,6 @@ def find_connectable_ip(host: Union[str, bytes, bytearray, None], port: Optional
         A single IP address, as a string. If any IPv4 address is found, one is
         returned. Otherwise, if any IPv6 address is found, one is returned. If
         neither, then None is returned.
-
     """
     try:
         addrinfos = socket.getaddrinfo(host, None)
@@ -88,16 +81,14 @@ def join_host_port(host: str, port: int) -> str:
     :Args:
         - host - A hostname.
         - port - An integer port.
-
     """
-    if ':' in host and not host.startswith('['):
-        return '[%s]:%d' % (host, port)
-    return '%s:%d' % (host, port)
+    if ":" in host and not host.startswith("["):
+        return f"[{host}]:{port}"
+    return f"{host}:{port}"
 
 
 def is_connectable(port: int, host: Optional[str] = "localhost") -> bool:
-    """
-    Tries to connect to the server at port to see if it is running.
+    """Tries to connect to the server at port to see if it is running.
 
     :Args:
      - port - The port to connect.
@@ -110,14 +101,17 @@ def is_connectable(port: int, host: Optional[str] = "localhost") -> bool:
         result = False
     finally:
         if socket_:
+            try:
+                socket_.shutdown(socket.SHUT_RDWR)
+            except Exception:
+                pass
             socket_.close()
     return result
 
 
 def is_url_connectable(port: Union[int, str]) -> bool:
-    """
-    Tries to connect to the HTTP server at /status path
-    and specified port to see if it responds successfully.
+    """Tries to connect to the HTTP server at /status path and specified port
+    to see if it responds successfully.
 
     :Args:
      - port - The port to connect.
@@ -125,26 +119,21 @@ def is_url_connectable(port: Union[int, str]) -> bool:
     from urllib import request as url_request
 
     try:
-        res = url_request.urlopen("http://127.0.0.1:%s/status" % port)
-        if res.getcode() == 200:
-            return True
-        else:
-            return False
+        res = url_request.urlopen(f"http://127.0.0.1:{port}/status")
+        return res.getcode() == 200
     except Exception:
         return False
 
 
 def keys_to_typing(value: Iterable[AnyKey]) -> List[str]:
     """Processes the values that will be typed in the element."""
-    typing: List[str] = []
+    characters: List[str] = []
     for val in value:
         if isinstance(val, Keys):
-            typing.append(val)
-        elif isinstance(val, int) or isinstance(val, float):
-            val = str(val)
-            for i in range(len(val)):
-                typing.append(val[i])
+            # Todo: Does this even work?
+            characters.append(val)
+        elif isinstance(val, (int, float)):
+            characters.extend(str(val))
         else:
-            for i in range(len(val)):
-                typing.append(val[i])
-    return typing
+            characters.extend(val)
+    return characters

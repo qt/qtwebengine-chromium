@@ -12,9 +12,13 @@ namespace enterprise_connectors {
 // Controls whether event reporting is enabled on Android
 BASE_DECLARE_FEATURE(kEnterpriseSecurityEventReportingOnAndroid);
 
-// Controls whether url filtering event reporting is enabled on Android, even if
-// `kEnterpriseSecurityEventReportingOnAndroid` is not enabled.
-BASE_DECLARE_FEATURE(kEnterpriseUrlFilteringEventReportingOnAndroid);
+// Controls whether enterprise features will attempt to attach the active
+// content area user email to DLP/reporting requests on Workspace sites.
+BASE_DECLARE_FEATURE(kEnterpriseActiveUserDetection);
+
+// Controls whether the iFrame parent url chain initiated from the active frame
+// will be attached to DLP scan requests.
+BASE_DECLARE_FEATURE(kEnterpriseIframeDlpRulesSupport);
 
 }  // namespace enterprise_connectors
 

@@ -12,8 +12,9 @@
 #include "base/observer_list_threadsafe.h"
 #include "base/power_monitor/power_observer.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
+#include "third_party/perfetto/include/perfetto/tracing/internal/track_event_internal.h"
 
 namespace base {
 
@@ -25,15 +26,17 @@ class PowerMonitorSource;
 // initialization happens before any other methods are invoked, including
 // IsInitialized(). IsInitialized() exists only as a convenience for detection
 // of test contexts where the PowerMonitor global is never created.
-class BASE_EXPORT PowerMonitor {
+class BASE_EXPORT PowerMonitor : public perfetto::TrackEventSessionObserver {
  public:
   static PowerMonitor* GetInstance();
 
-  // Initializes global PowerMonitor state. Takes ownership of |source|, which
+  // Initializes global PowerMonitor state. Takes ownership of `source`, which
   // will be leaked on process teardown. May only be called once. Not threadsafe
   // - no other PowerMonitor methods may be called on any thread while calling
-  // Initialize(). |source| must not be nullptr.
-  void Initialize(std::unique_ptr<PowerMonitorSource> source);
+  // Initialize(). `source` must not be nullptr. Global trace events are emitted
+  // iff `emit_global_event=true`; this is only set in the browser process.
+  void Initialize(std::unique_ptr<PowerMonitorSource> source,
+                  bool emit_global_event = false);
 
   PowerMonitor(const PowerMonitor&) = delete;
   PowerMonitor& operator=(const PowerMonitor&) = delete;
@@ -66,9 +69,7 @@ class BASE_EXPORT PowerMonitor {
   // Returns true if the system is currently suspended.
   bool AddPowerSuspendObserverAndReturnSuspendedState(
       PowerSuspendObserver* observer);
-  // Returns true if the system is on-battery.
-  bool AddPowerStateObserverAndReturnOnBatteryState(
-      PowerStateObserver* observer);
+  // Returns the battery power status (battery power, external power, unknown).
   PowerStateObserver::BatteryPowerStatus
   AddPowerStateObserverAndReturnBatteryPowerStatus(
       PowerStateObserver* observer);
@@ -98,14 +99,6 @@ class BASE_EXPORT PowerMonitor {
   // Update the result of thermal state.
   void SetCurrentThermalState(PowerThermalObserver::DeviceThermalState state);
 
-#if BUILDFLAG(IS_ANDROID)
-  // Read and return the current remaining battery capacity (microampere-hours).
-  // Only supported with a device power source (i.e. not in child processes in
-  // Chrome) and on devices with Android >= Lollipop as well as a power supply
-  // that supports this counter. Returns 0 if unsupported.
-  int GetRemainingBatteryCapacity() const;
-#endif  // BUILDFLAG(IS_ANDROID)
-
   // Uninitializes the PowerMonitor. Should be called at the end of any unit
   // test that mocks out the PowerMonitor, to avoid affecting subsequent tests.
   // There must be no live observers when invoked. Safe to call even if the
@@ -117,7 +110,10 @@ class BASE_EXPORT PowerMonitor {
   friend class base::NoDestructor<PowerMonitor>;
 
   PowerMonitor();
-  ~PowerMonitor();
+  ~PowerMonitor() override;
+
+  // perfetto::TrackEventSessionObserver overrides:
+  void OnStart(const perfetto::DataSourceBase::StartArgs&) override;
 
   const PowerMonitorSource* Source() const;
 
@@ -140,7 +136,9 @@ class BASE_EXPORT PowerMonitor {
 
   mutable Lock battery_power_status_lock_;
 
-  perfetto::NamedTrack process_track_;
+  bool emit_global_event_ = false;
+  const perfetto::NamedTrack suspend_track_;
+  const perfetto::NamedTrack battery_power_track_;
   PowerThermalObserver::DeviceThermalState power_thermal_state_
       GUARDED_BY(power_thermal_state_lock_) =
           PowerThermalObserver::DeviceThermalState::kUnknown;

@@ -20,11 +20,6 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 #include <locale.h>
@@ -34,10 +29,12 @@
 #include <limits>
 #include <string_view>
 
+#include "base/compiler_specific.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/span_printf.h"
+#include "base/strings/string_view_util.h"
 #include "build/build_config.h"
 #include "third_party/blink/renderer/platform/wtf/dtoa.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
@@ -55,7 +52,7 @@
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value.h"
 
-namespace WTF {
+namespace blink {
 
 ASSERT_SIZE(String, void*);
 
@@ -134,7 +131,7 @@ String String::Substring(unsigned pos, unsigned len) const {
 String String::DeprecatedLower() const {
   if (!impl_)
     return String();
-  return CaseMap::FastToLowerInvariant(impl_.get());
+  return blink::CaseMap::FastToLowerInvariant(impl_.get());
 }
 
 String String::LowerASCII() const {
@@ -199,9 +196,9 @@ String String::Format(const char* format, ...) {
   // the locale is compatible, and also that it is the default "C"
   // locale so that we aren't just lucky. Android's locales work
   // differently so can't check the same way there.
-  DCHECK_EQ(strcmp(localeconv()->decimal_point, "."), 0);
+  DCHECK_EQ(UNSAFE_TODO(strcmp(localeconv()->decimal_point, ".")), 0);
 #if !BUILDFLAG(IS_ANDROID)
-  DCHECK_EQ(strcmp(setlocale(LC_NUMERIC, NULL), "C"), 0);
+  DCHECK_EQ(UNSAFE_TODO(strcmp(setlocale(LC_NUMERIC, NULL), "C")), 0);
 #endif  // !BUILDFLAG(IS_ANDROID)
 
   va_list args;
@@ -444,7 +441,7 @@ String String::Make8BitFrom16BitSource(base::span<const UChar> source) {
   base::span<LChar> destination;
   String result = String::CreateUninitialized(length, destination);
 
-  CopyLCharsFromUCharSource(destination.data(), source.data(), length);
+  CopyLCharsFromUCharSource(destination, source);
 
   return result;
 }
@@ -471,15 +468,15 @@ String String::FromUTF8(base::span<const uint8_t> bytes) {
   if (!length)
     return g_empty_string;
 
-  ASCIIStringAttributes attributes = CharacterAttributes(string_start, length);
+  blink::AsciiStringAttributes attributes = blink::CharacterAttributes(bytes);
   if (attributes.contains_only_ascii)
     return StringImpl::Create(bytes, attributes);
 
   Vector<UChar, 1024> buffer(length);
 
-  unicode::ConversionResult result =
-      unicode::ConvertUTF8ToUTF16(bytes, base::span(buffer));
-  if (result.status != unicode::kConversionOK) {
+  blink::unicode::ConversionResult result =
+      blink::unicode::ConvertUtf8ToUtf16(bytes, base::span(buffer));
+  if (result.status != blink::unicode::kConversionOK) {
     return String();
   }
 
@@ -519,9 +516,9 @@ void String::WriteIntoTrace(perfetto::TracedValue context) const {
   // Avoid the default String to StringView conversion since it calls
   // AddRef() on the StringImpl and this method is sometimes called in
   // places where that triggers DCHECKs.
-  StringUTF8Adaptor adaptor(Is8Bit() ? StringView(Span8())
+  StringUtf8Adaptor adaptor(Is8Bit() ? StringView(Span8())
                                      : StringView(Span16()));
   std::move(context).WriteString(adaptor.data(), adaptor.size());
 }
 
-}  // namespace WTF
+}  // namespace blink

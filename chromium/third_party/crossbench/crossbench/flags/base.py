@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import collections
 import re
-from typing import (Any, Dict, Iterable, Iterator, List, Optional, Self, Set,
-                    Tuple, TypeAlias, TypeVar, Union)
+from typing import (Any, Iterable, Iterator, Optional, Self, Set, TypeAlias,
+                    TypeVar, Union)
 
 from typing_extensions import override
 
@@ -43,8 +43,8 @@ class Freezable:
 
 
 
-FlagsData: TypeAlias = Union[None, Dict[str, str], "Flags",
-                             Iterable[str | Tuple[str, str | None]]]
+FlagsData: TypeAlias = Union[None, dict[str, str], "Flags",
+                             Iterable[str | tuple[str, str | None]]]
 
 
 class BasicFlags(Freezable, collections.UserDict):
@@ -66,7 +66,7 @@ class BasicFlags(Freezable, collections.UserDict):
                          fr"{_END_OR_SEPARATOR_PATTERN}")
 
   @classmethod
-  def split(cls, flag_str: str) -> Tuple[str, Optional[str]]:
+  def split(cls, flag_str: str) -> tuple[str, Optional[str]]:
     if "=" in flag_str:
       flag_name, flag_value = flag_str.split("=", maxsplit=1)
       return (flag_name, flag_value)
@@ -89,7 +89,7 @@ class BasicFlags(Freezable, collections.UserDict):
     raw_flags = raw_flags.strip()
     if not raw_flags:
       return cls()
-    flag_parts: List[Tuple[str, str | None]] = []
+    flag_parts: list[tuple[str, str | None]] = []
     current_end: int | None = None
     for match in cls._PARSE_RE.finditer(raw_flags):
       if current_end is None:
@@ -220,11 +220,14 @@ class BasicFlags(Freezable, collections.UserDict):
     return f"{flag_name}={value}"
 
   @override
-  def items(self) -> Iterable[Tuple[str, Optional[str]]]:  # type: ignore
+  def items(self) -> Iterable[tuple[str, Optional[str]]]:  # type: ignore
     return self.data.items()
 
-  def to_dict(self) -> Dict[str, Optional[str]]:
+  def to_dict(self) -> dict[str, Optional[str]]:
     return dict(self.items())
+
+  def clear(self):
+    self.data.clear()
 
   def __iter__(self) -> Iterator[str]:
     for k, v in self.items():
@@ -242,6 +245,14 @@ class BasicFlags(Freezable, collections.UserDict):
 
   def __str__(self) -> str:
     return " ".join(self)
+
+  def freeze(self: Self) -> Self:
+    self.validate()
+    super().freeze()
+    return self
+
+  def validate(self) -> None:
+    pass
 
 
 class Flags(BasicFlags):

@@ -25,7 +25,7 @@
 #include "components/tracing/common/etw_export_win.h"
 #endif
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_IOS_TVOS)
 #include "base/apple/mach_port_rendezvous.h"
 #endif
 
@@ -33,13 +33,10 @@ namespace tracing {
 namespace {
 
 #if BUILDFLAG(IS_APPLE)
-constexpr base::MachPortsForRendezvous::key_type kTraceConfigRendezvousKey =
-    'trcc';
-constexpr base::MachPortsForRendezvous::key_type kTraceBufferRendezvousKey =
-    'trbc';
+using base::shared_memory::SharedMemoryMachPortRendezvousKey;
+constexpr SharedMemoryMachPortRendezvousKey kTraceConfigRendezvousKey = 'trcc';
+constexpr SharedMemoryMachPortRendezvousKey kTraceBufferRendezvousKey = 'trbc';
 #endif
-
-constexpr uint32_t kStartupTracingTimeoutMs = 30 * 1000;  // 30 sec
 
 using base::trace_event::TraceConfig;
 using base::trace_event::TraceLog;
@@ -52,23 +49,39 @@ bool IsTracingInitialized() {
   return g_tracing_initialized_after_featurelist;
 }
 
-void EnableStartupTracingIfNeeded() {
-  RegisterTracedValueProtoWriter();
-
-  // Create the PerfettoTracedProcess.
-  PerfettoTracedProcess::MaybeCreateInstance();
+void InitTracingPostFeatureList(
+    bool enable_consumer,
+    bool will_trace_thread_restart,
+    base::RepeatingCallback<bool()> should_allow_system_tracing) {
+  DCHECK(base::FeatureList::GetInstance());
+  DCHECK(!g_tracing_initialized_after_featurelist);
+  g_tracing_initialized_after_featurelist = true;
 
   // Initialize the client library's TrackRegistry to support trace points
   // during startup tracing. We don't setup the client library completely here
   // yet, because we don't have field trials loaded yet (which influence which
   // backends we enable).
-  // TODO(eseckler): Make it possible to initialize client lib backends after
-  // setting up the client library?
   perfetto::internal::TrackRegistry::InitializeInstance();
+
+  // Create the PerfettoTracedProcess.
+  auto& traced_process =
+      PerfettoTracedProcess::MaybeCreateInstance(will_trace_thread_restart);
+  if (should_allow_system_tracing) {
+    traced_process.SetAllowSystemTracingConsumerCallback(
+        std::move(should_allow_system_tracing));
+  }
+  traced_process.InitPostFeatureList(enable_consumer);
+
+  RegisterTracedValueProtoWriter();
 
   // Ensure TraceLog is initialized first.
   // https://crbug.com/764357
   TraceLog::GetInstance();
+
+#if BUILDFLAG(IS_WIN)
+  tracing::EnableETWExport();
+#endif  // BUILDFLAG(IS_WIN)
+
   auto& startup_config = TraceStartupConfig::GetInstance();
 
   if (startup_config.IsEnabled()) {
@@ -79,38 +92,9 @@ void EnableStartupTracingIfNeeded() {
     // TODO(khokhlov): Support startup tracing with the system backend in the
     // SDK build.
     opts.backend = perfetto::kCustomBackend;
-    // TODO(khokhlov): After client library is moved onto a separate thread
-    // and it's possible to start startup tracing early, replace this call with
-    // perfetto::Tracing::SetupStartupTracing(perfetto_config, args).
-    PerfettoTracedProcess::Get().RequestStartupTracing(perfetto_config, opts);
+
+    perfetto::Tracing::SetupStartupTracingBlocking(perfetto_config, opts);
   }
-}
-
-bool EnableStartupTracingForProcess(
-    const perfetto::TraceConfig& perfetto_config) {
-  perfetto::Tracing::SetupStartupTracingOpts opts;
-  opts.timeout_ms = kStartupTracingTimeoutMs;
-  opts.backend = perfetto::kCustomBackend;
-  // TODO(khokhlov): After client library is moved onto a separate thread
-  // and it's possible to start startup tracing early, replace this call with
-  // perfetto::Tracing::SetupStartupTracing(perfetto_config, args).
-  PerfettoTracedProcess::Get().RequestStartupTracing(perfetto_config, opts);
-  return true;
-}
-
-void InitTracingPostFeatureList(bool enable_consumer) {
-  if (g_tracing_initialized_after_featurelist) {
-    return;
-  }
-  g_tracing_initialized_after_featurelist = true;
-  DCHECK(base::FeatureList::GetInstance());
-
-  // Create the PerfettoTracedProcess.
-  PerfettoTracedProcess::MaybeCreateInstance();
-  PerfettoTracedProcess::Get().OnThreadPoolAvailable(enable_consumer);
-#if BUILDFLAG(IS_WIN)
-  tracing::EnableETWExport();
-#endif  // BUILDFLAG(IS_WIN)
 }
 
 base::ReadOnlySharedMemoryRegion CreateTracingConfigSharedMemory() {

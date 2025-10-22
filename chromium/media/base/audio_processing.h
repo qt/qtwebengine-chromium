@@ -23,13 +23,17 @@ struct MEDIA_EXPORT AudioProcessingSettings {
   // Multi-channel is not an individual audio effect, but determines whether the
   // processing algorithms should preserve multi-channel input audio.
   bool multi_channel_capture_processing = true;
+  // If true, a system loopback stream will be used as the echo cancellation
+  // reference signal.
+  bool use_loopback_aec_reference = false;
 
   bool operator==(const AudioProcessingSettings& b) const {
     return echo_cancellation == b.echo_cancellation &&
            noise_suppression == b.noise_suppression &&
            automatic_gain_control == b.automatic_gain_control &&
            multi_channel_capture_processing ==
-               b.multi_channel_capture_processing;
+               b.multi_channel_capture_processing &&
+           use_loopback_aec_reference == b.use_loopback_aec_reference;
   }
 
   bool NeedWebrtcAudioProcessing() const {
@@ -42,15 +46,6 @@ struct MEDIA_EXPORT AudioProcessingSettings {
 #endif
 
     return noise_suppression;
-  }
-
-  bool NeedAudioModification() const { return NeedWebrtcAudioProcessing(); }
-
-  // Deprecated.
-  // TODO(crbug.com/40889535): Use `AudioProcessor::NeedsPlayoutReference()`
-  // instead.
-  bool NeedPlayoutReference() const {
-    return echo_cancellation || automatic_gain_control;
   }
 
   // Stringifies the settings for human-readable logging.

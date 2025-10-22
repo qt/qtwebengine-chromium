@@ -87,9 +87,6 @@ GL_EXPORT bool VideoProcessorAutoHDRSupported();
 // Returns true if video processor support handling the given format.
 GL_EXPORT bool CheckVideoProcessorFormatSupport(DXGI_FORMAT format);
 
-// Returns true if the given P010 video format is displayable.
-GL_EXPORT bool CheckDisplayableSupportForP010();
-
 // Returns overlay support flags for the given format.
 // Caller should check for DXGI_OVERLAY_SUPPORT_FLAG_DIRECT and
 // DXGI_OVERLAY_SUPPORT_FLAG_SCALING bits.
@@ -136,9 +133,14 @@ struct DirectCompositionOverlayWorkarounds {
   // decoder textures are used or not.
   bool disable_decode_swap_chain = false;
 
-  // On Intel GPUs where YUV overlays are supported, BGRA8 overlays are
-  // supported as well but IDXGIOutput3::CheckOverlaySupport() returns
-  // unsupported. So allow manually enabling BGRA8 overlay support.
+  // This is a workaround for a long-known issue where older Intel GPU drivers
+  // fail to report BGRA8 overlay support on Windows, while Windows D3D API
+  // before 10.0.26100.4061 fails to deal with RGB pixel format in
+  // IDXGIOutput3::CheckOverlaySupport(). This also means that both newer
+  // Windows versions (10.0.26100.4061 and later) and newer Intel GPU drivers
+  // (32.0.101.6314 and later) are required to correctly report BGRA8 overlay
+  // support. Otherwise, this workaround is applied to manually allow BGRA8
+  // overlays to be used when YUV overlays are supported on Intel GPUs.
   bool enable_bgra8_overlays_with_yuv_overlay_support = false;
 
   // Forces to enable NV12 overlay support regardless of the query results from
@@ -152,9 +154,22 @@ struct DirectCompositionOverlayWorkarounds {
   // Enable NV12 overlay support only when
   // DXGI_COLOR_SPACE_YCBCR_STUDIO_G22_LEFT_P709 is supported.
   bool check_ycbcr_studio_g22_left_p709_for_nv12_support = false;
+
+  // Before 10.0.26100.3624, Windows could return PRESENTATION_ERROR_LOST in
+  // some cases that are potentially recoverable by destroying all the DComp
+  // textures associated with our DComp device. However, Viz is not
+  // well-equipped to do this since most DComp textures are owned by pools in
+  // the renderer processes. This version and beyond, Windows has a fix to only
+  // return PRESENTATION_ERROR_LOST in truly unrecoverable cases, which we will
+  // treat the same as context loss.
+  bool disable_dcomp_texture = false;
 };
 GL_EXPORT void SetDirectCompositionOverlayWorkarounds(
     const DirectCompositionOverlayWorkarounds& workarounds);
+
+// Returns true if the swap chain format is forced to be a YUV format via a GPU
+// workaround flag.
+GL_EXPORT bool IsSwapChainYuvFormatForced();
 
 // Returns monitor size.
 GL_EXPORT gfx::Size GetDirectCompositionPrimaryMonitorSize();
@@ -175,6 +190,8 @@ GL_EXPORT void SetSupportsAMDHwOffloadHDRCapsForTesting(
     bool amd_platform_detected,
     INT32 amd_hdr_hw_offload_max_width,
     INT32 amd_hdr_hw_offload_max_height);
+GL_EXPORT UINT
+GetDirectCompositionOverlaySupportFlagsForTesting(DXGI_FORMAT format);
 
 class GL_EXPORT DirectCompositionOverlayCapsObserver
     : public base::CheckedObserver {

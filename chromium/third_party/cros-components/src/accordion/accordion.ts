@@ -39,7 +39,7 @@ export class Accordion extends LitElement {
    * `<cros-accordion-item>`s to be open at once.
    * @export
    */
-  autoCollapse: boolean;
+  declare autoCollapse: boolean;
 
   /**
    * When true, all child `<cros-accordion-item>`s within this
@@ -47,20 +47,20 @@ export class Accordion extends LitElement {
    * property set on any child `<cros-accordion-item>`s.
    * @export
    */
-  quick: boolean;
+  declare quick: boolean;
 
   /**
    * How each accordion-item child should be styled. One of {default,
    * compact, title-only}.
    * @export
    */
-  variant: AccordionItemVariant;
+  declare variant: AccordionItemVariant;
 
   /**
    * The style of the card. One of {outline, filled, elevated}.
    * @export
    */
-  cardStyle: CardStyle;
+  declare cardStyle: CardStyle;
 
   constructor() {
     super();

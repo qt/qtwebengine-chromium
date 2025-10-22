@@ -113,8 +113,8 @@ void TreeScopeAdopter::MoveShadowTreeToNewDocument(
 
   shadow_root.SetDocument(new_document);
 
-  if (shadow_root.registry()) {
-    shadow_root.registry()->AssociatedWith(new_document);
+  if (shadow_root.customElementRegistry()) {
+    shadow_root.customElementRegistry()->AssociatedWith(new_document);
   }
 
   MoveTreeToNewDocument(shadow_root, old_document, new_document,
@@ -216,10 +216,6 @@ inline void TreeScopeAdopter::MoveNodeToNewDocument(
     }
 
     if (auto* element = DynamicTo<Element>(node)) {
-      if (old_document.HasExplicitlySetAttrElements()) {
-        old_document.MoveElementExplicitlySetAttrElementsMapToNewDocument(
-            element, new_document);
-      }
       if (old_document.HasCachedAttrAssociatedElements()) {
         old_document.MoveElementCachedAttrAssociatedElementsMapToNewDocument(
             element, new_document);
@@ -236,7 +232,6 @@ inline void TreeScopeAdopter::MoveNodeToNewDocument(
     DCHECK(!old_document.HasAnyNodeWithEventListeners());
     DCHECK(!old_document.HasMutationObservers());
     DCHECK(!old_document.ShouldInvalidateNodeListCaches());
-    DCHECK(!old_document.HasExplicitlySetAttrElements());
     DCHECK(!old_document.HasCachedAttrAssociatedElements());
   }
 
@@ -262,7 +257,6 @@ inline bool TreeScopeAdopter::IsDocumentEligibleForFastAdoption(
          !old_document.HasAnyNodeWithEventListeners() &&
          !old_document.HasMutationObservers() &&
          !old_document.ShouldInvalidateNodeListCaches() &&
-         !old_document.HasExplicitlySetAttrElements() &&
          !old_document.HasCachedAttrAssociatedElements();
 }
 

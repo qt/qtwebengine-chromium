@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import shlex
-from typing import TYPE_CHECKING, Dict, Iterable, Self, Type
+from typing import TYPE_CHECKING, Iterable, Self, Type
 
 from typing_extensions import override
 
@@ -18,11 +18,11 @@ from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import LocalPath
   from crossbench.probes.results import ProbeResult
 
-_DEBUGGER_LOOKUP: Dict[str, str] = {
+_DEBUGGER_LOOKUP: dict[str, str] = {
     "macos": "lldb",
     "linux": "gdb",
 }
@@ -101,7 +101,7 @@ class DebuggerProbe(Probe):
     )
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     self.expect_browser(browser, BrowserAttributes.CHROMIUM_BASED)
     # TODO: support more platforms

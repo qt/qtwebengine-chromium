@@ -5,6 +5,7 @@
 #include <memory>
 #include <string_view>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_trace_processor.h"
@@ -124,6 +125,7 @@ IN_PROC_BROWSER_TEST_F(ScrollTracingBrowserTest, ScrollingMetricsParity) {
       embedded_test_server()->GetURL("/scrollable_page_with_content.html"));
   EXPECT_TRUE(NavigateToURL(shell(), url));
   ASSERT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
 
   // Scroll with 3 updates to ensure:
   //  1) One frame is missed (maximum 2 may be missed).
@@ -315,6 +317,7 @@ IN_PROC_BROWSER_TEST_F(ScrollTracingBrowserTest, ScrollUpdateInfo) {
       embedded_test_server()->GetURL("/scrollable_page_with_content.html"));
   ASSERT_TRUE(NavigateToURL(shell(), url));
   ASSERT_TRUE(WaitForLoadStop(shell()->web_contents()));
+  SimulateEndOfPaintHoldingOnPrimaryMainFrame(shell()->web_contents());
 
   // Do a single scroll.
   DoScroll(gfx::Point(10, 10), {gfx::Vector2d(0, 10), gfx::Vector2d(0, 10)},

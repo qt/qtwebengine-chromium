@@ -84,35 +84,27 @@ void WorkerOrWorkletScriptController::DisposeContextIfNeeded() {
   if (!IsContextInitialized())
     return;
 
+  ScriptState::Scope scope(script_state_);
   if (!global_scope_->IsMainThreadWorkletGlobalScope()) {
-    ScriptState::Scope scope(script_state_);
     WorkerThreadDebugger* debugger = WorkerThreadDebugger::From(isolate_);
     debugger->ContextWillBeDestroyed(global_scope_->GetThread(),
                                      script_state_->GetContext());
   }
 
-  {
-    ScriptState::Scope scope(script_state_);
-    v8::Local<v8::Context> context = script_state_->GetContext();
-    // After disposing the world, all Blink->V8 references are gone. Blink
-    // stand-alone GCs may collect the WorkerOrWorkletGlobalScope because there
-    // are no more roots (V8->Blink references that are actually found by
-    // iterating Blink->V8 references). Clear the back pointers to avoid
-    // referring to cleared memory on the next GC in case the JS wrapper objects
-    // survived.
-    v8::Local<v8::Object> global_proxy_object = context->Global();
-    v8::Local<v8::Object> global_object =
-        global_proxy_object->GetPrototype().As<v8::Object>();
-    DCHECK(!global_object.IsEmpty());
-    V8DOMWrapper::ClearNativeInfo(isolate_, global_object,
-                                  global_scope_->GetWrapperTypeInfo());
-    V8DOMWrapper::ClearNativeInfo(isolate_, global_proxy_object,
-                                  global_scope_->GetWrapperTypeInfo());
+  v8::Local<v8::Context> context = script_state_->GetContext();
+  // After disposing the world, all Blink->V8 references are gone. Blink
+  // stand-alone GCs may collect the WorkerOrWorkletGlobalScope because there
+  // are no more roots (V8->Blink references that are actually found by
+  // iterating Blink->V8 references). Clear the back pointers to avoid
+  // referring to cleared memory on the next GC in case the JS wrapper objects
+  // survived.
+  v8::Local<v8::Object> global_proxy_object = context->Global();
+  V8DOMWrapper::ClearNativeInfoForGlobal(isolate_, global_proxy_object,
+                                         global_scope_->GetWrapperTypeInfo());
 
-    // This detaches v8::MicrotaskQueue pointer from v8::Context, so that we can
-    // destroy EventLoop safely.
-    context->DetachGlobal();
-  }
+  // This detaches v8::MicrotaskQueue pointer from v8::Context, so that we can
+  // destroy EventLoop safely.
+  context->DetachGlobal();
 
   script_state_->DisposePerContextData();
   script_state_->DissociateContext();
@@ -127,7 +119,7 @@ void WorkerOrWorkletScriptController::Initialize(const KURL& url_for_debugger) {
   // (aka the inner global).
   auto* script_wrappable = static_cast<ScriptWrappable*>(global_scope_);
   const WrapperTypeInfo* wrapper_type_info =
-      script_wrappable->GetWrapperTypeInfo();
+      ToWrapperTypeInfo(script_wrappable);
   v8::Local<v8::FunctionTemplate> global_interface_template =
       wrapper_type_info->GetV8ClassTemplate(isolate_, *world_)
           .As<v8::FunctionTemplate>();
@@ -215,15 +207,14 @@ void WorkerOrWorkletScriptController::Initialize(const KURL& url_for_debugger) {
 
   // The global proxy object.  Note this is not the global object.
   v8::Local<v8::Object> global_proxy = context->Global();
+  // Set a link from both JSGlobalProxy and its hidden prototype
+  // (JSGlobalObject) to the |script_wrappable| object.
+  V8DOMWrapper::SetNativeInfoForGlobal(isolate_, global_proxy,
+                                       script_wrappable);
   v8::Local<v8::Object> associated_wrapper =
       V8DOMWrapper::AssociateObjectWithWrapper(isolate_, script_wrappable,
                                                wrapper_type_info, global_proxy);
   CHECK(global_proxy == associated_wrapper);
-
-  // The global object, aka worker/worklet wrapper object.
-  v8::Local<v8::Object> global_object =
-      global_proxy->GetPrototype().As<v8::Object>();
-  V8DOMWrapper::SetNativeInfo(isolate_, global_object, script_wrappable);
 
   if (global_scope_->IsMainThreadWorkletGlobalScope()) {
     // Set the human readable name for the world.

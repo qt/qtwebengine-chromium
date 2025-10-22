@@ -27,7 +27,7 @@ class StubPasswordManagerDriver : public PasswordManagerDriver {
 
   // PasswordManagerDriver:
   int GetId() const override;
-  void SetPasswordFillData(
+  void PropagateFillDataOnParsingCompletion(
       const autofill::PasswordFormFillData& form_data) override;
   void GeneratedPasswordAccepted(const std::u16string& password) override;
   void GeneratedPasswordRejected() override;
@@ -62,9 +62,14 @@ class StubPasswordManagerDriver : public PasswordManagerDriver {
   bool CanShowAutofillUi() const override;
   int GetFrameId() const override;
   const GURL& GetLastCommittedURL() const override;
+  const url::Origin& GetLastCommittedOrigin() const override;
+
+  gfx::RectF TransformToRootCoordinates(
+      const gfx::RectF& bounds_in_frame_coordinates) override;
   base::WeakPtr<password_manager::PasswordManagerDriver> AsWeakPtr() override;
 
  private:
+  url::Origin opaque_origin_;
   base::WeakPtrFactory<StubPasswordManagerDriver> weak_ptr_factory_{this};
 };
 

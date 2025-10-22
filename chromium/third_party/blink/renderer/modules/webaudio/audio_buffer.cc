@@ -26,15 +26,11 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/modules/webaudio/audio_buffer.h"
 
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_buffer_options.h"
 #include "third_party/blink/renderer/modules/webaudio/base_audio_context.h"
@@ -42,6 +38,7 @@
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
 #include "third_party/blink/renderer/platform/bindings/exception_messages.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -105,9 +102,9 @@ AudioBuffer* AudioBuffer::Create(unsigned number_of_channels,
   if (!audio_buffer) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kNotSupportedError,
-        "createBuffer(" + String::Number(number_of_channels) + ", " +
-            String::Number(number_of_frames) + ", " +
-            String::Number(sample_rate) + ") failed.");
+        StrCat({"createBuffer(", String::Number(number_of_channels), ", ",
+                String::Number(number_of_frames), ", ",
+                String::Number(sample_rate), ") failed."}));
   }
 
   return audio_buffer;
@@ -198,7 +195,7 @@ AudioBuffer::AudioBuffer(AudioBus* bus)
 
     const float* src = bus->Channel(i)->Data();
     float* dst = channel_data_array->Data();
-    memmove(dst, src, length_ * sizeof(*dst));
+    UNSAFE_TODO(memmove(dst, src, length_ * sizeof(*dst)));
     channels_.push_back(channel_data_array);
   }
 }
@@ -209,9 +206,9 @@ NotShared<DOMFloat32Array> AudioBuffer::getChannelData(
   if (channel_index >= channels_.size()) {
     exception_state.ThrowDOMException(
         DOMExceptionCode::kIndexSizeError,
-        "channel index (" + String::Number(channel_index) +
-            ") exceeds number of channels (" +
-            String::Number(channels_.size()) + ")");
+        StrCat({"channel index (", String::Number(channel_index),
+                ") exceeds number of channels (",
+                String::Number(channels_.size()), ")"}));
     return NotShared<DOMFloat32Array>(nullptr);
   }
 
@@ -311,7 +308,7 @@ void AudioBuffer::Zero() {
   for (unsigned i = 0; i < channels_.size(); ++i) {
     if (NotShared<DOMFloat32Array> array = getChannelData(i)) {
       float* data = array->Data();
-      memset(data, 0, length() * sizeof(*data));
+      UNSAFE_TODO(memset(data, 0, length() * sizeof(*data)));
     }
   }
 }
@@ -332,7 +329,7 @@ SharedAudioBuffer::SharedAudioBuffer(AudioBuffer* buffer)
 void SharedAudioBuffer::Zero() {
   for (auto& channel : channels_) {
     float* data = static_cast<float*>(channel.Data());
-    memset(data, 0, length() * sizeof(*data));
+    UNSAFE_TODO(memset(data, 0, length() * sizeof(*data)));
   }
 }
 

@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_TO_V8_TRAITS_H_
 #define THIRD_PARTY_BLINK_RENDERER_BINDINGS_CORE_V8_TO_V8_TRAITS_H_
 
+#include <concepts>
 #include <optional>
 
 #include "base/numerics/safe_conversions.h"
@@ -41,7 +42,7 @@ class UnionBase;
 // TODO(canonmukai): Replace existing ToV8() with ToV8Traits<>.
 
 // Primary template for ToV8Traits.
-template <typename T, typename SFINAEHelper = void>
+template <typename T>
 struct ToV8Traits;
 
 // undefined
@@ -192,9 +193,8 @@ struct ToV8Traits<IDLFloatingPointNumberTypeBase<T, mode>> {
 
 // String
 template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<IDLStringTypeBase, T>::value>> {
+  requires(std::derived_from<T, IDLStringTypeBase>)
+struct ToV8Traits<T> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const String& value) {
     // if |value| is a null string, V8String() returns an empty string.
@@ -221,9 +221,8 @@ struct ToV8Traits<IDLObject> {
 
 // ScriptWrappable
 template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<ScriptWrappable, T>::value>> {
+  requires(std::derived_from<T, ScriptWrappable>)
+struct ToV8Traits<T> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  T* script_wrappable) {
     return script_wrappable->ToV8(script_state);
@@ -232,9 +231,8 @@ struct ToV8Traits<
 
 // Dictionary
 template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<bindings::DictionaryBase, T>::value>> {
+  requires(std::derived_from<T, bindings::DictionaryBase>)
+struct ToV8Traits<T> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const T* dictionary) {
     DCHECK(dictionary);
@@ -242,11 +240,11 @@ struct ToV8Traits<
   }
 };
 
-// Callback function
+// Callback function or callback interface
 template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<CallbackFunctionBase, T>::value>> {
+  requires(std::derived_from<T, CallbackFunctionBase> ||
+           std::derived_from<T, CallbackInterfaceBase>)
+struct ToV8Traits<T> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  T* callback) {
     // creation_context (|script_state->GetContext()|) is intentionally ignored.
@@ -258,27 +256,10 @@ struct ToV8Traits<
   }
 };
 
-// Callback interface
-template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<CallbackInterfaceBase, T>::value>> {
-  [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
-                                                 T* callback) {
-    // creation_context (|script_state->GetContext()|) is intentionally ignored.
-    // Callback Interfaces are not wrappers nor clonable. ToV8 on a callback
-    // interface must be used only when it's in the same world.
-    DCHECK(callback);
-    DCHECK(&callback->GetWorld() == &script_state->World());
-    return callback->CallbackObject().template As<v8::Value>();
-  }
-};
-
 // Enumeration
 template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<bindings::EnumerationBase, T>::value>> {
+  requires(std::derived_from<T, bindings::EnumerationBase>)
+struct ToV8Traits<T> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const T& enumeration) {
     return V8String(script_state->GetIsolate(), enumeration.AsCStr());
@@ -321,7 +302,7 @@ template <typename ElementIDLType, typename ContainerType>
     // SAFETY: v8::Array::New ensures the current callback will be called no
     // more than sequence.size() times, so the current_it++ is safe.
     auto it = UNSAFE_BUFFERS(current_it++);
-    if constexpr (WTF::IsAnyMemberType<decltype(*current_it)>::value) {
+    if constexpr (IsAnyMemberType<decltype(*current_it)>::value) {
       return ToV8Traits<ElementIDLType>::ToV8(script_state, it->Get());
     } else {
       return ToV8Traits<ElementIDLType>::ToV8(script_state, *it);
@@ -341,6 +322,17 @@ template <typename ElementIDLType, typename ContainerType>
 // HeapVector<Member<T>>. We leverage this fact to reduce the APK size.
 //
 // This hack reduces the APK size by 4 Kbytes as of 2021 March.
+template <typename BaseClassOfT, typename T>
+[[nodiscard]] inline v8::Local<v8::Object> ToV8HelperSequenceWithMemberUpcast(
+    ScriptState* script_state,
+    const GCedHeapVector<Member<T>>& sequence) {
+  static_assert(std::is_base_of_v<BaseClassOfT, T>);
+  return ToV8HelperSequence<BaseClassOfT>(
+      script_state,
+      *reinterpret_cast<const GCedHeapVector<Member<BaseClassOfT>>*>(
+          &sequence));
+}
+
 template <typename BaseClassOfT, typename T>
 [[nodiscard]] inline v8::Local<v8::Object> ToV8HelperSequenceWithMemberUpcast(
     ScriptState* script_state,
@@ -375,7 +367,7 @@ template <typename ValueIDLType, typename ContainerType>
   v8::Local<v8::Context> context = script_state->GetContext();
   for (const auto& [key, value] : record) {
     v8::Local<v8::Value> v8_value;
-    if constexpr (WTF::IsAnyMemberType<decltype(value)>::value) {
+    if constexpr (IsAnyMemberType<decltype(value)>::value) {
       v8_value = ToV8Traits<ValueIDLType>::ToV8(script_state, value.Get());
     } else {
       v8_value = ToV8Traits<ValueIDLType>::ToV8(script_state, value);
@@ -393,9 +385,22 @@ template <typename ValueIDLType, typename ContainerType>
 
 // IDLSequence
 template <typename T>
-struct ToV8Traits<
-    IDLSequence<T>,
-    std::enable_if_t<std::is_base_of<bindings::DictionaryBase, T>::value>> {
+  requires(std::derived_from<T, bindings::DictionaryBase>)
+struct ToV8Traits<IDLSequence<T>> {
+  [[nodiscard]] static v8::Local<v8::Object> ToV8(
+      ScriptState* script_state,
+      const GCedHeapVector<Member<T>>& value) {
+    return bindings::ToV8HelperSequenceWithMemberUpcast<
+        bindings::DictionaryBase>(script_state, value);
+  }
+
+  [[nodiscard]] static v8::Local<v8::Object> ToV8(
+      ScriptState* script_state,
+      const GCedHeapVector<Member<const T>>& value) {
+    return bindings::ToV8HelperSequenceWithMemberUpcast<
+        bindings::DictionaryBase>(script_state, value);
+  }
+
   [[nodiscard]] static v8::Local<v8::Object> ToV8(
       ScriptState* script_state,
       const HeapVector<Member<T>>& value) {
@@ -419,14 +424,43 @@ struct ToV8Traits<
 };
 
 template <typename T>
-struct ToV8Traits<
-    IDLSequence<T>,
-    std::enable_if_t<std::is_base_of<ScriptWrappable, T>::value>> {
+  requires(std::derived_from<T, ScriptWrappable>)
+struct ToV8Traits<IDLSequence<T>> {
+  [[nodiscard]] static v8::Local<v8::Object> ToV8(
+      ScriptState* script_state,
+      const GCedHeapVector<Member<T>>& value) {
+    return bindings::ToV8HelperSequenceWithMemberUpcast<ScriptWrappable>(
+        script_state, value);
+  }
+
+  template <wtf_size_t capacity>
+  [[nodiscard]] static v8::Local<v8::Object> ToV8(
+      ScriptState* script_state,
+      const GCedHeapVector<Member<T>, capacity>& value) {
+    return bindings::ToV8HelperSequenceWithMemberUpcast<ScriptWrappable>(
+        script_state, GCedHeapVector<Member<T>>(value));
+  }
+
+  [[nodiscard]] static v8::Local<v8::Object> ToV8(
+      ScriptState* script_state,
+      const GCedHeapVector<Member<const T>>& value) {
+    return bindings::ToV8HelperSequenceWithMemberUpcast<ScriptWrappable>(
+        script_state, value);
+  }
+
   [[nodiscard]] static v8::Local<v8::Object> ToV8(
       ScriptState* script_state,
       const HeapVector<Member<T>>& value) {
     return bindings::ToV8HelperSequenceWithMemberUpcast<ScriptWrappable>(
         script_state, value);
+  }
+
+  template <wtf_size_t capacity>
+  [[nodiscard]] static v8::Local<v8::Object> ToV8(
+      ScriptState* script_state,
+      const HeapVector<Member<T>, capacity>& value) {
+    return bindings::ToV8HelperSequenceWithMemberUpcast<ScriptWrappable>(
+        script_state, HeapVector<Member<T>>(value));
   }
 
   [[nodiscard]] static v8::Local<v8::Object> ToV8(
@@ -445,10 +479,9 @@ struct ToV8Traits<
 };
 
 template <typename T>
-struct ToV8Traits<
-    IDLSequence<T>,
-    std::enable_if_t<!std::is_base_of<bindings::DictionaryBase, T>::value &&
-                     !std::is_base_of<ScriptWrappable, T>::value>> {
+  requires(!std::derived_from<T, bindings::DictionaryBase> &&
+           !std::derived_from<T, ScriptWrappable>)
+struct ToV8Traits<IDLSequence<T>> {
   template <typename ContainerType>
   [[nodiscard]] static v8::Local<v8::Object> ToV8(ScriptState* script_state,
                                                   const ContainerType& value) {
@@ -567,9 +600,8 @@ struct ToV8Traits<IDLNullable<IDLFloatingPointNumberTypeBase<T, mode>>> {
 
 // Nullable Strings
 template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<IDLStringTypeBase, T>::value>> {
+  requires(std::derived_from<T, IDLStringTypeBase>)
+struct ToV8Traits<IDLNullable<T>> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const String& value) {
     if (!value)
@@ -593,9 +625,8 @@ struct ToV8Traits<IDLNullable<IDLObject>> {
 
 // Nullable ScriptWrappable
 template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<ScriptWrappable, T>::value>> {
+  requires(std::derived_from<T, ScriptWrappable>)
+struct ToV8Traits<IDLNullable<T>> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  T* script_wrappable) {
     if (!script_wrappable)
@@ -615,9 +646,8 @@ struct ToV8Traits<
 
 // Nullable Dictionary
 template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<bindings::DictionaryBase, T>::value>> {
+  requires(std::derived_from<T, bindings::DictionaryBase>)
+struct ToV8Traits<IDLNullable<T>> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const T* dictionary) {
     if (!dictionary)
@@ -626,24 +656,11 @@ struct ToV8Traits<
   }
 };
 
-// Nullable Callback function
+// Nullable Callback function or callback interface
 template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<CallbackFunctionBase, T>::value>> {
-  [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
-                                                 T* callback) {
-    if (!callback)
-      return v8::Null(script_state->GetIsolate());
-    return ToV8Traits<T>::ToV8(script_state, callback);
-  }
-};
-
-// Nullable Callback interface
-template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<CallbackInterfaceBase, T>::value>> {
+  requires(std::derived_from<T, CallbackFunctionBase> ||
+           std::derived_from<T, CallbackInterfaceBase>)
+struct ToV8Traits<IDLNullable<T>> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  T* callback) {
     if (!callback)
@@ -654,9 +671,8 @@ struct ToV8Traits<
 
 // Nullable Enumeration
 template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<bindings::EnumerationBase, T>::value>> {
+  requires(std::derived_from<T, bindings::EnumerationBase>)
+struct ToV8Traits<IDLNullable<T>> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(
       ScriptState* script_state,
       const std::optional<T>& enumeration) {
@@ -769,9 +785,8 @@ struct ToV8Traits<IDLNullable<IDLRecord<K, V>>> {
 // Union types
 
 template <typename T>
-struct ToV8Traits<
-    T,
-    std::enable_if_t<std::is_base_of<bindings::UnionBase, T>::value>> {
+  requires(std::derived_from<T, bindings::UnionBase>)
+struct ToV8Traits<T> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const T* value) {
     DCHECK(value);
@@ -780,9 +795,8 @@ struct ToV8Traits<
 };
 
 template <typename T>
-struct ToV8Traits<
-    IDLNullable<T>,
-    std::enable_if_t<std::is_base_of<bindings::UnionBase, T>::value>> {
+  requires(std::derived_from<T, bindings::UnionBase>)
+struct ToV8Traits<IDLNullable<T>> {
   [[nodiscard]] static v8::Local<v8::Value> ToV8(ScriptState* script_state,
                                                  const T* value) {
     if (!value)

@@ -13,6 +13,7 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
+#include "media/audio/audio_features.h"
 #include "media/base/audio_capturer_source.h"
 #include "media/base/audio_glitch_info.h"
 #include "media/base/limits.h"
@@ -96,6 +97,39 @@ class RendererWebAudioDeviceImplUnderTest : public RendererWebAudioDeviceImpl {
             base::BindOnce(&MockGetOutputDeviceParameters),
             std::move(silent_sink_callback)) {}
 };
+class RendererWebAudioDeviceImplConstructorParamTest
+    : public RendererWebAudioDeviceImpl {
+ public:
+  RendererWebAudioDeviceImplConstructorParamTest(
+      const blink::WebAudioSinkDescriptor& sink_descriptor,
+      media::ChannelLayoutConfig layout_config,
+      const blink::WebAudioLatencyHint& latency_hint,
+      std::optional<float> context_sample_rate,
+      media::AudioRendererSink::RenderCallback* callback,
+      CreateSilentSinkCallback silent_sink_callback,
+      base::RepeatingCallback<
+          media::AudioParameters(const blink::LocalFrameToken&,
+                                 const std::string&)> device_params_cb);
+};
+
+RendererWebAudioDeviceImplConstructorParamTest::
+    RendererWebAudioDeviceImplConstructorParamTest(
+        const blink::WebAudioSinkDescriptor& sink_descriptor,
+        media::ChannelLayoutConfig layout_config,
+        const blink::WebAudioLatencyHint& latency_hint,
+        std::optional<float> context_sample_rate,
+        media::AudioRendererSink::RenderCallback* callback,
+        CreateSilentSinkCallback silent_sink_callback,
+        base::RepeatingCallback<
+            media::AudioParameters(const blink::LocalFrameToken&,
+                                   const std::string&)> device_params_cb)
+    : RendererWebAudioDeviceImpl(sink_descriptor,
+                                 layout_config,
+                                 latency_hint,
+                                 context_sample_rate,
+                                 callback,
+                                 std::move(device_params_cb),
+                                 std::move(silent_sink_callback)) {}
 
 }  // namespace
 
@@ -114,15 +148,16 @@ class RendererWebAudioDeviceImplTest
 
   void OnRenderError() override {}
 
+  scoped_refptr<media::AudioRendererSink> CreateMockSilentSink(
+      const scoped_refptr<base::SequencedTaskRunner>& task_runner) {
+    return mock_audio_renderer_sink_;
+  }
+
  protected:
   RendererWebAudioDeviceImplTest() {
     mock_audio_renderer_sink_ = base::MakeRefCounted<MockAudioRendererSink>();
   }
 
-  scoped_refptr<media::AudioRendererSink> CreateMockSilentSink(
-      const scoped_refptr<base::SequencedTaskRunner>& task_runner) {
-    return mock_audio_renderer_sink_;
-  }
 
   void SetupDevice(blink::WebAudioLatencyHint latencyHint) {
     blink::WebAudioSinkDescriptor sink_descriptor(
@@ -201,7 +236,7 @@ class RendererWebAudioDeviceImplBufferSizeTest : public ::testing::Test {
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_FeatureDisabled_UsesDefaultBufferSize) {
   feature_list_.InitAndDisableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -225,7 +260,7 @@ TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_SameSampleRate_ReturnsDefaultBufferSize) {
   feature_list_.InitAndEnableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -247,7 +282,7 @@ TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_LowSampleRate_CapsAtMinBufferSize) {
   feature_list_.InitAndEnableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -267,7 +302,7 @@ TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_HighSampleRate_ScalesBufferSize) {
   feature_list_.InitAndEnableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -288,7 +323,7 @@ TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_CloseSampleRate_ScalesBufferSize) {
   feature_list_.InitAndEnableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -310,7 +345,7 @@ TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_CloseSampleRate2_ScalesBufferSize) {
   feature_list_.InitAndEnableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -331,7 +366,7 @@ TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
 TEST_F(RendererWebAudioDeviceImplBufferSizeTest,
        InteractiveLatency_VeryHighSampleRate_CapsAtMaxBufferSize) {
   feature_list_.InitAndEnableFeature(
-      blink::features::kWebAudioRemoveAudioDestinationResampler);
+      features::kWebAudioRemoveAudioDestinationResampler);
   blink::WebAudioLatencyHint latency_hint(
       blink::WebAudioLatencyHint::kCategoryInteractive);
   media::AudioParameters hardware_params(
@@ -593,6 +628,49 @@ TEST_F(RendererWebAudioDeviceImplTest,
   webaudio_device_->Stop();
 }
 
+TEST_F(RendererWebAudioDeviceImplTest, ValidDeviceParameters) {
+  // Setup a scenario where the device parameters callback returns valid
+  // parameters.
+  SetupDevice(media::ChannelLayoutConfig::Stereo());
+
+  EXPECT_EQ(webaudio_device_->GetOriginalSinkParamsForTesting().sample_rate(),
+            kHardwareSampleRate);
+  EXPECT_EQ(
+      webaudio_device_->GetOriginalSinkParamsForTesting().frames_per_buffer(),
+      kHardwareBufferSize);
+  EXPECT_TRUE(webaudio_device_->GetOriginalSinkParamsForTesting().IsValid());
+}
+
+TEST_F(RendererWebAudioDeviceImplTest,
+       HandleInvalidOriginalSinkParamsInConstructor) {
+  media::AudioParameters default_params;
+  EXPECT_FALSE(default_params.IsValid());
+  // Test for handling invalid original sink parameters in constructor.
+  auto mock_device_params_cb =
+      base::BindRepeating([](const blink::LocalFrameToken&,
+                             const std::string&) -> media::AudioParameters {
+        return media::AudioParameters();
+      });
+  blink::WebAudioSinkDescriptor sink_descriptor(
+      blink::WebString::FromUTF8(std::string()), kFrameToken);
+
+  RendererWebAudioDeviceImplConstructorParamTest device_under_test(
+      sink_descriptor, media::ChannelLayoutConfig::Stereo(),
+      blink::WebAudioLatencyHint(
+          blink::WebAudioLatencyHint::kCategoryInteractive),
+      std::nullopt, this,
+      base::BindRepeating(&RendererWebAudioDeviceImplTest::CreateMockSilentSink,
+                          base::Unretained(this)),
+      mock_device_params_cb);
+
+  const media::AudioParameters& params =
+      device_under_test.GetOriginalSinkParamsForTesting();
+  EXPECT_EQ(params.format(), media::AudioParameters::AUDIO_FAKE);
+  EXPECT_EQ(params.sample_rate(), 48000);
+  EXPECT_EQ(params.frames_per_buffer(), 480);
+  EXPECT_TRUE(params.IsValid());
+}
+
 class RendererWebAudioDeviceImplLatencyAndSampleRateTest
     : public RendererWebAudioDeviceImplTest,
       public testing::WithParamInterface<
@@ -614,7 +692,7 @@ class RendererWebAudioDeviceImplLatencyAndSampleRateTest
     }
 
     feature_list_.InitAndEnableFeature(
-        blink::features::kWebAudioRemoveAudioDestinationResampler);
+        features::kWebAudioRemoveAudioDestinationResampler);
   }
 
  protected:

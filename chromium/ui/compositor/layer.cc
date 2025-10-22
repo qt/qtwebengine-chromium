@@ -18,7 +18,6 @@
 #include "base/json/json_writer.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/layers/mirror_layer.h"
@@ -344,10 +343,15 @@ void Layer::SetShowReflectedLayerSubtree(Layer* subtree_reflected_layer) {
   if (subtree_reflected_layer_ == subtree_reflected_layer)
     return;
 
+  // If `FinishAnimationsBeforeSwitchToLayer` returns false, `this` Layer was
+  // destroyed.
+  if (!FinishAnimationsBeforeSwitchToLayer()) {
+    return;
+  }
+
   scoped_refptr<cc::MirrorLayer> new_layer =
       cc::MirrorLayer::Create(subtree_reflected_layer->cc_layer_.get());
-  if (!SwitchToLayer(new_layer))
-    return;
+  SwitchToLayer(new_layer);
 
   mirror_layer_ = std::move(new_layer);
 
@@ -434,7 +438,7 @@ void Layer::Remove(Layer* child) {
     child->ResetCompositorForAnimatorsInTree(compositor);
 
   auto i = std::ranges::find(children_, child);
-  CHECK(i != children_.end(), base::NotFatalUntil::M130);
+  CHECK(i != children_.end());
   children_.erase(i);
   child->parent_ = nullptr;
   child->cc_layer_->RemoveFromParent();
@@ -570,8 +574,12 @@ float Layer::GetCombinedOpacity() const {
   return opacity;
 }
 
-void Layer::SetBackdropFilterBounds(const gfx::RRectF& bounds) {
+void Layer::SetBackdropFilterBounds(const SkPath& bounds) {
   cc_layer_->SetBackdropFilterBounds(bounds);
+}
+
+void Layer::SetBackdropFilterBounds(const gfx::RRectF& bounds) {
+  SetBackdropFilterBounds(SkPath::RRect(SkRRect(bounds)));
 }
 
 void Layer::ClearBackdropFilterBounds() {
@@ -911,8 +919,10 @@ void Layer::SetName(const std::string& name) {
   cc_layer_->SetDebugName(name);
 }
 
-bool Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
-  // Finish animations being handled by cc_layer_.
+bool Layer::FinishAnimationsBeforeSwitchToLayer() {
+  // Finish animations being handled by the `cc_layer_`. Note that doing so
+  // could cause animation observers to be notified and those observers could
+  // destroy `this` Layer.
   if (animator_) {
     base::WeakPtr<Layer> weak_this = weak_ptr_factory_.GetWeakPtr();
 
@@ -923,7 +933,15 @@ bool Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
     animator_->StopAnimatingProperty(LayerAnimationElement::OPACITY);
     if (!weak_this)
       return false;
+  }
+  return true;
+}
 
+void Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
+  if (animator_) {
+    // Call `FinishAnimationsBeforeSwitchToLayer` before switching the layer.
+    CHECK(!animator_->IsAnimatingProperty(LayerAnimationElement::TRANSFORM) &&
+          !animator_->IsAnimatingProperty(LayerAnimationElement::OPACITY));
     animator_->SwitchToLayer(new_layer);
   }
 
@@ -977,13 +995,17 @@ bool Layer::SwitchToLayer(scoped_refptr<cc::Layer> new_layer) {
 
   SetLayerFilters();
   SetLayerBackgroundFilters();
-  return true;
 }
 
 bool Layer::SwitchCCLayerForTest() {
-  scoped_refptr<cc::PictureLayer> new_layer = cc::PictureLayer::Create(this);
-  if (!SwitchToLayer(new_layer))
+  // If `FinishAnimationsBeforeSwitchToLayer` returns false, `this` Layer was
+  // destroyed.
+  if (!FinishAnimationsBeforeSwitchToLayer()) {
     return false;
+  }
+
+  scoped_refptr<cc::PictureLayer> new_layer = cc::PictureLayer::Create(this);
+  SwitchToLayer(new_layer);
 
   content_layer_ = std::move(new_layer);
   return true;
@@ -1084,11 +1106,15 @@ void Layer::SetTransferableResource(const viz::TransferableResource& resource,
   DCHECK(release_callback);
   DCHECK(!resource.is_software);
   if (!texture_layer_.get()) {
+    // If `FinishAnimationsBeforeSwitchToLayer` returns false, `this` Layer was
+    // destroyed.
+    if (!FinishAnimationsBeforeSwitchToLayer()) {
+      return;
+    }
     // Incoming resource is assumed to have top-left origin which corresponds to
     // TextureLayer flipped being false.
     scoped_refptr<cc::TextureLayer> new_layer = cc::TextureLayer::Create(this);
-    if (!SwitchToLayer(new_layer))
-      return;
+    SwitchToLayer(new_layer);
 
     texture_layer_ = new_layer;
     // Reset the frame_size_in_dip_ so that SetTextureSize() will not early out,
@@ -1186,9 +1212,14 @@ void Layer::SetShowReflectedSurface(const viz::SurfaceId& surface_id,
   DCHECK(type_ == LAYER_TEXTURED || type_ == LAYER_SOLID_COLOR);
 
   if (!surface_layer_) {
-    scoped_refptr<cc::SurfaceLayer> new_layer = cc::SurfaceLayer::Create();
-    if (!SwitchToLayer(new_layer))
+    // If `FinishAnimationsBeforeSwitchToLayer` returns false, `this` Layer was
+    // destroyed.
+    if (!FinishAnimationsBeforeSwitchToLayer()) {
       return;
+    }
+
+    scoped_refptr<cc::SurfaceLayer> new_layer = cc::SurfaceLayer::Create();
+    SwitchToLayer(new_layer);
 
     surface_layer_ = new_layer;
   }
@@ -1223,9 +1254,14 @@ void Layer::SetShowSolidColorContent() {
   if (solid_color_layer_.get())
     return;
 
-  scoped_refptr<cc::SolidColorLayer> new_layer = cc::SolidColorLayer::Create();
-  if (!SwitchToLayer(new_layer))
+  // If `FinishAnimationsBeforeSwitchToLayer` returns false, `this` Layer was
+  // destroyed.
+  if (!FinishAnimationsBeforeSwitchToLayer()) {
     return;
+  }
+
+  scoped_refptr<cc::SolidColorLayer> new_layer = cc::SolidColorLayer::Create();
+  SwitchToLayer(new_layer);
 
   solid_color_layer_ = new_layer;
   fills_bounds_opaquely_ = cc_layer_->background_color().isOpaque();
@@ -1898,17 +1934,23 @@ void Layer::OnMirrorDestroyed(LayerMirror* mirror) {
   const auto it =
       std::ranges::find(mirrors_, mirror, &std::unique_ptr<LayerMirror>::get);
 
-  CHECK(it != mirrors_.end(), base::NotFatalUntil::M130);
+  CHECK(it != mirrors_.end());
   mirrors_.erase(it);
 }
 
 void Layer::CreateSurfaceLayerIfNecessary() {
   if (surface_layer_)
     return;
+
+  // If `FinishAnimationsBeforeSwitchToLayer` returns false, `this` Layer was
+  // destroyed.
+  if (!FinishAnimationsBeforeSwitchToLayer()) {
+    return;
+  }
+
   scoped_refptr<cc::SurfaceLayer> new_layer = cc::SurfaceLayer::Create();
   new_layer->SetSurfaceHitTestable(true);
-  if (!SwitchToLayer(new_layer))
-    return;
+  SwitchToLayer(new_layer);
 
   surface_layer_ = new_layer;
 }

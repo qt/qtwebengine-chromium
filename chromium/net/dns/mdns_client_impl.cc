@@ -15,7 +15,6 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
@@ -30,6 +29,7 @@
 #include "net/dns/public/util.h"
 #include "net/dns/record_rdata.h"
 #include "net/socket/datagram_socket.h"
+#include "third_party/re2/src/re2/re2.h"
 
 // TODO(gene): Remove this temporary method of disabling NSEC support once it
 // becomes clear whether this feature should be
@@ -75,6 +75,10 @@ void RecordQueryMetric(mdnsQueryType query_type, std::string_view host) {
                                    return host.ends_with(service);
                                  })) {
     base::UmaHistogramEnumeration("Network.Mdns.PrintScan", query_type);
+  } else if (RE2::FullMatch(host,
+                            "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                            "[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\\.local$")) {
+    base::UmaHistogramEnumeration("Network.Mdns.UUID", query_type);
   } else {
     base::UmaHistogramEnumeration("Network.Mdns.Other", query_type);
   }
@@ -412,7 +416,7 @@ void MDnsClientImpl::Core::RemoveListener(MDnsListenerImpl* listener) {
   ListenerKey key(listener->GetName(), listener->GetType());
   auto observer_list_iterator = listeners_.find(key);
 
-  CHECK(observer_list_iterator != listeners_.end(), base::NotFatalUntil::M130);
+  CHECK(observer_list_iterator != listeners_.end());
   DCHECK(observer_list_iterator->second->HasObserver(listener));
 
   observer_list_iterator->second->RemoveObserver(listener);

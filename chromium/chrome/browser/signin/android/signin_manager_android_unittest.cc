@@ -14,6 +14,7 @@
 #include "base/run_loop.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/scoped_feature_list.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browsing_data/chrome_browsing_data_remover_delegate_factory.h"
 #include "chrome/browser/download/chrome_download_manager_delegate.h"
@@ -32,6 +33,7 @@
 #include "components/keyed_service/core/service_access_type.h"
 #include "components/keyed_service/core/simple_factory_key.h"
 #include "components/offline_pages/core/stub_offline_page_model.h"
+#include "components/password_manager/core/browser/features/password_features.h"
 #include "components/password_manager/core/browser/password_manager_test_utils.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/password_manager/core/browser/split_stores_and_local_upm.h"
@@ -101,7 +103,7 @@ class SigninManagerAndroidTest : public ::testing::Test {
     profile_ = profile_builder.Build();
 
     background_tracing_manager_ =
-        content::BackgroundTracingManager::CreateInstance();
+        content::BackgroundTracingManager::CreateInstance(&tracing_delegate_);
 
     // Creating a BookmarkModel also a creates a StubOfflinePageModel.
     // We need to replace this with a mock that responds to deletions.
@@ -159,6 +161,7 @@ class SigninManagerAndroidTest : public ::testing::Test {
   content::BrowserTaskEnvironment task_environment_;
   ScopedTestingLocalState local_state_{TestingBrowserProcess::GetGlobal()};
   std::unique_ptr<TestingProfile> profile_;
+  content::TracingDelegate tracing_delegate_;
   std::unique_ptr<content::BackgroundTracingManager>
       background_tracing_manager_;
 };
@@ -200,26 +203,4 @@ TEST_F(SigninManagerAndroidTest, DoNotWipePasswordsIfLocalUpmOn) {
   EXPECT_THAT(
       account_password_store()->stored_passwords(),
       UnorderedElementsAre(Pair(account_store_form.signon_realm, SizeIs(1))));
-}
-
-class SigninManagerAndroidWithoutLocalUpmTest
-    : public SigninManagerAndroidTest {
- public:
-  SigninManagerAndroidWithoutLocalUpmTest() {
-    // Fake a user with outdated GmsCore.
-    base::android::BuildInfo::GetInstance()->set_gms_version_code_for_test("0");
-  }
-};
-
-TEST_F(SigninManagerAndroidWithoutLocalUpmTest, WipePasswordsIfLocalUpmOff) {
-  password_manager::PasswordForm form;
-  form.username_value = u"username";
-  form.password_value = u"password";
-  form.signon_realm = "https://g.com";
-  profile_password_store()->AddLogin(form);
-  ASSERT_FALSE(account_password_store());
-
-  WipeData(/*all_data=*/true);
-
-  EXPECT_THAT(profile_password_store()->stored_passwords(), IsEmpty());
 }

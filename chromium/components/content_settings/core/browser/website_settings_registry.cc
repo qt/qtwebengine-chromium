@@ -277,11 +277,6 @@ void WebsiteSettingsRegistry::Init() {
            WebsiteSettingsInfo::GENERIC_SINGLE_ORIGIN_SCOPE,
            DESKTOP | PLATFORM_ANDROID,
            WebsiteSettingsInfo::DONT_INHERIT_IN_INCOGNITO);
-  Register(ContentSettingsType::PRIVATE_NETWORK_CHOOSER_DATA,
-           "private-network-chooser-data", base::Value(),
-           WebsiteSettingsInfo::UNSYNCABLE, WebsiteSettingsInfo::NOT_LOSSY,
-           WebsiteSettingsInfo::TOP_ORIGIN_ONLY_SCOPE, DESKTOP,
-           WebsiteSettingsInfo::DONT_INHERIT_IN_INCOGNITO);
   Register(
       ContentSettingsType::FEDERATED_IDENTITY_IDENTITY_PROVIDER_SIGNIN_STATUS,
       "fedcm-idp-signin", base::Value(), WebsiteSettingsInfo::UNSYNCABLE,
@@ -328,6 +323,23 @@ void WebsiteSettingsRegistry::Init() {
       WebsiteSettingsInfo::DONT_INHERIT_IN_INCOGNITO);
   Register(ContentSettingsType::REVOKED_DISRUPTIVE_NOTIFICATION_PERMISSIONS,
            "disruptive-notification-permissions", base::Value(),
+           WebsiteSettingsInfo::UNSYNCABLE, WebsiteSettingsInfo::NOT_LOSSY,
+           WebsiteSettingsInfo::GENERIC_SINGLE_ORIGIN_SCOPE,
+           DESKTOP | PLATFORM_ANDROID,
+           WebsiteSettingsInfo::DONT_INHERIT_IN_INCOGNITO);
+  Register(
+      ContentSettingsType::ON_DEVICE_SPEECH_RECOGNITION_LANGUAGES_DOWNLOADED,
+      "ondevice-languages-downloaded", base::Value(),
+      WebsiteSettingsInfo::UNSYNCABLE, WebsiteSettingsInfo::NOT_LOSSY,
+      WebsiteSettingsInfo::TOP_ORIGIN_ONLY_SCOPE, DESKTOP | PLATFORM_ANDROID,
+      WebsiteSettingsInfo::DONT_INHERIT_IN_INCOGNITO);
+  Register(ContentSettingsType::INITIALIZED_TRANSLATIONS,
+           "initialized-translations", base::Value(),
+           WebsiteSettingsInfo::UNSYNCABLE, WebsiteSettingsInfo::NOT_LOSSY,
+           WebsiteSettingsInfo::TOP_ORIGIN_ONLY_SCOPE, DESKTOP,
+           WebsiteSettingsInfo::DONT_INHERIT_IN_INCOGNITO);
+  Register(ContentSettingsType::SUSPICIOUS_NOTIFICATION_IDS,
+           "suspicious-notification-ids", base::Value(),
            WebsiteSettingsInfo::UNSYNCABLE, WebsiteSettingsInfo::NOT_LOSSY,
            WebsiteSettingsInfo::GENERIC_SINGLE_ORIGIN_SCOPE,
            DESKTOP | PLATFORM_ANDROID,

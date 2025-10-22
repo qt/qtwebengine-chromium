@@ -20,14 +20,15 @@ const DEFAULT_FEATURE_SET = new FeatureSet();
 process.platform === 'darwin' && DEFAULT_FEATURE_SET.disable('MediaRouter');
 DEFAULT_FEATURE_SET.enable('DevToolsAiAssistancePerformanceAgent', {insights_enabled: true});
 DEFAULT_FEATURE_SET.enable('DevToolsAiGeneratedTimelineLabels');
-DEFAULT_FEATURE_SET.enable('DevToolsAutomaticFileSystems');
 DEFAULT_FEATURE_SET.enable('DevToolsCssValueTracing');
-DEFAULT_FEATURE_SET.enable('DevToolsFreestyler', {patching: true, user_tier: 'TESTERS'});
+DEFAULT_FEATURE_SET.enable('DevToolsFreestyler', {
+  user_tier: 'TESTERS',
+  function_calling: true,
+});
 DEFAULT_FEATURE_SET.enable('DevToolsWellKnown');
 
 // The unstable feature set (can be enabled via `--enable-unstable-features`).
 const UNSTABLE_FEATURE_SET = new FeatureSet();
-UNSTABLE_FEATURE_SET.enable('DevToolsFreestyler', {multimodal: true});
 
 const argv = yargs(hideBin(process.argv))
                  .option('browser', {
@@ -65,24 +66,42 @@ const argv = yargs(hideBin(process.argv))
                    default: true,
                    description: 'Automatically open DevTools for new tabs',
                  })
+                 .option('remote-debugging-port', {
+                   type: 'number',
+                   description: 'Launch Chrome with the remote debugging port',
+                 })
                  .option('target', {
                    alias: 't',
                    type: 'string',
                    default: 'Default',
                    description: 'Specify the target build subdirectory under //out',
                  })
+                 .option('user-data-dir', {
+                   type: 'string',
+                   description: 'Launch Chrome with the given profile directory',
+                 })
                  .option('verbose', {
                    type: 'boolean',
                    default: false,
                    description: 'Enable verbose logging',
                  })
-                 .group(['unstable-features', 'enable-features', 'disable-features'], 'Feature set:')
+                 .group(['unstable-features', 'enable-features', 'disable-features'], 'Feature options:')
                  .usage('npm start -- [options] [urls...]')
                  .help('help')
                  .version(false)
                  .parseSync();
 
-const {browser, disableFeatures, enableFeatures, unstableFeatures, open, target, verbose} = argv;
+const {
+  browser,
+  disableFeatures,
+  enableFeatures,
+  unstableFeatures,
+  open,
+  remoteDebuggingPort,
+  target,
+  userDataDir,
+  verbose,
+} = argv;
 const cwd = process.cwd();
 const {env} = process;
 const runBuildPath = path.join(import.meta.dirname, 'run_build.mjs');
@@ -114,17 +133,38 @@ function findBrowserBinary() {
   return browser;
 }
 
+// The `--remote-debugging-port` command line flag only has an effect in Chrome
+// nowadays when used with a non-default data directory, so we fail if the user
+// didn't also specify the `--user-data-dir` command line flag. In Chrome for
+// Testing the remote debugging port still works with the default profile.
+if (remoteDebuggingPort && browser !== 'cft' && !userDataDir) {
+  console.error(
+      'The `--remote-debugging-port` command line switch must be accompanied by the `--user-data-dir` switch\n' +
+      'to point to a non-standard directory. See https://developer.chrome.com/blog/remote-debugging-port for\n' +
+      'more information.\n');
+  process.exit(1);
+}
+
 // Perform the initial build.
-childProcess.spawnSync(process.argv[0], [runBuildPath, `--target=${target}`], {
+const {status} = childProcess.spawnSync(process.argv[0], [runBuildPath, `--target=${target}`], {
   cwd,
   env,
   stdio: 'inherit',
 });
+if (status !== 0) {
+  process.exit(1);
+}
 
 // Launch Chrome with our custom DevTools front-end.
 function start() {
   const binary = findBrowserBinary();
+  /**
+   * @type {string[]}
+   */
   const args = [];
+
+  // Disable first run experience.
+  args.push('--no-first-run');
 
   // Custom flags for CfT.
   if (browser === 'cft') {
@@ -150,6 +190,14 @@ function start() {
   }
   args.push(...featureSet);
 
+  // Custom flags for Chrome.
+  if (remoteDebuggingPort) {
+    args.push(`--remote-debugging-port=${remoteDebuggingPort}`);
+  }
+  if (userDataDir) {
+    args.push(`--user-data-dir=${userDataDir}`);
+  }
+
   // Open with our freshly built DevTools front-end.
   const genDir = path.join(rootPath(), 'out', target, 'gen');
   const customDevToolsFrontEndPath = isInChromiumDirectory().isInChromium ?
@@ -161,13 +209,14 @@ function start() {
   if (open) {
     args.push('--auto-open-devtools-for-tabs');
   }
-  args.push(...argv._);
+  const restArg = argv._.filter(arg => typeof arg === 'string');
+  args.push(...restArg);
 
   // Launch Chrome.
   if (verbose) {
     console.debug('Launch Chrome: %s %s', binary, args.join(' '));
   }
-  childProcess.spawnSync(binary, args, {cwd, env, stdio: 'inherit'});
+  childProcess.spawnSync(binary, args, {cwd, env, stdio: verbose ? 'inherit' : 'ignore'});
 }
 
 // Run build watcher in the background to automatically rebuild

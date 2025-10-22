@@ -5,13 +5,16 @@
 #ifndef UI_ACCESSIBILITY_ANDROID_ACCESSIBILITY_STATE_H_
 #define UI_ACCESSIBILITY_ANDROID_ACCESSIBILITY_STATE_H_
 
+#include <string>
 #include <vector>
+
+#include "base/component_export.h"
 
 namespace ui {
 
 // Provides methods for measuring accessibility state on Android via
 // org.chromium.ui.accessibility.AccessibilityState.
-class AccessibilityState {
+class COMPONENT_EXPORT(AX_BASE_ANDROID) AccessibilityState {
  public:
   // Provides an interface for clients to listen to animator duration scale
   // changes.
@@ -66,6 +69,9 @@ class AccessibilityState {
 
   // Returns a vector containing the IDs of all running accessibility services.
   static std::vector<std::string> GetAccessibilityServiceIds();
+
+  // Returns true when the user has set the OS-level setting to reduce motion.
+  static bool PrefersReducedMotion();
 
   // --------------------------------------------------------------------------
   // Methods that call into AccessibilityAutofillHelper.java via JNI

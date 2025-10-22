@@ -128,17 +128,17 @@ export class Menu extends LitElement implements MenuInterface {
   }
 
   /** @export */
-  anchor: string;
+  declare anchor: string;
   /** @export */
-  anchorCorner: Corner;
+  declare anchorCorner: Corner;
   /** @export */
-  hasOverflow: boolean;
+  declare hasOverflow: boolean;
   /**
    * Sets the initial state of the md-menu on first render. In general do not
    * set this and instead use show() and close().
    * @export
    */
-  open: boolean;
+  declare open: boolean;
 
   // The following properties are necessary for wrapping and keyboard
   // navigation
@@ -146,30 +146,30 @@ export class Menu extends LitElement implements MenuInterface {
    * Skips the opening and closing animations.
    * @export
    */
-  quick: boolean;
+  declare quick: boolean;
   /**
    * The corner of the menu which to align the anchor in the standard logical
    * property style of <block>_<inline>.
    * @export
    */
-  menuCorner: Corner;
+  declare menuCorner: Corner;
   /**
    * The element that should be focused by default once opened.
    * @export
    */
-  defaultFocus: FocusState;
+  declare defaultFocus: FocusState;
   /**
    * After closing, does not restore focus to the last focused element before
    * the menu was opened.
    * @export
    */
-  skipRestoreFocus: boolean;
+  declare skipRestoreFocus: boolean;
   /**
    * Set automatically by `cros-sub-menu-item`. Whether or not this menu is a
    * submenu and should defer handling left keyboard navigations to the parent
    * `cros-sub-menu-item`.
    */
-  isSubmenu: boolean;
+  declare isSubmenu: boolean;
   /**
    * If cros-menu should use the build-in popover API. If true cros-menu is
    * rendered in an isolated layer on top of all other contents in the web,
@@ -178,13 +178,13 @@ export class Menu extends LitElement implements MenuInterface {
    * position of the provided `anchor`.
    * @export
    */
-  usePopover: boolean;
+  declare usePopover: boolean;
 
   /**
    * Determines which role menu should use thus adjusting keyboard navigation.
    * @export
    */
-  type: MenuType;
+  declare type: MenuType;
 
   get mdMenu(): MdMenu {
     return this.renderRoot.querySelector('md-menu') as MdMenu;

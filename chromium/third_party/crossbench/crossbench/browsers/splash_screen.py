@@ -8,7 +8,7 @@ import abc
 import dataclasses
 import html
 from argparse import ArgumentTypeError
-from typing import TYPE_CHECKING, Any, Dict
+from typing import TYPE_CHECKING, Any
 
 from typing_extensions import override
 
@@ -24,7 +24,7 @@ if TYPE_CHECKING:
 class SplashScreenData:
   is_warmup: bool
   browser: Browser
-  run_details: Dict
+  run_details: dict
 
 
 class SplashScreen:
@@ -109,7 +109,7 @@ class DetailedSplashScreen(BaseURLSplashScreen):
     data_url = f"data:text/html;charset=utf-8,{url_helper.quote(page)}"
     return data_url
 
-  def _render_properties(self, title: str, properties: Dict[str, Any]) -> str:
+  def _render_properties(self, title: str, properties: dict[str, Any]) -> str:
     section = f"<h2>{html.escape(title)}</h2><dl>"
     for property_name, value in properties.items():
       section += f"<dt>{html.escape(property_name)}</dt>"

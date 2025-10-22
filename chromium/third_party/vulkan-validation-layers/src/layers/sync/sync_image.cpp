@@ -15,6 +15,7 @@
  * limitations under the License.
  */
 #include "sync_image.h"
+#include "state_tracker/state_tracker.h"
 
 syncval_state::ImageSubState::ImageSubState(vvl::Image &image) : vvl::ImageSubState(image), fragment_encoder(image) {}
 
@@ -23,7 +24,7 @@ bool syncval_state::ImageSubState::IsSimplyBound() const {
     return simple;
 }
 
-void syncval_state::ImageSubState::SetOpaqueBaseAddress(vvl::Device &dev_data) {
+void syncval_state::ImageSubState::SetOpaqueBaseAddress(vvl::DeviceState &dev_data) {
     // This is safe to call if already called to simplify caller logic
     // NOTE: Not asserting IsTiled, as there could in future be other reasons for opaque representations
     if (opaque_base_address_) return;

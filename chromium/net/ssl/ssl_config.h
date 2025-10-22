@@ -14,9 +14,12 @@
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/privacy_mode.h"
+#include "net/base/proxy_chain.h"
+#include "net/base/session_usage.h"
 #include "net/cert/cert_status_flags.h"
 #include "net/cert/x509_certificate.h"
 #include "net/socket/next_proto.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 namespace net {
 
@@ -50,6 +53,20 @@ struct NET_EXPORT SSLConfig {
   // bitwise OR of CertVerifier::VerifyFlags that represent this SSLConfig's
   // configuration.
   int GetCertVerifyFlags() const;
+
+  // Helper function to select TLS Trust Anchor IDs to advertise in the TLS
+  // handshake, so that the server can serve a certificate that the client
+  // trusts. |server_advertised_trust_anchor_ids| is a list of Trust Anchor IDs,
+  // in binary representation, that the server has provided out-of-band (e.g. in
+  // a DNS record). |trusted_trust_anchor_ids| is the set of Trust Anchor IDs,
+  // in binary representation, that the client trusts. The intersection is
+  // returned in wire format (a series of 8-bit length prefixed non-empty
+  // strings) such that it can be passed into BoringSSL.
+  static std::vector<uint8_t> SelectTrustAnchorIDs(
+      const std::vector<std::vector<uint8_t>>&
+          server_advertised_trust_anchor_ids,
+      const absl::flat_hash_set<std::vector<uint8_t>>&
+          trusted_trust_anchor_ids);
 
   // If specified, the minimum and maximum protocol versions that are enabled.
   // (Use the SSL_PROTOCOL_VERSION_xxx enumerators defined above.) If
@@ -146,6 +163,24 @@ struct NET_EXPORT SSLConfig {
   // logic ensures tickets are resolved early, but can interfere with some unit
   // tests.
   bool disable_post_handshake_peek_for_testing = false;
+
+  // The proxy chain involving this SSL session, and the session's position
+  // within that chain. If the session is to the destination, or (for QUIC) the
+  // proxy chain only includes a prefix of the proxies, then `proxy_chain_index`
+  // may be equal to `proxy_chain.length()`.
+  ProxyChain proxy_chain = ProxyChain::Direct();
+  size_t proxy_chain_index = 0;
+
+  // The usage of this session. This supports distinguishing connections to a
+  // proxy as an endpoint from connections to that same proxy as a proxy.
+  SessionUsage session_usage = SessionUsage::kDestination;
+
+  // If non-empty, a list of TLS Trust Anchor IDs in wire format
+  // (https://tlswg.org/tls-trust-anchor-ids/draft-ietf-tls-trust-anchor-ids.html#name-tls-extension),
+  // i.e. a series of non-empty, 8-bit length-prefixed strings. If non-empty,
+  // these trust anchor IDs will be sent on the TLS ClientHello message to help
+  // the server select a certificate that the client will accept.
+  std::vector<uint8_t> trust_anchor_ids;
 };
 
 }  // namespace net

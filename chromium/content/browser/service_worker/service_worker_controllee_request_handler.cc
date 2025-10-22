@@ -194,7 +194,7 @@ void ServiceWorkerControlleeRequestHandler::MaybeCreateLoader(
       tentative_resource_request.url.spec());
 
   // Look up a registration.
-  context_->registry()->FindRegistrationForClientUrl(
+  context_->registry().FindRegistrationForClientUrl(
       ServiceWorkerRegistry::Purpose::kNavigation,
       service_worker_client_->url(), service_worker_client_->key(),
       base::BindOnce(
@@ -269,7 +269,8 @@ void ServiceWorkerControlleeRequestHandler::ContinueWithRegistration(
           registration->scope(),
           service_worker_security_utils::site_for_cookies(
               service_worker_client_->key()),
-          service_worker_client_->top_frame_origin(), /*script_url=*/GURL(),
+          service_worker_client_->top_frame_origin(),
+          service_worker_client_->key(), /*script_url=*/GURL(),
           context_->wrapper()->browser_context());
 
   service_worker_accessed_callback_.Run(registration->scope(),
@@ -547,7 +548,7 @@ void ServiceWorkerControlleeRequestHandler::DidUpdateRegistration(
       !original_registration->installing_version()) {
     // Update failed. Look up the registration again since the original
     // registration was possibly unregistered in the meantime.
-    context_->registry()->FindRegistrationForClientUrl(
+    context_->registry().FindRegistrationForClientUrl(
         ServiceWorkerRegistry::Purpose::kNotForNavigation,
         service_worker_client_->url(), service_worker_client_->key(),
         base::BindOnce(
@@ -605,7 +606,7 @@ void ServiceWorkerControlleeRequestHandler::OnUpdatedVersionStatusChanged(
     // When the status is REDUNDANT, the update failed (eg: script error), we
     // continue with the incumbent version.
     // In case unregister job may have run, look up the registration again.
-    context_->registry()->FindRegistrationForClientUrl(
+    context_->registry().FindRegistrationForClientUrl(
         ServiceWorkerRegistry::Purpose::kNotForNavigation,
         service_worker_client_->url(), service_worker_client_->key(),
         base::BindOnce(

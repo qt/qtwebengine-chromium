@@ -100,12 +100,12 @@ class CONTENT_EXPORT PrefetchDocumentManager
 
   // Returns a tuple: (can_prefetch_now, prefetch_to_evict). 'can_prefetch_now'
   // is true if we can prefetch |next_prefetch| based on the state of the
-  // document, and the number of existing completed prefetches (only if
-  // |kPrefetchNewLimits| is enabled). The eagerness of |next_prefetch| is taken
-  // into account when making the decision. 'prefetch_to_evict' is set to an
-  // existing prefetch if one needs to be evicted to make space for the prefetch
-  // of |next_prefetch|, or nullptr otherwise. 'prefetch_to_evict' will only be
-  // non-null if 'can_prefetch_now' is true.
+  // document, and the number of existing completed prefetches. The eagerness of
+  // |next_prefetch| is taken into account when making the decision.
+  // 'prefetch_to_evict' is set to an existing prefetch if one needs to be
+  // evicted to make space for the prefetch of |next_prefetch|, or nullptr
+  // otherwise. 'prefetch_to_evict' will only be non-null if 'can_prefetch_now'
+  // is true.
   std::tuple<bool, base::WeakPtr<PrefetchContainer>> CanPrefetchNow(
       PrefetchContainer* next_prefetch);
 
@@ -151,12 +151,13 @@ class CONTENT_EXPORT PrefetchDocumentManager
   // Stores whether or not canary checks have been started for this page.
   bool have_canary_checks_started_{false};
 
-  // A list of eager prefetch requests (from this page) that have completed
+  // A list of immediate prefetch requests (from this page) that have completed
   // (oldest to newest).
-  std::vector<base::WeakPtr<PrefetchContainer>> completed_eager_prefetches_;
-  // A list of non-eager prefetch requests (from this page) that have completed
-  // (oldest to newest).
-  std::vector<base::WeakPtr<PrefetchContainer>> completed_non_eager_prefetches_;
+  std::vector<base::WeakPtr<PrefetchContainer>> completed_immediate_prefetches_;
+  // A list of non-immediate prefetch requests (from this page) that have
+  // completed (oldest to newest).
+  std::vector<base::WeakPtr<PrefetchContainer>>
+      completed_non_immediate_prefetches_;
 
   // Metrics related to the prefetches requested by this page load.
   PrefetchReferringPageMetrics referring_page_metrics_;

@@ -284,7 +284,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Apps.IntentPickerDestinationPlatform"
     enum="ArcIntentHandlerDestinationPlatform" expires_after="2025-09-14">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records the app platform shown as the result of link intent handling.
     Recorded when the user makes a choice in the Intent Picker dialog, and when
@@ -390,30 +390,27 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram
-    name="ChromeOS.Camera.ConfigureStreams.Output.Resolution{ChromeOS_Camera_StreamFormat}"
+    name="ChromeOS.Camera.ConfigureStreams.Output.Resolution.{StreamFormat}"
     units="pixels" expires_after="2026-02-10">
-<!-- Name completed by histogram_suffixes
-     name="ChromeOS.Camera.StreamFormat" -->
-
   <owner>beckerh@chromium.org</owner>
   <owner>chromeos-camera-eng@google.com</owner>
   <summary>
     Records the resolution of output stream that is configured by Chrome OS
-    camera service. {ChromeOS_Camera_StreamFormat}
+    camera service. {StreamFormat}
   </summary>
-  <token key="ChromeOS_Camera_StreamFormat">
-    <variant name=".BGRA_8888" summary="Format HAL_PIXEL_FORMAT_BGRA_8888"/>
-    <variant name=".BLOB" summary="Format HAL_PIXEL_FORMAT_BLOB"/>
-    <variant name=".IMPLEMENTATION_DEFINED"
+  <token key="StreamFormat">
+    <variant name="BGRA_8888" summary="Format HAL_PIXEL_FORMAT_BGRA_8888"/>
+    <variant name="BLOB" summary="Format HAL_PIXEL_FORMAT_BLOB"/>
+    <variant name="IMPLEMENTATION_DEFINED"
         summary="Format HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED"/>
-    <variant name=".RGBA_8888" summary="Format HAL_PIXEL_FORMAT_RGBA_8888"/>
-    <variant name=".RGBX_8888" summary="Format HAL_PIXEL_FORMAT_RGBX_8888"/>
-    <variant name=".YCbCr_420_888"
+    <variant name="RGBA_8888" summary="Format HAL_PIXEL_FORMAT_RGBA_8888"/>
+    <variant name="RGBX_8888" summary="Format HAL_PIXEL_FORMAT_RGBX_8888"/>
+    <variant name="YCbCr_420_888"
         summary="Format HAL_PIXEL_FORMAT_YCbCr_420_888"/>
-    <variant name=".YCbCr_422_I" summary="Format HAL_PIXEL_FORMAT_YCbCr_422_I"/>
-    <variant name=".YCrCb_420_SP"
+    <variant name="YCbCr_422_I" summary="Format HAL_PIXEL_FORMAT_YCbCr_422_I"/>
+    <variant name="YCrCb_420_SP"
         summary="Format HAL_PIXEL_FORMAT_YCrCb_420_SP"/>
-    <variant name=".YV12" summary="Format HAL_PIXEL_FORMAT_YV12"/>
+    <variant name="YV12" summary="Format HAL_PIXEL_FORMAT_YV12"/>
   </token>
 </histogram>
 
@@ -698,8 +695,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
   </summary>
 </histogram>
 
-<histogram base="true"
-    name="ChromeOS.Camera.HDRnet.AverageLatency.{ProcessingType}"
+<histogram name="ChromeOS.Camera.HDRnet.AverageLatency.{ProcessingType}"
     units="microseconds" expires_after="2026-02-10">
   <owner>jcliang@chromium.org</owner>
   <owner>chromeos-camera-eng@google.com</owner>
@@ -744,7 +740,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
   </summary>
 </histogram>
 
-<histogram base="true" name="ChromeOS.Camera.HDRnet.MaxStreamSize.{StreamType}"
+<histogram name="ChromeOS.Camera.HDRnet.MaxStreamSize.{StreamType}"
     units="pixels" expires_after="2026-02-10">
   <owner>jcliang@chromium.org</owner>
   <owner>chromeos-camera-eng@google.com</owner>
@@ -1125,7 +1121,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.CertProvisioning.Event{CertProvisioningProtocolVersion}.{CertProvisioningScope}"
-    enum="CertProvisioningEvent" expires_after="2025-08-10">
+    enum="CertProvisioningEvent" expires_after="2025-12-14">
   <owner>miersh@google.com</owner>
   <owner>gschwarz@google.com</owner>
   <summary>
@@ -1140,7 +1136,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.CertProvisioning.Result{CertProvisioningProtocolVersion}.{CertProvisioningScope}"
-    enum="CertProvisioningWorkerState" expires_after="2025-08-10">
+    enum="CertProvisioningWorkerState" expires_after="2025-12-14">
   <owner>miersh@google.com</owner>
   <owner>gschwarz@google.com</owner>
   <summary>
@@ -1154,10 +1150,21 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
       variants="AllCertProvisioningProtocolVersions"/>
 </histogram>
 
+<histogram name="ChromeOS.ClassManagementEnabled" enum="ClassManagementEnabled"
+    expires_after="2026-01-04">
+  <owner>zifanzhang@google.com</owner>
+  <owner>cros-client-wa@google.com</owner>
+  <summary>
+    Tracks the Class Management enabled status for users. Recorded when the user
+    session starts.
+  </summary>
+</histogram>
+
 <histogram name="ChromeOS.CountryCode.MissingVariationData"
     enum="ChromeOSFallbackCountry" expires_after="2026-03-20">
   <owner>cschlosser@chromium.org</owner>
   <owner>chromeos-privacyhub@google.com</owner>
+  <owner>chrome-regionalcapabilities@google.com</owner>
   <summary>
     Records an enum when constructing the regional capabilities service during
     browser startup and there is no variations country available. On ChromeOS
@@ -1169,10 +1176,24 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
   </summary>
 </histogram>
 
+<histogram name="ChromeOS.CountryCode.VPDRegionSplittingOutcome"
+    enum="BooleanSuccess" expires_after="2026-03-20">
+  <owner>cschlosser@chromium.org</owner>
+  <owner>chromeos-privacyhub@google.com</owner>
+  <owner>chrome-regionalcapabilities@google.com</owner>
+  <summary>
+    Records an enum when constructing the regional capabilities service during
+    browser startup and the fallback country is being computed from the VPD
+    region. This histogram tracks whether the 2-letters string obtained after
+    splitting the region read from VPD ends up being recognized as a valid
+    country code or not.
+  </summary>
+</histogram>
+
 <histogram name="ChromeOS.CWP.CollectPerf"
-    enum="ChromeOSProfileCollectionStatus" expires_after="2025-06-22">
-  <owner>aalexand@google.com</owner>
+    enum="ChromeOSProfileCollectionStatus" expires_after="2026-06-22">
   <owner>gmx@chromium.org</owner>
+  <owner>aalexand@google.com</owner>
   <owner>cwp-team@google.com</owner>
   <summary>
     A count of successes and various failure modes related to collecting and
@@ -1192,7 +1213,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.CWP.JankinessTriggerStatus"
-    enum="ChromeOSJankinessTriggerStatus" expires_after="2025-10-06">
+    enum="ChromeOSJankinessTriggerStatus" expires_after="2026-01-04">
   <owner>gmx@chromium.org</owner>
   <owner>cwp-team@google.com</owner>
   <summary>
@@ -1227,7 +1248,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.CWP.ParsePSICPU" enum="ChromeOSParsePSICPUStatus"
-    expires_after="2025-08-10">
+    expires_after="2026-08-10">
   <owner>shantuo@google.com</owner>
   <owner>cwp-team@google.com</owner>
   <summary>
@@ -1270,7 +1291,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.CWP.{PPath}.{PType}" units="failures"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>raging@google.com</owner>
   <owner>chromeos-memory@google.com</owner>
   <summary>
@@ -1322,7 +1343,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Debugd.Perf.{FunctionName}" units="ms"
-    expires_after="2025-08-03">
+    expires_after="2025-10-05">
   <owner>enlightened@google.com</owner>
   <owner>jorgelo@google.com</owner>
   <owner>chromeos-security-core@google.com</owner>
@@ -1480,7 +1501,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Display.TimeUntilFirstBrightnessChange.{Time}.{BrightnessAction}Brightness.{PowerSource}Power"
-    units="ms" expires_after="2025-09-07">
+    units="ms" expires_after="2026-01-11">
   <owner>cambickel@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -1510,7 +1531,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FeatureUsage.{FeatureName}" enum="FeatureUsageEvent"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>antrim@chromium.org</owner>
   <owner>cros-oac@google.com</owner>
   <summary>
@@ -1522,7 +1543,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FeatureUsage.{FeatureName}.Usetime" units="ms"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>antrim@chromium.org</owner>
   <owner>cros-oac@google.com</owner>
   <summary>
@@ -1533,7 +1554,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.FirmwareUpdateUi.InstallFailedWithDurationAfterRequest.RequestId{DeviceRequestId}"
-    units="ms" expires_after="2025-06-28">
+    units="ms" expires_after="2026-06-28">
   <owner>cambickel@google.com</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
@@ -1547,7 +1568,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FirmwareUpdateUi.InstallFailedWithStatus"
-    enum="FirmwareUpdateFwupdStatus" expires_after="2025-08-31">
+    enum="FirmwareUpdateFwupdStatus" expires_after="2026-01-11">
   <owner>cambickel@google.com</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
@@ -1558,7 +1579,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FirmwareUpdateUi.RequestReceived.Kind{Kind}"
-    enum="FirmwareUpdateDeviceRequestID" expires_after="2025-06-28">
+    enum="FirmwareUpdateDeviceRequestID" expires_after="2026-06-28">
   <owner>cambickel@google.com</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
@@ -1577,7 +1598,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.FirmwareUpdateUi.RequestSucceededWithDuration.RequestId{DeviceRequestId}"
-    units="ms" expires_after="2025-06-28">
+    units="ms" expires_after="2025-12-07">
   <owner>cambickel@google.com</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
@@ -1591,7 +1612,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FirmwareUpdateUi.{Method}Result"
-    enum="FirmwareUpdateMethodResult" expires_after="2025-08-31">
+    enum="FirmwareUpdateMethodResult" expires_after="2026-01-04">
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -1610,7 +1631,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FirmwareUpdateUi.{Source}.DeviceCount"
-    units="devices" expires_after="2025-08-31">
+    units="devices" expires_after="2026-01-04">
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -1630,7 +1651,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.FirmwareUpdateUi.{Source}.{Severity}UpdateCount"
-    units="updates" expires_after="2025-08-31">
+    units="updates" expires_after="2026-08-31">
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -1656,7 +1677,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Gaia.CreateAccount.IsFirstUser" enum="Boolean"
-    expires_after="2025-08-03">
+    expires_after="2025-12-21">
   <owner>thv@google.com</owner>
   <owner>cros-growth@google.com</owner>
   <summary>
@@ -1668,7 +1689,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Gaia.Done.ElapsedTime" units="ms"
-    expires_after="2025-08-03">
+    expires_after="2025-12-07">
   <owner>bchikhaoui@google.com</owner>
   <owner>cros-oac@google.com</owner>
   <summary>
@@ -1678,7 +1699,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Gaia.Done.Oobe.NewAccount" enum="BooleanNewAccount"
-    expires_after="2025-08-03">
+    expires_after="2025-12-07">
   <owner>thv@google.com</owner>
   <owner>cros-growth@google.com</owner>
   <summary>
@@ -1689,8 +1710,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Gaia.Message.{GaiaAuthFlow}.{MessageName}"
-    enum="BooleanReceived" expires_after="2025-08-03">
-  <owner>ayag@chromium.org</owner>
+    enum="BooleanReceived" expires_after="2025-12-07">
+  <owner>andreydav@google.com</owner>
   <owner>cros-3pidp@google.com</owner>
   <summary>
     Records whether or not {MessageName} was received during the {GaiaAuthFlow}
@@ -1720,7 +1741,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.HardwareVerifier.Report.IsCompliant" enum="Boolean"
-    expires_after="2025-08-17">
+    expires_after="2025-12-31">
   <owner>itspeter@chromium.org</owner>
   <owner>stimim@chromium.org</owner>
   <owner>chromeos-runtime-probe@google.com</owner>
@@ -1729,7 +1750,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.HardwareVerifier.Report{HardwareVerifierSupportCategory}"
-    enum="HardwareVerifierQualificationStatus" expires_after="2025-08-24">
+    enum="HardwareVerifierQualificationStatus" expires_after="2025-12-31">
   <owner>itspeter@chromium.org</owner>
   <owner>stimim@chromium.org</owner>
   <owner>chromeos-runtime-probe@google.com</owner>
@@ -1755,7 +1776,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.HardwareVerifier.TimeToFinish" units="ms"
-    expires_after="2025-08-17">
+    expires_after="2025-12-31">
   <owner>itspeter@chromium.org</owner>
   <owner>stimim@chromium.org</owner>
   <owner>chromeos-runtime-probe@google.com</owner>
@@ -1765,7 +1786,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.HardwareVerifier.TimeToProbe" units="ms"
-    expires_after="2025-06-22">
+    expires_after="2025-12-31">
   <owner>itspeter@chromium.org</owner>
   <owner>stimim@chromium.org</owner>
   <owner>chromeos-runtime-probe@google.com</owner>
@@ -1773,7 +1794,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.HaTS.{Survey}" enum="HaTSSurvey"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>aalsum@chromium.org</owner>
   <owner>jackshira@google.com</owner>
   <owner>iby@chromium.org</owner>
@@ -1799,7 +1820,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Healthd.DiagnosticResult.{Routine}"
-    enum="CrosHealthdDiagnosticResult" expires_after="2025-08-03">
+    enum="CrosHealthdDiagnosticResult" expires_after="2025-12-31">
   <owner>weiluanwang@google.com</owner>
   <owner>dennyh@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
@@ -1859,7 +1880,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Healthd.EventSubscription"
-    enum="CrosHealthdEventCategory" expires_after="2025-06-01">
+    enum="CrosHealthdEventCategory" expires_after="2025-12-31">
   <owner>weiluanwang@google.com</owner>
   <owner>dennyh@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
@@ -1870,7 +1891,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Healthd.RoutineCreation"
-    enum="CrosHealthdRoutineCategory" expires_after="2025-08-03">
+    enum="CrosHealthdRoutineCategory" expires_after="2025-12-31">
   <owner>weiluanwang@google.com</owner>
   <owner>dennyh@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
@@ -1881,7 +1902,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Healthd.TelemetryResult.{Category}"
-    enum="CrosHealthdTelemetryResult" expires_after="2025-08-03">
+    enum="CrosHealthdTelemetryResult" expires_after="2025-12-31">
   <owner>weiluanwang@google.com</owner>
   <owner>dennyh@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
@@ -1915,7 +1936,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Heartd.Action" enum="HeartdActionType"
-    expires_after="2024-07-21">
+    expires_after="2025-12-31">
   <owner>kerker@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
   <summary>
@@ -1987,7 +2008,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.AttachmentForm.{Type}" enum="AttachmentForm"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>wmahon@google.com</owner>
   <owner>chromeos-tango@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
@@ -2007,7 +2028,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.AttachmentType.{Form}" enum="AttachmentType"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>wmahon@google.com</owner>
   <owner>chromeos-tango@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
@@ -2030,8 +2051,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.AutoRepeatUsage" units="key_event"
-    expires_after="2025-06-22">
-  <owner>dpad@chromium.org</owner>
+    expires_after="2026-06-22">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records a hash of a keycode + modifier keys pressed everytime a user event
@@ -2045,7 +2066,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.ComboDeviceClassification"
     enum="ComboDeviceClassification" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>chromeos-tango@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2058,7 +2079,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.DoubleTap{ShiftLocation}ShiftDuration"
     units="ms" expires_after="2026-04-13">
-  <owner>dpad@chromium.org</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the duration between two consecutive {ShiftLocation}Shift keypresses
@@ -2073,7 +2094,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Inputs.EventRewriter.KeyRewriteLatency"
     units="microseconds" expires_after="2026-02-10">
   <owner>wangdanny@chromium.org</owner>
-  <owner>dpad@chromium.org</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the event rewriter latency metric every time a key is pressed.
@@ -2086,7 +2107,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Inputs.InternalKeyboard.CustomTopRowLayout.NumberOfTopRowKeys"
     units="keys" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cambickel@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2098,7 +2119,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Inputs.InternalKeyboard.CustomTopRowLayout.TopRowKeysPresent"
     enum="KeyboardTopRowActionKeys" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cambickel@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2108,8 +2129,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.InternalKeyboard.NumberOfTopRowKeys"
-    units="keys" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+    units="keys" expires_after="2025-12-28">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>wangdanny@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2119,7 +2140,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.InternalKeyboard.TopRowKeysPresent"
     enum="KeyboardTopRowActionKeys" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>wangdanny@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2129,7 +2150,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.InternalKeyboard.TopRowLayoutType"
     enum="KeyboardTopRowLayoutWithExtraSublayout" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cambickel@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2138,8 +2159,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.Keyboard.ModifierPressed.{KeyboardType}"
-    enum="ModifierKeyDomCodes" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+    enum="ModifierKeyDomCodes" expires_after="2026-01-11">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of times modifier keys are pressed before any modifier
@@ -2156,7 +2177,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Inputs.Keyboard.RemappedModifierPressed.{KeyboardType}"
     enum="ModifierKeyDomCodes" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of times modifier keys are pressed after modifier
@@ -2171,8 +2192,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.Keyboard.{FunctionKeyPressed}"
-    enum="InputKeyEventToFunctionKey" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+    enum="InputKeyEventToFunctionKey" expires_after="2025-12-28">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the source input key event that is rewritten to a Function key
@@ -2198,8 +2219,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Inputs.KeyUsage.Internal.{KeyboardKey}"
-    enum="KeyUsageCategory" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+    enum="KeyUsageCategory" expires_after="2025-12-28">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records when the {KeyboardKey} key is pressed or if it is recognized on the
@@ -2243,7 +2264,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.ModifierKeyCombo.{KeyboardType}" units="hash"
     expires_after="2025-10-28">
-  <owner>dpad@chromium.org</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records how users use their physical {KeyboardType} keyboards. It groups
@@ -2262,7 +2283,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.Mouse.InvalidRegistration" units="Vkey"
     expires_after="2025-10-28">
-  <owner>dpad@chromium.org</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records everytime a mouse attempts to register a button for peripheral
@@ -2273,7 +2294,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Inputs.Mouse.InvalidRegistration.{DeviceType}"
     units="Vkey" expires_after="2025-10-28">
   <owner>wangdanny@google.com</owner>
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records everytime if the mouse which tries the invalid registration is
@@ -2310,7 +2331,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.SuspendStateMachine"
     enum="SuspendStateMachineEvent" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records actions of the suspend state machine once it is triggered to start
@@ -2321,7 +2342,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.Touchscreen.Connected.Configuration"
     enum="TouchscreenConfiguration" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>longbowei@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2333,7 +2354,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Inputs.Touchscreen.Connected.External.Count"
     units="touchscreens" expires_after="2025-10-28">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>longbowei@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -2373,7 +2394,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Inputs.{DeviceType}.MetadataTier" enum="MetadataTier"
     expires_after="2025-09-14">
   <owner>wangdanny@google.com</owner>
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>Records the number of metadata tiers on {DeviceType}.</summary>
   <token key="DeviceType">
@@ -2386,7 +2407,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Intents.IntentPickerAction"
     enum="IntentPickerDialogAction" expires_after="2025-06-01">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     The intent picker dialog is shown (either automatically, or though a page
     action button) when the user navigates to a page whose URL can be handled by
@@ -2398,7 +2419,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Intents.IntentPickerIconEvent"
     enum="IntentPickerIconEvent" expires_after="2025-06-01">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records events associated with the intent picker icon in the omnibox.
     Recorded when the icon is shown or interacted with.
@@ -2406,7 +2427,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Intents.LinkCapturingEvent2"
-    enum="LinkCapturingEvent" expires_after="2025-09-21">
+    enum="LinkCapturingEvent" expires_after="2026-01-25">
   <owner>vpao@google.com</owner>
   <owner>chromeos-apps-foundation-team@google.com</owner>
   <summary>
@@ -2417,25 +2438,6 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
     Replaces ChromeOS.Intents.LinkCapturingEvent, which incorrectly recorded
     events when the user changed settings to stay in Chrome.
   </summary>
-</histogram>
-
-<histogram name="ChromeOS.Intents.LinkCapturingEvent2.{AppType}App"
-    enum="LinkCapturingEvent" expires_after="2023-03-12">
-  <owner>vpao@google.com</owner>
-  <owner>chromeos-apps-foundation-team@google.com</owner>
-  <summary>
-    Records when the link capturing entry point is shown for the {AppType} app
-    type, when a link is successfully captured and results in opening a/ an
-    {AppType} app, and when the user changes their settings to automatically
-    capture similar links in the future.
-
-    Replaces ChromeOS.Intents.LinkCapturingEvent.{AppType}App, which incorrectly
-    recorded events when the user changed settings to stay in Chrome.
-  </summary>
-  <token key="AppType">
-    <variant name="Arc"/>
-    <variant name="Web"/>
-  </token>
 </histogram>
 
 <histogram name="ChromeOS.IsLacrosBrowser" enum="Boolean" expires_after="never">
@@ -2450,7 +2452,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.K12UserAgeClassification.LogSegment"
-    enum="K12UserAgeClassificationMatrix" expires_after="2025-10-01">
+    enum="K12UserAgeClassificationMatrix" expires_after="2025-11-30">
   <owner>zifanzhang@google.com</owner>
   <owner>cros-client-wa@google.com</owner>
   <summary>Tracks the K12 user age classification.</summary>
@@ -2464,14 +2466,14 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Kcer.KcerPkcs12ImportEvent"
-    enum="KcerPkcs12ImportEvent" expires_after="2025-08-24">
+    enum="KcerPkcs12ImportEvent" expires_after="2025-12-28">
   <owner>miersh@google.com</owner>
   <owner>olsa@google.com</owner>
   <summary>Tracks events related to the import of PKCS#12 files.</summary>
 </histogram>
 
 <histogram name="ChromeOS.Kcer.Pkcs12Migration"
-    enum="KcerPkcs12MigrationUmaEvent" expires_after="2025-08-10">
+    enum="KcerPkcs12MigrationUmaEvent" expires_after="2025-12-14">
   <owner>miersh@google.com</owner>
   <owner>chromeos-commercial-networking@google.com</owner>
   <summary>
@@ -2480,9 +2482,9 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Keyboard.HasBacklight" enum="Boolean"
-    expires_after="2025-09-01">
+    expires_after="2026-09-01">
   <owner>longbowei@google.com</owner>
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records whether the keyboard has a backlight. This state is determined once
@@ -2493,7 +2495,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Keyboard.Startup.AmbientLightSensorEnabled"
     enum="BooleanEnabled" expires_after="2025-12-31">
   <owner>longbowei@google.com</owner>
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Record the status of the keyboard ambient light sensor at startup. Fires
@@ -2534,7 +2536,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.KeyPermissionsManager.Migration"
-    enum="KeyPermissionsManagerMigrationStatus" expires_after="2025-09-01">
+    enum="KeyPermissionsManagerMigrationStatus" expires_after="2026-03-01">
   <owner>miersh@google.com</owner>
   <owner>chromeos-commercial-networking@google.com</owner>
   <summary>
@@ -2595,7 +2597,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.GetPackState.FeatureId"
-    enum="LanguagePackFeatureIds" expires_after="2025-09-01">
+    enum="LanguagePackFeatureIds" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2606,7 +2608,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.GetPackState.LanguageCode"
-    enum="LanguagePackLanguageCodes" expires_after="2025-09-01">
+    enum="LanguagePackLanguageCodes" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2619,7 +2621,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.InstallBasePack.FeatureId"
-    enum="LanguagePackFeatureIds" expires_after="2025-09-01">
+    enum="LanguagePackFeatureIds" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2632,7 +2634,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.InstallError.Fonts"
-    enum="LanguagePackDlcErrorType" expires_after="2025-09-01">
+    enum="LanguagePackDlcErrorType" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2645,7 +2647,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.InstallError.Handwriting"
-    enum="LanguagePackDlcErrorType" expires_after="2025-09-01">
+    enum="LanguagePackDlcErrorType" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2657,7 +2659,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.InstallError.Tts"
-    enum="LanguagePackDlcErrorType" expires_after="2025-09-01">
+    enum="LanguagePackDlcErrorType" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2670,7 +2672,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.InstallPack.Success"
-    enum="LanguagePackFeatureSuccess" expires_after="2025-09-01">
+    enum="LanguagePackFeatureSuccess" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2681,7 +2683,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.Oobe.ValidLocale" enum="BooleanSuccess"
-    expires_after="2025-09-01">
+    expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2692,7 +2694,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LanguagePacks.UninstallComplete.Success"
-    enum="BooleanSuccess" expires_after="2025-09-01">
+    enum="BooleanSuccess" expires_after="2026-01-04">
   <owner>mlcui@google.com</owner>
   <owner>dvallet@chromium.org</owner>
   <owner>tranbaoduy@chromium.org</owner>
@@ -2704,9 +2706,9 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Liveness.PingResponseTime" units="ms"
-    expires_after="2025-08-24">
-  <owner>rtinkoff@google.com</owner>
+    expires_after="2026-07-14">
   <owner>xiyuan@google.com</owner>
+  <owner>cros-sw-perf@google.com</owner>
   <summary>
     Reports the time (ms) elapsed between sending of a LivenessChecker ping and
     receipt of the response. Recorded when LivenessChecker receives a ping
@@ -2715,7 +2717,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Liveness.PingResult" enum="BooleanSuccess"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>iby@google.com</owner>
   <owner>xiyuan@google.com</owner>
   <summary>
@@ -2726,8 +2728,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.LockScreenReauth.LockScreenReauthReason"
-    enum="LoginReauthReasons" expires_after="2025-09-07">
-  <owner>ayag@chromium.org</owner>
+    enum="LoginReauthReasons" expires_after="2026-01-11">
+  <owner>andreydav@google.com</owner>
   <owner>cros-3pidp@google.com</owner>
   <summary>
     Record the reason(s) why a user is required to reauthenticate online on the
@@ -2779,7 +2781,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.MachineStatistic.{MachineStatistic}.LoadingTime"
-    units="ms" expires_after="2025-08-24">
+    units="ms" expires_after="2025-12-28">
   <owner>asumaneev@google.com</owner>
   <owner>chromeos-commercial-remote-management@google.com</owner>
   <summary>
@@ -2795,7 +2797,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.MagicBoost.OptInCard.{OptInFeatures}"
-    enum="OptInCardAction" expires_after="2025-08-10">
+    enum="OptInCardAction" expires_after="2026-08-10">
   <owner>leandre@google.com</owner>
   <owner>cros-status-area-eng@google.com</owner>
   <summary>
@@ -2812,7 +2814,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.CacheStateOnAccess" enum="MahiCacheHit"
-    expires_after="2025-08-03">
+    expires_after="2025-10-05">
   <owner>thanhdng@chromium.org</owner>
   <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
@@ -2834,7 +2836,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.ContextMenuView.Activated"
-    enum="MahiContextMenuButtonType" expires_after="2025-08-10">
+    enum="MahiContextMenuButtonType" expires_after="2025-12-14">
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
   <summary>
@@ -2854,7 +2856,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.ContextMenuView.ButtonClicked"
-    enum="MahiMenuButton" expires_after="2025-08-10">
+    enum="MahiMenuButton" expires_after="2025-12-14">
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
   <summary>
@@ -2863,7 +2865,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.ContextMenuView.Distillable"
-    enum="BooleanDistillable" expires_after="2025-08-10">
+    enum="BooleanDistillable" expires_after="2025-12-14">
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
   <summary>
@@ -2873,7 +2875,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.ContextMenuView.ElucidationState"
-    enum="SelectedTextState" expires_after="2025-08-24">
+    enum="SelectedTextState" expires_after="2025-12-28">
   <owner>alanlxl@chromium.org</owner>
   <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
@@ -2883,7 +2885,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.ProviderCreationStatus"
-    enum="MahiProviderCreationStatus" expires_after="2025-08-03">
+    enum="MahiProviderCreationStatus" expires_after="2025-10-05">
   <owner>alanlxl@chromium.org</owner>
   <owner>thanhdng@chromium.org</owner>
   <owner>chrome-knowledge-eng@google.com</owner>
@@ -2896,7 +2898,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.ResponseStatusOnRequest"
-    enum="MahiResponseStatus" expires_after="2025-08-03">
+    enum="MahiResponseStatus" expires_after="2025-12-07">
   <owner>thanhdng@chromium.org</owner>
   <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
@@ -2906,7 +2908,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Mahi.Used" enum="MahiFeature"
-    expires_after="2025-08-03">
+    expires_after="2025-12-07">
   <owner>thanhdng@chromium.org</owner>
   <owner>chrome-knowledge-eng@google.com</owner>
   <summary>
@@ -2987,7 +2989,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Ownership.OwnerKeyUmaEvent" enum="OwnerKeyUmaEvent"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>miersh@google.com</owner>
   <owner>chromeos-commercial-networking@google.com</owner>
   <summary>
@@ -3032,7 +3034,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.PrintManagement.PrinterSettingsLaunchSource"
     enum="PrintManagementLaunchSourceType" expires_after="2024-01-23">
   <owner>ashleydp@google.com</owner>
-  <owner>gavinwill@chromium.org</owner>
+  <owner>gavinwill@google.com</owner>
   <owner>cros-device-enablement@chromium.org</owner>
   <summary>
     Tracks the source element that triggers navigation to Printer settings from
@@ -3044,7 +3046,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.PrivacyHub.Geolocation.AccessLevelChanged.{Source}"
-    enum="GeolocationAccessLevel" expires_after="2025-08-24">
+    enum="GeolocationAccessLevel" expires_after="2025-12-28">
   <owner>zauri@google.com</owner>
   <owner>chromeos-privacyhub@google.com</owner>
   <summary>
@@ -3078,7 +3080,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.PrivacyHub.Opened" enum="PrivacyHubNavigationOrigin"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>zauri@google.com</owner>
   <owner>chromeos-privacyhub@google.com</owner>
   <summary>
@@ -3108,7 +3110,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.PrivacyHub.{SensorName}Subpage.UserAction"
-    enum="PrivacyHubSensorSubpageUserAction" expires_after="2025-09-07">
+    enum="PrivacyHubSensorSubpageUserAction" expires_after="2026-01-11">
   <owner>shahinmd@google.com</owner>
   <owner>cros-privacy-features-dev@google.com</owner>
   <summary>
@@ -3123,7 +3125,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Regmon.PolicyHandlerTime" units="ms"
-    expires_after="2025-09-19">
+    expires_after="2026-01-25">
   <owner>chiav@chromium.org</owner>
   <owner>crmullins@chromium.org</owner>
   <summary>
@@ -3133,7 +3135,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Regmon.PolicyViolation"
-    enum="NetworkAnnotationHashCodes" expires_after="2025-09-19">
+    enum="NetworkAnnotationHashCodes" expires_after="2026-01-25">
   <owner>chiav@chromium.org</owner>
   <owner>crmullins@chromium.org</owner>
   <summary>
@@ -3145,7 +3147,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Regmon.ReportViolationTime" units="ms"
-    expires_after="2025-09-19">
+    expires_after="2026-01-25">
   <owner>chiav@chromium.org</owner>
   <owner>crmullins@chromium.org</owner>
   <summary>
@@ -3157,7 +3159,6 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.RgbKeyboard.RgbKeyboardCapabilityType"
     enum="RgbKeyboardCapabilityType" expires_after="2026-01-26">
   <owner>michaelcheco@google.com</owner>
-  <owner>dpad@google.com</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -3172,7 +3173,6 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.RgbKeyboard.{Type}"
     enum="RgbKeyboardBacklightChangeType" expires_after="2025-09-15">
   <owner>michaelcheco@google.com</owner>
-  <owner>dpad@google.com</owner>
   <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>Records the source of RGB backlight change for a device.</summary>
@@ -3189,8 +3189,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.SAML.APIError" enum="ChromeOSSamlApiError"
-    expires_after="2025-08-24">
-  <owner>ayag@google.com</owner>
+    expires_after="2025-12-28">
+  <owner>andreydav@google.com</owner>
   <owner>cros-3pidp@google.com</owner>
   <summary>Recorded when the Credentials Passing API call fails.</summary>
 </histogram>
@@ -3222,7 +3222,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.SAML.InSessionPasswordSyncEvent"
-    enum="SamlInSessionPasswordSyncEvent" expires_after="2025-08-03">
+    enum="SamlInSessionPasswordSyncEvent" expires_after="2025-12-07">
   <owner>mslus@chromium.org</owner>
   <owner>cros-3pidp@google.com</owner>
   <summary>
@@ -3232,14 +3232,14 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.SAML.Provider" enum="ChromeOSSamlProvider"
-    expires_after="2025-09-21">
+    expires_after="2026-01-25">
   <owner>mslus@chromium.org</owner>
   <owner>cros-3pidp@google.com</owner>
   <summary>Records SAML provider when SAML login flow is used.</summary>
 </histogram>
 
 <histogram name="ChromeOS.SAML.Scraping.PasswordCountAll" units="passwords"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>mslus@chromium.org</owner>
   <owner>emaxx@chromium.org</owner>
   <summary>
@@ -3263,7 +3263,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Sandboxing.NoNewPrivsProcPercentage" units="%"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>enlightened@chromium.org</owner>
   <owner>chromeos-hardening@google.com</owner>
   <summary>
@@ -3277,7 +3277,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Sandboxing.NonInitNsProcPercentage" units="%"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>enlightened@chromium.org</owner>
   <owner>chromeos-hardening@google.com</owner>
   <summary>
@@ -3291,7 +3291,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Sandboxing.NonRootProcPercentage" units="%"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>enlightened@chromium.org</owner>
   <owner>chromeos-hardening@google.com</owner>
   <summary>
@@ -3305,7 +3305,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Sandboxing.SecCompCoverage" units="%"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>enlightened@chromium.org</owner>
   <owner>chromeos-hardening@google.com</owner>
   <summary>
@@ -3319,7 +3319,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Sandboxing.UnprivProcPercentage" units="%"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>enlightened@chromium.org</owner>
   <owner>chromeos-hardening@google.com</owner>
   <summary>
@@ -3337,7 +3337,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.AuthFactor.{EventType}"
-    enum="SecagentdAuthFactor" expires_after="2025-08-10">
+    enum="SecagentdAuthFactor" expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3353,7 +3353,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Bootmode.Cros" enum="SecagentdBootmodeCros"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3365,7 +3365,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Bootmode.Uefi" enum="SecagentdBootmodeUefi"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3377,7 +3377,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Bpf.{Bpf}.AttachResult"
-    enum="SecagentdBpfAttachResult" expires_after="2025-08-10">
+    enum="SecagentdBpfAttachResult" expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3393,7 +3393,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Cache" enum="SecagentdCache"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3405,7 +3405,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.CacheFullness" units="%"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3415,7 +3415,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.CommandLineLength" units="bytes"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3425,7 +3425,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Policy" enum="SecagentdPolicy"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3441,7 +3441,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Process.{EventType}Event"
-    enum="SecagentdProcessEvent" expires_after="2025-08-10">
+    enum="SecagentdProcessEvent" expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3456,7 +3456,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Redaction" units="position"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3468,7 +3468,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.SendMessageResult"
-    enum="SecagentdSendMessageResult" expires_after="2025-08-10">
+    enum="SecagentdSendMessageResult" expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3479,7 +3479,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.SHA256ComputeTime" units="100ms"
-    expires_after="2025-08-24">
+    expires_after="2026-03-31">
   <owner>jasonling@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3490,7 +3490,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.SHA256InputSize" units="MiB"
-    expires_after="2025-08-24">
+    expires_after="2026-03-31">
   <owner>jasonling@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3501,7 +3501,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Secagentd.Tpm" enum="SecagentdTpm"
-    expires_after="2025-08-10">
+    expires_after="2026-03-31">
   <owner>rborzello@google.com</owner>
   <owner>cros-enterprise-security@google.com</owner>
   <summary>
@@ -3551,7 +3551,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.ButtonRemapping.DeviceTypeOfRemappedButton"
     enum="PeripheralCustomizationMetricsType" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>wangdanny@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -3561,8 +3561,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Settings.Device.ButtonRemapping.Pressed"
-    enum="PeripheralCustomizationMetricsType" expires_after="2025-07-27">
-  <owner>dpad@google.com</owner>
+    enum="PeripheralCustomizationMetricsType" expires_after="2025-09-28">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>wangdanny@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -3574,7 +3574,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Settings.Device.HasAmbientLightSensor" enum="Boolean"
     expires_after="2025-12-31">
   <owner>longbowei@google.com</owner>
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records whether the device has a ambient light sensor. This state is
@@ -3584,8 +3584,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Settings.Device.Keyboard.AutoRepeatDelay.{State}"
-    units="ms" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    units="ms" expires_after="2025-12-14">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the delay before auto repeat starts when the setting is {State}.
@@ -3598,7 +3598,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram name="ChromeOS.Settings.Device.Keyboard.AutoRepeatEnabled.{State}"
     enum="Boolean" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the whether auto repeat is enabled when the setting is {State}.
@@ -3610,8 +3610,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Settings.Device.Keyboard.AutoRepeatInterval.{State}"
-    units="ms" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    units="ms" expires_after="2026-08-10">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the interval between auto repeated keys when the setting is {State}.
@@ -3625,7 +3625,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.Modifiers.Hash"
     units="hash" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the configured modifier remapping set on {KeyboardType} keyboard for
@@ -3642,7 +3642,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.Modifiers.NumberOfKeysReset"
     units="keys" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of modifier keys reset everytime the modifier remappings
@@ -3659,7 +3659,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.Modifiers.NumberOfRemappedKeysOnStart"
     units="keys" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of non default modifier key remappings when the
@@ -3675,7 +3675,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.Modifiers.{Modifier}RemappedTo.Changed"
     enum="KeyboardModifierRemappingKeys" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the configured modifier remapping for the {Modifier} key when the
@@ -3701,7 +3701,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.Modifiers.{Modifier}RemappedTo.Initial"
     enum="KeyboardModifierRemappingKeys" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the configured modifier remapping for the {Modifier} key when the
@@ -3775,7 +3775,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.{KeyboardSetting}.Changed"
     enum="Boolean" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {KeyboardSetting} setting when the {KeyboardType}
@@ -3795,7 +3795,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Keyboard.{KeyboardType}.{KeyboardSetting}.Initial"
     enum="Boolean" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {KeyboardSetting} setting when the {KeyboardType}
@@ -3868,8 +3868,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.Touchpad.{TouchpadType}.{TouchpadSetting}.Changed"
-    enum="Boolean" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="Boolean" expires_after="2025-12-14">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {TouchpadSetting} settings when the {TouchpadType}
@@ -3890,8 +3890,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.Touchpad.{TouchpadType}.{TouchpadSetting}.Initial"
-    enum="Boolean" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="Boolean" expires_after="2025-12-14">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {TouchpadSetting} settings when the {TouchpadType}
@@ -3913,7 +3913,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Touchpad.{TouchpadType}.{TouchpadSetting}.{Difference}"
     enum="PointerSensitivity" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value {Difference} when {TouchpadSetting} settings on
@@ -3936,7 +3936,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Touchpad.{TouchpadType}.{TouchpadSpeedSettings}.Changed"
     enum="PointerSensitivity" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {TouchpadSpeedSettings} setting when the
@@ -3955,7 +3955,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.Touchpad.{TouchpadType}.{TouchpadSpeedSettings}.Initial"
     enum="PointerSensitivity" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {TouchpadSpeedSettings} setting when the
@@ -3972,8 +3972,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Settings.Device.{DeviceType}.SetSettingsSucceeded"
-    enum="Boolean" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="Boolean" expires_after="2025-10-12">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records if the {DeviceType} settings are set successfully. Set settings will
@@ -3990,7 +3990,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{DeviceType}.SettingsUpdated.FirstEver.{TimePeriod}"
     units="times updated" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of times settings were updated for the first ever
@@ -4003,7 +4003,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{DeviceType}.SettingsUpdated.FromDefaults.{TimePeriod}"
     units="times updated" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of times {DeviceType} settings were updated when they
@@ -4017,7 +4017,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{DeviceType}.SettingsUpdated.Synced.{TimePeriod}"
     units="times updated" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of times {DeviceType} settings were updated when the
@@ -4031,7 +4031,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.AcceleratorAction.Changed"
     enum="AcceleratorAction" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping AcceleratorAction property when
@@ -4047,7 +4047,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.AcceleratorAction.Initial"
     enum="AcceleratorAction" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping AcceleratorAction property when
@@ -4063,7 +4063,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.AcceleratorAction.Pressed"
     enum="AcceleratorAction" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping AcceleratorAction property when
@@ -4079,7 +4079,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.DefaultRemapping.CustomizableButton"
     enum="CustomizableButton" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the Button.CustomizableButton property when the
@@ -4096,7 +4096,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.DefaultRemapping.Vkey"
     units="Vkey" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the Button.Vkey property when the {Peripheral} device
@@ -4113,7 +4113,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.KeyEvent.Changed"
     units="KeyEventEncodedInt" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping KeyEvent property when the
@@ -4133,7 +4133,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.KeyEvent.Initial"
     units="KeyEventEncodedInt" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping KeyEvent property when the
@@ -4153,7 +4153,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.KeyEvent.Pressed"
     units="KeyEventEncodedInt" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping KeyEvent property when the it's
@@ -4173,7 +4173,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.Name.Changed.CustomizableButton"
     enum="CustomizableButton" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the Button.CustomizableButton property when the
@@ -4189,7 +4189,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.Name.Changed.Vkey"
     units="Vkey" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the Button.Vkey property when the {Peripheral} device
@@ -4207,7 +4207,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.Registered.CustomizableButton"
     enum="CustomizableButton" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the Button.CustomizableButton property when the user
@@ -4224,7 +4224,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.Registered.Vkey"
     units="Vkey" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the Button.Vkey property when the user presses the
@@ -4240,7 +4240,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.StaticShortcutAction.Changed"
     enum="DeviceSettingsStaticShortcutAction" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping StaticShortcutAction property when
@@ -4256,7 +4256,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.StaticShortcutAction.Initial"
     enum="DeviceSettingsStaticShortcutAction" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping StaticShortcutAction property when
@@ -4272,7 +4272,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.ButtonRemapping.StaticShortcutAction.Pressed"
     enum="DeviceSettingsStaticShortcutAction" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the button_remapping StaticShortcutAction property when
@@ -4288,7 +4288,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.External.NumConnectedLast28Days"
     units="devices" expires_after="2026-03-22">
-  <owner>dpad@google.com</owner>
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the number of {Peripheral} devices seen in the last 28 days.
@@ -4303,8 +4303,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.{PeripheralSetting}.Changed"
-    enum="Boolean" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="Boolean" expires_after="2025-12-14">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {PeripheralSetting} settings when the {Peripheral}
@@ -4324,8 +4324,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.{PeripheralSetting}.Initial"
-    enum="Boolean" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="Boolean" expires_after="2025-12-14">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {PeripheralSetting} settings when the {Peripheral}
@@ -4345,8 +4345,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.{SensitivityType}.Changed"
-    enum="PointerSensitivity" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="PointerSensitivity" expires_after="2025-10-12">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {SensitivityType} setting when the {Peripheral}
@@ -4364,8 +4364,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.{SensitivityType}.Initial"
-    enum="PointerSensitivity" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="PointerSensitivity" expires_after="2025-10-12">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value of the {SensitivityType} setting when the {Peripheral}
@@ -4383,8 +4383,8 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 
 <histogram
     name="ChromeOS.Settings.Device.{Peripheral}.{SensitivityType}.{Difference}"
-    enum="PointerSensitivity" expires_after="2025-08-10">
-  <owner>dpad@google.com</owner>
+    enum="PointerSensitivity" expires_after="2025-10-12">
+  <owner>jimmyxgong@chromium.org</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
     Records the value {Difference} when {SensitivityType} setting on
@@ -4407,7 +4407,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Sharesheet.AppCount2.{AppType}" units="apps"
     expires_after="2025-06-01">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records number of {AppType} apps found for a given intent in the Sharesheet
     when the sharesheet is invoked. Has 100 exponential buckets. (The original
@@ -4425,7 +4425,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Sharesheet.FileCount" units="files"
     expires_after="2025-06-01">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records the number of files a user is trying to share from the Sharesheet
     when the sharesheet is invoked.
@@ -4435,7 +4435,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.Sharesheet.LaunchSource"
     enum="ChromeOSSharesheetLaunchSource" expires_after="2025-06-01">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records the source from which the Sharesheet is invoked.
 
@@ -4444,16 +4444,16 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Sharesheet.UserAction"
-    enum="ChromeOSSharesheetAction" expires_after="2025-09-07">
+    enum="ChromeOSSharesheetAction" expires_after="2026-01-11">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>Records user action on sharesheet invocations.</summary>
 </histogram>
 
 <histogram name="ChromeOS.Sharesheet.{Location}.MimeType"
     enum="ChromeOSSharesheetMimeType" expires_after="2024-09-22">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records the mime type of the content being copied at the {Location} point in
     the Sharesheet flow.
@@ -4471,7 +4471,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.Stability.{Severity}" enum="CrashSeverityProductType"
-    expires_after="2025-08-24">
+    expires_after="2025-12-28">
   <owner>iby@chromium.org</owner>
   <owner>chromeos-data-eng@google.com</owner>
   <summary>
@@ -4632,7 +4632,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.TelemetryExtension.RoutineCreation"
-    enum="TelemetryExtensionRoutineCategory" expires_after="2025-08-03">
+    enum="TelemetryExtensionRoutineCategory" expires_after="2025-12-31">
   <owner>weiluanwang@google.com</owner>
   <owner>dennyh@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
@@ -4643,7 +4643,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.TelemetryExtension.RoutineSupportedStatusQuery"
-    enum="TelemetryExtensionRoutineCategory" expires_after="2025-08-10">
+    enum="TelemetryExtensionRoutineCategory" expires_after="2025-12-31">
   <owner>weiluanwang@google.com</owner>
   <owner>dennyh@google.com</owner>
   <owner>cros-tdm-tpe-eng@google.com</owner>
@@ -4740,12 +4740,43 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
   </summary>
 </histogram>
 
-<histogram base="true" name="ChromeOS.USB.DeviceAttached"
+<histogram name="ChromeOS.USB.DeviceAttached.{Status}.{USBDeviceClass}"
     enum="ChromeOSUsbEventTiming" expires_after="2026-01-01">
   <owner>allenwebb@chromium.org</owner>
   <owner>jorgelo@chromium.org</owner>
   <owner>mnissler@chromium.org</owner>
   <summary>Timing and number of USB devices attached.</summary>
+  <token key="Status">
+    <variant name="Recognized"
+        summary="A device that was already added to the list of trusted
+                 devices."/>
+    <variant name="Unrecognized"
+        summary="A device that was not in the list of trusted devices yet."/>
+  </token>
+  <token key="USBDeviceClass">
+    <variant name="App"
+        summary="A device with only the application specific interface class."/>
+    <variant name="Audio" summary="An audio device."/>
+    <variant name="AV" summary="An audio/video device."/>
+    <variant name="Card" summary="A smart card reader."/>
+    <variant name="Comm" summary="A communication device."/>
+    <variant name="Health" summary="A personal healthcare device."/>
+    <variant name="HID" summary="A human-interface device."/>
+    <variant name="Hub" summary="A USB hub."/>
+    <variant name="Image" summary="A still image capture device."/>
+    <variant name="Misc"
+        summary="A device with only the misc. interface class."/>
+    <variant name="Other"
+        summary="All devices not covered by the other groups."/>
+    <variant name="Phys" summary="A physical device."/>
+    <variant name="Print" summary="A printer."/>
+    <variant name="Sec" summary="A security device (e.g. fingerprint reader)."/>
+    <variant name="Storage" summary="A storage device."/>
+    <variant name="Vendor"
+        summary="A device with only the vendor specific interface class."/>
+    <variant name="Video" summary="A video device."/>
+    <variant name="Wireless" summary="A wireless controller device."/>
+  </token>
 </histogram>
 
 <histogram name="ChromeOS.USB.DeviceError" enum="ChromeOSUsbDeviceError"
@@ -4844,7 +4875,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.UserTypeByDeviceType.LogSegment"
-    enum="UserDeviceMatrix" expires_after="2025-08-24">
+    enum="UserDeviceMatrix" expires_after="2025-12-28">
   <owner>bmalcolm@chromium.org</owner>
   <owner>cros-client-wa@google.com</owner>
   <summary>
@@ -4861,7 +4892,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 <histogram name="ChromeOS.WebAPK.{InstallType}.Result"
     enum="WebApkInstallResultChromeOS" expires_after="2024-04-28">
   <owner>ovn@google.com</owner>
-  <owner>cros-web-apps-team@google.com</owner>
+  <owner>lt-web-apps-team@google.com</owner>
   <summary>
     Records the overall final state of a WebAPK {InstallType} operation on
     ChromeOS. A WebAPK is generated and installed when a PWA which supports Web
@@ -4875,7 +4906,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.WelcomeExperienceCompanionAppState"
-    enum="CompanionAppState" expires_after="2025-08-31">
+    enum="CompanionAppState" expires_after="2025-11-02">
   <owner>michaelcheco@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>
@@ -4886,7 +4917,7 @@ and mapped to the variant by `StatisticNameToMachineStatisticVariant()` -->
 </histogram>
 
 <histogram name="ChromeOS.WelcomeExperienceNotificationEvent"
-    enum="WelcomeExperienceNotificationEventType" expires_after="2025-06-30">
+    enum="WelcomeExperienceNotificationEventType" expires_after="2026-06-30">
   <owner>michaelcheco@google.com</owner>
   <owner>cros-device-enablement@google.com</owner>
   <summary>

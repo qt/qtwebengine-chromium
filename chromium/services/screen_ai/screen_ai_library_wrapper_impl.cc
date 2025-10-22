@@ -9,6 +9,7 @@
 
 #include "services/screen_ai/screen_ai_library_wrapper_impl.h"
 
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "ui/accessibility/accessibility_features.h"
@@ -90,6 +91,8 @@ bool ScreenAILibraryWrapperImpl::Load(const base::FilePath& library_path) {
   }
 
   if (!LoadFunction(init_ocr_, "InitOCRUsingCallback") ||
+      !LoadFunction(get_max_image_dimension_, "GetMaxImageDimension") ||
+      !LoadFunction(set_ocr_light_mode_, "SetOCRLightMode") ||
       !LoadFunction(perform_ocr_, "PerformOCR")) {
     return false;
   }
@@ -136,11 +139,23 @@ void ScreenAILibraryWrapperImpl::EnableDebugMode() {
 }
 
 NO_SANITIZE("cfi-icall")
+uint32_t ScreenAILibraryWrapperImpl::GetMaxImageDimension() {
+  CHECK(get_max_image_dimension_);
+  return get_max_image_dimension_();
+}
+
+NO_SANITIZE("cfi-icall")
 bool ScreenAILibraryWrapperImpl::InitOCR() {
   SCOPED_UMA_HISTOGRAM_TIMER(
       "Accessibility.ScreenAI.OCR.InitializationLatency");
   CHECK(init_ocr_);
   return init_ocr_();
+}
+
+NO_SANITIZE("cfi-icall")
+void ScreenAILibraryWrapperImpl::SetOCRLightMode(bool enabled) {
+  CHECK(set_ocr_light_mode_);
+  set_ocr_light_mode_(enabled);
 }
 
 NO_SANITIZE("cfi-icall")

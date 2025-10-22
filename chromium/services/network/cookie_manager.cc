@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "services/network/cookie_manager.h"
 
 #include <optional>
 #include <utility>
 
+#include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -161,7 +157,11 @@ void CookieManager::SetCanonicalCookie(const net::CanonicalCookie& cookie,
       return;
     }
   }
-  DCHECK(cookie_ptr->IsCanonical());
+  if constexpr (DCHECK_IS_ON()) {
+    net::CanonicalCookie::CanonicalizationResult result =
+        cookie_ptr->IsCanonical();
+    DCHECK(result) << result;
+  }
   cookie_store_->SetCanonicalCookieAsync(std::move(cookie_ptr), source_url,
                                          cookie_options, std::move(callback));
 }
@@ -173,14 +173,6 @@ void CookieManager::DeleteCanonicalCookie(
       cookie, base::BindOnce([](uint32_t num_deleted) {
                 return num_deleted > 0;
               }).Then(std::move(callback)));
-}
-
-void CookieManager::SiteHasCookieInOtherPartition(
-    const net::SchemefulSite& schemeful_site,
-    const std::optional<net::CookiePartitionKey>& cookie_partition_key,
-    SiteHasCookieInOtherPartitionCallback callback) {
-  std::move(callback).Run(cookie_store_->SiteHasCookieInOtherPartition(
-      schemeful_site, cookie_partition_key));
 }
 
 void CookieManager::SetContentSettings(
@@ -355,14 +347,13 @@ void CookieManager::AllowFileSchemeCookies(
     AllowFileSchemeCookiesCallback callback) {
   OnSettingsWillChange();
 
-  std::vector<std::string> cookieable_schemes(
-      net::CookieMonster::kDefaultCookieableSchemes,
-      net::CookieMonster::kDefaultCookieableSchemes +
-          net::CookieMonster::kDefaultCookieableSchemesCount);
+  std::vector<std::string> cookieable_schemes =
+      net::CookieMonster::GetDefaultCookieableSchemes();
   if (allow) {
-    cookieable_schemes.push_back(url::kFileScheme);
+    cookieable_schemes.emplace_back(url::kFileScheme);
   }
-  cookie_store_->SetCookieableSchemes(cookieable_schemes, std::move(callback));
+  cookie_store_->SetCookieableSchemes(std::move(cookieable_schemes),
+                                      std::move(callback));
 }
 
 void CookieManager::SetForceKeepSessionState() {

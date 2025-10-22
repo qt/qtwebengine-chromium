@@ -10,6 +10,8 @@
 #include "src/core/SkTraceEvent.h"
 #include "src/gpu/graphite/ScratchResourceManager.h"
 
+#include <cstdint>
+
 namespace skgpu::graphite {
 
 using Status = Task::Status;
@@ -54,6 +56,24 @@ Status TaskList::addCommands(Context* context,
     return this->visitTasks([&](Task* task) {
         return task->addCommands(context, commandBuffer, replayData);
     });
+}
+
+bool TaskList::visitPipelines(const std::function<bool(const GraphicsPipeline*)>& visitor) {
+    Status status = this->visitTasks([&](Task* task) {
+        return task->visitPipelines(visitor) ? Status::kSuccess : Status::kFail;
+    });
+    // Map back to simple bool (treat kDiscard as true too, no pipelines to visit means all
+    // pipelines were visited).
+    return status != Status::kFail;
+}
+
+bool TaskList::visitProxies(const std::function<bool(const TextureProxy*)>& visitor) {
+    Status status = this->visitTasks([&](Task* task) {
+        return task->visitProxies(visitor) ? Status::kSuccess : Status::kFail;
+    });
+    // Map back to simple bool (treat kDiscard as true too, no pipelines to visit means all
+    // pipelines were visited).
+    return status != Status::kFail;
 }
 
 } // namespace skgpu::graphite

@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import os
-from typing import TYPE_CHECKING, Any, Dict, Optional, Set, Type
+from typing import TYPE_CHECKING, Any, Optional, Set, Type
 
 from selenium import webdriver
 from selenium.webdriver.safari.options import Options as SafariOptions
@@ -17,12 +17,12 @@ from typing_extensions import override
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.safari.safari import Safari, find_safaridriver
 from crossbench.browsers.webdriver import DriverException, WebDriverBrowser
-from crossbench.helper.spinner import Spinner
+from crossbench.cli import ui
 from crossbench.helper.wait import WaitRange
+from crossbench.path import AnyPath, LocalPath
 
 if TYPE_CHECKING:
   from crossbench.browsers.settings import Settings
-  from crossbench.path import AnyPath, LocalPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
@@ -70,7 +70,7 @@ class SafariWebDriver(WebDriverBrowser, Safari):
     service = SafariService(executable_path=os.fspath(driver_path))
     driver_kwargs = {"service": service, "options": options}
 
-    with Spinner():
+    with ui.spinner():
       driver = self._start_driver_with_retries(driver_kwargs)
       self.platform.sleep(0.5)
 
@@ -80,13 +80,13 @@ class SafariWebDriver(WebDriverBrowser, Safari):
         driver.session_id)
     all_logs = list(self.platform.glob(logs, "safaridriver*"))
     if all_logs:
-      self._driver_log_file = all_logs[0]
-      assert self.platform.is_file(self._driver_log_file)
+      self._driver_log_file = LocalPath(all_logs[0])
+      assert self.platform.is_file(all_logs[0])
     return driver
 
   # TODO(cbruni): implement iOS platform
   def _start_driver_with_retries(
-      self, driver_kwargs: Dict[str, Any]) -> webdriver.Safari:
+      self, driver_kwargs: dict[str, Any]) -> webdriver.Safari:
     # safaridriver for iOS / technology preview seems to be brittle.
     # Let's give it several chances to start up.
     seen_exceptions: Set[Type[Exception]] = set()

@@ -50,6 +50,7 @@ CC = @CC@
 
 ENABLE_LIB_SHARED = @ENABLE_LIB_SHARED@
 ENABLE_LIB_STATIC = @ENABLE_LIB_STATIC@
+HAVE_WASI_SDK = @HAVE_WASI_SDK@
 
 CFLAGS = @CFLAGS@ @CPPFLAGS@
 #
@@ -71,11 +72,8 @@ LDFLAGS.rt = @LDFLAGS_RT@
 LDFLAGS.icu = @LDFLAGS_ICU@
 CFLAGS.icu = @CFLAGS_ICU@
 
-# When cross-compiling, we need to avoid the -s flag because it only
-# works on the build host's platform.
-INSTALL.strip.1 = $(INSTALL)
-INSTALL.strip.0 = $(INSTALL) -s
-INSTALL.strip   = $(INSTALL.strip.@IS_CROSS_COMPILING@)
+# INSTALL reminder: we specifically do not strip binaries,
+# as discussed in https://sqlite.org/forum/forumpost/9a67df63eda9925c.
 INSTALL.noexec  = $(INSTALL) -m 0644
 
 install-dir.bin = $(DESTDIR)$(bindir)
@@ -127,10 +125,8 @@ OPT_FEATURE_FLAGS = @OPT_FEATURE_FLAGS@
 
 LDFLAGS.libsqlite3.soname = @LDFLAGS_LIBSQLITE3_SONAME@
 # soname: see https://sqlite.org/src/forumpost/5a3b44f510df8ded
-LDFLAGS.libsqlite3.os-specific = @LDFLAGS_MAC_CVERSION@ @LDFLAGS_OUT_IMPLIB@
-# os-specific: see
-# - https://sqlite.org/forum/forumpost/9dfd5b8fd525a5d7
-# - https://sqlite.org/forum/forumpost/0c7fc097b2
+LDFLAGS.libsqlite3.os-specific = \
+  @LDFLAGS_MAC_CVERSION@ @LDFLAGS_MAC_INSTALL_NAME@ @LDFLAGS_OUT_IMPLIB@
 
 LDFLAGS.libsqlite3 = \
   $(LDFLAGS.rpath) $(LDFLAGS.pthread) \
@@ -143,57 +139,78 @@ sqlite3.o: $(TOP)/sqlite3.h $(TOP)/sqlite3.c
 	$(CC) -c $(TOP)/sqlite3.c -o $@ $(CFLAGS) $(CFLAGS.libsqlite3)
 
 libsqlite3.LIB = libsqlite3$(T.lib)
-libsqlite3.SO = libsqlite3$(T.dll)
+libsqlite3.DLL.basename = @SQLITE_DLL_BASENAME@
+libsqlite3.out.implib = @SQLITE_OUT_IMPLIB@
+libsqlite3.DLL = $(libsqlite3.DLL.basename)$(T.dll)
+libsqlite3.DLL.install-rules = @SQLITE_DLL_INSTALL_RULES@
 
-$(libsqlite3.SO): sqlite3.o
+$(libsqlite3.DLL): sqlite3.o
 	$(CC) -o $@  sqlite3.o $(LDFLAGS.shlib) \
 		$(LDFLAGS) $(LDFLAGS.libsqlite3) \
 		$(LDFLAGS.libsqlite3.os-specific) $(LDFLAGS.libsqlite3.soname)
-all: $(libsqlite3.SO)
+$(libsqlite3.DLL)-1: $(libsqlite3.DLL)
+$(libsqlite3.DLL)-0:
+all: $(libsqlite3.DLL)-$(ENABLE_LIB_SHARED)
 
 $(libsqlite3.LIB): sqlite3.o
 	$(AR) $(AR.flags) $@ sqlite3.o
-all: $(libsqlite3.LIB)
+$(libsqlite3.LIB)-1: $(libsqlite3.LIB)
+$(libsqlite3.LIB)-0:
+all: $(libsqlite3.LIB)-$(ENABLE_LIB_STATIC)
 
-install-so-1: $(install-dir.lib) $(libsqlite3.SO)
-	$(INSTALL) $(libsqlite3.SO) "$(install-dir.lib)"
-	@if [ -f $(libsqlite3.SO).a ]; then \
-		$(INSTALL) $(libsqlite3.SO).a "$(install-dir.lib)"; \
-	fi
-	@echo "Setting up $(libsqlite3.SO) version symlinks..."; \
-	if [ x.dll = x$(T.dll) ]; then \
-		echo "No library symlinks needed on this platform"; \
-	elif [ x.dylib = x$(T.dll) ]; then \
-		cd "$(install-dir.lib)" || exit $$?; \
-		rm -f libsqlite3.0$(T.dll) libsqlite3.$(PACKAGE_VERSION)$(T.dll) || exit $$?; \
-		dllname=libsqlite3.$(PACKAGE_VERSION)$(T.dll); \
-		mv $(libsqlite3.SO) $$dllname || exit $$?; \
-		ln -s $$dllname $(libsqlite3.SO) || exit $$?; \
-		ln -s $$dllname libsqlite3.0$(T.dll) || exit $$?; \
-		ls -la $$dllname $(libsqlite3.SO) libsqlite3.0$(T.dll); \
-	else \
-		cd "$(install-dir.lib)" || exit $$?; \
-		rm -f $(libsqlite3.SO).0 $(libsqlite3.SO).$(PACKAGE_VERSION) || exit $$?; \
-		mv $(libsqlite3.SO) $(libsqlite3.SO).$(PACKAGE_VERSION) || exit $$?; \
-		ln -s $(libsqlite3.SO).$(PACKAGE_VERSION) $(libsqlite3.SO) || exit $$?; \
-		ln -s $(libsqlite3.SO).$(PACKAGE_VERSION) $(libsqlite3.SO).0 || exit $$?; \
-		ls -la $(libsqlite3.SO) $(libsqlite3.SO).[a03]*; \
-		if [ -e $(libsqlite3.SO).0.8.6 ]; then \
-			echo "ACHTUNG: legacy libtool-compatible install found. Re-linking it..."; \
-			rm -f libsqlite3.la $(libsqlite3.SO).0.8.6 || exit $$?; \
-			ln -s $(libsqlite3.SO).$(PACKAGE_VERSION) $(libsqlite3.SO).0.8.6 || exit $$?; \
-			ls -la $(libsqlite3.SO).0.8.6; \
-		elif [ x1 = "x$(INSTALL_SO_086_LINK)" ]; then \
-			echo "ACHTUNG: installing legacy libtool-style links because INSTALL_SO_086_LINK=1"; \
-			rm -f libsqlite3.la $(libsqlite3.SO).0.8.6 || exit $$?; \
-			ln -s $(libsqlite3.SO).$(PACKAGE_VERSION) $(libsqlite3.SO).0.8.6 || exit $$?; \
-			ls -la $(libsqlite3.SO).0.8.6; \
-		fi; \
+#
+# Maintenance reminder: the install-dll-... rules must be kept in sync
+# with the main copies rom /main.mk.
+#
+install-dll-out-implib: $(install-dir.lib) $(libsqlite3.DLL)
+	if [ x != "x$(libsqlite3.out.implib)" ] && [ -f "$(libsqlite3.out.implib)" ]; then \
+		$(INSTALL) $(libsqlite3.out.implib) "$(install-dir.lib)"; \
 	fi
 
-install-so-0 install-so-:
-install-so: install-so-$(ENABLE_LIB_SHARED)
-install: install-so
+install-dll-unix-generic: install-dll-out-implib
+	$(INSTALL) $(libsqlite3.DLL) "$(install-dir.lib)"
+	@echo "Setting up $(libsqlite3.DLL) version symlinks..."; \
+	cd "$(install-dir.lib)" || exit $$?; \
+	rm -f $(libsqlite3.DLL).0 $(libsqlite3.DLL).$(PACKAGE_VERSION) || exit $$?; \
+	mv $(libsqlite3.DLL) $(libsqlite3.DLL).$(PACKAGE_VERSION) || exit $$?; \
+	ln -s $(libsqlite3.DLL).$(PACKAGE_VERSION) $(libsqlite3.DLL) || exit $$?; \
+	ln -s $(libsqlite3.DLL).$(PACKAGE_VERSION) $(libsqlite3.DLL).0 || exit $$?; \
+	ls -la $(libsqlite3.DLL) $(libsqlite3.DLL).[a03]*; \
+	if [ -e $(libsqlite3.DLL).0.8.6 ]; then \
+		echo "ACHTUNG: legacy libtool-compatible install found. Re-linking it..."; \
+		rm -f libsqlite3.la $(libsqlite3.DLL).0.8.6 || exit $$?; \
+		ln -s $(libsqlite3.DLL).$(PACKAGE_VERSION) $(libsqlite3.DLL).0.8.6 || exit $$?; \
+		ls -la $(libsqlite3.DLL).0.8.6; \
+	elif [ x1 = "x$(INSTALL_SO_086_LINK)" ]; then \
+		echo "ACHTUNG: installing legacy libtool-style links because INSTALL_SO_086_LINK=1"; \
+		rm -f libsqlite3.la $(libsqlite3.DLL).0.8.6 || exit $$?; \
+		ln -s $(libsqlite3.DLL).$(PACKAGE_VERSION) $(libsqlite3.DLL).0.8.6 || exit $$?; \
+		ls -la $(libsqlite3.DLL).0.8.6; \
+	fi
+
+install-dll-msys: install-dll-out-implib $(install-dir.bin)
+	$(INSTALL) $(libsqlite3.DLL) "$(install-dir.bin)"
+# ----------------------------------------------^^^ yes, bin
+# Each of {msys,mingw,cygwin} uses a different name for the DLL, but
+# that is already accounted for via $(libsqlite3.DLL).
+install-dll-mingw:  install-dll-msys
+install-dll-cygwin: install-dll-msys
+
+install-dll-darwin: $(install-dir.lib) $(libsqlite3.DLL)
+	$(INSTALL) $(libsqlite3.DLL) "$(install-dir.lib)"
+	@echo "Setting up $(libsqlite3.DLL) version symlinks..."; \
+	cd "$(install-dir.lib)" || exit $$?; \
+	rm -f libsqlite3.0$(T.dll) libsqlite3.$(PACKAGE_VERSION)$(T.dll) || exit $$?; \
+	dllname=libsqlite3.$(PACKAGE_VERSION)$(T.dll); \
+	mv $(libsqlite3.DLL) $$dllname || exit $$?; \
+	ln -s $$dllname $(libsqlite3.DLL) || exit $$?; \
+	ln -s $$dllname libsqlite3.0$(T.dll) || exit $$?; \
+	ls -la $$dllname $(libsqlite3.DLL) libsqlite3.0$(T.dll)
+
+install-dll-1: install-dll-$(libsqlite3.DLL.install-rules)
+install-dll-0 install-dll-:
+install-dll: install-dll-$(ENABLE_LIB_SHARED)
+install: install-dll
 
 install-lib-1: $(install-dir.lib) $(libsqlite3.LIB)
 	$(INSTALL.noexec) $(libsqlite3.LIB) "$(install-dir.lib)"
@@ -201,7 +218,7 @@ install-lib-0 install-lib-:
 install-lib: install-lib-$(ENABLE_LIB_STATIC)
 install: install-lib
 
-
+#
 # Flags to link the shell app either directly against sqlite3.c
 # (ENABLE_STATIC_SHELL==1) or libsqlite3.so (ENABLE_STATIC_SHELL==0).
 #
@@ -209,19 +226,35 @@ ENABLE_STATIC_SHELL = @ENABLE_STATIC_SHELL@
 sqlite3-shell-link-flags.1 = $(TOP)/sqlite3.c $(LDFLAGS.libsqlite3)
 sqlite3-shell-link-flags.0 = -L. -lsqlite3 $(LDFLAGS.zlib)
 sqlite3-shell-deps.1 = $(TOP)/sqlite3.c
-sqlite3-shell-deps.0 = $(libsqlite3.SO)
+sqlite3-shell-deps.0 = $(libsqlite3.DLL)
+#
+# STATIC_CLI_SHELL = 1 to statically link sqlite3$(T.exe), else
+# 0. Requires static versions of all requisite libraries. Primarily
+# intended for use with static-friendly environments like Alpine
+# Linux.
+#
+STATIC_CLI_SHELL = @STATIC_CLI_SHELL@
+#
+# sqlite3-shell-static.flags.N = N is $(STATIC_CLI_SHELL)
+#
+sqlite3-shell-static.flags.1 = -static
+sqlite3-shell-static.flags.0 =
 sqlite3$(T.exe): $(TOP)/shell.c $(sqlite3-shell-deps.$(ENABLE_STATIC_SHELL))
 	$(CC) -o $@ \
 		$(TOP)/shell.c $(sqlite3-shell-link-flags.$(ENABLE_STATIC_SHELL)) \
+		$(sqlite3-shell-static.flags.$(STATIC_CLI_SHELL)) \
 		-I. $(OPT_FEATURE_FLAGS) $(SHELL_OPT) \
 		$(CFLAGS) $(CFLAGS.readline) $(CFLAGS.icu) \
 		$(LDFLAGS) $(LDFLAGS.readline)
 
-all: sqlite3$(T.exe)
+sqlite3$(T.exe)-1:
+sqlite3$(T.exe)-0: sqlite3$(T.exe)
+all: sqlite3$(T.exe)-$(HAVE_WASI_SDK)
 
-install-shell: sqlite3$(T.exe) $(install-dir.bin)
-	$(INSTALL.strip) sqlite3$(T.exe) "$(install-dir.bin)"
-install: install-shell
+install-shell-0: sqlite3$(T.exe) $(install-dir.bin)
+	$(INSTALL) sqlite3$(T.exe) "$(install-dir.bin)"
+install-shell-1:
+install: install-shell-$(HAVE_WASI_SDK)
 
 install-headers: $(TOP)/sqlite3.h $(install-dir.include)
 	$(INSTALL.noexec) $(TOP)/sqlite3.h $(TOP)/sqlite3ext.h "$(install-dir.include)"
@@ -237,7 +270,7 @@ install: install-man1
 
 clean:
 	rm -f *.o sqlite3$(T.exe)
-	rm -f $(libsqlite3.LIB) $(libsqlite3.SO) $(libsqlite3.SO).a
+	rm -f $(libsqlite3.LIB) $(libsqlite3.DLL) libsqlite3$(T.dll).a
 
 distclean: clean
 	rm -f jimsh0$(T.exe) config.* sqlite3.pc sqlite_cfg.h Makefile
@@ -250,15 +283,16 @@ DIST_FILES := \
   sqlite3.rc sqlite3rc.h Replace.cs \
   sqlite3.pc.in sqlite3.1
 
+#
 # Maintenance note: dist_name must be sqlite-$(PACKAGE_VERSION) so
 # that tool/mkautoconfamal.sh knows how to find it.
+#
 dist_name = sqlite-$(PACKAGE_VERSION)
 dist_tarball = $(dist_name).tar.gz
 dist:
 	rm -fr $(dist_name)
 	mkdir -p $(dist_name)
 	cp -rp $(DIST_FILES) $(dist_name)/.
-	rm -f $(dist_name)/tea/configure.ac.in
 	tar czf $(dist_tarball) $(dist_name)
 	rm -fr $(dist_name)
 	ls -l $(dist_tarball)

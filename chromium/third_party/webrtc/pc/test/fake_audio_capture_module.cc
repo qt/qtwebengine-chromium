@@ -10,9 +10,8 @@
 
 #include "pc/test/fake_audio_capture_module.h"
 
-#include <string.h>
-
 #include <cstdint>
+#include <cstring>
 
 #include "api/audio/audio_device_defines.h"
 #include "api/make_ref_counted.h"
@@ -58,8 +57,8 @@ FakeAudioCaptureModule::~FakeAudioCaptureModule() {
   }
 }
 
-rtc::scoped_refptr<FakeAudioCaptureModule> FakeAudioCaptureModule::Create() {
-  auto capture_module = rtc::make_ref_counted<FakeAudioCaptureModule>();
+webrtc::scoped_refptr<FakeAudioCaptureModule> FakeAudioCaptureModule::Create() {
+  auto capture_module = webrtc::make_ref_counted<FakeAudioCaptureModule>();
   if (!capture_module->Initialize()) {
     return nullptr;
   }

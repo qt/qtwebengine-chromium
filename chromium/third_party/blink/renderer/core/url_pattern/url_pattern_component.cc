@@ -5,17 +5,29 @@
 #include "third_party/blink/renderer/core/url_pattern/url_pattern_component.h"
 
 #include <algorithm>
+#include <optional>
+#include <string>
 #include <string_view>
+#include <tuple>
+#include <unordered_map>
+#include <utility>
+#include <vector>
 
 #include "base/metrics/histogram_functions.h"
+#include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/types/expected.h"
 #include "components/url_pattern/url_pattern_util.h"
+#include "third_party/abseil-cpp/absl/status/status.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_url_pattern_options.h"
 #include "third_party/blink/renderer/core/url_pattern/url_pattern_canon.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_utf8_adaptor.h"
+#include "third_party/liburlpattern/part.h"
+#include "third_party/liburlpattern/pattern.h"
+#include "third_party/liburlpattern/utils.h"
 #include "url/url_util.h"
 
 namespace blink {
@@ -47,9 +59,12 @@ StringView TypeToString(Component::Type type) {
 }
 
 // Utility method to get the correct encoding callback for a given type.
-liburlpattern::EncodeCallback GetEncodeCallback(std::string_view pattern_utf8,
-                                                Component::Type type,
-                                                Component* protocol_component) {
+// `should_treat_as_standard_url` is used if and only if `type` equals
+// `kPathname`.
+liburlpattern::EncodeCallback GetEncodeCallback(
+    std::string_view pattern_utf8,
+    Component::Type type,
+    std::optional<bool> should_treat_as_standard_url) {
   switch (type) {
     case Component::Type::kProtocol:
       return ::url_pattern::ProtocolEncodeCallback;
@@ -73,26 +88,16 @@ liburlpattern::EncodeCallback GetEncodeCallback(std::string_view pattern_utf8,
       //
       //  https://url.spec.whatwg.org/#cannot-be-a-base-url-path-state
       //
-      // We prefer "standard" URL here by checking to see if the protocol
-      // pattern matches any of the known standard protocol strings.  So
-      // an exact pattern of `http` will match, but so will `http{s}?` and
-      // `*`.
-      //
-      // If the protocol pattern does not match any of the known standard URL
-      // protocols then we fall back to the "path" URL behavior.  This will
-      // normally be triggered by `data`, `javascript`, `about`, etc.  It
-      // will also be triggered for custom protocol strings.  We favor "path"
-      // behavior here because its better to under canonicalize since the
-      // developer can always manually canonicalize the pathname for a custom
-      // protocol.
-      //
-      // ShouldTreatAsStandardURL can by a bit expensive, so only do it if we
-      // actually have a pathname pattern to compile.
-      CHECK(protocol_component);
-      if (protocol_component->ShouldTreatAsStandardURL())
+      // In "path" URL cases, we fall back to the opaque pathname behavior.  We
+      // favor this behavior here because it is better to canonicalize less
+      // since developers can always manually canonicalize inputs for, e.g.,
+      // their custom protocols.
+      CHECK(should_treat_as_standard_url.has_value());
+      if (*should_treat_as_standard_url) {
         return ::url_pattern::StandardURLPathnameEncodeCallback;
-      else
+      } else {
         return ::url_pattern::PathURLPathnameEncodeCallback;
+      }
     case Component::Type::kSearch:
       return ::url_pattern::SearchEncodeCallback;
     case Component::Type::kHash:
@@ -102,10 +107,11 @@ liburlpattern::EncodeCallback GetEncodeCallback(std::string_view pattern_utf8,
 }
 
 // Utility method to get the correct liburlpattern parse options for a given
-// type.
+// type.  `should_treat_as_standard_url` is used if and only if `type` equals
+// `kPathname`.
 const liburlpattern::Options GetOptions(
     Component::Type type,
-    Component* protocol_component,
+    std::optional<bool> should_treat_as_standard_url,
     const URLPatternOptions& external_options) {
   using liburlpattern::Options;
 
@@ -126,10 +132,10 @@ const liburlpattern::Options GetOptions(
     // Just like how we select a different encoding callback based on
     // whether we are treating the pattern string as a standard or
     // cannot-be-a-base URL, we must also choose the right liburlppatern
-    // options as well.  We should only use use the options that treat
-    // `/` specially if we are treating this a standard URL.
-    DCHECK(protocol_component);
-    if (protocol_component->ShouldTreatAsStandardURL()) {
+    // options as well.  We should only use the options that treat "/" specially
+    // if we are treating this a standard URL.
+    CHECK(should_treat_as_standard_url.has_value());
+    if (*should_treat_as_standard_url) {
       // Pathname patterns for "standard" URLs use a "/" delimiter controlling
       // how far a named group like ":bar" will match.  They also use "/" as an
       // automatic prefix before groups.
@@ -188,22 +194,28 @@ Component* Component::Compile(v8::Isolate* isolate,
                               Component* protocol_component,
                               const URLPatternOptions& external_options,
                               ExceptionState& exception_state) {
-  StringView final_pattern = pattern.IsNull() ? "*" : pattern;
+  std::optional<bool> should_treat_as_standard_url =
+      protocol_component
+          ? std::optional(protocol_component->ShouldTreatAsStandardURL())
+          : std::nullopt;
   const liburlpattern::Options& options =
-      GetOptions(type, protocol_component, external_options);
+      GetOptions(type, should_treat_as_standard_url, external_options);
 
+  StringView final_pattern = pattern.IsNull() ? "*" : pattern;
   // Parse the pattern.
   // Lossy UTF8 conversion is fine given the input has come through a
   // USVString webidl argument.
-  StringUTF8Adaptor utf8(final_pattern);
-  auto parse_result = liburlpattern::Parse(
-      utf8.AsStringView(),
-      GetEncodeCallback(utf8.AsStringView(), type, protocol_component),
-      options);
-  if (!parse_result.ok()) {
+  StringUtf8Adaptor utf8(final_pattern);
+
+  auto parse_result =
+      liburlpattern::Parse(utf8.AsStringView(),
+                           GetEncodeCallback(utf8.AsStringView(), type,
+                                             should_treat_as_standard_url),
+                           options);
+  if (!parse_result.has_value()) {
     exception_state.ThrowTypeError(
         "Invalid " + TypeToString(type) + " pattern '" + final_pattern + "'. " +
-        String::FromUTF8(parse_result.status().message()));
+        String::FromUTF8(parse_result.error().message()));
     return nullptr;
   }
 
@@ -217,8 +229,8 @@ Component* Component::Compile(v8::Isolate* isolate,
         parse_result.value().GenerateRegexString(&name_list);
 
     // Compile the regular expression to verify it is valid.
-    auto case_sensitive = options.sensitive ? WTF::kTextCaseSensitive
-                                            : WTF::kTextCaseASCIIInsensitive;
+    auto case_sensitive =
+        options.sensitive ? kTextCaseSensitive : kTextCaseASCIIInsensitive;
     DCHECK(base::IsStringASCII(regexp_string));
     regexp = MakeGarbageCollected<ScriptRegexp>(
         isolate, String(regexp_string), case_sensitive,
@@ -335,7 +347,7 @@ bool Component::Match(StringView input,
       pattern_group_list;
   // Lossy UTF8 conversion is fine given the input has come through a
   // USVString webidl argument.
-  StringUTF8Adaptor utf8(input);
+  StringUtf8Adaptor utf8(input);
   bool result = pattern_.DirectMatch(
       utf8.AsStringView(), group_list ? &pattern_group_list : nullptr);
   if (group_list) {
@@ -379,6 +391,34 @@ bool Component::ShouldTreatAsStandardURL() const {
   should_treat_as_standard_url_ =
       std::ranges::any_of(url::GetStandardSchemes(), protocol_matches);
   return *should_treat_as_standard_url_;
+}
+
+std::optional<String> Component::Generate(
+    const WTF::Vector<std::pair<String, String>>& groups,
+    bool should_treat_as_standard_url,
+    ExceptionState& exception_state) const {
+  std::string pattern_string = pattern_.GeneratePatternString();
+  auto callback =
+      GetEncodeCallback(pattern_string, type_, should_treat_as_standard_url);
+
+  std::unordered_map<std::string, std::string> groups_map;
+  for (auto&& [key, value] : groups) {
+    StringUtf8Adaptor utf8_key(key);
+    StringUtf8Adaptor utf8_value(value);
+
+    auto [it, inserted] = groups_map.insert(
+        std::make_pair(utf8_key.AsStringView(), utf8_value.AsStringView()));
+    // Not `inserted` means key names are duplicated, which should not happen.
+    CHECK(inserted);
+  }
+
+  base::expected<std::string, absl::Status> result =
+      pattern_.Generate(groups_map, callback);
+  if (!result.has_value()) {
+    exception_state.ThrowTypeError(String::FromUTF8(result.error().message()));
+    return std::nullopt;
+  }
+  return String::FromUTF8(result.value());
 }
 
 const std::vector<liburlpattern::Part>& Component::PartList() const {

@@ -43,14 +43,14 @@ class CGdiPrinterDriver final : public CGdiDeviceDriver {
                           const FXDIB_ResampleOptions& options,
                           BlendMode blend_type) override;
   bool DrawDeviceText(pdfium::span<const TextCharPos> pCharPos,
-                      CFX_Font* pFont,
+                      CFX_Font* font,
                       const CFX_Matrix& mtObject2Device,
                       float font_size,
                       uint32_t color,
                       const CFX_TextRenderOptions& options) override;
 
-  const int m_HorzSize;
-  const int m_VertSize;
+  const int horz_size_;
+  const int vert_size_;
 };
 
 #endif  // CORE_FXGE_WIN32_CGDI_PRINTER_DRIVER_H_

@@ -226,6 +226,9 @@ void PostCallRecordCreateViSurfaceNN(VkInstance instance, const VkViSurfaceCreat
                                      const RecordObject& record_obj) override;
 
 #endif  // VK_USE_PLATFORM_VI_NN
+void PostCallRecordReleaseDisplayEXT(VkPhysicalDevice physicalDevice, VkDisplayKHR display,
+                                     const RecordObject& record_obj) override;
+
 #ifdef VK_USE_PLATFORM_XLIB_XRANDR_EXT
 void PostCallRecordAcquireXlibDisplayEXT(VkPhysicalDevice physicalDevice, Display* dpy, VkDisplayKHR display,
                                          const RecordObject& record_obj) override;
@@ -329,6 +332,16 @@ void PostCallRecordGetPhysicalDeviceCooperativeVectorPropertiesNV(VkPhysicalDevi
                                                                   VkCooperativeVectorPropertiesNV* pProperties,
                                                                   const RecordObject& record_obj) override;
 
+void PostCallRecordGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const RecordObject& record_obj) override;
+
+#ifdef VK_USE_PLATFORM_OHOS
+void PostCallRecordCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
+                                     const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                     const RecordObject& record_obj) override;
+
+#endif  // VK_USE_PLATFORM_OHOS
 void PostCallRecordGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties,
     const RecordObject& record_obj) override;

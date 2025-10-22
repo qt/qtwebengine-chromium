@@ -14,6 +14,7 @@
 #include "base/location.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_util.h"
 #include "base/task/thread_pool.h"
 #include "base/types/expected.h"
 #include "base/types/expected_macros.h"
@@ -66,10 +67,10 @@ namespace {
 // Preferred filename extension for the imported files.
 const base::FilePath::CharType kFileExtension[] = FILE_PATH_LITERAL("csv");
 
-// Limiting the file size to 150 KB: a limit is introduced to limit the
+// Limiting the file size to 1000 KB: a limit is introduced to limit the
 // number of passwords and limit the amount of data that can be displayed in
 // memory to preview the content of the import in a single run.
-const int32_t kMaxFileSizeBytes = 150 * 1024;
+const int32_t kMaxFileSizeBytes = 1000 * 1024;
 
 // Reads and returns a status and the contents of the file at |path| as a
 // optional string. The string will be present if the status is SUCCESS.
@@ -78,8 +79,8 @@ base::expected<std::string, ImportResults::Status> ReadFileToString(
   std::optional<int64_t> file_size = base::GetFileSize(path);
 
   if (file_size.has_value()) {
-    base::UmaHistogramCounts1M("PasswordManager.ImportFileSize",
-                               file_size.value());
+    base::UmaHistogramCounts10M("PasswordManager.ImportFileSize2",
+                                file_size.value());
     if (file_size.value() > kMaxFileSizeBytes) {
       return base::unexpected(ImportResults::Status::MAX_FILE_SIZE);
     }
@@ -91,6 +92,17 @@ base::expected<std::string, ImportResults::Status> ReadFileToString(
   }
 
   return std::move(contents);
+}
+
+base::expected<std::string, ImportResults::Status> ValidateString(
+    std::string string) {
+  int64_t file_size = string.size();
+  base::UmaHistogramCounts10M("PasswordManager.ImportFileSize2", file_size);
+  if (file_size > kMaxFileSizeBytes) {
+    return base::unexpected(ImportResults::Status::MAX_FILE_SIZE);
+  }
+
+  return std::move(string);
 }
 
 ImportEntry::Status GetConflictType(
@@ -414,9 +426,11 @@ void ProcessParsedCredential(
 
 }  // namespace
 
-PasswordImporter::PasswordImporter(SavedPasswordsPresenter* presenter)
+PasswordImporter::PasswordImporter(SavedPasswordsPresenter* presenter,
+                                   bool user_confirmation_required)
     : delete_function_(base::BindRepeating(&DefaultDeleteFunction)),
-      presenter_(presenter) {}
+      presenter_(presenter),
+      user_confirmation_required_(user_confirmation_required) {}
 
 PasswordImporter::~PasswordImporter() = default;
 
@@ -448,6 +462,19 @@ void PasswordImporter::ParseCSVPasswordsInSandbox(
   }
 }
 
+void PasswordImporter::Import(std::string csv_data,
+                              password_manager::PasswordForm::Store to_store,
+                              ImportResultsCallback results_callback) {
+  // Posting with USER_VISIBLE priority, because the result of the import is
+  // visible to the user in the password settings page.
+  base::ThreadPool::PostTaskAndReplyWithResult(
+      FROM_HERE, {base::TaskPriority::USER_VISIBLE, base::MayBlock()},
+      base::BindOnce(&ValidateString, std::move(csv_data)),
+      base::BindOnce(&PasswordImporter::ParseCSVPasswordsInSandbox,
+                     weak_ptr_factory_.GetWeakPtr(), to_store,
+                     std::move(results_callback)));
+}
+
 void PasswordImporter::Import(const base::FilePath& path,
                               password_manager::PasswordForm::Store to_store,
                               ImportResultsCallback results_callback) {
@@ -467,9 +494,10 @@ void PasswordImporter::Import(const base::FilePath& path,
 
 void PasswordImporter::ContinueImport(const std::vector<int>& selected_ids,
                                       ImportResultsCallback results_callback) {
-  CHECK(IsState(kConflicts));
+  CHECK(IsState(kUserInteractionRequired));
   CHECK(conflicts_cache_);
-  // Blocks concurrent import requests, when switching from `kConflicts` state.
+  // Blocks concurrent import requests, when switching from
+  // `kUserInteractionRequired` state.
   state_ = kInProgress;
 
   for (int id : selected_ids) {
@@ -565,7 +593,7 @@ void PasswordImporter::ConsumePasswords(
   base::UmaHistogramCounts1M("PasswordManager.Import.PerFile.Duplicates",
                              duplicates_count);
 
-  if (conflicts.empty()) {
+  if (conflicts.empty() && !user_confirmation_required_) {
     for (const std::vector<PasswordForm>& forms : conflicts) {
       results.displayed_entries.push_back(CreateFailedImportEntry(
           CredentialUIEntry(forms), GetConflictType(to_store)));
@@ -576,8 +604,9 @@ void PasswordImporter::ConsumePasswords(
     return;
   }
 
-  state_ = kConflicts;
+  state_ = kUserInteractionRequired;
   ImportResults conflicts_results;
+  conflicts_results.number_to_import = results.number_imported;
   conflicts_results.status = ImportResults::CONFLICTS;
   for (size_t idx = 0; idx < conflicts.size(); idx++) {
     conflicts_results.displayed_entries.push_back(
@@ -631,11 +660,12 @@ void PasswordImporter::ImportFinished(ImportResultsCallback results_callback,
   std::move(results_callback).Run(std::move(results));
 }
 
-void PasswordImporter::DeleteFile() {
+void PasswordImporter::DeleteFile(base::OnceClosure completion) {
   CHECK(IsState(kFinished));
   base::ThreadPool::PostTask(
       FROM_HERE, {base::MayBlock(), base::TaskPriority::BEST_EFFORT},
-      base::BindOnce(base::IgnoreResult(delete_function_), file_path_));
+      base::BindOnce(base::IgnoreResult(delete_function_), file_path_)
+          .Then(std::move(completion)));
 }
 
 void PasswordImporter::SetServiceForTesting(

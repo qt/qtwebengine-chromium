@@ -36,6 +36,7 @@ import re
 import shlex
 import subprocess
 import sys
+import shutil
 
 from enum import Enum
 from pathlib import Path
@@ -59,13 +60,108 @@ DEBUG = False
 # Some test suites use suffixes that would also match non-test-suite targets.
 # Those test suites should be manually added here.
 _TEST_TARGET_ALLOWLIST = [
-    # Running ash_pixeltests requires the --no-try-android-wrappers flag.
-    '//ash:ash_pixeltests',
-    '//chrome/test:browser_tests',
-    '//chrome/test:interactive_ui_tests',
-    '//chrome/test:unit_tests',
-]
 
+    # The tests below this line were output from the ripgrep command just below:
+    '//ash:ash_pixeltests',
+    '//build/rust/tests/test_serde_json_lenient:test_serde_json_lenient',
+    '//chrome/browser/apps/app_service/app_install:app_install_fuzztests',
+    '//chrome/browser/glic/e2e_test:glic_internal_e2e_interactive_ui_tests',
+    '//chrome/browser/mac:install_sh_test',
+    '//chrome/browser/metrics/perf:profile_provider_unittest',
+    '//chrome/browser/privacy_sandbox/notice:fuzz_tests',
+    '//chrome/browser/web_applications:web_application_fuzztests',
+    '//chromecast/media/base:video_plane_controller_test',
+    '//chromecast/metrics:cast_metrics_unittest',
+    '//chrome/enterprise_companion:enterprise_companion_integration_tests',
+    '//chrome/enterprise_companion:enterprise_companion_tests',
+    '//chrome/installer/gcapi:gcapi_test',
+    '//chrome/installer/test:upgrade_test',
+    '//chromeos/ash/components/kiosk/vision:kiosk_vision_unit_tests',
+    '//chrome/test/android:chrome_public_apk_baseline_profile_generator',
+    '//chrome/test:unit_tests',
+    '//clank/javatests:chrome_apk_baseline_profile_generator',
+    '//clank/javatests:chrome_smoke_test',
+    '//clank/javatests:monochrome_bundle_smoke_test',
+    '//clank/javatests:trichrome_chrome_google_bundle_smoke_test',
+    '//components/chromeos_camera:jpeg_decode_accelerator_unittest',
+    '//components/exo/wayland:wayland_client_compatibility_tests',
+    '//components/exo/wayland:wayland_client_tests',
+    '//components/facilitated_payments/core/validation:pix_code_validator_fuzzer',
+    '//components/ip_protection:components_ip_protection_fuzztests',
+    '//components/minidump_uploader:minidump_uploader_test',
+    '//components/paint_preview/browser:paint_preview_browser_unit_tests',
+    '//components/paint_preview/common:paint_preview_common_unit_tests',
+    '//components/paint_preview/renderer:paint_preview_renderer_unit_tests',
+    '//components/services/paint_preview_compositor:paint_preview_compositor_unit_tests',
+    '//components/translate/core/language_detection:language_detection_util_fuzztest',
+    '//components/webcrypto:webcrypto_testing_fuzzer',
+    '//components/zucchini:zucchini_integration_test',
+    '//content/test/fuzzer:devtools_protocol_encoding_json_fuzzer',
+    '//fuchsia_web/runners:cast_runner_integration_tests',
+    '//fuchsia_web/webengine:web_engine_integration_tests',
+    '//google_apis/gcm:gcm_unit_tests',
+    '//gpu:gl_tests',
+    '//gpu:gpu_benchmark',
+    '//gpu/vulkan/android:vk_tests',
+    '//ios/web:ios_web_inttests',
+    '//ios/web_view:ios_web_view_inttests',
+    '//media/cdm:aes_decryptor_fuzztests',
+    '//media/formats:ac3_util_fuzzer',
+    '//media/gpu/chromeos:image_processor_test',
+    '//media/gpu/v4l2:v4l2_unittest',
+    '//media/gpu/vaapi/test/fake_libva_driver:fake_libva_driver_unittest',
+    '//media/gpu/vaapi:vaapi_unittest',
+    '//native_client/tests:large_tests',
+    '//native_client/tests:medium_tests',
+    '//native_client/tests:small_tests',
+    '//sandbox/mac:sandbox_mac_fuzztests',
+    '//sandbox/win:sbox_integration_tests',
+    '//sandbox/win:sbox_validation_tests',
+    '//testing/libfuzzer/fuzzers:libyuv_scale_fuzztest',
+    '//testing/libfuzzer/fuzzers:paint_vector_icon_fuzztest',
+    '//third_party/blink/renderer/controller:blink_perf_tests',
+    '//third_party/blink/renderer/core:css_parser_fuzzer',
+    '//third_party/blink/renderer/core:inspector_ghost_rules_fuzzer',
+    '//third_party/blink/renderer/platform/loader:unencoded_digest_fuzzer',
+    '//third_party/crc32c:crc32c_benchmark',
+    '//third_party/crc32c:crc32c_tests',
+    '//third_party/dawn/src/dawn/tests/benchmarks:dawn_benchmarks',
+    '//third_party/highway:highway_tests',
+    '//third_party/ipcz/src:ipcz_tests',
+    '//third_party/libaom:av1_encoder_fuzz_test',
+    '//third_party/libaom:test_libaom',
+    '//third_party/libvpx:test_libvpx',
+    '//third_party/libvpx:vp8_encoder_fuzz_test',
+    '//third_party/libvpx:vp9_encoder_fuzz_test',
+    '//third_party/libwebp:libwebp_advanced_api_fuzzer',
+    '//third_party/libwebp:libwebp_animation_api_fuzzer',
+    '//third_party/libwebp:libwebp_animencoder_fuzzer',
+    '//third_party/libwebp:libwebp_enc_dec_api_fuzzer',
+    '//third_party/libwebp:libwebp_huffman_fuzzer',
+    '//third_party/libwebp:libwebp_mux_demux_api_fuzzer',
+    '//third_party/libwebp:libwebp_simple_api_fuzzer',
+    '//third_party/opus:test_opus_api',
+    '//third_party/opus:test_opus_decode',
+    '//third_party/opus:test_opus_encode',
+    '//third_party/opus:test_opus_padding',
+    '//third_party/pdfium:pdfium_embeddertests',
+    '//third_party/pffft:pffft_unittest',
+    '//third_party/rapidhash:rapidhash_fuzztests',
+    '//ui/ozone:ozone_integration_tests',
+]
+r"""
+ You can run this command to find test targets that do not match these regexes,
+ and use it to update _TEST_TARGET_ALLOWLIST.
+rg '^(instrumentation_test_runner|test)\("([^"]*)' -o -g'BUILD.gn' -r'$2' -N \
+  | rg -v '(_browsertests|_perftests|_wpr_tests|_unittests)$' \
+  | rg '^(.*)/BUILD.gn(.*)$' -r'\'//$1$2\',' \
+  | sort
+
+ And you can use a command like this to find source_set targets that do match
+ the test target regex (ideally this is minimal).
+rg '^source_set\("([^"]*)' -o -g'BUILD.gn' -r'$1' -N | \
+  rg '(_browsertests|_perftests|_wpr_tests|_unittests)$'
+"""
 _TEST_TARGET_REGEX = re.compile(
     r'(_browsertests|_perftests|_wpr_tests|_unittests)$')
 
@@ -75,8 +171,8 @@ _PREF_MAPPING_FILE_PATTERN = re.escape(
 
 TEST_FILE_NAME_REGEX = re.compile(
     r'(.*Test\.java)' +
-    r'|(.*_[a-z]*test(?:_win|_mac|_linux|_chromeos|_android)?\.cc)' + r'|(' +
-    _PREF_MAPPING_FILE_PATTERN + r')')
+    r'|(.*_[a-z]*test(?:_win|_mac|_linux|_chromeos|_android)?\.(cc|mm))' +
+    r'|(' + _PREF_MAPPING_FILE_PATTERN + r')')
 
 # Some tests don't directly include gtest.h and instead include it via gmock.h
 # or a test_utils.h file, so make sure these cases are captured. Also include
@@ -96,10 +192,32 @@ class TestValidity(Enum):
   VALID_TEST = 2  # Matches test file regex and includes gtest files.
 
 
+def FindRemoteCandidates(target):
+  """Find files using a remote code search utility, if installed."""
+  if not shutil.which('cs'):
+    return []
+  results = RunCommand([
+      'cs', '-l',
+      # Give the local path to the file, if the file exists.
+      '--local',
+      f'file:{target}',
+      # Restrict our search to Chromium
+      'git:chrome-internal/codesearch/chrome/src@main']).splitlines()
+  exact = set()
+  close = set()
+  for filename in results:
+    file_validity = IsTestFile(filename)
+    if file_validity is TestValidity.VALID_TEST:
+      exact.add(filename)
+    elif file_validity is TestValidity.MAYBE_A_TEST:
+      close.add(filename)
+  return list(exact), list(close)
+
+
 def IsTestFile(file_path):
   if not TEST_FILE_NAME_REGEX.match(file_path):
     return TestValidity.NOT_A_TEST
-  if file_path.endswith('.cc'):
+  if file_path.endswith('.cc') or file_path.endswith('.mm'):
     # Try a bit harder to remove non-test files for c++. Without this,
     # 'autotest.py base/' finds non-test files.
     try:
@@ -147,15 +265,24 @@ def RunCommand(cmd, **kwargs):
     raise CommandError(e.cmd, e.returncode, e.output) from None
 
 
-def BuildTestTargets(out_dir, targets, dry_run):
+def BuildTestTargets(out_dir, targets, dry_run, quiet):
   """Builds the specified targets with ninja"""
   cmd = gn_helpers.CreateBuildCommand(out_dir) + targets
   print('Building: ' + shlex.join(cmd))
   if (dry_run):
     return True
-  try:
-    subprocess.check_call(cmd)
-  except subprocess.CalledProcessError as e:
+  completed_process = subprocess.run(cmd,
+                                     capture_output=quiet,
+                                     encoding='utf-8')
+  if completed_process.returncode != 0:
+    if quiet:
+      before, _, after = completed_process.stdout.partition('stderr:')
+      if not after:
+        before, _, after = completed_process.stdout.partition('stdout:')
+      if after:
+        print(after)
+      else:
+        print(before)
     return False
   return True
 
@@ -213,28 +340,12 @@ def FindTestFilesInDirectory(directory):
   return test_files
 
 
-def FindMatchingTestFiles(target):
+def FindMatchingTestFiles(target, remote_search=False):
   # Return early if there's an exact file match.
   if os.path.isfile(target):
-    # If the target is a C++ implementation file, try to guess the test file.
-    if target.endswith('.cc') or target.endswith('.h'):
-      target_validity = IsTestFile(target)
-      if target_validity is TestValidity.VALID_TEST:
-        return [target]
-      alternate = f"{target.rsplit('.', 1)[0]}_unittest.cc"
-      alt_validity = TestValidity.NOT_A_TEST if not os.path.isfile(
-          alternate) else IsTestFile(alternate)
-      if alt_validity is TestValidity.VALID_TEST:
-        return [alternate]
-
-      # If neither the target nor its alternative were valid, check if they just
-      # didn't include the gtest files before deciding to exit.
-      if target_validity is TestValidity.MAYBE_A_TEST:
-        return [target]
-      if alt_validity is TestValidity.MAYBE_A_TEST:
-        return [alternate]
-      ExitWithMessage(f"{target} doesn't look like a test file")
-    return [target]
+    if test_file := _FindTestForFile(target):
+      return [test_file]
+    ExitWithMessage(f"{target} doesn't look like a test file")
   # If this is a directory, return all the test files it contains.
   if os.path.isdir(target):
     files = FindTestFilesInDirectory(target)
@@ -251,7 +362,14 @@ def FindMatchingTestFiles(target):
   if DEBUG:
     print('Finding files with full path containing: ' + target)
 
-  [exact, close] = RecursiveMatchFilename(SRC_DIR, target)
+  if remote_search:
+    exact, close = FindRemoteCandidates(target)
+    if not exact and not close:
+      print('Failed to find remote candidates; searching recursively')
+      exact, close = RecursiveMatchFilename(SRC_DIR, target)
+  else:
+    exact, close = RecursiveMatchFilename(SRC_DIR, target)
+
   if DEBUG:
     if exact:
       print('Found exact matching file(s):')
@@ -284,6 +402,32 @@ def FindMatchingTestFiles(target):
   if not test_files:
     ExitWithMessage(f'Target "{target}" did not match any files.')
   return test_files
+
+
+def _FindTestForFile(target: os.PathLike) -> str | None:
+  root, ext = os.path.splitext(target)
+  # If the target is a C++ implementation file, try to guess the test file.
+  # Candidates should be ordered most to least promising.
+  test_candidates = [target]
+  if ext == '.h':
+    # `*_unittest.{cc,mm}` are both possible.
+    test_candidates.append(f'{root}_unittest.cc')
+    test_candidates.append(f'{root}_unittest.mm')
+  elif ext == '.cc' or ext == '.mm':
+    test_candidates.append(f'{root}_unittest{ext}')
+  else:
+    return target
+
+  maybe_valid = []
+  for candidate in test_candidates:
+    if not os.path.isfile(candidate):
+      continue
+    validity = IsTestFile(candidate)
+    if validity is TestValidity.VALID_TEST:
+      return candidate
+    elif validity is TestValidity.MAYBE_A_TEST:
+      maybe_valid.append(candidate)
+  return maybe_valid[0] if maybe_valid else None
 
 
 def HaveUserPickFile(paths):
@@ -381,11 +525,9 @@ def FindTestTargets(target_cache, out_dir, paths, run_all):
     # Use gn refs to recursively find all targets that depend on |path|, filter
     # internal gn targets, and match against well-known test suffixes, falling
     # back to a list of known test targets if that fails.
-    gn_path = os.path.join(DEPOT_TOOLS_DIR, 'gn')
-    if sys.platform.startswith('win32'):
-      gn_path += '.bat'
+    gn_path = os.path.join(DEPOT_TOOLS_DIR, 'gn.py')
 
-    cmd = [gn_path, 'refs', out_dir, '--all'] + paths
+    cmd = [sys.executable, gn_path, 'refs', out_dir, '--all'] + paths
     targets = RunCommand(cmd).splitlines()
     test_targets = _TestTargetsFromGnRefs(targets)
 
@@ -473,7 +615,11 @@ SPECIAL_TEST_FILTERS = [(_PREF_MAPPING_FILE_REGEX, _PREF_MAPPING_GTEST_FILTER)]
 
 def BuildTestFilter(filenames, line):
   java_files = [f for f in filenames if f.endswith('.java')]
-  cc_files = [f for f in filenames if f.endswith('.cc')]
+  # TODO(crbug.com/434009870): Support EarlGrey tests, which don't use
+  # Googletest's macros or pascal case naming convention.
+  cc_files = [
+      f for f in filenames if f.endswith('.cc') or f.endswith('_unittest.mm')
+  ]
   filters = []
   if java_files:
     filters.append(BuildJavaTestFilter(java_files))
@@ -504,6 +650,11 @@ def main():
                       '-C',
                       metavar='OUT_DIR',
                       help='output directory of the build')
+  parser.add_argument('--remote-search',
+                      '--remote_search',
+                      '-r',
+                      action='store_true',
+                      help='Search for tests using a remote service')
   parser.add_argument(
       '--run-all',
       '--run_all',
@@ -527,6 +678,11 @@ def main():
       '-n',
       action='store_true',
       help='Print ninja and test run commands without executing them.')
+  parser.add_argument(
+      '--quiet',
+      '-q',
+      action='store_true',
+      help='Do not print while building, only print if build fails.')
   parser.add_argument(
       '--no-try-android-wrappers',
       '--no_try_android_wrappers',
@@ -553,7 +709,7 @@ def main():
   target_cache = TargetCache(out_dir)
   filenames = []
   for file in args.files:
-    filenames.extend(FindMatchingTestFiles(file))
+    filenames.extend(FindMatchingTestFiles(file, args.remote_search))
 
   targets, used_cache = FindTestTargets(target_cache, out_dir, filenames,
                                         args.run_all)
@@ -570,7 +726,7 @@ def main():
     pref_mapping_filter = BuildPrefMappingTestFilter(filenames)
 
   assert targets
-  build_ok = BuildTestTargets(out_dir, targets, args.dry_run)
+  build_ok = BuildTestTargets(out_dir, targets, args.dry_run, args.quiet)
 
   # If we used the target cache, it's possible we chose the wrong target because
   # a gn file was changed. The build step above will check for gn modifications
@@ -584,7 +740,7 @@ def main():
       # Note that this can happen, for example, if you rename a test target.
       print('gn config was changed, trying to build again', file=sys.stderr)
       targets = new_targets
-      build_ok = BuildTestTargets(out_dir, targets, args.dry_run)
+      build_ok = BuildTestTargets(out_dir, targets, args.dry_run, args.quiet)
 
   if not build_ok: sys.exit(1)
 

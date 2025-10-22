@@ -625,6 +625,7 @@ library:
 @item raw AMR-NB                @tab   @tab X
 @item raw AMR-WB                @tab   @tab X
 @item raw APAC                  @tab   @tab X
+@item raw APV                   @tab X @tab X
 @item raw aptX                  @tab X @tab X
 @item raw aptX HD               @tab X @tab X
 @item raw Bonk                  @tab   @tab X
@@ -637,6 +638,7 @@ library:
 @item raw E-AC-3                @tab X @tab X
 @item raw EVC                   @tab X @tab X
 @item raw FLAC                  @tab X @tab X
+@item raw G.728                 @tab   @tab X
 @item raw GSM                   @tab   @tab X
 @item raw H.261                 @tab X @tab X
 @item raw H.263                 @tab X @tab X
@@ -895,6 +897,7 @@ following image formats are supported:
     @tab fourcc: apch,apcn,apcs,apco,ap4h,ap4x
 @item Apple QuickDraw        @tab     @tab  X
     @tab fourcc: qdrw
+@item APV                    @tab     @tab  X
 @item Argonaut Video         @tab     @tab  X
     @tab Used in some Argonaut games.
 @item Asus v1                @tab  X  @tab  X
@@ -1241,6 +1244,7 @@ following image formats are supported:
 @item ADPCM Nintendo THP  @tab     @tab  X
 @item ADPCM Playstation      @tab     @tab  X
 @item ADPCM QT IMA           @tab  X  @tab  X
+@item ADPCM Sanyo            @tab     @tab  X
 @item ADPCM SEGA CRI ADX     @tab  X  @tab  X
     @tab Used in Sega Dreamcast games.
 @item ADPCM Shockwave Flash  @tab  X  @tab  X
@@ -1315,6 +1319,7 @@ following image formats are supported:
 @item FLAC (Free Lossless Audio Codec)  @tab  X  @tab  IX
 @item FTR Voice              @tab     @tab  X
 @item G.723.1                @tab X   @tab  X
+@item G.728                  @tab     @tab  X
 @item G.729                  @tab     @tab  X
 @item GSM                    @tab  E  @tab  X
     @tab encoding supported through external library libgsm

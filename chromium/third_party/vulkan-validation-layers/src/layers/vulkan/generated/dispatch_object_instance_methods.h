@@ -269,12 +269,26 @@ VkResult CreateScreenSurfaceQNX(VkInstance instance, const VkScreenSurfaceCreate
 VkBool32 GetPhysicalDeviceScreenPresentationSupportQNX(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
                                                        struct _screen_window* window);
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+void GetPhysicalDeviceExternalTensorPropertiesARM(VkPhysicalDevice physicalDevice,
+                                                  const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+                                                  VkExternalTensorPropertiesARM* pExternalTensorProperties);
 VkResult GetPhysicalDeviceOpticalFlowImageFormatsNV(VkPhysicalDevice physicalDevice,
                                                     const VkOpticalFlowImageFormatInfoNV* pOpticalFlowImageFormatInfo,
                                                     uint32_t* pFormatCount,
                                                     VkOpticalFlowImageFormatPropertiesNV* pImageFormatProperties);
 VkResult GetPhysicalDeviceCooperativeVectorPropertiesNV(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                         VkCooperativeVectorPropertiesNV* pProperties);
+VkResult GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex,
+                                                            uint32_t* pQueueFamilyDataGraphPropertyCount,
+                                                            VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties);
+void GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties);
+#ifdef VK_USE_PLATFORM_OHOS
+VkResult CreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+                           VkSurfaceKHR* pSurface);
+#endif  // VK_USE_PLATFORM_OHOS
 VkResult GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties);
 

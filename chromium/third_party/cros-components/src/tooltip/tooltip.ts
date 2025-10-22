@@ -111,19 +111,19 @@ export class Tooltip extends LitElement {
   };
 
   /** @export */
-  anchor: string;
+  declare anchor: string;
   /** @export */
-  label: string;
+  declare label: string;
   /**
    * If true, the tooltip will be truncated with an ellipsis after 3 lines.
    * @export
    */
-  truncate: boolean;
+  declare truncate: boolean;
   /**
    * If true, the tooltip will follow the anchor element when the page scrolls.
    * @export
    */
-  followAnchorOnScroll: boolean;
+  declare followAnchorOnScroll: boolean;
 
   constructor() {
     super();

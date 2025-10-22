@@ -7,12 +7,10 @@ import("//tools/grit/grit_rule.gni")
 
 assert(is_chromeos)
 
-grit("strings") {
+grit_strings("strings") {
   source = "../ui_chromeos_strings.grd"
-  outputs =
-      [ "grit/ui_chromeos_strings.h" ] +
-      process_file_template(all_chrome_locales,
-                            [ "ui_chromeos_strings_{{source_name_part}}.pak" ])
+  outputs = [ "grit/ui_chromeos_strings.h" ]
+  output_prefix = "ui_chromeos_strings_"
 }
 
 static_library("strings_provider") {
@@ -22,14 +20,14 @@ static_library("strings_provider") {
   ]
   deps = [
     "//ash/constants",
-    "//chromeos/ash/components/login/login_state:login_state",
+    "//chromeos/ash/components/login/login_state",
     "//chromeos/ash/components/network",
     "//chromeos/strings:strings_grit",
-    "//components/login:login",
+    "//components/login",
     "//components/strings:components_strings",
-    "//content/public/browser:browser",
+    "//content/public/browser",
     "//ui/base",
-    "//ui/chromeos:chromeos",
+    "//ui/chromeos",
     "//ui/chromeos/strings:strings_grit",
     "//ui/strings:ui_strings_grit",
   ]

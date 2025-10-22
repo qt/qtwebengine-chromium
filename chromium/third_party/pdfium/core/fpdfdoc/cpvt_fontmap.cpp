@@ -18,44 +18,47 @@
 #include "core/fxcrt/fx_codepage.h"
 #include "core/fxcrt/notreached.h"
 
-CPVT_FontMap::CPVT_FontMap(CPDF_Document* pDoc,
+CPVT_FontMap::CPVT_FontMap(CPDF_Document* doc,
                            RetainPtr<CPDF_Dictionary> pResDict,
                            RetainPtr<CPDF_Font> pDefFont,
                            const ByteString& sDefFontAlias)
-    : m_pDocument(pDoc),
-      m_pResDict(std::move(pResDict)),
-      m_pDefFont(std::move(pDefFont)),
-      m_sDefFontAlias(sDefFontAlias) {}
+    : document_(doc),
+      res_dict_(std::move(pResDict)),
+      def_font_(std::move(pDefFont)),
+      def_font_alias_(sDefFontAlias) {}
 
 CPVT_FontMap::~CPVT_FontMap() = default;
 
 void CPVT_FontMap::SetupAnnotSysPDFFont() {
-  if (!m_pDocument || !m_pResDict)
+  if (!document_ || !res_dict_) {
     return;
+  }
 
   RetainPtr<CPDF_Font> pPDFFont =
-      CPDF_InteractiveForm::AddNativeInteractiveFormFont(m_pDocument,
-                                                         &m_sSysFontAlias);
-  if (!pPDFFont)
+      CPDF_InteractiveForm::AddNativeInteractiveFormFont(document_,
+                                                         &sys_font_alias_);
+  if (!pPDFFont) {
     return;
+  }
 
-  RetainPtr<CPDF_Dictionary> pFontList = m_pResDict->GetMutableDictFor("Font");
-  if (ValidateFontResourceDict(pFontList.Get()) &&
-      !pFontList->KeyExist(m_sSysFontAlias)) {
-    pFontList->SetNewFor<CPDF_Reference>(m_sSysFontAlias, m_pDocument,
+  RetainPtr<CPDF_Dictionary> font_list = res_dict_->GetMutableDictFor("Font");
+  if (ValidateFontResourceDict(font_list.Get()) &&
+      !font_list->KeyExist(sys_font_alias_.AsStringView())) {
+    font_list->SetNewFor<CPDF_Reference>(sys_font_alias_, document_,
                                          pPDFFont->GetFontDictObjNum());
   }
-  m_pSysFont = std::move(pPDFFont);
+  sys_font_ = std::move(pPDFFont);
 }
 
 RetainPtr<CPDF_Font> CPVT_FontMap::GetPDFFont(int32_t nFontIndex) {
   switch (nFontIndex) {
     case 0:
-      return m_pDefFont;
+      return def_font_;
     case 1:
-      if (!m_pSysFont)
+      if (!sys_font_) {
         SetupAnnotSysPDFFont();
-      return m_pSysFont;
+      }
+      return sys_font_;
     default:
       return nullptr;
   }
@@ -64,11 +67,12 @@ RetainPtr<CPDF_Font> CPVT_FontMap::GetPDFFont(int32_t nFontIndex) {
 ByteString CPVT_FontMap::GetPDFFontAlias(int32_t nFontIndex) {
   switch (nFontIndex) {
     case 0:
-      return m_sDefFontAlias;
+      return def_font_alias_;
     case 1:
-      if (!m_pSysFont)
+      if (!sys_font_) {
         SetupAnnotSysPDFFont();
-      return m_sSysFontAlias;
+      }
+      return sys_font_alias_;
     default:
       return ByteString();
   }

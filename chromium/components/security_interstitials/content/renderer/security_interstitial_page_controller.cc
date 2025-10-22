@@ -8,18 +8,17 @@
 #include "components/security_interstitials/core/controller_client.h"
 #include "content/public/renderer/render_frame.h"
 #include "gin/converter.h"
-#include "gin/handle.h"
 #include "gin/object_template_builder.h"
+#include "security_interstitial_page_controller.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/platform/scheduler/web_agent_group_scheduler.h"
 #include "third_party/blink/public/web/web_local_frame.h"
 #include "v8/include/v8-context.h"
+#include "v8/include/v8-cppgc.h"
 #include "v8/include/v8-microtask-queue.h"
+#include "v8/include/cppgc/allocation.h"
 
 namespace security_interstitials {
-
-gin::WrapperInfo SecurityInterstitialPageController::kWrapperInfo = {
-    gin::kEmbedderNativeGin};
 
 void SecurityInterstitialPageController::Install(
     content::RenderFrame* render_frame) {
@@ -27,24 +26,26 @@ void SecurityInterstitialPageController::Install(
   v8::Isolate* isolate = web_frame->GetAgentGroupScheduler()->Isolate();
   v8::HandleScope handle_scope(isolate);
   v8::Local<v8::Context> context = web_frame->MainWorldScriptContext();
-  if (context.IsEmpty())
+  if (context.IsEmpty()) {
     return;
+  }
 
   v8::MicrotasksScope microtasks_scope(
       isolate, context->GetMicrotaskQueue(),
       v8::MicrotasksScope::kDoNotRunMicrotasks);
   v8::Context::Scope context_scope(context);
 
-  gin::Handle<SecurityInterstitialPageController> controller =
-      gin::CreateHandle(isolate,
-                        new SecurityInterstitialPageController(render_frame));
-  if (controller.IsEmpty())
+  auto* controller = cppgc::MakeGarbageCollected<SecurityInterstitialPageController>(
+      isolate->GetCppHeap()->GetAllocationHandle(), render_frame);
+  v8::Local<v8::Object> wrapper;
+  if (!controller->GetWrapper(isolate).ToLocal(&wrapper)) {
     return;
+  }
 
   v8::Local<v8::Object> global = context->Global();
   global
       ->Set(context, gin::StringToV8(isolate, "certificateErrorPageController"),
-            controller.ToV8())
+            wrapper)
       .Check();
 }
 
@@ -54,6 +55,10 @@ SecurityInterstitialPageController::SecurityInterstitialPageController(
 
 SecurityInterstitialPageController::~SecurityInterstitialPageController() =
     default;
+
+void SecurityInterstitialPageController::Dispose() {
+  RenderFrameObserver::Dispose();
+}
 
 void SecurityInterstitialPageController::DontProceed() {
   SendCommand(
@@ -123,10 +128,18 @@ void SecurityInterstitialPageController::OpenEnhancedProtectionSettings() {
                   CMD_OPEN_ENHANCED_PROTECTION_SETTINGS);
 }
 
+#if BUILDFLAG(IS_ANDROID)
+void SecurityInterstitialPageController::OpenAdvancedProtectionSettings() {
+  SendCommand(security_interstitials::SecurityInterstitialCommand::
+                  CMD_OPEN_ANDROID_ADVANCED_PROTECTION_SETTINGS);
+}
+#endif  // BUILDFLAG(IS_ANDROID)
+
 void SecurityInterstitialPageController::SendCommand(
     security_interstitials::SecurityInterstitialCommand command) {
-  if (!render_frame() || !active_)
+  if (!render_frame() || !active_) {
     return;
+  }
 
   mojo::AssociatedRemote<security_interstitials::mojom::InterstitialCommands>
       interface;
@@ -175,6 +188,11 @@ void SecurityInterstitialPageController::SendCommand(
     case security_interstitials::CMD_OPEN_ENHANCED_PROTECTION_SETTINGS:
       interface->OpenEnhancedProtectionSettings();
       break;
+    case security_interstitials::CMD_OPEN_ANDROID_ADVANCED_PROTECTION_SETTINGS:
+#if BUILDFLAG(IS_ANDROID)
+      interface->OpenAndroidAdvancedProtectionSettings();
+#endif  // BUILDFLAG(IS_ANDROID)
+      break;
     default:
       // Other values in the enum are only used by tests so this
       // method should not be called with them.
@@ -212,7 +230,17 @@ SecurityInterstitialPageController::GetObjectTemplateBuilder(
                      &SecurityInterstitialPageController::ReportPhishingError)
           .SetMethod("openEnhancedProtectionSettings",
                      &SecurityInterstitialPageController::
-                         OpenEnhancedProtectionSettings);
+                         OpenEnhancedProtectionSettings)
+#if BUILDFLAG(IS_ANDROID)
+          .SetMethod("openAndroidAdvancedProtectionSettings",
+                     &SecurityInterstitialPageController::
+                         OpenAdvancedProtectionSettings)
+#endif  // BUILDFLAG(IS_ANDROID)
+      ;
+}
+
+const gin::WrapperInfo* SecurityInterstitialPageController::wrapper_info() const {
+  return &kWrapperInfo;
 }
 
 void SecurityInterstitialPageController::OnDestruct() {}

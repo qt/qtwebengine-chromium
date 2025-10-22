@@ -328,6 +328,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL EnumerateDeviceExtensionProperties(
                 pProperties[i].specVersion = name_ver_pair.second;
                 ++i;
             }
+            *pPropertyCount = i;
             if (i != device_extension_map.size()) {
                 return VK_INCOMPLETE;
             }
@@ -2590,6 +2591,7 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceSurfacePresentModesKHR(
         if (*pPresentModeCount >= 3) pPresentModes[2] = VK_PRESENT_MODE_FIFO_KHR;
         if (*pPresentModeCount >= 2) pPresentModes[1] = VK_PRESENT_MODE_MAILBOX_KHR;
         if (*pPresentModeCount >= 1) pPresentModes[0] = VK_PRESENT_MODE_IMMEDIATE_KHR;
+        *pPresentModeCount = *pPresentModeCount < 6 ? *pPresentModeCount : 6;
     }
     return VK_SUCCESS;
 }
@@ -4072,6 +4074,21 @@ static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceProperties2KHR(
         std::strncpy(driver_properties->driverInfo, "Branch: --unknown-- Tag Info: --unknown--", VK_MAX_DRIVER_INFO_SIZE);
 #endif
     }
+
+    auto *layered_properties = lvl_find_mod_in_chain<VkPhysicalDeviceLayeredApiPropertiesListKHR>(pProperties->pNext);
+    if (layered_properties) {
+        layered_properties->layeredApiCount = 1;
+        if (layered_properties->pLayeredApis) {
+            layered_properties->pLayeredApis[0] = VkPhysicalDeviceLayeredApiPropertiesKHR{
+                VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_PROPERTIES_KHR,
+                nullptr,
+                0xba5eba11,
+                0xf005ba11,
+                VK_PHYSICAL_DEVICE_LAYERED_API_VULKAN_KHR
+            };
+            std::strncpy(layered_properties->pLayeredApis[0].deviceName, "Fake Driver", VK_MAX_PHYSICAL_DEVICE_NAME_SIZE);
+        }
+    }
 }
 
 static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceFormatProperties2KHR(
@@ -5166,6 +5183,17 @@ static VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2KHR(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL WaitForPresent2KHR(
+    VkDevice                                    device,
+    VkSwapchainKHR                              swapchain,
+    const VkPresentWait2InfoKHR*                pPresentWait2Info)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+
+
 static VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineBinariesKHR(
     VkDevice                                    device,
     const VkPipelineBinaryCreateInfoKHR*        pCreateInfo,
@@ -5217,6 +5245,16 @@ static VKAPI_ATTR VkResult VKAPI_CALL ReleaseCapturedPipelineDataKHR(
 }
 
 
+
+static VKAPI_ATTR VkResult VKAPI_CALL ReleaseSwapchainImagesKHR(
+    VkDevice                                    device,
+    const VkReleaseSwapchainImagesInfoKHR*      pReleaseInfo)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixPropertiesKHR(
     VkPhysicalDevice                            physicalDevice,
     uint32_t*                                   pPropertyCount,
@@ -5241,6 +5279,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixProperti
     }
     return VK_SUCCESS;
 }
+
+
 
 
 
@@ -5328,6 +5368,10 @@ static VKAPI_ATTR void VKAPI_CALL CmdBindDescriptorBufferEmbeddedSamplers2EXT(
 {
 //Not a CREATE or DESTROY function
 }
+
+
+
+
 
 
 
@@ -6843,7 +6887,7 @@ static VKAPI_ATTR void VKAPI_CALL GetImageSubresourceLayout2EXT(
 
 static VKAPI_ATTR VkResult VKAPI_CALL ReleaseSwapchainImagesEXT(
     VkDevice                                    device,
-    const VkReleaseSwapchainImagesInfoEXT*      pReleaseInfo)
+    const VkReleaseSwapchainImagesInfoKHR*      pReleaseInfo)
 {
 //Not a CREATE or DESTROY function
     return VK_SUCCESS;
@@ -7039,6 +7083,28 @@ static VKAPI_ATTR void VKAPI_CALL CmdCudaLaunchKernelNV(
 //Not a CREATE or DESTROY function
 }
 #endif /* VK_ENABLE_BETA_EXTENSIONS */
+
+
+static VKAPI_ATTR void VKAPI_CALL CmdDispatchTileQCOM(
+    VkCommandBuffer                             commandBuffer,
+    const VkDispatchTileInfoQCOM*               pDispatchTileInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdBeginPerTileExecutionQCOM(
+    VkCommandBuffer                             commandBuffer,
+    const VkPerTileBeginInfoQCOM*               pPerTileBeginInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdEndPerTileExecutionQCOM(
+    VkCommandBuffer                             commandBuffer,
+    const VkPerTileEndInfoQCOM*                 pPerTileEndInfo)
+{
+//Not a CREATE or DESTROY function
+}
 
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
@@ -7967,6 +8033,103 @@ static VKAPI_ATTR void VKAPI_CALL CmdSetCoverageReductionModeNV(
 
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL CreateTensorARM(
+    VkDevice                                    device,
+    const VkTensorCreateInfoARM*                pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkTensorARM*                                pTensor)
+{
+    unique_lock_t lock(global_lock);
+    *pTensor = (VkTensorARM)global_unique_handle++;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL DestroyTensorARM(
+    VkDevice                                    device,
+    VkTensorARM                                 tensor,
+    const VkAllocationCallbacks*                pAllocator)
+{
+//Destroy object
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateTensorViewARM(
+    VkDevice                                    device,
+    const VkTensorViewCreateInfoARM*            pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkTensorViewARM*                            pView)
+{
+    unique_lock_t lock(global_lock);
+    *pView = (VkTensorViewARM)global_unique_handle++;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL DestroyTensorViewARM(
+    VkDevice                                    device,
+    VkTensorViewARM                             tensorView,
+    const VkAllocationCallbacks*                pAllocator)
+{
+//Destroy object
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetTensorMemoryRequirementsARM(
+    VkDevice                                    device,
+    const VkTensorMemoryRequirementsInfoARM*    pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL BindTensorMemoryARM(
+    VkDevice                                    device,
+    uint32_t                                    bindInfoCount,
+    const VkBindTensorMemoryInfoARM*            pBindInfos)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetDeviceTensorMemoryRequirementsARM(
+    VkDevice                                    device,
+    const VkDeviceTensorMemoryRequirementsARM*  pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdCopyTensorARM(
+    VkCommandBuffer                             commandBuffer,
+     const VkCopyTensorInfoARM*                 pCopyTensorInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice                            physicalDevice,
+    const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM*              pExternalTensorProperties)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetTensorOpaqueCaptureDescriptorDataARM(
+    VkDevice                                    device,
+    const VkTensorCaptureDescriptorDataInfoARM* pInfo,
+    void*                                       pData)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetTensorViewOpaqueCaptureDescriptorDataARM(
+    VkDevice                                    device,
+    const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+    void*                                       pData)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+
 static VKAPI_ATTR void VKAPI_CALL GetShaderModuleIdentifierEXT(
     VkDevice                                    device,
     VkShaderModule                              shaderModule,
@@ -8199,6 +8362,115 @@ static VKAPI_ATTR void VKAPI_CALL QueueNotifyOutOfBandNV(
 }
 
 
+static VKAPI_ATTR VkResult VKAPI_CALL CreateDataGraphPipelinesARM(
+    VkDevice                                    device,
+    VkDeferredOperationKHR                      deferredOperation,
+    VkPipelineCache                             pipelineCache,
+    uint32_t                                    createInfoCount,
+    const VkDataGraphPipelineCreateInfoARM*     pCreateInfos,
+    const VkAllocationCallbacks*                pAllocator,
+    VkPipeline*                                 pPipelines)
+{
+    unique_lock_t lock(global_lock);
+    for (uint32_t i = 0; i < createInfoCount; ++i) {
+        pPipelines[i] = (VkPipeline)global_unique_handle++;
+    }
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateDataGraphPipelineSessionARM(
+    VkDevice                                    device,
+    const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkDataGraphPipelineSessionARM*              pSession)
+{
+    unique_lock_t lock(global_lock);
+    *pSession = (VkDataGraphPipelineSessionARM)global_unique_handle++;
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice                                    device,
+    const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo,
+    uint32_t*                                   pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetDataGraphPipelineSessionMemoryRequirementsARM(
+    VkDevice                                    device,
+    const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo,
+    VkMemoryRequirements2*                      pMemoryRequirements)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL BindDataGraphPipelineSessionMemoryARM(
+    VkDevice                                    device,
+    uint32_t                                    bindInfoCount,
+    const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL DestroyDataGraphPipelineSessionARM(
+    VkDevice                                    device,
+    VkDataGraphPipelineSessionARM               session,
+    const VkAllocationCallbacks*                pAllocator)
+{
+//Destroy object
+}
+
+static VKAPI_ATTR void VKAPI_CALL CmdDispatchDataGraphARM(
+    VkCommandBuffer                             commandBuffer,
+    VkDataGraphPipelineSessionARM               session,
+    const VkDataGraphPipelineDispatchInfoARM*   pInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetDataGraphPipelineAvailablePropertiesARM(
+    VkDevice                                    device,
+    const VkDataGraphPipelineInfoARM*           pPipelineInfo,
+    uint32_t*                                   pPropertiesCount,
+    VkDataGraphPipelinePropertyARM*             pProperties)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetDataGraphPipelinePropertiesARM(
+    VkDevice                                    device,
+    const VkDataGraphPipelineInfoARM*           pPipelineInfo,
+    uint32_t                                    propertiesCount,
+    VkDataGraphPipelinePropertyQueryResultARM*  pProperties)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice                            physicalDevice,
+    uint32_t                                    queueFamilyIndex,
+    uint32_t*                                   pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM*        pQueueFamilyDataGraphProperties)
+{
+//Not a CREATE or DESTROY function
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice                            physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties)
+{
+//Not a CREATE or DESTROY function
+}
+
+
 
 
 
@@ -8226,6 +8498,43 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetScreenBufferPropertiesQNX(
 
 
 
+
+static VKAPI_ATTR void VKAPI_CALL CmdBindTileMemoryQCOM(
+    VkCommandBuffer                             commandBuffer,
+    const VkTileMemoryBindInfoQCOM*             pTileMemoryBindInfo)
+{
+//Not a CREATE or DESTROY function
+}
+
+
+
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateExternalComputeQueueNV(
+    VkDevice                                    device,
+    const VkExternalComputeQueueCreateInfoNV*   pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkExternalComputeQueueNV*                   pExternalQueue)
+{
+    unique_lock_t lock(global_lock);
+    *pExternalQueue = (VkExternalComputeQueueNV)CreateDispObjHandle();
+    return VK_SUCCESS;
+}
+
+static VKAPI_ATTR void VKAPI_CALL DestroyExternalComputeQueueNV(
+    VkDevice                                    device,
+    VkExternalComputeQueueNV                    externalQueue,
+    const VkAllocationCallbacks*                pAllocator)
+{
+//Destroy object
+}
+
+static VKAPI_ATTR void VKAPI_CALL GetExternalComputeQueueDataNV(
+    VkExternalComputeQueueNV                    externalQueue,
+    VkExternalComputeQueueDataParamsNV*         params,
+    void*                                       pData)
+{
+//Not a CREATE or DESTROY function
+}
 
 
 
@@ -8347,6 +8656,20 @@ static VKAPI_ATTR void VKAPI_CALL UpdateIndirectExecutionSetShaderEXT(
 
 
 
+#ifdef VK_USE_PLATFORM_OHOS
+
+static VKAPI_ATTR VkResult VKAPI_CALL CreateSurfaceOHOS(
+    VkInstance                                  instance,
+    const VkSurfaceCreateInfoOHOS*              pCreateInfo,
+    const VkAllocationCallbacks*                pAllocator,
+    VkSurfaceKHR*                               pSurface)
+{
+    unique_lock_t lock(global_lock);
+    *pSurface = (VkSurfaceKHR)global_unique_handle++;
+    return VK_SUCCESS;
+}
+#endif /* VK_USE_PLATFORM_OHOS */
+
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL GetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
@@ -8382,6 +8705,8 @@ static VKAPI_ATTR VkResult VKAPI_CALL GetMemoryMetalHandlePropertiesEXT(
 #endif /* VK_USE_PLATFORM_METAL_EXT */
 
 
+
+
 #ifdef VK_ENABLE_BETA_EXTENSIONS
 #endif /* VK_ENABLE_BETA_EXTENSIONS */
 
@@ -8392,6 +8717,8 @@ static VKAPI_ATTR void VKAPI_CALL CmdEndRendering2EXT(
 {
 //Not a CREATE or DESTROY function
 }
+
+
 
 
 static VKAPI_ATTR VkResult VKAPI_CALL CreateAccelerationStructureKHR(

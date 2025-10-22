@@ -18,6 +18,7 @@ load("//third_party/cpptoolchains/windows_llvm/build_defs:windows.bzl", "windows
 
 package(default_visibility = [
     "//connections:__subpackages__",
+    "//googlemac/iPhone/Nearby:__subpackages__",
     "//location/nearby:__subpackages__",
 ])
 
@@ -51,7 +52,12 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
-    ],
+    ] + select({
+        "@platforms//os:platform_ios": [
+            "//internal/platform/implementation/apple:nearby_logger",
+        ],
+        "//conditions:default": [],
+    }),
 )
 
 # iOS only.

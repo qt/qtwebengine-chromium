@@ -11,6 +11,7 @@ import("../visibility.gni")
 generate_css("css_files") {
   sources = [
     "breakpointEditDialog.css",
+    "breakpointsView.css",
     "callStackSidebarPane.css",
     "debuggerPausedMessage.css",
     "dialog.css",
@@ -30,6 +31,8 @@ devtools_module("sources") {
     "AddSourceMapURLDialog.ts",
     "AiWarningInfobarPlugin.ts",
     "BreakpointEditDialog.ts",
+    "BreakpointsView.ts",
+    "BreakpointsViewUtils.ts",
     "CSSPlugin.ts",
     "CallStackSidebarPane.ts",
     "CategorizedBreakpointL10n.ts",
@@ -82,9 +85,11 @@ devtools_module("sources") {
     "../../panels/snippets:bundle",
     "../../panels/utils:bundle",
     "../../third_party/diff:bundle",
-    "../../ui/components/floating_button:bundle",
+    "../../ui/components/buttons:bundle",
     "../../ui/components/icon_button:bundle",
+    "../../ui/components/spinners:bundle",
     "../../ui/components/text_editor:bundle",
+    "../../ui/components/tooltips:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/color_picker:bundle",
     "../../ui/legacy/components/inline_editor:bundle",
@@ -110,7 +115,6 @@ devtools_entrypoint("bundle") {
   visibility = [
     ":*",
     "../../entrypoints/*",
-    "../../panels/ai_assistance/*",
     "../../panels/explain/*",
     "../../panels/network/*",
     "../browser_debugger/*",
@@ -134,7 +138,6 @@ devtools_entrypoint("meta") {
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/object_ui:bundle",
     "../../ui/legacy/components/quick_open:bundle",
-    "./components:bundle",
   ]
 
   visibility = [ "../../entrypoints/*" ]
@@ -145,6 +148,8 @@ ts_library("unittests") {
 
   sources = [
     "BreakpointEditDialog.test.ts",
+    "BreakpointsView.test.ts",
+    "BreakpointsViewUtils.test.ts",
     "CSSPlugin.test.ts",
     "CoveragePlugin.test.ts",
     "DebuggerPausedMessage.test.ts",
@@ -155,8 +160,10 @@ ts_library("unittests") {
     "OutlineQuickOpen.test.ts",
     "ResourceOriginPlugin.test.ts",
     "SourcesNavigator.test.ts",
+    "SourcesPanel.test.ts",
     "SourcesView.test.ts",
     "TabbedEditorContainer.test.ts",
+    "UISourceCodeFrame.test.ts",
   ]
 
   deps = [

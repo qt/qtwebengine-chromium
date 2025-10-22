@@ -5,25 +5,29 @@
 from __future__ import annotations
 
 import abc
+import datetime as dt
 import functools
 import logging
 import pathlib
+import re
 import shlex
-import subprocess
-from typing import (TYPE_CHECKING, Any, Dict, Generator, Iterator, List,
-                    Mapping, Optional, Set, Type)
+from typing import (TYPE_CHECKING, Any, Generator, Iterator, Mapping, Optional,
+                    Set, Type)
 
 from typing_extensions import override
 
 from crossbench import path as pth
+from crossbench.helper.wait import WaitRange
 from crossbench.plt import proc_helper
 from crossbench.plt.base import Environ, Platform, SubprocessError
 from crossbench.plt.remote import RemotePlatformMixin, RemotePopen
 from crossbench.plt.signals import PosixBaseSignal
 
 if TYPE_CHECKING:
-  from crossbench.plt.base import CmdArg, ListCmdArgs, ProcessLike
+  import subprocess
+
   from crossbench.plt.signals import AnyPosixSignals, Signals
+  from crossbench.plt.types import CmdArg, ListCmdArgs, ProcessLike
   from crossbench.types import JsonDict
 
 
@@ -49,6 +53,18 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
       return super()._raw_machine_arch()
     return self.sh_stdout("uname", "-m").strip()
 
+  @functools.cached_property
+  @override
+  def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
+    cpu_str = "UNKNOWN"
+    for line in self.cat(self.path("/proc/cpuinfo")).splitlines():
+      if line.startswith("model name"):
+        _, cpu_str = line.split(":", maxsplit=2)
+        break
+    if num_cores := self.cpu_cores(logical=False):
+      cpu_str = f"{cpu_str} {num_cores} cores"
+    return cpu_str
+
   @functools.lru_cache(maxsize=2)
   @override
   def cpu_cores(self, logical: bool) -> int:
@@ -68,8 +84,8 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     entries = self.sh_stdout("grep", "-E", "processor|core id|physical id",
                              "/proc/cpuinfo")
     logical_cores: Set[int] = set()
-    core_ids: List[int] = []
-    physical_ids: List[int] = []
+    core_ids: list[int] = []
+    physical_ids: list[int] = []
 
     for line in entries.splitlines():
       line = line.strip()
@@ -101,7 +117,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
   @functools.lru_cache(maxsize=1)
   @override
-  def cpu_details(self) -> Dict[str, Any]:
+  def cpu_details(self) -> dict[str, Any]:
     if self.is_local:
       return super().cpu_details()
     return {
@@ -138,6 +154,38 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
           "bits": int(self.sh_stdout(python3, "-c", self._PY_VERSION).strip())
       }
     return {"version": "unknown", "bits": 64}
+
+  UPTIME_RE = re.compile(r"up\s+"
+                         r"(?:(?P<days>\d+)\s+days?,\s*)?"
+                         r"(?:"
+                         r"(?:(?P<hm_hours>\d+):(?P<hm_mins>\d+))|"
+                         r"(?:(?P<mins_only>\d+)\s+min)"
+                         r")")
+
+  @override
+  def uptime(self) -> dt.timedelta:
+    """Parse posix uptime output into a timedelta object.
+    Example Output:
+    12:25  up  3:26, 2 users, load averages: 4.27 4.29 4.80
+    """
+    uptime_output = self.sh_stdout("uptime")
+    match = self.UPTIME_RE.search(uptime_output)
+    if not match:
+      return dt.timedelta()
+
+    groups = match.groupdict()
+    days = int(groups.get("days") or 0)
+    hours = int(groups.get("hm_hours") or 0)
+    minutes_hm = int(groups.get("hm_mins") or 0)
+    minutes_only = int(groups.get("mins_only") or 0)
+    minutes = minutes_hm or minutes_only
+
+    try:
+      delta = dt.timedelta(days=days, hours=hours, minutes=minutes)
+      return delta
+    except ValueError:
+      return dt.timedelta()
+
 
   @override
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
@@ -264,25 +312,30 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
 
   @override
   def mkdtemp(self,
+              suffix: Optional[str] = None,
               prefix: Optional[str] = None,
               dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
     if self.is_local:
-      return super().mkdtemp(prefix, dir)
-    return self._mktemp_sh(is_dir=True, prefix=prefix, dir=dir)
+      return super().mkdtemp(suffix, prefix, dir)
+    return self._mktemp_sh(is_dir=True, suffix=suffix, prefix=prefix, dir=dir)
 
   @override
   def mktemp(self,
+             suffix: Optional[str] = None,
              prefix: Optional[str] = None,
              dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
     if self.is_local:
-      return super().mktemp(prefix, dir)
-    return self._mktemp_sh(is_dir=False, prefix=prefix, dir=dir)
+      return super().mktemp(suffix, prefix, dir)
+    return self._mktemp_sh(is_dir=False, suffix=suffix, prefix=prefix, dir=dir)
 
-  def _mktemp_sh(self, is_dir: bool, prefix: Optional[str],
-                 dir: Optional[pth.AnyPathLike]) -> pth.AnyPath:
+  def _mktemp_sh(self,
+                 is_dir: bool,
+                 suffix: Optional[str] = None,
+                 prefix: Optional[str] = None,
+                 dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
     if not dir:
       dir = self.default_tmp_dir
-    template = self.path(dir) / f"{prefix}.XXXXXXXXXXX"
+    template = self.path(dir) / f"{prefix or ''}XXXXXXXXXXX{suffix or ''}"
     args: ListCmdArgs = ["mktemp"]
     if is_dir:
       args.append("-d")
@@ -319,17 +372,28 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     return to_path
 
   @override
-  def set_file_contents(self,
-                        file: pth.AnyPathLike,
-                        data: str,
-                        encoding: str = "utf-8") -> None:
+  def write_text(self,
+                 file: pth.AnyPathLike,
+                 data: str,
+                 encoding: str = "utf-8") -> None:
     if self.is_local:
-      super().set_file_contents(file, data, encoding)
+      super().write_text(file, data, encoding)
       return
     # TODO: implement stdin bypass for small content
     dest_file = self.path(file)
     with self.host_platform.NamedTemporaryFile("push.data") as tmp_file:
-      self.host_platform.set_file_contents(tmp_file, data, encoding=encoding)
+      self.host_platform.write_text(tmp_file, data, encoding=encoding)
+      self.push(tmp_file, dest_file)
+
+  @override
+  def write_bytes(self, file: pth.AnyPathLike, data: bytes) -> None:
+    if self.is_local:
+      super().write_bytes(file, data)
+      return
+    # TODO: implement stdin bypass for small content
+    dest_file = self.path(file)
+    with self.host_platform.NamedTemporaryFile("push.data") as tmp_file:
+      self.host_platform.write_bytes(tmp_file, data)
       self.push(tmp_file, dest_file)
 
   @override
@@ -409,7 +473,7 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
         pass
 
   @override
-  def process_info(self, process: ProcessLike) -> Optional[Dict[str, Any]]:
+  def process_info(self, process: ProcessLike) -> Optional[dict[str, Any]]:
     if self.is_local:
       return super().process_info(process)
     try:
@@ -439,6 +503,13 @@ class PosixPlatform(Platform, metaclass=abc.ABCMeta):
     if self.is_local:
       return super().user_id()
     return int(self.sh_stdout("id", "-u").strip())
+
+  @override
+  def last_modified(self, path: pth.AnyPathLike) -> float:
+    if self.is_local:
+      return super().last_modified(path)
+    # Get seconds since epoch
+    return float(self.sh_stdout("stat", "-c", "%Y", self.path(path)))
 
 
 class RemotePosixEnviron(Environ):
@@ -490,6 +561,8 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
     with self.NamedTemporaryFile("popen_pid_") as temp_pid_file:
       shell_cmd = shlex.join(map(str, args))
       # Capture the PID and wait on the process to finish.
+      # Ideally this would use mkfifo but that's not readily available on
+      # Android.
       shell_cmd += f" & PID=$! && echo $PID >{temp_pid_file} && wait $PID"
       if not quiet:
         logging.debug("REMOTE SHELL: %s", shell_cmd)
@@ -499,7 +572,10 @@ class RemotePosixPlatform(RemotePlatformMixin, PosixPlatform):
       remote_popen = RemotePopen(
           self, host_platform_cmd, bufsize=bufsize, stdout=stdout,
           stderr=stderr, stdin=stdin)
-      remote_pid = int(self.cat(temp_pid_file))
-      remote_popen.set_remote_pid(remote_pid)
-
-    return remote_popen
+      # tmp_pid_file might not have been immediately flushed:
+      for _ in WaitRange(0.01, timeout=2).wait_with_backoff():
+        if pid_str := self.cat(temp_pid_file):
+          remote_pid = int(pid_str)
+          remote_popen.set_remote_pid(remote_pid)
+          return remote_popen
+      raise RuntimeError("Could not read remote PID")

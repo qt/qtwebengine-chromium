@@ -10,7 +10,7 @@
 
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
+#include "extensions/buildflags/buildflags.h"
 #include "printing/buildflags/buildflags.h"
 #include "ui/base/buildflags.h"
 
@@ -52,10 +52,12 @@ extern const char kAppsGalleryURL[];
 extern const char kAuthServerAllowlist[];
 extern const char kAutoOpenDevToolsForTabs[];
 extern const char kAutoSelectDesktopCaptureSource[];
+extern const char kAutoSelectScreenCaptureSource[];
 extern const char kAutoSelectTabCaptureSourceByTitle[];
 extern const char kAutoSelectWindowCaptureSourceByTitle[];
 extern const char kBrowserSigninAutoAccept[];
 extern const char kBypassAccountAlreadyUsedByAnotherProfileCheck[];
+extern const char kCaptureAutoReject[];
 extern const char kCheckForUpdateIntervalSec[];
 extern const char kCipherSuiteBlacklist[];
 extern const char kCrashOnHangThreads[];
@@ -77,16 +79,14 @@ extern const char kDisableComponentUpdate[];
 extern const char kDisableCrashpadForTesting[];
 extern const char kDisableDefaultApps[];
 extern const char kDisableDomainReliability[];
-extern const char kDisableExtensions[];
-extern const char kDisableExtensionsExcept[];
 extern const char kDisableLazyLoading[];
-extern const char kDisableNaCl[];
 extern const char kDisablePrintPreview[];
 extern const char kDisablePromptOnRepost[];
 extern const char kDisableStackProfiler[];
 extern const char kDisableZeroBrowsersOpenForTests[];
 extern const char kDiskCacheDir[];
 extern const char kDiskCacheSize[];
+extern const char kDoNotDeElevateOnLaunch[];
 extern const char kDumpBrowserHistograms[];
 extern const char kEnableAudioDebugRecordingsFromExtension[];
 extern const char kEnableBookmarkUndo[];
@@ -97,15 +97,16 @@ extern const char kEnableExtensionActivityLogging[];
 extern const char kEnableExtensionActivityLogTesting[];
 extern const char kEnableUnsafeExtensionDebugging[];
 extern const char kEnableHangoutServicesExtensionForTesting[];
-extern const char kEnableNaCl[];
 extern const char kEnableNetBenchmarking[];
 extern const char kEnablePotentiallyAnnoyingSecurityFeatures[];
+extern const char kExperimentalAiStableChannel[];
 extern const char kExplicitlyAllowedPorts[];
 extern const char kExtensionAiDataCollection[];
 extern const char kExtensionContentVerification[];
 extern const char kExtensionContentVerificationBootstrap[];
 extern const char kExtensionContentVerificationEnforce[];
 extern const char kExtensionContentVerificationEnforceStrict[];
+extern const char kExtensionExperimentalActor[];
 extern const char kExtensionsInstallVerification[];
 extern const char kExtensionsNotWebstore[];
 extern const char kExtensionsToolbarZeroStateVariation[];
@@ -147,7 +148,6 @@ extern const char kOnTheFlyMhtmlHashComputation[];
 extern const char kOpenInNewWindow[];
 extern const char kPackExtension[];
 extern const char kPackExtensionKey[];
-extern const char kPasswordChangeUrl[];
 extern const char kPreCrashpadCrashTest[];
 extern const char kPredictionServiceMockLikelihood[];
 extern const char kPreinstalledWebAppsDir[];
@@ -156,15 +156,16 @@ extern const char kProductVersion[];
 extern const char kProfileDirectory[];
 extern const char kIgnoreProfileDirectoryIfNotExists[];
 extern const char kProfileEmail[];
+extern const char kCreateProfileEmailIfNotExists[];
 extern const char kProxyAutoDetect[];
 extern const char kProxyBypassList[];
 extern const char kProxyPacUrl[];
 extern const char kProxyServer[];
 extern const char kRemoteDebuggingTargets[];
+extern const char kRepairAllValidExtensions[];
 extern const char kRestart[];
 extern const char kRestoreLastSession[];
 extern const char kSameTab[];
-extern const char kScreenCaptureAudioDefaultUnchecked[];
 extern const char kSilentDebuggerExtensionAPI[];
 extern const char kSilentLaunch[];
 extern const char kSimulateBrowsingDataLifetime[];
@@ -182,7 +183,9 @@ extern const char kStartMaximized[];
 extern const char kStartStackProfiler[];
 extern const char kStartStackProfilerBrowserTest[];
 extern const char kStoragePressureNotificationInterval[];
+extern const char kSystemAudioCaptureDefaultChecked[];
 extern const char kSystemLogUploadFrequency[];
+extern const char kTabCaptureAudioDefaultUnchecked[];
 extern const char kThisTabCaptureAutoAccept[];
 extern const char kThisTabCaptureAutoReject[];
 extern const char kTestMemoryLogDelayInMinutes[];
@@ -218,6 +221,10 @@ extern const char kForceUpdateMenuType[];
 extern const char kMarketUrlForTesting[];
 extern const char kRequestDesktopSites[];
 #endif  // BUILDFLAG(IS_ANDROID)
+
+#if !BUILDFLAG(IS_ANDROID) || BUILDFLAG(ENABLE_DESKTOP_ANDROID_EXTENSIONS)
+extern const char kCastMirroringTargetPlayoutDelay[];
+#endif
 
 #if BUILDFLAG(IS_CHROMEOS)
 extern const char kCroshCommand[];
@@ -257,6 +264,7 @@ extern const char kNotificationLaunchId[];
 extern const char kPrefetchArgumentBrowserBackground[];
 extern const char kPwaLauncherVersion[];
 extern const char kShowIcons[];
+extern const char kSourceAppId[];
 extern const char kSourceShortcut[];
 extern const char kUninstall[];
 extern const char kUninstallAppId[];
@@ -264,12 +272,6 @@ extern const char kUninstallAppId[];
 
 #if BUILDFLAG(ENABLE_PRINT_PREVIEW) && !defined(OFFICIAL_BUILD)
 extern const char kDebugPrint[];
-#endif
-
-#if BUILDFLAG(ENABLE_PLUGINS)
-extern const char kAllowNaClCrxFsAPI[];
-extern const char kAllowNaClFileHandleAPI[];
-extern const char kAllowNaClSocketAPI[];
 #endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_MAC) || \
@@ -283,6 +285,7 @@ extern const char kForceNtpMobilePromo[];
 extern const char kGlicGuestURL[];
 extern const char kGlicAlwaysOpenFre[];
 extern const char kGlicFreURL[];
+extern const char kGlicShortcutsLearnMoreURL[];
 extern const char kGlicOpenOnStartup[];
 extern const char kGlicAllowedOrigins[];
 extern const char kGlicAutomation[];

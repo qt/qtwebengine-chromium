@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/platform/peerconnection/webrtc_util.h"
 
 #include <cstring>
@@ -103,12 +98,6 @@ std::optional<media::VideoCodecProfile> WebRTCFormatToCodecProfile(
   }
 #endif  // BUILDFLAG(RTC_USE_H265)
   return std::nullopt;
-}
-
-base::TimeTicks WebRTCFrameNtpEpoch() {
-  static base::TimeTicks ntp_epoch =
-      base::TimeTicks::UnixEpoch() - base::Milliseconds(2208988800000);
-  return ntp_epoch;
 }
 
 std::optional<base::TimeTicks> PLATFORM_EXPORT

@@ -45,6 +45,7 @@ from collections import defaultdict
 from copy import deepcopy
 from datetime import datetime
 from typing import (
+    ByteString,
     Collection,
     Iterator,
     List,
@@ -54,10 +55,10 @@ from typing import (
     Optional,
     Set,
     Tuple,
+    get_args,
 )
 
 import six
-from six.moves import zip_longest
 
 from urllib.parse import urljoin
 
@@ -67,12 +68,16 @@ from blinkpy.common import path_finder
 from blinkpy.common import read_checksum_from_png
 from blinkpy.common.host import Host
 from blinkpy.common.memoized import memoized
-from blinkpy.common.net.web_test_results import BASELINE_EXTENSIONS
+from blinkpy.common.net.web_test_results import (
+    BaselineSuffix,
+    BASELINE_EXTENSIONS,
+)
 from blinkpy.common.system.executive import ScriptError
 from blinkpy.common.system.path import abspath_to_uri
 from blinkpy.w3c.wpt_manifest import (
     FuzzyRange,
     FuzzyParameters,
+    Relation,
     WPTManifest,
     MANIFEST_NAME,
 )
@@ -127,6 +132,58 @@ FONT_FILES = [
     [[CONTENT_SHELL_FONTS_DIR], 'Tinos-BoldItalic.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'Tinos-Italic.ttf', None],
     [[CONTENT_SHELL_FONTS_DIR], 'Tinos-Regular.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-ascii.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-basic-bold.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-basic-bolditalic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-basic-italic.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-basic-regular.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-fallback.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-familyname-bold.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-familyname-funkyA.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-familyname-funkyB.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-familyname-funkyC.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-familyname.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-verify.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-100.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-1479-w1.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-1479-w4.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-1479-w7.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-1479-w9.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-15-w1.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-15-w5.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-200.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-24-w2.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-24-w4.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-2569-w2.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-2569-w5.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-2569-w6.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-2569-w9.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-258-w2.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-258-w5.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-258-w8.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-300.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-3589-w3.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-3589-w5.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-3589-w8.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-3589-w9.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-400.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-47-w4.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-47-w7.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-500.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-600.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-700.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-800.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-900.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w1.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w2.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w3.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w4.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w5.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w6.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w7.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w8.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights-full-w9.ttf', None],
+    [[CONTENT_SHELL_FONTS_DIR], 'csstest-weights.ttf', None],
 ]
 
 # This is the fingerprint of wpt's certificate found in
@@ -203,8 +260,6 @@ class Port(object):
     # the documentation in docs/testing/web_test_expectations.md when this list
     # changes.
     ALL_SYSTEMS = (
-        ('mac11', 'x86'),
-        ('mac11-arm64', 'arm64'),
         ('mac12', 'x86_64'),
         ('mac12-arm64', 'arm64'),
         ('mac13', 'x86_64'),
@@ -218,17 +273,23 @@ class Port(object):
         ('win11', 'x86_64'),
         ('linux', 'x86_64'),
         ('fuchsia', 'x86_64'),
-        ('ios17-simulator', 'x86_64'),
+        ('ios26-simulator', 'x86_64'),
         ('android', 'x86_64'),
         ('webview', 'x86_64'),
     )
 
     CONFIGURATION_SPECIFIER_MACROS = {
         'mac': [
-            'mac11', 'mac11-arm64', 'mac12', 'mac12-arm64', 'mac13',
-            'mac13-arm64', 'mac14', 'mac14-arm64', 'mac15', 'mac15-arm64'
+            'mac12',
+            'mac12-arm64',
+            'mac13',
+            'mac13-arm64',
+            'mac14',
+            'mac14-arm64',
+            'mac15',
+            'mac15-arm64',
         ],
-        'ios': ['ios17-simulator'],
+        'ios': ['ios26-simulator'],
         'win': ['win10.20h2', 'win11-arm64', 'win11'],
         'linux': ['linux'],
         'fuchsia': ['fuchsia'],
@@ -332,9 +393,7 @@ class Port(object):
         self._http_server = None
         self._websocket_server = None
         self._wpt_server = None
-        self._image_differ = None
         self.server_process_constructor = server_process.ServerProcess  # This can be overridden for testing.
-        self._http_lock = None  # FIXME: Why does this live on the port object?
         self._dump_reader = None
         # This is a map of the form dir->[all skipped tests in that dir]
         # It is used to optimize looking up for a test, as it allows a quick look up of the test dir
@@ -356,14 +415,11 @@ class Port(object):
         else:
             self.set_option_default('virtual_tests',
                                     not options.no_virtual_tests)
-        self._test_configuration = None
-        self._results_directory = None
-        self._used_expectation_files = None
 
     def __str__(self):
         return 'Port{name=%s, version=%s, architecture=%s, test_configuration=%s}' % (
             self._name, self._version, self._architecture,
-            self._test_configuration)
+            self.test_configuration())
 
     def version(self):
         return self._version
@@ -776,6 +832,23 @@ class Port(object):
 
         return baseline_dict
 
+    def allowed_suffixes(self, test_name: str) -> set[BaselineSuffix]:
+        """Get possible suffixes for the given test."""
+        wpt_type = self.get_wpt_type(test_name)
+        if wpt_type in {'testharness', 'wdspec'}:
+            return {'txt'}
+        elif wpt_type == 'manual':
+            # Some manual tests are run as pixel tests (crbug.com/1114920), so
+            # `png` is allowed in that case.
+            return {'png'}
+        elif wpt_type:
+            return set()
+
+        suffixes = set(get_args(BaselineSuffix))
+        if self.reference_files(test_name):
+            suffixes.discard('png')
+        return suffixes
+
     def output_filename(self, test_name, suffix, extension):
         """Generates the output filename for a test.
 
@@ -1079,8 +1152,10 @@ class Port(object):
                 return True
         return False
 
-    def reference_files(self, test_name):
+    def reference_files(self, test_name: str) -> list[tuple[Relation, str]]:
         """Returns a list of expectation (== or !=) and filename pairs"""
+        if match := self.WPT_REGEX.match(test_name):
+            return self._wpt_references_files(match.group(1), match.group(2))
 
         # Try to find -expected.* or -expected-mismatch.* in the same directory.
         reftest_list = []
@@ -1091,15 +1166,12 @@ class Port(object):
                                               match=(expectation == '=='))
                 if self._filesystem.exists(path):
                     reftest_list.append((expectation, path))
-        if reftest_list:
-            return reftest_list
+        return reftest_list
 
+    def _wpt_references_files(self, wpt_path: str,
+                              path_in_wpt: str) -> list[tuple[Relation, str]]:
         # Try to extract information from MANIFEST.json.
-        match = self.WPT_REGEX.match(test_name)
-        if not match:
-            return []
-        wpt_path = match.group(1)
-        path_in_wpt = match.group(2)
+        reftest_list = []
         for expectation, ref_path_in_wpt in self.wpt_manifest(
                 wpt_path).extract_reference_list(path_in_wpt):
             if ref_path_in_wpt.startswith('about:'):
@@ -1604,6 +1676,16 @@ class Port(object):
             return self._filesystem.isfile(self.abspath_for_test(path))
         return False
 
+    def get_wpt_type(self, test_name: str) -> Optional[str]:
+        """Returns the test type of a web platform test."""
+
+        base_test = self.lookup_virtual_test_base(test_name) or test_name
+        wpt_dir, url_from_wpt_dir = self.split_wpt_dir(base_test)
+        if not wpt_dir:
+            return None  # Not a WPT.
+        manifest = self.wpt_manifest(wpt_dir)
+        return manifest.get_test_type(url_from_wpt_dir)
+
     def is_wpt_crash_test(self, test_name):
         """Returns whether a WPT test is a crashtest.
 
@@ -2001,7 +2083,7 @@ class Port(object):
         """
         suite = self._lookup_virtual_suite(test)
         if suite is not None:
-            return self.operating_system() not in suite.platforms
+            return self.port_name not in suite.platforms
         return False
 
     def virtual_test_skipped_due_to_disabled(self, test):
@@ -2132,12 +2214,10 @@ class Port(object):
         Once blinkpy runs under python3, this can be removed in favour of
         callers using sys.executable.
         """
-        if six.PY3:
-            # Prefer sys.executable when the current script runs under python3.
-            # The current script might be running with vpython3 and in that case
-            # using the same executable will share the same virtualenv.
-            return sys.executable
-        return 'python3'
+        # Prefer sys.executable when the current script runs under python3.
+        # The current script might be running with vpython3 and in that case
+        # using the same executable will share the same virtualenv.
+        return sys.executable
 
     def get_option(self, name, default_value=None):
         return getattr(self._options, name, default_value)
@@ -2250,17 +2330,19 @@ class Port(object):
         # file relative to the target directory.
         return self.build_path('webkit_test_times', 'bot_times_ms.json')
 
-    def results_directory(self):
+    @memoized
+    def results_directory(self) -> str:
         """Returns the absolute path directory which will store all web tests outputted
         files. It may include a sub directory for artifacts and it may store performance test results."""
-        if not self._results_directory:
-            option_val = self.get_option(
-                'results_directory') or self.default_results_directory()
-            assert not self._filesystem.basename(option_val) == 'layout-test-results', (
-                'crbug.com/1026494, crbug.com/1027708: The layout-test-results sub directory should '
-                'not be passed as part of the --results-directory command line argument.')
-            self._results_directory = self._filesystem.abspath(option_val)
-        return self._results_directory
+        option_val = self.get_option(
+            'results_directory') or self.default_results_directory()
+        assert not self._filesystem.basename(
+            option_val
+        ) == 'layout-test-results', (
+            'crbug.com/1026494, crbug.com/1027708: The layout-test-results sub directory should '
+            'not be passed as part of the --results-directory command line argument.'
+        )
+        return self._filesystem.abspath(option_val)
 
     def artifacts_directory(self):
         """Returns path to artifacts sub directory of the results directory. This
@@ -2317,9 +2399,6 @@ class Port(object):
 
     def clean_up_test_run(self):
         """Performs port-specific work at the end of a test run."""
-        if self._image_differ:
-            self._image_differ.stop()
-            self._image_differ = None
 
     def setup_environ_for_server(self):
         # We intentionally copy only a subset of the environment when
@@ -2492,8 +2571,7 @@ class Port(object):
         return intentional_syntax_error in output
 
     def http_server_supports_ipv6(self):
-        # Apache < 2.4 on win32 does not support IPv6.
-        return not self.host.platform.is_win()
+        return True
 
     def stop_http_server(self):
         """Shuts down the http server if it is running."""
@@ -2511,13 +2589,11 @@ class Port(object):
     # TEST EXPECTATION-RELATED METHODS
     #
 
-    def test_configuration(self):
+    @memoized
+    def test_configuration(self) -> TestConfiguration:
         """Returns the current TestConfiguration for the port."""
-        if not self._test_configuration:
-            self._test_configuration = TestConfiguration(
-                self._version, self._architecture,
-                self._options.configuration.lower())
-        return self._test_configuration
+        return TestConfiguration(self._version, self._architecture,
+                                 self._options.configuration.lower())
 
     # FIXME: Belongs on a Platform object.
     @memoized
@@ -2669,19 +2745,18 @@ class Port(object):
             self._filesystem.join(self.web_tests_dir(), 'SlowTests')
         ])
 
-    def used_expectations_files(self):
+    @memoized
+    def used_expectations_files(self) -> List[str]:
         """Returns a list of paths to expectation files that are used."""
-        if self._used_expectation_files is None:
-            self._used_expectation_files = list(
-                self.default_expectations_files())
-            flag_specific = self._flag_specific_expectations_path()
-            if flag_specific:
-                self._used_expectation_files.append(flag_specific)
-            for path in self.get_option('additional_expectations', []):
-                expanded_path = self._filesystem.expanduser(path)
-                abs_path = self._filesystem.abspath(expanded_path)
-                self._used_expectation_files.append(abs_path)
-        return self._used_expectation_files
+        used_expectation_files = list(self.default_expectations_files())
+        flag_specific = self._flag_specific_expectations_path()
+        if flag_specific:
+            used_expectation_files.append(flag_specific)
+        for path in self.get_option('additional_expectations', []):
+            expanded_path = self._filesystem.expanduser(path)
+            abs_path = self._filesystem.abspath(expanded_path)
+            used_expectation_files.append(abs_path)
+        return used_expectation_files
 
     def extra_expectations_files(self):
         """Returns a list of paths to test expectations not loaded by default.
@@ -2863,7 +2938,13 @@ class Port(object):
             return True
         return False
 
-    def _get_crash_log(self, name, pid, stdout, stderr, newer_than):
+    def get_crash_log(
+        self,
+        name: Optional[str],
+        pid: Optional[str],
+        stdout: ByteString,
+        stderr: ByteString,
+    ) -> Tuple[ByteString, str, Optional[str]]:
         if self.output_contains_sanitizer_messages(stderr):
             # Running the symbolizer script can take a lot of memory, so we need to
             # serialize access to it across all the concurrently running drivers.
@@ -2895,12 +2976,12 @@ class Port(object):
         if stdout:
             stdout_lines = stdout.decode('utf8', 'replace').splitlines()
         else:
-            stdout_lines = [u'<empty>']
+            stdout_lines = ['<empty>']
 
         if stderr:
             stderr_lines = stderr.decode('utf8', 'replace').splitlines()
         else:
-            stderr_lines = [u'<empty>']
+            stderr_lines = ['<empty>']
 
         return (stderr,
                 ('crash log for %s (pid %s):\n%s\n%s\n' %

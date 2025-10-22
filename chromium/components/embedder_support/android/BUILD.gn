@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/config/android/rules.gni")
-import("//build/config/locales.gni")
 import("//third_party/jni_zero/jni_zero.gni")
 import("//tools/grit/grit_rule.gni")
 
@@ -108,11 +107,11 @@ static_library("util") {
     "//components/google/core/common",
     "//components/version_info",
     "//content/public/browser",
-    "//mojo/public/cpp/bindings:bindings",
-    "//mojo/public/cpp/system:system",
+    "//mojo/public/cpp/bindings",
+    "//mojo/public/cpp/system",
     "//net",
-    "//services/network/public/cpp:cpp",
-    "//services/network/public/mojom:mojom",
+    "//services/network/public/cpp",
+    "//services/network/public/mojom",
     "//url",
   ]
 }
@@ -156,6 +155,7 @@ android_library("content_view_java") {
   ]
   sources = [
     "java/src/org/chromium/components/embedder_support/view/ContentView.java",
+    "java/src/org/chromium/components/embedder_support/view/VirtualStructureProvider.java",
   ]
 }
 
@@ -178,9 +178,6 @@ generate_jni("view_jni_headers") {
 
 java_strings_grd("web_contents_delegate_strings_grd") {
   grd_file = "java/strings/web_contents_delegate_android_strings.grd"
-  outputs = [ "values/web_contents_delegate_android_strings.xml" ] + process_file_template(
-                android_bundle_locales_as_resources,
-                [ "values-{{source_name_part}}/web_contents_delegate_android_strings.xml" ])
 }
 
 static_library("web_contents_delegate") {
@@ -214,6 +211,9 @@ android_resources("web_contents_delegate_java_resources") {
     "java/res/drawable-xhdpi/color_picker_advanced_select_handle.png",
     "java/res/drawable/color_button_background.xml",
     "java/res/drawable/color_picker_border.xml",
+    "java/res/drawable/ic_content_copy.xml",
+    "java/res/drawable/ic_link.xml",
+    "java/res/drawable/ic_open_in_new.xml",
     "java/res/layout/color_picker_advanced_component.xml",
     "java/res/layout/color_picker_dialog_view.xml",
     "java/res/layout/color_picker_suggestion_view.xml",
@@ -276,6 +276,7 @@ static_library("context_menu") {
     "//base",
     "//content/public/browser",
     "//content/public/common",
+    "//ui/menus",
     "//url",
   ]
 }
@@ -328,14 +329,20 @@ android_library("native_java_unittests_java") {
     "//third_party/junit",
   ]
   srcjar_deps = [ ":native_j_unittests_jni_headers" ]
-  sources = [ "native_java_unittests/src/org/chromium/components/embedder_support/util/InputStreamUnittest.java" ]
+  sources = [
+    "native_java_unittests/src/org/chromium/components/embedder_support/util/InputStreamUnittest.java",
+    "native_java_unittests/src/org/chromium/components/embedder_support/util/WebResourceResponseUnittest.java",
+  ]
 }
 
 # See https://bugs.chromium.org/p/chromium/issues/detail?id=908819 for why we
 # can't put 'java' in the name here.
 generate_jni("native_j_unittests_jni_headers") {
   testonly = true
-  sources = [ "native_java_unittests/src/org/chromium/components/embedder_support/util/InputStreamUnittest.java" ]
+  sources = [
+    "native_java_unittests/src/org/chromium/components/embedder_support/util/InputStreamUnittest.java",
+    "native_java_unittests/src/org/chromium/components/embedder_support/util/WebResourceResponseUnittest.java",
+  ]
 }
 
 robolectric_library("junit_test_support") {
@@ -354,14 +361,17 @@ robolectric_library("components_embedder_support_junit_tests") {
     ":util_java",
     "//base:base_java_test_support",
     "//base:base_junit_test_support",
+    "//base:build_info_java",
     "//components/embedder_support/android:context_menu_java",
     "//content/public/android:content_java",
+    "//content/public/common:common_java",
     "//third_party/android_deps:org_mockito_mockito_core_java",
     "//third_party/androidx:androidx_test_monitor_java",
     "//third_party/androidx:androidx_test_runner_java",
     "//third_party/blink/public:blink_headers_java",
     "//third_party/junit",
     "//ui/android:ui_java",
+    "//ui/android:ui_java_test_support",
     "//url:url_java",
   ]
 }

@@ -34,8 +34,37 @@ using ::ink::BrushCoat;
 using ::ink::BrushFamily;
 using ::ink::jni::CastToBrushCoat;
 using ::ink::jni::CastToBrushFamily;
+using ::ink::jni::DeleteNativeBrushFamily;
 using ::ink::jni::JStringView;
+using ::ink::jni::NewNativeBrushCoat;
+using ::ink::jni::NewNativeBrushFamily;
 using ::ink::jni::ThrowExceptionFromStatus;
+
+// 0 is reserved for internal use.
+constexpr jint kSpringModel = 1;
+constexpr jint kExperimentalRawPositionModel = 2;
+
+BrushFamily::InputModel JIntToInputModel(jint input_model_value) {
+  switch (input_model_value) {
+    case kSpringModel:
+      return BrushFamily::SpringModel();
+    case kExperimentalRawPositionModel:
+      return BrushFamily::ExperimentalRawPositionModel();
+    default:
+      ABSL_CHECK(false) << "Unknown input model value: " << input_model_value;
+  }
+}
+
+jint InputModelToJInt(BrushFamily::SpringModel) { return kSpringModel; }
+
+jint InputModelToJInt(BrushFamily::ExperimentalRawPositionModel) {
+  return kExperimentalRawPositionModel;
+}
+
+jint InputModelToJInt(BrushFamily::InputModel input_model) {
+  return std::visit([](const auto& model) { return InputModelToJInt(model); },
+                    input_model);
+}
 
 }  // namespace
 
@@ -45,7 +74,7 @@ extern "C" {
 JNI_METHOD(brush, BrushFamilyNative, jlong,
            create)(JNIEnv* env, jobject object,
                    jlongArray coat_native_pointer_array,
-                   jstring client_brush_family_id) {
+                   jstring client_brush_family_id, jint input_model_value) {
   std::vector<BrushCoat> coats;
   const jsize num_coats = env->GetArrayLength(coat_native_pointer_array);
   coats.reserve(num_coats);
@@ -60,27 +89,31 @@ JNI_METHOD(brush, BrushFamilyNative, jlong,
       // No need to copy back the array, which is not modified.
       JNI_ABORT);
 
-  BrushFamily::InputModel input_model = BrushFamily::SpringModel();
   absl::StatusOr<BrushFamily> brush_family = BrushFamily::Create(
       coats, JStringView(env, client_brush_family_id).string_view(),
-      input_model);
+      JIntToInputModel(input_model_value));
   if (!brush_family.ok()) {
     ThrowExceptionFromStatus(env, brush_family.status());
     return 0;  // Unused return value.
   }
 
-  return reinterpret_cast<jlong>(new BrushFamily(*std::move(brush_family)));
+  return NewNativeBrushFamily(*std::move(brush_family));
 }
 
 JNI_METHOD(brush, BrushFamilyNative, void, free)
 (JNIEnv* env, jobject object, jlong native_pointer) {
-  delete reinterpret_cast<BrushFamily*>(native_pointer);
+  DeleteNativeBrushFamily(native_pointer);
 }
 
 JNI_METHOD(brush, BrushFamilyNative, jstring, getClientBrushFamilyId)
 (JNIEnv* env, jobject object, jlong native_pointer) {
   const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
   return env->NewStringUTF(brush_family.GetClientBrushFamilyId().c_str());
+}
+
+JNI_METHOD(brush, BrushFamilyNative, jboolean, getInputModelInt)
+(JNIEnv* env, jobject object, jlong native_pointer) {
+  return InputModelToJInt(CastToBrushFamily(native_pointer).GetInputModel());
 }
 
 JNI_METHOD(brush, BrushFamilyNative, jlong, getBrushCoatCount)
@@ -92,7 +125,7 @@ JNI_METHOD(brush, BrushFamilyNative, jlong, getBrushCoatCount)
 JNI_METHOD(brush, BrushFamilyNative, jlong, newCopyOfBrushCoat)
 (JNIEnv* env, jobject object, jlong native_pointer, jint index) {
   const BrushFamily& brush_family = CastToBrushFamily(native_pointer);
-  return reinterpret_cast<jlong>(new BrushCoat(brush_family.GetCoats()[index]));
+  return NewNativeBrushCoat(brush_family.GetCoats()[index]);
 }
 
 }  // extern "C"

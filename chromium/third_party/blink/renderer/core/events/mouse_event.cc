@@ -345,6 +345,12 @@ bool MouseEvent::IsLeftButton() const {
   return button() == static_cast<int16_t>(WebPointerProperties::Button::kLeft);
 }
 
+bool MouseEvent::IsLinkClickButton() const {
+  int16_t b = button();
+  return b == static_cast<int16_t>(WebPointerProperties::Button::kLeft) ||
+         b == static_cast<int16_t>(WebPointerProperties::Button::kMiddle);
+}
+
 unsigned MouseEvent::which() const {
   // For the DOM, the return values for left, middle and right mouse buttons are
   // 0, 1, 2, respectively.
@@ -508,8 +514,11 @@ void MouseEvent::ComputeRelativePosition() {
     layer = layer->EnclosingSelfPaintingLayer();
 
     PhysicalOffset physical_offset =
-        layer->GetLayoutObject().LocalToAbsolutePoint(PhysicalOffset(),
-                                                      kIgnoreTransforms);
+        layer->GetLayoutObject().LocalToAbsolutePoint(
+            PhysicalOffset(),
+            RuntimeEnabledFeatures::IncludeTransformsForLayerXandLayerYEnabled()
+                ? 0
+                : kIgnoreTransforms);
     layer_location_ -= gfx::Vector2dF(physical_offset);
 
     layer_location_.Scale(inverse_zoom_factor);

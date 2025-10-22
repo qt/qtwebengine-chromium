@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007 Apple Inc.  All rights reserved.
@@ -89,7 +90,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
  * Rendering a property's name and value is expensive, and each time we do it
  * it generates a new HTML element. If we call this directly from our Lit
  * components, we will generate a brand new DOM element on each single render.
- * This is very expensive and unneccessary - for the majority of re-renders a
+ * This is very expensive and unnecessary - for the majority of re-renders a
  * property's name and value does not change. So we cache the rest of rendering
  * the name and value in a map, where the key used is a combination of the
  * property's name and value. This ensures that we only re-generate this element
@@ -529,16 +530,17 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
       inherited: isInherited,
     };
     const trace = propertyTraces.get(propertyName);
+    const jslogContext = propertyName.startsWith('--') ? 'custom-property' : propertyName;
     if (!trace) {
       return {
         treeNodeData,
-        jslogContext: propertyName,
+        jslogContext,
         id: propertyName,
       };
     }
     return {
       treeNodeData,
-      jslogContext: propertyName,
+      jslogContext,
       id: propertyName,
       children: async () => trace.map(this.buildTraceNode),
     };
@@ -550,7 +552,7 @@ export class ComputedStyleWidget extends UI.ThrottledWidget.ThrottledWidget {
     const rule = property.ownerStyle.parentRule;
 
     if (rule) {
-      const header = rule.styleSheetId ? matchedStyles.cssModel().styleSheetHeaderForId(rule.styleSheetId) : null;
+      const header = rule.header;
       if (header && !header.isAnonymousInlineStyleSheet()) {
         contextMenu.defaultSection().appendItem(i18nString(UIStrings.navigateToSelectorSource), () => {
           StylePropertiesSection.tryNavigateToRuleLocation(matchedStyles, rule);

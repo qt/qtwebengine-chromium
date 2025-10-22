@@ -20,7 +20,6 @@
 #include "base/metrics/histogram_shared_memory.h"
 #include "base/metrics/persistent_histogram_allocator.h"
 #include "base/metrics/persistent_memory_allocator.h"
-#include "base/not_fatal_until.h"
 #include "base/observer_list.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -34,6 +33,7 @@
 #include "content/browser/browser_main_loop.h"
 #include "content/browser/child_process_host_impl.h"
 #include "content/browser/metrics/histogram_shared_memory_config.h"
+#include "content/browser/renderer_host/spare_render_process_host_manager_impl.h"
 #include "content/browser/tracing/background_tracing_manager_impl.h"
 #include "content/public/browser/browser_child_process_host_delegate.h"
 #include "content/public/browser/browser_child_process_observer.h"
@@ -53,7 +53,7 @@
 #include "services/tracing/public/cpp/trace_startup.h"
 #include "services/tracing/public/cpp/trace_startup_config.h"
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_IOS_TVOS)
 #include "content/browser/child_process_task_port_provider_mac.h"
 #endif
 
@@ -76,10 +76,6 @@
 #include "content/public/common/profiling_utils.h"
 #endif
 
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-#include "content/public/browser/browser_message_filter.h"
-#endif
-
 namespace content {
 namespace {
 
@@ -94,7 +90,7 @@ base::LazyInstance<base::ObserverList<BrowserChildProcessObserver>::Unchecked>::
 void NotifyProcessLaunchedAndConnected(const ChildProcessData& data) {
   // Assert that the process is valid, as guaranteed in a comment on the
   // declaration of `BrowserChildProcessLaunchedAndConnected()`.
-  CHECK(data.GetProcess().IsValid(), base::NotFatalUntil::M130);
+  CHECK(data.GetProcess().IsValid());
 
   for (auto& observer : g_browser_child_process_observers.Get())
     observer.BrowserChildProcessLaunchedAndConnected(data);
@@ -115,9 +111,6 @@ memory_instrumentation::mojom::ProcessType GetCoordinatorClientProcessType(
       return memory_instrumentation::mojom::ProcessType::UTILITY;
     case PROCESS_TYPE_GPU:
       return memory_instrumentation::mojom::ProcessType::GPU;
-    case PROCESS_TYPE_PPAPI_PLUGIN:
-    case PROCESS_TYPE_PPAPI_BROKER:
-      return memory_instrumentation::mojom::ProcessType::PLUGIN;
     default:
       NOTREACHED();
   }
@@ -136,10 +129,8 @@ void BindTracedProcessFromUIThread(
 // static
 std::unique_ptr<BrowserChildProcessHost> BrowserChildProcessHost::Create(
     content::ProcessType process_type,
-    BrowserChildProcessHostDelegate* delegate,
-    ChildProcessHost::IpcMode ipc_mode) {
-  return std::make_unique<BrowserChildProcessHostImpl>(process_type, delegate,
-                                                       ipc_mode);
+    BrowserChildProcessHostDelegate* delegate) {
+  return std::make_unique<BrowserChildProcessHostImpl>(process_type, delegate);
 }
 
 BrowserChildProcessHost* BrowserChildProcessHost::FromID(int child_process_id) {
@@ -153,7 +144,7 @@ BrowserChildProcessHost* BrowserChildProcessHost::FromID(int child_process_id) {
   return nullptr;
 }
 
-#if BUILDFLAG(IS_APPLE)
+#if BUILDFLAG(IS_APPLE) && !BUILDFLAG(IS_IOS_TVOS)
 base::PortProvider* BrowserChildProcessHost::GetPortProvider() {
   return ChildProcessTaskPortProvider::GetInstance();
 }
@@ -181,8 +172,7 @@ void BrowserChildProcessHostImpl::RemoveObserver(
 
 BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
     content::ProcessType process_type,
-    BrowserChildProcessHostDelegate* delegate,
-    ChildProcessHost::IpcMode ipc_mode)
+    BrowserChildProcessHostDelegate* delegate)
     : data_(process_type, ChildProcessHostImpl::GenerateChildProcessUniqueId()),
       delegate_(delegate) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -190,7 +180,7 @@ BrowserChildProcessHostImpl::BrowserChildProcessHostImpl(
   // Create a persistent memory segment for subprocess histograms.
   CreateMetricsAllocator();
 
-  child_process_host_ = ChildProcessHost::Create(this, ipc_mode);
+  child_process_host_ = ChildProcessHost::Create(this);
 
   g_child_process_list.Get().push_back(this);
   GetContentClient()->browser()->BrowserChildProcessHostCreated(this);
@@ -272,30 +262,11 @@ void BrowserChildProcessHostImpl::SetMetricsName(
   data_.metrics_name = metrics_name;
 }
 
-void BrowserChildProcessHostImpl::SetProcess(base::Process process) {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-  DCHECK(!in_process_);
-
-  // Only NaClProcessHost uses SetProcess(), and it always involve a legacy IPC
-  // channel. The channel is never connected at the time of the call, so
-  // NotifyProcessLaunchedAndConnected() never has to be invoked here.
-  DCHECK(has_legacy_ipc_channel_ && !is_channel_connected_);
-
-  DCHECK(!process.is_current());
-  data_.SetProcess(std::move(process));
-}
-
 void BrowserChildProcessHostImpl::ForceShutdown() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   g_child_process_list.Get().remove(this);
   child_process_host_->ForceShutdown();
 }
-
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-void BrowserChildProcessHostImpl::AddFilter(BrowserMessageFilter* filter) {
-  child_process_host_->AddFilter(filter->GetFilter());
-}
-#endif
 
 void BrowserChildProcessHostImpl::LaunchWithFileData(
     std::unique_ptr<SandboxedProcessLauncherDelegate> delegate,
@@ -414,19 +385,11 @@ ChildProcessTerminationInfo BrowserChildProcessHostImpl::GetTerminationInfo(
   return child_process_launcher_->GetChildTerminationInfo(known_dead);
 }
 
-bool BrowserChildProcessHostImpl::OnMessageReceived(
-    const IPC::Message& message) {
-  return delegate_->OnMessageReceived(message);
-}
-
 void BrowserChildProcessHostImpl::OnChannelConnected(int32_t peer_pid) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   DCHECK(has_legacy_ipc_channel_);
   is_channel_connected_ = true;
-
-  delegate_->OnChannelConnected(peer_pid);
-
   OnProcessConnected();
 }
 
@@ -442,10 +405,6 @@ void BrowserChildProcessHostImpl::OnProcessConnected() {
     launched_and_connected_ = true;
     NotifyProcessLaunchedAndConnected(data_);
   }
-}
-
-void BrowserChildProcessHostImpl::OnChannelError() {
-  delegate_->OnChannelError();
 }
 
 void BrowserChildProcessHostImpl::OnBadMessageReceived(
@@ -499,6 +458,8 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
     ChildProcessTerminationInfo info =
         GetTerminationInfo(true /* known_dead */);
 #if BUILDFLAG(IS_ANDROID)
+    info.has_spare_renderer =
+        SpareRenderProcessHostManagerImpl::Get().HasSpareRenderer();
     exited_abnormally_ = true;
     // Do not treat clean_exit, ie when child process exited due to quitting
     // its main loop, as a crash.
@@ -563,11 +524,6 @@ void BrowserChildProcessHostImpl::OnChildDisconnected() {
 #endif  // BUILDFLAG(IS_ANDROID)
   }
   delete delegate_;  // Will delete us
-}
-
-bool BrowserChildProcessHostImpl::Send(IPC::Message* message) {
-  DCHECK(has_legacy_ipc_channel_);
-  return child_process_host_->Send(message);
 }
 
 void BrowserChildProcessHostImpl::CreateMetricsAllocator() {
@@ -664,6 +620,10 @@ void BrowserChildProcessHostImpl::OnProcessLaunchFailed(int error_code) {
   delegate_->OnProcessLaunchFailed(error_code);
   ChildProcessTerminationInfo info =
       child_process_launcher_->GetChildTerminationInfo(/*known_dead=*/true);
+#if BUILDFLAG(IS_ANDROID)
+  info.has_spare_renderer =
+      SpareRenderProcessHostManagerImpl::Get().HasSpareRenderer();
+#endif
   DCHECK_EQ(info.status, base::TERMINATION_STATUS_LAUNCH_FAILED);
 
   for (auto& observer : g_browser_child_process_observers.Get())
@@ -711,14 +671,6 @@ void BrowserChildProcessHostImpl::OnProcessLaunched() {
     launched_and_connected_ = true;
     NotifyProcessLaunchedAndConnected(data_);
   }
-
-#if BUILDFLAG(IS_CHROMEOS)
-  // In ChromeOS, there are still child processes of NaCl modules, and they
-  // don't contribute to tracing actually. So do not register those clients
-  // to the tracing service. See https://crbug.com/1101468.
-  if (data_.process_type >= PROCESS_TYPE_CONTENT_END)
-    return;
-#endif
 
   tracing_registration_ = TracingServiceController::Get().RegisterClient(
       process.Pid(), base::BindRepeating(&BindTracedProcessFromUIThread,

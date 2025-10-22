@@ -20,17 +20,13 @@ mojom_component("vr_service") {
     "//gpu/ipc/common:interfaces",
     "//mojo/public/mojom/base",
     "//services/viz/public/mojom:shared_image_format",
-    "//ui/display/mojom:mojom",
+    "//ui/display/mojom",
     "//ui/gfx/geometry/mojom",
     "//ui/gfx/mojom",
   ]
 
   shared_cpp_typemap = {
     types = [
-      {
-        mojom = "device.mojom.RgbaTupleF16"
-        cpp = "::device::RgbaTupleF16"
-      },
       {
         mojom = "device.mojom.RgbTupleF32"
         cpp = "::device::RgbTupleF32"
@@ -98,7 +94,7 @@ component("vr_public_typemaps") {
   ]
 
   deps = [
-    "//base:base",
+    "//base",
     "//skia",
     "//ui/gfx/geometry",
     "//ui/gfx/geometry:geometry_skia",

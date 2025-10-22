@@ -13,6 +13,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_checker.h"
 #include "base/types/pass_key.h"
+#include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/modules/modules_export.h"
@@ -98,7 +99,7 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   // Asks the libjingle PeerConnection factory to create a libjingle
   // PeerConnection object.
   // The PeerConnection object is owned by PeerConnectionHandler.
-  virtual rtc::scoped_refptr<webrtc::PeerConnectionInterface>
+  virtual webrtc::scoped_refptr<webrtc::PeerConnectionInterface>
   CreatePeerConnection(
       const webrtc::PeerConnectionInterface::RTCConfiguration& config,
       blink::WebLocalFrame* web_frame,
@@ -108,7 +109,7 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
 
   // Creates a PortAllocator that uses Chrome IPC sockets and enforces privacy
   // controls according to the permissions granted on the page.
-  virtual std::unique_ptr<cricket::PortAllocator> CreatePortAllocator(
+  virtual std::unique_ptr<webrtc::PortAllocator> CreatePortAllocator(
       blink::WebLocalFrame* web_frame);
 
   // Creates an AsyncDnsResolverFactory that uses the networking Mojo service.
@@ -133,8 +134,8 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   void EnsureInitialized();
 
   // Returns the SingleThreadTaskRunner corresponding to the WebRTC worker or
-  // network threads (rtc::Thread), if they exist. These threads are ensured to
-  // exist after an RTCPeerConnectionHandler has been Initialized().
+  // network threads (webrtc::Thread), if they exist. These threads are ensured
+  // to exist after an RTCPeerConnectionHandler has been Initialized().
   scoped_refptr<base::SingleThreadTaskRunner> GetWebRtcWorkerTaskRunner();
   virtual scoped_refptr<base::SingleThreadTaskRunner>
   GetWebRtcNetworkTaskRunner();
@@ -149,13 +150,17 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
   // around the same ticks.
   virtual std::unique_ptr<webrtc::Metronome> CreateDecodeMetronome();
 
+  void BindPermissionService(
+      mojo::PendingReceiver<mojom::blink::PermissionService>
+          permission_service);
+
   void Trace(Visitor*) const override;
 
  protected:
   // Ctor for tests.
   PeerConnectionDependencyFactory();
 
-  virtual const rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>&
+  virtual const webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>&
   GetPcFactory();
   virtual bool PeerConnectionFactoryCreated();
 
@@ -201,7 +206,7 @@ class MODULES_EXPORT PeerConnectionDependencyFactory
 
   Member<WebrtcVideoPerfReporter> webrtc_video_perf_reporter_;
 
-  rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
+  webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pc_factory_;
 
   // Dispatches all P2P sockets.
   Member<P2PSocketDispatcher> p2p_socket_dispatcher_;

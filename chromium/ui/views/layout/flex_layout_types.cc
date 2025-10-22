@@ -10,6 +10,7 @@
 
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "ui/gfx/geometry/size.h"
@@ -274,20 +275,6 @@ void Inset1D::Expand(int leading, int trailing) {
   trailing_ += trailing;
 }
 
-bool Inset1D::operator==(const Inset1D& other) const {
-  return std::tie(leading_, trailing_) ==
-         std::tie(other.leading_, other.trailing_);
-}
-
-bool Inset1D::operator!=(const Inset1D& other) const {
-  return !(*this == other);
-}
-
-bool Inset1D::operator<(const Inset1D& other) const {
-  return std::tie(leading_, trailing_) <
-         std::tie(other.leading_, other.trailing_);
-}
-
 std::string Inset1D::ToString() const {
   return base::StringPrintf("%d, %d", leading(), trailing());
 }
@@ -356,18 +343,6 @@ void Span::Align(const Span& container,
       NOTIMPLEMENTED();
       break;
   }
-}
-
-bool Span::operator==(const Span& other) const {
-  return std::tie(start_, length_) == std::tie(other.start_, other.length_);
-}
-
-bool Span::operator!=(const Span& other) const {
-  return !(*this == other);
-}
-
-bool Span::operator<(const Span& other) const {
-  return std::tie(start_, length_) < std::tie(other.start_, other.length_);
 }
 
 std::string Span::ToString() const {

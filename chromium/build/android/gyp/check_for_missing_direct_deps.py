@@ -33,7 +33,6 @@ def _ParseDepGraph(jar_path: str):
   output = jar_utils.run_jdeps(pathlib.Path(jar_path))
   assert output is not None, f'Unable to parse jdep for {jar_path}'
   dep_graph = collections.defaultdict(set)
-  # pylint: disable=line-too-long
   # Example output:
   # java.javac.jar -> java.base
   # java.javac.jar -> not found
@@ -41,7 +40,6 @@ def _ParseDepGraph(jar_path: str):
   #    org.chromium.chrome.browser.tabmodel.TabWindowManagerImpl -> org.chromium.base.ApplicationStatus not found
   #    org.chromium.chrome.browser.tabmodel.TabWindowManagerImpl -> org.chromium.base.ApplicationStatus$ActivityStateListener not found
   #    org.chromium.chrome.browser.tabmodel.TabWindowManagerImpl -> org.chromium.chrome.browser.tab.Tab not found
-  # pylint: enable=line-too-long
   for line in output.splitlines():
     parsed = line.split()
     # E.g. java.javac.jar -> java.base
@@ -245,7 +243,7 @@ def main(argv):
                       help='Always use the build server.')
   parser.add_argument('--gn-target', required=True)
   parser.add_argument('--input-jar', required=True)
-  parser.add_argument('--direct-classpath-jars')
+  parser.add_argument('--direct-classpath-jars', action='append')
   parser.add_argument('--sdk-classpath-jars')
   parser.add_argument('--full-classpath-jars')
   parser.add_argument('--full-classpath-gn-targets')

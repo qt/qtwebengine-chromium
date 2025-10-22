@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import functools
 from typing import TYPE_CHECKING, Type
 
@@ -16,6 +15,8 @@ from crossbench.action_runner.action.action_type import ActionType
 from crossbench.parse import DurationParser
 
 if TYPE_CHECKING:
+  import datetime as dt
+
   from crossbench.config import ConfigParser
   from crossbench.types import JsonDict
 

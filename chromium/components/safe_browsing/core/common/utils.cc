@@ -160,15 +160,11 @@ void LogAuthenticatedCookieResets(network::ResourceRequest& resource_request,
                                   .InitWithNewPipeAndPassReceiver());
 }
 
-void SetAccessTokenAndClearCookieInResourceRequest(
-    network::ResourceRequest* resource_request,
-    const std::string& access_token) {
+void SetAccessToken(network::ResourceRequest* resource_request,
+                    const std::string& access_token) {
   resource_request->headers.SetHeader(
       net::HttpRequestHeaders::kAuthorization,
       base::StrCat({kAuthHeaderBearer, access_token}));
-  if (base::FeatureList::IsEnabled(kSafeBrowsingRemoveCookiesInAuthRequests)) {
-    resource_request->credentials_mode = network::mojom::CredentialsMode::kOmit;
-  }
 }
 
 void RecordHttpResponseOrErrorCode(const char* metric_name,
@@ -206,6 +202,64 @@ std::string GetExtraMetricsSuffix(
       break;
   }
   NOTREACHED();
+}
+
+std::string GetExtraExtraMetricsSuffix(
+    security_interstitials::UnsafeResource unsafe_resource) {
+  switch (unsafe_resource.threat_subtype) {
+    case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_VERDICT_1:
+      return "scam_experiment_verdict_1";
+    case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_VERDICT_2:
+      return "scam_experiment_verdict_2";
+    case safe_browsing::ThreatSubtype::SCAM_EXPERIMENT_CATCH_ALL_ENFORCEMENT:
+      return "scam_experiment_catch_all";
+    case safe_browsing::ThreatSubtype::UNKNOWN:
+      return "";
+  }
+  // Subtype is not always set.
+  return "";
+}
+
+std::string GetThreatTypeStringForInterstitial(
+    safe_browsing::SBThreatType threat_type) {
+  using enum SBThreatType;
+
+  switch (threat_type) {
+    case SB_THREAT_TYPE_URL_PHISHING:
+    case SB_THREAT_TYPE_URL_CLIENT_SIDE_PHISHING:
+      return "SOCIAL_ENGINEERING";
+    case SB_THREAT_TYPE_URL_MALWARE:
+      return "MALWARE";
+    case SB_THREAT_TYPE_URL_UNWANTED:
+      return "UNWANTED_SOFTWARE";
+    case SB_THREAT_TYPE_BILLING:
+      return "THREAT_TYPE_UNSPECIFIED";
+    case SB_THREAT_TYPE_MANAGED_POLICY_WARN:
+      return "MANAGED_POLICY_WARN";
+    case SB_THREAT_TYPE_MANAGED_POLICY_BLOCK:
+      return "MANAGED_POLICY_BLOCK";
+    case SB_THREAT_TYPE_UNUSED:
+    case SB_THREAT_TYPE_SAFE:
+    case SB_THREAT_TYPE_URL_BINARY_MALWARE:
+    case SB_THREAT_TYPE_EXTENSION:
+    case SB_THREAT_TYPE_API_ABUSE:
+    case SB_THREAT_TYPE_SUBRESOURCE_FILTER:
+    case SB_THREAT_TYPE_CSD_ALLOWLIST:
+    case DEPRECATED_SB_THREAT_TYPE_URL_PASSWORD_PROTECTION_PHISHING:
+    case DEPRECATED_SB_THREAT_TYPE_URL_CLIENT_SIDE_MALWARE:
+    case SB_THREAT_TYPE_SAVED_PASSWORD_REUSE:
+    case SB_THREAT_TYPE_SIGNED_IN_SYNC_PASSWORD_REUSE:
+    case SB_THREAT_TYPE_SIGNED_IN_NON_SYNC_PASSWORD_REUSE:
+    case SB_THREAT_TYPE_AD_SAMPLE:
+    case SB_THREAT_TYPE_BLOCKED_AD_POPUP:
+    case SB_THREAT_TYPE_BLOCKED_AD_REDIRECT:
+    case SB_THREAT_TYPE_SUSPICIOUS_SITE:
+    case SB_THREAT_TYPE_ENTERPRISE_PASSWORD_REUSE:
+    case SB_THREAT_TYPE_APK_DOWNLOAD:
+    case SB_THREAT_TYPE_HIGH_CONFIDENCE_ALLOWLIST:
+      NOTREACHED();
+  }
+  return std::string();
 }
 
 }  // namespace safe_browsing

@@ -311,7 +311,7 @@ class WebContentsViewAuraTest : public ContentBrowserTest {
   }
 
   void WaitAFrame() {
-    while (!GetRenderWidgetHost()->RequestRepaintForTesting()) {
+    while (!GetRenderWidgetHost()->RequestRepaintOnNewSurface()) {
       GiveItSomeTime();
     }
     frame_observer_->WaitForAnyFrameSubmission();
@@ -1099,6 +1099,32 @@ IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest, GetDropCallback_Cancelled) {
   ASSERT_FALSE(view->drag_in_progress_);
   EXPECT_EQ(0, drag_dest_delegate_.GetOnDropCalledCount());
   EXPECT_TRUE(drag_dest_delegate_.GetOnDragLeaveCalled());
+}
+
+// This test simulates a drag and drop scenario where input events start being
+// ignored after the drag started. When this happens, we still need to keep
+// track of whether or not a drag and drop is ongoing in the window irrespective
+// of our intentions for the result of the drop.
+IN_PROC_BROWSER_TEST_F(WebContentsViewAuraTest,
+                       IgnoreInputs_OngoingDropGetsCleared) {
+  StartTestWithPage("/simple_page.html");
+  WebContentsImpl* contents = GetWebContentsImpl();
+  WebContentsViewAura* view = GetWebContentsViewAura();
+
+  base::RunLoop run_loop;
+  async_drop_closure_ = run_loop.QuitClosure();
+
+  PrepareWebContentsViewForDropTest(/*delegate_allows_drop=*/true);
+  SimulateDragEnterAndDrop(/*document_is_handling_drag=*/false);
+  EXPECT_TRUE(view->drag_in_progress_);
+  std::optional<WebContents::ScopedIgnoreInputEvents> ignore_inputs =
+      contents->IgnoreInputEvents(std::nullopt);
+  view->OnDragExited();
+  // Even though input events are being ignored, the flag should still be
+  // cleared.
+  EXPECT_FALSE(view->drag_in_progress_);
+  EXPECT_EQ(0, drag_dest_delegate_.GetOnDropCalledCount());
+  ignore_inputs.reset();
 }
 
 // Tests that the content is not focusable when inputs are ignored, and that it

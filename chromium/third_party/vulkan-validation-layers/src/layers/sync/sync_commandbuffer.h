@@ -21,6 +21,7 @@
 #include "state_tracker/cmd_buffer_state.h"
 
 struct ReportProperties;
+struct RecordObject;
 class SyncValidator;
 
 namespace syncval {
@@ -215,7 +216,7 @@ class CommandBufferAccessContext : public CommandExecutionContext, DebugNameProv
                                            const std::vector<const vvl::ImageView *> &attachment_views);
 
     bool ValidateBeginRendering(const ErrorObject &error_obj, syncval_state::BeginRenderingCmdState &cmd_state) const;
-    void RecordBeginRendering(syncval_state::BeginRenderingCmdState &cmd_state, const RecordObject &record_obj);
+    void RecordBeginRendering(syncval_state::BeginRenderingCmdState &cmd_state, const Location &loc);
     bool ValidateEndRendering(const ErrorObject &error_obj) const;
     void RecordEndRendering(const RecordObject &record_obj);
     bool ValidateDispatchDrawDescriptorSet(VkPipelineBindPoint pipelineBindPoint, const Location &loc) const;
@@ -346,8 +347,62 @@ class CommandBufferSubState : public vvl::CommandBufferSubState {
 
     void NotifyInvalidate(const vvl::StateObject::NodeList &invalid_nodes, bool unlink) override;
 
+    void End() override;
     void Destroy() override;
     void Reset(const Location &loc) override;
+
+    void RecordCopyBuffer(vvl::Buffer &src_buffer_state, vvl::Buffer &dst_buffer_state, uint32_t region_count,
+                          const VkBufferCopy *regions, const Location &loc) override;
+    void RecordCopyBuffer2(vvl::Buffer &src_buffer_state, vvl::Buffer &dst_buffer_state, uint32_t region_count,
+                           const VkBufferCopy2 *regions, const Location &loc) override;
+    void RecordCopyImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                         VkImageLayout dst_image_layout, uint32_t region_count, const VkImageCopy *regions,
+                         const Location &loc) override;
+    void RecordCopyImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                          VkImageLayout dst_image_layout, uint32_t region_count, const VkImageCopy2 *regions,
+                          const Location &loc) override;
+    void RecordCopyBufferToImage(vvl::Buffer &src_buffer_state, vvl::Image &dst_image_state, VkImageLayout dst_image_layout,
+                                 uint32_t region_count, const VkBufferImageCopy *regions, const Location &loc) override;
+    void RecordCopyBufferToImage2(vvl::Buffer &src_buffer_state, vvl::Image &dst_image_state, VkImageLayout dst_image_layout,
+                                  uint32_t region_count, const VkBufferImageCopy2 *regions, const Location &loc) override;
+    void RecordCopyImageToBuffer(vvl::Image &src_image_state, vvl::Buffer &dst_buffer_state, VkImageLayout src_image_layout,
+                                 uint32_t region_count, const VkBufferImageCopy *regions, const Location &loc) override;
+    void RecordCopyImageToBuffer2(vvl::Image &src_image_state, vvl::Buffer &dst_buffer_state, VkImageLayout src_image_layout,
+                                  uint32_t region_count, const VkBufferImageCopy2 *regions, const Location &loc) override;
+    void RecordBlitImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                         VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit *regions,
+                         const Location &loc) override;
+    void RecordBlitImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, VkImageLayout src_image_layout,
+                          VkImageLayout dst_image_layout, uint32_t region_count, const VkImageBlit2 *regions,
+                          const Location &loc) override;
+    void RecordResolveImage(vvl::Image &src_image_state, vvl::Image &dst_image_state, uint32_t region_count,
+                            const VkImageResolve *regions, const Location &loc) override;
+    void RecordResolveImage2(vvl::Image &src_image_state, vvl::Image &dst_image_state, uint32_t region_count,
+                             const VkImageResolve2 *regions, const Location &loc) override;
+    void RecordClearColorImage(vvl::Image &image_state, VkImageLayout image_layout, const VkClearColorValue *color_values,
+                               uint32_t range_count, const VkImageSubresourceRange *ranges, const Location &loc) override;
+    void RecordClearDepthStencilImage(vvl::Image &image_state, VkImageLayout image_layout,
+                                      const VkClearDepthStencilValue *depth_stencil_values, uint32_t range_count,
+                                      const VkImageSubresourceRange *ranges, const Location &loc) override;
+    void RecordClearAttachments(uint32_t attachment_count, const VkClearAttachment *pAttachments, uint32_t rect_count,
+                                const VkClearRect *pRects, const Location &loc) override;
+    void RecordFillBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc) override;
+    void RecordUpdateBuffer(vvl::Buffer &buffer_state, VkDeviceSize offset, VkDeviceSize size, const Location &loc) override;
+
+    void RecordDecodeVideo(vvl::VideoSession &vs_state, const VkVideoDecodeInfoKHR &decode_info, const Location &loc) override;
+    void RecordEncodeVideo(vvl::VideoSession &vs_state, const VkVideoEncodeInfoKHR &encode_info, const Location &loc) override;
+
+    void RecordCopyQueryPoolResults(vvl::QueryPool &pool_state, vvl::Buffer &dst_buffer_state, uint32_t first_query,
+                                    uint32_t query_count, VkDeviceSize dst_offset, VkDeviceSize stride, VkQueryResultFlags flags,
+                                    const Location &loc) override;
+
+    void RecordBeginRenderPass(const VkRenderPassBeginInfo &render_pass_begin, const VkSubpassBeginInfo &subpass_begin_info,
+                               const Location &loc) override;
+    void RecordNextSubpass(const VkSubpassBeginInfo &subpass_begin_info, const VkSubpassEndInfo *subpass_end_info,
+                           const Location &loc) override;
+    void RecordEndRenderPass(const VkSubpassEndInfo *subpass_end_info, const Location &loc) override;
+
+    void RecordExecuteCommand(vvl::CommandBuffer &secondary_command_buffer, uint32_t cmd_index, const Location &loc) override;
 };
 
 static inline CommandBufferSubState &SubState(vvl::CommandBuffer &cb) {

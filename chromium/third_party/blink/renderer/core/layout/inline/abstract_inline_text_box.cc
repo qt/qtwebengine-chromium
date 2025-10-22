@@ -47,7 +47,7 @@ class AbstractInlineTextBoxCache final {
     MapKey key = ToMapKey(cursor);
     const auto it = map_->find(key);
     auto* const layout_text =
-        To<LayoutText>(cursor.CurrentMutableLayoutObject());
+        To<LayoutText>(cursor.Current().GetMutableLayoutObject());
     if (it != map_->end()) {
       CHECK(layout_text->HasAbstractInlineTextBox());
       return it->value.Get();
@@ -430,7 +430,7 @@ void AbstractInlineTextBox::GetWordBoundariesForText(
     //      could refactor their word boundary algorithm so that we could simply
     //      reuse it for accessibility. Anyway, we currently do not see a strong
     //      case to justify spending time to match this behavior perfectly.
-    if (WTF::unicode::IsPunct(text[offset]) || U16_IS_SURROGATE(text[offset])) {
+    if (IsWordBoundary(text[offset])) {
       // Case 1: A new word should start before and end after a series of
       // punctuation marks, i.e., Consecutive punctuation marks should be
       // accumulated into a single word. For example, "|Hello|+++---|there|".
@@ -438,7 +438,7 @@ void AbstractInlineTextBox::GetWordBoundariesForText(
       //
       // At beginning of text, or right after an alphanumeric character or a
       // character that cannot be a word break.
-      if (offset == 0 || WTF::unicode::IsAlphanumeric(text[offset - 1]) ||
+      if (offset == 0 || unicode::IsAlphanumeric(text[offset - 1]) ||
           !IsWordBreak(text[offset - 1])) {
         if (word_start) {
           words.emplace_back(*word_start, offset);
@@ -462,9 +462,7 @@ void AbstractInlineTextBox::GetWordBoundariesForText(
       // Case 3: A word should end if `offset` is proceeded by a word break or
       // a punctuation.
       UChar prev_character = text[offset - 1];
-      if (IsWordBreak(prev_character) ||
-          WTF::unicode::IsPunct(prev_character) ||
-          U16_IS_SURROGATE(prev_character)) {
+      if (IsWordBreak(prev_character) || IsWordBoundary(prev_character)) {
         if (word_start) {
           words.emplace_back(*word_start, offset);
           word_start = std::nullopt;

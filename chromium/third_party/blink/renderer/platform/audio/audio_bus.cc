@@ -26,11 +26,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/audio/audio_bus.h"
 
 #include <assert.h>
@@ -41,6 +36,7 @@
 #include <memory>
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_audio_bus.h"
 #include "third_party/blink/renderer/platform/audio/denormal_disabler.h"
@@ -539,14 +535,16 @@ void AudioBus::CopyWithGainFrom(const AudioBus& source_bus, float gain) {
   if (gain == 1) {
     for (unsigned channel_index = 0; channel_index < number_of_channels;
          ++channel_index) {
-      memcpy(destinations[channel_index], sources[channel_index],
-             frames_to_process * sizeof(*destinations[channel_index]));
+      UNSAFE_TODO(
+          memcpy(destinations[channel_index], sources[channel_index],
+                 frames_to_process * sizeof(*destinations[channel_index])));
     }
   } else if (gain == 0) {
     for (unsigned channel_index = 0; channel_index < number_of_channels;
          ++channel_index) {
-      memset(destinations[channel_index], 0,
-             frames_to_process * sizeof(*destinations[channel_index]));
+      UNSAFE_TODO(
+          memset(destinations[channel_index], 0,
+                 frames_to_process * sizeof(*destinations[channel_index])));
     }
   } else {
     for (unsigned channel_index = 0; channel_index < number_of_channels;
@@ -683,7 +681,8 @@ scoped_refptr<AudioBus> AudioBus::CreateByMixingToMono(
 
       // Do the mono mixdown.
       for (unsigned i = 0; i < n; ++i) {
-        destination[i] = (source_l[i] + source_r[i]) / 2;
+        UNSAFE_TODO(destination[i]) =
+            (UNSAFE_TODO(source_l[i]) + UNSAFE_TODO(source_r[i])) / 2;
       }
 
       destination_bus->ClearSilentFlag();
@@ -705,9 +704,9 @@ void AudioBus::ClearSilentFlag() {
   }
 }
 
-scoped_refptr<AudioBus> DecodeAudioFileData(const char* data, size_t size) {
+scoped_refptr<AudioBus> DecodeAudioFileData(base::span<const char> data) {
   WebAudioBus web_audio_bus;
-  if (Platform::Current()->DecodeAudioFileData(&web_audio_bus, data, size)) {
+  if (Platform::Current()->DecodeAudioFileData(&web_audio_bus, data)) {
     return web_audio_bus.Release();
   }
   return nullptr;
@@ -726,8 +725,7 @@ scoped_refptr<AudioBus> AudioBus::GetDataResource(int resource_id,
   // to take WebData and use segmented access.
   SegmentedBuffer::DeprecatedFlatData flat_data(
       resource.operator scoped_refptr<SharedBuffer>().get());
-  scoped_refptr<AudioBus> audio_bus =
-      DecodeAudioFileData(flat_data.data(), flat_data.size());
+  scoped_refptr<AudioBus> audio_bus = DecodeAudioFileData(flat_data);
 
   if (!audio_bus.get()) {
     return nullptr;
@@ -743,12 +741,10 @@ scoped_refptr<AudioBus> AudioBus::GetDataResource(int resource_id,
 }
 
 scoped_refptr<AudioBus> AudioBus::CreateBusFromInMemoryAudioFile(
-    const void* data,
-    size_t data_size,
+    base::span<const uint8_t> data,
     bool mix_to_mono,
     float sample_rate) {
-  scoped_refptr<AudioBus> audio_bus =
-      DecodeAudioFileData(static_cast<const char*>(data), data_size);
+  scoped_refptr<AudioBus> audio_bus = DecodeAudioFileData(base::as_chars(data));
   if (!audio_bus.get()) {
     return nullptr;
   }

@@ -64,6 +64,7 @@ class TsModel final : public mojom::TextSafetyModel,
                           ClassifyTextSafetyCallback callback) override;
   void DetectLanguage(const std::string& text,
                       DetectLanguageCallback callback) override;
+  void Clone(mojo::PendingReceiver<mojom::TextSafetySession> session) override;
 
   mojom::SafetyInfoPtr ClassifyTextSafety(const std::string& text);
   mojom::LanguageDetectionResultPtr DetectLanguage(std::string_view text);
@@ -144,6 +145,10 @@ void TsModel::DetectLanguage(const std::string& text,
   std::move(callback).Run(DetectLanguage(text));
 }
 
+void TsModel::Clone(mojo::PendingReceiver<mojom::TextSafetySession> session) {
+  StartSession(std::move(session));
+}
+
 DISABLE_CFI_DLSYM
 mojom::SafetyInfoPtr TsModel::ClassifyTextSafety(const std::string& text) {
   if (!model_) {
@@ -187,11 +192,10 @@ TsHolder::TsHolder(raw_ref<const ChromeML> chrome_ml) : chrome_ml_(chrome_ml) {}
 TsHolder::~TsHolder() = default;
 
 // static
-base::SequenceBound<TsHolder> TsHolder::Create(
-    raw_ref<const ChromeML> chrome_ml) {
+base::SequenceBound<TsHolder> TsHolder::Create(const ChromeML& chrome_ml) {
   return base::SequenceBound<TsHolder>(
       base::ThreadPool::CreateSequencedTaskRunner({base::MayBlock()}),
-      chrome_ml);
+      ToRawRef(chrome_ml));
 }
 
 void TsHolder::Reset(mojom::TextSafetyModelParamsPtr params,

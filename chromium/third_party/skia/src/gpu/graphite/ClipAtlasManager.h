@@ -4,21 +4,32 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #ifndef skgpu_graphite_ClipAtlasManager_DEFINED
 #define skgpu_graphite_ClipAtlasManager_DEFINED
 
-#include "include/gpu/graphite/TextureInfo.h"
+#include "include/core/SkRect.h"
+#include "include/core/SkRefCnt.h"
+#include "include/private/base/SkTDArray.h"
 #include "src/base/SkTInternalLList.h"
+#include "src/core/SkTHash.h"
 #include "src/gpu/AtlasTypes.h"
 #include "src/gpu/ResourceKey.h"
 #include "src/gpu/graphite/ClipStack.h"
 #include "src/gpu/graphite/DrawAtlas.h"
-#include "src/gpu/graphite/geom/Rect.h"
+
+#include <cstddef>
+#include <cstdint>
+#include <memory>
+#include <string_view>
+
+struct SkIPoint;
 
 namespace skgpu::graphite {
 
+class Caps;
+class DrawContext;
 class Recorder;
+class TextureProxy;
 
 //////////////////////////////////////////////////////////////////////////////////////////////////
 /** The ClipAtlasManager manages the lifetime of and access to rasterized clip masks.
@@ -28,9 +39,9 @@ public:
     ClipAtlasManager(Recorder* recorder);
     ~ClipAtlasManager() = default;
 
-    const TextureProxy* findOrCreateEntry(uint32_t stackRecordID,
+    sk_sp<TextureProxy> findOrCreateEntry(uint32_t stackRecordID,
                                           const ClipStack::ElementList*,
-                                          SkIRect iBounds,
+                                          SkIRect maskDeviceBounds,
                                           SkIPoint* outPos);
 
     bool recordUploads(DrawContext* dc);
@@ -48,15 +59,16 @@ private:
                      DrawAtlas::UseStorageTextures useStorageTextures,
                      std::string_view label, const Caps*);
 
-        const TextureProxy* findOrCreateEntry(Recorder* recorder,
+        sk_sp<TextureProxy> findOrCreateEntry(Recorder* recorder,
                                               const skgpu::UniqueKey&,
                                               const ClipStack::ElementList*,
-                                              SkIRect iBounds,
+                                              SkIRect maskDeviceBounds,
+                                              SkIRect keyBounds,
                                               SkIPoint* outPos);
         // Adds to DrawAtlas but not the cache
-        const TextureProxy* addToAtlas(Recorder* recorder,
+        sk_sp<TextureProxy> addToAtlas(Recorder* recorder,
                                        const ClipStack::ElementList*,
-                                       SkIRect iBounds,
+                                       SkIRect maskDeviceBounds,
                                        SkIPoint* outPos,
                                        AtlasLocator* locator);
         bool recordUploads(DrawContext*, Recorder*);

@@ -6,17 +6,30 @@
 
 #include <memory>
 
+#include "base/base64.h"
 #include "base/files/file_util.h"
 #include "base/files/important_file_writer.h"
-#include "base/hash/md5.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "components/trusted_vault/features.h"
 #include "components/trusted_vault/proto_string_bytes_conversion.h"
+#include "components/trusted_vault/standalone_trusted_vault_server_constants.h"
 #include "components/trusted_vault/trusted_vault_histograms.h"
 #include "components/trusted_vault/trusted_vault_server_constants.h"
+#include "crypto/hash.h"
+#include "crypto/obsolete/md5.h"
 
 namespace trusted_vault {
+
+// This is a separate function and not in `namespace {}` so it can be friended
+// by crypto/obsolete/md5, as required for using that class.
+std::string MD5StringForTrustedVault(const std::string& local_trusted_value) {
+  return base::ToLowerASCII(
+      base::HexEncode(crypto::obsolete::Md5::Hash(local_trusted_value)));
+}
 
 namespace {
 
@@ -25,7 +38,7 @@ constexpr base::FilePath::CharType kChromeSyncTrustedVaultFilename[] =
 constexpr base::FilePath::CharType kPasskeysTrustedVaultFilename[] =
     FILE_PATH_LITERAL("passkeys_trusted_vault.pb");
 
-constexpr int kCurrentLocalTrustedVaultVersion = 3;
+constexpr int kCurrentLocalTrustedVaultVersion = 4;
 
 base::FilePath GetBackendFilePath(const base::FilePath& base_dir,
                                   SecurityDomainId security_domain) {
@@ -62,12 +75,24 @@ trusted_vault_pb::LocalTrustedVault ReadDataFromDiskImpl(
     return data_proto;
   }
 
-  if (base::MD5String(file_proto.serialized_local_trusted_vault()) !=
+  if (MD5StringForTrustedVault(file_proto.serialized_local_trusted_vault()) !=
       file_proto.md5_digest_hex_string()) {
     RecordTrustedVaultFileReadStatus(
         security_domain_id,
         TrustedVaultFileReadStatusForUMA::kMD5DigestMismatch);
     return data_proto;
+  }
+
+  if (base::FeatureList::IsEnabled(kEnableTrustedVaultSHA256)) {
+    if (file_proto.has_sha256_digest_hex_string() &&
+        (base::Base64Encode(crypto::hash::Sha256(base::as_byte_span(
+             file_proto.serialized_local_trusted_vault()))) !=
+         file_proto.sha256_digest_hex_string())) {
+      RecordTrustedVaultFileReadStatus(
+          security_domain_id,
+          TrustedVaultFileReadStatusForUMA::kSHA256DigestMismatch);
+      return data_proto;
+    }
   }
 
   if (!data_proto.ParseFromString(
@@ -140,8 +165,28 @@ void UpgradeToVersion3(
       per_user_vault.mutable_local_device_registration_info()
           ->set_device_registered(false);
     }
-    local_trusted_vault->set_data_version(3);
   }
+  local_trusted_vault->set_data_version(3);
+}
+
+// Version 3 had the `last_registration_returned_local_data_obsolete` field in
+// `LocalDeviceRegistrationInfo` message. That was migrated to the
+// `LocalTrustedVaultPerUser` message in version 4.
+void UpgradeToVersion4(
+    trusted_vault_pb::LocalTrustedVault* local_trusted_vault) {
+  CHECK(local_trusted_vault);
+  CHECK_EQ(local_trusted_vault->data_version(), 3);
+
+  for (trusted_vault_pb::LocalTrustedVaultPerUser& per_user_vault :
+       *local_trusted_vault->mutable_user()) {
+    if (per_user_vault.local_device_registration_info()
+            .has_deprecated_last_registration_returned_local_data_obsolete()) {
+      per_user_vault.set_last_registration_returned_local_data_obsolete(
+          per_user_vault.local_device_registration_info()
+              .deprecated_last_registration_returned_local_data_obsolete());
+    }
+  }
+  local_trusted_vault->set_data_version(4);
 }
 
 void WriteDataToDiskImpl(const trusted_vault_pb::LocalTrustedVault& data,
@@ -150,7 +195,12 @@ void WriteDataToDiskImpl(const trusted_vault_pb::LocalTrustedVault& data,
   trusted_vault_pb::LocalTrustedVaultFileContent file_proto;
   file_proto.set_serialized_local_trusted_vault(data.SerializeAsString());
   file_proto.set_md5_digest_hex_string(
-      base::MD5String(file_proto.serialized_local_trusted_vault()));
+      MD5StringForTrustedVault(file_proto.serialized_local_trusted_vault()));
+  if (base::FeatureList::IsEnabled(kEnableTrustedVaultSHA256)) {
+    file_proto.set_sha256_digest_hex_string(
+        base::Base64Encode(crypto::hash::Sha256(
+            base::as_byte_span(file_proto.serialized_local_trusted_vault()))));
+  }
   bool success = base::ImportantFileWriter::WriteFileAtomically(
       file_path, file_proto.SerializeAsString(), "TrustedVault");
   if (!success) {
@@ -194,6 +244,11 @@ class DefaultFileAccess : public StandaloneTrustedVaultStorage::FileAccess {
 
     if (data.data_version() == 2) {
       UpgradeToVersion3(&data);
+      WriteToDisk(data);
+    }
+
+    if (data.data_version() == 3) {
+      UpgradeToVersion4(&data);
       WriteToDisk(data);
     }
 

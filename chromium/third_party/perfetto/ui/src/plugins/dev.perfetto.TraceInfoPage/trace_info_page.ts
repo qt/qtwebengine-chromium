@@ -16,8 +16,7 @@ import m from 'mithril';
 import {Engine, EngineAttrs} from '../../trace_processor/engine';
 import {QueryResult, UNKNOWN} from '../../trace_processor/query_result';
 import {assertExists} from '../../base/logging';
-import {TraceAttrs} from '../../public/trace';
-import {PageWithTraceAttrs} from '../../public/page';
+import {Trace, TraceAttrs} from '../../public/trace';
 
 /**
  * Extracts and copies fields from a source object based on the keys present in
@@ -127,7 +126,7 @@ class StatsSection implements m.ClassComponent<StatsSectionAttrs> {
     return m(
       `section${attrs.cssClass}`,
       m('h2', attrs.title),
-      m('h3', attrs.subTitle),
+      m('h4', attrs.subTitle),
       m(
         'table',
         m('thead', m('tr', m('td', 'Name'), m('td', 'Value'), m('td', 'Type'))),
@@ -144,7 +143,7 @@ class LoadingErrors implements m.ClassComponent<TraceAttrs> {
     return m(
       `section.errors`,
       m('h2', `Loading errors`),
-      m('h3', `The following errors were encountered while loading the trace:`),
+      m('h4', `The following errors were encountered while loading the trace:`),
       m('pre.metric-error', errors.join('\n')),
     );
   }
@@ -212,6 +211,86 @@ class TraceMetadata implements m.ClassComponent<EngineAttrs> {
         m('thead', m('tr', m('td', 'Name'), m('td', 'Value'))),
         m('tbody', tableRows),
       ),
+    );
+  }
+}
+
+const machineRowSpec = {
+  id: UNKNOWN,
+  rawId: UNKNOWN,
+  sysname: UNKNOWN,
+  release: UNKNOWN,
+  version: UNKNOWN,
+  arch: UNKNOWN,
+  numCpus: UNKNOWN,
+  androidBuildFingerprint: UNKNOWN,
+  androidDeviceManufacturer: UNKNOWN,
+  androidSdkVersion: UNKNOWN,
+};
+
+type MachineRow = typeof machineRowSpec;
+
+class MachineListSection implements m.ClassComponent<EngineAttrs> {
+  private data?: MachineRow[];
+
+  oncreate({attrs}: m.CVnodeDOM<EngineAttrs>) {
+    const engine = attrs.engine;
+    const query = `
+      select
+        id,
+        raw_id as rawId,
+        sysname,
+        release,
+        version,
+        arch,
+        num_cpus as numCpus,
+        android_build_fingerprint as androidBuildFingerprint,
+        android_device_manufacturer as androidDeviceManufacturer,
+        android_sdk_version as androidSdkVersion
+      from machine
+    `;
+
+    engine.query(query).then((resp: QueryResult) => {
+      const tableRows: MachineRow[] = [];
+      const it = resp.iter(machineRowSpec);
+      for (; it.valid(); it.next()) {
+        tableRows.push(pickFields(it, machineRowSpec));
+      }
+      this.data = tableRows;
+    });
+  }
+
+  view() {
+    const data = this.data;
+    if (data === undefined || data.length <= 1) {
+      return undefined;
+    }
+
+    const machineTables = data.map((row) => {
+      const tableRows = [];
+      for (const key of Object.keys(machineRowSpec)) {
+        const value = row[key as keyof MachineRow];
+        if (value !== undefined && value !== null) {
+          tableRows.push(m('tr', m('td.name', key), m('td', `${value}`)));
+        }
+      }
+
+      return m(
+        '',
+        m('h3', `Machine ${row.id}`),
+        m(
+          'table',
+          m('thead', m('tr', m('td', 'Name'), m('td', 'Value'))),
+          m('tbody', tableRows),
+        ),
+      );
+    });
+
+    return m(
+      'section',
+      m('h2', 'Machines'),
+      m('h4', 'System information of the machines involved in the trace.'),
+      machineTables,
     );
   }
 }
@@ -420,14 +499,18 @@ class PackageListSection implements m.ClassComponent<EngineAttrs> {
   }
 }
 
-export class TraceInfoPage implements m.ClassComponent<PageWithTraceAttrs> {
+export interface TraceInfoPageAttrs {
+  readonly trace: Trace;
+}
+
+export class TraceInfoPage implements m.ClassComponent<TraceInfoPageAttrs> {
   private engine?: Engine;
 
-  oninit({attrs}: m.CVnode<PageWithTraceAttrs>) {
+  oninit({attrs}: m.CVnode<TraceInfoPageAttrs>) {
     this.engine = attrs.trace.engine.getProxy('TraceInfoPage');
   }
 
-  view({attrs}: m.CVnode<PageWithTraceAttrs>) {
+  view({attrs}: m.CVnode<TraceInfoPageAttrs>) {
     const engine = assertExists(this.engine);
     return m(
       '.trace-info-page',
@@ -453,6 +536,7 @@ export class TraceInfoPage implements m.ClassComponent<PageWithTraceAttrs> {
         sqlConstraints: `severity = 'data_loss' and value > 0`,
       }),
       m(TraceMetadata, {engine}),
+      m(MachineListSection, {engine}),
       m(PackageListSection, {engine}),
       m(AndroidGameInterventionList, {engine}),
       m(StatsSection, {

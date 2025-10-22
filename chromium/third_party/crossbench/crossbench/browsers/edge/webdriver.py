@@ -59,7 +59,7 @@ class EdgeWebDriver(EdgeBaseMixin, ChromiumBasedWebDriver):
 
 
 class EdgeWebDriverDownloader:
-  BASE_URL = "https://msedgedriver.azureedge.net"
+  BASE_URL = "https://msedgedriver.microsoft.com"
 
   def __init__(self, browser: EdgeWebDriver) -> None:
     self.browser = browser
@@ -109,4 +109,6 @@ class EdgeWebDriverDownloader:
         return "win64"
       if self.platform.is_ia32:
         return "win32"
+      if self.platform.is_arm64:
+        return "arm64"
     raise ValueError(f"Unsupported edgedriver platform {self.platform}")

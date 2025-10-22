@@ -10,14 +10,13 @@
 
 #include "call/rtp_payload_params.h"
 
-#include <stddef.h>
-
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <optional>
 
 #include "absl/container/inlined_vector.h"
-#include "absl/strings/match.h"
 #include "api/field_trials_view.h"
 #include "api/transport/rtp/dependency_descriptor.h"
 #include "api/video/encoded_image.h"
@@ -36,7 +35,6 @@
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/frame_dependencies_calculator.h"
 #include "modules/video_coding/include/video_codec_interface.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/random.h"
@@ -186,11 +184,9 @@ RtpPayloadParams::RtpPayloadParams(const uint32_t ssrc,
                                    const FieldTrialsView& trials)
     : ssrc_(ssrc),
       generic_picture_id_experiment_(
-          absl::StartsWith(trials.Lookup("WebRTC-GenericPictureId"),
-                           "Enabled")),
-      simulate_generic_structure_(absl::StartsWith(
-          trials.Lookup("WebRTC-GenericCodecDependencyDescriptor"),
-          "Enabled")) {
+          trials.IsEnabled("WebRTC-GenericPictureId")),
+      simulate_generic_structure_(
+          trials.IsEnabled("WebRTC-GenericCodecDependencyDescriptor")) {
   for (auto& spatial_layer : last_frame_id_)
     spatial_layer.fill(-1);
 
@@ -789,7 +785,7 @@ void RtpPayloadParams::SetDependenciesVp8New(
 
   RTC_DCHECK_GT(vp8_info.referencedBuffersCount, 0u);
   RTC_DCHECK_LE(vp8_info.referencedBuffersCount,
-                arraysize(vp8_info.referencedBuffers));
+                std::size(vp8_info.referencedBuffers));
 
   for (size_t i = 0; i < vp8_info.referencedBuffersCount; ++i) {
     const size_t referenced_buffer = vp8_info.referencedBuffers[i];

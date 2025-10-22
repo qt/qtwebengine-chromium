@@ -144,9 +144,9 @@ describeWithEnvironment('TraceProcessor', function() {
       reset() {},
     };
 
-    function fillHandlers(handlersDeps: {[key: string]: {deps ? () : Trace.Handlers.Types.HandlerName[]}}):
-        {[key: string]: Trace.Handlers.Types.Handler} {
-      const handlers: {[key: string]: Trace.Handlers.Types.Handler} = {};
+    function fillHandlers(handlersDeps: Record<string, {deps ? () : Trace.Handlers.Types.HandlerName[]}>):
+        Record<string, Trace.Handlers.Types.Handler> {
+      const handlers: Record<string, Trace.Handlers.Types.Handler> = {};
       for (const handler in handlersDeps) {
         handlers[handler] = {...baseHandler, ...handlersDeps[handler]};
       }
@@ -154,7 +154,7 @@ describeWithEnvironment('TraceProcessor', function() {
     }
 
     it('sorts handlers satisfying their dependencies 1', function() {
-      const handlersDeps: {[key: string]: {deps ? () : Trace.Handlers.Types.HandlerName[]}} = {
+      const handlersDeps: Record<string, {deps ? () : Trace.Handlers.Types.HandlerName[]}> = {
         Meta: {},
         GPU: {
           deps() {
@@ -194,7 +194,7 @@ describeWithEnvironment('TraceProcessor', function() {
       assert.deepEqual([...Trace.Processor.sortHandlers(handlers).keys()], expectedOrder);
     });
     it('sorts handlers satisfying their dependencies 2', function() {
-      const handlersDeps: {[key: string]: {deps ? () : Trace.Handlers.Types.HandlerName[]}} = {
+      const handlersDeps: Record<string, {deps ? () : Trace.Handlers.Types.HandlerName[]}> = {
         GPU: {
           deps() {
             return ['LayoutShifts', 'NetworkRequests'];
@@ -213,7 +213,7 @@ describeWithEnvironment('TraceProcessor', function() {
       assert.deepEqual([...Trace.Processor.sortHandlers(handlers).keys()], expectedOrder);
     });
     it('throws an error when a dependency cycle is present among handlers', function() {
-      const handlersDeps: {[key: string]: {deps ? () : Trace.Handlers.Types.HandlerName[]}} = {
+      const handlersDeps: Record<string, {deps ? () : Trace.Handlers.Types.HandlerName[]}> = {
         Meta: {},
         GPU: {
           deps() {
@@ -246,7 +246,7 @@ describeWithEnvironment('TraceProcessor', function() {
   describe('insights', () => {
     it('returns a single group of insights even if no navigations', async function() {
       const processor = Trace.Processor.TraceProcessor.createWithAllHandlers();
-      const file = await TraceLoader.rawEvents(this, 'basic.json.gz');
+      const file = await TraceLoader.rawEvents(this, 'nested-interactions.json.gz');
 
       await processor.parse(file, {isFreshRecording: true, isCPUProfile: false});
       if (!processor.insights) {
@@ -266,11 +266,15 @@ describeWithEnvironment('TraceProcessor', function() {
             UIStrings: {} as any,
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             i18nString: (() => {}) as any,
-            isRenderBlocking: (x: unknown): x is Trace.Insights.Models.RenderBlocking.RenderBlockingInsightModel =>
+            isRenderBlocking: (_x: unknown): _x is Trace.Insights.Models.RenderBlocking.RenderBlockingInsightModel =>
                 false,
             generateInsight: () => {
               throw new Error('forced error');
             },
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            createOverlays: (() => {}) as any,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            createOverlayForRequest: (() => {}) as any,
           },
         };
       });
@@ -284,9 +288,9 @@ describeWithEnvironment('TraceProcessor', function() {
       }
 
       const insights = Array.from(processor.insights.values());
-      assert.lengthOf(insights, 2);
-      assert.instanceOf(insights[1].model.RenderBlocking, Error, 'RenderBlocking did not throw an error');
-      assert.strictEqual(insights[1].model.RenderBlocking.message, 'forced error');
+      assert.lengthOf(insights, 1);
+      assert.instanceOf(insights[0].model.RenderBlocking, Error, 'RenderBlocking did not throw an error');
+      assert.strictEqual(insights[0].model.RenderBlocking.message, 'forced error');
     });
 
     it('returns insights for a navigation', async function() {
@@ -299,7 +303,7 @@ describeWithEnvironment('TraceProcessor', function() {
       }
 
       assert.deepEqual([...processor.insights.keys()], [
-        Trace.Types.Events.NO_NAVIGATION,
+        // excluded NO_NAVIGATION set, as it was trivial
         '0BCFC23BC7D7BEDC9F93E912DCCEC1DA',
       ]);
 
@@ -307,12 +311,8 @@ describeWithEnvironment('TraceProcessor', function() {
       if (insights[0].model.RenderBlocking instanceof Error) {
         throw new Error('RenderBlocking threw an error');
       }
-      if (insights[1].model.RenderBlocking instanceof Error) {
-        throw new Error('RenderBlocking threw an error');
-      }
 
-      assert.lengthOf(insights[0].model.RenderBlocking.renderBlockingRequests, 0);
-      assert.lengthOf(insights[1].model.RenderBlocking.renderBlockingRequests, 2);
+      assert.lengthOf(insights[0].model.RenderBlocking.renderBlockingRequests, 2);
     });
 
     it('returns insights for multiple navigations', async function() {
@@ -374,7 +374,8 @@ describeWithEnvironment('TraceProcessor', function() {
         // It's been sorted already ... but let's add some fake estimated savings and re-sort to
         // better test the sorting.
         insightSet.model.CLSCulprits.metricSavings = {CLS: 0.07};
-        processor.sortInsightSet(processor.insights, insightSet, metadata ?? null);
+        insightSet.model.Viewport.metricSavings = {INP: Trace.Types.Timing.Milli(300)};
+        processor.sortInsightSet(insightSet, metadata ?? null);
 
         return Object.keys(insightSet.model);
       };
@@ -385,8 +386,8 @@ describeWithEnvironment('TraceProcessor', function() {
         'Viewport',
         'Cache',
         'ImageDelivery',
-        'InteractionToNextPaint',
-        'LCPPhases',
+        'INPBreakdown',
+        'LCPBreakdown',
         'LCPDiscovery',
         'RenderBlocking',
         'NetworkDependencyTree',
@@ -408,8 +409,8 @@ describeWithEnvironment('TraceProcessor', function() {
         'CLSCulprits',
         'Cache',
         'ImageDelivery',
-        'InteractionToNextPaint',
-        'LCPPhases',
+        'INPBreakdown',
+        'LCPBreakdown',
         'LCPDiscovery',
         'RenderBlocking',
         'NetworkDependencyTree',

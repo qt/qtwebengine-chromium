@@ -7,8 +7,6 @@
 
 #include <optional>
 
-#include "base/debug/stack_trace.h"
-#include "base/gtest_prod_util.h"
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
@@ -30,6 +28,10 @@ namespace TemplateURLPrepopulateData {
 class Resolver;
 }
 
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
 class PrefRegistrySimple;
 class PrefService;
 class TemplateURLService;
@@ -45,23 +47,57 @@ class SearchEngineChoiceService : public KeyedService {
     virtual void OnSavedGuestSearchChanged() = 0;
   };
 
-  // This constructor should only be used in tests.
+  // Interface allowing SearchEngineChoiceService to have access to
+  // dependencies from higher level layers or that's can't be passed in
+  // at construction time, for example due to incompatible lifecycles.
+  class Client {
+   public:
+    virtual ~Client();
+
+    // Returns the Variations (Finch) country ID for this current run, or an
+    // invalid country ID if it's not available.
+    virtual country_codes::CountryId GetVariationsCountry() = 0;
+
+    // Returns whether this profile type is compatible with the
+    // Guest-specific default search engine propagation.
+    virtual bool IsProfileEligibleForDseGuestPropagation() = 0;
+
+    // Returns whether Chrome detected in this current run that its data has
+    // been transferred / restored to a new device.
+    //
+    // In practice, this function is not reliable on desktop. That's because
+    // "detected in current session" happens asynchronously, so it's possible
+    // to call this function and get a "false" value in a session where it will
+    // end up returning true at some point. And in the next session, "detected
+    // in current session" would be false too. It's possible to miss an actual
+    // true value due to timing of calls to this function.
+    virtual bool IsDeviceRestoreDetectedInCurrentSession() = 0;
+
+    // Returns whether the search engine choice described in `choice_metadata`
+    // predates the Chrome data having been transferred or restored to this
+    // device.
+    virtual bool DoesChoicePredateDeviceRestore(
+        const ChoiceCompletionMetadata& choice_metadata) = 0;
+
+   protected:
+    // Helper for subclass to have the possibility to share some of the
+    // implementation of `GetVariationsCountry()`.
+    static country_codes::CountryId GetVariationsLatestCountry(
+        variations::VariationsService* variations_service);
+  };
+
   SearchEngineChoiceService(
+      std::unique_ptr<Client> client,
       PrefService& profile_prefs,
       PrefService* local_state,
       regional_capabilities::RegionalCapabilitiesService& regional_capabilities,
-      TemplateURLPrepopulateData::Resolver& prepopulate_data_resolver,
-      bool is_profile_eligible_for_dse_guest_propagation,
-      country_codes::CountryId variations_country_id =
-          country_codes::CountryId());
-  SearchEngineChoiceService(
-      PrefService& profile_prefs,
-      PrefService* local_state,
-      regional_capabilities::RegionalCapabilitiesService& regional_capabilities,
-      TemplateURLPrepopulateData::Resolver& prepopulate_data_resolver,
-      bool is_profile_eligible_for_dse_guest_propagation,
-      variations::VariationsService* variations_service);
+      TemplateURLPrepopulateData::Resolver& prepopulate_data_resolver);
   ~SearchEngineChoiceService() override;
+
+  // Runs the initialisation step for this service, checking consistency in the
+  // prefs and performing some tasks that might be needed following device state
+  // changes.
+  void Init();
 
   // Returns the choice screen eligibility condition most relevant for the
   // profile associated with `profile_prefs` and `template_url_service`. Only
@@ -76,11 +112,18 @@ class SearchEngineChoiceService : public KeyedService {
   // such that if a non-eligible condition is returned, it would take at least a
   // restart for the state to change. So this state can be checked and cached
   // ahead of showing a choice screen.
-  // TODO(b/318801987): Remove `is_regular_profile` after fixing tests.
   SearchEngineChoiceScreenConditions GetStaticChoiceScreenConditions(
       const policy::PolicyService& policy_service,
-      bool is_regular_profile,
       const TemplateURLService& template_url_service);
+
+  // Records the specified choice screen condition at profile initialization.
+  void RecordStaticEligibility(SearchEngineChoiceScreenConditions condition);
+
+  // Records the specified choice screen condition for relevant navigations.
+  void RecordDynamicEligibility(SearchEngineChoiceScreenConditions condition);
+
+  // Records the specified choice screen event.
+  void RecordChoiceScreenEvent(SearchEngineChoiceScreenEvents event);
 
   // Returns key information needed to show a search engine choice screen, like
   // the template URLs for the engines to show. See
@@ -117,9 +160,42 @@ class SearchEngineChoiceService : public KeyedService {
   // TODO(crbug.com/328040066): Move to `//components/regional_capabilities`.
   void ClearCountryIdCacheForTesting();
 
+  // Returns a reference to the `SearchEngineChoiceService::Client` owned and
+  // used by this service.
+  Client& GetClientForTesting();
+
+  enum class ChoiceStatus {
+    // Metedata indicates that a search engine choice has been made and is
+    // considered valid.
+    kValid,
+    // No search engine choice has been made yet.
+    kNotMade,
+    // The current search engine choice has been made on a different device.
+    kFromRestoredDevice,
+    // There is no default search provider available, likely disabled by
+    // enterprise policies.
+    kDefaultSearchDisabled,
+    // The current default search provider is set by enterprise policies.
+    kCurrentIsSetByPolicy,
+    // The current default search provider is non-Google prepopulated one.
+    kCurrentIsNonGooglePrepopulated,
+    // The current default search provider is a custom, client-specified URL.
+    // For example, it could be entered manually by the user or picked up as
+    // site search.
+    kCurrentIsNotPrepopulated,
+    // The current default search provider is coming from search provider
+    // overrides set by the admin or non-standard distribution channel.
+    kCurrentIsDistributionCustom,
+    // The current default search provider has a prepopulated ID that doesn't
+    // match any of the preopulated engines currently available.
+    kCurrentIsUnknownPrepopulated,
+  };
+  ChoiceStatus EvaluateSearchProviderChoiceForTesting(
+      const TemplateURLService& template_url_service);
+
   // Returns whether the profile is eligible for the default search engine to be
   // used across all guest sessions.
-  bool IsProfileEligibleForDseGuestPropagation() const;
+  bool IsDsePropagationAllowedForGuest() const;
 
   // Returns the previously chosen default search engine configured to be
   // propagated to new guest sessions. Returns nullopt if the profile is
@@ -138,35 +214,37 @@ class SearchEngineChoiceService : public KeyedService {
   // Register Local state preferences in `registry`.
   static void RegisterLocalStatePrefs(PrefRegistrySimple* registry);
 
-  void SetIsProfileEligibleForDseGuestPropagationForTesting(bool eligible) {
-    is_profile_eligible_for_dse_guest_propagation_ = eligible;
-  }
+  // Register profile preferences in `registry`.
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
  private:
-  // Checks if the search engine choice should be prompted again, based on
-  // experiment parameters. If a reprompt is needed, some preferences related to
-  // the choice are cleared, which triggers a reprompt on the next page load.
-  void PreprocessPrefsForReprompt();
+  // Checks if the search engine choice should be invalidated, based on pref
+  // inconsistencies, command line args, or experiment parameters. Returns a
+  // wipe reason if the choice should be cleared, or nullopt otherwise.
+  std::optional<SearchEngineChoiceWipeReason> CheckPrefsForWipeReason();
 
   void ProcessPendingChoiceScreenDisplayState();
 
+  bool IsChoiceRenewalNeeded(
+      const ChoiceCompletionMetadata& completion_metadata,
+      bool include_previous_just_in_time_detection);
+
+  ChoiceStatus EvaluateSearchProviderChoice(
+      const TemplateURLService& template_url_service);
+
+  const std::unique_ptr<Client> client_;
   const raw_ref<PrefService> profile_prefs_;
   const raw_ptr<PrefService> local_state_;
   const raw_ref<regional_capabilities::RegionalCapabilitiesService>
       regional_capabilities_service_;
   const raw_ref<TemplateURLPrepopulateData::Resolver>
       prepopulate_data_resolver_;
-  bool is_profile_eligible_for_dse_guest_propagation_ = false;
   base::ObserverList<Observer> observers_;
-  const country_codes::CountryId variations_country_id_;
 
-  // Used to ensure that the value returned from `GetCountryId` never changes
-  // in runtime (different runs can still return different values, though).
-  std::optional<int> country_id_cache_;
-
-  // Used to track caller of `MaybeRecordChoiceScreenDisplayState()` to debug
-  // some unmet expectations, see b/344899110.
-  std::unique_ptr<base::debug::StackTrace> display_state_record_caller_;
+  // Used to track whether `MaybeRecordChoiceScreenDisplayState()` has already
+  // been called for this profile, to monitor the prevalence of some unexpected
+  // behaviour, see crbug.com/390272573.
+  bool has_recorded_display_state_ = false;
 
   base::WeakPtrFactory<SearchEngineChoiceService> weak_ptr_factory_{this};
 };

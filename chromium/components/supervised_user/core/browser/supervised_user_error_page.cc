@@ -35,8 +35,8 @@ std::string BuildAvatarImageUrl(const std::string& url, int size) {
   if (!gurl.is_valid())
     return url;
 
-  GURL to_return = signin::GetAvatarImageURLWithOptions(
-      gurl, size, false /* no_silhouette */);
+  GURL to_return =
+      signin::GetAvatarImageURLWithOptions(gurl, size, /*no_silhouette=*/false);
   return to_return.spec();
 }
 
@@ -52,6 +52,8 @@ int GetBlockMessageID(FilteringBehaviorReason reason, bool single_parent) {
     case FilteringBehaviorReason::MANUAL:
       return single_parent ? IDS_CHILD_BLOCK_MESSAGE_MANUAL_SINGLE_PARENT
                            : IDS_CHILD_BLOCK_MESSAGE_MANUAL_MULTI_PARENT;
+    case FilteringBehaviorReason::FILTER_DISABLED:
+      NOTREACHED() << "When filtering is disabled, nothing is blocked";
   }
 }
 
@@ -66,21 +68,50 @@ int GetInterstitialMessageID(FilteringBehaviorReason reason) {
         return IDS_SUPERVISED_USER_INTERSTITIAL_MESSAGE_SAFE_SITES;
       case FilteringBehaviorReason::MANUAL:
         return IDS_SUPERVISED_USER_INTERSTITIAL_MESSAGE_MANUAL;
-      default:
-        NOTREACHED();
+      case FilteringBehaviorReason::FILTER_DISABLED:
+        NOTREACHED() << "When filtering is disabled, nothing is blocked";
     }
   }
   return IDS_CHILD_BLOCK_INTERSTITIAL_MESSAGE_V2;
 }
 
-std::string BuildErrorPageHtml(bool allow_access_requests,
-                               std::optional<Custodian> custodian,
-                               std::optional<Custodian> second_custodian,
-                               FilteringBehaviorReason reason,
-                               const std::string& app_locale,
-                               bool already_sent_remote_request,
-                               bool is_main_frame,
-                               std::optional<float> ios_font_size_multiplier) {
+#if BUILDFLAG(IS_ANDROID)
+std::string BuildErrorPageHtmlWithoutApprovals(const GURL& url,
+                                               const std::string& app_locale) {
+  base::Value::Dict load_time_data;
+  load_time_data.Set("blockPageTitle",
+                     l10n_util::GetStringUTF8(IDS_BLOCK_INTERSTITIAL_TITLE));
+  load_time_data.Set("blockPageHeader",
+                     l10n_util::GetStringUTF8(IDS_BLOCK_INTERSTITIAL_TITLE));
+  load_time_data.Set("blockPageMessage",
+                     l10n_util::FormatString(
+                         l10n_util::GetStringUTF16(IDS_NO_APPROVALS_MESSAGE),
+                         {base::UTF8ToUTF16(url.host())}, nullptr));
+  load_time_data.Set("learnMore", l10n_util::GetStringUTF8(
+                                      IDS_NO_APPROVALS_LEARN_MORE_BUTTON));
+  load_time_data.Set("backButton",
+                     l10n_util::GetStringUTF8(IDS_NO_APPROVALS_BACK_BUTTON));
+
+  webui::SetLoadTimeDataDefaults(app_locale, &load_time_data);
+
+  std::string html =
+      ui::ResourceBundle::GetSharedInstance().LoadDataResourceString(
+          IDR_SUPERVISED_USER_BLOCK_INTERSTITIAL_NO_APPROVALS_HTML);
+  webui::AppendWebUiCssTextDefaults(&html);
+  std::string error_html = webui::GetI18nTemplateHtml(html, load_time_data);
+  return error_html;
+}
+#endif  // BUILDFLAG(IS_ANDROID)
+
+std::string BuildErrorPageHtmlWithApprovals(
+    bool allow_access_requests,
+    std::optional<Custodian> custodian,
+    std::optional<Custodian> second_custodian,
+    FilteringBehaviorReason reason,
+    const std::string& app_locale,
+    bool already_sent_remote_request,
+    bool is_main_frame,
+    std::optional<float> ios_font_size_multiplier) {
   base::Value::Dict load_time_data;
   load_time_data.Set("blockPageTitle",
                      l10n_util::GetStringUTF8(IDS_BLOCK_INTERSTITIAL_TITLE));

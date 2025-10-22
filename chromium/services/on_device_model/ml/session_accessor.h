@@ -39,10 +39,16 @@ class COMPONENT_EXPORT(ON_DEVICE_MODEL_ML) SessionAccessor {
   ChromeMLCancelFn Append(on_device_model::mojom::AppendOptionsPtr options,
                           ChromeMLContextSavedFn context_saved_fn);
   ChromeMLCancelFn Generate(on_device_model::mojom::GenerateOptionsPtr options,
+                            ChromeMLConstraint constraint,
                             ChromeMLExecutionOutputFn output_fn);
   void Score(const std::string& text, ChromeMLScoreFn score_fn);
+  void GetProbabilitiesBlocking(const std::string& input,
+                                ChromeMLGetProbabilitiesBlockingFn get_prob_fn);
   void SizeInTokens(on_device_model::mojom::InputPtr input,
                     ChromeMLSizeInTokensFn size_in_tokens_fn);
+  void CreateAsrStream(on_device_model::mojom::AsrStreamOptionsPtr options,
+                       const ChromeMLASRStreamOutputFn output_fn);
+  void AsrAddAudioChunk(on_device_model::mojom::AudioDataPtr data);
 
  private:
   class Canceler;
@@ -61,16 +67,25 @@ class COMPONENT_EXPORT(ON_DEVICE_MODEL_ML) SessionAccessor {
                       scoped_refptr<Canceler> canceler);
   void GenerateInternal(
       on_device_model::mojom::GenerateOptionsPtr generate_options,
+      ChromeMLConstraint constraint,
       ChromeMLExecutionOutputFn output_fn,
       scoped_refptr<Canceler> canceler);
   void ScoreInternal(const std::string& text, ChromeMLScoreFn score_fn);
+  void GetProbabilitiesBlockingInternal(
+      const std::string& input,
+      ChromeMLGetProbabilitiesBlockingFn get_prob_fn);
   void SizeInTokensInternal(on_device_model::mojom::InputPtr input,
                             ChromeMLSizeInTokensFn size_in_tokens_fn);
+  void CreateAsrStreamInternal(
+      on_device_model::mojom::AsrStreamOptionsPtr asr_options,
+      const ChromeMLASRStreamOutputFn output_fn);
+  void AsrAddAudioChunkInternal(on_device_model::mojom::AudioDataPtr data);
 
   const raw_ref<const ChromeML> chrome_ml_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
   ChromeMLModel model_;
   ChromeMLSession session_ = 0;
+  ChromeMLASRStream asr_stream_ = 0;
 };
 
 }  // namespace ml

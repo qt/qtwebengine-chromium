@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import dataclasses
-
-from typing import Tuple
-from typing_extensions import Self
+from typing import TYPE_CHECKING
 
 from crossbench.benchmarks.loading.point import Point
+
+if TYPE_CHECKING:
+  from typing_extensions import Self
 
 SCROLL_BOUNDS_OFFSET_FACTOR: float = 0.1
 
@@ -40,7 +41,7 @@ class DisplayRectangle:
         Point(self.origin.x + other.origin.x, self.origin.y + other.origin.y),
         self.width, self.height)
 
-  def get_scrollable_area(self) -> Tuple[int, int, int]:
+  def get_scrollable_area(self) -> tuple[int, int, int]:
     scrollable_top = self.top
     scrollable_bottom = self.bottom
     max_swipe_distance = scrollable_bottom - scrollable_top

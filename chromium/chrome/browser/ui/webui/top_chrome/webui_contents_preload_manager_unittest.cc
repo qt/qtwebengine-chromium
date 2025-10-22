@@ -16,6 +16,7 @@
 #include "chrome/browser/ui/webui/top_chrome/preload_context.h"
 #include "chrome/browser/ui/webui/top_chrome/top_chrome_web_ui_controller.h"
 #include "chrome/browser/ui/webui/top_chrome/webui_contents_preload_manager_test_api.h"
+#include "chrome/browser/ui/webui/top_chrome/webui_contents_preload_state.h"
 #include "chrome/common/webui_url_constants.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
@@ -73,6 +74,18 @@ class WebUIContentsPreloadManagerTest : public ChromeRenderViewHostTestHarness {
     // Clearing it from the preload manager to destroy it.
     test_api().SetPreloadCandidateSelector(nullptr);
     ChromeRenderViewHostTestHarness::TearDown();
+  }
+
+  // Fast forwards the time to trigger the preload.
+  // Preloading is triggered by either:
+  // 1. A delay deadline is reached.
+  // 2. The WebContents specified as the busy WebContents to watch emits the
+  // first non-empty paint.
+  // Since in unit tests the web contents never actually paint, the only way to
+  // trigger the preload is to fast forward the time.
+  void FastForwardToTriggerPreload() {
+    constexpr base::TimeDelta deadline = base::Seconds(3);
+    task_environment()->FastForwardBy(deadline);
   }
 
   WebUIContentsPreloadManager* preload_manager() {
@@ -134,6 +147,7 @@ TEST_F(WebUIContentsPreloadManagerTest,
   std::unique_ptr<content::BrowserContext> browser_context =
       std::make_unique<TestingProfile>();
   preload_manager()->Request(GURL("about:blank"), browser_context.get());
+  FastForwardToTriggerPreload();
   EXPECT_NE(preload_manager()->preloaded_web_contents(), nullptr);
 }
 
@@ -233,6 +247,7 @@ TEST_F(WebUIContentsPreloadManagerTest, RequestNavigation) {
     GURL different_url("about:blank");
     EXPECT_NE(url_to_preload,
               different_url);  // Ensure the URL is indeed different.
+    FastForwardToTriggerPreload();
     content::WebContents* preloaded_web_contents =
         preload_manager()->preloaded_web_contents();
 
@@ -262,11 +277,12 @@ TEST_F(WebUIContentsPreloadManagerTest, IsReadyToShow) {
   EXPECT_NE(result.web_contents, nullptr);
   EXPECT_FALSE(result.is_ready_to_show);
 
+  FastForwardToTriggerPreload();
   content::WebContents* preloaded_web_contents =
       preload_manager()->preloaded_web_contents();
   ASSERT_NE(preloaded_web_contents, nullptr);
 
-  // Simulate the WebUI calls into ShowUI().
+  FastForwardToTriggerPreload();
   auto* webui_controller = static_cast<TopChromeWebUIController*>(
       preloaded_web_contents->GetWebUI()->GetController());
   ASSERT_NE(webui_controller, nullptr);
@@ -309,6 +325,8 @@ TEST_F(WebUIContentsPreloadManagerTest, CandidateSelector) {
   RequestResult result =
       preload_manager()->Request(url1, browser_context.get());
   EXPECT_EQ(result.web_contents->GetVisibleURL(), url1);
+
+  FastForwardToTriggerPreload();
   EXPECT_EQ(preload_manager()->preloaded_web_contents()->GetVisibleURL(), url2);
 }
 
@@ -331,12 +349,14 @@ TEST_F(WebUIContentsPreloadManagerTest, PreloadOnWebUIDestroy) {
   RequestResult result =
       preload_manager()->Request(url1, browser_context.get());
   EXPECT_EQ(result.web_contents->GetVisibleURL(), url1);
+  FastForwardToTriggerPreload();
   EXPECT_EQ(preload_manager()->preloaded_web_contents()->GetVisibleURL(), url2);
 
   // Destroy URL1. Since URL1 is preferred over URL2, URL1 should be preloaded.
   ON_CALL(preload_candidate_selector(), GetURLToPreload(_))
       .WillByDefault(Return(url1));
   result.web_contents.reset();
+  FastForwardToTriggerPreload();
   EXPECT_EQ(preload_manager()->preloaded_web_contents()->GetVisibleURL(), url1);
 }
 
@@ -361,6 +381,7 @@ TEST_F(WebUIContentsPreloadManagerTest, RequestURLHasPath) {
 
   // Case 2: request a WebUI that is not preloaded.
   {
+    FastForwardToTriggerPreload();
     EXPECT_EQ(preload_manager()->preloaded_web_contents()->GetVisibleURL(),
               url1);
     const GURL url2_with_path = url2.Resolve("path");
@@ -399,7 +420,7 @@ TEST_F(WebUIContentsPreloadManagerTest, DelayPreloadUntilDeadline) {
   // Not yet preload.
   EXPECT_EQ(preload_manager()->preloaded_web_contents(), nullptr);
   // Fast forward time to pass deadline.
-  task_environment()->FastForwardBy(deadline);
+  FastForwardToTriggerPreload();
   // Now it's preloaded.
   EXPECT_NE(preload_manager()->preloaded_web_contents(), nullptr);
 }
@@ -453,7 +474,7 @@ TEST_F(WebUIContentsPreloadManagerTest, PendingDelayCancelDueToProfileDestroy) {
   test_web_contents.reset();
   browser_context.reset();
   // Fast forward time to pass deadline.
-  task_environment()->FastForwardBy(deadline);
+  FastForwardToTriggerPreload();
   // Still not preloaded.
   EXPECT_EQ(preload_manager()->preloaded_web_contents(), nullptr);
 }
@@ -478,13 +499,10 @@ TEST_F(WebUIContentsPreloadManagerTest, DelayPreloadFireOnce) {
       ->TestDidFirstVisuallyNonEmptyPaint();
   // Now it's preloaded.
   EXPECT_NE(preload_manager()->preloaded_web_contents(), nullptr);
-
-  // Clear preloaded contents.
   test_api().SetPreloadedContents(nullptr);
-  EXPECT_EQ(preload_manager()->preloaded_web_contents(), nullptr);
 
   // Fast forward to pass deadline should not trigger preload.
-  task_environment()->FastForwardBy(deadline);
+  FastForwardToTriggerPreload();
   EXPECT_EQ(preload_manager()->preloaded_web_contents(), nullptr);
 
   // == 2nd preload ==
@@ -495,13 +513,35 @@ TEST_F(WebUIContentsPreloadManagerTest, DelayPreloadFireOnce) {
   // Fast forward to pass deadline should trigger preload.
   task_environment()->FastForwardBy(deadline);
   EXPECT_NE(preload_manager()->preloaded_web_contents(), nullptr);
-
-  // Clear preloaded contents.
   test_api().SetPreloadedContents(nullptr);
-  EXPECT_EQ(preload_manager()->preloaded_web_contents(), nullptr);
 
   // The first non-empty paint should not trigger preload.
   content::WebContentsTester::For(test_web_contents.get())
       ->TestDidFirstVisuallyNonEmptyPaint();
   EXPECT_EQ(preload_manager()->preloaded_web_contents(), nullptr);
+}
+
+// Tests that SetPreloadedContents() does not lead to a new
+// PendingPreload due to the destruction of old preloaded
+// contents.
+TEST_F(WebUIContentsPreloadManagerTest,
+       NoPendingPreloadAfterSetPreloadedContents) {
+  std::unique_ptr<content::BrowserContext> browser_context =
+      std::make_unique<TestingProfile>();
+
+  // First, preload a WebContents.
+  test_api().MaybePreloadForBrowserContext(browser_context.get());
+  ASSERT_NE(preload_manager()->preloaded_web_contents(), nullptr);
+  base::WeakPtr<content::WebContents> old_preloaded_contents =
+      preload_manager()->preloaded_web_contents()->GetWeakPtr();
+
+  // Then, simulate setting a new preloaded contents.
+  std::unique_ptr<content::WebContents> new_preloaded_contents =
+      content::WebContentsTester::CreateTestWebContents(browser_context.get(),
+                                                        nullptr);
+  WebUIContentsPreloadState::GetOrCreateForWebContents(
+      new_preloaded_contents.get());
+  test_api().SetPreloadedContents(std::move(new_preloaded_contents));
+  EXPECT_TRUE(old_preloaded_contents.WasInvalidated());
+  EXPECT_FALSE(test_api().HasPendingPreload());
 }

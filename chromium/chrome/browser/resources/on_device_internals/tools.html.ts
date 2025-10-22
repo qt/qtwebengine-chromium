@@ -12,6 +12,7 @@ export function getHtml(this: ToolsElement) {
 <div class="performance-class">
   Device performance class: <strong>${this.performanceClassText_}</strong>
 </div>
+
 <cr-input id="modelInput" label="Model directory" placeholder="/tmp/model"
     ?disabled="${this.isLoading_()}"
     error-message="${this.error_}" ?invalid="${this.error_.length}" autofocus>
@@ -19,8 +20,18 @@ export function getHtml(this: ToolsElement) {
       @click="${this.onLoadClick_}">
     Load
   </cr-button>
+  <cr-button slot="suffix" ?disabled="${this.isLoading_()}"
+      @click="${this.onLoadDefaultClick_}">
+    Load Default
+  </cr-button>
 </cr-input>
+
 <div class="model-options">
+  <cr-checkbox ?hidden="${!this.showPlatformModelCheckbox_}"
+      ?checked="${this.usePlatformModel_}"
+      @checked-changed="${this.onUsePlatformModelChanged_}">
+    Use ChromeOS Platform Model
+  </cr-checkbox>
   <select id="performanceHintSelect" class="md-select"
       value="${this.performanceHint_}" @change="${this.onPerformanceHintChange_}">
     <option value="kHighestQuality">Highest Quality</option>
@@ -58,8 +69,7 @@ export function getHtml(this: ToolsElement) {
       @value-changed="${this.onTemperatureChanged_}">
   </cr-input>
 </div>
-<cr-textarea id="textInput"
-    ?disabled="${!this.canEnterInput_()}" label="Input"
+<cr-textarea type="text" id="textInput" label="Input"
     placeholder="Place control tokens {$SYSTEM, $MODEL, $USER, $END} on their own lines, in between lines of text."
     .value="${this.text_}" @value-changed="${this.onTextChanged_}">
 </cr-textarea>
@@ -91,7 +101,7 @@ export function getHtml(this: ToolsElement) {
         <cr-icon icon="cr:add" slot="prefix-icon"></cr-icon>
         Add audio
       </cr-button>
-      <input id="audioInput" type="file">
+      <input id="audioInput" type="file" accept="audio/*">
     </div>
     ${this.audioFile_ ? html`
       <cr-button class="floating-button" @click="${this.onRemoteAudioClick_}">

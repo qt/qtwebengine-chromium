@@ -9,7 +9,6 @@ import atexit
 import collections.abc
 import contextlib
 import dataclasses
-import datetime as dt
 import functools
 import inspect
 import logging
@@ -24,34 +23,34 @@ import sys
 import tempfile
 import urllib.error
 import urllib.request
-from typing import (TYPE_CHECKING, Any, Callable, Dict, Generator, Iterable,
-                    Iterator, List, Mapping, Optional, Sequence, Tuple, Type,
-                    TypeAlias)
+from typing import (TYPE_CHECKING, Any, Callable, Generator, Iterable,
+                    Iterator, Mapping, Optional, Sequence, Type)
 
+import google.cloud.storage as gcloud_storage
 import psutil
 
 from crossbench import parse
 from crossbench import path as pth
 from crossbench.helper import wait
+from crossbench.parse import ObjectParser
 from crossbench.plt import proc_helper
 from crossbench.plt.arch import MachineArch
 from crossbench.plt.bin import Binary
+from crossbench.plt.port_manager import (LocalPortManager, PortManager,
+                                         PortScope)
 from crossbench.plt.remote import RemotePopen
 
 if TYPE_CHECKING:
-  from asyncio.subprocess import Process
-  from subprocess import Popen
+  import datetime as dt
+
+  import google.cloud.storage.blob as gcloud_blob
 
   from crossbench.plt.display_info import DisplayInfo
+  from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.plt.signals import AnySignals, Signals
+  from crossbench.plt.types import CmdArg, ProcessLike, TupleCmdArgs
   from crossbench.types import JsonDict
-  ProcessLike: TypeAlias = Popen | Process | int
 
-CmdArg: TypeAlias = pth.AnyPathLike
-SequenceCmdArgs: TypeAlias = Sequence[CmdArg]
-ListCmdArgs: TypeAlias = List[CmdArg]
-TupleCmdArgs: TypeAlias = Tuple[CmdArg, ...]
-CmdArgs: TypeAlias = ListCmdArgs | TupleCmdArgs
 
 class Environ(collections.abc.MutableMapping, metaclass=abc.ABCMeta):
   pass
@@ -106,8 +105,12 @@ class Platform(abc.ABC):
   # pylint: disable=locally-disabled, redefined-builtin
 
   def __init__(self) -> None:
-    self._binary_lookup_override: Dict[str, pth.AnyPath] = {}
+    self._binary_lookup_override: dict[str, pth.AnyPath] = {}
     self._cache_dir_root: pth.AnyPath | None = None
+    self._default_port_manager: PortManager = self._create_port_manager()
+
+  def _create_port_manager(self) -> PortManager:
+    return LocalPortManager(self)
 
   def assert_is_local(self) -> None:
     if self.is_local:
@@ -199,7 +202,7 @@ class Platform(abc.ABC):
     return self.machine == MachineArch.ARM_64
 
   @property
-  def key(self) -> Tuple[str, str]:
+  def key(self) -> tuple[str, str]:
     return (self.name, str(self.machine))
 
   @property
@@ -238,7 +241,7 @@ class Platform(abc.ABC):
   @property
   def is_battery_powered(self) -> bool:
     self.assert_is_local()
-    if not psutil.sensors_battery:
+    if not psutil.sensors_battery: # type: ignore
       return False
     status = psutil.sensors_battery()
     if not status:
@@ -246,7 +249,7 @@ class Platform(abc.ABC):
     return not status.power_plugged
 
   @functools.lru_cache(maxsize=1)
-  def cpu_details(self) -> Dict[str, Any]:
+  def cpu_details(self) -> dict[str, Any]:
     self.assert_is_local()
     details = {
         "physical cores":
@@ -284,7 +287,7 @@ class Platform(abc.ABC):
 
 
   @functools.lru_cache(maxsize=1)
-  def system_details(self) -> Dict[str, Any]:
+  def system_details(self) -> dict[str, Any]:
     return {
         "machine": str(self.machine),
         "os": self.os_details(),
@@ -311,7 +314,7 @@ class Platform(abc.ABC):
         "bits": 64 if sys.maxsize > 2**32 else 32,
     }
 
-  def display_details(self) -> Tuple[DisplayInfo, ...]:
+  def display_details(self) -> tuple[DisplayInfo, ...]:
     # TODO: implement on more platforms
     return tuple()
 
@@ -321,6 +324,10 @@ class Platform(abc.ABC):
 
   def is_thermal_throttled(self) -> bool:
     return self.get_relative_cpu_speed() < 1
+
+  @abc.abstractmethod
+  def uptime(self) -> dt.timedelta:
+    pass
 
   def disk_usage(self, path: pth.AnyPathLike) -> psutil._common.sdiskusage:
     return psutil.disk_usage(str(self.local_path(path)))
@@ -387,6 +394,10 @@ class Platform(abc.ABC):
   @abc.abstractmethod
   def app_version(self, app_or_bin: pth.AnyPathLike) -> str:
     pass
+
+  @property
+  def is_headless(self) -> bool:
+    return not self.has_display
 
   @property
   def has_display(self) -> bool:
@@ -503,12 +514,12 @@ class Platform(abc.ABC):
       pass
 
   def processes(self,
-                attrs: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+                attrs: Optional[list[str]] = None) -> list[dict[str, Any]]:
     # TODO(cbruni): support remote platforms
     assert self.is_local, "Only local platform supported"
     return self._collect_process_dict(psutil.process_iter(attrs=attrs))
 
-  def process_running(self, process_name_list: List[str]) -> Optional[str]:
+  def process_running(self, process_name_list: list[str]) -> Optional[str]:
     self.assert_is_local()
     # TODO(cbruni): support remote platforms
     for proc in psutil.process_iter(attrs=["name"]):
@@ -521,7 +532,7 @@ class Platform(abc.ABC):
 
   def process_children(self,
                        parent_pid: int,
-                       recursive: bool = False) -> List[Dict[str, Any]]:
+                       recursive: bool = False) -> list[dict[str, Any]]:
     self.assert_is_local()
     # TODO(cbruni): support remote platforms
     try:
@@ -531,8 +542,8 @@ class Platform(abc.ABC):
     return self._collect_process_dict(process.children(recursive=recursive))
 
   def _collect_process_dict(
-      self, process_iterator: Iterable[psutil.Process]) -> List[Dict[str, Any]]:
-    process_info_list: List[Dict[str, Any]] = []
+      self, process_iterator: Iterable[psutil.Process]) -> list[dict[str, Any]]:
+    process_info_list: list[dict[str, Any]] = []
     for process in process_iterator:
       try:
         process_info_list.append(process.as_dict())
@@ -540,7 +551,7 @@ class Platform(abc.ABC):
         pass
     return process_info_list
 
-  def process_info(self, process: ProcessLike) -> Optional[Dict[str, Any]]:
+  def process_info(self, process: ProcessLike) -> Optional[dict[str, Any]]:
     self.assert_is_local()
     # TODO(cbruni): support remote platforms
     try:
@@ -549,7 +560,16 @@ class Platform(abc.ABC):
     except proc_helper.PROCESS_NOT_FOUND_EXCEPTIONS:
       return None
 
-  def foreground_process(self) -> Optional[Dict[str, Any]]:
+  def process_meminfo(self, process_name: str,
+                      timeout: dt.timedelta) -> list[ProcessMeminfo]:
+    del process_name, timeout
+    raise NotImplementedError(f"process_meminfo not implemented for {self}.")
+
+  def system_meminfo(self, timeout: dt.timedelta) -> dict[str, float]:
+    del timeout
+    raise NotImplementedError(f"system_meminfo not implemented for {self}.")
+
+  def foreground_process(self) -> Optional[dict[str, Any]]:
     return None
 
   @property
@@ -557,29 +577,9 @@ class Platform(abc.ABC):
     self.assert_is_local()
     return self.path(tempfile.gettempdir())
 
-  def port_forward(self, local_port: int, remote_port: int) -> int:
-    """ Forwards a device remote_port to a local port."""
-    if remote_port != local_port:
-      raise ValueError("Cannot forward a remote port on a local platform.")
-    parse.NumberParser.port_number(local_port, "local_port")
-    self.assert_is_local()
-    return local_port
-
-  def stop_port_forward(self, local_port: int) -> None:
-    del local_port
-    self.assert_is_local()
-
-  def reverse_port_forward(self, remote_port: int, local_port: int) -> int:
-    """ Forwards a local port to a device port."""
-    if remote_port != local_port:
-      raise ValueError("Cannot forward a remote port on a local platform.")
-    parse.NumberParser.port_number(remote_port, "remote_port")
-    self.assert_is_local()
-    return remote_port
-
-  def stop_reverse_port_forward(self, remote_port: int) -> None:
-    del remote_port
-    self.assert_is_local()
+  @property
+  def ports(self) -> PortScope:
+    return self._default_port_manager.scope
 
   def is_port_used(self, port: int) -> bool:
     self.assert_is_local()
@@ -634,16 +634,20 @@ class Platform(abc.ABC):
     """Hiss! I return the file contents as bytes."""
     return self.local_path(file).read_bytes()
 
-  def get_file_contents(self,
-                        file: pth.AnyPathLike,
-                        encoding: str = "utf-8") -> str:
+  def read_text(self, file: pth.AnyPathLike, encoding: str = "utf-8") -> str:
     return self.cat(file, encoding)
 
-  def set_file_contents(self,
-                        file: pth.AnyPathLike,
-                        data: str,
-                        encoding: str = "utf-8") -> None:
+  def write_text(self,
+                 file: pth.AnyPathLike,
+                 data: str,
+                 encoding: str = "utf-8") -> None:
     self.local_path(file).write_text(data, encoding)
+
+  def read_bytes(self, file: pth.AnyPathLike) -> bytes:
+    return self.cat_bytes(file)
+
+  def write_bytes(self, file: pth.AnyPathLike, data: bytes) -> None:
+    self.local_path(file).write_bytes(data)
 
   def pull(self, from_path: pth.AnyPath,
            to_path: pth.LocalPath) -> pth.LocalPath:
@@ -753,37 +757,41 @@ class Platform(abc.ABC):
             exist_ok: bool = True) -> None:
     self.local_path(path).mkdir(parents=parents, exist_ok=exist_ok)
 
+  def mkdtemp(self,
+              suffix: Optional[str] = None,
+              prefix: Optional[str] = None,
+              dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
+    self.assert_is_local()
+    return self.path(tempfile.mkdtemp(suffix=suffix, prefix=prefix, dir=dir))
+
+  def mktemp(self,
+             suffix: Optional[str] = None,
+             prefix: Optional[str] = None,
+             dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
+    self.assert_is_local()
+    fd, name = tempfile.mkstemp(suffix=suffix, prefix=prefix, dir=dir)
+    os.close(fd)
+    return self.path(name)
+
   @contextlib.contextmanager
   def NamedTemporaryFile(  # pylint: disable=invalid-name
       self,
+      suffix: Optional[str] = None,
       prefix: Optional[str] = None,
       dir: Optional[pth.AnyPathLike] = None):
-    tmp_file: pth.AnyPath = self.mktemp(prefix, dir)
+    tmp_file: pth.AnyPath = self.mktemp(suffix, prefix, dir)
     try:
       yield tmp_file
     finally:
       self.rm(tmp_file, missing_ok=True)
 
-  def mkdtemp(self,
-              prefix: Optional[str] = None,
-              dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
-    self.assert_is_local()
-    return self.path(tempfile.mkdtemp(prefix=prefix, dir=dir))
-
-  def mktemp(self,
-             prefix: Optional[str] = None,
-             dir: Optional[pth.AnyPathLike] = None) -> pth.AnyPath:
-    self.assert_is_local()
-    fd, name = tempfile.mkstemp(prefix=prefix, dir=dir)
-    os.close(fd)
-    return self.path(name)
-
   @contextlib.contextmanager
   def TemporaryDirectory(  # pylint: disable=invalid-name
       self,
+      suffix: Optional[str] = None,
       prefix: Optional[str] = None,
       dir: Optional[pth.AnyPathLike] = None):
-    tmp_dir = self.mkdtemp(prefix, dir)
+    tmp_dir = self.mkdtemp(suffix, prefix, dir)
     try:
       yield tmp_dir
     finally:
@@ -813,6 +821,9 @@ class Platform(abc.ABC):
   def file_size(self, path: pth.AnyPathLike) -> int:
     # TODO: support remotely
     return self.local_path(path).stat().st_size
+
+  def last_modified(self, path: pth.AnyPathLike) -> float:
+    return self.local_path(path).stat().st_mtime
 
   def sh_stdout(self,
                 *args: CmdArg,
@@ -933,6 +944,23 @@ class Platform(abc.ABC):
         f"Downloading {url} failed. Downloaded file {path} doesn't exist.")
     return path
 
+  def download_gcs_file(self, gcs_url: str, local_path: pth.LocalPath) -> None:
+    blob: gcloud_blob.Blob = self.prepare_gcs_request(gcs_url)
+    local_path.parent.mkdir(parents=True, exist_ok=True)
+    blob.download_to_filename(str(local_path))
+
+  def prepare_gcs_request(self, gcs_url: str) -> gcloud_blob.Blob:
+    parsed = ObjectParser.url(gcs_url, schemes=("gs",))
+    bucket_name = parsed.netloc
+    object_name = parsed.path.lstrip("/")
+    if not bucket_name:
+      raise ValueError(f"Missing bucket name in URL: {gcs_url}")
+    client = gcloud_storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob: gcloud_blob.Blob = bucket.blob(object_name)
+    blob.reload()
+    return blob
+
   def concat_files(self,
                    inputs: Iterable[pth.LocalPath],
                    output: pth.LocalPath,
@@ -955,6 +983,12 @@ class Platform(abc.ABC):
     raise NotImplementedError(
         "'get_main_display_brightness' is only available on MacOS for now")
 
+  def set_display_refresh_rate(self,
+                               refresh_rate: int,
+                               retry: int = 3) -> tuple[bool, str]:
+    raise NotImplementedError(
+        "'set_display_refresh_rate' is only available on MacOS for now")
+
   def check_autobrightness(self) -> bool:
     raise NotImplementedError(
         "'check_autobrightness' is only available on MacOS for now")
@@ -964,7 +998,7 @@ class Platform(abc.ABC):
     raise NotImplementedError(
         "'screenshot' is only available on MacOS for now")
 
-  def display_resolution(self) -> Tuple[int, int]:
+  def display_resolution(self) -> tuple[int, int]:
     raise NotImplementedError(
         "'display_resolution' is only available on Android and ChromeOS for "
         "now")

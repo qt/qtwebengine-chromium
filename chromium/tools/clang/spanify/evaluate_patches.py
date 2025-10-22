@@ -10,14 +10,24 @@
 # http://go/autospan-tracker
 # ----------------------------------------------------------------------------
 
+from datetime import datetime
+import getpass
 import os
 import random
-import shutil
-import subprocess
-import getpass
-import sys
 import re
-from datetime import datetime
+import subprocess
+import sys
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
+from googleapiclient.http import MediaFileUpload
+
+# common gn args for spanify project scripts.
+from gnconfigs import GnConfigs, GenerateGnTarget
+
 
 # To install the required dependencies to interact with the Google Sheets API:
 # ```
@@ -32,12 +42,6 @@ from datetime import datetime
 # argument which will set the limit of patches to evaluate. Default is 100.
 # ```
 
-from google.auth.transport.requests import Request
-from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import MediaFileUpload
 
 def run(command, error_message=None, exit_on_error=True):
     """
@@ -116,7 +120,7 @@ def appendRow(spreadsheet, values):
                 "values": [values]
             },
             valueInputOption="USER_ENTERED",
-        ).execute()
+        ).execute(num_retries=5)
 
     except HttpError as err:
         print(f"appendRow failed: {err}", file=sys.stderr)
@@ -163,15 +167,40 @@ def uploadScratch(creds, file_name, scratch_dir):
         print(f"Failed to upload scratch: {e}", file=sys.stderr)
 
 
-def writeCommonArgs(f):
-    f.write("target_os = \"linux\"\n")
-    f.write("clang_use_chrome_plugins = false\n")
-    f.write("dcheck_always_on = true\n")
-    f.write("is_chrome_branded = true\n")
-    f.write("is_debug = false\n")
-    f.write("is_official_build = true\n")
-    f.write("chrome_pgo_phase = 0\n")
-    f.write("force_enable_raw_ptr_exclusion = true\n")
+def ReportCaseResult(scratch_dir, result, spreadsheet, today, index, patches,
+                     user, error_msg, diff, final_file):
+    with open(scratch_dir + "/evaluation.csv", "a") as f:
+        f.write(f"{index}, {result}, {error_msg}\n")
+    try:
+        appendRow(spreadsheet, [
+            today,
+            index,
+            len(patches),
+            result,
+            error_msg,
+            diff,
+            user,
+        ])
+    except Exception as e:
+        try:
+            appendRow(spreadsheet, [
+                today,
+                index,
+                len(patches),
+                result,
+                f"\"Failed to upload to spreadsheet: {str(e)}\"",
+                f"diff_len: {len(diff)} error_msg_len: {len(error_msg)}",
+                user,
+            ])
+        except Exception as err:
+            print(f"Failed to appendRow for simplified data spreadsheet: {err}",
+                  file=sys.stderr)
+
+        print(f"Failed to appendRow but uploaded error to spreadsheet: {e}",
+              file=sys.stderr)
+
+    with open(scratch_dir + f"/patch_{index}.{result}", "w+") as f:
+        f.write(final_file)
 
 
 today = datetime.now().strftime("%Y/%m/%d")
@@ -180,7 +209,16 @@ scratch_dir = os.path.expanduser("~/scratch")
 creds = getGoogleCreds()
 spreadsheet = getSpreadsheet(creds)
 user = getpass.getuser()
+platform = "linux"
 
+# Curry ReportCaseResult to use the variables above to simplify the code below.
+# Preventing code duplication and mistakes.
+report_success = lambda error_msg, diff, final_file: ReportCaseResult(
+        scratch_dir, "pass", spreadsheet, today, index, patches, user,
+        error_msg, diff, final_file)
+report_failure = lambda error_msg, diff, final_file: ReportCaseResult(
+        scratch_dir, "fail", spreadsheet, today, index, patches, user,
+        error_msg, diff, final_file)
 
 print("Running evaluate_patches.py...")
 
@@ -193,26 +231,29 @@ run("git reset --hard origin/main")
 # patches to avoid recompiling the entire project for each patch.
 run("gclient sync -fD", exit_on_error=False)
 
+if len(sys.argv) > 2:
+    # If you pass both a patch limit override and a second argument, use the
+    # second argument as the platform to rewrite-multiple-platforms. This
+    # allows doing something like:
+    # "evaluate_patches.py 3000 android"
+    # To override the default Linux platform and do android instead.
+    platform = sys.argv[2]
+
 try:
     run("gcertstatus --check_remaining=3h --nocheck_ssh")
     print("Remote exec available. Enabling.")
-    with open("out/linux/args.gn", "w") as f:
-        writeCommonArgs(f)
-        f.write("use_remoteexec = true\n")
-        f.write("use_siso = true\n")
+    GenerateGnTarget(platform, GnConfigs(True).min_all_platforms[platform])
 except:
     print("Remote exec not available. Disabling.")
-    with open("out/linux/args.gn", "w") as f:
-        writeCommonArgs(f)
-        f.write("use_remoteexec = false\n")
-        f.write("use_reclient = false\n")
-        f.write("use_siso = true\n")
+    GenerateGnTarget(platform, GnConfigs(False).min_all_platforms[platform])
 
 # We've updated the args and need to generate new build files.
-run("gn gen out/linux", "Failed to generate out/linux.")
+run(f"gn gen out/{platform}", f"Failed to generate out/{platform}.")
 
 # Produce a full rewrite, and store individual patches below ~/scratch/patch_*
-run("./tools/clang/spanify/rewrite-multiple-platforms.sh")
+rewrite_script = "./tools/clang/spanify/rewrite-multiple-platforms.sh"
+print(f"${rewrite_script} --platform=${platform}")
+run(f"{rewrite_script} --platform={platform}")
 
 run("git reset --hard origin/main")  # Restore source code.
 run("gclient sync -fD", exit_on_error=False)  # Restore compiler.
@@ -241,7 +282,7 @@ with open(scratch_dir + "/evaluation.csv", "w+") as f:
     f.write("patch, status, error_msg\n")
 
 # Perform a clean build to ensure a valid state for the incremental builds.
-run("autoninja -C out/linux", "Failed to build the project.")
+run(f"autoninja -C out/{platform}", "Failed to build the project.")
 
 # Create and evaluate patches
 try:
@@ -267,7 +308,7 @@ try:
         try:
             result = subprocess.run(f"cat ~/scratch/{patch} " +
                                     " | tools/clang/scripts/apply_edits.py" +
-                                    " -p ./out/linux/",
+                                    f" -p ./out/{platform}/",
                                     shell=True,
                                     check=True,
                                     capture_output=True,
@@ -275,26 +316,15 @@ try:
         except subprocess.CalledProcessError as e:
             error_msg = ("\"" + str(e) + " !!! exception(stderr): " +
                          str(e.stderr) + "\"")
-            with open(scratch_dir + "/evaluation.csv", "a") as f:
-                f.write(f"{index}, fail, {error_msg}\n")
 
             run(f"git diff  > ~/scratch/patch_{index}.diff")
             diff = open(scratch_dir + f"/patch_{index}.diff").read()
 
-            appendRow(spreadsheet, [
-                today,
-                index,
-                len(patches),
-                "fail",
-                error_msg,
-                diff,
-                user,
-            ])
-            run("git restore .", "Failed to restore after failed patch.")
+            final_file = str(e.stderr) + "\n" + str(e.stdout)
 
-            with open(scratch_dir + f"/patch_{index}.fail", "w+") as f:
-                f.write(str(e.stderr))
-                f.write(str(e.stdout))
+            report_failure(error_msg, diff, final_file)
+
+            run("git restore .", "Failed to restore after failed patch.")
             continue
 
         run("git cl format")
@@ -308,21 +338,10 @@ try:
         # Sometimes we generate patches that apply_edits will skip (for example
         # third_party) thus don't treat failure to commit as an error.
         if not run("git commit -F commit_message.txt", exit_on_error=False):
-            with open(scratch_dir + "/evaluation.csv", "a") as f:
-                f.write(f"{index}, fail, {error_msg}\n")
-
             # We fail when there is no diff get the replacements instead.
             diff = open(scratch_dir + f"/patch_{index}.txt").read()
 
-            appendRow(spreadsheet, [
-                today,
-                index,
-                len(patches),
-                "fail",
-                "Failed to commit diff",
-                diff,
-                user,
-            ])
+            report_failure("Failed to commit diff", diff, "")
             continue
 
         # Serialize changes
@@ -333,13 +352,14 @@ try:
         print(f"Evaluating patch {index}/{len(patches)}")
         print("Building...")
 
-        result = subprocess.run("time autoninja -C out/linux",
+        result = subprocess.run(f"time autoninja -C out/{platform}",
                                 shell=True,
                                 capture_output=True,
                                 text=True)
         print(result.stdout)
         print(result.stderr)
 
+        final_file = result.stderr + "\n" + result.stdout
         with open(scratch_dir + f"/patch_{index}.out", "w+") as f:
             f.write(result.stderr)
             f.write(result.stdout)
@@ -355,53 +375,13 @@ try:
                     error_msg = match.group(4)
                     break
 
-            with open(scratch_dir + "/evaluation.csv", "a") as f:
-                f.write(f"{index}, fail, {error_msg}\n")
-
-            appendRow(spreadsheet, [
-                today,
-                index,
-                len(patches),
-                "fail",
-                error_msg,
-                diff,
-                user,
-            ])
-
-            shutil.copy(scratch_dir + f"/patch_{index}.out",
-                        scratch_dir + f"/patch_{index}.fail")
-        elif not run('gn check out/linux', exit_on_error=False):
+            report_failure(error_msg, diff, final_file)
+        elif not run(f'gn check out/{platform}', exit_on_error=False):
             error_msg = "failed gn check"
-            with open(scratch_dir + "/evaluation.csv", "a") as f:
-                f.write(f"{index}, fail, {error_msg}\n")
-
-            appendRow(spreadsheet, [
-                today,
-                index,
-                len(patches),
-                "fail",
-                error_msg,
-                diff,
-                user,
-            ])
-
-            shutil.copy(scratch_dir + f"/patch_{index}.out",
-                        scratch_dir + f"/patch_{index}.fail")
+            report_failure(error_msg, diff, final_file)
             continue
         else:
-            with open(scratch_dir + "/evaluation.csv", "a") as f:
-                f.write(f"{index}, pass, \"\"\n")
-            appendRow(spreadsheet, [
-                today,
-                index,
-                len(patches),
-                "pass",
-                "",
-                diff,
-                user,
-            ])
-            shutil.copy(scratch_dir + f"/patch_{index}.out",
-                        scratch_dir + f"/patch_{index}.pass")
+            report_success("", diff, final_file)
 finally:
     # Regardless of success or failure we want to upload the scratch directory
     # to the shared google drive for easy debugging of either compile errors or

@@ -406,6 +406,20 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Accessibility.ReadAnything.Distillation">
+  <owner>lwinston@google.com</owner>
+  <owner>kristislee@google.com</owner>
+  <summary>
+    Records a distillation success / failure after a new page has been opened
+    with reading mode.
+  </summary>
+  <metric name="DistillationStatus" enum="ReadAnythingDistillationStatus">
+    <summary>
+      The status of the distillation
+    </summary>
+  </metric>
+</event>
+
 <event name="Accessibility.ReadAnything.EmptyState">
   <owner>abigailbklein@google.com</owner>
   <summary>
@@ -422,6 +436,47 @@ be describing additional metrics about the same event.
       <history>
         <statistics>
           <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="Accessibility.ReadAnything.SidePanel">
+  <owner>gusmartin@google.com</owner>
+  <owner>lwinston@google.com</owner>
+  <owner>komo-eng@google.com</owner>
+  <summary>
+    Records Read Anything side panel events
+  </summary>
+  <metric name="Closed" enum="Boolean">
+    <summary>
+      A flag set to true when the Read Anything side panel is closed for a given
+      source ID.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="EntryPoint" enum="SidePanelOpenTrigger">
+    <summary>
+      Records the UI entry point that the user clicked to open the Read Anything
+      side panel.
+    </summary>
+  </metric>
+  <metric name="Shown" enum="Boolean">
+    <summary>
+      A flag set to true when the Read Anything side panel is shown for a given
+      source ID.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
         </statistics>
       </history>
     </aggregation>
@@ -728,7 +783,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="AdsInterestGroup.AuctionLatency.V2">
-  <owner>orrb@google.com</owner>
+  <owner>morlovich@chromium.org</owner>
   <owner>chrome-ads-core@google.com</owner>
   <summary>
     Captures latency-relevant metrics associated with a single FLEDGE auction.
@@ -1811,6 +1866,34 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Android.AssistContent.PageContextRequest">
+  <owner>ssid@google.com</owner>
+  <owner>salg@google.com</owner>
+  <summary>
+    This event is recorded when page context provider is queried by the
+    Assistant app.
+  </summary>
+  <metric name="PageContextRequested" enum="Boolean">
+    <summary>
+      Whether the page context was requested based on the structured Assist data
+      provided.
+    </summary>
+  </metric>
+</event>
+
+<event name="Android.AssistContent.Request">
+  <owner>ssid@google.com</owner>
+  <owner>salg@google.com</owner>
+  <summary>
+    This event is recorded when AssistContent was requested by Android OS.
+  </summary>
+  <metric name="WebPageStructuredDataAttached" enum="Boolean">
+    <summary>
+      Whether structured data is attached to the AssistContent.
+    </summary>
+  </metric>
+</event>
+
 <event name="Android.DarkTheme.AutoDarkMode">
   <owner>nemco@google.com</owner>
   <owner>wenyufu@chromium.org</owner>
@@ -2253,6 +2336,86 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Autofill.AmountExtractionComplete" singular="true">
+  <owner>jamessun@google.com</owner>
+  <owner>longsheng@google.com</owner>
+  <summary>
+    Records the result of the amount extraction process. This process is to
+    search for the final checkout amount from the merchants' checkout page and
+    respond to the browser process. This event starts from the moment amount
+    extraction is initiated in the browser process to when a response is
+    received. Logged when the search is finished.
+  </summary>
+  <metric name="FailureLatencyInMillis">
+    <summary>
+      Records duration in milliseconds from when the amount extraction is
+      triggered to when an empty result of the search is returned to the browser
+      process.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="Result" enum="AmountExtractionResult">
+    <summary>
+      An enum that records the result of the amount extraction: success, failure
+      or timeout.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="SuccessLatencyInMillis">
+    <summary>
+      Records duration in milliseconds from when the amount extraction is
+      triggered to when a non-empty result of the search is returned to the
+      browser process.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="Autofill.BnplSuggestionAccepted" singular="true">
+  <owner>wilsonlow@google.com</owner>
+  <owner>payments-autofill-team@google.com</owner>
+  <summary>
+    Recorded when a BNPL suggestion was added to the payments autofill dropdown
+    and shown to the user.
+  </summary>
+  <metric name="Accepted" enum="Boolean">
+    <summary>
+      Only ever set to true, thus serving as a counter.
+    </summary>
+  </metric>
+</event>
+
+<event name="Autofill.BnplSuggestionShown" singular="true">
+  <owner>wilsonlow@google.com</owner>
+  <owner>payments-autofill-team@google.com</owner>
+  <summary>
+    Recorded when a BNPL autofill suggestion was accepted on the current page.
+  </summary>
+  <metric name="Shown" enum="Boolean">
+    <summary>
+      Only ever set to true, thus serving as a counter.
+    </summary>
+  </metric>
+</event>
+
 <event name="Autofill.CardUploadDecision">
   <owner>sebsg@chromium.org</owner>
   <metric name="UploadDecision">
@@ -2366,7 +2529,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="Autofill.DeveloperEngagement">
-  <owner>jsaul@google.com</owner>
+  <owner>osaul@google.com</owner>
   <summary>
     Recorded when we parse a form to log whether developer has used autocomplete
     markup or UPI-VPA hints. The value is a bitmask of
@@ -2515,7 +2678,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="Autofill.FormEvent">
-  <owner>jsaul@google.com</owner>
+  <owner>osaul@google.com</owner>
   <summary>
     Recorded when user interacted with autofill.
   </summary>
@@ -2613,7 +2776,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="Autofill.InteractedWithForm">
-  <owner>jsaul@google.com</owner>
+  <owner>osaul@google.com</owner>
   <summary>
     Recorded when we parse a form to log form metadata and autofill settings
     that apply to all subsequent events for this form.
@@ -2728,7 +2891,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="Autofill.SuggestionFilled">
-  <owner>jsaul@google.com</owner>
+  <owner>osaul@google.com</owner>
   <summary>
     Recorded when user selects a suggestion and we fill the form with that
     suggestion.
@@ -2762,7 +2925,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="Autofill.SuggestionsShown">
-  <owner>jsaul@google.com</owner>
+  <owner>osaul@google.com</owner>
   <summary>
     Recorded when a suggestion is shown to user.
   </summary>
@@ -2800,7 +2963,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="Autofill.TextFieldDidChange">
-  <owner>jsaul@google.com</owner>
+  <owner>osaul@google.com</owner>
   <summary>
     Recorded when user edits a text field. The text field may have been
     autofilled.
@@ -3419,6 +3582,12 @@ be describing additional metrics about the same event.
       The server AI type of the field as classified by autofill's ML model.
     </summary>
   </metric>
+  <metric name="EntityType">
+    <summary>
+      The type of entity for which the current metric record is being logged
+      (E.g. Passport, Driver's License, etc.).
+    </summary>
+  </metric>
   <metric name="EventType">
     <summary>
       Type of the event being recorded, see `AutofillAiUkmLogger::EventType` for
@@ -3486,6 +3655,26 @@ be describing additional metrics about the same event.
     quality. They are recorded on navigation if a form was submitted before,
     only if the submitted form had Autofill AI prediction.
   </summary>
+  <metric name="AutofillAiFilledFieldCount">
+    <summary>
+      The number of fields at form submission that are autofilled and that were
+      autofilled by AutofillAi. Fields filled with any other source will be
+      excluded from this count.
+    </summary>
+  </metric>
+  <metric name="AutofillFilledFieldCount">
+    <summary>
+      The number of fields at form submission that are autofilled. This will
+      include fields that are autofilled by any source except Autocomplete,
+      including AutofillAi.
+    </summary>
+  </metric>
+  <metric name="EntityType">
+    <summary>
+      The type of entity for which the current metric record is being logged
+      (E.g. Passport, Driver's License, etc.).
+    </summary>
+  </metric>
   <metric name="FillingAcceptance">
     <summary>
       Has value 1 if user accepted the suggestion to fill values on a submitted
@@ -3751,30 +3940,37 @@ be describing additional metrics about the same event.
   <owner>yigu@chromium.org</owner>
   <owner>web-identity-eng@google.com</owner>
   <summary>
-    Records performance metrics for FedCM(Federated Credential Management) API.
+    Records performance metrics for FedCM (Federated Credential Management) API.
+    Recorded when a FedCmMetrics object is destroyed, typically when cleaning up
+    a FederatedAuthRequestImpl object which is created and associated with a
+    call to the FedCM API.
   </summary>
   <metric name="AccountLabel.NumMatchingAccounts" enum="FedCmNumAccounts">
     <summary>
       Records the number of accounts that match an account label. Records at the
-      time the accounts received by the FedCM API are filtered.
+      time the API call is completed.
     </summary>
   </metric>
-  <metric name="AccountsDialogShown" enum="BooleanHit">
+  <metric name="AccountsDialogShown2">
     <summary>
-      Records a 1 each time an accounts dialog is shown.
+      Records the number of times an accounts dialog is shown per API call.
+      Records at the time the API call is completed. This is in units of
+      dialogs.
     </summary>
   </metric>
   <metric name="AccountSelectionScrollPosition">
     <summary>
       Records the page scroll (y-axis) position upon account selection. Records
       once per user selecting an account by clicking on a FedCM dialog.
-      Bucketized exponentially with a standard bucket spacing of 1.15. This is
-      in units of pixels.
+      Bucketized exponentially with a standard bucket spacing of 1.15. Records
+      at the time the API call is completed. This is in units of pixels.
     </summary>
   </metric>
-  <metric name="AccountsRequestSent" enum="BooleanHit">
+  <metric name="AccountsRequestSent2">
     <summary>
-      Records a 1 each time a request is sent to the accounts endpoint.
+      Records the number of requests sent to the accounts endpoint per API call.
+      Records at the time the API call is completed. This is in units of
+      requests.
     </summary>
   </metric>
   <metric name="AutoReauthn.BlockedByContentSettings" enum="Boolean">
@@ -3782,7 +3978,8 @@ be describing additional metrics about the same event.
       Records whether the FedCM auto re-authn call is blocked because the auto
       re-authn content settings permission is disabled. Records at most one
       sample per FedCM API with auto re-authn enabled: some failures could occur
-      before this metric is recorded.
+      before this metric is recorded. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="AutoReauthn.BlockedByEmbargo" enum="Boolean">
@@ -3790,7 +3987,8 @@ be describing additional metrics about the same event.
       Records whether the FedCM auto re-authn call is blocked because the auto
       re-authn is under embargo, i.e. due to cooldown. Records at most one
       sample per FedCM API with auto re-authn enabled: some failures could occur
-      before this metric is recorded.
+      before this metric is recorded. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="AutoReauthn.BlockedByPreventSilentAccess" enum="Boolean">
@@ -3798,7 +3996,8 @@ be describing additional metrics about the same event.
       Records whether the FedCM auto re-authn call is blocked because
       preventSilentAccess() has been called on this site. Records at most one
       sample per FedCM API with auto re-authn enabled: some failures could occur
-      before this metric is recorded.
+      before this metric is recorded. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="AutoReauthn.ReturningAccounts" enum="FedCmNumAccounts">
@@ -3806,7 +4005,7 @@ be describing additional metrics about the same event.
       Records whether there was zero, one, or multiple returning accounts when a
       site calls the FedCM API with autoReauthn: true. Records at most one
       sample per failed API call: some failures could occur before this metric
-      is recorded.
+      is recorded. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="AutoReauthn.Succeeded" enum="Boolean">
@@ -3817,7 +4016,8 @@ be describing additional metrics about the same event.
       and the false count would provide the number of attempts where auto
       re-authn was blocked for some non-network related reason. Records at most
       one sample per FedCM API with auto re-authn enabled: some failures could
-      occur before this metric is recorded.
+      occur before this metric is recorded. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="AutoReauthn.TimeFromEmbargoWhenBlocked">
@@ -3827,7 +4027,8 @@ be describing additional metrics about the same event.
       records a sample when there is an auto re-authn FedCM API call which is
       blocked due to embargo. Samples are exponentially bucketed, with a max
       bucket of 10 minutes, the embargo duration (see
-      `kFederatedIdentityAutoReauthnEmbargoDuration`).
+      `kFederatedIdentityAutoReauthnEmbargoDuration`). Records at the time the
+      API call is completed.
     </summary>
   </metric>
   <metric name="Button.AccountChooserResult" enum="FedCmAccountChooserResult">
@@ -3865,7 +4066,13 @@ be describing additional metrics about the same event.
       dialog close button). Recorded when the FedCM dialog is closed without the
       user selecting an account. This includes instances where the close action
       is less intentional such as the virtual keyboard showing triggering the
-      dialog close.
+      dialog close. Records at the time the API call is completed.
+    </summary>
+  </metric>
+  <metric name="DidShowUI" enum="Boolean">
+    <summary>
+      Records whether the FedCM dialog was shown. Recorded once per API call
+      when the request is fulfilled (either resolved or rejected).
     </summary>
   </metric>
   <metric name="Disconnect.FrameType" enum="FedCmRequesterFrameType">
@@ -3873,38 +4080,39 @@ be describing additional metrics about the same event.
       Records the type of frame that invokes disconnect(). Records once for each
       disconnect() call. Possible values are: main frame, same-site iframe, and
       cross-site iframe, where the site of the caller frame is compared with the
-      site of the main frame.
+      site of the main frame. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="DomainHint.NumMatchingAccounts" enum="FedCmNumAccounts">
     <summary>
       Records the number of accounts that match a domain hint. Records at the
-      time the accounts received by the FedCM API are filtered.
+      time the API call is completed.
     </summary>
   </metric>
   <metric name="Error.ErrorDialogResult" enum="FedCmErrorDialogResult">
     <summary>
       Records the outcome of the error dialog. Recorded at most once per API
-      call when the error dialog is displayed.
+      call when the API call is completed.
     </summary>
   </metric>
   <metric name="Error.ErrorDialogType" enum="FedCmErrorDialogType">
     <summary>
       Records the type of error dialog shown. Recorded at most once per API call
-      when the error dialog is displayed.
+      when the API call is completed.
     </summary>
   </metric>
   <metric name="Error.TokenResponseType" enum="FedCmTokenResponseType">
     <summary>
       Records the type of token response received. Recorded at most once per API
-      call when a token response received.
+      call when the API call is completed.
     </summary>
   </metric>
   <metric name="FedCmSessionID">
     <summary>
       Records the session ID associated to the FedCM call for which this event
       is recording metrics. Each FedCM call gets a random integer session id,
-      which helps group UKM events by the session id.
+      which helps group UKM events by the session id. Records at the time the
+      API call is completed.
     </summary>
   </metric>
   <metric name="FrameType" enum="FedCmRequesterFrameType">
@@ -3913,7 +4121,7 @@ be describing additional metrics about the same event.
       call. Possible values are: main frame, same-site iframe, and cross-site
       iframe, where the site of the caller frame is compared with the site of
       the main frame. Same-origin iframes are recorded under the same-site
-      category.
+      category. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="HasSigninAccount" enum="Boolean">
@@ -3922,33 +4130,37 @@ be describing additional metrics about the same event.
       successful account fetch from the IdP server after the accounts filtering.
       If there are multiple accounts, record the user as sign-in if IdP claims
       at least one of the accounts is sign-in. If an IdP does not share the
-      user's sign-in state, record the state stored in the browser.
+      user's sign-in state, record the state stored in the browser. Records at
+      the time the API call is completed.
     </summary>
   </metric>
   <metric name="IdentityProvidersCount">
     <summary>
       Records the count of identity providers right before fetching endpoints
       with multi IDP flag enabled. It counts distinct providers including the
-      ones a user is not signed in to. Recorded at most once per API call before
-      the browser starts fetching from the IdPs.
+      ones a user is not signed in to. Recorded at most once per API call.
+      Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="LoginHint.NumMatchingAccounts" enum="FedCmNumAccounts">
     <summary>
       Records the number of accounts that match a login hint. Records at the
-      time the accounts received by the FedCM API are filtered.
+      time the API call is completed.
     </summary>
   </metric>
-  <metric name="MismatchDialogShown" enum="BooleanHit">
+  <metric name="MismatchDialogShown2">
     <summary>
-      Records a 1 each time a mismatch dialog is shown.
+      Records the number of times a mismatch dialog is shown per API call.
+      Records at the time the API call is completed. This is in units of
+      dialogs.
     </summary>
   </metric>
   <metric name="MultipleRequestsFromDifferentIdPs" enum="Boolean">
     <summary>
       Records whether an API call is rejected due to there's an existing
       in-flight API call initiated by other IdPs. Recorded once per promise
-      rejection because of an existing API call.
+      rejection because of an existing API call. Records at the time the API
+      call is completed.
     </summary>
   </metric>
   <metric name="MultipleRequestsRpMode" enum="FedCmMultipleRequestsRpMode">
@@ -3960,16 +4172,16 @@ be describing additional metrics about the same event.
   <metric name="NumIdpsMismatch">
     <summary>
       Records the number of IDPs that result in a 'mismatch' status from a
-      single FedCM get() invocation. Recorded every time a FedCM get() call is
-      resolved. Records some integer 0 or greater. Uses exponential count
+      single FedCM get() invocation. Records at the time the API call is
+      completed. Records some integer 0 or greater. Uses exponential count
       bucketing.
     </summary>
   </metric>
   <metric name="NumIdpsRequested">
     <summary>
       Records the number of IDPs that are requested from a single FedCM get()
-      invocation. Recorded every time a FedCM get() call is resolved. Records
-      some integer greater than or equal to 1. Uses exponential count bucketing.
+      invocation. Records at the time the API call is completed. Records some
+      integer greater than or equal to 1. Uses exponential count bucketing.
     </summary>
   </metric>
   <metric name="NumRequestsPerDocument">
@@ -3978,7 +4190,8 @@ be describing additional metrics about the same event.
       document. Requests made when FedCM is disabled or when there is a pending
       FedCM request are not counted. Records at most one sample for every
       document where at least one navigator.credentials.get() request is made.
-      No samples are recorded if the count is 0. The bucketing method used is
+      No samples are recorded if the count is 0. Records at the time the API
+      call is completed. The bucketing method used is
       base::UmaHistogramCounts100.
     </summary>
   </metric>
@@ -3989,20 +4202,21 @@ be describing additional metrics about the same event.
       some frame in the page invokes the preventSilentAccess() JavaScript call.
       Possible values are: main frame, same-site iframe, and cross-site iframe,
       where the site of the caller frame is compared with the site of the main
-      frame.
+      frame. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="RpMode" enum="FedCmRpMode">
     <summary>
       Records the RP mode of the FedCM API. Recorded once per API call together
       with Status.RequestIdToken when the request is fulfilled (either resolved
-      or rejected).
+      or rejected). Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="RpUrlHasPath" enum="Boolean">
     <summary>
       Whether the accounts dialog is shown on an RP URL which has a path.
-      Recorded each time the user is shown an accounts dialog.
+      Recorded each time the user is shown an accounts dialog. Records at the
+      time the API call is completed.
     </summary>
   </metric>
   <metric name="Status.Disconnect" enum="FedCmDisconnectStatus">
@@ -4030,7 +4244,8 @@ be describing additional metrics about the same event.
   <metric name="Status.SignInStateMatch" enum="FedCmSignInStateMatchStatus">
     <summary>
       Records whether user sign-in states between IDP and browser match after
-      browser receives an account list from IDP prior to showing UI.
+      browser receives an account list from IDP prior to showing UI. Records at
+      the time the API call is completed.
     </summary>
   </metric>
   <metric name="ThirdPartyCookiesStatus" enum="FedCmThirdPartyCookiesStatus">
@@ -4047,19 +4262,22 @@ be describing additional metrics about the same event.
       developer aborts the request. This duration includes the time when the
       accounts dialog is inactive e.g. user switches to a different tab. Samples
       are at most 10 minutes. Records a sample when an accounts dialog which is
-      not the verifying UI for auto re-authentication is shown.
+      not the verifying UI for auto re-authentication is shown. Records at the
+      time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.CancelOnDialog">
     <summary>
       Records the time (in milliseconds) from when the accounts dialog is shown
-      to when the user closes the dialog without selecting any account.
+      to when the user closes the dialog without selecting any account. Records
+      at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.ContinueOnDialog">
     <summary>
       Records the time (in milliseconds) from when the accounts dialog is shown
-      to when the user presses the Continue button.
+      to when the user presses the Continue button. Records at the time the API
+      call is completed.
     </summary>
   </metric>
   <metric name="Timing.Disconnect">
@@ -4068,6 +4286,7 @@ be describing additional metrics about the same event.
       received by the browser process to the time in which it is completed, e.g.
       right before sending the response back to the renderer process. Records
       one sample for every disconnect call which sends a disconnect request.
+      Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.GetUserInfoToButtonMode">
@@ -4076,13 +4295,15 @@ be describing additional metrics about the same event.
       the getUserInfo() API to the time when the Button Mode API is called.
       Recorded when the Button mode is invoked and there was a successful
       accounts fetch via the getUserInfo API call on this page. Recorded at most
-      once per getUserInfo API call.
+      once per getUserInfo API call. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="Timing.IdTokenResponse">
     <summary>
       Records the time (in milliseconds) from when the user presses the Continue
-      button to when the id token response is received.
+      button to when the id token response is received. Records at the time the
+      API call is completed.
     </summary>
   </metric>
   <metric name="Timing.MismatchDialogShownDuration">
@@ -4091,13 +4312,15 @@ be describing additional metrics about the same event.
       triggers IDP sign-in pop-up window or when dialog is destroyed e.g. user
       closes the dialog. This duration includes the time when the mismatch
       dialog is inactive e.g. user switches to a different tab. Samples are at
-      most 10 minutes. Records a sample when a mismatch dialog is shown.
+      most 10 minutes. Records a sample when a mismatch dialog is shown, at the
+      time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.ShowAccountsDialog">
     <summary>
       Records the time (in milliseconds) from when a call to the API was made to
-      when the accounts dialog is shown.
+      when the accounts dialog is shown. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="Timing.ShowAccountsDialogBreakdown.AccountsFetch">
@@ -4106,6 +4329,7 @@ be describing additional metrics about the same event.
       to when the fetch response is received. Only recorded when the accounts
       are ready to show which means all fetches are done. In case of multiple
       identity providers, the fetch that takes the longest will be recorded.
+      Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.ShowAccountsDialogBreakdown.ClientMetadataFetch">
@@ -4114,7 +4338,7 @@ be describing additional metrics about the same event.
       was made to when the fetch response is received. Only recorded when the
       accounts are ready to show which means all fetches are done. In case of
       multiple identity providers, the fetch that takes the longest will be
-      recorded.
+      recorded. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.ShowAccountsDialogBreakdown.WellKnownAndConfigFetch">
@@ -4123,13 +4347,14 @@ be describing additional metrics about the same event.
       when the well-known and config files fetch are received. Only recorded
       when the accounts are ready to show which means all fetches are done. In
       case of multiple identity providers, the fetch that takes the longest will
-      be recorded.
+      be recorded. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.TurnaroundTime">
     <summary>
       Records the overall time (in milliseconds) from when the API is called to
-      when the id token response is received.
+      when the id token response is received. Records at the time the API call
+      is completed.
     </summary>
   </metric>
   <metric name="UseOtherAccountResult" enum="FedCmUseOtherAccountResult">
@@ -4139,7 +4364,7 @@ be describing additional metrics about the same event.
       attempts to login with a new account via the &quot;use other account&quot;
       button, when the request is fulfilled (either resolved or rejected). Only
       considers the last &quot;use other account&quot; button clicked if there
-      are multiple attempts.
+      are multiple attempts. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="VerifyingDialogResult" enum="FedCmVerifyingDialogResult">
@@ -4156,20 +4381,24 @@ be describing additional metrics about the same event.
   <owner>web-identity-eng@google.com</owner>
   <summary>
     Records performance metrics for FedCM (Federated Credential Management) API.
-    Recorded when the web developer calls the FedCM API. Individual metrics are
-    recorded eagerly, whenever the value has been computed.
+    Recorded when a FedCmMetrics object is destroyed, typically when cleaning up
+    a FederatedAuthRequestImpl object which is created and associated with a
+    call to the FedCM API.
 
     This event uses the specific WEB_IDENTITY ukm_source_id which is generated
     from the identity provider's origin.
   </summary>
-  <metric name="AccountsDialogShown" enum="BooleanHit">
+  <metric name="AccountsDialogShown2">
     <summary>
-      Records a 1 each time an accounts dialog is shown.
+      Records the number of times an accounts dialog is shown per API call.
+      Records at the time the API call is completed. This is in units of
+      dialogs.
     </summary>
   </metric>
-  <metric name="AccountsRequestSent" enum="BooleanHit">
+  <metric name="AccountsRequestSent2">
     <summary>
-      Records a 1 each time a request is sent to the accounts endpoint.
+      Records the number of requests sent to the accounts endpoint per API call.
+      This is in units of requests.
     </summary>
   </metric>
   <metric name="Disconnect.FrameType" enum="FedCmRequesterFrameType">
@@ -4177,39 +4406,44 @@ be describing additional metrics about the same event.
       Records the type of frame that invokes disconnect(). Records once for each
       disconnect() call. Possible values are: main frame, same-site iframe, and
       cross-site iframe, where the site of the caller frame is compared with the
-      site of the main frame.
+      site of the main frame. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Error.ErrorDialogResult" enum="FedCmErrorDialogResult">
     <summary>
       Records the outcome of the error dialog. Recorded at most once per API
-      call when the error dialog is displayed.
+      call when the error dialog is displayed. Records at the time the API call
+      is completed.
     </summary>
   </metric>
   <metric name="Error.ErrorDialogType" enum="FedCmErrorDialogType">
     <summary>
       Records the type of error dialog shown. Recorded at most once per API call
-      when the error dialog is displayed.
+      when the error dialog is displayed. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="Error.ErrorUrlType" enum="FedCmErrorUrlType">
     <summary>
       Records whether the error URL is same-origin, cross-origin but same-site
       or cross-site with the config URL. Recorded at most once per API call when
-      a valid error URL is received.
+      a valid error URL is received. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="Error.TokenResponseType" enum="FedCmTokenResponseType">
     <summary>
       Records the type of token response received. Recorded at most once per API
-      call when a token response received.
+      call when a token response received. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="FedCmSessionID">
     <summary>
       Records the session ID associated to the FedCM call for which this event
       is recording metrics. Each FedCM call gets a random integer session id,
-      which helps group UKM events by the session id.
+      which helps group UKM events by the session id. Records at the time the
+      API call is completed.
     </summary>
   </metric>
   <metric name="FrameType" enum="FedCmRequesterFrameType">
@@ -4218,7 +4452,7 @@ be describing additional metrics about the same event.
       call. Possible values are: main frame, same-site iframe, and cross-site
       iframe, where the site of the caller frame is compared with the site of
       the main frame. Same-origin iframes are recorded under the same-site
-      category.
+      category. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="HasSigninAccount" enum="Boolean">
@@ -4227,12 +4461,15 @@ be describing additional metrics about the same event.
       successful account fetch from the IdP server after the accounts filtering.
       If there are multiple accounts, record the user as sign-in if IdP claims
       at least one of the accounts is sign-in. If an IdP does not share the
-      user's sign-in state, record the state stored in the browser.
+      user's sign-in state, record the state stored in the browser. Records at
+      the time the API call is completed.
     </summary>
   </metric>
-  <metric name="MismatchDialogShown" enum="BooleanHit">
+  <metric name="MismatchDialogShown2">
     <summary>
-      Records a 1 each time a mismatch dialog is shown.
+      Records the number of times a mismatch dialog is shown per API call.
+      Records at the time the API call is completed. This is in units of
+      dialogs.
     </summary>
   </metric>
   <metric name="MultipleRequestsRpMode" enum="FedCmMultipleRequestsRpMode">
@@ -4245,8 +4482,8 @@ be describing additional metrics about the same event.
     <summary>
       Records the number of IDPs that result in a 'mismatch' status from a
       single FedCM get() invocation. Recorded every time a FedCM get() call is
-      resolved. Records some integer 0 or greater. Uses exponential count
-      bucketing.
+      resolved. Records at the time the API call is completed. Records some
+      integer 0 or greater. Uses exponential count bucketing.
     </summary>
   </metric>
   <metric name="NumIdpsRequested">
@@ -4288,7 +4525,8 @@ be describing additional metrics about the same event.
   <metric name="Status.SignInStateMatch" enum="FedCmSignInStateMatchStatus">
     <summary>
       Records whether user sign-in states between IDP and browser match after
-      browser receives an account list from IDP prior to showing UI.
+      browser receives an account list from IDP prior to showing UI. Records at
+      the time the API call is completed.
     </summary>
   </metric>
   <metric name="ThirdPartyCookiesStatus" enum="FedCmThirdPartyCookiesStatus">
@@ -4305,19 +4543,22 @@ be describing additional metrics about the same event.
       developer aborts the request. This duration includes the time when the
       accounts dialog is inactive e.g. user switches to a different tab. Samples
       are at most 10 minutes. Records a sample when an accounts dialog which is
-      not the verifying UI for auto re-authentication is shown.
+      not the verifying UI for auto re-authentication is shown. Records at the
+      time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.CancelOnDialog">
     <summary>
       Records the time (in milliseconds) from when the accounts dialog is shown
-      to when the user closes the dialog without selecting any account.
+      to when the user closes the dialog without selecting any account. Records
+      at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.ContinueOnDialog">
     <summary>
       Records the time (in milliseconds) from when the accounts dialog is shown
-      to when the user presses the Continue button.
+      to when the user presses the Continue button. Records at the time the API
+      call is completed.
     </summary>
   </metric>
   <metric name="Timing.Disconnect">
@@ -4326,12 +4567,14 @@ be describing additional metrics about the same event.
       received by the browser process to the time in which it is completed, e.g.
       right before sending the response back to the renderer process. Records
       one sample for every disconnect call which sends a disconnect request.
+      Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.IdTokenResponse">
     <summary>
       Records the time (in milliseconds) from when the user presses the Continue
-      button to when the id token response is received.
+      button to when the id token response is received. Records at the time the
+      API call is completed.
     </summary>
   </metric>
   <metric name="Timing.MismatchDialogShownDuration">
@@ -4340,19 +4583,22 @@ be describing additional metrics about the same event.
       triggers IDP sign-in pop-up window or when dialog is destroyed e.g. user
       closes the dialog. This duration includes the time when the mismatch
       dialog is inactive e.g. user switches to a different tab. Samples are at
-      most 10 minutes. Records a sample when a mismatch dialog is shown.
+      most 10 minutes. Records a sample when a mismatch dialog is shown. Records
+      at the time the API call is completed.
     </summary>
   </metric>
   <metric name="Timing.ShowAccountsDialog">
     <summary>
       Records the time (in milliseconds) from when a call to the API was made to
-      when the accounts dialog is shown.
+      when the accounts dialog is shown. Records at the time the API call is
+      completed.
     </summary>
   </metric>
   <metric name="Timing.TurnaroundTime">
     <summary>
       Records the overall time (in milliseconds) from when the API is called to
-      when the id token response is received.
+      when the id token response is received. Records at the time the API call
+      is completed.
     </summary>
   </metric>
   <metric name="UseOtherAccountResult" enum="FedCmUseOtherAccountResult">
@@ -4362,7 +4608,7 @@ be describing additional metrics about the same event.
       attempts to login with a new account via the &quot;use other account&quot;
       button, when the request is fulfilled (either resolved or rejected). Only
       considers the last &quot;use other account&quot; button clicked if there
-      are multiple attempts.
+      are multiple attempts. Records at the time the API call is completed.
     </summary>
   </metric>
   <metric name="VerifyingDialogResult" enum="FedCmVerifyingDialogResult">
@@ -4793,6 +5039,23 @@ be describing additional metrics about the same event.
     <summary>
       Records whether a page has an image whose size equals the full viewport.
       Recorded when the LCP algorithm has stopped.
+    </summary>
+  </metric>
+</event>
+
+<event name="Blink.Preloading.ByLinkHeader">
+  <owner>tnak@chromium.org</owner>
+  <owner>chrome-loading@google.com</owner>
+  <summary>
+    Events taken when HTTP responses are received and they have Link headers.
+    Multiple events should be involved if one response contains multiple Link
+    headers. This event provides insights into potential information leakage
+    related to Link headers on subresources.
+  </summary>
+  <metric name="OriginStatusOnSubresource" enum="OriginStatusOnSubresource">
+    <summary>
+      Records the cross-origin usage related to Link headers on subresource
+      fetches. This is only recorded for subresource fetches.
     </summary>
   </metric>
 </event>
@@ -5709,8 +5972,155 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="BTM.ChainBegin" singular="True">
+  <owner>navtracking-team@google.com</owner>
+  <owner>dc-komics@google.com</owner>
+  <summary>
+    Emitted for the page visited at the beginning of a redirect chain (i.e. the
+    initial URL), when third-party cookies are disabled. The redirect chain is
+    used as a part of Bounce Tracking Mitigations (BTM).
+  </summary>
+  <metric name="ChainId">
+    <summary>
+      A randomly-generated 32-bit id to connect this event with the BTM.Redirect
+      and BTM.ChainEnd events emitted within the same redirect chain.
+    </summary>
+  </metric>
+  <metric name="InitialAndFinalSitesSame" enum="BooleanSameSite">
+    <summary>
+      True when the site before the redirect chain is the same as the site at
+      the end of the chain.
+    </summary>
+  </metric>
+</event>
+
+<event name="BTM.ChainEnd" singular="True">
+  <owner>navtracking-team@google.com</owner>
+  <owner>dc-komics@google.com</owner>
+  <summary>
+    Emitted for the page visited at the end of a redirect chain (i.e. the final
+    URL), when third-party cookies are disabled. The redirect chain is used as a
+    part of Bounce Tracking Mitigations (BTM).
+  </summary>
+  <metric name="ChainId">
+    <summary>
+      A randomly-generated 32-bit id to connect this event with the
+      BTM.ChainBegin and BTM.Redirect events emitted within the same redirect
+      chain.
+    </summary>
+  </metric>
+  <metric name="InitialAndFinalSitesSame" enum="BooleanSameSite">
+    <summary>
+      True when the site before the redirect chain is the same as the site at
+      the end of the chain.
+    </summary>
+  </metric>
+</event>
+
+<event name="BTM.Redirect" singular="True">
+  <owner>navtracking-team@google.com</owner>
+  <owner>dc-komics@google.com</owner>
+  <summary>
+    Emitted on every HTTP redirect or client-side bounce within a redirect
+    chain, when third-party cookies are disabled. A client-side bounce is a
+    non-user-initiated navigation starting soon after the previous navigation
+    committed.
+
+    The redirect chain is used as a part of Bounce Tracking Mitigations (BTM).
+  </summary>
+  <metric name="ChainId">
+    <summary>
+      A randomly-generated 32-bit id to connect this event with other
+      BTM.Redirect events and the BTM.ChainBegin/ChainEnd events emitted within
+      the same redirect chain.
+    </summary>
+  </metric>
+  <metric name="ClientBounceDelay">
+    <summary>
+      Populated for client redirects only. The time in seconds (capped at 10)
+      between the page committing and the redirect navigation starting. An int
+      in the range [0, 10].
+    </summary>
+  </metric>
+  <metric name="CookieAccessType" enum="CookieAccessType">
+    <summary>
+      Whether the redirect read cookies, wrote cookies, both, or neither.
+    </summary>
+  </metric>
+  <metric name="HasStickyActivation" enum="BooleanHasUserActivation">
+    <summary>
+      Populated for client redirects only. Whether the user interacted with the
+      page (See the HTML spec for a definition). This info is persisted within
+      BTM for a duration of `btm::kInteractionTtl`.
+    </summary>
+  </metric>
+  <metric name="InitialAndFinalSitesSame" enum="BooleanSameSite">
+    <summary>
+      True when the site before the redirect chain is the same as the site at
+      the end of the chain.
+    </summary>
+  </metric>
+  <metric name="IsPartialRedirectChain">
+    <summary>
+      True if the chain is missing the end URL. Any comparisons to the final
+      site are invalid for this redirect.
+    </summary>
+  </metric>
+  <metric name="RedirectAndFinalSiteSame" enum="BooleanSameSite">
+    <summary>
+      True when the redirect site is the same as the site at the end of the
+      redirect chain.
+    </summary>
+  </metric>
+  <metric name="RedirectAndInitialSiteSame" enum="BooleanSameSite">
+    <summary>
+      True when the redirect site is the same as the site before the redirect
+      chain.
+    </summary>
+  </metric>
+  <metric name="RedirectChainIndex">
+    <summary>
+      0-based index of this individual redirect within its chain.
+    </summary>
+  </metric>
+  <metric name="RedirectChainLength">
+    <summary>
+      The length of the overall redirect chain.
+    </summary>
+  </metric>
+  <metric name="RedirectType" enum="DIPSRedirectType">
+    <summary>
+      The type of the redirect: client or server.
+    </summary>
+  </metric>
+  <metric name="SiteEngagementLevel" enum="SiteEngagementLevel">
+    <summary>
+      The site engagement level of the redirect URL, at the time the redirect
+      took place.
+    </summary>
+  </metric>
+  <metric name="SiteHadUserActivation" enum="BooleanHasUserActivation">
+    <summary>
+      Whether the site has previously had a user activation.
+    </summary>
+  </metric>
+  <metric name="SiteHadWebAuthnAssertion" enum="BooleanHasWebAuthnAssertion">
+    <summary>
+      Whether the site has previously had a WebAuthn assertion.
+    </summary>
+  </metric>
+  <metric name="WebAuthnAssertionRequestSucceeded"
+      enum="BooleanWebAuthnAssertionRequestSucceeded">
+    <summary>
+      Populated for client redirects only. Whether the user triggered a
+      successful web authn assertion. This info is persisted within BTM for a
+      duration of `btm::kInteractionTtl`.
+    </summary>
+  </metric>
+</event>
+
 <event name="BTM.ShortVisit">
-  <owner>rtarpine@chromium.org</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
     Records metrics related to user engagement. Recorded when the user stays on
@@ -5814,7 +6224,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="BTM.ShortVisitNeighbor">
-  <owner>rtarpine@chromium.org</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
     Emitted at the same time as a BTM.ShortVisit event, but for the pages
@@ -7665,9 +8075,12 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="DIPS.ChainBegin" singular="True">
-  <owner>rtarpine@google.com</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
+    This metric has been superceded by the BTM.ChainBegin UKM and is no longer
+    emitted as of M138.
+
     Emitted after a redirect chain terminates, but for the page visited before
     the chain began -- the initial URL.
   </summary>
@@ -7687,9 +8100,12 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="DIPS.ChainEnd" singular="True">
-  <owner>rtarpine@google.com</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
+    This metric has been superceded by the BTM.ChainEnd UKM and is no longer
+    emitted as of M138.
+
     Emitted for the page visited at the end of a redirect chain -- the final
     URL.
   </summary>
@@ -7709,7 +8125,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="DIPS.Deletion" singular="True">
-  <owner>rtarpine@google.com</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
     Recorded when DIPS judges a site to be an incidental party and deletes its
@@ -7787,9 +8203,12 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="DIPS.Redirect" singular="True">
-  <owner>rtarpine@google.com</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
+    This metric has been superceded by the BTM.Redirect UKM and is no longer
+    emitted as of M138.
+
     Recorded on every HTTP redirect or client-side bounce, where a client-side
     bounce is a non-user-initiated navigation starting soon after the previous
     navigation committed.
@@ -7861,6 +8280,8 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="SiteEngagementLevel" enum="SiteEngagementLevel">
     <summary>
+      Deprecated as of M139.
+
       The site engagement level of the redirect URL, at the time the redirect
       took place.
     </summary>
@@ -7881,12 +8302,12 @@ be describing additional metrics about the same event.
   <summary>
     For this event to be emitted for a URL B, all of the following must be true:
     a tab's primary main frame was navigated to three consecutive URLs
-    A-&gt;B-&gt;C; B accessed cookies or storage; the eTLD+1 for B was different
-    from the eTLD+1s of A and C; at least A and C committed (became the primary
-    main page); and the navigation A-&gt;B was content-initiated but not
-    user-initiated. One of the following must also be true: a) B did not commit
-    and the navigation B-&gt;C was a server redirect; or b) B did commit and the
-    navigation B-&gt;C was content-initiated but not user-initiated.
+    A-&gt;B-&gt;C; the eTLD+1 for B was different from the eTLD+1s of A and C;
+    at least A and C committed (became the primary main page); and the
+    navigation A-&gt;B was content-initiated but not user-initiated. One of the
+    following must also be true: a) B did not commit and the navigation B-&gt;C
+    was a server redirect; or b) B did commit and the navigation B-&gt;C was
+    content-initiated but not user-initiated.
   </summary>
   <metric name="ExitRedirectType" enum="DIPSRedirectType">
     <summary>
@@ -7897,7 +8318,16 @@ be describing additional metrics about the same event.
   <metric name="FlowId">
     <summary>
       A randomly-generated 32-bit id to connect this event with its matching
-      DIPS.SuspectedTrackerFlowReferrer event.
+      DIPS.SuspectedTrackerFlowReferrerV2 event.
+    </summary>
+  </metric>
+  <metric name="HadActiveStorageAccess" enum="Boolean">
+    <summary>
+      Whether the entrypoint actively accessed browser storage (cookies,
+      localStorage, etc.) during this visit. &quot;Actively&quot; means that the
+      entrypoint specifically requested the access; e.g., receiving cookies
+      because the browser automatically sent them in the HTTP request doesn't
+      count.
     </summary>
   </metric>
 </event>
@@ -7908,17 +8338,17 @@ be describing additional metrics about the same event.
   <summary>
     For this event to be emitted for a URL A, all of the following must be true:
     a tab's primary main frame was navigated to three consecutive URLs
-    A-&gt;B-&gt;C; B accessed cookies or storage; the eTLD+1 for B was different
-    from the eTLD+1s of A and C; at least A and C committed (became the primary
-    main page); and the navigation A-&gt;B was content-initiated but not
-    user-initiated. One of the following must also be true: a) B did not commit
-    and the navigation B-&gt;C was a server redirect; or b) B did commit and the
-    navigation B-&gt;C was content-initiated but not user-initiated.
+    A-&gt;B-&gt;C; the eTLD+1 for B was different from the eTLD+1s of A and C;
+    at least A and C committed (became the primary main page); and the
+    navigation A-&gt;B was content-initiated but not user-initiated. One of the
+    following must also be true: a) B did not commit and the navigation B-&gt;C
+    was a server redirect; or b) B did commit and the navigation B-&gt;C was
+    content-initiated but not user-initiated.
   </summary>
   <metric name="FlowId">
     <summary>
       A randomly-generated 32-bit id to connect this event with its matching
-      DIPS.SuspectedTrackerFlowEntrypoint event.
+      DIPS.SuspectedTrackerFlowEntrypointV2 event.
     </summary>
   </metric>
 </event>
@@ -8060,6 +8490,97 @@ be describing additional metrics about the same event.
     <summary>
       Contains the UKM source id of the navigation as an integer.
     </summary>
+  </metric>
+</event>
+
+<event name="DomDistiller.Android.DistillabilityLatency" singular="true">
+  <owner>wylieb@google.com</owner>
+  <owner>chrome-reader-mode@google.com</owner>
+  <summary>
+    Recorded for a subset of page loads (default: 1/1000 page loads). Records
+    the result of the triggering model which determines if the current page is
+    considered distillable. Recorded for the android-specific code which uses
+    the results.
+  </summary>
+  <metric name="Latency">
+    <summary>
+      The duration (in milliseconds) for how long it took from the time the
+      distillability result to be returned.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="DomDistiller.Android.DistillabilityResult" singular="true">
+  <owner>wylieb@google.com</owner>
+  <owner>chrome-reader-mode@google.com</owner>
+  <summary>
+    Recorded for a subset of page loads (default: 1/1000 page loads). Records
+    the result of the triggering model which determines if the current page is
+    considered distillable. Recorded for the android-specific code which uses
+    the result.
+  </summary>
+  <metric name="Result" enum="DistillationResult">
+    <summary>
+      The distillation result from the current page.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="DomDistiller.Android.ReaderModeShown" singular="true">
+  <owner>wylieb@google.com</owner>
+  <owner>chrome-reader-mode@google.com</owner>
+  <summary>
+    Recorded for a subset of page loads (default: 1/1000 page loads). Records
+    when the user interacts with reader mode directly, after it's been offered.
+    Recorded for the android-specific code which uses the results.
+  </summary>
+  <metric name="Shown" enum="Boolean">
+    <summary>
+      Whether reader mode is shown for the current page.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="DomDistiller.ModelResult.Distillable" singular="true">
+  <owner>wylieb@google.com</owner>
+  <owner>chrome-reader-mode@google.com</owner>
+  <summary>
+    Recorded for a subset of page loads (default: 1/1000 page loads). Records
+    the result of the triggering model which determines if the current page is
+    considered distillable.
+  </summary>
+  <metric name="Distillable" enum="Boolean">
+    <summary>
+      Whether the current page is distillable.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
 </event>
 
@@ -8715,7 +9236,7 @@ be describing additional metrics about the same event.
   <owner>payments-autofill-team@google.com</owner>
   <summary>
     An event that is logged after a likely Pix code is copied to the clipboard
-    on an allowlisted website.
+    on any website.
   </summary>
   <metric name="PixCodeCopied" enum="Boolean">
     <summary>
@@ -8910,14 +9431,15 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="CompletionStatus.ErrorCode">
     <summary>
-      An integer representing the error code of the request when it completes or
-      fails. This comes from network::URLLoaderCompletionStatus.error_code.
+      Deprecated as of 2025/05/22. An integer representing the error code of the
+      request when it completes or fails. This comes from
+      network::URLLoaderCompletionStatus.error_code.
     </summary>
   </metric>
   <metric name="CompletionStatus.ExtendedErrorCode">
     <summary>
-      An integer representing the error code of the request when it completes or
-      fails. This comes from
+      Deprecated as of 2025/05/22. An integer representing the error code of the
+      request when it completes or fails. This comes from
       network::URLLoaderCompletionStatus.extended_error_code.
     </summary>
   </metric>
@@ -8944,6 +9466,20 @@ be describing additional metrics about the same event.
       Whether the Context is detached or not when this event is logged.
     </summary>
   </metric>
+  <metric name="LoaderCompleted.ErrorCode">
+    <summary>
+      An integer representing the error code of the request when it reaches the
+      kLoaderCompleted stage. This comes from
+      network::URLLoaderCompletionStatus.error_code.
+    </summary>
+  </metric>
+  <metric name="LoaderCompleted.ExtendedErrorCode">
+    <summary>
+      An integer representing the extended error code of the request when it
+      reaches the kLoaderCompleted stage. This comes from
+      network::URLLoaderCompletionStatus.extended_error_code.
+    </summary>
+  </metric>
   <metric name="NumRedirects">
     <summary>
       The number of redirects a fetch keepalive request loader has experienced
@@ -8953,6 +9489,14 @@ be describing additional metrics about the same event.
       https://fetch.spec.whatwg.org/#http-redirect-fetch.
     </summary>
   </metric>
+  <metric name="NumRetries">
+    <summary>
+      The number of retries a fetch keepalive request loader has experienced so
+      far when the event is logged.
+
+      Note that the maximum value is 10.
+    </summary>
+  </metric>
   <metric name="PreviousStage" enum="FetchKeepAliveRequestStage">
     <summary>
       An enum representing the previous stage of the fetch keepalive request
@@ -8960,6 +9504,34 @@ be describing additional metrics about the same event.
 
       When the request is abandoned from the &quot;LoaderCreated&quot; stage,
       this is also set to &quot;LoaderCreated&quot; stage.
+    </summary>
+  </metric>
+  <metric name="RequestFailed.ErrorCode">
+    <summary>
+      An integer representing the error code of the request when it reaches the
+      kRequestfailed stage. This comes from
+      network::URLLoaderCompletionStatus.error_code.
+    </summary>
+  </metric>
+  <metric name="RequestFailed.ExtendedErrorCode">
+    <summary>
+      An integer representing the extended error code of the request when it
+      reaches the kRequestFailed stage. This comes from
+      network::URLLoaderCompletionStatus.extended_error_code.
+    </summary>
+  </metric>
+  <metric name="RequestRetried.ErrorCode">
+    <summary>
+      An integer representing the error code of the request when it reaches the
+      kRequestRetried stage. This comes from
+      network::URLLoaderCompletionStatus.error_code.
+    </summary>
+  </metric>
+  <metric name="RequestRetried.ExtendedErrorCode">
+    <summary>
+      An integer representing the extended error code of the request when it
+      reaches the kRequestRetried stage. This comes from
+      network::URLLoaderCompletionStatus.extended_error_code.
     </summary>
   </metric>
   <metric name="RequestType" enum="FetchKeepAliveRequestType">
@@ -9031,6 +9603,14 @@ be describing additional metrics about the same event.
     <summary>
       The time difference (in milliseconds) between the
       &quot;RequestFailed&quot; stage and the &quot;LoaderCreated&quot; stage.
+
+      Only set when the stage is reached.
+    </summary>
+  </metric>
+  <metric name="TimeDelta.RequestRetried">
+    <summary>
+      The time difference (in milliseconds) between the
+      &quot;RequestRetried&quot; stage and the &quot;LoaderCreated&quot; stage.
 
       Only set when the stage is reached.
     </summary>
@@ -9374,6 +9954,21 @@ be describing additional metrics about the same event.
   <metric name="Function" enum="GameControlsEditingListFunction">
     <summary>
       The functions on the editing list.
+    </summary>
+  </metric>
+</event>
+
+<event name="GameControls.PlayGameWithGameControls">
+  <owner>cuicuiruan@google.com</owner>
+  <owner>arc-gaming@google.com</owner>
+  <summary>
+    Log once whether the ARC game is played with Game Controls per game session.
+    If it is played with Game Controls, record true immediately. If it is never
+    played with Game Controls, record false when shutting down the game.
+  </summary>
+  <metric name="PlayedWith" enum="Boolean">
+    <summary>
+      Boolean indicating whether the ARC game is played with Game Controls.
     </summary>
   </metric>
 </event>
@@ -11203,20 +11798,6 @@ be describing additional metrics about the same event.
     The metric is reported once per page-load, and when the page closes (e.g.
     the user closes the tab, or navigates away to a different page).
   </summary>
-  <metric name="AboveThreshold">
-    <summary>
-      The number of fixed-duration sliding windows (as a percentage) where the
-      number of dropped frames are above a threshold. The specific threshold is
-      yet to be determined.
-    </summary>
-    <aggregation>
-      <history>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
   <metric name="Average">
     <summary>
       This is trivially computable by counting the total number of dropped
@@ -11252,98 +11833,6 @@ be describing additional metrics about the same event.
       </history>
     </aggregation>
   </metric>
-  <metric name="CompositorFocusedPercentile95">
-    <summary>
-      CompositorFocused metrics report the throughput of frames that include
-      compositor thread updates. The 95-th percentile dropped frames within a
-      fixed-duration sliding window (as a percentage). So out of all
-      PerecentDroppedFrames of sliding windows the 95th percentile will be
-      reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="CompositorFocusedVariance">
-    <summary>
-      CompositorFocused metrics report the throughput of frames that include
-      compositor thread updates. The variance of percent dropped frames within a
-      fixed-duration sliding window. So out of all PerecentDroppedFrames of
-      sliding windows the variance will be reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="MainFocusedMedian">
-    <summary>
-      MainFocused metrics report the throughput of frames that include main
-      thread updates. The median dropped frames within a fixed-duration sliding
-      window (as a percentage). So out of all PerecentDroppedFrames of sliding
-      windows the median will be reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="MainFocusedPercentile95">
-    <summary>
-      MainFocused metrics report the throughput of frames that include main
-      thread updates. The 95-th percentile dropped frames within a
-      fixed-duration sliding window (as a percentage). So out of all
-      PerecentDroppedFrames of sliding windows the 95th percentile will be
-      reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="MainFocusedVariance">
-    <summary>
-      MainFocused metrics report the throughput of frames that include main
-      thread updates. The variance of percent dropped frames within a
-      fixed-duration sliding window. So out of all PerecentDroppedFrames of
-      sliding windows the variance will be reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
   <metric name="Median">
     <summary>
       The median dropped frames within a fixed-duration sliding window (as a
@@ -11361,282 +11850,61 @@ be describing additional metrics about the same event.
       </history>
     </aggregation>
   </metric>
-  <metric name="Percentile95">
+</event>
+
+<event name="GroupSuggestionPromo.Suggestion">
+  <owner>yuezhanggg@chromium.org</owner>
+  <owner>ssid@chromium.org</owner>
+  <summary>
+    Collects information about member tabs that are in a tab group suggestion.
+    Recorded after a suggestion is shown and user has reacted to the suggestion.
+  </summary>
+  <metric name="GroupSuggestionID">
     <summary>
-      The 95-th percentile dropped frames within a fixed-duration sliding window
-      (as a percentage). So out of all PerecentDroppedFrames of sliding windows
-      the 95th percentile will be reported here.
+      An int ID corresponding to the suggestion. This will enable joining all
+      tabs of the suggestion together.
     </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
   </metric>
-  <metric name="ScrollFocusedMedian">
+  <metric name="GroupSuggestionType" enum="TabGroupSuggesiton.SuggestionType">
     <summary>
-      ScrollFocused metrics reports the throughput with highest priority on
-      scroll interactions. The median dropped frames within a fixed-duration
-      sliding window (as a percentage) with highest priority given to scroll
-      throughput. So out of all PerecentDroppedFrames of sliding windows the
-      median will be reported here.
+      Enum of the type of the suggestion. This is decided by the type of
+      heuristics used to trigger the suggestion.
     </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
   </metric>
-  <metric name="ScrollFocusedPercentile95">
+  <metric name="IsActiveTab" enum="Boolean">
     <summary>
-      ScrollFocused metrics reports the throughput with highest priority on
-      scroll interactions. The 95-th percentile dropped frames within a
-      fixed-duration sliding window (as a percentage). So out of all
-      PerecentDroppedFrames of sliding windows the 95th percentile will be
-      reported here.
+      Boolean indicating whether this source is the active tab for the trigger,
+      only recorded for 1 tab within all GroupSuggestionPromo.Suggestion events
+      recorded with the same GroupSuggestionID.
     </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
   </metric>
-  <metric name="ScrollFocusedVariance">
+  <metric name="RecentForegroundCount">
     <summary>
-      ScrollFocused metrics reports the throughput with highest priority on
-      scroll interactions. The variance of percent dropped frames within a
-      fixed-duration sliding window. So out of all PerecentDroppedFrames of
-      sliding windows the variance will be reported here.
+      Int recording the number of times that the tab has been foregrounded in a
+      predefined time window, currently 10 minutes.
     </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
   </metric>
-  <metric name="SmoothnessBad">
+  <metric name="SecondsSinceLastActive">
     <summary>
-      The percentage of sliding windows with bad smoothness, or a
-      PercentDroppedFrames of 12% to 25%.
+      Int recording the number of seconds since the tab was last active.
+      Exponentially bucketed using GetExponentialBucketMin with a spacing of 1.3
     </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
   </metric>
-  <metric name="SmoothnessGood">
+  <metric name="UserResponseType" enum="TabGroupSuggesiton.UserResponse">
     <summary>
-      The percentage of sliding windows with good smoothness, or a
-      PercentDroppedFrames of 3% to 6%.
+      Enum of the type of user response.
     </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="SmoothnessOkay">
-    <summary>
-      The percentage of sliding windows with okay smoothness, or a
-      PercentDroppedFrames of 6% to 12%.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="SmoothnessVeryBad25to50">
-    <summary>
-      The percentage of sliding windows with a subset of very bad smoothness, or
-      a PercentDroppedFrames of 25% to 50%.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="SmoothnessVeryBad50to75">
-    <summary>
-      The percentage of sliding windows with a subset of very bad smoothness, or
-      a PercentDroppedFrames of 50% to 75%.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="SmoothnessVeryBad75to100">
-    <summary>
-      The percentage of sliding windows with a subset of very bad smoothness, or
-      a PercentDroppedFrames of 75% to 100%.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="SmoothnessVeryGood">
-    <summary>
-      The percentage of sliding windows with very good smoothness, or a
-      PercentDroppedFrames of 0% to 3%.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="Variance">
-    <summary>
-      The variance of percent dropped frames within a fixed-duration sliding
-      window. So out of all PerecentDroppedFrames of sliding windows the
-      variance will be reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="WorstCase">
-    <summary>
-      The maximum number of dropped frames (as a percentage) within a
-      fixed-duration sliding window. So out of all PerecentDroppedFrames of
-      sliding windows the max percentile will be reported here.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="WorstCaseAfter1Sec">
-    <summary>
-      The same as WorstCase metric, but only the sliding windows which starts 1
-      second after first contentful paint will be taken into account.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="WorstCaseAfter2Sec">
-    <summary>
-      The same as WorstCase metric, but only the sliding windows which starts 2
-      second after first contentful paint will be taken into account.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
-  </metric>
-  <metric name="WorstCaseAfter5Sec">
-    <summary>
-      The same as WorstCase metric, but only the sliding windows which starts 5
-      second after first contentful paint will be taken into account.
-    </summary>
-    <aggregation>
-      <history>
-        <index fields="profile.country"/>
-        <index fields="profile.form_factor"/>
-        <index fields="profile.system_ram"/>
-        <statistics>
-          <quantiles type="std-percentiles"/>
-        </statistics>
-      </history>
-    </aggregation>
   </metric>
 </event>
 
-<event name="HistoryApi">
+<event name="HistoryApi.AdvanceMethod">
   <owner>yaoxia@chromium.org</owner>
   <owner>shivanisha@chromium.org</owner>
   <summary>
-    Records usage of the window.history API, capturing details about the
-    operation type, user activation, and ad-related information. Recorded when
-    window.history API is used.
+    Records usage of `window.history` methods that advance the history position
+    (`pushState()`, `forward()`, and `go()` with positive values), capturing
+    details about user activation and ad-related information. Recorded when
+    these specific methods are invoked.
   </summary>
   <metric name="FromAd" enum="Boolean">
     <summary>
@@ -11650,12 +11918,6 @@ be describing additional metrics about the same event.
     <summary>
       Whether the invoking context has seen user activation.
       (https://mustaqahmed.github.io/user-activation-v2)
-    </summary>
-  </metric>
-  <metric name="IsHistoryModifyingOperation" enum="Boolean">
-    <summary>
-      Whether the operation modifies the history state (i.e., back(), forward(),
-      go(), pushState(), replaceState()).
     </summary>
   </metric>
 </event>
@@ -12875,6 +13137,19 @@ be describing additional metrics about the same event.
       </history>
     </aggregation>
   </metric>
+  <metric name="ContentAreaContextMenuText">
+    <summary>
+      Time to first interaction when overlay invoked through the selected text
+      context menu.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
   <metric name="FindInPage">
     <summary>
       Time to first interaction when overlay invoked through the find in page
@@ -12900,9 +13175,48 @@ be describing additional metrics about the same event.
       </history>
     </aggregation>
   </metric>
+  <metric name="HomeworkActionChip">
+    <summary>
+      Time to first interaction when overlay invoked through the omnibox Lens
+      homework page action suggestion.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
   <metric name="Omnibox">
     <summary>
       Time to first interaction when overlay invoked through the omnibox.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="OmniboxContextualSuggestion">
+    <summary>
+      Time to first interaction when overlay invoked through the omnibox
+      contextual suggestion.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="OmniboxPageAction">
+    <summary>
+      Time to first interaction when overlay invoked through the omnibox Lens
+      page action suggestion.
     </summary>
     <aggregation>
       <history>
@@ -13190,6 +13504,42 @@ be describing additional metrics about the same event.
       within a different reserved IP space than the loaded private page, 8 for
       resources requested by public pages that are suspected to be routers, and
       16 for localhost resources.
+    </summary>
+  </metric>
+</event>
+
+<event name="LoginDetectionV2" singular="True">
+  <owner>yigu@chromium.org</owner>
+  <owner>tbansal@chromium.org</owner>
+  <owner>web-identity-eng@chromium.org</owner>
+  <summary>
+    Records the info about login detected for sites based on different
+    heuristics. Recorded once per page load when OAuth login was detected on
+    page load. Note: the first version of LoginDetection recorded all pageload
+    types including password logins and no logins etc.
+  </summary>
+  <metric name="Page.LoginType" enum="LoginDetectionType">
+    <summary>
+      An enum for representing the different ways of user login to a site. At
+      this moment only OAuth logins are recorded in UKM.
+    </summary>
+  </metric>
+</event>
+
+<event name="LoginDetectionV2IdentityProvider" singular="True">
+  <owner>yigu@chromium.org</owner>
+  <owner>tbansal@chromium.org</owner>
+  <owner>web-identity-eng@chromium.org</owner>
+  <summary>
+    Records the OAuth provider info about login detected for sites based on
+    different heuristics. Recorded once per page load when OAuth login was
+    detected on page load. Note: the first version of LoginDetection recorded
+    all pageload types including password logins and no logins etc.
+  </summary>
+  <metric name="Page.LoginType" enum="LoginDetectionType">
+    <summary>
+      An enum for representing the different ways of user login to a site. At
+      this moment only OAuth logins are recorded in UKM.
     </summary>
   </metric>
 </event>
@@ -14442,6 +14792,23 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="Media.WebAudio.ScriptProcessorNode">
+  <owner>hongchan@chromium.org</owner>
+  <owner>mjwilson@chromium.org</owner>
+  <owner>webaudio-dev@chromium.org</owner>
+  <summary>
+    Records the creation of a ScriptProcessorNode to monitor usage of this
+    deprecated API. ScriptProcessorNode has been deprecated and developers are
+    strongly encouraged to use AudioWorklet instead. This data helps gauge
+    migration progress and the impact if it were to be removed.
+  </summary>
+  <metric name="Creation" enum="Boolean">
+    <summary>
+      Fired and set to true when a ScriptProcessorNode is constructed.
+    </summary>
+  </metric>
+</event>
+
 <event name="Media.WebMediaPlayerState">
   <owner>dalecurtis@chromium.org</owner>
   <owner>media-dev@chromium.org</owner>
@@ -15472,6 +15839,19 @@ be describing additional metrics about the same event.
       The last milestone before the navigation is abandoned.
     </summary>
   </metric>
+  <metric name="Net.ErrorCode" enum="NetErrorCodes">
+    <summary>
+      The `net::Error` code for this page load. Only logged for failed
+      provisional navigations (i.e. abandoned before commit).
+    </summary>
+  </metric>
+  <metric name="Net.ExtendedErrorCode" enum="ErrorNavigationTrigger">
+    <summary>
+      The extended error code for the net error for this page load, which
+      represents the detailed context of why the net error happened. Only logged
+      for failed provisional navigations.
+    </summary>
+  </metric>
   <metric name="PreviousBackgroundedTime">
     <summary>
       If we've experienced backgrounding while the navigation/page load is
@@ -16092,6 +16472,181 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="NavigationTimeline" singular="True">
+  <owner>hayato@chromium.org</owner>
+  <owner>chrome-loading@google.com</owner>
+  <summary>
+    Metrics to measure the navigation timings. These are recorded for 1 out of
+    1,000 navigations. These metrics are based on the equivalent UMA metrics
+    defined under Navigation.Timeline.{DurationFromTo}.Duration.
+  </summary>
+  <metric name="BeforeUnloadPhase1Duration">
+    <summary>
+      The start and end of beforeunload phase 1 in the initiating renderer
+      process, if that phase runs in a given navigation.
+    </summary>
+  </metric>
+  <metric name="BeforeUnloadPhase1ToNavigationRequestCreationDuration">
+    <summary>
+      When beforeunload phase 1 is finished to when the NavigationRequest is
+      created.
+    </summary>
+  </metric>
+  <metric name="BeforeUnloadPhase2Duration">
+    <summary>
+      The start and end of beforeunload phase 2 in the browser process, if that
+      phase runs in a given navigation.
+    </summary>
+  </metric>
+  <metric name="BeforeUnloadPhase2ToBeginNavigationDuration">
+    <summary>
+      When beforeunload phase 2 is finished to when
+      NavigationRequest::BeginNavigation() is called.
+    </summary>
+  </metric>
+  <metric name="BeginNavigationToCommitDuration">
+    <summary>
+      When NavigationRequest::BeginNavigation() is called to start the
+      navigation, to when the CommitNavigation message is sent. This is only
+      logged for navigations that don't go through the network stack, such as
+      about:blank navigations or browser-initiated same-document navigations.
+    </summary>
+  </metric>
+  <metric name="BeginNavigationToLoaderStartDuration">
+    <summary>
+      When NavigationRequest::BeginNavigation() is called to when the
+      NavigationURLLoader starts. Represents the browser process initialization
+      work between beforeunload processing and starting the network request.
+    </summary>
+  </metric>
+  <metric name="CommitToDidCommitDuration">
+    <summary>
+      When the CommitNavigation IPC is sent to the renderer process to when its
+      reply is received by RenderFrameHostImpl::DidCommitNavigation.
+    </summary>
+  </metric>
+  <metric name="DidCommitToFinishDuration">
+    <summary>
+      When the browser process receives the DidCommitNavigation IPC to when the
+      browser process finishes processing that IPC, making the navigation
+      committed.
+    </summary>
+  </metric>
+  <metric name="FetchStartToReceiveHeadersDuration">
+    <summary>
+      When fetch of the document via an HTTP(S) request starts, to when the
+      final response headers are received in the network service. This can
+      include redirects.
+    </summary>
+  </metric>
+  <metric name="IgnoredCorrectlyDuration">
+    <summary>
+      Reports how much time from beforeunload phases 1 and 2 was correctly
+      excluded from the Navigation.Timeline.TotalExcludingBeforeUnload.Duration
+      metric, so that beforeunload handlers and dialogs would not be counted as
+      part of the navigation.
+
+      Recorded at the point when a navigation finishes committing, i.e. finishes
+      processing the DidCommitNavigation message. A corresponding event is also
+      emitted for tracing.
+    </summary>
+  </metric>
+  <metric name="IgnoredIncorrectlyDuration">
+    <summary>
+      Reports how much time navigation guardrail metrics like FCP are
+      incorrectly excluding from the navigation duration, due to collecting
+      start times after beforeunload phase 1 finishes and possibly adjusting
+      them to after beforeunload phase 2 finishes. This excluded time represents
+      actual time the user is waiting that is not accounted for in current
+      metrics.
+
+      Recorded at the point when a navigation finishes committing, i.e. finishes
+      processing the DidCommitNavigation message. A corresponding event is also
+      emitted for tracing.
+    </summary>
+  </metric>
+  <metric name="LoaderStartToFetchStartDuration">
+    <summary>
+      When the NavigationURLLoader starts, to when the browser is ready to fetch
+      the document using an HTTP(S) request.
+    </summary>
+  </metric>
+  <metric name="LoaderStartToReceiveResponseDuration">
+    <summary>
+      When the NavigationURLLoader starts to when
+      NavigationRequest::OnResponseStarted() is called.
+    </summary>
+  </metric>
+  <metric name="NavigationRequestToBeforeUnloadPhase2Duration">
+    <summary>
+      When the NavigationRequest is created to when beforeunload phase 2 is
+      started in the browser process. Includes time to pick a target
+      RenderFrameHost, SiteInstance, and process.
+    </summary>
+  </metric>
+  <metric name="NavigationRequestToBeginNavigationDuration">
+    <summary>
+      When the NavigationRequest is created to when
+      NavigationRequest::BeginNavigation() is called. Logged only when no
+      beforeunload handler processing occurs (otherwise, see
+      NavigationRequestToBeforeUnloadPhase2Duration and
+      BeforeUnloadPhase2ToBeginNavigationDuration). Includes time to pick a
+      target RenderFrameHost, SiteInstance, and proces.
+    </summary>
+  </metric>
+  <metric name="ReceiveHeadersToReceiveResponseDuration">
+    <summary>
+      When the final response headers are received in the network service to
+      when NavigationRequest::OnResponseStarted() is called in the browser
+      process.
+    </summary>
+  </metric>
+  <metric name="ReceiveResponseToCommitDuration">
+    <summary>
+      When NavigationRequest::OnResponseStarted() is called to when the
+      CommitNavigation IPC is sent to the renderer process.
+    </summary>
+  </metric>
+  <metric name="RendererCommitToDidCommitDuration">
+    <summary>
+      When the renderer process receives a CommitNavigation IPC to when the
+      renderer process sends a DidCommitNavigation reply.
+    </summary>
+  </metric>
+  <metric name="StartToBeforeUnloadPhase1Duration">
+    <summary>
+      When the navigation starts, which could be in the renderer process, to
+      when beforeunload phase 1 starts in that process.
+    </summary>
+  </metric>
+  <metric name="StartToNavigationRequestCreationDuration">
+    <summary>
+      When the navigation starts, which could be in the renderer process, to
+      when the NavigationRequest is created.
+    </summary>
+  </metric>
+  <metric name="StartToSyncRendererCommitDuration">
+    <summary>
+      When the navigation starts in the renderer process, to when the renderer
+      process begins a synchronous renderer commit.
+    </summary>
+  </metric>
+  <metric name="TotalDuration">
+    <summary>
+      When the navigation starts to when the browser process finishes processing
+      the DidCommitNavigation IPC, at which point the navigation is committed.
+      Includes the time spent running any beforeunload handlers/dialogs.
+    </summary>
+  </metric>
+  <metric name="TotalExcludingBeforeUnloadDuration">
+    <summary>
+      When the navigation starts to when the browser process finishes processing
+      the DidCommitNavigation IPC, at which point the navigation is committed.
+      Excludes the time spent running any beforeunload handlers/dialogs.
+    </summary>
+  </metric>
+</event>
+
 <event name="NavigationTiming" singular="True">
   <owner>nhiroki@chromium.org</owner>
   <owner>chrome-loading@google.com</owner>
@@ -16508,6 +17063,18 @@ be describing additional metrics about the same event.
       Bucketed into exponential intervals with a standard bucket_spacing of 2.0.
     </summary>
   </metric>
+  <metric name="ZeroPrefixContextualSearchShown" enum="Boolean">
+    <summary>
+      Whether at least one zero-prefix Contextual Search suggestion was shown in
+      the Omnibox session.
+    </summary>
+  </metric>
+  <metric name="ZeroPrefixLensActionShown" enum="Boolean">
+    <summary>
+      Whether at least one zero-prefix Lens Action suggestion was shown in the
+      Omnibox session.
+    </summary>
+  </metric>
   <metric name="ZeroPrefixSearchShown" enum="Boolean">
     <summary>
       Whether at least one zero-prefix Search suggestion was shown in the
@@ -16536,7 +17103,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="OpenerHeuristic.PopupInteraction">
-  <owner>rtarpine@chromium.org</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
     Recorded when the user first interacts in a pop-up with opener access.
@@ -16580,7 +17147,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="OpenerHeuristic.PopupPastInteraction">
-  <owner>rtarpine@chromium.org</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
     Recorded when a pop-up with opener access is initially opened, and the user
@@ -16618,7 +17185,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="OpenerHeuristic.PostPopupCookieAccess">
-  <owner>rtarpine@chromium.org</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>amaliev@chromium.org</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
@@ -16656,7 +17223,7 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="OpenerHeuristic.TopLevel">
-  <owner>rtarpine@chromium.org</owner>
+  <owner>navtracking-team@google.com</owner>
   <owner>dc-komics@google.com</owner>
   <summary>
     Recorded by a top-level page that opens a pop-up with opener access, when
@@ -16720,18 +17287,11 @@ be describing additional metrics about the same event.
       did not complete successfully.
     </summary>
   </metric>
-  <metric name="RegisteredOptimizationTargets">
-    <summary>
-      A bitmask of the optimization targets that were registered at the start of
-      the page load where each flipped bit corresponds to its int value in
-      |optimization_guide::proto::OptimizationTarget|.
-    </summary>
-  </metric>
   <metric name="RegisteredOptimizationTypes">
     <summary>
       A bitmask of the optimization types that were registered at the start of
       the page load where each flipped bit corresponds to its int value in
-      |optimization_guide::proto::OptimizationTarget|.
+      |optimization_guide::proto::OptimizationType|.
     </summary>
   </metric>
 </event>
@@ -18242,6 +18802,13 @@ be describing additional metrics about the same event.
     <summary>
       Records how the user interacted with a saving prompt.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
   <metric name="Saving.Prompt.Shown" enum="Boolean">
     <summary>
@@ -18332,6 +18899,13 @@ be describing additional metrics about the same event.
     <summary>
       Records how the user interacted with an updating prompt.
     </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
   <metric name="Updating.Prompt.Shown" enum="Boolean">
     <summary>
@@ -18379,6 +18953,61 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
+<event name="PasswordManager.ChangeFlowOutcome" singular="True">
+  <owner>otara@google.com</owner>
+  <owner>vsemeniuk@google.com</owner>
+  <summary>
+    Metrics related to the outcome of the password change flow. Recorded when
+    the flow is stopped.
+  </summary>
+  <metric name="CoarseFinalPasswordChangeStatus"
+      enum="CoarseFinalPasswordChangeState">
+    <summary>
+      Records the state at which the password change flow was stopped, either
+      successful, failed or interrupted.
+
+      This mirrors CoarseFinalPasswordChangeStatus in UMA.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="PasswordManager.ChangeRecovery" singular="True">
+  <owner>otara@google.com</owner>
+  <owner>vsemeniuk@google.com</owner>
+  <summary>
+    Metrics related to the recovery flow of the password change feature. Records
+    users enter and exit the recovery flow.
+  </summary>
+  <metric name="PasswordChangeRecoveryFlow"
+      enum="PasswordChangeRecoveryFlowState">
+    <summary>
+      Records the start and the end of the password recovery flow. We will
+      consider the start to be an interaction with a &quot;Trouble signing
+      in&quot; button in the password autofill dropdown or a proactive recovery
+      popup that we show if we detect a failed log-in attempt. The end of the
+      flow is considered to be an updated primary password (the backup password
+      becomes the primary password). This happens after the user accepts the
+      &quot;update password&quot; bubble
+
+      This mirrors PasswordChangeRecoveryFlow in UMA.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
 <event name="PasswordManager.ChangeSubmission" singular="True">
   <owner>fiorellab@google.com</owner>
   <owner>vsemeniuk@google.com</owner>
@@ -18386,11 +19015,13 @@ be describing additional metrics about the same event.
     Metrics related to password change submission flow. Recorded when password
     are saved by password change submission trajectory.
   </summary>
-  <metric name="LogInWithPasswordChangeSubmission" enum="Boolean">
+  <metric name="LogInWithPasswordChangeSubmission"
+      enum="LogInWithChangedPasswordOutcome">
     <summary>
-      Records whether or not a login is successful using a password previously
-      saved through password change submission flow. It is recorded at the
-      moment of detecting a succesful or failed log in.
+      Records whether or not a login is successful using either the primary or
+      the backup password previously saved through password change submission
+      flow. It is recorded at the moment of detecting a succesful or failed log
+      in.
 
       This mirrors LogInWithPasswordChangeSubmission in UMA.
     </summary>
@@ -18588,7 +19219,6 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="PasswordManager.PasswordFillingIOS">
-  <owner>theocristea@google.com</owner>
   <owner>kazinova@google.com</owner>
   <owner>vsemeniuk@google.com</owner>
   <summary>
@@ -19169,7 +19799,7 @@ be describing additional metrics about the same event.
     renderer process are allocated to all pages hosted in that process using the
     algorithm in performance_manager::ProcessMetricsDecorator. An event is
     collected for each open page every 2 minutes, which is the same frequency as
-    the PerformanceMonitor.AverageCPU8.* histograms.
+    the PerformanceMonitor.AverageCPU9.* histograms.
   </summary>
   <metric name="BackgroundState" enum="PageMeasurementBackgroundState">
     <summary>
@@ -19200,7 +19830,7 @@ be describing additional metrics about the same event.
     <summary>
       The estimated CPU usage of the page over the last 2 minutes, with 10,000
       as 100% usage of 1 full core. (The same scale as the
-      PerformanceMonitor.AverageCPU8.* histograms.)
+      PerformanceMonitor.AverageCPU9.* histograms.)
     </summary>
     <aggregation>
       <history>
@@ -19228,7 +19858,7 @@ be describing additional metrics about the same event.
     <summary>
       The sum of the estimated CPU usage of all pages over the last 2 minutes,
       with 10,000 as 100% usage of 1 full core. (The same scale as the
-      PerformanceMonitor.AverageCPU8.* histograms.) RecentCPUUsage can be
+      PerformanceMonitor.AverageCPU9.* histograms.) RecentCPUUsage can be
       compared to this to find how the page compares to other open tabs.
     </summary>
     <aggregation>
@@ -19356,13 +19986,17 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="PermissionType">
     <summary>
-      An enum of type ContentSettingsType.
+      The type of permission, encoded through the mapping defined by
+      `kHistogramValue` in
+      https://source.chromium.org/chromium/chromium/src/+/main:components/content_settings/core/browser/content_settings_uma_util.cc;l=22;bpv=1;bpt=1.
+      Beware that this is not the same as the ContentSettingsType enum (casted
+      to int). An enum of type ContentSettingsType.
     </summary>
   </metric>
   <metric name="PredictionsApiResponse.GrantLikelihood"
       enum="PredictionGrantLikelihood">
     <summary>
-      An enum of type PermissionUmaUtil::PredictionGrantLikelihood describing
+      An enum of type PermissionUiSelector::PredictionGrantLikelihood describing
       the likelihood returned by the Web Permission Predictions Service, if the
       service was successfully queried.
     </summary>
@@ -19587,8 +20221,13 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="PermissionType" enum="PermissionRequestType">
     <summary>
-      Represents the permission type that the prompt is for. An enum of type
-      ContentSettingsType.
+      Represents the permission type that the prompt is for. This can sometimes
+      differ from PermissionType when the PermissionType is Multiple, as some
+      screens are designed to only be shown for one permission at a time. This
+      is encoded via RequestTypeForUma in
+      https://source.chromium.org/chromium/chromium/src/+/main:components/permissions/permission_uma_util.h;bpv=1;bpt=1;l=73.
+      Beware that this is not the same as the ContentSettingsType enum (casted
+      to int).
     </summary>
   </metric>
   <metric name="PreviousScreens">
@@ -19601,10 +20240,11 @@ be describing additional metrics about the same event.
   </metric>
   <metric name="ScreenPermissionType" enum="PermissionRequestType">
     <summary>
-      Represents the permission type that current screen is for. This can
-      sometimes differ from PermissionType when the PermissionType is Multiple,
-      as some screens are designed to only be shown for one permission at a
-      time. An enum of type ContentSettingsType.
+      Represents the permission type that current screen is for. This is encoded
+      via RequestTypeForUma in
+      https://source.chromium.org/chromium/chromium/src/+/main:components/permissions/permission_uma_util.h;bpv=1;bpt=1;l=73.
+      Beware that this is not the same as the ContentSettingsType enum (casted
+      to int).
     </summary>
   </metric>
   <metric name="Variant" enum="ElementAnchoredBubbleVariant">
@@ -19643,7 +20283,11 @@ be describing additional metrics about the same event.
   </summary>
   <metric name="PermissionType">
     <summary>
-      An enum of type ContentSettingsType.
+      The type of permission used, encoded through the mapping defined by
+      `kHistogramValue` in
+      https://source.chromium.org/chromium/chromium/src/+/main:components/content_settings/core/browser/content_settings_uma_util.cc;l=22;bpv=1;bpt=1.
+      Beware that this is not the same as the ContentSettingsType enum (casted
+      to int).
     </summary>
   </metric>
 </event>
@@ -19666,6 +20310,13 @@ be describing additional metrics about the same event.
     <summary>
       A boolean signaling whether the URL is on the high confidence allowlist or
       not.
+    </summary>
+  </metric>
+  <metric name="SiteEngagementLevel">
+    <summary>
+      The site engagement level of the site when the user receives a
+      notification from them. Set to 0 even if the origin is not tracked by the
+      Site Engagement Service.
     </summary>
   </metric>
   <metric name="SuspiciousScore">
@@ -21134,16 +21785,22 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
-<event name="SafetyHub.DisruptiveNotificationRevocations.FalsePositive">
+<event
+    name="SafetyHub.DisruptiveNotificationRevocations.FalsePositiveInteraction">
   <owner>olesiamarukhnno@google.com</owner>
   <owner>antoniosartori@chromium.org</owner>
   <summary>
-    Recorded when an increase in site engagement score was detected for a site
-    that was previously put in a potential revocation list for disruptive
-    notification permissions. The metrics will be recorded on the first site
-    engagement increase after a revocation would have been proposed (cf. metric
-    SafetyHub.DisruptiveNotificationRevocations.Proposed).
+    Recorded when an user interaction was detected for a site that was
+    previously put in a potential revocation list for disruptive notification
+    permissions or for a site for which notification permission was revoked. The
+    metrics will be recorded on either page visit or a notification click.
   </summary>
+  <metric name="DailyAverageVolume">
+    <summary>
+      Average daily volume of notifications sent by the site, measured over the
+      last 7 days.
+    </summary>
+  </metric>
   <metric name="DaysSinceRevocation">
     <summary>
       The number of days between the website was put in the potential revocation
@@ -21160,6 +21817,72 @@ be describing additional metrics about the same event.
       Site engagement score when the site marked for revocation.
     </summary>
   </metric>
+  <metric name="Reason" enum="DisruptiveNotificationFalsePositiveReason">
+    <summary>
+      The reason why the revocation was deemed a false positive: either a web
+      site visit or a notification click.
+    </summary>
+  </metric>
+  <metric name="RevocationState" enum="DisruptiveNotificationRevocationState">
+    <summary>
+      The revocation state (either proposed or actually revoked).
+    </summary>
+  </metric>
+</event>
+
+<event
+    name="SafetyHub.DisruptiveNotificationRevocations.FalsePositiveRevocation">
+  <owner>olesiamarukhnno@google.com</owner>
+  <owner>antoniosartori@chromium.org</owner>
+  <summary>
+    Recorded when enough user interactations were detected to be deemed a false
+    positive revocation for a site that was previously put in a potential
+    revocation list for disruptive notification permissions or for a site for
+    which notification permission was revoked. The metrics will be recorded on
+    either page visit or a notification click. A site engagement score has to
+    increase by a minimum amount, set in feature params. A false positive
+    revocation can only be reported after a min cooldown period has passed, set
+    in feature params.
+  </summary>
+  <metric name="DailyAverageVolume">
+    <summary>
+      Average daily volume of notifications sent by the site, measured over the
+      last 7 days.
+    </summary>
+  </metric>
+  <metric name="DaysSinceRevocation">
+    <summary>
+      The number of days between the website was put in the potential revocation
+      list and the detected increase in site engagement.
+    </summary>
+  </metric>
+  <metric name="NewSiteEngagement">
+    <summary>
+      New site engagement after user interaction with the site.
+    </summary>
+  </metric>
+  <metric name="NotificationClickCount">
+    <summary>
+      The notification clicks count, observered while the site is in the
+      proposed revocation list.
+    </summary>
+  </metric>
+  <metric name="OldSiteEngagement">
+    <summary>
+      Site engagement score when the site marked for revocation.
+    </summary>
+  </metric>
+  <metric name="PageVisitCount">
+    <summary>
+      The page visits count, observered while the site is in the proposed
+      revocation list.
+    </summary>
+  </metric>
+  <metric name="RevocationState" enum="DisruptiveNotificationRevocationState">
+    <summary>
+      The revocation state (either proposed or actually revoked).
+    </summary>
+  </metric>
 </event>
 
 <event name="SafetyHub.DisruptiveNotificationRevocations.Proposed">
@@ -21171,7 +21894,9 @@ be describing additional metrics about the same event.
     from the website is displayed. Notifications are considered disruptives when
     sent by websites with both very low site engagement index and high volume of
     notifications. After a revocation is proposed, this metric will not be
-    reported anymore for the website for 30 days.
+    reported anymore for the website for 30 days. After metrics were collected,
+    during the full launch the permission will be revoked on the next Safety
+    Check run.
   </summary>
   <metric name="DailyAverageVolume">
     <summary>
@@ -21182,6 +21907,39 @@ be describing additional metrics about the same event.
   <metric name="SiteEngagement">
     <summary>
       Site engagement for the disruptive site.
+    </summary>
+  </metric>
+</event>
+
+<event name="SafetyHub.DisruptiveNotificationRevocations.UserRegrant">
+  <owner>olesiamarukhnno@google.com</owner>
+  <owner>antoniosartori@chromium.org</owner>
+  <summary>
+    Recorded when a user has granted a notification permission for a site where
+    notifications where revoked due to disruptive notifications. Recorded when
+    user is visiting a site and has allowed notification permission for a site
+    in the revoke list.
+  </summary>
+  <metric name="DailyAverageVolume">
+    <summary>
+      Average daily volume of notifications sent by the site, measured over the
+      last 7 days.
+    </summary>
+  </metric>
+  <metric name="DaysSinceRevocation">
+    <summary>
+      The number of days between the website was put in the potential revocation
+      list and the detected increase in site engagement.
+    </summary>
+  </metric>
+  <metric name="NewSiteEngagement">
+    <summary>
+      New site engagement after user interaction with the site.
+    </summary>
+  </metric>
+  <metric name="OldSiteEngagement">
+    <summary>
+      Site engagement score when the site marked for revocation.
     </summary>
   </metric>
 </event>
@@ -21613,6 +22371,13 @@ be describing additional metrics about the same event.
       or sum of a UMA/UKM metric.
     </summary>
   </metric>
+  <metric name="ActualResult10">
+    <summary>
+      The 10th UMA or UKM metrics related to the features affected by the ML
+      model, with or without aggregation, after running the features as
+      instructed by the ML model. No encoding is used.
+    </summary>
+  </metric>
   <metric name="ActualResult2">
     <summary>
       The 2nd UMA or UKM metrics related to the features affected by the ML
@@ -21644,6 +22409,27 @@ be describing additional metrics about the same event.
   <metric name="ActualResult6">
     <summary>
       The 6th UMA or UKM metrics related to the features affected by the ML
+      model, with or without aggregation, after running the features as
+      instructed by the ML model. No encoding is used.
+    </summary>
+  </metric>
+  <metric name="ActualResult7">
+    <summary>
+      The 7th UMA or UKM metrics related to the features affected by the ML
+      model, with or without aggregation, after running the features as
+      instructed by the ML model. No encoding is used.
+    </summary>
+  </metric>
+  <metric name="ActualResult8">
+    <summary>
+      The 8th UMA or UKM metrics related to the features affected by the ML
+      model, with or without aggregation, after running the features as
+      instructed by the ML model. No encoding is used.
+    </summary>
+  </metric>
+  <metric name="ActualResult9">
+    <summary>
+      The 9th UMA or UKM metrics related to the features affected by the ML
       model, with or without aggregation, after running the features as
       instructed by the ML model. No encoding is used.
     </summary>
@@ -22976,22 +23762,6 @@ be describing additional metrics about the same event.
   </metric>
 </event>
 
-<event name="SiteInstance">
-  <owner>bashi@chromium.org</owner>
-  <owner>chrome-site-isolation@google.com</owner>
-  <summary>
-    Records how likely a tab can share processes with other tabs.
-  </summary>
-  <metric name="NewProcessUsedForNavigationWhenSameSiteProcessExists"
-      enum="Boolean">
-    <summary>
-      Records whether a new process is used for navigation when there are other
-      same site process(es). Recorded for the outer-most main frame navigation
-      when navigation is committed (cross-origin redirects are not recorded).
-    </summary>
-  </metric>
-</event>
-
 <event name="SmartCharging">
   <owner>thanhdng@chromium.org</owner>
   <owner>jiameng@chromium.org</owner>
@@ -23172,8 +23942,8 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="SoftNavigation" singular="True">
-  <owner>iclelland@chromium.org</owner>
-  <owner>haoliuk@chromium.org</owner>
+  <owner>mmocny@chromium.org</owner>
+  <owner>speed-metrics-dev@chromium.org</owner>
   <summary>
     Records soft navigation metrics including LCP, CLS, INP. Soft navigation is
     DOM changes that are perceived to be navigation, but there is no page load.
@@ -23364,6 +24134,35 @@ be describing additional metrics about the same event.
       Enumerates the different results possible for subresource redirection,
       such as redirectable or different reasons of ineligibility.
     </summary>
+  </metric>
+</event>
+
+<event name="SuspiciousNotificationInteraction">
+  <owner>skrakowi@chromium.org</owner>
+  <owner>chrome-counter-abuse-core@google.com</owner>
+  <summary>
+    Recorded when the user takes an action on a suspicious notification whose
+    contents were replaced by a warning.
+  </summary>
+  <metric name="SuspiciousInteractionType"
+      enum="SuspiciousNotificationWarningInteractions">
+    <summary>
+      The type of action that the user has taken after receiving a notification
+      content detection warning.
+    </summary>
+  </metric>
+  <metric name="SuspiciousScore">
+    <summary>
+      The 'suspicious' score given to notification contents that came from the
+      URL. Ranges from 0 to 100.
+    </summary>
+    <aggregation>
+      <history>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
   </metric>
 </event>
 
@@ -23983,6 +24782,13 @@ be describing additional metrics about the same event.
       Token and thus was granted cookie access.
     </summary>
   </metric>
+  <metric name="Source" enum="FirstPartyMetadataSource">
+    <summary>
+      The source of the metadata rule that grants this cookie access. This is
+      logged for every page load with third-party cookies allowed due to a
+      global metadata or heuristics rule.
+    </summary>
+  </metric>
 </event>
 
 <event name="Translate">
@@ -24015,7 +24821,7 @@ be describing additional metrics about the same event.
     instances where the user backgrounds then kills Chrome.
   </summary>
   <metric name="FinalSourceLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The source language at the time the event is recorded. In most cases this
       will match the initial source language, but the user can change the source
@@ -24032,7 +24838,7 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="FinalTargetLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The target language at the time the event is recorded. In most cases this
       will match the initial target language, but the user can change the target
@@ -24052,7 +24858,7 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="HTMLContentLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The HTML language content attribute specified by the document. Note that
       the semantic_type attribute is included in order to remain consistent with
@@ -24060,7 +24866,7 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="HTMLDocumentLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The HTML language attribute specified by the document. Note that the
       semantic_type attribute is included in order to remain consistent with the
@@ -24068,7 +24874,7 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="InitialSourceLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The initial source language that Translate determines for the page. Note
       that the semantic_type attribute is included in order to remain consistent
@@ -24092,7 +24898,7 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="InitialTargetLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The initial target language that Translate thinks it should translate to.
       Note that the semantic_type attribute is included in order to remain
@@ -24106,7 +24912,7 @@ be describing additional metrics about the same event.
     </summary>
   </metric>
   <metric name="ModelDetectedLanguage" semantic_type="ST_DEMOGRAPHIC_INFO"
-      enum="LocaleCodeISO639">
+      enum="LocaleCodeBCP47">
     <summary>
       The language that was estimated by the language model based on the page's
       content. Note that the semantic_type attribute is included in order to
@@ -24202,6 +25008,215 @@ be describing additional metrics about the same event.
       <history>
         <statistics>
           <enumeration/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+</event>
+
+<event name="TrustedWebActivity.Startup">
+  <owner>ishitatsuyuki@google.com</owner>
+  <owner>uekawa@chromium.org</owner>
+  <owner>cros-virt-devices-guests@google.com</owner>
+  <summary>
+    Page load metrics for the first page load in a Trusted Web Activity (TWA).
+
+    The startup is considered Cold if the browser process was not running and
+    had to be started, and Warm if the process was already running in the
+    background. Timings are relative to the Activity initialization timestamp
+    passed from android-browser-helper.
+  </summary>
+  <metric name="AndroidBrowserHelper.Version">
+    <summary>
+      The version code of android-browser-helper used by the TWA wrapper
+      associated with the origin.
+    </summary>
+  </metric>
+  <metric name="TimeToFirstCommitNavigation2.Cold">
+    <summary>
+      The timestamp of the first navigation commit, relative to the Activity
+      initialization timestamp passed from android-browser-helper. Split by
+      startups where the browser process was not in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToFirstCommitNavigation2.Warm">
+    <summary>
+      The timestamp of the first navigation commit, relative to the Activity
+      initialization timestamp passed from android-browser-helper. Split by
+      startups where the browser process was already running in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToFirstContentfulPaint.Cold">
+    <summary>
+      The timestamp of the first contentful paint, relative to the Activity
+      initialization timestamp passed from android-browser-helper. Split by
+      startups where the browser process was not in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToFirstContentfulPaint.Warm">
+    <summary>
+      The timestamp of the first contentful paint, relative to the Activity
+      initialization timestamp passed from android-browser-helper. Split by
+      startups where the browser process was already running in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToLargestContentfulPaint2.Cold">
+    <summary>
+      The timestamp of the largest contentful paint, relative to the Activity
+      initialization timestamp passed from android-browser-helper. Split by
+      startups where the browser process was not in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToLargestContentfulPaint2.Warm">
+    <summary>
+      The timestamp of the largest contentful paint, relative to the Activity
+      initialization timestamp passed from android-browser-helper. Split by
+      startups where the browser process was already running in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToMarkFullyLoaded.Cold">
+    <summary>
+      Timestamp of performance.mark('mark_fully_loaded'), relative to the
+      Activity initialization timestamp passed from android-browser-helper.
+      Recorded only if the web page supports the respective performance marker.
+      Split by startups where the browser process was not in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToMarkFullyLoaded.Warm">
+    <summary>
+      Timestamp of performance.mark('mark_fully_loaded'), relative to the
+      Activity initialization timestamp passed from android-browser-helper.
+      Recorded only if the web page supports the respective performance marker.
+      Split by startups where the browser process was already running in the
+      background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToMarkFullyVisible.Cold">
+    <summary>
+      Timestamp of performance.mark('mark_fully_visible'), relative to the
+      Activity initialization timestamp passed from android-browser-helper.
+      Recorded only if the web page supports the respective performance marker.
+      Split by startups where the browser process was not in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToMarkFullyVisible.Warm">
+    <summary>
+      Timestamp of performance.mark('mark_fully_visible'), relative to the
+      Activity initialization timestamp passed from android-browser-helper.
+      Recorded only if the web page supports the respective performance marker.
+      Split by startups where the browser process was already running in the
+      background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToMarkInteractive.Cold">
+    <summary>
+      Timestamp of performance.mark('mark_interactive'), relative to the
+      Activity initialization timestamp passed from android-browser-helper.
+      Recorded only if the web page supports the respective performance marker.
+      Split by startups where the browser process was not in the background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
+        </statistics>
+      </history>
+    </aggregation>
+  </metric>
+  <metric name="TimeToMarkInteractive.Warm">
+    <summary>
+      Timestamp of performance.mark('mark_interactive'), relative to the
+      Activity initialization timestamp passed from android-browser-helper.
+      Recorded only if the web page supports the respective performance marker.
+      Split by startups where the browser process was already running in the
+      background.
+    </summary>
+    <aggregation>
+      <history>
+        <index fields="profile.form_factor"/>
+        <statistics>
+          <quantiles type="std-percentiles"/>
         </statistics>
       </history>
     </aggregation>
@@ -26824,10 +27839,8 @@ be describing additional metrics about the same event.
 </event>
 
 <event name="XR.WebXR.Session">
-  <owner>billorr@chromium.org</owner>
-  <owner>bialpio@chromium.org</owner>
+  <owner>alcooper@chromium.org</owner>
   <owner>xr-dev@chromium.org</owner>
-  <owner>cassew@google.com</owner>
   <summary>
     When session ends, records data for a WebXR / WebVR session.
   </summary>

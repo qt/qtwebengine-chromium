@@ -1,6 +1,7 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/report_view/report_view.js';
 
@@ -117,10 +118,6 @@ export class StorageMetadataView extends LegacyWrapper.LegacyWrapper.WrappableCo
   #storageBucketsModel?: SDK.StorageBucketsModel.StorageBucketsModel;
   #storageKey: SDK.StorageKeyManager.StorageKey|null = null;
   #storageBucket: Protocol.Storage.StorageBucketInfo|null = null;
-
-  getShadow(): ShadowRoot {
-    return this.#shadow;
-  }
 
   setStorageKey(storageKey: string): void {
     this.#storageKey = SDK.StorageKeyManager.parseStorageKey(storageKey);

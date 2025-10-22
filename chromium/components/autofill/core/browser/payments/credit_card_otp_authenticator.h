@@ -91,7 +91,7 @@ class CreditCardOtpAuthenticator : public OtpUnmaskDelegate {
   // |SendSelectChallengeOptionRequest()| to send the selected challenge option
   // to server.
   virtual void OnChallengeOptionSelected(
-      const CreditCard* card,
+      const CreditCard& card,
       const CardUnmaskChallengeOption& selected_challenge_option,
       base::WeakPtr<Requester> requester,
       const std::string& context_token,
@@ -141,7 +141,7 @@ class CreditCardOtpAuthenticator : public OtpUnmaskDelegate {
   void SendUnmaskCardRequest();
 
   // Card being unmasked.
-  raw_ptr<const CreditCard> card_;
+  CreditCard card_;
 
   // User-entered OTP value.
   std::u16string otp_;

@@ -6,7 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_SCHEDULER_WEB_SCHEDULING_TASK_STATE_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/scheduler/script_wrappable_task_state.h"
+#include "third_party/blink/renderer/core/scheduler/task_attribution_task_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 
@@ -15,20 +15,17 @@ class TaskAttributionInfo;
 }  // namespace blink::scheduler
 
 namespace blink {
-class ExecutionContext;
 class SchedulerTaskContext;
 
 class CORE_EXPORT WebSchedulingTaskState final
-    : public GarbageCollected<WebSchedulingTaskState>,
-      public WrappableTaskState {
+    : public TaskAttributionTaskState {
  public:
   WebSchedulingTaskState(scheduler::TaskAttributionInfo*,
                          SchedulerTaskContext*);
 
-  // `WrappableTaskState` implementation:
+  // `TaskAttributionTaskState` implementation:
   scheduler::TaskAttributionInfo* GetTaskAttributionInfo() override;
-  SchedulerTaskContext* GetSchedulerTaskContextFor(
-      const ExecutionContext&) override;
+  SchedulerTaskContext* GetSchedulerTaskContext() override;
   void Trace(Visitor*) const override;
 
  private:

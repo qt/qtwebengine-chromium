@@ -29,7 +29,6 @@
 #include <optional>
 
 #include "build/build_config.h"
-#include "third_party/blink/renderer/core/clipboard/clipboard_mime_types.h"
 #include "third_party/blink/renderer/core/clipboard/clipboard_utilities.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer_access_policy.h"
@@ -57,9 +56,12 @@
 #include "third_party/blink/renderer/platform/graphics/paint/paint_record_builder.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/graphics/unaccelerated_static_bitmap_image.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_response.h"
+#include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/mime/mime_type_registry.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/skia/include/core/SkSurface.h"
+#include "ui/base/clipboard/clipboard_constants.h"
 #include "ui/base/dragdrop/mojom/drag_drop_types.mojom-blink.h"
 #include "ui/gfx/geometry/rect_conversions.h"
 
@@ -95,7 +97,7 @@ class DraggedNodeImageBuilder {
 #if DCHECK_IS_ON()
     DCHECK_EQ(dom_tree_version_, node_->GetDocument().DomTreeVersion());
 #endif
-    // Construct layout object for |node_| with pseudo class "-webkit-drag"
+    // Construct layout object for |node_| with pseudo-class "-webkit-drag"
     local_frame_->View()->UpdateAllLifecyclePhasesExceptPaint(
         DocumentUpdateReason::kDragImage);
     LayoutObject* const dragged_layout_object = node_->GetLayoutObject();
@@ -113,14 +115,12 @@ class DraggedNodeImageBuilder {
 
     // Maximum reasonable dimension for a drag image which won't crash during
     // memory allocation and DnD operation.
-    if (RuntimeEnabledFeatures::DnDScaleHeightAndWidthToMaxDimensionEnabled()) {
-      const int kMaxDimension = 64 * 128;
-      if (absolute_bounding_box.width() > kMaxDimension) {
-        absolute_bounding_box.set_width(kMaxDimension);
-      }
-      if (absolute_bounding_box.height() > kMaxDimension) {
-        absolute_bounding_box.set_height(kMaxDimension);
-      }
+    const int kMaxDimension = 64 * 128;
+    if (absolute_bounding_box.width() > kMaxDimension) {
+      absolute_bounding_box.set_width(kMaxDimension);
+    }
+    if (absolute_bounding_box.height() > kMaxDimension) {
+      absolute_bounding_box.set_height(kMaxDimension);
     }
 
     gfx::RectF bounding_box =
@@ -220,14 +220,19 @@ AtomicString ConvertDragOperationsMaskToEffectAllowed(DragOperationsMask op) {
 // specified in the HTML spec. See
 // https://html.spec.whatwg.org/multipage/dnd.html#the-datatransfer-interface
 String NormalizeType(const String& type, bool* convert_to_url = nullptr) {
+  constexpr char kTypeText[] = "text";
+  constexpr char kTypeUrl[] = "url";
+  constexpr char kMimeTypePlainTextEtc[] = "text/plain;";
+
   String clean_type = type.StripWhiteSpace().LowerASCII();
-  if (clean_type == kMimeTypeText ||
-      clean_type.StartsWith(kMimeTypeTextPlainEtc))
-    return kMimeTypeTextPlain;
-  if (clean_type == kMimeTypeURL) {
-    if (convert_to_url)
+  if (clean_type == kTypeText || clean_type.StartsWith(kMimeTypePlainTextEtc)) {
+    return ui::kMimeTypePlainText;
+  }
+  if (clean_type == kTypeUrl) {
+    if (convert_to_url) {
       *convert_to_url = true;
-    return kMimeTypeTextURIList;
+    }
+    return ui::kMimeTypeUriList;
   }
   return clean_type;
 }
@@ -510,7 +515,7 @@ void DataTransfer::DeclareAndWriteDragImage(Element* element,
   WriteImageToDataObject(data_object_.Get(), element, image_url);
 
   // Put img tag on the clipboard referencing the image
-  data_object_->SetData(kMimeTypeTextHTML,
+  data_object_->SetData(ui::kMimeTypeHtml,
                         CreateMarkup(element, kIncludeNode, kResolveAllURLs));
 }
 
@@ -522,7 +527,7 @@ void DataTransfer::WriteURL(Node* node, const KURL& url, const String& title) {
   data_object_->SetURLAndTitle(url, title);
 
   // The URL can also be used as plain text.
-  data_object_->SetData(kMimeTypeTextPlain, url.GetString());
+  data_object_->SetData(ui::kMimeTypePlainText, url.GetString());
 
   // The URL can also be used as an HTML fragment.
   data_object_->SetHTMLAndBaseURL(
@@ -544,7 +549,7 @@ void DataTransfer::WriteSelection(const FrameSelection& selection) {
   ReplaceNewlinesWithWindowsStyleNewlines(str);
 #endif
   ReplaceNBSPWithSpace(str);
-  data_object_->SetData(kMimeTypeTextPlain, str);
+  data_object_->SetData(ui::kMimeTypePlainText, str);
 }
 
 void DataTransfer::SetAccessPolicy(DataTransferAccessPolicy policy) {

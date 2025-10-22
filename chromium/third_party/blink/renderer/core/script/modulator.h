@@ -28,6 +28,12 @@
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
+namespace v8 {
+
+enum class ModuleImportPhase;
+
+}
+
 namespace blink {
 
 class ModuleScript;
@@ -51,11 +57,12 @@ class CORE_EXPORT SingleModuleClient
  public:
   ~SingleModuleClient() override = default;
   virtual void Trace(Visitor* visitor) const {}
-  const char* NameInHeapSnapshot() const override {
+  const char* GetHumanReadableName() const override {
     return "SingleModuleClient";
   }
 
-  virtual void NotifyModuleLoadFinished(ModuleScript*) = 0;
+  virtual void NotifyModuleLoadFinished(ModuleScript*,
+                                        v8::ModuleImportPhase) = 0;
 };
 
 // A ModuleTreeClient is notified when a module script and its whole descendent
@@ -65,7 +72,9 @@ class CORE_EXPORT ModuleTreeClient : public GarbageCollected<ModuleTreeClient>,
  public:
   ~ModuleTreeClient() override = default;
   virtual void Trace(Visitor* visitor) const {}
-  const char* NameInHeapSnapshot() const override { return "ModuleTreeClient"; }
+  const char* GetHumanReadableName() const override {
+    return "ModuleTreeClient";
+  }
 
   virtual void NotifyModuleTreeLoadFinished(ModuleScript*) = 0;
 };
@@ -111,7 +120,7 @@ class CORE_EXPORT Modulator : public GarbageCollected<Modulator>,
   static void ClearModulator(ScriptState*);
 
   void Trace(Visitor* visitor) const override;
-  const char* NameInHeapSnapshot() const override { return "Modulator"; }
+  const char* GetHumanReadableName() const override { return "Modulator"; }
 
   virtual ModuleRecordResolver* GetModuleRecordResolver() = 0;
   virtual base::SingleThreadTaskRunner* TaskRunner() = 0;
@@ -138,6 +147,7 @@ class CORE_EXPORT Modulator : public GarbageCollected<Modulator>,
       const ScriptFetchOptions&,
       ModuleScriptCustomFetchType,
       ModuleTreeClient*,
+      v8::ModuleImportPhase,
       String referrer = Referrer::ClientReferrerString()) = 0;
 
   // Asynchronously retrieve a module script from the module map, or fetch it

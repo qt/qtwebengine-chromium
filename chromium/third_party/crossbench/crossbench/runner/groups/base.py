@@ -14,7 +14,6 @@ if TYPE_CHECKING:
   from crossbench.path import LocalPath
   from crossbench.probes.probe import Probe
   from crossbench.runner.run import Run
-  from crossbench.runner.runner import Runner
   from crossbench.types import JsonMapping
 
 

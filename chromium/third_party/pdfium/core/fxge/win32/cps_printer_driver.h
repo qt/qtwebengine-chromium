@@ -66,7 +66,7 @@ class CPSPrinterDriver final : public RenderDeviceDriverIface {
                           const FXDIB_ResampleOptions& options,
                           BlendMode blend_type) override;
   bool DrawDeviceText(pdfium::span<const TextCharPos> pCharPos,
-                      CFX_Font* pFont,
+                      CFX_Font* font,
                       const CFX_Matrix& mtObject2Device,
                       float font_size,
                       uint32_t color,
@@ -74,13 +74,13 @@ class CPSPrinterDriver final : public RenderDeviceDriverIface {
   bool MultiplyAlpha(float alpha) override;
   bool MultiplyAlphaMask(RetainPtr<const CFX_DIBitmap> mask) override;
 
-  HDC m_hDC;
-  int m_Width;
-  int m_Height;
-  int m_nBitsPerPixel;
-  int m_HorzSize;
-  int m_VertSize;
-  CFX_PSRenderer m_PSRenderer;
+  HDC dc_handle_;
+  int width_;
+  int height_;
+  int bits_per_pixel_;
+  int horz_size_;
+  int vert_size_;
+  CFX_PSRenderer psrenderer_;
 };
 
 #endif  // CORE_FXGE_WIN32_CPS_PRINTER_DRIVER_H_

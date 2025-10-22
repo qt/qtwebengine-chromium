@@ -17,8 +17,8 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
 #include "base/trace_event/named_trigger.h"
+#include "base/trace_event/trace_event.h"
 #include "components/crash/core/common/crash_key.h"
 #include "components/page_load_metrics/browser/navigation_handle_user_data.h"
 #include "components/page_load_metrics/browser/observers/core/largest_contentful_paint_handler.h"
@@ -30,6 +30,7 @@
 #include "components/page_load_metrics/google/browser/histogram_suffixes.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/site_instance.h"
+#include "net/http/http_connection_info.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 
@@ -55,6 +56,12 @@ const char kHistogramGWSNavigationStartToFirstLoaderCallback[] =
     HISTOGRAM_PREFIX "NavigationTiming.NavigationStartToFirstLoaderCallback";
 const char kHistogramGWSNavigationStartToOnComplete[] =
     HISTOGRAM_PREFIX "NavigationTiming.NavigationStartToOnComplete";
+const char kHistogramGWSFirstFetchStartToFirstRequestStart[] =
+    HISTOGRAM_PREFIX "NavigationTiming.FirstFetchStartToFirstRequestStart";
+const char kHistogramGWSCreateStreamDelay[] =
+    HISTOGRAM_PREFIX "NavigationTiming.CreateStreamDelay";
+const char kHistogramGWSConnectedCallbackDelay[] =
+    HISTOGRAM_PREFIX "NavigationTiming.ConnectedCallbackDelay";
 const char kHistogramGWSInitializeStreamDelay[] =
     HISTOGRAM_PREFIX "NavigationTiming.InitializeStreamDelay";
 
@@ -120,20 +127,40 @@ const char kHistogramGWSConnectionReuseStatus[] =
     HISTOGRAM_PREFIX "ConnectionReuseStatus";
 const char kHistogramIncognitoSuffix[] = ".Incognito";
 
-const char kHistogramGWSAllHeadersExpected[] =
-    HISTOGRAM_PREFIX "SyntheticResponse.AllHeadersExpected";
-const char kHistogramGWSHeaderMismatchType[] =
-    HISTOGRAM_PREFIX "SyntheticResponse.HeaderMismatchType";
+// Prerender related histograms.
+const char kHistogramPrerenderHostReused[] =
+    HISTOGRAM_PREFIX "Prerender.HostReused";
 
+// ServiceWorker related histograms.
+const char kHistogramServiceWorkerParseStartSearch[] =
+    "PageLoad.Clients.ServiceWorker2.ParseTiming.NavigationToParseStart.search";
+const char kHistogramServiceWorkerFirstContentfulPaintSearch[] =
+    "PageLoad.Clients.ServiceWorker2.PaintTiming."
+    "NavigationToFirstContentfulPaint.search";
+const char kHistogramServiceWorkerParseStartToFirstContentfulPaintSearch[] =
+    "PageLoad.Clients.ServiceWorker2.PaintTiming."
+    "ParseStartToFirstContentfulPaint.search";
+const char kHistogramServiceWorkerDomContentLoadedSearch[] =
+    "PageLoad.Clients.ServiceWorker2.DocumentTiming."
+    "NavigationToDOMContentLoadedEventFired.search";
+const char kHistogramServiceWorkerLoadSearch[] =
+    "PageLoad.Clients.ServiceWorker2.DocumentTiming.NavigationToLoadEventFired."
+    "search";
+const char kHistogramNoServiceWorkerFirstContentfulPaintSearch[] =
+    "PageLoad.Clients.NoServiceWorker2.PaintTiming."
+    "NavigationToFirstContentfulPaint.search";
+const char kHistogramNoServiceWorkerParseStartToFirstContentfulPaintSearch[] =
+    "PageLoad.Clients.NoServiceWorker2.PaintTiming."
+    "ParseStartToFirstContentfulPaint.search";
+const char kHistogramNoServiceWorkerDomContentLoadedSearch[] =
+    "PageLoad.Clients.NoServiceWorker2.DocumentTiming."
+    "NavigationToDOMContentLoadedEventFired.search";
+const char kHistogramNoServiceWorkerLoadSearch[] =
+    "PageLoad.Clients.NoServiceWorker2.DocumentTiming."
+    "NavigationToLoadEventFired.search";
 }  // namespace internal
 
 namespace {
-
-// TODO(crbug.com/352578800): When this is enabled, the browser will log
-// response headers if those're unexpected to be in the navigation response.
-BASE_FEATURE(kSyntheticResponseReportUnexpectedHeader,
-             "SyntheticResponseReportUnexpectedHeader",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 bool IsNavigationFromNewTabPage(
     GWSPageLoadMetricsObserver::NavigationSourceType type) {
@@ -164,185 +191,6 @@ GWSPageLoadMetricsObserver::NavigationSourceType GetBackgroundedState(
       // Types that already have backgrounded types
       return type;
   }
-}
-
-struct ExpectedHeaderInfo {
-  std::unordered_set<std::string> values;
-  bool allow_value_mismatch = false;
-  bool found_in_actual_headers = false;
-};
-
-std::unordered_map<std::string, ExpectedHeaderInfo> GetExpectedHeaderInfo() {
-  std::unordered_map<std::string, ExpectedHeaderInfo> expected_headers;
-  expected_headers.emplace(
-      "accept-ch",
-      ExpectedHeaderInfo(
-          {"Sec-CH-Prefers-Color-Scheme", "Sec-CH-UA-Form-Factors",
-           "Sec-CH-UA-Platform", "Sec-CH-UA-Platform-Version", "Sec-CH-UA-Arch",
-           "Sec-CH-UA-Model", "Sec-CH-UA-Bitness",
-           "Sec-CH-UA-Full-Version-List", "Sec-CH-UA-WoW64"},
-          true));
-  expected_headers.emplace(
-      "alt-svc",
-      ExpectedHeaderInfo({"h3=\":443\"; ma=2592000,h3-29=\":443\"; ma=2592000"},
-                         false));
-  expected_headers.emplace("cache-control",
-                           ExpectedHeaderInfo({"private, max-age=0"}, false));
-  expected_headers.emplace("content-encoding",
-                           ExpectedHeaderInfo({"br"}, false));
-  // CSP value will be checked via
-  // `CheckContentSecurityPolicyHeaderConsistency()`.
-  expected_headers.emplace("content-security-policy",
-                           ExpectedHeaderInfo({}, true));
-  expected_headers.emplace(
-      "content-type", ExpectedHeaderInfo({"text/html; charset=UTF-8"}, false));
-  expected_headers.emplace("expires", ExpectedHeaderInfo({"-1"}, false));
-  expected_headers.emplace("permissions-policy",
-                           ExpectedHeaderInfo({"unload=()"}, false));
-  expected_headers.emplace("server", ExpectedHeaderInfo({"gws"}, false));
-  // We apply `max-age=31536000` for all cases when the navigation commit is
-  // started with the synthetic response.
-  expected_headers.emplace("strict-transport-security",
-                           ExpectedHeaderInfo({"max-age=31536000"}, true));
-  expected_headers.emplace("x-frame-options",
-                           ExpectedHeaderInfo({"SAMEORIGIN"}, false));
-  expected_headers.emplace("x-xss-protection",
-                           ExpectedHeaderInfo({"0"}, false));
-// At the OnCommit() phase, headers in `navigation_handle->GetResponseHeaders()`
-// don't have "set-cookie" headers, so it's excluded from the expected header
-// list.
-
-// TODO(crbug.com/376572257): Better platform detection aligning with GWS
-// response.
-#if BUILDFLAG(IS_ANDROID)
-#else
-  expected_headers.emplace(
-      "cross-origin-opener-policy",
-      ExpectedHeaderInfo({"same-origin-allow-popups; report-to=\"gws\""},
-                         false));
-  expected_headers.emplace(
-      "report-to",
-      ExpectedHeaderInfo(
-          {"{\"group\":\"gws\",\"max_age\":2592000,\"endpoints\":[{\"url\":"
-           "\"https://csp.withgoogle.com/csp/report-to/gws/cdt1\"}]}"},
-          false));
-#endif  // BUDILDFLAG(IS_ANDROID)
-
-  return expected_headers;
-}
-
-// Check the Content-Security-Policy header is expected, except for the `nonce`.
-bool CheckContentSecurityPolicyHeaderConsistency(
-    const std::string header_value) {
-  const std::string first_half =
-      "object-src 'none';base-uri 'self';script-src 'nonce-";
-  const std::string second_half =
-      "' 'strict-dynamic' 'report-sample' 'unsafe-eval' 'unsafe-inline' https: "
-      "http:;report-uri https://csp.withgoogle.com/csp/gws/";
-  if (header_value.find(first_half) == std::string::npos) {
-    return false;
-  }
-  if (header_value.find(second_half) == std::string::npos) {
-    return false;
-  }
-  return true;
-}
-
-using ArrayItemKey = crash_reporter::CrashKeyString<256>;
-ArrayItemKey g_header_not_expected_keys_for_header_name[] = {
-    {"GWSHeaderNotExpected-Header-1", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Header-2", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Header-3", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Header-4", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Header-5", ArrayItemKey::Tag::kArray},
-};
-ArrayItemKey g_header_not_expected_keys_for_value[] = {
-    {"GWSHeaderNotExpected-Value-1", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Value-2", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Value-3", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Value-4", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotExpected-Value-5", ArrayItemKey::Tag::kArray},
-};
-ArrayItemKey g_header_value_mismatched_keys_for_header_name[] = {
-    {"GWSHeaderValueMismatched-Header-1", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Header-2", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Header-3", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Header-4", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Header-5", ArrayItemKey::Tag::kArray},
-};
-ArrayItemKey g_header_value_mismatched_keys_for_value[] = {
-    {"GWSHeaderValueMismatched-Value-1", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Value-2", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Value-3", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Value-4", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderValueMismatched-Value-5", ArrayItemKey::Tag::kArray},
-};
-ArrayItemKey g_header_not_exist_keys_for_header_name[] = {
-    {"GWSHeaderNotActuallyExist-Header-1", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotActuallyExist-Header-2", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotActuallyExist-Header-3", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotActuallyExist-Header-4", ArrayItemKey::Tag::kArray},
-    {"GWSHeaderNotActuallyExist-Header-5", ArrayItemKey::Tag::kArray},
-};
-
-struct HeaderInfo {
-  std::string header_name;
-  std::string value;
-};
-
-using ReportedHeaders = std::vector<HeaderInfo>;
-
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-//
-// LINT.IfChange(HeaderMismatchType)
-enum class HeaderMismatchType {
-  kHeaderNotExpected = 1 << 0,
-  kValueMismatched = 1 << 1,
-  kHeaderNotActuallyExist = 1 << 2,
-  kMaxValue = kHeaderNotActuallyExist,
-};
-// LINT.ThenChange(//tools/metrics/histograms/metadata/page/enums.xml:HeaderMismatchType)
-
-void SetHeaderCrashKeys(const ReportedHeaders& reported_headers,
-                        HeaderMismatchType mismatch_type) {
-  auto it = reported_headers.begin();
-
-#define SetCrashKeyForUnexpectedHeader(headers, keys, is_header_name) \
-  it = headers.begin();                                               \
-  for (ArrayItemKey& key : keys) {                                    \
-    if (it == headers.end()) {                                        \
-      key.Clear();                                                    \
-    } else {                                                          \
-      key.Set(is_header_name ? it->header_name : it->value);          \
-      ++it;                                                           \
-    }                                                                 \
-  }
-
-  switch (mismatch_type) {
-    case HeaderMismatchType::kHeaderNotExpected:
-      SetCrashKeyForUnexpectedHeader(reported_headers,
-                                     g_header_not_expected_keys_for_header_name,
-                                     /*is_header_name=*/true);
-      SetCrashKeyForUnexpectedHeader(reported_headers,
-                                     g_header_not_expected_keys_for_value,
-                                     /*is_header_name=*/false);
-      break;
-    case HeaderMismatchType::kValueMismatched:
-      SetCrashKeyForUnexpectedHeader(
-          reported_headers, g_header_value_mismatched_keys_for_header_name,
-          /*is_header_name=*/true);
-      SetCrashKeyForUnexpectedHeader(reported_headers,
-                                     g_header_value_mismatched_keys_for_value,
-                                     /*is_header_name=*/false);
-      break;
-    case HeaderMismatchType::kHeaderNotActuallyExist:
-      SetCrashKeyForUnexpectedHeader(reported_headers,
-                                     g_header_not_exist_keys_for_header_name,
-                                     /*is_header_name=*/true);
-      break;
-  }
-#undef SetCrashKeyForUnexpectedHeader
 }
 }  // namespace
 
@@ -387,18 +235,20 @@ GWSPageLoadMetricsObserver::OnCommit(
     content::NavigationHandle* navigation_handle) {
   const bool is_gws_url =
       page_load_metrics::IsGoogleSearchResultUrl(navigation_handle->GetURL());
-  if (is_first_navigation_) {
+  if (!is_prerendered_ && is_first_navigation_) {
     base::UmaHistogramBoolean(internal::kHistogramGWSIsFirstNavigationForGWS,
                               is_gws_url);
   }
   if (!is_gws_url) {
     return STOP_OBSERVING;
   }
-
   navigation_handle_timing_ = navigation_handle->GetNavigationHandleTiming();
   was_cached_ = navigation_handle->WasResponseCached();
-  RecordPreCommitHistograms();
-  MaybeRecordUnexpectedHeaders(navigation_handle->GetResponseHeaders());
+  http_connection_info_ =
+      net::HttpConnectionInfoToCoarse(navigation_handle->GetConnectionInfo());
+  if (!is_prerendered_) {
+    RecordPreCommitHistograms();
+  }
 
   return CONTINUE_OBSERVING;
 }
@@ -407,8 +257,24 @@ page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 GWSPageLoadMetricsObserver::OnPrerenderStart(
     content::NavigationHandle* navigation_handle,
     const GURL& currently_committed_url) {
-  // TODO(crbug.com/40222513): Handle Prerendering cases.
-  return STOP_OBSERVING;
+  is_prerendered_ = true;
+  // TODO(crbug.com/40222513): Currently, we do not record most metrics for
+  // prerendered pages. Consider and enable metrics for prerender as well.
+  return CONTINUE_OBSERVING;
+}
+
+void GWSPageLoadMetricsObserver::DidActivatePrerenderedPage(
+    content::NavigationHandle* navigation_handle) {
+  CHECK(is_prerendered_);
+  // We record the prerender host reuse status.
+  base::UmaHistogramBoolean(internal::kHistogramPrerenderHostReused,
+                            navigation_handle->IsPrerenderHostReused());
+  if (IsIncognitoProfile()) {
+    auto histogram_name = base::StrCat({internal::kHistogramPrerenderHostReused,
+                                        internal::kHistogramIncognitoSuffix});
+    base::UmaHistogramBoolean(histogram_name,
+                              navigation_handle->IsPrerenderHostReused());
+  }
 }
 
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
@@ -427,9 +293,64 @@ void GWSPageLoadMetricsObserver::OnFirstContentfulPaintInPage(
           timing.paint_timing->first_contentful_paint, GetDelegate())) {
     return;
   }
+  CHECK(!is_prerendered_);
+
+  if (page_load_metrics::IsServiceWorkerControlled(GetDelegate())) {
+    PAGE_LOAD_HISTOGRAM(
+        internal::kHistogramServiceWorkerFirstContentfulPaintSearch,
+        timing.paint_timing->first_contentful_paint.value());
+    PAGE_LOAD_HISTOGRAM(
+        internal::kHistogramServiceWorkerParseStartToFirstContentfulPaintSearch,
+        timing.paint_timing->first_contentful_paint.value() -
+            timing.parse_timing->parse_start.value());
+  } else {
+    PAGE_LOAD_HISTOGRAM(
+        internal::kHistogramNoServiceWorkerFirstContentfulPaintSearch,
+        timing.paint_timing->first_contentful_paint.value());
+    PAGE_LOAD_HISTOGRAM(
+        internal::
+            kHistogramNoServiceWorkerParseStartToFirstContentfulPaintSearch,
+        timing.paint_timing->first_contentful_paint.value() -
+            timing.parse_timing->parse_start.value());
+  }
 
   PAGE_LOAD_HISTOGRAM(internal::kHistogramGWSFirstContentfulPaint,
                       timing.paint_timing->first_contentful_paint.value());
+}
+
+void GWSPageLoadMetricsObserver::OnDomContentLoadedEventStart(
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
+  if (!page_load_metrics::WasStartedInForegroundOptionalEventInForeground(
+          timing.document_timing->dom_content_loaded_event_start,
+          GetDelegate())) {
+    return;
+  }
+
+  if (page_load_metrics::IsServiceWorkerControlled(GetDelegate())) {
+    PAGE_LOAD_HISTOGRAM(
+        internal::kHistogramServiceWorkerDomContentLoadedSearch,
+        timing.document_timing->dom_content_loaded_event_start.value());
+  } else {
+    PAGE_LOAD_HISTOGRAM(
+        internal::kHistogramNoServiceWorkerDomContentLoadedSearch,
+        timing.document_timing->dom_content_loaded_event_start.value());
+  }
+}
+
+void GWSPageLoadMetricsObserver::OnLoadEventStart(
+    const page_load_metrics::mojom::PageLoadTiming& timing) {
+  if (!page_load_metrics::WasStartedInForegroundOptionalEventInForeground(
+          timing.document_timing->load_event_start, GetDelegate())) {
+    return;
+  }
+
+  if (page_load_metrics::IsServiceWorkerControlled(GetDelegate())) {
+    PAGE_LOAD_HISTOGRAM(internal::kHistogramServiceWorkerLoadSearch,
+                        timing.document_timing->load_event_start.value());
+  } else {
+    PAGE_LOAD_HISTOGRAM(internal::kHistogramNoServiceWorkerLoadSearch,
+                        timing.document_timing->load_event_start.value());
+  }
 }
 
 void GWSPageLoadMetricsObserver::OnParseStart(
@@ -438,8 +359,13 @@ void GWSPageLoadMetricsObserver::OnParseStart(
           timing.parse_timing->parse_start, GetDelegate())) {
     return;
   }
+  CHECK(!is_prerendered_);
   PAGE_LOAD_HISTOGRAM(internal::kHistogramGWSParseStart,
                       timing.parse_timing->parse_start.value());
+  if (page_load_metrics::IsServiceWorkerControlled(GetDelegate())) {
+    PAGE_LOAD_HISTOGRAM(internal::kHistogramServiceWorkerParseStartSearch,
+                        timing.parse_timing->parse_start.value());
+  }
 }
 
 void GWSPageLoadMetricsObserver::OnConnectStart(
@@ -448,6 +374,7 @@ void GWSPageLoadMetricsObserver::OnConnectStart(
           timing.connect_start, GetDelegate())) {
     return;
   }
+  CHECK(!is_prerendered_);
   PAGE_LOAD_HISTOGRAM(AddHistogramSuffix(internal::kHistogramGWSConnectStart),
                       timing.connect_start.value());
 }
@@ -458,6 +385,7 @@ void GWSPageLoadMetricsObserver::OnDomainLookupStart(
           timing.domain_lookup_timing->domain_lookup_start, GetDelegate())) {
     return;
   }
+  CHECK(!is_prerendered_);
   PAGE_LOAD_HISTOGRAM(
       AddHistogramSuffix(internal::kHistogramGWSDomainLookupStart),
       timing.domain_lookup_timing->domain_lookup_start.value());
@@ -469,6 +397,7 @@ void GWSPageLoadMetricsObserver::OnDomainLookupEnd(
           timing.domain_lookup_timing->domain_lookup_end, GetDelegate())) {
     return;
   }
+  CHECK(!is_prerendered_);
   PAGE_LOAD_HISTOGRAM(
       AddHistogramSuffix(internal::kHistogramGWSDomainLookupEnd),
       timing.domain_lookup_timing->domain_lookup_end.value());
@@ -476,6 +405,10 @@ void GWSPageLoadMetricsObserver::OnDomainLookupEnd(
 
 void GWSPageLoadMetricsObserver::OnComplete(
     const page_load_metrics::mojom::PageLoadTiming& timing) {
+  if (is_prerendered_) {
+    return;
+  }
+
   const base::TimeTicks navigation_start = GetDelegate().GetNavigationStart();
   if (!navigation_start.is_null()) {
     PAGE_LOAD_HISTOGRAM(internal::kHistogramGWSNavigationStartToOnComplete,
@@ -487,6 +420,9 @@ void GWSPageLoadMetricsObserver::OnComplete(
 void GWSPageLoadMetricsObserver::OnCustomUserTimingMarkObserved(
     const std::vector<page_load_metrics::mojom::CustomUserTimingMarkPtr>&
         timings) {
+  if (is_prerendered_) {
+    return;
+  }
   for (const auto& mark : timings) {
     if (mark->mark_name == internal::kGwsAFTStartMarkName) {
       PAGE_LOAD_HISTOGRAM(internal::kHistogramGWSAFTStart, mark->start_time);
@@ -516,11 +452,15 @@ void GWSPageLoadMetricsObserver::OnCustomUserTimingMarkObserved(
 page_load_metrics::PageLoadMetricsObserver::ObservePolicy
 GWSPageLoadMetricsObserver::FlushMetricsOnAppEnterBackground(
     const page_load_metrics::mojom::PageLoadTiming& timing) {
-  LogMetricsOnComplete();
+  if (!is_prerendered_) {
+    LogMetricsOnComplete();
+  }
   return STOP_OBSERVING;
 }
 
 void GWSPageLoadMetricsObserver::LogMetricsOnComplete() {
+  CHECK(!is_prerendered_);
+
   const page_load_metrics::ContentfulPaintTimingInfo&
       all_frames_largest_contentful_paint =
           GetDelegate()
@@ -547,6 +487,7 @@ void GWSPageLoadMetricsObserver::LogMetricsOnComplete() {
 }
 
 void GWSPageLoadMetricsObserver::RecordNavigationTimingHistograms() {
+  CHECK(!is_prerendered_);
   const base::TimeTicks navigation_start_time =
       GetDelegate().GetNavigationStart();
   const content::NavigationHandleTiming& timing = navigation_handle_timing_;
@@ -583,24 +524,45 @@ void GWSPageLoadMetricsObserver::RecordNavigationTimingHistograms() {
       internal::kHistogramGWSNavigationStartToFinalLoaderCallback,
       timing.final_loader_callback_time - navigation_start_time);
 
-  PAGE_LOAD_SHORT_HISTOGRAM(
+  // To avoid affecting other metrics, check `first_fetch_start_time`
+  // separately.
+  if (timing.first_fetch_start_time.has_value()) {
+    PAGE_LOAD_SHORT_HISTOGRAM(
+        internal::kHistogramGWSFirstFetchStartToFirstRequestStart,
+        timing.first_request_start_time - *timing.first_fetch_start_time);
+  }
+
+  auto protocol = net::HttpConnectionInfoCoarseToString(http_connection_info_);
+  auto record_histogram_with_suffix =
+      [&protocol](const std::string& histogram_name, base::TimeDelta timing) {
+        auto histogram_with_suffix = base::StrCat({histogram_name, protocol});
+        PAGE_LOAD_SHORT_HISTOGRAM(histogram_name, timing);
+        PAGE_LOAD_SHORT_HISTOGRAM(histogram_with_suffix, timing);
+      };
+
+  record_histogram_with_suffix(
       internal::kHistogramGWSConnectTimingFirstRequestDomainLookupDelay,
       timing.first_request_domain_lookup_delay);
-  PAGE_LOAD_SHORT_HISTOGRAM(
+  record_histogram_with_suffix(
       internal::kHistogramGWSConnectTimingFirstRequestConnectDelay,
       timing.first_request_connect_delay);
-  PAGE_LOAD_SHORT_HISTOGRAM(
+  record_histogram_with_suffix(
       internal::kHistogramGWSConnectTimingFirstRequestSslDelay,
       timing.first_request_ssl_delay);
-  PAGE_LOAD_SHORT_HISTOGRAM(
+  record_histogram_with_suffix(
       internal::kHistogramGWSConnectTimingFinalRequestDomainLookupDelay,
       timing.final_request_domain_lookup_delay);
-  PAGE_LOAD_SHORT_HISTOGRAM(
+  record_histogram_with_suffix(
       internal::kHistogramGWSConnectTimingFinalRequestConnectDelay,
       timing.final_request_connect_delay);
-  PAGE_LOAD_SHORT_HISTOGRAM(
+  record_histogram_with_suffix(
       internal::kHistogramGWSConnectTimingFinalRequestSslDelay,
       timing.final_request_ssl_delay);
+
+  PAGE_LOAD_SHORT_HISTOGRAM(internal::kHistogramGWSCreateStreamDelay,
+                            timing.create_stream_delay);
+  PAGE_LOAD_SHORT_HISTOGRAM(internal::kHistogramGWSConnectedCallbackDelay,
+                            timing.connected_callback_delay);
   PAGE_LOAD_SHORT_HISTOGRAM(internal::kHistogramGWSInitializeStreamDelay,
                             timing.initialize_stream_delay);
 
@@ -645,6 +607,7 @@ void GWSPageLoadMetricsObserver::RecordNavigationTimingHistograms() {
 }
 
 void GWSPageLoadMetricsObserver::RecordPreCommitHistograms() {
+  CHECK(!is_prerendered_);
   base::UmaHistogramEnumeration(internal::kHistogramGWSNavigationSourceType,
                                 source_type_);
   if (!was_cached_) {
@@ -654,6 +617,7 @@ void GWSPageLoadMetricsObserver::RecordPreCommitHistograms() {
 
 void GWSPageLoadMetricsObserver::RecordConnectionReuseHistograms() {
   DCHECK(!was_cached_);
+  CHECK(!is_prerendered_);
 
   const content::NavigationHandleTiming& timing = navigation_handle_timing_;
   ConnectionReuseStatus status = ConnectionReuseStatus::kNonReuse;
@@ -667,11 +631,21 @@ void GWSPageLoadMetricsObserver::RecordConnectionReuseHistograms() {
   }
   base::UmaHistogramEnumeration(internal::kHistogramGWSConnectionReuseStatus,
                                 status);
+
+  auto protocol = net::HttpConnectionInfoCoarseToString(http_connection_info_);
+  auto total_histogram_name =
+      base::StrCat({internal::kHistogramGWSConnectionReuseStatus, protocol});
+  base::UmaHistogramEnumeration(total_histogram_name, status);
+
   if (IsIncognitoProfile()) {
-    auto histogram_name =
+    auto histogram_name_with_incognito_suffix =
         base::StrCat({internal::kHistogramGWSConnectionReuseStatus,
                       internal::kHistogramIncognitoSuffix});
-    base::UmaHistogramEnumeration(histogram_name, status);
+    base::UmaHistogramEnumeration(histogram_name_with_incognito_suffix, status);
+
+    // Record the total histogram with protocol suffix as well.
+    total_histogram_name = base::StrCat({total_histogram_name, protocol});
+    base::UmaHistogramEnumeration(total_histogram_name, status);
   }
 
   switch (status) {
@@ -708,6 +682,7 @@ std::string GWSPageLoadMetricsObserver::AddHistogramSuffix(
 
 void GWSPageLoadMetricsObserver::RecordLatencyHitograms(
     base::TimeTicks response_start_time) {
+  CHECK(!is_prerendered_);
   const auto trace_id =
       TRACE_ID_WITH_SCOPE("GWSLatencyEvent", TRACE_ID_LOCAL(navigation_id_));
   // TODO(crbug.com/364278026): SRT starts from the time when the user submits
@@ -768,104 +743,5 @@ void GWSPageLoadMetricsObserver::RecordLatencyHitograms(
   if (sct_time.has_value() && hct_time.has_value()) {
     PAGE_LOAD_HISTOGRAM(internal::kHistogramGWSTimeBetweenHCTAndSCT,
                         sct_time.value() - hct_time.value());
-  }
-}
-
-void GWSPageLoadMetricsObserver::MaybeRecordUnexpectedHeaders(
-    const net::HttpResponseHeaders* response_headers) {
-  ReportedHeaders not_expected_headers;
-  ReportedHeaders value_mismatched_headers;
-  ReportedHeaders not_exist_headers;
-
-  std::unordered_map<std::string, ExpectedHeaderInfo> expected_headers =
-      GetExpectedHeaderInfo();
-
-  // Headers that are not handled by the browser, or not used at all for the
-  // navigation commit.
-  constexpr auto kIgnorableHeaderInfo =
-      base::MakeFixedFlatSet<std::string_view>({
-          "date",
-          "p3p",
-          // TODO(crbug.com/379764811): Consider moving this header to <meta>
-          // HTML tag. Even though the impact is very limited, the existence of
-          // this header will change the behavior.
-          "X-DNS-Prefetch-Control",
-      });
-
-  size_t iter = 0;
-  std::string name, value;
-  while (response_headers->EnumerateHeaderLines(&iter, &name, &value)) {
-    if (kIgnorableHeaderInfo.contains(name)) {
-      continue;
-    }
-    if (!expected_headers.contains(name)) {
-      // GWSHeaderNotExpected: The header is not in the expected header list.
-      not_expected_headers.emplace_back(name, value);
-      continue;
-    }
-    if (name == "content-security-policy") {
-      // Check content-security-policy separately. The CSP value should be
-      // consistent except for the `nonce` value.
-      if (!CheckContentSecurityPolicyHeaderConsistency(value)) {
-        value_mismatched_headers.emplace_back(name, value);
-      }
-    }
-    auto* expected = &expected_headers[name];
-    expected->found_in_actual_headers = true;
-    if (!expected->allow_value_mismatch && !expected->values.contains(value)) {
-      // GWSHeaderValueMismatched: The header is in the expected header list,
-      // but the value is different or an inconsistent value is not allowed.
-      value_mismatched_headers.emplace_back(name, value);
-    }
-  }
-
-  for (auto header : expected_headers) {
-    if (header.second.found_in_actual_headers) {
-      continue;
-    }
-    // GWSHeaderNotActuallyExist: The expected header does not exist in the
-    // actual headers.
-    not_exist_headers.emplace_back(header.first, "");
-  }
-
-  bool all_headers_expected = not_expected_headers.empty() &&
-                              value_mismatched_headers.empty() &&
-                              not_exist_headers.empty();
-  bool set_crash_key =
-      !all_headers_expected &&
-      base::FeatureList::IsEnabled(kSyntheticResponseReportUnexpectedHeader);
-
-  // Potential hit rate of the synthetic response.
-  base::UmaHistogramBoolean(internal::kHistogramGWSAllHeadersExpected,
-                            all_headers_expected);
-
-  size_t mismatch_type = 0;
-  if (!not_expected_headers.empty()) {
-    mismatch_type |= static_cast<int>(HeaderMismatchType::kHeaderNotExpected);
-  }
-  if (!value_mismatched_headers.empty()) {
-    mismatch_type |= static_cast<int>(HeaderMismatchType::kValueMismatched);
-  }
-  if (!not_exist_headers.empty()) {
-    mismatch_type |=
-        static_cast<int>(HeaderMismatchType::kHeaderNotActuallyExist);
-  }
-  UMA_HISTOGRAM_COUNTS_100(internal::kHistogramGWSHeaderMismatchType,
-                           mismatch_type);
-
-  if (set_crash_key) {
-    if (!not_expected_headers.empty()) {
-      SetHeaderCrashKeys(not_expected_headers,
-                         HeaderMismatchType::kHeaderNotExpected);
-    }
-    if (!value_mismatched_headers.empty()) {
-      SetHeaderCrashKeys(value_mismatched_headers,
-                         HeaderMismatchType::kValueMismatched);
-    }
-    if (!not_exist_headers.empty()) {
-      SetHeaderCrashKeys(not_exist_headers,
-                         HeaderMismatchType::kHeaderNotActuallyExist);
-    }
-    base::debug::DumpWithoutCrashing();
   }
 }

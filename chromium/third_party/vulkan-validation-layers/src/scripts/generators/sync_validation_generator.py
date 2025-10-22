@@ -70,9 +70,9 @@ class SyncValidationOutputGenerator(BaseGenerator):
         self.stageAccessCombo = []
 
         # fake stages and accesses for acquire present support
-        self.pipelineStagePresentEngine = Flag('VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL', 0, False, False, None, None, [])
-        self.accessAcquireRead = Flag('VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL', 0, False, False, None, None, [])
-        self.accessPresented = Flag('VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL', 0, False, False, None, None, [])
+        self.pipelineStagePresentEngine = Flag('VK_PIPELINE_STAGE_2_PRESENT_ENGINE_BIT_SYNCVAL', [], 0, False, False, None, None, [])
+        self.accessAcquireRead = Flag('VK_ACCESS_2_PRESENT_ACQUIRE_READ_BIT_SYNCVAL', [], 0, False, False, None, None, [])
+        self.accessPresented = Flag('VK_ACCESS_2_PRESENT_PRESENTED_BIT_SYNCVAL', [], 0, False, False, None, None, [])
 
     def generate(self):
         self.write(f'''// *** THIS FILE IS GENERATED - DO NOT EDIT ***
@@ -274,7 +274,8 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
         stage_to_stageAccess = {}
         for stageAccess_info in self.stageAccessCombo:
             stage = stageAccess_info['stage']
-            if stage == 'VK_PIPELINE_STAGE_2_NONE': continue
+            if stage == 'VK_PIPELINE_STAGE_2_NONE':
+                continue
             stageAccess_bit = stageAccess_info['access_bit']
             stage_to_stageAccess[stage] = stage_to_stageAccess.get(stage, []) + [stageAccess_bit]
         stages_in_bit_order = sorted([x for x in self.vk.bitmasks['VkPipelineStageFlagBits2'].flags], key=lambda x: x.value)
@@ -332,7 +333,11 @@ const vvl::unordered_map<VkPipelineStageFlagBits2, VkPipelineStageFlags2>& syncL
             'VK_PIPELINE_STAGE_2_PRE_RASTERIZATION_SHADERS_BIT',
         ]
         for queue in [x for x in self.vk.queueBits.keys()]:
-            stages = [x.flag.name for x in self.vk.syncStage if x.support.queues & queue and x.flag.name not in ignoreQueueFlag and x.equivalent.max]
+            stages = [x.flag.name for x in self.vk.syncStage if x.support.queues is not None and (x.support.queues & queue) and x.flag.name not in ignoreQueueFlag and x.equivalent.max]
+            # These are possible for every queue
+            for s in ['VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT', 'VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT']:
+                if s not in stages:
+                    stages.append(s)
             out.append(f'    {{ {self.vk.queueBits[queue]}, (\n        {separator.join(stages)}\n    )}},\n')
         out.append('    };\n')
         out.append('    return variable;\n')

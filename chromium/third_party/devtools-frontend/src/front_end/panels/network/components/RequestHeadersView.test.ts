@@ -31,6 +31,7 @@ import {
   resetRecordedMetrics,
 } from '../../../testing/UserMetricsHelpers.js';
 import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
+import * as UI from '../../../ui/legacy/legacy.js';
 import * as NetworkForward from '../forward/forward.js';
 
 import * as NetworkComponents from './components.js';
@@ -199,9 +200,9 @@ describeWithMockConnection('RequestHeadersView', () => {
     const headerValue = generalCategory.querySelector('.header-value');
     assert.instanceOf(headerValue, HTMLElement);
 
-    assert.isTrue(spy.notCalled);
+    sinon.assert.notCalled(spy);
     dispatchCopyEvent(headerValue);
-    assert.isTrue(spy.calledWith(Host.UserMetrics.Action.NetworkPanelCopyValue));
+    sinon.assert.calledWith(spy, Host.UserMetrics.Action.NetworkPanelCopyValue);
   });
 
   it('can switch between source and parsed view', async () => {
@@ -281,11 +282,11 @@ describeWithMockConnection('RequestHeadersView', () => {
     assert.instanceOf(responseHeadersCategory, HTMLElement);
 
     const spy = sinon.spy(component, 'render');
-    assert.isTrue(spy.notCalled);
+    sinon.assert.notCalled(spy);
     assert.deepEqual(getRowsTextFromCategory(responseHeadersCategory), [['originalname', 'originalValue']]);
 
     request.responseHeaders = [{name: 'updatedName', value: 'updatedValue'}];
-    assert.isTrue(spy.calledOnce);
+    sinon.assert.calledOnce(spy);
     await RenderCoordinator.done();
     assert.deepEqual(getRowsTextFromCategory(responseHeadersCategory), [['updatedname', 'updatedValue']]);
   });
@@ -526,9 +527,11 @@ describeWithEnvironment('RequestHeadersView\'s Category', () => {
     component.addEventListener(NetworkComponents.RequestHeadersView.ToggleRawHeadersEvent.eventName, () => {
       eventCounter += 1;
     });
-    const checkbox = getElementWithinComponent(component, 'input', HTMLInputElement);
+    const checkbox = getElementWithinComponent(component, 'devtools-checkbox', UI.UIUtils.CheckboxLabel);
+    const inputElement = checkbox.shadowRoot?.querySelector('input');
+    assert.exists(inputElement);
 
-    dispatchClickEvent(checkbox);
+    dispatchClickEvent(inputElement);
     assert.strictEqual(eventCounter, 1);
   });
 });

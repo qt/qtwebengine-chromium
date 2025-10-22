@@ -13,13 +13,11 @@
 // limitations under the License.
 
 import m from 'mithril';
-import {Button, ButtonBar} from '../../../../widgets/button';
+import {Button, ButtonBar, ButtonVariant} from '../../../../widgets/button';
 import {Intent} from '../../../../widgets/common';
 import {isSqlColumnEqual, SqlColumn, sqlColumnId} from './sql_column';
-import {
-  SqlValue,
-  sqlValueToSqliteString,
-} from '../../../../trace_processor/sql_utils';
+import {sqlValueToSqliteString} from '../../../../trace_processor/sql_utils';
+import {SqlValue} from '../../../../trace_processor/query_result';
 
 // A filter which can be applied to the table.
 export interface Filter {
@@ -120,6 +118,7 @@ export function renderFilters(filters: Filters): m.Children {
         label: filterTitle(filter),
         icon: 'close',
         intent: Intent.Primary,
+        variant: ButtonVariant.Filled,
         onclick: () => filters.removeFilter(filter),
       }),
     ),
@@ -137,6 +136,34 @@ export class StandardFilters {
     return {
       columns: [col],
       op: (cols) => `${cols[0]} = ${sqlValueToSqliteString(value)}`,
+    };
+  }
+
+  static valueNotEquals(col: SqlColumn, value: SqlValue): Filter {
+    if (value === null) {
+      return {
+        columns: [col],
+        op: (cols) => `${cols[0]} IS NOT NULL`,
+      };
+    }
+    return {
+      columns: [col],
+      op: (cols) => `${cols[0]} != ${sqlValueToSqliteString(value)}`,
+    };
+  }
+
+  static valueIsOneOf(col: SqlColumn, values: SqlValue[]): Filter {
+    if (values.length === 1) return StandardFilters.valueEquals(col, values[0]);
+    if (values.length === 0) {
+      return {
+        columns: [],
+        op: () => 'FALSE',
+      };
+    }
+    return {
+      op: (cols) =>
+        `${cols[0]} IN (${values.map(sqlValueToSqliteString).join(', ')})`,
+      columns: [col],
     };
   }
 }

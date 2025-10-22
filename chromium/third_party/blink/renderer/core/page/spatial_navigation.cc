@@ -41,7 +41,6 @@
 #include "third_party/blink/renderer/core/html/html_image_element.h"
 #include "third_party/blink/renderer/core/html_names.h"
 #include "third_party/blink/renderer/core/input/event_handler.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
@@ -49,6 +48,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "ui/gfx/geometry/rect.h"
 
 namespace blink {
@@ -227,10 +227,6 @@ gfx::RectF RectInViewport(const Node& node) {
 // offscreen activeElement. When activeElement is offscreen, spatnav doesn't use
 // it as the search origin; the search will start at an edge of the visual
 // viewport instead.
-// TODO(crbug.com/889840): Fix VisibleBoundsInVisualViewport().
-// If VisibleBoundsInVisualViewport() would have taken "element-clips" into
-// account, spatnav could have called it directly; no need to check the
-// LayoutObject's VisibleContentRect.
 bool IsOffscreen(const Node* node) {
   DCHECK(node);
   return RectInViewport(*node).IsEmpty();

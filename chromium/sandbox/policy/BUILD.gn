@@ -6,6 +6,7 @@ import("//build/buildflag_header.gni")
 import("//build/config/cast.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//chromeos/ash/components/assistant/assistant.gni")
+import("//media/media_options.gni")
 import("//testing/test.gni")
 
 # Most consumers of sandbox::policy should depend on this target.
@@ -25,7 +26,6 @@ component("policy") {
   defines = [ "SANDBOX_POLICY_IMPL" ]
   deps = [
     "//base",
-    "//ppapi/buildflags",
     "//sandbox/policy/mojom",
   ]
   public_deps = [ "//sandbox:common" ]
@@ -35,6 +35,8 @@ component("policy") {
       "linux/bpf_base_policy_linux.h",
       "linux/bpf_renderer_policy_linux.cc",
       "linux/bpf_renderer_policy_linux.h",
+      "linux/landlock_gpu_policy_android.cc",
+      "linux/landlock_gpu_policy_android.h",
     ]
     deps += [
       "//sandbox:sandbox_buildflags",
@@ -69,8 +71,6 @@ component("policy") {
       "linux/bpf_network_policy_linux.h",
       "linux/bpf_on_device_translation_policy_linux.cc",
       "linux/bpf_on_device_translation_policy_linux.h",
-      "linux/bpf_ppapi_policy_linux.cc",
-      "linux/bpf_ppapi_policy_linux.h",
       "linux/bpf_print_backend_policy_linux.cc",
       "linux/bpf_print_backend_policy_linux.h",
       "linux/bpf_print_compositor_policy_linux.cc",
@@ -92,12 +92,11 @@ component("policy") {
       "linux/sandbox_seccomp_bpf_linux.cc",
       "linux/sandbox_seccomp_bpf_linux.h",
     ]
-    if (is_linux || is_chromeos) {
+    if (allow_oop_video_decoder) {
       sources += [
         "linux/bpf_hardware_video_decoding_policy_linux.cc",
         "linux/bpf_hardware_video_decoding_policy_linux.h",
       ]
-      deps += [ "//media/gpu:buildflags" ]
     }
     if (is_linux) {
       deps += [ "//net" ]  # TODO(crbug.com/40220507): remove this.
@@ -108,6 +107,8 @@ component("policy") {
     ]
     deps += [
       ":chromecast_sandbox_allowlist_buildflags",
+      "//media:media_buildflags",
+      "//media/gpu:buildflags",
       "//sandbox:sandbox_buildflags",
       "//sandbox/linux:sandbox_services",
       "//sandbox/linux:seccomp_bpf",
@@ -227,7 +228,6 @@ source_set("tests") {
     ":policy",
     "//base",
     "//base/test:test_support",
-    "//ppapi/buildflags:buildflags",
     "//sandbox/policy/mojom",
     "//testing/gtest",
   ]

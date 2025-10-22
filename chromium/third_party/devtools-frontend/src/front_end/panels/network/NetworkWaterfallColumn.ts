@@ -1,6 +1,7 @@
 // Copyright 2016 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import type * as SDK from '../../core/sdk/sdk.js';
@@ -27,7 +28,6 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
   private scrollTop: number;
   private headerHeight: number;
   private calculator: NetworkTimeCalculator;
-  private rawRowHeight: number;
   private rowHeight: number;
   private offsetWidth: number;
   private offsetHeight: number;
@@ -47,7 +47,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
 
   constructor(calculator: NetworkTimeCalculator) {
     // TODO(allada) Make this a shadowDOM when the NetworkWaterfallColumn gets moved into NetworkLogViewColumns.
-    super(false);
+    super();
     this.registerRequiredCSS(networkWaterfallColumnStyles);
 
     this.canvas = this.contentElement.createChild('canvas');
@@ -64,9 +64,6 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
     this.headerHeight = 0;
     this.calculator = calculator;
 
-    // this.rawRowHeight captures model height (41 or 21px),
-    // this.rowHeight is computed height of the row in CSS pixels, can be 20.8 for zoomed-in content.
-    this.rawRowHeight = 0;
     this.rowHeight = 0;
 
     this.offsetWidth = 0;
@@ -216,11 +213,11 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
   }
 
   private onMouseMove(event: MouseEvent): void {
-    this.setHoveredNode(this.getNodeFromPoint(event.offsetX, event.offsetY), event.shiftKey);
+    this.setHoveredNode(this.getNodeFromPoint(event.offsetY), event.shiftKey);
   }
 
   private onClick(event: MouseEvent): void {
-    const handled = this.setSelectedNode(this.getNodeFromPoint(event.offsetX, event.offsetY));
+    const handled = this.setSelectedNode(this.getNodeFromPoint(event.offsetY));
     if (handled) {
       event.consume(true);
     }
@@ -310,12 +307,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
   }
 
   setRowHeight(height: number): void {
-    this.rawRowHeight = height;
-    this.updateRowHeight();
-  }
-
-  private updateRowHeight(): void {
-    this.rowHeight = Math.round(this.rawRowHeight * window.devicePixelRatio) / window.devicePixelRatio;
+    this.rowHeight = height;
   }
 
   setHeaderHeight(height: number): void {
@@ -331,7 +323,7 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
     this.calculator = calculator;
   }
 
-  getNodeFromPoint(x: number, y: number): NetworkNode|null {
+  getNodeFromPoint(y: number): NetworkNode|null {
     if (y <= this.headerHeight) {
       return null;
     }
@@ -373,7 +365,6 @@ export class NetworkWaterfallColumn extends UI.Widget.VBox {
 
   override onResize(): void {
     super.onResize();
-    this.updateRowHeight();
     this.calculateCanvasSize();
     this.scheduleDraw();
   }

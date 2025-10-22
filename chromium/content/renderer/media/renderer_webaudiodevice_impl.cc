@@ -25,6 +25,7 @@
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
 #include "content/public/renderer/render_frame.h"
+#include "media/audio/audio_features.h"
 #include "media/audio/null_audio_sink.h"
 #include "media/base/audio_glitch_info.h"
 #include "media/base/audio_timestamp_helper.h"
@@ -163,25 +164,45 @@ int RendererWebAudioDeviceImpl::GetOutputBufferSize(
   scaled_default_buffer_size =
       std::clamp(scaled_default_buffer_size, min_buffer_size, max_buffer_size);
 
+  int output_buffer_size = -1;
   switch (latency_hint.Category()) {
     case WebAudioLatencyHint::kCategoryInteractive:
-      return media::AudioLatency::GetInteractiveBufferSize(
+      output_buffer_size = media::AudioLatency::GetInteractiveBufferSize(
           scaled_default_buffer_size);
+      break;
     case WebAudioLatencyHint::kCategoryBalanced:
-      return media::AudioLatency::GetRtcBufferSize(resolved_context_sample_rate,
-                                                   scaled_default_buffer_size);
-    case WebAudioLatencyHint::kCategoryPlayback:
-      return media::AudioLatency::GetHighLatencyBufferSize(
+      output_buffer_size = media::AudioLatency::GetRtcBufferSize(
           resolved_context_sample_rate, scaled_default_buffer_size);
+      break;
+    case WebAudioLatencyHint::kCategoryPlayback:
+      output_buffer_size = media::AudioLatency::GetHighLatencyBufferSize(
+          resolved_context_sample_rate, scaled_default_buffer_size);
+      break;
     case WebAudioLatencyHint::kCategoryExact:
-      return media::AudioLatency::GetExactBufferSize(
+      output_buffer_size = media::AudioLatency::GetExactBufferSize(
           base::Seconds(latency_hint.Seconds()), resolved_context_sample_rate,
           scaled_default_buffer_size, min_buffer_size, max_buffer_size,
           kMaxWebAudioBufferSize);
+      break;
     case WebAudioLatencyHint::kLastValue:
       NOTREACHED();
   }
-  NOTREACHED();
+
+  CHECK(output_buffer_size != -1)
+      << "RendererWebAudioDeviceImpl::GetOutputBufferSize: Output buffer size "
+         "was not updated from initial value (-1). "
+      << "Latency Hint Category: " << static_cast<int>(latency_hint.Category());
+
+  TRACE_EVENT_INSTANT(
+      "webaudio", "RendererWebAudioDeviceImpl::GetOutputBufferSize",
+      "latency_hint", blink::WebAudioLatencyHint::AsString(latency_hint),
+      "resolved_context_sample_rate", resolved_context_sample_rate,
+      "hardware_params", hardware_params.AsHumanReadableString(),
+      "scale_factor", scale_factor, "min_buffer_size", min_buffer_size,
+      "max_buffer_size", max_buffer_size, "scaled_default_buffer_size",
+      scaled_default_buffer_size, "output_buffer_size", output_buffer_size);
+
+  return output_buffer_size;
 }
 
 RendererWebAudioDeviceImpl::RendererWebAudioDeviceImpl(
@@ -249,7 +270,7 @@ RendererWebAudioDeviceImpl::RendererWebAudioDeviceImpl(
   // sink.
   int resolved_context_sample_rate;
   if (base::FeatureList::IsEnabled(
-          blink::features::kWebAudioRemoveAudioDestinationResampler) &&
+          features::kWebAudioRemoveAudioDestinationResampler) &&
       context_sample_rate.has_value()) {
     resolved_context_sample_rate = *context_sample_rate;
   } else {

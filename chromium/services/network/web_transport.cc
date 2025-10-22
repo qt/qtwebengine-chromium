@@ -2,23 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "services/network/web_transport.h"
+
+#include <stdint.h>
 
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "mojo/public/cpp/system/data_pipe.h"
 #include "net/base/io_buffer.h"
-#include "net/third_party/quiche/src/quiche/common/platform/api/quiche_mem_slice.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_session.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_time.h"
 #include "net/third_party/quiche/src/quiche/quic/core/quic_types.h"
@@ -31,9 +28,11 @@ namespace {
 
 net::WebTransportParameters CreateParameters(
     const std::vector<mojom::WebTransportCertificateFingerprintPtr>&
-        fingerprints) {
+        fingerprints,
+    std::vector<std::string> application_protocols) {
   net::WebTransportParameters params;
   params.enable_web_transport_http3 = true;
+  params.application_protocols = std::move(application_protocols);
 
   for (const auto& fingerprint : fingerprints) {
     params.server_certificate_fingerprints.push_back(
@@ -404,14 +403,16 @@ WebTransport::WebTransport(
     const net::NetworkAnonymizationKey& key,
     const std::vector<mojom::WebTransportCertificateFingerprintPtr>&
         fingerprints,
+    const std::vector<std::string>& application_protocols,
     NetworkContext* context,
     mojo::PendingRemote<mojom::WebTransportHandshakeClient> handshake_client)
-    : transport_(net::CreateWebTransportClient(url,
-                                               origin,
-                                               this,
-                                               key,
-                                               context->url_request_context(),
-                                               CreateParameters(fingerprints))),
+    : transport_(net::CreateWebTransportClient(
+          url,
+          origin,
+          this,
+          key,
+          context->url_request_context(),
+          CreateParameters(fingerprints, std::move(application_protocols)))),
       context_(context),
       receiver_(this),
       handshake_client_(std::move(handshake_client)) {
@@ -571,6 +572,18 @@ void WebTransport::CloseIfNonceMatches(base::UnguessableToken nonce) {
   transport_->CloseIfNonceMatches(nonce);
 }
 
+void WebTransport::OnBeforeConnect(const net::IPEndPoint& server_address) {
+  if (torn_down_ || closing_) {
+    return;
+  }
+
+  DCHECK(handshake_client_);
+
+  // Here we assume that the server_address is not going to handed to the
+  // initiator renderer.
+  handshake_client_->OnBeforeConnect(server_address);
+}
+
 void WebTransport::OnConnected(
     scoped_refptr<net::HttpResponseHeaders> response_headers) {
   if (torn_down_ || closing_) {
@@ -582,6 +595,7 @@ void WebTransport::OnConnected(
   handshake_client_->OnConnectionEstablished(
       receiver_.BindNewPipeAndPassRemote(),
       client_.BindNewPipeAndPassReceiver(), std::move(response_headers),
+      transport_->session()->GetNegotiatedSubprotocol(),
       StatsToMojom(transport_->session()->GetSessionStats()));
 
   handshake_client_.reset();
@@ -736,8 +750,7 @@ void WebTransport::OnDatagramReceived(std::string_view datagram) {
     return;
   }
 
-  client_->OnDatagramReceived(base::span(
-      reinterpret_cast<const uint8_t*>(datagram.data()), datagram.size()));
+  client_->OnDatagramReceived(base::as_byte_span(datagram));
 }
 
 void WebTransport::OnCanCreateNewOutgoingBidirectionalStream() {

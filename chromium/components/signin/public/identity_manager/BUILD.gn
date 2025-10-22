@@ -19,6 +19,7 @@ source_set("identity_manager") {
     "account_info.h",
     "account_managed_status_finder.cc",
     "account_managed_status_finder.h",
+    "account_managed_status_finder_outcome.h",
     "accounts_cookie_mutator.h",
     "accounts_in_cookie_jar_info.cc",
     "accounts_in_cookie_jar_info.h",
@@ -34,6 +35,7 @@ source_set("identity_manager") {
     "identity_utils.cc",
     "identity_utils.h",
     "load_credentials_state.h",
+    "oauth_consumer_ids.h",
     "primary_account_access_token_fetcher.cc",
     "primary_account_access_token_fetcher.h",
     "primary_account_change_event.cc",
@@ -74,7 +76,10 @@ source_set("identity_manager") {
   }
 
   if (is_android) {
-    deps += [ "//components/signin/public/android:jni_headers" ]
+    deps += [
+      "//components/signin/public/android:jni_headers",
+      "//google_apis/gaia/android:jni_headers",
+    ]
   }
 
   allow_circular_includes_from = [
@@ -153,6 +158,10 @@ source_set("unit_tests") {
       "//components/account_manager_core:test_support",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("test_support") {

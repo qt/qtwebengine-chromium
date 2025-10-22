@@ -72,7 +72,7 @@ struct Config {
 
 Config kValidConfig = {
     /*accounts=*/
-    {{"account1", /*login_state=*/std::nullopt,
+    {{"account1", /*idp_claimed_login_state=*/std::nullopt,
       /*was_granted_sharing_permission=*/true}},
     /*config_fetch_status=*/{ParseStatus::kSuccess, net::HTTP_OK},
     /*disconnect_fetch_status=*/{ParseStatus::kSuccess, net::HTTP_OK},
@@ -228,7 +228,8 @@ class FederatedAuthDisconnectRequestTest
           .Times(0);
     }
 
-    metrics_ = std::make_unique<FedCmMetrics>(rfh->GetPageUkmSourceId());
+    auto fedcm_metrics =
+        std::make_unique<FedCmMetrics>(rfh->GetPageUkmSourceId());
 
     blink::mojom::IdentityCredentialDisconnectOptionsPtr options =
         blink::mojom::IdentityCredentialDisconnectOptions::New();
@@ -240,7 +241,7 @@ class FederatedAuthDisconnectRequestTest
     DisconnectRequestCallbackHelper callback_helper;
     request_ = FederatedAuthDisconnectRequest::Create(
         std::move(network_manager), permission_delegate_.get(), rfh,
-        metrics_.get(), std::move(options));
+        std::move(fedcm_metrics), std::move(options));
     request_->SetCallbackAndStart(callback_helper.callback(),
                                   api_permission_delegate_.get());
     callback_helper.WaitForCallback();
@@ -343,7 +344,6 @@ class FederatedAuthDisconnectRequestTest
   raw_ptr<TestIdpNetworkRequestManager> network_manager_;
   std::unique_ptr<MockApiPermissionDelegate> api_permission_delegate_;
   std::unique_ptr<TestPermissionDelegate> permission_delegate_;
-  std::unique_ptr<FedCmMetrics> metrics_;
   std::unique_ptr<FederatedAuthDisconnectRequest> request_;
   base::HistogramTester histogram_tester_;
   std::unique_ptr<ukm::TestAutoSetUkmRecorder> ukm_recorder_;
@@ -389,7 +389,8 @@ TEST_F(FederatedAuthDisconnectRequestTest,
   const char kAccountId[] = "account";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccountId, /*login_state=*/LoginState::kSignIn,
+  config.accounts = {{kAccountId,
+                      /*idp_claimed_login_state=*/LoginState::kSignIn,
                       /*was_granted_sharing_permission=*/false}};
 
   // Pretend the IdP was given third-party cookies access.

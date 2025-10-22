@@ -11,7 +11,7 @@
 #include "content/common/features.h"
 #include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "content/public/common/zygote/zygote_buildflags.h"
-#include "ppapi/buildflags/buildflags.h"
+#include "media/gpu/buildflags.h"
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -27,6 +27,11 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chromeos/ash/components/assistant/buildflags.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#include "media/gpu/buildflags.h"
+#include "media/media_buildflags.h"
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
 #if BUILDFLAG(IS_MAC)
 #include "base/mac/process_requirement.h"
@@ -71,15 +76,17 @@ UtilitySandboxedProcessLauncherDelegate::
       sandbox_type_ == sandbox::mojom::Sandbox::kOnDeviceModelExecution ||
       sandbox_type_ == sandbox::mojom::Sandbox::kCdm ||
       sandbox_type_ == sandbox::mojom::Sandbox::kPrintCompositor ||
-#if BUILDFLAG(ENABLE_PPAPI) && !BUILDFLAG(IS_WIN)
-      sandbox_type_ == sandbox::mojom::Sandbox::kPpapi ||
-#endif
 #if BUILDFLAG(IS_FUCHSIA)
       sandbox_type_ == sandbox::mojom::Sandbox::kVideoCapture ||
 #endif
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+      sandbox_type_ == sandbox::mojom::Sandbox::kShapeDetection ||
+#if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
       sandbox_type_ == sandbox::mojom::Sandbox::kHardwareVideoDecoding ||
+#endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
+#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
       sandbox_type_ == sandbox::mojom::Sandbox::kHardwareVideoEncoding ||
+#endif  // BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #if BUILDFLAG(IS_CHROMEOS)
       sandbox_type_ == sandbox::mojom::Sandbox::kIme ||
@@ -144,10 +151,10 @@ ZygoteCommunication* UtilitySandboxedProcessLauncherDelegate::GetZygote() {
   // process upon startup.
   if (sandbox_type_ == sandbox::mojom::Sandbox::kNetwork ||
       sandbox_type_ == sandbox::mojom::Sandbox::kOnDeviceModelExecution ||
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
       sandbox_type_ == sandbox::mojom::Sandbox::kHardwareVideoDecoding ||
       sandbox_type_ == sandbox::mojom::Sandbox::kHardwareVideoEncoding ||
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#endif
 #if BUILDFLAG(IS_CHROMEOS)
       sandbox_type_ == sandbox::mojom::Sandbox::kIme ||
       sandbox_type_ == sandbox::mojom::Sandbox::kTts ||
@@ -157,6 +164,9 @@ ZygoteCommunication* UtilitySandboxedProcessLauncherDelegate::GetZygote() {
 #endif  // BUILDFLAG(ENABLE_CROS_LIBASSISTANT)
 #endif  // BUILDFLAG(IS_CHROMEOS)
       sandbox_type_ == sandbox::mojom::Sandbox::kAudio ||
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
+      sandbox_type_ == sandbox::mojom::Sandbox::kShapeDetection ||
+#endif
 #if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
     BUILDFLAG(IS_WIN)
       sandbox_type_ == sandbox::mojom::Sandbox::kPrintBackend ||

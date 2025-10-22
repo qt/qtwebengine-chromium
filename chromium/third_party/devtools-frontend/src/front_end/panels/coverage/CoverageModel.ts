@@ -155,8 +155,7 @@ export class CoverageModel extends SDK.SDKModel.SDKModel<EventTypes> {
     }
   }
 
-  async preciseCoverageDeltaUpdate(
-      timestamp: number, occasion: string, coverageData: Protocol.Profiler.ScriptCoverage[]): Promise<void> {
+  async preciseCoverageDeltaUpdate(timestamp: number, coverageData: Protocol.Profiler.ScriptCoverage[]): Promise<void> {
     this.coverageUpdateTimes.add(timestamp);
     const result = await this.backlogOrProcessJSCoverage(coverageData, timestamp);
     if (result.length) {
@@ -728,7 +727,7 @@ export class URLCoverageInfo extends Common.ObjectWrapper.ObjectWrapper<URLCover
   unusedPercentage(): number {
     // Per convention, empty files are reported as 100 % uncovered
     if (this.sizeInternal === 0) {
-      return 100;
+      return 1;
     }
     return this.unusedSize() / this.size();
   }

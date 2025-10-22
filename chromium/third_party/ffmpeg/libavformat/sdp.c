@@ -31,6 +31,7 @@
 #include "libavcodec/mpeg4audio.h"
 #include "avformat.h"
 #include "internal.h"
+#include "av1.h"
 #include "avc.h"
 #include "hevc.h"
 #include "nal.h"
@@ -153,6 +154,26 @@ static int sdp_get_address(char *dest_addr, int size, int *ttl, const char *url)
     }
 
     return port;
+}
+
+static int extradata2psets_av1(AVFormatContext *s, const AVCodecParameters *par,
+                               char **out)
+{
+    char *psets;
+    AV1SequenceParameters seq;
+
+    if (ff_av1_parse_seq_header(&seq, par->extradata, par->extradata_size) < 0)
+        return AVERROR_INVALIDDATA;
+
+    psets = av_mallocz(64);
+    if (!psets) {
+        av_log(s, AV_LOG_ERROR, "Cannot allocate memory for the parameter sets.\n");
+        return AVERROR(ENOMEM);
+    }
+    av_strlcatf(psets, 64, "profile=%u;level-idx=%u;tier=%u",
+                seq.profile, seq.level, seq.tier);
+    *out = psets;
+    return 0;
 }
 
 #define MAX_PSET_SIZE 1024
@@ -523,6 +544,15 @@ static int sdp_write_media_attributes(char *buff, int size, const AVStream *st,
     int ret = 0;
 
     switch (p->codec_id) {
+    case AV_CODEC_ID_AV1:
+        av_strlcatf(buff, size, "a=rtpmap:%d AV1/90000\r\n", payload_type);
+        if (p->extradata_size) {
+            ret = extradata2psets_av1(fmt, p, &config);
+            if (ret < 0)
+                return ret;
+            av_strlcatf(buff, size, "a=fmtp:%d %s\r\n", payload_type, config);
+        }
+        break;
     case AV_CODEC_ID_DIRAC:
         av_strlcatf(buff, size, "a=rtpmap:%d VC2/90000\r\n", payload_type);
         break;
@@ -836,6 +866,9 @@ int ff_sdp_write_media(char *buff, int size, const AVStream *st, int idx,
     sdp_write_address(buff, size, dest_addr, dest_type, ttl);
     if (p->bit_rate) {
         av_strlcatf(buff, size, "b=AS:%"PRId64"\r\n", p->bit_rate / 1000);
+    }
+    if (p->framerate.num > 0 && p->framerate.den > 0) {
+        av_strlcatf(buff, size, "a=framerate:%g\r\n", av_q2d(p->framerate));
     }
 
     return sdp_write_media_attributes(buff, size, st, payload_type, fmt);

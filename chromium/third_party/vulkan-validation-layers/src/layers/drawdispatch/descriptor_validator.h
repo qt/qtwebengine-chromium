@@ -1,6 +1,7 @@
 /* Copyright (c) 2023-2025 The Khronos Group Inc.
  * Copyright (c) 2023-2025 Valve Corporation
  * Copyright (c) 2023-2025 LunarG, Inc.
+ * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -26,7 +27,7 @@ struct ResourceInterfaceVariable;
 namespace vvl {
 struct DrawDispatchVuid;
 class DescriptorBinding;
-class Device;
+class DeviceProxy;
 class BufferDescriptor;
 class ImageDescriptor;
 class ImageSamplerDescriptor;
@@ -36,10 +37,11 @@ class SamplerDescriptor;
 class CommandBuffer;
 class Sampler;
 class DescriptorSet;
+class TensorDescriptor;
 
 class DescriptorValidator : public Logger {
   public:
-    DescriptorValidator(Device& dev, vvl::CommandBuffer& cb_state, vvl::DescriptorSet& descriptor_set, uint32_t set_index,
+    DescriptorValidator(DeviceProxy& dev, vvl::CommandBuffer& cb_state, vvl::DescriptorSet& descriptor_set, uint32_t set_index,
                         VkFramebuffer framebuffer, const VulkanTypedHandle* shader_handle, const Location& loc);
 
     // Used with normal validation where we know which descriptors are accessed.
@@ -48,11 +50,9 @@ class DescriptorValidator : public Logger {
     // The main reason we can't combine is one function needs to be const and the other is non-const.
     bool ValidateBindingDynamic(const spirv::ResourceInterfaceVariable& binding_info, DescriptorBinding& binding,
                                 const uint32_t index);
-
-    // For GPU-AV, these can become aliased and need to be mutable between descriptor accesses
-    uint32_t set_index;
-    // A descriptor set might be used between multiple shaders and need to adjust which one was found
-    const VulkanTypedHandle* shader_handle;  // VkPipeline or VkShaderObject
+    void SetSetIndexForGpuAv(uint32_t set_index) { this->set_index = set_index; }
+    void SetShaderHandleForGpuAv(const VulkanTypedHandle* shader_handle) { this->shader_handle = shader_handle; }
+    void SetLocationForGpuAv(const Location& gpuav_loc);
 
   private:
     template <typename T>
@@ -73,6 +73,8 @@ class DescriptorValidator : public Logger {
                             VkDescriptorType descriptor_type, const vvl::AccelerationStructureDescriptor& descriptor) const;
     bool ValidateDescriptor(const spirv::ResourceInterfaceVariable& binding_info, const uint32_t index,
                             VkDescriptorType descriptor_type, const vvl::SamplerDescriptor& descriptor) const;
+    bool ValidateDescriptor(const spirv::ResourceInterfaceVariable& binding_info, uint32_t index, VkDescriptorType descriptor_type,
+                            const vvl::TensorDescriptor& descriptor) const;
 
     // helper for the common parts of ImageSamplerDescriptor and SamplerDescriptor validation
     bool ValidateSamplerDescriptor(const spirv::ResourceInterfaceVariable& binding_info, uint32_t index, VkSampler sampler,
@@ -81,11 +83,16 @@ class DescriptorValidator : public Logger {
     std::string DescribeDescriptor(const spirv::ResourceInterfaceVariable& binding_info, uint32_t index,
                                    VkDescriptorType type) const;
 
-    vvl::Device& dev_state;
+    vvl::DeviceProxy& dev_proxy;
     vvl::CommandBuffer& cb_state;
     vvl::DescriptorSet& descriptor_set;
     const VkFramebuffer framebuffer;
-    const Location& loc;
-    const DrawDispatchVuid& vuids;
+    LocationCapture loc;
+    const DrawDispatchVuid* vuids;
+
+    // For GPU-AV, these can become aliased and need to be mutable between descriptor accesses
+    uint32_t set_index;
+    // A descriptor set might be used between multiple shaders and need to adjust which one was found
+    const VulkanTypedHandle* shader_handle;  // VkPipeline or VkShaderObject
 };
 }  // namespace vvl

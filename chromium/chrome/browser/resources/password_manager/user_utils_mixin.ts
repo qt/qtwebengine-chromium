@@ -25,28 +25,12 @@ export const UserUtilMixin = dedupingMixin(
         static get properties() {
           return {
             /**
-             * Indicates whether the account-scoped password storage is enabled.
-             */
-            isAccountStorageEnabled: {
-              type: Boolean,
-              value: false,
-            },
-
-            /* Account storage eligibility. */
-            isEligibleForAccountStorage: {
-              type: Boolean,
-              value: false,
-              computed: 'computeIsEligibleForAccountStorage_(syncInfo_)',
-            },
-
-            /**
              * If true, the edit dialog and removal notification show
              * information about which location(s) a password is stored.
              */
             isAccountStoreUser: {
               type: Boolean,
-              computed: 'computeIsAccountStoreUser_(' +
-                  'isAccountStorageEnabled, isEligibleForAccountStorage)',
+              value: false,
             },
 
             isSyncingPasswords: {
@@ -68,36 +52,28 @@ export const UserUtilMixin = dedupingMixin(
               value: '',
               computed: 'computeAvatarImage_(accountInfo_)',
             },
+
+            syncInfo_: Object,
+            accountInfo_: Object,
           };
         }
 
-      isAccountStorageEnabled:
-        boolean;
-      isEligibleForAccountStorage:
-        boolean;
-      // Whether account storage is enabled and the default storage is account.
-      isAccountStoreUser:
-        boolean;
-      isSyncingPasswords:
-        boolean;
-      accountEmail:
-        string;
-      avatarImage:
-        string;
-      private syncInfo_:
-        SyncInfo;
-      private accountInfo_:
-        AccountInfo;
+        declare isAccountStoreUser: boolean;
+        declare isSyncingPasswords: boolean;
+        declare accountEmail: string;
+        declare avatarImage: string;
+        declare private syncInfo_: SyncInfo;
+        declare private accountInfo_: AccountInfo;
 
-      private setIsAccountStorageEnabledListener_:
-        ((enabled: boolean) => void)|null = null;
+        private setIsAccountStorageEnabledListener_:
+            ((enabled: boolean) => void)|null = null;
 
         override connectedCallback() {
           super.connectedCallback();
 
           // Create listener functions.
           this.setIsAccountStorageEnabledListener_ = (enabled) =>
-              this.isAccountStorageEnabled = enabled;
+              this.isAccountStoreUser = enabled;
           const syncInfoChanged = (syncInfo: SyncInfo) => this.syncInfo_ =
               syncInfo;
           const accountInfoChanged = (accountInfo: AccountInfo) =>
@@ -137,10 +113,6 @@ export const UserUtilMixin = dedupingMixin(
           PasswordManagerImpl.getInstance().setAccountStorageEnabled(false);
         }
 
-        private computeIsEligibleForAccountStorage_(): boolean {
-          return !!(this.syncInfo_?.isEligibleForAccountStorage);
-        }
-
         private computeIsSyncingPasswords_(): boolean {
           return !!(this.syncInfo_?.isSyncingPasswords);
         }
@@ -152,11 +124,6 @@ export const UserUtilMixin = dedupingMixin(
         private computeAvatarImage_(): string {
           return this.accountInfo_?.avatarImage || '';
         }
-
-        private computeIsAccountStoreUser_(): boolean {
-          return this.isEligibleForAccountStorage &&
-              this.isAccountStorageEnabled;
-        }
       }
 
       return UserUtilMixin;
@@ -164,8 +131,6 @@ export const UserUtilMixin = dedupingMixin(
 
 
 export interface UserUtilMixinInterface {
-  isAccountStorageEnabled: boolean;
-  isEligibleForAccountStorage: boolean;
   isAccountStoreUser: boolean;
   isSyncingPasswords: boolean;
   accountEmail: string;

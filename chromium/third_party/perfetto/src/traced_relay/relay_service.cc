@@ -22,12 +22,13 @@
 #include "perfetto/base/build_config.h"
 #include "perfetto/base/logging.h"
 #include "perfetto/base/task_runner.h"
+#include "perfetto/ext/base/android_utils.h"
 #include "perfetto/ext/base/clock_snapshots.h"
 #include "perfetto/ext/base/file_utils.h"
-#include "perfetto/ext/base/hash.h"
 #include "perfetto/ext/base/string_utils.h"
 #include "perfetto/ext/base/unix_socket.h"
 #include "perfetto/ext/base/utils.h"
+#include "perfetto/ext/base/version.h"
 #include "perfetto/ext/ipc/client.h"
 #include "perfetto/tracing/core/forward_decls.h"
 #include "protos/perfetto/ipc/wire_protocol.gen.h"
@@ -41,12 +42,12 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/utsname.h>
-#include <unistd.h>
 #include <time.h>
+#include <unistd.h>
 #endif
 
 // Non-QNX include statements
-#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) || \
+#if PERFETTO_BUILDFLAG(PERFETTO_OS_ANDROID) ||           \
     PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX_BUT_NOT_QNX) || \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
 #include <sys/syscall.h>
@@ -64,7 +65,8 @@ namespace {
 
 std::string GenerateSetPeerIdentityRequest(int32_t pid,
                                            int32_t uid,
-                                           const std::string& machine_id_hint) {
+                                           const std::string& machine_id_hint,
+                                           const std::string& machine_name) {
   IPCFrame ipc_frame;
   ipc_frame.set_request_id(0);
 
@@ -77,8 +79,49 @@ std::string GenerateSetPeerIdentityRequest(int32_t pid,
 #endif
   set_peer_identity->set_uid(uid);
   set_peer_identity->set_machine_id_hint(machine_id_hint);
+  set_peer_identity->set_machine_name(machine_name);
 
   return ipc::BufferedFrameDeserializer::Serialize(ipc_frame);
+}
+
+void SetSystemInfo(protos::gen::InitRelayRequest* request) {
+  base::SystemInfo sys_info = base::GetSystemInfo();
+
+  auto* info = request->mutable_system_info();
+  info->set_tracing_service_version(base::GetVersionString());
+
+  if (sys_info.timezone_off_mins.has_value())
+    info->set_timezone_off_mins(*sys_info.timezone_off_mins);
+
+  if (sys_info.utsname_info.has_value()) {
+    auto* utsname_info = info->mutable_utsname();
+    utsname_info->set_sysname(sys_info.utsname_info->sysname);
+    utsname_info->set_version(sys_info.utsname_info->version);
+    utsname_info->set_machine(sys_info.utsname_info->machine);
+    utsname_info->set_release(sys_info.utsname_info->release);
+  }
+
+  if (sys_info.page_size.has_value())
+    info->set_page_size(*sys_info.page_size);
+  if (sys_info.num_cpus.has_value())
+    info->set_num_cpus(*sys_info.num_cpus);
+
+  if (!sys_info.android_build_fingerprint.empty())
+    info->set_android_build_fingerprint(sys_info.android_build_fingerprint);
+  if (!sys_info.android_device_manufacturer.empty())
+    info->set_android_device_manufacturer(sys_info.android_device_manufacturer);
+  if (sys_info.android_sdk_version.has_value())
+    info->set_android_sdk_version(*sys_info.android_sdk_version);
+  if (!sys_info.android_soc_model.empty())
+    info->set_android_soc_model(sys_info.android_soc_model);
+  if (!sys_info.android_guest_soc_model.empty())
+    info->set_android_guest_soc_model(sys_info.android_guest_soc_model);
+  if (!sys_info.android_hardware_revision.empty())
+    info->set_android_hardware_revision(sys_info.android_hardware_revision);
+  if (!sys_info.android_storage_model.empty())
+    info->set_android_storage_model(sys_info.android_storage_model);
+  if (!sys_info.android_ram_model.empty())
+    info->set_android_ram_model(sys_info.android_ram_model);
 }
 
 }  // Anonymous namespace.
@@ -86,12 +129,14 @@ std::string GenerateSetPeerIdentityRequest(int32_t pid,
 RelayClient::~RelayClient() = default;
 RelayClient::RelayClient(const std::string& client_sock_name,
                          const std::string& machine_id_hint,
+                         const std::string& machine_name,
                          base::TaskRunner* task_runner,
                          OnErrorCallback on_error_callback)
     : task_runner_(task_runner),
       on_error_callback_(on_error_callback),
       client_sock_name_(client_sock_name),
-      machine_id_hint_(machine_id_hint) {
+      machine_id_hint_(machine_id_hint),
+      machine_name_(machine_name) {
   Connect();
 }
 
@@ -117,8 +162,9 @@ void RelayClient::OnConnect(base::UnixSocket* self, bool connected) {
   }
 
   // The RelayClient needs to send its peer identity to the host.
-  auto req = GenerateSetPeerIdentityRequest(
-      getpid(), static_cast<int32_t>(geteuid()), machine_id_hint_);
+  auto req =
+      GenerateSetPeerIdentityRequest(getpid(), static_cast<int32_t>(geteuid()),
+                                     machine_id_hint_, machine_name_);
   if (!self->SendStr(req)) {
     return NotifyError();
   }
@@ -133,12 +179,21 @@ void RelayClient::OnConnect(base::UnixSocket* self, bool connected) {
 }
 
 void RelayClient::OnServiceConnected() {
+  InitRelayRequest();
   phase_ = Phase::PING;
   SendSyncClockRequest();
 }
 
 void RelayClient::OnServiceDisconnected() {
   NotifyError();
+}
+
+void RelayClient::InitRelayRequest() {
+  protos::gen::InitRelayRequest request;
+
+  SetSystemInfo(&request);
+
+  relay_ipc_client_->InitRelay(request);
 }
 
 void RelayClient::SendSyncClockRequest() {
@@ -193,7 +248,9 @@ void RelayClient::OnSyncClockResponse(const protos::gen::SyncClockResponse&) {
 }
 
 RelayService::RelayService(base::TaskRunner* task_runner)
-    : task_runner_(task_runner), machine_id_hint_(GetMachineIdHint()) {}
+    : task_runner_(task_runner),
+      machine_id_hint_(GetMachineIdHint()),
+      machine_name_(base::GetPerfettoMachineName()) {}
 
 void RelayService::Start(const char* listening_socket_name,
                          std::string client_socket_name) {
@@ -259,7 +316,7 @@ void RelayService::OnNewIncomingConnection(
 #endif
   auto req = GenerateSetPeerIdentityRequest(
       pid, static_cast<int32_t>(server_conn->peer_uid_posix()),
-      machine_id_hint_);
+      machine_id_hint_, machine_name_);
   // Buffer the SetPeerIdentity request.
   SocketWithBuffer server, client;
   PERFETTO_CHECK(server.available_bytes() >= req.size());
@@ -321,7 +378,7 @@ void RelayService::ConnectRelayClient() {
     return;
 
   relay_client_ = std::make_unique<RelayClient>(
-      client_socket_name_, machine_id_hint_, task_runner_,
+      client_socket_name_, machine_id_hint_, machine_name_, task_runner_,
       [this]() { this->ReconnectRelayClient(); });
 }
 
@@ -338,13 +395,13 @@ std::string RelayService::GetMachineIdHint(
     PERFETTO_BUILDFLAG(PERFETTO_OS_LINUX) ||   \
     PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
   auto get_pseudo_boot_id = []() -> std::string {
-    base::Hasher hasher;
+    base::FnvHasher hasher;
     // Generate a pseudo-unique identifier for the current machine.
     // Source 1: system boot timestamp from the creation time of /dev inode.
 #if PERFETTO_BUILDFLAG(PERFETTO_OS_APPLE)
     // Mac or iOS, just use stat(2).
     const char* dev_path = "/dev";
-    struct stat stat_buf {};
+    struct stat stat_buf{};
     int rc = PERFETTO_EINTR(stat(dev_path, &stat_buf));
     if (rc == -1)
       return std::string();
@@ -353,7 +410,7 @@ std::string RelayService::GetMachineIdHint(
 #elif PERFETTO_BUILDFLAG(PERFETTO_OS_QNX)
     // QNX doesn't support the file birthtime flag in the stat structure.
     // In order to still calculate the system boot time in epoch seconds
-    // we get the current epoch seconds and substract the amount of time
+    // we get the current epoch seconds and subtract the amount of time
     // since boot. This is a more generic approach that could be used in
     // general for POSIX operating systems (even though is not as accurate).
     timespec system_boottime;
@@ -362,14 +419,14 @@ std::string RelayService::GetMachineIdHint(
     // Get current epoch time
     int rc = clock_gettime(CLOCK_REALTIME, &system_boottime);
     if (rc == 0)
-        return std::string();
+      return std::string();
 
     // Get seconds since system boot
     timesinceboot_secs = ClockCycles() / SYSPAGE_ENTRY(qtime)->cycles_per_sec;
 
     // Calculate system boot time in epoch seconds
     if (timesinceboot_secs > static_cast<uint64_t>(system_boottime.tv_sec))
-        return std::string();
+      return std::string();
 
     system_boottime.tv_sec -= timesinceboot_secs;
 
@@ -378,7 +435,7 @@ std::string RelayService::GetMachineIdHint(
 #else
     // Android or Linux, use statx(2)
     const char* dev_path = "/dev";
-    struct statx stat_buf {};
+    struct statx stat_buf{};
     auto rc = PERFETTO_EINTR(syscall(__NR_statx, /*dirfd=*/-1, dev_path,
                                      /*flags=*/0, STATX_BTIME, &stat_buf));
     if (rc == -1)

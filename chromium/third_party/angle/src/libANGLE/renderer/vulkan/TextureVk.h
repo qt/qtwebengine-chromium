@@ -422,6 +422,12 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                 const vk::Format &format,
                                 const gl::Extents &size);
 
+    // If an image is in use by the GPU but is overwritten completely, a new VkImage can be created
+    // instead to avoid creating an unnecessary dependency.
+    angle::Result ghostOnOverwrite(ContextVk *contextVk,
+                                   const gl::ImageIndex &index,
+                                   const gl::Box &area);
+
     angle::Result setImageImpl(const gl::Context *context,
                                const gl::ImageIndex &index,
                                const gl::InternalFormat &formatInfo,
@@ -583,9 +589,13 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     angle::Result maybeUpdateBaseMaxLevels(ContextVk *contextVk,
                                            TextureUpdateResult *changeResultOut);
 
-    bool isFastUnpackPossible(const vk::Format &vkFormat,
+    bool isFastUnpackPossible(const gl::Box &area,
+                              GLuint rowLengthPixels,
+                              GLuint imageHeightPixels,
+                              const vk::Format &vkFormat,
                               size_t offset,
-                              const vk::Format &bufferVkFormat) const;
+                              const vk::Format &bufferVkFormat,
+                              GLenum type) const;
 
     bool updateMustBeStaged(gl::LevelIndex textureLevelIndexGL, angle::FormatID dstFormatID) const;
     bool updateMustBeFlushed(gl::LevelIndex textureLevelIndexGL, angle::FormatID dstFormatID) const;
@@ -608,7 +618,9 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
 
     angle::Result ensureMutable(ContextVk *contextVk);
     angle::Result refreshImageViews(ContextVk *contextVk);
-    void initImageUsageFlags(ContextVk *contextVk, angle::FormatID actualFormatID);
+    void initImageUsageFlags(ContextVk *contextVk,
+                             const angle::Format &intendedFormat,
+                             angle::FormatID actualFormatID);
     void handleImmutableSamplerTransition(const vk::ImageHelper *previousImage,
                                           const vk::ImageHelper *nextImage);
 
@@ -672,6 +684,11 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
     using MultiSampleImageViews =
         gl::RenderToTextureImageMap<gl::TexLevelArray<vk::ImageViewHelper>>;
     std::unique_ptr<MultiSampleImageViews> mMultisampledImageViews;
+
+    // Implicit RGB image to be used in YUV rendering when
+    // nullColorAttachmentWithExternalFormatResolve is not supported.
+    std::unique_ptr<vk::ImageHelper> mRgbDrawImageForYuvResolve;
+    std::unique_ptr<vk::ImageViewHelper> mRgbDrawImageViewsForYuvResolve;
 
     // Texture buffers create texel buffer views instead.  |BufferViewHelper| contains the views
     // corresponding to the attached buffer range.

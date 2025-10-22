@@ -145,6 +145,17 @@ MATCHER(RenderProcessHostIsReady, "") {
   return arg->IsReady();
 }
 
+// The test verifies that HasSpareRenderer() correctly returns
+// whether there is an available spare renderer.
+IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest, HasSpareRenderer) {
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+  EXPECT_FALSE(spare_manager.HasSpareRenderer());
+  spare_manager.WarmupSpare(browser_context());
+  EXPECT_TRUE(spare_manager.HasSpareRenderer());
+  spare_manager.CleanupSparesForTesting();
+  EXPECT_FALSE(spare_manager.HasSpareRenderer());
+}
+
 // This test verifies the creation of a deferred spare renderer. It checks two
 // conditions:
 //  1. A spare renderer is created successfully under standard conditions.
@@ -525,10 +536,13 @@ class NonSpareRendererContentBrowserClient
     return true;
   }
 
-  std::optional<SpareProcessRefusedByEmbedderReason>
-  ShouldUseSpareRenderProcessHost(BrowserContext* browser_context,
-                                  const GURL& site_url) override {
-    return SpareProcessRefusedByEmbedderReason::DefaultDisabled;
+  bool ShouldUseSpareRenderProcessHost(
+      BrowserContext* browser_context,
+      const GURL& site_url,
+      std::optional<SpareProcessRefusedByEmbedderReason>& refused_reason)
+      override {
+    refused_reason = std::nullopt;
+    return false;
   }
 };
 
@@ -904,6 +918,88 @@ IN_PROC_BROWSER_TEST_F(SpareRenderProcessHostManagerTest,
       "ForCOOP",
       true, 1);
 }
+
+#if BUILDFLAG(IS_ANDROID)
+
+class AndroidSpareRendererProcessHostManagerTest
+    : public SpareRenderProcessHostManagerTest {
+ public:
+  AndroidSpareRendererProcessHostManagerTest() {
+    scoped_feature_list_.InitAndEnableFeatureWithParameters(
+        features::kAndroidWarmUpSpareRendererWithTimeout,
+        {
+            {features::kAndroidSpareRendererKillWhenBackgrounded.name, "true"},
+            {features::kAndroidSpareRendererOnlyForNavigation.name, "true"},
+        });
+  }
+
+ private:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+IN_PROC_BROWSER_TEST_F(AndroidSpareRendererProcessHostManagerTest,
+                       KillSpareRendererWhenAppBackgrounded) {
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+  // Notify a foreground state to start the test as foreground.
+  base::android::ApplicationStatusListener::NotifyApplicationStateChange(
+      base::android::ApplicationState::
+          APPLICATION_STATE_HAS_RUNNING_ACTIVITIES);
+  BrowserContext* browser_context =
+      ShellContentBrowserClient::Get()->browser_context();
+  spare_manager.WarmupSpare(browser_context);
+  EXPECT_EQ(spare_manager.GetSpares().size(), 1u);
+  RenderProcessHost* rph = spare_manager.GetSpares().back();
+
+  // Send backgrounded event
+  base::android::ApplicationStatusListener::NotifyApplicationStateChange(
+      base::android::ApplicationState::
+          APPLICATION_STATE_HAS_STOPPED_ACTIVITIES);
+  RenderProcessHostWatcher process_watcher(
+      rph, RenderProcessHostWatcher::WATCH_FOR_HOST_DESTRUCTION);
+  process_watcher.Wait();
+  EXPECT_TRUE(spare_manager.GetSpares().empty());
+}
+
+IN_PROC_BROWSER_TEST_F(AndroidSpareRendererProcessHostManagerTest,
+                       OnlyForNavigation) {
+  ASSERT_TRUE(embedded_test_server()->Start());
+
+  auto& spare_manager = SpareRenderProcessHostManagerImpl::Get();
+  BrowserContext* browser_context =
+      ShellContentBrowserClient::Get()->browser_context();
+  spare_manager.WarmupSpare(browser_context);
+  EXPECT_EQ(spare_manager.GetSpares().size(), 1u);
+
+  GURL test_url = embedded_test_server()->GetURL("/simple_page.html");
+  scoped_refptr<SiteInstance> test_site_instance =
+      SiteInstance::CreateForURL(browser_context, test_url);
+  base::HistogramTester histogram_tester;
+
+  // Emulate a non-navigation process allocation. The
+  // kServiceWorkerProcessManager source is only used for testing.
+  // Since the feature AndroidSpareRendererOnlyForNavigation is enabled,
+  // the allocation will not get a spare renderer.
+  EXPECT_FALSE(spare_manager.MaybeTakeSpare(
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kServiceWorkerProcessManager}));
+  // Also verify that the SpareProcessMaybeTakeAction UMA correctly records the
+  // reason.
+  histogram_tester.ExpectUniqueSample(
+      "BrowserRenderProcessHost.SpareProcessMaybeTakeAction",
+      content::RenderProcessHostImpl::SpareProcessMaybeTakeAction::
+          kRefusedNonNavigation,
+      1);
+  // Navigation request can still allocate a spare renderer.
+  EXPECT_TRUE(spare_manager.MaybeTakeSpare(
+      browser_context, static_cast<SiteInstanceImpl*>(test_site_instance.get()),
+      ProcessAllocationContext{
+          ProcessAllocationSource::kNavigationRequest,
+          NavigationProcessAllocationContext{
+              ProcessAllocationNavigationStage::kBeforeNetworkRequest, 0,
+              false}}));
+}
+#endif
 
 class ExtraSpareRenderProcessHostManagerTest
     : public SpareRenderProcessHostManagerTest {

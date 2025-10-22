@@ -6,6 +6,7 @@ import * as i18n from '../../../core/i18n/i18n.js';
 import * as Extras from '../extras/extras.js';
 import type * as Handlers from '../handlers/handlers.js';
 import * as Helpers from '../helpers/helpers.js';
+import type * as Types from '../types/types.js';
 
 import {estimateCompressionRatioForScript, metricSavingsForWastedBytes} from './Common.js';
 import {
@@ -59,13 +60,13 @@ function finalize(partialModel: PartialInsightModel<DuplicatedJavaScriptInsightM
   };
 }
 
+export function isDuplicatedJavaScript(model: InsightModel): model is DuplicatedJavaScriptInsightModel {
+  return model.insightKey === InsightKeys.DUPLICATE_JAVASCRIPT;
+}
+
 export function generateInsight(
     parsedTrace: Handlers.Types.ParsedTrace, context: InsightSetContext): DuplicatedJavaScriptInsightModel {
   const scripts = parsedTrace.Scripts.scripts.filter(script => {
-    if (!context.navigation) {
-      return false;
-    }
-
     if (script.frame !== context.frameId) {
       return false;
     }
@@ -77,7 +78,15 @@ export function generateInsight(
     return Helpers.Timing.timestampIsInBounds(context.bounds, script.ts);
   });
 
-  const {duplication, duplicationGroupedByNodeModules} = Extras.ScriptDuplication.computeScriptDuplication({scripts});
+  const compressionRatios = new Map<string, number>();
+  for (const script of scripts) {
+    if (script.request) {
+      compressionRatios.set(script.request.args.data.requestId, estimateCompressionRatioForScript(script));
+    }
+  }
+
+  const {duplication, duplicationGroupedByNodeModules} =
+      Extras.ScriptDuplication.computeScriptDuplication({scripts}, compressionRatios);
   const scriptsWithDuplication = [...duplication.values().flatMap(data => data.duplicates.map(d => d.script))];
 
   const wastedBytesByRequestId = new Map<string, number>();
@@ -88,8 +97,7 @@ export function generateInsight(
         continue;
       }
 
-      const compressionRatio = estimateCompressionRatioForScript(sourceData.script);
-      const transferSize = Math.round(sourceData.attributedSize * compressionRatio);
+      const transferSize = sourceData.attributedSize;
       const requestId = sourceData.script.request.args.data.requestId;
       wastedBytesByRequestId.set(requestId, (wastedBytesByRequestId.get(requestId) || 0) + transferSize);
     }
@@ -102,5 +110,16 @@ export function generateInsight(
     scripts,
     mainDocumentUrl: context.navigation?.args.data?.url ?? parsedTrace.Meta.mainFrameURL,
     metricSavings: metricSavingsForWastedBytes(wastedBytesByRequestId, context),
+    wastedBytes: wastedBytesByRequestId.values().reduce((acc, cur) => acc + cur, 0),
+  });
+}
+
+export function createOverlays(model: DuplicatedJavaScriptInsightModel): Types.Overlays.Overlay[] {
+  return model.scriptsWithDuplication.map(script => script.request).filter(e => !!e).map(request => {
+    return {
+      type: 'ENTRY_OUTLINE',
+      entry: request,
+      outlineReason: 'ERROR',
+    };
   });
 }

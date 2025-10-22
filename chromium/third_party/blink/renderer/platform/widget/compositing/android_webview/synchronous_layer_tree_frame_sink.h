@@ -83,8 +83,7 @@ class SynchronousLayerTreeFrameSink
  public:
   SynchronousLayerTreeFrameSink(
       scoped_refptr<viz::RasterContextProvider> context_provider,
-      scoped_refptr<cc::RasterContextProviderWrapper>
-          worker_context_provider_wrapper,
+      scoped_refptr<viz::RasterContextProvider> worker_context_provider,
       scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner,
       uint32_t layer_tree_frame_sink_id,
       std::unique_ptr<viz::BeginFrameSource> begin_frame_source,
@@ -107,6 +106,7 @@ class SynchronousLayerTreeFrameSink
   void DidNotProduceFrame(const viz::BeginFrameAck& ack,
                           cc::FrameSkippedReason reason) override;
   void Invalidate(bool needs_draw) override;
+  void NotifyNewLocalSurfaceIdExpectedWhilePaused() override;
 
   // viz::mojom::CompositorFrameSinkClient implementation.
   void DidReceiveCompositorFrameAck(
@@ -114,7 +114,6 @@ class SynchronousLayerTreeFrameSink
   void OnBeginFrame(
       const viz::BeginFrameArgs& args,
       const HashMap<uint32_t, viz::FrameTimingDetails>& timing_details,
-      bool frame_ack,
       Vector<viz::ReturnedResource> resources) override;
   void ReclaimResources(Vector<viz::ReturnedResource> resources) override;
   void OnBeginFramePausedChanged(bool paused) override;
@@ -187,10 +186,6 @@ class SynchronousLayerTreeFrameSink
     void DisplayAddChildWindowToBrowser(
         gpu::SurfaceHandle child_window) override {}
     void SetWideColorEnabled(bool enabled) override {}
-    void SetPreferredFrameInterval(base::TimeDelta interval) override {}
-    base::TimeDelta GetPreferredFrameIntervalForFrameSinkId(
-        const viz::FrameSinkId& id,
-        viz::mojom::CompositorFrameSinkType* type) override;
   };
 
   viz::DebugRendererSettings debug_settings_;
@@ -224,6 +219,8 @@ class SynchronousLayerTreeFrameSink
   gfx::Rect sw_viewport_for_current_draw_;
 
   THREAD_CHECKER(thread_checker_);
+
+  std::optional<uint64_t> gpu_memory_override_in_bytes_;
 
   // Indicates that webview using viz
   const bool viz_frame_submission_enabled_;

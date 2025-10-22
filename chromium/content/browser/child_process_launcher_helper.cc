@@ -9,6 +9,7 @@
 #include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/memory/shared_memory_switch.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/histogram_shared_memory.h"
@@ -39,7 +40,8 @@
 #endif
 
 #if BUILDFLAG(IS_IOS)
-#include "base/apple/mach_port_rendezvous.h"
+#include "base/apple/mach_port_rendezvous_ios.h"
+#include "base/files/scoped_temp_dir.h"
 #endif
 
 namespace content {
@@ -314,6 +316,10 @@ ChildProcessLauncherHelper::~ChildProcessLauncherHelper() {
     base::Process::Open(process_id_.value()).ForgetPriority();
   }
 #endif  // BUILDFLAG(IS_CHROMEOS)
+#if BUILDFLAG(IS_IOS)
+  GetProcessLauncherTaskRunner()->DeleteSoon(FROM_HERE,
+                                             std::move(scoped_temp_dir_));
+#endif
 }
 
 void ChildProcessLauncherHelper::StartLaunchOnClientThread() {

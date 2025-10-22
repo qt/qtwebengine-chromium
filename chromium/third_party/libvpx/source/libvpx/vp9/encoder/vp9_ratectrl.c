@@ -1734,14 +1734,6 @@ void vp9_rc_set_frame_target(VP9_COMP *cpi, int target) {
                                   rate_thresh_mult[rc->frame_size_selector]);
   }
 
-#if CONFIG_RATE_CTRL
-  if (cpi->oxcf.use_simple_encode_api) {
-    if (cpi->encode_command.use_external_target_frame_bits) {
-      rc->this_frame_target = cpi->encode_command.target_frame_bits;
-    }
-  }
-#endif  // CONFIG_RATE_CTRL
-
   // Target rate per SB64 (including partial SB64s.
   const int64_t sb64_target_rate =
       ((int64_t)rc->this_frame_target * 64 * 64) / (cm->width * cm->height);
@@ -2612,13 +2604,6 @@ void vp9_rc_set_gf_interval_range(const VP9_COMP *const cpi,
     // Set Maximum gf/arf interval
     rc->max_gf_interval = oxcf->max_gf_interval;
     rc->min_gf_interval = oxcf->min_gf_interval;
-#if CONFIG_RATE_CTRL
-    if (oxcf->use_simple_encode_api) {
-      // In this experiment, we avoid framerate being changed dynamically during
-      // encoding.
-      framerate = oxcf->init_framerate;
-    }
-#endif  // CONFIG_RATE_CTRL
     if (rc->min_gf_interval == 0) {
       rc->min_gf_interval = vp9_rc_get_default_min_gf_interval(
           oxcf->width, oxcf->height, framerate);
@@ -3289,7 +3274,6 @@ int vp9_encodedframe_overshoot(VP9_COMP *cpi, int frame_size, int *q) {
     int enumerator;
     // Set a larger QP.
     if (cpi->oxcf.content != VP9E_CONTENT_SCREEN &&
-        cm->width * cm->height >= 1280 * 720 &&
         (rc->buffer_level > (3 * rc->optimal_buffer_level) >> 2) &&
         (cpi->rc.avg_source_sad[0] < sad_thr)) {
       *q = (*q + cpi->rc.worst_quality) >> 1;

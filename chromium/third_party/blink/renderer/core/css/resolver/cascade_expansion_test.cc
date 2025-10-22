@@ -3,13 +3,13 @@
 // found in the LICENSE file.
 
 #include "third_party/blink/renderer/core/css/resolver/cascade_expansion.h"
-#include "third_party/blink/renderer/core/css/properties/css_property_ref.h"
-#include "third_party/blink/renderer/core/css/resolver/cascade_expansion-inl.h"
 
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/css_selector.h"
 #include "third_party/blink/renderer/core/css/css_test_helpers.h"
 #include "third_party/blink/renderer/core/css/css_unset_value.h"
+#include "third_party/blink/renderer/core/css/properties/css_property_ref.h"
+#include "third_party/blink/renderer/core/css/resolver/cascade_expansion-inl.h"
 #include "third_party/blink/renderer/core/css/resolver/match_result.h"
 #include "third_party/blink/renderer/core/css/rule_set.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -81,13 +81,9 @@ class CascadeExpansionTest : public PageTestBase {
     Vector<CSSPropertyID> all;
     for (CSSPropertyID id : CSSPropertyIDList()) {
       const CSSProperty& property = CSSProperty::Get(id);
-      if (!IsInAllExpansion(id)) {
-        continue;
+      if (IsInAllExpansion(id) && filter.Accepts(property)) {
+        all.push_back(id);
       }
-      if (filter.Rejects(property)) {
-        continue;
-      }
-      all.push_back(id);
     }
     return all;
   }
@@ -429,25 +425,6 @@ TEST_F(CascadeExpansionTest, FilterMarker) {
   auto e = ExpansionAt(result, 0);
   ASSERT_EQ(1u, e.size());
   EXPECT_EQ(CSSPropertyID::kFontSize, e[0].name.Id());
-}
-
-TEST_F(CascadeExpansionTest, FilterHighlightLegacy) {
-  MatchResult result;
-  result.BeginAddingAuthorRulesForTreeScope(GetDocument());
-  result.AddMatchedProperties(
-      ParseDeclarationBlock(
-          "display:block;background-color:lime;forced-color-adjust:none"),
-      {
-          .valid_property_filter =
-              static_cast<uint8_t>(ValidPropertyFilter::kHighlightLegacy),
-          .origin = CascadeOrigin::kAuthor,
-      });
-
-  auto e = ExpansionAt(result, 0);
-  ASSERT_EQ(3u, e.size());
-  EXPECT_EQ(CSSPropertyID::kBackgroundColor, e[0].name.Id());
-  EXPECT_EQ(CSSPropertyID::kInternalVisitedBackgroundColor, e[1].name.Id());
-  EXPECT_EQ(CSSPropertyID::kForcedColorAdjust, e[2].name.Id());
 }
 
 TEST_F(CascadeExpansionTest, FilterHighlight) {

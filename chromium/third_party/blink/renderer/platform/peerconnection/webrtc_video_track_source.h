@@ -29,7 +29,7 @@ namespace blink {
 // a webrtc::VideoFrame, taking any adaptation requested by downstream classes
 // into account.
 class PLATFORM_EXPORT WebRtcVideoTrackSource
-    : public rtc::AdaptedVideoTrackSource {
+    : public webrtc::AdaptedVideoTrackSource {
  public:
   struct FrameAdaptationParams {
     bool should_drop_frame;
@@ -55,7 +55,7 @@ class PLATFORM_EXPORT WebRtcVideoTrackSource
   void SetCustomFrameAdaptationParamsForTesting(
       const FrameAdaptationParams& params);
 
-  void SetSinkWantsForTesting(const rtc::VideoSinkWants& sink_wants);
+  void SetSinkWantsForTesting(const webrtc::VideoSinkWants& sink_wants);
 
   SourceState state() const override;
 
@@ -103,7 +103,7 @@ class PLATFORM_EXPORT WebRtcVideoTrackSource
                                       int64_t time_posted_us);
 
   // Delivers |frame| to base class method
-  // rtc::AdaptedVideoTrackSource::OnFrame(). If the cropping (given via
+  // webrtc::AdaptedVideoTrackSource::OnFrame(). If the cropping (given via
   // |frame->visible_rect()|) has changed since the last delivered frame,
   // the whole frame is marked as updated. |timestamp_us| is
   // |frame->timestamp()| in Microseconds but clipped to ensure that it
@@ -127,15 +127,11 @@ class PLATFORM_EXPORT WebRtcVideoTrackSource
 
   void TryProcessPendingFrames();
 
-  // This checks if the colorspace information should be passed to webrtc. Avoid
-  // sending unknown or unnecessary color space.
-  bool ShouldSetColorSpace(const gfx::ColorSpace& color_space);
-
   // |thread_checker_| is bound to the libjingle worker thread.
   THREAD_CHECKER(thread_checker_);
   scoped_refptr<WebRtcVideoFrameAdapter::SharedResources> adapter_resources_;
   // State for the timestamp translation.
-  rtc::TimestampAligner timestamp_aligner_;
+  webrtc::TimestampAligner timestamp_aligner_;
 
   const bool is_screencast_;
   const std::optional<bool> needs_denoising_;
@@ -159,7 +155,7 @@ class PLATFORM_EXPORT WebRtcVideoTrackSource
     int64_t id;
     bool can_be_delivered = false;
   };
-  WTF::Deque<PendingFrame> pending_frames_;
+  Deque<PendingFrame> pending_frames_;
 
   scoped_refptr<CallbackProxy> callback_proxy_;
 

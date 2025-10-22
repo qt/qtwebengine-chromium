@@ -30,7 +30,6 @@
 #include "net/base/load_states.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_internal_info.h"
-#include "net/base/net_error_details.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_export.h"
 #include "net/base/network_delegate.h"
@@ -42,6 +41,9 @@
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/site_for_cookies.h"
+#include "net/device_bound_sessions/session_key.h"
+#include "net/device_bound_sessions/session_service.h"
+#include "net/device_bound_sessions/session_usage.h"
 #include "net/dns/public/secure_dns_policy.h"
 #include "net/filter/source_stream_type.h"
 #include "net/http/http_raw_request_headers.h"
@@ -70,6 +72,7 @@ class CookieOptions;
 class CookieInclusionStatus;
 class IOBuffer;
 struct LoadTimingInfo;
+struct NetErrorDetails;
 struct RedirectInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
@@ -344,6 +347,11 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
     force_main_frame_for_same_site_cookies_ = value;
   }
 
+  // Indicates if the resource is a well-known pervasive static resource
+  // that should use a shared cache.
+  bool is_shared_resource() const { return is_shared_resource_; }
+  void set_is_shared_resource(bool value) { is_shared_resource_ = value; }
+
   // Overrides pertaining to cookie settings for this particular request.
   CookieSettingOverrides& cookie_setting_overrides() {
     return cookie_setting_overrides_;
@@ -516,16 +524,14 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   // The time at which the returned response was requested.  For cached
   // responses, this is the last time the cache entry was validated.
-  const base::Time& request_time() const { return response_info_.request_time; }
+  base::Time request_time() const { return response_info_.request_time; }
 
   // The time at which the returned response was generated.  For cached
   // responses, this is the last time the cache entry was validated.
-  const base::Time& response_time() const {
-    return response_info_.response_time;
-  }
+  base::Time response_time() const { return response_info_.response_time; }
 
   // Like response_time, but ignoring revalidations.
-  const base::Time& original_response_time() const {
+  base::Time original_response_time() const {
     return response_info_.original_response_time;
   }
 
@@ -927,11 +933,36 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   // Whether Device Bound Session registration and challenge are allowed
   // for this request (e.g. by Origin Trial)
-  bool allows_device_bound_sessions() const {
-    return allows_device_bound_sessions_;
+  bool allows_device_bound_session_registration() const {
+    return allows_device_bound_session_registration_;
   }
-  void set_allows_device_bound_sessions(bool allows_device_bound_sessions) {
-    allows_device_bound_sessions_ = allows_device_bound_sessions;
+  void set_allows_device_bound_session_registration(
+      bool allows_device_bound_session_registration) {
+    allows_device_bound_session_registration_ =
+        allows_device_bound_session_registration;
+  }
+
+  // Whether this request was in the scope of any device bound session,
+  // even if it did not need to be deferred.
+  device_bound_sessions::SessionUsage device_bound_session_usage() const {
+    return device_bound_session_usage_;
+  }
+  void set_device_bound_session_usage(
+      device_bound_sessions::SessionUsage usage) {
+    device_bound_session_usage_ = usage;
+  }
+
+  // Returns all the device bound sessions that have deferred this
+  // request.
+  const base::flat_map<device_bound_sessions::SessionKey,
+                       device_bound_sessions::SessionService::RefreshResult>&
+  device_bound_session_deferrals() const {
+    return device_bound_session_deferrals_;
+  }
+  void AddDeviceBoundSessionDeferral(
+      const device_bound_sessions::SessionKey& deferral,
+      const device_bound_sessions::SessionService::RefreshResult result) {
+    device_bound_session_deferrals_[deferral] = result;
   }
 
  protected:
@@ -1068,6 +1099,7 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
 
   bool force_ignore_site_for_cookies_ = false;
   bool force_main_frame_for_same_site_cookies_ = false;
+  bool is_shared_resource_ = false;
   CookieSettingOverrides cookie_setting_overrides_;
 
   std::optional<url::Origin> initiator_;
@@ -1222,7 +1254,16 @@ class NET_EXPORT URLRequest : public base::SupportsUserData {
   base::RepeatingCallback<void(const device_bound_sessions::SessionAccess&)>
       device_bound_session_access_callback_;
 
-  bool allows_device_bound_sessions_ = false;
+  // Whether the request is allowed to register new device bound sessions
+  bool allows_device_bound_session_registration_ = false;
+  // How existing device bound sessions interacted with this request
+  device_bound_sessions::SessionUsage device_bound_session_usage_ =
+      device_bound_sessions::SessionUsage::kUnknown;
+  // Which device bound sessions have deferred this request, and the
+  // result of that refresh.
+  base::flat_map<device_bound_sessions::SessionKey,
+                 device_bound_sessions::SessionService::RefreshResult>
+      device_bound_session_deferrals_;
 
   THREAD_CHECKER(thread_checker_);
 

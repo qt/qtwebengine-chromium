@@ -69,6 +69,8 @@ source_set("trust_tokens") {
     "trust_token_request_signing_helper.h",
     "trust_token_store.cc",
     "trust_token_store.h",
+    "trust_token_url_loader_interceptor.cc",
+    "trust_token_url_loader_interceptor.h",
     "types.cc",
     "types.h",
   ]
@@ -162,6 +164,10 @@ source_set("tests") {
     "//third_party/fuzztest",
     "//url",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 # public.proto contains datatypes intended

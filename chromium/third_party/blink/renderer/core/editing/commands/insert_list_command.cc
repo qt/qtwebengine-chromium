@@ -286,8 +286,23 @@ void InsertListCommand::DoApply(EditingState* editing_state) {
         visible_end_of_selection = CreateVisiblePosition(end_of_selection);
       }
 
-      start_of_current_paragraph =
+      VisiblePosition start_of_next_paragraph =
           StartOfNextParagraph(EndingVisibleSelection().VisibleStart());
+      // Move to the start of the next paragraph. If the start of the next
+      // paragraph goes before the start of the current paragraph, then we
+      // should move to the next position from the start of the next paragraph
+      // in order to avoid infinite loop causing a renderer freeze.
+      // TODO(crbug.com/417631316): Below change fixes the renderer freeze but
+      // it uncovers another bug where the empty span is not unlistified.
+      if (RuntimeEnabledFeatures::
+              FixNextPositionCalculationInInsertListEnabled() &&
+          !start_of_current_paragraph.IsOrphan() &&
+          start_of_next_paragraph.DeepEquivalent() <=
+              start_of_current_paragraph.DeepEquivalent()) {
+        start_of_current_paragraph = NextPositionOf(start_of_next_paragraph);
+      } else {
+        start_of_current_paragraph = start_of_next_paragraph;
+      }
     }
     SetEndingSelection(SelectionForUndoStep::From(
         SelectionInDOMTree::Builder()
@@ -560,6 +575,10 @@ void InsertListCommand::ToggleSelectedListItem(
     return;
 
   GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
+  if (RuntimeEnabledFeatures::PlaceholderVisibilityEnabled() &&
+      EnsureNodeVisibility(placeholder)) {
+    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
+  }
 
   VisiblePosition insertion_point = VisiblePosition::BeforeNode(*placeholder);
   VisiblePosition visible_start = CreateVisiblePosition(start);
@@ -570,18 +589,17 @@ void InsertListCommand::ToggleSelectedListItem(
   // According to spec file [1] if the selection node is part of a list child
   // node, toggle the visibility (or state) of the entire list child node.
   // [1]:https://w3c.github.io/editing/docs/execCommand/#toggling-lists
-  if (RuntimeEnabledFeatures::ConsiderFullChildNodeContentForListifyEnabled()) {
-    // If the list type needs to be switched, create a new list of list_tag type
-    // and use it as placeholder so that, list_item's children will remain
-    // unchanged.
-    Node* listified_placeholder = nullptr;
-    if (switch_list_type || force_create_list) {
-      listified_placeholder = ListifyParagraph(
-          initial_selection, insertion_point, list_tag, editing_state);
-      GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
-      if (listified_placeholder) {
-        insertion_point = VisiblePosition::BeforeNode(*listified_placeholder);
-      }
+
+  // If the list type needs to be switched, create a new list of list_tag type
+  // and use it as placeholder so that, list_item's children will remain
+  // unchanged.
+  Node* listified_placeholder = nullptr;
+  if (switch_list_type || force_create_list) {
+    listified_placeholder = ListifyParagraph(initial_selection, insertion_point,
+                                             list_tag, editing_state);
+    GetDocument().UpdateStyleAndLayout(DocumentUpdateReason::kEditing);
+    if (listified_placeholder) {
+      insertion_point = VisiblePosition::BeforeNode(*listified_placeholder);
     }
   }
   visible_start = CreateVisiblePosition(start);

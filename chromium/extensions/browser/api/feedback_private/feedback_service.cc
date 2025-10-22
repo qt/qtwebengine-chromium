@@ -19,6 +19,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/statistics_recorder.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
 #include "build/chromeos_buildflags.h"
@@ -33,6 +34,7 @@
 #include "extensions/browser/api/extensions_api_client.h"
 #include "extensions/browser/api/feedback_private/feedback_private_delegate.h"
 #include "extensions/browser/blob_reader.h"
+#include "extensions/browser/extensions_browser_client.h"
 #include "net/base/network_change_notifier.h"
 
 #if BUILDFLAG(IS_CHROMEOS)

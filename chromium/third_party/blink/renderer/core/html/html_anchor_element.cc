@@ -67,6 +67,7 @@
 #include "third_party/blink/renderer/core/navigation_api/navigation_api.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/scroll/scroll_into_view_util.h"
 #include "third_party/blink/renderer/core/speculation_rules/document_speculation_rules.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
@@ -618,19 +619,19 @@ void HTMLAnchorElementBase::NavigateToHyperlink(
   }
 }
 
-Element* HTMLAnchorElementBase::interestTargetElement() {
-  if (!RuntimeEnabledFeatures::HTMLInterestTargetAttributeEnabled(
+Element* HTMLAnchorElementBase::InterestForElement() const {
+  if (!RuntimeEnabledFeatures::HTMLInterestForAttributeEnabled(
           GetDocument().GetExecutionContext())) {
     return nullptr;
   }
   // Anchor elements that don't have the `href` attribute are not interactive,
-  // so they can't support `interesttarget`.
+  // so they can't support `interestfor`.
   if (!IsInTreeScope() || !IsLink()) {
     return nullptr;
   }
 
   return GetElementAttributeResolvingReferenceTarget(
-      html_names::kInteresttargetAttr);
+      html_names::kInterestforAttr);
 }
 
 void HTMLAnchorElementBase::HandleClick(MouseEvent& event) {
@@ -763,10 +764,7 @@ bool IsLinkClick(Event& event) {
       !mouse_event) {
     return false;
   }
-  int16_t button = mouse_event->button();
-  return (button == static_cast<int16_t>(WebPointerProperties::Button::kLeft) ||
-          button ==
-              static_cast<int16_t>(WebPointerProperties::Button::kMiddle));
+  return mouse_event->IsLinkClickButton();
 }
 
 bool HTMLAnchorElementBase::WillRespondToMouseClickEvents() {
@@ -829,8 +827,16 @@ void HTMLAnchorElementBase::Trace(Visitor* visitor) const {
 HTMLAnchorElement::HTMLAnchorElement(Document& document)
     : HTMLAnchorElementBase(html_names::kATag, document) {}
 
+void HTMLAnchorElement::AttachLayoutTree(AttachContext& context) {
+  // It's ok to set the update flag here, since update traversal will only
+  // happen if there are elements with scroll-target-group property set, and
+  // if there are some, the update traversal will happen anyway.
+  GetDocument().SetNeedsScrollTargetGroupRelationsUpdate();
+  HTMLAnchorElementBase::AttachLayoutTree(context);
+}
+
 void HTMLAnchorElement::DetachLayoutTree(bool performing_reattach) {
-  if (ScrollMarkerGroupData* data = GetScrollMarkerGroupContainerData()) {
+  if (ScrollMarkerGroupData* data = GetScrollTargetGroupContainerData()) {
     data->RemoveFromFocusGroup(*this);
   }
   HTMLAnchorElementBase::DetachLayoutTree(performing_reattach);
@@ -849,14 +855,15 @@ Element* HTMLAnchorElement::ScrollTargetElement() const {
 PaintLayerScrollableArea*
 HTMLAnchorElement::AncestorScrollableAreaOfScrollTargetElement() const {
   Element* scroll_target = ScrollTargetElement();
-  if (!scroll_target) {
+  if (!scroll_target || !scroll_target->GetLayoutObject()) {
     return nullptr;
   }
-  for (Element* parent =
-           LayoutTreeBuilderTraversal::ParentElement(*scroll_target);
-       parent; parent = LayoutTreeBuilderTraversal::ParentElement(*parent)) {
-    if (parent->GetLayoutBox() && parent->GetLayoutBox()->GetScrollableArea()) {
-      return parent->GetLayoutBox()->GetScrollableArea();
+  for (LayoutBox* parent_box = scroll_target->GetLayoutObject()->EnclosingBox();
+       parent_box; parent_box = parent_box->ParentBox()) {
+    if (ScrollableArea* scrollable_area =
+            scroll_into_view_util::GetScrollableAreaForLayoutBox(
+                *parent_box, /*make_visible_in_visual_viewport=*/false)) {
+      return DynamicTo<PaintLayerScrollableArea>(scrollable_area);
     }
   }
   return nullptr;

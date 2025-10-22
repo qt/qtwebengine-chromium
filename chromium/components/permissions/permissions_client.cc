@@ -43,8 +43,9 @@ double PermissionsClient::GetSiteEngagementScore(
 void PermissionsClient::AreSitesImportant(
     content::BrowserContext* browser_context,
     std::vector<std::pair<url::Origin, bool>>* origins) {
-  for (auto& entry : *origins)
+  for (auto& entry : *origins) {
     entry.second = false;
+  }
 }
 
 bool PermissionsClient::IsCookieDeletionDisabled(
@@ -88,15 +89,15 @@ void PermissionsClient::TriggerPromptHatsSurveyIfEnabled(
     std::optional<permissions::feature_params::PermissionElementPromptPosition>
         pepc_prompt_position,
     ContentSetting initial_permission_status,
-    base::OnceCallback<void()> hats_shown_callback_) {}
+    base::OnceCallback<void()> hats_shown_callback,
+    std::optional<PermissionHatsTriggerHelper::PreviewParametersForHats>
+        preview_parameters) {}
 
 void PermissionsClient::OnPromptResolved(
-    RequestType request_type,
+    const PermissionRequest* request,
     PermissionAction action,
-    const GURL& origin,
     PermissionPromptDisposition prompt_disposition,
     PermissionPromptDispositionReason prompt_disposition_reason,
-    PermissionRequestGestureType gesture_type,
     std::optional<QuietUiReason> quiet_ui_reason,
     base::TimeDelta prompt_display_duration,
     std::optional<permissions::feature_params::PermissionElementPromptPosition>
@@ -154,18 +155,6 @@ permissions::PermissionIgnoredReason PermissionsClient::DetermineIgnoreReason(
 bool PermissionsClient::IsDseOrigin(content::BrowserContext* browser_context,
                                     const url::Origin& origin) {
   return false;
-}
-
-infobars::InfoBarManager* PermissionsClient::GetInfoBarManager(
-    content::WebContents* web_contents) {
-  return nullptr;
-}
-
-infobars::InfoBar* PermissionsClient::MaybeCreateInfoBar(
-    content::WebContents* web_contents,
-    ContentSettingsType type,
-    base::WeakPtr<PermissionPromptAndroid> prompt) {
-  return nullptr;
 }
 
 std::unique_ptr<PermissionsClient::PermissionMessageDelegate>

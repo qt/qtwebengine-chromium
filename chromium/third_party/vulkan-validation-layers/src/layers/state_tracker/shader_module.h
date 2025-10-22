@@ -1,4 +1,5 @@
 /* Copyright (c) 2021-2025 The Khronos Group Inc.
+ * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,10 +22,10 @@
 #include <cassert>
 #include <cstdlib>
 #include <cstring>
+#include <string>
 #include <vector>
-#include <optional>
-#include <unordered_set>
 
+#include "containers/custom_containers.h"
 #include "state_tracker/shader_instruction.h"
 #include "state_tracker/state_object.h"
 #include "state_tracker/sampler_state.h"
@@ -43,6 +44,16 @@ static constexpr uint32_t kInvalidValue = std::numeric_limits<uint32_t>::max();
 
 // Need to find a way to know if actually array length of zero, or a runtime array.
 static constexpr uint32_t kRuntimeArray = std::numeric_limits<uint32_t>::max();
+
+struct LocalSize {
+    uint32_t x = 0;
+    uint32_t y = 0;
+    uint32_t z = 0;
+
+    std::string ToString() const {
+        return "x = " + std::to_string(x) + ", y = " + std::to_string(y) + ", z = " + std::to_string(z);
+    }
+};
 
 // This is the common info for both OpDecorate and OpMemberDecorate
 // Used to keep track of all decorations applied to any instruction
@@ -100,63 +111,81 @@ struct DecorationSet : public DecorationBase {
 
 // Tracking of OpExecutionMode / OpExecutionModeId values
 struct ExecutionModeSet {
-    enum FlagBit {
-        output_points_bit = 1 << 0,
-        point_mode_bit = 1 << 1,
-        post_depth_coverage_bit = 1 << 2,
-        local_size_bit = 1 << 3,
-        local_size_id_bit = 1 << 4,
-        iso_lines_bit = 1 << 5,
-        xfb_bit = 1 << 6,
-        early_fragment_test_bit = 1 << 7,
-        subgroup_uniform_control_flow_bit = 1 << 8,
+    enum FlagBit : uint64_t {
+        output_points_bit = 1ull << 0,
+        output_lines_bit = 1ull << 1,
+        output_triangle_bit = 1ull << 2,
 
-        signed_zero_inf_nan_preserve_width_16 = 1 << 9,
-        signed_zero_inf_nan_preserve_width_32 = 1 << 10,
-        signed_zero_inf_nan_preserve_width_64 = 1 << 11,
-        denorm_preserve_width_16 = 1 << 12,
-        denorm_preserve_width_32 = 1 << 13,
-        denorm_preserve_width_64 = 1 << 14,
-        denorm_flush_to_zero_width_16 = 1 << 15,
-        denorm_flush_to_zero_width_32 = 1 << 16,
-        denorm_flush_to_zero_width_64 = 1 << 17,
-        rounding_mode_rte_width_16 = 1 << 18,
-        rounding_mode_rte_width_32 = 1 << 19,
-        rounding_mode_rte_width_64 = 1 << 20,
-        rounding_mode_rtz_width_16 = 1 << 21,
-        rounding_mode_rtz_width_32 = 1 << 22,
-        rounding_mode_rtz_width_64 = 1 << 23,
+        subdivision_iso_lines_bit = 1ull << 3,
+        subdivision_triangle_bit = 1ull << 4,
+        subdivision_quad_bit = 1ull << 5,
 
-        depth_replacing_bit = 1 << 24,
-        stencil_ref_replacing_bit = 1 << 25,
+        vertex_order_cw_bit = 1ull << 6,
+        vertex_order_ccw_bit = 1ull << 7,
 
-        fp_fast_math_default = 1 << 26,
+        spacing_equal_bit = 1ull << 8,
+        spacing_fractional_even_bit = 1ull << 9,
+        spacing_fractional_odd_bit = 1ull << 10,
 
-        derivative_group_linear = 1 << 27,
-        derivative_group_quads = 1 << 28,
+        point_mode_bit = 1ull << 11,
+        post_depth_coverage_bit = 1ull << 12,
+        local_size_bit = 1ull << 13,
+        local_size_id_bit = 1ull << 14,
+        xfb_bit = 1ull << 15,
+        early_fragment_test_bit = 1ull << 16,
+        subgroup_uniform_control_flow_bit = 1ull << 17,
+
+        signed_zero_inf_nan_preserve_width_16 = 1ull << 18,
+        signed_zero_inf_nan_preserve_width_32 = 1ull << 19,
+        signed_zero_inf_nan_preserve_width_64 = 1ull << 20,
+        denorm_preserve_width_16 = 1ull << 21,
+        denorm_preserve_width_32 = 1ull << 22,
+        denorm_preserve_width_64 = 1ull << 23,
+        denorm_flush_to_zero_width_16 = 1ull << 24,
+        denorm_flush_to_zero_width_32 = 1ull << 25,
+        denorm_flush_to_zero_width_64 = 1ull << 26,
+        rounding_mode_rte_width_16 = 1ull << 27,
+        rounding_mode_rte_width_32 = 1ull << 28,
+        rounding_mode_rte_width_64 = 1ull << 29,
+        rounding_mode_rtz_width_16 = 1ull << 30,
+        rounding_mode_rtz_width_32 = 1ull << 31,
+        rounding_mode_rtz_width_64 = 1ull << 32,
+
+        depth_replacing_bit = 1ull << 33,
+        stencil_ref_replacing_bit = 1ull << 34,
+
+        fp_fast_math_default = 1ull << 35,
+
+        derivative_group_linear = 1ull << 36,
+        derivative_group_quads = 1ull << 37,
+
+        geometry_input_points_bit = 1ull << 38,
+        geometry_input_line_bit = 1ull << 39,
+        geometry_input_line_adjacency_bit = 1ull << 40,
+        geometry_input_triangle_bit = 1ull << 41,
+        geometry_input_triangle_adjacency_bit = 1ull << 42,
     };
 
     // bits to know if things have been set or not by a Decoration
-    uint32_t flags = 0;
-
-    VkPrimitiveTopology input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
-    VkPrimitiveTopology primitive_topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+    uint64_t flags = 0;
 
     // SPIR-V spec says only LocalSize or LocalSizeId can be used, so can share
-    uint32_t local_size_x = kInvalidValue;
-    uint32_t local_size_y = kInvalidValue;
-    uint32_t local_size_z = kInvalidValue;
+    LocalSize local_size = {kInvalidValue, kInvalidValue, kInvalidValue};
 
     uint32_t output_vertices = vvl::kU32Max;
     uint32_t output_primitives = 0;
     uint32_t invocations = 0;
 
-    uint32_t tessellation_subdivision = 0;
-    uint32_t tessellation_orientation = 0;
-    uint32_t tessellation_spacing = 0;
-
     void Add(const Instruction &insn);
     bool Has(FlagBit flag_bit) const { return (flags & flag_bit) != 0; }
+
+    // Helpers for the various input/output stuff Geom/Tess/Mesh has
+    uint32_t GetTessellationSubdivision() const;
+    uint32_t GetTessellationOrientation() const;
+    uint32_t GetTessellationSpacing() const;
+    VkPrimitiveTopology GetTessellationEvalOutputTopology() const;
+    VkPrimitiveTopology GetGeometryInputTopology() const;
+    VkPrimitiveTopology GetGeometryMeshOutputTopology() const;
 };
 
 struct AtomicInstructionInfo {
@@ -236,7 +265,6 @@ struct ImageAccess {
     bool is_dref = false;
     bool is_sampler_implicitLod_dref_proj = false;
     bool is_sampler_sampled = false;  // OpImageSample* or OpImageSparseSample*
-    bool is_not_sampler_sampled = false;
     bool is_sampler_bias_offset = false;
     bool is_sampler_offset = false;  // ConstOffset or Offset (not ConstOffsets)
     bool is_sign_extended = false;
@@ -340,6 +368,8 @@ struct VariableBase {
     // memory was read
     bool IsImageReadFrom() const { return access_mask & AccessBit::image_read; }
     bool IsImageWrittenTo() const { return access_mask & AccessBit::image_write; }
+    // Something like textureSize() will access the OpVariable, but not the image itself
+    bool IsImageAccessed() const { return access_mask & AccessBit::image_mask; }
 
   private:
     static const char *FindDebugName(const VariableBase &variable, const DebugNameMap &debug_name_map);
@@ -392,10 +422,13 @@ struct ResourceInterfaceVariable : public VariableBase {
     // Will be kRuntimeArray (non-zero) for runtime arrays
     uint32_t array_length;
 
-    bool is_sampled_image;  // OpTypeSampledImage
+    // OpTypeSampledImage (used for combined image samplers)
+    bool is_type_sampled_image;
 
-    // List of samplers that sample a given image. The index of array is index of image.
+    // The index of vector is index of image. (TODO - this doesn't work for GPU-AV)
     std::vector<vvl::unordered_set<SamplerUsedByImage>> samplers_used_by_image;
+    // workaround for YCbCr to track sampler variables until |samplers_used_by_image| is fixed
+    vvl::unordered_set<uint32_t> sampled_image_sampler_variable_ids;
 
     // For storage images - list of Texel component length the OpImageWrite
     std::vector<uint32_t> write_without_formats_component_count_list;
@@ -429,7 +462,6 @@ struct ResourceInterfaceVariable : public VariableBase {
         bool is_multisampled;
 
         bool is_sampler_sampled{false};  // OpImageSample* or OpImageSparseSample*
-        bool is_not_sampler_sampled{false};
         bool is_sampler_implicitLod_dref_proj{false};
         bool is_sampler_bias_offset{false};
         bool is_sampler_offset{false};        // ConstOffset or Offset (not ConstOffsets)
@@ -455,6 +487,7 @@ struct ResourceInterfaceVariable : public VariableBase {
     bool is_storage_texel_buffer{false};
     const bool is_storage_buffer;
     bool is_input_attachment{false};
+    bool is_storage_tensor{false};
 
     ResourceInterfaceVariable(const Module &module_state, const EntryPoint &entrypoint, const Instruction &insn,
                               const ImageAccessMap &image_access_map, const AccessChainVariableMap &access_chain_map,
@@ -482,6 +515,13 @@ struct PushConstantVariable : public VariableBase {
                          const VariableAccessMap &variable_access_map, const DebugNameMap &debug_name_map);
 };
 
+struct TaskPayloadVariable : public VariableBase {
+    uint32_t size;
+
+    TaskPayloadVariable(const Module &module_state, const Instruction &insn, VkShaderStageFlagBits stage,
+                        const VariableAccessMap &variable_access_map, const DebugNameMap &debug_name_map);
+};
+
 // Represents a single Entrypoint into a Shader Module
 struct EntryPoint {
     // "A module must not have two OpEntryPoint instructions with the same Execution Model and the same Name string."
@@ -503,6 +543,8 @@ struct EntryPoint {
 
     // only one Push Constant block is allowed per entry point
     std::shared_ptr<const PushConstantVariable> push_constant_variable;
+    // For both Task and Mesh entry point, there can be one TaskPayloadWorkgroupEXT variable
+    std::shared_ptr<const TaskPayloadVariable> task_payload_variable;
     const std::vector<ResourceInterfaceVariable> resource_interface_variables;
     const std::vector<StageInterfaceVariable> stage_interface_variables;
     // Easier to lookup without having to check for the is_builtin bool
@@ -545,7 +587,7 @@ struct EntryPoint {
 
   protected:
     static vvl::unordered_set<uint32_t> GetAccessibleIds(const Module &module_state, EntryPoint &entrypoint);
-    static std::vector<StageInterfaceVariable> GetStageInterfaceVariables(const Module &module_state, const EntryPoint &entrypoint,
+    static std::vector<StageInterfaceVariable> GetStageInterfaceVariables(const Module &module_state, EntryPoint &entrypoint,
                                                                           const VariableAccessMap &variable_access_map,
                                                                           const DebugNameMap &debug_name_map);
     static std::vector<ResourceInterfaceVariable> GetResourceInterfaceVariables(const Module &module_state, EntryPoint &entrypoint,
@@ -577,6 +619,7 @@ struct StatelessData {
     bool has_builtin_fully_covered{false};
     bool has_invocation_repack_instruction{false};
     bool has_group_decoration{false};
+    bool has_ext_inst_with_forward_refs{false};  // OpExtInstWithForwardRefsKHR
 };
 
 // Represents a SPIR-V Module
@@ -624,8 +667,8 @@ struct Module {
         uint32_t builtin_workgroup_size_id = 0;
 
         std::vector<const Instruction *> cooperative_matrix_inst;
-
         std::vector<const Instruction *> cooperative_vector_inst;
+        std::vector<const Instruction *> emit_mesh_tasks_inst;
 
         std::vector<spv::Capability> capability_list;
         // Code on the hot path can cache capabilities for fast access.
@@ -694,8 +737,6 @@ struct Module {
         return (it != static_data_.execution_modes.end()) ? it->second : static_data_.empty_execution_mode;
     }
 
-    std::shared_ptr<const TypeStructInfo> GetTypeStructInfo(uint32_t struct_id) const;
-    // Overload to walk down and find the OpTypeStruct
     std::shared_ptr<const TypeStructInfo> GetTypeStructInfo(const Instruction *insn) const;
 
     // Used to get human readable strings for error messages
@@ -707,14 +748,10 @@ struct Module {
     std::string DescribeVariable(uint32_t id) const;
     std::string DescribeInstruction(const Instruction &error_insn) const;
 
-    // Note that some shaders can have an input and output topology
-    std::optional<VkPrimitiveTopology> GetTopology(const EntryPoint &entrypoint) const;
-
     std::shared_ptr<const EntryPoint> FindEntrypoint(char const *name, VkShaderStageFlagBits stageBits) const;
-    bool FindLocalSize(const EntryPoint &entrypoint, uint32_t &local_size_x, uint32_t &local_size_y, uint32_t &local_size_z) const;
+    LocalSize FindLocalSize(const EntryPoint &entrypoint) const;
 
     uint32_t CalculateWorkgroupSharedMemory() const;
-    uint32_t CalculateTaskPayloadMemory() const;
 
     const Instruction *GetConstantDef(uint32_t id) const;
     uint32_t GetConstantValueById(uint32_t id) const;

@@ -27,7 +27,9 @@ namespace blink {
 
 class ServiceWorkerRouterCondition;
 
-// TODO(crbug.com/1490445): set this value by discussing in spec proposal.
+// This value is spec-compliant. Do NOT change the value without appropriate
+// spec changes, and please keep this value up-to-date.
+// https://www.w3.org/TR/service-workers/#check-router-registration-limit-algorithm
 static constexpr int kServiceWorkerRouterConditionMaxRecursionDepth = 10;
 // TODO(crbug.com/1503017): set this value by discussing in spec proposal.
 static constexpr size_t kServiceWorkerMaxRouterSize = 256;
@@ -198,27 +200,20 @@ class BLINK_COMMON_EXPORT ServiceWorkerRouterCondition {
 // Network source structure.
 // TODO(crbug.com/1371756): implement fields in the proposal.
 struct BLINK_COMMON_EXPORT ServiceWorkerRouterNetworkSource {
-  bool operator==(const ServiceWorkerRouterNetworkSource& other) const {
-    return true;
-  }
+  bool operator==(const ServiceWorkerRouterNetworkSource& other) const =
+      default;
 };
 
-// Race two sources.
-struct BLINK_COMMON_EXPORT ServiceWorkerRouterRaceSource {
-  // Enum to explain which sources race.
-  enum class TargetEnum {
-    kNetworkAndFetchHandler = 0,
-  };
-
-  TargetEnum target = TargetEnum::kNetworkAndFetchHandler;
-  bool operator==(const ServiceWorkerRouterRaceSource& other) const;
+// Race network and fetch event sources.
+struct BLINK_COMMON_EXPORT ServiceWorkerRouterRaceNetworkAndFetchEventSource {
+  bool operator==(const ServiceWorkerRouterRaceNetworkAndFetchEventSource&
+                      other) const = default;
 };
 
 // Fetch handler source structure.
 struct BLINK_COMMON_EXPORT ServiceWorkerRouterFetchEventSource {
-  bool operator==(const ServiceWorkerRouterFetchEventSource& other) const {
-    return true;
-  }
+  bool operator==(const ServiceWorkerRouterFetchEventSource& other) const =
+      default;
 };
 
 // Cache source structure.
@@ -228,7 +223,15 @@ struct BLINK_COMMON_EXPORT ServiceWorkerRouterCacheSource {
   // tracks are used for matching as if CacheStorage.match().
   std::optional<std::string> cache_name;
 
-  bool operator==(const ServiceWorkerRouterCacheSource& other) const;
+  bool operator==(const ServiceWorkerRouterCacheSource& other) const = default;
+};
+
+// Race network and cache sources.
+struct BLINK_COMMON_EXPORT ServiceWorkerRouterRaceNetworkAndCacheSource {
+  ServiceWorkerRouterCacheSource cache_source;
+
+  bool operator==(const ServiceWorkerRouterRaceNetworkAndCacheSource& other)
+      const = default;
 };
 
 // This represents a source of the router rule.
@@ -237,9 +240,12 @@ struct BLINK_COMMON_EXPORT ServiceWorkerRouterSource {
   network::mojom::ServiceWorkerRouterSourceType type;
 
   std::optional<ServiceWorkerRouterNetworkSource> network_source;
-  std::optional<ServiceWorkerRouterRaceSource> race_source;
+  std::optional<ServiceWorkerRouterRaceNetworkAndFetchEventSource>
+      race_network_and_fetch_event_source;
   std::optional<ServiceWorkerRouterFetchEventSource> fetch_event_source;
   std::optional<ServiceWorkerRouterCacheSource> cache_source;
+  std::optional<ServiceWorkerRouterRaceNetworkAndCacheSource>
+      race_network_and_cache_source;
 
   bool operator==(const ServiceWorkerRouterSource& other) const;
 };

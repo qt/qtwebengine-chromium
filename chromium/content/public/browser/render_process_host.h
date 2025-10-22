@@ -51,7 +51,6 @@
 #include "third_party/blink/public/mojom/quota/quota_manager_host.mojom-forward.h"
 #include "third_party/blink/public/mojom/websockets/websocket_connector.mojom-forward.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value_forward.h"
-#include "ui/gfx/native_widget_types.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "content/public/browser/android/child_process_importance.h"
@@ -120,9 +119,6 @@ class StoragePartition;
 struct GlobalRenderFrameHostId;
 #if BUILDFLAG(IS_ANDROID)
 enum class ChildProcessImportance;
-#endif
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-class BrowserMessageFilter;
 #endif
 
 namespace mojom {
@@ -360,11 +356,6 @@ class CONTENT_EXPORT RenderProcessHost : public IPC::Sender,
 
   // Returns the renderer channel.
   virtual IPC::ChannelProxy* GetChannel() = 0;
-
-#if BUILDFLAG(CONTENT_ENABLE_LEGACY_IPC)
-  // Adds a message filter to the IPC channel.
-  virtual void AddFilter(BrowserMessageFilter* filter) = 0;
-#endif
 
   // Sets whether this render process is blocked. This means that input events
   // should not be sent to it, nor other timely signs of life expected from it.

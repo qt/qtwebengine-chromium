@@ -136,9 +136,15 @@ void PostCallRecordCreateDescriptorPool(VkDevice device, const VkDescriptorPoolC
                                         const VkAllocationCallbacks* pAllocator, VkDescriptorPool* pDescriptorPool,
                                         const RecordObject& record_obj) override;
 
+void PostCallRecordResetDescriptorPool(VkDevice device, VkDescriptorPool descriptorPool, VkDescriptorPoolResetFlags flags,
+                                       const RecordObject& record_obj) override;
+
 void PostCallRecordAllocateDescriptorSets(VkDevice device, const VkDescriptorSetAllocateInfo* pAllocateInfo,
                                           VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj,
                                           vvl::AllocateDescriptorSetsData& chassis_state) override;
+
+void PostCallRecordFreeDescriptorSets(VkDevice device, VkDescriptorPool descriptorPool, uint32_t descriptorSetCount,
+                                      const VkDescriptorSet* pDescriptorSets, const RecordObject& record_obj) override;
 
 void PostCallRecordCreateFramebuffer(VkDevice device, const VkFramebufferCreateInfo* pCreateInfo,
                                      const VkAllocationCallbacks* pAllocator, VkFramebuffer* pFramebuffer,
@@ -388,6 +394,9 @@ void PostCallRecordGetEncodedVideoSessionParametersKHR(VkDevice device,
 void PostCallRecordQueueSubmit2KHR(VkQueue queue, uint32_t submitCount, const VkSubmitInfo2* pSubmits, VkFence fence,
                                    const RecordObject& record_obj) override;
 
+void PostCallRecordWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain, const VkPresentWait2InfoKHR* pPresentWait2Info,
+                                      const RecordObject& record_obj) override;
+
 void PostCallRecordCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
                                              const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries,
                                              const RecordObject& record_obj) override;
@@ -398,6 +407,12 @@ void PostCallRecordGetPipelineKeyKHR(VkDevice device, const VkPipelineCreateInfo
 void PostCallRecordGetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInfoKHR* pInfo,
                                             VkPipelineBinaryKeyKHR* pPipelineBinaryKey, size_t* pPipelineBinaryDataSize,
                                             void* pPipelineBinaryData, const RecordObject& record_obj) override;
+
+void PostCallRecordReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
+                                                  const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) override;
+
+void PostCallRecordReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
+                                             const RecordObject& record_obj) override;
 
 void PostCallRecordGetCalibratedTimestampsKHR(VkDevice device, uint32_t timestampCount,
                                               const VkCalibratedTimestampInfoKHR* pTimestampInfos, uint64_t* pTimestamps,
@@ -574,7 +589,7 @@ void PostCallRecordTransitionImageLayoutEXT(VkDevice device, uint32_t transition
                                             const VkHostImageLayoutTransitionInfo* pTransitions,
                                             const RecordObject& record_obj) override;
 
-void PostCallRecordReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo,
+void PostCallRecordReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
                                              const RecordObject& record_obj) override;
 
 void PostCallRecordCreateIndirectCommandsLayoutNV(VkDevice device, const VkIndirectCommandsLayoutCreateInfoNV* pCreateInfo,
@@ -685,6 +700,24 @@ void PostCallRecordWriteMicromapsPropertiesEXT(VkDevice device, uint32_t microma
                                                VkQueryType queryType, size_t dataSize, void* pData, size_t stride,
                                                const RecordObject& record_obj) override;
 
+void PostCallRecordCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM* pCreateInfo,
+                                   const VkAllocationCallbacks* pAllocator, VkTensorARM* pTensor,
+                                   const RecordObject& record_obj) override;
+
+void PostCallRecordCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM* pCreateInfo,
+                                       const VkAllocationCallbacks* pAllocator, VkTensorViewARM* pView,
+                                       const RecordObject& record_obj) override;
+
+void PostCallRecordBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos,
+                                       const RecordObject& record_obj) override;
+
+void PostCallRecordGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device, const VkTensorCaptureDescriptorDataInfoARM* pInfo,
+                                                           void* pData, const RecordObject& record_obj) override;
+
+void PostCallRecordGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                               const VkTensorViewCaptureDescriptorDataInfoARM* pInfo, void* pData,
+                                                               const RecordObject& record_obj) override;
+
 void PostCallRecordCreateOpticalFlowSessionNV(VkDevice device, const VkOpticalFlowSessionCreateInfoNV* pCreateInfo,
                                               const VkAllocationCallbacks* pAllocator, VkOpticalFlowSessionNV* pSession,
                                               const RecordObject& record_obj) override;
@@ -703,17 +736,57 @@ void PostCallRecordGetShaderBinaryDataEXT(VkDevice device, VkShaderEXT shader, s
 void PostCallRecordGetFramebufferTilePropertiesQCOM(VkDevice device, VkFramebuffer framebuffer, uint32_t* pPropertiesCount,
                                                     VkTilePropertiesQCOM* pProperties, const RecordObject& record_obj) override;
 
+void PostCallRecordGetDynamicRenderingTilePropertiesQCOM(VkDevice device, const VkRenderingInfo* pRenderingInfo,
+                                                         VkTilePropertiesQCOM* pProperties,
+                                                         const RecordObject& record_obj) override;
+
 void PostCallRecordConvertCooperativeVectorMatrixNV(VkDevice device, const VkConvertCooperativeVectorMatrixInfoNV* pInfo,
                                                     const RecordObject& record_obj) override;
 
 void PostCallRecordSetLatencySleepModeNV(VkDevice device, VkSwapchainKHR swapchain, const VkLatencySleepModeInfoNV* pSleepModeInfo,
                                          const RecordObject& record_obj) override;
 
+void PostCallRecordLatencySleepNV(VkDevice device, VkSwapchainKHR swapchain, const VkLatencySleepInfoNV* pSleepInfo,
+                                  const RecordObject& record_obj) override;
+
+void PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                               VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                               const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                               const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                               const RecordObject& record_obj) override;
+
+void PostCallRecordCreateDataGraphPipelineSessionARM(VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                                     const VkAllocationCallbacks* pAllocator,
+                                                     VkDataGraphPipelineSessionARM* pSession,
+                                                     const RecordObject& record_obj) override;
+
+void PostCallRecordGetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements, const RecordObject& record_obj) override;
+
+void PostCallRecordBindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                         const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos,
+                                                         const RecordObject& record_obj) override;
+
+void PostCallRecordGetDataGraphPipelineAvailablePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                              uint32_t* pPropertiesCount,
+                                                              VkDataGraphPipelinePropertyARM* pProperties,
+                                                              const RecordObject& record_obj) override;
+
+void PostCallRecordGetDataGraphPipelinePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                     uint32_t propertiesCount,
+                                                     VkDataGraphPipelinePropertyQueryResultARM* pProperties,
+                                                     const RecordObject& record_obj) override;
+
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 void PostCallRecordGetScreenBufferPropertiesQNX(VkDevice device, const struct _screen_buffer* buffer,
                                                 VkScreenBufferPropertiesQNX* pProperties, const RecordObject& record_obj) override;
 
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+void PostCallRecordCreateExternalComputeQueueNV(VkDevice device, const VkExternalComputeQueueCreateInfoNV* pCreateInfo,
+                                                const VkAllocationCallbacks* pAllocator, VkExternalComputeQueueNV* pExternalQueue,
+                                                const RecordObject& record_obj) override;
+
 void PostCallRecordCreateIndirectCommandsLayoutEXT(VkDevice device, const VkIndirectCommandsLayoutCreateInfoEXT* pCreateInfo,
                                                    const VkAllocationCallbacks* pAllocator,
                                                    VkIndirectCommandsLayoutEXT* pIndirectCommandsLayout,

@@ -11,8 +11,7 @@
 #ifndef P2P_TEST_NAT_SOCKET_FACTORY_H_
 #define P2P_TEST_NAT_SOCKET_FACTORY_H_
 
-#include <stddef.h>
-
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -22,6 +21,7 @@
 #include "api/units/time_delta.h"
 #include "p2p/test/nat_server.h"
 #include "p2p/test/nat_types.h"
+#include "rtc_base/buffer.h"
 #include "rtc_base/socket.h"
 #include "rtc_base/socket_address.h"
 #include "rtc_base/socket_factory.h"
@@ -172,23 +172,10 @@ class NATSocketServer : public SocketServer, public NATInternalSocketFactory {
 };
 
 // Free-standing NAT helper functions.
-size_t PackAddressForNAT(char* buf,
-                         size_t buf_size,
-                         const SocketAddress& remote_addr);
-size_t UnpackAddressFromNAT(rtc::ArrayView<const uint8_t> buf,
+void PackAddressForNAT(const SocketAddress& remote_addr, Buffer& buf);
+size_t UnpackAddressFromNAT(ArrayView<const uint8_t> buf,
                             SocketAddress* remote_addr);
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::kNATEncodedIPv4AddressSize;
-using ::webrtc::kNATEncodedIPv6AddressSize;
-using ::webrtc::NATInternalSocketFactory;
-using ::webrtc::NATSocketFactory;
-using ::webrtc::NATSocketServer;
-using ::webrtc::PackAddressForNAT;
-using ::webrtc::UnpackAddressFromNAT;
-}  // namespace rtc
 
 #endif  // P2P_TEST_NAT_SOCKET_FACTORY_H_

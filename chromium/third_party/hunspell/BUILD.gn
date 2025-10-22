@@ -65,7 +65,10 @@ static_library("hunspell") {
   ]
   public_configs = [ ":hunspell_config" ]
 
-  defines = [ "OPENOFFICEORG" ]
+  defines = [
+    "OPENOFFICEORG",
+    "MAXSUGGESTION=5",
+  ]
 
   deps = [
     "//base",
@@ -116,7 +119,7 @@ fuzzer_test("hunspell_spell_fuzzer") {
   ]
   deps = [
     ":hunspell",
-    "//base:base",
+    "//base",
   ]
 
   # This is a dictionary for the fuzzer, not a spellcheck dictionary.
@@ -130,7 +133,7 @@ fuzzer_test("hunspell_suggest_fuzzer") {
   ]
   deps = [
     ":hunspell",
-    "//base:base",
+    "//base",
   ]
 
   # This is a dictionary for the fuzzer, not a spellcheck dictionary.
@@ -141,7 +144,7 @@ fuzzer_test("bdict_fuzzer") {
   sources = [ "fuzz/bdict_fuzzer.cc" ]
   deps = [
     ":hunspell",
-    "//base:base",
+    "//base",
   ]
   seed_corpus = "fuzz/bdict_corpus"
 }

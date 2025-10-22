@@ -7,8 +7,11 @@
 #include <memory>
 
 #include "base/metrics/histogram_macros.h"
+#include "base/notimplemented.h"
+#include "base/scoped_observation.h"
 #include "base/threading/hang_watcher.h"
 #include "ui/aura/env.h"
+#include "ui/aura/window_observer.h"
 #include "ui/base/dragdrop/drag_drop_types.h"
 #include "ui/base/dragdrop/drag_source_win.h"
 #include "ui/base/dragdrop/drop_target_event.h"
@@ -21,6 +24,31 @@
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 
 namespace views {
+
+namespace {
+
+class SourceWindowObserver : public aura::WindowObserver {
+ public:
+  explicit SourceWindowObserver(aura::Window* window)
+      : scoped_observation_(this) {
+    scoped_observation_.Observe(window);
+  }
+
+  // aura::WindowObserver:
+  void OnWindowDestroying(aura::Window* window) override {
+    source_window_alive_ = false;
+    scoped_observation_.Reset();
+  }
+
+  bool source_window_alive() { return source_window_alive_; }
+
+ private:
+  bool source_window_alive_ = true;
+  base::ScopedObservation<aura::Window, aura::WindowObserver>
+      scoped_observation_;
+};
+
+}  // namespace
 
 DesktopDragDropClientWin::DesktopDragDropClientWin(
     aura::Window* root_window,
@@ -46,39 +74,27 @@ ui::mojom::DragOperation DesktopDragDropClientWin::StartDragAndDrop(
     ui::mojom::DragEventSource source) {
   gfx::Point touch_screen_point;
   if (source == ui::mojom::DragEventSource::kTouch) {
+    source_window->GetHost()->ConvertDIPToPixels(&touch_screen_point);
     display::Screen* screen = display::Screen::GetScreen();
     CHECK(screen);
     aura::Window* window =
         screen->GetWindowAtScreenPoint(screen->GetCursorScreenPoint());
-    touch_screen_point =
-        screen_location + source_window->GetBoundsInScreen().OffsetFromOrigin();
+    touch_screen_point = screen_location;
     source_window->GetHost()->ConvertDIPToPixels(&touch_screen_point);
     bool touch_down = aura::Env::GetInstance()->is_touch_down();
     bool touch_over_other_window =
         !window || window->GetRootWindow() != root_window;
-    bool touch_drag_cursor_sync =
-        base::FeatureList::IsEnabled(features::kEnableTouchDragCursorSync);
-    // If attempting to start a touch drag with the cursor over another window,
-    // move cursor to this window so the next drag attempt will succeed.
-    // TODO(crbug.com/40312079): Mouse cursor needs to follow long press touch
-    // events for this to be smoother, but ::SetCursorPos needs to be called
-    // well before calling ::DoDragDrop.
-    if (touch_drag_cursor_sync && touch_down && touch_over_other_window) {
-      ::SetCursorPos(touch_screen_point.x(), touch_screen_point.y());
-    }
     // Check that the cursor is over the window being dragged from. If not,
     // don't start the drag because ::DoDragDrop will not do the drag.
-    if (touch_drag_cursor_sync && (!touch_down || touch_over_other_window)) {
+    if (!touch_down || touch_over_other_window) {
       return ui::PreferredDragOperation(
           ui::DragDropTypes::DropEffectToDragOperation(DROPEFFECT_NONE));
     }
     desktop_host_->StartTouchDrag(touch_screen_point);
-    // Gesture state gets left in a state where you can't start
-    // another drag, unless it's cleaned up. Cleaning it up before starting
-    // drag drop also fixes an issue with getting two kGestureScrollBegin events
-    // in a row. See crbug.com/1120809.
-    source_window->CleanupGestureState();
   }
+  // Observe the source window to avoid accessing it if the window is
+  // destroyed while the drag is ongoing.
+  SourceWindowObserver source_window_observer(source_window);
   base::WeakPtr<DesktopDragDropClientWin> alive(weak_factory_.GetWeakPtr());
 
   drag_drop_in_progress_ = true;
@@ -100,11 +116,15 @@ ui::mojom::DragOperation DesktopDragDropClientWin::StartDragAndDrop(
       drag_source_.Get(),
       ui::DragDropTypes::DragOperationToDropEffect(allowed_operations),
       &effect);
-  if (alive && source == ui::mojom::DragEventSource::kTouch) {
-    desktop_host_->FinishTouchDrag(touch_screen_point);
-    // Move the mouse cursor to where the drag drop started, to avoid issues
-    // when the drop is outside of the Chrome window.
-    ::SetCursorPos(touch_screen_point.x(), touch_screen_point.y());
+  if (source == ui::mojom::DragEventSource::kTouch) {
+    if (source_window_observer.source_window_alive()) {
+      // Kill the gesture that initiated the drag to avoid issues with lingering
+      // touch events.
+      source_window->CleanupGestureState();
+    }
+    if (alive) {
+      desktop_host_->FinishTouchDrag(touch_screen_point);
+    }
   }
   drag_source_copy->set_data(nullptr);
 

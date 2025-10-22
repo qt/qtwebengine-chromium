@@ -365,11 +365,7 @@ bool HasSharedDictionaryAcceptEncoding(
   if (it == headers.end()) {
     return false;
   }
-  if (base::FeatureList::IsEnabled(network::features::kSharedZstd)) {
     return it->second == "dcb, dcz" || base::EndsWith(it->second, ", dcb, dcz");
-  } else {
-    return it->second == "dcb" || base::EndsWith(it->second, ", dcb");
-  }
 }
 
 // A dummy ContentBrowserClient for testing HTTP Auth.
@@ -711,17 +707,10 @@ class SharedDictionaryBrowserTestBase : public ContentBrowserTest {
     if (dict_hash) {
       if (*dict_hash == kExpectedDictionaryHashBase64) {
         if (HasSharedDictionaryAcceptEncoding(request.headers)) {
-          if (base::FeatureList::IsEnabled(network::features::kSharedZstd)) {
             response->AddCustomHeader(
                 "content-encoding",
                 net::shared_dictionary::kSharedZstdContentEncodingName);
             response->set_content(kZstdCompressedDataString);
-          } else {
-            response->AddCustomHeader(
-                "content-encoding",
-                net::shared_dictionary::kSharedBrotliContentEncodingName);
-            response->set_content(kBrotliCompressedDataString);
-          }
         } else {
           response->set_content(kErrorNoSharedDictionaryAcceptEncodingString);
         }
@@ -746,8 +735,7 @@ class SharedDictionaryBrowserTest
     scoped_feature_list_.InitWithFeatures(
         /*enabled_features=*/
         {network::features::kCompressionDictionaryTransportBackend,
-         network::features::kCompressionDictionaryTransport,
-         network::features::kSharedZstd},
+         network::features::kCompressionDictionaryTransport},
         /*disabled_features=*/{});
   }
   SharedDictionaryBrowserTest(const SharedDictionaryBrowserTest&) = delete;
@@ -874,7 +862,7 @@ class SharedDictionaryBrowserTest
     RunWriteDictionaryTestImpl(
         GetTargetShell(), fetch_type, page_url, dictionary_url,
         GetBrowserType() == BrowserType::kNormal
-            ? "Net.SharedDictionaryManagerOnDisk.DictionarySizeKB"
+            ? "Net.SharedDictionaryManagerOnDisk.DictionarySize"
             : "Net.SharedDictionaryWriterInMemory.DictionarySize",
         expect_success);
   }
@@ -1131,6 +1119,13 @@ IN_PROC_BROWSER_TEST_P(SharedDictionaryBrowserTest,
   RunWriteDictionaryTest(FetchType::kFetchApi,
                          GetURL("/shared_dictionary/blank.html"),
                          GetCrossOriginURL("/shared_dictionary/test.dict"));
+}
+
+IN_PROC_BROWSER_TEST_P(SharedDictionaryBrowserTest,
+                       FetchCompressedDictionarySecureContext) {
+  RunWriteDictionaryTest(FetchType::kFetchApi,
+                         GetURL("/shared_dictionary/blank.html"),
+                         GetURL("/shared_dictionary/test.dict.gz"));
 }
 
 IN_PROC_BROWSER_TEST_P(SharedDictionaryBrowserTest,
@@ -1522,7 +1517,7 @@ IN_PROC_BROWSER_TEST_P(SharedDictionaryBrowserTest, MatchDestEmptyString) {
   // Wait for the dictionary to be registered.
   EXPECT_TRUE(WaitForHistogram(
       GetBrowserType() == BrowserType::kNormal
-          ? "Net.SharedDictionaryManagerOnDisk.DictionarySizeKB"
+          ? "Net.SharedDictionaryManagerOnDisk.DictionarySize"
           : "Net.SharedDictionaryWriterInMemory.DictionarySize"));
 
   // Check that Chrome uses the dictionary while fetching the resource using
@@ -1551,7 +1546,7 @@ IN_PROC_BROWSER_TEST_P(SharedDictionaryBrowserTest, MatchDestScript) {
   // Wait for the dictionary to be registered.
   EXPECT_TRUE(WaitForHistogram(
       GetBrowserType() == BrowserType::kNormal
-          ? "Net.SharedDictionaryManagerOnDisk.DictionarySizeKB"
+          ? "Net.SharedDictionaryManagerOnDisk.DictionarySize"
           : "Net.SharedDictionaryWriterInMemory.DictionarySize"));
 
   // Check that Chrome uses the dictionary while fetching a script.

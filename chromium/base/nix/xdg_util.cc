@@ -42,15 +42,8 @@ std::optional<std::string>& GetXdgActivationToken() {
 
 namespace base::nix {
 
-const char kDotConfigDir[] = ".config";
-const char kXdgConfigHomeEnvVar[] = "XDG_CONFIG_HOME";
-const char kXdgCurrentDesktopEnvVar[] = "XDG_CURRENT_DESKTOP";
-const char kXdgSessionTypeEnvVar[] = "XDG_SESSION_TYPE";
-const char kXdgActivationTokenEnvVar[] = "XDG_ACTIVATION_TOKEN";
-const char kXdgActivationTokenSwitch[] = "xdg-activation-token";
-
 FilePath GetXDGDirectory(Environment* env,
-                         const char* env_name,
+                         cstring_view env_name,
                          const char* fallback_dir) {
   FilePath path;
   if (auto env_value = env->GetVar(env_name).value_or(""); !env_value.empty()) {
@@ -150,6 +143,9 @@ DesktopEnvironment GetDesktopEnvironment(Environment* env) {
       if (value == "LXQt") {
         return DESKTOP_ENVIRONMENT_LXQT;
       }
+      if (value == "COSMIC") {
+        return DESKTOP_ENVIRONMENT_COSMIC;
+      }
     }
   }
 
@@ -222,6 +218,8 @@ const char* GetDesktopEnvironmentName(DesktopEnvironment env) {
       return "UKUI";
     case DESKTOP_ENVIRONMENT_LXQT:
       return "LXQT";
+    case DESKTOP_ENVIRONMENT_COSMIC:
+      return "COSMIC";
   }
   return nullptr;
 }
@@ -266,10 +264,17 @@ SessionType GetSessionType(Environment& env) {
 }
 
 std::optional<std::string> ExtractXdgActivationTokenFromEnv(Environment& env) {
-  if (auto token = env.GetVar(kXdgActivationTokenEnvVar).value_or("");
+  std::string token;
+  if (token = env.GetVar(kXdgActivationTokenEnvVar).value_or("");
       !token.empty()) {
     GetXdgActivationToken() = std::move(token);
     env.UnSetVar(kXdgActivationTokenEnvVar);
+  } else if (token = env.GetVar(kDesktopStartupIdEnvVar).value_or("");
+             !token.empty()) {
+    // X11 apps use DESKTOP_STARTUP_ID to pass the activation token.
+    // https://gitlab.freedesktop.org/wayland/wayland-protocols/-/blob/main/staging/xdg-activation/x11-interoperation.rst
+    GetXdgActivationToken() = std::move(token);
+    env.UnSetVar(kDesktopStartupIdEnvVar);
   }
   return GetXdgActivationToken();
 }

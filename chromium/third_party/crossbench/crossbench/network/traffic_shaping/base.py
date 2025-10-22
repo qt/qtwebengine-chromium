@@ -8,8 +8,6 @@ import abc
 import contextlib
 from typing import TYPE_CHECKING, Iterator, TypeVar
 
-from typing_extensions import override
-
 from crossbench.flags.base import Flags
 
 if TYPE_CHECKING:
@@ -60,7 +58,6 @@ class TrafficShaper(abc.ABC):
       self._is_running = False
 
   @contextlib.contextmanager
-  @override
   def pause(self):
     """Temporarily pause traffic shaping if supported."""
     yield None

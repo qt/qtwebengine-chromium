@@ -20,6 +20,8 @@ export enum RecentlyClosedItemOpenAction {
 export interface TabSearchApiProxy {
   closeTab(tabId: number): void;
 
+  closeWebUiTab(): void;
+
   declutterTabs(tabIds: number[], urls: Url[]): void;
 
   acceptTabOrganization(sessionId: number, organizationId: number, tabs: Tab[]):
@@ -47,6 +49,8 @@ export interface TabSearchApiProxy {
   getTabOrganizationModelStrategy():
       Promise<{strategy: TabOrganizationModelStrategy}>;
 
+  getIsSplit(): Promise<{isSplit: boolean}>;
+
   openRecentlyClosedEntry(
       id: number, withSearch: boolean, isTab: boolean, index: number): void;
 
@@ -62,6 +66,8 @@ export interface TabSearchApiProxy {
 
   removeTabFromOrganization(
       sessionId: number, organizationId: number, tab: Tab): void;
+
+  replaceActiveSplitTab(replacementTabId: number): void;
 
   saveRecentlyClosedExpandedPref(expanded: boolean): void;
 
@@ -99,6 +105,10 @@ export class TabSearchApiProxyImpl implements TabSearchApiProxy {
 
   closeTab(tabId: number) {
     this.handler.closeTab(tabId);
+  }
+
+  closeWebUiTab() {
+    this.handler.closeWebUiTab();
   }
 
   declutterTabs(tabIds: number[], urls: Url[]) {
@@ -152,6 +162,10 @@ export class TabSearchApiProxyImpl implements TabSearchApiProxy {
     return this.handler.getTabOrganizationModelStrategy();
   }
 
+  getIsSplit() {
+    return this.handler.getIsSplit();
+  }
+
   openRecentlyClosedEntry(
       id: number, withSearch: boolean, isTab: boolean, index: number) {
     chrome.metricsPrivate.recordEnumerationValue(
@@ -191,6 +205,10 @@ export class TabSearchApiProxyImpl implements TabSearchApiProxy {
   removeTabFromOrganization(
       sessionId: number, organizationId: number, tab: Tab) {
     this.handler.removeTabFromOrganization(sessionId, organizationId, tab);
+  }
+
+  replaceActiveSplitTab(replacementSplitTabId: number) {
+    this.handler.replaceActiveSplitTab(replacementSplitTabId);
   }
 
   saveRecentlyClosedExpandedPref(expanded: boolean) {

@@ -591,23 +591,23 @@ std::vector<std::u16string> ClipboardNonBacked::GetStandardFormats(
   std::vector<std::u16string> types;
   if (IsFormatAvailable(ClipboardFormatType::PlainTextType(), buffer,
                         data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypeText));
+    types.push_back(kMimeTypePlainText16);
   }
   if (IsFormatAvailable(ClipboardFormatType::HtmlType(), buffer, data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypeHTML));
+    types.push_back(kMimeTypeHtml16);
   }
   if (IsFormatAvailable(ClipboardFormatType::SvgType(), buffer, data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypeSvg));
+    types.push_back(kMimeTypeSvg16);
   }
   if (IsFormatAvailable(ClipboardFormatType::RtfType(), buffer, data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypeRTF));
+    types.push_back(kMimeTypeRtf16);
   }
   if (IsFormatAvailable(ClipboardFormatType::BitmapType(), buffer, data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypePNG));
+    types.push_back(kMimeTypePng16);
   }
   if (IsFormatAvailable(ClipboardFormatType::FilenamesType(), buffer,
                         data_dst)) {
-    types.push_back(base::UTF8ToUTF16(kMimeTypeURIList));
+    types.push_back(kMimeTypeUriList16);
   }
   return types;
 }
@@ -961,18 +961,6 @@ void ClipboardNonBacked::WriteBitmap(const SkBitmap& bitmap) {
 void ClipboardNonBacked::WriteData(const ClipboardFormatType& format,
                                    base::span<const uint8_t> data) {
   ClipboardDataBuilder::WriteData(format, data);
-}
-
-void ClipboardNonBacked::WriteClipboardHistory() {
-  // TODO(crbug.com/40945200): Add support for this.
-}
-
-void ClipboardNonBacked::WriteUploadCloudClipboard() {
-  // TODO(crbug.com/40945200): Add support for this.
-}
-
-void ClipboardNonBacked::WriteConfidentialDataForPassword() {
-  // TODO(crbug.com/40945200): Add support for this.
 }
 
 const ClipboardInternal& ClipboardNonBacked::GetInternalClipboard(

@@ -10,15 +10,13 @@ import os
 import sys
 import textwrap
 import traceback
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
-                    Type)
+from typing import TYPE_CHECKING, Any, Optional, Sequence, Type
 
 import tabulate as tbl
 
 import crossbench.benchmarks.all as benchmarks
 from crossbench import __version__
 from crossbench import path as pth
-from crossbench.benchmarks.base import Benchmark
 from crossbench.cli import exception_formatter, ui
 from crossbench.cli.parser import CrossBenchArgumentParser
 from crossbench.cli.subcommand.benchmark import BenchmarkSubcommand
@@ -27,15 +25,17 @@ from crossbench.cli.subcommand.devtools_recorder_proxy.subcommand import \
     DevtoolsRecorderProxySubcommand
 from crossbench.cli.subcommand.help import HelpSubcommand
 from crossbench.cli.subcommand.version import VersionSubcommand
-from crossbench.parse import LateArgumentError
+from crossbench.helper.collection_helper import close_matches_message
 from crossbench.probes.all import GENERAL_PURPOSE_PROBES
 from crossbench.runner.runner import Runner
 
 if TYPE_CHECKING:
+  from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
-  BenchmarkClsT = Type[Benchmark]
-  BrowserLookupTableT = Dict[str, Tuple[Type[Browser], pth.LocalPath]]
   from crossbench.cli.subcommand.base import CrossbenchSubcommand
+  from crossbench.parse import LateArgumentError
+  BenchmarkClsT = Type[Benchmark]
+  BrowserLookupTableT = dict[str, tuple[Type[Browser], pth.LocalPath]]
 
 
 class CrossBenchArgumentError(argparse.ArgumentError):
@@ -115,12 +115,14 @@ class MainCrossBenchArgumentParser(CrossBenchArgumentParser):
     file.write("EXAMPLE:\n")
     file.write("  ./cb.py speedometer --browser=chrome-m131 "
                "--browser=out/release/chrome --probe=profiling\n\n")
-    readme_file = pth.AnyPath(__file__).parent / "README.md"
-    file.write(f"  See {readme_file} for more details.\n")
+    readme_file = pth.AnyPath(__file__).parents[2] / "README.md"
+    file.write(f"  See {readme_file} for more details and instructions.\n")
 
 class CrossBenchCLI:
-  BENCHMARKS: Tuple[BenchmarkClsT, ...] = (
+  BENCHMARKS: tuple[BenchmarkClsT, ...] = (
+      benchmarks.EmbedderBenchmark,
       # JetStream:
+      benchmarks.JetStream11Benchmark,
       benchmarks.JetStream20Benchmark,
       benchmarks.JetStream21Benchmark,
       benchmarks.JetStream22Benchmark,
@@ -128,12 +130,17 @@ class CrossBenchCLI:
       # Loading:
       benchmarks.LoadingBenchmark,
       # LoadLine:
-      benchmarks.LoadLinePhoneBenchmark,
-      benchmarks.LoadLinePhoneDebugBenchmark,
-      benchmarks.LoadLinePhoneFastBenchmark,
-      benchmarks.LoadLineTabletBenchmark,
-      benchmarks.LoadLineTabletDebugBenchmark,
-      benchmarks.LoadLineTabletFastBenchmark,
+      benchmarks.LoadLine1PhoneBenchmark,
+      benchmarks.LoadLine1PhoneDebugBenchmark,
+      benchmarks.LoadLine1PhoneFastBenchmark,
+      benchmarks.LoadLine1TabletBenchmark,
+      benchmarks.LoadLine1TabletDebugBenchmark,
+      benchmarks.LoadLine1TabletFastBenchmark,
+      # LoadLine 2:
+      benchmarks.LoadLine2PhoneBenchmark,
+      benchmarks.LoadLine2PhoneDebugBenchmark,
+      benchmarks.LoadLine2TabletBenchmark,
+      benchmarks.LoadLine2TabletDebugBenchmark,
       # Manual:
       benchmarks.ManualBenchmark,
       # Memory:
@@ -145,7 +152,10 @@ class CrossBenchCLI:
       benchmarks.MotionMark13Benchmark,
       benchmarks.MotionMark131Benchmark,
       benchmarks.MotionMarkMainBenchmark,
+      # Powerline
+      benchmarks.PowerlineBenchmark,
       # Speedometer:
+      benchmarks.Speedometer10Benchmark,
       benchmarks.Speedometer20Benchmark,
       benchmarks.Speedometer21Benchmark,
       benchmarks.Speedometer30Benchmark,
@@ -156,9 +166,9 @@ class CrossBenchCLI:
   RUNNER_CLS: Type[Runner] = Runner
 
   def __init__(self, enable_logging: bool = True) -> None:
-    self._enable_logging = enable_logging
+    self._enable_logging: bool = enable_logging
     self._console_handler: logging.StreamHandler | None = None
-    self._benchmark_subcommands: Dict[BenchmarkClsT, BenchmarkSubcommand] = {}
+    self._benchmark_subcommands: dict[BenchmarkClsT, BenchmarkSubcommand] = {}
     self.parser = MainCrossBenchArgumentParser(
         description=("A cross browser and cross benchmark runner "
                      "with configurable measurement probes.\n"))
@@ -189,17 +199,8 @@ class CrossBenchCLI:
     return self._last_subcommand
 
   def _setup_parser(self) -> None:
-    self.add_verbosity_argument(self.parser)
-    # Disable colors by default when piped to a file.
-    has_color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
-    self.parser.add_argument(
-        "--no-color",
-        dest="color",
-        action="store_false",
-        default=has_color,
-        help="Disable colored output")
-    self.parser.add_argument(
-        "--version", action="version", version=f"%(prog)s {__version__}")
+    self.add_debugging_arguments(self.parser)
+    self.add_base_arguments(self.parser)
 
   def _setup_subparsers(
       self) -> argparse._SubParsersAction[CrossBenchArgumentParser]:
@@ -210,7 +211,19 @@ class CrossBenchCLI:
         parser_class=CrossBenchArgumentParser)
     return subparsers
 
-  def add_verbosity_argument(self, parser: argparse.ArgumentParser) -> None:
+  def add_base_arguments(self, parser) -> None:
+    # Disable colors by default when piped to a file.
+    has_color = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
+    parser.add_argument(
+        "--no-color",
+        dest="color",
+        action="store_false",
+        default=has_color,
+        help="Disable colored output")
+    parser.add_argument(
+        "--version", action="version", version=f"%(prog)s {__version__}")
+
+  def add_debugging_arguments(self, parser: argparse.ArgumentParser):
     debug_group = parser.add_argument_group("Verbosity / Debugging Options")
     verbosity_group = debug_group.add_mutually_exclusive_group()
     verbosity_group.add_argument(
@@ -242,6 +255,7 @@ class CrossBenchCLI:
         action=EnableDebuggingAction,
         nargs=0,
         help="Enable debug output, equivalent to --throw -vvv")
+    return debug_group
 
   def _setup_subcommands(self) -> None:
     for benchmark_cls in self.BENCHMARKS:
@@ -258,8 +272,9 @@ class CrossBenchCLI:
 
   def run(self, argv: Sequence[str]) -> None:
     self._init_logging(argv)
-    unprocessed_argv: List[str] = []
+    unprocessed_argv: list[str] = []
     try:
+      argv = self._rename_subcommand(argv)
       # Manually check for unprocessed_argv to print nicer error messages.
       self.args, unprocessed_argv = self.parser.parse_known_args(argv)
     except argparse.ArgumentError as e:
@@ -279,6 +294,32 @@ class CrossBenchCLI:
       self.args.crossbench_subcommand.run(self.args)
     finally:
       self._teardown_logging()
+
+  def _rename_subcommand(self, argv: Sequence[str]) -> Sequence[str]:
+    if not argv:
+      return argv
+    subcommand = argv[0]
+    if subcommand.startswith("-"):
+      return argv
+
+    choices = set(self._subparsers.choices.keys())
+    if subcommand in choices:
+      return argv
+
+    alternative: str | None = None
+    for benchmark_cls in self._benchmark_subcommands:
+      aliases = benchmark_cls.aliases()
+      if subcommand in aliases:
+        alternative = benchmark_cls.NAME
+        break
+      choices.update(benchmark_cls.aliases())
+
+    if not alternative:
+      message, alternative = close_matches_message(subcommand, set(choices))
+      message = f"Unknown subcommand {repr(subcommand)}: {message}"
+    if not alternative:
+      raise argparse.ArgumentError(None, message)
+    return [alternative, *argv[1:]]
 
   def handle_late_argument_error(self, e: LateArgumentError) -> None:
     self.error(f"error argument {e.flag}: {e.message}")
@@ -308,6 +349,8 @@ class CrossBenchCLI:
     if not self._enable_logging:
       logging.getLogger().setLevel(logging.CRITICAL)
       return
+    if hasattr(sys.stdout, "reconfigure"):
+      sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
     self._console_handler = logging.StreamHandler(sys.stderr)
     self._console_handler.addFilter(logging.Filter("root"))
     self._console_handler.setLevel(logging.INFO)
@@ -317,13 +360,17 @@ class CrossBenchCLI:
     logging.getLogger().addHandler(self._console_handler)
 
     # Manually extract values to allow logging for failing arguments.
-    if "-v" in argv or "-vv" in argv or "-vvv" in argv:
+    if self._has_debug_logging_argv(argv):
       self._console_handler.setLevel(logging.DEBUG)
       logging.getLogger().setLevel(logging.DEBUG)
     # TODO: move to ui helpers
     ui.COLOR_LOGGING = self._detect_terminal_color(argv)
     if ui.COLOR_LOGGING:
       self._console_handler.setFormatter(ui.ColoredLogFormatter())
+    logging.debug(" ".join(sys.argv))
+
+  def _has_debug_logging_argv(self, argv: Sequence[str]) -> bool:
+    return any(value in ("-v", "-vv", "-vvv", "--debug") for value in argv)
 
   def _detect_terminal_color(self, argv: Sequence[str]) -> bool:
     if "--no-color" in argv:

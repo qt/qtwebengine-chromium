@@ -1,6 +1,7 @@
 // Copyright 2016 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -51,7 +52,7 @@ export class NetworkManageCustomHeadersView extends UI.Widget.VBox implements UI
       addHeaderColumnCallback: (arg0: string) => boolean,
       changeHeaderColumnCallback: (arg0: string, arg1: string) => boolean,
       removeHeaderColumnCallback: (arg0: string) => boolean) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(networkManageCustomHeadersViewStyles);
 
     this.contentElement.createChild('div', 'header').textContent = i18nString(UIStrings.manageHeaderColumns);

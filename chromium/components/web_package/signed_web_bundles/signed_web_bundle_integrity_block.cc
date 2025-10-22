@@ -7,7 +7,6 @@
 #include <string>
 #include <utility>
 
-#include "base/functional/overloaded.h"
 #include "base/types/expected_macros.h"
 #include "components/web_package/mojom/web_bundle_parser.mojom.h"
 #include "components/web_package/signed_web_bundles/signed_web_bundle_id.h"
@@ -58,11 +57,5 @@ SignedWebBundleIntegrityBlock::SignedWebBundleIntegrityBlock(
     const SignedWebBundleIntegrityBlock&) = default;
 SignedWebBundleIntegrityBlock& SignedWebBundleIntegrityBlock::operator=(
     const SignedWebBundleIntegrityBlock&) = default;
-
-bool SignedWebBundleIntegrityBlock::operator==(
-    const SignedWebBundleIntegrityBlock& other) const = default;
-
-bool SignedWebBundleIntegrityBlock::operator!=(
-    const SignedWebBundleIntegrityBlock& other) const = default;
 
 }  // namespace web_package

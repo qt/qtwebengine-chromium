@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "ui/base/clipboard/clipboard_ozone.h"
 
 #include <algorithm>
@@ -18,6 +13,7 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
 #include "base/containers/map_util.h"
@@ -26,7 +22,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/no_destructor.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/run_loop.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
@@ -420,13 +416,13 @@ std::vector<std::u16string> ClipboardOzone::GetStandardFormats(
       continue;
     }
     // `WriteText` uses the following mime types for text, so if those types are
-    // available, we add kMimeTypeText to the list.
+    // available, we add kMimeTypePlainText to the list.
     if ((mime_type == ClipboardFormatType::PlainTextType().GetName() ||
          mime_type == kMimeTypeLinuxText || mime_type == kMimeTypeLinuxString ||
-         mime_type == kMimeTypeTextUtf8 ||
+         mime_type == kMimeTypeUtf8PlainText ||
          mime_type == kMimeTypeLinuxUtf8String) &&
-        !base::Contains(types, base::UTF8ToUTF16(kMimeTypeText))) {
-      types.push_back(base::UTF8ToUTF16(kMimeTypeText));
+        !base::Contains(types, kMimeTypePlainText16)) {
+      types.push_back(kMimeTypePlainText16);
       continue;
     }
   }
@@ -463,8 +459,8 @@ void ClipboardOzone::ReadText(ClipboardBuffer buffer,
                               const DataTransferEndpoint* data_dst,
                               std::u16string* result) const {
   DCHECK(CalledOnValidThread());
-  auto clipboard_data =
-      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypeText);
+  auto clipboard_data = async_clipboard_ozone_->ReadClipboardDataAndWait(
+      buffer, kMimeTypePlainText);
 
   if (!IsReadAllowed(GetSource(buffer), data_dst, clipboard_data))
     return;
@@ -479,8 +475,8 @@ void ClipboardOzone::ReadAsciiText(ClipboardBuffer buffer,
                                    std::string* result) const {
   DCHECK(CalledOnValidThread());
 
-  auto clipboard_data =
-      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypeText);
+  auto clipboard_data = async_clipboard_ozone_->ReadClipboardDataAndWait(
+      buffer, kMimeTypePlainText);
 
   if (!IsReadAllowed(GetSource(buffer), data_dst, clipboard_data))
     return;
@@ -498,7 +494,7 @@ void ClipboardOzone::ReadHTML(ClipboardBuffer buffer,
   DCHECK(CalledOnValidThread());
 
   auto clipboard_data =
-      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypeHTML);
+      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypeHtml);
 
   if (!IsReadAllowed(GetSource(buffer), data_dst, clipboard_data))
     return;
@@ -539,7 +535,7 @@ void ClipboardOzone::ReadRTF(ClipboardBuffer buffer,
   DCHECK(CalledOnValidThread());
 
   auto clipboard_data =
-      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypeRTF);
+      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypeRtf);
 
   if (!IsReadAllowed(GetSource(buffer), data_dst, clipboard_data))
     return;
@@ -552,7 +548,7 @@ void ClipboardOzone::ReadPng(ClipboardBuffer buffer,
                              const DataTransferEndpoint* data_dst,
                              ReadPngCallback callback) const {
   auto clipboard_data =
-      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypePNG);
+      async_clipboard_ozone_->ReadClipboardDataAndWait(buffer, kMimeTypePng);
 
   if (!IsReadAllowed(GetSource(buffer), data_dst, clipboard_data)) {
     std::move(callback).Run(std::vector<uint8_t>());
@@ -593,7 +589,7 @@ void ClipboardOzone::ReadFilenames(ClipboardBuffer buffer,
   DCHECK(CalledOnValidThread());
 
   auto clipboard_data = async_clipboard_ozone_->ReadClipboardDataAndWait(
-      buffer, kMimeTypeURIList);
+      buffer, kMimeTypeUriList);
 
   if (!IsReadAllowed(GetSource(buffer), data_dst, clipboard_data))
     return;
@@ -683,15 +679,16 @@ void ClipboardOzone::WritePortableAndPlatformRepresentations(
 void ClipboardOzone::WriteText(std::string_view text) {
   std::vector<uint8_t> data(text.begin(), text.end());
   async_clipboard_ozone_->InsertData(
-      std::move(data), {kMimeTypeText, kMimeTypeLinuxText, kMimeTypeLinuxString,
-                        kMimeTypeTextUtf8, kMimeTypeLinuxUtf8String});
+      std::move(data),
+      {kMimeTypePlainText, kMimeTypeLinuxText, kMimeTypeLinuxString,
+       kMimeTypeUtf8PlainText, kMimeTypeLinuxUtf8String});
 }
 
 void ClipboardOzone::WriteHTML(
     std::string_view markup,
     std::optional<std::string_view> /* source_url */) {
   std::vector<uint8_t> data(markup.begin(), markup.end());
-  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeHTML});
+  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeHtml});
 }
 
 void ClipboardOzone::WriteSvg(std::string_view markup) {
@@ -701,13 +698,13 @@ void ClipboardOzone::WriteSvg(std::string_view markup) {
 
 void ClipboardOzone::WriteRTF(std::string_view rtf) {
   std::vector<uint8_t> data(rtf.begin(), rtf.end());
-  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeRTF});
+  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeRtf});
 }
 
 void ClipboardOzone::WriteFilenames(std::vector<ui::FileInfo> filenames) {
   std::string uri_list = ui::FileInfosToURIList(filenames);
   std::vector<uint8_t> data(uri_list.begin(), uri_list.end());
-  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeURIList});
+  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeUriList});
 }
 
 void ClipboardOzone::WriteBookmark(std::string_view title,
@@ -716,10 +713,10 @@ void ClipboardOzone::WriteBookmark(std::string_view title,
   std::u16string bookmark =
       base::StrCat({base::UTF8ToUTF16(url) + u"\n" + base::UTF8ToUTF16(title)});
 
-  std::vector<uint8_t> data(
-      reinterpret_cast<const uint8_t*>(bookmark.data()),
-      reinterpret_cast<const uint8_t*>(bookmark.data() + bookmark.size()));
-  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeMozillaURL});
+  std::vector<uint8_t> data(reinterpret_cast<const uint8_t*>(bookmark.data()),
+                            reinterpret_cast<const uint8_t*>(UNSAFE_TODO(
+                                bookmark.data() + bookmark.size())));
+  async_clipboard_ozone_->InsertData(std::move(data), {kMimeTypeMozillaUrl});
 }
 
 void ClipboardOzone::WriteWebSmartPaste() {
@@ -737,7 +734,7 @@ void ClipboardOzone::WriteBitmap(const SkBitmap& bitmap) {
   std::vector<uint8_t> png_bytes =
       clipboard_util::EncodeBitmapToPngAcceptJank(bitmap);
   if (!png_bytes.empty()) {
-    async_clipboard_ozone_->InsertData(std::move(png_bytes), {kMimeTypePNG});
+    async_clipboard_ozone_->InsertData(std::move(png_bytes), {kMimeTypePng});
   }
 }
 
@@ -745,18 +742,6 @@ void ClipboardOzone::WriteData(const ClipboardFormatType& format,
                                base::span<const uint8_t> data) {
   std::vector<uint8_t> owned_data(data.begin(), data.end());
   async_clipboard_ozone_->InsertData(std::move(owned_data), {format.GetName()});
-}
-
-void ClipboardOzone::WriteClipboardHistory() {
-  // TODO(crbug.com/40945200): Add support for this.
-}
-
-void ClipboardOzone::WriteUploadCloudClipboard() {
-  // TODO(crbug.com/40945200): Add support for this.
-}
-
-void ClipboardOzone::WriteConfidentialDataForPassword() {
-  // TODO(crbug.com/40945200): Add support for this.
 }
 
 void ClipboardOzone::AddSourceToClipboard(

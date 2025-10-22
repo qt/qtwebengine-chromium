@@ -100,7 +100,6 @@ using mojom::blink::CredentialInfo;
 using mojom::blink::CredentialInfoPtr;
 using mojom::blink::CredentialManagerError;
 using mojom::blink::CredentialMediationRequirement;
-using mojom::blink::PaymentCredentialInstrument;
 using mojom::blink::WebAuthnDOMExceptionDetailsPtr;
 using MojoPublicKeyCredentialCreationOptions =
     mojom::blink::PublicKeyCredentialCreationOptions;
@@ -537,6 +536,8 @@ void OnPreventSilentAccessComplete(
 
 void OnGetComplete(std::unique_ptr<ScopedPromiseResolver> scoped_resolver,
                    RequiredOriginType required_origin_type,
+                   Mediation mediation,
+
                    CredentialManagerError error,
                    CredentialInfoPtr credential_info) {
   auto* resolver =
@@ -545,12 +546,20 @@ void OnGetComplete(std::unique_ptr<ScopedPromiseResolver> scoped_resolver,
   AssertSecurityRequirementsBeforeResponse(resolver, required_origin_type);
   if (error != CredentialManagerError::SUCCESS) {
     DCHECK(!credential_info);
+    if (mediation == Mediation::IMMEDIATE) {
+      UseCounter::Count(resolver->GetExecutionContext(),
+                        WebFeature::kCredentialsGetImmediateMediationFailure);
+    }
     resolver->Reject(CredentialManagerErrorToDOMException(error));
     return;
   }
   DCHECK(credential_info);
   UseCounter::Count(resolver->GetExecutionContext(),
                     WebFeature::kCredentialManagerGetReturnedCredential);
+  if (mediation == Mediation::IMMEDIATE) {
+    UseCounter::Count(resolver->GetExecutionContext(),
+                      WebFeature::kCredentialsGetImmediateMediationPasswordSuccess);
+  }
   resolver->Resolve(mojo::ConvertTo<Credential*>(std::move(credential_info)));
 }
 
@@ -766,6 +775,9 @@ void OnGetAssertionComplete(
     if (mediation == Mediation::CONDITIONAL) {
       UseCounter::Count(resolver->GetExecutionContext(),
                         WebFeature::kWebAuthnConditionalUiGetSuccess);
+    } else if (mediation == Mediation::IMMEDIATE) {
+      UseCounter::Count(resolver->GetExecutionContext(),
+                        WebFeature::kCredentialsGetImmediateMediationPublicKeySuccess);
     }
 
     auto* authenticator_response =
@@ -789,6 +801,10 @@ void OnGetAssertionComplete(
         authenticator_response, credential->authenticator_attachment,
         extension_outputs));
     return;
+  }
+  if (mediation == Mediation::IMMEDIATE) {
+    UseCounter::Count(resolver->GetExecutionContext(),
+                      WebFeature::kCredentialsGetImmediateMediationFailure);
   }
   DCHECK(!credential);
   AbortSignal* signal =
@@ -826,7 +842,7 @@ void OnAuthenticatorGetCredentialComplete(
   auto password_response =
       std::move(get_credential_response->get_password_response());
   OnGetComplete(std::move(scoped_resolver), RequiredOriginType::kSecure,
-                CredentialManagerError::SUCCESS, std::move(password_response));
+                mediation, CredentialManagerError::SUCCESS, std::move(password_response));
 }
 
 void OnSmsReceive(ScriptPromiseResolver<IDLNullable<Credential>>* resolver,
@@ -884,26 +900,6 @@ bool IsPaymentExtensionValid(const CredentialCreationOptions* options,
   const auto* payment = options->publicKey()->extensions()->payment();
   if (!payment->hasIsPayment() || !payment->isPayment()) {
     return true;
-  }
-
-  // TODO(crbug.com/1512245): Remove this check in favour of the validation in
-  // |AuthenticationCredentialsContainer::create|, which throws a
-  // NotAllowedError rather than a SecurityError like the SPC spec currently
-  // requires.
-  if (!RuntimeEnabledFeatures::
-          WebAuthenticationAlignErrorTypeForPaymentCredentialCreateEnabled() &&
-      !IsSameSecurityOriginWithAncestors(
-          To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame())) {
-    bool has_user_activation = LocalFrame::ConsumeTransientUserActivation(
-        To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame(),
-        UserActivationUpdateSource::kRenderer);
-    if (!has_user_activation) {
-      resolver->Reject(MakeGarbageCollected<DOMException>(
-          DOMExceptionCode::kSecurityError,
-          "A user activation is required to create a credential in a "
-          "cross-origin iframe."));
-      return false;
-    }
   }
 
   const auto* context = resolver->GetExecutionContext();
@@ -1010,7 +1006,7 @@ const char* validateGetPublicKeyCredentialPRFExtension(
     for (const auto& pair : prf.evalByCredential()) {
       Vector<uint8_t> cred_id;
       if (!pair.first.Is8Bit() ||
-          !WTF::Base64UnpaddedURLDecode(pair.first, cred_id)) {
+          !Base64UnpaddedURLDecode(pair.first, cred_id)) {
         return "'prf' extension contains invalid base64url data in "
                "'evalByCredential'";
       }
@@ -1217,7 +1213,7 @@ DOMException* AuthenticatorStatusToDOMException(
           "to the credential manager.");
     case AuthenticatorStatus::IMMEDIATE_NOT_FOUND:
       return MakeGarbageCollected<DOMException>(
-          DOMExceptionCode::kNotFoundError,
+          DOMExceptionCode::kNotAllowedError,
           "No immediate discoverable credentials are found.");
   }
   return nullptr;
@@ -1529,12 +1525,14 @@ ScriptPromise<IDLNullable<Credential>> AuthenticationCredentialsContainer::get(
       CredentialMetrics::From(script_state).RecordWebAuthnConditionalUiCall();
       mediation = Mediation::CONDITIONAL;
     } else if (options->mediation() == "immediate") {
-      if (RuntimeEnabledFeatures::WebAuthenticationImmediateGetEnabled()) {
+      if (RuntimeEnabledFeatures::WebAuthenticationImmediateGetEnabled(
+              context)) {
         mediation = Mediation::IMMEDIATE;
         EmitImmediateMediationUseCounters(context, options);
       } else {
         resolver->Reject(MakeGarbageCollected<DOMException>(
-            DOMExceptionCode::kNotSupportedError, "Not implemented"));
+            DOMExceptionCode::kNotSupportedError,
+            "Immediate mediation not implemented"));
         return promise;
       }
     }
@@ -1634,6 +1632,26 @@ ScriptPromise<IDLNullable<Credential>> AuthenticationCredentialsContainer::get(
         "Conditional mediation is not supported for this credential type"));
     return promise;
   }
+  if (options->mediation() == "immediate") {
+    if (RuntimeEnabledFeatures::WebAuthenticationImmediateGetEnabled(context)) {
+      if (options->password()) {
+        resolver->Reject(MakeGarbageCollected<DOMException>(
+            DOMExceptionCode::kNotSupportedError,
+            "Immediate mediation is not yet implemented for requests that do "
+            "not accept PublicKeyCredential. An Immediate request for "
+            "passwords must also include a request for passkeys."));
+      } else {
+        resolver->Reject(MakeGarbageCollected<DOMException>(
+            DOMExceptionCode::kNotSupportedError,
+            "Immediate mediation is not supported for this credential type"));
+      }
+    } else {
+      resolver->Reject(MakeGarbageCollected<DOMException>(
+          DOMExceptionCode::kNotSupportedError,
+          "Immediate mediation not implemented"));
+    }
+    return promise;
+  }
   if (options->mediation() == "silent") {
     UseCounter::Count(context,
                       WebFeature::kCredentialManagerGetMediationSilent);
@@ -1655,7 +1673,7 @@ ScriptPromise<IDLNullable<Credential>> AuthenticationCredentialsContainer::get(
       requirement, options->password(), std::move(providers),
       WTF::BindOnce(&OnGetComplete,
                     std::make_unique<ScopedPromiseResolver>(resolver),
-                    required_origin_type));
+                    required_origin_type, Mediation::MODAL));
 
   return promise;
 }
@@ -1888,17 +1906,8 @@ AuthenticationCredentialsContainer::create(
   // In the case of create() in a cross-origin iframe, the spec requires that
   // the caller must have transient user activation (which is consumed).
   // https://w3c.github.io/webauthn/#sctn-createCredential, step 2.
-  //
-  // TODO(crbug.com/1512245): This check should be used for payment credentials
-  // as well, but currently the SPC spec expects a SecurityError rather than
-  // NotAllowedError.
-  bool has_payment_extension = options->publicKey()->hasExtensions() &&
-                               options->publicKey()->extensions()->hasPayment();
   if (!IsSameSecurityOriginWithAncestors(
-          To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame()) &&
-      (RuntimeEnabledFeatures::
-           WebAuthenticationAlignErrorTypeForPaymentCredentialCreateEnabled() ||
-       !has_payment_extension)) {
+          To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame())) {
     bool has_user_activation = LocalFrame::ConsumeTransientUserActivation(
         To<LocalDOMWindow>(resolver->GetExecutionContext())->GetFrame(),
         UserActivationUpdateSource::kRenderer);
@@ -2239,7 +2248,7 @@ void AuthenticationCredentialsContainer::GetForIdentity(
 
   CredentialMediationRequirement mediation_requirement;
   if (options.mediation() == "conditional") {
-    if (RuntimeEnabledFeatures::FedCmDelegationEnabled()) {
+    if (RuntimeEnabledFeatures::FedCmAutofillEnabled()) {
       mediation_requirement = CredentialMediationRequirement::kConditional;
     } else {
       resolver->Reject(MakeGarbageCollected<DOMException>(
@@ -2267,20 +2276,6 @@ void AuthenticationCredentialsContainer::GetForIdentity(
 
   mojom::blink::RpMode rp_mode = mojom::blink::RpMode::kPassive;
   auto v8_rp_mode = identity_options.mode();
-  // TODO(crbug.com/372198646): remove the debugging aid enums after shipping
-  // active mode.
-  if (v8_rp_mode ==
-          blink::V8IdentityCredentialRequestOptionsMode::Enum::kWidget ||
-      v8_rp_mode ==
-          blink::V8IdentityCredentialRequestOptionsMode::Enum::kButton) {
-    resolver->GetExecutionContext()->AddConsoleMessage(
-        MakeGarbageCollected<ConsoleMessage>(
-            mojom::blink::ConsoleMessageSource::kJavaScript,
-            mojom::blink::ConsoleMessageLevel::kWarning,
-            "The mode button/widget are renamed to active/passive "
-            "respectively and will be deprecated soon."));
-  }
-
   rp_mode = mojo::ConvertTo<mojom::blink::RpMode>(v8_rp_mode);
   if (rp_mode == mojom::blink::RpMode::kActive) {
     if (identity_provider_ptrs.size() > 1u) {

@@ -43,7 +43,6 @@
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_disk_cache_factory.h"
 #include "content/browser/gpu/gpu_main_thread_factory.h"
-#include "content/browser/gpu/gpu_memory_buffer_manager_singleton.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/service_worker/service_worker_host.h"
 #include "content/browser/storage_partition_impl.h"
@@ -242,6 +241,7 @@ static const char* const kSwitchNames[] = {
     sandbox::policy::switches::kGpuSandboxAllowSysVShm,
     sandbox::policy::switches::kGpuSandboxFailuresFatal,
     sandbox::policy::switches::kDisableGpuSandbox,
+    sandbox::policy::switches::kDisableLandlockSandbox,
     sandbox::policy::switches::kNoSandbox,
 #if BUILDFLAG(IS_WIN)
     sandbox::policy::switches::kAllowThirdPartyModules,
@@ -254,6 +254,7 @@ static const char* const kSwitchNames[] = {
     switches::kRaiseTimerFrequency,
     switches::kUseRedistributableDirectML,
 #endif  // BUILDFLAG(IS_WIN)
+    switches::kBackgroundThreadPoolFieldTrial,
     switches::kEnableANGLEFeatures,
     switches::kDelegatedInkRenderer,
     switches::kDisableANGLEFeatures,
@@ -264,7 +265,6 @@ static const char* const kSwitchNames[] = {
     switches::kDisableShaderNameHashing,
     switches::kDisableSkiaRuntimeOpts,
     switches::kDRMVirtualConnectorIsExternal,
-    switches::kEnableBackgroundThreadPool,
     switches::kEnableGpuMainTimeKeeperMetrics,
     switches::kEnableGpuRasterization,
     switches::kEnableSkiaGraphite,
@@ -279,7 +279,6 @@ static const char* const kSwitchNames[] = {
     switches::kProfilingFile,
     switches::kProfilingFlush,
     switches::kRunAllCompositorStagesBeforeDraw,
-    switches::kShaderCachePath,
     switches::kSkiaFontCacheLimitMb,
     switches::kSkiaGraphiteBackend,
     switches::kSkiaResourceCacheLimitMb,
@@ -322,11 +321,17 @@ static const char* const kSwitchNames[] = {
     ash::switches::kRevenBranding,
     switches::kSchedulerBoostUrgent,
 #endif
-#if BUILDFLAG(USE_CHROMEOS_MEDIA_ACCELERATION)
+#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
     switches::kHardwareVideoDecodeFrameRate,
 #endif
 #if BUILDFLAG(WEBNN_USE_TFLITE)
     switches::kWebNNTfliteDumpModel,
+#endif
+#if BUILDFLAG(IS_WIN)
+    switches::kWebNNOrtLoggingLevel,
+    switches::kWebNNOrtDumpModel,
+    switches::kWebNNOrtLibraryPathForTesting,
+    switches::kWebNNOrtEpLibraryPathForTesting,
 #endif
 };
 
@@ -730,8 +735,8 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
 
   g_gpu_process_hosts[kind] = this;
 
-  process_ = std::make_unique<BrowserChildProcessHostImpl>(
-      PROCESS_TYPE_GPU, this, ChildProcessHost::IpcMode::kNormal);
+  process_ =
+      std::make_unique<BrowserChildProcessHostImpl>(PROCESS_TYPE_GPU, this);
 }
 
 GpuProcessHost::~GpuProcessHost() {
@@ -770,7 +775,7 @@ GpuProcessHost::~GpuProcessHost() {
               static_cast<int>(content::RESULT_CODE_GPU_DEAD_ON_ARRIVAL)) {
         // Add a sample to Stability.Counts2's GPU crash bucket.
         //
-        // On Android Chrome and Android WebLayer, GPU crashes are logged via
+        // On Android Chrome, GPU crashes are logged via
         // ContentStabilityMetricsProvider::OnCrashDumpProcessed() and
         // StabilityMetricsHelper::IncreaseGpuCrashCount().
         metrics::StabilityMetricsHelper::RecordStabilityEvent(
@@ -801,7 +806,8 @@ GpuProcessHost::~GpuProcessHost() {
         message += "exited normally. Everything is okay.";
         break;
       case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
-        message += base::StringPrintf("exited with code %d.", info.exit_code);
+        message +=
+            "exited with code " + CrashExitCodeToString(info.exit_code) + ".";
         unexpected_exit = true;
         break;
       case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
@@ -811,7 +817,9 @@ GpuProcessHost::~GpuProcessHost() {
         message += "was killed by you! Why?";
         break;
       case base::TERMINATION_STATUS_PROCESS_CRASHED:
-        message += "crashed!";
+        message +=
+            "crashed! Exit code: " + CrashExitCodeToString(info.exit_code) +
+            ".";
         unexpected_exit = true;
         break;
       case base::TERMINATION_STATUS_STILL_RUNNING:

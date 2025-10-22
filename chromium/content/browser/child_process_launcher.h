@@ -39,6 +39,11 @@
 #include "base/files/scoped_file.h"
 #endif
 
+#if BUILDFLAG(IS_MAC)
+#include "base/process/port_provider_mac.h"
+#include "base/scoped_observation.h"
+#endif
+
 namespace base {
 class CommandLine;
 class UnsafeSharedMemoryRegion;
@@ -90,6 +95,7 @@ struct RenderProcessPriority {
                         bool intersects_viewport,
                         bool boost_for_pending_views,
                         bool boost_for_loading,
+                        bool boost_for_discard,
                         bool is_spare_renderer
 #if BUILDFLAG(IS_ANDROID)
                         ,
@@ -113,7 +119,6 @@ struct RenderProcessPriority {
   base::Process::Priority GetProcessPriority() const;
 
   bool operator==(const RenderProcessPriority& other) const;
-  bool operator!=(const RenderProcessPriority& other) const;
 
   using TraceProto = perfetto::protos::pbzero::ChildProcessLauncherPriority;
   void WriteIntoTrace(perfetto::TracedProto<TraceProto> proto) const;
@@ -163,6 +168,10 @@ struct RenderProcessPriority {
   // navigation and initial loading.
   bool boost_for_loading;
 
+  // |boost_for_discard| is true if this process is responsible for executing
+  // discard logic.
+  bool boost_for_discard;
+
   // |is_spare_renderer| is true if this process should be treated as a spare
   // renderer. The process will be given a moderate priority even it is not
   // visible and used.
@@ -208,7 +217,14 @@ struct ChildProcessLauncherFileData {
 // Launches a process asynchronously and notifies the client of the process
 // handle when it's available.  It's used to avoid blocking the calling thread
 // on the OS since often it can take > 100 ms to create the process.
-class CONTENT_EXPORT ChildProcessLauncher {
+
+// On MacOS, observes the PortProvider to allow re-setting the priority of the
+// process when its task port is available.
+class CONTENT_EXPORT ChildProcessLauncher
+#if BUILDFLAG(IS_MAC)
+    : public base::PortProvider::Observer
+#endif
+{
  public:
   class CONTENT_EXPORT Client {
    public:
@@ -255,7 +271,11 @@ class CONTENT_EXPORT ChildProcessLauncher {
   ChildProcessLauncher(const ChildProcessLauncher&) = delete;
   ChildProcessLauncher& operator=(const ChildProcessLauncher&) = delete;
 
-  ~ChildProcessLauncher();
+  ~ChildProcessLauncher()
+#if BUILDFLAG(IS_MAC)
+      override
+#endif
+      ;
 
   // True if the process is being launched and so the handle isn't available.
   bool IsStarting();
@@ -315,6 +335,15 @@ class CONTENT_EXPORT ChildProcessLauncher {
 #endif
               int error_code);
 
+#if BUILDFLAG(IS_MAC)
+  // base::PortProvider::Observer:
+  void OnReceivedTaskPort(base::ProcessHandle process_handle) override;
+#endif
+
+#if !BUILDFLAG(IS_ANDROID)
+  void SetProcessPriorityImpl(base::Process::Priority priority);
+#endif
+
   raw_ptr<Client> client_;
 
   // The process associated with this ChildProcessLauncher. Set in Notify by
@@ -334,6 +363,18 @@ class CONTENT_EXPORT ChildProcessLauncher {
   bool should_launch_elevated_ = false;
 
   scoped_refptr<internal::ChildProcessLauncherHelper> helper_;
+
+  // The priority of the process. The state is stored to avoid changing the
+  // setting repeatedly.
+  //
+  // On MacOS, this is also used to re-set the priority when the task port of
+  // the process is available.
+  std::optional<base::Process::Priority> priority_;
+
+#if BUILDFLAG(IS_MAC)
+  base::ScopedObservation<base::PortProvider, base::PortProvider::Observer>
+      scoped_port_provider_observation_{this};
+#endif
 
   base::WeakPtrFactory<ChildProcessLauncher> weak_factory_{this};
 };

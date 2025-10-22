@@ -21,7 +21,6 @@ source_set("utils") {
 
   deps = [
     "//base",
-    "//chrome/browser:browser_process",
     "//chromeos/ash/components/editor_menu/public/cpp",
     "//chromeos/crosapi/mojom",
     "//ui/aura",
@@ -58,16 +57,16 @@ source_set("editor_menu") {
     "//chrome/browser/ui/ash/read_write_cards",
     "//chromeos/ash/components/editor_menu/public/cpp",
     "//chromeos/components/magic_boost/public/cpp",
-    "//chromeos/constants:constants",
+    "//chromeos/constants",
     "//chromeos/crosapi/mojom",
-    "//content/public/browser:browser",
+    "//content/public/browser",
     "//ui/gfx",
     "//ui/views",
   ]
 
   if (is_chrome_branded) {
     deps += [
-      "//chromeos/ash/resources/internal/strings:strings",
+      "//chromeos/ash/resources/internal/strings",
       "//chromeos/ash/resources/internal/strings:strings_grit",
     ]
   }
@@ -94,11 +93,11 @@ source_set("views") {
     ":utils",
     "//base",
     "//build:branding_buildflags",
-    "//chrome/browser:browser_process",
     "//chromeos/ash/components/editor_menu/public/cpp",
-    "//chromeos/constants:constants",
+    "//chromeos/constants",
     "//chromeos/strings:strings_grit",
     "//chromeos/ui/vector_icons",
+    "//components/application_locale_storage",
     "//components/vector_icons",
     "//ui/aura",
     "//ui/base",
@@ -109,8 +108,12 @@ source_set("views") {
 
   if (is_chrome_branded) {
     deps += [
-      "//chromeos/ash/resources/internal/strings:strings",
+      "//chromeos/ash/resources/internal/strings",
       "//chromeos/ash/resources/internal/strings:strings_grit",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

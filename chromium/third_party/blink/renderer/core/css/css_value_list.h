@@ -27,10 +27,6 @@
 #include "third_party/blink/renderer/platform/wtf/casting.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
-namespace WTF {
-class String;
-}  // namespace WTF
-
 namespace blink {
 
 class CORE_EXPORT CSSValueList : public CSSValue {
@@ -56,6 +52,9 @@ class CORE_EXPORT CSSValueList : public CSSValue {
   CSSValueList(ClassType, ValueListSeparator);
   explicit CSSValueList(ValueListSeparator);
   CSSValueList(ValueListSeparator, HeapVector<Member<const CSSValue>, 4>);
+  CSSValueList(ClassType,
+               ValueListSeparator,
+               HeapVector<Member<const CSSValue>, 4>);
   CSSValueList(const CSSValueList&) = delete;
   CSSValueList& operator=(const CSSValueList&) = delete;
 

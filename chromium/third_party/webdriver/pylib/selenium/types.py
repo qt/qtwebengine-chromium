@@ -14,10 +14,12 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-
 """Selenium type definitions."""
 
-from typing import Union
-
+from typing import IO, Any, Iterable, Type, Union
 
 AnyKey = Union[str, int, float]
+WaitExcTypes = Iterable[Type[Exception]]
+
+# Service Types
+SubprocessStdAlias = Union[int, str, IO[Any]]

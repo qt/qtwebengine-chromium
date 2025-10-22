@@ -14,6 +14,7 @@
 
 #include "rtc_base/logging.h"
 #include "sdk/android/generated_video_jni/NativeAndroidVideoTrackSource_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
 #include "sdk/android/src/jni/video_frame.h"
 
 namespace webrtc {
@@ -108,12 +109,12 @@ ScopedJavaLocalRef<jobject> AndroidVideoTrackSource::AdaptFrame(
   // TODO(magjed): Move this logic to users of NativeAndroidVideoTrackSource
   // instead, in order to keep this native wrapping layer as thin as possible.
   if (rotation % 180 == 0) {
-    drop = !rtc::AdaptedVideoTrackSource::AdaptFrame(
+    drop = !AdaptedVideoTrackSource::AdaptFrame(
         j_width, j_height, camera_time_us, &adapted_width, &adapted_height,
         &crop_width, &crop_height, &crop_x, &crop_y);
   } else {
     // Swap all width/height and x/y.
-    drop = !rtc::AdaptedVideoTrackSource::AdaptFrame(
+    drop = !AdaptedVideoTrackSource::AdaptFrame(
         j_height, j_width, camera_time_us, &adapted_height, &adapted_width,
         &crop_height, &crop_width, &crop_y, &crop_x);
   }
@@ -128,7 +129,7 @@ void AndroidVideoTrackSource::OnFrameCaptured(
     jint j_rotation,
     jlong j_timestamp_ns,
     const JavaRef<jobject>& j_video_frame_buffer) {
-  rtc::scoped_refptr<VideoFrameBuffer> buffer =
+  scoped_refptr<VideoFrameBuffer> buffer =
       JavaToNativeFrameBuffer(env, j_video_frame_buffer);
   const VideoRotation rotation = jintToVideoRotation(j_rotation);
 

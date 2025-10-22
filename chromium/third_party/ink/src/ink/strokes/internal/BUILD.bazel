@@ -55,7 +55,6 @@ cc_library(
         "//ink/types:physical_distance",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/log:absl_check",
-        "@com_google_absl//absl/log:check",
         "@com_google_absl//absl/types:span",
         "@ink_stroke_modeler//ink_stroke_modeler:params",
         "@ink_stroke_modeler//ink_stroke_modeler:stroke_modeler",
@@ -472,7 +471,6 @@ cc_library(
         "//ink/strokes/input:stroke_input_batch",
         "//ink/types:duration",
         "@com_google_absl//absl/container:inlined_vector",
-        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/types:span",
     ],
 )

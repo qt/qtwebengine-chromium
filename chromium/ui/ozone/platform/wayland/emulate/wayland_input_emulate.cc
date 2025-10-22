@@ -2,45 +2,32 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "ui/ozone/platform/wayland/emulate/wayland_input_emulate.h"
 
-#include <ui-controls-unstable-v1-client-protocol.h>
+#include <ui-controls-unstable-v2-client-protocol.h>
 #include <wayland-client-protocol.h>
 
 #include <cstdint>
 #include <string>
 
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "ui/base/test/ui_controls.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
 #include "ui/display/types/display_constants.h"
 #include "ui/events/keycodes/dom/keycode_converter.h"
-#include "ui/ozone/platform/wayland/host/shell_toplevel_wrapper.h"
 #include "ui/ozone/platform/wayland/host/wayland_popup.h"
 #include "ui/ozone/platform/wayland/host/wayland_toplevel_window.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
-#include "ui/ozone/platform/wayland/host/xdg_popup_wrapper_impl.h"
-#include "ui/ozone/platform/wayland/host/xdg_surface_wrapper_impl.h"
-#include "ui/ozone/platform/wayland/host/xdg_toplevel_wrapper_impl.h"
+#include "ui/ozone/platform/wayland/host/xdg_popup.h"
+#include "ui/ozone/platform/wayland/host/xdg_toplevel.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ui/base/wayland/wayland_display_util.h"
 #include "ui/display/manager/managed_display_info.h"
 #include "ui/display/test/display_test_util.h"
 #endif
-
-namespace {
-
-// send_key_events() is only available since version 2.
-constexpr uint32_t kMinVersion = 2;
-
-}  // namespace
 
 namespace wl {
 
@@ -80,16 +67,16 @@ WaylandInputEmulate::WaylandInputEmulate(
     LOG(FATAL) << "ui-controls protocol extension is not available.";
   }
 
-  static constexpr zcr_ui_controls_v1_listener kUiControlsListener = {
+  static constexpr zcr_ui_controls_v2_listener kUiControlsListener = {
       .request_processed = &OnRequestProcessed};
-  zcr_ui_controls_v1_add_listener(ui_controls_, &kUiControlsListener, this);
+  zcr_ui_controls_v2_add_listener(ui_controls_, &kUiControlsListener, this);
 }
 
 WaylandInputEmulate::~WaylandInputEmulate() {
   auto* wayland_proxy = wl::WaylandProxy::GetInstance();
   wayland_proxy->SetDelegate(nullptr);
 
-  zcr_ui_controls_v1_destroy(ui_controls_);
+  zcr_ui_controls_v2_destroy(ui_controls_);
   wl_registry_destroy(registry_);
 }
 
@@ -112,7 +99,7 @@ void WaylandInputEmulate::EmulateKeyboardKey(ui::DomCode dom_code,
           << " state=" << key_state
           << " accelerator_state=" << accelerator_state;
 
-  zcr_ui_controls_v1_send_key_events(
+  zcr_ui_controls_v2_send_key_events(
       ui_controls_, ui::KeycodeConverter::DomCodeToEvdevCode(dom_code),
       key_state, accelerator_state, request_id);
 
@@ -146,22 +133,12 @@ void WaylandInputEmulate::EmulatePointerMotion(
 
   auto* wayland_proxy = wl::WaylandProxy::GetInstance();
 
-  xdg_surface* target_surface = nullptr;
+  struct wl_surface* target_surface = nullptr;
   gfx::Point target_location = mouse_screen_location;
   if (widget) {
     auto* window = wayland_proxy->GetWaylandWindowForAcceleratedWidget(widget);
-    xdg_surface* xdg_surface = nullptr;
-    if (auto* toplevel_window = window->AsWaylandToplevelWindow()) {
-      xdg_surface = toplevel_window->shell_toplevel()
-                        ->AsXDGToplevelWrapper()
-                        ->xdg_surface_wrapper()
-                        ->xdg_surface();
-    } else if (auto* popup = window->AsWaylandPopup()) {
-      xdg_surface = popup->shell_popup()
-                        ->AsXDGPopupWrapper()
-                        ->xdg_surface_wrapper()
-                        ->xdg_surface();
-    }
+    struct wl_surface* surface =
+        window->root_surface() ? window->root_surface()->surface() : nullptr;
     bool screen_coordinates = false;
     if (force_use_screen_coordinates_once_) {
       screen_coordinates = true;
@@ -170,9 +147,9 @@ void WaylandInputEmulate::EmulatePointerMotion(
 
     // If we can't use screen coordinates, we must have a surface so we can use
     // surface-local coordinates.
-    DCHECK(screen_coordinates || xdg_surface);
+    DCHECK(screen_coordinates || surface);
 
-    target_surface = screen_coordinates ? nullptr : xdg_surface;
+    target_surface = screen_coordinates ? nullptr : surface;
     // Ignore `force_use_screen_coordinates_once_` for selecting which
     // coordinates to use. This is because the only difference between
     // `mouse_screen_location` and `mouse_surface_location` is that the former
@@ -190,7 +167,7 @@ void WaylandInputEmulate::EmulatePointerMotion(
   VLOG(1) << "Requesting pointer motion: location="
           << target_location.ToString();
 
-  zcr_ui_controls_v1_send_mouse_move(ui_controls_, target_location.x(),
+  zcr_ui_controls_v2_send_mouse_move(ui_controls_, target_location.x(),
                                      target_location.y(), target_surface,
                                      request_id);
   wayland_proxy->FlushForTesting();
@@ -213,33 +190,9 @@ void WaylandInputEmulate::EmulatePointerButton(ui_controls::MouseButton button,
   VLOG(1) << "Requesting pointer button: button=" << button
           << " button_state=" << button_state;
 
-  zcr_ui_controls_v1_send_mouse_button(ui_controls_, button, button_state,
+  zcr_ui_controls_v2_send_mouse_button(ui_controls_, button, button_state,
                                        accelerator_state, request_id);
 
-  auto* wayland_proxy = wl::WaylandProxy::GetInstance();
-  wayland_proxy->FlushForTesting();
-}
-
-void WaylandInputEmulate::EmulateTouch(int action,
-                                       const gfx::Point& touch_screen_location,
-                                       int touch_id,
-                                       uint32_t request_id) {
-  if (AnyWindowWaitingForBufferCommit()) {
-    auto pending_request =
-        std::make_unique<PendingRequest>(PendingRequestType::Touch, request_id);
-    pending_request->action = action;
-    pending_request->touch_screen_location = touch_screen_location;
-    pending_request->touch_id = touch_id;
-    pending_requests_.emplace_back(std::move(pending_request));
-    return;
-  }
-
-  VLOG(1) << "Requesting touch: location=" << touch_screen_location.ToString()
-          << " action=" << action << " touch_id=" << touch_id;
-
-  zcr_ui_controls_v1_send_touch(
-      ui_controls_, action, touch_id, touch_screen_location.x(),
-      touch_screen_location.y(), /*surface=*/nullptr, request_id);
   auto* wayland_proxy = wl::WaylandProxy::GetInstance();
   wayland_proxy->FlushForTesting();
 }
@@ -341,7 +294,7 @@ void WaylandInputEmulate::OnWindowAdded(gfx::AcceleratedWidget widget) {
 
 // static
 void WaylandInputEmulate::OnRequestProcessed(void* data,
-                                             zcr_ui_controls_v1* ui_controls,
+                                             zcr_ui_controls_v2* ui_controls,
                                              uint32_t id) {
   auto* self = static_cast<WaylandInputEmulate*>(data);
   self->request_processed_callback_.Run(id);
@@ -354,10 +307,10 @@ void WaylandInputEmulate::OnGlobal(void* data,
                                    const char* interface,
                                    uint32_t version) {
   auto* self = static_cast<WaylandInputEmulate*>(data);
-  if (strcmp(interface, "zcr_ui_controls_v1") == 0 && version >= kMinVersion) {
+  if (std::string_view(interface) == "zcr_ui_controls_v2") {
     const wl_interface* wayland_interface =
-        static_cast<const wl_interface*>(&zcr_ui_controls_v1_interface);
-    self->ui_controls_ = static_cast<zcr_ui_controls_v1*>(
+        static_cast<const wl_interface*>(&zcr_ui_controls_v2_interface);
+    self->ui_controls_ = static_cast<zcr_ui_controls_v2*>(
         wl_registry_bind(registry, name, wayland_interface, version));
   }
 }
@@ -431,10 +384,6 @@ void WaylandInputEmulate::DispatchPendingRequests() {
       case PendingRequestType::MouseButton:
         EmulatePointerButton(event->button, event->button_state,
                              event->accelerator_state, event->request_id);
-        break;
-      case PendingRequestType::Touch:
-        EmulateTouch(event->action, event->touch_screen_location,
-                     event->touch_id, event->request_id);
         break;
     }
   }

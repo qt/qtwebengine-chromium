@@ -81,9 +81,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
       const KURL& url,
       const ResourceLoaderOptions& options,
       ReportingDisposition reporting_disposition,
-      base::optional_ref<const ResourceRequest::RedirectInfo> redirect_info,
-      FetchParameters::HasPreloadedResponseCandidate
-          has_preloaded_response_candidate) const override;
+      base::optional_ref<const ResourceRequest::RedirectInfo> redirect_info)
+      const override;
   mojom::FetchCacheMode ResourceRequestCachePolicy(
       const ResourceRequest&,
       ResourceType,
@@ -93,6 +92,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
                       WebScopedVirtualTimePauser&,
                       ResourceType) override;
 
+  void FillInitiatorInfo(FetchInitiatorInfo& initiator_info) override;
+
   void AddResourceTiming(mojom::blink::ResourceTimingInfoPtr,
                          const AtomicString& initiator_type) override;
   bool AllowImage() const override;
@@ -101,9 +102,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
 
   void PopulateResourceRequestBeforeCacheAccess(
       const ResourceLoaderOptions& options,
-      ResourceRequest& request,
-      FetchParameters::HasPreloadedResponseCandidate
-          has_preloaded_response_candidate) override;
+      ResourceRequest& request) override;
 
   void WillSendRequest(ResourceRequest& resource_request) override;
 
@@ -115,6 +114,7 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
 
   bool StartSpeculativeImageDecode(Resource* resource,
                                    base::OnceClosure callback) override;
+  bool SpeculativeDecodeRequestInFlight() const override;
 
   bool IsPrerendering() const override;
 
@@ -136,7 +136,8 @@ class CORE_EXPORT FrameFetchContext final : public BaseFetchContext,
       const ResourceRequestHead& resource_request,
       base::optional_ref<const KURL> alias_url,
       ResourceType type,
-      const FetchInitiatorInfo& initiator_info) override;
+      const FetchInitiatorInfo& initiator_info,
+      subresource_filter::ScopedRule* out_rule) override;
 
   // LoadingBehaviorObserver overrides:
   void DidObserveLoadingBehavior(LoadingBehaviorFlag) override;

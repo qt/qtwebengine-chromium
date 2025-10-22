@@ -42,6 +42,7 @@
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_throttle.h"
 #include "content/public/common/content_features.h"
@@ -816,13 +817,12 @@ IN_PROC_BROWSER_TEST_P(AttributionSrcBrowserTest,
   TestNavigationThrottleInserter throttle_inserter(
       web_contents(),
       base::BindLambdaForTesting(
-          [&](NavigationHandle* handle) -> std::unique_ptr<NavigationThrottle> {
-            auto throttle = std::make_unique<TestNavigationThrottle>(handle);
+          [&](NavigationThrottleRegistry& registry) -> void {
+            auto throttle = std::make_unique<TestNavigationThrottle>(registry);
             throttle->SetResponse(TestNavigationThrottle::WILL_REDIRECT_REQUEST,
                                   TestNavigationThrottle::SYNCHRONOUS,
                                   NavigationThrottle::CANCEL_AND_IGNORE);
-
-            return throttle;
+            registry.AddThrottle(std::move(throttle));
           }));
 
   // Create a separate server as we cannot register a `ControllableHttpResponse`
@@ -1752,8 +1752,11 @@ IN_PROC_BROWSER_TEST_P(
 
   run_loop.Run();
 
+  SimulateEndOfPaintHoldingOnPrimaryMainFrame(web_contents());
   SimulateGestureScrollSequence(web_contents(), gfx::Point(100, 100),
                                 gfx::Vector2dF(0, 15));
+  RunUntilInputProcessed(
+      web_contents()->GetPrimaryMainFrame()->GetRenderWidgetHost());
 
   GURL redirected_url(https_server()->GetURL("a.test", "/title2.html"));
   EXPECT_TRUE(NavigateToURLFromRendererWithoutUserGesture(web_contents(),

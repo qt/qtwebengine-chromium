@@ -32,9 +32,9 @@ class CPDF_ContentMarks {
   const CPDF_ContentMarkItem* GetItem(size_t index) const;
 
   void AddMark(ByteString name);
-  void AddMarkWithDirectDict(ByteString name, RetainPtr<CPDF_Dictionary> pDict);
+  void AddMarkWithDirectDict(ByteString name, RetainPtr<CPDF_Dictionary> dict);
   void AddMarkWithPropertiesHolder(const ByteString& name,
-                                   RetainPtr<CPDF_Dictionary> pDict,
+                                   RetainPtr<CPDF_Dictionary> dict,
                                    const ByteString& property_name);
   bool RemoveMark(CPDF_ContentMarkItem* pMarkItem);
   size_t FindFirstDifference(const CPDF_ContentMarks* other) const;
@@ -52,9 +52,9 @@ class CPDF_ContentMarks {
     int GetMarkedContentID() const;
     void AddMark(ByteString name);
     void AddMarkWithDirectDict(ByteString name,
-                               RetainPtr<CPDF_Dictionary> pDict);
+                               RetainPtr<CPDF_Dictionary> dict);
     void AddMarkWithPropertiesHolder(const ByteString& name,
-                                     RetainPtr<CPDF_Dictionary> pDict,
+                                     RetainPtr<CPDF_Dictionary> dict,
                                      const ByteString& property_name);
     bool RemoveMark(CPDF_ContentMarkItem* pMarkItem);
 
@@ -63,12 +63,12 @@ class CPDF_ContentMarks {
     MarkData(const MarkData& src);
     ~MarkData() override;
 
-    std::vector<RetainPtr<CPDF_ContentMarkItem>> m_Marks;
+    std::vector<RetainPtr<CPDF_ContentMarkItem>> marks_;
   };
 
   void EnsureMarkDataExists();
 
-  RetainPtr<MarkData> m_pMarkData;
+  RetainPtr<MarkData> mark_data_;
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_CONTENTMARKS_H_

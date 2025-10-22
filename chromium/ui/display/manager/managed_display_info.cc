@@ -393,7 +393,9 @@ ManagedDisplayInfo::ManagedDisplayInfo(int64_t id,
       clear_overscan_insets_(false),
       bits_per_channel_(0),
       variable_refresh_rate_state_(VariableRefreshRateState::kVrrNotCapable),
-      vsync_rate_min_(std::nullopt) {}
+      vsync_rate_min_(std::nullopt) {
+  has_overscan_ = true;
+}
 
 ManagedDisplayInfo::ManagedDisplayInfo(const ManagedDisplayInfo& other) =
     default;
@@ -632,7 +634,11 @@ std::string ManagedDisplayInfo::ToString() const {
       panel_corners_radii_.ToString().c_str(),
       PanelOrientationToString(panel_orientation_).c_str(),
       detected_ ? "true" : "false",
-      display_color_spaces_.GetRasterColorSpace().ToString().c_str());
+      display_color_spaces_
+          .GetRasterAndCompositeColorSpace(
+              gfx::ContentColorUsage::kWideColorGamut)
+          .ToString()
+          .c_str());
 
   return result;
 }

@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "api/audio_options.h"
+#include "api/create_modular_peer_connection_factory.h"
 #include "api/enable_media_with_defaults.h"
 #include "api/jsep.h"
 #include "api/make_ref_counted.h"
@@ -38,7 +39,6 @@
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp8_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp9_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_open_h264_adapter.h"
-#include "p2p/base/basic_packet_socket_factory.h"
 #include "p2p/base/port_interface.h"
 #include "p2p/test/test_turn_server.h"
 #include "pc/peer_connection.h"
@@ -64,22 +64,22 @@
 namespace webrtc {
 namespace {
 
-using ::webrtc::test::GetGlobalMetricsLogger;
-using ::webrtc::test::ImprovementDirection;
-using ::webrtc::test::Unit;
+using test::GetGlobalMetricsLogger;
+using test::ImprovementDirection;
+using test::Unit;
 
-static const int kDefaultTestTimeMs = 15000;
-static const int kRampUpTimeMs = 5000;
-static const int kPollIntervalTimeMs = 50;
-static const SocketAddress kDefaultLocalAddress("1.1.1.1", 0);
-static const char kTurnInternalAddress[] = "88.88.88.0";
-static const char kTurnExternalAddress[] = "88.88.88.1";
-static const int kTurnInternalPort = 3478;
-static const int kTurnExternalPort = 0;
+const int kDefaultTestTimeMs = 15000;
+const int kRampUpTimeMs = 5000;
+const int kPollIntervalTimeMs = 50;
+const SocketAddress kDefaultLocalAddress("1.1.1.1", 0);
+const char kTurnInternalAddress[] = "88.88.88.0";
+const char kTurnExternalAddress[] = "88.88.88.1";
+const int kTurnInternalPort = 3478;
+const int kTurnExternalPort = 0;
 // The video's configured max bitrate in webrtcvideoengine.cc is 1.7 Mbps.
 // Setting the network bandwidth to 1 Mbps allows the video's bitrate to push
 // the network's limitations.
-static const int kNetworkBandwidth = 1000000;
+const int kNetworkBandwidth = 1000000;
 
 }  // namespace
 
@@ -105,14 +105,14 @@ class PeerConnectionWrapperForRampUpTest : public PeerConnectionWrapper {
   using PeerConnectionWrapper::PeerConnectionWrapper;
 
   PeerConnectionWrapperForRampUpTest(
-      rtc::scoped_refptr<PeerConnectionFactoryInterface> pc_factory,
-      rtc::scoped_refptr<PeerConnectionInterface> pc,
+      scoped_refptr<PeerConnectionFactoryInterface> pc_factory,
+      scoped_refptr<PeerConnectionInterface> pc,
       std::unique_ptr<MockPeerConnectionObserver> observer)
       : PeerConnectionWrapper::PeerConnectionWrapper(pc_factory,
                                                      pc,
                                                      std::move(observer)) {}
 
-  bool AddIceCandidates(std::vector<const IceCandidateInterface*> candidates) {
+  bool AddIceCandidates(std::vector<const IceCandidate*> candidates) {
     bool success = true;
     for (const auto candidate : candidates) {
       if (!pc()->AddIceCandidate(candidate)) {
@@ -122,27 +122,26 @@ class PeerConnectionWrapperForRampUpTest : public PeerConnectionWrapper {
     return success;
   }
 
-  rtc::scoped_refptr<VideoTrackInterface> CreateLocalVideoTrack(
+  scoped_refptr<VideoTrackInterface> CreateLocalVideoTrack(
       FrameGeneratorCapturerVideoTrackSource::Config config,
       Clock* clock) {
     video_track_sources_.emplace_back(
-        rtc::make_ref_counted<FrameGeneratorCapturerVideoTrackSource>(
+        make_ref_counted<FrameGeneratorCapturerVideoTrackSource>(
             config, clock, /*is_screencast=*/false));
     video_track_sources_.back()->Start();
-    return rtc::scoped_refptr<VideoTrackInterface>(
-        pc_factory()->CreateVideoTrack(video_track_sources_.back(),
-                                       CreateRandomUuid()));
+    return scoped_refptr<VideoTrackInterface>(pc_factory()->CreateVideoTrack(
+        video_track_sources_.back(), CreateRandomUuid()));
   }
 
-  rtc::scoped_refptr<AudioTrackInterface> CreateLocalAudioTrack(
-      const cricket::AudioOptions options) {
-    rtc::scoped_refptr<AudioSourceInterface> source =
+  scoped_refptr<AudioTrackInterface> CreateLocalAudioTrack(
+      const AudioOptions options) {
+    scoped_refptr<AudioSourceInterface> source =
         pc_factory()->CreateAudioSource(options);
     return pc_factory()->CreateAudioTrack(CreateRandomUuid(), source.get());
   }
 
  private:
-  std::vector<rtc::scoped_refptr<FrameGeneratorCapturerVideoTrackSource>>
+  std::vector<scoped_refptr<FrameGeneratorCapturerVideoTrackSource>>
       video_track_sources_;
 };
 
@@ -162,7 +161,7 @@ class PeerConnectionRampUpTest : public ::testing::Test {
     virtual_socket_server_.set_bandwidth(kNetworkBandwidth / 8);
   }
 
-  virtual ~PeerConnectionRampUpTest() {
+  ~PeerConnectionRampUpTest() override {
     SendTask(network_thread(), [this] { turn_servers_.clear(); });
   }
 
@@ -180,7 +179,8 @@ class PeerConnectionRampUpTest : public ::testing::Test {
     pcf_deps.worker_thread = worker_thread_.get();
     pcf_deps.signaling_thread = Thread::Current();
     pcf_deps.socket_factory = &firewall_socket_server_;
-    auto network_manager = std::make_unique<FakeNetworkManager>();
+    auto network_manager =
+        std::make_unique<FakeNetworkManager>(network_thread());
     network_manager->AddInterface(kDefaultLocalAddress);
     pcf_deps.network_manager = std::move(network_manager);
     pcf_deps.adm = FakeAudioCaptureModule::Create();
@@ -217,7 +217,7 @@ class PeerConnectionRampUpTest : public ::testing::Test {
     FrameGeneratorCapturerVideoTrackSource::Config config;
     caller_->AddTrack(caller_->CreateLocalVideoTrack(config, clock_));
     // Disable highpass filter so that we can get all the test audio frames.
-    cricket::AudioOptions options;
+    AudioOptions options;
     options.highpass_filter = false;
     caller_->AddTrack(caller_->CreateLocalAudioTrack(options));
 

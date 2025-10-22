@@ -12,6 +12,8 @@
 #include "base/logging.h"
 #include "base/time/time.h"
 #include "components/signin/public/identity_manager/account_info.h"
+#include "components/signin/public/identity_manager/identity_manager.h"
+#include "components/signin/public/identity_manager/tribool.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 #include "google_apis/gaia/google_service_auth_error.h"
 
@@ -544,13 +546,22 @@ void AccountManagedStatusFinder::OnExtendedAccountInfoUpdated(
   }
 
   // Keep waiting if `info` isn't complete yet.
-  if (info.hosted_domain.empty()) {
+  if (info.IsManaged() == signin::Tribool::kUnknown) {
     return;
   }
 
-  // This is the relevant account! Determine its type.
-  OutcomeDeterminedAsync(info.IsManaged() ? Outcome::kEnterprise
-                                          : Outcome::kConsumerNotWellKnown);
+  if (!identity_manager_->AreRefreshTokensLoaded()) {
+    // `OnRefreshTokensLoaded()` will update the outcome.
+    return;
+  }
+
+  // This is the relevant account! Determine its type. It can't be any of the
+  // types that can be known synchronously, otherwise it would have been
+  // determined already, either in the constructor or in
+  // `OnRefreshTokensLoaded()`.
+  OutcomeDeterminedAsync(signin::TriboolToBoolOrDie(info.IsManaged())
+                             ? Outcome::kEnterprise
+                             : Outcome::kConsumerNotWellKnown);
 }
 
 void AccountManagedStatusFinder::OnRefreshTokenRemovedForAccount(
@@ -573,7 +584,7 @@ void AccountManagedStatusFinder::OnErrorStateOfRefreshTokenUpdatedForAccount(
   DCHECK_EQ(outcome_, Outcome::kPending);
 
   if (!identity_manager_->AreRefreshTokensLoaded()) {
-    // `OnRefreshTokensLoaded` will update the outcome.
+    // `OnRefreshTokensLoaded()` will update the outcome.
     return;
   }
 
@@ -648,15 +659,16 @@ AccountManagedStatusFinder::DetermineOutcome() const {
   // The easy cases didn't apply, so actually get the canonical info from
   // IdentityManager. This may or may not be available immediately.
   AccountInfo info = identity_manager_->FindExtendedAccountInfo(account_);
-  if (!info.hosted_domain.empty()) {
-    return info.IsManaged() ? Outcome::kEnterprise
-                            : Outcome::kConsumerNotWellKnown;
+  if (info.IsManaged() != signin::Tribool::kUnknown) {
+    return signin::TriboolToBoolOrDie(info.IsManaged())
+               ? Outcome::kEnterprise
+               : Outcome::kConsumerNotWellKnown;
   }
 
-  GoogleServiceAuthError authError =
+  GoogleServiceAuthError auth_error =
       identity_manager_->GetErrorStateOfRefreshTokenForAccount(
           account_.account_id);
-  if (!ignore_persistent_auth_errors_ && authError.IsPersistentError()) {
+  if (!ignore_persistent_auth_errors_ && auth_error.IsPersistentError()) {
     return Outcome::kTimeout;
   }
 

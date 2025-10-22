@@ -1,6 +1,6 @@
-/* Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
+/* Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
  * Copyright (C) 2015-2024 Google Inc.
  * Modifications Copyright (C) 2020 Advanced Micro Devices, Inc. All rights reserved.
  *
@@ -19,6 +19,7 @@
 #pragma once
 #include "state_tracker/state_object.h"
 #include <vulkan/utility/vk_safe_struct.hpp>
+#include "utils/image_utils.h"
 
 // Note: some of the types in this header are needed by both the DescriptorSet and Pipeline
 // state objects. It is helpful to have a separate header to avoid circular #include madness.
@@ -57,7 +58,8 @@ struct hash<SamplerUsedByImage> {
 
 namespace vvl {
 
-class Sampler : public StateObject {
+class SamplerSubState;
+class Sampler : public StateObject, public SubStateManager<SamplerSubState> {
   public:
     const vku::safe_VkSamplerCreateInfo safe_create_info;
     const VkSamplerCreateInfo &create_info;
@@ -72,6 +74,8 @@ class Sampler : public StateObject {
           samplerConversion(GetConversion(pCreateInfo)),
           customCreateInfo(GetCustomCreateInfo(pCreateInfo)) {}
 
+    void Destroy() override;
+    void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) override;
     VkSampler VkHandle() const { return handle_.Cast<VkSampler>(); }
 
   private:
@@ -86,6 +90,32 @@ class Sampler : public StateObject {
         return result;
     }
 };
+
+class SamplerSubState {
+  public:
+    explicit SamplerSubState(Sampler &obj) : base(obj) {}
+    SamplerSubState(const SamplerSubState &) = delete;
+    SamplerSubState &operator=(const SamplerSubState &) = delete;
+    virtual ~SamplerSubState() {}
+    virtual void Destroy() {}
+    virtual void NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {}
+
+    Sampler &base;
+};
+
+inline void Sampler::Destroy() {
+    for (auto &item : sub_states_) {
+        item.second->Destroy();
+    }
+    StateObject::Destroy();
+}
+
+inline void Sampler::NotifyInvalidate(const StateObject::NodeList &invalid_nodes, bool unlink) {
+    for (auto &item : sub_states_) {
+        item.second->NotifyInvalidate(invalid_nodes, unlink);
+    }
+    StateObject::NotifyInvalidate(invalid_nodes, unlink);
+}
 
 class SamplerYcbcrConversion : public StateObject {
   public:

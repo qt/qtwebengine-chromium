@@ -10,19 +10,13 @@
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/permission_request_description.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "services/device/public/mojom/sensor_provider.mojom-shared.h"
-#include "third_party/blink/public/common/permissions/permission_utils.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 
 using device::mojom::SensorType;
-
-namespace features {
-BASE_FEATURE(kAllowSensorsToEnterBfcache,
-             "AllowSensorsToEnterBfcache",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-}
 
 namespace content {
 
@@ -89,7 +83,10 @@ void FrameSensorProviderProxy::GetSensor(device::mojom::SensorType type,
       ->GetPermissionController()
       ->RequestPermissionFromCurrentDocument(
           &render_frame_host(),
-          PermissionRequestDescription(blink::PermissionType::SENSORS),
+          PermissionRequestDescription(
+              content::PermissionDescriptorUtil::
+                  CreatePermissionDescriptorForPermissionType(
+                      blink::PermissionType::SENSORS)),
           base::BindOnce(
               &FrameSensorProviderProxy::OnPermissionRequestCompleted,
               weak_factory_.GetWeakPtr(), type, std::move(callback)));
@@ -103,26 +100,6 @@ void FrameSensorProviderProxy::OnPermissionRequestCompleted(
     std::move(callback).Run(
         device::mojom::SensorCreationResult::ERROR_NOT_ALLOWED, nullptr);
     return;
-  }
-
-  // Unblock the orientation sensors as these are tested to play well with
-  // back-forward cache. This is conservative.
-  // TODO(crbug.com/40660549): Test and unblock all of the sensors to work with
-  // back-forward cache.
-  switch (type) {
-    case SensorType::ABSOLUTE_ORIENTATION_EULER_ANGLES:
-    case SensorType::ABSOLUTE_ORIENTATION_QUATERNION:
-    case SensorType::RELATIVE_ORIENTATION_EULER_ANGLES:
-    case SensorType::RELATIVE_ORIENTATION_QUATERNION:
-      break;
-    default:
-      if (!base::FeatureList::IsEnabled(
-              features::kAllowSensorsToEnterBfcache)) {
-        static_cast<RenderFrameHostImpl*>(&render_frame_host())
-            ->OnBackForwardCacheDisablingStickyFeatureUsed(
-                blink::scheduler::WebSchedulerTrackedFeature::
-                    kRequestedBackForwardCacheBlockedSensors);
-      }
   }
 
   auto* web_contents_sensor_provider =

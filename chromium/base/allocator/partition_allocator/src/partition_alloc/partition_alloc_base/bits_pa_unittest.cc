@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 // This file contains the unit tests for the bit utilities.
 
 #include <cstddef>
@@ -229,6 +234,24 @@ TEST(BitsTestPA, CountrZeroSizeT) {
   EXPECT_EQ(1, CountrZero(size_t{2}));
   EXPECT_EQ(0, CountrZero(size_t{1}));
 #endif
+}
+
+TEST(BitsTestPA, RotR32) {
+  EXPECT_EQ(RotR<uint32_t>(3696969696, 0), 3696969696u);
+  EXPECT_EQ(RotR<uint32_t>(3696969696, 1), 1848484848u);
+  EXPECT_EQ(RotR<uint32_t>(3696969696, 10), 4164359889u);
+  EXPECT_EQ(RotR<uint32_t>(3696969696, 31), 3098972097u);
+  EXPECT_EQ(RotR<uint32_t>(3696969696, 32), 3696969696u);
+  EXPECT_EQ(RotR<uint32_t>(3696969696, 40), 3772537671u);
+}
+
+TEST(BitsTestPA, RotR64) {
+  EXPECT_EQ(RotR<uint64_t>(36969696969696, 0), 36969696969696ull);
+  EXPECT_EQ(RotR<uint64_t>(36969696969696, 1), 18484848484848ull);
+  EXPECT_EQ(RotR<uint64_t>(36969696969696, 10), 17870283357509347824ull);
+  EXPECT_EQ(RotR<uint64_t>(36969696969696, 63), 73939393939392ull);
+  EXPECT_EQ(RotR<uint64_t>(36969696969696, 64), 36969696969696ull);
+  EXPECT_EQ(RotR<uint64_t>(36969696969696, 80), 14114281232743247271ull);
 }
 
 }  // namespace partition_alloc::internal::base::bits

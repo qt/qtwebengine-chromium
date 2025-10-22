@@ -150,15 +150,6 @@ void LayerImpl::UpdateDebugInfo(LayerDebugInfo* debug_info) {
                                     existing_invalidations.end());
 }
 
-void LayerImpl::SetMayContainVideo(bool may_contain_video) {
-  if (may_contain_video_ == may_contain_video) {
-    return;
-  }
-
-  may_contain_video_ = may_contain_video;
-  SetNeedsPushProperties();
-}
-
 void LayerImpl::SetHasTransformNode(bool val) {
   if (has_transform_node_ == val) {
     return;
@@ -436,7 +427,6 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
     layer->offset_to_transform_parent_ = offset_to_transform_parent_;
     layer->contents_opaque_ = contents_opaque_;
     layer->contents_opaque_for_text_ = contents_opaque_for_text_;
-    layer->may_contain_video_ = may_contain_video_;
     layer->should_check_backface_visibility_ =
         should_check_backface_visibility_;
     layer->draws_content_ = draws_content_;
@@ -471,7 +461,7 @@ void LayerImpl::PushPropertiesTo(LayerImpl* layer) {
     }
   }
 
-  if (layer_tree_impl()->settings().UseLayerContextForDisplay()) {
+  if (layer_tree_impl()->settings().TreesInVizInClientProcess()) {
     // Ensure updates also propagate to the display tree on its next update.
     layer->SetNeedsPushProperties(changed_properties_);
   }
@@ -537,11 +527,13 @@ bool LayerImpl::LayerPropertyChangedNotFromPropertyTrees() const {
 
 void LayerImpl::NoteLayerPropertyChanged() {
   layer_property_changed_not_from_property_trees_ = true;
+  SetNeedsPushProperties();
   layer_tree_impl()->set_needs_update_draw_properties();
 }
 
 void LayerImpl::NoteLayerPropertyChangedFromPropertyTrees() {
   layer_property_changed_from_property_trees_ = true;
+  SetNeedsPushProperties();
   layer_tree_impl()->set_needs_update_draw_properties();
 }
 
@@ -771,7 +763,7 @@ void LayerImpl::SetNeedsPushProperties(uint8_t changed_props) {
 
   // We never push properties from the active tree unless using a LayerContext.
   if (layer_tree_impl()->IsActiveTree() &&
-      !layer_tree_impl()->settings().UseLayerContextForDisplay()) {
+      !layer_tree_impl()->settings().TreesInVizInClientProcess()) {
     return;
   }
 
@@ -805,7 +797,7 @@ void LayerImpl::AsValueInto(base::trace_event::TracedValue* state) const {
   // consumers.
   viz::TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
       TRACE_DISABLED_BY_DEFAULT("cc.debug"), state, "cc::LayerImpl",
-      LayerTypeAsString(GetLayerType()), this);
+      LayerTypeAsString(GetLayerType()), viz::TracedValue::Id(this));
   state->SetInteger("layer_id", id());
   MathUtil::AddToTracedValue("bounds", bounds_, state);
 

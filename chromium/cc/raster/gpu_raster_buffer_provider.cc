@@ -101,16 +101,9 @@ void GpuRasterBufferProvider::RasterBufferImpl::Playback(
     const RasterSource::PlaybackSettings& playback_settings,
     const GURL& url) {
   TRACE_EVENT0("cc", "GpuRasterBuffer::Playback");
-
-  viz::RasterContextProvider::ScopedRasterContextLock scoped_context(
-      client_->worker_context_provider_, url.possibly_invalid_spec().c_str());
-  gpu::raster::RasterInterface* ri =
-      client_->worker_context_provider_->RasterInterface();
   PlaybackOnWorkerThread(raster_source, raster_full_rect, raster_dirty_rect,
                          new_content_id, transform, playback_settings, url);
 
-  backing_->mailbox_sync_token =
-      viz::ClientResourceProvider::GenerateSyncTokenHelper(ri);
   backing_->returned_sync_token = gpu::SyncToken();
 }
 
@@ -120,17 +113,17 @@ bool GpuRasterBufferProvider::RasterBufferImpl::
 }
 
 GpuRasterBufferProvider::GpuRasterBufferProvider(
+    scoped_refptr<gpu::SharedImageInterface> sii,
     viz::RasterContextProvider* compositor_context_provider,
     viz::RasterContextProvider* worker_context_provider,
-    const RasterCapabilities& raster_caps,
+    bool is_overlay_candidate,
     const gfx::Size& max_tile_size,
-    bool unpremultiply_and_dither_low_bit_depth_tiles,
     RasterQueryQueue* const pending_raster_queries,
     float raster_metric_probability)
-    : compositor_context_provider_(compositor_context_provider),
+    : sii_(sii),
+      compositor_context_provider_(compositor_context_provider),
       worker_context_provider_(worker_context_provider),
-      tile_format_(raster_caps.tile_format),
-      tile_overlay_candidate_(raster_caps.tile_overlay_candidate),
+      tile_overlay_candidate_(is_overlay_candidate),
       max_tile_size_(max_tile_size),
       pending_raster_queries_(pending_raster_queries),
       raster_metric_probability_(raster_metric_probability),
@@ -176,14 +169,6 @@ std::unique_ptr<RasterBuffer> GpuRasterBufferProvider::AcquireBufferForRaster(
 
 void GpuRasterBufferProvider::Flush() {
   compositor_context_provider_->ContextSupport()->FlushPendingWork();
-}
-
-viz::SharedImageFormat GpuRasterBufferProvider::GetFormat() const {
-  return tile_format_;
-}
-
-bool GpuRasterBufferProvider::IsResourcePremultiplied() const {
-  return !ShouldUnpremultiplyAndDitherResource(GetFormat());
 }
 
 bool GpuRasterBufferProvider::IsResourceReadyToDraw(
@@ -271,6 +256,8 @@ void GpuRasterBufferProvider::RasterBufferImpl::PlaybackOnWorkerThreadInternal(
     const RasterSource::PlaybackSettings& playback_settings,
     const GURL& url,
     RasterQuery* query) {
+  viz::RasterContextProvider::ScopedRasterContextLock scoped_context(
+      client_->worker_context_provider_, url.possibly_invalid_spec().c_str());
   gpu::raster::RasterInterface* ri =
       client_->worker_context_provider_->RasterInterface();
   DCHECK(ri);
@@ -335,9 +322,10 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
   gpu::raster::RasterInterface* ri =
       client_->worker_context_provider_->RasterInterface();
   bool mailbox_needs_clear = false;
+  std::unique_ptr<gpu::RasterScopedAccess> ri_access;
   if (!backing_->shared_image()) {
     DCHECK(!backing_->returned_sync_token.HasData());
-    auto* sii = client_->worker_context_provider_->SharedImageInterface();
+    auto* sii = client_->sii_.get();
 
     // This SharedImage will serve as the destination of the raster defined by
     // `raster_source` before being sent off to the display compositor.
@@ -351,9 +339,13 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
     }
     backing_->CreateSharedImage(sii, flags, "GpuRasterTile");
     mailbox_needs_clear = true;
-    ri->WaitSyncTokenCHROMIUM(sii->GenUnverifiedSyncToken().GetConstData());
+    ri_access = backing_->shared_image()->BeginRasterAccess(
+        ri, sii->GenUnverifiedSyncToken(),
+        /*readonly=*/false);
   } else {
-    ri->WaitSyncTokenCHROMIUM(backing_->returned_sync_token.GetConstData());
+    ri_access = backing_->shared_image()->BeginRasterAccess(
+        ri, backing_->returned_sync_token,
+        /*readonly=*/false);
   }
 
   // Assume legacy MSAA if sample count is positive.
@@ -362,14 +354,6 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
           ? (client_->is_using_dmsaa_ ? gpu::raster::kDMSAA
                                       : gpu::raster::kMSAA)
           : gpu::raster::kNoMSAA;
-  // msaa_sample_count should be 1, 2, 4, 8, 16, 32, 64,
-  // and log2(msaa_sample_count) should be [0,6].
-  // If playback_settings.msaa_sample_count <= 0, the MSAA is not used. It is
-  // equivalent to MSAA sample count 1.
-  uint32_t sample_count =
-      std::clamp(playback_settings.msaa_sample_count, 1, 64);
-  UMA_HISTOGRAM_CUSTOM_COUNTS("Gpu.Rasterization.Raster.MSAASampleCountLog2",
-                              std::bit_width(sample_count) - 1, 0, 7, 7);
   // With Raw Draw, the framebuffer will be the rasterization target. It cannot
   // support LCD text, so disable LCD text for Raw Draw backings.
   // TODO(penghuang): remove it when sktext::gpu::Slug can be serialized.
@@ -398,15 +382,8 @@ void GpuRasterBufferProvider::RasterBufferImpl::RasterizeSource(
       playback_settings.raster_inducing_scroll_offsets,
       const_cast<RasterSource*>(raster_source)->max_op_size_hint());
   ri->EndRasterCHROMIUM();
-
-  // TODO(ericrk): Handle unpremultiply+dither for 4444 cases.
-  // https://crbug.com/789153
-}
-
-bool GpuRasterBufferProvider::ShouldUnpremultiplyAndDitherResource(
-    viz::SharedImageFormat format) const {
-  // TODO(crbug.com/40042400): Re-enable for OOPR.
-  return false;
+  backing_->mailbox_sync_token =
+      gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
 }
 
 }  // namespace cc

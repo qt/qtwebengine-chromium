@@ -8,6 +8,7 @@ include_rules = [
   "+third_party/boringssl/src/pki",
   "+third_party/nss",
   "+third_party/protobuf/src/google/protobuf",
+  "+third_party/re2",
   "+third_party/zlib",
   "+third_party/simdutf",
 
@@ -64,6 +65,10 @@ specific_include_rules = {
 
   "cookie_partition_key\.(cc|h)": [
     "+mojo/public/cpp/bindings/default_construct_tag.h",
+  ],
+
+  "proxy_config_service_linux.cc": [
+    "+ui/base/glib",
   ],
 
   # Dependencies specific for fuzz targets and other fuzzing-related code.

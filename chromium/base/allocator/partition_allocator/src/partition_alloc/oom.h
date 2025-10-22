@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_OOM_H_
 #define PARTITION_ALLOC_OOM_H_
 
@@ -51,6 +56,16 @@ namespace internal {
 // PA_NOT_TAIL_CALLED to ensure that its parent function stays on the stack.
 [[noreturn]] PA_NOT_TAIL_CALLED PA_COMPONENT_EXPORT(
     PARTITION_ALLOC) void OnNoMemory(size_t size);
+
+#if PA_BUILDFLAG(IS_POSIX)
+// See above for annotations.
+//
+// THis is used to identify cases where the kernel return ENOMEM for memory
+// management calls. This can indicate several things, but in particular on
+// Linux that the current process has exceeded the per-process VMA limit.
+[[noreturn]] PA_NOT_TAIL_CALLED PA_COMPONENT_EXPORT(
+    PARTITION_ALLOC) void OnErrnoNoMem();
+#endif
 
 // OOM_CRASH(size) - Specialization of IMMEDIATE_CRASH which will raise a custom
 // exception on Windows to signal this is OOM and not a normal assert.

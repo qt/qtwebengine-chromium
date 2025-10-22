@@ -24,19 +24,15 @@ cc_library(
     deps = [
         ":affine_transform_jni",
         ":angle_jni",
-        ":envelope_jni_helper",
+        ":box_accumulator_jni",
         ":intersects_jni",
         ":mesh_format_jni",
         ":mesh_jni",
-        ":mutable_envelope_jni",
         ":parallelogram_jni",
-        ":parallelogram_jni_helper",
         ":partitioned_mesh_jni",
         ":rect_jni",
-        ":rect_jni_helper",
         ":triangle_jni",
         ":vec_jni",
-        ":vec_jni_helper",
     ],
     alwayslink = 1,
 )
@@ -60,6 +56,7 @@ cc_library(
     name = "intersects_jni",
     srcs = ["intersects_jni.cc"],
     deps = [
+        ":partitioned_mesh_jni_helper",
         "//ink/geometry:affine_transform",
         "//ink/geometry:angle",
         "//ink/geometry:intersects",
@@ -86,6 +83,9 @@ cc_library(
     name = "partitioned_mesh_jni",
     srcs = ["partitioned_mesh_jni.cc"],
     deps = [
+        ":mesh_format_jni_helper",
+        ":mesh_jni_helper",
+        ":partitioned_mesh_jni_helper",
         "//ink/geometry:affine_transform",
         "//ink/geometry:angle",
         "//ink/geometry:mesh",
@@ -112,7 +112,9 @@ cc_library(
     name = "mesh_jni",
     srcs = ["mesh_jni.cc"],
     deps = [
-        ":envelope_jni_helper",
+        ":box_accumulator_jni_helper",
+        ":mesh_format_jni_helper",
+        ":mesh_jni_helper",
         ":vec_jni_helper",
         "//ink/geometry:envelope",
         "//ink/geometry:mesh",
@@ -132,10 +134,24 @@ cc_library(
 )
 
 cc_library(
-    name = "mutable_envelope_jni",
-    srcs = ["mutable_envelope_jni.cc"],
+    name = "mesh_jni_helper",
+    hdrs = ["mesh_jni_helper.h"],
     deps = [
-        ":envelope_jni_helper",
+        "//ink/geometry:mesh",
+        "@com_google_absl//absl/log:absl_check",
+    ] + select({
+        "@platforms//os:android": [],
+        "//conditions:default": [
+            "@rules_jni//jni",
+        ],
+    }),
+)
+
+cc_library(
+    name = "box_accumulator_jni",
+    srcs = ["box_accumulator_jni.cc"],
+    deps = [
+        ":box_accumulator_jni_helper",
         "//ink/geometry:angle",
         "//ink/geometry:envelope",
         "//ink/geometry:point",
@@ -157,6 +173,7 @@ cc_library(
     name = "mesh_format_jni",
     srcs = ["mesh_format_jni.cc"],
     deps = [
+        ":mesh_format_jni_helper",
         "//ink/geometry:mesh_format",
         "//ink/jni/internal:jni_defines",
     ] + select({
@@ -169,15 +186,10 @@ cc_library(
 )
 
 cc_library(
-    name = "envelope_jni_helper",
-    srcs = ["envelope_jni_helper.cc"],
-    hdrs = ["envelope_jni_helper.h"],
-    # Temporarily limited visibility while new APIs are being developed.
-    visibility = ["//ink:__subpackages__"],
+    name = "mesh_format_jni_helper",
+    hdrs = ["mesh_format_jni_helper.h"],
     deps = [
-        "//ink/geometry:envelope",
-        "//ink/geometry:rect",
-        "//ink/jni/internal:jni_defines",
+        "//ink/geometry:mesh_format",
         "@com_google_absl//absl/log:absl_check",
     ] + select({
         "@platforms//os:android": [],
@@ -185,7 +197,25 @@ cc_library(
             "@rules_jni//jni",
         ],
     }),
-    alwayslink = 1,
+)
+
+cc_library(
+    name = "box_accumulator_jni_helper",
+    srcs = ["box_accumulator_jni_helper.cc"],
+    hdrs = ["box_accumulator_jni_helper.h"],
+    visibility = ["//ink:__subpackages__"],
+    deps = [
+        "//ink/geometry:envelope",
+        "//ink/geometry:rect",
+        "//ink/jni/internal:jni_defines",
+        "//ink/jni/internal:jni_jvm_interface",
+        "@com_google_absl//absl/log:absl_check",
+    ] + select({
+        "@platforms//os:android": [],
+        "//conditions:default": [
+            "@rules_jni//jni",
+        ],
+    }),
 )
 
 cc_library(
@@ -215,6 +245,7 @@ cc_library(
         ":vec_jni_helper",
         "//ink/geometry:rect",
         "//ink/jni/internal:jni_defines",
+        "//ink/jni/internal:jni_jvm_interface",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/log:absl_check",
     ] + select({
@@ -223,7 +254,6 @@ cc_library(
             "@rules_jni//jni",
         ],
     }),
-    alwayslink = 1,
 )
 
 cc_library(
@@ -256,6 +286,7 @@ cc_library(
         "//ink/geometry:quad",
         "//ink/geometry:vec",
         "//ink/jni/internal:jni_defines",
+        "//ink/jni/internal:jni_jvm_interface",
         "@com_google_absl//absl/log",
     ] + select({
         "@platforms//os:android": [],
@@ -275,6 +306,7 @@ cc_library(
         "//ink/geometry:point",
         "//ink/geometry:quad",
         "//ink/jni/internal:jni_defines",
+        "//ink/jni/internal:jni_jvm_interface",
         "@com_google_absl//absl/log:absl_check",
     ] + select({
         "@platforms//os:android": [],
@@ -307,11 +339,11 @@ cc_library(
     name = "vec_jni_helper",
     srcs = ["vec_jni_helper.cc"],
     hdrs = ["vec_jni_helper.h"],
-    # Temporarily limited visibility while new APIs are being developed.
     visibility = ["//ink:__subpackages__"],
     deps = [
         "//ink/geometry:point",
         "//ink/geometry:vec",
+        "//ink/jni/internal:jni_jvm_interface",
         "@com_google_absl//absl/log:absl_check",
     ] + select({
         "@platforms//os:android": [],
@@ -319,7 +351,6 @@ cc_library(
             "@rules_jni//jni",
         ],
     }),
-    alwayslink = 1,
 )
 
 cc_library(
@@ -336,4 +367,18 @@ cc_library(
         ],
     }),
     alwayslink = 1,
+)
+
+cc_library(
+    name = "partitioned_mesh_jni_helper",
+    hdrs = ["partitioned_mesh_jni_helper.h"],
+    deps = [
+        "//ink/geometry:partitioned_mesh",
+        "@com_google_absl//absl/log:absl_check",
+    ] + select({
+        "@platforms//os:android": [],
+        "//conditions:default": [
+            "@rules_jni//jni",
+        ],
+    }),
 )

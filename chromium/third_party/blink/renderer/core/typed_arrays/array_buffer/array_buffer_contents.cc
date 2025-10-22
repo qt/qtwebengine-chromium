@@ -24,11 +24,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/typed_arrays/array_buffer/array_buffer_contents.h"
 
 #include <cstring>
@@ -36,6 +31,7 @@
 
 #include "base/bits.h"
 #include "base/feature_list.h"
+#include "base/memory/platform_shared_memory_region.h"
 #include "base/system/sys_info.h"
 #include "gin/array_buffer.h"
 #include "partition_alloc/oom.h"
@@ -81,12 +77,14 @@ ArrayBufferContents::ArrayBufferContents(
   auto deleter = [](void* buffer, size_t length, void* data) {
     size_t offset = reinterpret_cast<uintptr_t>(buffer) %
                     base::SysInfo::VMAllocationGranularity();
-    uint8_t* base = static_cast<uint8_t*>(buffer) - offset;
-    auto mapping = base::span(base, length + offset);
+    // SAFETY: Memory that was allocated is VMAllocationGranularity() aligned.
+    // the overallocated bytes are at the beginning of the buffer.
+    uint8_t* base = UNSAFE_BUFFERS(static_cast<uint8_t*>(buffer) - offset);
+    auto mapping = UNSAFE_BUFFERS(base::span(base, length + offset));
     auto* mapper = gin::GetSharedMemoryMapperForArrayBuffers();
     base::subtle::PlatformSharedMemoryRegion::Unmap(mapping, mapper);
   };
-  void* base = result.value().data() + offset_rounding;
+  uint8_t* base = &result.value()[offset_rounding];
   backing_store_ =
       v8::ArrayBuffer::NewBackingStore(base, length, deleter, nullptr);
 }
@@ -211,7 +209,7 @@ void ArrayBufferContents::CopyTo(ArrayBufferContents& other) {
       DataLength(), 1, IsShared() ? kShared : kNotShared, kDontInitialize);
   if (!IsValid() || !other.IsValid())
     return;
-  std::memcpy(other.Data(), Data(), DataLength());
+  other.ByteSpan().copy_from(ByteSpan());
 }
 
 template <partition_alloc::AllocFlags flags>
@@ -251,11 +249,11 @@ void* ArrayBufferContents::AllocateMemory(size_t size,
 #endif
   void* data;
   if (policy == kZeroInitialize) {
-    data = WTF::Partitions::ArrayBufferPartition()
+    data = Partitions::ArrayBufferPartition()
                ->Alloc<new_flags | partition_alloc::AllocFlags::kZeroFill>(
                    size, WTF_HEAP_PROFILER_TYPE_NAME(ArrayBufferContents));
   } else {
-    data = WTF::Partitions::ArrayBufferPartition()->Alloc<new_flags>(
+    data = Partitions::ArrayBufferPartition()->Alloc<new_flags>(
         size, WTF_HEAP_PROFILER_TYPE_NAME(ArrayBufferContents));
   }
 
@@ -279,10 +277,10 @@ void ArrayBufferContents::FreeMemory(void* data) {
       InstanceCounters::kArrayBufferContentsCounter);
 #ifdef V8_ENABLE_SANDBOX
   // See |AllocateMemory|.
-  WTF::Partitions::ArrayBufferPartition()
+  Partitions::ArrayBufferPartition()
       ->Free<partition_alloc::FreeFlags::kNoMemoryToolOverride>(data);
 #else
-  WTF::Partitions::ArrayBufferPartition()->Free(data);
+  Partitions::ArrayBufferPartition()->Free(data);
 #endif
 }
 

@@ -26,6 +26,7 @@
 #include "components/sync/model/entity_change.h"
 #include "components/sync/model/metadata_batch.h"
 #include "components/sync/model/metadata_change_list.h"
+#include "components/sync/model/model_error.h"
 #include "components/sync/model/mutable_data_batch.h"
 #include "components/sync/model/sync_metadata_store_change_list.h"
 #include "components/sync/protocol/history_specifics.pb.h"
@@ -484,9 +485,6 @@ bool SpecificsContainsOnlyValidURLs(
   return true;
 }
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-// LINT.IfChange(SyncHistorySpecificsError)
 enum class SpecificsError {
   kMissingRequiredFields = 0,
   kTooOld = 1,
@@ -494,7 +492,6 @@ enum class SpecificsError {
   kUnwantedURL = 3,
   kMaxValue = kUnwantedURL
 };
-// LINT.ThenChange(/tools/metrics/histograms/metadata/sync/enums.xml:SyncHistorySpecificsError)
 
 // Checks the given `specifics` for validity, i.e. whether it passes some basic
 // validation checks, and returns the appropriate error if it doesn't.
@@ -531,10 +528,6 @@ std::optional<SpecificsError> GetSpecificsError(
   }
 
   return {};
-}
-
-void RecordSpecificsError(SpecificsError error) {
-  base::UmaHistogramEnumeration("Sync.History.IncomingSpecificsError", error);
 }
 
 }  // namespace
@@ -595,7 +588,6 @@ HistorySyncBridge::ApplyIncrementalSyncChanges(
     if (specifics_error.has_value()) {
       DVLOG(1) << "Skipping invalid visit, reason "
                << static_cast<int>(*specifics_error);
-      RecordSpecificsError(*specifics_error);
       continue;
     }
 
@@ -731,7 +723,7 @@ std::unique_ptr<syncer::DataBatch> HistorySyncBridge::GetAllDataForDebugging() {
     RecordDatabaseError(SyncHistoryDatabaseError::kGetAllDataReadMetadata);
     change_processor()->ReportError(
         {FROM_HERE,
-         "Failed reading metadata from HistorySyncMetadataDatabase."});
+         syncer::ModelError::Type::kHistoryFailedToLoadMetadataForDebugging});
   }
   StorageKeyList storage_keys;
   for (const auto& [storage_key, metadata] : metadata_batch->GetAllMetadata()) {
@@ -741,7 +733,7 @@ std::unique_ptr<syncer::DataBatch> HistorySyncBridge::GetAllDataForDebugging() {
 }
 
 std::string HistorySyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(entity_data.specifics.has_history())
       << "EntityData does not have history specifics.";
@@ -751,7 +743,7 @@ std::string HistorySyncBridge::GetClientTag(
 }
 
 std::string HistorySyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(entity_data.specifics.has_history())
       << "EntityData does not have history specifics.";
@@ -894,7 +886,7 @@ void HistorySyncBridge::OnDatabaseError() {
   sync_metadata_database_ = nullptr;
   RecordDatabaseError(SyncHistoryDatabaseError::kOnDatabaseError);
   change_processor()->ReportError(
-      {FROM_HERE, "HistoryDatabase encountered error"});
+      {FROM_HERE, syncer::ModelError::Type::kHistoryDatabaseError});
 }
 
 void HistorySyncBridge::LoadMetadata() {
@@ -906,8 +898,7 @@ void HistorySyncBridge::LoadMetadata() {
   if (!sync_metadata_database_->GetAllSyncMetadata(batch.get())) {
     RecordDatabaseError(SyncHistoryDatabaseError::kLoadMetadata);
     change_processor()->ReportError(
-        {FROM_HERE,
-         "Failed reading metadata from HistorySyncMetadataDatabase."});
+        {FROM_HERE, syncer::ModelError::Type::kHistoryFailedToLoadMetadata});
     return;
   }
   change_processor()->ModelReadyToSync(std::move(batch));
@@ -950,6 +941,13 @@ bool HistorySyncBridge::ShouldCommitRightNow() const {
 void HistorySyncBridge::MaybeCommit(const VisitRow& visit_row) {
   // First check if the overall state allows committing right now.
   if (!ShouldCommitRightNow()) {
+    return;
+  }
+
+  // If this visit is actor-initiated, ignore it.
+  history::VisitSource visit_source = VisitSource::SOURCE_BROWSED;
+  if (history_backend_->GetVisitSource(visit_row.visit_id, &visit_source) &&
+      visit_source == VisitSource::SOURCE_ACTOR) {
     return;
   }
 

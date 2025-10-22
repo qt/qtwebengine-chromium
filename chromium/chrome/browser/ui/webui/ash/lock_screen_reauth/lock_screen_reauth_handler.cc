@@ -269,8 +269,7 @@ void LockScreenReauthHandler::OnSetCookieForLoadGaiaWithPartition(
   params.Set("hl", app_locale);
   params.Set("email", context.email);
   params.Set("gaiaId", context.gaia_id.ToString());
-  params.Set("extractSamlPasswordAttributes",
-             login::ExtractSamlPasswordAttributesEnabled());
+  params.Set("extractSamlPasswordAttributes", true);
   params.Set("clientVersion", version_info::GetVersionNumber());
   params.Set("readOnlyEmail", true);
   PrefService* local_state = g_browser_process->local_state();
@@ -311,8 +310,8 @@ void LockScreenReauthHandler::HandleCompleteAuthentication(
   CHECK_EQ(params.size(), 7u);
   bool using_saml;
   GaiaId gaia_id(params[0].GetString());
-  std::string email = params[1].GetString();
-  std::string password = params[2].GetString();
+  const std::string& email = params[1].GetString();
+  const std::string& password = params[2].GetString();
   auto scraped_saml_passwords =
       ::login::ConvertToStringList(params[3].GetList());
   using_saml = params[4].GetBool();
@@ -415,7 +414,7 @@ void LockScreenReauthHandler::CheckCredentials(
 void LockScreenReauthHandler::HandleUpdateUserPassword(
     const base::Value::List& value) {
   DCHECK(!value.empty());
-  std::string old_password = value[0].GetString();
+  const std::string& old_password = value[0].GetString();
   lock_screen_reauth_manager_->UpdateUserPassword(old_password);
 }
 

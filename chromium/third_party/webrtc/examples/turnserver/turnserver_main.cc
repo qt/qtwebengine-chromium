@@ -33,9 +33,9 @@ class TurnFileAuth : public webrtc::TurnAuthInterface {
   explicit TurnFileAuth(std::map<std::string, std::string> name_to_key)
       : name_to_key_(std::move(name_to_key)) {}
 
-  virtual bool GetKey(absl::string_view username,
-                      absl::string_view realm,
-                      std::string* key) {
+  bool GetKey(absl::string_view username,
+              absl::string_view realm,
+              std::string* key) override {
     // File is stored as lines of <username>=<HA1>.
     // Generate HA1 via "echo -n "<username>:<realm>:<password>" | md5sum"
     auto it = name_to_key_.find(std::string(username));
@@ -89,7 +89,7 @@ int main(int argc, char* argv[]) {
   server.set_realm(argv[3]);
   server.set_software(kSoftware);
   server.set_auth_hook(&auth);
-  server.AddInternalSocket(int_socket, cricket::PROTO_UDP);
+  server.AddInternalSocket(int_socket, webrtc::PROTO_UDP);
   server.SetExternalSocketFactory(
       new webrtc::BasicPacketSocketFactory(&socket_server),
       webrtc::SocketAddress(ext_addr, 0));

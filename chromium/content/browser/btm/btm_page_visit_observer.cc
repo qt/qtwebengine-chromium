@@ -4,8 +4,12 @@
 
 #include "content/browser/btm/btm_page_visit_observer.h"
 
+#include <vector>
+
 #include "base/check.h"
+#include "base/debug/alias.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/metrics/histogram_functions.h"
 #include "content/browser/btm/btm_bounce_detector.h"
 #include "content/browser/btm/btm_utils.h"
 #include "content/browser/btm/cookie_access_filter.h"
@@ -14,6 +18,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/navigation_handle_user_data.h"
 #include "content/public/browser/render_frame_host.h"
+#include "url/gurl_debug.h"
 
 namespace content {
 
@@ -26,9 +31,6 @@ BtmNavigationInfo::BtmNavigationInfo(NavigationHandle& navigation_handle)
                    navigation_handle.GetNextPageUkmSourceId()}) {
   CHECK(navigation_handle.HasCommitted());
 }
-BtmNavigationInfo::BtmNavigationInfo(const BtmNavigationInfo&) = default;
-BtmNavigationInfo& BtmNavigationInfo::operator=(const BtmNavigationInfo&) =
-    default;
 BtmNavigationInfo::BtmNavigationInfo(BtmNavigationInfo&&) = default;
 BtmNavigationInfo& BtmNavigationInfo::operator=(BtmNavigationInfo&&) = default;
 BtmNavigationInfo::~BtmNavigationInfo() = default;
@@ -97,8 +99,16 @@ class NavigationState
     // recorded an access type for.
     urls.push_back(navigation_handle.GetURL());
 
-    // TODO - crbug.com/406841434: `CHECK` the result of `filter_.Filter`.
-    filter_.Filter(urls, accesses);
+    // Cookie accesses can race each other causing order of navigations to not
+    // match the order of cookie accesses. When this happens Filter() will
+    // return false and assume all kUnknown accesses.
+    //
+    // TODO: crbug.com/407710083 - `CHECK` the result of `filter_.Filter` once
+    // the race is fixed.
+    const bool were_all_accesses_matched = filter_.Filter(urls, accesses);
+    base::UmaHistogramBoolean(
+        "Privacy.DIPS.PageVisitObserver.AllAccessesMatched",
+        were_all_accesses_matched);
 
     int i = 0;
     for (const size_t redirect_chain_index : server_redirect_chain_indices_) {
@@ -197,15 +207,15 @@ void BtmPageVisitObserver::DidFinishNavigation(
   current_page_ = BtmPageVisitInfo{
       .url = navigation_handle->GetURL(),
       .source_id = navigation_handle->GetNextPageUkmSourceId(),
-      .had_qualifying_storage_access = IsWrite(final_url_cookie_access)};
+      .had_active_storage_access = IsWrite(final_url_cookie_access)};
   last_page_change_time_ = now;
 }
 
 void BtmPageVisitObserver::ReportVisit() {
   CHECK(!pending_visits_.empty());
-  VisitTuple& visit = pending_visits_.front();
-  callback_.Run(visit.prev_page, visit.navigation);
+  VisitTuple visit = std::move(pending_visits_.front());
   pending_visits_.pop_front();
+  callback_.Run(std::move(visit.prev_page), std::move(visit.navigation));
 }
 
 void BtmPageVisitObserver::NotifyStorageAccessed(
@@ -215,7 +225,7 @@ void BtmPageVisitObserver::NotifyStorageAccessed(
   if (!render_frame_host->GetPage().IsPrimary() || blocked) {
     return;
   }
-  current_page_.had_qualifying_storage_access = true;
+  current_page_.had_active_storage_access = true;
 }
 
 void BtmPageVisitObserver::OnCookiesAccessed(
@@ -257,7 +267,7 @@ void BtmPageVisitObserver::OnCookiesAccessed(
 
   if (render_frame_host->GetMainFrame()->IsInPrimaryMainFrame()) {
     // Cookie access within the current page.
-    current_page_.had_qualifying_storage_access = true;
+    current_page_.had_active_storage_access = true;
     return;
   }
 
@@ -265,7 +275,7 @@ void BtmPageVisitObserver::OnCookiesAccessed(
   // page, try to find that page's visit.
   for (VisitTuple& visit : pending_visits_) {
     if (first_party_url == visit.prev_page.url) {
-      visit.prev_page.had_qualifying_storage_access = true;
+      visit.prev_page.had_active_storage_access = true;
       return;
     }
   }
@@ -274,7 +284,8 @@ void BtmPageVisitObserver::OnCookiesAccessed(
 void BtmPageVisitObserver::OnCookiesAccessed(
     NavigationHandle* navigation_handle,
     const CookieAccessDetails& details) {
-  // Ignore irrelevant cookie accesses.
+  // Ignore irrelevant cookie accesses. Included in this group are navigational
+  // cookie reads, as they're passive storage accesses.
   if (details.blocked_by_policy ||
       details.type != CookieAccessDetails::Type::kChange ||
       !IsInPrimaryPage(*navigation_handle)) {
@@ -292,7 +303,16 @@ void BtmPageVisitObserver::OnCookiesAccessed(
     }
 
     // Attribute subframe storage accesses to the top-level page.
-    current_page_.had_qualifying_storage_access = true;
+    current_page_.had_active_storage_access = true;
+    return;
+  }
+
+  // Ignore non-navigational cookie accesses reported through this event because
+  // we can't reliably attribute subresources accesses to the URL that is
+  // loading the subresource.
+  // TODO - https://crbug.com/408168195: Attribute non-navigation accesses e.g.
+  // from Early Hints, to the correct URL.
+  if (details.source == CookieAccessDetails::Source::kNonNavigation) {
     return;
   }
 

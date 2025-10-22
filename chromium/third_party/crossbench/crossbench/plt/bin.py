@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import functools
-from typing import TYPE_CHECKING, Iterable, Optional, Tuple, TypeAlias
+from typing import TYPE_CHECKING, Iterable, Optional, TypeAlias
 
 from typing_extensions import override
 
@@ -70,7 +70,7 @@ class Binary:
       raise ValueError("At least one platform binary must be provided")
 
   def _convert(self,
-               paths: Optional[BinaryLookup] = None) -> Tuple[pth.AnyPath, ...]:
+               paths: Optional[BinaryLookup] = None) -> tuple[pth.AnyPath, ...]:
     if paths is None:
       return tuple()
     if isinstance(paths, str):
@@ -106,7 +106,7 @@ class Binary:
         return result
     raise BinaryNotFoundError(self, platform)
 
-  def platform_path(self, platform: Platform) -> Tuple[pth.AnyPath, ...]:
+  def platform_path(self, platform: Platform) -> tuple[pth.AnyPath, ...]:
     if self._chromeos and platform.is_chromeos:
       return self._chromeos
     if self._linux and platform.is_linux:
@@ -124,7 +124,7 @@ class Binary:
         return self._win_default()
     return self._default
 
-  def _win_default(self) -> Tuple[pth.AnyPath, ...]:
+  def _win_default(self) -> tuple[pth.AnyPath, ...]:
     return tuple(
         default if default.suffix == ".exe" else default.with_suffix(".exe")
         for default in self._default)

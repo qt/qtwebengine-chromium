@@ -17,7 +17,6 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/memory_dump_request_args.h"
@@ -389,14 +388,12 @@ void CoordinatorImpl::PerformNextQueuedGlobalMemoryDump() {
   if (request->args.add_to_trace && heap_profiler_) {
     request->heap_dump_in_progress = true;
 
-    // |IsArgumentFilterEnabled| is the round-about way of asking to anonymize
-    // the trace. The only way that PII gets leaked is if the full path is
-    // emitted for mapped files. Passing |strip_path_from_mapped_files|
-    // is all that is necessary to anonymize the trace.
+    // We use level_of_detail == kBackground as a way of asking to anonymize the
+    // trace. The only way that PII gets leaked is if the full path is emitted
+    // for mapped files. Passing |strip_path_from_mapped_files| is all that is
+    // necessary to anonymize the trace.
     bool strip_path_from_mapped_files =
-        base::trace_event::TraceLog::GetInstance()
-            ->GetCurrentTraceConfig()
-            .IsArgumentFilterEnabled();
+        request->args.level_of_detail == MemoryDumpLevelOfDetail::kBackground;
     heap_profiler_->DumpProcessesForTracing(
         strip_path_from_mapped_files, write_proto_heap_profile_,
         base::BindOnce(&CoordinatorImpl::OnDumpProcessesForTracing,
@@ -484,12 +481,11 @@ void CoordinatorImpl::OnOSMemoryDumpForVMRegions(uint64_t dump_guid,
                                                  OSMemDumpMap os_dumps) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto request_it = in_progress_vm_region_requests_.find(dump_guid);
-  CHECK(request_it != in_progress_vm_region_requests_.end(),
-        base::NotFatalUntil::M130);
+  CHECK(request_it != in_progress_vm_region_requests_.end());
 
   QueuedVmRegionRequest* request = request_it->second.get();
   auto it = request->pending_responses.find(process_id);
-  CHECK(it != request->pending_responses.end(), base::NotFatalUntil::M130);
+  CHECK(it != request->pending_responses.end());
   request->pending_responses.erase(it);
   request->responses[process_id].os_dumps = std::move(os_dumps);
 
@@ -532,7 +528,7 @@ void CoordinatorImpl::OnDumpProcessesForTracing(
     // dump node in the UI.
     TRACE_EVENT_API_ADD_TRACE_EVENT_WITH_PROCESS_ID(
         TRACE_EVENT_PHASE_MEMORY_DUMP,
-        base::trace_event::TraceLog::GetCategoryGroupEnabled(
+        TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(
             base::trace_event::MemoryDumpManager::kTraceCategory),
         "periodic_interval", trace_event_internal::kGlobalScope, dump_guid,
         result->pid, &args, TRACE_EVENT_FLAG_HAS_ID);

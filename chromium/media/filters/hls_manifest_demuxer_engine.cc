@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "media/filters/hls_manifest_demuxer_engine.h"
 
@@ -116,11 +112,10 @@ hls::RenditionManager::CodecSupportType GetSupportedTypes(
 }
 
 HlsDemuxerStatus::Or<RelaxedParserSupportedType> CheckMP4Bytes(
-    const uint8_t* data,
-    size_t size) {
+    base::span<const uint8_t> data) {
   NullMediaLog null;
   std::unique_ptr<mp4::BoxReader> reader;
-  auto result = mp4::BoxReader::ReadTopLevelBox(data, size, &null, &reader);
+  auto result = mp4::BoxReader::ReadTopLevelBox(data, &null, &reader);
   if (result == mp4::ParseResult::kOk) {
     return RelaxedParserSupportedType::kMP4;
   }
@@ -128,8 +123,8 @@ HlsDemuxerStatus::Or<RelaxedParserSupportedType> CheckMP4Bytes(
 }
 
 HlsDemuxerStatus::Or<RelaxedParserSupportedType>
-CheckBitstreamForContainerMagic(const uint8_t* data, size_t size) {
-  CHECK_GT(size, 0lu);
+CheckBitstreamForContainerMagic(base::span<const uint8_t> data) {
+  CHECK(!data.empty());
 
   constexpr uint8_t kMP4FirstByte = 0x66;
   constexpr uint8_t kMPEGTSFirstByte = 0x47;
@@ -140,7 +135,7 @@ CheckBitstreamForContainerMagic(const uint8_t* data, size_t size) {
   switch (data[0]) {
     case kMP4FirstByte:
     case kFMP4FirstByte: {
-      return CheckMP4Bytes(data, size);
+      return CheckMP4Bytes(data);
     }
     case kID3FirstByte:
     case kAACFirstByte: {
@@ -527,34 +522,36 @@ void HlsManifestDemuxerEngine::UpdateMediaPlaylistForRole(
   TRACE_EVENT_NESTABLE_ASYNC_END0("media", "HLS::UpdateRenditionManifest",
                                   this);
 
-  renditions_[role]->UpdatePlaylist(std::move(maybe_playlist).value(),
-                                    std::nullopt);
+  renditions_[role]->UpdatePlaylist(std::move(maybe_playlist).value());
   std::move(cb).Run(OkStatus());
 }
 
 void HlsManifestDemuxerEngine::OnRenditionsReselected(
     hls::AdaptationReason reason,
     const hls::VariantStream* variant,
-    const hls::Rendition* audio_override_rendition) {
+    std::optional<hls::RenditionGroup::RenditionTrack> primary,
+    std::optional<hls::RenditionGroup::RenditionTrack> extra) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
   stats_reporter_.OnAdaptation(reason);
   ProcessAsyncAction<HlsDemuxerStatus>(
       base::BindOnce(&HlsManifestDemuxerEngine::CheckActionState,
                      weak_factory_.GetWeakPtr()),
       base::BindOnce(&HlsManifestDemuxerEngine::AdaptationAction,
-                     weak_factory_.GetWeakPtr(), variant,
-                     audio_override_rendition));
+                     weak_factory_.GetWeakPtr(), variant, std::move(primary),
+                     std::move(extra)));
 }
 
 void HlsManifestDemuxerEngine::AdaptationAction(
     const hls::VariantStream* variant,
-    const hls::Rendition* audio_override_rendition,
+    std::optional<hls::RenditionGroup::RenditionTrack> primary,
+    std::optional<hls::RenditionGroup::RenditionTrack> extra,
     HlsDemuxerStatusCallback cb) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN1("media", "HLS::SelectRenditions", this,
                                     "reselect", true);
 
-  OnRenditionsSelected(std::move(cb), variant, audio_override_rendition);
+  OnRenditionsSelected(std::move(cb), variant, std::move(primary),
+                       std::move(extra));
 }
 
 void HlsManifestDemuxerEngine::UpdateHlsDataSourceStats(
@@ -738,7 +735,7 @@ void HlsManifestDemuxerEngine::OnMultivariantPlaylist(
                           weak_factory_.GetWeakPtr()),
       base::BindRepeating(&GetSupportedTypes));
 
-  if (!rendition_manager_->HasAnyVariants()) {
+  if (!rendition_manager_->HasSelectableVariants()) {
     // This will abort the pending init, and `parse_complete_cb` will not need
     // to be called.
     std::move(parse_complete_cb).Run(HlsDemuxerStatus::Codes::kNoRenditions);
@@ -751,53 +748,53 @@ void HlsManifestDemuxerEngine::OnMultivariantPlaylist(
                      weak_factory_.GetWeakPtr(), std::move(parse_complete_cb)));
 }
 
+HlsDemuxerStatusCallback HlsManifestDemuxerEngine::BindPlaylistLoader(
+    hls::RenditionGroup::RenditionTrack rendition,
+    std::string rendition_role,
+    HlsDemuxerStatusCallback do_next) {
+  DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
+  const GURL& rendition_uri = std::get<1>(rendition)->GetUri().value();
+  auto existing = renditions_.find(rendition_role);
+  if (existing != renditions_.end() &&
+      existing->second->MediaPlaylistUri() == rendition_uri) {
+    return do_next;
+  }
+
+  PlaylistParseInfo parse_info = {rendition_uri, selected_variant_codecs_,
+                                  rendition_role};
+  return HlsDemuxerStatus::BindOkContinuation(
+      std::move(do_next),
+      base::BindOnce(&HlsManifestDemuxerEngine::LoadPlaylist,
+                     weak_factory_.GetWeakPtr(), std::move(parse_info)));
+}
+
 void HlsManifestDemuxerEngine::OnRenditionsSelected(
     HlsDemuxerStatusCallback on_complete,
     const hls::VariantStream* variant,
-    const hls::Rendition* audio_override_rendition) {
+    std::optional<hls::RenditionGroup::RenditionTrack> primary,
+    std::optional<hls::RenditionGroup::RenditionTrack> extra) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(media_sequence_checker_);
-
-  // Ensure that if the variant changes, then we update the codecs that are
-  // expected. There can still be other codecs determined after parsing the
-  // media content.
-  if (variant) {
-    std::vector<std::string> no_codecs;
-    selected_variant_codecs_ = variant->GetCodecs().value_or(no_codecs);
-  }
-
-  // If nothing was selected, then we are in an unplayable state, regardless
-  // of whether this is the first initialization or not.
-  if (!audio_override_rendition && !variant) {
+  if (!variant || !(primary.has_value() || extra.has_value())) {
+    DCHECK(!variant && !primary.has_value() && !extra.has_value());
     std::move(on_complete).Run(HlsDemuxerStatus::Codes::kNoRenditions);
     return;
   }
 
-  // Bind the audio override rendition fetch into a closure. If we have to
-  // reselect the primary rendition now, this will take the place of the
-  // on_complete callback.
-  if (audio_override_rendition) {
-    PlaylistParseInfo override_parse_info = {
-        audio_override_rendition->GetUri().value(), selected_variant_codecs_,
-        kAudioOverride};
+  // Update the codecs list
+  std::vector<std::string> no_codecs;
+  selected_variant_codecs_ = variant->GetCodecs().value_or(no_codecs);
 
-    on_complete = HlsDemuxerStatus::BindOkContinuation(
-        std::move(on_complete),
-        base::BindOnce(&HlsManifestDemuxerEngine::LoadPlaylist,
-                       weak_factory_.GetWeakPtr(),
-                       std::move(override_parse_info)));
-  }
   TRACE_EVENT_NESTABLE_ASYNC_END0("media", "HLS::SelectRenditions", this);
 
-  // If there is a variant change, just call LoadPlaylist directly. Since
-  // we've already checked that variant and override are not both null, we
-  // need to run the variant load CB.
-  if (variant) {
-    PlaylistParseInfo primary_parse_info = {variant->GetPrimaryRenditionUri(),
-                                            selected_variant_codecs_, kPrimary};
-    LoadPlaylist(std::move(primary_parse_info), std::move(on_complete));
-  } else {
-    std::move(on_complete).Run(OkStatus());
+  if (extra.has_value()) {
+    on_complete = BindPlaylistLoader(extra.value(), kAudioOverride,
+                                     std::move(on_complete));
   }
+  if (primary.has_value()) {
+    on_complete =
+        BindPlaylistLoader(primary.value(), kPrimary, std::move(on_complete));
+  }
+  std::move(on_complete).Run(OkStatus());
 }
 
 void HlsManifestDemuxerEngine::LoadPlaylist(
@@ -824,7 +821,8 @@ void HlsManifestDemuxerEngine::OnMediaPlaylist(
   // assume the codecs are the same.
   auto maybe_exists = renditions_.find(parse_info.role);
   if (maybe_exists != renditions_.end()) {
-    maybe_exists->second->UpdatePlaylist(std::move(playlist), parse_info.uri);
+    maybe_exists->second->UpdatePlaylistURI(parse_info.uri);
+    maybe_exists->second->UpdatePlaylist(std::move(playlist));
     TRACE_EVENT_NESTABLE_ASYNC_END0("media", "HLS::LoadPlaylist", this);
     std::move(parse_complete_cb).Run(OkStatus());
     return;
@@ -969,8 +967,6 @@ void HlsManifestDemuxerEngine::DetermineBitstreamContainer(
       case hls::XKeyTagMethod::kAES128:
       case hls::XKeyTagMethod::kAES256: {
         auto maybe_iv = enc_data->GetIVStr(segment->GetMediaSequenceNumber());
-        base::span<const uint8_t> stream_data =
-            base::span(stream->raw_data(), stream->buffer_size());
         if (!maybe_iv.has_value() ||
             maybe_iv->size() != crypto::aes_cbc::kBlockSize) {
           std::move(cb).Run(
@@ -981,13 +977,12 @@ void HlsManifestDemuxerEngine::DetermineBitstreamContainer(
         auto iv =
             base::as_byte_span(*maybe_iv).first<crypto::aes_cbc::kBlockSize>();
         auto maybe_plaintext =
-            crypto::aes_cbc::Decrypt(enc_data->GetKey(), iv, stream_data);
+            crypto::aes_cbc::Decrypt(enc_data->GetKey(), iv, stream->data());
         if (!maybe_plaintext) {
           std::move(cb).Run(HlsDemuxerStatus::Codes::kFailedToDecryptSegment);
           return;
         }
-        std::move(cb).Run(CheckBitstreamForContainerMagic(
-            maybe_plaintext->data(), maybe_plaintext->size()));
+        std::move(cb).Run(CheckBitstreamForContainerMagic(*maybe_plaintext));
         return;
       }
       default: {
@@ -997,8 +992,7 @@ void HlsManifestDemuxerEngine::DetermineBitstreamContainer(
     }
   }
 
-  std::move(cb).Run(CheckBitstreamForContainerMagic(stream->raw_data(),
-                                                    stream->buffer_size()));
+  std::move(cb).Run(CheckBitstreamForContainerMagic(stream->data()));
 }
 
 void HlsManifestDemuxerEngine::OnChunkDemuxerParseWarning(

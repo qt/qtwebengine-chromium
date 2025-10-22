@@ -528,11 +528,6 @@ bool OriginTrialContext::CanEnableTrialFromName(const StringView& trial_name) {
         network::features::kInterestGroupStorage);
   }
 
-  if (trial_name == "SpeculationRulesPrefetchFuture") {
-    return base::FeatureList::IsEnabled(
-        features::kSpeculationRulesPrefetchFuture);
-  }
-
   if (trial_name == "BackForwardCacheSendNotRestoredReasons") {
     return base::FeatureList::IsEnabled(
         features::kBackForwardCacheSendNotRestoredReasons);
@@ -547,10 +542,6 @@ bool OriginTrialContext::CanEnableTrialFromName(const StringView& trial_name) {
     return base::FeatureList::IsEnabled(features::kSoftNavigationDetection);
   }
 
-  if (trial_name == "FoldableAPIs") {
-    return base::FeatureList::IsEnabled(features::kViewportSegments);
-  }
-
   if (trial_name == "PermissionElement") {
     return base::FeatureList::IsEnabled(blink::features::kPermissionElement);
   }
@@ -560,12 +551,16 @@ bool OriginTrialContext::CanEnableTrialFromName(const StringView& trial_name) {
     return base::FeatureList::IsEnabled(features::kAISummarizationAPI);
   }
 
-  if (trial_name == "LanguageDetectionAPI") {
-    return base::FeatureList::IsEnabled(features::kLanguageDetectionAPI);
+  if (trial_name == "AIRewriterAPI") {
+    return base::FeatureList::IsEnabled(features::kAIRewriterAPI);
   }
 
-  if (trial_name == "AIPromptAPIForExtension") {
-    return base::FeatureList::IsEnabled(features::kAIPromptAPIForExtension);
+  if (trial_name == "AIWriterAPI") {
+    return base::FeatureList::IsEnabled(features::kAIRewriterAPI);
+  }
+
+  if (trial_name == "LanguageDetectionAPI") {
+    return base::FeatureList::IsEnabled(features::kLanguageDetectionAPI);
   }
 
   if (trial_name == "SpeculationRulesTargetHint") {
@@ -638,7 +633,7 @@ bool OriginTrialContext::EnableTrialFromToken(
     const Vector<OriginInfo>* script_origins) {
   DCHECK(!token.empty());
   OriginTrialStatus trial_status = OriginTrialStatus::kValidTokenNotProvided;
-  StringUTF8Adaptor token_string(token);
+  StringUtf8Adaptor token_string(token);
   // TODO(https://crbug.com/1153336): Remove explicit validator.
   // Since |blink::SecurityOrigin::IsPotentiallyTrustworthy| is the source of
   // security information in this context, use that explicitly, instead of

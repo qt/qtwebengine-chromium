@@ -45,13 +45,12 @@ class DisplayAndroidManagerTest : public testing::TestWithParam<bool> {
   DisplayAndroidManagerTest()
       : env_(base::android::AttachCurrentThread()),
         display_android_manager_(false) {
-    display_android_manager_.SetPrimaryDisplayId(env_, nullptr,
-                                                 kPrimaryDisplayId);
+    display_android_manager_.SetPrimaryDisplayId(env_, kPrimaryDisplayId);
   }
 
   void AddDisplay(const TestDisplayParams& display_params) {
     display_android_manager_.UpdateDisplay(
-        env_, nullptr, display_params.sdk_display_id,
+        env_, display_params.sdk_display_id,
         base::android::ConvertUTF8ToJavaString(env_, display_params.label),
         base::android::ToJavaIntArray(env_, display_params.bounds),
         base::android::ToJavaIntArray(env_, display_params.insets),
@@ -62,7 +61,7 @@ class DisplayAndroidManagerTest : public testing::TestWithParam<bool> {
   }
 
   void RemoveDisplay(int32_t sdk_display_id) {
-    display_android_manager_.RemoveDisplay(env_, nullptr, sdk_display_id);
+    display_android_manager_.RemoveDisplay(env_, sdk_display_id);
   }
 
   display::Display GetDisplay(int32_t sdk_display_id) const {
@@ -90,7 +89,7 @@ class DisplayAndroidManagerTest : public testing::TestWithParam<bool> {
     EXPECT_EQ(display.device_scale_factor(), display_params.dip_scale);
     EXPECT_EQ(display.bounds(), display_params.scaled_bounds);
 
-    if (base::FeatureList::IsEnabled(kUsingCorrectWorkArea)) {
+    if (base::FeatureList::IsEnabled(kAndroidUseCorrectDisplayWorkArea)) {
       EXPECT_EQ(display.work_area(), display_params.scaled_work_area);
     } else {
       EXPECT_EQ(display.work_area(), display_params.scaled_bounds);
@@ -140,7 +139,7 @@ TEST_P(DisplayAndroidManagerTest, General) {
 
   base::test::ScopedFeatureList scoped_feature_list;
   if (GetParam()) {
-    scoped_feature_list.InitAndEnableFeature(kUsingCorrectWorkArea);
+    scoped_feature_list.InitAndEnableFeature(kAndroidUseCorrectDisplayWorkArea);
   }
 
   // Checking the initial state

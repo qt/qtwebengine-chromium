@@ -19,6 +19,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "quiche/http2/core/http2_frame_decoder_adapter.h"
+#include "quiche/quic/core/crypto/crypto_protocol.h"
 #include "quiche/quic/core/http/http_constants.h"
 #include "quiche/quic/core/http/http_decoder.h"
 #include "quiche/quic/core/http/http_frames.h"
@@ -36,7 +37,7 @@
 #include "quiche/quic/platform/api/quic_flags.h"
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_stack_trace.h"
-#include "quiche/common/platform/api/quiche_mem_slice.h"
+#include "quiche/common/quiche_mem_slice.h"
 
 using http2::Http2DecoderAdapter;
 using quiche::HttpHeaderBlock;
@@ -608,6 +609,10 @@ void QuicSpdySession::Initialize() {
   // Limit HPACK buffering to 2x header list size limit.
   h2_deframer_.GetHpackDecoder().set_max_decode_buffer_size_bytes(
       2 * max_inbound_header_list_size_);
+
+  if (ShouldNegotiateWebTransport()) {
+    connection()->sent_packet_manager().EnableOverheadMeasurement();
+  }
 }
 
 void QuicSpdySession::FillSettingsFrame() {

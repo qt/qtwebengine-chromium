@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "components/dom_distiller/content/browser/dom_distiller_viewer_source.h"
 
+#include <deque>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -90,7 +86,7 @@ class DomDistillerViewerSource::RequestViewerHandle
 
   // Temporary store of pending JavaScript if the page isn't ready to receive
   // data from distillation.
-  std::string buffer_;
+  std::deque<std::string> buffers_;
 };
 
 DomDistillerViewerSource::RequestViewerHandle::RequestViewerHandle(
@@ -111,9 +107,9 @@ DomDistillerViewerSource::RequestViewerHandle::~RequestViewerHandle() {
 void DomDistillerViewerSource::RequestViewerHandle::SendJavaScript(
     const std::string& buffer) {
   if (waiting_for_page_ready_) {
-    buffer_ += buffer;
+    buffers_.push_back(buffer);
   } else {
-    DCHECK(buffer_.empty());
+    DCHECK(buffers_.empty());
     if (web_contents()) {
       RunIsolatedJavaScript(web_contents()->GetPrimaryMainFrame(), buffer);
     }
@@ -179,12 +175,15 @@ void DomDistillerViewerSource::RequestViewerHandle::DOMContentLoaded(
     return;
   }
 
+  // Execute the scripts in buffer_ one-by-one, starting from the front of the
+  // list.
+  while (!buffers_.empty()) {
+    RunIsolatedJavaScript(web_contents()->GetPrimaryMainFrame(),
+                          buffers_.front());
+    buffers_.pop_front();
+  }
   // No SendJavaScript() calls allowed before |buffer_| is run and cleared.
   waiting_for_page_ready_ = false;
-  if (!buffer_.empty()) {
-    RunIsolatedJavaScript(web_contents()->GetPrimaryMainFrame(), buffer_);
-    buffer_.clear();
-  }
   // No need to Cancel() here.
 }
 
@@ -227,11 +226,10 @@ void DomDistillerViewerSource::StartDataRequest(
         base::MakeRefCounted<base::RefCountedString>(std::move(image)));
     return;
   }
-  if (base::StartsWith(path, kViewerSaveFontScalingPath,
-                       base::CompareCase::SENSITIVE)) {
+  auto remainder = base::RemovePrefix(path, kViewerSaveFontScalingPath);
+  if (remainder) {
     double scale = 1.0;
-    if (base::StringToDouble(path.substr(strlen(kViewerSaveFontScalingPath)),
-                             &scale)) {
+    if (base::StringToDouble(*remainder, &scale)) {
       dom_distiller_service_->GetDistilledPagePrefs()->SetFontScaling(scale);
     }
   }
@@ -261,7 +259,7 @@ void DomDistillerViewerSource::StartDataRequest(
   std::string unsafe_page_html = viewer::GetArticleTemplateHtml(
       dom_distiller_service_->GetDistilledPagePrefs()->GetTheme(),
       dom_distiller_service_->GetDistilledPagePrefs()->GetFontFamily(),
-      std::string());
+      std::string(), /*use_offline_data=*/false);
 
   if (viewer_handle) {
     // The service returned a |ViewerHandle| and guarantees it will call

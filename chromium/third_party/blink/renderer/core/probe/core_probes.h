@@ -38,7 +38,6 @@
 #include "third_party/blink/renderer/core/frame/ad_tracker.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/platform/bindings/callback_function_base.h"
-#include "third_party/blink/renderer/platform/loader/fetch/resource.h"
 
 namespace network {
 namespace mojom {
@@ -58,6 +57,7 @@ class ThreadDebugger;
 namespace protocol {
 namespace Network {
 class DirectTCPSocketOptions;
+class DirectUDPSocketOptions;
 }  // namespace Network
 namespace Audits {
 class InspectorIssue;

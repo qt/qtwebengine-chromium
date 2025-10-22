@@ -924,6 +924,9 @@ static av_cold int sonic_decode_init(AVCodecContext *avctx)
     if (get_bits1(&gb)) // XXX FIXME
         av_log(avctx, AV_LOG_INFO, "Custom quant table\n");
 
+    if (s->num_taps > 128)
+        return AVERROR_INVALIDDATA;
+
     s->block_align = 2048LL*s->samplerate/(44100*s->downsampling);
     s->frame_size = s->channels*s->block_align*s->downsampling;
 //    avctx->frame_size = s->block_align;
@@ -1102,7 +1105,7 @@ const FFCodec ff_sonic_encoder = {
     .priv_data_size = sizeof(SonicContext),
     .init           = sonic_encode_init,
     FF_CODEC_ENCODE_CB(sonic_encode_frame),
-    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE },
+    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .close          = sonic_encode_close,
 };
@@ -1119,7 +1122,7 @@ const FFCodec ff_sonic_ls_encoder = {
     .priv_data_size = sizeof(SonicContext),
     .init           = sonic_encode_init,
     FF_CODEC_ENCODE_CB(sonic_encode_frame),
-    .p.sample_fmts  = (const enum AVSampleFormat[]){ AV_SAMPLE_FMT_S16, AV_SAMPLE_FMT_NONE },
+    CODEC_SAMPLEFMTS(AV_SAMPLE_FMT_S16),
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .close          = sonic_encode_close,
 };

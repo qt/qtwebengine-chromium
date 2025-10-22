@@ -22,6 +22,7 @@
 #include "ui/base/mojom/ui_base_types.mojom-shared.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/color_palette.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/strings/grit/ui_strings.h"
 #include "ui/views/bubble/bubble_border.h"
 #include "ui/views/bubble/bubble_dialog_delegate_view.h"
@@ -81,7 +82,8 @@ DialogDelegate::Params::~Params() = default;
 // DialogDelegate:
 
 DialogDelegate::DialogDelegate() {
-  WidgetDelegate::RegisterWindowWillCloseCallback(
+  RegisterWindowWillCloseCallback(
+      RegisterWillCloseCallbackPassKey(),
       base::BindOnce(&DialogDelegate::WindowWillClose, base::Unretained(this)));
 }
 
@@ -146,11 +148,16 @@ Widget::InitParams DialogDelegate::GetDialogWidgetInitParams(
 #if !BUILDFLAG(IS_APPLE)
   // Web-modal (ui::mojom::ModalType::kChild) dialogs with parents are marked as
   // child widgets to prevent top-level window behavior (independent movement,
-  // etc). On Mac, however, the parent may be a native window (not a
-  // views::Widget), and so the dialog must be considered top-level to gain
-  // focus and input method behaviors.
-  params.child =
-      parent && (delegate->GetModalType() == ui::mojom::ModalType::kChild);
+  // etc). However, on Mac or when forcing to use desktop widget, the
+  // dialog must be considered top-level to gain focus and input method
+  // behaviors.
+  // TODO(crbug.com/346974105): This might be wrong because it implies multiple
+  // focus managers in a widget tree. A widget tree should have a single focus
+  // manager, so that it is impossible for two widgets to have focus
+  // simultaneously.
+  params.child = parent &&
+                 (delegate->GetModalType() == ui::mojom::ModalType::kChild) &&
+                 !delegate->use_desktop_widget_override();
 #endif
 
   if (BubbleDialogDelegate* bubble = delegate->AsBubbleDialogDelegate()) {
@@ -221,6 +228,10 @@ bool DialogDelegate::ShouldIgnoreButtonPressedEventHandling(
   return false;
 }
 
+bool DialogDelegate::ShouldAllowKeyEventsDuringInputProtection() const {
+  return true;
+}
+
 bool DialogDelegate::Cancel() {
   DCHECK(!already_started_close_);
   if (HasCallback(cancel_callback_)) {
@@ -244,6 +255,7 @@ bool DialogDelegate::RunCloseCallback(
   if (std::holds_alternative<base::OnceClosure>(callback)) {
     already_started_close_ = true;
     std::get<base::OnceClosure>(std::move(callback)).Run();
+    return true;
   } else {
     base::WeakPtr<Widget> weak_ptr = GetWidget()->GetWeakPtr();
     bool already_started_close =
@@ -254,9 +266,10 @@ bool DialogDelegate::RunCloseCallback(
       return false;
     }
     already_started_close_ = already_started_close;
+    return already_started_close_;
   }
 
-  return already_started_close_;
+  NOTREACHED();
 }
 
 View* DialogDelegate::GetInitiallyFocusedView() {
@@ -350,7 +363,8 @@ std::unique_ptr<NonClientFrameView> DialogDelegate::CreateDialogFrameView(
   DialogDelegate* delegate = widget->widget_delegate()->AsDialogDelegate();
   if (delegate) {
     if (delegate->GetParams().round_corners) {
-      border->SetCornerRadius(delegate->GetCornerRadius());
+      border->set_rounded_corners(
+          gfx::RoundedCornersF(delegate->GetCornerRadius()));
     }
     frame->SetFootnoteView(delegate->DisownFootnoteView());
   }

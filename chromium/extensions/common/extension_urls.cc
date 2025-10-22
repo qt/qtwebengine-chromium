@@ -40,6 +40,8 @@ const GURL* g_item_snippet_url_for_test_ = nullptr;
 
 const char kChromeWebstoreBaseURL[] = "https://chrome.google.com/webstore";
 const char kNewChromeWebstoreBaseURL[] = "https://chromewebstore.google.com/";
+const char kExtensionsDocsWhatsNewURL[] =
+    "https://developer.chrome.com/docs/extensions/whats-new";
 const char kChromeWebstoreUpdateURL[] =
     "https://clients2.google.com/service/update2/crx";
 const char kChromeWebstoreApiURL[] = "https://chromewebstore.googleapis.com/";
@@ -47,12 +49,19 @@ const char kChromeWebstoreApiURL[] = "https://chromewebstore.googleapis.com/";
 const char kAppMenuUtmSource[] = "ext_app_menu";
 const char kExtensionsMenuUtmSource[] = "ext_extensions_menu";
 const char kExtensionsSidebarUtmSource[] = "ext_sidebar";
+const char kCustomActionIphUtmSource[] = "ext_zero_state_promo_generic_iph";
+const char kCustomUiChipIphUtmSource[] = "ext_zero_state_promo_chips_iph";
+const char kCustomUiPlainLinkIphUtmSource[] = "ext_zero_state_promo_links_iph";
 
 GURL GetWebstoreLaunchURL() {
   extensions::ExtensionsClient* client = extensions::ExtensionsClient::Get();
   if (client)
     return client->GetWebstoreBaseURL();
   return GURL(kChromeWebstoreBaseURL);
+}
+
+GURL GetDocsWhatsNewURL() {
+  return GURL(kExtensionsDocsWhatsNewURL);
 }
 
 GURL GetNewWebstoreLaunchURL() {

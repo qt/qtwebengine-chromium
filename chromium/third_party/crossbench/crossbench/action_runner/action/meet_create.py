@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import functools
 from typing import TYPE_CHECKING, Optional, Type
 
@@ -17,6 +16,8 @@ from crossbench.action_runner.action.enums import WindowTarget
 from crossbench.bond.bond import AddBotsConfig
 
 if TYPE_CHECKING:
+  import datetime as dt
+
   from crossbench.action_runner.base import ActionRunner
   from crossbench.config import ConfigParser
   from crossbench.runner.run import Run

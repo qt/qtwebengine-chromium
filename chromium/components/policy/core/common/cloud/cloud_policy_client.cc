@@ -9,7 +9,6 @@
 #include <variant>
 
 #include "base/check.h"
-#include "base/check_is_test.h"
 #include "base/containers/contains.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -54,12 +53,6 @@ BASE_FEATURE(kPolicyFetchWithSha256,
 
 namespace {
 
-#if BUILDFLAG(IS_WIN)
-BASE_FEATURE(kGetBrowserIdentifierAsync,
-             "GetBrowserIdentifierAsync",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-#endif
-
 const char kDmServerCloudPolicyRequestHistogramBase[] =
     "Enterprise.DMServerCloudPolicyRequestStatus";
 
@@ -100,7 +93,7 @@ ThirdPartyIdentityType TranslateProtobufThirdPartyIdentityType(
 
 bool IsChromePolicy(const std::string& type) {
   return type == dm_protocol::kChromeDevicePolicyType ||
-         type == dm_protocol::kChromeUserPolicyType ||
+         type == dm_protocol::GetChromeUserPolicyType() ||
          IsMachineLevelUserCloudPolicyType(type);
 }
 
@@ -282,7 +275,7 @@ std::string FormatMacAddress(const CloudPolicyClient::MacAddress& mac_address) {
 // Returns the histogram variant for the corresponding `type`. Returns nullopt
 // if there is no variant for the type.
 std::optional<std::string_view> HistogramVariantForType(std::string_view type) {
-  if (type == dm_protocol::kChromeUserPolicyType) {
+  if (type == dm_protocol::GetChromeUserPolicyType()) {
     return "UserPolicy";
   } else if (type == dm_protocol::kChromeMachineLevelUserCloudPolicyType) {
     return "MachineLevelUserCloudPolicy";
@@ -307,7 +300,24 @@ CloudPolicyClient::Result::Result(DeviceManagementStatus status)
     : result_(status) {}
 CloudPolicyClient::Result::Result(DeviceManagementStatus status, int net_error)
     : result_(status), net_error_(net_error) {}
+CloudPolicyClient::Result::Result(DeviceManagementStatus status,
+                                  int net_error,
+                                  base::Value::Dict response)
+    : result_(status), net_error_(net_error), response_(std::move(response)) {}
 CloudPolicyClient::Result::Result(NotRegistered) : result_(NotRegistered()) {}
+
+CloudPolicyClient::Result::Result(const Result& other)
+    : result_(other.result_),
+      net_error_(other.net_error_),
+      response_(other.response_.Clone()) {}
+
+CloudPolicyClient::Result& CloudPolicyClient::Result::operator=(
+    const Result& other) {
+  result_ = other.result_;
+  net_error_ = other.net_error_;
+  response_ = other.response_.Clone();
+  return *this;
+}
 
 bool CloudPolicyClient::Result::IsSuccess() const {
   return result_ ==
@@ -329,6 +339,10 @@ DeviceManagementStatus CloudPolicyClient::Result::GetDMServerError() const {
 
 int CloudPolicyClient::Result::GetNetError() const {
   return net_error_;
+}
+
+const base::Value::Dict& CloudPolicyClient::Result::GetResponse() const {
+  return response_;
 }
 
 CloudPolicyClient::CloudPolicyClient(
@@ -748,14 +762,11 @@ void CloudPolicyClient::FetchPolicy(PolicyFetchReason reason) {
     if (type_to_fetch.first ==
         dm_protocol::kChromeMachineLevelUserCloudPolicyType) {
 #if BUILDFLAG(IS_WIN)
-      if (base::FeatureList::IsEnabled(kGetBrowserIdentifierAsync)) {
         cbcm_policy_fetch_request = fetch_request;
-      } else
-#endif  // BUILDFLAG(IS_WIN)
-      {
+#else
         fetch_request->set_allocated_browser_device_identifier(
             GetBrowserDeviceIdentifier().release());
-      }
+#endif  // BUILDFLAG(IS_WIN)
     }
 #endif
   }
@@ -1033,6 +1044,7 @@ void CloudPolicyClient::UploadChromeOsUserReport(
 }
 
 void CloudPolicyClient::UploadChromeProfileReport(
+    bool use_cookies,
     std::unique_ptr<em::ChromeProfileReportRequest> chrome_profile_report,
     CloudPolicyClient::ResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
@@ -1048,6 +1060,7 @@ void CloudPolicyClient::UploadChromeProfileReport(
           DeviceManagementService::JobConfiguration::TYPE_CHROME_PROFILE_REPORT,
           std::move(callback));
 
+  config->set_use_cookies(use_cookies);
   config->request()->set_allocated_chrome_profile_report_request(
       chrome_profile_report.release());
 
@@ -1131,10 +1144,6 @@ void CloudPolicyClient::FetchRemoteCommands(
 
   // Unsigned commands and NONE signature are not supported.
   DCHECK_NE(signature_type, em::PolicyFetchRequest::NONE);
-
-  if (reason == RemoteCommandsFetchReason::kTest) {
-    CHECK_IS_TEST();
-  }
 
   auto params = DMServerJobConfiguration::CreateParams::WithClient(
       DeviceManagementService::JobConfiguration::TYPE_REMOTE_COMMANDS, this);
@@ -1818,7 +1827,13 @@ void CloudPolicyClient::OnRealtimeReportUploadCompleted(
     NotifyClientError();
   }
 
-  std::move(callback).Run(CloudPolicyClient::Result(status));
+  if (response.has_value()) {
+    std::move(callback).Run(CloudPolicyClient::Result(
+        status, reponse_code, std::move(response.value())));
+  } else {
+    std::move(callback).Run(CloudPolicyClient::Result(status, reponse_code));
+  }
+
   RemoveJob(job);
 }
 

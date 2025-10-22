@@ -98,10 +98,9 @@ class DisplayResourceProviderSoftwareTest : public testing::Test {
 
     std::fill(span.begin(), span.end(), value);
 
-    auto transferable_resource = TransferableResource::MakeSoftwareSharedImage(
-        shared_image, shared_image_interface->GenVerifiedSyncToken(), size,
-        SinglePlaneFormat::kBGRA_8888,
-        TransferableResource::ResourceSource::kTileRasterTask);
+    auto transferable_resource = TransferableResource::Make(
+        shared_image, TransferableResource::ResourceSource::kTileRasterTask,
+        shared_image_interface->GenVerifiedSyncToken());
 
     auto callback = base::BindOnce(&MockReleaseCallback::Released,
                                    base::Unretained(&release_callback),
@@ -148,7 +147,7 @@ TEST_F(DisplayResourceProviderSoftwareTest, ReadSoftwareResources) {
                                             kPremul_SkAlphaType));
 
     DisplayResourceProviderSoftware::ScopedReadLockSkImage lock(
-        resource_provider_.get(), mapped_resource_id, kPremul_SkAlphaType);
+        resource_provider_.get(), mapped_resource_id);
     const SkImage* sk_image = lock.sk_image();
     bool result = sk_image->readPixels(nullptr, dstBitmap.pixmap(),
                                        /*srcX=*/0, /*srcY=*/0);

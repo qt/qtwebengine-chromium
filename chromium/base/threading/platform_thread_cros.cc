@@ -181,10 +181,10 @@ void SetThreadLatencySensitivity(ProcessId process_id,
   switch (thread_type) {
     case ThreadType::kBackground:
     case ThreadType::kUtility:
-    case ThreadType::kResourceEfficient:
     case ThreadType::kDefault:
       break;
     case ThreadType::kDisplayCritical:
+    case ThreadType::kInteractive:
       // Compositing and display critical threads need a boost for consistent 60
       // fps.
       [[fallthrough]];
@@ -193,11 +193,15 @@ void SetThreadLatencySensitivity(ProcessId process_id,
       break;
   }
 
-  PLOG_IF(ERROR, !WriteFile(latency_sensitive_file,
-                            (is_urgent && latency_sensitive_urgent)
-                                ? base::byte_span_from_cstring("1")
-                                : base::byte_span_from_cstring("0")))
-      << "Failed to write latency file.";
+  // Logging error only if failed to write when latency sensitive, otherwise
+  // silently ignore as "0" is the default value.
+  if (is_urgent && latency_sensitive_urgent) {
+    PLOG_IF(ERROR, !WriteFile(latency_sensitive_file,
+                              base::byte_span_from_cstring("1")))
+        << "Failed to write latency file.";
+  } else {
+    WriteFile(latency_sensitive_file, base::byte_span_from_cstring("0"));
+  }
 
   attr.sched_flags |= SCHED_FLAG_UTIL_CLAMP_MIN;
   attr.sched_flags |= SCHED_FLAG_UTIL_CLAMP_MAX;
@@ -228,12 +232,20 @@ void SetThreadLatencySensitivity(ProcessId process_id,
 
 // Get the type by reading through kThreadTypeToNiceValueMap
 std::optional<ThreadType> GetThreadTypeForNiceValue(int nice_value) {
-  for (auto i : internal::kThreadTypeToNiceValueMap) {
-    if (nice_value == i.nice_value) {
-      return i.thread_type;
-    }
+  switch (nice_value) {
+    case 10:
+      return ThreadType::kBackground;
+    case 2:
+      return ThreadType::kUtility;
+    case 0:
+      return ThreadType::kDefault;
+    case -8:
+      return ThreadType::kDisplayCritical;
+    case -10:
+      return ThreadType::kRealtimeAudio;
+    default:
+      return std::nullopt;
   }
-  return std::nullopt;
 }
 
 std::optional<int> GetNiceValueForThreadId(PlatformThreadId thread_id) {
@@ -280,6 +292,7 @@ void SetThreadRTPrioFromType(ProcessId process_id,
       policy = SCHED_RR;
       break;
     case ThreadType::kDisplayCritical:
+    case ThreadType::kInteractive:
       if (!PlatformThreadChromeOS::IsDisplayThreadsRtFeatureEnabled()) {
         return;
       }

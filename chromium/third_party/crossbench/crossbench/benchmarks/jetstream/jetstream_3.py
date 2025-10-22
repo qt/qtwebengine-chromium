@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import abc
-from typing import Tuple, Type
+from typing import Type
 
 from crossbench.benchmarks.jetstream.jetstream_2 import (JetStream2Benchmark,
                                                          JetStream2Probe,
@@ -27,10 +27,10 @@ class JetStream3ProbeContext(JetStream2ProbeContext):
 
 # TODO: introduce JetStreamStory
 class JetStream3Story(JetStream2Story, metaclass=abc.ABCMeta):
-  SUBSTORIES: Tuple[str, ...] = ()
+  SUBSTORIES: tuple[str, ...] = ()
 
 
-ProbeClsTupleT = Tuple[Type[JetStream3Probe], ...]
+ProbeClsTupleT = tuple[Type[JetStream3Probe], ...]
 
 
 # TODO: introduce JetStreamBenchmark

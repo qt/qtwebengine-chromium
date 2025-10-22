@@ -5,12 +5,14 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_SCROLL_SCROLL_INTO_VIEW_UTIL_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_SCROLL_SCROLL_INTO_VIEW_UTIL_H_
 
+#include "cc/input/scroll_snap_data.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_scroll_into_view_options.h"
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/scroll/scroll_alignment.h"
 #include "third_party/blink/renderer/core/scroll/scroll_types.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 
 namespace gfx {
 class RectF;
@@ -20,6 +22,7 @@ namespace blink {
 
 class LayoutObject;
 class LayoutView;
+class LayoutBox;
 struct PhysicalRect;
 class ScrollableArea;
 class ComputedStyle;
@@ -37,7 +40,8 @@ void CORE_EXPORT ScrollRectToVisible(const LayoutObject& target,
                                      const PhysicalRect&,
                                      mojom::blink::ScrollIntoViewParamsPtr,
                                      const LayoutObject* container = nullptr,
-                                     bool from_remote_frame = false);
+                                     bool from_remote_frame = false,
+                                     bool include_self = true);
 
 // ScrollFocusedEditableIntoView uses the caret rect for ScrollIntoView but
 // stores enough information in `params` so that the editable element's bounds
@@ -64,6 +68,19 @@ ScrollOffset GetScrollOffsetToExpose(
     const PhysicalBoxStrut& expose_scroll_margin,
     const mojom::blink::ScrollAlignment& align_x,
     const mojom::blink::ScrollAlignment& align_y);
+
+ScrollableArea* GetScrollableAreaForLayoutBox(
+    const LayoutBox& box,
+    bool make_visible_in_visual_viewport);
+
+mojom::blink::ScrollAlignment ResolveToPhysicalAlignment(
+    V8ScrollLogicalPosition::Enum inline_alignment,
+    V8ScrollLogicalPosition::Enum block_alignment,
+    ScrollOrientation axis,
+    const ComputedStyle& computed_style);
+
+V8ScrollLogicalPosition::Enum SnapAlignmentToV8ScrollLogicalPosition(
+    cc::SnapAlignment);
 
 CORE_EXPORT mojom::blink::ScrollIntoViewParamsPtr CreateScrollIntoViewParams(
     const mojom::blink::ScrollAlignment& align_x =

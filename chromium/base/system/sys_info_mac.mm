@@ -17,7 +17,6 @@
 
 #include "base/apple/scoped_mach_port.h"
 #include "base/check_op.h"
-#include "base/debug/stack_trace.h"
 #include "base/feature_list.h"
 #include "base/mac/mac_util.h"
 #include "base/no_destructor.h"
@@ -98,20 +97,6 @@ std::string SysInfo::OperatingSystemArchitecture() {
     case mac::CPUType::kArm:
       return "arm64";
   }
-}
-
-// static
-uint64_t SysInfo::AmountOfPhysicalMemoryImpl() {
-  struct host_basic_info hostinfo;
-  mach_msg_type_number_t count = HOST_BASIC_INFO_COUNT;
-  base::apple::ScopedMachSendRight host(mach_host_self());
-  int result = host_info(host.get(), HOST_BASIC_INFO,
-                         reinterpret_cast<host_info_t>(&hostinfo), &count);
-  if (result != KERN_SUCCESS) {
-    NOTREACHED();
-  }
-  DCHECK_EQ(HOST_BASIC_INFO_COUNT, count);
-  return hostinfo.max_mem;
 }
 
 // static

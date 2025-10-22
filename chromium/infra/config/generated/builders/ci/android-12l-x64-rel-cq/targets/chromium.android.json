@@ -3,7 +3,7 @@
     "gtest_tests": [
       {
         "args": [
-          "--annotation=Restriction=Tablet,ImportantFormFactors=Tablet",
+          "--annotation=Restriction=Tablet,Restriction=TabletOrDesktop,ImportantFormFactors=Tablet,ImportantFormFactors=TabletOrDesktop",
           "--git-revision=${got_revision}",
           "--avd-config=../../tools/android/avd/proto/android_32_google_apis_x64_foldable.textpb",
           "--gs-results-bucket=chromium-result-details",
@@ -18,6 +18,7 @@
           ],
           "script": "//build/android/pylib/results/presentation/test_results_presentation.py"
         },
+        "module_name": "//chrome/android:chrome_public_test_apk/",
         "name": "chrome_public_test_apk_tablet",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",

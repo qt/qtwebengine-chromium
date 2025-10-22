@@ -255,9 +255,10 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
     if (*opt == '/') {
         opt++;
 
-        if (po->type == OPT_TYPE_BOOL) {
+        if (!opt_has_arg(po)) {
             av_log(NULL, AV_LOG_FATAL,
-                   "Requested to load an argument from file for a bool option '%s'\n",
+                   "Requested to load an argument from file for an option '%s'"
+                   " which does not take an argument\n",
                    po->name);
             return AVERROR(EINVAL);
         }
@@ -352,9 +353,11 @@ static int write_option(void *optctx, const OptionDef *po, const char *opt,
 
         ret = po->u.func_arg(optctx, opt, arg);
         if (ret < 0) {
-            av_log(NULL, AV_LOG_ERROR,
-                   "Failed to set value '%s' for option '%s': %s\n",
-                   arg, opt, av_err2str(ret));
+            if ((strcmp(opt, "init_hw_device") != 0) || (strcmp(arg, "list") != 0)) {
+                av_log(NULL, AV_LOG_ERROR,
+                       "Failed to set value '%s' for option '%s': %s\n",
+                       arg, opt, av_err2str(ret));
+            }
             goto finish;
         }
     }

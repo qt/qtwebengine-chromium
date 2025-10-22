@@ -13,10 +13,12 @@
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "base/test/mock_callback.h"
+#include "base/test/protobuf_matchers.h"
 #include "base/test/simple_test_clock.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
@@ -50,6 +52,7 @@
 namespace syncer {
 namespace {
 
+using base::test::EqualsProto;
 using sync_pb::DataTypeState;
 using sync_pb::DeviceInfoSpecifics;
 using sync_pb::EntitySpecifics;
@@ -88,10 +91,6 @@ MATCHER_P(HasDeviceInfo, expected, "") {
   return arg.device_info().SerializeAsString() == expected.SerializeAsString();
 }
 
-MATCHER_P(EqualsProto, expected, "") {
-  return arg.SerializeAsString() == expected.SerializeAsString();
-}
-
 MATCHER_P(ModelEqualsSpecifics, expected_specifics, "") {
   if (expected_specifics.has_sharing_fields() !=
       arg.sharing_info().has_value()) {
@@ -101,12 +100,7 @@ MATCHER_P(ModelEqualsSpecifics, expected_specifics, "") {
   if (expected_specifics.has_sharing_fields()) {
     auto& expected_fields = expected_specifics.sharing_fields();
     auto& arg_info = *arg.sharing_info();
-    if (expected_fields.vapid_fcm_token() !=
-            arg_info.vapid_target_info.fcm_token ||
-        expected_fields.vapid_p256dh() != arg_info.vapid_target_info.p256dh ||
-        expected_fields.vapid_auth_secret() !=
-            arg_info.vapid_target_info.auth_secret ||
-        expected_fields.sender_id_fcm_token_v2() !=
+    if (expected_fields.sender_id_fcm_token_v2() !=
             arg_info.sender_id_target_info.fcm_token ||
         expected_fields.sender_id_p256dh_v2() !=
             arg_info.sender_id_target_info.p256dh ||
@@ -242,18 +236,6 @@ std::string ManufacturerForSuffix(int suffix) {
   return base::StringPrintf("manufacturer %d", suffix);
 }
 
-std::string SharingVapidFcmTokenForSuffix(int suffix) {
-  return base::StringPrintf("sharing vapid fcm token %d", suffix);
-}
-
-std::string SharingVapidP256dhForSuffix(int suffix) {
-  return base::StringPrintf("sharing vapid p256dh %d", suffix);
-}
-
-std::string SharingVapidAuthSecretForSuffix(int suffix) {
-  return base::StringPrintf("sharing vapid auth secret %d", suffix);
-}
-
 std::string SharingSenderIdFcmTokenForSuffix(int suffix) {
   return base::StringPrintf("sharing sender-id fcm token %d", suffix);
 }
@@ -310,12 +292,6 @@ DeviceInfoSpecifics CreateSpecifics(
   specifics.mutable_feature_fields()->set_send_tab_to_self_receiving_type(
       sync_pb::
           SyncEnums_SendTabReceivingType_SEND_TAB_RECEIVING_TYPE_CHROME_OR_UNSPECIFIED);
-  specifics.mutable_sharing_fields()->set_vapid_fcm_token(
-      SharingVapidFcmTokenForSuffix(suffix));
-  specifics.mutable_sharing_fields()->set_vapid_p256dh(
-      SharingVapidP256dhForSuffix(suffix));
-  specifics.mutable_sharing_fields()->set_vapid_auth_secret(
-      SharingVapidAuthSecretForSuffix(suffix));
   specifics.mutable_sharing_fields()->set_sender_id_fcm_token_v2(
       SharingSenderIdFcmTokenForSuffix(suffix));
   specifics.mutable_sharing_fields()->set_chime_representative_target_id(
@@ -433,9 +409,6 @@ class TestLocalDeviceInfoProvider : public MutableLocalDeviceInfoProvider {
         sync_pb::
             SyncEnums_SendTabReceivingType_SEND_TAB_RECEIVING_TYPE_CHROME_OR_UNSPECIFIED,
         DeviceInfo::SharingInfo(
-            {SharingVapidFcmTokenForSuffix(kLocalSuffix),
-             SharingVapidP256dhForSuffix(kLocalSuffix),
-             SharingVapidAuthSecretForSuffix(kLocalSuffix)},
             {SharingSenderIdFcmTokenForSuffix(kLocalSuffix),
              SharingSenderIdP256dhForSuffix(kLocalSuffix),
              SharingSenderIdAuthSecretForSuffix(kLocalSuffix)},
@@ -681,28 +654,8 @@ class DeviceInfoSyncBridgeTest : public testing::Test,
   }
 
   std::map<std::string, DeviceInfoSpecifics> ReadAllFromStore() {
-    std::unique_ptr<DataTypeStore::RecordList> records;
-    base::RunLoop loop;
-    store()->ReadAllData(base::BindOnce(
-        [](std::unique_ptr<DataTypeStore::RecordList>* output_records,
-           base::RunLoop* loop, const std::optional<syncer::ModelError>& error,
-           std::unique_ptr<DataTypeStore::RecordList> input_records) {
-          EXPECT_FALSE(error) << error->ToString();
-          EXPECT_THAT(input_records, NotNull());
-          *output_records = std::move(input_records);
-          loop->Quit();
-        },
-        &records, &loop));
-    loop.Run();
-    std::map<std::string, DeviceInfoSpecifics> result;
-    if (records) {
-      for (const DataTypeStore::Record& record : *records) {
-        DeviceInfoSpecifics specifics;
-        EXPECT_TRUE(specifics.ParseFromString(record.value));
-        result.emplace(record.id, specifics);
-      }
-    }
-    return result;
+    return DataTypeStoreTestUtil::ReadAllDataAsProtoAndWait<
+        DeviceInfoSpecifics>(*store());
   }
 
   std::map<std::string, sync_pb::EntitySpecifics> GetAllData() {

@@ -49,6 +49,8 @@ GCSAFE_CODE_FWD_ACCESSOR(bool, has_tagged_outgoing_params)
 GCSAFE_CODE_FWD_ACCESSOR(bool, marked_for_deoptimization)
 GCSAFE_CODE_FWD_ACCESSOR(Tagged<Object>, raw_instruction_stream)
 GCSAFE_CODE_FWD_ACCESSOR(uint32_t, stack_slots)
+GCSAFE_CODE_FWD_ACCESSOR(uint16_t, parameter_count)
+GCSAFE_CODE_FWD_ACCESSOR(uint16_t, parameter_count_without_receiver)
 GCSAFE_CODE_FWD_ACCESSOR(uint16_t, wasm_js_tagged_parameter_count)
 GCSAFE_CODE_FWD_ACCESSOR(uint16_t, wasm_js_first_tagged_parameter)
 GCSAFE_CODE_FWD_ACCESSOR(Address, constant_pool)
@@ -100,7 +102,11 @@ inline uint16_t Code::parameter_count_without_receiver() const {
 }
 
 inline Tagged<ProtectedFixedArray> Code::deoptimization_data() const {
-  DCHECK(uses_deoptimization_data());
+  // It's important to CHECK that the Code object uses deoptimization data. We
+  // trust optimized code to have deoptimization data here, but the reference to
+  // this code might be corrupted, such that we get type confusion on this field
+  // in cases where we assume that it must be optimized code.
+  SBXCHECK(uses_deoptimization_data());
   return Cast<ProtectedFixedArray>(
       ReadProtectedPointerField(kDeoptimizationDataOrInterpreterDataOffset));
 }
@@ -129,7 +135,11 @@ inline bool Code::has_deoptimization_data_or_interpreter_data() const {
 }
 
 Tagged<TrustedObject> Code::bytecode_or_interpreter_data() const {
-  DCHECK_EQ(kind(), CodeKind::BASELINE);
+  // It's important to CHECK that the Code object is baseline code. We trust
+  // baseline code to have bytecode/interpreter data here, but the reference to
+  // this code might be corrupted, such that we get type confusion on this field
+  // in cases where we assume that it must be baseline code.
+  SBXCHECK_EQ(kind(), CodeKind::BASELINE);
   return ReadProtectedPointerField(kDeoptimizationDataOrInterpreterDataOffset);
 }
 void Code::set_bytecode_or_interpreter_data(Tagged<TrustedObject> value,
@@ -434,6 +444,21 @@ inline bool Code::is_context_specialized() const {
   return IsContextSpecializedField::decode(flags(kRelaxedLoad));
 }
 
+#if V8_ENABLE_GEARBOX
+inline bool Code::is_gearbox_placeholder_builtin() const {
+  return IsGearboxPlaceholderField::decode(flags(kRelaxedLoad));
+}
+
+void Code::set_is_gearbox_placeholder_builtin(bool flag) {
+  // We should only invoke the setter when we serializing the placeholder object
+  // in mksnapshot.
+  DCHECK_IMPLIES(flag, Builtins::IsGearboxPlaceholder(builtin_id()));
+  int32_t previous = flags(kRelaxedLoad);
+  int32_t updated = IsGearboxPlaceholderField::update(previous, flag);
+  set_flags(updated, kRelaxedStore);
+}
+#endif  // V8_ENABLE_GEARBOX
+
 inline bool Code::is_turbofanned() const {
   return IsTurbofannedField::decode(flags(kRelaxedLoad));
 }
@@ -503,72 +528,10 @@ bool Code::marked_for_deoptimization() const {
 }
 
 void Code::set_marked_for_deoptimization(bool flag) {
-  DCHECK_IMPLIES(flag, AllowDeoptimization::IsAllowed(
-                           GetIsolateFromWritableObject(*this)));
+  DCHECK_IMPLIES(flag, AllowDeoptimization::IsAllowed(Isolate::Current()));
   int32_t previous = flags(kRelaxedLoad);
   int32_t updated = MarkedForDeoptimizationField::update(previous, flag);
   set_flags(updated, kRelaxedStore);
-}
-
-inline void Code::SetMarkedForDeoptimization(Isolate* isolate,
-                                             LazyDeoptimizeReason reason) {
-  set_marked_for_deoptimization(true);
-  // Eager deopts are already logged by the deoptimizer.
-  if (reason != LazyDeoptimizeReason::kEagerDeopt &&
-      V8_UNLIKELY(v8_flags.trace_deopt || v8_flags.log_deopt)) {
-    TraceMarkForDeoptimization(isolate, reason);
-  }
-#ifdef V8_ENABLE_LEAPTIERING
-  JSDispatchHandle handle = js_dispatch_handle();
-  if (handle != kNullJSDispatchHandle) {
-    JSDispatchTable* jdt = IsolateGroup::current()->js_dispatch_table();
-    Tagged<Code> cur = jdt->GetCode(handle);
-    if (SafeEquals(cur)) {
-      if (v8_flags.reopt_after_lazy_deopts &&
-          isolate->concurrent_recompilation_enabled()) {
-        jdt->SetCodeNoWriteBarrier(
-            handle, *BUILTIN_CODE(isolate, InterpreterEntryTrampoline));
-        // Somewhat arbitrary list of lazy deopt reasons which we expect to be
-        // stable enough to warrant either immediate re-optimization, or
-        // re-optimization after one invocation (to detect potential follow-up
-        // IC changes).
-        // TODO(olivf): We should also work on reducing the number of
-        // dependencies we create in the compilers to require less of these
-        // quick re-compilations.
-        switch (reason) {
-          case LazyDeoptimizeReason::kAllocationSiteTenuringChange:
-          case LazyDeoptimizeReason::kAllocationSiteTransitionChange:
-          case LazyDeoptimizeReason::kEmptyContextExtensionChange:
-          case LazyDeoptimizeReason::kFrameValueMaterialized:
-          case LazyDeoptimizeReason::kPropertyCellChange:
-          case LazyDeoptimizeReason::kScriptContextSlotPropertyChange:
-          case LazyDeoptimizeReason::kPrototypeChange:
-          case LazyDeoptimizeReason::kExceptionCaught:
-          case LazyDeoptimizeReason::kFieldTypeConstChange:
-          case LazyDeoptimizeReason::kFieldRepresentationChange:
-          case LazyDeoptimizeReason::kFieldTypeChange:
-          case LazyDeoptimizeReason::kInitialMapChange:
-          case LazyDeoptimizeReason::kMapDeprecated:
-            jdt->SetTieringRequest(
-                handle, TieringBuiltin::kMarkReoptimizeLazyDeoptimized,
-                isolate);
-            break;
-          default:
-            // TODO(olivf): This trampoline is just used to reset the budget. If
-            // we knew the feedback cell and the bytecode size here, we could
-            // directly reset the budget.
-            jdt->SetTieringRequest(handle, TieringBuiltin::kMarkLazyDeoptimized,
-                                   isolate);
-            break;
-        }
-      } else {
-        jdt->SetCodeNoWriteBarrier(handle, *BUILTIN_CODE(isolate, CompileLazy));
-      }
-    }
-    // Ensure we don't try to patch the entry multiple times.
-    set_js_dispatch_handle(kNullJSDispatchHandle);
-  }
-#endif
 }
 
 bool Code::embedded_objects_cleared() const {
@@ -621,39 +584,37 @@ Address Code::code_comments() const {
 }
 
 int Code::code_comments_size() const {
-  return builtin_jump_table_info_offset() - code_comments_offset();
+  return jump_table_info_offset() - code_comments_offset();
 }
 
 bool Code::has_code_comments() const { return code_comments_size() > 0; }
 
-int32_t Code::builtin_jump_table_info_offset() const {
-  if (!V8_BUILTIN_JUMP_TABLE_INFO_BOOL) {
+int32_t Code::jump_table_info_offset() const {
+  if constexpr (!V8_JUMP_TABLE_INFO_BOOL) {
     // Redirection needed since the field doesn't exist in this case.
     return unwinding_info_offset();
   }
-  return ReadField<int32_t>(kBuiltinJumpTableInfoOffsetOffset);
+  return ReadField<int32_t>(kJumpTableInfoOffsetOffset);
 }
 
-void Code::set_builtin_jump_table_info_offset(int32_t value) {
-  if (!V8_BUILTIN_JUMP_TABLE_INFO_BOOL) {
+void Code::set_jump_table_info_offset(int32_t value) {
+  if constexpr (!V8_JUMP_TABLE_INFO_BOOL) {
     // Redirection needed since the field doesn't exist in this case.
     return;
   }
   DCHECK_LE(value, metadata_size());
-  WriteField<int32_t>(kBuiltinJumpTableInfoOffsetOffset, value);
+  WriteField<int32_t>(kJumpTableInfoOffsetOffset, value);
 }
 
-Address Code::builtin_jump_table_info() const {
-  return metadata_start() + builtin_jump_table_info_offset();
+Address Code::jump_table_info() const {
+  return metadata_start() + jump_table_info_offset();
 }
 
-int Code::builtin_jump_table_info_size() const {
-  return unwinding_info_offset() - builtin_jump_table_info_offset();
+int Code::jump_table_info_size() const {
+  return unwinding_info_offset() - jump_table_info_offset();
 }
 
-bool Code::has_builtin_jump_table_info() const {
-  return builtin_jump_table_info_size() > 0;
-}
+bool Code::has_jump_table_info() const { return jump_table_info_size() > 0; }
 
 Address Code::unwinding_info_start() const {
   return metadata_start() + unwinding_info_offset();
@@ -840,6 +801,15 @@ CodeEntrypointTag Code::entrypoint_tag() const {
     default:
       // TODO(saelo): eventually we'll want this to be UNREACHABLE().
       return kDefaultCodeEntrypointTag;
+  }
+}
+
+CodeSandboxingMode Code::sandboxing_mode() const {
+  if (is_builtin()) {
+    return Builtins::SandboxingModeOf(builtin_id());
+  } else {
+    // All runtime-generated code should run sandboxed.
+    return CodeSandboxingMode::kSandboxed;
   }
 }
 

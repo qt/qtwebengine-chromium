@@ -9,23 +9,14 @@
 
 namespace commerce::flag_descriptions {
 
-extern const char kCommerceLocalPDPDetectionName[];
-extern const char kCommerceLocalPDPDetectionDescription[];
-
 extern const char kProductSpecificationsName[];
 extern const char kProductSpecificationsDescription[];
 
 extern const char kCompareConfirmationToastName[];
 extern const char kCompareConfirmationToastDescription[];
 
-extern const char kCompareManagementInterfaceName[];
-extern const char kCompareManagementInterfaceDescription[];
-
 extern const char kShoppingListName[];
 extern const char kShoppingListDescription[];
-
-extern const char kChromeCartDomBasedHeuristicsName[];
-extern const char kChromeCartDomBasedHeuristicsDescription[];
 
 extern const char kPriceInsightsName[];
 extern const char kPriceInsightsDescription[];
@@ -52,6 +43,12 @@ extern const char kPriceTrackingSubscriptionServiceLocaleKeyDescription[];
 
 extern const char kPriceTrackingSubscriptionServiceProductVersionName[];
 extern const char kPriceTrackingSubscriptionServiceProductVersionDescription[];
+
+extern const char kDiscountAutofillName[];
+extern const char kDiscountAutofillDescription[];
+
+extern const char kShoppingAlternateServerName[];
+extern const char kShoppingAlternateServerDescription[];
 
 }  // namespace commerce::flag_descriptions
 

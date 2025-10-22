@@ -5,7 +5,7 @@
 #ifndef COMPONENTS_PAGE_CONTENT_ANNOTATIONS_CORE_PAGE_VISIBILITY_MODEL_EXECUTOR_H_
 #define COMPONENTS_PAGE_CONTENT_ANNOTATIONS_CORE_PAGE_VISIBILITY_MODEL_EXECUTOR_H_
 
-#include "components/optimization_guide/core/tflite_model_executor.h"
+#include "components/optimization_guide/core/inference/tflite_model_executor.h"
 #include "third_party/tflite_support/src/tensorflow_lite_support/cc/task/core/category.h"
 
 namespace page_content_annotations {
@@ -31,7 +31,7 @@ class PageVisibilityModelExecutor
       const std::string& input) override;
   base::expected<std::unique_ptr<ModelExecutionTask>,
                  optimization_guide::ExecutionStatus>
-  BuildModelExecutionTask(base::MemoryMappedFile* model_file) override;
+  BuildModelExecutionTask(base::File& model_file) override;
 
  private:
   // -1 tells TFLite to use its own default number of threads.

@@ -12,10 +12,12 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_CONTEXT_STATE_H_
 #define GPU_COMMAND_BUFFER_SERVICE_CONTEXT_STATE_H_
 
+#include <array>
 #include <memory>
 #include <vector>
 
 #include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "base/notreached.h"
 #include "gpu/command_buffer/service/gl_utils.h"
@@ -56,7 +58,7 @@ struct GPU_GLES2_EXPORT TextureUnit {
   // glBindTexture
   scoped_refptr<TextureRef> bound_texture_external_oes;
 
-  // texture currently bound to this unit's GL_TEXTURE_RECTANGLE_ARB with
+  // texture currently bound to this unit's GL_TEXTURE_RECTANGLE_ANGLE with
   // glBindTexture
   scoped_refptr<TextureRef> bound_texture_rectangle_arb;
 
@@ -87,7 +89,7 @@ struct GPU_GLES2_EXPORT TextureUnit {
         return bound_texture_cube_map.get();
       case GL_SAMPLER_EXTERNAL_OES:
         return bound_texture_external_oes.get();
-      case GL_SAMPLER_2D_RECT_ARB:
+      case GL_SAMPLER_2D_RECT_ANGLE:
         return bound_texture_rectangle_arb.get();
       case GL_SAMPLER_3D:
       case GL_INT_SAMPLER_3D:
@@ -111,7 +113,7 @@ struct GPU_GLES2_EXPORT TextureUnit {
         return bound_texture_cube_map.get();
       case GL_TEXTURE_EXTERNAL_OES:
         return bound_texture_external_oes.get();
-      case GL_TEXTURE_RECTANGLE_ARB:
+      case GL_TEXTURE_RECTANGLE_ANGLE:
         return bound_texture_rectangle_arb.get();
       case GL_TEXTURE_3D:
         return bound_texture_3d.get();
@@ -133,7 +135,7 @@ struct GPU_GLES2_EXPORT TextureUnit {
       case GL_TEXTURE_EXTERNAL_OES:
         bound_texture_external_oes = texture_ref;
         break;
-      case GL_TEXTURE_RECTANGLE_ARB:
+      case GL_TEXTURE_RECTANGLE_ANGLE:
         bound_texture_rectangle_arb = texture_ref;
         break;
       case GL_TEXTURE_3D:
@@ -175,7 +177,7 @@ class GPU_GLES2_EXPORT Vec4 {
     GLuint uint_value;
   };
 
-  ValueUnion v_[4];
+  std::array<ValueUnion, 4> v_;
   ShaderVariableBaseType type_;
 };
 
@@ -325,8 +327,8 @@ struct GPU_GLES2_EXPORT ContextState {
   void SetMaxWindowRectangles(size_t max);
   size_t GetMaxWindowRectangles() const;
   void SetWindowRectangles(GLenum mode,
-                           size_t count,
-                           const volatile GLint* box);
+                           size_t spanification_suspected_redundant_count,
+                           base::span<const volatile GLint> box);
   template <typename T>
   void GetWindowRectangle(GLuint index, T* box) {
     for (size_t i = 0; i < 4; ++i) {

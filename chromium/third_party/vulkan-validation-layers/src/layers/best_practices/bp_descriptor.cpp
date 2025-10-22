@@ -24,9 +24,6 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
                                                           VkDescriptorSet* pDescriptorSets, const ErrorObject& error_obj,
                                                           vvl::AllocateDescriptorSetsData& ads_state_data) const {
     bool skip = false;
-    skip |= BaseClass::PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, error_obj, ads_state_data);
-    if (skip) return skip;
-
     const auto pool_state = Get<vvl::DescriptorPool>(pAllocateInfo->descriptorPool);
     ASSERT_AND_RETURN_SKIP(pool_state);
 
@@ -60,9 +57,10 @@ bool BestPractices::PreCallValidateAllocateDescriptorSets(VkDevice device, const
                     "BestPractices-vkAllocateDescriptorSets-EmptyDescriptorPoolType", ads_pool_state->Handle(), error_obj.location,
                     "Unable to allocate %" PRIu32
                     " descriptors of type %s from %s"
-                    ". This pool only has %" PRIu32 " descriptors of this type remaining.",
+                    ". This pool only has %" PRIu32 " descriptors of this type remaining.\n%s",
                     ads_state_data.required_descriptors_by_type.at(it->first), string_VkDescriptorType(VkDescriptorType(it->first)),
-                    FormatHandle(*ads_pool_state).c_str(), available_count);
+                    FormatHandle(*ads_pool_state).c_str(), available_count,
+                    device_state->PrintDescriptorAllocation(*pAllocateInfo, *pool_state, VkDescriptorType(it->first)).c_str());
             }
         }
     }
@@ -165,3 +163,27 @@ bool BestPractices::PreCallValidateCreateDescriptorUpdateTemplate(VkDevice devic
     return skip;
 }
 
+bool BestPractices::PreCallValidateCreateDescriptorPool(VkDevice device, const VkDescriptorPoolCreateInfo* pCreateInfo,
+                                                        const VkAllocationCallbacks* pAllocator, VkDescriptorPool* pDescriptorPool,
+                                                        const ErrorObject& error_obj) const {
+    bool skip = false;
+
+    const auto* mutable_descriptor_type_ci = vku::FindStructInPNextChain<VkMutableDescriptorTypeCreateInfoEXT>(pCreateInfo->pNext);
+    if (mutable_descriptor_type_ci && mutable_descriptor_type_ci->mutableDescriptorTypeListCount > pCreateInfo->poolSizeCount) {
+        std::stringstream msg;
+        if (pCreateInfo->poolSizeCount == 1) {
+            msg << "first element";
+        } else {
+            msg << "first " << pCreateInfo->poolSizeCount << "elements";
+        }
+
+        skip |= LogWarning(
+            "BestPractices-MutableDescriptor-TypeListCount", device,
+            error_obj.location.pNext(Struct::VkMutableDescriptorTypeCreateInfoEXT, Field::mutableDescriptorTypeListCount),
+            "is %" PRIu32 ", but VkDescriptorPoolCreateInfo::poolSizeCount is only %" PRIu32
+            ". Only %s from VkMutableDescriptorTypeCreateInfoEXT::pMutableDescriptorTypeLists will be used",
+            mutable_descriptor_type_ci->mutableDescriptorTypeListCount, pCreateInfo->poolSizeCount, msg.str().c_str());
+    }
+
+    return skip;
+}

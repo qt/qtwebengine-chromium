@@ -7,7 +7,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, Optional, Sequence, Tuple, Type
+from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Sequence, Type
 
 import selenium.common.exceptions
 import urllib3.exceptions
@@ -15,7 +15,6 @@ from typing_extensions import override
 
 from crossbench.action_runner.action_runner_listener import \
     ActionRunnerListener
-from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
 from crossbench.benchmarks.loading.page.base import Page
@@ -25,15 +24,15 @@ from crossbench.helper import url_helper
 from crossbench.parse import NumberParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.runner.exception import StopStoryException
 
 if TYPE_CHECKING:
   import argparse
 
-  from crossbench.action_runner.base import ActionRunner
+  from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
   from crossbench.path import LocalPath
+  from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
@@ -104,13 +103,13 @@ class MemoryProbeContext(ActionRunnerListener,
     cur_benchmark = probe.benchmark
     if not isinstance(cur_benchmark, MemoryBenchmark):
       raise TypeError("The probe only works for MemoryBenchmark")
-    cur_benchmark.action_runner.set_listener(self)
+    run.action_runner.set_listener(self)
     self._skippable_tab_count = cur_benchmark._skippable_tab_count
     self._target_tab_count = cur_benchmark.get_target_tab_count()
     self._intensive_tab_switch_count = \
       cur_benchmark.get_intensive_tab_switch_count()
     # Records the navigation_start_time time for each window handle.
-    self._navigation_time_ms: Dict[str, float] = {}
+    self._navigation_time_ms: dict[str, float] = {}
     self._tab_count: int = 1
 
   def start(self) -> None:
@@ -225,7 +224,7 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
   """
   Create memory story
   Specify alloc-count, block-size, compressiblity,
-  prefill-constnat, random style to decide the
+  prefill-constant, random style to decide the
   memory workload.
   """
   stories: Sequence[Page]
@@ -233,9 +232,9 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
 
   @classmethod
   @override
-  def add_cli_parser(
+  def add_cli_arguments(
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser = super().add_cli_parser(parser)
+    parser = super().add_cli_arguments(parser)
     parser.add_argument(
         "--alloc-count",
         type=NumberParser.positive_int,
@@ -292,29 +291,13 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
         "Equivalent to --tabs=infinity")
     return parser
 
-  @classmethod
-  @override
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
-    kwargs = super().kwargs_from_cli(args)
-    kwargs["args"] = args
-    return kwargs
-
-  def __init__(self,
-               story_cls: Type[Page],
-               patterns: Sequence[str],
-               args: argparse.Namespace,
-               separate: bool = False) -> None:
-    self._args: argparse.Namespace = args
-
-    super().__init__(story_cls, patterns, separate)
-
   @override
   def process_all(self, patterns: Sequence[str]) -> None:
-    self.stories = self.stories_from_cli_args(self._args)
+    self.stories = self.stories_from_cli_args(self.args)
 
   @classmethod
   def stories_from_cli_args(cls, args: argparse.Namespace) -> Sequence[Page]:
-    url_params = {
+    url_params: MutableMapping[str, str] = {
         "alloc": str(args.alloc_count),
         "blocksize": str(args.block_size),
         "compress": str(args.compressibility),
@@ -330,7 +313,6 @@ class MemoryBenchmarkStoryFilter(StoryFilter[Page]):
 
   @override
   def create_stories(self, separate: bool) -> Sequence[Page]:
-    self.log_stories(self.stories)
     return self.stories
 
 
@@ -342,15 +324,14 @@ class MemoryBenchmark(SubStoryBenchmark):
   NAME = "memory"
   DEFAULT_STORY_CLS = Page
   STORY_FILTER_CLS = MemoryBenchmarkStoryFilter
-  PROBES: Tuple[Type[MemoryProbe], ...] = (MemoryProbe,)
+  PROBES: tuple[Type[MemoryProbe], ...] = (MemoryProbe,)
 
   @classmethod
   @override
   def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
-  ) -> CrossBenchArgumentParser:
-    parser = super().add_cli_parser(subparsers, aliases)
-    cls.STORY_FILTER_CLS.add_cli_parser(parser)
+      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+    parser = super().add_cli_parser(subparsers)
+    cls.STORY_FILTER_CLS.add_cli_arguments(parser)
     parser.add_argument(
         "--skippable-tab-count",
         type=NumberParser.positive_int,
@@ -365,7 +346,7 @@ class MemoryBenchmark(SubStoryBenchmark):
 
   @classmethod
   @override
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["skippable_tab_count"] = args.skippable_tab_count
     kwargs["target_tab_count"] = args.tabs.count
@@ -381,19 +362,18 @@ class MemoryBenchmark(SubStoryBenchmark):
 
   @classmethod
   @override
-  def all_story_names(cls) -> Tuple[str, ...]:
+  def all_story_names(cls) -> tuple[str, ...]:
     return ()
 
   def __init__(self,
                stories: Sequence[Page],
+               action_runner_config: Optional[ActionRunnerConfig] = None,
                skippable_tab_count: int = 0,
                target_tab_count: int = 0,
-               intensive_tab_switch_count: int = 0,
-               action_runner: Optional[ActionRunner] = None) -> None:
-    self._action_runner = action_runner or DefaultActionRunner()
+               intensive_tab_switch_count: int = 0) -> None:
     for story in stories:
       assert isinstance(story, Page)
-    super().__init__(stories)
+    super().__init__(stories, action_runner_config)
     self._skippable_tab_count = skippable_tab_count
     self._target_tab_count = target_tab_count
     self._intensive_tab_switch_count = intensive_tab_switch_count
@@ -406,11 +386,7 @@ class MemoryBenchmark(SubStoryBenchmark):
 
   @classmethod
   @override
-  def describe(cls) -> Dict[str, Any]:
+  def describe(cls) -> dict[str, Any]:
     data = super().describe()
     data["url"] = cls.STORY_FILTER_CLS.URL
     return data
-
-  @property
-  def action_runner(self) -> ActionRunner:
-    return self._action_runner

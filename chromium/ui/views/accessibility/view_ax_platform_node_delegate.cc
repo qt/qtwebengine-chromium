@@ -15,8 +15,11 @@
 #include "base/containers/adapters.h"
 #include "base/functional/bind.h"
 #include "base/i18n/rtl.h"
-#include "base/lazy_instance.h"
 #include "base/memory/raw_ptr.h"
+#include "base/no_destructor.h"
+#include "base/notimplemented.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
 #include "ui/accessibility/accessibility_features.h"
@@ -54,8 +57,10 @@ struct QueuedEvent {
   int32_t node_id;
 };
 
-base::LazyInstance<std::vector<QueuedEvent>>::Leaky g_event_queue =
-    LAZY_INSTANCE_INITIALIZER;
+std::vector<QueuedEvent>& GetEventQueue() {
+  static base::NoDestructor<std::vector<QueuedEvent>> event_queue;
+  return *event_queue;
+}
 
 // g_is_queueing_events is set to true when we are in the "queueing events"
 // state. It is set to true in PostFlushEventQueueTaskIfNecessary(), and
@@ -65,7 +70,7 @@ base::LazyInstance<std::vector<QueuedEvent>>::Leaky g_event_queue =
 // queue any event that is fired after PostFlushEventQueueTaskIfNecessary()
 // is called, until we begin to flush events.
 bool g_is_queueing_events = false;
-// g_is_flushing is true only when we are iterating over g_event_queue in
+// g_is_flushing is true only when we are iterating over GetEventQueue() in
 // FlushQueue(). While flushing, no new events should be added to the queue, see
 // https://crbug.com/358404368
 bool g_is_flushing = false;
@@ -107,11 +112,11 @@ void FlushQueue() {
   DCHECK(g_is_queueing_events);
   g_is_queueing_events = false;
   g_is_flushing = true;
-  for (QueuedEvent event : g_event_queue.Get()) {
+  for (QueuedEvent event : GetEventQueue()) {
     FireEvent(event);
   }
   g_is_flushing = false;
-  g_event_queue.Get().clear();
+  GetEventQueue().clear();
 }
 
 void PostFlushEventQueueTaskIfNecessary() {
@@ -145,7 +150,7 @@ ViewAXPlatformNodeDelegate::ViewAXPlatformNodeDelegate(View* view)
     : ViewAccessibility(view) {}
 
 void ViewAXPlatformNodeDelegate::Init() {
-  ax_platform_node_ = ui::AXPlatformNode::Create(this);
+  ax_platform_node_ = ui::AXPlatformNode::Create(*this);
   DCHECK(ax_platform_node_);
 
   static bool first_time = true;
@@ -159,7 +164,7 @@ void ViewAXPlatformNodeDelegate::Init() {
 ViewAXPlatformNodeDelegate::~ViewAXPlatformNodeDelegate() {
   if (ui::AXPlatformNode::GetPopupFocusOverride() ==
       ax_platform_node_->GetNativeViewAccessible()) {
-    ui::AXPlatformNode::SetPopupFocusOverride(nullptr);
+    ui::AXPlatformNode::SetPopupFocusOverride(gfx::NativeViewAccessible());
   }
 }
 
@@ -190,7 +195,7 @@ void ViewAXPlatformNodeDelegate::SetPopupFocusOverride() {
 }
 
 void ViewAXPlatformNodeDelegate::EndPopupFocusOverride() {
-  ui::AXPlatformNode::SetPopupFocusOverride(nullptr);
+  ui::AXPlatformNode::SetPopupFocusOverride(gfx::NativeViewAccessible());
 }
 
 void ViewAXPlatformNodeDelegate::FireFocusAfterMenuClose() {
@@ -223,18 +228,6 @@ gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::GetNativeObject() const {
   return ax_platform_node_->GetNativeViewAccessible();
 }
 
-void ViewAXPlatformNodeDelegate::OnWidgetUpdated(Widget* widget,
-                                                 Widget* old_widget) {
-  ViewAccessibility::OnWidgetUpdated(widget, old_widget);
-
-  // Initialize the AtomicViewAXTreeManager if necessary when the view gets
-  // added to the widget. We must wait for the widget to become available to
-  // get valid data our of GetData().
-  if (widget && needs_ax_tree_manager()) {
-    EnsureAtomicViewAXTreeManager();
-  }
-}
-
 void ViewAXPlatformNodeDelegate::FireNativeEvent(ax::mojom::Event event_type) {
   DCHECK(ax_platform_node_);
   Widget* const widget = view()->GetWidget();
@@ -262,7 +255,7 @@ void ViewAXPlatformNodeDelegate::FireNativeEvent(ax::mojom::Event event_type) {
   }
 
   if (g_is_queueing_events) {
-    g_event_queue.Get().emplace_back(event_type, GetUniqueId());
+    GetEventQueue().emplace_back(event_type, GetUniqueId());
     return;
   }
 
@@ -297,7 +290,7 @@ void ViewAXPlatformNodeDelegate::FireNativeEvent(ax::mojom::Event event_type) {
       // Fire after a delay so that screen readers don't wipe it out when
       // another user-generated event fires simultaneously.
       PostFlushEventQueueTaskIfNecessary();
-      g_event_queue.Get().emplace_back(event_type, GetUniqueId());
+      GetEventQueue().emplace_back(event_type, GetUniqueId());
       return;
     }
     default:
@@ -406,7 +399,7 @@ gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::ChildAtIndex(
   DCHECK_LT(index, GetChildCount())
       << "|index| should be less than the unignored child count.";
   if (IsLeaf()) {
-    return nullptr;
+    return gfx::NativeViewAccessible();
   }
 
   if (!virtual_children().empty()) {
@@ -486,7 +479,7 @@ std::wstring ViewAXPlatformNodeDelegate::ComputeListItemNameFromContent()
   // TODO(accessibility): We're aware the accessible name might be computed
   // incorrectly if there's a complex structure. Things might be missing for
   // descendants of descendants.
-  for (size_t i = 0; i < GetChildCount(); ++i) {
+  for (size_t i = 0, child_count = GetChildCount(); i < child_count; ++i) {
     auto* child = ui::AXPlatformNode::FromNativeViewAccessible(ChildAtIndex(i));
     if (GetData().role != ax::mojom::Role::kListMarker) {
       str += child->GetDelegate()->GetName();
@@ -539,7 +532,7 @@ ViewAXPlatformNodeDelegate::CreateTextPositionAt(
 
 gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::GetNSWindow() {
   NOTIMPLEMENTED() << "Should only be called on Mac.";
-  return nullptr;
+  return gfx::NativeViewAccessible();
 }
 
 gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::GetNativeViewAccessible()
@@ -577,7 +570,7 @@ gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::GetParent() const {
     }
   }
 
-  return nullptr;
+  return gfx::NativeViewAccessible();
 }
 
 bool ViewAXPlatformNodeDelegate::IsLeaf() const {
@@ -707,7 +700,7 @@ gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::HitTestSync(
     int screen_physical_pixel_x,
     int screen_physical_pixel_y) const {
   if (!view() || !view()->GetWidget()) {
-    return nullptr;
+    return gfx::NativeViewAccessible();
   }
 
   if (IsLeaf()) {
@@ -720,15 +713,27 @@ gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::HitTestSync(
   // Search child widgets first, since they're on top in the z-order.
   for (Widget* child_widget : GetChildWidgets().child_widgets) {
     View* child_root_view = child_widget->GetRootView();
-    View::ConvertPointFromScreen(child_root_view, &point);
-    if (child_root_view->HitTestPoint(point)) {
-      return child_root_view->GetNativeViewAccessible();
+    if (features::IsAccessibilityHitTestPointCopyEnabled()) {
+      // Use a per-iteration copy; don't mutate `point` so later iterations and
+      // the view() hit test use the original ScreenToDIPPoint result.
+      gfx::Point point_for_child = point;
+      View::ConvertPointFromScreen(child_root_view, &point_for_child);
+      if (child_root_view->HitTestPoint(point_for_child)) {
+        return child_root_view->GetNativeViewAccessible();
+      }
+    } else {
+      // Legacy path (pre-fix to https://crbug.com/440293932):
+      // ConvertPointFromScreen mutates shared point.
+      View::ConvertPointFromScreen(child_root_view, &point);
+      if (child_root_view->HitTestPoint(point)) {
+        return child_root_view->GetNativeViewAccessible();
+      }
     }
   }
 
   View::ConvertPointFromScreen(view(), &point);
   if (!view()->HitTestPoint(point)) {
-    return nullptr;
+    return gfx::NativeViewAccessible();
   }
 
   // Check if the point is within any of the virtual children of this view.
@@ -784,7 +789,7 @@ gfx::NativeViewAccessible ViewAXPlatformNodeDelegate::GetFocus() const {
       focus_manager ? focus_manager->GetFocusedView() : nullptr;
 
   if (!focused_view) {
-    return nullptr;
+    return gfx::NativeViewAccessible();
   }
 
   // The accessibility focus will be either on the |focused_view| or on one of

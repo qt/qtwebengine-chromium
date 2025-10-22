@@ -31,6 +31,7 @@ enum UrlQueryParams {
   TOKEN_SECRET = 'token_secret',
   TAB_GROUP_ID = 'tab_group_id',
   TAB_GROUP_TITLE = 'tab_group_title',
+  IS_DISABLED_FOR_POLICY = 'is_disabled_for_policy',
 }
 
 enum FlowValues {
@@ -212,6 +213,8 @@ export function createTranslationMap(): TranslationMap {
       [StaticMessageKey.DELETE_FLOW_HEADER]:
           loadTimeData.getString('deleteFlowHeader'),
       [StaticMessageKey.DELETE]: loadTimeData.getString('delete'),
+      [StaticMessageKey.SHARING_DISABLED_DESCRIPTION]:
+          loadTimeData.getString('sharingDisabledDescription'),
     },
     dynamic: {
       /** Invite flow */
@@ -243,7 +246,17 @@ export function createTranslationMap(): TranslationMap {
           params: DynamicMessageParams,
           ) =>
           loadTimeData.getStringF(
-              'getGroupPreviewAriaLabel', params.group.name),
+              'getGroupPreviewAriaLabel', params.group.name) +
+          ' ' +
+          loadTimeData.getStringF(
+              params.group.members.length <= 1 ? 'memberCountSingular' :
+                                                 'memberCountPlural',
+              params.group.members.length) +
+          ' ' +
+          loadTimeData.getStringF(
+              params.payload.mediaCount <= 1 ? 'tabCountSingular' :
+                                               'tabCountPlural',
+              params.payload.mediaCount),
       /** Manage flow */
       [DynamicMessageKey.GET_STOP_SHARING_DIALOG_CONTENT]: () =>
           loadTimeData.getStringF(
@@ -297,7 +310,7 @@ export function createTranslationMap(): TranslationMap {
           loadTimeData.getStringF('manageGroupTitle', getTabGroupName()),
       [DynamicMessageKey.GET_CLOSE_FLOW_DESCRIPTION_FIRST_PARAGRAPH]:
           (params: DynamicMessageParams) => {
-            if (params.displayedUser!.name! === getGroupOwnerName(params)) {
+            if (params.loggedInUser.role === DataSharingMemberRoleEnum.OWNER) {
               return loadTimeData.getStringF('ownerDeleteLastTimeBody');
             } else {
               return loadTimeData.getStringF('memberDeleteLastTimeBody');
@@ -305,7 +318,7 @@ export function createTranslationMap(): TranslationMap {
           },
       [DynamicMessageKey.GET_CLOSE_FLOW_DESCRIPTION_SECOND_PARAGRAPH]:
           (params: DynamicMessageParams) => {
-            if (params.displayedUser!.name! === getGroupOwnerName(params)) {
+            if (params.loggedInUser.role === DataSharingMemberRoleEnum.OWNER) {
               return loadTimeData.getStringF(
                   'ownerDeleteLastTimeBody2', getTabGroupName());
             } else {
@@ -458,6 +471,8 @@ export class DataSharingApp extends CustomElement implements Logger {
     const tokenSecret = params.get(UrlQueryParams.TOKEN_SECRET);
     const tabGroupId = params.get(UrlQueryParams.TAB_GROUP_ID);
     const parent = this.getRequiredElement('#dialog-container');
+    const isSharingDisabled =
+        (params.get(UrlQueryParams.IS_DISABLED_FOR_POLICY) === 'true');
 
     this.tabGroupId_ = tabGroupId;
 
@@ -465,6 +480,20 @@ export class DataSharingApp extends CustomElement implements Logger {
       parent.classList.add('invite');
     } else {
       parent.classList.remove('invite');
+    }
+
+    switch (flow) {
+      case FlowValues.SHARE:
+        document.title =
+            loadTimeData.getStringF('shareGroupTitle', getTabGroupName());
+        break;
+      case FlowValues.MANAGE:
+        document.title =
+            loadTimeData.getStringF('manageGroupTitle', getTabGroupName());
+        break;
+      case FlowValues.JOIN:
+        document.title = loadTimeData.getStringF('previewA11yName');
+        break;
     }
 
     switch (flow) {
@@ -513,6 +542,10 @@ export class DataSharingApp extends CustomElement implements Logger {
               onJoinSuccessful: () => {
                 this.successfullyJoined_ = true;
                 this.browserProxy_.handler!.openTabGroup(groupId!);
+                // No need to return this promise since we want the bubble to
+                // keep spinning until closed by the browser when new shared tab
+                // group is received.
+                return new Promise<void>(() => {});
               },
               fetchPreviewData: () => {
                 return this.browserProxy_.getTabGroupPreview(
@@ -521,14 +554,19 @@ export class DataSharingApp extends CustomElement implements Logger {
               logger: this,
             })
             .then((res) => {
-              let code: Code = res.status;
-              if (!this.successfullyJoined_ && !this.abandonJoin_) {
-                // If user neither succesfully joined nor abandon join, there
-                // must be an error.
-                code = Code.UNKNOWN;
+              if (this.successfullyJoined_) {
+                // If user successfully joined, do nothing and keep the dialog
+                // around until the tab group is delivered by sync server.
+                return;
               }
 
-              this.browserProxy_.closeUi(code);
+              if (this.abandonJoin_) {
+                this.browserProxy_.closeUi(res.status);
+              } else {
+                // If user neither successfully joined nor abandon join, there
+                // must be an error.
+                this.browserProxy_.closeUi(Code.UNKNOWN);
+              }
             });
         break;
       case FlowValues.MANAGE:
@@ -551,6 +589,7 @@ export class DataSharingApp extends CustomElement implements Logger {
               },
               logger: this,
               showLeaveDialogAtStartup: flow === FlowValues.LEAVE,
+              isSharingDisabled,
             })
             .then((res) => {
               this.browserProxy_.closeUi(res.status);

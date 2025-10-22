@@ -37,7 +37,7 @@ export class HighlightMenuElement extends HighlightMenuElementBase {
     return {settingsPrefs: {type: Object}};
   }
 
-  settingsPrefs: SettingsPrefs = {
+  accessor settingsPrefs: SettingsPrefs = {
     letterSpacing: 0,
     lineSpacing: 0,
     theme: 0,
@@ -55,10 +55,10 @@ export class HighlightMenuElement extends HighlightMenuElementBase {
       title: loadTimeData.getString('wordHighlightTitle'),
       data: chrome.readingMode.wordHighlighting,
     },
-    {
+    ...(chrome.readingMode.isPhraseHighlightingEnabled?[{
       title: loadTimeData.getString('phraseHighlightTitle'),
       data: chrome.readingMode.phraseHighlighting,
-    },
+    }]: []),
     {
       title: loadTimeData.getString('sentenceHighlightTitle'),
       data: chrome.readingMode.sentenceHighlighting,

@@ -10,9 +10,8 @@
 namespace viz {
 
 FlingSchedulerAndroid::FlingSchedulerAndroid(input::RenderInputRouter* rir,
-                                             Delegate* delegate,
                                              const FrameSinkId& frame_sink_id)
-    : rir_(*rir), delegate_(*delegate), frame_sink_id_(frame_sink_id) {}
+    : rir_(*rir), frame_sink_id_(frame_sink_id) {}
 
 FlingSchedulerAndroid::~FlingSchedulerAndroid() {
   StopObservingBeginFrames();
@@ -22,7 +21,7 @@ void FlingSchedulerAndroid::ScheduleFlingProgress(
     base::WeakPtr<input::FlingController> fling_controller) {
   DCHECK(fling_controller);
   fling_controller_ = fling_controller;
-  if (observed_begin_frame_source_) {
+  if (observing_begin_frame_source_) {
     return;
   }
   StartObservingBeginFrames();
@@ -36,11 +35,7 @@ void FlingSchedulerAndroid::DidStopFlingingOnBrowser(
   rir_->DidStopFlinging();
 }
 
-bool FlingSchedulerAndroid::NeedsBeginFrameForFlingProgress() {
-  // Viz never receives an OnAnimate call since it don't have access to
-  // WindowAndroid. Hence, it always fall back to BeginFrames notifications
-  // coming from corresponding CompositorFrameSinkSupport's BeginFrameSource in
-  // Viz.
+bool FlingSchedulerAndroid::ProgressFlingOnFlingStart() {
   return true;
 }
 
@@ -61,8 +56,17 @@ void FlingSchedulerAndroid::ProgressFlingOnBeginFrameIfneeded(
   NOTREACHED();
 }
 
+void FlingSchedulerAndroid::SetBeginFrameSource(
+    BeginFrameSource* begin_frame_source) {
+  if (!begin_frame_source) {
+    StopObservingBeginFrames();
+  }
+  CHECK(!observing_begin_frame_source_);
+  begin_frame_source_ = begin_frame_source;
+}
+
 BeginFrameSource* FlingSchedulerAndroid::GetBeginFrameSource() {
-  return delegate_->GetBeginFrameSourceForFrameSink(frame_sink_id_);
+  return begin_frame_source_;
 }
 
 void FlingSchedulerAndroid::StartObservingBeginFrames() {
@@ -70,30 +74,27 @@ void FlingSchedulerAndroid::StartObservingBeginFrames() {
     return;
   }
 
-  if (observed_begin_frame_source_) {
+  if (observing_begin_frame_source_) {
     return;
   }
 
-  auto* begin_frame_source = GetBeginFrameSource();
-  if (!begin_frame_source) {
-    return;
+  if (GetBeginFrameSource()) {
+    observing_begin_frame_source_ = true;
+    GetBeginFrameSource()->AddObserver(this);
   }
-
-  observed_begin_frame_source_ = begin_frame_source;
-  observed_begin_frame_source_->AddObserver(this);
 }
 
 void FlingSchedulerAndroid::StopObservingBeginFrames() {
-  if (!observed_begin_frame_source_) {
+  if (!observing_begin_frame_source_) {
     return;
   }
-  observed_begin_frame_source_->RemoveObserver(this);
-  observed_begin_frame_source_ = nullptr;
+  GetBeginFrameSource()->RemoveObserver(this);
+  observing_begin_frame_source_ = false;
 }
 
 bool FlingSchedulerAndroid::OnBeginFrameDerivedImpl(
     const BeginFrameArgs& args) {
-  DCHECK(observed_begin_frame_source_);
+  DCHECK(observing_begin_frame_source_);
   if (!fling_controller_) {
     StopObservingBeginFrames();
     return false;

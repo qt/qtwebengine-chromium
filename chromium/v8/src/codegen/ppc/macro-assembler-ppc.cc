@@ -157,7 +157,7 @@ void MacroAssembler::LoadRootRelative(Register destination, int32_t offset) {
 }
 
 void MacroAssembler::StoreRootRelative(int32_t offset, Register value) {
-  StoreU64(value, MemOperand(kRootRegister, offset));
+  StoreU64(value, MemOperand(kRootRegister, offset), r0);
 }
 
 void MacroAssembler::LoadRootRegisterOffset(Register destination,
@@ -414,7 +414,7 @@ void MacroAssembler::TestCodeIsMarkedForDeoptimization(Register code,
 }
 
 Operand MacroAssembler::ClearedValue() const {
-  return Operand(static_cast<int32_t>(i::ClearedValue(isolate()).ptr()));
+  return Operand(static_cast<int32_t>(i::kClearedWeakValue.ptr()));
 }
 
 void MacroAssembler::Call(Label* target) { b(target, SetLK); }
@@ -426,6 +426,12 @@ void MacroAssembler::Push(Handle<HeapObject> handle) {
 
 void MacroAssembler::Push(Tagged<Smi> smi) {
   mov(r0, Operand(smi));
+  push(r0);
+}
+
+void MacroAssembler::Push(Tagged<TaggedIndex> index) {
+  // TaggedIndex is the same as Smi for 32 bit archs.
+  mov(r0, Operand(static_cast<uint32_t>(index.value())));
   push(r0);
 }
 
@@ -663,6 +669,38 @@ void MacroAssembler::MultiPopF64AndV128(DoubleRegList dregs,
 #endif
   MultiPopDoubles(dregs);
 }
+void MacroAssembler::PushAll(RegList registers) {
+  if (registers.is_empty()) return;
+  ASM_CODE_COMMENT(this);
+  // TODO(victorgomes): {stm/ldm} pushes/pops registers in the opposite order
+  // as expected by Maglev frame. Consider massaging Maglev to accept this
+  // order instead.
+  // Can not use MultiPush(registers, sp) due to orders
+  for (Register reg : registers) {
+    Push(reg);
+  }
+}
+
+void MacroAssembler::PopAll(RegList registers) {
+  if (registers.is_empty()) return;
+  ASM_CODE_COMMENT(this);
+  // Can not use MultiPop(registers, sp);
+  for (Register reg : base::Reversed(registers)) {
+    Pop(reg);
+  }
+}
+
+void MacroAssembler::PushAll(DoubleRegList registers, int stack_slot_size) {
+  if (registers.is_empty()) return;
+  ASM_CODE_COMMENT(this);
+  MultiPushDoubles(registers, sp);
+}
+
+void MacroAssembler::PopAll(DoubleRegList registers, int stack_slot_size) {
+  if (registers.is_empty()) return;
+  ASM_CODE_COMMENT(this);
+  MultiPopDoubles(registers, sp);
+}
 
 void MacroAssembler::LoadTaggedRoot(Register destination, RootIndex index) {
   ASM_CODE_COMMENT(this);
@@ -687,8 +725,19 @@ void MacroAssembler::LoadRoot(Register destination, RootIndex index,
 void MacroAssembler::LoadTaggedField(const Register& destination,
                                      const MemOperand& field_operand,
                                      const Register& scratch) {
+  ASM_CODE_COMMENT(this);
   if (COMPRESS_POINTERS_BOOL) {
     DecompressTagged(destination, field_operand);
+  } else {
+    LoadU64(destination, field_operand, scratch);
+  }
+}
+
+void MacroAssembler::LoadTaggedFieldWithoutDecompressing(
+    const Register& destination, const MemOperand& field_operand,
+    const Register& scratch) {
+  if (COMPRESS_POINTERS_BOOL) {
+    LoadU32(destination, field_operand, scratch);
   } else {
     LoadU64(destination, field_operand, scratch);
   }
@@ -703,6 +752,11 @@ void MacroAssembler::SmiUntag(Register dst, const MemOperand& src, RCBit rc,
   }
 
   SmiUntag(dst, rc);
+}
+
+void MacroAssembler::SmiUntagField(Register dst, const MemOperand& src,
+                                   RCBit rc, Register scratch) {
+  SmiUntag(dst, src, rc, scratch);
 }
 
 void MacroAssembler::StoreTaggedField(const Register& value,
@@ -1443,6 +1497,7 @@ void MacroAssembler::LoadConstantPoolPointerRegisterFromCodeTargetAddress(
 void MacroAssembler::LoadPC(Register dst) {
   b(4, SetLK);
   mflr(dst);
+  // dst points to address of mflr
 }
 
 void MacroAssembler::ComputeCodeStartAddress(Register dst) {
@@ -1646,7 +1701,7 @@ void MacroAssembler::LeaveExitFrame(Register scratch) {
   LoadU64(cp, ExternalReferenceAsOperand(context_address, no_reg));
 
 #ifdef DEBUG
-  mov(scratch, Operand(Context::kInvalidContext));
+  mov(scratch, Operand(Context::kNoContext));
   StoreU64(scratch, ExternalReferenceAsOperand(context_address, no_reg));
 #endif
 
@@ -1829,7 +1884,7 @@ void MacroAssembler::InvokeFunctionCode(Register function, Register new_target,
   constexpr int unused_argument_count = 0;
   switch (type) {
     case InvokeType::kCall:
-      CallJSFunction(function, unused_argument_count, r0);
+      CallJSFunction(function, unused_argument_count);
       break;
     case InvokeType::kJump:
       JumpJSFunction(function, r0);
@@ -1957,14 +2012,6 @@ void MacroAssembler::IsObjectType(Register object, Register scratch1,
   CompareObjectType(object, scratch1, scratch2, type);
 }
 
-void MacroAssembler::CompareObjectType(Register object, Register map,
-                                       Register type_reg, InstanceType type) {
-  const Register temp = type_reg == no_reg ? r0 : type_reg;
-
-  LoadMap(map, object);
-  CompareInstanceType(map, temp, type);
-}
-
 void MacroAssembler::CompareObjectTypeRange(Register object, Register map,
                                             Register type_reg, Register scratch,
                                             InstanceType lower_limit,
@@ -1974,18 +2021,11 @@ void MacroAssembler::CompareObjectTypeRange(Register object, Register map,
   CompareInstanceTypeRange(map, type_reg, scratch, lower_limit, upper_limit);
 }
 
-void MacroAssembler::CompareInstanceType(Register map, Register type_reg,
-                                         InstanceType type) {
-  static_assert(Map::kInstanceTypeOffset < 4096);
-  static_assert(LAST_TYPE <= 0xFFFF);
-  lhz(type_reg, FieldMemOperand(map, Map::kInstanceTypeOffset));
-  cmpi(type_reg, Operand(type));
-}
-
 void MacroAssembler::CompareRange(Register value, Register scratch,
                                   unsigned lower_limit, unsigned higher_limit) {
   ASM_CODE_COMMENT(this);
   DCHECK_LT(lower_limit, higher_limit);
+  CHECK_NE(value, scratch);
   if (lower_limit != 0) {
     mov(scratch, Operand(lower_limit));
     sub(scratch, value, scratch);
@@ -2165,10 +2205,11 @@ void MacroAssembler::JumpIfIsInRange(Register value, Register scratch,
 void MacroAssembler::TruncateDoubleToI(Isolate* isolate, Zone* zone,
                                        Register result,
                                        DoubleRegister double_input,
-                                       StubCallMode stub_mode) {
+                                       StubCallMode stub_mode,
+                                       DoubleRegister double_scratch) {
   Label done;
 
-  TryInlineTruncateDoubleToI(result, double_input, &done);
+  TryInlineTruncateDoubleToI(result, double_input, &done, double_scratch);
 
   // If we fell through then inline version didn't succeed - call stub instead.
   mflr(r0);
@@ -2197,8 +2238,9 @@ void MacroAssembler::TruncateDoubleToI(Isolate* isolate, Zone* zone,
 
 void MacroAssembler::TryInlineTruncateDoubleToI(Register result,
                                                 DoubleRegister double_input,
-                                                Label* done) {
-  DoubleRegister double_scratch = kScratchDoubleReg;
+                                                Label* done,
+                                                DoubleRegister double_scratch) {
+  CHECK(!AreAliased(double_scratch, double_input));
   ConvertDoubleToInt64(double_input,
                        result, double_scratch);
 
@@ -2277,30 +2319,6 @@ void MacroAssembler::AssertFeedbackVector(Register object, Register scratch) {
 }
 #endif  // V8_ENABLE_DEBUG_CODE
 
-// Optimized code is good, get it into the closure and link the closure
-// into the optimized functions list, then tail call the optimized code.
-void MacroAssembler::ReplaceClosureCodeWithOptimizedCode(
-    Register optimized_code, Register closure, Register scratch1,
-    Register slot_address) {
-#ifdef V8_ENABLE_LEAPTIERING
-  UNREACHABLE();
-#else
-  DCHECK(!AreAliased(optimized_code, closure, scratch1, slot_address));
-  DCHECK_EQ(closure, kJSFunctionRegister);
-  DCHECK(!AreAliased(optimized_code, closure));
-  // Store code entry in the closure.
-  StoreCodePointerField(optimized_code,
-                        FieldMemOperand(closure, JSFunction::kCodeOffset), r0);
-  // Write barrier clobbers scratch1 below.
-  Register value = scratch1;
-  mr(value, optimized_code);
-
-  RecordWriteField(closure, JSFunction::kCodeOffset, value, slot_address,
-                   kLRHasNotBeenSaved, SaveFPRegsMode::kIgnore, SmiCheck::kOmit,
-                   SlotDescriptor::ForCodePointerSlot());
-#endif  // V8_ENABLE_LEAPTIERING
-}
-
 void MacroAssembler::GenerateTailCallToReturnedCode(
     Runtime::FunctionId function_id) {
   // ----------- S t a t e -------------
@@ -2318,7 +2336,9 @@ void MacroAssembler::GenerateTailCallToReturnedCode(
          kJavaScriptCallArgCountRegister, kJavaScriptCallTargetRegister);
 
     CallRuntime(function_id, 1);
+#ifndef V8_ENABLE_LEAPTIERING
     mr(r5, r3);
+#endif
 
     // Restore target function, new target and actual argument count.
     Pop(kJavaScriptCallTargetRegister, kJavaScriptCallNewTargetRegister,
@@ -2326,10 +2346,34 @@ void MacroAssembler::GenerateTailCallToReturnedCode(
     SmiUntag(kJavaScriptCallArgCountRegister);
   }
   static_assert(kJavaScriptCallCodeStartRegister == r5, "ABI mismatch");
+#ifdef V8_ENABLE_LEAPTIERING
+  JumpJSFunction(kJavaScriptCallTargetRegister, r0);
+#else
   JumpCodeObject(r5);
+#endif
 }
 
 #ifndef V8_ENABLE_LEAPTIERING
+
+// Optimized code is good, get it into the closure and link the closure
+// into the optimized functions list, then tail call the optimized code.
+void MacroAssembler::ReplaceClosureCodeWithOptimizedCode(
+    Register optimized_code, Register closure, Register scratch1,
+    Register slot_address) {
+  DCHECK(!AreAliased(optimized_code, closure, scratch1, slot_address));
+  DCHECK_EQ(closure, kJSFunctionRegister);
+  DCHECK(!AreAliased(optimized_code, closure));
+  // Store code entry in the closure.
+  StoreCodePointerField(optimized_code,
+                        FieldMemOperand(closure, JSFunction::kCodeOffset), r0);
+  // Write barrier clobbers scratch1 below.
+  Register value = scratch1;
+  mr(value, optimized_code);
+
+  RecordWriteField(closure, JSFunction::kCodeOffset, value, slot_address,
+                   kLRHasNotBeenSaved, SaveFPRegsMode::kIgnore, SmiCheck::kOmit,
+                   SlotDescriptor::ForCodePointerSlot());
+}
 
 // Read off the flags in the feedback vector and check if there
 // is optimized code or a tiering state that needs to be processed.
@@ -2339,8 +2383,8 @@ void MacroAssembler::LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
   ASM_CODE_COMMENT(this);
   DCHECK(!AreAliased(flags, feedback_vector));
   DCHECK(CodeKindCanTierUp(current_code_kind));
-  LoadU16(flags,
-          FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset));
+  LoadU16(flags, FieldMemOperand(feedback_vector, FeedbackVector::kFlagsOffset),
+          r0);
   uint32_t kFlagsMask = FeedbackVector::kFlagsTieringStateIsAnyRequested |
                         FeedbackVector::kFlagsMaybeHasTurbofanCode |
                         FeedbackVector::kFlagsLogNextExecution;
@@ -2349,8 +2393,8 @@ void MacroAssembler::LoadFeedbackVectorFlagsAndJumpIfNeedsProcessing(
   }
   CHECK(is_uint16(kFlagsMask));
   mov(r0, Operand(kFlagsMask));
-  AndU32(r0, flags, r0, SetRC);
-  bne(flags_need_processing, cr0);
+  andi(r0, flags, Operand(kFlagsMask));
+  bne(flags_need_processing);
 }
 
 void MacroAssembler::OptimizeCodeOrTailCallOptimizedCodeSlot(
@@ -2454,7 +2498,7 @@ void MacroAssembler::EmitDecrementCounter(StatsCounter* counter, int value,
 
 void MacroAssembler::Check(Condition cond, AbortReason reason, CRegister cr) {
   Label L;
-  b(cond, &L, cr);
+  b(to_condition(cond), &L, cr);
   Abort(reason);
   // will not return here
   bind(&L);
@@ -2536,10 +2580,34 @@ void MacroAssembler::LoadFeedbackVector(Register dst, Register closure,
   bind(&done);
 }
 
+void MacroAssembler::LoadInterpreterDataBytecodeArray(
+    Register destination, Register interpreter_data) {
+  LoadTaggedField(destination,
+                  FieldMemOperand(interpreter_data,
+                                  offsetof(InterpreterData, bytecode_array_)),
+                  r0);
+}
+
+void MacroAssembler::LoadInterpreterDataInterpreterTrampoline(
+    Register destination, Register interpreter_data) {
+  LoadTaggedField(
+      destination,
+      FieldMemOperand(interpreter_data,
+                      offsetof(InterpreterData, interpreter_trampoline_)),
+      r0);
+}
+
 void MacroAssembler::LoadCompressedMap(Register dst, Register object,
                                        Register scratch) {
   ASM_CODE_COMMENT(this);
   LoadU32(dst, FieldMemOperand(object, HeapObject::kMapOffset), scratch);
+}
+
+void MacroAssembler::LoadCompressedMap(Register dst, Register object) {
+  ASM_CODE_COMMENT(this);
+  UseScratchRegisterScope temps(this);
+  Register scratch = temps.Acquire();
+  LoadCompressedMap(dst, object, scratch);
 }
 
 void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
@@ -2554,6 +2622,30 @@ void MacroAssembler::LoadNativeContextSlot(Register dst, int index) {
 #ifdef V8_ENABLE_DEBUG_CODE
 void MacroAssembler::Assert(Condition cond, AbortReason reason, CRegister cr) {
   if (v8_flags.debug_code) Check(cond, reason, cr);
+}
+
+void MacroAssembler::AssertUnreachable(AbortReason reason) {
+  if (v8_flags.debug_code) Abort(reason);
+}
+
+void MacroAssembler::AssertZeroExtended(Register int32_register) {
+  if (!v8_flags.debug_code) return;
+  ASM_CODE_COMMENT(this);
+  mov(r0, Operand(kMaxUInt32));
+  CmpS64(int32_register, r0);
+  Check(le, AbortReason::k32BitValueInRegisterIsNotZeroExtended);
+}
+
+void MacroAssembler::AssertMap(Register object) {
+  if (!v8_flags.debug_code) return;
+  ASM_CODE_COMMENT(this);
+  TestIfSmi(object, r0);
+  Check(ne, AbortReason::kOperandIsNotAMap);
+  Push(object);
+  LoadMap(object, object);
+  CompareInstanceType(object, object, MAP_TYPE);
+  Pop(object);
+  Check(eq, AbortReason::kOperandIsNotAMap);
 }
 
 void MacroAssembler::AssertNotSmi(Register object) {
@@ -2811,9 +2903,6 @@ int MacroAssembler::CallCFunction(Register function, int num_reg_arguments,
     Pop(scratch);
   }
 
-  // Just call directly. The function called cannot cause a GC, or
-  // allow preemption, so the return address in the link register
-  // stays correct.
   Register dest = function;
   if (ABI_USES_FUNCTION_DESCRIPTORS && has_function_descriptor) {
     // AIX/PPC64BE Linux uses a function descriptor. When calling C code be
@@ -2828,15 +2917,35 @@ int MacroAssembler::CallCFunction(Register function, int num_reg_arguments,
     dest = ip;
   }
 
-  Call(dest);
-  int call_pc_offset = pc_offset();
-  int offset_since_start_call = SizeOfCodeGeneratedSince(&start_call);
-  // Here we are going to patch the `addi` instruction above to use the
-  // correct offset.
-  // LoadPC emits two instructions and pc is the address of its second emitted
-  // instruction. Add one more to the offset to point to after the Call.
-  offset_since_start_call += kInstrSize;
-  patch_pc_address(pc_scratch, start_pc_offset, offset_since_start_call);
+  int call_pc_offset;
+  {
+    ConstantPoolUnavailableScope block_const_pool_scope(this);
+    BlockTrampolinePoolScope block_trampoline_pool(this);
+    Call(dest);
+    call_pc_offset = pc_offset();
+    int offset_since_start_call = SizeOfCodeGeneratedSince(&start_call);
+    // Here we are going to patch the `addi` instruction above to use the
+    // correct offset.
+    // LoadPC emits two instructions and pc is the address of its second emitted
+    // instruction. Add one more to the offset to point to after the Call.
+    offset_since_start_call += kInstrSize;
+    patch_pc_address(pc_scratch, start_pc_offset, offset_since_start_call);
+
+    int before_offset = pc_offset();
+    int stack_passed_arguments =
+        CalculateStackPassedWords(num_reg_arguments, num_double_arguments);
+    int stack_space = kNumRequiredStackFrameSlots + stack_passed_arguments;
+    if (ActivationFrameAlignment() > kSystemPointerSize) {
+      // Using prefixed load may emit `nop` which then fails the check below.
+      ld(sp, MemOperand(sp, stack_space * kSystemPointerSize));
+    } else {
+      AddS64(sp, sp, Operand(stack_space * kSystemPointerSize), r0);
+    }
+    // We assume that the move instruction uses kMaxSizeOfMoveAfterFastCall
+    // bytes. When we patch in the deopt trampoline, we patch it in after the
+    // move instruction, so that the stack has been restored correctly.
+    CHECK_EQ(kMaxSizeOfMoveAfterFastCall, pc_offset() - before_offset);
+  }
 
   if (set_isolate_data_slots == SetIsolateDataSlots::kYes) {
     // We don't unset the PC; the FP is the source of truth.
@@ -2845,16 +2954,6 @@ int MacroAssembler::CallCFunction(Register function, int num_reg_arguments,
 
     StoreU64(zero_scratch,
              ExternalReferenceAsOperand(IsolateFieldId::kFastCCallCallerFP));
-  }
-
-  // Remove frame bought in PrepareCallCFunction
-  int stack_passed_arguments =
-      CalculateStackPassedWords(num_reg_arguments, num_double_arguments);
-  int stack_space = kNumRequiredStackFrameSlots + stack_passed_arguments;
-  if (ActivationFrameAlignment() > kSystemPointerSize) {
-    LoadU64(sp, MemOperand(sp, stack_space * kSystemPointerSize), r0);
-  } else {
-    AddS64(sp, sp, Operand(stack_space * kSystemPointerSize), r0);
   }
 
   return call_pc_offset;
@@ -5213,7 +5312,9 @@ void MacroAssembler::LoadEntrypointFromJSDispatchTable(Register destination,
   ASM_CODE_COMMENT(this);
 
   Register index = destination;
-  Move(scratch, ExternalReference::js_dispatch_table_address());
+  CHECK(root_array_available());
+  LoadU64(scratch,
+          ExternalReferenceAsOperand(IsolateFieldId::kJSDispatchTable));
   ShiftRightU64(index, dispatch_handle, Operand(kJSDispatchHandleShift));
   ShiftLeftU64(index, index, Operand(kJSDispatchTableEntrySizeLog2));
   AddS64(scratch, scratch, index);
@@ -5250,7 +5351,7 @@ void MacroAssembler::JumpCodeObject(Register code_object, JumpMode jump_mode) {
 }
 
 void MacroAssembler::CallJSFunction(Register function_object,
-                                    uint16_t argument_count, Register scratch) {
+                                    uint16_t argument_count) {
   Register code = kJavaScriptCallCodeStartRegister;
 #if V8_ENABLE_LEAPTIERING
   Register dispatch_handle = r0;
@@ -5263,11 +5364,11 @@ void MacroAssembler::CallJSFunction(Register function_object,
   // from the code pointer table instead of going through the Code object. In
   // this way, we avoid one memory load on this code path.
   LoadCodeEntrypointViaCodePointer(
-      code, FieldMemOperand(function_object, JSFunction::kCodeOffset), scratch);
+      code, FieldMemOperand(function_object, JSFunction::kCodeOffset), ip);
   Call(code);
 #else
   LoadTaggedField(
-      code, FieldMemOperand(function_object, JSFunction::kCodeOffset), scratch);
+      code, FieldMemOperand(function_object, JSFunction::kCodeOffset), ip);
   CallCodeObject(code);
 #endif
 }
@@ -5536,6 +5637,62 @@ void MacroAssembler::ReverseBitsInSingleByteU64(Register dst, Register src,
   orx(dst, dst, scratch2);
 }
 
+void MacroAssembler::JumpIfCodeIsMarkedForDeoptimization(
+    Register code, Register scratch, Label* if_marked_for_deoptimization) {
+  CHECK_NE(scratch, r0);
+  TestCodeIsMarkedForDeoptimization(code, scratch, r0);
+  bne(if_marked_for_deoptimization);
+}
+
+void MacroAssembler::JumpIfCodeIsTurbofanned(Register code, Register scratch,
+                                             Label* if_turbofanned) {
+  LoadU32(scratch, FieldMemOperand(code, Code::kFlagsOffset), r0);
+  TestBit(scratch, Code::kIsTurbofannedBit, r0);
+  bne(if_turbofanned);
+}
+void MacroAssembler::TryLoadOptimizedOsrCode(Register scratch_and_result,
+                                             CodeKind min_opt_level,
+                                             Register feedback_vector,
+                                             FeedbackSlot slot,
+                                             Label* on_result,
+                                             Label::Distance) {
+  Label fallthrough, clear_slot;
+  LoadTaggedField(
+      scratch_and_result,
+      FieldMemOperand(feedback_vector,
+                      FeedbackVector::OffsetOfElementAt(slot.ToInt())));
+  LoadWeakValue(scratch_and_result, scratch_and_result, &fallthrough);
+  // Is it marked_for_deoptimization? If yes, clear the slot.
+  {
+    // The entry references a CodeWrapper object. Unwrap it now.
+    LoadTaggedField(
+        scratch_and_result,
+        FieldMemOperand(scratch_and_result, CodeWrapper::kCodeOffset));
+
+    UseScratchRegisterScope temps(this);
+    Register temp = temps.Acquire();
+    CHECK(!AreAliased(temp, scratch_and_result, r0));
+
+    JumpIfCodeIsMarkedForDeoptimization(scratch_and_result, temp, &clear_slot);
+    if (min_opt_level == CodeKind::TURBOFAN_JS) {
+      JumpIfCodeIsTurbofanned(scratch_and_result, temp, on_result);
+      b(&fallthrough);
+    } else {
+      b(on_result);
+    }
+  }
+
+  bind(&clear_slot);
+  mov(scratch_and_result, ClearedValue());
+  StoreTaggedField(
+      scratch_and_result,
+      FieldMemOperand(feedback_vector,
+                      FeedbackVector::OffsetOfElementAt(slot.ToInt())));
+
+  bind(&fallthrough);
+  mov(scratch_and_result, Operand::Zero());
+}
+
 // Calls an API function. Allocates HandleScope, extracts returned value
 // from handle and propagates exceptions. Clobbers C argument registers
 // and C caller-saved registers. Restores context. On return removes
@@ -5706,6 +5863,33 @@ void CallApiFunctionAndReturn(MacroAssembler* masm, bool with_profiling,
     __ mr(return_value, saved_result);
     __ b(&leave_exit_frame);
   }
+}
+
+void MacroAssembler::Switch(Register scratch, Register value,
+                            int case_value_base, Label** labels,
+                            int num_labels) {
+  Label fallthrough;
+  if (case_value_base != 0) {
+    SubS64(value, value, Operand(case_value_base), r0);
+  }
+  CmpU64(value, Operand(num_labels), r0);
+  bge(&fallthrough);
+
+  int entry_size_log2 = 2;
+  ShiftLeftU32(value, value, Operand(entry_size_log2));
+
+  Assembler::BlockTrampolinePoolScope block_trampoline_pool(this);
+  // offset = size of (mflr, addi, add, mtctr, bctr)
+  constexpr int offset = 20;
+  LoadPC(scratch);
+  addi(scratch, scratch, Operand(offset));
+  add(scratch, scratch, value);
+  Jump(scratch);
+
+  for (int i = 0; i < num_labels; ++i) {
+    b(labels[i]);
+  }
+  bind(&fallthrough);
 }
 
 }  // namespace internal

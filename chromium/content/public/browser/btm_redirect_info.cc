@@ -14,7 +14,8 @@ namespace content {
 BtmRedirectChainInfo::BtmRedirectChainInfo(const UrlAndSourceId& initial_url,
                                            const UrlAndSourceId& final_url,
                                            size_t length,
-                                           bool is_partial_chain)
+                                           bool is_partial_chain,
+                                           bool are_3pcs_generally_enabled)
     : chain_id(static_cast<int32_t>(base::RandUint64())),
       initial_url(initial_url),
       initial_site(GetSiteForBtm(initial_url.url)),
@@ -22,7 +23,8 @@ BtmRedirectChainInfo::BtmRedirectChainInfo(const UrlAndSourceId& initial_url,
       final_site(GetSiteForBtm(final_url.url)),
       initial_and_final_sites_same(initial_site == final_site),
       length(length),
-      is_partial_chain(is_partial_chain) {}
+      is_partial_chain(is_partial_chain),
+      are_3pcs_generally_enabled(are_3pcs_generally_enabled) {}
 
 BtmRedirectChainInfo::BtmRedirectChainInfo(const BtmRedirectChainInfo&) =
     default;
@@ -62,7 +64,7 @@ std::unique_ptr<BtmRedirectInfo> BtmRedirectInfo::CreateForClient(
       /*server_bounce_delay=*/base::TimeDelta()));
 }
 
-BtmRedirectInfo::BtmRedirectInfo(const UrlAndSourceId& url,
+BtmRedirectInfo::BtmRedirectInfo(const UrlAndSourceId& redirector,
                                  BtmRedirectType redirect_type,
                                  BtmDataAccessType access_type,
                                  base::Time time,
@@ -72,8 +74,8 @@ BtmRedirectInfo::BtmRedirectInfo(const UrlAndSourceId& url,
                                  bool was_response_cached,
                                  int response_code,
                                  base::TimeDelta server_bounce_delay)
-    : redirecting_url(url),
-      site(GetSiteForBtm(url.url)),
+    : redirector(redirector),
+      site(GetSiteForBtm(redirector.url)),
       redirect_type(redirect_type),
       access_type(access_type),
       time(time),

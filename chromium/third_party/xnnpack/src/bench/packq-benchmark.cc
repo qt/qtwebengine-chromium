@@ -18,9 +18,8 @@
 #include <benchmark/benchmark.h>
 
 void x8_packq(benchmark::State& state, xnn_x8_packq_f32qp8_ukernel_fn packq,
-              size_t mr, size_t kr, size_t sr,
-              benchmark::utils::IsaCheckFunction isa_check) {
-  if (isa_check != nullptr && !isa_check(state)) {
+              size_t mr, size_t kr, size_t sr, uint64_t arch_flags) {
+  if (!benchmark::utils::CheckArchFlags(state, arch_flags)) {
     return;
   }
 
@@ -44,13 +43,13 @@ void x8_packq(benchmark::State& state, xnn_x8_packq_f32qp8_ukernel_fn packq,
               sizeof(int8_t) * batch *
                   (dim_m * dim_k + rounded_n * rounded_k + rounded_n));
 
-  xnnpack::Buffer<float, XNN_ALLOCATION_ALIGNMENT> input(num_buffers * batch * dim_m *
-                                                 dim_k);
+  xnnpack::Buffer<float, XNN_ALLOCATION_ALIGNMENT> input(num_buffers * batch *
+                                                         dim_m * dim_k);
   std::generate(input.begin(), input.end(), f32rng);
   const size_t packed_size =
       xnn_x8_packq_f32qp8_packed_size(batch * dim_m, dim_k, mr, kr, sr);
   xnnpack::Buffer<int8_t, XNN_ALLOCATION_ALIGNMENT> packed_weights(num_buffers *
-                                                           packed_size);
+                                                                   packed_size);
 
   size_t buffer_index = 0;
   for (auto _ : state) {

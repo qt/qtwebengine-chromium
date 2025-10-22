@@ -4,6 +4,8 @@
 
 #include "third_party/blink/renderer/modules/webaudio/panner_handler.h"
 
+#include <array>
+
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/synchronization/lock.h"
@@ -126,7 +128,12 @@ void PannerHandler::ProcessIfNecessary(uint32_t frames_to_process) {
           // to the downstream nodes.  (For example, a Gain node with a gain of
           // 0 will want to silence its output.)
           UnsilenceOutputs();
+          base::TimeTicks process_start_time = base::TimeTicks::Now();
           Process(frames_to_process);
+          base::TimeDelta process_duration =
+              base::TimeTicks::Now() - process_start_time;
+          uma_reporter_->AddProcessDuration(process_duration,
+                                            frames_to_process);
         }
       } else {
         // We must be in the middle of changing the properties of the panner.
@@ -230,19 +237,22 @@ void PannerHandler::ProcessSampleAccurateValues(AudioBus* destination,
   float orientation_x[render_quantum_frames_expected];
   float orientation_y[render_quantum_frames_expected];
   float orientation_z[render_quantum_frames_expected];
-  double azimuth[render_quantum_frames_expected];
-  double elevation[render_quantum_frames_expected];
+  std::array<double, render_quantum_frames_expected> azimuth;
+  std::array<double, render_quantum_frames_expected> elevation;
   float total_gain[render_quantum_frames_expected];
 
-  position_x_->CalculateSampleAccurateValues(panner_x, frames_to_process);
-  position_y_->CalculateSampleAccurateValues(panner_y, frames_to_process);
-  position_z_->CalculateSampleAccurateValues(panner_z, frames_to_process);
-  orientation_x_->CalculateSampleAccurateValues(orientation_x,
-                                                frames_to_process);
-  orientation_y_->CalculateSampleAccurateValues(orientation_y,
-                                                frames_to_process);
-  orientation_z_->CalculateSampleAccurateValues(orientation_z,
-                                                frames_to_process);
+  position_x_->CalculateSampleAccurateValues(
+      base::span(panner_x).first(frames_to_process));
+  position_y_->CalculateSampleAccurateValues(
+      base::span(panner_y).first(frames_to_process));
+  position_z_->CalculateSampleAccurateValues(
+      base::span(panner_z).first(frames_to_process));
+  orientation_x_->CalculateSampleAccurateValues(
+      base::span(orientation_x).first(frames_to_process));
+  orientation_y_->CalculateSampleAccurateValues(
+      base::span(orientation_y).first(frames_to_process));
+  orientation_z_->CalculateSampleAccurateValues(
+      base::span(orientation_z).first(frames_to_process));
 
   const float* listener_x = listener_handler_->GetPositionXValues(
       render_quantum_frames);
@@ -306,12 +316,18 @@ void PannerHandler::ProcessOnlyAudioParams(uint32_t frames_to_process) {
 
   DCHECK_LE(frames_to_process, GetDeferredTaskHandler().RenderQuantumFrames());
 
-  position_x_->CalculateSampleAccurateValues(values, frames_to_process);
-  position_y_->CalculateSampleAccurateValues(values, frames_to_process);
-  position_z_->CalculateSampleAccurateValues(values, frames_to_process);
-  orientation_x_->CalculateSampleAccurateValues(values, frames_to_process);
-  orientation_y_->CalculateSampleAccurateValues(values, frames_to_process);
-  orientation_z_->CalculateSampleAccurateValues(values, frames_to_process);
+  position_x_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  position_y_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  position_z_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  orientation_x_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  orientation_y_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
+  orientation_z_->CalculateSampleAccurateValues(
+      base::span(values).first(frames_to_process));
 }
 
 void PannerHandler::Initialize() {
@@ -521,9 +537,9 @@ void PannerHandler::SetPosition(float x,
 
   double now = Context()->currentTime();
 
-  position_x_->Timeline().SetValueAtTime(x, now, exceptionState);
-  position_y_->Timeline().SetValueAtTime(y, now, exceptionState);
-  position_z_->Timeline().SetValueAtTime(z, now, exceptionState);
+  position_x_->SetValueAtTime(x, now, exceptionState);
+  position_y_->SetValueAtTime(y, now, exceptionState);
+  position_z_->SetValueAtTime(z, now, exceptionState);
 
   MarkPannerAsDirty(PannerHandler::kAzimuthElevationDirty |
                     PannerHandler::kDistanceConeGainDirty);
@@ -538,9 +554,9 @@ void PannerHandler::SetOrientation(float x,
 
   double now = Context()->currentTime();
 
-  orientation_x_->Timeline().SetValueAtTime(x, now, exceptionState);
-  orientation_y_->Timeline().SetValueAtTime(y, now, exceptionState);
-  orientation_z_->Timeline().SetValueAtTime(z, now, exceptionState);
+  orientation_x_->SetValueAtTime(x, now, exceptionState);
+  orientation_y_->SetValueAtTime(y, now, exceptionState);
+  orientation_z_->SetValueAtTime(z, now, exceptionState);
 
   MarkPannerAsDirty(PannerHandler::kDistanceConeGainDirty);
 }

@@ -4,31 +4,36 @@
 
 #include "content/browser/dom_storage/dom_storage_context_wrapper.h"
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/files/file_path.h"
+#include "base/files/file_util.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/syslog_logging.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/task/thread_pool.h"
 #include "build/build_config.h"
 #include "components/services/storage/dom_storage/local_storage_impl.h"
 #include "components/services/storage/dom_storage/session_storage_impl.h"
-#include "components/services/storage/public/mojom/partition.mojom.h"
+#include "components/services/storage/public/cpp/constants.h"
 #include "components/services/storage/public/mojom/storage_policy_update.mojom.h"
+#include "components/services/storage/public/mojom/storage_service.mojom.h"
 #include "components/services/storage/public/mojom/storage_usage_info.mojom.h"
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 #include "content/browser/renderer_host/frame_tree.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
-#include "content/browser/storage_access/storage_access_handle.h"
 #include "content/browser/storage_partition_impl.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -45,6 +50,7 @@
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 
 namespace content {
+
 namespace {
 
 void AdaptSessionStorageUsageInfo(
@@ -101,8 +107,36 @@ DOMStorageContextWrapper::DOMStorageContextWrapper(
       base::BindRepeating(&DOMStorageContextWrapper::OnMemoryPressure,
                           base::Unretained(this)));
 
+  // `partition_` can be null in test environments.
+  if (!partition_) {
+    return;
+  }
+
   MaybeBindSessionStorageControl();
   MaybeBindLocalStorageControl();
+
+  // Report on disk LocalStorage db size.
+  if (partition_->GetStoragePartitionPath()) {
+    // Path to the LocalStorage leveldb directory.
+    base::FilePath db_path =
+        partition_->GetStoragePartitionPath()
+            ->Append(storage::kLocalStoragePath)
+            .AppendASCII(storage::kLocalStorageLeveldbName);
+
+    // Offload the blocking file operation and report the result.
+    base::ThreadPool::PostTaskAndReplyWithResult(
+        FROM_HERE, {base::MayBlock()},
+        base::BindOnce(
+            [](const base::FilePath& path) -> int64_t {
+              return base::ComputeDirectorySize(path);
+            },
+            db_path),
+        base::BindOnce([](int64_t db_size) {
+          int size_kb = base::saturated_cast<int>(db_size / 1024);
+          base::UmaHistogramMemoryKB("LocalStorage.DatabaseOnDiskSizeKB",
+                                     size_kb);
+        }));
+  }
 }
 
 DOMStorageContextWrapper::~DOMStorageContextWrapper() {
@@ -307,7 +341,7 @@ bool DOMStorageContextWrapper::IsRequestValid(
     // third_party/blink/renderer/modules/storage_access/README.md
     host_storage_key_matched_or_missing =
         host->GetStorageKey() == storage_key ||
-        (StorageAccessHandle::DoesDocumentHaveStorageAccess(host) &&
+        (host->IsFullCookieAccessAllowed() &&
          blink::StorageKey::CreateFirstParty(host->GetStorageKey().origin()) ==
              storage_key);
   }
@@ -330,10 +364,9 @@ bool DOMStorageContextWrapper::IsRequestValid(
   return true;
 }
 
-void DOMStorageContextWrapper::RecoverFromStorageServiceCrash() {
+void DOMStorageContextWrapper::OnSessionStorageDisconnected() {
   DCHECK(partition_);
   MaybeBindSessionStorageControl();
-  MaybeBindLocalStorageControl();
 
   // Make sure the service is aware of namespaces we asked a previous instance
   // to create, so it can properly service renderers trying to manipulate those
@@ -342,22 +375,40 @@ void DOMStorageContextWrapper::RecoverFromStorageServiceCrash() {
   for (const auto& entry : alive_namespaces_)
     session_storage_control_->CreateNamespace(entry.first);
   session_storage_control_->ScavengeUnusedNamespaces(base::NullCallback());
+
+  partition_->ResetSessionStorageConnections();
 }
 
 void DOMStorageContextWrapper::MaybeBindSessionStorageControl() {
   if (!partition_)
     return;
   session_storage_control_.reset();
-  partition_->GetStorageServicePartition()->BindSessionStorageControl(
+  partition_->GetStorageService()->BindSessionStorageControl(
+      partition_->GetStoragePartitionPath(),
       session_storage_control_.BindNewPipeAndPassReceiver());
+  session_storage_control_.set_disconnect_handler(
+      base::BindOnce(&DOMStorageContextWrapper::OnSessionStorageDisconnected,
+                     base::Unretained(this)));
+}
+
+void DOMStorageContextWrapper::OnLocalStorageDisconnected() {
+  DCHECK(partition_);
+
+  MaybeBindLocalStorageControl();
+  partition_->ResetLocalStorageConnections();
 }
 
 void DOMStorageContextWrapper::MaybeBindLocalStorageControl() {
-  if (!partition_)
+  if (!partition_) {
     return;
+  }
   local_storage_control_.reset();
-  partition_->GetStorageServicePartition()->BindLocalStorageControl(
+  partition_->GetStorageService()->BindLocalStorageControl(
+      partition_->GetStoragePartitionPath(),
       local_storage_control_.BindNewPipeAndPassReceiver());
+  local_storage_control_.set_disconnect_handler(
+      base::BindOnce(&DOMStorageContextWrapper::OnLocalStorageDisconnected,
+                     base::Unretained(this)));
 }
 
 scoped_refptr<SessionStorageNamespaceImpl>

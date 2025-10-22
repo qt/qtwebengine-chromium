@@ -27,6 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/components/report_view/report_view.js';
 import '../../ui/legacy/legacy.js';
@@ -44,6 +45,8 @@ import * as ApplicationComponents from './components/components.js';
 import type {
   Database, DatabaseId, Entry, Index, IndexedDBModel, ObjectStore, ObjectStoreMetadata} from './IndexedDBModel.js';
 import indexedDBViewsStyles from './indexedDBViews.css.js';
+
+type IDBKeyValue = number|string|Date|IDBKeyValue[];
 
 const {html} = Lit;
 
@@ -73,6 +76,17 @@ const UIStrings = {
    *@description Explanation text in Application panel IndexedDB delete confirmation dialog
    */
   databaseWillBeRemoved: 'The selected database and contained data will be removed.',
+  /**
+   * @description Title of the confirmation dialog in the IndexedDB tab of the Application panel
+   *              that the user is about to clear an object store and this cannot be undone.
+   * @example {table1} PH1
+   */
+  confirmClearObjectStore: 'Clear "{PH1}" object store?',
+  /**
+   * @description Description in the confirmation dialog in the IndexedDB tab of the Application
+   *              panel that the user is about to clear an object store and this cannot be undone.
+   */
+  objectStoreWillBeCleared: 'The data contained in the selected object store will be removed.',
   /**
    *@description Text in Indexed DBViews of the Application panel
    */
@@ -257,12 +271,12 @@ export class IDBDataView extends UI.View.SimpleView {
   private clearingObjectStore: boolean;
   private pageSize: number;
   private skipCount: number;
-  private entries: Entry[];
+  // Used in Web Tests
+  protected entries: Entry[];
   private objectStore!: ObjectStore;
   private index!: Index|null;
   private keyInput!: UI.Toolbar.ToolbarInput;
   private dataGrid!: DataGrid.DataGrid.DataGridImpl<unknown>;
-  private previouslySelectedNode?: DataGrid.DataGrid.DataGridNode<unknown>;
   private lastPageSize!: number;
   private lastSkipCount!: number;
   private pageBackButton!: UI.Toolbar.ToolbarButton;
@@ -376,7 +390,6 @@ export class IDBDataView extends UI.View.SimpleView {
     dataGrid.setStriped(true);
     dataGrid.addEventListener(DataGrid.DataGrid.Events.SELECTED_NODE, () => {
       this.updateToolbarEnablement();
-      this.updateSelectionColor();
     }, this);
     return dataGrid;
   }
@@ -556,7 +569,6 @@ export class IDBDataView extends UI.View.SimpleView {
       this.pageForwardButton.setEnabled(hasMore);
       this.needsRefresh.setVisible(false);
       this.updateToolbarEnablement();
-      this.updateSelectionColor();
       this.updatedDataForTests();
     }
 
@@ -601,12 +613,18 @@ export class IDBDataView extends UI.View.SimpleView {
   }
 
   private async clearButtonClicked(): Promise<void> {
-    this.clearButton.setEnabled(false);
-    this.clearingObjectStore = true;
-    await this.model.clearObjectStore(this.databaseId, this.objectStore.name);
-    this.clearingObjectStore = false;
-    this.clearButton.setEnabled(true);
-    this.updateData(true);
+    const ok = await UI.UIUtils.ConfirmDialog.show(
+        i18nString(UIStrings.objectStoreWillBeCleared),
+        i18nString(UIStrings.confirmClearObjectStore, {PH1: this.objectStore.name}), this.element,
+        {jslogContext: 'clear-object-store-confirmation'});
+    if (ok) {
+      this.clearButton.setEnabled(false);
+      this.clearingObjectStore = true;
+      await this.model.clearObjectStore(this.databaseId, this.objectStore.name);
+      this.clearingObjectStore = false;
+      this.clearButton.setEnabled(true);
+      this.updateData(true);
+    }
   }
 
   markNeedsRefresh(): void {
@@ -617,6 +635,29 @@ export class IDBDataView extends UI.View.SimpleView {
     this.needsRefresh.setVisible(true);
   }
 
+  private async resolveArrayKey(key: SDK.RemoteObject.RemoteObject): Promise<IDBKeyValue> {
+    const {properties} = await key.getOwnProperties(false /* generatePreview */);
+    if (!properties) {
+      return [];
+    }
+    const result: IDBKeyValue = [];
+    const propertyPromises = properties.filter(property => !isNaN(Number(property.name))).map(async property => {
+      const value = property.value;
+      if (!value) {
+        return;
+      }
+      let propertyValue;
+      if (value.subtype === 'array') {
+        propertyValue = await this.resolveArrayKey(value);
+      } else {
+        propertyValue = value.value;
+      }
+      result[Number(property.name)] = propertyValue;
+    });
+    await Promise.all(propertyPromises);
+    return result;
+  }
+
   private async deleteButtonClicked(node: DataGrid.DataGrid.DataGridNode<unknown>|null): Promise<void> {
     if (!node) {
       node = this.dataGrid.selectedNode;
@@ -625,9 +666,7 @@ export class IDBDataView extends UI.View.SimpleView {
       }
     }
     const key = (this.isIndex ? node.data['primary-key'] : node.data.key as SDK.RemoteObject.RemoteObject);
-    // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const keyValue = (key.value as string | number | any[] | Date);
+    const keyValue: IDBKeyValue = key.subtype === 'array' ? await this.resolveArrayKey(key) : key.value;
     await this.model.deleteEntries(this.databaseId, this.objectStore.name, window.IDBKeyRange.only(keyValue));
     this.refreshObjectStoreCallback();
   }
@@ -641,32 +680,13 @@ export class IDBDataView extends UI.View.SimpleView {
     const empty = !this.dataGrid || this.dataGrid.rootNode().children.length === 0;
     this.deleteSelectedButton.setEnabled(!empty && this.dataGrid.selectedNode !== null);
   }
-
-  private updateSelectionColor(): void {
-    if (this.previouslySelectedNode) {
-      this.previouslySelectedNode.element().querySelectorAll('.source-code').forEach(element => {
-        const shadowRoot = element.shadowRoot;
-        shadowRoot?.adoptedStyleSheets.pop();
-      });
-    }
-    this.previouslySelectedNode = this.dataGrid.selectedNode ?? undefined;
-    this.dataGrid.selectedNode?.element().querySelectorAll('.source-code').forEach(element => {
-      const shadowRoot = element.shadowRoot;
-      const sheet = new CSSStyleSheet();
-      sheet.replaceSync('::selection {background-color: var(--sys-color-state-focus-select); color: currentColor;}');
-      shadowRoot?.adoptedStyleSheets.push(sheet);
-    });
-  }
 }
 
 export class IDBDataGridNode extends DataGrid.DataGrid.DataGridNode<unknown> {
   override selectable: boolean;
   valueObjectPresentation: ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection|null;
-  constructor(data: {
-    // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [x: string]: any,
-  }) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  constructor(data: Record<string, any>) {
     super(data, false);
     this.selectable = true;
     this.valueObjectPresentation = null;

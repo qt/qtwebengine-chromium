@@ -14,16 +14,18 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
-from typing import Union
-import warnings
+from typing import Any, Dict, Optional, Union
+
+from typing_extensions import deprecated
+
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
+from selenium.webdriver.common.options import ArgOptions
 from selenium.webdriver.firefox.firefox_binary import FirefoxBinary
 from selenium.webdriver.firefox.firefox_profile import FirefoxProfile
-from selenium.webdriver.common.options import ArgOptions
 
 
-class Log(object):
-    def __init__(self):
+class Log:
+    def __init__(self) -> None:
         self.level = None
 
     def to_capabilities(self) -> dict:
@@ -35,40 +37,42 @@ class Log(object):
 class Options(ArgOptions):
     KEY = "moz:firefoxOptions"
 
-    def __init__(self):
-        super(Options, self).__init__()
-        self._binary: FirefoxBinary = None
+    def __init__(self) -> None:
+        super().__init__()
+        self._binary_location = ""
         self._preferences: dict = {}
-        self._profile = None
-        self._proxy = None
+        # https://fxdx.dev/deprecating-cdp-support-in-firefox-embracing-the-future-with-webdriver-bidi/.
+        # Enable BiDi only
+        self._preferences["remote.active-protocols"] = 1
+        self._profile: Optional[FirefoxProfile] = None
         self.log = Log()
 
     @property
+    @deprecated("use binary_location instead")
     def binary(self) -> FirefoxBinary:
-        """Returns the FirefoxBinary instance"""
-        return self._binary
+        """Returns the FirefoxBinary instance."""
+        return FirefoxBinary(self._binary_location)
 
     @binary.setter
-    def binary(self, new_binary: Union[str, FirefoxBinary]):
+    @deprecated("use binary_location instead")
+    def binary(self, new_binary: Union[str, FirefoxBinary]) -> None:
         """Sets location of the browser binary, either by string or
-        ``FirefoxBinary`` instance.
-
-        """
-        if not isinstance(new_binary, FirefoxBinary):
-            new_binary = FirefoxBinary(new_binary)
-        self._binary = new_binary
+        ``FirefoxBinary`` instance."""
+        if isinstance(new_binary, FirefoxBinary):
+            new_binary = new_binary._start_cmd
+        self.binary_location = str(new_binary)
 
     @property
     def binary_location(self) -> str:
-        """
-        :Returns: The location of the binary.
-        """
-        return self.binary._start_cmd
+        """:Returns: The location of the binary."""
+        return self._binary_location
 
     @binary_location.setter  # noqa
-    def binary_location(self, value: str):
-        """ Sets the location of the browser binary by string """
-        self.binary = value
+    def binary_location(self, value: str) -> None:
+        """Sets the location of the browser binary by string."""
+        if not isinstance(value, str):
+            raise TypeError(self.BINARY_LOCATION_ERROR)
+        self._binary_location = value
 
     @property
     def preferences(self) -> dict:
@@ -80,73 +84,36 @@ class Options(ArgOptions):
         self._preferences[name] = value
 
     @property
-    def profile(self) -> FirefoxProfile:
-        """
-        :Returns: The Firefox profile to use.
-        """
-        if self._profile:
-            warnings.warn(
-                "Getting a profile has been deprecated.",
-                DeprecationWarning,
-                stacklevel=2
-            )
+    def profile(self) -> Optional[FirefoxProfile]:
+        """:Returns: The Firefox profile to use."""
         return self._profile
 
     @profile.setter
-    def profile(self, new_profile: Union[str, FirefoxProfile]):
-        """Sets location of the browser profile to use, either by string
-        or ``FirefoxProfile``.
-
-        """
-        warnings.warn(
-            "Setting a profile has been deprecated. Please use the set_preference and install_addons methods",
-            DeprecationWarning,
-            stacklevel=2
-        )
+    def profile(self, new_profile: Union[str, FirefoxProfile]) -> None:
+        """Sets location of the browser profile to use, either by string or
+        ``FirefoxProfile``."""
         if not isinstance(new_profile, FirefoxProfile):
             new_profile = FirefoxProfile(new_profile)
         self._profile = new_profile
 
-    @property
-    def headless(self) -> bool:
-        """
-        :Returns: True if the headless argument is set, else False
-        """
-        return '-headless' in self._arguments
-
-    @headless.setter
-    def headless(self, value: bool):
-        """
-        Sets the headless argument
-
-        Args:
-          value: boolean value indicating to set the headless option
-        """
-        if value:
-            self._arguments.append('-headless')
-        elif '-headless' in self._arguments:
-            self._arguments.remove('-headless')
-
-    def enable_mobile(self, android_package: str = "org.mozilla.firefox", android_activity=None, device_serial=None):
+    def enable_mobile(
+        self, android_package: Optional[str] = "org.mozilla.firefox", android_activity=None, device_serial=None
+    ):
         super().enable_mobile(android_package, android_activity, device_serial)
 
     def to_capabilities(self) -> dict:
-        """Marshals the Firefox options to a `moz:firefoxOptions`
-        object.
-        """
+        """Marshals the Firefox options to a `moz:firefoxOptions` object."""
         # This intentionally looks at the internal properties
         # so if a binary or profile has _not_ been set,
         # it will defer to geckodriver to find the system Firefox
         # and generate a fresh profile.
         caps = self._caps
-        opts = {}
+        opts: Dict[str, Any] = {}
 
-        if self._binary:
-            opts["binary"] = self._binary._start_cmd
+        if self._binary_location:
+            opts["binary"] = self._binary_location
         if self._preferences:
             opts["prefs"] = self._preferences
-        if self._proxy:
-            self._proxy.add_to_capabilities(caps)
         if self._profile:
             opts["profile"] = self._profile.encoded
         if self._arguments:

@@ -214,7 +214,9 @@ V8ScriptValueSerializer::V8ScriptValueSerializer(ScriptState* script_state,
       transferables_(options.transferables),
       blob_info_array_(options.blob_info),
       wasm_policy_(options.wasm_policy),
-      for_storage_(options.for_storage == SerializedScriptValue::kForStorage) {}
+      for_storage_(options.for_storage == SerializedScriptValue::kForStorage),
+      skip_wrapped_objects_(options.script_wrappable_policy ==
+                            Options::kOmitWrappedObjects) {}
 
 scoped_refptr<SerializedScriptValue> V8ScriptValueSerializer::Serialize(
     v8::Local<v8::Value> value,
@@ -398,7 +400,7 @@ void V8ScriptValueSerializer::WriteUnguessableToken(
 }
 
 void V8ScriptValueSerializer::WriteUTF8String(const StringView& string) {
-  StringUTF8Adaptor utf8(string);
+  StringUtf8Adaptor utf8(string);
   WriteUint32(utf8.size());
   WriteRawBytes(utf8.data(), utf8.size());
 }
@@ -536,10 +538,9 @@ bool V8ScriptValueSerializer::WriteDOMObject(ScriptWrappable* wrappable,
     if (image_data->IsBufferBaseDetached()) {
       WriteUint64(0u);
     } else {
-      SkPixmap image_data_pixmap = image_data->GetSkPixmap();
-      size_t pixel_buffer_length = image_data_pixmap.computeByteSize();
-      WriteUint64(base::strict_cast<uint64_t>(pixel_buffer_length));
-      WriteRawBytes(image_data_pixmap.addr(), pixel_buffer_length);
+      base::span<const uint8_t> image_data_bytes = image_data->RawByteSpan();
+      WriteUint64(base::strict_cast<uint64_t>(image_data_bytes.size()));
+      WriteRawBytes(image_data_bytes.data(), image_data_bytes.size());
     }
     return true;
   }
@@ -902,6 +903,10 @@ v8::Maybe<bool> V8ScriptValueSerializer::WriteHostObject(
     v8::Isolate* isolate,
     v8::Local<v8::Object> object) {
   DCHECK_EQ(isolate, script_state_->GetIsolate());
+
+  if (skip_wrapped_objects_) {
+    return v8::Just(true);
+  }
   ExceptionState exception_state(isolate);
 
   if (!V8DOMWrapper::IsWrapper(isolate, object)) {
@@ -918,7 +923,7 @@ v8::Maybe<bool> V8ScriptValueSerializer::WriteHostObject(
     return v8::Just(true);
   }
   if (!exception_state.HadException()) {
-    StringView interface = wrappable->GetWrapperTypeInfo()->interface_name;
+    StringView interface = ToWrapperTypeInfo(wrappable)->interface_name;
     exception_state.ThrowDOMException(
         DOMExceptionCode::kDataCloneError,
         interface + " object could not be cloned.");
@@ -1040,13 +1045,13 @@ v8::Maybe<uint32_t> V8ScriptValueSerializer::GetWasmModuleTransferId(
 void* V8ScriptValueSerializer::ReallocateBufferMemory(void* old_buffer,
                                                       size_t size,
                                                       size_t* actual_size) {
-  *actual_size = WTF::Partitions::BufferPotentialCapacity(size);
-  return WTF::Partitions::BufferTryRealloc(old_buffer, *actual_size,
-                                           "SerializedScriptValue buffer");
+  *actual_size = Partitions::BufferPotentialCapacity(size);
+  return Partitions::BufferTryRealloc(old_buffer, *actual_size,
+                                      "SerializedScriptValue buffer");
 }
 
 void V8ScriptValueSerializer::FreeBufferMemory(void* buffer) {
-  return WTF::Partitions::BufferFree(buffer);
+  return Partitions::BufferFree(buffer);
 }
 
 bool V8ScriptValueSerializer::AdoptSharedValueConveyor(

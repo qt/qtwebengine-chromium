@@ -15,7 +15,6 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/not_fatal_until.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/trace_event/common/trace_event_common.h"
@@ -164,7 +163,9 @@ std::string GenerateConfigurationLogForController(
       const std::string size = ModeSize(*(param.mode.get())).ToString();
       const std::string refresh_rate =
           base::NumberToString(ModeRefreshRate(*param.mode));
-      mode = base::StrCat({size, "@", refresh_rate});
+      const char* scan_mode =
+          param.mode.get()->flags & DRM_MODE_FLAG_INTERLACE ? "i" : "p";
+      mode = base::StrCat({size, scan_mode, "@", refresh_rate});
     } else {
       mode = "Disabled";
     }
@@ -316,10 +317,13 @@ void ScreenManager::RemoveDisplayControllers(
 
       bool is_mirrored = (*it)->IsMirrored();
 
-      std::unique_ptr<CrtcController> crtc = (*it)->RemoveCrtc(drm, crtc_id);
-      if (crtc->is_enabled()) {
-        commit_request.push_back(CrtcCommitRequest::DisableCrtcRequest(
-            crtc->crtc(), crtc->connector()));
+      if ((*it)->IsTiled()) {
+        // Disable all CRTCs/connectors for a tiled display if any CRTC is
+        // removed. DrmGpuDisplayManager will create a new controller if any of
+        // the connectors are still connected.
+        (*it)->RemoveAllCrtcs(&commit_request);
+      } else {
+        (*it)->RemoveCrtc(drm, crtc_id, &commit_request);
       }
 
       if (!is_mirrored) {
@@ -425,7 +429,7 @@ bool ScreenManager::TestAndSetPreferredModifiers(
 
   for (const auto& params : controllers_params) {
     auto it = FindDisplayController(params.drm, params.crtc);
-    CHECK(controllers_.end() != it, base::NotFatalUntil::M130);
+    CHECK(controllers_.end() != it);
     HardwareDisplayController* controller = it->get();
 
     if (params.mode) {
@@ -477,7 +481,7 @@ bool ScreenManager::TestAndSetLinearModifier(
 
   for (const auto& params : controllers_params) {
     auto it = FindDisplayController(params.drm, params.crtc);
-    CHECK(controllers_.end() != it, base::NotFatalUntil::M130);
+    CHECK(controllers_.end() != it);
     HardwareDisplayController* controller = it->get();
 
     uint32_t fourcc_format = GetFourCCFormatForOpaqueFramebuffer(
@@ -554,7 +558,7 @@ bool ScreenManager::TestModesetWithOverlays(
   auto drm = controllers_params[0].drm;
   for (const auto& params : controllers_params) {
     auto it = FindDisplayController(params.drm, params.crtc);
-    CHECK(controllers_.end() != it, base::NotFatalUntil::M130);
+    CHECK(controllers_.end() != it);
     HardwareDisplayController* controller = it->get();
 
     if (params.mode) {
@@ -601,7 +605,7 @@ bool ScreenManager::Modeset(
   for (const auto& params : controllers_params) {
     if (params.mode) {
       auto it = FindDisplayController(params.drm, params.crtc);
-      CHECK(controllers_.end() != it, base::NotFatalUntil::M130);
+      CHECK(controllers_.end() != it);
       HardwareDisplayController* controller = it->get();
 
       uint32_t fourcc_format = GetFourCCFormatForOpaqueFramebuffer(
@@ -650,7 +654,7 @@ void ScreenManager::SetDisplayControllerForEnableAndGetProps(
     const DrmOverlayPlaneList& modeset_planes,
     bool enable_vrr) {
   HardwareDisplayControllers::iterator it = FindDisplayController(drm, crtc);
-  CHECK(controllers_.end() != it, base::NotFatalUntil::M130)
+  CHECK(controllers_.end() != it)
       << "Display controller (crtc=" << crtc << ") doesn't exist.";
 
   HardwareDisplayController* controller = it->get();

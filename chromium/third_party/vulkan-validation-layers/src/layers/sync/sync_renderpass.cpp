@@ -15,11 +15,13 @@
  * limitations under the License.
  */
 
+#include <vulkan/utility/vk_format_utils.h>
 #include "sync/sync_renderpass.h"
 #include "sync/sync_validation.h"
 #include "sync/sync_op.h"
 #include "sync/sync_image.h"
 #include "state_tracker/render_pass_state.h"
+#include "state_tracker/pipeline_state.h"
 
 // Action for validating resolve operations
 class ValidateResolveAction {
@@ -294,20 +296,21 @@ bool RenderPassAccessContext::ValidateStoreOperation(const CommandBufferAccessCo
             bool checked_stencil = false;
             if (is_color) {
                 hazard = CurrentContext().DetectHazard(view_gen, AttachmentViewGen::Gen::kRenderArea,
-                                                       SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE, SyncOrdering::kRaster);
+                                                       SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE, SyncOrdering::kRaster,
+                                                       SyncFlag::kStoreOp);
                 aspect = "color";
             } else {
                 const bool stencil_op_stores = ci.stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE;
                 if (has_depth && store_op_stores) {
                     hazard = CurrentContext().DetectHazard(view_gen, AttachmentViewGen::Gen::kDepthOnlyRenderArea,
                                                            SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE,
-                                                           SyncOrdering::kRaster);
+                                                           SyncOrdering::kRaster, SyncFlag::kStoreOp);
                     aspect = "depth";
                 }
                 if (!hazard.IsHazard() && has_stencil && stencil_op_stores) {
                     hazard = CurrentContext().DetectHazard(view_gen, AttachmentViewGen::Gen::kStencilOnlyRenderArea,
                                                            SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE,
-                                                           SyncOrdering::kRaster);
+                                                           SyncOrdering::kRaster, SyncFlag::kStoreOp);
                     aspect = "stencil";
                     checked_stencil = true;
                 }
@@ -459,18 +462,19 @@ void RenderPassAccessContext::UpdateAttachmentStoreAccess(const vvl::RenderPass 
 
             if (is_color && store_op_stores) {
                 access_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kRenderArea,
-                                                 SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE, SyncOrdering::kRaster, tag);
+                                                 SYNC_COLOR_ATTACHMENT_OUTPUT_COLOR_ATTACHMENT_WRITE, SyncOrdering::kRaster, tag,
+                                                 SyncFlag::kStoreOp);
             } else {
                 if (has_depth && store_op_stores) {
                     access_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kDepthOnlyRenderArea,
                                                      SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, SyncOrdering::kRaster,
-                                                     tag);
+                                                     tag, SyncFlag::kStoreOp);
                 }
                 const bool stencil_op_stores = ci.stencilStoreOp != VK_ATTACHMENT_STORE_OP_NONE;
                 if (has_stencil && stencil_op_stores) {
                     access_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kStencilOnlyRenderArea,
                                                      SYNC_LATE_FRAGMENT_TESTS_DEPTH_STENCIL_ATTACHMENT_WRITE, SyncOrdering::kRaster,
-                                                     tag);
+                                                     tag, SyncFlag::kStoreOp);
                 }
             }
         }
@@ -512,9 +516,8 @@ void RenderPassAccessContext::RecordLayoutTransitions(const vvl::RenderPass &rp_
 // TODO: SyncError reporting places in this function are not covered by the tests.
 bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandBufferAccessContext &cb_context, vvl::Func command) const {
     bool skip = false;
-    const auto lv_bind_point = ConvertToLvlBindPoint(VK_PIPELINE_BIND_POINT_GRAPHICS);
     const vvl::CommandBuffer &cmd_buffer = cb_context.GetCBState();
-    const auto &last_bound_state = cmd_buffer.lastBound[lv_bind_point];
+    const auto &last_bound_state = cmd_buffer.GetLastBoundGraphics();
     const auto *pipe = last_bound_state.pipeline_state;
 
     if (!pipe || pipe->RasterizationDisabled()) {
@@ -610,8 +613,7 @@ bool RenderPassAccessContext::ValidateDrawSubpassAttachment(const CommandBufferA
 }
 
 void RenderPassAccessContext::RecordDrawSubpassAttachment(const vvl::CommandBuffer &cmd_buffer, const ResourceUsageTag tag) {
-    const auto lv_bind_point = ConvertToLvlBindPoint(VK_PIPELINE_BIND_POINT_GRAPHICS);
-    const auto &last_bound_state = cmd_buffer.lastBound[lv_bind_point];
+    const auto &last_bound_state = cmd_buffer.GetLastBoundGraphics();
     const auto *pipe = last_bound_state.pipeline_state;
     if (!pipe || pipe->RasterizationDisabled()) return;
 
@@ -803,21 +805,21 @@ void RenderPassAccessContext::RecordLoadOperations(const ResourceUsageTag tag) {
                 const SyncAccessIndex load_op = ColorLoadUsage(ci.loadOp);
                 if (load_op != SYNC_ACCESS_INDEX_NONE) {
                     subpass_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kRenderArea, load_op,
-                                                      SyncOrdering::kColorAttachment, tag);
+                                                      SyncOrdering::kColorAttachment, tag, SyncFlag::kLoadOp);
                 }
             } else {
                 if (has_depth) {
                     const SyncAccessIndex load_op = DepthStencilLoadUsage(ci.loadOp);
                     if (load_op != SYNC_ACCESS_INDEX_NONE) {
                         subpass_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kDepthOnlyRenderArea, load_op,
-                                                          SyncOrdering::kDepthStencilAttachment, tag);
+                                                          SyncOrdering::kDepthStencilAttachment, tag, SyncFlag::kLoadOp);
                     }
                 }
                 if (has_stencil) {
                     const SyncAccessIndex load_op = DepthStencilLoadUsage(ci.stencilLoadOp);
                     if (load_op != SYNC_ACCESS_INDEX_NONE) {
                         subpass_context.UpdateAccessState(view_gen, AttachmentViewGen::Gen::kStencilOnlyRenderArea, load_op,
-                                                          SyncOrdering::kDepthStencilAttachment, tag);
+                                                          SyncOrdering::kDepthStencilAttachment, tag, SyncFlag::kLoadOp);
                     }
                 }
             }

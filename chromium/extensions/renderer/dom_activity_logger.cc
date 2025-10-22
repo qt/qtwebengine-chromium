@@ -15,7 +15,6 @@
 #include "extensions/renderer/extension_frame_helper.h"
 #include "extensions/renderer/script_context.h"
 #include "extensions/renderer/script_context_set.h"
-#include "ipc/ipc_sync_channel.h"
 #include "third_party/blink/public/platform/web_string.h"
 #include "third_party/blink/public/platform/web_url.h"
 #include "v8/include/v8-isolate.h"
@@ -48,7 +47,11 @@ void AppendV8Value(v8::Isolate* isolate,
 }  // namespace
 
 DOMActivityLogger::DOMActivityLogger(const ExtensionId& extension_id)
-    : extension_id_(extension_id) {}
+    : extension_id_(extension_id) {
+  // TODO(crbug.com/414486674): upgrade to CHECK once we ensure that validation
+  // is always working.
+  DCHECK(!extension_id_.empty());
+}
 
 DOMActivityLogger::~DOMActivityLogger() = default;
 

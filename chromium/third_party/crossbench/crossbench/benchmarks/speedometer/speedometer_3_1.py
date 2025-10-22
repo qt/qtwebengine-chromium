@@ -38,6 +38,7 @@ class Speedometer31Story(Speedometer3Story):
   NAME: str = "speedometer_3.1"
   URL: str = "https://chromium-workloads.web.app/speedometer/v3.1/"
   URL_OFFICIAL: str = "https://browserbench.org/Speedometer3.1/"
+  URL_CHROME_FORK: str = "https://chromium-workloads.web.app/speedometer/v3.1-custom/"
 
 
 class Speedometer31Benchmark(Speedometer3Benchmark):
@@ -52,3 +53,9 @@ class Speedometer31Benchmark(Speedometer3Benchmark):
   @override
   def version(cls) -> VersionParts:
     return (3, 1)
+
+  @classmethod
+  @override
+  def aliases(cls) -> tuple[str, ...]:
+    return ("sp", "speedometer", "sp3", "speedometer3",
+            "speedometer_3") + super().aliases()

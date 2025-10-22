@@ -82,6 +82,13 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
             self.fieldName[extension.name] = extension.name.lower()
             self.requiredExpression[extension.name] = list()
             if extension.depends is not None:
+                # TODO - https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/10208
+                # Need to handle something like (VK_KHR_present_id,VK_KHR_present_id2)
+                # Also have no way in exprValues to even detect it to make this check automatic
+                if extension.name == 'VK_NV_low_latency2':
+                    self.requiredExpression[extension.name].append(self.vk.extensions['VK_KHR_timeline_semaphore'])
+                    continue
+
                 # This is a work around for https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/5372
                 temp = re.sub(r',VK_VERSION_1_\d+', '', extension.depends)
                 # It can look like (VK_KHR_timeline_semaphore,VK_VERSION_1_2) or (VK_VERSION_1_2,VK_KHR_timeline_semaphore)
@@ -126,7 +133,6 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
         self.write('// NOLINTEND') # Wrap for clang-tidy to ignore
 
     def generateHeader(self):
-        guard_helper = PlatformGuardHelper()
         out = []
         out.append('''
             #pragma once
@@ -206,32 +212,7 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
                 RequirementVec requirements;
             };
 
-            typedef vvl::unordered_map<vvl::Extension, Info> InfoMap;
-            static const InfoMap &GetInfoMap() {
-                static const InfoMap info_map = {
-            ''')
-        for extension in [x for x in self.vk.extensions.values() if x.instance]:
-            out.extend(guard_helper.add_guard(extension.protect))
-            reqs = ''
-            # This is only done to match whitespace from before code we refactored
-            if self.requiredExpression[extension.name]:
-                reqs += '{\n'
-                reqs += ',\n'.join([f'{{&InstanceExtensions::{self.fieldName[feature.name]}, {feature.nameString}}}' for feature in self.requiredExpression[extension.name]])
-                reqs += '}'
-            out.append(f'{{vvl::Extension::_{extension.name}, Info(&InstanceExtensions::{extension.name.lower()}, {{{reqs}}})}},\n')
-        out.extend(guard_helper.add_guard(None))
-
-        out.append('''
-                };
-                return info_map;
-            }
-
-            static const Info &GetInfo(vvl::Extension extension_name) {
-                static const Info empty_info{nullptr, RequirementVec()};
-                const auto &ext_map = InstanceExtensions::GetInfoMap();
-                const auto info = ext_map.find(extension_name);
-                return (info != ext_map.cend()) ? info->second : empty_info;
-            }
+            const Info &GetInfo(vvl::Extension extension_name) const;
 
             InstanceExtensions() = default;
             InstanceExtensions(APIVersion requested_api_version, const VkInstanceCreateInfo *pCreateInfo);
@@ -258,34 +239,7 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
                 RequirementVec requirements;
             };
 
-            typedef vvl::unordered_map<vvl::Extension, Info> InfoMap;
-            static const InfoMap &GetInfoMap() {
-                static const InfoMap info_map = {
-            ''')
-
-        for extension in [x for x in self.vk.extensions.values() if x.device]:
-            out.extend(guard_helper.add_guard(extension.protect))
-            reqs = ''
-            # This is only done to match whitespace from before code we refactored
-            if self.requiredExpression[extension.name]:
-                reqs += '{\n'
-                reqs += ',\n'.join([f'{{&DeviceExtensions::{self.fieldName[feature.name]}, {feature.nameString}}}' for feature in self.requiredExpression[extension.name]])
-                reqs += '}'
-            out.append(f'{{vvl::Extension::_{extension.name}, Info(&DeviceExtensions::{extension.name.lower()}, {{{reqs}}})}},\n')
-        out.extend(guard_helper.add_guard(None))
-
-        out.append('''
-                };
-
-                return info_map;
-            }
-
-            static const Info &GetInfo(vvl::Extension extension_name) {
-                static const Info empty_info{nullptr, RequirementVec()};
-                const auto &ext_map = DeviceExtensions::GetInfoMap();
-                const auto info = ext_map.find(extension_name);
-                return (info != ext_map.cend()) ? info->second : empty_info;
-            }
+            const Info &GetInfo(vvl::Extension extension_name) const;
 
             DeviceExtensions() = default;
             DeviceExtensions(const InstanceExtensions &instance_ext) : InstanceExtensions(instance_ext) {}
@@ -323,6 +277,7 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
         self.write(''.join(out))
 
     def generateSource(self):
+        guard_helper = PlatformGuardHelper()
         out = []
         out.append('''
             #include "vk_extension_helper.h"
@@ -528,4 +483,64 @@ class ExtensionHelperOutputGenerator(BaseGenerator):
             }
     ''')
 
+        out.append('''
+            using InstanceExtensionsInfoMap = vvl::unordered_map<vvl::Extension, InstanceExtensions::Info>;
+            static const InstanceExtensionsInfoMap& GetInstanceInfoMap() {
+                using Info = InstanceExtensions::Info;
+                static const InstanceExtensionsInfoMap info_map = {
+            ''')
+        for extension in [x for x in self.vk.extensions.values() if x.instance]:
+            out.extend(guard_helper.add_guard(extension.protect))
+            reqs = ''
+            # This is only done to match whitespace from before code we refactored
+            if self.requiredExpression[extension.name]:
+                reqs += '{\n'
+                reqs += ',\n'.join([f'{{&InstanceExtensions::{self.fieldName[feature.name]}, {feature.nameString}}}' for feature in self.requiredExpression[extension.name]])
+                reqs += '}'
+            out.append(f'{{vvl::Extension::_{extension.name}, Info(&InstanceExtensions::{extension.name.lower()}, {{{reqs}}})}},\n')
+        out.extend(guard_helper.add_guard(None))
+        out.append('''
+                };
+
+                return info_map;
+            }
+
+            using DeviceExtensionsInfoMap = vvl::unordered_map<vvl::Extension, DeviceExtensions::Info>;
+            static const DeviceExtensionsInfoMap& GetDeviceInfoMap() {
+                using Info = DeviceExtensions::Info;
+                static const DeviceExtensionsInfoMap info_map = {
+            ''')
+        for extension in [x for x in self.vk.extensions.values() if x.device]:
+            out.extend(guard_helper.add_guard(extension.protect))
+            reqs = ''
+            # This is only done to match whitespace from before code we refactored
+            if self.requiredExpression[extension.name]:
+                reqs += '{\n'
+                reqs += ',\n'.join([f'{{&DeviceExtensions::{self.fieldName[feature.name]}, {feature.nameString}}}' for feature in self.requiredExpression[extension.name]])
+                reqs += '}'
+            out.append(f'{{vvl::Extension::_{extension.name}, Info(&DeviceExtensions::{extension.name.lower()}, {{{reqs}}})}},\n')
+        out.extend(guard_helper.add_guard(None))
+
+
+        out.append('''
+                };
+                return info_map;
+            }
+        ''')
+
+        out.append('''
+            const InstanceExtensions::Info &InstanceExtensions::GetInfo(vvl::Extension extension_name) const {
+                static const InstanceExtensions::Info empty_info{nullptr, RequirementVec()};
+                const auto &ext_map = GetInstanceInfoMap();
+                const auto info = ext_map.find(extension_name);
+                return (info != ext_map.cend()) ? info->second : empty_info;
+            }
+
+            const DeviceExtensions::Info &DeviceExtensions::GetInfo(vvl::Extension extension_name) const {
+                static const DeviceExtensions::Info empty_info{nullptr, RequirementVec()};
+                const auto &ext_map = GetDeviceInfoMap();
+                const auto info = ext_map.find(extension_name);
+                return (info != ext_map.cend()) ? info->second : empty_info;
+            }
+        ''')
         self.write(''.join(out))

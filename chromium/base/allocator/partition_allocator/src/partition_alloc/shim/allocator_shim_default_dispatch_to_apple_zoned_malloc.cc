@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <utility>
 
 #include "partition_alloc/shim/allocator_interception_apple.h"
@@ -38,6 +43,26 @@ void* ReallocImpl(void* ptr, size_t size, void* context) {
 void FreeImpl(void* ptr, void* context) {
   MallocZoneFunctions& functions = GetFunctionsForZone(context);
   functions.free(reinterpret_cast<struct _malloc_zone_t*>(context), ptr);
+}
+
+void FreeWithSizeImpl(void* ptr, size_t size, void* context) {
+  MallocZoneFunctions& functions = GetFunctionsForZone(context);
+  functions.free_definite_size(
+      reinterpret_cast<struct _malloc_zone_t*>(context), ptr, size);
+}
+
+void FreeWithAlignmentImpl(void* ptr, size_t, void* context) {
+  MallocZoneFunctions& functions = GetFunctionsForZone(context);
+  functions.free(reinterpret_cast<struct _malloc_zone_t*>(context), ptr);
+}
+
+void FreeWithSizeAndAlignmentImpl(void* ptr,
+                                  size_t size,
+                                  size_t,
+                                  void* context) {
+  MallocZoneFunctions& functions = GetFunctionsForZone(context);
+  functions.free_definite_size(
+      reinterpret_cast<struct _malloc_zone_t*>(context), ptr, size);
 }
 
 size_t GetSizeEstimateImpl(void* ptr, void* context) {
@@ -84,12 +109,6 @@ void BatchFreeImpl(void** to_be_freed,
                        to_be_freed, num_to_be_freed);
 }
 
-void FreeDefiniteSizeImpl(void* ptr, size_t size, void* context) {
-  MallocZoneFunctions& functions = GetFunctionsForZone(context);
-  functions.free_definite_size(
-      reinterpret_cast<struct _malloc_zone_t*>(context), ptr, size);
-}
-
 void TryFreeDefaultImpl(void* ptr, void* context) {
   MallocZoneFunctions& functions = GetFunctionsForZone(context);
   if (functions.try_free_default) {
@@ -102,26 +121,28 @@ void TryFreeDefaultImpl(void* ptr, void* context) {
 }  // namespace
 
 const AllocatorDispatch AllocatorDispatch::default_dispatch = {
-    &MallocImpl,           /* alloc_function */
-    &MallocImpl,           /* alloc_unchecked_function */
-    &CallocImpl,           /* alloc_zero_initialized_function */
-    &MemalignImpl,         /* alloc_aligned_function */
-    &ReallocImpl,          /* realloc_function */
-    &ReallocImpl,          /* realloc_unchecked_function */
-    &FreeImpl,             /* free_function */
-    &GetSizeEstimateImpl,  /* get_size_estimate_function */
-    &GoodSizeImpl,         /* good_size_function */
-    &ClaimedAddressImpl,   /* claimed_address_function */
-    &BatchMallocImpl,      /* batch_malloc_function */
-    &BatchFreeImpl,        /* batch_free_function */
-    &FreeDefiniteSizeImpl, /* free_definite_size_function */
-    &TryFreeDefaultImpl,   /* try_free_default_function */
-    nullptr,               /* aligned_malloc_function */
-    nullptr,               /* aligned_malloc_unchecked_function */
-    nullptr,               /* aligned_realloc_function */
-    nullptr,               /* aligned_realloc_unchecked_function */
-    nullptr,               /* aligned_free_function */
-    nullptr,               /* next */
+    &MallocImpl,                   /* alloc_function */
+    &MallocImpl,                   /* alloc_unchecked_function */
+    &CallocImpl,                   /* alloc_zero_initialized_function */
+    &MemalignImpl,                 /* alloc_aligned_function */
+    &ReallocImpl,                  /* realloc_function */
+    &ReallocImpl,                  /* realloc_unchecked_function */
+    &FreeImpl,                     /* free_function */
+    &FreeWithSizeImpl,             /* free_with_size_function */
+    &FreeWithAlignmentImpl,        /* free_with_size_function */
+    &FreeWithSizeAndAlignmentImpl, /* free_with_size_function */
+    &GetSizeEstimateImpl,          /* get_size_estimate_function */
+    &GoodSizeImpl,                 /* good_size_function */
+    &ClaimedAddressImpl,           /* claimed_address_function */
+    &BatchMallocImpl,              /* batch_malloc_function */
+    &BatchFreeImpl,                /* batch_free_function */
+    &TryFreeDefaultImpl,           /* try_free_default_function */
+    nullptr,                       /* aligned_malloc_function */
+    nullptr,                       /* aligned_malloc_unchecked_function */
+    nullptr,                       /* aligned_realloc_function */
+    nullptr,                       /* aligned_realloc_unchecked_function */
+    nullptr,                       /* aligned_free_function */
+    nullptr,                       /* next */
 };
 
 }  // namespace allocator_shim

@@ -21,15 +21,21 @@
 #include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "components/policy/core/common/cloud/dm_auth.h"
 #include "components/policy/policy_export.h"
-#include "services/network/public/cpp/simple_url_loader.h"
+
+class GURL;
 
 namespace base {
 class SequencedTaskRunner;
 }
 
-namespace network {
-class SharedURLLoaderFactory;
+namespace net {
+struct NetworkTrafficAnnotationTag;
 }
+
+namespace network {
+struct ResourceRequest;
+class SharedURLLoaderFactory;
+}  // namespace network
 
 namespace policy {
 
@@ -245,6 +251,9 @@ class POLICY_EXPORT DeviceManagementService {
     // The content type of the payload.
     virtual std::string GetContentType() = 0;
 
+    // Whether the request will forward user cookies or not.
+    virtual bool AreCookiesUsed() = 0;
+
     // Returns the network annotation to assign to requests.
     virtual net::NetworkTrafficAnnotationTag GetTrafficAnnotationTag() = 0;
 
@@ -313,9 +322,7 @@ class POLICY_EXPORT DeviceManagementService {
   std::pair<std::unique_ptr<Job>, JobForTesting> CreateJobForTesting(
       std::unique_ptr<JobConfiguration> config);
 
-  const scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForTesting() {
-    return task_runner_;
-  }
+  const scoped_refptr<base::SequencedTaskRunner> GetTaskRunnerForTesting();
 
  private:
   using JobQueue = std::vector<base::WeakPtr<JobImpl>>;
@@ -375,6 +382,9 @@ class POLICY_EXPORT JobConfigurationBase
       const std::string& response_body) override;
   std::optional<base::TimeDelta> GetTimeoutDuration() override;
   std::string GetContentType() override;
+  bool AreCookiesUsed() override;
+
+  void set_use_cookies(bool use_cookies) { use_cookies_ = use_cookies; }
 
  protected:
   JobConfigurationBase(JobType type,

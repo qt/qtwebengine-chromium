@@ -52,6 +52,9 @@ GraphicsPipeline::PipelineInfo::PipelineInfo(
 #if defined(GPU_TEST_UTILS)
     fSkSLVertexShader = SkShaderUtils::PrettyPrint(shaderInfo.vertexSkSL());
     fSkSLFragmentShader = SkShaderUtils::PrettyPrint(shaderInfo.fragmentSkSL());
+#endif
+
+#if defined(SK_TRACE_GRAPHITE_PIPELINE_USE) || defined(GPU_TEST_UTILS)
     fLabel = shaderInfo.fsLabel();
 #endif
 }
@@ -65,7 +68,7 @@ SkString GraphicsPipelineDesc::toString(ShaderCodeDictionary* dict) const {
 
     PaintParamsKey key = dict->lookup(fPaintID);
 
-    tmp.append(key.toString(dict, true));
+    tmp.append(key.toString(dict));
 
     return tmp;
 }

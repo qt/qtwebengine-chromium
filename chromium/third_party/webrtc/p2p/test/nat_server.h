@@ -87,9 +87,9 @@ class NATServer {
 
   // Packets received on one of the networks.
   void OnInternalUDPPacket(AsyncPacketSocket* socket,
-                           const rtc::ReceivedPacket& packet);
+                           const ReceivedIpPacket& packet);
   void OnExternalUDPPacket(AsyncPacketSocket* socket,
-                           const rtc::ReceivedPacket& packet);
+                           const ReceivedIpPacket& packet);
 
  private:
   typedef std::set<SocketAddress, AddrCmp> AddressSet;
@@ -123,21 +123,12 @@ class NATServer {
   SocketFactory* external_;
   SocketAddress external_ip_;
   AsyncUDPSocket* udp_server_socket_;
-  rtc::ProxyServer* tcp_proxy_server_;
+  ProxyServer* tcp_proxy_server_;
   InternalMap* int_map_;
   ExternalMap* ext_map_;
 };
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::AddrCmp;
-using ::webrtc::NAT_SERVER_TCP_PORT;
-using ::webrtc::NAT_SERVER_UDP_PORT;
-using ::webrtc::NATServer;
-using ::webrtc::RouteCmp;
-}  // namespace rtc
 
 #endif  // P2P_TEST_NAT_SERVER_H_

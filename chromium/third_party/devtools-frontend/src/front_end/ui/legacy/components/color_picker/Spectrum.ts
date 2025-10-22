@@ -1,6 +1,7 @@
 // Copyright 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2011 Brian Grinstead All rights reserved.
@@ -37,6 +38,7 @@ import * as Host from '../../../../core/host/host.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
 import * as Platform from '../../../../core/platform/platform.js';
 import * as SDK from '../../../../core/sdk/sdk.js';
+import * as TextUtils from '../../../../models/text_utils/text_utils.js';
 import * as IconButton from '../../../components/icon_button/icon_button.js';
 import * as SrgbOverlay from '../../../components/srgb_overlay/srgb_overlay.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
@@ -228,7 +230,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
   private srgbOverlay: SrgbOverlay.SrgbOverlay.SrgbOverlay;
   private contrastOverlay: ContrastOverlay|undefined;
   private contrastDetails: ContrastDetails|undefined;
-  private readonly contrastDetailsBackgroundColorPickedToggledBound:
+  private readonly contrastDetailsBackgroundColorPickerToggledBound:
       ((event: Common.EventTarget.EventTargetEvent<boolean>) => void)|undefined;
   private readonly palettes: Map<string, Palette>;
   private readonly palettePanel: HTMLElement;
@@ -269,7 +271,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
   // actual variable string.
   private colorStringInternal?: string;
   constructor(contrastInfo?: ContrastInfo|null) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(spectrumStyles);
 
     this.contentElement.tabIndex = 0;
@@ -398,8 +400,8 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
           this.contrastInfo, this.contentElement, this.toggleColorPicker.bind(this),
           this.contrastPanelExpandedChanged.bind(this), this.colorSelected.bind(this));
 
-      this.contrastDetailsBackgroundColorPickedToggledBound =
-          this.contrastDetailsBackgroundColorPickedToggled.bind(this);
+      this.contrastDetailsBackgroundColorPickerToggledBound =
+          this.contrastDetailsBackgroundColorPickerToggled.bind(this);
     }
 
     this.element.classList.add('flex-none');
@@ -571,7 +573,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     return true;
   }
 
-  private contrastDetailsBackgroundColorPickedToggled(event: {
+  private contrastDetailsBackgroundColorPickerToggled(event: {
     data: unknown,
   }): void {
     if (event.data) {
@@ -680,15 +682,8 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       UI.ARIAUtils.markAsButton(colorElement);
       UI.ARIAUtils.setLabel(colorElement, i18nString(UIStrings.colorS, {PH1: palette.colors[i]}));
       colorElement.tabIndex = -1;
-      colorElement.addEventListener(
-          'mousedown',
-          this.paletteColorSelected.bind(
-              this, palette.colors[i], palette.colorNames[i], Boolean(palette.matchUserFormat)));
-      colorElement.addEventListener(
-          'focus',
-          this.paletteColorSelected.bind(
-              this, palette.colors[i], palette.colorNames[i], Boolean(palette.matchUserFormat)));
-      colorElement.addEventListener('keydown', this.onPaletteColorKeydown.bind(this, i));
+      colorElement.addEventListener('mousedown', this.onPaletteColorKeydown.bind(this, palette, i));
+      colorElement.addEventListener('keydown', this.onPaletteColorKeydown.bind(this, palette, i));
       if (palette.mutable) {
         colorElementToMutable.set(colorElement, true);
         colorElementToColor.set(colorElement, palette.colors[i]);
@@ -760,9 +755,8 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
         UI.ARIAUtils.markAsButton(shadeElement);
         UI.ARIAUtils.setLabel(shadeElement, i18nString(UIStrings.colorS, {PH1: shades[i]}));
         shadeElement.tabIndex = -1;
-        shadeElement.addEventListener('mousedown', this.paletteColorSelected.bind(this, shades[i], shades[i], false));
-        shadeElement.addEventListener('focus', this.paletteColorSelected.bind(this, shades[i], shades[i], false));
-        shadeElement.addEventListener('keydown', this.onShadeColorKeydown.bind(this, colorElement));
+        shadeElement.addEventListener('mousedown', this.onShadeColorKeydown.bind(this, shades[i], colorElement));
+        shadeElement.addEventListener('keydown', this.onShadeColorKeydown.bind(this, shades[i], colorElement));
         this.shadesContainer.appendChild(shadeElement);
       }
     }
@@ -958,19 +952,21 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     this.dispatchEventToListeners(Events.SIZE_CHANGED);
   }
 
-  private paletteColorSelected(colorText: string, colorName: string|undefined, matchUserFormat: boolean): void {
-    const color = Common.Color.parse(colorText);
-    if (!color) {
+  private onPaletteColorKeydown(palette: Palette, colorIndex: number, event: KeyboardEvent|MouseEvent): void {
+    if (event instanceof MouseEvent || Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
+      const colorText = palette.colors[colorIndex];
+      const colorName = palette.colorNames[colorIndex];
+      const color = Common.Color.parse(colorText);
+      if (color) {
+        this.innerSetColor(
+            color, colorText, colorName, palette.matchUserFormat ? this.colorFormat : color.format(),
+            ChangeSource.Other);
+      }
+      // Continue bubbling so that the color picker will close and submit the selected color.
       return;
     }
-    this.innerSetColor(
-        color, colorText, colorName, matchUserFormat ? this.colorFormat : color.format(), ChangeSource.Other);
-  }
-
-  private onPaletteColorKeydown(colorIndex: number, event: Event): void {
-    const keyboardEvent = event as KeyboardEvent;
     let nextColorIndex;
-    switch (keyboardEvent.key) {
+    switch (event.key) {
       case 'ArrowLeft':
         nextColorIndex = colorIndex - 1;
         break;
@@ -990,7 +986,15 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     }
   }
 
-  private onShadeColorKeydown(colorElement: HTMLElement, event: KeyboardEvent): void {
+  private onShadeColorKeydown(shade: string, colorElement: HTMLElement, event: MouseEvent|KeyboardEvent): void {
+    if (event instanceof MouseEvent || Platform.KeyboardUtilities.isEnterOrSpaceKey(event)) {
+      const color = Common.Color.parse(shade);
+      if (color) {
+        this.innerSetColor(color, shade, shade, color.format(), ChangeSource.Other);
+      }
+      // Continue bubbling so that the color picker will close and submit the selected color.
+      return;
+    }
     const target = event.target as HTMLElement;
     if (Platform.KeyboardUtilities.isEscKey(event) || event.key === 'Tab') {
       colorElement.focus();
@@ -1068,7 +1072,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     this.innerSetColor(color, '', undefined /* colorName */, undefined /* colorFormat */, ChangeSource.Other);
   }
 
-  private get color(): Common.Color.Color {
+  get color(): Common.Color.Color {
     if (this.colorInternal) {
       return this.colorInternal;
     }
@@ -1305,9 +1309,28 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
     event.preventDefault();
   }
 
+  #getValueSteppingForInput(element: HTMLInputElement): {step: number, range: {min: number, max: number}}|undefined {
+    const channel = this.color.channels[this.textValues.indexOf(element)];
+    switch (channel) {
+      case Common.Color.ColorChannel.R:
+      case Common.Color.ColorChannel.G:
+      case Common.Color.ColorChannel.B:
+        return this.color instanceof Common.Color.ColorFunction ? {step: .01, range: {min: 0, max: 1}} :
+                                                                  {step: 1, range: {min: 0, max: 255}};
+      case Common.Color.ColorChannel.ALPHA:
+      case Common.Color.ColorChannel.X:
+      case Common.Color.ColorChannel.Y:
+      case Common.Color.ColorChannel.Z:
+        return {step: .01, range: {min: 0, max: 1}};
+      default:
+        return undefined;
+    }
+  }
+
   private inputChanged(event: Event): void {
     const inputElement = event.currentTarget as HTMLInputElement;
-    const newValue = UI.UIUtils.createReplacementString(inputElement.value, event);
+    const newValue = UI.UIUtils.createReplacementString(
+        inputElement.value, event, undefined, this.#getValueSteppingForInput(inputElement));
     if (newValue) {
       inputElement.value = newValue;
       inputElement.selectionStart = 0;
@@ -1354,19 +1377,19 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       this.colorPickerButton.setToggled(false);
     }
 
-    if (this.contrastDetails && this.contrastDetailsBackgroundColorPickedToggledBound) {
+    if (this.contrastDetails && this.contrastDetailsBackgroundColorPickerToggledBound) {
       this.contrastDetails.addEventListener(
           ContrastDetailsEvents.BACKGROUND_COLOR_PICKER_WILL_BE_TOGGLED,
-          this.contrastDetailsBackgroundColorPickedToggledBound);
+          this.contrastDetailsBackgroundColorPickerToggledBound);
     }
   }
 
   override willHide(): void {
     void this.toggleColorPicker(false);
-    if (this.contrastDetails && this.contrastDetailsBackgroundColorPickedToggledBound) {
+    if (this.contrastDetails && this.contrastDetailsBackgroundColorPickerToggledBound) {
       this.contrastDetails.removeEventListener(
           ContrastDetailsEvents.BACKGROUND_COLOR_PICKER_WILL_BE_TOGGLED,
-          this.contrastDetailsBackgroundColorPickedToggledBound);
+          this.contrastDetailsBackgroundColorPickerToggledBound);
     }
   }
 
@@ -1375,9 +1398,10 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       enabled = this.colorPickerButton.isToggled();
     }
 
-    // This is to make sure that only one picker is open at a time
-    // Also have a look at this.contrastDetailsBackgroundColorPickedToggled
-    if (this.contrastDetails && enabled && this.contrastDetails.backgroundColorPickerEnabled()) {
+    // This is to make sure that only one picker is open at a time (enabled is true) and
+    // the background color picker gets dismissed whenever the popup is closed by an Esc (enabled is false).
+    // Also have a look at this.contrastDetailsBackgroundColorPickedToggled.
+    if (this.contrastDetails?.backgroundColorPickerEnabled()) {
       this.contrastDetails.toggleBackgroundColorPicker(false);
     }
 
@@ -1397,7 +1421,7 @@ export class Spectrum extends Common.ObjectWrapper.eventMixin<EventTypes, typeof
       // Wait for TypeScript to support the definition of EyeDropper API:
       // https://github.com/microsoft/TypeScript/issues/48638
       /* eslint-disable  @typescript-eslint/no-explicit-any */
-      const eyeDropper = new (<any>window).EyeDropper();
+      const eyeDropper = new (window as any).EyeDropper();
       this.eyeDropperAbortController = new AbortController();
 
       try {
@@ -1517,8 +1541,8 @@ export class PaletteGenerator {
   }
 
   private async processStylesheet(stylesheet: SDK.CSSStyleSheetHeader.CSSStyleSheetHeader): Promise<void> {
-    let text: string = (await stylesheet.requestContent()).content || '';
-    text = text.toLowerCase();
+    const contentDataOrError = await stylesheet.requestContentData();
+    const text = TextUtils.ContentData.ContentData.textOr(contentDataOrError, '').toLowerCase();
     const regexResult = text.matchAll(/((?:rgb|hsl|hwb)a?\([^)]+\)|#[0-9a-f]{6}|#[0-9a-f]{3})/g);
     for (const {0: c, index} of regexResult) {
       // Check whether the match occured in a property value and not in a property name or a selector by verifying

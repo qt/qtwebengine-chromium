@@ -640,13 +640,13 @@ TEST_F(ContainerQueryTest, OldStyleForTransitions) {
     PostStyleUpdateScope post_style_update_scope(GetDocument());
 
     // Should transition between [10px, 20px]. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(120, -1), kLogicalAxesInline);
     EXPECT_EQ("15px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
 
     // Should transition between [10px, 30px]. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(130, -1), kLogicalAxesInline);
     EXPECT_EQ("20px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
@@ -711,13 +711,13 @@ TEST_F(ContainerQueryTest, TransitionAppearingInFinalPass) {
     PostStyleUpdateScope post_style_update_scope(GetDocument());
 
     // No transition property present. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(120, -1), kLogicalAxesInline);
     EXPECT_EQ("20px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
 
     // Still no transition property present. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(130, -1), kLogicalAxesInline);
     EXPECT_EQ("30px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
@@ -782,13 +782,13 @@ TEST_F(ContainerQueryTest, TransitionTemporarilyAppearing) {
     PostStyleUpdateScope post_style_update_scope(GetDocument());
 
     // No transition property present yet. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(120, -1), kLogicalAxesInline);
     EXPECT_EQ("20px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
 
     // Transition between [10px, 90px]. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(130, -1), kLogicalAxesInline);
     EXPECT_EQ("50px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
@@ -853,13 +853,13 @@ TEST_F(ContainerQueryTest, RedefiningAnimations) {
     PostStyleUpdateScope post_style_update_scope(GetDocument());
 
     // Animation at 20%. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(120, -1), kLogicalAxesInline);
     EXPECT_EQ("20px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
 
     // Animation at 30%. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(130, -1), kLogicalAxesInline);
     EXPECT_EQ("30px", ComputedValueString(target, "height"));
     EXPECT_EQ(0u, GetAnimationsCount(target));
@@ -922,7 +922,7 @@ TEST_F(ContainerQueryTest, UnsetAnimation) {
     PostStyleUpdateScope post_style_update_scope(GetDocument());
 
     // Animation should appear to be canceled. (Intermediate round).
-    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+    GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
         *container, LogicalSize(130, -1), kLogicalAxesInline);
     EXPECT_EQ("auto", ComputedValueString(target, "height"));
     EXPECT_EQ(1u, GetAnimationsCount(target));
@@ -1163,7 +1163,7 @@ TEST_F(ContainerQueryTest, CQDependentContentVisibilityHidden) {
 
   Element* locker = GetDocument().getElementById(AtomicString("locker"));
   locker->setAttribute(html_names::kClassAttr, AtomicString("locked"));
-  locker->setInnerHTML("<span>Visible?</span>");
+  locker->SetInnerHTMLWithoutTrustedTypes("<span>Visible?</span>");
 
   UpdateAllLifecyclePhasesForTest();
 
@@ -1248,7 +1248,7 @@ TEST_F(ContainerQueryTest, TreeScopedReferenceUserOrigin) {
   GetStyleEngine().InjectSheet(user_sheet_key, parsed_user_sheet,
                                WebCssOrigin::kUser);
 
-  GetDocument().body()->setHTMLUnsafe(R"HTML(
+  GetDocument().body()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <style>
       @container user-container (width >= 0) {
         div > span {

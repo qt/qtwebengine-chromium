@@ -6,6 +6,7 @@
 
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 
 namespace blink {
 
@@ -37,7 +38,9 @@ LayoutMultiColumnSpannerPlaceholder::CreateAnonymous(
 LayoutMultiColumnSpannerPlaceholder::LayoutMultiColumnSpannerPlaceholder(
     LayoutBox* layout_object_in_flow_thread)
     : LayoutBox(nullptr),
-      layout_object_in_flow_thread_(layout_object_in_flow_thread) {}
+      layout_object_in_flow_thread_(layout_object_in_flow_thread) {
+  DCHECK(!RuntimeEnabledFeatures::FlowThreadLessEnabled());
+}
 
 void LayoutMultiColumnSpannerPlaceholder::Trace(Visitor* visitor) const {
   visitor->Trace(layout_object_in_flow_thread_);
@@ -102,10 +105,10 @@ void LayoutMultiColumnSpannerPlaceholder::WillBeRemovedFromTree() {
   LayoutBox::WillBeRemovedFromTree();
 }
 
-DeprecatedLayoutPoint LayoutMultiColumnSpannerPlaceholder::LocationInternal()
-    const {
+DeprecatedLayoutPoint
+LayoutMultiColumnSpannerPlaceholder::DeprecatedLocationInternal() const {
   NOT_DESTROYED();
-  return layout_object_in_flow_thread_->LocationInternal();
+  return layout_object_in_flow_thread_->DeprecatedLocationInternal();
 }
 
 PhysicalSize LayoutMultiColumnSpannerPlaceholder::Size() const {

@@ -52,7 +52,7 @@
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/supervised_user/supervised_user_service_factory.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "components/account_manager_core/chromeos/account_manager_facade_factory.h"
+#include "chromeos/ash/components/account_manager/account_manager_facade_factory.h"
 #include "components/supervised_user/core/browser/supervised_user_service.h"
 
 #if BUILDFLAG(ENABLE_EXTENSIONS)
@@ -233,8 +233,7 @@ void ProcessMirrorHeader(
   // Do not allow non-Google origins to open incognito windows.
   // TODO(crbug.com/40064889): Expand this check to all Mirror headers,
   //                          regardless of `service_type`.
-  if (service_type == GAIA_SERVICE_TYPE_INCOGNITO &&
-      base::FeatureList::IsEnabled(kVerifyRequestInitiatorForMirrorHeaders)) {
+  if (service_type == GAIA_SERVICE_TYPE_INCOGNITO) {
     GURL initiator_url =
         request_initiator ? request_initiator->GetURL() : GURL();
     bool is_request_initiated_by_google_domain =
@@ -322,14 +321,14 @@ void ProcessMirrorHeader(
 
   // 3. Displaying an account addition window.
   if (service_type == GAIA_SERVICE_TYPE_ADDSESSION) {
-    ::GetAccountManagerFacade(profile->GetPath().value())
+    ash::GetAccountManagerFacade(profile->GetPath().value())
         ->ShowAddAccountDialog(account_manager::AccountManagerFacade::
                                    AccountAdditionSource::kOgbAddAccount);
     return;
   }
 
   // 4. Displaying the Account Manager for managing accounts.
-  ::GetAccountManagerFacade(profile->GetPath().value())
+  ash::GetAccountManagerFacade(profile->GetPath().value())
       ->ShowManageAccountsSettings();
   return;
 

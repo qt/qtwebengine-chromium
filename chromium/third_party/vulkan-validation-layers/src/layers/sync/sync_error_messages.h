@@ -26,11 +26,12 @@ class CommandBufferAccessContext;
 class CommandExecutionContext;
 class HazardResult;
 class QueueBatchContext;
+class SyncValidator;
+struct Location;
 struct SyncImageMemoryBarrier;
 
 namespace vvl {
 class DescriptorSet;
-class Device;
 class Pipeline;
 }  // namespace vvl
 
@@ -38,7 +39,7 @@ namespace syncval {
 
 class ErrorMessages {
   public:
-    explicit ErrorMessages(vvl::Device& validator);
+    explicit ErrorMessages(SyncValidator& validator);
 
     std::string Error(const HazardResult& hazard, const CommandExecutionContext& context, vvl::Func command,
                       const std::string& resource_description, const char* message_type,
@@ -50,6 +51,11 @@ class ErrorMessages {
 
     std::string BufferCopyError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context, const vvl::Func command,
                                 const std::string& resouce_description, uint32_t region_index, ResourceAccessRange range) const;
+
+    std::string AccelerationStructureError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
+                                           const vvl::Func command, const std::string& resource_description,
+                                           const ResourceAccessRange range, VkAccelerationStructureKHR as,
+                                           const Location& as_location) const;
 
     std::string ImageCopyResolveBlitError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
                                           vvl::Func command, const std::string& resource_description, uint32_t region_index,
@@ -134,7 +140,7 @@ class ErrorMessages {
                            const std::string& resource_description) const;
 
   private:
-    vvl::Device& validator_;
+    SyncValidator& validator_;
 };
 
 }  // namespace syncval

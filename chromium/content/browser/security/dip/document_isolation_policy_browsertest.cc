@@ -6,6 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/strings/escape.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "base/test/gtest_util.h"
 #include "base/test/scoped_feature_list.h"
@@ -664,10 +665,79 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     crash_observer.reset();
 
     // Finish the navigation to the non DIP page.
-    // TODO(crbug.com/343914483): This might need to change and match the test
-    // above if we implement an optimization to assume DIP value hasn't changed
-    // until response time.
     ASSERT_TRUE(non_dip_navigation.WaitForNavigationFinished());
+
+    // The navigation will fail if we create speculative RFH when the navigation
+    // started (instead of only when the response started), because the renderer
+    // process will crash and trigger deletion of the speculative RFH and the
+    // navigation using that speculative RFH. BFCache forces a BrowsingInstance
+    // swap (even in this same-site case), hence it also necessitates a
+    // speculative RFH.
+    // TODO(crbug.com/40261276): If the final RenderFrameHost picked for
+    // the navigation doesn't use the same process as the crashed process, we
+    // can crash the process after the final RenderFrameHost has been picked
+    // instead, and the navigation will commit normally.
+    if (ShouldCreateNewHostForAllFrames() || IsBackForwardCacheEnabled()) {
+      EXPECT_FALSE(non_dip_navigation.was_committed());
+      EXPECT_EQ(current_frame_host()
+                    ->policy_container_host()
+                    ->policies()
+                    .document_isolation_policy,
+                GetDocumentIsolationPolicy());
+      return;
+    }
+
+    EXPECT_TRUE(non_dip_navigation.was_successful());
+    EXPECT_EQ(current_frame_host()
+                  ->policy_container_host()
+                  ->policies()
+                  .document_isolation_policy,
+              DipNone());
+  }
+
+  // Test a crash during the navigation commit.
+  {
+    // Navigate to a DIP page.
+    EXPECT_TRUE(NavigateToURL(shell(), dip_page));
+    scoped_refptr<SiteInstance> initial_site_instance(
+        current_frame_host()->GetSiteInstance());
+
+    // Start navigating to a non DIP page.
+    TestNavigationManager non_dip_navigation(web_contents(), non_dip_page);
+    shell()->LoadURL(non_dip_page);
+    EXPECT_TRUE(non_dip_navigation.WaitForResponse());
+
+    // Simulate the renderer process crashing.
+    RenderProcessHost* process = initial_site_instance->GetProcess();
+    ASSERT_TRUE(process);
+    std::unique_ptr<RenderProcessHostWatcher> crash_observer(
+        new RenderProcessHostWatcher(
+            process, RenderProcessHostWatcher::WATCH_FOR_PROCESS_EXIT));
+    process->Shutdown(0);
+    crash_observer->Wait();
+    crash_observer.reset();
+
+    // Finish the navigation to the non DIP page.
+    ASSERT_TRUE(non_dip_navigation.WaitForNavigationFinished());
+
+    // The navigation will fail if we create speculative RFH when the navigation
+    // started (instead of only when the response started), because the renderer
+    // process will crash and trigger deletion of the speculative RFH and the
+    // navigation using that speculative RFH. BFCache forces a BrowsingInstance
+    // swap (even in this same-site case), hence it also necessitates a
+    // speculative RFH.
+    // TODO(crbug.com/40261276): If the final RenderFrameHost picked for the
+    // navigation doesn't use the same process the navigation should not stop
+    // but go on and commit normally
+    if (ShouldCreateNewHostForAllFrames() || IsBackForwardCacheEnabled()) {
+      EXPECT_FALSE(non_dip_navigation.was_committed());
+      EXPECT_EQ(current_frame_host()
+                    ->policy_container_host()
+                    ->policies()
+                    .document_isolation_policy,
+                GetDocumentIsolationPolicy());
+      return;
+    }
 
     EXPECT_TRUE(non_dip_navigation.was_successful());
     EXPECT_EQ(current_frame_host()
@@ -877,11 +947,14 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
                                 .root()
                                 ->render_manager()
                                 ->speculative_frame_host();
-    // The navigation is considered cross-site, because the AgentClusterKey of
-    // the current page has an IsolationKey, and the request does not have one.
-    // TODO(https://issues.chromium.org/343914483): Avoid creating a speculative
-    // RFH in this case.
-    EXPECT_TRUE(speculative_rfh);
+    if (CanSameSiteMainFrameNavigationsChangeRenderFrameHosts()) {
+      // When ProactivelySwapBrowsingInstance or RenderDocument is enabled on
+      // same-site main-frame navigations, the navigation will result in a new
+      // RFH, so it will create a pending RFH.
+      EXPECT_TRUE(speculative_rfh);
+    } else {
+      EXPECT_FALSE(speculative_rfh);
+    }
 
     ASSERT_TRUE(non_dip_navigation.WaitForNavigationFinished());
 
@@ -917,11 +990,15 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
                                 .root()
                                 ->render_manager()
                                 ->speculative_frame_host();
-    // The navigation is considered cross-site, because the AgentClusterKey of
-    // the current page has an IsolationKey, and the request does not have one.
-    // TODO(https://issues.chromium.org/343914483): Avoid creating a speculative
-    // RFH in this case.
-    EXPECT_TRUE(speculative_rfh);
+    if (WillSameSiteNavigationChangeRenderFrameHosts(true, true)) {
+      // When RenderDocument is enabled, a speculative RFH will always be
+      // created. ProactivelySwapBrowsingInstance will not create one in this
+      // case because we are navigating to the same URL as the existing
+      // document.
+      EXPECT_TRUE(speculative_rfh);
+    } else {
+      EXPECT_FALSE(speculative_rfh);
+    }
 
     ASSERT_TRUE(dip_navigation.WaitForNavigationFinished());
 
@@ -952,7 +1029,7 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest, DipOriginKeyed) {
   // requires_origin_keyed_process() will return true.
   EXPECT_EQ(SiteIsolationPolicy::AreOriginKeyedProcessesEnabledByDefault(),
             current_si->GetSiteInfo().requires_origin_keyed_process());
-  EXPECT_TRUE(current_si->GetSiteInfo().agent_cluster_key()->IsOriginKeyed());
+  EXPECT_TRUE(current_si->GetSiteInfo().agent_cluster_key().IsOriginKeyed());
 }
 
 // Tests that main frame navigations are correctly assigned cross-origin
@@ -979,7 +1056,8 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     EXPECT_TRUE(NavigateToURL(shell(), isolated_page));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_TRUE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // The navigation triggers a speculative BrowsingInstance swap because it is
     // browser-initiated and end up being cross-site due to the DIP mismatch.
@@ -993,7 +1071,8 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     EXPECT_TRUE(NavigateToURL(shell(), non_isolated_page));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_FALSE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // The navigation triggers a speculative BrowsingInstance swap because it is
     // browser-initiated and end up being cross-site due to the DIP mismatch.
@@ -1009,7 +1088,8 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     EXPECT_TRUE(WaitForLoadStop(web_contents()));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_TRUE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // The navigation triggers a speculative BrowsingInstance swap because it is
     // browser-initiated and end up being cross-site due to the DIP mismatch.
@@ -1024,7 +1104,8 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     EXPECT_TRUE(WaitForLoadStop(web_contents()));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_FALSE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // The navigation triggers a speculative BrowsingInstance swap because it is
     // browser-initiated and end up being cross-site due to the DIP mismatch.
@@ -1040,7 +1121,7 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     SiteInstanceImpl* site_instance_2 = current_frame_host()->GetSiteInstance();
     EXPECT_TRUE(site_instance_1->IsCrossOriginIsolated());
     EXPECT_TRUE(site_instance_2->IsCrossOriginIsolated());
-    EXPECT_NE(site_instance_1->GetOrCreateProcess(),
+    EXPECT_NE(site_instance_1->GetOrCreateProcessForTesting(),
               site_instance_2->GetProcess());
 
     // The navigation triggers a speculative BrowsingInstance swap because it is
@@ -1074,7 +1155,8 @@ IN_PROC_BROWSER_TEST_P(
     EXPECT_TRUE(NavigateToURLFromRenderer(shell(), isolated_page));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_TRUE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // When BfCache is enabled, a pro-active BrowsingInstance swap happens.
     if (IsBackForwardCacheEnabled()) {
@@ -1101,7 +1183,8 @@ IN_PROC_BROWSER_TEST_P(
     EXPECT_TRUE(NavigateToURLFromRenderer(shell(), non_isolated_page));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_FALSE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // When BfCache is enabled, a pro-active BrowsingInstance swap happens.
     if (IsBackForwardCacheEnabled()) {
@@ -1119,7 +1202,8 @@ IN_PROC_BROWSER_TEST_P(
     ASSERT_TRUE(WaitForLoadStop(web_contents()));
     SiteInstanceImpl* current_si = current_frame_host()->GetSiteInstance();
     EXPECT_TRUE(current_si->IsCrossOriginIsolated());
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // When BfCache is enabled, a pro-active BrowsingInstance swap happens.
     if (IsBackForwardCacheEnabled()) {
@@ -1138,7 +1222,7 @@ IN_PROC_BROWSER_TEST_P(
     SiteInstanceImpl* site_instance_2 = current_frame_host()->GetSiteInstance();
     EXPECT_TRUE(site_instance_1->IsCrossOriginIsolated());
     EXPECT_TRUE(site_instance_2->IsCrossOriginIsolated());
-    EXPECT_NE(site_instance_1->GetOrCreateProcess(),
+    EXPECT_NE(site_instance_1->GetOrCreateProcessForTesting(),
               site_instance_2->GetProcess());
 
     // When BfCache is enabled, a pro-active BrowsingInstance swap happens.
@@ -1239,7 +1323,8 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     EXPECT_TRUE(NavigateToURLFromRenderer(shell(), non_isolated_page));
     main_si = current_frame_host()->GetSiteInstance();
     EXPECT_FALSE(main_si->IsCrossOriginIsolated());
-    EXPECT_NE(main_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(main_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
 
     // When BfCache is enabled, a pro-active BrowsingInstance swap happens.
     if (IsBackForwardCacheEnabled()) {
@@ -1431,7 +1516,8 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
     } else {
       EXPECT_TRUE(current_si->IsRelatedSiteInstance(previous_si.get()));
     }
-    EXPECT_NE(current_si->GetProcess(), previous_si->GetOrCreateProcess());
+    EXPECT_NE(current_si->GetProcess(),
+              previous_si->GetOrCreateProcessForTesting());
     EXPECT_FALSE(current_si->IsCrossOriginIsolated());
   }
 
@@ -1501,7 +1587,7 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
   EXPECT_NE(main_si, current_frame_host()->GetSiteInstance());
   EXPECT_TRUE(
       main_si->IsRelatedSiteInstance(current_frame_host()->GetSiteInstance()));
-  EXPECT_NE(main_si->GetOrCreateProcess(),
+  EXPECT_NE(main_si->GetOrCreateProcessForTesting(),
             current_frame_host()->GetSiteInstance()->GetProcess());
 }
 
@@ -1528,7 +1614,7 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
   EXPECT_NE(main_si, current_frame_host()->GetSiteInstance());
   EXPECT_TRUE(
       main_si->IsRelatedSiteInstance(current_frame_host()->GetSiteInstance()));
-  EXPECT_NE(main_si->GetOrCreateProcess(),
+  EXPECT_NE(main_si->GetOrCreateProcessForTesting(),
             current_frame_host()->GetSiteInstance()->GetProcess());
 }
 
@@ -1851,132 +1937,6 @@ IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyBrowserTest,
 
 // TODO(crbug.com/349104385): Add a test checking that the
 // Document-Isolation-Policy header is ignored on redirect responses.
-
-class DocumentIsolationPolicyOriginTrialBrowserTest
-    : public base::test::WithFeatureOverride,
-      public ContentBrowserTest {
- public:
-  DocumentIsolationPolicyOriginTrialBrowserTest()
-      : base::test::WithFeatureOverride(
-            features::kDocumentIsolationPolicyOriginTrial) {}
-
-  // Origin Trials key generated with:
-  //
-  // tools/origin_trials/generate_token.py --expire-days 3000 --version 3
-  // https://dip.security:9999 DocumentIsolationPolicy
-  static std::string OriginTrialToken() {
-    return "Az6HDJNOX2Q2dxlqF5Nqd+VpPghvLYWzBtdJju+"
-           "eejQRTjW4XA4TJmLBgrHCZ22rnsiKr5iOg0iY4BMUwuRuSAYAAABjeyJvcmlnaW4iOi"
-           "AiaHR0cHM6Ly9kaXAuc2VjdXJpdHk6OTk5OSIsICJmZWF0dXJlIjogIkRvY3VtZW50S"
-           "XNvbGF0aW9uUG9saWN5IiwgImV4cGlyeSI6IDE5OTAyNzM3NjF9";
-  }
-
-  // The OriginTrial token is bound to a given origin. Since the
-  // EmbeddedTestServer's port changes after every test run, it can't be used.
-  // As a result, response must be served using a URLLoaderInterceptor.
-  GURL OriginTrialURL() { return GURL("https://dip.security:9999"); }
-
-  WebContentsImpl* web_contents() const {
-    return static_cast<WebContentsImpl*>(shell()->web_contents());
-  }
-
-  RenderFrameHostImpl* current_frame_host() {
-    return web_contents()->GetPrimaryMainFrame();
-  }
-
-  net::EmbeddedTestServer* https_server() { return &https_server_; }
-
-  GURL OtherURL() { return GURL("https://a.test"); }
-
- private:
-  void SetUpOnMainThread() override {
-    ContentBrowserTest::SetUpOnMainThread();
-    mock_cert_verifier_.mock_cert_verifier()->set_default_result(net::OK);
-    host_resolver()->AddRule("*", "127.0.0.1");
-    ASSERT_TRUE(embedded_test_server()->Start());
-    https_server()->ServeFilesFromSourceDirectory(GetTestDataFilePath());
-    SetupCrossSiteRedirector(https_server());
-    net::test_server::RegisterDefaultHandlers(&https_server_);
-    ASSERT_TRUE(https_server()->Start());
-  }
-
-  void SetUpCommandLine(base::CommandLine* command_line) override {
-    ContentBrowserTest::SetUpCommandLine(command_line);
-    mock_cert_verifier_.SetUpCommandLine(command_line);
-  }
-
-  void SetUpInProcessBrowserTestFixture() override {
-    ContentBrowserTest::SetUpInProcessBrowserTestFixture();
-    mock_cert_verifier_.SetUpInProcessBrowserTestFixture();
-  }
-
-  void TearDownInProcessBrowserTestFixture() override {
-    ContentBrowserTest::TearDownInProcessBrowserTestFixture();
-    mock_cert_verifier_.TearDownInProcessBrowserTestFixture();
-  }
-
-  ContentMockCertVerifier mock_cert_verifier_;
-  net::EmbeddedTestServer https_server_;
-  base::test::ScopedFeatureList feature_list_;
-};
-
-INSTANTIATE_FEATURE_OVERRIDE_TEST_SUITE(
-    DocumentIsolationPolicyOriginTrialBrowserTest);
-
-IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyOriginTrialBrowserTest,
-                       ValidToken) {
-  URLLoaderInterceptor interceptor(base::BindLambdaForTesting(
-      [&](URLLoaderInterceptor::RequestParams* params) {
-        DCHECK_EQ(params->url_request.url, OriginTrialURL());
-        URLLoaderInterceptor::WriteResponse(
-            "HTTP/1.1 200 OK\n"
-            "Content-type: text/html\n"
-            "Document-Isolation-Policy: isolate-and-require-corp\n"
-            "Origin-Trial: " +
-                OriginTrialToken() + "\n\n",
-            "", params->client.get());
-        return true;
-      }));
-  EXPECT_TRUE(NavigateToURL(shell(), OriginTrialURL()));
-#if !BUILDFLAG(IS_ANDROID)
-  EXPECT_EQ(
-      current_frame_host()
-          ->policy_container_host()
-          ->policies()
-          .document_isolation_policy.value,
-      IsParamFeatureEnabled()
-          ? network::mojom::DocumentIsolationPolicyValue::kIsolateAndRequireCorp
-          : network::mojom::DocumentIsolationPolicyValue::kNone);
-#else
-  EXPECT_EQ(current_frame_host()
-                ->policy_container_host()
-                ->policies()
-                .document_isolation_policy.value,
-            network::mojom::DocumentIsolationPolicyValue::kNone);
-#endif
-}
-
-IN_PROC_BROWSER_TEST_P(DocumentIsolationPolicyOriginTrialBrowserTest,
-                       TokenOriginMismatched) {
-  URLLoaderInterceptor interceptor(base::BindLambdaForTesting(
-      [&](URLLoaderInterceptor::RequestParams* params) {
-        DCHECK_EQ(params->url_request.url, OtherURL());
-        URLLoaderInterceptor::WriteResponse(
-            "HTTP/1.1 200 OK\n"
-            "Content-type: text/html\n"
-            "Document-Isolation-Policy: isolate-and-require-corp\n"
-            "Origin-Trial: " +
-                OriginTrialToken() + "\n\n",
-            "", params->client.get());
-        return true;
-      }));
-  EXPECT_TRUE(NavigateToURL(shell(), OtherURL()));
-  EXPECT_EQ(current_frame_host()
-                ->policy_container_host()
-                ->policies()
-                .document_isolation_policy.value,
-            network::mojom::DocumentIsolationPolicyValue::kNone);
-}
 
 // Regression test for crbug.com/393480086.
 // Blocking a navigation at BeginNavigation stage in a child frame of a document

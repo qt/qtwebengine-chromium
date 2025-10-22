@@ -950,7 +950,7 @@ i::DirectHandle<i::String> VecToString(i::Isolate* isolate,
   // so let's be robust to that.
   if (length > 0 && chars[length - 1] == 0) length--;
   return isolate->factory()
-      ->NewStringFromUtf8({chars.get(), length})
+      ->NewStringFromUtf8(std::string_view{chars.get(), length})
       .ToHandleChecked();
 }
 
@@ -1983,7 +1983,7 @@ struct implement<Global> {
   using type = RefImpl<Global, i::WasmGlobalObject>;
 };
 
-WASM_EXPORT void Global::destroy() { delete (this); }
+WASM_EXPORT void Global::destroy() { delete impl(this); }
 
 WASM_EXPORT auto Global::copy() const -> own<Global> {
   return impl(this)->copy();
@@ -2049,7 +2049,7 @@ WASM_EXPORT auto Global::get() const -> Val {
             store->i_isolate()));
       }
       if (IsWasmNull(*result)) {
-        result = v8_global->GetIsolate()->factory()->null_value();
+        result = i::Isolate::Current()->factory()->null_value();
       }
       return Val(V8RefValueToWasm(store, result));
     }
@@ -2356,8 +2356,6 @@ WASM_EXPORT own<Instance> Instance::make(Store* store_abs,
   v8::Isolate::Scope isolate_scope(store->isolate());
   i::HandleScope handle_scope(isolate);
   CheckAndHandleInterrupts(isolate);
-
-  DCHECK_EQ(module->v8_object()->GetIsolate(), isolate);
 
   if (trap) *trap = nullptr;
   ownvec<ImportType> import_types = module_abs->imports();

@@ -31,8 +31,11 @@ bool ViewTransitionPseudoElementBase::CanGeneratePseudoElement(
       return pseudo_id == kPseudoIdViewTransitionGroup;
     case kPseudoIdViewTransitionGroup:
       return pseudo_id == kPseudoIdViewTransitionImagePair ||
-             (pseudo_id == kPseudoIdViewTransitionGroup &&
+             (pseudo_id == kPseudoIdViewTransitionGroupChildren &&
               RuntimeEnabledFeatures::NestedViewTransitionEnabled());
+    case kPseudoIdViewTransitionGroupChildren:
+      CHECK(RuntimeEnabledFeatures::NestedViewTransitionEnabled());
+      return pseudo_id == kPseudoIdViewTransitionGroup;
     case kPseudoIdViewTransitionImagePair:
       return pseudo_id == kPseudoIdViewTransitionOld ||
              pseudo_id == kPseudoIdViewTransitionNew;
@@ -42,6 +45,11 @@ bool ViewTransitionPseudoElementBase::CanGeneratePseudoElement(
     default:
       NOTREACHED();
   }
+}
+
+const Vector<AtomicString>&
+ViewTransitionPseudoElementBase::ViewTransitionClassList() const {
+  return style_tracker_->GetViewTransitionClassList(view_transition_name());
 }
 
 const ComputedStyle*
@@ -57,7 +65,11 @@ ViewTransitionPseudoElementBase::CustomStyleForLayoutObject(
     style_request.pseudo_ident_list =
         style_tracker_->GetViewTransitionClassList(view_transition_name());
   }
-  // Use the originating element to get the style for the pseudo element.
+  if (RuntimeEnabledFeatures::CSSNestedPseudoElementsEnabled()) {
+    style_request.pseudo_id = kPseudoIdNone;
+    return StyleForPseudoElement(style_recalc_context, style_request);
+  }
+  // Use the originating element to get the style for the pseudo-element.
   return UltimateOriginatingElement().StyleForPseudoElement(
       style_recalc_context, style_request);
 }
@@ -70,6 +82,16 @@ void ViewTransitionPseudoElementBase::Trace(Visitor* visitor) const {
 bool ViewTransitionPseudoElementBase::IsBoundTo(
     const blink::ViewTransitionStyleTracker* tracker) const {
   return style_tracker_.Get() == tracker;
+}
+
+const Vector<AtomicString>&
+ViewTransitionPseudoElementBase::GetViewTransitionNames() const {
+  return style_tracker_->GetViewTransitionNames();
+}
+
+const Vector<AtomicString>
+ViewTransitionPseudoElementBase::GetContainedViewTransitionNames() const {
+  return style_tracker_->ComputeContainedGroupNames(view_transition_name());
 }
 
 }  // namespace blink

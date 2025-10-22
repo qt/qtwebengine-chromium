@@ -14,6 +14,7 @@
 namespace content {
 class ServiceWorkerContext;
 struct ConsoleMessage;
+struct ServiceWorkerRegistrationInformation;
 struct ServiceWorkerRunningInfo;
 
 class ServiceWorkerContextObserver {
@@ -44,8 +45,10 @@ class ServiceWorkerContextObserver {
   // registration ID |registration_id| and scope |scope|.
   //
   // This happens after OnRegistrationCompleted().
-  virtual void OnRegistrationStored(int64_t registration_id,
-                                    const GURL& scope) {}
+  virtual void OnRegistrationStored(
+      int64_t registration_id,
+      const GURL& scope,
+      const ServiceWorkerRegistrationInformation& service_worker_info) {}
 
   // Called when the service worker with id |version_id| changes status to
   // activated.

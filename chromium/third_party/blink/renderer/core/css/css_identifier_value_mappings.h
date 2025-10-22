@@ -43,6 +43,7 @@
 #include "third_party/blink/renderer/core/scroll/scrollable_area.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/core/style/position_area.h"
+#include "third_party/blink/renderer/core/style/scroll_marker_group.h"
 #include "third_party/blink/renderer/platform/fonts/font_description.h"
 #include "third_party/blink/renderer/platform/fonts/font_smoothing_mode.h"
 #include "third_party/blink/renderer/platform/fonts/font_variant_emoji.h"
@@ -1646,6 +1647,8 @@ inline Containment CSSIdentifierValue::ConvertTo() const {
       return kContainsSize;
     case CSSValueID::kInlineSize:
       return kContainsInlineSize;
+    case CSSValueID::kViewTransition:
+      return kContainsViewTransition;
     default:
       break;
   }
@@ -1663,6 +1666,8 @@ inline EContainerType CSSIdentifierValue::ConvertTo() const {
       return kContainerTypeSize;
     case CSSValueID::kScrollState:
       return kContainerTypeScrollState;
+    case CSSValueID::kAnchored:
+      return kContainerTypeAnchored;
     default:
       break;
   }
@@ -1687,6 +1692,66 @@ inline CSSIdentifierValue::CSSIdentifierValue(TextUnderlinePosition position)
       break;
     case TextUnderlinePosition::kRight:
       value_id_ = CSSValueID::kRight;
+      break;
+  }
+}
+
+template <>
+inline ScrollMarkerGroup::ScrollMarkerPosition CSSIdentifierValue::ConvertTo()
+    const {
+  using enum ScrollMarkerGroup::ScrollMarkerPosition;
+  switch (GetValueID()) {
+    case CSSValueID::kAfter:
+      return kAfter;
+    case CSSValueID::kBefore:
+      return kBefore;
+    default:
+      break;
+  }
+  NOTREACHED();
+}
+
+template <>
+inline CSSIdentifierValue::CSSIdentifierValue(
+    ScrollMarkerGroup::ScrollMarkerPosition position)
+    : CSSValue(kIdentifierClass) {
+  using enum ScrollMarkerGroup::ScrollMarkerPosition;
+  switch (position) {
+    case kAfter:
+      value_id_ = CSSValueID::kAfter;
+      break;
+    case kBefore:
+      value_id_ = CSSValueID::kBefore;
+      break;
+  }
+}
+
+template <>
+inline ScrollMarkerGroup::ScrollMarkerMode CSSIdentifierValue::ConvertTo()
+    const {
+  using enum ScrollMarkerGroup::ScrollMarkerMode;
+  switch (GetValueID()) {
+    case CSSValueID::kTabs:
+      return kTabs;
+    case CSSValueID::kLinks:
+      return kLinks;
+    default:
+      break;
+  }
+  NOTREACHED();
+}
+
+template <>
+inline CSSIdentifierValue::CSSIdentifierValue(
+    ScrollMarkerGroup::ScrollMarkerMode mode)
+    : CSSValue(kIdentifierClass) {
+  using enum ScrollMarkerGroup::ScrollMarkerMode;
+  switch (mode) {
+    case kTabs:
+      value_id_ = CSSValueID::kTabs;
+      break;
+    case kLinks:
+      value_id_ = CSSValueID::kLinks;
       break;
   }
 }
@@ -1928,6 +1993,10 @@ inline CSSIdentifierValue::CSSIdentifierValue(
     case TimelineOffset::NamedRange::kExitCrossing:
       value_id_ = CSSValueID::kExitCrossing;
       break;
+    case TimelineOffset::NamedRange::kScroll:
+      CHECK(RuntimeEnabledFeatures::ScrollTimelineNamedRangeScrollEnabled());
+      value_id_ = CSSValueID::kScroll;
+      break;
     default:
       NOTREACHED();
   }
@@ -1948,6 +2017,9 @@ inline TimelineOffset::NamedRange CSSIdentifierValue::ConvertTo() const {
       return TimelineOffset::NamedRange::kExit;
     case CSSValueID::kExitCrossing:
       return TimelineOffset::NamedRange::kExitCrossing;
+    case CSSValueID::kScroll:
+      CHECK(RuntimeEnabledFeatures::ScrollTimelineNamedRangeScrollEnabled());
+      return TimelineOffset::NamedRange::kScroll;
     default:
       break;
   }
@@ -2213,6 +2285,20 @@ inline PositionVisibility CSSIdentifierValue::ConvertTo() const {
       return PositionVisibility::kAnchorsVisible;
     case CSSValueID::kNoOverflow:
       return PositionVisibility::kNoOverflow;
+    default:
+      NOTREACHED();
+  }
+}
+
+template <>
+inline FlexWrapMode CSSIdentifierValue::ConvertTo() const {
+  switch (GetValueID()) {
+    case CSSValueID::kNowrap:
+      return FlexWrapMode::kNowrap;
+    case CSSValueID::kWrap:
+      return FlexWrapMode::kWrap;
+    case CSSValueID::kWrapReverse:
+      return FlexWrapMode::kWrapReverse;
     default:
       NOTREACHED();
   }

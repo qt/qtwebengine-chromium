@@ -1,6 +1,7 @@
 // Copyright (c) 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -79,10 +80,11 @@ export class BlockedURLsPane extends UI.Widget.VBox implements
   private blockedCountForUrl: Map<string, number>;
 
   constructor() {
-    super(true);
+    super({
+      jslog: `${VisualLogging.panel('network.blocked-urls').track({resize: true})}`,
+      useShadowDom: true,
+    });
     this.registerRequiredCSS(blockedURLsPaneStyles);
-
-    this.element.setAttribute('jslog', `${VisualLogging.panel('network.blocked-urls').track({resize: true})}`);
 
     this.manager = SDK.NetworkManager.MultitargetNetworkManager.instance();
     this.manager.addEventListener(
@@ -178,11 +180,11 @@ export class BlockedURLsPane extends UI.Widget.VBox implements
     this.update();
   }
 
-  removeItemRequested(pattern: SDK.NetworkManager.BlockedPattern, index: number): void {
+  removeItemRequested(_pattern: SDK.NetworkManager.BlockedPattern, index: number): void {
     const patterns = this.manager.blockedPatterns();
     patterns.splice(index, 1);
     this.manager.setBlockedPatterns(patterns);
-    UI.ARIAUtils.alert(UIStrings.itemDeleted);
+    UI.ARIAUtils.LiveAnnouncer.alert(UIStrings.itemDeleted);
   }
 
   beginEdit(pattern: SDK.NetworkManager.BlockedPattern): UI.ListWidget.Editor<SDK.NetworkManager.BlockedPattern> {

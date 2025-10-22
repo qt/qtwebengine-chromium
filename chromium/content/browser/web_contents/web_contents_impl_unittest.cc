@@ -909,7 +909,7 @@ TEST_F(WebContentsImplTest, NavigateFromSitelessUrl) {
   main_test_rfh()->GetSiteInstance()->group()->IncrementActiveFrameCount();
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
-  if (AreAllSitesIsolatedForTesting()) {
+  if (AreStrictSiteInstancesEnabled()) {
     EXPECT_TRUE(
         contents()->GetSiteInstance()->GetSiteURL().DomainIs("google.com"));
   } else {
@@ -1012,13 +1012,13 @@ TEST_F(WebContentsImplTest, NavigateFromRestoredRegularUrl) {
 
   EXPECT_EQ(orig_instance, contents()->GetSiteInstance());
   EXPECT_TRUE(orig_instance->HasSite());
-  EXPECT_EQ(!AreAllSitesIsolatedForTesting(),
+  EXPECT_EQ(!AreStrictSiteInstancesEnabled(),
             orig_instance->IsDefaultSiteInstance());
 
   // Navigate to another site and verify that a new SiteInstance was created.
   const GURL url("http://www.google.com");
   NavigationSimulator::NavigateAndCommitFromBrowser(contents(), url);
-  if (AreAllSitesIsolatedForTesting()) {
+  if (AreStrictSiteInstancesEnabled()) {
     EXPECT_NE(orig_instance, contents()->GetSiteInstance());
   } else {
     // Verify this remains the default SiteInstance since |url| does
@@ -1059,7 +1059,9 @@ TEST_F(WebContentsImplTest, FindOpenerRVHWhenPending) {
       TestWebContents::Create(browser_context(), instance));
   popup->SetOpener(contents());
   contents()->GetRenderManager()->CreateOpenerProxies(
-      instance->group(), nullptr, pending_rfh->browsing_context_state());
+      instance->group(), /*skip_this_node=*/nullptr,
+      pending_rfh->browsing_context_state(),
+      /*navigation_metrics_token=*/std::nullopt);
 
   // If swapped out is forbidden, a new proxy should be created for the opener
   // in the group |instance| belongs to, and we should ensure that its routing
@@ -1679,7 +1681,8 @@ TEST_F(WebContentsImplTest, FilterURLs) {
   other_contents->NavigateAndCommit(url_normalized);
 
   // Check that an IPC with about:whatever is correctly normalized.
-  other_contents->GetPrimaryMainFrame()->DidFailLoadWithError(url_from_ipc, 1);
+  other_contents->GetPrimaryMainFrame()->DidFailLoadWithError(url_from_ipc,
+                                                              net::ERR_FAILED);
   EXPECT_EQ(url_blocked, other_observer.last_url());
 }
 
@@ -2582,6 +2585,17 @@ TEST_F(WebContentsImplTest, MediaWakeLock) {
   EXPECT_FALSE(has_audio_wake_lock());
 }
 
+TEST_F(WebContentsImplTest, MarkAudible) {
+  AudioStreamMonitor* monitor = contents()->audio_stream_monitor();
+  EXPECT_FALSE(monitor->IsCurrentlyAudible());
+
+  base::ScopedClosureRunner audible_closure = contents()->MarkAudible();
+  EXPECT_TRUE(monitor->IsCurrentlyAudible());
+
+  audible_closure.RunAndReset();
+  EXPECT_FALSE(monitor->IsCurrentlyAudible());
+}
+
 // Test that the WebContentsObserver is notified when text is copied to the
 // clipboard for a given RenderFrameHost.
 TEST_F(WebContentsImplTest, OnTextCopiedToClipboard) {
@@ -3107,7 +3121,7 @@ TEST_F(WebContentsImplTest, BadDownloadImageResponseFromRenderer) {
   // exercising the code in WebContentsImpl.
   scoped_refptr<SiteInstance> instance =
       SiteInstance::Create(GetBrowserContext());
-  instance->GetOrCreateProcess()->Init();
+  instance->GetOrCreateProcessForTesting()->Init();
   WebContents::CreateParams create_params(GetBrowserContext(),
                                           std::move(instance));
   create_params.desired_renderer_state = WebContents::CreateParams::
@@ -3498,7 +3512,7 @@ TEST_F(WebContentsImplTest, BadDownloadImageFromAXNodeId) {
   // exercising the code in WebContentsImpl.
   scoped_refptr<SiteInstance> instance =
       SiteInstance::Create(GetBrowserContext());
-  instance->GetOrCreateProcess()->Init();
+  instance->GetOrCreateProcessForTesting()->Init();
   WebContents::CreateParams create_params(GetBrowserContext(),
                                           std::move(instance));
   create_params.desired_renderer_state = WebContents::CreateParams::

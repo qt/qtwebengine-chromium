@@ -134,6 +134,9 @@ class VIEWS_EXPORT Textfield : public View,
   void SetReadOnly(bool read_only);
 
   // Sets the input type; displays only asterisks for TEXT_INPUT_TYPE_PASSWORD.
+  // Other types are not no-op.
+  // TODO(crbug.com/419034676): restrict inputs appropriately for the type.
+  // e.g. TEXT_INPUT_TYPE_NUMBER should take only numbers.
   void SetTextInputType(ui::TextInputType type);
 
   // Sets the input flags so that the system input methods can turn on/off some
@@ -489,11 +492,9 @@ class VIEWS_EXPORT Textfield : public View,
       const std::vector<ui::GrammarFragment>& fragments) override;
 #endif
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
   void GetActiveTextInputControlLayoutBounds(
       std::optional<gfx::Rect>* control_bounds,
       std::optional<gfx::Rect>* selection_bounds) override;
-#endif
 
 #if BUILDFLAG(IS_WIN)
   void SetActiveCompositionForAccessibility(

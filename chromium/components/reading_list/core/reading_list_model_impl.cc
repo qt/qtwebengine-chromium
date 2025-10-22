@@ -21,7 +21,7 @@
 #include "components/reading_list/core/reading_list_model_storage.h"
 #include "components/reading_list/core/reading_list_sync_bridge.h"
 #include "components/sync/model/client_tag_based_data_type_processor.h"
-#include "google_apis/gaia/core_account_id.h"
+#include "google_apis/gaia/gaia_id.h"
 #include "url/gurl.h"
 
 ReadingListModelImpl::ScopedReadingListBatchUpdateImpl::
@@ -243,12 +243,8 @@ ReadingListEntry* ReadingListModelImpl::SyncMergeEntry(
   ReadingListEntry* existing_entry = GetMutableEntryFromURL(url);
   DCHECK(existing_entry);
 
-  // TODO(crbug.com/40260548): ReadingList(Will|Did)MoveEntry() in this context
-  // is quite meaningless and the observer API should merge it with
-  // ReadingList(Will|Did)UpdateEntry().
-
   for (auto& observer : observers_)
-    observer.ReadingListWillMoveEntry(this, url);
+    observer.ReadingListWillUpdateEntry(this, url);
 
   UpdateEntryStateCountersOnEntryRemoval(*existing_entry);
   existing_entry->MergeWithEntry(*entry);
@@ -259,7 +255,7 @@ ReadingListEntry* ReadingListModelImpl::SyncMergeEntry(
   storage_layer_->EnsureBatchCreated()->SaveEntry(*existing_entry);
 
   for (auto& observer : observers_) {
-    observer.ReadingListDidMoveEntry(this, url);
+    observer.ReadingListDidUpdateEntry(this, url);
     observer.ReadingListDidApplyChanges(this);
   }
 
@@ -324,16 +320,14 @@ bool ReadingListModelImpl::IsUrlSupported(const GURL& url) {
   return url.SchemeIsHTTPOrHTTPS();
 }
 
-CoreAccountId ReadingListModelImpl::GetAccountWhereEntryIsSavedTo(
-    const GURL& url) {
+GaiaId ReadingListModelImpl::GetAccountWhereEntryIsSavedTo(const GURL& url) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(loaded());
 
   if (entries_.find(url) == entries_.end()) {
-    return CoreAccountId();
+    return GaiaId();
   }
-  return CoreAccountId::FromString(
-      sync_bridge_.change_processor()->TrackedAccountId());
+  return sync_bridge_.change_processor()->TrackedGaiaId();
 }
 
 bool ReadingListModelImpl::NeedsExplicitUploadToSyncServer(
@@ -356,7 +350,8 @@ const ReadingListEntry& ReadingListModelImpl::AddOrReplaceEntry(
     const GURL& url,
     const std::string& title,
     reading_list::EntrySource source,
-    base::TimeDelta estimated_read_time) {
+    std::optional<base::TimeDelta> estimated_read_time,
+    std::optional<base::Time> creation_time) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(loaded());
   DCHECK(IsUrlSupported(url));
@@ -370,10 +365,10 @@ const ReadingListEntry& ReadingListModelImpl::AddOrReplaceEntry(
 
   std::string trimmed_title = TrimTitle(title);
 
-  auto entry =
-      base::MakeRefCounted<ReadingListEntry>(url, trimmed_title, clock_->Now());
-  if (!estimated_read_time.is_zero()) {
-    entry->SetEstimatedReadTime(estimated_read_time);
+  auto entry = base::MakeRefCounted<ReadingListEntry>(
+      url, trimmed_title, creation_time.value_or(clock_->Now()));
+  if (estimated_read_time.has_value()) {
+    entry->SetEstimatedReadTime(*estimated_read_time);
   }
 
   AddEntry(std::move(entry), source);
@@ -396,7 +391,7 @@ void ReadingListModelImpl::SetReadStatusIfExists(const GURL& url, bool read) {
     return;
   }
   for (ReadingListModelObserver& observer : observers_) {
-    observer.ReadingListWillMoveEntry(this, url);
+    observer.ReadingListWillUpdateEntry(this, url);
   }
   UpdateEntryStateCountersOnEntryRemoval(entry);
   entry.SetRead(read, clock_->Now());
@@ -408,7 +403,7 @@ void ReadingListModelImpl::SetReadStatusIfExists(const GURL& url, bool read) {
   sync_bridge_.DidAddOrUpdateEntry(entry, batch->GetSyncMetadataChangeList());
 
   for (ReadingListModelObserver& observer : observers_) {
-    observer.ReadingListDidMoveEntry(this, url);
+    observer.ReadingListDidUpdateEntry(this, url);
     observer.ReadingListDidApplyChanges(this);
   }
 }
@@ -691,7 +686,7 @@ void ReadingListModelImpl::StoreLoaded(
 
   if (!result_or_error.has_value()) {
     sync_bridge_.ReportError(
-        syncer::ModelError(FROM_HERE, result_or_error.error()));
+        {FROM_HERE, syncer::ModelError::Type::kReadingListStorageLoadFailed});
     return;
   }
 

@@ -19,9 +19,9 @@
 
 #include <array>
 #include <cstdint>
-#include <optional>
 
-#include "src/trace_processor/db/table.h"
+#include "src/trace_processor/dataframe/dataframe.h"
+#include "src/trace_processor/perfetto_sql/engine/dataframe_module.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_module.h"
 
 namespace perfetto::trace_processor {
@@ -29,7 +29,7 @@ namespace perfetto::trace_processor {
 // SQLite module which allows iteration over a table pointer (i.e. a instance of
 // Table which is being directly passed in as a SQL value). This allows for a
 // dynamic, schema-less iteration over table pointers. This is generally not
-// possible as SQLite reqiures the schema to be defined upfront but this class
+// possible as SQLite requires the schema to be defined upfront but this class
 // works around that by having a fixed schema but then allowing "binding" table
 // pointer columns to SQLite columns dynamically at query time.
 //
@@ -66,10 +66,10 @@ struct TablePointerModule : sqlite::Module<TablePointerModule> {
   using Context = void;
   struct Vtab : sqlite::Module<TablePointerModule>::Vtab {};
   struct Cursor : sqlite::Module<TablePointerModule>::Cursor {
-    const Table* table = nullptr;
+    const dataframe::Dataframe* dataframe = nullptr;
     std::array<uint32_t, kBindableColumnCount> bound_col_to_table_index{};
     uint32_t col_count = 0;
-    std::optional<Table::Iterator> iterator;
+    DataframeModule::DfCursor cursor;
   };
 
   static constexpr auto kType = kEponymousOnly;

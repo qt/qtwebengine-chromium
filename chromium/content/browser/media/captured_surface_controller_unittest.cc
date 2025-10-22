@@ -205,7 +205,7 @@ class TestTab {
       BrowserContext* browser_context) {
     scoped_refptr<SiteInstance> instance =
         SiteInstance::Create(browser_context);
-    instance->GetOrCreateProcess()->Init();
+    instance->GetOrCreateProcessForTesting()->Init();
     return TestWebContents::Create(browser_context, std::move(instance));
   }
 
@@ -1383,7 +1383,6 @@ TEST_P(CapturedSurfaceControllerSendWheelClampTest, ClampMaxWheelDeltaY) {
   run_loop.Run();
 }
 
-// TODO(crbug.com/40276312): Migrate test suite to validate forwardWheel().
 class WebContentsObserverCscNotifiedBySendWheelTest
     : public CapturedSurfaceControllerTestBase {
  public:

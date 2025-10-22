@@ -6,11 +6,14 @@
 
 #include <limits.h>
 
+#include <string_view>
+
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
@@ -38,6 +41,23 @@ std::string_view GetPromoActionHistogramSuffix(PromoAction promo_action) {
       NOTREACHED() << "No signin promo should not record metrics.";
   }
 }
+
+#if BUILDFLAG(IS_IOS)
+std::string_view ReauthFlowEventToHistogramSuffix(ReauthFlowEvent event) {
+  switch (event) {
+    case ReauthFlowEvent::kStarted:
+      return ".Started";
+    case ReauthFlowEvent::kCompleted:
+      return ".Completed";
+    case ReauthFlowEvent::kError:
+      return ".Error";
+    case ReauthFlowEvent::kCancelled:
+      return ".Cancelled";
+    case ReauthFlowEvent::kInterrupted:
+      return ".Interrupted";
+  }
+}
+#endif  // BUILDFLAG(IS_IOS)
 
 }  // namespace
 
@@ -167,6 +187,10 @@ void LogSyncOptInStarted(AccessPoint access_point) {
   base::UmaHistogramEnumeration("Signin.SyncOptIn.Started", access_point);
 }
 
+void LogSyncOptInOffered(AccessPoint access_point) {
+  base::UmaHistogramEnumeration("Signin.SyncOptIn.Offered", access_point);
+}
+
 void LogSyncSettingsOpened(AccessPoint access_point) {
   base::UmaHistogramEnumeration("Signin.SyncOptIn.OpenedSyncSettings",
                                 access_point);
@@ -247,7 +271,7 @@ void LogCookieJarCounts(const int signed_in,
 void LogAccountRelation(const AccountRelation relation,
                         const ReportingType type) {
   INVESTIGATOR_HISTOGRAM_ENUMERATION(
-      "Signin.CookieJar.ChromeAccountRelation", type,
+      "Signin.CookieJar.ChromeAccountRelation2", type,
       static_cast<int>(relation),
       static_cast<int>(AccountRelation::HISTOGRAM_COUNT));
 }
@@ -314,6 +338,22 @@ void RecordSignoutConfirmationFromDataLossAlert(
       break;
   }
   base::UmaHistogramBoolean(histogram, signout_confirmed);
+}
+
+void RecordReauthFlowEventInSigninFlow(signin_metrics::AccessPoint access_point,
+                                       ReauthFlowEvent event) {
+  base::UmaHistogramEnumeration(
+      base::StrCat({"Signin.Reauth.InSigninFlow",
+                    ReauthFlowEventToHistogramSuffix(event)}),
+      access_point);
+}
+
+void RecordReauthFlowEventInExplicitFlow(ReauthAccessPoint access_point,
+                                         ReauthFlowEvent event) {
+  base::UmaHistogramEnumeration(
+      base::StrCat({"Signin.Reauth.InExplicitFlow",
+                    ReauthFlowEventToHistogramSuffix(event)}),
+      access_point);
 }
 #endif  // BUILDFLAG(IS_IOS)
 
@@ -463,6 +503,9 @@ void RecordSigninUserActionForAccessPoint(AccessPoint access_point) {
     case AccessPoint::kCctAccountMismatchNotification:
     case AccessPoint::kDriveFilePickerIos:
     case AccessPoint::kHistoryPage:
+    case AccessPoint::kWidget:
+    case AccessPoint::kHistorySyncEducationalTip:
+    case AccessPoint::kManagedProfileAutoSigninIos:
       NOTREACHED() << "Access point " << static_cast<int>(access_point)
                    << " is not supposed to log signin user actions.";
     case AccessPoint::kCollaborationShareTabGroup:
@@ -472,6 +515,10 @@ void RecordSigninUserActionForAccessPoint(AccessPoint access_point) {
     case AccessPoint::kCollaborationJoinTabGroup:
       base::RecordAction(base::UserMetricsAction(
           "Signin_Signin_FromCollaborationJoinTabGroup"));
+      break;
+    case AccessPoint::kCollaborationLeaveOrDeleteTabGroup:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromCollaborationLeaveOrDeleteTabGroup"));
       break;
     case AccessPoint::kSafetyCheck:
       VLOG(1) << "Signin_Signin_From* user action is not recorded "
@@ -525,10 +572,6 @@ void RecordSigninUserActionForAccessPoint(AccessPoint access_point) {
       base::RecordAction(
           base::UserMetricsAction("Signin_Signin_FromSetUpList"));
       break;
-    case AccessPoint::kPasswordMigrationWarningAndroid:
-      base::RecordAction(base::UserMetricsAction(
-          "Signin_Signin_FromPasswordMigrationWarningAndroid"));
-      break;
     case AccessPoint::kChromeSigninInterceptBubble:
       base::RecordAction(base::UserMetricsAction(
           "Signin_Signin_FromChromeSigninInterceptBubble"));
@@ -576,6 +619,42 @@ void RecordSigninUserActionForAccessPoint(AccessPoint access_point) {
     case AccessPoint::kGlicLaunchButton:
       base::RecordAction(
           base::UserMetricsAction("Signin_Signin_FromGlicLaunchButton"));
+      break;
+    case AccessPoint::kHistorySyncOptinExpansionPillOnStartup:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromHistorySyncOptinExpansionPillOnStartup"));
+      break;
+    case AccessPoint::kHistorySyncOptinExpansionPillOnInactivity:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromHistorySyncOptinExpansionPillOnInactivity"));
+      break;
+    case AccessPoint::kNonModalSigninPasswordPromo:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromNonModalSigninPasswordPromo"));
+      break;
+    case AccessPoint::kNonModalSigninBookmarkPromo:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromNonModalSigninBookmarkPromo"));
+      break;
+    case AccessPoint::kUserManagerWithPrefilledEmail:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromUserManagerWithPrefilledEmail"));
+      break;
+    case AccessPoint::kEnterpriseManagementDisclaimerAtStartup:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromEnterpriseManagementDisclaimerAtStartup"));
+      break;
+    case AccessPoint::kEnterpriseManagementDisclaimerAfterBrowserFocus:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromEnterpriseManagementDisclaimerAfterBrowserFocus"));
+      break;
+    case AccessPoint::kEnterpriseManagementDisclaimerAfterSignin:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Signin_FromEnterpriseManagementDisclaimerAfterSignin"));
+      break;
+    case AccessPoint::kNtpFeaturePromo:
+      base::RecordAction(
+          base::UserMetricsAction("Signin_Signin_FromNtpFeaturePromo"));
       break;
   }
 }
@@ -708,6 +787,10 @@ void RecordSigninImpressionUserActionForAccessPoint(AccessPoint access_point) {
       base::RecordAction(
           base::UserMetricsAction("Signin_Impression_FromAddressBubble"));
       break;
+    case AccessPoint::kUserManagerWithPrefilledEmail:
+      base::RecordAction(base::UserMetricsAction(
+          "Signin_Impression_FromUserManagerWithPrefilledEmail"));
+      break;
     case AccessPoint::kEnterpriseSignoutCoordinator:
     case AccessPoint::kExtensions:
     case AccessPoint::kSupervisedUser:
@@ -729,7 +812,6 @@ void RecordSigninImpressionUserActionForAccessPoint(AccessPoint access_point) {
     case AccessPoint::kSaveToPhotosIos:
     case AccessPoint::kReauthInfoBar:
     case AccessPoint::kAccountConsistencyService:
-    case AccessPoint::kPasswordMigrationWarningAndroid:
     case AccessPoint::kRestorePrimaryAccountOnProfileLoad:
     case AccessPoint::kTabOrganization:
     case AccessPoint::kProfileMenuSignoutConfirmationPrompt:
@@ -746,6 +828,18 @@ void RecordSigninImpressionUserActionForAccessPoint(AccessPoint access_point) {
     case AccessPoint::kGlicLaunchButton:
     case AccessPoint::kHistoryPage:
     case AccessPoint::kCollaborationJoinTabGroup:
+    case AccessPoint::kHistorySyncOptinExpansionPillOnStartup:
+    case AccessPoint::kWidget:
+    case AccessPoint::kCollaborationLeaveOrDeleteTabGroup:
+    case AccessPoint::kHistorySyncOptinExpansionPillOnInactivity:
+    case AccessPoint::kHistorySyncEducationalTip:
+    case AccessPoint::kManagedProfileAutoSigninIos:
+    case AccessPoint::kNonModalSigninPasswordPromo:
+    case AccessPoint::kNonModalSigninBookmarkPromo:
+    case AccessPoint::kEnterpriseManagementDisclaimerAtStartup:
+    case AccessPoint::kEnterpriseManagementDisclaimerAfterBrowserFocus:
+    case AccessPoint::kEnterpriseManagementDisclaimerAfterSignin:
+    case AccessPoint::kNtpFeaturePromo:
       NOTREACHED() << "Signin_Impression_From* user actions are not recorded "
                       "for access point "
                    << static_cast<int>(access_point);

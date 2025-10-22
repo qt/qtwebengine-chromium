@@ -22,7 +22,7 @@
 
 <script type="text/javascript" charset="utf-8">
 
-    var cdn = 'https://storage.googleapis.com/skia-cdn/misc/';
+    var cdn = 'https://cdn.skia.org/misc/';
 
     const ckLoaded = CanvasKitInit({locateFile: (file) => '/build/'+file});
     const loadRoboto = fetch(cdn + 'Roboto-Regular.ttf').then((response) => response.arrayBuffer());
@@ -108,7 +108,7 @@
 
             result += '[';
             for (let i = 0; i < logicals.length; ++i) {
-                const logical = logicals[i];
+                const logical = logicals[i].index;
                 result += (i === 0 ? '' : ', ') + logical;
             }
             result += '] expected: ' + output;
@@ -161,7 +161,7 @@
 
             let result = '0: ';
             for (let i = 0; i < flags.length; ++i) {
-                const flag = flags[i];
+                const flag = flags[i].flags;
                 if (flagsText[i] === '|') {
                     canvas.drawText(result, 100, height, dataPaint, dataFont);
                     height += 40;

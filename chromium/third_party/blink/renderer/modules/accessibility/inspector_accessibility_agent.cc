@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/inspector/inspected_frames.h"
 #include "third_party/blink/renderer/core/inspector/inspector_dom_agent.h"
 #include "third_party/blink/renderer/core/inspector/inspector_style_sheet.h"
+#include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
 #include "third_party/blink/renderer/modules/accessibility/inspector_type_builder_helper.h"
@@ -117,7 +118,7 @@ std::unique_ptr<protocol::Array<AXNode>> WalkAXNodesToDepth(
       continue;
     AddChildren(*ax_object, true, nodes, cache);
 
-    const AXObject::AXObjectVector& children = ax_object->UnignoredChildren();
+    const AXObject::AXObjectVector& children = ax_object->UnignoredChildrenSlow();
 
     for (auto& child_ax_object : children) {
       int depth = id_depth.second;
@@ -453,7 +454,7 @@ void InspectorAccessibilityAgent::CompleteQuery(
       continue;
     }
     ui::AXNodeData node_data;
-    ax_object->Serialize(&node_data, ui::kAXModeComplete);
+    ax_object->Serialize(&node_data, ui::kAXModeInspector);
     reachable.pop_back();
     const AXObject::AXObjectVector& children =
         ax_object->ChildrenIncludingIgnored();

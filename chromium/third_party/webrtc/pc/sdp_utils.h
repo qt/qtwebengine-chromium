@@ -13,7 +13,6 @@
 
 #include <functional>
 #include <memory>
-#include <string>
 
 #include "api/jsep.h"
 #include "p2p/base/transport_info.h"
@@ -34,7 +33,7 @@ CloneSessionDescriptionAsType(const SessionDescriptionInterface* sdesc,
 // Function that takes a single session description content with its
 // corresponding transport and produces a boolean.
 typedef std::function<bool(const webrtc::ContentInfo*,
-                           const cricket::TransportInfo*)>
+                           const webrtc::TransportInfo*)>
     SdpContentPredicate;
 
 // Returns true if the predicate returns true for all contents in the given
@@ -47,7 +46,7 @@ bool SdpContentsNone(SdpContentPredicate pred, const SessionDescription* desc);
 
 // Function that takes a single session description content with its
 // corresponding transport and can mutate the content and/or the transport.
-typedef std::function<void(webrtc::ContentInfo*, cricket::TransportInfo*)>
+typedef std::function<void(webrtc::ContentInfo*, webrtc::TransportInfo*)>
     SdpContentMutator;
 
 // Applies the mutator function over all contents in the given session

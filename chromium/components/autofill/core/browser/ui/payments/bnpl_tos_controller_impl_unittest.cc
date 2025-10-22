@@ -62,7 +62,7 @@ class BnplTosControllerImplTest : public Test {
         .SetAccountInfoForPayments(account_info_);
 
     issuer_ = BnplIssuer(/*instrument_id=*/std::nullopt,
-                         std::string(kBnplAffirmIssuerId),
+                         BnplIssuer::IssuerId::kBnplAffirm,
                          std::vector<BnplIssuer::EligiblePriceRange>{});
     LegalMessageLine::Parse(
         base::JSONReader::Read(
@@ -159,8 +159,9 @@ TEST_F(BnplTosControllerImplTest, GetTitle) {
 }
 
 TEST_F(BnplTosControllerImplTest, GetReviewText) {
-  EXPECT_EQ(controller_->GetReviewText(),
-            GetStringFUTF16(IDS_AUTOFILL_BNPL_TOS_REVIEW_TEXT, IssuerName()));
+  EXPECT_EQ(
+      controller_->GetReviewText(),
+      GetStringFUTF16(IDS_AUTOFILL_BNPL_TOS_REVIEW_TEXT_V2, IssuerName()));
 }
 
 TEST_F(BnplTosControllerImplTest, GetApproveText) {

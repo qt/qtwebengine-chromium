@@ -12,6 +12,7 @@
 
 #include "base/debug/alias.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "components/viz/common/switches.h"
@@ -25,6 +26,7 @@
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "gpu/command_buffer/service/skia_utils.h"
 #include "gpu/command_buffer/service/texture_manager.h"
+#include "third_party/microsoft_dxheaders/src/include/composition/dcomp-preview.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkSurface.h"
 #include "third_party/skia/include/gpu/ganesh/GrDirectContext.h"
@@ -48,6 +50,22 @@ NOINLINE void CheckForLoopFailures() {
     NOTREACHED();
   }
   g_last_reshape_failure = now;
+}
+
+OutputSurface::DCSupportLevel GetDcSupportLevel() {
+  if (gl::DirectCompositionTextureSupported()) {
+    Microsoft::WRL::ComPtr<IDCompositionDevice3> dcomp_device =
+        gl::GetDirectCompositionDevice();
+
+    if (Microsoft::WRL::ComPtr<PREVIEW_IDCompositionDevice5> dcomp_device5;
+        SUCCEEDED(dcomp_device.As(&dcomp_device5))) {
+      return OutputSurface::DCSupportLevel::kDCompDynamicTexture;
+    }
+
+    return OutputSurface::DCSupportLevel::kDCompTexture;
+  }
+
+  return OutputSurface::DCSupportLevel::kDCLayers;
 }
 
 }  // namespace
@@ -105,7 +123,7 @@ SkiaOutputDeviceDComp::SkiaOutputDeviceDComp(
     gpu::MemoryTracker* memory_tracker,
     DidSwapBufferCompleteCallback did_swap_buffer_complete_callback)
     : SkiaOutputDevice(context_state->gr_context(),
-                       context_state->graphite_context(),
+                       context_state->graphite_shared_context(),
                        memory_tracker,
                        std::move(did_swap_buffer_complete_callback)),
       shared_image_representation_factory_(shared_image_representation_factory),
@@ -130,10 +148,7 @@ SkiaOutputDeviceDComp::SkiaOutputDeviceDComp(
           features::kDirectCompositionUnlimitedOverlays)) {
     capabilities_.allowed_yuv_overlay_count = INT_MAX;
   }
-  capabilities_.dc_support_level =
-      gl::DirectCompositionTextureSupported()
-          ? OutputSurface::DCSupportLevel::kDCompTexture
-          : OutputSurface::DCSupportLevel::kDCLayers;
+  capabilities_.dc_support_level = GetDcSupportLevel();
   capabilities_.supports_post_sub_buffer = true;
   capabilities_.supports_delegated_ink = presenter_->SupportsDelegatedInk();
   capabilities_.pending_swap_params.max_pending_swaps =
@@ -143,7 +158,8 @@ SkiaOutputDeviceDComp::SkiaOutputDeviceDComp(
   capabilities_.supports_non_backed_solid_color_overlays = true;
 
   DCHECK(context_state_);
-  DCHECK(context_state_->gr_context() || context_state_->graphite_context());
+  DCHECK(context_state_->gr_context() ||
+         context_state_->graphite_shared_context());
   DCHECK(context_state_->context());
   DCHECK(presenter_);
 
@@ -266,20 +282,26 @@ void SkiaOutputDeviceDComp::ScheduleOverlays(
 
     gl::DCLayerOverlayParams& params = out_overlays.emplace_back();
 
+    params.background_color = dc_layer.color;
+    params.z_order = dc_layer.plane_z_order;
+
     const gpu::Mailbox& mailbox = dc_layer.mailbox;
     if (!mailbox.IsZero()) {
       std::optional<gl::DCLayerOverlayImage> overlay_image =
           BeginOverlayAccess(mailbox);
-      if (!overlay_image) {
+      if (overlay_image) {
+        params.overlay_image = std::move(overlay_image);
+        params.damage_rect = dc_layer.damage_rect;
+        scheduled_overlay_mailboxes_.insert(mailbox);
+      } else {
         DLOG(ERROR) << "Failed to ProduceOverlay or GetDCLayerOverlayImage";
-        continue;
+#if DCHECK_IS_ON()
+        params.background_color = SkColors::kRed;
+#else
+        params.background_color = SkColors::kWhite;
+#endif
       }
-      params.overlay_image = std::move(overlay_image);
-      scheduled_overlay_mailboxes_.insert(mailbox);
     }
-
-    params.background_color = dc_layer.color;
-    params.z_order = dc_layer.plane_z_order;
 
     // SwapChainPresenter uses the size of the overlay's resource in pixels to
     // calculate its swap chain size. `uv_rect` maps the portion of
@@ -303,6 +325,8 @@ void SkiaOutputDeviceDComp::ScheduleOverlays(
         (dc_layer.format == MultiPlaneFormat::kP010);
     params.video_params.possible_video_fullscreen_letterboxing =
         dc_layer.possible_video_fullscreen_letterboxing;
+    params.video_params.is_full_screen_video =
+        dc_layer.overlay_type == gfx::OverlayType::kFullScreen;
   }
 
   // Schedule DC layer overlays to be presented at next SwapBuffers().

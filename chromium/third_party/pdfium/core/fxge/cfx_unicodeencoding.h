@@ -15,13 +15,13 @@ class CFX_Font;
 
 class CFX_UnicodeEncoding {
  public:
-  explicit CFX_UnicodeEncoding(const CFX_Font* pFont);
+  explicit CFX_UnicodeEncoding(const CFX_Font* font);
   virtual ~CFX_UnicodeEncoding();
 
   virtual uint32_t GlyphFromCharCode(uint32_t charcode);
 
  protected:
-  UnownedPtr<const CFX_Font> const m_pFont;
+  UnownedPtr<const CFX_Font> const font_;
 };
 
 #endif  // CORE_FXGE_CFX_UNICODEENCODING_H_

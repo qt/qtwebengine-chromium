@@ -130,7 +130,6 @@ static int fourcc_is_ivf(const char detect[4]) {
 
 static const int av1_arg_ctrl_map[] = { AOME_SET_CPUUSED,
                                         AOME_SET_ENABLEAUTOALTREF,
-                                        AOME_SET_SHARPNESS,
                                         AOME_SET_STATIC_THRESHOLD,
                                         AV1E_SET_ROW_MT,
                                         AV1E_SET_FP_MT,
@@ -343,7 +342,6 @@ static const arg_def_t *const kf_args[] = {
 static const arg_def_t *const av1_ctrl_args[] = {
   &g_av1_codec_arg_defs.cpu_used_av1,
   &g_av1_codec_arg_defs.auto_altref,
-  &g_av1_codec_arg_defs.sharpness,
   &g_av1_codec_arg_defs.static_thresh,
   &g_av1_codec_arg_defs.rowmtarg,
   &g_av1_codec_arg_defs.fpmtarg,
@@ -469,6 +467,9 @@ static const arg_def_t *const av1_key_val_args[] = {
   &g_av1_codec_arg_defs.dist_metric,
   &g_av1_codec_arg_defs.kf_max_pyr_height,
   &g_av1_codec_arg_defs.auto_tiles,
+  &g_av1_codec_arg_defs.screen_detection_mode,
+  &g_av1_codec_arg_defs.sharpness,
+  &g_av1_codec_arg_defs.enable_adaptive_sharpness,
   NULL,
 };
 
@@ -814,7 +815,7 @@ static struct stream_state *new_stream(struct AvxEncoderConfig *global,
   }
 
   if (prev) {
-    memcpy(stream, prev, sizeof(*stream));
+    *stream = *prev;
     stream->index++;
     prev->next = stream;
   } else {
@@ -849,8 +850,7 @@ static struct stream_state *new_stream(struct AvxEncoderConfig *global,
 
     /* Allows removal of the application version from the EBML tags */
     stream->webm_ctx.debug = global->debug;
-    memcpy(&stream->config.cfg.encoder_cfg, &global->encoder_config,
-           sizeof(stream->config.cfg.encoder_cfg));
+    stream->config.cfg.encoder_cfg = global->encoder_config;
   }
 
   /* Output files must be specified for each stream */

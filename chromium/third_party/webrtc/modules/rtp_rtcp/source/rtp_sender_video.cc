@@ -10,10 +10,9 @@
 
 #include "modules/rtp_rtcp/source/rtp_sender_video.h"
 
-#include <stdlib.h>
-#include <string.h>
-
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -22,7 +21,6 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/memory/memory.h"
-#include "absl/strings/match.h"
 #include "api/array_view.h"
 #include "api/crypto/frame_encryptor_interface.h"
 #include "api/field_trials_view.h"
@@ -179,13 +177,12 @@ RTPSenderVideo::RTPSenderVideo(const Config& config)
       post_encode_overhead_bitrate_(/*max_window_size=*/TimeDelta::Seconds(1)),
       frame_encryptor_(config.frame_encryptor),
       require_frame_encryption_(config.require_frame_encryption),
-      generic_descriptor_auth_experiment_(!absl::StartsWith(
-          config.field_trials->Lookup("WebRTC-GenericDescriptorAuth"),
-          "Disabled")),
+      generic_descriptor_auth_experiment_(
+          !config.field_trials->IsDisabled("WebRTC-GenericDescriptorAuth")),
       absolute_capture_time_sender_(config.clock),
       frame_transformer_delegate_(
           config.frame_transformer
-              ? rtc::make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
+              ? make_ref_counted<RTPSenderVideoFrameTransformerDelegate>(
                     this,
                     config.frame_transformer,
                     rtp_sender_->SSRC(),
@@ -513,7 +510,7 @@ bool RTPSenderVideo::SendVideo(int payload_type,
                                std::optional<VideoCodecType> codec_type,
                                uint32_t rtp_timestamp,
                                Timestamp capture_time,
-                               rtc::ArrayView<const uint8_t> payload,
+                               ArrayView<const uint8_t> payload,
                                size_t encoder_output_size,
                                RTPVideoHeader video_header,
                                TimeDelta expected_retransmission_time,
@@ -666,10 +663,10 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     MinimizeDescriptor(&video_header);
   }
 
-  rtc::Buffer encrypted_video_payload;
+  Buffer encrypted_video_payload;
   if (frame_encryptor_ != nullptr) {
     const size_t max_ciphertext_size =
-        frame_encryptor_->GetMaxCiphertextByteSize(webrtc::MediaType::VIDEO,
+        frame_encryptor_->GetMaxCiphertextByteSize(MediaType::VIDEO,
                                                    payload.size());
     encrypted_video_payload.SetSize(max_ciphertext_size);
 
@@ -682,8 +679,8 @@ bool RTPSenderVideo::SendVideo(int payload_type,
     }
 
     if (frame_encryptor_->Encrypt(
-            webrtc::MediaType::VIDEO, first_packet->Ssrc(), additional_data,
-            payload, encrypted_video_payload, &bytes_written) != 0) {
+            MediaType::VIDEO, first_packet->Ssrc(), additional_data, payload,
+            encrypted_video_payload, &bytes_written) != 0) {
       return false;
     }
 
@@ -804,17 +801,18 @@ bool RTPSenderVideo::SendEncodedImage(int payload_type,
                                       uint32_t rtp_timestamp,
                                       const EncodedImage& encoded_image,
                                       RTPVideoHeader video_header,
-                                      TimeDelta expected_retransmission_time) {
+                                      TimeDelta expected_retransmission_time,
+                                      const std::vector<uint32_t>& csrcs) {
   if (frame_transformer_delegate_) {
     // The frame will be sent async once transformed.
     return frame_transformer_delegate_->TransformFrame(
         payload_type, codec_type, rtp_timestamp, encoded_image, video_header,
-        expected_retransmission_time);
+        expected_retransmission_time, csrcs);
   }
   return SendVideo(payload_type, codec_type, rtp_timestamp,
                    encoded_image.CaptureTime(), encoded_image,
                    encoded_image.size(), video_header,
-                   expected_retransmission_time, /*csrcs=*/{});
+                   expected_retransmission_time, csrcs);
 }
 
 DataRate RTPSenderVideo::PostEncodeOverhead() const {

@@ -10,11 +10,12 @@
 #include "content/browser/webid/federated_auth_request_page_data.h"
 #include "content/browser/webid/flags.h"
 #include "content/browser/webid/webid_utils.h"
-#include "content/public/browser/federated_identity_api_permission_context_delegate.h"
-#include "content/public/browser/federated_identity_permission_context_delegate.h"
 #include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/webid/federated_identity_api_permission_context_delegate.h"
+#include "content/public/browser/webid/federated_identity_permission_context_delegate.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
 #include "third_party/blink/public/mojom/webid/federated_auth_request.mojom.h"
+#include "url/origin.h"
 #include "url/url_constants.h"
 
 namespace content {
@@ -160,16 +161,15 @@ void FederatedAuthUserInfoRequest::SetCallbackAndStart(
     return;
   }
 
-  // FederatedProviderFetcher is stored as a member so that
-  // FederatedProviderFetcher is destroyed when FederatedAuthRequestImpl is
-  // destroyed.
-  provider_fetcher_ = std::make_unique<FederatedProviderFetcher>(
+  // FedCmConfigFetcher is stored as a member so that it is destroyed when
+  // FederatedAuthRequestImpl is destroyed.
+  config_fetcher_ = std::make_unique<FedCmConfigFetcher>(
       *render_frame_host_, network_manager_.get());
   // TODO(crbug.com/390626180): It seems ok to ignore the well-known checks in
   // all cases here. However, keeping this unchanged for now when the IDP
   // registration API is not enabled since we only really need this for that
   // case.
-  provider_fetcher_->Start(
+  config_fetcher_->Start(
       {{idp_config_url_, IsFedCmIdPRegistrationEnabled()}},
       blink::mojom::RpMode::kPassive, /*icon_ideal_size=*/0,
       /*icon_minimum_size=*/0,
@@ -179,8 +179,8 @@ void FederatedAuthUserInfoRequest::SetCallbackAndStart(
 }
 
 void FederatedAuthUserInfoRequest::OnAllConfigAndWellKnownFetched(
-    std::vector<FederatedProviderFetcher::FetchResult> fetch_results) {
-  provider_fetcher_.reset();
+    std::vector<FedCmConfigFetcher::FetchResult> fetch_results) {
+  config_fetcher_.reset();
 
   if (fetch_results.size() != 1u) {
     // This could happen when the user info request was sent from a compromised
@@ -207,7 +207,8 @@ void FederatedAuthUserInfoRequest::OnAllConfigAndWellKnownFetched(
   }
 
   network_manager_->SendAccountsRequest(
-      fetch_results[0].endpoints.accounts, client_id_,
+      url::Origin::Create(idp_config_url_), fetch_results[0].endpoints.accounts,
+      client_id_,
       base::BindOnce(&FederatedAuthUserInfoRequest::OnAccountsResponseReceived,
                      weak_ptr_factory_.GetWeakPtr()));
 }
@@ -230,15 +231,9 @@ void FederatedAuthUserInfoRequest::OnAccountsResponseReceived(
       ->SetUserInfoAccountsResponseTime(idp_config_url_,
                                         base::TimeTicks::Now());
 
-  // Populate the accounts login state.
+  // Populate the accounts' login state based on browser stored permission
+  // grants.
   for (auto& account : accounts) {
-    // We set the login state based on the IDP response if it sends
-    // back an approved_clients list. If it does not, we need to set
-    // it here based on browser state.
-    if (account->login_state) {
-      continue;
-    }
-
     LoginState login_state = LoginState::kSignUp;
     // Consider this a sign-in if we have seen a successful sign-up for
     // this account before.
@@ -247,7 +242,7 @@ void FederatedAuthUserInfoRequest::OnAccountsResponseReceived(
             url::Origin::Create(idp_config_url_), account->id)) {
       login_state = LoginState::kSignIn;
     }
-    account->login_state = login_state;
+    account->browser_trusted_login_state = login_state;
   }
 
   MaybeReturnAccounts(std::move(accounts));
@@ -304,13 +299,17 @@ void FederatedAuthUserInfoRequest::MaybeReturnAccounts(
 
 bool FederatedAuthUserInfoRequest::IsReturningAccount(
     const IdentityRequestAccount& account) {
-  // The |login_state| will only be |kSignUp| if IDP provides an
+  // The |idp_claimed_login_state| will be std::nullopt if the IDP doesn't
+  // provide an |approved_clients| list and the |browser_trusted_login_state|
+  // will be |kSignUp| if there are no browser stored permission grants. The
+  // |idp_claimed_login_state| will be |kSignUp| if IDP provides an
   // |approved_clients| AND the client id is NOT on the |approved_clients|
   // list, in which case we trust the IDP that we should treat the user as a
   // new user and shouldn't return the user info. This should override browser
   // local stored permission since a user can revoke their account out of
   // band.
-  if (account.login_state == LoginState::kSignUp) {
+  if (account.idp_claimed_login_state.value_or(
+          account.browser_trusted_login_state) == LoginState::kSignUp) {
     return false;
   }
 

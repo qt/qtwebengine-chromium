@@ -45,16 +45,21 @@ class CJS_Object : public CFXJS_PerObjectData::Binding {
                             pdfium::span<const JSMethodSpec> consts);
 
   CJS_Object(v8::Local<v8::Object> pObject, CJS_Runtime* pRuntime);
+
+  // For simple testing only, where we need not support methods that call back
+  // through an actual CJS_Runtime.
+  CJS_Object(v8::Local<v8::Object> object, v8::Isolate* isolate);
+
   ~CJS_Object() override;
 
   v8::Local<v8::Object> ToV8Object() {
-    return m_pV8Object.Get(GetRuntime()->GetIsolate());
+    return v8_object_.Get(GetRuntime()->GetIsolate());
   }
-  CJS_Runtime* GetRuntime() const { return m_pRuntime.Get(); }
+  CJS_Runtime* GetRuntime() const { return runtime_.Get(); }
 
  private:
-  v8::Global<v8::Object> m_pV8Object;
-  ObservedPtr<CJS_Runtime> m_pRuntime;
+  v8::Global<v8::Object> v8_object_;
+  ObservedPtr<CJS_Runtime> runtime_;
 };
 
 #endif  // FXJS_CJS_OBJECT_H_

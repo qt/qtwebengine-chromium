@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/internal_allocator.h"
 
 namespace partition_alloc::internal {
@@ -11,7 +16,6 @@ PartitionRoot& InternalAllocatorRoot() {
     // Disable features using the internal root to avoid reentrancy issue.
     PartitionOptions opts;
     opts.thread_cache = PartitionOptions::kDisabled;
-    opts.scheduler_loop_quarantine = PartitionOptions::kDisabled;
     return opts;
   }());
 

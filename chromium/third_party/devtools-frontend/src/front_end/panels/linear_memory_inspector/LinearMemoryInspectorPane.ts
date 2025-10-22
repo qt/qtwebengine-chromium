@@ -1,6 +1,7 @@
 // Copyright (c) 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -39,8 +40,7 @@ export class LinearMemoryInspectorPane extends Common.ObjectWrapper.eventMixin<E
   readonly #tabbedPane: UI.TabbedPane.TabbedPane;
 
   constructor() {
-    super(false);
-    this.element.setAttribute('jslog', `${VisualLogging.panel('linear-memory-inspector').track({resize: true})}`);
+    super({jslog: `${VisualLogging.panel('linear-memory-inspector').track({resize: true})}`});
     this.#tabbedPane = new UI.TabbedPane.TabbedPane();
     this.#tabbedPane.setPlaceholderElement(this.createPlaceholder());
     this.#tabbedPane.setCloseableTabs(true);
@@ -130,7 +130,7 @@ export class LinearMemoryInspectorView extends UI.Widget.VBox {
 
   constructor(
       memoryWrapper: LazyUint8Array, address: number|undefined = 0, tabId: string, hideValueInspector?: boolean) {
-    super(false);
+    super();
 
     if (address < 0 || address >= memoryWrapper.length()) {
       throw new Error('Requested address is out of bounds.');

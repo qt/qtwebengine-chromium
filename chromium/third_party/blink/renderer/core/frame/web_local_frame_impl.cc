@@ -91,9 +91,12 @@
 #include <cmath>
 #include <memory>
 #include <numeric>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "base/check_is_test.h"
 #include "base/compiler_specific.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
@@ -361,6 +364,10 @@ class ChromePrintContext : public PrintContext {
     GraphicsContext& context = builder.Context();
     context.SetPrintingMetafile(canvas->GetPrintingMetafile());
     context.SetPrinting(true);
+    if (frame_->GetDocument()->Printing()) {
+      context.SetPrintingInternalHeadersAndFooters(
+          frame_->GetPrintParams().printing_internal_headers_and_footers);
+    }
     context.BeginRecording();
     SpoolPage(context, page_index);
     canvas->drawPicture(context.EndRecording());
@@ -375,6 +382,8 @@ class ChromePrintContext : public PrintContext {
     GraphicsContext& context = builder.Context();
     context.SetPrintingMetafile(canvas->GetPrintingMetafile());
     context.SetPrinting(true);
+    context.SetPrintingInternalHeadersAndFooters(
+        frame_->GetPrintParams().printing_internal_headers_and_footers);
     context.BeginRecording();
 
     // Fill the whole background by white.
@@ -442,7 +451,9 @@ class ChromePrintContext : public PrintContext {
 
     auto* frame_view = GetFrame()->View();
     DCHECK(frame_view);
-    frame_view->UpdateLifecyclePhasesForPrinting();
+    if (!frame_view->UpdateLifecyclePhasesForPrinting()) {
+      return;
+    }
 
     if (!IsFrameValid() || page_index >= PageCount()) {
       // TODO(crbug.com/452672): The number of pages may change after layout for
@@ -566,7 +577,9 @@ class PaintPreviewContext : public PrintContext {
     if (!GetFrame()->GetDocument() ||
         !GetFrame()->GetDocument()->GetLayoutView())
       return false;
-    GetFrame()->View()->UpdateLifecyclePhasesForPrinting();
+    if (!GetFrame()->View()->UpdateLifecyclePhasesForPrinting()) {
+      return false;
+    }
     if (!GetFrame()->GetDocument() ||
         !GetFrame()->GetDocument()->GetLayoutView())
       return false;
@@ -874,12 +887,13 @@ gfx::PointF WebLocalFrameImpl::GetScrollOffset() const {
   return gfx::PointF();
 }
 
-void WebLocalFrameImpl::SetScrollOffset(const gfx::PointF& offset) {
+bool WebLocalFrameImpl::SetScrollOffset(const gfx::PointF& offset) {
   if (ScrollableArea* scrollable_area = LayoutViewport()) {
-    scrollable_area->SetScrollOffset(
+    return scrollable_area->SetScrollOffset(
         scrollable_area->ScrollPositionToOffset(offset),
         mojom::blink::ScrollType::kProgrammatic);
   }
+  return false;
 }
 
 gfx::Size WebLocalFrameImpl::DocumentSize() const {
@@ -1141,7 +1155,7 @@ v8::Local<v8::Context> WebLocalFrameImpl::MainWorldScriptContext() const {
 int32_t WebLocalFrameImpl::GetScriptContextWorldId(
     v8::Local<v8::Context> script_context) const {
   DCHECK_EQ(this, FrameForContext(script_context));
-  v8::Isolate* isolate = script_context->GetIsolate();
+  v8::Isolate* isolate = v8::Isolate::GetCurrent();
   return DOMWrapperWorld::World(isolate, script_context).GetWorldId();
 }
 
@@ -1238,6 +1252,10 @@ void WebLocalFrameImpl::DeprecatedStopLoading() {
   // FIXME: Figure out what we should really do here. It seems like a bug
   // that FrameLoader::stopLoading doesn't call stopAllLoaders.
   GetFrame()->Loader().StopAllLoaders(/*abort_client=*/true);
+}
+
+void WebLocalFrameImpl::RequestNetworkIdleCallback(base::OnceClosure callback) {
+  GetFrame()->RequestNetworkIdleCallback(std::move(callback));
 }
 
 void WebLocalFrameImpl::ReplaceSelection(const WebString& text) {
@@ -1974,7 +1992,8 @@ bool WebLocalFrameImpl::GetPrintPresetOptionsForPlugin(
 bool WebLocalFrameImpl::CapturePaintPreview(const gfx::Rect& bounds,
                                             cc::PaintCanvas* canvas,
                                             bool include_linked_destinations,
-                                            bool skip_accelerated_content) {
+                                            bool skip_accelerated_content,
+                                            bool allow_scrollbars) {
   bool success = false;
   {
     // Ignore paint timing while capturing a paint preview as it can change LCP
@@ -1986,7 +2005,8 @@ bool WebLocalFrameImpl::CapturePaintPreview(const gfx::Rect& bounds,
         *GetFrame()->GetDocument(),
         skip_accelerated_content
             ? Document::kPaintingPreviewSkipAcceleratedContent
-            : Document::kPaintingPreview);
+            : Document::kPaintingPreview,
+        allow_scrollbars);
     GetFrame()->StartPaintPreview();
     PaintPreviewContext* paint_preview_context =
         MakeGarbageCollected<PaintPreviewContext>(GetFrame());
@@ -2591,48 +2611,19 @@ WebViewImpl* WebLocalFrameImpl::ViewImpl() const {
   return GetFrame()->GetPage()->GetChromeClient().GetWebView();
 }
 
-bool WebLocalFrameImpl::ShouldWarmUpCompositorOnPrerenderFromThisPoint(
-    features::Prerender2WarmUpCompositorTriggerPoint trigger_point) {
-  static const bool is_warm_up_compositor_enabled =
-      base::FeatureList::IsEnabled(::features::kWarmUpCompositor);
-  if (!is_warm_up_compositor_enabled) {
-    return false;
-  }
-
+bool WebLocalFrameImpl::ShouldWarmUpCompositor() {
   if (!GetFrame()->IsOutermostMainFrame()) {
     return false;
   }
 
-  if (!GetFrame()->GetPage() || !GetFrame()->GetPage()->IsPrerendering() ||
-      !GetFrame()->GetPage()->ShouldWarmUpCompositorOnPrerender()) {
-    return false;
-  }
-
-  static const bool is_prerender2_warm_up_compositor_enabled =
-      base::FeatureList::IsEnabled(features::kPrerender2WarmUpCompositor);
-  // TODO(crbug.com/41496019): Seek the best point to start warm-up.
-  static const auto prerender2_warm_up_compositor_trigger_point =
-      features::kPrerender2WarmUpCompositorTriggerPoint.Get();
-  if (!is_prerender2_warm_up_compositor_enabled ||
-      prerender2_warm_up_compositor_trigger_point != trigger_point) {
-    return false;
-  }
-
-  return true;
+  // It can be effective for prerendering pages to consider warming up their
+  // composers before they are activated and visible.
+  return GetFrame()->GetPage() && GetFrame()->GetPage()->IsPrerendering() &&
+         GetFrame()->GetPage()->ShouldWarmUpCompositorOnPrerender();
 }
 
 void WebLocalFrameImpl::DidCommitLoad() {
-  if (frame_widget_ &&
-      ShouldWarmUpCompositorOnPrerenderFromThisPoint(
-          features::Prerender2WarmUpCompositorTriggerPoint::kDidCommitLoad)) {
-    frame_widget_->WarmUpCompositor();
-  }
-}
-
-void WebLocalFrameImpl::DidDispatchDOMContentLoadedEvent() {
-  if (frame_widget_ && ShouldWarmUpCompositorOnPrerenderFromThisPoint(
-                           features::Prerender2WarmUpCompositorTriggerPoint::
-                               kDidDispatchDOMContentLoadedEvent)) {
+  if (frame_widget_ && ShouldWarmUpCompositor()) {
     frame_widget_->WarmUpCompositor();
   }
 }
@@ -2650,12 +2641,6 @@ void WebLocalFrameImpl::DidFailLoad(const ResourceError& error,
 void WebLocalFrameImpl::DidFinish() {
   if (!Client())
     return;
-
-  if (frame_widget_ &&
-      ShouldWarmUpCompositorOnPrerenderFromThisPoint(
-          features::Prerender2WarmUpCompositorTriggerPoint::kDidFinishLoad)) {
-    frame_widget_->WarmUpCompositor();
-  }
 
   if (WebPluginContainerImpl* plugin = GetFrame()->GetWebPluginContainer())
     plugin->DidFinishLoading();
@@ -2702,6 +2687,10 @@ bool WebLocalFrameImpl::IsProvisional() const {
 }
 
 WebLocalFrameImpl* WebLocalFrameImpl::LocalRoot() {
+  return const_cast<WebLocalFrameImpl*>(std::as_const(*this).LocalRoot());
+}
+
+const WebLocalFrameImpl* WebLocalFrameImpl::LocalRoot() const {
   DCHECK(GetFrame());
   auto* result = FromFrame(GetFrame()->LocalFrameRoot());
   DCHECK(result);
@@ -3179,6 +3168,14 @@ void WebLocalFrameImpl::AddInspectorIssueImpl(
           InspectorIssue::Create(std::move(info)))));
 }
 
+void WebLocalFrameImpl::AddUserReidentificationIssueImpl(
+    std::optional<std::string> devtools_request_id,
+    const WebURL& affected_request_url) {
+  DCHECK(GetFrame());
+  AuditsIssue::ReportUserReidentificationIssue(GetFrame(), devtools_request_id,
+                                               affected_request_url);
+}
+
 void WebLocalFrameImpl::AddGenericIssueImpl(
     mojom::blink::GenericIssueErrorType error_type,
     int violating_node_id) {
@@ -3363,7 +3360,8 @@ void WebLocalFrameImpl::SetLCPPHint(
     return;
   }
 
-  lcpp->set_lcp_element_locators(hint->lcp_element_locators);
+  lcpp->set_lcp_element_locators(hint->lcp_element_locators,
+                                 hint->lcp_element_locators_all);
 
   HashSet<KURL> lcp_influencer_scripts;
   for (auto& url : hint->lcp_influencer_scripts) {
@@ -3382,8 +3380,8 @@ void WebLocalFrameImpl::SetLCPPHint(
   Vector<url::Origin> preconnect_origins;
   preconnect_origins.reserve(
       base::checked_cast<wtf_size_t>(hint->preconnect_origins.size()));
-  for (const auto& origin_url : hint->preconnect_origins) {
-    preconnect_origins.emplace_back(url::Origin::Create(origin_url));
+  for (const auto& origin : hint->preconnect_origins) {
+    preconnect_origins.emplace_back(origin);
   }
   lcpp->set_preconnected_origins(preconnect_origins);
 
@@ -3394,6 +3392,11 @@ void WebLocalFrameImpl::SetLCPPHint(
     unused_preloads.emplace_back(url);
   }
   lcpp->set_unused_preloads(std::move(unused_preloads));
+
+  if (hint->for_testing) {
+    CHECK_IS_TEST();
+    lcpp->enable_testing();
+  }
 }
 
 bool WebLocalFrameImpl::IsFeatureEnabled(

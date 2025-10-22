@@ -249,6 +249,7 @@ class OutputSPIRVTraverser : public TIntermTraverser
     void declareConst(TIntermDeclaration *decl);
     void declareSpecConst(TIntermDeclaration *decl);
     spirv::IdRef createConstant(const TType &type,
+                                spirv::IdRef typeId,
                                 TBasicType expectedBasicType,
                                 const TConstantUnion *constUnion,
                                 bool isConstantNullValue);
@@ -446,6 +447,7 @@ spv::StorageClass GetStorageClass(const ShCompileOptions &compileOptions,
         case EvqFragCoord:
         case EvqFrontFacing:
         case EvqPointCoord:
+        case EvqShadingRateEXT:
         case EvqSampleID:
         case EvqSamplePosition:
         case EvqSampleMaskIn:
@@ -600,6 +602,12 @@ spirv::IdRef OutputSPIRVTraverser::getSymbolIdAndStorageClass(const TSymbol *sym
             mBuilder.addCapability(spv::CapabilitySampleRateShading);
             uniqueId = &symbol->uniqueId();
             break;
+        case EvqShadingRateEXT:
+            name              = "gl_ShadingRateEXT";
+            builtInDecoration = spv::BuiltInShadingRateKHR;
+            mBuilder.addCapability(spv::CapabilityFragmentShadingRateKHR);
+            mBuilder.addExtension(SPIRVExtensions::FragmentShadingRate);
+            break;
         case EvqSamplePosition:
             name              = "gl_SamplePosition";
             builtInDecoration = spv::BuiltInSamplePosition;
@@ -718,6 +726,7 @@ spirv::IdRef OutputSPIRVTraverser::getSymbolIdAndStorageClass(const TSymbol *sym
     switch (type.getQualifier())
     {
         case EvqLayerIn:
+        case EvqShadingRateEXT:
         case EvqSampleID:
         case EvqPrimitiveID:
         case EvqViewIDOVR:
@@ -1192,7 +1201,7 @@ void OutputSPIRVTraverser::declareConst(TIntermDeclaration *decl)
 
     const spirv::IdRef typeId = mBuilder.getTypeData(type, {}).id;
     const spirv::IdRef constId =
-        createConstant(type, type.getBasicType(), initializer->getConstantValue(),
+        createConstant(type, typeId, type.getBasicType(), initializer->getConstantValue(),
                        initializer->isConstantNullValue());
 
     // Remember the id of the variable for future look up.
@@ -1235,11 +1244,11 @@ void OutputSPIRVTraverser::declareSpecConst(TIntermDeclaration *decl)
 }
 
 spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
+                                                  spirv::IdRef typeId,
                                                   TBasicType expectedBasicType,
                                                   const TConstantUnion *constUnion,
                                                   bool isConstantNullValue)
 {
-    const spirv::IdRef typeId = mBuilder.getTypeData(type, {}).id;
     spirv::IdRefList componentIds;
 
     // If the object is all zeros, use OpConstantNull to avoid creating a bunch of constants.  This
@@ -1259,13 +1268,14 @@ spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
     {
         TType elementType(type);
         elementType.toArrayElementType();
+        const spirv::IdRef elementTypeId = mBuilder.getTypeData(elementType, {}).id;
 
         // If it's an array constant, get the constant id of each element.
         for (unsigned int elementIndex = 0; elementIndex < type.getOutermostArraySize();
              ++elementIndex)
         {
             componentIds.push_back(
-                createConstant(elementType, expectedBasicType, constUnion, false));
+                createConstant(elementType, elementTypeId, expectedBasicType, constUnion, false));
             constUnion += elementType.getObjectSize();
         }
     }
@@ -1275,8 +1285,9 @@ spirv::IdRef OutputSPIRVTraverser::createConstant(const TType &type,
         for (const TField *field : type.getStruct()->fields())
         {
             const TType *fieldType = field->type();
-            componentIds.push_back(
-                createConstant(*fieldType, fieldType->getBasicType(), constUnion, false));
+            const spirv::IdRef fieldTypeId = mBuilder.getTypeData(*fieldType, {}).id;
+            componentIds.push_back(createConstant(*fieldType, fieldTypeId,
+                                                  fieldType->getBasicType(), constUnion, false));
 
             constUnion += fieldType->getObjectSize();
         }
@@ -3887,7 +3898,6 @@ spirv::IdRef OutputSPIRVTraverser::createImageTextureBuiltIn(TIntermOperator *no
         // - sampler2DRect, vec4 P
         // - sampler3D, vec4 P
         // - sampler2DShadow, vec4 P
-        // - sampler2DRectShadow, vec4 P
         //
         // Of these cases, only (sampler2D*, vec4 P) requires moving the proj channel from .w to the
         // appropriate location (.y for 1D and .z for 2D).
@@ -4817,6 +4827,7 @@ void OutputSPIRVTraverser::visitConstantUnion(TIntermConstantUnion *node)
     mNodeData.emplace_back();
 
     const TType &type = node->getType();
+    spirv::IdRef typeId = mBuilder.getTypeData(type, {}).id;
 
     // Find out the expected type for this constant, so it can be cast right away and not need an
     // instruction to do that.
@@ -4847,12 +4858,18 @@ void OutputSPIRVTraverser::visitConstantUnion(TIntermConstantUnion *node)
             {
                 expectedBasicType = parentAggregate->getType().getBasicType();
             }
+
+            if (expectedBasicType != type.getBasicType())
+            {
+                TType castType = type;
+                castType.setBasicType(expectedBasicType);
+                typeId = mBuilder.getTypeData(castType, {}).id;
+            }
         }
     }
 
-    const spirv::IdRef typeId  = mBuilder.getTypeData(type, {}).id;
-    const spirv::IdRef constId = createConstant(type, expectedBasicType, node->getConstantValue(),
-                                                node->isConstantNullValue());
+    const spirv::IdRef constId = createConstant(
+        type, typeId, expectedBasicType, node->getConstantValue(), node->isConstantNullValue());
 
     nodeDataInitRValue(&mNodeData.back(), constId, typeId);
 }

@@ -118,14 +118,6 @@ class SafeBrowsingUIManager : public BaseUIManager {
 
     // Returns true if metrics reporting is enabled.
     virtual bool IsMetricsAndCrashReportingEnabled() = 0;
-
-    // Returns true if sending of hit reports is enabled, in which case
-    // SafeBrowsingUIManager will send hit reports when it deems the context
-    // appropriate to do so (see ShouldSendHitReport()). If this method returns
-    // false, SafeBrowsingUIManager will never send hit reports.
-    // TODO(crbug.com/40780174): Eliminate this method if/once hit report
-    // sending is enabled in WebLayer.
-    virtual bool IsSendingOfHitReportsEnabled() = 0;
   };
 
   SafeBrowsingUIManager(
@@ -193,9 +185,6 @@ class SafeBrowsingUIManager : public BaseUIManager {
   // expects the allowlist to exist, but the tests don't necessarily call
   // DisplayBlockingPage(), which creates it.
   static void CreateAllowlistForTesting(content::WebContents* web_contents);
-
-  static std::string GetThreatTypeStringForInterstitial(
-      safe_browsing::SBThreatType threat_type);
 
   // Add and remove observers. These methods must be invoked on the UI thread.
   void AddObserver(Observer* observer);

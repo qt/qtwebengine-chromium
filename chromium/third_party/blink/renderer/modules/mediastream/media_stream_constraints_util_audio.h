@@ -16,9 +16,16 @@
 namespace blink {
 class MediaConstraints;
 class MediaStreamAudioSource;
+class V8UnionBooleanOrString;
 }  // namespace blink
 
 namespace blink {
+
+V8UnionBooleanOrString* EchoCancellationModeToBooleanOrString(
+    EchoCancellationMode);
+Vector<EchoCancellationMode> GetSupportedEchoCancellationModes(
+    int platform_effects,
+    mojom::blink::MediaStreamType);
 
 // This class represents the capability of an audio-capture device.
 // It may represent three different things:
@@ -149,8 +156,7 @@ MODULES_EXPORT blink::AudioCaptureSettings SelectSettingsAudioCapture(
     const AudioDeviceCaptureCapabilities& capabilities,
     const MediaConstraints& constraints,
     mojom::blink::MediaStreamType stream_type,
-    bool should_disable_hardware_noise_suppression,
-    bool is_reconfiguration_allowed = false);
+    bool is_reconfiguration_allowed);
 
 // This variant of SelectSettings takes an existing MediaStreamAudioSource
 // as input in order to determine settings that are compatible with it.
@@ -171,8 +177,7 @@ SelectEligibleSettingsAudioCapture(
     const AudioDeviceCaptureCapabilities& capabilities,
     const MediaConstraints& constraints,
     mojom::blink::MediaStreamType stream_type,
-    bool should_disable_hardware_noise_suppression,
-    bool is_reconfiguration_allowed = false);
+    bool is_reconfiguration_allowed);
 
 // Return a tuple with <min,max> representing the min and max buffer sizes or
 // latencies that can be provided by the given AudioParameters. The min and max

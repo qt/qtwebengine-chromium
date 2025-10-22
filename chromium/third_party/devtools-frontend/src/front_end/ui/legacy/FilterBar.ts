@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import './Toolbar.js';
 
 import * as Common from '../../core/common/common.js';
@@ -264,7 +266,7 @@ export class TextFilterUI extends Common.ObjectWrapper.ObjectWrapper<FilterUIEve
 
 interface NamedBitSetFilterUIOptions {
   items: Item[];
-  setting?: Common.Settings.Setting<{[key: string]: boolean}>;
+  setting?: Common.Settings.Setting<Record<string, boolean>>;
 }
 
 export class NamedBitSetFilterUIElement extends HTMLElement {
@@ -293,7 +295,7 @@ export class NamedBitSetFilterUIElement extends HTMLElement {
     namedBitSetFilterUI.element().classList.add('named-bitset-filter');
 
     const styleElement = this.#shadow.createChild('style');
-    styleElement.textContent = filterStyles.cssText;
+    styleElement.textContent = filterStyles;
 
     const disclosureElement = this.#shadow.createChild('div', 'named-bit-set-filter-disclosure');
     disclosureElement.appendChild(namedBitSetFilterUI.element());
@@ -319,9 +321,9 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
   private readonly typeFilterElementTypeNames = new WeakMap<HTMLElement, string>();
   private allowedTypes = new Set<string>();
   private readonly typeFilterElements: HTMLElement[] = [];
-  private readonly setting: Common.Settings.Setting<{[key: string]: boolean}>|undefined;
+  private readonly setting: Common.Settings.Setting<Record<string, boolean>>|undefined;
 
-  constructor(items: Item[], setting?: Common.Settings.Setting<{[key: string]: boolean}>) {
+  constructor(items: Item[], setting?: Common.Settings.Setting<Record<string, boolean>>) {
     super();
     this.filtersElement = document.createElement('div');
     this.filtersElement.classList.add('filter-bitset-filter');
@@ -366,7 +368,7 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
   }
 
   private settingChanged(): void {
-    const allowedTypesFromSetting = (this.setting as Common.Settings.Setting<{[key: string]: boolean}>).get();
+    const allowedTypesFromSetting = (this.setting as Common.Settings.Setting<Record<string, boolean>>).get();
     this.allowedTypes = new Set();
     for (const element of this.typeFilterElements) {
       const typeName = this.typeFilterElementTypeNames.get(element);
@@ -421,18 +423,17 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
     }
   }
 
-  private onTypeFilterKeydown(ev: Event): void {
-    const event = (ev as KeyboardEvent);
+  private onTypeFilterKeydown(event: KeyboardEvent): void {
     const element = (event.target as HTMLElement | null);
     if (!element) {
       return;
     }
 
-    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') {
+    if (event.key === 'ArrowLeft' || event.key === 'ArrowUp' || (event.key === 'Tab' && event.shiftKey)) {
       if (this.keyFocusNextBit(element, true /* selectPrevious */)) {
         event.consume(true);
       }
-    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown') {
+    } else if (event.key === 'ArrowRight' || event.key === 'ArrowDown' || (event.key === 'Tab' && !event.shiftKey)) {
       if (this.keyFocusNextBit(element, false /* selectPrevious */)) {
         event.consume(true);
       }
@@ -442,10 +443,15 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
   }
 
   private keyFocusNextBit(target: HTMLElement, selectPrevious: boolean): boolean {
-    const index = this.typeFilterElements.indexOf(target);
+    let index = this.typeFilterElements.indexOf(target);
+
     if (index === -1) {
-      return false;
+      index = this.typeFilterElements.findIndex(el => el.classList.contains('selected'));
+      if (index === -1) {
+        index = selectPrevious ? this.typeFilterElements.length : -1;
+      }
     }
+
     const nextIndex = selectPrevious ? index - 1 : index + 1;
     if (nextIndex < 0 || nextIndex >= this.typeFilterElements.length) {
       return false;
@@ -477,7 +483,7 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
 
     if (this.setting) {
       // Settings do not support `Sets` so convert it back to the Map-like object.
-      const updatedSetting = ({} as {[key: string]: boolean});
+      const updatedSetting = ({} as Record<string, boolean>);
       for (const type of this.allowedTypes) {
         updatedSetting[type] = true;
       }
@@ -493,40 +499,37 @@ export class NamedBitSetFilterUI extends Common.ObjectWrapper.ObjectWrapper<Filt
 export class CheckboxFilterUI extends Common.ObjectWrapper.ObjectWrapper<FilterUIEventTypes> implements FilterUI {
   private readonly filterElement: HTMLDivElement;
   private readonly activeWhenChecked: boolean;
-  private label: CheckboxLabel;
-  private checkboxElement: HTMLInputElement;
+  private checkbox: CheckboxLabel;
   constructor(
-      className: string, title: Common.UIString.LocalizedString, activeWhenChecked?: boolean,
-      setting?: Common.Settings.Setting<boolean>, jslogContext?: string) {
+      title: Common.UIString.LocalizedString,
+      activeWhenChecked?: boolean,
+      setting?: Common.Settings.Setting<boolean>,
+      jslogContext?: string,
+  ) {
     super();
     this.filterElement = document.createElement('div');
     this.filterElement.classList.add('filter-checkbox-filter');
     this.activeWhenChecked = Boolean(activeWhenChecked);
-    this.label = CheckboxLabel.create(title);
-    this.filterElement.appendChild(this.label);
-    this.checkboxElement = this.label.checkboxElement;
+    this.checkbox = CheckboxLabel.create(title, undefined, undefined, jslogContext);
+    this.filterElement.appendChild(this.checkbox);
     if (setting) {
-      bindCheckbox(this.checkboxElement, setting);
+      bindCheckbox(this.checkbox, setting);
     } else {
-      this.checkboxElement.checked = true;
+      this.checkbox.checked = true;
     }
-    this.checkboxElement.addEventListener('change', this.fireUpdated.bind(this), false);
-    if (jslogContext) {
-      this.checkboxElement.setAttribute(
-          'jslog', `${VisualLogging.toggle().track({change: true}).context(jslogContext)}`);
-    }
+    this.checkbox.addEventListener('change', this.fireUpdated.bind(this), false);
   }
 
   isActive(): boolean {
-    return this.activeWhenChecked === this.checkboxElement.checked;
+    return this.activeWhenChecked === this.checkbox.checked;
   }
 
   checked(): boolean {
-    return this.checkboxElement.checked;
+    return this.checkbox.checked;
   }
 
   setChecked(checked: boolean): void {
-    this.checkboxElement.checked = checked;
+    this.checkbox.checked = checked;
   }
 
   element(): HTMLDivElement {
@@ -534,7 +537,7 @@ export class CheckboxFilterUI extends Common.ObjectWrapper.ObjectWrapper<FilterU
   }
 
   labelElement(): Element {
-    return this.label;
+    return this.checkbox;
   }
 
   private fireUpdated(): void {

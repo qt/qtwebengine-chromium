@@ -366,3 +366,14 @@ Common.Revealer.registerRevealer({
     return new Timeline.TimelinePanel.EventRevealer();
   },
 });
+
+Common.Revealer.registerRevealer({
+  contextTypes() {
+    return maybeRetrieveContextTypes(Timeline => [Timeline.Utils.Helpers.RevealableInsight]);
+  },
+  destination: Common.Revealer.RevealerDestination.TIMELINE_PANEL,
+  async loadRevealer() {
+    const Timeline = await loadTimelineModule();
+    return new Timeline.TimelinePanel.InsightRevealer();
+  },
+});

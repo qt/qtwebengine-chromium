@@ -56,8 +56,6 @@ inline constexpr char kManagedDefaultFileSystemWriteGuardSetting[] =
     "profile.managed_default_content_settings.file_system_write_guard";
 inline constexpr char kManagedDefaultSerialGuardSetting[] =
     "profile.managed_default_content_settings.serial_guard";
-inline constexpr char kManagedDefaultInsecurePrivateNetworkSetting[] =
-    "profile.managed_default_content_settings.insecure_private_network";
 inline constexpr char kManagedDefaultJavaScriptJitSetting[] =
     "profile.managed_default_content_settings.javascript_jit";
 inline constexpr char kManagedDefaultJavaScriptOptimizerSetting[] =
@@ -81,6 +79,12 @@ inline constexpr char kManagedDefaultLegacyCookieScope[] =
     "profile.managed_default_content_settings.legacy_cookie_scope";
 inline constexpr char kManagedDefaultControlledFrameSetting[] =
     "profile.managed_default_content_settings.controlled_frame";
+#if BUILDFLAG(IS_CHROMEOS)
+inline constexpr char kManagedDefaultSmartCardConnectSetting[] =
+    "profile.managed_default_content_settings.smart_card_connect";
+inline constexpr char kManagedDefaultDeviceAttributesSetting[] =
+    "profile.managed_default_content_settings.device_attributes";
+#endif  // BUILDFLAG(IS_CHROMEOS)
 
 // Preferences that are exclusively used to store managed content settings
 // patterns.
@@ -148,8 +152,6 @@ inline constexpr char kManagedSerialAskForUrls[] =
     "profile.managed_serial_ask_for_urls";
 inline constexpr char kManagedSerialBlockedForUrls[] =
     "profile.managed_serial_blocked_for_urls";
-inline constexpr char kManagedInsecurePrivateNetworkAllowedForUrls[] =
-    "profile.managed_insecure_private_network_allowed_for_urls";
 inline constexpr char kManagedJavaScriptJitAllowedForSites[] =
     "profile.managed_javascript_jit_allowed_for_sites";
 inline constexpr char kManagedJavaScriptJitBlockedForSites[] =
@@ -193,11 +195,20 @@ inline constexpr char kManagedSmartCardConnectAllowedForUrls[] =
     "profile.managed_smart_card_connect_allowed_for_urls";
 inline constexpr char kManagedSmartCardConnectBlockedForUrls[] =
     "profile.managed_smart_card_connect_blocked_for_urls";
+inline constexpr char kManagedDeviceAttributesAllowedForOrigins[] =
+    "profile.managed_device_attributes_allowed_for_origins";
+inline constexpr char kManagedDeviceAttributesBlockedForOrigins[] =
+    "profile.managed_device_attributes_blocked_for_origins";
 #endif
 inline constexpr char kManagedControlledFrameAllowedForUrls[] =
     "profile.managed_controlled_frame_allowed_for_urls";
 inline constexpr char kManagedControlledFrameBlockedForUrls[] =
     "profile.managed_controlled_frame_blocked_for_urls";
+
+inline constexpr char kManagedLocalNetworkAccessAllowedForUrls[] =
+    "profile.managed_local_network_access_allowed_for_urls";
+inline constexpr char kManagedLocalNetworkAccessBlockedForUrls[] =
+    "profile.managed_local_network_access_blocked_for_urls";
 
 // Boolean indicating whether the quiet UI is enabled for notification
 // permission requests. This and kEnableNotificationCPSS can't both be true

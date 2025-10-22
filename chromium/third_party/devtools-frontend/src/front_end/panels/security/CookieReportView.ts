@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../ui/legacy/components/data_grid/data_grid.js';
 
@@ -26,7 +27,7 @@ const UIStrings = {
    */
   title: 'Third-party cookies',
   /**
-   *@description Explaination in the header about the cookies listed in the report
+   *@description Explanation in the header about the cookies listed in the report
    */
   body: 'This site might not work if third-party cookies and other cookies are limited in Chrome.',
   /**
@@ -100,7 +101,7 @@ const UIStrings = {
    */
   gracePeriod: 'Review {PH1}. Grace period exception is active.',
   /**
-   *@description Label for a link to third-party cookie site compatability look-up.
+   *@description Label for a link to third-party cookie site compatibility look-up.
    */
   reportedIssues: 'reported issues',
   /**
@@ -111,22 +112,6 @@ const UIStrings = {
    *@description String in Cookie Report table. This is used when a cookie's domain does not have an entry in the third-party cookie migration readiness list Github nor a grace period nor heuristics exception.
    */
   other: 'Contact third-party site for more info',
-  /**
-   *@description String representing the GitHubResource insight type. Used as filter chip text to allow the user to filter the table based on recommendation.
-   */
-  gitHubResourceInsightTypeString: 'Github',
-  /**
-   *@description String representing the GracePeriod insight type. Used as filter chip text to allow the user to filter the table based on recommendation.
-   */
-  gracePeriodInsightTypeString: 'Grace Period',
-  /**
-   *@description String representing the GitHubResource insight type. Used as filter chip text to allow the user to filter the table based on recommendation.
-   */
-  heuristicsInisightTypeString: 'Heuristics',
-  /**
-   *@description String representing a null insight type. Used as filter chip text to allow the user to filter the table based on recommendation.
-   */
-  otherInsightTypeString: 'Other',
   /**
    *@description String representing the Advertising cookie type. Used to format 'ad' category from the Third Party Web dataset.
    */
@@ -301,7 +286,7 @@ export class CookieReportView extends UI.Widget.VBox {
     `, target, {host: this});
     // clang-format on
   }) {
-    super(true, undefined, element);
+    super(element, {useShadowDom: true});
     this.#view = view;
     this.registerRequiredCSS(cookieReportViewStyles);
     this.searchText = Common.Settings.Settings.instance().createSetting('cookie-report-search-query', '').get();
@@ -439,23 +424,6 @@ export class CookieReportView extends UI.Widget.VBox {
         return i18nString(UIStrings.allowedByException);
       case IssuesManager.CookieIssue.CookieStatus.ALLOWED:
         return i18nString(UIStrings.allowed);
-    }
-  }
-
-  static getInsightTypeString(insight?: Protocol.Audits.CookieIssueInsight): string {
-    if (!insight) {
-      return i18nString(UIStrings.otherInsightTypeString);
-    }
-
-    switch (insight.type) {
-      case Protocol.Audits.InsightType.GitHubResource:
-        return i18nString(UIStrings.gitHubResourceInsightTypeString);
-      case Protocol.Audits.InsightType.GracePeriod:
-        return i18nString(UIStrings.gracePeriodInsightTypeString);
-      case Protocol.Audits.InsightType.Heuristics:
-        return i18nString(UIStrings.heuristicsInisightTypeString);
-      default:
-        return i18nString(UIStrings.otherInsightTypeString);
     }
   }
 

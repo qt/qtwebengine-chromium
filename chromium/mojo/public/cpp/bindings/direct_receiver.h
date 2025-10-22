@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <string_view>
 #include <utility>
 
 #include "base/component_export.h"
@@ -30,6 +31,14 @@ class WidgetInputHandlerImpl;
 
 namespace cc::mojo_embedder {
 class AsyncLayerTreeFrameSink;
+}
+
+namespace cc::slim {
+class FrameSinkImpl;
+}
+
+namespace viz {
+class CompositorFrameSinkImpl;
 }
 
 namespace mojo {
@@ -109,8 +118,10 @@ class DirectReceiverKey {
   // Update this list and get a mojo/OWNERS approval in order to gain access to
   // DirectReceiver construction.
   friend class cc::mojo_embedder::AsyncLayerTreeFrameSink;
+  friend class cc::slim::FrameSinkImpl;
   friend class mojo::test::direct_receiver_unittest::ServiceImpl;
   friend class blink::WidgetInputHandlerImpl;
+  friend class viz::CompositorFrameSinkImpl;
 };
 
 // DirectReceiver is a wrapper around the standard Receiver<T> type that always
@@ -153,7 +164,14 @@ class DirectReceiver {
   // Binds this object to `receiver` to receive IPC directly on the calling
   // thread.
   void Bind(PendingReceiver<T> receiver) {
-    receiver_.Bind(PendingReceiver<T>{node_->AdoptPipe(receiver.PassPipe())});
+    receiver_.Bind(receiver.is_valid() ? PendingReceiver<T>(node_->AdoptPipe(
+                                             receiver.PassPipe()))
+                                       : std::move(receiver));
+  }
+
+  void ResetWithReason(uint32_t custom_reason_code,
+                       std::string_view description) {
+    receiver_.ResetWithReason(custom_reason_code, description);
   }
 
   internal::ThreadLocalNode& node_for_testing() { return *node_; }

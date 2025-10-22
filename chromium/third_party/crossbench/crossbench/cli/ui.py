@@ -9,15 +9,19 @@ import datetime as dt
 import logging
 import sys
 import threading
-from typing import TYPE_CHECKING, Iterator, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Final, Iterator, Optional, Type
 
 import colorama
+
+from crossbench.helper import terminal
+from crossbench.helper.spinner import Spinner
 
 if TYPE_CHECKING:
   from types import TracebackType
 
 colorama.init()
 
+IS_ATTY: Final[bool] = hasattr(sys.stdout, "isatty") and sys.stdout.isatty()
 COLOR_LOGGING: bool = True
 
 
@@ -45,8 +49,8 @@ class ColoredLogFormatter(logging.Formatter):
 
   def formatException(
       self,
-      ei: Tuple[Type[BaseException], BaseException, Optional[TracebackType]]
-      | Tuple[None, ...]
+      ei: tuple[Type[BaseException], BaseException, Optional[TracebackType]]
+      | tuple[None, ...]
   ) -> str:
     return ""
 
@@ -54,17 +58,70 @@ class ColoredLogFormatter(logging.Formatter):
     return ""
 
 
-@contextlib.contextmanager
-def timer(msg: str = "Elapsed Time") -> Iterator[None]:
-  start_time = dt.datetime.now()
+def format_duration(duration: dt.timedelta) -> str:
+  remaining_s = duration.total_seconds()
+  hours = remaining_s // 3600
+  # remaining seconds
+  remaining_s = remaining_s - (hours * 3600)
+  # minutes
+  minutes = remaining_s // 60
+  # remaining seconds
+  seconds = remaining_s - (minutes * 60)
 
+  formatted = f"{round(seconds, 1)}s"
+  if minutes:
+    formatted = f"{minutes}m{formatted}"
+  if hours:
+    formatted = f"{hours}h{formatted}"
+  return formatted
+
+
+def write_indented(msg: str) -> None:
+  indent = colorama.Cursor.FORWARD() * 30
+  sys.stdout.write(f"{indent}{msg}\r")
+
+
+def clear_indented() -> None:
+  indent = colorama.Cursor.FORWARD() * 30
+  sys.stdout.write(f"{indent}{terminal.CLEAR_END}\r")
+
+
+DEFAULT_INTERVAL_S: Final[float] = 0.5
+
+
+@contextlib.contextmanager
+def timer(msg: str = "Elapsed Time",
+          update_interval=DEFAULT_INTERVAL_S) -> Iterator[None]:
+  if not IS_ATTY:
+    yield
+    return
+
+  start_time = dt.datetime.now()
   def print_timer():
     delta = dt.datetime.now() - start_time
-    indent = colorama.Cursor.FORWARD() * 3
-    sys.stdout.write(f"{indent}{msg}: {delta}\r")
-
-  with RepeatTimer(interval=0.25, function=print_timer):
+    write_indented(f"{msg}: {format_duration(delta)}")
+  with RepeatTimer(interval=update_interval, function=print_timer):
     yield
+  clear_indented()
+
+
+@contextlib.contextmanager
+def countdown(duration: dt.timedelta,
+              msg: str = "Waiting",
+              update_interval=DEFAULT_INTERVAL_S) -> Iterator[None]:
+  if not IS_ATTY:
+    print(f"{msg}: {format_duration(duration)}")
+    yield
+    return
+
+  start_time = dt.datetime.now()
+  def print_timer():
+    delta = dt.datetime.now() - start_time
+    time_left = duration - delta
+    write_indented(f"{msg}: {format_duration(time_left)}")
+  with RepeatTimer(interval=update_interval, function=print_timer):
+    yield
+  clear_indented()
 
 
 class RepeatTimer(threading.Timer):
@@ -78,3 +135,7 @@ class RepeatTimer(threading.Timer):
 
   def __exit__(self, *args, **kwargs) -> None:
     self.cancel()
+
+
+def spinner(sleep: float = 0.5, title: str = "") -> Spinner:
+  return Spinner(IS_ATTY, sleep, title)

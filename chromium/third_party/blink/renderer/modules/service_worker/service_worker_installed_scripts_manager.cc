@@ -9,7 +9,6 @@
 
 #include "base/barrier_closure.h"
 #include "base/containers/span.h"
-#include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/threading/thread_checker.h"
@@ -216,7 +215,7 @@ class Internal : public mojom::blink::ServiceWorkerInstalledScriptsManager {
   void OnScriptReceived(mojom::blink::ServiceWorkerScriptInfoPtr script_info) {
     DCHECK_CALLED_ON_VALID_THREAD(io_thread_checker_);
     auto iter = running_receivers_.find(script_info->script_url);
-    CHECK(iter != running_receivers_.end(), base::NotFatalUntil::M130);
+    CHECK(iter != running_receivers_.end());
     std::unique_ptr<BundledReceivers> receivers = std::move(iter->value);
     DCHECK(receivers);
     if (!receivers->body()->HasReceivedAllData() ||
@@ -308,8 +307,8 @@ ServiceWorkerInstalledScriptsManager::GetScriptData(const KURL& script_url) {
       std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
           TextResourceDecoderOptions::kPlainTextContent,
           raw_script_data->Encoding().empty()
-              ? UTF8Encoding()
-              : WTF::TextEncoding(raw_script_data->Encoding())));
+              ? Utf8Encoding()
+              : TextEncoding(raw_script_data->Encoding())));
 
   Vector<uint8_t> source_text = raw_script_data->TakeScriptText();
   String decoded_source_text = decoder->Decode(base::span(source_text));

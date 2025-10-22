@@ -30,13 +30,13 @@
 #include "components/sync_bookmarks/synced_bookmark_tracker_entity.h"
 #include "ui/base/models/tree_node_iterator.h"
 
-using syncer::EntityData;
-using syncer::UpdateResponseData;
-using syncer::UpdateResponseDataList;
-
 namespace sync_bookmarks {
 
 namespace {
+
+using syncer::EntityData;
+using syncer::UpdateResponseData;
+using syncer::UpdateResponseDataList;
 
 static const size_t kInvalidIndex = -1;
 

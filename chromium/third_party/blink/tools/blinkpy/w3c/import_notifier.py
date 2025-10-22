@@ -47,7 +47,6 @@ from blinkpy.w3c.buganizer import (
     BuganizerIssue,
 )
 from blinkpy.w3c.common import (
-    AUTOROLLER_EMAIL,
     WPT_GH_URL,
     WPT_GH_RANGE_URL_TEMPLATE,
 )
@@ -82,9 +81,6 @@ class ImportNotifier:
 
         self.finder = path_finder.PathFinder(host.filesystem)
         self.default_port = host.port_factory.get()
-        self.default_port.set_option_default('additional_expectations', [
-            self.finder.path_from_web_tests('MobileTestExpectations'),
-        ])
         self.default_port.set_option_default('test_types',
                                              typing.get_args(TestType))
         self.owners_extractor = DirectoryOwnersExtractor(host)
@@ -374,7 +370,7 @@ class ImportNotifier:
         commit_list = ''
         for sha, subject in imported_commits:
             # subject is a Unicode string and can contain non-ASCII characters.
-            line = u'{}: {}'.format(subject, GITHUB_COMMIT_PREFIX + sha)
+            line = '{}: {}'.format(subject, GITHUB_COMMIT_PREFIX + sha)
             if self.local_wpt.is_commit_affecting_directory(
                     sha, path_from_wpt):
                 line += ' [affecting this directory]'
@@ -438,7 +434,6 @@ class ImportNotifier:
 
     def _cl_for_wpt_revision(self, wpt_revision: str) -> GerritCL:
         query = ' '.join([
-            f'owner:{AUTOROLLER_EMAIL}',
             f'prefixsubject:"{self.IMPORT_SUBJECT_PREFIX}{wpt_revision}"',
             'status:merged',
         ])

@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) IBM Corp. 2009  All rights reserved.
@@ -84,6 +85,10 @@ const UIStrings = {
    *@description A context menu item in the Watch Expressions Sidebar Pane of the Sources panel and Network pane request.
    */
   copyValue: 'Copy value',
+  /**
+   *@description announcement for when watch expression is deleted
+   */
+  watchExpressionDeleted: 'Watch expression deleted',
 } as const;
 const str_ = i18n.i18n.registerUIStrings('panels/sources/WatchExpressionsSidebarPane.ts', UIStrings);
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
@@ -437,6 +442,7 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   private deleteWatchExpression(event: Event): void {
     event.consume(true);
+    UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.watchExpressionDeleted));
     this.updateExpression(null);
   }
 
@@ -492,7 +498,7 @@ export class WatchExpression extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     } else {
       const propertyValue =
           ObjectUI.ObjectPropertiesSection.ObjectPropertiesSection.createPropertyValueWithCustomSupport(
-              expressionValue, Boolean(exceptionDetails), false /* showPreview */, titleElement, this.linkifier);
+              expressionValue, Boolean(exceptionDetails), false /* showPreview */, this.linkifier);
       this.valueElement = propertyValue.element;
     }
     const separatorElement = document.createElement('span');

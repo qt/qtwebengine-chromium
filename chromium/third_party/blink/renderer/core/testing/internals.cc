@@ -24,11 +24,6 @@
  * THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/core/testing/internals.h"
 
 #include <atomic>
@@ -2789,7 +2784,7 @@ void Internals::setMediaControlsTestMode(HTMLMediaElement* media_element,
 void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
     const String& scheme) {
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
   SchemeRegistry::RegisterURLSchemeAsBypassingContentSecurityPolicy(scheme);
 }
@@ -2805,7 +2800,7 @@ void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
       policy_areas_enum |= SchemeRegistry::kPolicyAreaStyle;
   }
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
   SchemeRegistry::RegisterURLSchemeAsBypassingContentSecurityPolicy(
       scheme, static_cast<SchemeRegistry::PolicyAreas>(policy_areas_enum));
@@ -2814,10 +2809,10 @@ void Internals::registerURLSchemeAsBypassingContentSecurityPolicy(
 void Internals::removeURLSchemeRegisteredAsBypassingContentSecurityPolicy(
     const String& scheme) {
 #if DCHECK_IS_ON()
-  WTF::SetIsBeforeThreadCreatedForTest();  // Required for next operation:
+  SetIsBeforeThreadCreatedForTest();  // Required for next operation:
 #endif
-  SchemeRegistry::RemoveURLSchemeRegisteredAsBypassingContentSecurityPolicy(
-      scheme);
+  SchemeRegistry::
+      RemoveURLSchemeRegisteredAsBypassingContentSecurityPolicyForTest(scheme);
 }
 
 TypeConversions* Internals::typeConversions() const {
@@ -3152,7 +3147,7 @@ DOMArrayBuffer* Internals::serializeObject(
   DOMArrayBuffer* buffer = DOMArrayBuffer::CreateUninitializedOrNull(
       base::checked_cast<uint32_t>(span.size()), sizeof(uint8_t));
   if (buffer)
-    memcpy(buffer->Data(), span.data(), span.size());
+    buffer->ByteSpan().copy_from(span);
   return buffer;
 }
 
@@ -3501,8 +3496,9 @@ void Internals::forceLoseCanvasContext(CanvasRenderingContext* context) {
   context->LoseContext(CanvasRenderingContext::kSyntheticLostContext);
 }
 
-void Internals::disableCanvasAcceleration(HTMLCanvasElement* canvas) {
-  canvas->DisableAcceleration();
+void Internals::disableCanvasAccelerationForCanvas2D(
+    HTMLCanvasElement* canvas) {
+  canvas->DisableAccelerationForCanvas2D();
 }
 
 bool Internals::isCanvasImageSourceAccelerated(
@@ -3723,7 +3719,7 @@ bool Internals::isLowEndDevice() const {
 }
 
 Vector<String> Internals::supportedTextEncodingLabels() const {
-  return WTF::TextEncodingAliasesForTesting();
+  return TextEncodingAliasesForTesting();
 }
 
 void Internals::simulateRasterUnderInvalidations(bool enable) {

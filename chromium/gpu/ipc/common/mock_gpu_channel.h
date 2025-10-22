@@ -58,14 +58,6 @@ class MockGpuChannel : public mojom::GpuChannel {
                     const viz::SharedImageFormat&,
                     gfx::BufferUsage,
                     CreateGpuMemoryBufferCallback));
-  MOCK_METHOD2(GetGpuMemoryBufferHandleInfo,
-               void(const gpu::Mailbox&, GetGpuMemoryBufferHandleInfoCallback));
-#if BUILDFLAG(IS_ANDROID)
-  MOCK_METHOD3(CreateStreamTexture,
-               void(int32_t,
-                    mojo::PendingAssociatedReceiver<mojom::StreamTexture>,
-                    CreateStreamTextureCallback));
-#endif  // BUILDFLAG(IS_ANDROID)
 #if BUILDFLAG(IS_WIN)
   MOCK_METHOD3(CreateDCOMPTexture,
                void(int32_t,
@@ -80,10 +72,6 @@ class MockGpuChannel : public mojom::GpuChannel {
                     const std::vector<SyncToken>&,
                     uint64_t,
                     CopyToGpuMemoryBufferAsyncCallback));
-  MOCK_METHOD3(CopyNativeGmbToSharedMemorySync,
-               void(gfx::GpuMemoryBufferHandle,
-                    base::UnsafeSharedMemoryRegion,
-                    CopyNativeGmbToSharedMemorySyncCallback));
   MOCK_METHOD3(CopyNativeGmbToSharedMemoryAsync,
                void(gfx::GpuMemoryBufferHandle,
                     base::UnsafeSharedMemoryRegion,

@@ -33,9 +33,9 @@ class CXFA_ArrayNodeList final : public CXFA_TreeList {
   void SetArrayNodeList(const std::vector<CXFA_Node*>& srcArray);
 
  private:
-  explicit CXFA_ArrayNodeList(CXFA_Document* pDocument);
+  explicit CXFA_ArrayNodeList(CXFA_Document* document);
 
-  std::vector<cppgc::Member<CXFA_Node>> m_array;
+  std::vector<cppgc::Member<CXFA_Node>> array_;
 };
 
 #endif  // XFA_FXFA_PARSER_CXFA_ARRAYNODELIST_H_

@@ -9,9 +9,8 @@ nicolaso@chromium.org
 # Please pick a random reviewer:
 #
 # cat tools/traffic_annotation/summary/TRAFFIC_ANNOTATION_OWNERS \
-#   | tail -n+8 | shuf | head -n 1
+#   | tail -n+7 | shuf | head -n 1
 #
-bsep@chromium.org
 dullweber@chromium.org
 harrisonsean@chromium.org
 mkwst@chromium.org

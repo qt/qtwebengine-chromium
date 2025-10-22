@@ -9,10 +9,12 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
 #include "src/xnnpack/reduce.h"
-
 #include "src/xnnpack/simd/f16-neonfp16arith.h"
 
 
@@ -23,7 +25,7 @@ void xnn_f16_rdmax_ukernel_2p2x__neonfp16arith_c32(
     size_t input_stride,
     const xnn_float16* zero,
     xnn_float16* output,
-    const void* params) XNN_OOB_READS
+    const void* params)
 {
   assert(rows != 0);
   assert(channels != 0);

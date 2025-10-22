@@ -72,11 +72,6 @@
 #include "gpu/vulkan/vulkan_fence_helper.h"
 #endif
 
-#if BUILDFLAG(IS_MAC)
-#include "gpu/ipc/service/built_in_shader_cache_loader.h"
-#include "gpu/ipc/service/built_in_shader_cache_writer.h"
-#endif
-
 namespace gpu {
 
 namespace {
@@ -122,13 +117,13 @@ void TrimD3DResources(const scoped_refptr<SharedContextState>& context_state) {
 }
 #endif
 
-void APIENTRY CrashReportOnGLErrorDebugCallback(GLenum source,
-                                                GLenum type,
-                                                GLuint id,
-                                                GLenum severity,
-                                                GLsizei length,
-                                                const GLchar* message,
-                                                const GLvoid* user_param) {
+void GL_APIENTRY CrashReportOnGLErrorDebugCallback(GLenum source,
+                                                   GLenum type,
+                                                   GLuint id,
+                                                   GLenum severity,
+                                                   GLsizei length,
+                                                   const GLchar* message,
+                                                   const GLvoid* user_param) {
   if (type == GL_DEBUG_TYPE_ERROR && source == GL_DEBUG_SOURCE_API &&
       user_param) {
     // Note: log_message cannot contain any user data. The error strings
@@ -180,10 +175,7 @@ void SetCrashKeyTimeDelta(base::debug::CrashKeyString* key,
 
 }  // namespace
 
-GpuChannelManager::GpuPeakMemoryMonitor::GpuPeakMemoryMonitor(
-    GpuChannelManager* channel_manager,
-    scoped_refptr<base::SingleThreadTaskRunner> task_runner)
-    : weak_factory_(this) {}
+GpuChannelManager::GpuPeakMemoryMonitor::GpuPeakMemoryMonitor() = default;
 
 GpuChannelManager::GpuPeakMemoryMonitor::~GpuPeakMemoryMonitor() = default;
 
@@ -191,6 +183,8 @@ base::flat_map<GpuPeakMemoryAllocationSource, uint64_t>
 GpuChannelManager::GpuPeakMemoryMonitor::GetPeakMemoryUsage(
     uint32_t sequence_num,
     uint64_t* out_peak_memory) {
+  base::AutoLock auto_lock(peak_mem_lock_);
+
   auto sequence = sequence_trackers_.find(sequence_num);
   base::flat_map<GpuPeakMemoryAllocationSource, uint64_t> allocation_per_source;
   *out_peak_memory = 0u;
@@ -201,8 +195,10 @@ GpuChannelManager::GpuPeakMemoryMonitor::GetPeakMemoryUsage(
   return allocation_per_source;
 }
 
+// Runs on GpuMain thread, called from GpuServiceImpl
 void GpuChannelManager::GpuPeakMemoryMonitor::StartGpuMemoryTracking(
     uint32_t sequence_num) {
+  base::AutoLock auto_lock(peak_mem_lock_);
   sequence_trackers_.emplace(
       sequence_num,
       SequenceTracker(current_memory_, current_memory_per_source_));
@@ -211,8 +207,10 @@ void GpuChannelManager::GpuPeakMemoryMonitor::StartGpuMemoryTracking(
                            StartTrackingTracedValue());
 }
 
+// Runs on GpuMain thread, called from GpuServiceImpl
 void GpuChannelManager::GpuPeakMemoryMonitor::StopGpuMemoryTracking(
     uint32_t sequence_num) {
+  base::AutoLock auto_lock(peak_mem_lock_);
   auto sequence = sequence_trackers_.find(sequence_num);
   if (sequence != sequence_trackers_.end()) {
     TRACE_EVENT_ASYNC_END2("gpu", "PeakMemoryTracking", sequence_num, "peak",
@@ -220,15 +218,6 @@ void GpuChannelManager::GpuPeakMemoryMonitor::StopGpuMemoryTracking(
                            StopTrackingTracedValue(sequence->second));
     sequence_trackers_.erase(sequence);
   }
-}
-
-base::WeakPtr<MemoryTracker::Observer>
-GpuChannelManager::GpuPeakMemoryMonitor::GetWeakPtr() {
-  return weak_factory_.GetWeakPtr();
-}
-
-void GpuChannelManager::GpuPeakMemoryMonitor::InvalidateWeakPtrs() {
-  weak_factory_.InvalidateWeakPtrs();
 }
 
 GpuChannelManager::GpuPeakMemoryMonitor::SequenceTracker::SequenceTracker(
@@ -248,6 +237,8 @@ GpuChannelManager::GpuPeakMemoryMonitor::SequenceTracker::~SequenceTracker() =
 
 std::unique_ptr<base::trace_event::TracedValue>
 GpuChannelManager::GpuPeakMemoryMonitor::StartTrackingTracedValue() {
+  peak_mem_lock_.AssertAcquired();
+
   auto dict = std::make_unique<base::trace_event::TracedValue>();
   FormatAllocationSourcesForTracing(dict.get(), current_memory_per_source_);
   return dict;
@@ -256,6 +247,8 @@ GpuChannelManager::GpuPeakMemoryMonitor::StartTrackingTracedValue() {
 std::unique_ptr<base::trace_event::TracedValue>
 GpuChannelManager::GpuPeakMemoryMonitor::StopTrackingTracedValue(
     SequenceTracker& sequence) {
+  peak_mem_lock_.AssertAcquired();
+
   auto dict = std::make_unique<base::trace_event::TracedValue>();
   dict->BeginDictionary("source_totals");
   FormatAllocationSourcesForTracing(dict.get(),
@@ -297,6 +290,8 @@ void GpuChannelManager::GpuPeakMemoryMonitor::OnMemoryAllocatedChange(
     uint64_t old_size,
     uint64_t new_size,
     GpuPeakMemoryAllocationSource source) {
+  base::AutoLock auto_lock(peak_mem_lock_);
+
   uint64_t diff = new_size - old_size;
   current_memory_ += diff;
   current_memory_per_source_[source] += diff;
@@ -337,7 +332,7 @@ GpuChannelManager::GpuChannelManager(
     SharedImageManager* shared_image_manager,
     GpuMemoryBufferFactory* gpu_memory_buffer_factory,
     const GpuFeatureInfo& gpu_feature_info,
-    GpuProcessShmCount use_shader_cache_shm_count,
+    GpuProcessShmCount* use_shader_cache_shm_count,
     scoped_refptr<gl::GLSurface> default_offscreen_surface,
     ImageDecodeAcceleratorWorker* image_decode_accelerator_worker,
     viz::VulkanContextProvider* vulkan_context_provider,
@@ -364,7 +359,7 @@ GpuChannelManager::GpuChannelManager(
       discardable_manager_(gpu_preferences_),
       passthrough_discardable_manager_(gpu_preferences_),
       image_decode_accelerator_worker_(image_decode_accelerator_worker),
-      use_shader_cache_shm_count_(std::move(use_shader_cache_shm_count)),
+      use_shader_cache_shm_count_(use_shader_cache_shm_count),
       memory_pressure_listener_(
           FROM_HERE,
           base::BindRepeating(&GpuChannelManager::HandleMemoryPressure,
@@ -373,7 +368,7 @@ GpuChannelManager::GpuChannelManager(
       vulkan_context_provider_(vulkan_context_provider),
       metal_context_provider_(metal_context_provider),
       dawn_context_provider_(dawn_context_provider),
-      peak_memory_monitor_(this, task_runner),
+      peak_memory_monitor_(base::MakeRefCounted<GpuPeakMemoryMonitor>()),
       gr_context_options_provider_(gr_context_options_provider) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   DCHECK(task_runner->BelongsToCurrentThread());
@@ -411,10 +406,6 @@ GpuChannelManager::~GpuChannelManager() {
     default_offscreen_surface_ = nullptr;
   }
 
-  // Inavlidate here as the |shared_context_state_| attempts to call back to
-  // |this| in the middle of the deletion.
-  peak_memory_monitor_.InvalidateWeakPtrs();
-
   // Try to make the context current so that GPU resources can be destroyed
   // correctly.
   if (shared_context_state_)
@@ -442,31 +433,13 @@ gles2::ProgramCache* GpuChannelManager::program_cache() {
 
     // Use the EGL blob cache extension for the passthrough decoder.
     if (use_passthrough_cmd_decoder()) {
-      gles2::PassthroughProgramCache::ValueAddedHook* value_add_hook = nullptr;
-#if BUILDFLAG(IS_MAC)
-      if (base::FeatureList::IsEnabled(
-              features::kWriteMetalShaderCacheToDisk)) {
-        shader_cache_writer_ = std::make_unique<BuiltInShaderCacheWriter>();
-        value_add_hook = shader_cache_writer_.get();
-      }
-#endif
-      std::unique_ptr<gles2::PassthroughProgramCache> cache =
-          std::make_unique<gles2::PassthroughProgramCache>(
-              gpu_preferences_.gpu_program_cache_size, disable_disk_cache,
-              value_add_hook);
-#if BUILDFLAG(IS_MAC)
-      auto entries = BuiltInShaderCacheLoader::TakeEntries();
-      for (auto& entry : *entries) {
-        cache->Set(std::move(entry.key), std::move(entry.value),
-                   gles2::ProgramCache::CacheProgramCallback());
-      }
-#endif
-      program_cache_ = std::move(cache);
+      program_cache_ = std::make_unique<gles2::PassthroughProgramCache>(
+          gpu_preferences_.gpu_program_cache_size, disable_disk_cache);
     } else {
       program_cache_ = std::make_unique<gles2::MemoryProgramCache>(
           gpu_preferences_.gpu_program_cache_size, disable_disk_cache,
           workarounds.disable_program_caching_for_transform_feedback,
-          &use_shader_cache_shm_count_);
+          use_shader_cache_shm_count_);
     }
   }
   return program_cache_.get();
@@ -598,13 +571,6 @@ void GpuChannelManager::OnDiskCacheHandleDestoyed(
   }
 }
 
-void GpuChannelManager::DestroyGpuMemoryBuffer(gfx::GpuMemoryBufferId id,
-                                               int client_id) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-
-  gpu_memory_buffer_factory_->DestroyGpuMemoryBuffer(id, client_id);
-}
-
 void GpuChannelManager::PopulateCache(const gpu::GpuDiskCacheHandle& handle,
                                       const std::string& key,
                                       const std::string& data) {
@@ -666,22 +632,6 @@ GpuChannelManager::GetContextLostCallback() {
                      weak_factory_.GetWeakPtr(), context_lost_count_ + 1));
 }
 
-GpuChannelManager::OnMemoryAllocatedChangeCallback
-GpuChannelManager::GetOnMemoryAllocatedChangeCallback() {
-  return base::BindPostTask(
-      task_runner_,
-      base::BindOnce(
-          [](base::WeakPtr<gpu::GpuChannelManager> gpu_channel_manager,
-             gpu::CommandBufferId id, uint64_t old_size, uint64_t new_size,
-             gpu::GpuPeakMemoryAllocationSource source) {
-            if (gpu_channel_manager) {
-              gpu_channel_manager->peak_memory_monitor()
-                  ->OnMemoryAllocatedChange(id, old_size, new_size, source);
-            }
-          },
-          weak_factory_.GetWeakPtr()));
-}
-
 void GpuChannelManager::DestroyAllChannels() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
@@ -709,8 +659,12 @@ void GpuChannelManager::GetVideoMemoryUsageStats(
         size;
   }
 
-  if (shared_context_state_ && !shared_context_state_->context_lost())
+  // Add the SharedContextState memory from the CrGpuMain thread to the total.
+  // GpuServiceImpl::AddVideoMemoryUsageStatsOnCompositorGpu() adds the
+  // SharedContextState memory from CompositorGpuMain if DrDC is enabled.
+  if (shared_context_state_ && !shared_context_state_->context_lost()) {
     total_size += shared_context_state_->GetMemoryUsage();
+  }
 
   // Assign the total across all processes in the GPU process
   video_memory_usage_stats->process_map[base::GetCurrentProcId()].video_memory =
@@ -722,18 +676,15 @@ void GpuChannelManager::GetVideoMemoryUsageStats(
 }
 
 void GpuChannelManager::StartPeakMemoryMonitor(uint32_t sequence_num) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-
-  peak_memory_monitor_.StartGpuMemoryTracking(sequence_num);
+  peak_memory_monitor_->StartGpuMemoryTracking(sequence_num);
 }
 
 base::flat_map<GpuPeakMemoryAllocationSource, uint64_t>
 GpuChannelManager::GetPeakMemoryUsage(uint32_t sequence_num,
                                       uint64_t* out_peak_memory) {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   auto allocation_per_source =
-      peak_memory_monitor_.GetPeakMemoryUsage(sequence_num, out_peak_memory);
-  peak_memory_monitor_.StopGpuMemoryTracking(sequence_num);
+      peak_memory_monitor_->GetPeakMemoryUsage(sequence_num, out_peak_memory);
+  peak_memory_monitor_->StopGpuMemoryTracking(sequence_num);
   return allocation_per_source;
 }
 
@@ -822,7 +773,7 @@ void GpuChannelManager::OnBackgroundCleanup() {
 
   SkGraphics::PurgeAllCaches();
 }
-#endif
+#endif  // BUILDFLAG(IS_ANDROID)
 
 void GpuChannelManager::OnApplicationBackgrounded() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -889,11 +840,18 @@ void GpuChannelManager::HandleMemoryPressure(
     shared_context_state_->PurgeMemory(memory_pressure_level);
   }
 
-  if (gr_shader_cache_)
+  if (gr_shader_cache_) {
     gr_shader_cache_->PurgeMemory(memory_pressure_level);
+  }
+#if BUILDFLAG(USE_DAWN) || BUILDFLAG(SKIA_USE_DAWN)
+  if (dawn_caching_interface_factory()) {
+    dawn_caching_interface_factory()->PurgeMemory(memory_pressure_level);
+  }
+#endif  // BUILDFLAG(USE_DAWN) || BUILDFLAG(SKIA_USE_DAWN)
+
 #if BUILDFLAG(IS_WIN)
   TrimD3DResources(shared_context_state_);
-#endif
+#endif  // BUILDFLAG(IS_WIN)
 }
 
 scoped_refptr<SharedContextState> GpuChannelManager::GetSharedContextState(
@@ -1005,8 +963,9 @@ scoped_refptr<SharedContextState> GpuChannelManager::GetSharedContextState(
       base::BindOnce(&GpuChannelManager::OnContextLost, base::Unretained(this),
                      context_lost_count_ + 1),
       gpu_preferences_.gr_context_type, vulkan_context_provider_,
-      metal_context_provider_, dawn_context_provider_,
-      peak_memory_monitor_.GetWeakPtr(),
+      metal_context_provider_, dawn_context_provider_, peak_memory_monitor_,
+      /*direct_rendering_display_compositor_enabled=*/
+      features::IsDrDcEnabled(gpu_feature_info_),
       /*created_on_compositor_gpu_thread=*/false, gr_context_options_provider_);
 
   // Initialize GL context, so Vulkan and GL interop can work properly.
@@ -1032,7 +991,7 @@ scoped_refptr<SharedContextState> GpuChannelManager::GetSharedContextState(
 
   if (!shared_context_state->InitializeSkia(
           gpu_preferences_, gpu_driver_bug_workarounds_, gr_shader_cache(),
-          &use_shader_cache_shm_count_, watchdog_)) {
+          use_shader_cache_shm_count_, watchdog_)) {
     LOG(ERROR) << "ContextResult::kFatalFailure: Failed to initialize Skia for "
                   "SharedContextState";
     *result = ContextResult::kFatalFailure;

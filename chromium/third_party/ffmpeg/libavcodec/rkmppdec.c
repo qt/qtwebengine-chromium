@@ -29,6 +29,7 @@
 #include "avcodec.h"
 #include "codec_internal.h"
 #include "decode.h"
+#include "decode_bsf.h"
 #include "hwconfig.h"
 #include "libavutil/refstruct.h"
 #include "libavutil/buffer.h"
@@ -123,7 +124,7 @@ static int rkmpp_write_data(AVCodecContext *avctx, uint8_t *buffer, int size, in
     return ret;
 }
 
-static int rkmpp_close_decoder(AVCodecContext *avctx)
+static av_cold int rkmpp_close_decoder(AVCodecContext *avctx)
 {
     RKMPPDecodeContext *rk_context = avctx->priv_data;
     av_refstruct_unref(&rk_context->decoder);
@@ -149,7 +150,7 @@ static void rkmpp_release_decoder(AVRefStructOpaque unused, void *obj)
     av_buffer_unref(&decoder->device_ref);
 }
 
-static int rkmpp_init_decoder(AVCodecContext *avctx)
+static av_cold int rkmpp_init_decoder(AVCodecContext *avctx)
 {
     RKMPPDecodeContext *rk_context = avctx->priv_data;
     RKMPPDecoder *decoder = NULL;
@@ -279,9 +280,11 @@ static int rkmpp_send_packet(AVCodecContext *avctx, const AVPacket *avpkt)
     // on first packet, send extradata
     if (decoder->first_packet) {
         if (avctx->extradata_size) {
-            ret = rkmpp_write_data(avctx, avctx->extradata,
-                                            avctx->extradata_size,
-                                            avpkt->pts);
+            const uint8_t *extradata;
+            int extradata_size;
+            ff_decode_get_extradata(avctx, &extradata, &extradata_size);
+            ret = rkmpp_write_data(avctx, (uint8_t*)extradata, extradata_size,
+                                   avpkt->pts);
             if (ret) {
                 av_log(avctx, AV_LOG_ERROR, "Failed to write extradata to decoder (code = %d)\n", ret);
                 return ret;
@@ -517,7 +520,7 @@ static int rkmpp_receive_frame(AVCodecContext *avctx, AVFrame *frame)
     return rkmpp_retrieve_frame(avctx, frame);
 }
 
-static void rkmpp_flush(AVCodecContext *avctx)
+static av_cold void rkmpp_flush(AVCodecContext *avctx)
 {
     RKMPPDecodeContext *rk_context = avctx->priv_data;
     RKMPPDecoder *decoder = rk_context->decoder;

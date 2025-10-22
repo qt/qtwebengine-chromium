@@ -23,7 +23,6 @@
 
 #include "absl/algorithm/container.h"
 #include "absl/base/nullability.h"
-#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "api/array_view.h"
 #include "api/call/bitrate_allocation.h"
@@ -89,9 +88,9 @@ RtpStreamSender::~RtpStreamSender() = default;
 }  // namespace webrtc_internal_rtp_video_sender
 
 namespace {
-static const int kMinSendSidePacketHistorySize = 600;
+const int kMinSendSidePacketHistorySize = 600;
 // We don't do MTU discovery, so assume that we have the standard ethernet MTU.
-static const size_t kPathMTU = 1500;
+const size_t kPathMTU = 1500;
 
 using webrtc_internal_rtp_video_sender::RtpStreamSender;
 
@@ -103,7 +102,7 @@ bool PayloadTypeSupportsSkippingFecPackets(absl::string_view payload_name,
     return true;
   }
   if (codecType == kVideoCodecGeneric &&
-      absl::StartsWith(trials.Lookup("WebRTC-GenericPictureId"), "Enabled")) {
+      trials.IsEnabled("WebRTC-GenericPictureId")) {
     return true;
   }
   return false;
@@ -123,8 +122,7 @@ bool ShouldDisableRedAndUlpfec(bool flexfec_enabled,
 
   bool should_disable_red_and_ulpfec = false;
 
-  if (absl::StartsWith(trials.Lookup("WebRTC-DisableUlpFecExperiment"),
-                       "Enabled")) {
+  if (trials.IsEnabled("WebRTC-DisableUlpFecExperiment")) {
     RTC_LOG(LS_INFO) << "Experiment to disable sending ULPFEC is enabled.";
     should_disable_red_and_ulpfec = true;
   }
@@ -234,7 +232,7 @@ std::vector<RtpStreamSender> CreateRtpStreamSenders(
     RateLimiter* retransmission_rate_limiter,
     FrameEncryptorInterface* frame_encryptor,
     const CryptoOptions& crypto_options,
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer) {
+    scoped_refptr<FrameTransformerInterface> frame_transformer) {
   RTC_DCHECK_GT(rtp_config.ssrcs.size(), 0);
 
   RtpRtcpInterface::Configuration configuration;
@@ -392,7 +390,7 @@ bool IsFirstFrameOfACodedVideoSequence(
 
 RtpVideoSender::RtpVideoSender(
     const Environment& env,
-    absl::Nonnull<TaskQueueBase*> transport_queue,
+    TaskQueueBase* absl_nonnull transport_queue,
     const std::map<uint32_t, RtpState>& suspended_ssrcs,
     const std::map<uint32_t, RtpPayloadState>& states,
     const RtpConfig& rtp_config,
@@ -404,11 +402,10 @@ RtpVideoSender::RtpVideoSender(
     std::unique_ptr<FecController> fec_controller,
     FrameEncryptorInterface* frame_encryptor,
     const CryptoOptions& crypto_options,
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer)
+    scoped_refptr<FrameTransformerInterface> frame_transformer)
     : env_(env),
-      use_frame_rate_for_overhead_(absl::StartsWith(
-          env.field_trials().Lookup("WebRTC-Video-UseFrameRateForOverhead"),
-          "Enabled")),
+      use_frame_rate_for_overhead_(
+          env.field_trials().IsEnabled("WebRTC-Video-UseFrameRateForOverhead")),
       has_packet_feedback_(TransportSeqNumExtensionConfigured(rtp_config)),
       transport_queue_(*transport_queue),
       active_(false),
@@ -625,7 +622,7 @@ EncodedImageCallback::Result RtpVideoSender::OnEncodedImage(
           encoded_image,
           params_[simulcast_index].GetRtpVideoHeader(
               encoded_image, codec_specific_info, frame_id),
-          expected_retransmission_time);
+          expected_retransmission_time, csrcs_);
   if (frame_count_observer_) {
     FrameCounts& counts = frame_counts_[simulcast_index];
     if (encoded_image._frameType == VideoFrameType::kVideoFrameKey) {
@@ -723,10 +720,10 @@ DataRate RtpVideoSender::GetPostEncodeOverhead() const {
   return post_encode_overhead;
 }
 
-void RtpVideoSender::DeliverRtcp(const uint8_t* packet, size_t length) {
+void RtpVideoSender::DeliverRtcp(ArrayView<const uint8_t> packet) {
   // Runs on a network thread.
   for (const RtpStreamSender& stream : rtp_streams_)
-    stream.rtp_rtcp->IncomingRtcpPacket(rtc::MakeArrayView(packet, length));
+    stream.rtp_rtcp->IncomingRtcpPacket(packet);
 }
 
 void RtpVideoSender::ConfigureSsrcs(
@@ -924,7 +921,7 @@ uint32_t RtpVideoSender::GetProtectionBitrateBps() const {
 
 std::vector<RtpSequenceNumberMap::Info> RtpVideoSender::GetSentRtpPacketInfos(
     uint32_t ssrc,
-    rtc::ArrayView<const uint16_t> sequence_numbers) const {
+    ArrayView<const uint16_t> sequence_numbers) const {
   for (const auto& rtp_stream : rtp_streams_) {
     if (ssrc == rtp_stream.rtp_rtcp->SSRC()) {
       return rtp_stream.rtp_rtcp->GetSentRtpPacketInfos(sequence_numbers);
@@ -1019,7 +1016,7 @@ void RtpVideoSender::OnPacketFeedbackVector(
       // clean up anyway.
       continue;
     }
-    rtc::ArrayView<const uint16_t> rtp_sequence_numbers(kv.second);
+    ArrayView<const uint16_t> rtp_sequence_numbers(kv.second);
     it->second->OnPacketsAcknowledged(rtp_sequence_numbers);
   }
 }
@@ -1029,6 +1026,12 @@ void RtpVideoSender::SetEncodingData(size_t width,
                                      size_t num_temporal_layers) {
   fec_controller_->SetEncodingData(width, height, num_temporal_layers,
                                    rtp_config_.max_packet_size);
+}
+
+void RtpVideoSender::SetCsrcs(ArrayView<const uint32_t> csrcs) {
+  MutexLock lock(&mutex_);
+  csrcs_.assign(csrcs.begin(),
+                csrcs.begin() + std::min<size_t>(csrcs.size(), kRtpCsrcSize));
 }
 
 DataRate RtpVideoSender::CalculateOverheadRate(DataRate data_rate,

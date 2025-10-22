@@ -18,6 +18,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <utility>
 #include <vector>
 
@@ -26,7 +27,7 @@
 #include "./centipede/mutation_input.h"
 #include "./common/defs.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 //============= CmpDictionary ===============
 bool CmpDictionary::SetFromMetadata(const ExecutionMetadata &metadata) {
@@ -347,4 +348,4 @@ std::vector<ByteArray> ByteArrayMutator::MutateMany(
   return mutants;
 }
 
-}  // namespace centipede
+}  // namespace fuzztest::internal

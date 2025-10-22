@@ -12,7 +12,6 @@
 #include "content/common/content_export.h"
 #include "content/services/auction_worklet/auction_v8_helper.h"
 #include "content/services/auction_worklet/public/mojom/auction_network_events_handler.mojom.h"
-#include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom-forward.h"
 #include "content/services/auction_worklet/public/mojom/auction_worklet_service.mojom.h"
 #include "content/services/auction_worklet/public/mojom/trusted_signals_cache.mojom-forward.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -77,8 +76,8 @@ class CONTENT_EXPORT AuctionWorkletServiceImpl
           pending_url_loader_factory,
       mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
           auction_network_events_handler,
-      const GURL& script_source_url,
-      const std::optional<GURL>& wasm_helper_url,
+      mojom::InProgressAuctionDownloadPtr script_source_load,
+      mojom::InProgressAuctionDownloadPtr wasm_helper_load,
       const std::optional<GURL>& trusted_bidding_signals_url,
       const std::string& trusted_bidding_signals_slot_size_param,
       const url::Origin& top_window_origin,
@@ -94,7 +93,7 @@ class CONTENT_EXPORT AuctionWorkletServiceImpl
           pending_url_loader_factory,
       mojo::PendingRemote<auction_worklet::mojom::AuctionNetworkEventsHandler>
           auction_network_events_handler,
-      const GURL& decision_logic_url,
+      mojom::InProgressAuctionDownloadPtr decision_logic_load,
       const std::optional<GURL>& trusted_scoring_signals_url,
       const url::Origin& top_window_origin,
       mojom::AuctionWorkletPermissionsPolicyStatePtr permissions_policy_state,

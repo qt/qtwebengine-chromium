@@ -34,6 +34,7 @@ buildflag_header("buildflags") {
     "USE_STATIC_ANGLE=$use_static_angle",
     "USE_OPENGL_APITRACE=$enable_opengl_apitrace",
     "ENABLE_VALIDATING_COMMAND_DECODER=$enable_validating_command_decoder",
+    "ENABLE_VULKAN=$enable_vulkan",
   ]
 }
 
@@ -47,6 +48,10 @@ component("gl_enums") {
 
   defines = [ "GL_IMPLEMENTATION" ]
 
+  public_deps = [ "//third_party/angle:includes" ]
+}
+
+source_set("gl_headers") {
   public_deps = [ "//third_party/angle:includes" ]
 }
 
@@ -145,8 +150,6 @@ component("gl") {
     "shader_tracking.h",
     "shared_gl_fence_egl.cc",
     "shared_gl_fence_egl.h",
-    "startup_trace.cc",
-    "startup_trace.h",
     "sync_control_vsync_provider.cc",
     "sync_control_vsync_provider.h",
     "trace_util.cc",
@@ -167,14 +170,15 @@ component("gl") {
   deps = [
     ":buildflags",
     "//build:android_buildflags",
+    "//build:chromeos_buildflags",
     "//mojo/public/cpp/bindings",
     "//ui/base:ozone_buildflags",
     "//ui/gfx/mojom",
   ]
   public_deps = [
     ":gl_enums",
+    ":gl_headers",
     "//base",
-    "//third_party/mesa_headers",
     "//ui/events/platform",
     "//ui/gfx",
     "//ui/gfx/geometry",
@@ -197,10 +201,12 @@ component("gl") {
 
   if (use_ozone) {
     if (!is_fuchsia) {
-      data_deps += [
-        "//third_party/angle:libEGL",
-        "//third_party/angle:libGLESv2",
-      ]
+      if (!use_static_angle) {
+        data_deps += [
+          "//third_party/angle:libEGL",
+          "//third_party/angle:libGLESv2",
+        ]
+      }
       if (angle_shared_libvulkan && !is_chromeos) {
         data_deps += [ "//third_party/vulkan-loader/src:libvulkan" ]
       }
@@ -218,14 +224,16 @@ component("gl") {
     deps += [
       "//ui/base:features",
       "//ui/base/x",
-      "//ui/events/platform/x11:x11",
+      "//ui/events/platform/x11",
       "//ui/gfx/linux:gpu_memory_buffer_support_x11",
     ]
 
-    data_deps += [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
+    if (!use_static_angle) {
+      data_deps += [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
     if (angle_shared_libvulkan && !is_chromeos) {
       data_deps += [ "//third_party/vulkan-loader/src:libvulkan" ]
     }
@@ -258,6 +266,7 @@ component("gl") {
       "gl_fence_win.h",
       "hdr_metadata_helper_win.cc",
       "hdr_metadata_helper_win.h",
+      "os_compositor_tree_base.h",
       "swap_chain_presenter.cc",
       "swap_chain_presenter.h",
       "vsync_provider_win.cc",
@@ -283,16 +292,20 @@ component("gl") {
     ]
     deps += [
       "//ui/base",
-      "//ui/display:display",
+      "//ui/display",
       "//ui/gfx/mojom:dxgi_info",
     ]
 
     data_deps += [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
       "//third_party/swiftshader/src/Vulkan:icd_file",
       "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan",
     ]
+    if (!use_static_angle) {
+      data_deps += [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
     if (angle_shared_libvulkan && !is_chromeos) {
       data_deps += [ "//third_party/vulkan-loader/src:libvulkan" ]
     }
@@ -325,11 +338,12 @@ component("gl") {
       "Quartz.framework",
     ]
 
-    data_deps += [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-      "//third_party/mesa_headers",
-    ]
+    if (!use_static_angle) {
+      data_deps += [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
     if (enable_swiftshader) {
       data_deps += [
         "//third_party/swiftshader/src/Vulkan:icd_file",
@@ -396,16 +410,18 @@ if (is_mac) {
   # "shared_library" target types it will try to link things into
   # Chromium Framework when we want to keep the ANGLE and SwiftShader
   # libraries separate instead.
-  copy("angle_library_copy") {
-    sources = [
-      "$root_out_dir/libEGL.dylib",
-      "$root_out_dir/libGLESv2.dylib",
-    ]
-    outputs = [ "$root_out_dir/egl_intermediates/{{source_file_part}}" ]
-    deps = [
-      "//third_party/angle:libEGL",
-      "//third_party/angle:libGLESv2",
-    ]
+  if (!use_static_angle) {
+    copy("angle_library_copy") {
+      sources = [
+        "$root_out_dir/libEGL.dylib",
+        "$root_out_dir/libGLESv2.dylib",
+      ]
+      outputs = [ "$root_out_dir/egl_intermediates/{{source_file_part}}" ]
+      deps = [
+        "//third_party/angle:libEGL",
+        "//third_party/angle:libGLESv2",
+      ]
+    }
   }
 
   if (enable_swiftshader) {
@@ -531,11 +547,13 @@ test("gl_unittests") {
       "delegated_ink_point_renderer_gpu_unittest.cc",
       "gl_fence_win_unittest.cc",
       "hdr_metadata_helper_win_unittest.cc",
+      "os_compositor_tree_base_unittest.cc",
     ]
   }
 
   deps = [
     ":gl",
+    ":gl_headers",
     ":gl_unittest_utils",
     ":run_all_unittests",
     ":test_support",
@@ -543,7 +561,7 @@ test("gl_unittests") {
     "//testing/gmock",
     "//testing/gtest",
     "//third_party/angle:includes",
-    "//ui/base:base",
+    "//ui/base",
     "//ui/gfx",
     "//ui/gfx:test_support",
     "//ui/gfx/geometry",
@@ -552,10 +570,7 @@ test("gl_unittests") {
     "//ui/platform_window:platform_impls",
   ]
 
-  data_deps = [
-    "//testing/buildbot/filters:gl_unittests_filters",
-    "//third_party/mesa_headers",
-  ]
+  data_deps = [ "//testing/buildbot/filters:gl_unittests_filters" ]
 
   if (is_win) {
     deps += [
@@ -568,6 +583,10 @@ test("gl_unittests") {
   if (use_ozone) {
     deps += [ "//ui/ozone" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 # We can't run this test on real Chrome OS hardware for Ozone, so new target.

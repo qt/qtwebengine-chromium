@@ -22,6 +22,7 @@
 #include "error_message/error_strings.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/descriptor_sets.h"
+#include "state_tracker/pipeline_state.h"
 
 #include <cassert>
 #include <cinttypes>
@@ -29,7 +30,7 @@
 
 namespace syncval {
 
-ErrorMessages::ErrorMessages(vvl::Device& validator) : validator_(validator) {}
+ErrorMessages::ErrorMessages(SyncValidator& validator) : validator_(validator) {}
 
 std::string ErrorMessages::Error(const HazardResult& hazard, const CommandExecutionContext& context, vvl::Func command,
                                  const std::string& resource_description, const char* message_type,
@@ -41,7 +42,7 @@ std::string ErrorMessages::Error(const HazardResult& hazard, const CommandExecut
             message += '\n';
         }
         const ReportProperties properties = GetErrorMessageProperties(hazard, context, command, message_type, additional_info);
-        message += properties.FormatExtraPropertiesSection(validator_.syncval_settings.message_extra_properties_pretty_print);
+        message += properties.FormatExtraPropertiesSection();
     }
     return message;
 }
@@ -73,6 +74,28 @@ std::string ErrorMessages::BufferCopyError(const HazardResult& hazard, const Com
     additional_info.message_end_text = ss.str();
 
     return Error(hazard, cb_context, command, resource_description, "BufferCopyError", additional_info);
+}
+
+std::string ErrorMessages::AccelerationStructureError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
+                                                      const vvl::Func command, const std::string& resource_description,
+                                                      const ResourceAccessRange range, VkAccelerationStructureKHR as,
+                                                      const Location& as_location) const {
+    AdditionalMessageInfo additional_info;
+
+    std::stringstream ss;
+    ss << "The buffer backs ";
+    ss << as_location.Fields();
+    ss << " (" << validator_.FormatHandle(as) << "). ";
+    additional_info.pre_synchronization_text = ss.str();
+
+    std::stringstream ss2;
+    ss2 << "\nBuffer access region: {\n";
+    ss2 << "  offset = " << range.begin << "\n";
+    ss2 << "  size = " << range.end - range.begin << "\n";
+    ss2 << "}\n";
+    additional_info.message_end_text += ss2.str();
+
+    return Error(hazard, cb_context, command, resource_description, "AccelerationStructureError", additional_info);
 }
 
 std::string ErrorMessages::ImageCopyResolveBlitError(const HazardResult& hazard, const CommandBufferAccessContext& cb_context,
@@ -402,7 +425,7 @@ std::string ErrorMessages::ImageBarrierError(const HazardResult& hazard, const C
 
 std::string ErrorMessages::FirstUseError(const HazardResult& hazard, const CommandExecutionContext& exec_context,
                                          const CommandBufferAccessContext& recorded_context, uint32_t command_buffer_index) const {
-    const ResourceUsageInfo exec_usage_info = exec_context.GetResourceUsageInfo(hazard.TagEx());
+    const ResourceUsageInfo prior_usage_info = exec_context.GetResourceUsageInfo(hazard.TagEx());
     const ResourceUsageInfo recorded_usage_info = recorded_context.GetResourceUsageInfo(hazard.RecordedAccess()->TagEx());
 
     AdditionalMessageInfo additional_info;
@@ -413,28 +436,28 @@ std::string ErrorMessages::FirstUseError(const HazardResult& hazard, const Comma
     if (!recorded_usage_info.debug_region_name.empty()) {
         ss << "[" << recorded_usage_info.debug_region_name << "]";
     }
-    if (exec_usage_info.queue) {
+    if (exec_context.Handle().type == kVulkanObjectTypeQueue) {
         ss << " (from " << validator_.FormatHandle(recorded_context.Handle());
         ss << " submitted on the current ";
-        ss << validator_.FormatHandle(exec_usage_info.queue->Handle()) << ")";
-    } else {
+        ss << validator_.FormatHandle(exec_context.Handle()) << ")";
+    } else {  // primary command buffer executes secondary one
+        assert(exec_context.Handle().type == kVulkanObjectTypeCommandBuffer);
         ss << " (from the secondary " << validator_.FormatHandle(recorded_context.Handle()) << ")";
     }
     additional_info.access_initiator = ss.str();
 
     std::stringstream ss2;
-    if (exec_context.Handle().type == kVulkanObjectTypeQueue) {
-        if (exec_usage_info.cb) {
-            ss2 << "(from " << validator_.FormatHandle(exec_usage_info.cb->Handle());
-            ss2 << " submitted on " << validator_.FormatHandle(exec_context.Handle()) << ")";
+    if (prior_usage_info.queue) {
+        if (prior_usage_info.cb) {
+            ss2 << "(from " << validator_.FormatHandle(prior_usage_info.cb->Handle());
+            ss2 << " submitted on " << validator_.FormatHandle(prior_usage_info.queue->Handle()) << ")";
         } else {  // QueuePresent case (not recorded into command buffer)
-            ss2 << "(submitted on " << validator_.FormatHandle(exec_context.Handle()) << ")";
+            ss2 << "(submitted on " << validator_.FormatHandle(prior_usage_info.queue->Handle()) << ")";
         }
-    } else {  // primary command buffer executes secondary one
-        assert(exec_context.Handle().type == kVulkanObjectTypeCommandBuffer);
+    } else if (prior_usage_info.cb) {
         // TODO: distinuish between "native" primary command buffer commands and
         // command recorded from the secondary command buffers.
-        ss2 << "(from the primary " << validator_.FormatHandle(exec_context.Handle()) << ")";
+        ss2 << "(from the primary " << validator_.FormatHandle(prior_usage_info.cb->Handle()) << ")";
     }
     additional_info.brief_description_end_text = ss2.str();
 

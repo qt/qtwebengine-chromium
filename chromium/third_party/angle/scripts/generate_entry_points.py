@@ -44,6 +44,8 @@ ALIASING_EXCEPTIONS = [
     'drawArraysInstancedBaseInstanceANGLE',
     'drawElementsInstancedBaseVertexBaseInstanceANGLE',
     'logicOpANGLE',
+    'shadingRateEXT',
+    'shadingRateQCOM',
 ]
 
 # These are the entry points which potentially are used first by an application
@@ -61,12 +63,15 @@ INIT_DICT = {
 # validation.
 PLS_DISABLE_LIST = {
     "glBeginTransformFeedback",
-    "glBlitFramebuffer",
     "glBindFramebuffer",
+    "glBlitFramebuffer",
     "glCopyTexImage2D",
+    "glDiscardFramebufferEXT",
     "glDrawBuffers",
     "glFramebufferMemorylessPixelLocalStorageANGLE",
     "glFramebufferRenderbuffer",
+    "glInvalidateFramebuffer",
+    "glInvalidateSubFramebuffer",
     "glReadPixels",
     "glStartTilingQCOM",
 }
@@ -96,8 +101,10 @@ CONTEXT_PRIVATE_LIST = [
     'glDepthRangef',
     'glDisable',
     'glDisablei',
+    'glDisableVertexAttribArray',
     'glEnable',
     'glEnablei',
+    'glEnableVertexAttribArray',
     'glFrontFace',
     'glHint',
     'glIsEnabled',
@@ -116,7 +123,9 @@ CONTEXT_PRIVATE_LIST = [
     'glSampleCoverage',
     'glSampleMaski',
     'glScissor',
-    'glShadingRate',
+    'glShadingRateCombinerOps',
+    'glShadingRateEXT',
+    'glShadingRateQCOM',
     'glStencilFunc',
     'glStencilFuncSeparate',
     'glStencilMask',
@@ -300,7 +309,7 @@ void GL_APIENTRY GL_{name}({params})
     if ({valid_context_check})
     {{{packed_gl_enum_conversions}
         {context_lock}{implicit_pls_disable}
-        bool isCallValid = (context->skipValidation() || {validation_expression});
+        {validation_expression}
         if (ANGLE_LIKELY(isCallValid))
         {{
             context->{name_lower_no_suffix}({internal_params});
@@ -324,7 +333,7 @@ void GL_APIENTRY GL_{name}({params})
 
     if ({valid_context_check})
     {{{packed_gl_enum_conversions}
-        bool isCallValid = (context->skipValidation() || {validation_expression});
+        {validation_expression}
         if (ANGLE_LIKELY(isCallValid))
         {{
             ContextPrivate{name_no_suffix}({context_private_internal_params});
@@ -349,8 +358,8 @@ TEMPLATE_GLES_ENTRY_POINT_WITH_RETURN = """\
     {return_type} returnValue;
     if ({valid_context_check})
     {{{packed_gl_enum_conversions}
-        {context_lock}
-        bool isCallValid = (context->skipValidation() || {validation_expression});
+        {context_lock}{implicit_pls_disable}
+        {validation_expression}
         if (ANGLE_LIKELY(isCallValid))
         {{
             returnValue = context->{name_lower_no_suffix}({internal_params});
@@ -381,7 +390,7 @@ TEMPLATE_GLES_CONTEXT_PRIVATE_ENTRY_POINT_WITH_RETURN = """\
     {return_type} returnValue;
     if ({valid_context_check})
     {{{packed_gl_enum_conversions}
-        bool isCallValid = (context->skipValidation() || {validation_expression});
+        {validation_expression}
         if (ANGLE_LIKELY(isCallValid))
         {{
             returnValue = ContextPrivate{name_no_suffix}({context_private_internal_params});
@@ -1652,14 +1661,81 @@ def is_egl_entry_point_accessing_both_sync_and_non_sync_API_resources(cmd_name):
     return False
 
 
-def get_validation_expression(api, cmd_name, entry_point_name, internal_params, is_gles1):
+def get_validation_expression(api, cmd_name, entry_point_name, internal_params, sources):
+    if api != "GLES":
+        return ""
+
     name = strip_api_prefix(cmd_name)
     private_params = ["context->getPrivateState()", "context->getMutableErrorSetForValidation()"]
-    extra_params = private_params if is_context_private_state_command(api,
-                                                                      cmd_name) else ["context"]
+    is_private = is_context_private_state_command(api, cmd_name)
+    extra_params = private_params if is_private else ["context"]
     expr = "Validate{name}({params})".format(
         name=name, params=", ".join(extra_params + [entry_point_name] + internal_params))
-    return expr
+
+    def get_camel_case(name_with_underscores):
+        words = name_with_underscores.split('_')
+        words = [words[2]] + [(word[0].upper() + word[1:]) for word in words[3:]] + [words[1]]
+        return ''.join(words)
+
+    condition = ""
+    error_suffix = sources[0].replace("_", "")
+    if sorted(sources) == ["1_0", "2_0"]:
+        # Entry points existing in all context versions
+        condition = "true"
+    elif sorted(sources) == ["1_0", "3_2"]:
+        # glGetPointerv is a special case: defined in ES 1.0 and ES 3.2 only
+        condition = "context->getClientVersion() < ES_2_0 || context->getClientVersion() >= ES_3_2"
+        error_suffix = "1Or32"
+    elif sources == ["1_0"]:
+        condition = "context->getClientVersion() < ES_2_0"
+    elif len(sources) == 1 and sources[0] in ["2_0", "3_0", "3_1", "3_2"]:
+        condition = "context->getClientVersion() >= ES_{}".format(sources[0])
+    else:
+        assert (sources[0].startswith("GL_"))
+        exts = map(lambda x: "context->getExtensions().{}".format(get_camel_case(x)), sources)
+        condition = " || ".join(sorted(list(exts)))
+        error_suffix = "EXT"
+
+    record_error = "else {{RecordVersionErrorES{}(context, {});}}".format(
+        error_suffix, entry_point_name) if condition != "true" else ""
+
+    pre_validation = """#if defined(ANGLE_ENABLE_ASSERTS)
+    const uint32_t errorCount = context->getPushedErrorCount();
+#endif
+"""
+
+    # If a command holds a lock, assert that:
+    #  * passed validation generates no errors
+    #  * failed validation generates exactly one error
+    lock_assertion = "ASSERT(context->getPushedErrorCount() - errorCount == (isCallValid ? 0 : 1));"
+
+    # If a command does not hold a lock, assert that:
+    #  * failed validation updates the error counter
+    #
+    # Since the error counter is global, it may be incremented from
+    # other threads thus this assertion is weaker than the one above.
+    lockless_assertion = "ASSERT(isCallValid || context->getPushedErrorCount() != errorCount);"
+
+    has_lock = not is_context_private_state_command(api, cmd_name)
+    post_validation = """
+#if defined(ANGLE_ENABLE_ASSERTS)
+    {}
+#endif""".format(lock_assertion if has_lock else lockless_assertion)
+
+    return """bool isCallValid = context->skipValidation();
+if (!isCallValid)
+{{
+    if (ANGLE_LIKELY({support_condition}))
+    {{
+        {pre_validation}isCallValid = {validation_expression};{post_validation}
+    }}
+    {record_error}
+}}""".format(
+        support_condition=condition,
+        pre_validation=pre_validation,
+        validation_expression=expr,
+        post_validation=post_validation,
+        record_error=record_error)
 
 
 def entry_point_export(api):
@@ -1827,6 +1903,7 @@ def is_context_lost_acceptable_cmd(cmd_name):
         "glGetError",
         "glGetSync",
         "glGetQueryObjecti",
+        "glGetQueryObjectui",
         "glGetProgramiv",
         "glGetGraphicsResetStatus",
         "glGetShaderiv",
@@ -1846,15 +1923,15 @@ def get_context_getter_function(cmd_name):
 
 
 def get_valid_context_check(cmd_name):
-    return "context"
+    return "ANGLE_LIKELY(context != nullptr)"
 
 
-def get_constext_lost_error_generator(cmd_name):
+def get_constext_lost_error_generator(cmd_name, entry_point_name):
     # Don't generate context lost errors on commands that accept lost contexts
     if is_context_lost_acceptable_cmd(cmd_name):
         return ""
 
-    return "GenerateContextLostErrorOnCurrentGlobalContext();"
+    return "GenerateContextLostErrorOnCurrentGlobalContext({name});".format(name=entry_point_name)
 
 
 def strip_suffix_always(api, name):
@@ -1928,7 +2005,7 @@ def get_def_template(api, cmd_name, return_type, has_errcode_ret):
 
 
 def format_entry_point_def(api, command_node, cmd_name, proto, params, cmd_packed_enums,
-                           packed_param_types, ep_to_object, is_gles1):
+                           packed_param_types, ep_to_object, sources):
     packed_enums = get_packed_enums(api, cmd_packed_enums, cmd_name, packed_param_types, params)
     internal_params = [just_the_name_packed(param, packed_enums) for param in params]
     if internal_params and internal_params[-1] == "errcode_ret":
@@ -2012,7 +2089,7 @@ def format_entry_point_def(api, command_node, cmd_name, proto, params, cmd_packe
         "egl_capture_params":
             ", ".join(["thread"] + internal_params),
         "validation_expression":
-            get_validation_expression(api, cmd_name, entry_point_name, internal_params, is_gles1),
+            get_validation_expression(api, cmd_name, entry_point_name, internal_params, sources),
         "format_params":
             ", ".join(format_params),
         "context_getter":
@@ -2020,7 +2097,7 @@ def format_entry_point_def(api, command_node, cmd_name, proto, params, cmd_packe
         "valid_context_check":
             get_valid_context_check(cmd_name),
         "constext_lost_error_generator":
-            get_constext_lost_error_generator(cmd_name),
+            get_constext_lost_error_generator(cmd_name, entry_point_name),
         "event_comment":
             event_comment,
         "labeled_object":
@@ -2329,8 +2406,7 @@ class ANGLEEntryPoints(registry_xml.EntryPoints):
                  cmd_packed_enums,
                  export_template=TEMPLATE_GL_ENTRY_POINT_EXPORT,
                  packed_param_types=[],
-                 ep_to_object={},
-                 is_gles1=False):
+                 ep_to_object={}):
         super().__init__(api, xml, commands)
 
         self.decls = []
@@ -2349,7 +2425,7 @@ class ANGLEEntryPoints(registry_xml.EntryPoints):
             self.defs.append(
                 format_entry_point_def(self.api, command_node, cmd_name, proto_text, param_text,
                                        cmd_packed_enums, packed_param_types, ep_to_object,
-                                       is_gles1))
+                                       xml.sources_by_command[cmd_name]))
 
             self.export_defs.append(
                 format_entry_point_export(cmd_name, proto_text, param_text, export_template))
@@ -2386,14 +2462,9 @@ class GLEntryPoints(ANGLEEntryPoints):
 
     all_param_types = set()
 
-    def __init__(self, api, xml, commands, is_gles1=False):
-        super().__init__(
-            api,
-            xml,
-            commands,
-            GLEntryPoints.all_param_types,
-            GLEntryPoints.get_packed_enums(),
-            is_gles1=is_gles1)
+    def __init__(self, api, xml, commands):
+        super().__init__(api, xml, commands, GLEntryPoints.all_param_types,
+                         GLEntryPoints.get_packed_enums())
 
     _packed_enums = None
 
@@ -2497,6 +2568,8 @@ def get_decls(api,
         # directly access the context-private state.
         if is_context_private_state_command(api, cmd_name):
             continue
+
+        already_included.append(name_no_suffix)
 
         param_text = ["".join(param.itertext()) for param in command.findall('param')]
         proto_text = "".join(proto.itertext())
@@ -3021,23 +3094,19 @@ def format_replay_params(api, command_name, param_text_list, packed_enums, resou
         capture_type = get_capture_param_type_name(param_type)
         union_name = get_param_type_union_name(capture_type)
         param_access = 'captures[%d].value.%s' % (i, union_name)
-        # Workaround for https://github.com/KhronosGroup/OpenGL-Registry/issues/545
-        if command_name == 'glCreateShaderProgramvEXT' and i == 2:
-            param_access = 'const_cast<const char **>(%s)' % param_access
-        else:
-            cmd_no_suffix = strip_suffix(api, command_name)
-            if cmd_no_suffix in packed_enums and param_name in packed_enums[cmd_no_suffix]:
-                packed_type = remove_id_suffix(packed_enums[cmd_no_suffix][param_name])
-                if packed_type == 'Sync':
-                    param_access = 'gSyncMap2[captures[%d].value.GLuintVal]' % i
-                elif packed_type in resource_id_types:
-                    param_access = 'g%sMap[%s]' % (packed_type, param_access)
-                elif packed_type == 'UniformLocation':
-                    param_access = 'gUniformLocations[gCurrentProgram][%s]' % param_access
-                elif packed_type == 'egl::Image':
-                    param_access = 'gEGLImageMap2[captures[%d].value.GLuintVal]' % i
-                elif packed_type == 'egl::Sync':
-                    param_access = 'gEGLSyncMap[captures[%d].value.egl_SyncIDVal]' % i
+        cmd_no_suffix = strip_suffix(api, command_name)
+        if cmd_no_suffix in packed_enums and param_name in packed_enums[cmd_no_suffix]:
+            packed_type = remove_id_suffix(packed_enums[cmd_no_suffix][param_name])
+            if packed_type == 'Sync':
+                param_access = 'gSyncMap2[captures[%d].value.GLuintVal]' % i
+            elif packed_type in resource_id_types:
+                param_access = 'g%sMap[%s]' % (packed_type, param_access)
+            elif packed_type == 'UniformLocation':
+                param_access = 'gUniformLocations[gCurrentProgram][%s]' % param_access
+            elif packed_type == 'egl::Image':
+                param_access = 'gEGLImageMap2[captures[%d].value.GLuintVal]' % i
+            elif packed_type == 'egl::Sync':
+                param_access = 'gEGLSyncMap[captures[%d].value.egl_SyncIDVal]' % i
         param_access_strs.append(param_access)
     return ', '.join(param_access_strs)
 
@@ -3258,9 +3327,10 @@ def get_prepare_swap_buffers_call(api, cmd_name, params):
     prepareCall = "ANGLE_EGLBOOLEAN_TRY(EGL_PrepareSwapBuffersANGLE(%s));" % (", ".join(
         [just_the_name(param) for param in passed_params]))
 
-    # For eglQuerySurface, the prepare call is only needed for EGL_BUFFER_AGE
+    # For eglQuerySurface, the prepare call is needed for EGL_BUFFER_AGE
+    # and EGL_SURFACE_COMPRESSION_EXT
     if cmd_name in ["eglQuerySurface", "eglQuerySurface64KHR"]:
-        prepareCall = "if (attribute == EGL_BUFFER_AGE_EXT) {" + prepareCall + "}"
+        prepareCall = "if (attribute == EGL_BUFFER_AGE_EXT || attribute == EGL_SURFACE_COMPRESSION_EXT) {" + prepareCall + "}"
 
     return prepareCall
 
@@ -3444,6 +3514,7 @@ def main():
             '../src/libANGLE/validationESEXT_autogen.h',
             '../src/libEGL/libEGL_autogen.cpp',
             '../src/libEGL/libEGL_autogen.def',
+            '../src/libEGL/libEGL_vulkan_secondaries_autogen.def',
             '../src/libGLESv2/entry_points_cl_autogen.cpp',
             '../src/libGLESv2/entry_points_cl_autogen.h',
             '../src/libGLESv2/entry_points_egl_autogen.cpp',
@@ -3466,6 +3537,7 @@ def main():
             '../src/libGLESv2/libGLESv2_autogen.def',
             '../src/libGLESv2/libGLESv2_no_capture_autogen.def',
             '../src/libGLESv2/libGLESv2_with_capture_autogen.def',
+            '../src/libGLESv2/libGLESv2_vulkan_secondaries_autogen.def',
             '../src/libGLESv2/egl_context_lock_autogen.h',
             '../util/capture/frame_capture_replay_autogen.cpp',
         ]
@@ -3500,6 +3572,14 @@ def main():
     context_private_call_protos = []
     context_private_call_functions = set()
 
+    # Build commands cache
+    for major_version, minor_version in registry_xml.GLES_VERSIONS:
+        version = "{}_{}".format(major_version, minor_version)
+        name_prefix = "GL_VERSION_ES_CM_" if major_version == 1 else "GL_ES_VERSION_"
+        feature_name = "{}{}".format(name_prefix, version)
+        xml.AddCommands(feature_name, version)
+    xml.AddExtensionCommands(registry_xml.supported_extensions, ['gles2', 'gles1'])
+
     # First run through the main GLES entry points.  Since ES2+ is the primary use
     # case, we go through those first and then add ES1-only APIs at the end.
     for major_version, minor_version in registry_xml.GLES_VERSIONS:
@@ -3513,13 +3593,11 @@ def main():
         comment = version.replace("_", ".")
         feature_name = "{}{}".format(name_prefix, version)
 
-        xml.AddCommands(feature_name, version)
-
         version_commands = xml.commands[version]
         all_commands_no_suffix.extend(xml.commands[version])
         all_commands_with_suffix.extend(xml.commands[version])
 
-        eps = GLEntryPoints(apis.GLES, xml, version_commands, is_gles1=(major_version == 1))
+        eps = GLEntryPoints(apis.GLES, xml, version_commands)
         eps.decls.insert(0, "extern \"C\" {")
         eps.decls.append("} // extern \"C\"")
         eps.defs.insert(0, "extern \"C\" {")
@@ -3581,14 +3659,11 @@ def main():
     for angle_ext in registry_xml.angle_extensions:
         glesdecls['exts']['ANGLE Extensions'][angle_ext] = []
 
-    xml.AddExtensionCommands(registry_xml.supported_extensions, ['gles2', 'gles1'])
-
     for extension_name, ext_cmd_names in sorted(xml.ext_data.items()):
         extension_commands.extend(xml.ext_data[extension_name])
 
         # Detect and filter duplicate extensions.
-        is_gles1 = extension_name in registry_xml.gles1_extensions
-        eps = GLEntryPoints(apis.GLES, xml, ext_cmd_names, is_gles1=is_gles1)
+        eps = GLEntryPoints(apis.GLES, xml, ext_cmd_names)
 
         # Write the extension name as a comment before the first EP.
         comment = "\n// {}".format(extension_name)
@@ -3635,7 +3710,6 @@ def main():
 
     for name in extension_commands:
         all_commands_with_suffix.append(name)
-        all_commands_no_suffix.append(strip_suffix(apis.GLES, name))
 
     # OpenCL
     clxml = registry_xml.RegistryXML('cl.xml')

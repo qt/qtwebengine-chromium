@@ -40,6 +40,8 @@ class QuicConnectionAlarmsPeer {
 class QuicTestAlarmProxy : public QuicAlarmProxy {
  public:
   explicit QuicTestAlarmProxy(QuicAlarmProxy proxy) : QuicAlarmProxy(proxy) {}
+  QuicTestAlarmProxy(QuicAlarmMultiplexer* multiplexer, QuicAlarmSlot slot)
+      : QuicAlarmProxy(multiplexer, slot) {}
 
   void Fire() { QuicConnectionAlarmsPeer::Fire(*this); }
 
@@ -251,6 +253,9 @@ class QuicConnectionPeer {
   static void OnForwardProgressMade(QuicConnection* connection);
 
   static bool CanReceiveAckFrequencyFrames(QuicConnection* connection);
+
+  static uint8_t GetNumPtosForRetransmittableOnWireTimeout(
+      const QuicConnection* connection);
 };
 
 }  // namespace test

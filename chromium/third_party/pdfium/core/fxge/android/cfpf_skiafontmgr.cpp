@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <iterator>
 #include <utility>
 
@@ -17,7 +18,6 @@
 #include "core/fxcrt/fx_extension.h"
 #include "core/fxcrt/fx_folder.h"
 #include "core/fxcrt/fx_system.h"
-#include "core/fxcrt/stl_util.h"
 #include "core/fxge/android/cfpf_skiafont.h"
 #include "core/fxge/android/cfpf_skiapathfont.h"
 #include "core/fxge/freetype/fx_freetype.h"
@@ -57,11 +57,9 @@ const SkiaFontMap kSkiaSansFontMap[] = {
 
 uint32_t SkiaGetSubstFont(uint32_t hash,
                           pdfium::span<const SkiaFontMap> font_map) {
-  const SkiaFontMap* it =
-      std::lower_bound(font_map.begin(), font_map.end(), hash,
-                       [](const SkiaFontMap& item, uint32_t hash) {
-                         return item.family < hash;
-                       });
+  const SkiaFontMap* it = std::ranges::lower_bound(
+      font_map, hash, std::less<>{}, &SkiaFontMap::family);
+
   if (it != font_map.end() && it->family == hash) {
     return it->subst;
   }
@@ -130,8 +128,9 @@ uint32_t SkiaGetCharset(FX_Charset charset) {
 uint32_t SkiaNormalizeFontName(ByteStringView family) {
   uint32_t hash_code = 0;
   for (unsigned char ch : family) {
-    if (ch == ' ' || ch == '-' || ch == ',')
+    if (ch == ' ' || ch == '-' || ch == ',') {
       continue;
+    }
     hash_code = 31 * hash_code + tolower(ch);
   }
   return hash_code;
@@ -170,7 +169,7 @@ bool SkiaMaybeArabic(ByteStringView facename) {
   return name.Contains("arabic");
 }
 
-constexpr auto kFPFSkiaFontCharsets = fxcrt::ToArray<const uint32_t>({
+constexpr auto kFPFSkiaFontCharsets = std::to_array<const uint32_t>({
     SKIACHARSET_Ansi,
     SKIACHARSET_EeasternEuropean,
     SKIACHARSET_Cyrillic,
@@ -335,8 +334,9 @@ CFPF_SkiaFont* CFPF_SkiaFontMgr::CreateFont(ByteStringView family_name,
   }
 
   auto font = std::make_unique<CFPF_SkiaFont>(this, best_font, charset);
-  if (!font->IsValid())
+  if (!font->IsValid()) {
     return nullptr;
+  }
 
   CFPF_SkiaFont* ret = font.get();
   family_font_map_[hash] = std::move(font);
@@ -358,8 +358,9 @@ RetainPtr<CFX_Face> CFPF_SkiaFontMgr::GetFontFace(ByteStringView path,
   args.pathname = const_cast<FT_String*>(path.unterminated_c_str());
   RetainPtr<CFX_Face> face =
       CFX_Face::Open(ft_library_.get(), &args, face_index);
-  if (!face)
+  if (!face) {
     return nullptr;
+  }
 
   face->SetPixelSize(0, 64);
   return face;
@@ -367,20 +368,23 @@ RetainPtr<CFX_Face> CFPF_SkiaFontMgr::GetFontFace(ByteStringView path,
 
 void CFPF_SkiaFontMgr::ScanPath(const ByteString& path) {
   std::unique_ptr<FX_Folder> handle = FX_Folder::OpenFolder(path);
-  if (!handle)
+  if (!handle) {
     return;
+  }
 
   ByteString filename;
   bool is_folder = false;
   while (handle->GetNextFile(&filename, &is_folder)) {
     if (is_folder) {
-      if (filename == "." || filename == "..")
+      if (filename == "." || filename == "..") {
         continue;
+      }
     } else {
       ByteString ext = filename.Last(4);
       ext.MakeLower();
-      if (ext != ".ttf" && ext != ".ttc" && ext != ".otf")
+      if (ext != ".ttf" && ext != ".ttc" && ext != ".otf") {
         continue;
+      }
     }
     ByteString fullpath(path);
     fullpath += "/";
@@ -395,8 +399,9 @@ void CFPF_SkiaFontMgr::ScanPath(const ByteString& path) {
 
 void CFPF_SkiaFontMgr::ScanFile(const ByteString& file) {
   RetainPtr<CFX_Face> face = GetFontFace(file.AsStringView(), 0);
-  if (!face)
+  if (!face) {
     return;
+  }
 
   font_faces_.push_back(ReportFace(face, file));
 }

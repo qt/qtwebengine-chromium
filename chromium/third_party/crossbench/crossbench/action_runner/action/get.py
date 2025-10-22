@@ -17,11 +17,12 @@ from crossbench.action_runner.action.enums import ReadyState, WindowTarget
 from crossbench.parse import DurationParser, ObjectParser
 
 if TYPE_CHECKING:
+  from urllib.parse import ParseResult
+
   from crossbench.action_runner.base import ActionRunner
   from crossbench.config import ConfigParser
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
-
 
 class GetAction(BaseDurationAction):
   TYPE: ActionType = ActionType.GET
@@ -30,6 +31,12 @@ class GetAction(BaseDurationAction):
   @override
   def parse_str(cls, value: str) -> Self:
     return cls(url=ObjectParser.fuzzy_url_str(value))
+
+  @classmethod
+  @override
+  def parse_any_url(cls, url: ParseResult, **kwargs) -> Self:
+    cls.expect_no_extra_kwargs(kwargs)
+    return cls(url=url.geturl())
 
   @classmethod
   @override

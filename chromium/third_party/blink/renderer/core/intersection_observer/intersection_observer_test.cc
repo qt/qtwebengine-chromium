@@ -28,7 +28,6 @@
 #include "third_party/blink/renderer/core/testing/sim/sim_request.h"
 #include "third_party/blink/renderer/core/testing/sim/sim_test.h"
 #include "third_party/blink/renderer/platform/heap/thread_state.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 #include "third_party/blink/renderer/platform/testing/unit_test_helpers.h"
 #include "ui/gfx/geometry/test/geometry_util.h"
 
@@ -185,7 +184,7 @@ class IntersectionObserverTest : public SimTest {
     EXPECT_EQ(LocalFrameView::kNotNeeded,
               frame_view->GetIntersectionObservationStateForTesting());
 
-    root->scrollTo(0, 50);
+    root->scrollToForTesting(0, 50);
     EXPECT_EQ(gfx::Vector2dF(50, 100), observation->MinScrollDeltaToUpdate());
     EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
               frame_view->GetIntersectionObservationStateForTesting());
@@ -195,7 +194,7 @@ class IntersectionObserverTest : public SimTest {
     EXPECT_EQ(observer_delegate->EntryCount(), 1);
     EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
 
-    root->scrollTo(0, 100);
+    root->scrollToForTesting(0, 100);
     EXPECT_EQ(gfx::Vector2dF(50, 50), observation->MinScrollDeltaToUpdate());
     EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
               frame_view->GetIntersectionObservationStateForTesting());
@@ -208,7 +207,7 @@ class IntersectionObserverTest : public SimTest {
     EXPECT_EQ(LocalFrameView::kNotNeeded,
               frame_view->GetIntersectionObservationStateForTesting());
 
-    root->scrollTo(0, 101);
+    root->scrollToForTesting(0, 101);
     EXPECT_EQ(gfx::Vector2dF(), observation->MinScrollDeltaToUpdate());
     EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
               frame_view->GetIntersectionObservationStateForTesting());
@@ -1178,7 +1177,7 @@ TEST_F(IntersectionObserverTest, CachedRectsWithScrollers) {
   Element* target2 = GetDocument().getElementById(AtomicString("target2"));
   Element* target3 = GetDocument().getElementById(AtomicString("target3"));
   // Ensure target3's ScrollTranslation node.
-  target3->parentElement()->scrollTo(0, 10);
+  target3->parentElement()->scrollToForTesting(0, 10);
 
   IntersectionObserverInit* observer_init = IntersectionObserverInit::Create();
   observer_init->setRoot(MakeGarbageCollected<V8UnionDocumentOrElement>(root));
@@ -1222,9 +1221,9 @@ TEST_F(IntersectionObserverTest, CachedRectsWithScrollers) {
   EXPECT_FALSE(CanUseCachedRects(*observation3));
 
   // Scrolling the root should not invalidate.
-  root->scrollTo(0, 100);
-  target2->parentElement()->scrollTo(0, 100);
-  target3->parentElement()->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
+  target2->parentElement()->scrollToForTesting(0, 100);
+  target3->parentElement()->scrollToForTesting(0, 100);
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_TRUE(CanUseCachedRects(*observation1));
@@ -1235,9 +1234,9 @@ TEST_F(IntersectionObserverTest, CachedRectsWithScrollers) {
   test::RunPendingTasks();
 
   // Scroll again.
-  root->scrollTo(0, 200);
-  target2->parentElement()->scrollTo(0, 200);
-  target3->parentElement()->scrollTo(0, 200);
+  root->scrollToForTesting(0, 200);
+  target2->parentElement()->scrollToForTesting(0, 200);
+  target3->parentElement()->scrollToForTesting(0, 200);
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_TRUE(CanUseCachedRects(*observation1));
@@ -1342,9 +1341,9 @@ TEST_F(IntersectionObserverTest, CachedRectsWithOverflowHidden) {
 
   // Scrolling the root the first time creates a scroll translation node which
   // causes the invalidation.
-  root->scrollTo(0, 100);
-  target2->parentElement()->scrollTo(0, 100);
-  target3->parentElement()->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
+  target2->parentElement()->scrollToForTesting(0, 100);
+  target3->parentElement()->scrollToForTesting(0, 100);
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_FALSE(CanUseCachedRects(*observation1));
@@ -1356,9 +1355,9 @@ TEST_F(IntersectionObserverTest, CachedRectsWithOverflowHidden) {
   test::RunPendingTasks();
 
   // Scroll again.
-  root->scrollTo(0, 200);
-  target2->parentElement()->scrollTo(0, 200);
-  target3->parentElement()->scrollTo(0, 200);
+  root->scrollToForTesting(0, 200);
+  target2->parentElement()->scrollToForTesting(0, 200);
+  target3->parentElement()->scrollToForTesting(0, 200);
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_FALSE(CanUseCachedRects(*observation3));
@@ -1607,7 +1606,7 @@ TEST_F(IntersectionObserverTest, CachedRectsWithFixedPosition) {
   EXPECT_TRUE(CanUseCachedRects(*observation1));
   EXPECT_TRUE(CanUseCachedRects(*observation2));
 
-  GetDocument().domWindow()->scrollTo(0, 100);
+  GetDocument().domWindow()->scrollToForTesting(0, 100);
   GetDocument().View()->UpdateAllLifecyclePhasesExceptPaint(
       DocumentUpdateReason::kTest);
   EXPECT_TRUE(CanUseCachedRects(*observation1));
@@ -1833,7 +1832,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdZero) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 50);
+  root->scrollToForTesting(0, 50);
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
   Compositor().BeginFrame();
@@ -1843,7 +1842,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdZero) {
   EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
   EXPECT_EQ(gfx::Vector2dF(50, 50), observation->MinScrollDeltaToUpdate());
 
-  root->scrollTo(0, 30);
+  root->scrollToForTesting(0, 30);
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
   Compositor().BeginFrame();
@@ -1856,7 +1855,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdZero) {
   // MinScrollDeltaToUpdate would be recomputed to (50, 70).
   EXPECT_EQ(gfx::Vector2dF(50, 30), observation->MinScrollDeltaToUpdate());
 
-  root->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
   Compositor().BeginFrame();
@@ -1868,7 +1867,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdZero) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 101);
+  root->scrollToForTesting(0, 101);
   EXPECT_EQ(gfx::Vector2dF(50, 0), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -1881,7 +1880,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdZero) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(51, 101);
+  root->scrollToForTesting(51, 101);
   EXPECT_EQ(gfx::Vector2dF(50, 1), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -1942,7 +1941,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateWithPageZoom) {
             frame_view->GetIntersectionObservationStateForTesting());
 
   // Note that this CSSOM function uses CSS (unzoomed) coordinates.
-  root->scrollTo(0, 50);
+  root->scrollToForTesting(0, 50);
   // While our internal geometries are zoomed.
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -1953,7 +1952,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateWithPageZoom) {
   EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
   EXPECT_EQ(gfx::Vector2dF(100, 100), observation->MinScrollDeltaToUpdate());
 
-  root->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
   Compositor().BeginFrame();
@@ -1965,7 +1964,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateWithPageZoom) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 101);
+  root->scrollToForTesting(0, 101);
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
   Compositor().BeginFrame();
@@ -1977,7 +1976,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateWithPageZoom) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(51, 101);
+  root->scrollToForTesting(51, 101);
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
   Compositor().BeginFrame();
@@ -2031,7 +2030,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateImplicitRoot) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  window.scrollTo(0, 50);
+  window.scrollToForTesting(0, 50);
   EXPECT_EQ(gfx::Vector2dF(50, 100), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2044,7 +2043,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateImplicitRoot) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  window.scrollTo(0, 100);
+  window.scrollToForTesting(0, 100);
   EXPECT_EQ(gfx::Vector2dF(50, 50), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2057,7 +2056,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateImplicitRoot) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  window.scrollTo(0, 101);
+  window.scrollToForTesting(0, 101);
   EXPECT_EQ(gfx::Vector2dF(50, 0), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2070,7 +2069,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateImplicitRoot) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  window.scrollTo(51, 101);
+  window.scrollToForTesting(51, 101);
   EXPECT_EQ(gfx::Vector2dF(50, 1), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2183,7 +2182,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateMinimumThreshold) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 50);
+  root->scrollToForTesting(0, 50);
   EXPECT_EQ(gfx::Vector2dF(50, 100), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2193,7 +2192,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateMinimumThreshold) {
   EXPECT_EQ(observer_delegate->EntryCount(), 1);
   EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
 
-  root->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
   EXPECT_EQ(gfx::Vector2dF(50, 50), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2206,7 +2205,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateMinimumThreshold) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 101);
+  root->scrollToForTesting(0, 101);
   EXPECT_EQ(gfx::Vector2dF(50, 0), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2219,7 +2218,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateMinimumThreshold) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(51, 101);
+  root->scrollToForTesting(51, 101);
   EXPECT_EQ(gfx::Vector2dF(50, 1), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2278,7 +2277,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThreshold0_5) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 50);
+  root->scrollToForTesting(0, 50);
   EXPECT_EQ(gfx::Vector2dF(50, 100), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2289,7 +2288,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThreshold0_5) {
   EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
   EXPECT_EQ(gfx::Vector2dF(50, 50), observation->MinScrollDeltaToUpdate());
 
-  root->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
   EXPECT_EQ(gfx::Vector2dF(50, 50), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2302,7 +2301,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThreshold0_5) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 101);
+  root->scrollToForTesting(0, 101);
   EXPECT_EQ(gfx::Vector2dF(), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2315,7 +2314,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThreshold0_5) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 151);
+  root->scrollToForTesting(0, 151);
   EXPECT_EQ(gfx::Vector2dF(), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2375,7 +2374,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOne) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
   EXPECT_EQ(gfx::Vector2dF(20, 200), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2386,7 +2385,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOne) {
   EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
   EXPECT_EQ(gfx::Vector2dF(20, 100), observation->MinScrollDeltaToUpdate());
 
-  root->scrollTo(0, 200);
+  root->scrollToForTesting(0, 200);
   EXPECT_EQ(gfx::Vector2dF(20, 100), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2399,7 +2398,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOne) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(20, 200);
+  root->scrollToForTesting(20, 200);
   EXPECT_EQ(gfx::Vector2dF(20, 0), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2412,7 +2411,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOne) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(31, 201);
+  root->scrollToForTesting(31, 201);
   EXPECT_EQ(gfx::Vector2dF(10, 0), observation->MinScrollDeltaToUpdate());
   Compositor().BeginFrame();
   test::RunPendingTasks();
@@ -2471,7 +2470,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOneOfRoot) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(0, 100);
+  root->scrollToForTesting(0, 100);
   EXPECT_EQ(gfx::Vector2dF(30, 200), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2482,7 +2481,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOneOfRoot) {
   EXPECT_FALSE(observer_delegate->LastEntry()->isIntersecting());
   EXPECT_EQ(gfx::Vector2dF(30, 100), observation->MinScrollDeltaToUpdate());
 
-  root->scrollTo(30, 200);
+  root->scrollToForTesting(30, 200);
   EXPECT_EQ(gfx::Vector2dF(30, 100), observation->MinScrollDeltaToUpdate());
   EXPECT_EQ(LocalFrameView::kScrollAndVisibilityOnly,
             frame_view->GetIntersectionObservationStateForTesting());
@@ -2495,7 +2494,7 @@ TEST_F(IntersectionObserverTest, MinScrollDeltaToUpdateThresholdOneOfRoot) {
   EXPECT_EQ(LocalFrameView::kNotNeeded,
             frame_view->GetIntersectionObservationStateForTesting());
 
-  root->scrollTo(31, 201);
+  root->scrollToForTesting(31, 201);
   EXPECT_EQ(gfx::Vector2dF(0, 0), observation->MinScrollDeltaToUpdate());
   Compositor().BeginFrame();
   test::RunPendingTasks();

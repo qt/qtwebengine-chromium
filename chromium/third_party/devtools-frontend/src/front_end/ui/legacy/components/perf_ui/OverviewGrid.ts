@@ -27,6 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
@@ -34,7 +35,6 @@ import * as Platform from '../../../../core/platform/platform.js';
 import * as IconButton from '../../../components/icon_button/icon_button.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
 import * as UI from '../../legacy.js';
-import * as ThemeSupport from '../../theme_support/theme_support.js';
 
 import overviewGridStyles from './overviewGrid.css.js';
 import {type Calculator, TimelineGrid} from './TimelineGrid.js';
@@ -200,7 +200,7 @@ export class Window extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
 
     this.parentElement.addEventListener('wheel', this.onMouseWheel.bind(this), true);
     this.parentElement.addEventListener('dblclick', this.resizeWindowMaximum.bind(this), true);
-    ThemeSupport.ThemeSupport.instance().appendStyle(this.parentElement, overviewGridStyles);
+    Platform.DOMUtilities.appendStyle(this.parentElement, overviewGridStyles);
 
     this.leftResizeElement = parentElement.createChild('div', 'overview-grid-window-resizer');
     UI.UIUtils.installDragHandle(
@@ -472,7 +472,7 @@ export class Window extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   /**
    * This function will return the raw value of the give slider.
    * Since the OverviewGrid is used in Performance panel or Memory panel, the raw value can be in milliseconds or bytes.
-   * @param leftSlider if this slider is the left one
+   * @param leftSlider - if this slider is the left one
    * @returns the value in milliseconds or bytes
    */
   private getRawSliderValue(leftSlider?: boolean): number {

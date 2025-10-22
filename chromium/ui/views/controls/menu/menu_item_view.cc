@@ -37,6 +37,10 @@
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/color_utils.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
+#include "ui/gfx/geometry/rrect_f.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/geometry/vector2d.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/paint_vector_icon.h"
@@ -796,23 +800,17 @@ ProposedLayout MenuItemView::CalculateProposedLayout(
 
     // Position the icons.
     const MenuConfig& config = MenuConfig::instance();
-    const int icon_x = GetContentStart();
+
     if (radio_check_image_view_) {
+      const int x = CalculateIconX(radio_check_image_view_);
       const int y = (layout.host_size.height() - kMenuCheckSize) / 2;
       layout.child_layouts.emplace_back(
           radio_check_image_view_.get(), radio_check_image_view_->GetVisible(),
-          gfx::Rect(icon_x, y, kMenuCheckSize, kMenuCheckSize));
+          gfx::Rect(x, y, kMenuCheckSize, kMenuCheckSize));
     }
     if (icon_view_) {
       const gfx::Size preferred_size = icon_view_->GetPreferredSize({});
-      int x = (config.icons_in_label ? submenu->label_start() : icon_x) +
-              ((submenu->icon_area_width() - preferred_size.width()) / 2);
-      // If this is a checkbox or radio, then it needs space for both the
-      // radio/check image and an icon, so move the icon to where the label
-      // would start.
-      if (type_ == Type::kCheckbox || type_ == Type::kRadio) {
-        x = submenu->label_start();
-      }
+      const int x = CalculateIconX(icon_view_);
       const int y = (layout.host_size.height() - preferred_size.height()) / 2;
       layout.child_layouts.emplace_back(
           icon_view_.get(), icon_view_->GetVisible(),
@@ -857,9 +855,11 @@ void MenuItemView::SetForcedVisualSelection(bool selected) {
   SchedulePaint();
 }
 
-void MenuItemView::SetCornerRadius(int radius) {
+void MenuItemView::SetBottomCornersRadius(int lower_left_radius,
+                                          int lower_right_radius) {
   DCHECK_EQ(Type::kHighlighted, type_);
-  corner_radius_ = radius;
+  bottom_rounded_corners_ =
+      gfx::RoundedCornersF(0, 0, lower_left_radius, lower_right_radius);
   invalidate_dimensions();  // Triggers preferred size recalculation.
 }
 
@@ -875,7 +875,7 @@ bool MenuItemView::ShouldShowNewBadge() const {
 bool MenuItemView::IsTraversableByKeyboard() const {
   bool ignore_enabled =
       ui::AXPlatform::GetInstance().GetMode().has_mode(ui::AXMode::kNativeAPIs);
-  return GetVisible() && (ignore_enabled || GetEnabled());
+  return GetVisible() && (ignore_enabled || GetEnabledInViewsSubtree());
 }
 
 int MenuItemView::GetItemHorizontalBorder() const {
@@ -930,8 +930,9 @@ MenuItemView::MenuItemView(MenuItemView* parent,
 
   visible_changed_callback_ = AddVisibleChangedCallback(base::BindRepeating(
       &MenuItemView::UpdateAccessibleSelection, base::Unretained(this)));
-  enabled_changed_callback_ = AddEnabledChangedCallback(base::BindRepeating(
-      &MenuItemView::UpdateAccessibleSelection, base::Unretained(this)));
+  enabled_changed_callback_ =
+      AddEnabledInViewsSubtreeChangedCallback(base::BindRepeating(
+          &MenuItemView::UpdateAccessibleSelection, base::Unretained(this)));
 
   UpdateAccessibleSelection();
   UpdateAccessibleKeyShortcuts();
@@ -1066,6 +1067,26 @@ void MenuItemView::OnPaintImpl(gfx::Canvas* canvas, PaintMode mode) {
 
   const Colors colors = CalculateColors(paint_as_selected);
 
+  // Paint the icon for drag handles. In normal mode, the icon is painted by
+  // View::PaintChildren().
+  if (icon_view_ && icon_view_->GetVisible() && mode == PaintMode::kForDrag) {
+    const gfx::Size preferred_size = icon_view_->GetPreferredSize({});
+    // Use the shared helper function to determine the X coordinate.
+    const int x = CalculateIconX(icon_view_);
+    const int y = (height() - preferred_size.height()) / 2;
+    gfx::Rect icon_bounds(x, y, preferred_size.width(),
+                          preferred_size.height());
+    AdjustBoundsForRTLUI(&icon_bounds);
+
+    const gfx::ImageSkia image =
+        icon_view_->GetImageModel().Rasterize(GetColorProvider());
+    if (!image.isNull()) {
+      cc::PaintFlags paint_flags;
+      canvas->DrawImageInt(image, icon_bounds.x(), icon_bounds.y(),
+                           paint_flags);
+    }
+  }
+
   const gfx::FontList& font_list = GetFontList();
 
   // Calculate the margins.
@@ -1150,14 +1171,19 @@ void MenuItemView::PaintBackground(gfx::Canvas* canvas,
     flags.setAntiAlias(true);
     flags.setStyle(cc::PaintFlags::kFill_Style);
     flags.setColor(color);
-    // Draw a rounded rect that spills outside of the clipping area, so that the
-    // rounded corners only show in the bottom 2 corners. Note that
-    // |corner_radius_| should only be set when the highlighted item is at the
-    // end of the menu.
-    gfx::RectF spilling_rect(GetLocalBounds());
-    spilling_rect.set_y(spilling_rect.y() - corner_radius_);
-    spilling_rect.set_height(spilling_rect.height() + corner_radius_);
-    canvas->DrawRoundRect(spilling_rect, corner_radius_, flags);
+
+    // Note that `bottom_rounded_corners_` should only be set when the
+    // highlighted item is at the bottom of the menu.
+    SkRRect rounded_rect;
+    SkVector radii[4]{{0, 0},
+                      {0, 0},
+                      {bottom_rounded_corners_.lower_right(),
+                       bottom_rounded_corners_.lower_right()},
+                      {bottom_rounded_corners_.lower_left(),
+                       bottom_rounded_corners_.lower_left()}};
+    rounded_rect.setRectRadii(gfx::RectFToSkRect(gfx::RectF(GetLocalBounds())),
+                              radii);
+    canvas->sk_canvas()->drawRRect(rounded_rect, flags);
   } else if (paint_as_selected) {
     gfx::Rect item_bounds = GetLocalBounds();
     if (type_ == Type::kActionableSubMenu) {
@@ -1250,7 +1276,7 @@ SkColor MenuItemView::GetTextColor(bool minor, bool paint_as_selected) const {
   style::TextStyle text_style = style::STYLE_PRIMARY;
   if (type_ == Type::kHighlighted) {
     text_style = style::STYLE_HIGHLIGHTED;
-  } else if (!GetEnabled()) {
+  } else if (!GetEnabledInViewsSubtree()) {
     text_style = style::STYLE_DISABLED;
   } else if (paint_as_selected) {
     text_style = style::STYLE_SELECTED;
@@ -1554,14 +1580,15 @@ void MenuItemView::UpdateSelectionBasedState(bool paint_as_selected) {
 
   // Update any vector icons if a custom color is used or if the icon is
   // disabled.
-  if ((!GetEnabled() || foreground_color_id_.has_value()) && icon_view_) {
+  if ((!GetEnabledInViewsSubtree() || foreground_color_id_.has_value()) &&
+      icon_view_) {
     ui::ImageModel icon_model = icon_view_->GetImageModel();
     if (!icon_model.IsEmpty() && icon_model.IsVectorIcon()) {
       ui::VectorIconModel model = icon_model.GetVectorIcon();
       const gfx::VectorIcon* icon = model.vector_icon();
       const ui::ImageModel& image_model = ui::ImageModel::FromVectorIcon(
           *icon,
-          GetEnabled()
+          GetEnabledInViewsSubtree()
               ? GetColorProvider()->GetColor(foreground_color_id_.value())
               : GetColorProvider()->GetColor(ui::kColorMenuIconDisabled),
           model.icon_size());
@@ -1582,6 +1609,51 @@ bool MenuItemView::IsScheduledForDeletion() const {
   return parent_menu_item_ &&
          (base::Contains(parent_menu_item_->removed_items_, this) ||
           parent_menu_item_->IsScheduledForDeletion());
+}
+
+int MenuItemView::CalculateIconX(const ImageView* icon_view) const {
+  DCHECK(icon_view);
+
+  const SubmenuView* const submenu = GetContainingSubmenu();
+
+  // Case 1: The check or radio icon (primary icon for checkbox/radio items).
+  if (icon_view == radio_check_image_view_) {
+    // The check/radio icon is always placed at the start of the content area
+    // (the gutter), aligned left.
+    return GetContentStart();
+  }
+
+  // Case 2: The standard icon (icon_view_).
+  CHECK_EQ(icon_view, icon_view_);
+
+  // If this is a checkbox or radio item that also has a secondary icon
+  // (icon_view_), the primary icon (radio_check_image_view_) occupies the
+  // standard icon slot (Case 1), and this secondary icon is moved to where the
+  // label starts.
+  if (type_ == Type::kCheckbox || type_ == Type::kRadio) {
+    return submenu->label_start();
+  }
+
+  // For other item types (kNormal, kSubMenu, etc.), calculate the standard icon
+  // position.
+  const MenuConfig& config = MenuConfig::instance();
+
+  int icon_area_start_x;
+  if (config.icons_in_label) {
+    // Icons start where the label starts.
+    icon_area_start_x = submenu->label_start();
+  } else {
+    // Icons start at the beginning of the content area (the gutter).
+    icon_area_start_x = GetContentStart();
+  }
+
+  // Center the icon within the designated icon area width for the submenu.
+  const gfx::Size preferred_size = icon_view->GetPreferredSize({});
+  const int icon_area_width = submenu->icon_area_width();
+  const int icon_width = preferred_size.width();
+  const int centering_offset = (icon_area_width - icon_width) / 2;
+
+  return icon_area_start_x + centering_offset;
 }
 
 int MenuItemView::GetVerticalMargin() const {

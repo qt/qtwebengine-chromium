@@ -8,15 +8,22 @@
 #ifndef skgpu_graphite_task_TaskList_DEFINED
 #define skgpu_graphite_task_TaskList_DEFINED
 
+#include "include/core/SkRefCnt.h"
 #include "include/private/base/SkTArray.h"
 #include "src/gpu/graphite/task/Task.h"
+
+#include <functional>
+#include <utility>
 
 namespace skgpu::graphite {
 
 class CommandBuffer;
 class Context;
+class GraphicsPipeline;
 class ResourceProvider;
+class RuntimeEffectDictionary;
 class ScratchResourceManager;
+class TextureProxy;
 
 class TaskList {
 public:
@@ -37,6 +44,10 @@ public:
                                   ScratchResourceManager*,
                                   const RuntimeEffectDictionary*);
     Task::Status addCommands(Context*, CommandBuffer*, Task::ReplayTargetData);
+
+    bool visitPipelines(const std::function<bool(const GraphicsPipeline*)>& visitor);
+
+    bool visitProxies(const std::function<bool(const TextureProxy*)>& visitor);
 
 private:
     template <typename Fn> // (Task*)->Status

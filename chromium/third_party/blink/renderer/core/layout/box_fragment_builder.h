@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/layout/table/table_borders.h"
 #include "third_party/blink/renderer/core/layout/table/table_fragment_data.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 
@@ -425,6 +426,7 @@ class CORE_EXPORT BoxFragmentBuilder final : public FragmentBuilder {
   // Set how much to adjust |consumed_block_size_| for legacy write-back. See
   // BlockBreakToken::ConsumedBlockSizeForLegacy() for more details.
   void SetConsumedBlockSizeLegacyAdjustment(LayoutUnit adjustment) {
+    DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
     EnsureBreakTokenData()->consumed_block_size_legacy_adjustment = adjustment;
   }
 
@@ -641,19 +643,18 @@ class CORE_EXPORT BoxFragmentBuilder final : public FragmentBuilder {
     use_last_baseline_for_inline_baseline_ = true;
   }
 
-  void SetGapGeometry(GapGeometry* gap_geometry) {
+  void SetGapGeometry(const GapGeometry* gap_geometry) {
     gap_geometry_ = gap_geometry;
   }
 
-  const GapGeometry* GetGapGeometryForTest() { return gap_geometry_; }
+  const GapGeometry* GetGapGeometry() const { return gap_geometry_; }
 
   void SetTableGridRect(const LogicalRect& table_grid_rect) {
     table_grid_rect_ = table_grid_rect;
   }
 
-  void SetTableColumnGeometries(
-      const TableColumnGeometries& table_column_geometries) {
-    table_column_geometries_ = table_column_geometries;
+  void SetTableColumnGeometries(TableColumnGeometries table_column_geometries) {
+    table_column_geometries_ = std::move(table_column_geometries);
   }
 
   void SetTableCollapsedBorders(const TableBorders& table_collapsed_borders) {
@@ -834,7 +835,7 @@ class CORE_EXPORT BoxFragmentBuilder final : public FragmentBuilder {
   std::optional<LayoutUnit> last_baseline_;
   LayoutUnit math_italic_correction_;
 
-  GapGeometry* gap_geometry_ = nullptr;
+  const GapGeometry* gap_geometry_ = nullptr;
 
   // Table specific types.
   std::optional<LogicalRect> table_grid_rect_;

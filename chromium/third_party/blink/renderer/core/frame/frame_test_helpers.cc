@@ -48,7 +48,6 @@
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/frame/fenced_frame_sandbox_flags.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
-#include "third_party/blink/public/common/page/browsing_context_group_info.h"
 #include "third_party/blink/public/common/page/color_provider_color_maps.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "third_party/blink/public/mojom/frame/frame_owner_properties.mojom.h"
@@ -180,6 +179,11 @@ cc::LayerTreeSettings GetSynchronousSingleThreadLayerTreeSettings() {
   // test makes progress.
   settings.single_thread_proxy_scheduler = false;
   settings.use_layer_lists = true;
+// TODO(crbug.com/434513378) Cannot enable smooth scrolling on Fuchsia as it
+// causes test failures in BasicScroll test.
+#if !BUILDFLAG(IS_FUCHSIA)
+  settings.enable_smooth_scroll = true;
+#endif
 #if BUILDFLAG(IS_MAC)
   settings.enable_elastic_overscroll = true;
 #endif
@@ -724,10 +728,10 @@ void WebViewHelper::InitializeWebView(
     std::optional<blink::FencedFrame::DeprecatedFencedFrameMode>
         fenced_frame_mode,
     bool is_prerendering) {
-  auto browsing_context_group_info = BrowsingContextGroupInfo::CreateUnique();
+  auto browsing_context_group_token = base::UnguessableToken::Create();
   if (opener) {
     WebViewImpl* opener_impl = To<WebViewImpl>(opener);
-    browsing_context_group_info.browsing_context_group_token =
+    browsing_context_group_token =
         opener_impl->GetPage()->BrowsingContextGroupToken();
   }
   web_view_client =
@@ -739,19 +743,20 @@ void WebViewHelper::InitializeWebView(
     prerender_param->should_prepare_paint_tree = true;
   }
 
-  web_view_ = To<WebViewImpl>(
-      WebView::Create(web_view_client,
-                      /*is_hidden=*/is_prerendering, std::move(prerender_param),
-                      /*fenced_frame_mode=*/fenced_frame_mode,
-                      /*compositing_enabled=*/true,
-                      /*widgets_never_composited=*/false,
-                      /*opener=*/opener, mojo::NullAssociatedReceiver(),
-                      *agent_group_scheduler_,
-                      /*session_storage_namespace_id=*/std::string(),
-                      /*page_base_background_color=*/std::nullopt,
-                      std::move(browsing_context_group_info),
-                      /*color_provider_colors=*/nullptr,
-                      /*partitioned_popin_params=*/nullptr));
+  web_view_ = To<WebViewImpl>(WebView::Create(
+      web_view_client,
+      /*is_hidden=*/is_prerendering, std::move(prerender_param),
+      /*fenced_frame_mode=*/fenced_frame_mode,
+      /*compositing_enabled=*/true,
+      /*widgets_never_composited=*/false,
+      /*opener=*/opener, mojo::NullAssociatedReceiver(),
+      *agent_group_scheduler_,
+      /*session_storage_namespace_id=*/std::string(),
+      /*page_base_background_color=*/std::nullopt, browsing_context_group_token,
+      /*color_provider_colors=*/nullptr,
+      /*partitioned_popin_params=*/nullptr,
+      /*history_index=*/-1,
+      /*history_length=*/0));
   // This property must be set at initialization time, it is not supported to be
   // changed afterward, and does nothing.
   web_view_->GetSettings()->SetViewportEnabled(viewport_enabled_);
@@ -782,19 +787,21 @@ void WebViewHelper::InitializeWebView(
 
 WebViewImpl* WebViewHelper::CreateWebView(WebViewClient* web_view_client,
                                           bool compositing_enabled) {
-  return To<WebViewImpl>(
-      WebView::Create(web_view_client,
-                      /*is_hidden=*/false,
-                      /*prerender_param=*/nullptr,
-                      /*fenced_frame_mode=*/std::nullopt, compositing_enabled,
-                      /*widgets_never_composited=*/false,
-                      /*opener=*/nullptr, mojo::NullAssociatedReceiver(),
-                      *agent_group_scheduler_,
-                      /*session_storage_namespace_id=*/std::string(),
-                      /*page_base_background_color=*/std::nullopt,
-                      BrowsingContextGroupInfo::CreateUnique(),
-                      /*color_provider_colors=*/nullptr,
-                      /*partitioned_popin_params=*/nullptr));
+  return To<WebViewImpl>(WebView::Create(
+      web_view_client,
+      /*is_hidden=*/false,
+      /*prerender_param=*/nullptr,
+      /*fenced_frame_mode=*/std::nullopt, compositing_enabled,
+      /*widgets_never_composited=*/false,
+      /*opener=*/nullptr, mojo::NullAssociatedReceiver(),
+      *agent_group_scheduler_,
+      /*session_storage_namespace_id=*/std::string(),
+      /*page_base_background_color=*/std::nullopt,
+      /*browsing_context_group_token=*/base::UnguessableToken::Create(),
+      /*color_provider_colors=*/nullptr,
+      /*partitioned_popin_params=*/nullptr,
+      /*history_index=*/-1,
+      /*history_length=*/0));
 }
 
 int TestWebFrameClient::loads_in_progress_ = 0;
@@ -1012,9 +1019,9 @@ void TestWebFrameWidget::DispatchThroughCcInputHandler(
   FlushInputHandlerTasks();
 }
 
-void TestWebFrameWidget::RequestDecode(
-    const cc::DrawImage&,
-    base::OnceCallback<void(bool)> callback) {
+void TestWebFrameWidget::RequestDecode(const cc::DrawImage&,
+                                       base::OnceCallback<void(bool)> callback,
+                                       bool speculative) {
   // TODO(paint-dev): probably this should `std::move(callback).Run(true)`, but
   // that could cause deep recursion into
   // ResourceFetcher::MaybeStartSpeculativeImageDecode(). Currently, nothing
@@ -1056,7 +1063,7 @@ void TestWebFrameWidget::BindWidgetChannels(
 
   widget_host_->GetWidgetInputHandler(
       input_handler.BindNewPipeAndPassReceiver(),
-      GetInputHandlerHost()->BindNewRemote());
+      GetInputHandlerHost()->BindNewRemote(), /* from_viz= */ false);
 }
 
 bool TestWebFrameWidget::HaveScrollEventHandlers() const {
@@ -1155,8 +1162,10 @@ void TestWebFrameWidgetHost::BindRenderInputRouterInterfaces(
 
 void TestWebFrameWidgetHost::GetWidgetInputHandler(
     mojo::PendingReceiver<mojom::blink::WidgetInputHandler> request,
-    mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host) {
-  client_remote_->GetWidgetInputHandler(std::move(request), std::move(host));
+    mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host,
+    bool from_viz) {
+  client_remote_->GetWidgetInputHandler(std::move(request), std::move(host),
+                                        from_viz);
 }
 
 mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost>

@@ -20,7 +20,6 @@
 #include "src/core/SkAlphaRuns.h"
 #include "src/core/SkAnalyticEdge.h"
 #include "src/core/SkBlitter.h"
-#include "src/core/SkEdge.h"
 #include "src/core/SkEdgeBuilder.h"
 #include "src/core/SkMask.h"
 #include "src/core/SkScan.h"
@@ -542,7 +541,7 @@ static SkAlpha trapezoid_to_alpha(SkFixed l1, SkFixed l2) {
 static SkAlpha partial_triangle_to_alpha(SkFixed a, SkFixed b) {
     SkASSERT(a <= SK_Fixed1);
 #if 0
-    // TODO(mtklein): skia:8877
+    // TODO(mtklein): skbug.com/40040159
     SkASSERT(b <= SK_Fixed1);
 #endif
 
@@ -551,7 +550,7 @@ static SkAlpha partial_triangle_to_alpha(SkFixed a, SkFixed b) {
     SkFixed area = (a >> 11) * (a >> 11) * (b >> 11);
 
 #if 0
-    // TODO(mtklein): skia:8877
+    // TODO(mtklein): skbug.com/40040159
     return SkTo<SkAlpha>(area >> 8);
 #else
     return SkTo<SkAlpha>((area >> 8) & 0xFF);
@@ -990,18 +989,18 @@ static void validate_sort(const SkAnalyticEdge* edge) {
 // relatively large compared to fQDDx/QCDDx and fQDDy/fCDDy
 static bool is_smooth_enough(SkAnalyticEdge* thisEdge, SkAnalyticEdge* nextEdge, int stop_y) {
     if (thisEdge->fCurveCount < 0) {
-        const SkCubicEdge& cEdge   = static_cast<SkAnalyticCubicEdge*>(thisEdge)->fCEdge;
-        int                ddshift = cEdge.fCurveShift;
-        return SkAbs32(cEdge.fCDx) >> 1 >= SkAbs32(cEdge.fCDDx) >> ddshift &&
-               SkAbs32(cEdge.fCDy) >> 1 >= SkAbs32(cEdge.fCDDy) >> ddshift &&
+        const auto cEdge = static_cast<SkAnalyticCubicEdge*>(thisEdge);
+        int      ddshift = cEdge->fCurveShift;
+        return SkAbs32(cEdge->fCDx) >> 1 >= SkAbs32(cEdge->fCDDx) >> ddshift &&
+               SkAbs32(cEdge->fCDy) >> 1 >= SkAbs32(cEdge->fCDDy) >> ddshift &&
                // current Dy is (fCDy - (fCDDy >> ddshift)) >> dshift
-               (cEdge.fCDy - (cEdge.fCDDy >> ddshift)) >> cEdge.fCubicDShift >= SK_Fixed1;
+               (cEdge->fCDy - (cEdge->fCDDy >> ddshift)) >> cEdge->fCubicDShift >= SK_Fixed1;
     } else if (thisEdge->fCurveCount > 0) {
-        const SkQuadraticEdge& qEdge = static_cast<SkAnalyticQuadraticEdge*>(thisEdge)->fQEdge;
-        return SkAbs32(qEdge.fQDx) >> 1 >= SkAbs32(qEdge.fQDDx) &&
-               SkAbs32(qEdge.fQDy) >> 1 >= SkAbs32(qEdge.fQDDy) &&
+        const auto qEdge = static_cast<SkAnalyticQuadraticEdge*>(thisEdge);
+        return SkAbs32(qEdge->fQDx) >> 1 >= SkAbs32(qEdge->fQDDx) &&
+               SkAbs32(qEdge->fQDy) >> 1 >= SkAbs32(qEdge->fQDDy) &&
                // current Dy is (fQDy - fQDDy) >> shift
-               (qEdge.fQDy - qEdge.fQDDy) >> qEdge.fCurveShift >= SK_Fixed1;
+               (qEdge->fQDy - qEdge->fQDDy) >> qEdge->fCurveShift >= SK_Fixed1;
     }
     // DDx should be small and Dy should be large
     return SkAbs32(Sk32_sat_sub(nextEdge->fDX, thisEdge->fDX)) <= SK_Fixed1 &&

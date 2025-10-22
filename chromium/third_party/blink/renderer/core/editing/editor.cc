@@ -88,6 +88,7 @@
 #include "third_party/blink/renderer/core/scroll/scroll_alignment.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/weborigin/kurl.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
@@ -161,7 +162,7 @@ static bool IsCaretAtStartOfWrappedLine(const FrameSelection& selection) {
     return false;
   int prev_offset = prev.ComputeOffsetInContainerNode();
   UChar prev_char = prev_node->data()[prev_offset];
-  return prev_char == kSpaceCharacter;
+  return prev_char == uchar::kSpace;
 }
 
 bool Editor::HandleTextEvent(TextEvent* event) {
@@ -205,7 +206,8 @@ bool Editor::HandleTextEvent(TextEvent* event) {
   // TODO(kojii): rich editing has the same issue, but has more options and
   // needs coordination with JS. Enable for plaintext only for now and collect
   // feedback.
-  if (data == " " && !CanEditRichly() &&
+  if (!RuntimeEnabledFeatures::CaretWithTextAffinityUpstreamEnabled() &&
+      data == " " && !CanEditRichly() &&
       IsCaretAtStartOfWrappedLine(GetFrameSelection())) {
     InsertLineBreak();
   }
@@ -943,6 +945,7 @@ void Editor::RespondToChangedSelection() {
 }
 
 void Editor::SyncSelection(SyncCondition force_sync) {
+  TRACE_EVENT0("blink", "Editor::SyncSelection");
   frame_->Client()->DidChangeSelection(
       !GetFrameSelection().GetSelectionInDOMTree().IsRange(), force_sync);
 }

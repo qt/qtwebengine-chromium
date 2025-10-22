@@ -9,13 +9,8 @@
 #include <string>
 
 #include "base/functional/callback_forward.h"
-#include "content/public/browser/identity_request_dialog_controller.h"
 #include "content/public/browser/web_contents_observer.h"
-
-using IdentityProviderDataPtr = scoped_refptr<content::IdentityProviderData>;
-using IdentityRequestAccountPtr =
-    scoped_refptr<content::IdentityRequestAccount>;
-using TokenError = content::IdentityCredentialTokenError;
+#include "content/public/browser/webid/identity_request_dialog_controller.h"
 
 namespace base {
 class Location;
@@ -31,16 +26,20 @@ class CONTENT_EXPORT FakeIdentityRequestDialogController
     : public IdentityRequestDialogController,
       public WebContentsObserver {
  public:
-  explicit FakeIdentityRequestDialogController(
+  using IdentityProviderDataPtr = scoped_refptr<content::IdentityProviderData>;
+  using IdentityRequestAccountPtr =
+      scoped_refptr<content::IdentityRequestAccount>;
+  using TokenError = content::IdentityCredentialTokenError;
+
+  FakeIdentityRequestDialogController(
       std::optional<std::string> selected_account,
-      WebContents* web_contents = nullptr);
+      WebContents* web_contents);
   ~FakeIdentityRequestDialogController() override;
 
   bool ShowAccountsDialog(
       content::RelyingPartyData rp_data,
       const std::vector<IdentityProviderDataPtr>& idp_list,
       const std::vector<IdentityRequestAccountPtr>& accounts,
-      IdentityRequestAccount::SignInMode sign_in_mode,
       blink::mojom::RpMode rp_mode,
       const std::vector<IdentityRequestAccountPtr>& new_accounts,
       AccountSelectionCallback on_selected,
@@ -48,7 +47,7 @@ class CONTENT_EXPORT FakeIdentityRequestDialogController
       DismissCallback dismmiss_callback,
       AccountsDisplayedCallback accounts_displayed_callback) override;
 
-  bool ShowFailureDialog(const std::string& rp_for_display,
+  bool ShowFailureDialog(const RelyingPartyData& rp_data,
                          const std::string& idp_for_display,
                          blink::mojom::RpContext rp_context,
                          blink::mojom::RpMode rp_mode,
@@ -56,7 +55,7 @@ class CONTENT_EXPORT FakeIdentityRequestDialogController
                          DismissCallback dismiss_callback,
                          LoginToIdPCallback login_callback) override;
 
-  bool ShowErrorDialog(const std::string& rp_for_display,
+  bool ShowErrorDialog(const RelyingPartyData& rp_data,
                        const std::string& idp_for_display,
                        blink::mojom::RpContext rp_context,
                        blink::mojom::RpMode rp_mode,
@@ -65,11 +64,19 @@ class CONTENT_EXPORT FakeIdentityRequestDialogController
                        DismissCallback dismiss_callback,
                        MoreDetailsCallback more_details_callback) override;
 
-  bool ShowLoadingDialog(const std::string& rp_for_display,
+  bool ShowLoadingDialog(const RelyingPartyData& rp_data,
                          const std::string& idp_for_display,
                          blink::mojom::RpContext rp_context,
                          blink::mojom::RpMode rp_mode,
                          DismissCallback dismiss_callback) override;
+
+  bool ShowVerifyingDialog(
+      const content::RelyingPartyData& rp_data,
+      const IdentityProviderDataPtr& idp_data,
+      const IdentityRequestAccountPtr& account,
+      content::IdentityRequestAccount::SignInMode sign_in_mode,
+      blink::mojom::RpMode rp_mode,
+      AccountsDisplayedCallback accounts_displayed_callback) override;
 
   std::string GetTitle() const override;
 
@@ -88,6 +95,8 @@ class CONTENT_EXPORT FakeIdentityRequestDialogController
       const url::Origin& origin,
       base::OnceCallback<void(bool accepted)> callback) override;
 
+  bool DidShowUi() const override;
+
  private:
   void PostTask(const base::Location& from_here, base::OnceClosure task);
 
@@ -98,6 +107,7 @@ class CONTENT_EXPORT FakeIdentityRequestDialogController
   // We observe WebContentsDestroyed to ensure that this pointer is valid.
   raw_ptr<WebContents> popup_window_{nullptr};
   DismissCallback popup_dismiss_callback_;
+  bool did_show_ui_ = false;
 };
 
 }  // namespace content

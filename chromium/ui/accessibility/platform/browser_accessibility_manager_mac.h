@@ -60,7 +60,7 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManagerMac
       ax::mojom::AriaNotificationInterrupt interrupt_property,
       const std::string& type) override;
 
-  bool OnAccessibilityEvents(const AXUpdatesAndEvents& details) override;
+  bool OnAccessibilityEvents(AXUpdatesAndEvents& details) override;
 
   void FireSentinelEventForTesting() override;
 
@@ -78,6 +78,8 @@ class COMPONENT_EXPORT(AX_PLATFORM) BrowserAccessibilityManagerMac
   void OnNodeDataChanged(AXTree* tree,
                          const AXNodeData& old_node_data,
                          const AXNodeData& new_node_data) override;
+
+  void OnSubtreeWillBeReparented(AXTree* tree, AXNode* node) override;
 
   NSDictionary* GetUserInfoForSelectedTextChangedNotification();
 

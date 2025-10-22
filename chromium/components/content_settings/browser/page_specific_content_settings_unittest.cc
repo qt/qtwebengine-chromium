@@ -522,7 +522,7 @@ TEST_F(PageSpecificContentSettingsTest, SiteDataObserver) {
   NavigateAndCommit(GURL("http://google.com"));
   auto* rfh = web_contents()->GetPrimaryMainFrame();
   MockSiteDataObserver mock_observer(web_contents());
-  EXPECT_CALL(mock_observer, OnSiteDataAccessed).Times(6);
+  EXPECT_CALL(mock_observer, OnSiteDataAccessed).Times(5);
 
   bool blocked_by_policy = false;
   GURL origin("http://google.com");
@@ -558,9 +558,6 @@ TEST_F(PageSpecificContentSettingsTest, SiteDataObserver) {
       blocked_by_policy);
   PageSpecificContentSettings::StorageAccessed(
       StorageType::LOCAL_STORAGE, rfh->GetGlobalId(), google_storage_key,
-      blocked_by_policy);
-  PageSpecificContentSettings::StorageAccessed(
-      StorageType::DATABASE, rfh->GetGlobalId(), google_storage_key,
       blocked_by_policy);
 }
 
@@ -1548,6 +1545,32 @@ TEST_F(PageSpecificContentSettingsTest, ObjectBasedInUseIndicator) {
 }
 #endif
 
+#if BUILDFLAG(IS_WIN)
+TEST_F(PageSpecificContentSettingsTest, ProtectedMediaIdentifier) {
+  MockPageSpecificContentSettingsDelegate* mock_delegate =
+      InstallMockDelegate();
+  NavigateAndCommit(GURL("http://google.com"));
+
+  PageSpecificContentSettings* pscs = PageSpecificContentSettings::GetForFrame(
+      web_contents()->GetPrimaryMainFrame());
+  ASSERT_NE(pscs, nullptr);
+
+  // Allowed
+  EXPECT_CALL(*mock_delegate,
+              OnContentAllowed(ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER))
+      .Times(1);
+  pscs->OnProtectedMediaIdentifierPermissionSet(
+      web_contents()->GetLastCommittedURL(), /*allowed=*/true);
+
+  // Blocked
+  EXPECT_CALL(*mock_delegate,
+              OnContentBlocked(ContentSettingsType::PROTECTED_MEDIA_IDENTIFIER))
+      .Times(1);
+  pscs->OnProtectedMediaIdentifierPermissionSet(
+      web_contents()->GetLastCommittedURL(), /*allowed=*/false);
+}
+#endif  // BUILDFLAG(IS_WIN)
+
 class PageSpecificContentSettingsIframeTest
     : public PageSpecificContentSettingsTest {
  public:
@@ -1604,7 +1627,7 @@ TEST_F(PageSpecificContentSettingsIframeTest, UnrelatedSecondaryUrlBlocked) {
   EXPECT_TRUE(content_settings->allow_script);
 }
 
-// Tests that the content settings are correctly set if the primary and
+// Tests that the image content settings are correctly set if the primary and
 // secondary urls are identical.
 TEST_F(PageSpecificContentSettingsIframeTest, PrimarySecondaryIdentical) {
   GURL parent_url("https://parent.com");
@@ -1623,4 +1646,109 @@ TEST_F(PageSpecificContentSettingsIframeTest, PrimarySecondaryIdentical) {
   EXPECT_FALSE(content_settings->allow_script);
 }
 
+#if !BUILDFLAG(IS_IOS)
+// Tests that the image content settings are correctly set if a secondary url is
+// blocked.
+TEST_F(PageSpecificContentSettingsIframeTest, SecondaryUrlBlockedForImages) {
+  GURL parent_url("https://parent.com");
+  GURL child_url("https://child.com");
+
+  settings_map()->SetContentSettingDefaultScope(parent_url, child_url,
+                                                ContentSettingsType::IMAGES,
+                                                CONTENT_SETTING_BLOCK);
+
+  blink::mojom::RendererContentSettingsPtr content_settings =
+      NavigateAndGetContentSettings(parent_url, child_url);
+  EXPECT_FALSE(content_settings->allow_image);
+}
+
+// Tests that the image content settings are correctly set if an unrelated
+// secondary url is blocked.
+TEST_F(PageSpecificContentSettingsIframeTest,
+       UnrelatedSecondaryUrlBlockedForImages) {
+  GURL other_url("https://other.com");
+  GURL parent_url("https://parent.com");
+  GURL child_url("https://child.com");
+
+  settings_map()->SetContentSettingDefaultScope(
+      other_url, child_url, ContentSettingsType::IMAGES, CONTENT_SETTING_BLOCK);
+
+  blink::mojom::RendererContentSettingsPtr content_settings =
+      NavigateAndGetContentSettings(parent_url, child_url);
+  EXPECT_TRUE(content_settings->allow_image);
+}
+
+// Tests that the content settings are correctly set if the primary and
+// secondary urls are identical.
+TEST_F(PageSpecificContentSettingsIframeTest,
+       PrimarySecondaryIdenticalForImages) {
+  GURL parent_url("https://parent.com");
+  GURL child_url = parent_url;
+  GURL other_url("https://other.com");
+
+  // All content settings that are sent to the renderer are top-origin scoped.
+  // Secondary_url is ignored. This call is functionally equivalent to setting
+  // secondary_url = wildcard.
+  settings_map()->SetContentSettingDefaultScope(parent_url, other_url,
+                                                ContentSettingsType::IMAGES,
+                                                CONTENT_SETTING_BLOCK);
+
+  blink::mojom::RendererContentSettingsPtr content_settings =
+      NavigateAndGetContentSettings(parent_url, child_url);
+  EXPECT_FALSE(content_settings->allow_image);
+}
+
+// Tests that the mixed content settings are correctly set if a secondary
+// url is allowed.
+TEST_F(PageSpecificContentSettingsIframeTest,
+       SecondaryUrlBlockedForMixedScript) {
+  GURL parent_url("https://parent.com");
+  GURL child_url("https://child.com");
+
+  settings_map()->SetContentSettingDefaultScope(
+      parent_url, child_url, ContentSettingsType::MIXEDSCRIPT,
+      CONTENT_SETTING_ALLOW);
+
+  blink::mojom::RendererContentSettingsPtr content_settings =
+      NavigateAndGetContentSettings(parent_url, child_url);
+  EXPECT_TRUE(content_settings->allow_mixed_content);
+}
+
+// Tests that the mixed content settings are correctly set if an unrelated
+// secondary url is allowed.
+TEST_F(PageSpecificContentSettingsIframeTest,
+       UnrelatedSecondaryUrlBlockedForMixedScript) {
+  GURL other_url("https://other.com");
+  GURL parent_url("https://parent.com");
+  GURL child_url("https://child.com");
+
+  settings_map()->SetContentSettingDefaultScope(
+      other_url, child_url, ContentSettingsType::MIXEDSCRIPT,
+      CONTENT_SETTING_ALLOW);
+
+  blink::mojom::RendererContentSettingsPtr content_settings =
+      NavigateAndGetContentSettings(parent_url, child_url);
+  EXPECT_FALSE(content_settings->allow_mixed_content);
+}
+
+// Tests that the content settings are correctly set if the primary and
+// secondary urls are identical.
+TEST_F(PageSpecificContentSettingsIframeTest,
+       PrimarySecondaryIdenticalForMixedScript) {
+  GURL parent_url("https://parent.com");
+  GURL child_url = parent_url;
+  GURL other_url("https://other.com");
+
+  // All content settings that are sent to the renderer are top-origin scoped.
+  // Secondary_url is ignored. This call is functionally equivalent to setting
+  // secondary_url = wildcard.
+  settings_map()->SetContentSettingDefaultScope(
+      parent_url, other_url, ContentSettingsType::MIXEDSCRIPT,
+      CONTENT_SETTING_ALLOW);
+
+  blink::mojom::RendererContentSettingsPtr content_settings =
+      NavigateAndGetContentSettings(parent_url, child_url);
+  EXPECT_TRUE(content_settings->allow_mixed_content);
+}
+#endif  // !BUILDFLAG(IS_IOS)
 }  // namespace content_settings

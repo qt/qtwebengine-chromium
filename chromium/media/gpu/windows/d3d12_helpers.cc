@@ -45,6 +45,12 @@ ScopedD3D12ResourceMap::~ScopedD3D12ResourceMap() {
   Commit();
 }
 
+ScopedD3D12ResourceMap::ScopedD3D12ResourceMap(
+    ScopedD3D12ResourceMap&& other) noexcept = default;
+
+ScopedD3D12ResourceMap& ScopedD3D12ResourceMap::operator=(
+    ScopedD3D12ResourceMap&& other) noexcept = default;
+
 bool ScopedD3D12ResourceMap::Map(ID3D12Resource* resource,
                                  UINT subresource,
                                  const D3D12_RANGE* read_range) {
@@ -70,7 +76,7 @@ bool ScopedD3D12ResourceMap::Map(ID3D12Resource* resource,
 }
 
 void ScopedD3D12ResourceMap::Commit(const D3D12_RANGE* written_range) {
-  if (!data_.empty()) {
+  if (resource_) {
     data_ = {};
     resource_->Unmap(subresource_, written_range);
     resource_ = nullptr;
@@ -147,7 +153,8 @@ GUID GetD3D12VideoDecodeGUID(VideoCodecProfile profile,
     case HEVCPROFILE_MAIN10:
       return D3D12_VIDEO_DECODE_PROFILE_HEVC_MAIN10;
     case HEVCPROFILE_REXT:
-      return GetHEVCRangeExtensionPrivateGUID(bitdepth, chroma_sampling);
+      return GetHEVCRangeExtensionGUID(bitdepth, chroma_sampling,
+                                       /*use_dxva_device_for_hevc_rext=*/true);
 #endif  // BUILDFLAG(ENABLE_HEVC_PARSER_AND_HW_DECODER)
     case AV1PROFILE_PROFILE_MAIN:
       return D3D12_VIDEO_DECODE_PROFILE_AV1_PROFILE0;

@@ -4,9 +4,7 @@
 
 from __future__ import annotations
 
-import datetime as dt
 import functools
-import re
 from typing import TYPE_CHECKING, Type
 
 from typing_extensions import override
@@ -14,11 +12,14 @@ from typing_extensions import override
 from crossbench.action_runner.action.action import (ACTION_TIMEOUT, Action,
                                                     ActionT)
 from crossbench.action_runner.action.action_type import ActionType
-from crossbench.config import ConfigParser
 from crossbench.parse import ObjectParser
 
 if TYPE_CHECKING:
+  import datetime as dt
+  import re
+
   from crossbench.action_runner.base import ActionRunner
+  from crossbench.config import ConfigParser
   from crossbench.runner.run import Run
 
 

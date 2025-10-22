@@ -89,6 +89,9 @@ class Network(abc.ABC):
     assert not self._is_running, "Cannot start network more than once."
     self._is_running = True
     try:
-      yield self
+      # Activate PortForwarder so we properly clean up pending ports in case of
+      # errors.
+      with self.browser_platform.ports.nested():
+        yield self
     finally:
       self._is_running = False

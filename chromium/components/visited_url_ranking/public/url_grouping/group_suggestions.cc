@@ -12,10 +12,53 @@ GroupSuggestion::~GroupSuggestion() = default;
 GroupSuggestion::GroupSuggestion(GroupSuggestion&&) = default;
 GroupSuggestion& GroupSuggestion::operator=(GroupSuggestion&&) = default;
 
+GroupSuggestion GroupSuggestion::DeepCopy() const {
+  GroupSuggestion copy;
+  copy.tab_ids = tab_ids;
+  copy.suggestion_reason = suggestion_reason;
+  copy.suggested_name = suggested_name;
+  copy.promo_header = promo_header;
+  copy.promo_contents = promo_contents;
+  copy.suggestion_id = suggestion_id;
+  return copy;
+}
+
 GroupSuggestions::GroupSuggestions() = default;
 GroupSuggestions::~GroupSuggestions() = default;
 
 GroupSuggestions::GroupSuggestions(GroupSuggestions&&) = default;
 GroupSuggestions& GroupSuggestions::operator=(GroupSuggestions&&) = default;
+
+GroupSuggestions GroupSuggestions::DeepCopy() const {
+  GroupSuggestions copy;
+  copy.suggestions.reserve(suggestions.size());
+  for (const auto& suggestion : suggestions) {
+    copy.suggestions.push_back(suggestion.DeepCopy());
+  }
+  return copy;
+}
+
+CachedSuggestions::CachedSuggestions() = default;
+CachedSuggestions::~CachedSuggestions() = default;
+
+CachedSuggestions::CachedSuggestions(CachedSuggestions&&) = default;
+CachedSuggestions& CachedSuggestions::operator=(CachedSuggestions&&) = default;
+
+const char* GetSuggestionReasonString(
+    GroupSuggestion::SuggestionReason reason) {
+  switch (reason) {
+    case GroupSuggestion::SuggestionReason::kUnknown:
+      return "Unknown";
+    case GroupSuggestion::SuggestionReason::kRecentlyOpened:
+      return "RecentlyOpened";
+    case GroupSuggestion::SuggestionReason::kSwitchedBetween:
+      return "SwitchedBetween";
+    case GroupSuggestion::SuggestionReason::kSimilarSource:
+      return "SimilarSource";
+    case GroupSuggestion::SuggestionReason::kSameOrigin:
+      return "SameOrigin";
+  }
+  NOTREACHED();
+}
 
 }  // namespace visited_url_ranking

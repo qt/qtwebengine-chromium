@@ -9,9 +9,12 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/path_service.h"
+#include "base/run_loop.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
+#include "base/test/run_until.h"
 #include "base/test/task_environment.h"
 #include "components/affiliations/core/browser/fake_affiliation_service.h"
 #include "components/password_manager/core/browser/import/csv_password_sequence.h"
@@ -20,6 +23,7 @@
 #include "components/password_manager/core/browser/ui/credential_ui_entry.h"
 #include "components/password_manager/core/browser/ui/saved_passwords_presenter.h"
 #include "components/password_manager/core/common/password_manager_constants.h"
+#include "components/password_manager/services/csv_password/fake_password_parser_service.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -40,25 +44,6 @@ const char16_t kTestNote[] = u"secret-note";
 const char kTestFileName[] = "test_only.csv";
 }  // namespace
 
-// A wrapper on CSVPasswordSequence that mimics the sandbox behaviour.
-class FakePasswordParserService : public mojom::CSVPasswordParser {
- public:
-  void ParseCSV(const std::string& raw_json,
-                ParseCSVCallback callback) override {
-    mojom::CSVPasswordSequencePtr result = nullptr;
-    CSVPasswordSequence seq(raw_json);
-    if (seq.result() == CSVPassword::Status::kOK) {
-      result = mojom::CSVPasswordSequence::New();
-      if (result) {
-        for (const auto& pwd : seq) {
-          result->csv_passwords.push_back(pwd);
-        }
-      }
-    }
-    std::move(callback).Run(std::move(result));
-  }
-};
-
 class PasswordImporterTest : public testing::Test {
  public:
   PasswordImporterTest() : receiver_{&service_}, importer_(&presenter_) {
@@ -72,8 +57,10 @@ class PasswordImporterTest : public testing::Test {
                          /*affiliated_match_helper=*/nullptr);
     account_store_->Init(/*prefs=*/nullptr,
                          /*affiliated_match_helper=*/nullptr);
-    presenter_.Init();
-    task_environment_.RunUntilIdle();
+    async_task_completed_ = false;
+    presenter_.Init(base::BindOnce(&PasswordImporterTest::OnAsyncTaskCompleted,
+                                   base::Unretained(this)));
+    WaitUntilAsyncTaskIsCompleted();
   }
 
   PasswordImporterTest(const PasswordImporterTest&) = delete;
@@ -91,11 +78,22 @@ class PasswordImporterTest : public testing::Test {
       PasswordForm::Store to_store =
           password_manager::PasswordForm::Store::kProfileStore) {
     file_path_ = input_file;
+    results_callback_called_ = false;
     importer_.Import(input_file, to_store,
                      base::BindOnce(&PasswordImporterTest::OnPasswordsConsumed,
                                     base::Unretained(this)));
-    task_environment_.RunUntilIdle();
-    ASSERT_TRUE(results_callback_called_);
+    WaitUntilResultsCallbackIsCalled();
+  }
+
+  void StartImportAndWaitForCompletion(
+      const char* csv_input,
+      PasswordForm::Store to_store =
+          password_manager::PasswordForm::Store::kProfileStore) {
+    results_callback_called_ = false;
+    importer_.Import(csv_input, to_store,
+                     base::BindOnce(&PasswordImporterTest::OnPasswordsConsumed,
+                                    base::Unretained(this)));
+    WaitUntilResultsCallbackIsCalled();
   }
 
   void AssertNotStartedState() {
@@ -107,7 +105,7 @@ class PasswordImporterTest : public testing::Test {
   }
 
   void AssertConflictsState() {
-    ASSERT_TRUE(importer_.IsState(PasswordImporter::kConflicts));
+    ASSERT_TRUE(importer_.IsState(PasswordImporter::kUserInteractionRequired));
   }
 
   void ContinueImportAndWaitForCompletion(
@@ -117,15 +115,16 @@ class PasswordImporterTest : public testing::Test {
     importer_.ContinueImport(
         selected_ids, base::BindOnce(&PasswordImporterTest::OnPasswordsConsumed,
                                      base::Unretained(this)));
-    task_environment_.RunUntilIdle();
-    ASSERT_TRUE(results_callback_called_);
+    WaitUntilResultsCallbackIsCalled();
   }
 
   void TriggerDeleteFile() {
     EXPECT_CALL(mock_delete_file_, Run(file_path_)).Times(1);
-    importer_.DeleteFile();
     // Deletion is happening on the Thread pool asynchronously.
-    task_environment_.RunUntilIdle();
+    base::RunLoop run_loop;
+    importer_.DeleteFile(
+        base::BindLambdaForTesting([&run_loop]() { run_loop.Quit(); }));
+    run_loop.Run();
   }
 
   std::vector<CredentialUIEntry> stored_passwords() {
@@ -136,17 +135,20 @@ class PasswordImporterTest : public testing::Test {
   // the presenter is not possible (a check for collision prevents that).
   void AddToProfileAndAccountStores(PasswordForm form) {
     form.in_store = password_manager::PasswordForm::Store::kProfileStore;
-    profile_store_->AddLogin(form);
-    task_environment_.RunUntilIdle();
+    AddLogin(form);
+
     form.in_store = password_manager::PasswordForm::Store::kAccountStore;
-    account_store_->AddLogin(form);
-    task_environment_.RunUntilIdle();
+    AddLogin(form);
   }
 
   bool AddPasswordForm(const PasswordForm& form) {
-    bool result = presenter_.AddCredential(CredentialUIEntry(form));
-
-    task_environment_.RunUntilIdle();
+    async_task_completed_ = false;
+    bool result = presenter_.AddCredential(
+        CredentialUIEntry(form),
+        password_manager::PasswordForm::Type::kManuallyAdded,
+        base::BindOnce(&PasswordImporterTest::OnAsyncTaskCompleted,
+                       base::Unretained(this)));
+    WaitUntilAsyncTaskIsCompleted();
     return result;
   }
 
@@ -168,7 +170,27 @@ class PasswordImporterTest : public testing::Test {
     import_results_ = results;
   }
 
+  void WaitUntilResultsCallbackIsCalled() {
+    ASSERT_TRUE(
+        base::test::RunUntil([&]() { return results_callback_called_; }));
+  }
+
+  void AddLogin(const PasswordForm& form) {
+    async_task_completed_ = false;
+    profile_store_->AddLogin(
+        form, base::BindOnce(&PasswordImporterTest::OnAsyncTaskCompleted,
+                             base::Unretained(this)));
+    WaitUntilAsyncTaskIsCompleted();
+  }
+
+  void WaitUntilAsyncTaskIsCompleted() {
+    ASSERT_TRUE(base::test::RunUntil([&]() { return async_task_completed_; }));
+  }
+
+  void OnAsyncTaskCompleted() { async_task_completed_ = true; }
+
   base::test::TaskEnvironment task_environment_;
+  bool async_task_completed_ = false;
   password_manager::ImportResults import_results_;
   bool results_callback_called_ = false;
   FakePasswordParserService service_;
@@ -238,6 +260,27 @@ TEST_F(PasswordImporterTest, CSVImportWithNote) {
   base::FilePath input_path = temp_file_path();
   ASSERT_TRUE(base::WriteFile(input_path, kTestCSVInput));
   ASSERT_NO_FATAL_FAILURE(StartImportAndWaitForCompletion(input_path));
+  AssertFinishedState();
+
+  histogram_tester.ExpectUniqueSample(
+      "PasswordManager.Import.PerFile.Notes.TotalCount", 1, 1);
+
+  password_manager::ImportResults results = GetImportResults();
+
+  EXPECT_EQ(1u, results.number_imported);
+  ASSERT_EQ(1u, stored_passwords().size());
+  EXPECT_EQ(kTestNote, stored_passwords()[0].note);
+}
+
+TEST_F(PasswordImporterTest, CSVImportWithNoteFromString) {
+  constexpr char kTestCSVInput[] =
+      "Url,Username,Password,Note\n"
+      "http://accounts.google.com/a/"
+      "LoginAuth,test@gmail.com,test1,secret-note\n";
+
+  base::HistogramTester histogram_tester;
+
+  ASSERT_NO_FATAL_FAILURE(StartImportAndWaitForCompletion(kTestCSVInput));
   AssertFinishedState();
 
   histogram_tester.ExpectUniqueSample(
@@ -326,7 +369,8 @@ TEST_F(PasswordImporterTest, CSVImportBadHeaderReturnsBadFormat) {
   histogram_tester.ExpectTotalCount("PasswordManager.ImportDuration", 0);
   histogram_tester.ExpectTotalCount(
       "PasswordManager.ImportedPasswordsPerUserInCSV", 0);
-  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize", 120, 1);
+  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize2", 120,
+                                      1);
 
   password_manager::ImportResults results = GetImportResults();
 
@@ -986,8 +1030,8 @@ TEST_F(PasswordImporterTest, PartialImportSucceeds) {
 
   histogram_tester.ExpectUniqueSample("PasswordManager.ImportEntryStatus",
                                       ImportEntry::Status::MISSING_URL, 1);
-  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize",
-                                      /*sample=*/105,
+  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize2",
+                                      /*sample=*/104,
                                       /*expected_bucket_count=*/1);
   histogram_tester.ExpectTotalCount("PasswordManager.ImportDuration", 1);
   histogram_tester.ExpectUniqueSample(
@@ -1010,8 +1054,8 @@ TEST_F(PasswordImporterTest, PartialImportSucceeds) {
 
 TEST_F(PasswordImporterTest, CSVImportLargeFileShouldFail) {
   base::HistogramTester histogram_tester;
-  // content has more than kMaxFileSizeBytes (150KB) of bytes.
-  std::string content(150 * 1024 + 100, '*');
+  // content has more than kMaxFileSizeBytes (1000KB) of bytes.
+  std::string content(1000 * 1024 + 100, '*');
 
   base::FilePath temp_file_path;
   ASSERT_TRUE(base::CreateTemporaryFile(&temp_file_path));
@@ -1022,8 +1066,8 @@ TEST_F(PasswordImporterTest, CSVImportLargeFileShouldFail) {
 
   EXPECT_THAT(stored_passwords(), IsEmpty());
 
-  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize",
-                                      /*sample=*/153700,
+  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize2",
+                                      /*sample=*/1024100,
                                       /*expected_bucket_count=*/1);
   histogram_tester.ExpectTotalCount("PasswordManager.ImportDuration", 0);
   histogram_tester.ExpectTotalCount(
@@ -1033,6 +1077,27 @@ TEST_F(PasswordImporterTest, CSVImportLargeFileShouldFail) {
   EXPECT_EQ(ImportResults::Status::MAX_FILE_SIZE, results.status);
 
   base::DeleteFile(temp_file_path);
+}
+
+TEST_F(PasswordImporterTest, CSVImportLargeStringShouldFail) {
+  base::HistogramTester histogram_tester;
+  // content has more than kMaxFileSizeBytes (1000KB) of bytes.
+  std::string content(1000 * 1024 + 100, '*');
+
+  ASSERT_NO_FATAL_FAILURE(StartImportAndWaitForCompletion(content.c_str()));
+  AssertNotStartedState();
+
+  EXPECT_THAT(stored_passwords(), IsEmpty());
+
+  histogram_tester.ExpectUniqueSample("PasswordManager.ImportFileSize2",
+                                      /*sample=*/1024100,
+                                      /*expected_bucket_count=*/1);
+  histogram_tester.ExpectTotalCount("PasswordManager.ImportDuration", 0);
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.ImportedPasswordsPerUserInCSV", 0);
+
+  const password_manager::ImportResults& results = GetImportResults();
+  EXPECT_EQ(ImportResults::Status::MAX_FILE_SIZE, results.status);
 }
 
 TEST_F(PasswordImporterTest, CSVImportHitMaxPasswordsLimit) {
@@ -1069,7 +1134,7 @@ TEST_F(PasswordImporterTest, CSVImportNonExistingFile) {
   ASSERT_NO_FATAL_FAILURE(StartImportAndWaitForCompletion(input_path));
   AssertNotStartedState();
 
-  histogram_tester.ExpectTotalCount("PasswordManager.ImportFileSize", 0);
+  histogram_tester.ExpectTotalCount("PasswordManager.ImportFileSize2", 0);
   histogram_tester.ExpectTotalCount("PasswordManager.ImportDuration", 0);
   histogram_tester.ExpectTotalCount(
       "PasswordManager.ImportedPasswordsPerUserInCSV", 0);
@@ -1085,7 +1150,7 @@ TEST_F(PasswordImporterTest, ImportIOErrorDueToUnreadableFile) {
       StartImportAndWaitForCompletion(non_existent_input_file));
   AssertNotStartedState();
 
-  histogram_tester.ExpectTotalCount("PasswordManager.ImportFileSize", 0);
+  histogram_tester.ExpectTotalCount("PasswordManager.ImportFileSize2", 0);
   histogram_tester.ExpectTotalCount("PasswordManager.ImportDuration", 0);
   histogram_tester.ExpectTotalCount(
       "PasswordManager.ImportedPasswordsPerUserInCSV", 0);

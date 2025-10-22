@@ -33,7 +33,9 @@
 #include "src/tint/lang/core/ir/module.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/spirv/ir/builtin_call.h"
+#include "src/tint/lang/spirv/ir/copy_logical.h"
 #include "src/tint/lang/spirv/type/explicit_layout_array.h"
+#include "src/tint/lang/spirv/writer/common/options.h"
 
 using namespace tint::core::fluent_types;     // NOLINT
 using namespace tint::core::number_suffixes;  // NOLINT
@@ -46,6 +48,9 @@ namespace {
 struct State {
     /// The IR module.
     core::ir::Module& ir;
+
+    /// The SPIR-V binary version.
+    SpvVersion version;
 
     /// The IR builder.
     core::ir::Builder b{ir};
@@ -76,9 +81,9 @@ struct State {
                 continue;
             }
 
-            auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
+            auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
             switch (ptr->AddressSpace()) {
-                case core::AddressSpace::kPushConstant:
+                case core::AddressSpace::kImmediate:
                 case core::AddressSpace::kStorage:
                 case core::AddressSpace::kUniform:
                     vars_requiring_explicit_layout.Push(var);
@@ -86,8 +91,10 @@ struct State {
 
                 case core::AddressSpace::kFunction:
                 case core::AddressSpace::kPrivate:
-                    // TODO(crbug.com/401585324): Only do this for SPIR-V 1.5 and later.
-                    RecordTypesThatMustNotHaveExplicitLayout(ptr);
+                    // In SPIR-V 1.4 and earlier, Vulkan allowed explicit layout decorations.
+                    if (version > SpvVersion::kSpv14) {
+                        RecordTypesThatMustNotHaveExplicitLayout(ptr);
+                    }
                     break;
 
                 case core::AddressSpace::kWorkgroup:
@@ -107,7 +114,7 @@ struct State {
         // emitted without explicit layout decorations, we need to rewrite its store type and
         // introduce element-wise copies when loading and storing those types.
         for (auto* var : vars_requiring_explicit_layout) {
-            UpdatePointerType(var->Result(0));
+            UpdatePointerType(var->Result());
         }
     }
 
@@ -182,7 +189,7 @@ struct State {
         if (!must_emit_without_explicit_layout.Contains(original_struct) && !members_were_forked) {
             // TODO(crbug.com/tint/745): Remove the const_cast.
             const_cast<core::type::Struct*>(original_struct)
-                ->SetStructFlag(core::type::kSpirvExplicitLayout);
+                ->SetStructFlag(core::type::kExplicitLayout);
             return nullptr;
         }
 
@@ -193,7 +200,7 @@ struct State {
                                                    original_struct->Align(),  //
                                                    original_struct->Size(),   //
                                                    original_struct->SizeNoPadding());
-        new_str->SetStructFlag(core::type::kSpirvExplicitLayout);
+        new_str->SetStructFlag(core::type::kExplicitLayout);
         for (auto flag : original_struct->StructFlags()) {
             new_str->SetStructFlag(flag);
         }
@@ -247,7 +254,7 @@ struct State {
             [&](core::ir::Access* access) {
                 // If the access produces a pointer to a type that has been forked, we need to
                 // update the result type and then recurse into its uses.
-                UpdatePointerType(access->Result(0));
+                UpdatePointerType(access->Result());
             },
             [&](ir::BuiltinCall* call) {
                 // The only builtin function that takes an array pointer is arrayLength().
@@ -257,17 +264,17 @@ struct State {
             [&](core::ir::Let* let) {
                 // A let usage will propagate the pointer to a type that has been forked, so we need
                 // to update the result type and then recurse into its uses.
-                UpdatePointerType(let->Result(0));
+                UpdatePointerType(let->Result());
             },
             [&](core::ir::Load* load) {
                 b.InsertAfter(load, [&] {
                     // Change the load instruction to produce the forked type, and then convert the
                     // result of the load to the original type.
-                    auto* original_type = load->Result(0)->Type();
+                    auto* original_type = load->Result()->Type();
                     auto* forked_load = b.InstructionResult(load->From()->Type()->UnwrapPtr());
                     auto* converted = ConvertIfNeeded(original_type, forked_load);
-                    load->Result(0)->ReplaceAllUsesWith(converted);
-                    load->SetResults(Vector{forked_load});
+                    load->Result()->ReplaceAllUsesWith(converted);
+                    load->SetResult(forked_load);
                 });
             },
             [&](core::ir::Store* store) {
@@ -292,8 +299,12 @@ struct State {
             return src;
         }
 
-        // TODO(crbug.com/401587662): Use OpCopyLogical with SPIR-V 1.4 and later.
-
+        // In SPIR-V 1.4 or later, use OpCopyLogical instead of member-wise copying.
+        if (version >= SpvVersion::kSpv14) {
+            auto* copy =
+                ir.CreateInstruction<spirv::ir::CopyLogical>(b.InstructionResult(dst_type), src);
+            return b.Append(copy)->Result();
+        }
         // Create a helper function to do the conversion.
         auto* helper = conversion_helpers.GetOrAdd(src_type, [&] {
             auto* param = b.FunctionParam("tint_source", src_type);
@@ -312,7 +323,7 @@ struct State {
             });
             return func;
         });
-        return b.Call(helper, src)->Result(0);
+        return b.Call(helper, src)->Result();
     }
 
     /// Recursively convert a struct type to/from the explicitly laid out version.
@@ -324,11 +335,11 @@ struct State {
         for (uint32_t i = 0; i < dst_struct->Members().Length(); i++) {
             auto* src_member = src_struct->Members()[i];
             auto* dst_member = dst_struct->Members()[i];
-            auto* extracted = b.Access(src_member->Type(), input, u32(i))->Result(0);
+            auto* extracted = b.Access(src_member->Type(), input, u32(i))->Result();
             auto* converted = ConvertIfNeeded(dst_member->Type(), extracted);
             construct_args.Push(converted);
         }
-        return b.Construct(dst_struct, std::move(construct_args))->Result(0);
+        return b.Construct(dst_struct, std::move(construct_args))->Result();
     }
 
     /// Recursively convert an array type to/from the explicitly laid out version.
@@ -344,25 +355,26 @@ struct State {
         // Convert each element one at a time, writing into the local variable.
         auto* result = b.Var(ty.ptr<function>(dst_array));
         b.LoopRange(ty, 0_u, u32(count->value), 1_u, [&](core::ir::Value* idx) {
-            auto* extracted = b.Access(src_array->ElemType(), input, idx)->Result(0);
+            auto* extracted = b.Access(src_array->ElemType(), input, idx)->Result();
             auto* converted = ConvertIfNeeded(dst_array->ElemType(), extracted);
             auto* dst_ptr = b.Access(ty.ptr(function, dst_array->ElemType()), result, idx);
             b.Store(dst_ptr, converted);
         });
 
-        return b.Load(result)->Result(0);
+        return b.Load(result)->Result();
     }
 };
 
 }  // namespace
 
-Result<SuccessType> ForkExplicitLayoutTypes(core::ir::Module& ir) {
-    auto result = ValidateAndDumpIfNeeded(ir, "spirv.ForkExplicitLayoutTypes");
+Result<SuccessType> ForkExplicitLayoutTypes(core::ir::Module& ir, SpvVersion version) {
+    auto result = ValidateAndDumpIfNeeded(ir, "spirv.ForkExplicitLayoutTypes",
+                                          kForkExplicitLayoutTypesCapabilities);
     if (result != Success) {
         return result;
     }
 
-    State{ir}.Process();
+    State{ir, version}.Process();
 
     return Success;
 }

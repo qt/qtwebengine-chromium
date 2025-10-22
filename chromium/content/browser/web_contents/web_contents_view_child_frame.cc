@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/notimplemented.h"
 #include "build/build_config.h"
 #include "content/browser/renderer_host/render_frame_proxy_host.h"
 #include "content/browser/renderer_host/render_widget_host_view_child_frame.h"
@@ -148,9 +149,6 @@ void WebContentsViewChildFrame::OnCapturerCountChanged() {}
 
 void WebContentsViewChildFrame::FullscreenStateChanged(bool is_fullscreen) {}
 
-void WebContentsViewChildFrame::UpdateWindowControlsOverlay(
-    const gfx::Rect& bounding_rect) {}
-
 BackForwardTransitionAnimationManager*
 WebContentsViewChildFrame::GetBackForwardTransitionAnimationManager() {
   return nullptr;
@@ -160,15 +158,15 @@ void WebContentsViewChildFrame::DestroyBackForwardTransitionAnimationManager() {
 }
 
 void WebContentsViewChildFrame::RestoreFocus() {
-  NOTREACHED();
+  NOTIMPLEMENTED();
 }
 
 void WebContentsViewChildFrame::Focus() {
-  NOTREACHED();
+  NOTIMPLEMENTED();
 }
 
 void WebContentsViewChildFrame::StoreFocus() {
-  NOTREACHED();
+  NOTIMPLEMENTED();
 }
 
 void WebContentsViewChildFrame::FocusThroughTabTraversal(bool reverse) {

@@ -8,6 +8,7 @@
 #include "base/component_export.h"
 #include "base/containers/span.h"
 #include "components/persistent_cache/backend_params.h"
+#include "components/persistent_cache/entry_metadata.h"
 
 namespace persistent_cache {
 
@@ -37,6 +38,8 @@ class COMPONENT_EXPORT(PERSISTENT_CACHE) Backend {
   virtual std::unique_ptr<Entry> Find(std::string_view key) = 0;
 
   // Used to add an entry containing `content` and associated with `key`.
+  // Metadata associated with the entry can be provided in `metadata` or the
+  // object can be default initialized to signify no metadata.
   //
   // This call will never report failure and `content` is expected (but not
   // guaranteed) to be resident upon return.
@@ -46,7 +49,19 @@ class COMPONENT_EXPORT(PERSISTENT_CACHE) Backend {
   //
   // Thread-safe.
   virtual void Insert(std::string_view key,
-                      base::span<const uint8_t> content) = 0;
+                      base::span<const uint8_t> content,
+                      EntryMetadata metadata) = 0;
+
+  // Used to get type of instance. Intended for things like metrics recording.
+  // Externally behavior of all backend types should be equivalent and control
+  // flow should not be tailored to the type.
+  virtual BackendType GetType() const = 0;
+
+  // Used to understand if the instance has read only access. Intended for
+  // things like metrics recording. Externally behavior of all backend types
+  // should be equivalent for reads. Writes should probably not be attempted if
+  // not permitted.
+  virtual bool IsReadOnly() const = 0;
 
  protected:
   Backend();

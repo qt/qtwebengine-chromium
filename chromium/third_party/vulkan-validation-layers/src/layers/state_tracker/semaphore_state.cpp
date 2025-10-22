@@ -38,7 +38,7 @@ void vvl::Semaphore::TimePoint::Notify() const {
     signal_submit->queue->Notify(signal_submit->seq);
 }
 
-vvl::Semaphore::Semaphore(Device &dev, VkSemaphore handle, const VkSemaphoreTypeCreateInfo *type_create_info,
+vvl::Semaphore::Semaphore(DeviceState &dev, VkSemaphore handle, const VkSemaphoreTypeCreateInfo *type_create_info,
                           const VkSemaphoreCreateInfo *pCreateInfo)
     : RefcountedStateObject(handle, kVulkanObjectTypeSemaphore),
       type(type_create_info ? type_create_info->semaphoreType : VK_SEMAPHORE_TYPE_BINARY),
@@ -287,6 +287,13 @@ bool vvl::Semaphore::HasResolvingTimelineSignal(uint64_t wait_payload) const {
     assert(type == VK_SEMAPHORE_TYPE_TIMELINE);
     auto guard = ReadLock();
 
+    // For external semaphore we can't track the signal.
+    // In theory, it can be context-dependent whether to assume the external signal is
+    // available or not in order to have false positive free validation. Assert that
+    // this function is only called for regular semaphores and it is up to the caller
+    // to handle external case.
+    assert(scope_ == vvl::Semaphore::kInternal);
+
     // Check if completed payload value (which includes initial value) resolves the wait.
     if (wait_payload <= completed_.payload) {
         return true;
@@ -362,6 +369,8 @@ bool vvl::Semaphore::CanRetireTimelineWait(const vvl::Queue *current_queue, uint
 
 void vvl::Semaphore::RetireWait(vvl::Queue *current_queue, uint64_t payload, const Location &loc, bool queue_thread) {
     std::shared_future<void> waiter;
+    bool retire_external_payload = false;
+    uint64_t external_payload = 0;
     {
         auto guard = WriteLock();
         if (payload <= completed_.payload) {
@@ -372,7 +381,22 @@ void vvl::Semaphore::RetireWait(vvl::Queue *current_queue, uint64_t payload, con
                 // GetSemaphoreCounterValue for external semaphore might not have a registered timepoint.
                 // Add timepoint so we can retire timeline up to that point.
                 assert(type == VK_SEMAPHORE_TYPE_TIMELINE);
-                timeline_[payload] = TimePoint{};
+                auto payload_it = timeline_.insert({payload, TimePoint{}}).first;
+
+                // Search existing signal. If found, notify corresponding submission.
+                // (external payload, which is already reached by the gpu, is larger then found signal,
+                // this means that earlier signals were also processed, so we can retire them)
+                for (auto it = std::make_reverse_iterator(payload_it); it != timeline_.rend(); ++it) {
+                    const TimePoint &t = it->second;
+                    if (t.signal_submit.has_value() && t.signal_submit->queue) {
+                        retire_external_payload = true;
+                        external_payload = payload;
+                        // Update payload value to retire existing signal.
+                        // External payload will be retired after that to update current payload value.
+                        payload = it->first;
+                        break;
+                    }
+                }
             }
             if (scope_ == kExternalTemporary) {
                 scope_ = kInternal;
@@ -403,7 +427,13 @@ void vvl::Semaphore::RetireWait(vvl::Queue *current_queue, uint64_t payload, con
         // the current timepoint should get destroyed while we're waiting, so copy out the waiter.
         waiter = timepoint.waiter;
     }
+
     WaitTimePoint(std::move(waiter), payload, !queue_thread, loc);
+
+    if (retire_external_payload) {
+        auto guard = WriteLock();
+        RetireTimePoint(external_payload, kWait, SubmissionReference{});
+    }
 }
 
 void vvl::Semaphore::RetireSignal(uint64_t payload) {
@@ -454,11 +484,28 @@ void vvl::Semaphore::WaitTimePoint(std::shared_future<void> &&waiter, uint64_t p
     }
 
     if (result != std::future_status::ready) {
-        dev_data_.LogError("INTERNAL-ERROR-VkSemaphore-state-timeout", Handle(), loc,
-                           "The Validation Layers hit a timeout waiting for timeline semaphore state to update (this is most "
-                           "likely a validation bug). completed_.payload=%" PRIu64 " wait_payload=%" PRIu64,
-                           completed_.payload, payload);
+        dev_data_.LogError(
+            "INTERNAL-ERROR-VkSemaphore-state-timeout", Handle(), loc,
+            "The Validation Layers hit a timeout waiting for timeline semaphore state to update. completed_.payload=%" PRIu64
+            " wait_payload=%" PRIu64,
+            completed_.payload, payload);
     }
+}
+
+void vvl::Semaphore::SetSwapchainWaitInfo(const SwapchainWaitInfo &info) {
+    auto guard = WriteLock();
+    swapchain_wait_info_.emplace(info);
+}
+
+void vvl::Semaphore::ClearSwapchainWaitInfo() {
+    auto guard = WriteLock();
+    swapchain_wait_info_.reset();
+}
+
+std::optional<vvl::Semaphore::SwapchainWaitInfo> vvl::Semaphore::GetSwapchainWaitInfo() const {
+    auto guard = ReadLock();
+    // Return by value due to locking (not safe to access reference when unlocked)
+    return swapchain_wait_info_;
 }
 
 void vvl::Semaphore::Import(VkExternalSemaphoreHandleTypeFlagBits handle_type, VkSemaphoreImportFlags flags) {

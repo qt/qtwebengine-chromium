@@ -23,46 +23,13 @@ namespace {
 using Result = PrivateNetworkAccessCheckResult;
 using Policy = mojom::PrivateNetworkRequestPolicy;
 
-mojom::ClientSecurityStatePtr GetRequestClientSecurityState(
-    const ResourceRequest& request) {
-  if (!request.trusted_params.has_value()) {
-    return nullptr;
-  }
-
-  return request.trusted_params->client_security_state.Clone();
-}
-
-// WARNING: This should be kept in sync with similar logic in
-// `network::cors::CorsURLLoader::GetClientSecurityState()`.
-const mojom::ClientSecurityState* ChooseClientSecurityState(
-    const mojom::ClientSecurityState* factory_client_security_state,
-    const mojom::ClientSecurityState* request_client_security_state) {
-  if (factory_client_security_state) {
-    // Enforce that only one ClientSecurityState is ever given to us, as this
-    // is an invariant in the current codebase. In case of a compromised
-    // renderer process, we might be passed both, in which case we prefer to
-    // use the factory params' value: contrary to the request params, it is
-    // always sourced from the browser process.
-    DCHECK(!request_client_security_state)
-        << "Must not provide a ClientSecurityState in both "
-           "URLLoaderFactoryParams and ResourceRequest::TrustedParams.";
-
-    return factory_client_security_state;
-  }
-
-  return request_client_security_state;
-}
-
 }  // namespace
 
 PrivateNetworkAccessChecker::PrivateNetworkAccessChecker(
     const ResourceRequest& request,
-    const mojom::ClientSecurityState* factory_client_security_state,
+    const mojom::ClientSecurityState* client_security_state,
     int32_t url_load_options)
-    : request_client_security_state_(GetRequestClientSecurityState(request)),
-      client_security_state_(
-          ChooseClientSecurityState(factory_client_security_state,
-                                    request_client_security_state_.get())),
+    : client_security_state_(client_security_state),
       should_block_local_request_(url_load_options &
                                   mojom::kURLLoadOptionBlockLocalRequest),
       target_address_space_(request.target_ip_address_space),
@@ -98,10 +65,10 @@ PrivateNetworkAccessCheckResult PrivateNetworkAccessChecker::Check(
   mojom::IPAddressSpace resource_address_space =
       TransportInfoToIPAddressSpace(transport_info);
 
-  // If we are connecting to a private IP endpoint over HTTP without a target IP
+  // If we are connecting to a local IP endpoint over HTTP without a target IP
   // address space, record whether we could have successfully inferred the
   // target IP address space from the request URL.
-  if (resource_address_space == mojom::IPAddressSpace::kPrivate &&
+  if (resource_address_space == mojom::IPAddressSpace::kLocal &&
       is_request_url_scheme_http_ &&
       target_address_space_ == mojom::IPAddressSpace::kUnknown) {
     base::UmaHistogramBoolean(
@@ -129,14 +96,14 @@ void PrivateNetworkAccessChecker::ResetForRetry() {
   //
   // 1. `https://public.example` fetches `http://localhost/foo`
   // 2. `OnConnected()` notices that the remote endpoint's IP address space is
-  //    `kLocal`, fails the request with
+  //    `kLoopback`, fails the request with
   //    `CorsError::UnexpectedPrivateNetworkAccess`.
   // 3. A preflight request is sent with `target_ip_address_space_` set to
-  //    `kLocal`, succeeds.
+  //    `kLoopback`, succeeds.
   // 4. `http://localhost/foo` redirects the GET request to
   //    `https://public2.example/bar`.
   //
-  // The target IP address space `kLocal` should not be applied to the new
+  // The target IP address space `kLoopback` should not be applied to the new
   // connection obtained to `https://public2.example`.
   //
   // See also: https://crbug.com/1293891
@@ -234,16 +201,28 @@ Result PrivateNetworkAccessChecker::CheckInternal(
   // `required_address_space_` is the IP address space the website claimed the
   // subresource to be. If it doesn't meet the real situation, then we should
   // fail the request.
-  if (base::FeatureList::IsEnabled(
-          features::kPrivateNetworkAccessPermissionPrompt) &&
+  //
+  // TODO(crbug.com/395895368): consider collapsing the address spaces for LNA
+  // checks.
+  if (base::FeatureList::IsEnabled(features::kLocalNetworkAccessChecks) &&
       required_address_space_ != mojom::IPAddressSpace::kUnknown &&
       resource_address_space != required_address_space_) {
     return Result::kBlockedByTargetIpAddressSpace;
   }
 
-  if (!IsLessPublicAddressSpace(resource_address_space,
-                                client_security_state_->ip_address_space)) {
-    return Result::kAllowedNoLessPublic;
+  // Currently for LNA we are only blocking public -> local/private/loopback
+  // requests. Requests from local -> loopback (or private -> local in PNA
+  // terminology) are not blocked at present.
+  if (base::FeatureList::IsEnabled(features::kLocalNetworkAccessChecks)) {
+    if (!IsLessPublicAddressSpaceLNA(
+            resource_address_space, client_security_state_->ip_address_space)) {
+      return Result::kAllowedNoLessPublic;
+    }
+  } else {
+    if (!IsLessPublicAddressSpace(resource_address_space,
+                                  client_security_state_->ip_address_space)) {
+      return Result::kAllowedNoLessPublic;
+    }
   }
 
   // We use a switch statement to force this code to be amended when values are
@@ -273,17 +252,6 @@ void PrivateNetworkAccessChecker::SetRequestUrl(const GURL& url) {
   is_potentially_trustworthy_same_origin_ =
       IsUrlPotentiallyTrustworthy(url) && request_initiator_.has_value() &&
       request_initiator_.value().IsSameOriginWith(url);
-}
-
-bool PrivateNetworkAccessChecker::NeedPermission(
-    const GURL& url,
-    bool is_web_secure_context,
-    mojom::IPAddressSpace target_address_space) {
-  return base::FeatureList::IsEnabled(
-             network::features::kPrivateNetworkAccessPermissionPrompt) &&
-         is_web_secure_context && !network::IsUrlPotentiallyTrustworthy(url) &&
-         (target_address_space == mojom::IPAddressSpace::kLocal ||
-          target_address_space == mojom::IPAddressSpace::kPrivate);
 }
 
 }  // namespace network

@@ -2,10 +2,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/builders.star", "cpu", "os", "siso")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/try.star", "try_")
+load("@chromium-luci//builders.star", "cpu", "os")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//try.star", "try_")
+load("//lib/siso.star", "siso")
 
 luci.bucket(
     name = "codesearch",
@@ -34,9 +35,7 @@ try_.defaults.set(
     cq_group = "cq",
     execution_timeout = 9 * time.hour,
     expiration_timeout = 2 * time.hour,
-    reclient_enabled = False,
     service_account = "chromium-try-builder@chops-service-accounts.iam.gserviceaccount.com",
-    siso_enabled = True,
     siso_project = siso.project.DEFAULT_UNTRUSTED,
     siso_remote_jobs = siso.remote_jobs.LOW_JOBS_FOR_CQ,
 )
@@ -55,6 +54,7 @@ try_.builder(
             "minimal_symbols",
             "remoteexec",
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "static",
             "arm",
         ],
@@ -183,6 +183,7 @@ try_.builder(
             "debug_builder",
             "remoteexec",
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "static",
             "arm",
         ],

@@ -9,12 +9,11 @@ import("//base/allocator/partition_allocator/partition_alloc.gni")
 group("android_tools") {
   testonly = true
   deps = [
-    "//build/android/pylib/device/commands",
     "//third_party/catapult/telemetry:bitmaptools($host_toolchain)",
     "//tools/android/adb_reboot",
     "//tools/android/forwarder2",
     "//tools/android/md5sum",
-    "//tools/android/memtrack_helper:memtrack_helper",
+    "//tools/android/memtrack_helper",
     "//tools/perf:run_benchmark_wrapper",
     "//tools/perf/clear_system_cache",
   ]

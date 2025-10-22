@@ -140,7 +140,6 @@ component("gamepad") {
       "CoreFoundation.framework",
       "Foundation.framework",
       "GameController.framework",
-      "IOKit.framework",
     ]
 
     if (is_mac) {
@@ -156,13 +155,20 @@ component("gamepad") {
         "xbox_data_fetcher_mac.cc",
         "xbox_data_fetcher_mac.h",
       ]
-      frameworks += [ "ForceFeedback.framework" ]
+      frameworks += [
+        "ForceFeedback.framework",
+        "IOKit.framework",
+      ]
     }
   }
 
   if (is_chromeos) {
     deps += [ "//chromeos/dbus/permission_broker" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 static_library("test_helpers") {
@@ -193,6 +199,10 @@ static_library("test_helpers") {
       "test_support/fake_winrt_wgi_environment.h",
       "test_support/wgi_test_error_code.h",
     ]
+
+    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+    # enable the diagnostic by removing this line.
+    configs += [ "//build/config/compiler:no_exit_time_destructors" ]
   }
 }
 

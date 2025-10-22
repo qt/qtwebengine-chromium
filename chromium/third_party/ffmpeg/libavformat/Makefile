@@ -47,6 +47,7 @@ OBJS-$(CONFIG_RTPDEC)                    += rdt.o                       \
                                             rtpdec_ac3.o                \
                                             rtpdec_amr.o                \
                                             rtpdec_asf.o                \
+                                            rtpdec_av1.o                \
                                             rtpdec_dv.o                 \
                                             rtpdec_g726.o               \
                                             rtpdec_h261.o               \
@@ -61,6 +62,7 @@ OBJS-$(CONFIG_RTPDEC)                    += rdt.o                       \
                                             rtpdec_mpeg12.o             \
                                             rtpdec_mpeg4.o              \
                                             rtpdec_mpegts.o             \
+                                            rtpdec_opus.o               \
                                             rtpdec_qcelp.o              \
                                             rtpdec_qdm2.o               \
                                             rtpdec_qt.o                 \
@@ -118,6 +120,8 @@ OBJS-$(CONFIG_APTX_DEMUXER)              += aptxdec.o
 OBJS-$(CONFIG_APTX_MUXER)                += rawenc.o
 OBJS-$(CONFIG_APTX_HD_DEMUXER)           += aptxdec.o
 OBJS-$(CONFIG_APTX_HD_MUXER)             += rawenc.o
+OBJS-$(CONFIG_APV_DEMUXER)               += apvdec.o
+OBJS-$(CONFIG_APV_MUXER)                 += apvenc.o
 OBJS-$(CONFIG_AQTITLE_DEMUXER)           += aqtitledec.o subtitles.o
 OBJS-$(CONFIG_ARGO_ASF_DEMUXER)          += argo_asf.o
 OBJS-$(CONFIG_ARGO_ASF_MUXER)            += argo_asf.o
@@ -243,6 +247,7 @@ OBJS-$(CONFIG_G726_DEMUXER)              += g726.o
 OBJS-$(CONFIG_G726_MUXER)                += rawenc.o
 OBJS-$(CONFIG_G726LE_DEMUXER)            += g726.o
 OBJS-$(CONFIG_G726LE_MUXER)              += rawenc.o
+OBJS-$(CONFIG_G728_DEMUXER)              += g728dec.o
 OBJS-$(CONFIG_G729_DEMUXER)              += g729dec.o
 OBJS-$(CONFIG_GDV_DEMUXER)               += gdv.o
 OBJS-$(CONFIG_GENH_DEMUXER)              += genh.o
@@ -376,7 +381,7 @@ OBJS-$(CONFIG_MOV_DEMUXER)               += mov.o mov_chan.o mov_esds.o \
 OBJS-$(CONFIG_MOV_MUXER)                 += movenc.o \
                                             movenchint.o mov_chan.o rtp.o \
                                             movenccenc.o movenc_ttml.o rawutils.o \
-                                            dovi_isom.o evc.o
+                                            dovi_isom.o evc.o cbs.o cbs_av1.o
 OBJS-$(CONFIG_MP2_MUXER)                 += rawenc.o
 OBJS-$(CONFIG_MP3_DEMUXER)               += mp3dec.o replaygain.o
 OBJS-$(CONFIG_MP3_MUXER)                 += mp3enc.o rawenc.o id3v2enc.o
@@ -517,6 +522,7 @@ OBJS-$(CONFIG_RTP_MUXER)                 += rtp.o         \
                                             rtpenc_aac.o     \
                                             rtpenc_latm.o    \
                                             rtpenc_amr.o     \
+                                            rtpenc_av1.o     \
                                             rtpenc_h261.o    \
                                             rtpenc_h263.o    \
                                             rtpenc_h263_rfc2190.o \
@@ -633,6 +639,7 @@ OBJS-$(CONFIG_WEBM_CHUNK_MUXER)          += webm_chunk.o
 OBJS-$(CONFIG_WEBP_MUXER)                += webpenc.o
 OBJS-$(CONFIG_WEBVTT_DEMUXER)            += webvttdec.o subtitles.o
 OBJS-$(CONFIG_WEBVTT_MUXER)              += webvttenc.o
+OBJS-$(CONFIG_WHIP_MUXER)                += whip.o avc.o http.o srtp.o
 OBJS-$(CONFIG_WSAUD_DEMUXER)             += westwood_aud.o
 OBJS-$(CONFIG_WSAUD_MUXER)               += westwood_audenc.o
 OBJS-$(CONFIG_WSD_DEMUXER)               += wsddec.o rawdec.o

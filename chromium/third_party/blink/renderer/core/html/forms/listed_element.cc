@@ -58,14 +58,14 @@ namespace blink {
 
 namespace {
 
-void InvalidateShadowIncludingAncestorForms(ContainerNode& insertion_point) {
+void InvalidateAncestorFormsForAutofill(ContainerNode& insertion_point) {
   // Let any forms in the shadow including ancestors know that this
   // ListedElement has changed.
   ContainerNode* starting_node = &insertion_point;
   for (ContainerNode* parent = starting_node; parent;
        parent = parent->ParentOrShadowHostNode()) {
     if (HTMLFormElement* form = DynamicTo<HTMLFormElement>(parent)) {
-      form->InvalidateListedElementsIncludingShadowTrees();
+      form->InvalidateListedElementsForAutofill();
     }
   }
 }
@@ -150,7 +150,7 @@ void ListedElement::InsertedInto(ContainerNode& insertion_point) {
         &element, WebFormRelatedChangeType::kAdd);
   }
 
-  InvalidateShadowIncludingAncestorForms(insertion_point);
+  InvalidateAncestorFormsForAutofill(insertion_point);
 }
 
 void ListedElement::RemovedFrom(ContainerNode& insertion_point) {
@@ -203,7 +203,7 @@ void ListedElement::RemovedFrom(ContainerNode& insertion_point) {
         .InvalidateStatefulFormControlList();
   }
 
-  InvalidateShadowIncludingAncestorForms(insertion_point);
+  InvalidateAncestorFormsForAutofill(insertion_point);
 
   if (insertion_point.isConnected()) {
     // We don't insist on form_ being non-null as the form does not take care of
@@ -479,7 +479,15 @@ String ListedElement::CustomValidationMessage() const {
 }
 
 void ListedElement::SetCustomValidationMessage(const String& message) {
-  custom_validation_message_ = message;
+  if (RuntimeEnabledFeatures::CustomValidityNormalizeNewlinesEnabled()) {
+    // \r\n and \r should be replaced with \n:
+    // https://github.com/whatwg/html/pull/10350
+    String message_copy(message);
+    custom_validation_message_ =
+        message_copy.Replace("\r\n", "\n").Replace('\r', '\n');
+  } else {
+    custom_validation_message_ = message;
+  }
 }
 
 String ListedElement::validationMessage() const {
@@ -567,9 +575,7 @@ Element& ListedElement::GetHostOrFocusDelegate() const {
   const HTMLElement& host = ToHTMLElement();
   // If host is a shadow host with delegatesFocus, then the element to get
   // focus should be its focusable area.
-  if (RuntimeEnabledFeatures::
-          FormValidationCustomElementsDelegatesFocusFixEnabled() &&
-      host.IsShadowHostWithDelegatesFocus()) {
+  if (host.IsShadowHostWithDelegatesFocus()) {
     if (Element* focusable_area =
             host.GetFocusableArea(/*in_descendant_traversal=*/true)) {
       return *focusable_area;

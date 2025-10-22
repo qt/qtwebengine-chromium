@@ -114,6 +114,36 @@ class PortTest(LoggingTestCase):
         port = self.make_port()
         self.assertEqual(port.get_option('foo', 'bar'), 'bar')
 
+    def test_allowed_suffixes_legacy(self):
+        port = self.make_port(with_tests=True)
+        # Depending on the `testRunner` call, any kind can be dumped.
+        self.assertEqual(port.allowed_suffixes('failures/expected/text.html'),
+                         {'txt', 'png', 'wav'})
+
+    def test_allowed_suffixes_legacy_reftest(self):
+        port = self.make_port(with_tests=True)
+        self.assertEqual(
+            port.allowed_suffixes('failures/expected/reftest.html'),
+            {'txt', 'wav'})
+
+    def test_allowed_suffixes_wpt_testharness(self):
+        port = self.make_port(with_tests=True)
+        add_manifest_to_mock_filesystem(port)
+        self.assertEqual(
+            port.allowed_suffixes(
+                'external/wpt/dom/ranges/Range-attributes.html'), {'txt'})
+
+    def test_allowed_suffixes_wpt_reftest(self):
+        port = self.make_port(with_tests=True)
+        add_manifest_to_mock_filesystem(port)
+        self.assertEqual(
+            port.allowed_suffixes('external/wpt/html/dom/elements/'
+                                  'global-attributes/dir_auto-EN-L.html'),
+            set())
+        self.assertEqual(
+            port.allowed_suffixes('external/wpt/foo/bar/test-print.html'),
+            set())
+
     def test_output_filename(self):
         port = self.make_port()
 
@@ -1535,8 +1565,6 @@ class PortTest(LoggingTestCase):
     def test_http_server_supports_ipv6(self):
         port = self.make_port()
         self.assertTrue(port.http_server_supports_ipv6())
-        port.host.platform.os_name = 'win'
-        self.assertFalse(port.http_server_supports_ipv6())
 
     def test_http_server_requires_http_protocol_options_unsafe(self):
         port = self.make_port(

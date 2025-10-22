@@ -17,112 +17,14 @@
 -- found in the trace.
 -- This script will use the `android_jank_cuj_main_thread_frame_boundary`,
 -- containing bounds of frames within jank CUJs.
-SELECT RUN_METRIC('android/android_jank_cuj.sql');
+SELECT RUN_METRIC('android/process_metadata.sql');
 
 INCLUDE PERFETTO MODULE android.slices;
 INCLUDE PERFETTO MODULE android.binder;
+INCLUDE PERFETTO MODULE android.frame_blocking_calls.blocking_calls_aggregation;
 INCLUDE PERFETTO MODULE android.critical_blocking_calls;
 INCLUDE PERFETTO MODULE android.frames.timeline;
-
--- TODO(b/296349525): Add this to the perfetto standard library.
-DROP TABLE IF EXISTS android_cujs;
-CREATE TABLE android_cujs AS
-    SELECT
-        cuj_id,
-        cuj.upid,
-        t.utid AS ui_thread,
-        process_name,
-        process_metadata,
-        cuj_name,
-        cuj.layer_id,
-        tb.ts,
-        tb.dur,
-        tb.ts_end,
-        begin_vsync,
-        end_vsync
-    FROM android_jank_cuj_main_thread_cuj_boundary tb
-    JOIN android_jank_cuj cuj USING (cuj_id)
-    JOIN android_jank_cuj_main_thread t USING (cuj_id);
-
--- While calculating the metric, there are two possibilities for a blocking call:
--- 1. Blocking call is completely within a frame boundary.
--- 2. Blocking call crosses the frame boundary into the next frame.
--- For the first case, the blocking call duration is the 'dur' field value itself. But for the
--- second case, only the part within the frame is considered.
-DROP TABLE IF EXISTS blocking_calls_per_frame;
-CREATE PERFETTO TABLE blocking_calls_per_frame AS
-SELECT
-    MIN(
-        bc.dur,
-        frame.ts_end - bc.ts,
-        bc.ts_end - frame.ts
-    ) AS dur,
-    MAX(frame.ts, bc.ts) AS ts,
-    bc.upid,
-    bc.name,
-    bc.process_name,
-    bc.utid,
-    frame.frame_id,
-    frame.layer_id
-FROM _android_critical_blocking_calls bc
-JOIN android_frames_layers frame
-ON bc.utid = frame.ui_thread_utid
-   -- The following condition to accommodate blocking call crossing frame boundary. The blocking
-   -- call starts in a frame and ends in a frame. It can either be the same frame or a different
-   -- frame.
-WHERE (bc.ts >= frame.ts AND bc.ts <= frame.ts_end) -- Blocking call starts within the frame.
-    OR (bc.ts_end >= frame.ts AND bc.ts_end <= frame.ts_end); -- Blocking call ends within the frame.
-
--- Table capturing the full and partial frames within a CUJ boundary. This table captures the
--- layer ID associated with the actual frame too.
-DROP TABLE IF EXISTS frames_in_cuj;
-CREATE PERFETTO TABLE frames_in_cuj AS
-SELECT
-    cuj.cuj_name,
-    cuj.upid,
-    cuj.process_name,
-    frame.layer_id,
-    frame.frame_id,
-    cuj.cuj_id,
-    MAX(frame.ts, cuj.ts) AS frame_ts,
-    MIN(
-        frame.dur,
-        cuj.ts_end - frame.ts,
-        frame.ts_end - cuj.ts
-    ) AS dur
-FROM android_frames_layers frame
-JOIN android_cujs cuj
-ON frame.upid = cuj.upid
-   AND frame.layer_id = cuj.layer_id
-   AND frame.ui_thread_utid = cuj.ui_thread
--- Check whether the frame_id falls within the begin and end vsync of the cuj.
--- Also check if the frame start or end timestamp falls within the cuj boundary.
-WHERE
-   -- frame withtin cuj vsync boundary
-   frame_id >= begin_vsync AND frame_id <= end_vsync
-   AND (
-      -- frame start within cuj
-      (frame.ts >= cuj.ts AND frame.ts <= cuj.ts_end)
-      OR
-      -- frame end within cuj
-      (frame.ts_end >= cuj.ts AND frame.ts_end <= cuj.ts_end)
-   );
-
--- Combine the above two tables to get blocking calls within frame within CUJ.
-DROP TABLE IF EXISTS blocking_calls_frame_cuj;
-CREATE PERFETTO TABLE blocking_calls_frame_cuj AS
-SELECT
-    b.upid,
-    b.frame_id,
-    b.layer_id,
-    b.name,
-    frame_cuj.cuj_name,
-    b.ts,
-    b.dur,
-    b.process_name
-FROM frames_in_cuj frame_cuj
-JOIN blocking_calls_per_frame b
-USING (upid, frame_id, layer_id);
+INCLUDE PERFETTO MODULE android.cujs.sysui_cujs;
 
 -- Calculate the mean/max values for duration and count for blocking calls per frame.
 DROP TABLE IF EXISTS android_blocking_calls_cuj_per_frame_calls;
@@ -138,7 +40,7 @@ WITH blocking_calls_aggregate_values AS (
     upid,
     process_name,
     name
-  FROM blocking_calls_frame_cuj
+  FROM _blocking_calls_frame_cuj
   GROUP BY cuj_name, name, frame_id
 ),
 frame_cnt_per_cuj AS (
@@ -147,7 +49,7 @@ frame_cnt_per_cuj AS (
   SELECT
     COUNT(*) AS frame_cnt,
     cuj_name
-  FROM frames_in_cuj
+  FROM _android_frames_in_cuj
   GROUP BY cuj_name
 )
 SELECT
@@ -170,7 +72,7 @@ SELECT AndroidCujBlockingCallsPerFrameMetric('cuj', (
     SELECT RepeatedField(
         AndroidCujBlockingCallsPerFrameMetric_Cuj(
             'name', cuj_name,
-            'process', process_metadata,
+            'process', process_metadata_proto(cuj.upid),
             'blocking_calls', (
                 SELECT RepeatedField(
                     AndroidBlockingCallPerFrame(
@@ -189,5 +91,5 @@ SELECT AndroidCujBlockingCallsPerFrameMetric('cuj', (
             )
         )
     )
-    FROM (SELECT DISTINCT cuj_name, upid, process_metadata FROM android_cujs) cuj
+    FROM (SELECT DISTINCT cuj_name, upid FROM android_sysui_jank_cujs) cuj
 ));

@@ -17,65 +17,64 @@
 
 """The WebDriver implementation."""
 
+import base64
+import contextlib
 import copy
-from importlib import import_module
-
+import os
 import pkgutil
-
-import sys
-from typing import Dict, List, Optional, Union
-
+import tempfile
+import types
 import warnings
-
+import zipfile
 from abc import ABCMeta
-from base64 import b64decode
+from base64 import b64decode, urlsafe_b64encode
 from contextlib import asynccontextmanager, contextmanager
+from importlib import import_module
+from typing import Any, Dict, List, Optional, Type, Union
 
+from selenium.common.exceptions import (
+    InvalidArgumentException,
+    JavascriptException,
+    NoSuchCookieException,
+    NoSuchElementException,
+    WebDriverException,
+)
+from selenium.webdriver.common.bidi.browser import Browser
+from selenium.webdriver.common.bidi.browsing_context import BrowsingContext
+from selenium.webdriver.common.bidi.network import Network
+from selenium.webdriver.common.bidi.script import Script
+from selenium.webdriver.common.bidi.session import Session
+from selenium.webdriver.common.bidi.storage import Storage
+from selenium.webdriver.common.bidi.webextension import WebExtension
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.options import ArgOptions, BaseOptions
+from selenium.webdriver.common.print_page_options import PrintOptions
+from selenium.webdriver.common.timeouts import Timeouts
+from selenium.webdriver.common.virtual_authenticator import (
+    Credential,
+    VirtualAuthenticatorOptions,
+    required_virtual_authenticator,
+)
+from selenium.webdriver.support.relative_locator import RelativeBy
+
+from ..common.fedcm.dialog import Dialog
 from .bidi_connection import BidiConnection
+from .client_config import ClientConfig
 from .command import Command
 from .errorhandler import ErrorHandler
+from .fedcm import FedCM
 from .file_detector import FileDetector, LocalFileDetector
+from .locator_converter import LocatorConverter
 from .mobile import Mobile
 from .remote_connection import RemoteConnection
 from .script_key import ScriptKey
 from .shadowroot import ShadowRoot
 from .switch_to import SwitchTo
 from .webelement import WebElement
-
-from selenium.common.exceptions import (InvalidArgumentException,
-                                        JavascriptException,
-                                        WebDriverException,
-                                        NoSuchCookieException)
-from selenium.webdriver.common.by import By
-from selenium.webdriver.common.options import BaseOptions
-from selenium.webdriver.common.print_page_options import PrintOptions
-from selenium.webdriver.common.timeouts import Timeouts
-from selenium.webdriver.common.html5.application_cache import ApplicationCache
-from selenium.webdriver.support.relative_locator import RelativeBy
-
-
-_W3C_CAPABILITY_NAMES = frozenset([
-    'acceptInsecureCerts',
-    'browserName',
-    'browserVersion',
-    'pageLoadStrategy',
-    'platformName',
-    'proxy',
-    'setWindowRect',
-    'strictFileInteractability',
-    'timeouts',
-    'unhandledPromptBehavior',
-    'webSocketUrl'
-])
-
-_OSS_W3C_CONVERSION = {
-    'acceptSslCerts': 'acceptInsecureCerts',
-    'version': 'browserVersion',
-    'platform': 'platformName'
-}
-
+from .websocket_connection import WebSocketConnection
 
 cdp = None
+devtools = None
 
 
 def import_cdp():
@@ -84,7 +83,7 @@ def import_cdp():
         cdp = import_module("selenium.webdriver.common.bidi.cdp")
 
 
-def _make_w3c_caps(caps):
+def _create_caps(caps):
     """Makes a W3C alwaysMatch capabilities object.
 
     Filters out capability names that are not in the W3C spec. Spec-compliant
@@ -93,42 +92,43 @@ def _make_w3c_caps(caps):
     Moves the Firefox profile, if present, from the old location to the new Firefox
     options object.
 
-    :Args:
-     - caps - A dictionary of capabilities requested by the caller.
+    Parameters:
+    -----------
+    caps : dict
+        - A dictionary of capabilities requested by the caller.
     """
     caps = copy.deepcopy(caps)
-    profile = caps.get('firefox_profile')
     always_match = {}
-    if caps.get('proxy') and caps['proxy'].get('proxyType'):
-        caps['proxy']['proxyType'] = caps['proxy']['proxyType'].lower()
     for k, v in caps.items():
-        if v and k in _OSS_W3C_CONVERSION:
-            always_match[_OSS_W3C_CONVERSION[k]] = v.lower() if k == 'platform' else v
-        if k in _W3C_CAPABILITY_NAMES or ':' in k:
-            always_match[k] = v
-    if profile:
-        moz_opts = always_match.get('moz:firefoxOptions', {})
-        # If it's already present, assume the caller did that intentionally.
-        if 'profile' not in moz_opts:
-            # Don't mutate the original capabilities.
-            new_opts = copy.deepcopy(moz_opts)
-            new_opts['profile'] = profile
-            always_match['moz:firefoxOptions'] = new_opts
-    return {"firstMatch": [{}], "alwaysMatch": always_match}
+        always_match[k] = v
+    return {"capabilities": {"firstMatch": [{}], "alwaysMatch": always_match}}
 
 
-def get_remote_connection(capabilities, command_executor, keep_alive, ignore_local_proxy=False):
-    from selenium.webdriver.chromium.remote_connection import ChromiumRemoteConnection
-    from selenium.webdriver.safari.remote_connection import SafariRemoteConnection
+def get_remote_connection(
+    capabilities: dict,
+    command_executor: Union[str, RemoteConnection],
+    keep_alive: bool,
+    ignore_local_proxy: bool,
+    client_config: Optional[ClientConfig] = None,
+) -> RemoteConnection:
+    if isinstance(command_executor, str):
+        client_config = client_config or ClientConfig(remote_server_addr=command_executor)
+        client_config.remote_server_addr = command_executor
+        command_executor = RemoteConnection(client_config=client_config)
+    from selenium.webdriver.chrome.remote_connection import ChromeRemoteConnection
+    from selenium.webdriver.edge.remote_connection import EdgeRemoteConnection
     from selenium.webdriver.firefox.remote_connection import FirefoxRemoteConnection
+    from selenium.webdriver.safari.remote_connection import SafariRemoteConnection
 
-    candidates = [RemoteConnection] + [ChromiumRemoteConnection, SafariRemoteConnection, FirefoxRemoteConnection]
-    handler = next(
-        (c for c in candidates if c.browser_name == capabilities.get('browserName')),
-        RemoteConnection
+    candidates = [ChromeRemoteConnection, EdgeRemoteConnection, SafariRemoteConnection, FirefoxRemoteConnection]
+    handler = next((c for c in candidates if c.browser_name == capabilities.get("browserName")), RemoteConnection)
+
+    return handler(
+        remote_server_addr=command_executor,
+        keep_alive=keep_alive,
+        ignore_proxy=ignore_local_proxy,
+        client_config=client_config,
     )
-
-    return handler(command_executor, keep_alive=keep_alive, ignore_proxy=ignore_local_proxy)
 
 
 def create_matches(options: List[BaseOptions]) -> Dict:
@@ -156,7 +156,7 @@ def create_matches(options: List[BaseOptions]) -> Dict:
         always[k] = v
 
     for i in opts:
-        for k in always.keys():
+        for k in always:
             del i[k]
 
     capabilities["capabilities"]["alwaysMatch"] = always
@@ -166,96 +166,82 @@ def create_matches(options: List[BaseOptions]) -> Dict:
 
 
 class BaseWebDriver(metaclass=ABCMeta):
-    """
-    Abstract Base Class for all Webdriver subtypes.
-    ABC's allow custom implementations of Webdriver to be registered so that isinstance type checks
-    will succeed.
+    """Abstract Base Class for all Webdriver subtypes.
+
+    ABC's allow custom implementations of Webdriver to be registered so
+    that isinstance type checks will succeed.
     """
 
 
 class WebDriver(BaseWebDriver):
-    """
-    Controls a browser by sending commands to a remote server.
-    This server is expected to be running the WebDriver wire protocol
-    as defined at
-    https://github.com/SeleniumHQ/selenium/wiki/JsonWireProtocol
+    """Controls a browser by sending commands to a remote server. This server
+    is expected to be running the WebDriver wire protocol as defined at
+    https://www.selenium.dev/documentation/legacy/json_wire_protocol/.
 
-    :Attributes:
-     - session_id - String ID of the browser session started and controlled by this WebDriver.
-     - capabilities - Dictionary of effective capabilities of this browser session as returned
-         by the remote server. See https://github.com/SeleniumHQ/selenium/wiki/DesiredCapabilities
-     - command_executor - remote_connection.RemoteConnection object used to execute commands.
-     - error_handler - errorhandler.ErrorHandler object used to handle errors.
+    Attributes:
+    -----------
+    session_id - String ID of the browser session started and controlled by this WebDriver.
+    capabilities - Dictionary of effective capabilities of this browser session as returned
+        by the remote server. See https://www.selenium.dev/documentation/legacy/desired_capabilities/
+    command_executor : str or remote_connection.RemoteConnection object used to execute commands.
+    error_handler - errorhandler.ErrorHandler object used to handle errors.
     """
 
     _web_element_cls = WebElement
     _shadowroot_cls = ShadowRoot
 
-    def __init__(self, command_executor='http://127.0.0.1:4444',
-                 desired_capabilities=None, browser_profile=None, proxy=None,
-                 keep_alive=True, file_detector=None, options: Union[BaseOptions, List[BaseOptions]] = None):
-        """
-        Create a new driver that will issue commands using the wire protocol.
+    def __init__(
+        self,
+        command_executor: Union[str, RemoteConnection] = "http://127.0.0.1:4444",
+        keep_alive: bool = True,
+        file_detector: Optional[FileDetector] = None,
+        options: Optional[Union[BaseOptions, List[BaseOptions]]] = None,
+        locator_converter: Optional[LocatorConverter] = None,
+        web_element_cls: Optional[type] = None,
+        client_config: Optional[ClientConfig] = None,
+    ) -> None:
+        """Create a new driver that will issue commands using the wire
+        protocol.
 
-        :Args:
-         - command_executor - Either a string representing URL of the remote server or a custom
-             remote_connection.RemoteConnection object. Defaults to 'http://127.0.0.1:4444/wd/hub'.
-         - desired_capabilities - A dictionary of capabilities to request when
-             starting the browser session. Required parameter.
-         - browser_profile - A selenium.webdriver.firefox.firefox_profile.FirefoxProfile object.
-             Only used if Firefox is requested. Optional.
-         - proxy - A selenium.webdriver.common.proxy.Proxy object. The browser session will
-             be started with given proxy settings, if possible. Optional.
-         - keep_alive - Whether to configure remote_connection.RemoteConnection to use
-             HTTP keep-alive. Defaults to True.
-         - file_detector - Pass custom file detector object during instantiation. If None,
-             then default LocalFileDetector() will be used.
-         - options - instance of a driver options.Options class
+        Parameters:
+        -----------
+        command_executor : str or remote_connection.RemoteConnection
+            - Either a string representing the URL of the remote server or a custom
+            remote_connection.RemoteConnection object. Defaults to 'http://127.0.0.1:4444/wd/hub'.
+        keep_alive : bool (Deprecated)
+            - Whether to configure remote_connection.RemoteConnection to use HTTP keep-alive. Defaults to True.
+        file_detector : object or None
+            - Pass a custom file detector object during instantiation. If None, the default
+                LocalFileDetector() will be used.
+        options : options.Options
+            - Instance of a driver options.Options class.
+        locator_converter : object or None
+            - Custom locator converter to use. Defaults to None.
+        web_element_cls : class
+            - Custom class to use for web elements. Defaults to WebElement.
+        client_config : object or None
+            - Custom client configuration to use. Defaults to None.
         """
-        if desired_capabilities:
-            warnings.warn(
-                "desired_capabilities has been deprecated, please pass in an Options object with options kwarg",
-                DeprecationWarning,
-                stacklevel=2
+
+        if options is None:
+            raise TypeError(
+                "missing 1 required keyword-only argument: 'options' (instance of driver `options.Options` class)"
             )
-        if browser_profile:
-            warnings.warn(
-                "browser_profile has been deprecated, please pass in an Firefox Options object with options kwarg",
-                DeprecationWarning,
-                stacklevel=2
-            )
-        if proxy:
-            warnings.warn(
-                "proxy has been deprecated, please pass in an Options object with options kwarg",
-                DeprecationWarning,
-                stacklevel=2
-            )
-        if not keep_alive:
-            warnings.warn(
-                "keep_alive has been deprecated. We will be using True as the default value as we start removing it.",
-                DeprecationWarning,
-                stacklevel=2
-            )
-        capabilities = {}
-        # If we get a list we can assume that no capabilities
-        # have been passed in
-        if isinstance(options, list):
+        elif isinstance(options, list):
             capabilities = create_matches(options)
-        else:
             _ignore_local_proxy = False
-            if options:
-                capabilities = options.to_capabilities()
-                _ignore_local_proxy = options._ignore_local_proxy
-            if desired_capabilities:
-                if not isinstance(desired_capabilities, dict):
-                    raise WebDriverException("Desired Capabilities must be a dictionary")
-                else:
-                    capabilities.update(desired_capabilities)
+        else:
+            capabilities = options.to_capabilities()
+            _ignore_local_proxy = options._ignore_local_proxy
         self.command_executor = command_executor
         if isinstance(self.command_executor, (str, bytes)):
-            self.command_executor = get_remote_connection(capabilities, command_executor=command_executor,
-                                                          keep_alive=keep_alive,
-                                                          ignore_local_proxy=_ignore_local_proxy)
+            self.command_executor = get_remote_connection(
+                capabilities,
+                command_executor=command_executor,
+                keep_alive=keep_alive,
+                ignore_local_proxy=_ignore_local_proxy,
+                client_config=client_config,
+            )
         self._is_remote = True
         self.session_id = None
         self.caps = {}
@@ -264,37 +250,56 @@ class WebDriver(BaseWebDriver):
         self._switch_to = SwitchTo(self)
         self._mobile = Mobile(self)
         self.file_detector = file_detector or LocalFileDetector()
+        self.locator_converter = locator_converter or LocatorConverter()
+        self._web_element_cls = web_element_cls or self._web_element_cls
+        self._authenticator_id = None
         self.start_client()
-        self.start_session(capabilities, browser_profile)
+        self.start_session(capabilities)
+        self._fedcm = FedCM(self)
+
+        self._websocket_connection = None
+        self._script = None
+        self._network = None
+        self._browser = None
+        self._bidi_session = None
+        self._browsing_context = None
+        self._storage = None
+        self._webextension = None
 
     def __repr__(self):
-        return '<{0.__module__}.{0.__name__} (session="{1}")>'.format(
-            type(self), self.session_id)
+        return f'<{type(self).__module__}.{type(self).__name__} (session="{self.session_id}")>'
 
     def __enter__(self):
         return self
 
-    def __exit__(self, *args):
+    def __exit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc: Optional[BaseException],
+        traceback: Optional[types.TracebackType],
+    ):
         self.quit()
 
     @contextmanager
     def file_detector_context(self, file_detector_class, *args, **kwargs):
-        """
-        Overrides the current file detector (if necessary) in limited context.
-        Ensures the original file detector is set afterwards.
+        """Overrides the current file detector (if necessary) in limited
+        context. Ensures the original file detector is set afterwards.
+
+        Parameters:
+        -----------
+        file_detector_class : object
+            - Class of the desired file detector. If the class is different
+            from the current file_detector, then the class is instantiated with args and kwargs
+            and used as a file detector during the duration of the context manager.
+        args : tuple
+            - Optional arguments that get passed to the file detector class during instantiation.
+        kwargs : dict
+            - Keyword arguments, passed the same way as args.
 
         Example:
-
-        with webdriver.file_detector_context(UselessFileDetector):
-            someinput.send_keys('/etc/hosts')
-
-        :Args:
-         - file_detector_class - Class of the desired file detector. If the class is different
-             from the current file_detector, then the class is instantiated with args and kwargs
-             and used as a file detector during the duration of the context manager.
-         - args - Optional arguments that get passed to the file detector class during
-             instantiation.
-         - kwargs - Keyword arguments, passed the same way as args.
+        --------
+        >>> with webdriver.file_detector_context(UselessFileDetector):
+        >>>    someinput.send_keys('/etc/hosts')
         """
         last_detector = None
         if not isinstance(self.file_detector, file_detector_class):
@@ -307,65 +312,54 @@ class WebDriver(BaseWebDriver):
                 self.file_detector = last_detector
 
     @property
-    def mobile(self):
+    def mobile(self) -> Mobile:
         return self._mobile
 
     @property
     def name(self) -> str:
         """Returns the name of the underlying browser for this instance.
 
-        :Usage:
-            ::
-
-                name = driver.name
+        Example:
+        --------
+        >>> name = driver.name
         """
-        if 'browserName' in self.caps:
-            return self.caps['browserName']
-        else:
-            raise KeyError('browserName not specified in session capabilities')
+        if "browserName" in self.caps:
+            return self.caps["browserName"]
+        raise KeyError("browserName not specified in session capabilities")
 
     def start_client(self):
-        """
-        Called before starting a new session. This method may be overridden
-        to define custom startup behavior.
+        """Called before starting a new session.
+
+        This method may be overridden to define custom startup behavior.
         """
         pass
 
     def stop_client(self):
-        """
-        Called after executing a quit command. This method may be overridden
-        to define custom shutdown behavior.
+        """Called after executing a quit command.
+
+        This method may be overridden to define custom shutdown
+        behavior.
         """
         pass
 
-    def start_session(self, capabilities: dict, browser_profile=None) -> None:
-        """
-        Creates a new session with the desired capabilities.
+    def start_session(self, capabilities: dict) -> None:
+        """Creates a new session with the desired capabilities.
 
-        :Args:
-         - capabilities - a capabilities dict to start the session with.
-         - browser_profile - A selenium.webdriver.firefox.firefox_profile.FirefoxProfile object. Only used if Firefox is requested.
+        Parameters:
+        -----------
+        capabilities : dict
+            - A capabilities dict to start the session with.
         """
-        if not isinstance(capabilities, dict):
-            raise InvalidArgumentException("Capabilities must be a dictionary")
-        if browser_profile:
-            if "moz:firefoxOptions" in capabilities:
-                capabilities["moz:firefoxOptions"]["profile"] = browser_profile.encoded
-            else:
-                capabilities.update({'firefox_profile': browser_profile.encoded})
-        w3c_caps = _make_w3c_caps(capabilities)
-        parameters = {"capabilities": w3c_caps,
-                      "desiredCapabilities": capabilities}
-        response = self.execute(Command.NEW_SESSION, parameters)
-        if 'sessionId' not in response:
-            response = response['value']
-        self.session_id = response['sessionId']
-        self.caps = response.get('value')
 
-        # if capabilities is none we are probably speaking to
-        # a W3C endpoint
-        if not self.caps:
-            self.caps = response.get('capabilities')
+        caps = _create_caps(capabilities)
+        try:
+            response = self.execute(Command.NEW_SESSION, caps)["value"]
+            self.session_id = response.get("sessionId")
+            self.caps = response.get("capabilities")
+        except Exception:
+            if hasattr(self, "service") and self.service is not None:
+                self.service.stop()
+            raise
 
     def _wrap_value(self, value):
         if isinstance(value, dict):
@@ -373,14 +367,13 @@ class WebDriver(BaseWebDriver):
             for key, val in value.items():
                 converted[key] = self._wrap_value(val)
             return converted
-        elif isinstance(value, self._web_element_cls):
-            return {'element-6066-11e4-a52e-4f735466cecf': value.id}
-        elif isinstance(value, self._shadowroot_cls):
-            return {'shadow-6066-11e4-a52e-4f735466cecf': value.id}
-        elif isinstance(value, list):
+        if isinstance(value, self._web_element_cls):
+            return {"element-6066-11e4-a52e-4f735466cecf": value.id}
+        if isinstance(value, self._shadowroot_cls):
+            return {"shadow-6066-11e4-a52e-4f735466cecf": value.id}
+        if isinstance(value, list):
             return list(self._wrap_value(item) for item in value)
-        else:
-            return value
+        return value
 
     def create_web_element(self, element_id: str) -> WebElement:
         """Creates a web element with the specified `element_id`."""
@@ -388,483 +381,156 @@ class WebDriver(BaseWebDriver):
 
     def _unwrap_value(self, value):
         if isinstance(value, dict):
-            if 'element-6066-11e4-a52e-4f735466cecf' in value:
-                return self.create_web_element(value['element-6066-11e4-a52e-4f735466cecf'])
-            elif 'shadow-6066-11e4-a52e-4f735466cecf' in value:
-                return self._shadowroot_cls(self, value['shadow-6066-11e4-a52e-4f735466cecf'])
-            else:
-                for key, val in value.items():
-                    value[key] = self._unwrap_value(val)
-                return value
-        elif isinstance(value, list):
-            return list(self._unwrap_value(item) for item in value)
-        else:
+            if "element-6066-11e4-a52e-4f735466cecf" in value:
+                return self.create_web_element(value["element-6066-11e4-a52e-4f735466cecf"])
+            if "shadow-6066-11e4-a52e-4f735466cecf" in value:
+                return self._shadowroot_cls(self, value["shadow-6066-11e4-a52e-4f735466cecf"])
+            for key, val in value.items():
+                value[key] = self._unwrap_value(val)
             return value
+        if isinstance(value, list):
+            return list(self._unwrap_value(item) for item in value)
+        return value
 
-    def execute(self, driver_command: str, params: dict = None) -> dict:
+    def execute_cdp_cmd(self, cmd: str, cmd_args: dict):
+        """Execute Chrome Devtools Protocol command and get returned result The
+        command and command args should follow chrome devtools protocol
+        domains/commands, refer to link
+        https://chromedevtools.github.io/devtools-protocol/
+
+        Parameters:
+        -----------
+        cmd : str,
+            - Command name
+
+        cmd_args : dict
+            - Command args
+            - Empty dict {} if there is no command args
+
+        Returns:
+        --------
+            A dict, empty dict {} if there is no result to return.
+                - To getResponseBody: {'base64Encoded': False, 'body': 'response body string'}
+
+        Example:
+        --------
+        >>> driver.execute_cdp_cmd("Network.getResponseBody", {"requestId": requestId})
+
         """
-        Sends a command to be executed by a command.CommandExecutor.
+        return self.execute("executeCdpCommand", {"cmd": cmd, "params": cmd_args})["value"]
 
-        :Args:
-         - driver_command: The name of the command to execute as a string.
-         - params: A dictionary of named parameters to send with the command.
+    def execute(self, driver_command: str, params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+        """Sends a command to be executed by a command.CommandExecutor.
 
-        :Returns:
-          The command's JSON response loaded into a dictionary object.
+        Parameters:
+        -----------
+        driver_command : str
+            - The name of the command to execute as a string.
+
+        params : dict
+            - A dictionary of named Parameters to send with the command.
+
+        Returns:
+        --------
+          dict - The command's JSON response loaded into a dictionary object.
         """
+        params = self._wrap_value(params)
+
         if self.session_id:
             if not params:
-                params = {'sessionId': self.session_id}
-            elif 'sessionId' not in params:
-                params['sessionId'] = self.session_id
+                params = {"sessionId": self.session_id}
+            elif "sessionId" not in params:
+                params["sessionId"] = self.session_id
 
-        params = self._wrap_value(params)
         response = self.command_executor.execute(driver_command, params)
         if response:
             self.error_handler.check_response(response)
-            response['value'] = self._unwrap_value(
-                response.get('value', None))
+            response["value"] = self._unwrap_value(response.get("value", None))
             return response
         # If the server doesn't send a response, assume the command was
         # a success
-        return {'success': 0, 'value': None, 'sessionId': self.session_id}
+        return {"success": 0, "value": None, "sessionId": self.session_id}
 
     def get(self, url: str) -> None:
+        """Navigate the browser to the specified URL in the current window or
+        tab.
+
+        The method does not return until the page is fully loaded (i.e. the
+        onload event has fired).
+
+        Parameters:
+        -----------
+        url : str
+            - The URL to be opened by the browser.
+            - Must include the protocol (e.g., http://, https://).
+
+        Example:
+        --------
+        >>> driver = webdriver.Chrome()
+        >>> driver.get("https://example.com")
         """
-        Loads a web page in the current browser session.
-        """
-        self.execute(Command.GET, {'url': url})
+        self.execute(Command.GET, {"url": url})
 
     @property
     def title(self) -> str:
         """Returns the title of the current page.
 
-        :Usage:
-            ::
-
-                title = driver.title
+        Example:
+        --------
+        >>> element = driver.find_element(By.ID, "foo")
+        >>> print(element.title())
         """
-        resp = self.execute(Command.GET_TITLE)
-        return resp['value'] if resp['value'] else ""
+        return self.execute(Command.GET_TITLE).get("value", "")
 
-    def find_element_by_id(self, id_) -> WebElement:
-        """Finds an element by id.
+    def pin_script(self, script: str, script_key=None) -> ScriptKey:
+        """Store common javascript scripts to be executed later by a unique
+        hashable ID.
 
-        :Args:
-         - id\\_ - The id of the element to be found.
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_id('foo')
+        Example:
+        --------
+        >>> script = "return document.getElementById('foo').value"
         """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.ID, value=id_)
+        script_key_instance = ScriptKey(script_key)
+        self.pinned_scripts[script_key_instance.id] = script
+        return script_key_instance
 
-    def find_elements_by_id(self, id_) -> WebElement:
+    def unpin(self, script_key: ScriptKey) -> None:
+        """Remove a pinned script from storage.
+
+        Example:
+        --------
+        >>> driver.unpin(script_key)
         """
-        Finds multiple elements by id.
-
-        :Args:
-         - id\\_ - The id of the elements to be found.
-
-        :Returns:
-         - list of WebElement - a list with elements if any was found.  An
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_id('foo')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.ID, value=id_)
-
-    def find_element_by_xpath(self, xpath) -> WebElement:
-        """
-        Finds an element by xpath.
-
-        :Args:
-         - xpath - The xpath locator of the element to find.
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_xpath('//div/td[1]')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.XPATH, value=xpath)
-
-    def find_elements_by_xpath(self, xpath) -> WebElement:
-        """
-        Finds multiple elements by xpath.
-
-        :Args:
-         - xpath - The xpath locator of the elements to be found.
-
-        :Returns:
-         - list of WebElement - a list with elements if any was found.  An
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_xpath("//div[contains(@class, 'foo')]")
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.XPATH, value=xpath)
-
-    def find_element_by_link_text(self, link_text) -> WebElement:
-        """
-        Finds an element by link text.
-
-        :Args:
-         - link_text: The text of the element to be found.
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_link_text('Sign In')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.LINK_TEXT, value=link_text)
-
-    def find_elements_by_link_text(self, text) -> WebElement:
-        """
-        Finds elements by link text.
-
-        :Args:
-         - link_text: The text of the elements to be found.
-
-        :Returns:
-         - list of webelement - a list with elements if any was found.  an
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_link_text('Sign In')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.LINK_TEXT, value=text)
-
-    def find_element_by_partial_link_text(self, link_text) -> WebElement:
-        """
-        Finds an element by a partial match of its link text.
-
-        :Args:
-         - link_text: The text of the element to partially match on.
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_partial_link_text('Sign')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.PARTIAL_LINK_TEXT, value=link_text)
-
-    def find_elements_by_partial_link_text(self, link_text) -> WebElement:
-        """
-        Finds elements by a partial match of their link text.
-
-        :Args:
-         - link_text: The text of the element to partial match on.
-
-        :Returns:
-         - list of webelement - a list with elements if any was found.  an
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_partial_link_text('Sign')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.PARTIAL_LINK_TEXT, value=link_text)
-
-    def find_element_by_name(self, name) -> WebElement:
-        """
-        Finds an element by name.
-
-        :Args:
-         - name: The name of the element to find.
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_name('foo')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.NAME, value=name)
-
-    def find_elements_by_name(self, name) -> WebElement:
-        """
-        Finds elements by name.
-
-        :Args:
-         - name: The name of the elements to find.
-
-        :Returns:
-         - list of webelement - a list with elements if any was found.  an
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_name('foo')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.NAME, value=name)
-
-    def find_element_by_tag_name(self, name) -> WebElement:
-        """
-        Finds an element by tag name.
-
-        :Args:
-         - name - name of html tag (eg: h1, a, span)
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_tag_name('h1')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.TAG_NAME, value=name)
-
-    def find_elements_by_tag_name(self, name) -> WebElement:
-        """
-        Finds elements by tag name.
-
-        :Args:
-         - name - name of html tag (eg: h1, a, span)
-
-        :Returns:
-         - list of WebElement - a list with elements if any was found.  An
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_tag_name('h1')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.TAG_NAME, value=name)
-
-    def find_element_by_class_name(self, name) -> WebElement:
-        """
-        Finds an element by class name.
-
-        :Args:
-         - name: The class name of the element to find.
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_class_name('foo')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.CLASS_NAME, value=name)
-
-    def find_elements_by_class_name(self, name) -> WebElement:
-        """
-        Finds elements by class name.
-
-        :Args:
-         - name: The class name of the elements to find.
-
-        :Returns:
-         - list of WebElement - a list with elements if any was found.  An
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_class_name('foo')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.CLASS_NAME, value=name)
-
-    def find_element_by_css_selector(self, css_selector) -> WebElement:
-        """
-        Finds an element by css selector.
-
-        :Args:
-         - css_selector - CSS selector string, ex: 'a.nav#home'
-
-        :Returns:
-         - WebElement - the element if it was found
-
-        :Raises:
-         - NoSuchElementException - if the element wasn't found
-
-        :Usage:
-            ::
-
-                element = driver.find_element_by_css_selector('#foo')
-        """
-        warnings.warn(
-            "find_element_by_* commands are deprecated. Please use find_element() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_element(by=By.CSS_SELECTOR, value=css_selector)
-
-    def find_elements_by_css_selector(self, css_selector) -> WebElement:
-        """
-        Finds elements by css selector.
-
-        :Args:
-         - css_selector - CSS selector string, ex: 'a.nav#home'
-
-        :Returns:
-         - list of WebElement - a list with elements if any was found.  An
-           empty list if not
-
-        :Usage:
-            ::
-
-                elements = driver.find_elements_by_css_selector('.foo')
-        """
-        warnings.warn(
-            "find_elements_by_* commands are deprecated. Please use find_elements() instead",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return self.find_elements(by=By.CSS_SELECTOR, value=css_selector)
-
-    def pin_script(self, script, script_key=None) -> ScriptKey:
-        """
-
-        """
-        if not script_key:
-            _script_key = ScriptKey()
-        else:
-            _script_key = ScriptKey(script_key)
-        self.pinned_scripts[_script_key.id] = script
-        return _script_key
-
-    def unpin(self, script_key) -> None:
-        """
-
-        """
-        self.pinned_scripts.pop(script_key.id)
+        try:
+            self.pinned_scripts.pop(script_key.id)
+        except KeyError:
+            raise KeyError(f"No script with key: {script_key} existed in {self.pinned_scripts}") from None
 
     def get_pinned_scripts(self) -> List[str]:
+        """Return a list of all pinned scripts.
+
+        Example:
+        --------
+        >>> pinned_scripts = driver.get_pinned_scripts()
         """
+        return list(self.pinned_scripts)
 
-        """
-        return list(self.pinned_scripts.keys())
+    def execute_script(self, script: str, *args):
+        """Synchronously Executes JavaScript in the current window/frame.
 
-    def execute_script(self, script, *args):
-        """
-        Synchronously Executes JavaScript in the current window/frame.
+        Parameters:
+        -----------
+        script : str
+            - The javascript to execute.
 
-        :Args:
-         - script: The JavaScript to execute.
-         - \\*args: Any applicable arguments for your JavaScript.
+        *args : tuple
+            - Any applicable arguments for your JavaScript.
 
-        :Usage:
-            ::
-
-                driver.execute_script('return document.title;')
+        Example:
+        --------
+        >>> input_id = "username"
+        >>> input_value = "test_user"
+        >>> driver.execute_script("document.getElementById(arguments[0]).value = arguments[1];", input_id, input_value)
         """
         if isinstance(script, ScriptKey):
             try:
@@ -875,75 +541,65 @@ class WebDriver(BaseWebDriver):
         converted_args = list(args)
         command = Command.W3C_EXECUTE_SCRIPT
 
-        return self.execute(command, {
-            'script': script,
-            'args': converted_args})['value']
+        return self.execute(command, {"script": script, "args": converted_args})["value"]
 
     def execute_async_script(self, script: str, *args):
-        """
-        Asynchronously Executes JavaScript in the current window/frame.
+        """Asynchronously Executes JavaScript in the current window/frame.
 
-        :Args:
-         - script: The JavaScript to execute.
-         - \\*args: Any applicable arguments for your JavaScript.
+        Parameters:
+        -----------
+        script : str
+            - The javascript to execute.
 
-        :Usage:
-            ::
+        *args : tuple
+            - Any applicable arguments for your JavaScript.
 
-                script = "var callback = arguments[arguments.length - 1]; " \\
-                         "window.setTimeout(function(){ callback('timeout') }, 3000);"
-                driver.execute_async_script(script)
+        Example:
+        --------
+        >>> script = "var callback = arguments[arguments.length - 1]; "
+        ...     "window.setTimeout(function(){ callback('timeout') }, 3000);"
+        >>> driver.execute_async_script(script)
         """
         converted_args = list(args)
         command = Command.W3C_EXECUTE_SCRIPT_ASYNC
 
-        return self.execute(command, {
-            'script': script,
-            'args': converted_args})['value']
+        return self.execute(command, {"script": script, "args": converted_args})["value"]
 
     @property
     def current_url(self) -> str:
-        """
-        Gets the URL of the current page.
+        """Gets the URL of the current page.
 
-        :Usage:
-            ::
-
-                driver.current_url
+        Example:
+        --------
+        >>> print(driver.current_url)
         """
-        return self.execute(Command.GET_CURRENT_URL)['value']
+        return self.execute(Command.GET_CURRENT_URL)["value"]
 
     @property
     def page_source(self) -> str:
-        """
-        Gets the source of the current page.
+        """Gets the source of the current page.
 
-        :Usage:
-            ::
-
-                driver.page_source
+        Example:
+        --------
+        >>> print(driver.page_source)
         """
-        return self.execute(Command.GET_PAGE_SOURCE)['value']
+        return self.execute(Command.GET_PAGE_SOURCE)["value"]
 
     def close(self) -> None:
-        """
-        Closes the current window.
+        """Closes the current window.
 
-        :Usage:
-            ::
-
-                driver.close()
+        Example:
+        --------
+        >>> driver.close()
         """
         self.execute(Command.CLOSE)
 
     def quit(self) -> None:
-        """
-        Quits the driver and closes every associated window.
+        """Quits the driver and closes every associated window.
 
-        :Usage:
-            ::
-
-                driver.quit()
+        Example:
+        --------
+        >>> driver.quit()
         """
         try:
             self.execute(Command.QUIT)
@@ -953,249 +609,256 @@ class WebDriver(BaseWebDriver):
 
     @property
     def current_window_handle(self) -> str:
-        """
-        Returns the handle of the current window.
+        """Returns the handle of the current window.
 
-        :Usage:
-            ::
-
-                driver.current_window_handle
+        Example:
+        --------
+        >>> print(driver.current_window_handle)
         """
-        return self.execute(Command.W3C_GET_CURRENT_WINDOW_HANDLE)['value']
+        return self.execute(Command.W3C_GET_CURRENT_WINDOW_HANDLE)["value"]
 
     @property
     def window_handles(self) -> List[str]:
-        """
-        Returns the handles of all windows within the current session.
+        """Returns the handles of all windows within the current session.
 
-        :Usage:
-            ::
-
-                driver.window_handles
+        Example:
+        --------
+        >>> print(driver.window_handles)
         """
-        return self.execute(Command.W3C_GET_WINDOW_HANDLES)['value']
+        return self.execute(Command.W3C_GET_WINDOW_HANDLES)["value"]
 
     def maximize_window(self) -> None:
+        """Maximizes the current window that webdriver is using.
+
+        Example:
+        --------
+        >>> driver.maximize_window()
         """
-        Maximizes the current window that webdriver is using
-        """
-        params = None
         command = Command.W3C_MAXIMIZE_WINDOW
-        self.execute(command, params)
+        self.execute(command, None)
 
     def fullscreen_window(self) -> None:
-        """
-        Invokes the window manager-specific 'full screen' operation
+        """Invokes the window manager-specific 'full screen' operation.
+
+        Example:
+        --------
+        >>> driver.fullscreen_window()
         """
         self.execute(Command.FULLSCREEN_WINDOW)
 
     def minimize_window(self) -> None:
-        """
-        Invokes the window manager-specific 'minimize' operation
-        """
+        """Invokes the window manager-specific 'minimize' operation."""
         self.execute(Command.MINIMIZE_WINDOW)
 
     def print_page(self, print_options: Optional[PrintOptions] = None) -> str:
-        """
-        Takes PDF of the current page.
-        The driver makes a best effort to return a PDF based on the provided parameters.
+        """Takes PDF of the current page.
+
+        The driver makes a best effort to return a PDF based on the
+        provided Parameters.
+
+        Example:
+        --------
+        >>> driver.print_page()
         """
         options = {}
         if print_options:
             options = print_options.to_dict()
 
-        return self.execute(Command.PRINT_PAGE, options)['value']
+        return self.execute(Command.PRINT_PAGE, options)["value"]
 
     @property
     def switch_to(self) -> SwitchTo:
-        """
-        :Returns:
-            - SwitchTo: an object containing all options to switch focus into
+        """Return an object containing all options to switch focus into.
 
-        :Usage:
-            ::
+        Returns:
+        --------
+        SwitchTo: an object containing all options to switch focus into.
 
-                element = driver.switch_to.active_element
-                alert = driver.switch_to.alert
-                driver.switch_to.default_content()
-                driver.switch_to.frame('frame_name')
-                driver.switch_to.frame(1)
-                driver.switch_to.frame(driver.find_elements_by_tag_name("iframe")[0])
-                driver.switch_to.parent_frame()
-                driver.switch_to.window('main')
+        Examples:
+        --------
+        >>> element = driver.switch_to.active_element
+        >>> alert = driver.switch_to.alert
+        >>> driver.switch_to.default_content()
+        >>> driver.switch_to.frame("frame_name")
+        >>> driver.switch_to.frame(1)
+        >>> driver.switch_to.frame(driver.find_elements(By.TAG_NAME, "iframe")[0])
+        >>> driver.switch_to.parent_frame()
+        >>> driver.switch_to.window("main")
         """
         return self._switch_to
 
     # Navigation
     def back(self) -> None:
-        """
-        Goes one step backward in the browser history.
+        """Goes one step backward in the browser history.
 
-        :Usage:
-            ::
-
-                driver.back()
+        Example:
+        --------
+        >>> driver.back()
         """
         self.execute(Command.GO_BACK)
 
     def forward(self) -> None:
-        """
-        Goes one step forward in the browser history.
+        """Goes one step forward in the browser history.
 
-        :Usage:
-            ::
-
-                driver.forward()
+        Example:
+        --------
+        >>> driver.forward()
         """
         self.execute(Command.GO_FORWARD)
 
     def refresh(self) -> None:
-        """
-        Refreshes the current page.
+        """Refreshes the current page.
 
-        :Usage:
-            ::
-
-                driver.refresh()
+        Example:
+        --------
+        >>> driver.refresh()
         """
         self.execute(Command.REFRESH)
 
     # Options
     def get_cookies(self) -> List[dict]:
+        """Returns a set of dictionaries, corresponding to cookies visible in
+        the current session.
+
+        Returns:
+        --------
+        cookies:List[dict] : A list of dictionaries, corresponding to cookies visible in the current
+
+        Example:
+        --------
+        >>> cookies = driver.get_cookies()
         """
-        Returns a set of dictionaries, corresponding to cookies visible in the current session.
+        return self.execute(Command.GET_ALL_COOKIES)["value"]
 
-        :Usage:
-            ::
+    def get_cookie(self, name) -> Optional[Dict]:
+        """Get a single cookie by name. Raises ValueError if the name is empty
+        or whitespace. Returns the cookie if found, None if not.
 
-                driver.get_cookies()
+        Example:
+        --------
+        >>> cookie = driver.get_cookie("my_cookie")
         """
-        return self.execute(Command.GET_ALL_COOKIES)['value']
+        if not name or name.isspace():
+            raise ValueError("Cookie name cannot be empty")
 
-    def get_cookie(self, name) -> dict:
-        """
-        Get a single cookie by name. Returns the cookie if found, None if not.
+        with contextlib.suppress(NoSuchCookieException):
+            return self.execute(Command.GET_COOKIE, {"name": name})["value"]
 
-        :Usage:
-            ::
-
-                driver.get_cookie('my_cookie')
-        """
-        try:
-            return self.execute(Command.GET_COOKIE, {'name': name})['value']
-        except NoSuchCookieException:
-            return None
+        return None
 
     def delete_cookie(self, name) -> None:
-        """
-        Deletes a single cookie with the given name.
+        """Deletes a single cookie with the given name. Raises ValueError if
+        the name is empty or whitespace.
 
-        :Usage:
-            ::
-
-                driver.delete_cookie('my_cookie')
+        Example:
+        --------
+        >>> driver.delete_cookie("my_cookie")
         """
-        self.execute(Command.DELETE_COOKIE, {'name': name})
+
+        # firefox deletes all cookies when "" is passed as name
+        if not name or name.isspace():
+            raise ValueError("Cookie name cannot be empty")
+
+        self.execute(Command.DELETE_COOKIE, {"name": name})
 
     def delete_all_cookies(self) -> None:
-        """
-        Delete all cookies in the scope of the session.
+        """Delete all cookies in the scope of the session.
 
-        :Usage:
-            ::
-
-                driver.delete_all_cookies()
+        Example:
+        --------
+        >>> driver.delete_all_cookies()
         """
         self.execute(Command.DELETE_ALL_COOKIES)
 
     def add_cookie(self, cookie_dict) -> None:
+        """Adds a cookie to your current session.
+
+        Parameters:
+        -----------
+        cookie_dict : dict
+            - A dictionary object, with required keys - "name" and "value";
+            - Optional keys - "path", "domain", "secure", "httpOnly", "expiry", "sameSite"
+
+        Examples:
+        --------
+        >>> driver.add_cookie({"name": "foo", "value": "bar"})
+        >>> driver.add_cookie({"name": "foo", "value": "bar", "path": "/"})
+        >>> driver.add_cookie({"name": "foo", "value": "bar", "path": "/", "secure": True})
+        >>> driver.add_cookie({"name": "foo", "value": "bar", "sameSite": "Strict"})
         """
-        Adds a cookie to your current session.
-
-        :Args:
-         - cookie_dict: A dictionary object, with required keys - "name" and "value";
-            optional keys - "path", "domain", "secure", "expiry", "sameSite"
-
-        Usage:
-            driver.add_cookie({'name' : 'foo', 'value' : 'bar'})
-            driver.add_cookie({'name' : 'foo', 'value' : 'bar', 'path' : '/'})
-            driver.add_cookie({'name' : 'foo', 'value' : 'bar', 'path' : '/', 'secure':True})
-            driver.add_cookie({'name': 'foo', 'value': 'bar', 'sameSite': 'Strict'})
-
-        """
-        if 'sameSite' in cookie_dict:
-            assert cookie_dict['sameSite'] in ['Strict', 'Lax', 'None']
-            self.execute(Command.ADD_COOKIE, {'cookie': cookie_dict})
+        if "sameSite" in cookie_dict:
+            assert cookie_dict["sameSite"] in ["Strict", "Lax", "None"]
+            self.execute(Command.ADD_COOKIE, {"cookie": cookie_dict})
         else:
-            self.execute(Command.ADD_COOKIE, {'cookie': cookie_dict})
+            self.execute(Command.ADD_COOKIE, {"cookie": cookie_dict})
 
     # Timeouts
-    def implicitly_wait(self, time_to_wait) -> None:
+    def implicitly_wait(self, time_to_wait: float) -> None:
+        """Sets a sticky timeout to implicitly wait for an element to be found,
+        or a command to complete. This method only needs to be called one time
+        per session. To set the timeout for calls to execute_async_script, see
+        set_script_timeout.
+
+        Parameters:
+        -----------
+        time_to_wait : float
+            - Amount of time to wait (in seconds)
+
+        Example:
+        --------
+        >>> driver.implicitly_wait(30)
         """
-        Sets a sticky timeout to implicitly wait for an element to be found,
-           or a command to complete. This method only needs to be called one
-           time per session. To set the timeout for calls to
-           execute_async_script, see set_script_timeout.
+        self.execute(Command.SET_TIMEOUTS, {"implicit": int(float(time_to_wait) * 1000)})
 
-        :Args:
-         - time_to_wait: Amount of time to wait (in seconds)
+    def set_script_timeout(self, time_to_wait: float) -> None:
+        """Set the amount of time that the script should wait during an
+        execute_async_script call before throwing an error.
 
-        :Usage:
-            ::
+        Parameters:
+        -----------
+        time_to_wait : float
+            - The amount of time to wait (in seconds)
 
-                driver.implicitly_wait(30)
+        Example:
+        --------
+        >>> driver.set_script_timeout(30)
         """
-        self.execute(Command.SET_TIMEOUTS, {
-            'implicit': int(float(time_to_wait) * 1000)})
+        self.execute(Command.SET_TIMEOUTS, {"script": int(float(time_to_wait) * 1000)})
 
-    def set_script_timeout(self, time_to_wait) -> None:
-        """
-        Set the amount of time that the script should wait during an
-           execute_async_script call before throwing an error.
+    def set_page_load_timeout(self, time_to_wait: float) -> None:
+        """Set the amount of time to wait for a page load to complete before
+        throwing an error.
 
-        :Args:
-         - time_to_wait: The amount of time to wait (in seconds)
+        Parameters:
+        -----------
+        time_to_wait : float
+             - The amount of time to wait (in seconds)
 
-        :Usage:
-            ::
-
-                driver.set_script_timeout(30)
-        """
-        self.execute(Command.SET_TIMEOUTS, {
-            'script': int(float(time_to_wait) * 1000)})
-
-    def set_page_load_timeout(self, time_to_wait) -> None:
-        """
-        Set the amount of time to wait for a page load to complete
-           before throwing an error.
-
-        :Args:
-         - time_to_wait: The amount of time to wait
-
-        :Usage:
-            ::
-
-                driver.set_page_load_timeout(30)
+        Example:
+        --------
+        >>> driver.set_page_load_timeout(30)
         """
         try:
-            self.execute(Command.SET_TIMEOUTS, {
-                'pageLoad': int(float(time_to_wait) * 1000)})
+            self.execute(Command.SET_TIMEOUTS, {"pageLoad": int(float(time_to_wait) * 1000)})
         except WebDriverException:
-            self.execute(Command.SET_TIMEOUTS, {
-                'ms': float(time_to_wait) * 1000,
-                'type': 'page load'})
+            self.execute(Command.SET_TIMEOUTS, {"ms": float(time_to_wait) * 1000, "type": "page load"})
 
     @property
     def timeouts(self) -> Timeouts:
-        """
-        Get all the timeouts that have been set on the current session
+        """Get all the timeouts that have been set on the current session.
 
-        :Usage:
-            ::
-                driver.timeouts
-        :rtype: Timeout
+        Returns:
+        --------
+        Timeouts: A named tuple with the following fields:
+            - implicit_wait: The time to wait for elements to be found.
+            - page_load: The time to wait for a page to load.
+            - script: The time to wait for scripts to execute.
+
+        Example:
+        --------
+        >>> driver.timeouts
         """
-        timeouts = self.execute(Command.GET_TIMEOUTS)['value']
+        timeouts = self.execute(Command.GET_TIMEOUTS)["value"]
         timeouts["implicit_wait"] = timeouts.pop("implicit") / 1000
         timeouts["page_load"] = timeouts.pop("pageLoad") / 1000
         timeouts["script"] = timeouts.pop("script") / 1000
@@ -1203,286 +866,283 @@ class WebDriver(BaseWebDriver):
 
     @timeouts.setter
     def timeouts(self, timeouts) -> None:
-        """
-        Set all timeouts for the session. This will override any previously
+        """Set all timeouts for the session. This will override any previously
         set timeouts.
 
-        :Usage:
-            ::
-                my_timeouts = Timeouts()
-                my_timeouts.implicit_wait = 10
-                driver.timeouts = my_timeouts
+        Example:
+        --------
+        >>> my_timeouts = Timeouts()
+        >>> my_timeouts.implicit_wait = 10
+        >>> driver.timeouts = my_timeouts
         """
-        self.execute(Command.SET_TIMEOUTS, timeouts._to_json())['value']
+        _ = self.execute(Command.SET_TIMEOUTS, timeouts._to_json())["value"]
 
-    def find_element(self, by=By.ID, value=None) -> WebElement:
+    def find_element(self, by=By.ID, value: Optional[str] = None) -> WebElement:
+        """Find an element given a By strategy and locator.
+
+        Parameters:
+        -----------
+        by : selenium.webdriver.common.by.By
+            The locating strategy to use. Default is `By.ID`. Supported values include:
+            - By.ID: Locate by element ID.
+            - By.NAME: Locate by the `name` attribute.
+            - By.XPATH: Locate by an XPath expression.
+            - By.CSS_SELECTOR: Locate by a CSS selector.
+            - By.CLASS_NAME: Locate by the `class` attribute.
+            - By.TAG_NAME: Locate by the tag name (e.g., "input", "button").
+            - By.LINK_TEXT: Locate a link element by its exact text.
+            - By.PARTIAL_LINK_TEXT: Locate a link element by partial text match.
+            - RelativeBy: Locate elements relative to a specified root element.
+
+        Example:
+        --------
+        element = driver.find_element(By.ID, 'foo')
+
+        Returns:
+        -------
+        WebElement
+            The first matching `WebElement` found on the page.
         """
-        Find an element given a By strategy and locator.
+        by, value = self.locator_converter.convert(by, value)
 
-        :Usage:
-            ::
-
-                element = driver.find_element(By.ID, 'foo')
-
-        :rtype: WebElement
-        """
         if isinstance(by, RelativeBy):
-            return self.find_elements(by=by, value=value)[0]
+            elements = self.find_elements(by=by, value=value)
+            if not elements:
+                raise NoSuchElementException(f"Cannot locate relative element with: {by.root}")
+            return elements[0]
 
-        if by == By.ID:
-            by = By.CSS_SELECTOR
-            value = '[id="%s"]' % value
-        elif by == By.TAG_NAME:
-            by = By.CSS_SELECTOR
-        elif by == By.CLASS_NAME:
-            by = By.CSS_SELECTOR
-            value = ".%s" % value
-        elif by == By.NAME:
-            by = By.CSS_SELECTOR
-            value = '[name="%s"]' % value
+        return self.execute(Command.FIND_ELEMENT, {"using": by, "value": value})["value"]
 
-        return self.execute(Command.FIND_ELEMENT, {
-            'using': by,
-            'value': value})['value']
+    def find_elements(self, by=By.ID, value: Optional[str] = None) -> List[WebElement]:
+        """Find elements given a By strategy and locator.
 
-    def find_elements(self, by=By.ID, value=None) -> List[WebElement]:
+        Parameters:
+        -----------
+        by : selenium.webdriver.common.by.By
+            The locating strategy to use. Default is `By.ID`. Supported values include:
+            - By.ID: Locate by element ID.
+            - By.NAME: Locate by the `name` attribute.
+            - By.XPATH: Locate by an XPath expression.
+            - By.CSS_SELECTOR: Locate by a CSS selector.
+            - By.CLASS_NAME: Locate by the `class` attribute.
+            - By.TAG_NAME: Locate by the tag name (e.g., "input", "button").
+            - By.LINK_TEXT: Locate a link element by its exact text.
+            - By.PARTIAL_LINK_TEXT: Locate a link element by partial text match.
+            - RelativeBy: Locate elements relative to a specified root element.
+
+        Example:
+        --------
+        element = driver.find_elements(By.ID, 'foo')
+
+        Returns:
+        -------
+        List[WebElement]
+            list of `WebElements` matching locator strategy found on the page.
         """
-        Find elements given a By strategy and locator.
+        by, value = self.locator_converter.convert(by, value)
 
-        :Usage:
-            ::
-
-                elements = driver.find_elements(By.CLASS_NAME, 'foo')
-
-        :rtype: list of WebElement
-        """
         if isinstance(by, RelativeBy):
-            _pkg = '.'.join(__name__.split('.')[:-1])
-            raw_function = pkgutil.get_data(_pkg, 'findElements.js').decode('utf8')
-            find_element_js = "return ({}).apply(null, arguments);".format(raw_function)
+            _pkg = ".".join(__name__.split(".")[:-1])
+            raw_function = pkgutil.get_data(_pkg, "findElements.js").decode("utf8")
+            find_element_js = f"/* findElements */return ({raw_function}).apply(null, arguments);"
             return self.execute_script(find_element_js, by.to_dict())
-
-        if by == By.ID:
-            by = By.CSS_SELECTOR
-            value = '[id="%s"]' % value
-        elif by == By.TAG_NAME:
-            by = By.CSS_SELECTOR
-        elif by == By.CLASS_NAME:
-            by = By.CSS_SELECTOR
-            value = ".%s" % value
-        elif by == By.NAME:
-            by = By.CSS_SELECTOR
-            value = '[name="%s"]' % value
 
         # Return empty list if driver returns null
         # See https://github.com/SeleniumHQ/selenium/issues/4555
-        return self.execute(Command.FIND_ELEMENTS, {
-            'using': by,
-            'value': value})['value'] or []
-
-    @property
-    def desired_capabilities(self) -> dict:
-        """
-        returns the drivers current desired capabilities being used
-        """
-        warnings.warn("desired_capabilities is deprecated. Please call capabilities.",
-                      DeprecationWarning, stacklevel=2)
-        return self.caps
+        return self.execute(Command.FIND_ELEMENTS, {"using": by, "value": value})["value"] or []
 
     @property
     def capabilities(self) -> dict:
-        """
-        returns the drivers current capabilities being used.
+        """Returns the drivers current capabilities being used.
+
+        Example:
+        --------
+        >>> print(driver.capabilities)
         """
         return self.caps
 
     def get_screenshot_as_file(self, filename) -> bool:
+        """Saves a screenshot of the current window to a PNG image file.
+        Returns False if there is any IOError, else returns True. Use full
+        paths in your filename.
+
+        Parameters:
+        -----------
+        filename : str
+            - The full path you wish to save your screenshot to. This
+            - should end with a `.png` extension.
+
+        Example:
+        --------
+        >>> driver.get_screenshot_as_file("/Screenshots/foo.png")
         """
-        Saves a screenshot of the current window to a PNG image file. Returns
-           False if there is any IOError, else returns True. Use full paths in
-           your filename.
-
-        :Args:
-         - filename: The full path you wish to save your screenshot to. This
-           should end with a `.png` extension.
-
-        :Usage:
-            ::
-
-                driver.get_screenshot_as_file('/Screenshots/foo.png')
-        """
-        if not filename.lower().endswith('.png'):
-            warnings.warn("name used for saved screenshot does not match file "
-                          "type. It should end with a `.png` extension", UserWarning)
+        if not str(filename).lower().endswith(".png"):
+            warnings.warn(
+                "name used for saved screenshot does not match file type. It should end with a `.png` extension",
+                UserWarning,
+                stacklevel=2,
+            )
         png = self.get_screenshot_as_png()
         try:
-            with open(filename, 'wb') as f:
+            with open(filename, "wb") as f:
                 f.write(png)
-        except IOError:
+        except OSError:
             return False
         finally:
             del png
         return True
 
     def save_screenshot(self, filename) -> bool:
-        """
-        Saves a screenshot of the current window to a PNG image file. Returns
-           False if there is any IOError, else returns True. Use full paths in
-           your filename.
+        """Saves a screenshot of the current window to a PNG image file.
+        Returns False if there is any IOError, else returns True. Use full
+        paths in your filename.
 
-        :Args:
-         - filename: The full path you wish to save your screenshot to. This
-           should end with a `.png` extension.
+        Parameters:
+        -----------
+        filename : str
+            - The full path you wish to save your screenshot to. This
+            - should end with a `.png` extension.
 
-        :Usage:
-            ::
-
-                driver.save_screenshot('/Screenshots/foo.png')
+        Example:
+        --------
+        >>> driver.save_screenshot("/Screenshots/foo.png")
         """
         return self.get_screenshot_as_file(filename)
 
     def get_screenshot_as_png(self) -> bytes:
-        """
-        Gets the screenshot of the current window as a binary data.
+        """Gets the screenshot of the current window as a binary data.
 
-        :Usage:
-            ::
-
-                driver.get_screenshot_as_png()
+        Example:
+        --------
+        >>> driver.get_screenshot_as_png()
         """
-        return b64decode(self.get_screenshot_as_base64().encode('ascii'))
+        return b64decode(self.get_screenshot_as_base64().encode("ascii"))
 
     def get_screenshot_as_base64(self) -> str:
+        """Gets the screenshot of the current window as a base64 encoded string
+        which is useful in embedded images in HTML.
+
+        Example:
+        --------
+        >>> driver.get_screenshot_as_base64()
         """
-        Gets the screenshot of the current window as a base64 encoded string
-           which is useful in embedded images in HTML.
+        return self.execute(Command.SCREENSHOT)["value"]
 
-        :Usage:
-            ::
+    def set_window_size(self, width, height, windowHandle: str = "current") -> None:
+        """Sets the width and height of the current window. (window.resizeTo)
 
-                driver.get_screenshot_as_base64()
+        Parameters:
+        -----------
+        width : int
+            - the width in pixels to set the window to
+
+        height : int
+            - the height in pixels to set the window to
+
+        Example:
+        --------
+        >>> driver.set_window_size(800, 600)
         """
-        return self.execute(Command.SCREENSHOT)['value']
-
-    def set_window_size(self, width, height, windowHandle='current') -> dict:
-        """
-        Sets the width and height of the current window. (window.resizeTo)
-
-        :Args:
-         - width: the width in pixels to set the window to
-         - height: the height in pixels to set the window to
-
-        :Usage:
-            ::
-
-                driver.set_window_size(800,600)
-        """
-        if windowHandle != 'current':
-            warnings.warn("Only 'current' window is supported for W3C compatible browsers.")
+        self._check_if_window_handle_is_current(windowHandle)
         self.set_window_rect(width=int(width), height=int(height))
 
-    def get_window_size(self, windowHandle='current') -> dict:
-        """
-        Gets the width and height of the current window.
+    def get_window_size(self, windowHandle: str = "current") -> dict:
+        """Gets the width and height of the current window.
 
-        :Usage:
-            ::
-
-                driver.get_window_size()
+        Example:
+        --------
+        >>> driver.get_window_size()
         """
 
-        if windowHandle != 'current':
-            warnings.warn("Only 'current' window is supported for W3C compatible browsers.")
+        self._check_if_window_handle_is_current(windowHandle)
         size = self.get_window_rect()
 
-        if size.get('value', None):
-            size = size['value']
+        if size.get("value", None):
+            size = size["value"]
 
-        return {k: size[k] for k in ('width', 'height')}
+        return {k: size[k] for k in ("width", "height")}
 
-    def set_window_position(self, x, y, windowHandle='current') -> dict:
+    def set_window_position(self, x: float, y: float, windowHandle: str = "current") -> dict:
+        """Sets the x,y position of the current window. (window.moveTo)
+
+        Parameters:
+        ---------
+        x : float
+            - The x-coordinate in pixels to set the window position
+
+        y : float
+            - The y-coordinate in pixels to set the window position
+
+        Example:
+        --------
+        >>> driver.set_window_position(0, 0)
         """
-        Sets the x,y position of the current window. (window.moveTo)
-
-        :Args:
-         - x: the x-coordinate in pixels to set the window position
-         - y: the y-coordinate in pixels to set the window position
-
-        :Usage:
-            ::
-
-                driver.set_window_position(0,0)
-        """
-        if windowHandle != 'current':
-            warnings.warn("Only 'current' window is supported for W3C compatible browsers.")
+        self._check_if_window_handle_is_current(windowHandle)
         return self.set_window_rect(x=int(x), y=int(y))
 
-    def get_window_position(self, windowHandle='current') -> dict:
-        """
-        Gets the x,y position of the current window.
+    def get_window_position(self, windowHandle="current") -> dict:
+        """Gets the x,y position of the current window.
 
-        :Usage:
-            ::
-
-                driver.get_window_position()
+        Example:
+        --------
+        >>> driver.get_window_position()
         """
 
-        if windowHandle != 'current':
-            warnings.warn("Only 'current' window is supported for W3C compatible browsers.")
+        self._check_if_window_handle_is_current(windowHandle)
         position = self.get_window_rect()
 
-        return {k: position[k] for k in ('x', 'y')}
+        return {k: position[k] for k in ("x", "y")}
+
+    def _check_if_window_handle_is_current(self, windowHandle: str) -> None:
+        """Warns if the window handle is not equal to `current`."""
+        if windowHandle != "current":
+            warnings.warn("Only 'current' window is supported for W3C compatible browsers.", stacklevel=2)
 
     def get_window_rect(self) -> dict:
-        """
-        Gets the x, y coordinates of the window as well as height and width of
-        the current window.
+        """Gets the x, y coordinates of the window as well as height and width
+        of the current window.
 
-        :Usage:
-            ::
-
-                driver.get_window_rect()
+        Example:
+        --------
+        >>> driver.get_window_rect()
         """
-        return self.execute(Command.GET_WINDOW_RECT)['value']
+        return self.execute(Command.GET_WINDOW_RECT)["value"]
 
     def set_window_rect(self, x=None, y=None, width=None, height=None) -> dict:
-        """
-        Sets the x, y coordinates of the window as well as height and width of
-        the current window. This method is only supported for W3C compatible
+        """Sets the x, y coordinates of the window as well as height and width
+        of the current window. This method is only supported for W3C compatible
         browsers; other browsers should use `set_window_position` and
         `set_window_size`.
 
-        :Usage:
-            ::
-
-                driver.set_window_rect(x=10, y=10)
-                driver.set_window_rect(width=100, height=200)
-                driver.set_window_rect(x=10, y=10, width=100, height=200)
+        Example:
+        --------
+        >>> driver.set_window_rect(x=10, y=10)
+        >>> driver.set_window_rect(width=100, height=200)
+        >>> driver.set_window_rect(x=10, y=10, width=100, height=200)
         """
 
         if (x is None and y is None) and (not height and not width):
             raise InvalidArgumentException("x and y or height and width need values")
 
-        return self.execute(Command.SET_WINDOW_RECT, {"x": x, "y": y,
-                                                      "width": width,
-                                                      "height": height})['value']
+        return self.execute(Command.SET_WINDOW_RECT, {"x": x, "y": y, "width": width, "height": height})["value"]
 
     @property
-    def file_detector(self):
+    def file_detector(self) -> FileDetector:
         return self._file_detector
 
     @file_detector.setter
-    def file_detector(self, detector):
-        """
-        Set the file detector to be used when sending keyboard input.
-        By default, this is set to a file detector that does nothing.
+    def file_detector(self, detector) -> None:
+        """Set the file detector to be used when sending keyboard input. By
+        default, this is set to a file detector that does nothing.
 
-        see FileDetector
-        see LocalFileDetector
-        see UselessFileDetector
+        - see FileDetector
+        - see LocalFileDetector
+        - see UselessFileDetector
 
-        :Args:
-         - detector: The detector to use. Must not be None.
+        Parameters:
+        -----------
+        detector : Any
+            - The detector to use. Must not be None.
         """
         if not detector:
             raise WebDriverException("You may not set a file detector that is null")
@@ -1492,75 +1152,65 @@ class WebDriver(BaseWebDriver):
 
     @property
     def orientation(self):
-        """
-        Gets the current orientation of the device
+        """Gets the current orientation of the device.
 
-        :Usage:
-            ::
-
-                orientation = driver.orientation
+        Example:
+        --------
+        >>> orientation = driver.orientation
         """
-        return self.execute(Command.GET_SCREEN_ORIENTATION)['value']
+        return self.execute(Command.GET_SCREEN_ORIENTATION)["value"]
 
     @orientation.setter
-    def orientation(self, value):
+    def orientation(self, value) -> None:
+        """Sets the current orientation of the device.
+
+        Parameters:
+        -----------
+        value : str
+            - orientation to set it to.
+
+        Example:
+        --------
+        >>> driver.orientation = "landscape"
         """
-        Sets the current orientation of the device
-
-        :Args:
-         - value: orientation to set it to.
-
-        :Usage:
-            ::
-
-                driver.orientation = 'landscape'
-        """
-        allowed_values = ['LANDSCAPE', 'PORTRAIT']
+        allowed_values = ["LANDSCAPE", "PORTRAIT"]
         if value.upper() in allowed_values:
-            self.execute(Command.SET_SCREEN_ORIENTATION, {'orientation': value})
+            self.execute(Command.SET_SCREEN_ORIENTATION, {"orientation": value})
         else:
             raise WebDriverException("You can only set the orientation to 'LANDSCAPE' and 'PORTRAIT'")
 
-    @property
-    def application_cache(self):
-        """ Returns a ApplicationCache Object to interact with the browser app cache"""
-        return ApplicationCache(self)
+    def start_devtools(self):
+        global devtools
+        if self._websocket_connection:
+            return devtools, self._websocket_connection
+        else:
+            global cdp
+            import_cdp()
 
-    @property
-    def log_types(self):
-        """
-        Gets a list of the available log types. This only works with w3c compliant browsers.
+            if not devtools:
+                if self.caps.get("se:cdp"):
+                    ws_url = self.caps.get("se:cdp")
+                    version = self.caps.get("se:cdpVersion").split(".")[0]
+                else:
+                    version, ws_url = self._get_cdp_details()
 
-        :Usage:
-            ::
+                if not ws_url:
+                    raise WebDriverException("Unable to find url to connect to from capabilities")
 
-                driver.log_types
-        """
-        return self.execute(Command.GET_AVAILABLE_LOG_TYPES)['value']
-
-    def get_log(self, log_type):
-        """
-        Gets the log for a given log type
-
-        :Args:
-         - log_type: type of log that which will be returned
-
-        :Usage:
-            ::
-
-                driver.get_log('browser')
-                driver.get_log('driver')
-                driver.get_log('client')
-                driver.get_log('server')
-        """
-        return self.execute(Command.GET_LOG, {'type': log_type})['value']
+                devtools = cdp.import_devtools(version)
+                if self.caps["browserName"].lower() == "firefox":
+                    raise RuntimeError("CDP support for Firefox has been removed. Please switch to WebDriver BiDi.")
+            self._websocket_connection = WebSocketConnection(ws_url)
+            targets = self._websocket_connection.execute(devtools.target.get_targets())
+            target_id = targets[0].target_id
+            session = self._websocket_connection.execute(devtools.target.attach_to_target(target_id, True))
+            self._websocket_connection.session_id = session
+            return devtools, self._websocket_connection
 
     @asynccontextmanager
     async def bidi_connection(self):
-        assert sys.version_info >= (3, 7)
         global cdp
         import_cdp()
-        ws_url = None
         if self.caps.get("se:cdp"):
             ws_url = self.caps.get("se:cdp")
             version = self.caps.get("se:cdpVersion").split(".")[0]
@@ -1570,38 +1220,417 @@ class WebDriver(BaseWebDriver):
         if not ws_url:
             raise WebDriverException("Unable to find url to connect to from capabilities")
 
-        cdp.import_devtools(version)
-
-        devtools = import_module("selenium.webdriver.common.devtools.v{}".format(version))
+        devtools = cdp.import_devtools(version)
         async with cdp.open_cdp(ws_url) as conn:
             targets = await conn.execute(devtools.target.get_targets())
             target_id = targets[0].target_id
             async with conn.open_session(target_id) as session:
                 yield BidiConnection(session, cdp, devtools)
 
+    @property
+    def script(self):
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if not self._script:
+            self._script = Script(self._websocket_connection)
+
+        return self._script
+
+    def _start_bidi(self):
+        if self.caps.get("webSocketUrl"):
+            ws_url = self.caps.get("webSocketUrl")
+        else:
+            raise WebDriverException("Unable to find url to connect to from capabilities")
+
+        self._websocket_connection = WebSocketConnection(ws_url)
+
+    @property
+    def network(self):
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if not hasattr(self, "_network") or self._network is None:
+            self._network = Network(self._websocket_connection)
+
+        return self._network
+
+    @property
+    def browser(self):
+        """Returns a browser module object for BiDi browser commands.
+
+        Returns:
+        --------
+        Browser: an object containing access to BiDi browser commands.
+
+        Examples:
+        ---------
+        >>> user_context = driver.browser.create_user_context()
+        >>> user_contexts = driver.browser.get_user_contexts()
+        >>> client_windows = driver.browser.get_client_windows()
+        >>> driver.browser.remove_user_context(user_context)
+        """
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if self._browser is None:
+            self._browser = Browser(self._websocket_connection)
+
+        return self._browser
+
+    @property
+    def _session(self):
+        """
+        Returns the BiDi session object for the current WebDriver session.
+        """
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if self._bidi_session is None:
+            self._bidi_session = Session(self._websocket_connection)
+
+        return self._bidi_session
+
+    @property
+    def browsing_context(self):
+        """Returns a browsing context module object for BiDi browsing context commands.
+
+        Returns:
+        --------
+        BrowsingContext: an object containing access to BiDi browsing context commands.
+
+        Examples:
+        ---------
+        >>> context_id = driver.browsing_context.create(type="tab")
+        >>> driver.browsing_context.navigate(context=context_id, url="https://www.selenium.dev")
+        >>> driver.browsing_context.capture_screenshot(context=context_id)
+        >>> driver.browsing_context.close(context_id)
+        """
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if self._browsing_context is None:
+            self._browsing_context = BrowsingContext(self._websocket_connection)
+
+        return self._browsing_context
+
+    @property
+    def storage(self):
+        """Returns a storage module object for BiDi storage commands.
+
+        Returns:
+        --------
+        Storage: an object containing access to BiDi storage commands.
+
+        Examples:
+        ---------
+        >>> cookie_filter = CookieFilter(name="example")
+        >>> result = driver.storage.get_cookies(filter=cookie_filter)
+        >>> driver.storage.set_cookie(cookie=PartialCookie(
+                "name", BytesValue(BytesValue.TYPE_STRING, "value"), "domain")
+            )
+        >>> driver.storage.delete_cookies(filter=CookieFilter(name="example"))
+        """
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if self._storage is None:
+            self._storage = Storage(self._websocket_connection)
+
+        return self._storage
+
+    @property
+    def webextension(self):
+        """Returns a webextension module object for BiDi webextension commands.
+
+        Returns:
+        --------
+        WebExtension: an object containing access to BiDi webextension commands.
+
+        Examples:
+        ---------
+        >>> extension_path = "/path/to/extension"
+        >>> extension_result = driver.webextension.install(path=extension_path)
+        >>> driver.webextension.uninstall(extension_result)
+        """
+        if not self._websocket_connection:
+            self._start_bidi()
+
+        if self._webextension is None:
+            self._webextension = WebExtension(self._websocket_connection)
+
+        return self._webextension
+
     def _get_cdp_details(self):
         import json
+
         import urllib3
 
         http = urllib3.PoolManager()
-        _firefox = False
         if self.caps.get("browserName") == "chrome":
-            debugger_address = self.caps.get(f"{self.vendor_prefix}:{self.caps.get('browserName')}Options").get("debuggerAddress")
-        else:
-            _firefox = True
-            debugger_address = self.caps.get("moz:debuggerAddress")
-        res = http.request('GET', f"http://{debugger_address}/json/version")
+            debugger_address = self.caps.get("goog:chromeOptions").get("debuggerAddress")
+        elif self.caps.get("browserName") == "MicrosoftEdge":
+            debugger_address = self.caps.get("ms:edgeOptions").get("debuggerAddress")
+
+        res = http.request("GET", f"http://{debugger_address}/json/version")
         data = json.loads(res.data)
 
         browser_version = data.get("Browser")
         websocket_url = data.get("webSocketDebuggerUrl")
 
         import re
-        if _firefox:
-            # Mozilla Automation Team asked to only support 85
-            # until WebDriver Bidi is available.
-            version = 85
-        else:
-            version = re.search(r".*/(\d+)\.", browser_version).group(1)
+
+        version = re.search(r".*/(\d+)\.", browser_version).group(1)
 
         return version, websocket_url
+
+    # Virtual Authenticator Methods
+    def add_virtual_authenticator(self, options: VirtualAuthenticatorOptions) -> None:
+        """Adds a virtual authenticator with the given options.
+
+        Example:
+        --------
+        >>> from selenium.webdriver.common.virtual_authenticator import VirtualAuthenticatorOptions
+        >>> options = VirtualAuthenticatorOptions(protocol="u2f", transport="usb", device_id="myDevice123")
+        >>> driver.add_virtual_authenticator(options)
+        """
+        self._authenticator_id = self.execute(Command.ADD_VIRTUAL_AUTHENTICATOR, options.to_dict())["value"]
+
+    @property
+    def virtual_authenticator_id(self) -> str:
+        """Returns the id of the virtual authenticator.
+
+        Example:
+        --------
+        >>> print(driver.virtual_authenticator_id)
+        """
+        return self._authenticator_id
+
+    @required_virtual_authenticator
+    def remove_virtual_authenticator(self) -> None:
+        """Removes a previously added virtual authenticator.
+
+        The authenticator is no longer valid after removal, so no
+        methods may be called.
+
+        Example:
+        --------
+        >>> driver.remove_virtual_authenticator()
+        """
+        self.execute(Command.REMOVE_VIRTUAL_AUTHENTICATOR, {"authenticatorId": self._authenticator_id})
+        self._authenticator_id = None
+
+    @required_virtual_authenticator
+    def add_credential(self, credential: Credential) -> None:
+        """Injects a credential into the authenticator.
+
+        Example:
+        --------
+        >>> from selenium.webdriver.common.credential import Credential
+        >>> credential = Credential(id="user@example.com", password="aPassword")
+        >>> driver.add_credential(credential)
+        """
+        self.execute(Command.ADD_CREDENTIAL, {**credential.to_dict(), "authenticatorId": self._authenticator_id})
+
+    @required_virtual_authenticator
+    def get_credentials(self) -> List[Credential]:
+        """Returns the list of credentials owned by the authenticator.
+
+        Example:
+        --------
+        >>> credentials = driver.get_credentials()
+        """
+        credential_data = self.execute(Command.GET_CREDENTIALS, {"authenticatorId": self._authenticator_id})
+        return [Credential.from_dict(credential) for credential in credential_data["value"]]
+
+    @required_virtual_authenticator
+    def remove_credential(self, credential_id: Union[str, bytearray]) -> None:
+        """Removes a credential from the authenticator.
+
+        Example:
+        --------
+        >>> credential_id = "user@example.com"
+        >>> driver.remove_credential(credential_id)
+        """
+        # Check if the credential is bytearray converted to b64 string
+        if isinstance(credential_id, bytearray):
+            credential_id = urlsafe_b64encode(credential_id).decode()
+
+        self.execute(
+            Command.REMOVE_CREDENTIAL, {"credentialId": credential_id, "authenticatorId": self._authenticator_id}
+        )
+
+    @required_virtual_authenticator
+    def remove_all_credentials(self) -> None:
+        """Removes all credentials from the authenticator.
+
+        Example:
+        --------
+        >>> driver.remove_all_credentials()
+        """
+        self.execute(Command.REMOVE_ALL_CREDENTIALS, {"authenticatorId": self._authenticator_id})
+
+    @required_virtual_authenticator
+    def set_user_verified(self, verified: bool) -> None:
+        """Sets whether the authenticator will simulate success or fail on user
+        verification.
+
+        Parameters:
+        -----------
+        verified: True if the authenticator will pass user verification, False otherwise.
+
+        Example:
+        --------
+        >>> driver.set_user_verified(True)
+        """
+        self.execute(Command.SET_USER_VERIFIED, {"authenticatorId": self._authenticator_id, "isUserVerified": verified})
+
+    def get_downloadable_files(self) -> list:
+        """Retrieves the downloadable files as a list of file names.
+
+        Example:
+        --------
+        >>> files = driver.get_downloadable_files()
+        """
+        if "se:downloadsEnabled" not in self.capabilities:
+            raise WebDriverException("You must enable downloads in order to work with downloadable files.")
+
+        return self.execute(Command.GET_DOWNLOADABLE_FILES)["value"]["names"]
+
+    def download_file(self, file_name: str, target_directory: str) -> None:
+        """Downloads a file with the specified file name to the target
+        directory.
+
+        Parameters:
+        -----------
+        file_name : str
+            - The name of the file to download.
+
+        target_directory : str
+            - The path to the directory to save the downloaded file.
+
+        Example:
+        --------
+        >>> driver.download_file("example.zip", "/path/to/directory")
+        """
+        if "se:downloadsEnabled" not in self.capabilities:
+            raise WebDriverException("You must enable downloads in order to work with downloadable files.")
+
+        if not os.path.exists(target_directory):
+            os.makedirs(target_directory)
+
+        contents = self.execute(Command.DOWNLOAD_FILE, {"name": file_name})["value"]["contents"]
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            zip_file = os.path.join(tmp_dir, file_name + ".zip")
+            with open(zip_file, "wb") as file:
+                file.write(base64.b64decode(contents))
+
+            with zipfile.ZipFile(zip_file, "r") as zip_ref:
+                zip_ref.extractall(target_directory)
+
+    def delete_downloadable_files(self) -> None:
+        """Deletes all downloadable files.
+
+        Example:
+        --------
+        >>> driver.delete_downloadable_files()
+        """
+        if "se:downloadsEnabled" not in self.capabilities:
+            raise WebDriverException("You must enable downloads in order to work with downloadable files.")
+
+        self.execute(Command.DELETE_DOWNLOADABLE_FILES)
+
+    @property
+    def fedcm(self) -> FedCM:
+        """Returns the Federated Credential Management (FedCM) dialog object
+        for interaction.
+
+        Returns:
+        -------
+        FedCM: an object providing access to all Federated Credential Management (FedCM) dialog commands.
+
+        Examples:
+        --------
+        >>> title = driver.fedcm.title
+        >>> subtitle = driver.fedcm.subtitle
+        >>> dialog_type = driver.fedcm.dialog_type
+        >>> accounts = driver.fedcm.account_list
+        >>> driver.fedcm.select_account(0)
+        >>> driver.fedcm.accept()
+        >>> driver.fedcm.dismiss()
+        >>> driver.fedcm.enable_delay()
+        >>> driver.fedcm.disable_delay()
+        >>> driver.fedcm.reset_cooldown()
+        """
+        return self._fedcm
+
+    @property
+    def supports_fedcm(self) -> bool:
+        """Returns whether the browser supports FedCM capabilities.
+
+        Example:
+        --------
+        >>> print(driver.supports_fedcm)
+        """
+        return self.capabilities.get(ArgOptions.FEDCM_CAPABILITY, False)
+
+    def _require_fedcm_support(self):
+        """Raises an exception if FedCM is not supported."""
+        if not self.supports_fedcm:
+            raise WebDriverException(
+                "This browser does not support Federated Credential Management. "
+                "Please ensure you're using a supported browser."
+            )
+
+    @property
+    def dialog(self):
+        """Returns the FedCM dialog object for interaction.
+
+        Example:
+        --------
+        >>> dialog = driver.dialog
+        """
+        self._require_fedcm_support()
+        return Dialog(self)
+
+    def fedcm_dialog(self, timeout=5, poll_frequency=0.5, ignored_exceptions=None):
+        """Waits for and returns the FedCM dialog.
+
+        Parameters:
+        -----------
+        timeout : int
+            - How long to wait for the dialog
+
+        poll_frequency : floatHow
+            - Frequently to poll
+
+        ignored_exceptions : Any
+            - Exceptions to ignore while waiting
+
+        Returns:
+        -------
+            The FedCM dialog object if found
+
+        Raises:
+        -------
+            TimeoutException if dialog doesn't appear
+            WebDriverException if FedCM not supported
+        """
+        from selenium.common.exceptions import NoAlertPresentException
+        from selenium.webdriver.support.wait import WebDriverWait
+
+        self._require_fedcm_support()
+
+        if ignored_exceptions is None:
+            ignored_exceptions = (NoAlertPresentException,)
+
+        def _check_fedcm():
+            try:
+                dialog = Dialog(self)
+                return dialog if dialog.type else None
+            except NoAlertPresentException:
+                return None
+
+        wait = WebDriverWait(self, timeout, poll_frequency=poll_frequency, ignored_exceptions=ignored_exceptions)
+        return wait.until(lambda _: _check_fedcm())

@@ -7,7 +7,7 @@
             "sub_dir": "Vulkan-Headers",
             "build_dir": "Vulkan-Headers/build",
             "install_dir": "Vulkan-Headers/build/install",
-            "commit": "v1.4.311"
+            "commit": "v1.4.323"
         },
         {
             "name": "Vulkan-Utility-Libraries",
@@ -15,7 +15,7 @@
             "sub_dir": "Vulkan-Utility-Libraries",
             "build_dir": "Vulkan-Utility-Libraries/build",
             "install_dir": "Vulkan-Utility-Libraries/build/install",
-            "commit": "v1.4.311",
+            "commit": "v1.4.323",
             "deps": [
                 {
                     "var_name": "VULKAN_HEADERS_INSTALL_DIR",
@@ -29,7 +29,7 @@
             "sub_dir": "SPIRV-Headers",
             "build_dir": "SPIRV-Headers/build",
             "install_dir": "SPIRV-Headers/build/install",
-            "commit": "8c88e0c4c94a21de825efccba5f99a862b049825"
+            "commit": "de1807b7cfa8e722979d5ab7b7445b258dbc1836"
         },
         {
             "name": "SPIRV-Tools",
@@ -43,7 +43,7 @@
                 "-DSPIRV_SKIP_TESTS=ON",
                 "-DSPIRV_SKIP_EXECUTABLES=OFF"
             ],
-            "commit": "393d5c7df150532045c50affffea2df22e8231b0"
+            "commit": "286c4a66d950b6ab78b1ed04b14931ac806da99d"
         },
         {
             "name": "mimalloc",
@@ -57,7 +57,7 @@
                 "-DMI_BUILD_SHARED=OFF",
                 "-DMI_BUILD_TESTS=OFF"
             ],
-            "commit": "v2.1.2",
+            "commit": "v3.0.3",
             "build_platforms": [
                 "windows"
             ]
@@ -84,7 +84,7 @@
             "sub_dir": "glslang",
             "build_dir": "glslang/build",
             "install_dir": "glslang/build/install",
-            "commit": "e57f993cff981c8c3ffd38967e030f04d13781a9",
+            "commit": "f43df42fe69bb38d43625b53e0706bbee43d74b4",
             "cmake_options": [
                 "-DENABLE_OPT=OFF"
             ],
@@ -99,7 +99,7 @@
             "sub_dir": "Vulkan-Loader",
             "build_dir": "Vulkan-Loader/build",
             "install_dir": "Vulkan-Loader/build/install",
-            "commit": "v1.4.311",
+            "commit": "v1.4.323",
             "build_step": "skip",
             "optional": [
                 "tests"
@@ -112,24 +112,17 @@
             "sub_dir": "Vulkan-Profiles",
             "build_dir": "Vulkan-Profiles/build",
             "install_dir": "Vulkan-Profiles/build/install",
-            "commit": "v1.4.306",
+            "commit": "e0093bc4eabf6212194f96e76ab5e05549035da0",
             "build_step": "skip",
             "optional": [
                 "tests"
             ]
         },
         {
-            "name": "Vulkan-Tools",
-            "api": "vulkan",
-            "url": "https://github.com/KhronosGroup/Vulkan-Tools.git",
-            "sub_dir": "Vulkan-Tools",
-            "build_dir": "Vulkan-Tools/build",
-            "install_dir": "Vulkan-Tools/build/install",
-            "commit": "v1.4.311",
-            "build_step": "skip",
-            "optional": [
-                "tests"
-            ]
+            "name": "slang",
+            "repo_binaries_url": "https://github.com/shader-slang/slang/releases/tag/v2025.12.1",
+            "build_dir": "slang/download",
+            "install_dir": "slang/install"
         }
     ],
     "install_names": {
@@ -139,6 +132,7 @@
         "SPIRV-Headers": "SPIRV_HEADERS_INSTALL_DIR",
         "SPIRV-Tools": "SPIRV_TOOLS_INSTALL_DIR",
         "googletest": "GOOGLETEST_INSTALL_DIR",
-        "mimalloc": "MIMALLOC_INSTALL_DIR"
+        "mimalloc": "MIMALLOC_INSTALL_DIR",
+        "slang": "SLANG_INSTALL_DIR"
     }
 }

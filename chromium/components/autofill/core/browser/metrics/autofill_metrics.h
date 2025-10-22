@@ -29,6 +29,7 @@
 #include "components/autofill/core/browser/metrics/log_event.h"
 #include "components/autofill/core/browser/payments/payments_autofill_client.h"
 #include "components/autofill/core/browser/suggestions/suggestion_hiding_reason.h"
+#include "components/autofill/core/browser/ui/autofill_image_fetcher_base.h"
 #include "components/autofill/core/browser/ui/popup_interaction.h"
 #include "components/autofill/core/common/dense_set.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-forward.h"
@@ -455,6 +456,21 @@ class AutofillMetrics {
     kMaxValue = kPassword
   };
 
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  //
+  // Represents the status of Autofill prompts when at least one prompt can be
+  // displayed.
+  enum class AutofillPromptStatus {
+    // Both prompts could have been displayed.
+    kAddressAndCreditCardShown = 0,
+    // Only the address prompt could have been displayed.
+    kAddressShown = 1,
+    // Only the credit card prompt could have been displayed.
+    kCreditCardShown = 2,
+    kMaxValue = kCreditCardShown,
+  };
+
   // Utility class for determining the seamlessness of a credit card fill.
   class CreditCardSeamlessness {
    public:
@@ -722,10 +738,6 @@ class AutofillMetrics {
   // used.
   static void LogAutocompleteDaysSinceLastUse(size_t days);
 
-  // Logs the number of days since an unaccepted Autocomplete suggestion was
-  // last used.
-  static void LogUnacceptedAutocompleteSuggestionDaysSinceLastUse(size_t days);
-
   // Logs the fact that an autocomplete popup was shown.
   static void OnAutocompleteSuggestionsShown();
 
@@ -849,10 +861,17 @@ class AutofillMetrics {
   static void LogVerificationStatusOfAddressTokensOnProfileUsage(
       const AutofillProfile& profile);
 
-  // Logs the image fetching result for one image in AutofillImageFetcher.
-  static void LogImageFetchResult(bool succeeded);
-  // Logs the roundtrip latency for fetching an image in AutofillImageFetcher.
-  static void LogImageFetcherRequestLatency(base::TimeDelta latency);
+  // Logs the image fetching result for one `image_type` in
+  // AutofillImageFetcher.
+  static void LogImageFetchResult(
+      AutofillImageFetcherBase::ImageType image_type,
+      bool succeeded);
+  // Logs the overall image fetching result for a `image_type` in
+  // AutofillImageFetcher after a maximum preset number of attempts during
+  // browser startup.
+  static void LogImageFetchOverallResult(
+      AutofillImageFetcherBase::ImageType image_type,
+      bool succeeded);
 
   // Logs a field's (PredictionState, AutocompleteState) pair on form submit.
   static void LogAutocompletePredictionCollisionState(
@@ -891,9 +910,6 @@ class AutofillMetrics {
 
   static void LogAutocompleteEvent(AutocompleteEvent event);
 
-  static void LogAutofillPopupVisibleDuration(FillingProduct filling_product,
-                                              base::TimeDelta duration);
-
   // TODO(crbug.com/316143236): Remove all datalist related metrics once
   // debugging is complete.
   static void LogDataListSuggestionsShown();
@@ -901,6 +917,9 @@ class AutofillMetrics {
   static void LogDataListSuggestionsUpdated();
 
   static void LogDataListSuggestionsInserted();
+
+  // Logs the status of Autofill prompts.
+  static void LogAutofillPromptStatus(AutofillPromptStatus status);
 };
 
 #if defined(UNIT_TEST)

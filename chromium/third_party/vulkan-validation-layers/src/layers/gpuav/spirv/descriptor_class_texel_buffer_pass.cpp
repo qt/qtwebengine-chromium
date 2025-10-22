@@ -18,26 +18,28 @@
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
 
-#include "generated/instrumentation_descriptor_class_texel_buffer_comp.h"
+#include "generated/gpuav_offline_spirv.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 
 namespace gpuav {
 namespace spirv {
 
-const static OfflineLinkInfo link_info = {instrumentation_descriptor_class_texel_buffer_comp,
-                                          instrumentation_descriptor_class_texel_buffer_comp_size,
-                                          "inst_descriptor_class_texel_buffer"};
+const static OfflineModule kOfflineModule = {instrumentation_descriptor_class_texel_buffer_comp,
+                                             instrumentation_descriptor_class_texel_buffer_comp_size, UseErrorPayloadVariable};
 
-DescriptorClassTexelBufferPass::DescriptorClassTexelBufferPass(Module& module) : Pass(module) { module.use_bda_ = true; }
+const static OfflineFunction kOfflineFunction = {"inst_descriptor_class_texel_buffer",
+                                                 instrumentation_descriptor_class_texel_buffer_comp_function_0_offset};
+
+DescriptorClassTexelBufferPass::DescriptorClassTexelBufferPass(Module& module) : Pass(module, kOfflineModule) {
+    module.use_bda_ = true;
+}
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
-uint32_t DescriptorClassTexelBufferPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+uint32_t DescriptorClassTexelBufferPass::GetLinkFunctionId() { return GetLinkFunction(link_function_id_, kOfflineFunction); }
 
-uint32_t DescriptorClassTexelBufferPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it,
-                                                            const InjectionData& injection_data, const InstructionMeta& meta) {
+void DescriptorClassTexelBufferPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     assert(meta.access_chain_inst && meta.var_inst);
     const Constant& set_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_set);
-    const Constant& binding_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_binding);
     const uint32_t descriptor_index_id = CastToUint32(meta.descriptor_index_id, block, inst_it);  // might be int32
 
     const uint32_t opcode = meta.target_instruction->Opcode();
@@ -56,17 +58,19 @@ uint32_t DescriptorClassTexelBufferPass::CreateFunctionCall(BasicBlock& block, I
     BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[meta.descriptor_set][meta.descriptor_binding];
     const Constant& binding_layout_offset = module_.type_manager_.GetConstantUInt32(binding_layout.start);
 
+    const uint32_t inst_position = meta.target_instruction->GetPositionIndex();
+    const uint32_t inst_position_id = module_.type_manager_.CreateConstantUInt32(inst_position).Id();
+
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
-    const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
+    const uint32_t void_type = module_.type_manager_.GetTypeVoid().Id();
 
-    block.CreateInstruction(
-        spv::OpFunctionCall,
-        {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id, set_constant.Id(),
-         binding_constant.Id(), descriptor_index_id, descriptor_offset_id, binding_layout_offset.Id()},
-        inst_it);
+    block.CreateInstruction(spv::OpFunctionCall,
+                            {void_type, function_result, function_def, inst_position_id, set_constant.Id(), descriptor_index_id,
+                             descriptor_offset_id, binding_layout_offset.Id()},
+                            inst_it);
 
-    return function_result;
+    module_.need_log_error_ = true;
 }
 
 bool DescriptorClassTexelBufferPass::RequiresInstrumentation(const Function& function, const Instruction& inst,
@@ -111,14 +115,14 @@ bool DescriptorClassTexelBufferPass::RequiresInstrumentation(const Function& fun
         const Variable* global_var = module_.type_manager_.FindVariableById(load_inst->Operand(0));
         meta.var_inst = global_var ? &global_var->inst_ : nullptr;
     }
-    if (!meta.var_inst || (meta.var_inst->Opcode() != spv::OpAccessChain && meta.var_inst->Opcode() != spv::OpVariable)) {
+    if (!meta.var_inst || (!meta.var_inst->IsNonPtrAccessChain() && meta.var_inst->Opcode() != spv::OpVariable)) {
         return false;
     }
 
     // If OpVariable, access_chain_inst_ is never checked because it should be a direct image access
     meta.access_chain_inst = meta.var_inst;
 
-    if (meta.var_inst->Opcode() == spv::OpAccessChain) {
+    if (meta.var_inst->IsNonPtrAccessChain()) {
         meta.descriptor_index_id = meta.var_inst->Operand(1);
 
         if (meta.var_inst->Length() > 5) {
@@ -187,12 +191,18 @@ bool DescriptorClassTexelBufferPass::Instrument() {
                 if (IsMaxInstrumentationsCount()) continue;
                 instrumentations_count_++;
 
-                InjectionData injection_data = GetInjectionData(*function, current_block, inst_it, *meta.target_instruction);
-
                 // inst_it is updated to the instruction after the new function call, it will not add/remove any Blocks
-                CreateFunctionCall(current_block, &inst_it, injection_data, meta);
+                CreateFunctionCall(current_block, &inst_it, meta);
             }
         }
+    }
+
+    if (instrumentations_count_ > 75) {
+        module_.InternalWarning(
+            "GPUAV-Compile-time-texel-buffer",
+            "This shader will be very slow to compile and runtime performance may also be slow. This is due to the number of OOB "
+            "checks for texel "
+            "buffers. Turn on the |gpuav_force_on_robustness| setting to skip these checks and improve GPU-AV performance.");
     }
 
     return instrumentations_count_ != 0;

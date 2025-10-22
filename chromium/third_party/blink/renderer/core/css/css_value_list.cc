@@ -43,7 +43,12 @@ CSSValueList::CSSValueList(ValueListSeparator list_separator)
 
 CSSValueList::CSSValueList(ValueListSeparator list_separator,
                            HeapVector<Member<const CSSValue>, 4> values)
-    : CSSValue(kValueListClass), values_(std::move(values)) {
+    : CSSValueList(kValueListClass, list_separator, std::move(values)) {}
+
+CSSValueList::CSSValueList(ClassType class_type,
+                           ValueListSeparator list_separator,
+                           HeapVector<Member<const CSSValue>, 4> values)
+    : CSSValue(class_type), values_(std::move(values)) {
   value_list_separator_ = list_separator;
 }
 
@@ -178,7 +183,7 @@ bool CSSValueList::Equals(const CSSValueList& other) const {
 unsigned CSSValueList::CustomHash() const {
   unsigned hash = value_list_separator_;
   for (const CSSValue* value : values_) {
-    WTF::AddIntToHash(hash, value->Hash());
+    AddIntToHash(hash, value->Hash());
   }
   return hash;
 }

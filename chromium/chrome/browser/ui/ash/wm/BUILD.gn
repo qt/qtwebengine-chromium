@@ -14,6 +14,7 @@ static_library("wm") {
 
   public_deps = [
     "//chrome/browser:browser_public_dependencies",
+    "//chrome/browser/ui:browser_tab_strip",
     "//chrome/browser/ui/tabs:tab_strip_model_observer",
   ]
 
@@ -21,9 +22,10 @@ static_library("wm") {
     "//ash/constants",
     "//ash/public/cpp",
     "//base",
-    "//chrome/browser:browser_process",
-    "//chrome/browser/ash/app_restore:app_restore",
+    "//chrome/browser/ash/app_restore",
+    "//chrome/browser/ash/browser_delegate",
     "//chrome/browser/profiles:profile",
+    "//chrome/browser/signin",
     "//chrome/browser/ui:browser_list",
     "//chrome/browser/ui/ash/desks",
     "//chrome/browser/ui/webui/ash/scanner_feedback_dialog",
@@ -31,6 +33,7 @@ static_library("wm") {
     "//chromeos/ash/services/coral/public/mojom",
     "//chromeos/ui/wm",
     "//components/app_constants",
+    "//components/application_locale_storage",
     "//components/signin/public/identity_manager",
     "//components/variations/service",
     "//content/public/browser",

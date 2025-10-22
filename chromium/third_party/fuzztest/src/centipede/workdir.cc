@@ -16,6 +16,7 @@
 
 #include <cstddef>
 #include <filesystem>  // NOLINT
+#include <optional>
 #include <string>
 #include <string_view>
 #include <system_error>  // NOLINT
@@ -28,10 +29,11 @@
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_format.h"
+#include "absl/strings/strip.h"
 #include "./centipede/environment.h"
 #include "./common/logging.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 namespace {
 
@@ -80,6 +82,15 @@ bool WorkDir::PathShards::IsShard(std::string_view path) const {
   return absl::StartsWith(path, prefix_);
 }
 
+std::optional<size_t> WorkDir::PathShards::GetShardIndex(
+    std::string_view path) const {
+  if (!absl::ConsumePrefix(&path, prefix_)) return std::nullopt;
+  if (path.size() != kDigitsInShardIndex) return std::nullopt;
+  size_t shard = 0;
+  if (!absl::SimpleAtoi(path, &shard)) return std::nullopt;
+  return shard;
+}
+
 //------------------------------------------------------------------------------
 //                                 WorkDir
 
@@ -121,7 +132,7 @@ WorkDir::WorkDir(                  //
       binary_hash_{binary_hash_holder_},
       my_shard_index_{my_shard_index_holder_} {}
 
-WorkDir::WorkDir(const centipede::Environment& env)
+WorkDir::WorkDir(const fuzztest::internal::Environment& env)
     : workdir_{env.workdir},
       binary_name_{env.binary_name},
       binary_hash_{env.binary_hash},
@@ -242,5 +253,4 @@ std::vector<std::string> WorkDir::EnumerateRawCoverageProfiles() const {
   return raw_profiles;
 }
 
-}  // namespace centipede
-
+}  // namespace fuzztest::internal

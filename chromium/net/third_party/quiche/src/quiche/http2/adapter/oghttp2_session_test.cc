@@ -371,6 +371,34 @@ TEST(OgHttp2SessionTest, ClientHeaderCompression) {
             wire_sizes[CompressionOption::DISABLE_COMPRESSION]);
 }
 
+TEST(OgHttp2SessionTest, ClientWithMaxDynamicTableSizeZero) {
+  TestVisitor visitor;
+  testing::InSequence seq;
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x0, 0));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(HEADERS, _, _, 0x5));
+  EXPECT_CALL(visitor, OnFrameSent(HEADERS, _, _, 0x5, 0));
+
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kClient;
+  // Sets the optional option to zero.
+  options.max_hpack_encoding_table_capacity = 0;
+  OgHttp2Session session(visitor, options);
+
+  constexpr absl::string_view kValue = "toast toast toast feed meeeee";
+  session.SubmitRequest(ToHeaders({{":method", "POST"},
+                                   {":scheme", "http"},
+                                   {":authority", "example.com"},
+                                   {":path", "/this/is/request/one"},
+                                   {"food", kValue},
+                                   {"food", kValue}}),
+                        true, nullptr);
+  int result = session.Send();
+  ASSERT_EQ(result, 0);
+  // The encoder table size should not have grown beyond zero.
+  EXPECT_EQ(session.GetHpackEncoderDynamicTableSize(), 0);
+}
+
 TEST(OgHttp2SessionTest, ClientSubmitRequestWithLargePayload) {
   TestVisitor visitor;
   OgHttp2Session::Options options;
@@ -773,6 +801,32 @@ TEST(OgHttp2SessionTest, ServerEnqueuesSettingsOnce) {
   EXPECT_THAT(visitor.data(), EqualsFrames({SpdyFrameType::SETTINGS}));
 }
 
+// Demonstrates that the dynamic table size setting interpreted from the peer
+// won't exceed the hardcoded 64kB upper bound.
+TEST(OgHttp2SessionTest, ServerDynamicTableSizeAboveUpperBound) {
+  TestVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kServer;
+  OgHttp2Session session(visitor, options);
+
+  const std::string frames =
+      TestFrameSequence()
+          .ClientPreface({{HEADER_TABLE_SIZE, 100u * 1024u}})
+          .Serialize();
+  testing::InSequence s;
+
+  // Client preface (empty SETTINGS)
+  EXPECT_CALL(visitor, OnFrameHeader(0, 6, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  // Although the peer adverised 100kB, the server interprets the setting value
+  // with a 64kB upper bound.
+  EXPECT_CALL(visitor, OnSetting(Http2Setting{HEADER_TABLE_SIZE, 64u * 1024u}));
+  EXPECT_CALL(visitor, OnSettingsEnd());
+
+  const int64_t result = session.ProcessBytes(frames);
+  EXPECT_EQ(frames.size(), static_cast<size_t>(result));
+}
+
 TEST(OgHttp2SessionTest, ServerSubmitResponse) {
   TestVisitor visitor;
   OgHttp2Session::Options options;
@@ -1161,6 +1215,175 @@ TEST(OgHttp2SessionTest, ServerClosesStreamDuringOnEndStream) {
 
   const int64_t result = session.ProcessBytes(frames);
   EXPECT_EQ(result, frames.size());
+}
+
+TEST(OgHttp2SessionTest, ResetStreamRaceWithIncomingData) {
+  TestVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kServer;
+  OgHttp2Session session(visitor, options);
+
+  const std::string frames = TestFrameSequence()
+                                 .ClientPreface()
+                                 .Headers(1,
+                                          {{":method", "POST"},
+                                           {":scheme", "https"},
+                                           {":authority", "example.com"},
+                                           {":path", "/"}},
+                                          /*fin=*/false)
+                                 .Data(1, "Request body", false)
+                                 .Serialize();
+  testing::InSequence s;
+
+  // Client preface (empty SETTINGS)
+  EXPECT_CALL(visitor, OnFrameHeader(0, 0, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  EXPECT_CALL(visitor, OnSettingsEnd());
+  // Stream 1
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, HEADERS, 0x4));
+  EXPECT_CALL(visitor, OnBeginHeadersForStream(1));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":method", "POST"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":scheme", "https"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":authority", "example.com"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":path", "/"));
+  EXPECT_CALL(visitor, OnEndHeadersForStream(1));
+
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, DATA, 0x0));
+  EXPECT_CALL(visitor, OnBeginDataForStream(1, _));
+  EXPECT_CALL(visitor, OnDataForStream(1, "Request body"))
+      .WillOnce(testing::InvokeWithoutArgs([&session]() {
+        session.Consume(1, 12);
+        return true;
+      }));
+
+  session.ProcessBytes(frames);
+
+  EXPECT_TRUE(session.want_write());
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x0, 0));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x1));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x1, 0));
+  int result1 = session.Send();
+  EXPECT_EQ(0, result1);
+  absl::string_view serialized1 = visitor.data();
+  EXPECT_THAT(serialized1,
+              EqualsFrames({SpdyFrameType::SETTINGS, SpdyFrameType::SETTINGS}));
+  EXPECT_FALSE(session.want_write());
+
+  EXPECT_LT(session.GetReceiveWindowSize(), kInitialFlowControlWindowSize);
+
+  // Reset the stream and receive more data on this stream.
+  session.EnqueueFrame(std::make_unique<spdy::SpdyRstStreamIR>(
+      1, spdy::ERROR_CODE_PROTOCOL_ERROR));
+  const std::string more_frames =
+      TestFrameSequence()
+          .Data(1, std::string(16 * 1024, 'x'), false)
+          .Data(1, std::string(16 * 1024, 'y'), false)
+          .Serialize();
+  // These bytes are counted against the connection flow control window but
+  // should be dropped right away and considerred as consumed.
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, DATA, _)).Times(0);
+  EXPECT_CALL(visitor, OnBeginDataForStream(1, _)).Times(0);
+  EXPECT_CALL(visitor, OnDataForStream(1, _)).Times(0);
+
+  session.ProcessBytes(more_frames);
+  EXPECT_TRUE(session.want_write());
+
+  EXPECT_CALL(visitor, OnBeforeFrameSent(RST_STREAM, 1, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(RST_STREAM, 1, _, 0x0, 1));
+  EXPECT_CALL(visitor, OnCloseStream(1, Http2ErrorCode::HTTP2_NO_ERROR));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(WINDOW_UPDATE, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(WINDOW_UPDATE, 0, _, 0x0, 0));
+  int result2 = session.Send();
+  EXPECT_EQ(0, result2);
+  absl::string_view serialized2 = visitor.data();
+  serialized2.remove_prefix(serialized1.size());
+  EXPECT_THAT(serialized2, EqualsFrames({SpdyFrameType::RST_STREAM,
+                                         SpdyFrameType::WINDOW_UPDATE}));
+  EXPECT_EQ(session.GetReceiveWindowSize(), kInitialFlowControlWindowSize);
+}
+
+TEST(OgHttp2SessionTest, ResetAndCloseStreamRaceWithIncomingData) {
+  TestVisitor visitor;
+  OgHttp2Session::Options options;
+  options.perspective = Perspective::kServer;
+  OgHttp2Session session(visitor, options);
+
+  const std::string frames = TestFrameSequence()
+                                 .ClientPreface()
+                                 .Headers(1,
+                                          {{":method", "POST"},
+                                           {":scheme", "https"},
+                                           {":authority", "example.com"},
+                                           {":path", "/"}},
+                                          /*fin=*/false)
+                                 .Data(1, "Request body", false)
+                                 .Serialize();
+  testing::InSequence s;
+
+  // Client preface (empty SETTINGS)
+  EXPECT_CALL(visitor, OnFrameHeader(0, 0, SETTINGS, 0));
+  EXPECT_CALL(visitor, OnSettingsStart());
+  EXPECT_CALL(visitor, OnSettingsEnd());
+  // Stream 1
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, HEADERS, 0x4));
+  EXPECT_CALL(visitor, OnBeginHeadersForStream(1));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":method", "POST"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":scheme", "https"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":authority", "example.com"));
+  EXPECT_CALL(visitor, OnHeaderForStream(1, ":path", "/"));
+  EXPECT_CALL(visitor, OnEndHeadersForStream(1));
+
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, DATA, 0x0));
+  EXPECT_CALL(visitor, OnBeginDataForStream(1, _));
+  EXPECT_CALL(visitor, OnDataForStream(1, "Request body"))
+      .WillOnce(testing::InvokeWithoutArgs([&session]() {
+        session.Consume(1, 12);
+        return true;
+      }));
+
+  session.ProcessBytes(frames);
+
+  EXPECT_TRUE(session.want_write());
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x0, 0));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(SETTINGS, 0, _, 0x1));
+  EXPECT_CALL(visitor, OnFrameSent(SETTINGS, 0, _, 0x1, 0));
+  int result1 = session.Send();
+  EXPECT_EQ(0, result1);
+  absl::string_view serialized1 = visitor.data();
+  EXPECT_THAT(serialized1,
+              EqualsFrames({SpdyFrameType::SETTINGS, SpdyFrameType::SETTINGS}));
+  EXPECT_FALSE(session.want_write());
+
+  EXPECT_LT(session.GetReceiveWindowSize(), kInitialFlowControlWindowSize);
+
+  // Reset the stream and receive more data on this stream.
+  session.EnqueueFrame(std::make_unique<spdy::SpdyRstStreamIR>(
+      1, spdy::ERROR_CODE_PROTOCOL_ERROR));
+  EXPECT_CALL(visitor, OnBeforeFrameSent(RST_STREAM, 1, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(RST_STREAM, 1, _, 0x0, 1));
+  EXPECT_CALL(visitor, OnCloseStream(1, Http2ErrorCode::HTTP2_NO_ERROR));
+  EXPECT_EQ(0, session.Send());
+
+  const std::string more_frames =
+      TestFrameSequence()
+          .Data(1, std::string(16 * 1024, 'x'), false)
+          .Data(1, std::string(16 * 1024, 'y'), false)
+          .Serialize();
+  // These bytes are counted against the connection flow control window but
+  // should be dropped right away and considered as consumed.
+  EXPECT_CALL(visitor, OnFrameHeader(1, _, DATA, _)).Times(2);
+  EXPECT_CALL(visitor, OnBeginDataForStream(1, _)).Times(0);
+  EXPECT_CALL(visitor, OnDataForStream(1, _)).Times(0);
+
+  session.ProcessBytes(more_frames);
+  EXPECT_TRUE(session.want_write());
+
+  EXPECT_CALL(visitor, OnBeforeFrameSent(WINDOW_UPDATE, 0, _, 0x0));
+  EXPECT_CALL(visitor, OnFrameSent(WINDOW_UPDATE, 0, _, 0x0, 0));
+  EXPECT_EQ(0, session.Send());
+  EXPECT_EQ(session.GetReceiveWindowSize(), kInitialFlowControlWindowSize);
 }
 
 }  // namespace test

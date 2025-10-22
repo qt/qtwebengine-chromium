@@ -28,11 +28,6 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/modules/crypto/normalize_algorithm.h"
 
 #include <algorithm>
@@ -188,7 +183,7 @@ bool AlgorithmNameComparator(const AlgorithmNameMapping& a,
 
 std::optional<WebCryptoAlgorithmId> LookupAlgorithmIdByName(
     const String& algorithm_name) {
-  auto it = WTF::VisitCharacters(algorithm_name, [&](auto algo_chars) {
+  auto it = VisitCharacters(algorithm_name, [&](auto algo_chars) {
     using CharType = decltype(algo_chars)::value_type;
     auto begin = kAlgorithmNameMappings.begin();
     auto end = kAlgorithmNameMappings.end();
@@ -205,17 +200,6 @@ std::optional<WebCryptoAlgorithmId> LookupAlgorithmIdByName(
     return std::nullopt;
 
   WebCryptoAlgorithmId id = it->algorithm_id;
-
-  if (!RuntimeEnabledFeatures::WebCryptoCurve25519Enabled()) {
-    if (id == kWebCryptoAlgorithmIdX25519) {
-      return std::nullopt;
-    }
-  }
-  if (!RuntimeEnabledFeatures::WebCryptoEd25519Enabled()) {
-    if (id == kWebCryptoAlgorithmIdEd25519) {
-      return std::nullopt;
-    }
-  }
   return id;
 }
 

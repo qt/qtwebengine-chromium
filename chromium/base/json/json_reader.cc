@@ -7,21 +7,14 @@
 #include <string_view>
 #include <utility>
 
-#include "base/features.h"
-#include "base/json/json_parser.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
-
-#if !BUILDFLAG(IS_NACL)
 #include "base/strings/string_view_rust.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/functions.h"
 #include "third_party/rust/serde_json_lenient/v0_2/wrapper/lib.rs.h"
-#endif
-
-// TODO(crbug.com/40811643): Move the C++ parser into components/nacl to just
-// run in-process there. Don't compile base::JSONReader on NaCL at all.
-#if !BUILDFLAG(IS_NACL)
 
 namespace {
 const char kSecurityJsonParsingTime[] = "Security.JSONParser.ParsingTime";
@@ -105,7 +98,6 @@ base::JSONReader::Result DecodeJSONInRust(std::string_view json,
           (options & base::JSON_REPLACE_INVALID_CHARACTERS) != 0,
       .allow_comments = (options & base::JSON_ALLOW_COMMENTS) != 0,
       .allow_newlines = (options & base::JSON_ALLOW_NEWLINES_IN_STRINGS) != 0,
-      .allow_control_chars = (options & base::JSON_ALLOW_CONTROL_CHARS) != 0,
       .allow_vert_tab = (options & base::JSON_ALLOW_VERT_TAB) != 0,
       .allow_x_escapes = (options & base::JSON_ALLOW_X_ESCAPES) != 0,
       .max_depth = max_depth,
@@ -130,31 +122,25 @@ base::JSONReader::Result DecodeJSONInRust(std::string_view json,
 }  // namespace
 }  // namespace serde_json_lenient
 
-#endif  // !BUILDFLAG(IS_NACL)
-
 namespace base {
+
+std::string JSONReader::Error::ToString() const {
+  return base::StrCat({"line ", base::NumberToString(line), ", column ",
+                       base::NumberToString(column), ": ", message});
+}
 
 // static
 std::optional<Value> JSONReader::Read(std::string_view json,
                                       int options,
                                       size_t max_depth) {
-#if BUILDFLAG(IS_NACL)
-  internal::JSONParser parser(options, max_depth);
-  return parser.Parse(json);
-#else   // BUILDFLAG(IS_NACL)
   SCOPED_UMA_HISTOGRAM_TIMER_MICROS(kSecurityJsonParsingTime);
-  if (UsingRust()) {
-    JSONReader::Result result =
-        serde_json_lenient::DecodeJSONInRust(json, options, max_depth);
-    if (!result.has_value()) {
-      return std::nullopt;
-    }
-    return std::move(*result);
-  } else {
-    internal::JSONParser parser(options, max_depth);
-    return parser.Parse(json);
+
+  JSONReader::Result result =
+      serde_json_lenient::DecodeJSONInRust(json, options, max_depth);
+  if (!result.has_value()) {
+    return std::nullopt;
   }
-#endif  // BUILDFLAG(IS_NACL)
+  return std::move(*result);
 }
 
 // static
@@ -183,52 +169,9 @@ std::optional<Value::List> JSONReader::ReadList(std::string_view json,
 JSONReader::Result JSONReader::ReadAndReturnValueWithError(
     std::string_view json,
     int options) {
-#if BUILDFLAG(IS_NACL)
-  internal::JSONParser parser(options);
-  auto value = parser.Parse(json);
-  if (!value) {
-    Error error;
-    error.message = parser.GetErrorMessage();
-    error.line = parser.error_line();
-    error.column = parser.error_column();
-    return base::unexpected(std::move(error));
-  }
-
-  return std::move(*value);
-#else   // BUILDFLAG(IS_NACL)
   SCOPED_UMA_HISTOGRAM_TIMER_MICROS(kSecurityJsonParsingTime);
-  if (UsingRust()) {
-    return serde_json_lenient::DecodeJSONInRust(json, options,
-                                                internal::kAbsoluteMaxDepth);
-  } else {
-    internal::JSONParser parser(options);
-    auto value = parser.Parse(json);
-    if (!value) {
-      Error error;
-      error.message = parser.GetErrorMessage();
-      error.line = parser.error_line();
-      error.column = parser.error_column();
-      return base::unexpected(std::move(error));
-    }
-
-    return std::move(*value);
-  }
-#endif  // BUILDFLAG(IS_NACL)
-}
-
-// static
-bool JSONReader::UsingRust() {
-  // If features have not yet been enabled, we cannot check the feature, so fall
-  // back to the C++ parser. In practice, this seems to apply to
-  // `ReadPrefsFromDisk()`, which is parsing trusted JSON.
-  if (!base::FeatureList::GetInstance()) {
-    return false;
-  }
-#if BUILDFLAG(IS_NACL)
-  return false;
-#else
-  return base::FeatureList::IsEnabled(base::features::kUseRustJsonParser);
-#endif
+  return serde_json_lenient::DecodeJSONInRust(json, options,
+                                              internal::kAbsoluteMaxDepth);
 }
 
 }  // namespace base

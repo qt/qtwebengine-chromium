@@ -15,10 +15,10 @@
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/filter/brotli_source_stream.h"
 #include "net/filter/filter_source_stream.h"
 #include "net/filter/gzip_source_stream.h"
@@ -165,7 +165,12 @@ std::unique_ptr<SourceStream> FilterSourceStream::CreateDecodingSourceStream(
       case SourceStreamType::kUnknown:
         NOTREACHED();
     }
-    CHECK(downstream);
+    // https://crbug.com/410771958: this can happen when zstd is disabled via
+    // disable_zstd_filter (GN arg), but we somehow still received a zstd
+    // encoded response.
+    if (downstream == nullptr) {
+      return nullptr;
+    }
     upstream = std::move(downstream);
   }
   return upstream;

@@ -66,8 +66,8 @@ void GetPageRanges(JNIEnv* env,
 // static
 std::unique_ptr<PrintingContext> PrintingContext::CreateImpl(
     Delegate* delegate,
-    ProcessBehavior process_behavior) {
-  DCHECK_EQ(process_behavior, ProcessBehavior::kOopDisabled);
+    OutOfProcessBehavior out_of_process_behavior) {
+  DCHECK_EQ(out_of_process_behavior, OutOfProcessBehavior::kDisabled);
   return std::make_unique<PrintingContextAndroid>(delegate);
 }
 
@@ -89,7 +89,7 @@ void PrintingContextAndroid::SetPendingPrint(
 }
 
 PrintingContextAndroid::PrintingContextAndroid(Delegate* delegate)
-    : PrintingContext(delegate, ProcessBehavior::kOopDisabled) {
+    : PrintingContext(delegate, OutOfProcessBehavior::kDisabled) {
   // The constructor is run in the IO thread.
 }
 
@@ -117,10 +117,8 @@ void PrintingContextAndroid::AskUserForSettings(
   }
 }
 
-void PrintingContextAndroid::AskUserForSettingsReply(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    jboolean success) {
+void PrintingContextAndroid::AskUserForSettingsReply(JNIEnv* env,
+                                                     jboolean success) {
   DCHECK(callback_);
   if (!success) {
     // TODO(cimamoglu): Differentiate between `kFailed` And `kCancel`.
@@ -154,9 +152,7 @@ void PrintingContextAndroid::AskUserForSettingsReply(
   std::move(callback_).Run(mojom::ResultCode::kSuccess);
 }
 
-void PrintingContextAndroid::ShowSystemDialogDone(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj) {
+void PrintingContextAndroid::ShowSystemDialogDone(JNIEnv* env) {
   DCHECK(callback_);
   // Settings are not updated, callback is called only to unblock javascript.
   std::move(callback_).Run(mojom::ResultCode::kCanceled);

@@ -40,6 +40,7 @@
 #include "cc/test/fake_layer_tree_frame_sink.h"
 #include "cc/test/fake_raster_source.h"
 #include "cc/tiles/tile_task_manager.h"
+#include "cc/trees/layer_tree_frame_sink.h"
 #include "cc/trees/raster_capabilities.h"
 #include "components/viz/client/client_resource_provider.h"
 #include "components/viz/common/resources/platform_color.h"
@@ -171,37 +172,37 @@ class RasterBufferProviderTest
 
   // Overridden from testing::Test:
   void SetUp() override {
-    RasterCapabilities raster_caps;
-    raster_caps.tile_format = viz::SinglePlaneFormat::kRGBA_8888;
-
     switch (GetParam()) {
       case RASTER_BUFFER_PROVIDER_TYPE_ZERO_COPY:
         Create3dResourceProvider();
-        raster_caps.use_gpu_rasterization = false;
         raster_buffer_provider_ =
             std::make_unique<ZeroCopyRasterBufferProvider>(
-                context_provider_.get(), raster_caps);
+                context_provider_->SharedImageInterface(),
+                /*is_software=*/false);
         break;
       case RASTER_BUFFER_PROVIDER_TYPE_ONE_COPY:
         Create3dResourceProvider();
-        raster_caps.use_gpu_rasterization = false;
         raster_buffer_provider_ = std::make_unique<OneCopyRasterBufferProvider>(
+            worker_context_provider_->SharedImageInterface(),
             base::SingleThreadTaskRunner::GetCurrentDefault().get(),
             context_provider_.get(), worker_context_provider_.get(),
-            kMaxBytesPerCopyOperation, false, kMaxStagingBuffers, raster_caps);
+            kMaxBytesPerCopyOperation, false, kMaxStagingBuffers,
+            /*is_overlay_candidate=*/false);
         break;
       case RASTER_BUFFER_PROVIDER_TYPE_GPU:
         Create3dResourceProvider();
-        raster_caps.use_gpu_rasterization = true;
         raster_buffer_provider_ = std::make_unique<GpuRasterBufferProvider>(
+            worker_context_provider_->SharedImageInterface(),
             context_provider_.get(), worker_context_provider_.get(),
-            raster_caps, gfx::Size(), true, pending_raster_queries_.get(), 1);
+            /*is_overlay_candidate=*/false, gfx::Size(),
+            pending_raster_queries_.get(), 1);
         break;
       case RASTER_BUFFER_PROVIDER_TYPE_BITMAP:
         CreateSoftwareResourceProvider();
         raster_buffer_provider_ =
             std::make_unique<ZeroCopyRasterBufferProvider>(
-                layer_tree_frame_sink_.get(), raster_caps);
+                layer_tree_frame_sink_.get()->shared_image_interface(),
+                /*is_software=*/true);
         break;
     }
 
@@ -251,8 +252,8 @@ class RasterBufferProviderTest
   }
 
   ResourcePool::InUsePoolResource AllocateResource(const gfx::Size& size) {
-    auto format = raster_buffer_provider_->GetFormat();
-    return pool_->AcquireResource(size, format, gfx::ColorSpace());
+    return pool_->AcquireResource(size, viz::SinglePlaneFormat::kRGBA_8888,
+                                  gfx::ColorSpace());
   }
 
   void AppendTask(unsigned id,
@@ -365,6 +366,10 @@ class RasterBufferProviderTest
   std::unique_ptr<FakeLayerTreeFrameSink> layer_tree_frame_sink_;
   std::unique_ptr<viz::ClientResourceProvider> resource_provider_;
   std::unique_ptr<TileTaskManager> tile_task_manager_;
+  std::unique_ptr<RasterQueryQueue> pending_raster_queries_;
+  // Some subclasses of RasterBufferProvider (GpuRasterBufferProvider) hold a
+  // raw_ptr to pending_raster_queries_, so it must be declared after
+  // pending_raster_queries_ to avoid having a dangling ptr.
   std::unique_ptr<RasterBufferProvider> raster_buffer_provider_;
   SynchronousTaskGraphRunner task_graph_runner_;
   UniqueNotifier all_tile_tasks_finished_;
@@ -374,7 +379,6 @@ class RasterBufferProviderTest
   std::vector<RasterTaskResult> completed_tasks_;
   std::vector<ResourcePool::InUsePoolResource> resources_;
   TaskGraph graph_;
-  std::unique_ptr<RasterQueryQueue> pending_raster_queries_;
 };
 
 TEST_P(RasterBufferProviderTest, Basic) {

@@ -16,7 +16,6 @@
 #define THIRD_PARTY_NEARBY_SHARING_LOCAL_DEVICE_DATA_NEARBY_SHARE_LOCAL_DEVICE_DATA_MANAGER_IMPL_H_
 
 #include <memory>
-#include <optional>
 #include <string>
 #include <vector>
 
@@ -27,7 +26,6 @@
 #include "sharing/common/nearby_share_enums.h"
 #include "sharing/internal/api/preference_manager.h"
 #include "sharing/internal/api/sharing_rpc_client.h"
-#include "sharing/internal/impl/common/nearby_identity_grpc_client.h"
 #include "sharing/internal/public/context.h"
 #include "sharing/local_device_data/nearby_share_local_device_data_manager.h"
 #include "sharing/proto/rpc_resources.pb.h"
@@ -89,8 +87,6 @@ class NearbyShareLocalDeviceDataManagerImpl
   void PublishDevice(
       std::vector<nearby::sharing::proto::PublicCertificate> certificates,
       bool force_update_contacts, PublishDeviceCallback callback) override;
-
-  bool UsingIdentityRpc() override;
 
   // Creates a default device name of the form "<given name>'s <device type>."
   // For example, "Josh's Chromebook." If a given name cannot be found, returns

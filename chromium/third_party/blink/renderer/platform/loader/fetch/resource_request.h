@@ -38,6 +38,7 @@
 #include "net/filter/source_stream_type.h"
 #include "net/storage_access_api/status.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "services/network/public/cpp/fetch_retry_options.h"
 #include "services/network/public/mojom/attribution.mojom-blink.h"
 #include "services/network/public/mojom/chunked_data_pipe_getter.mojom-blink-forward.h"
 #include "services/network/public/mojom/cors.mojom-blink-forward.h"
@@ -292,6 +293,16 @@ class PLATFORM_EXPORT ResourceRequestHead {
                    : std::nullopt;
   }
 
+  bool HasFetchRetryOptions() const { return fetch_retry_options_.has_value(); }
+  const std::optional<network::FetchRetryOptions>& FetchRetryOptions() const {
+    return fetch_retry_options_;
+  }
+
+  void SetFetchRetryOptions(
+      const network::FetchRetryOptions& fetch_retry_options) {
+    fetch_retry_options_ = fetch_retry_options;
+  }
+
   // True if the request should be considered for computing and attaching the
   // topics headers.
   bool GetBrowsingTopics() const { return browsing_topics_; }
@@ -409,7 +420,7 @@ class PLATFORM_EXPORT ResourceRequestHead {
 
   // This is also called as a side-effect of `SetFetchIntegrity()`.
   void SetExpectedPublicKeys(const IntegrityMetadataSet&);
-  const WTF::Vector<String>& GetExpectedPublicKeys() const {
+  const WTF::Vector<Vector<uint8_t>>& GetExpectedPublicKeys() const {
     return expected_public_keys_;
   }
 
@@ -674,12 +685,14 @@ class PLATFORM_EXPORT ResourceRequestHead {
 #endif
   }
 
-  bool AllowsDeviceBoundSessions() const {
-    return allows_device_bound_sessions_;
+  bool AllowsDeviceBoundSessionRegistration() const {
+    return allows_device_bound_session_registration_;
   }
 
-  void SetAllowsDeviceBoundSessions(bool allows_device_bound_sessions) {
-    allows_device_bound_sessions_ = allows_device_bound_sessions;
+  void SetAllowsDeviceBoundSessionRegistration(
+      bool allows_device_bound_session_registration) {
+    allows_device_bound_session_registration_ =
+        allows_device_bound_session_registration;
   }
 
  private:
@@ -752,7 +765,7 @@ class PLATFORM_EXPORT ResourceRequestHead {
   // Exposed as Request.integrity in Service Workers
   String fetch_integrity_;
   // Public key expectations extracted from `integrity_`
-  WTF::Vector<String> expected_public_keys_;
+  WTF::Vector<Vector<uint8_t>> expected_public_keys_;
   String referrer_string_;
   network::mojom::ReferrerPolicy referrer_policy_;
   network::mojom::CorsPreflightPolicy cors_preflight_policy_;
@@ -832,6 +845,8 @@ class PLATFORM_EXPORT ResourceRequestHead {
   // TODO(crbug.com/382527001): Consider merge this field with `keepalive_`.
   std::optional<base::UnguessableToken> keepalive_token_;
 
+  std::optional<network::FetchRetryOptions> fetch_retry_options_;
+
 #if DCHECK_IS_ON()
   bool is_set_url_allowed_ = true;
 #endif
@@ -839,7 +854,7 @@ class PLATFORM_EXPORT ResourceRequestHead {
   // Whether this request is allowed to register new device bound
   // sessions or accept challenges on device bound sessions (e.g. due to
   // an Origin Trial)
-  bool allows_device_bound_sessions_ = false;
+  bool allows_device_bound_session_registration_ = false;
 };
 
 class PLATFORM_EXPORT ResourceRequestBody {

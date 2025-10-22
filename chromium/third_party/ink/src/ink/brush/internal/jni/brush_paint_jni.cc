@@ -36,7 +36,11 @@ using ink::brush_internal::ValidateBrushPaint;
 using ink::brush_internal::ValidateBrushPaintTextureLayer;
 using ink::jni::CastToBrushPaint;
 using ink::jni::CastToTextureLayer;
+using ink::jni::DeleteNativeBrushPaint;
+using ink::jni::DeleteNativeTextureLayer;
 using ink::jni::JStringToStdString;
+using ink::jni::NewNativeBrushPaint;
+using ink::jni::NewNativeTextureLayer;
 using ink::jni::ThrowExceptionFromStatus;
 
 BrushPaint::TextureSizeUnit JIntToSizeUnit(jint val) {
@@ -75,8 +79,8 @@ JNI_METHOD(brush, BrushPaintNative, jlong, create)
       env->GetLongArrayElements(texture_layer_native_pointers_array, nullptr);
   ABSL_CHECK(texture_layer_native_pointers != nullptr);
   for (int i = 0; i < texture_layers_count; ++i) {
-    texture_layers.push_back(*reinterpret_cast<BrushPaint::TextureLayer*>(
-        texture_layer_native_pointers[i]));
+    texture_layers.push_back(
+        CastToTextureLayer(texture_layer_native_pointers[i]));
   }
   env->ReleaseLongArrayElements(
       texture_layer_native_pointers_array, texture_layer_native_pointers,
@@ -87,12 +91,12 @@ JNI_METHOD(brush, BrushPaintNative, jlong, create)
     ThrowExceptionFromStatus(env, status);
     return 0;
   }
-  return reinterpret_cast<jlong>(new BrushPaint(std::move(brush_paint)));
+  return NewNativeBrushPaint(std::move(brush_paint));
 }
 
 JNI_METHOD(brush, BrushPaintNative, void, free)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  delete reinterpret_cast<BrushPaint*>(native_pointer);
+  DeleteNativeBrushPaint(native_pointer);
 }
 
 JNI_METHOD(brush, BrushPaintNative, jint, getTextureLayerCount)
@@ -106,8 +110,7 @@ JNI_METHOD(brush, BrushPaintNative, jint, getTextureLayerCount)
 JNI_METHOD(brush, BrushPaintNative, jlong, newCopyOfTextureLayer)
 (JNIEnv* env, jobject thiz, jlong native_pointer, jint index) {
   const BrushPaint& brush_paint = CastToBrushPaint(native_pointer);
-  return reinterpret_cast<jlong>(
-      new BrushPaint::TextureLayer(brush_paint.texture_layers[index]));
+  return NewNativeTextureLayer(brush_paint.texture_layers[index]);
 }
 
 // ************ Native Implementation of BrushPaint TextureLayer ************
@@ -117,8 +120,9 @@ JNI_METHOD(brush, BrushPaintNative, jlong, newCopyOfTextureLayer)
 JNI_METHOD(brush, TextureLayerNative, jlong, create)
 (JNIEnv* env, jobject thiz, jstring client_texture_id, jfloat size_x,
  jfloat size_y, jfloat offset_x, jfloat offset_y, jfloat rotation_in_radians,
- jfloat opacity, jint animation_frames, jint size_unit, jint origin,
- jint mapping, jint wrap_x, jint wrap_y, jint blend_mode) {
+ jfloat opacity, jint animation_frames, jint animation_rows,
+ jint animation_columns, jint size_unit, jint origin, jint mapping, jint wrap_x,
+ jint wrap_y, jint blend_mode) {
   BrushPaint::TextureLayer texture_layer{
       .client_texture_id = JStringToStdString(env, client_texture_id),
       .mapping = JIntToMapping(mapping),
@@ -131,6 +135,8 @@ JNI_METHOD(brush, TextureLayerNative, jlong, create)
       .rotation = Angle::Radians(rotation_in_radians),
       .opacity = opacity,
       .animation_frames = animation_frames,
+      .animation_rows = animation_rows,
+      .animation_columns = animation_columns,
       .blend_mode = JIntToBlendMode(blend_mode),
   };
   if (absl::Status status = ValidateBrushPaintTextureLayer(texture_layer);
@@ -138,13 +144,12 @@ JNI_METHOD(brush, TextureLayerNative, jlong, create)
     ThrowExceptionFromStatus(env, status);
     return 0;
   }
-  return reinterpret_cast<jlong>(
-      new BrushPaint::TextureLayer(std::move(texture_layer)));
+  return NewNativeTextureLayer(std::move(texture_layer));
 }
 
 JNI_METHOD(brush, TextureLayerNative, void, free)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  delete reinterpret_cast<BrushPaint::TextureLayer*>(native_pointer);
+  DeleteNativeTextureLayer(native_pointer);
 }
 
 JNI_METHOD(brush, TextureLayerNative, jstring, getClientTextureId)
@@ -198,9 +203,17 @@ JNI_METHOD(brush, TextureLayerNative, jfloat, getOpacity)
 
 JNI_METHOD(brush, TextureLayerNative, jint, getAnimationFrames)
 (JNIEnv* env, jobject thiz, jlong native_pointer) {
-  const BrushPaint::TextureLayer& texture_layer =
-      CastToTextureLayer(native_pointer);
-  return texture_layer.animation_frames;
+  return CastToTextureLayer(native_pointer).animation_frames;
+}
+
+JNI_METHOD(brush, TextureLayerNative, jint, getAnimationRows)
+(JNIEnv* env, jobject thiz, jlong native_pointer) {
+  return CastToTextureLayer(native_pointer).animation_rows;
+}
+
+JNI_METHOD(brush, TextureLayerNative, jint, getAnimationColumns)
+(JNIEnv* env, jobject thiz, jlong native_pointer) {
+  return CastToTextureLayer(native_pointer).animation_columns;
 }
 
 JNI_METHOD(brush, TextureLayerNative, jint, getSizeUnitInt)

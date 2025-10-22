@@ -18,12 +18,12 @@
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/layout/geometry/box_strut.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_size.h"
 #include "third_party/blink/renderer/core/style/computed_style_base_constants.h"
 #include "third_party/blink/renderer/core/style/style_view_transition_group.h"
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
+#include "third_party/blink/renderer/platform/geometry/physical_size.h"
 #include "third_party/blink/renderer/platform/graphics/paint/effect_paint_property_node.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
 #include "third_party/blink/renderer/platform/heap/heap_traits.h"
@@ -41,14 +41,14 @@ class PseudoElement;
 // system which encompasses the following responsibilities :
 //
 // 1) Triggering style invalidation to change the DOM structure at different
-//    stages during a transition. For example, pseudo elements for new-content
+//    stages during a transition. For example, pseudo-elements for new-content
 //    are generated after the new Document has loaded and the transition can be
 //    started.
 //
 // 2) Tracking changes in the state of transition elements that are mirrored in
-//    the style for their corresponding pseudo element. For example, if a
+//    the style for their corresponding pseudo-element. For example, if a
 //    transition element's size or viewport space transform is updated. This
-//    data is used to generate a dynamic UA stylesheet for these pseudo
+//    data is used to generate a dynamic UA stylesheet for these pseudo-
 //    elements.
 //
 // Note: The root element is special because its responsibilities are hoisted up
@@ -75,11 +75,16 @@ class ViewTransitionStyleTracker
 
     // Transforms a point from local space into the snapshot viewport. For
     // details of the snapshot viewport, see README.md.
+    // This transform is in CSS space relative to the top-left corner of the
+    // box.
     gfx::Transform snapshot_matrix;
 
     PhysicalSize GroupSize() const {
       return border_box_rect_in_enclosing_layer_css_space.size;
     }
+
+    gfx::Transform ComputeRelativeTransformWithCenterOrigin(
+        const gfx::Transform& parent_transform) const;
   };
 
   explicit ViewTransitionStyleTracker(
@@ -89,11 +94,10 @@ class ViewTransitionStyleTracker
   ViewTransitionStyleTracker(
       Element& element,
       const blink::ViewTransitionToken& transition_token);
-  ~ViewTransitionStyleTracker();
 
   void AddTransitionElementsFromCSS();
 
-  // Returns true if the pseudo element corresponding to the given id and name
+  // Returns true if the pseudo-element corresponding to the given id and name
   // is the only child.
   bool MatchForOnlyChild(PseudoId pseudo_id,
                          const AtomicString& view_transition_name) const;
@@ -127,9 +131,8 @@ class ViewTransitionStyleTracker
   // is initiated.
   void Abort();
 
-  // Notifies when rendering is throttled for the local subframe associated with
-  // this transition.
-  void DidThrottleLocalSubframeRendering();
+  // Notifies when rendering is paused.
+  void PauseRendering();
 
   // Returns the snapshot ID to identify the render pass based image produced by
   // this Element. Returns an invalid ID if this element is not participating in
@@ -138,8 +141,8 @@ class ViewTransitionStyleTracker
 
   // The layer used to paint the old Document rendered in a LocalFrame subframe
   // until the new Document can start rendering.
-  const scoped_refptr<cc::ViewTransitionContentLayer>&
-  GetSubframeSnapshotLayer() const;
+  const scoped_refptr<cc::ViewTransitionContentLayer>& GetScopeSnapshotLayer()
+      const;
 
   // Creates a PseudoElement for the corresponding |pseudo_id| and
   // |view_transition_name|. The |pseudo_id| must be a ::transition* element.
@@ -154,12 +157,12 @@ class ViewTransitionStyleTracker
   // should be skipped.
   bool RunPostPrePaintSteps();
 
-  // Provides a UA stylesheet applied to ::transition* pseudo elements.
+  // Provides a UA stylesheet applied to ::transition* pseudo-elements.
   CSSStyleSheet& UAStyleSheet();
 
   void Trace(Visitor* visitor) const;
 
-  // Returns true if any of the pseudo elements are currently participating in
+  // Returns true if any of the pseudo-elements are currently participating in
   // an animation.
   bool HasActiveAnimations() const;
 
@@ -184,7 +187,7 @@ class ViewTransitionStyleTracker
     return std::move(capture_resource_ids_);
   }
 
-  // Returns whether styles applied to pseudo elements should be limited to UA
+  // Returns whether styles applied to pseudo-elements should be limited to UA
   // rules based on the current phase of the transition.
   StyleRequest::RulesToInclude StyleRulesToInclude() const;
 
@@ -222,9 +225,22 @@ class ViewTransitionStyleTracker
   const Vector<AtomicString>& GetViewTransitionClassList(
       const AtomicString& name) const;
 
+  const Vector<AtomicString>& GetViewTransitionNames() const {
+    return view_transition_names_;
+  }
+
   // This returns the resolved containing group name for a given view transition
   // name. Note that this only works once the transition starts.
   AtomicString GetContainingGroupName(const AtomicString& name) const;
+
+  void WillEnterGetComputedStyleScope();
+  void WillExitGetComputedStyleScope();
+
+  void InvalidateInternalPseudoStyle();
+
+  // Computes a list of contained group names for a given view transition name.
+  Vector<AtomicString> ComputeContainedGroupNames(
+      const AtomicString& container_name) const;
 
  private:
   class ImageWrapperPseudoElement;
@@ -239,6 +255,8 @@ class ViewTransitionStyleTracker
       const StyleViewTransitionGroup& group) const;
 
   AtomicString GenerateAutoName(Element&, const TreeScope*, bool allow_from_id);
+
+  bool NeedsSnapshotForCapture() const;
 
   struct ElementData : public GarbageCollected<ElementData> {
     void Trace(Visitor* visitor) const;
@@ -258,7 +276,7 @@ class ViewTransitionStyleTracker
     void CacheStateForOldSnapshot();
 
     // The element in the current DOM whose state is being tracked and mirrored
-    // into the corresponding container pseudo element.
+    // into the corresponding container pseudo-element.
     Member<Element> target_element;
 
     // Computed info for each element participating in the transition for the
@@ -300,9 +318,23 @@ class ViewTransitionStyleTracker
     // exists.
     base::flat_map<CSSPropertyID, String> captured_css_properties;
 
+    // The set of properties to set on the view-transition-group-children
+    // pseudo. This also includes the border offset from the border box to the
+    // content area.
+    base::flat_map<CSSPropertyID, String> group_children_css_properties;
+    gfx::Vector2d border_offset;
+
+    // Border offset as of capture time.
+    gfx::Vector2d cached_border_offset;
+
     // This only contains properties that need to be animated, which is a
     // subset of `captured_css_properties`.
     base::flat_map<CSSPropertyID, String> cached_animated_css_properties;
+
+    // This only contains properties that need to be animated on group children,
+    // which is a subset of `group_children_css_properties`.
+    base::flat_map<CSSPropertyID, String>
+        cached_group_children_animated_properties;
 
     // https://drafts.csswg.org/css-view-transitions-2/#captured-element-class-list
     Vector<AtomicString> class_list;
@@ -315,12 +347,18 @@ class ViewTransitionStyleTracker
     bool is_generated_name;
   };
 
+  bool RunPostPrePaintStepsForElement(AtomicString name,
+                                      ElementData* element_data,
+                                      const int max_capture_size_in_layout,
+                                      bool& needs_style_invalidation);
+
   // In physical pixels. Returns the snapshot root rect, relative to the
   // fixed viewport origin. See README.md for a detailed description of the
   // snapshot root rect.
   gfx::Rect GetSnapshotRootInFixedViewport() const;
 
-  void InvalidateStyle();
+  void InvalidateStyleAndCompositing();
+  void InvalidatePseudoStyle();
   bool HasLiveNewContent() const;
   void EndTransition();
 
@@ -361,7 +399,7 @@ class ViewTransitionStyleTracker
   gfx::Transform ComputeTransformForParticipant(const LayoutObject&) const;
 
   viz::ViewTransitionElementResourceId GenerateResourceId(
-      bool for_subframe_snapshot = false) const;
+      bool for_scope_snapshot = false) const;
 
   void SnapBrowserControlsToFullyShown();
 
@@ -374,9 +412,14 @@ class ViewTransitionStyleTracker
   // in the rare case that the root element has been removed from the DOM.
   Element* OriginatingElement() const;
 
+  // Returns true if we have potentially created pseudo-elements that should not
+  // be exposed via getComputedStyle or should not have author styles applied.
+  bool HasInternalPseudoElements() const;
+
   Member<Document> document_;
 
   Member<Element> element_;
+  AtomicString scope_tag_;
 
   // Indicates which step during the transition we're currently at.
   State state_ = State::kIdle;
@@ -430,7 +473,7 @@ class ViewTransitionStyleTracker
 
   // Set if this transition is in a LocalFrame sub-frame, when the capture is
   // initiated until the start phase of the animation.
-  scoped_refptr<cc::ViewTransitionContentLayer> subframe_snapshot_layer_;
+  scoped_refptr<cc::ViewTransitionContentLayer> scope_snapshot_layer_;
 
   // Returns true if GetViewTransitionState() has already been called. This is
   // used only to enforce additional captures don't happen after that.
@@ -450,6 +493,10 @@ class ViewTransitionStyleTracker
   base::Token token_;
 
   HashMap<AtomicString, AtomicString> id_to_auto_name_map_;
+
+  Vector<AtomicString> view_transition_names_;
+
+  bool in_get_computed_style_scope_ = false;
 };
 
 }  // namespace blink

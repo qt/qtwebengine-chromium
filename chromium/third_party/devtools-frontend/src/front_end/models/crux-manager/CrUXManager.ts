@@ -12,7 +12,7 @@ const UIStrings = {
   /**
    * @description Warning message indicating that the user will see real user data for a URL which is different from the URL they are currently looking at.
    */
-  fieldOverrideWarning: 'Field data is configured for a different URL than the current page.',
+  fieldOverrideWarning: 'Field metrics are configured for a different URL than the current page.',
 } as const;
 
 const str_ = i18n.i18n.registerUIStrings('models/crux-manager/CrUXManager.ts', UIStrings);
@@ -67,7 +67,7 @@ interface CollectionDate {
 
 interface CrUXRecord {
   key: Omit<CrUXRequest, 'metrics'>;
-  metrics: {[K in StandardMetricNames]?: MetricResponse;}&{
+  metrics: Partial<Record<StandardMetricNames, MetricResponse>>&{
     // eslint-disable-next-line @typescript-eslint/naming-convention
     form_factors?: FormFactorsResponse,
   };
@@ -85,9 +85,7 @@ export interface CrUXResponse {
   };
 }
 
-export type PageResult = {
-  [K in`${PageScope}-${DeviceScope}`]: CrUXResponse|null;
-}&{
+export type PageResult = Record<`${PageScope}-${DeviceScope}`, CrUXResponse|null>&{
   warnings: string[],
 };
 

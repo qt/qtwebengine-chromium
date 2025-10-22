@@ -10,9 +10,15 @@
 
 #include "video/encoder_overshoot_detector.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 
 #include "api/units/data_rate.h"
+#include "api/units/data_size.h"
+#include "api/units/frequency.h"
+#include "api/units/time_delta.h"
+#include "api/video/video_codec_type.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/time_utils.h"
 #include "system_wrappers/include/metrics.h"
@@ -25,7 +31,7 @@ namespace {
 using ::testing::TestWithParam;
 using ::testing::ValuesIn;
 
-static std::string CodecTypeToHistogramSuffix(VideoCodecType codec) {
+std::string CodecTypeToHistogramSuffix(VideoCodecType codec) {
   switch (codec) {
     case kVideoCodecVP8:
       return "Vp8";

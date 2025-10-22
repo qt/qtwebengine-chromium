@@ -27,11 +27,13 @@ function createWorkspace(): Workspace.Workspace.WorkspaceImpl {
 
 function createWorkspaceDiff({workspace}: {workspace: Workspace.Workspace.WorkspaceImpl}):
     WorkspaceDiff.WorkspaceDiff.WorkspaceDiffImpl {
+  const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
   const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
     forceNew: true,
     targetManager: SDK.TargetManager.TargetManager.instance(),
     resourceMapping:
         new Bindings.ResourceMapping.ResourceMapping(SDK.TargetManager.TargetManager.instance(), workspace),
+    ignoreListManager,
   });
   const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance({
     forceNew: true,
@@ -128,6 +130,25 @@ describeWithEnvironment('CombinedDiffView', () => {
       uiSourceCode.setWorkingCopy('const data={original:false}');
 
       assert.strictEqual((await view.nextInput).singleDiffViewInputs[0].fileName, '*/tmp/non-mapped.html');
+    });
+  });
+
+  describe('ignoredUrl', () => {
+    it('should ignore files in ignoredFileNames', async () => {
+      const {uiSourceCode} = createFileSystemUISourceCode({
+        url: urlString`inspector:///inspector-stylesheet`,
+        content: ORIGINAL_CONTENT,
+        autoMapping: true,
+        mimeType: 'text/css',
+        fileSystemPath: ''
+      });
+      const {widget, view} = await createCombinedDiffView({workspaceDiff});
+      widget.ignoredUrls = ['inspector://'];
+      uiSourceCode.setWorkingCopy('const data={original:false}');
+
+      const input = await view.nextInput;
+
+      assert.deepEqual(input.singleDiffViewInputs, []);
     });
   });
 });

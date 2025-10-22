@@ -20,6 +20,7 @@
 #pragma once
 #include "state_tracker/state_object.h"
 #include "containers/small_vector.h"
+#include <vulkan/utility/vk_safe_struct.hpp>
 
 enum QueryState {
     QUERYSTATE_UNKNOWN,    // Initial state.
@@ -29,57 +30,30 @@ enum QueryState {
     QUERYSTATE_AVAILABLE,  // Results available.
 };
 
+enum QueryResultType {
+    QUERYRESULT_UNKNOWN,
+    QUERYRESULT_NO_DATA,
+    QUERYRESULT_SOME_DATA,
+    QUERYRESULT_WAIT_ON_RESET,
+    QUERYRESULT_WAIT_ON_RUNNING,
+};
+
 namespace vvl {
 
 class VideoProfileDesc;
+class CommandBuffer;
 
 class QueryPool : public StateObject {
   public:
     QueryPool(VkQueryPool handle, const VkQueryPoolCreateInfo *pCreateInfo, uint32_t index_count, uint32_t perf_queue_family_index,
               uint32_t n_perf_pass, bool has_cb, bool has_rb, std::shared_ptr<const vvl::VideoProfileDesc> &&supp_video_profile,
-              VkVideoEncodeFeedbackFlagsKHR enabled_video_encode_feedback_flags)
-        : StateObject(handle, kVulkanObjectTypeQueryPool),
-          safe_create_info(pCreateInfo),
-          create_info(*safe_create_info.ptr()),
-          has_perf_scope_command_buffer(has_cb),
-          has_perf_scope_render_pass(has_rb),
-          n_performance_passes(n_perf_pass),
-          perf_counter_index_count(index_count),
-          perf_counter_queue_family_index(perf_queue_family_index),
-          supported_video_profile(std::move(supp_video_profile)),
-          video_encode_feedback_flags(enabled_video_encode_feedback_flags),
-          query_states_(pCreateInfo->queryCount) {
-        for (uint32_t i = 0; i < pCreateInfo->queryCount; ++i) {
-            auto perf_size = n_perf_pass > 0 ? n_perf_pass : 1;
-            query_states_[i].reserve(perf_size);
-            for (uint32_t p = 0; p < perf_size; p++) {
-                query_states_[i].emplace_back(QUERYSTATE_UNKNOWN);
-            }
-        }
-    }
+              VkVideoEncodeFeedbackFlagsKHR enabled_video_encode_feedback_flags);
 
     VkQueryPool VkHandle() const { return handle_.Cast<VkQueryPool>(); }
 
-    void SetQueryState(uint32_t query, uint32_t perf_pass, QueryState state) {
-        auto guard = WriteLock();
-        assert(query < query_states_.size());
-        assert((n_performance_passes == 0 && perf_pass == 0) || (perf_pass < n_performance_passes));
-        if (state == QUERYSTATE_RESET) {
-            for (auto &state : query_states_[query]) {
-                state = QUERYSTATE_RESET;
-            }
-        } else {
-            query_states_[query][perf_pass] = state;
-        }
-    }
-    QueryState GetQueryState(uint32_t query, uint32_t perf_pass) const {
-        auto guard = ReadLock();
-        // this method can get called with invalid arguments during validation
-        if (query < query_states_.size() && ((n_performance_passes == 0 && perf_pass == 0) || (perf_pass < n_performance_passes))) {
-            return query_states_[query][perf_pass];
-        }
-        return QUERYSTATE_UNKNOWN;
-    }
+    void SetQueryState(uint32_t query, uint32_t perf_pass, QueryState state);
+    QueryState GetQueryState(uint32_t query, uint32_t perf_pass) const;
+    QueryResultType GetQueryResultType(QueryState state, VkQueryResultFlags flags);
 
     const vku::safe_VkQueryPoolCreateInfo safe_create_info;
     const VkQueryPoolCreateInfo &create_info;
@@ -132,7 +106,7 @@ struct QueryObject {
           index(index_),
           indexed(indexed_) {}
 
-    // This is needed because vvl::CommandBuffer::BeginQuery() and EndQuery() need to make a copy to update
+    // This is needed because vvl::CommandBuffer::RecordBeginQuery() and RecordEndQuery() need to make a copy to update
     QueryObject(const QueryObject &obj, uint32_t perf_pass_)
         : pool(obj.pool),
           slot(obj.slot),
@@ -153,12 +127,11 @@ inline bool operator==(const QueryObject &query1, const QueryObject &query2) {
 
 using QueryMap = vvl::unordered_map<QueryObject, QueryState>;
 
-enum QueryResultType {
-    QUERYRESULT_UNKNOWN,
-    QUERYRESULT_NO_DATA,
-    QUERYRESULT_SOME_DATA,
-    QUERYRESULT_WAIT_ON_RESET,
-    QUERYRESULT_WAIT_ON_RUNNING,
+struct QueryCount {
+    uint32_t count;
+    uint32_t subpass;
+    bool inside_render_pass;
+    explicit QueryCount(vvl::CommandBuffer &cb_state);
 };
 
 inline const char *string_QueryResultType(QueryResultType result_type) {

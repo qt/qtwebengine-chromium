@@ -9,6 +9,7 @@ source_set("language") {
   ]
   deps = [
     ":ui",
+    "//components/application_locale_storage",
     "//components/language/core/browser",
     "//components/language/core/common",
     "//components/prefs",
@@ -89,9 +90,10 @@ source_set("unit_tests") {
     "//ios/chrome/browser/shared/model/prefs:browser_prefs",
     "//ios/chrome/browser/shared/model/profile/test",
     "//ios/chrome/browser/translate/model",
+    "//ios/web/public/test",
     "//testing/gmock",
     "//testing/gtest",
-    "//ui/base:base",
+    "//ui/base",
   ]
 }
 

@@ -10,6 +10,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_view_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/time/time.h"
@@ -326,8 +327,8 @@ void CachedImageFetcher::StoreData(bool cache_result_needs_transcoding,
         return;
     }
 
-    // |needs_transcoding| is only true when the image to save isn't transcoded
-    // and |allow_needs_transcoding_file()| is true (set by
+    // `needs_transcoding` is only true when the image to save isn't transcoded
+    // and `allow_needs_transcoding_file()` is true (set by
     // ReducedModeImageFetcher).
     bool needs_transcoding = !is_image_data_transcoded &&
                              request.params.allow_needs_transcoding_file();

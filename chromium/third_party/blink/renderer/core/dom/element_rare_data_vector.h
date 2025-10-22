@@ -6,7 +6,9 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_DOM_ELEMENT_RARE_DATA_VECTOR_H_
 
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/dom/css_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
+#include "third_party/blink/renderer/core/dom/explicitly_set_attr_elements_map.h"
 #include "third_party/blink/renderer/core/dom/focusgroup_flags.h"
 #include "third_party/blink/renderer/core/dom/has_invalidation_flags.h"
 #include "third_party/blink/renderer/core/dom/node_rare_data.h"
@@ -43,7 +45,7 @@ class ResizeObservation;
 class StyleScopeData;
 class CustomElementDefinition;
 class PopoverData;
-class InterestInvokerData;
+class InvokerData;
 class InterestInvokerTargetData;
 class OutOfFlowData;
 class HTMLElement;
@@ -85,12 +87,15 @@ class CORE_EXPORT ElementRareDataVector final : public NodeRareData {
     kRestrictionTargetId = 28,
     kStyleScopeData = 29,
     kOutOfFlowData = 30,
-    kInterestInvokerData = 31,
+    kInvokerData = 31,
     kInterestInvokerTargetData = 32,
     kScrollMarkerGroupData = 33,
     kScrollMarkerGroupContainerData = 34,
+    kExplicitlySetElementsForAttr = 35,
+    kCSSPseudoElementData = 36,
+    kCustomElementRegistry = 37,
 
-    kNumFields = 35,
+    kNumFields = 38,
   };
 
   ElementRareDataField* GetField(FieldId field_id) const;
@@ -164,7 +169,7 @@ class CORE_EXPORT ElementRareDataVector final : public NodeRareData {
   PseudoElement* GetPseudoElement(
       PseudoId,
       const AtomicString& document_transition_tag = g_null_atom) const;
-  bool HasViewTransitionGroupPseudoElement() const;
+  bool HasScrollButtonOrMarkerGroupPseudos() const;
   PseudoElementData::PseudoElementVector GetPseudoElements() const;
   void AddColumnPseudoElement(ColumnPseudoElement&);
   const ColumnPseudoElementsVector* GetColumnPseudoElements() const;
@@ -272,9 +277,8 @@ class CORE_EXPORT ElementRareDataVector final : public NodeRareData {
   PopoverData& EnsurePopoverData();
   void RemovePopoverData();
 
-  InterestInvokerData* GetInterestInvokerData() const;
-  InterestInvokerData& EnsureInterestInvokerData();
-  void RemoveInterestInvokerData();
+  InvokerData* GetInvokerData() const;
+  InvokerData& EnsureInvokerData();
 
   InterestInvokerTargetData* GetInterestInvokerTargetData() const;
   InterestInvokerTargetData& EnsureInterestInvokerTargetData();
@@ -306,12 +310,21 @@ class CORE_EXPORT ElementRareDataVector final : public NodeRareData {
   void SetScrollMarkerGroupContainerData(ScrollMarkerGroupData*);
   ScrollMarkerGroupData* GetScrollMarkerGroupContainerData() const;
 
+  void CacheCSSPseudoElement(PseudoId, CSSPseudoElement&);
+  CSSPseudoElement* GetCSSPseudoElement(PseudoId) const;
+
+  ExplicitlySetAttrElementsMap* GetExplicitlySetElementsForAttr() const;
+  ExplicitlySetAttrElementsMap& EnsureExplicitlySetElementsForAttr();
+
   AnchorPositionScrollData* GetAnchorPositionScrollData() const;
   void RemoveAnchorPositionScrollData();
   AnchorPositionScrollData& EnsureAnchorPositionScrollData(Element*);
 
   AnchorElementObserver& EnsureAnchorElementObserver(Element*);
   AnchorElementObserver* GetAnchorElementObserver() const;
+
+  CustomElementRegistry* GetCustomElementRegistry() const;
+  void SetCustomElementRegistry(CustomElementRegistry* registry);
 
   void IncrementImplicitlyAnchoredElementCount();
   void DecrementImplicitlyAnchoredElementCount();
@@ -441,9 +454,9 @@ class CORE_EXPORT ElementRareDataVector final : public NodeRareData {
     unsigned has_undo_stack : 1 = false;
     unsigned scrollbar_pseudo_element_styles_depend_on_font_metrics : 1 = false;
     // This never gets reset, since we would have to keep track for
-    // every pseudo element whether it has counter style or not.
+    // every pseudo-element whether it has counter style or not.
     // But since situations when counter style if removed from
-    // pseudo element are rare, we are fine with it, since
+    // pseudo-element are rare, we are fine with it, since
     // it doesn't hurt performance much.
     unsigned has_counters_styles : 1 = false;
     unsigned has_been_explicitly_scrolled : 1 = false;

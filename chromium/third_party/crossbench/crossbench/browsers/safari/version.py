@@ -5,14 +5,14 @@
 from __future__ import annotations
 
 import re
-from typing import TYPE_CHECKING, Final, Tuple
+from typing import TYPE_CHECKING, Final
 
 from typing_extensions import override
 
 from crossbench.browsers.version import BrowserVersion, BrowserVersionChannel
 
 if TYPE_CHECKING:
-  VersionParseResult = Tuple[Tuple[int, ...], BrowserVersionChannel, str]
+  VersionParseResult = tuple[tuple[int, ...], BrowserVersionChannel, str]
 
 class SafariVersion(BrowserVersion):
   _MIN_MAJOR_PARTS_LEN: Final[int] = 3
@@ -67,7 +67,7 @@ class SafariVersion(BrowserVersion):
     return parts, channel, full_version
 
   @classmethod
-  def _parse_parts(cls, full_version: str, parts_str: str) -> Tuple[int, ...]:
+  def _parse_parts(cls, full_version: str, parts_str: str) -> tuple[int, ...]:
     try:
       parts = tuple(map(int, parts_str.split(".")))
     except ValueError as e:
@@ -109,5 +109,5 @@ class SafariVersion(BrowserVersion):
 
   @property
   @override
-  def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
+  def key(self) -> tuple[tuple[int, ...], BrowserVersionChannel]:
     return (self.comparable_parts(self._MIN_PARTS_LEN), self._channel)

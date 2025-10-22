@@ -62,10 +62,8 @@ inline constexpr absl::string_view kSkSLVertexShaderHelpers =
     // `opacityShift` to `colorUnpremul`. Both the input color and the output
     // color are unpremultiplied linear sRGB, and may include RGB values outside
     // the range [0, 1], e.g. for wide-gamut colors. The current implementation
-    // performs the shift in the YIQ color space, using the Rec. 601 primaries.
-    //
-    // TODO: b/310989115 - Switch to using sRGB primaries instead (see
-    // discussion on cl/583146821).
+    // performs the shift in the YIQ color space, using the Rec. 601 primaries,
+    // though it might be better to use the sRGB primaries instead.
     //
     // NOTE: there is no separate `applyHSLShift()` taking two `float3`s to help
     // prevent accidentally passing arguments in the wrong order.
@@ -264,12 +262,23 @@ inline constexpr absl::string_view kSkSLVertexShaderHelpers =
         const float2 surfaceUv,
         const float particleAnimationOffset,
         const float textureAnimationProgress,
-        const int numTextureAnimationFrames) {
+        const int numTextureAnimationFrames,
+        const int numTextureAnimationRows,
+        const int numTextureAnimationColumns) {
+      // Progress overshooting 1 is handled by wrapping around to 0. Effectively
+      // progress is mod 1.
       float progress =
           fract(textureAnimationProgress + particleAnimationOffset);
+
       float numFrames = float(numTextureAnimationFrames);
-      return vec2(surfaceUv.x,
-                  (surfaceUv.y + floor(progress * numFrames)) / numFrames);
+      float numRows = float(numTextureAnimationRows);
+      float numColumns = float(numTextureAnimationColumns);
+      float frameIndex = floor(progress * numFrames);
+      float frameRowFractional = frameIndex / numColumns;
+      float frameRow = floor(frameRowFractional);
+      float frameColumn = floor(fract(frameRowFractional) * numColumns);
+      return vec2((surfaceUv.x + frameColumn) / numColumns,
+                  (surfaceUv.y + frameRow) / numRows);
     })"
 
     // ------------------------------------------------------------------------

@@ -20,6 +20,8 @@
 #include "quiche/balsa/balsa_headers.h"
 #include "quiche/balsa/balsa_visitor_interface.h"
 #include "quiche/balsa/header_properties.h"
+#include "quiche/balsa/http_validation_policy.h"
+#include "quiche/common/platform/api/quiche_flag_utils.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 
 // When comparing characters (other than == and !=), cast to unsigned char
@@ -475,6 +477,10 @@ bool BalsaFrame::FindColonsAndParseIntoKeyValue(const Lines& lines,
                                : BalsaFrameEnums::INVALID_HEADER_FORMAT);
         return false;
       }
+      // Getting here means we find obs-fold character (for header line
+      // continuation) and continuation is allowed.
+      HandleWarning(is_trailer ? BalsaFrameEnums::OBS_FOLD_IN_TRAILERS
+                               : BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
 
       // If disallow_header_continuation_lines() is false, we neither reject nor
       // normalize continuation lines, in violation of RFC7230.
@@ -666,20 +672,19 @@ bool BalsaFrame::CheckHeaderLinesForInvalidChars(const Lines& lines,
       headers->OriginalHeaderStreamBegin() + lines.front().first;
   const char* stream_end =
       headers->OriginalHeaderStreamBegin() + lines.back().second;
-  bool found_invalid = false;
 
   for (const char* c = stream_begin; c < stream_end; c++) {
     if (header_properties::IsInvalidHeaderChar(*c)) {
-      found_invalid = true;
+      return true;
     }
     if (*c == '\r' &&
         http_validation_policy().disallow_lone_cr_in_request_headers &&
         c + 1 < stream_end && *(c + 1) != '\n') {
-      found_invalid = true;
+      return true;
     }
   }
 
-  return found_invalid;
+  return false;
 }
 
 void BalsaFrame::ProcessHeaderLines(const Lines& lines, bool is_trailer,
@@ -1338,10 +1343,33 @@ size_t BalsaFrame::ProcessInput(const char* input, size_t size) {
           }
 
           const char c = *current;
-          if (HeaderFramingFound(c) != 0) {
-            // If we've found a "\r\n\r\n", then the message
-            // is done.
+          const int32_t framing_found = HeaderFramingFound(c);
+          if (framing_found != 0) {
+            // TODO(b/433557986) remove these code counts
+            if (framing_found == kValidTerm1 && is_request_) {
+              QUICHE_CODE_COUNT(balsa_frame_framing_found_valid_term1_request);
+            } else if (framing_found == kValidTerm1 && !is_request_) {
+              QUICHE_CODE_COUNT(balsa_frame_framing_found_valid_term1_response);
+            } else if (framing_found == kValidTerm2 && is_request_) {
+              QUICHE_CODE_COUNT(balsa_frame_framing_found_valid_term2_request);
+            } else if (framing_found == kValidTerm2 && !is_request_) {
+              QUICHE_CODE_COUNT(balsa_frame_framing_found_valid_term2_response);
+            }
+
+            // If we've found the end of the chunk, then we're done.
             ++current;
+
+            if (http_validation_policy()
+                    .require_chunked_body_end_with_crlf_crlf &&
+                framing_found != kValidTerm1) {
+              //  https://datatracker.ietf.org/doc/html/rfc9112#name-chunked-transfer-coding
+              // The ABNF for chunked coding states that both `last-chunk` _and_
+              // `chunked_body` must end with CR_LF, i.e. kValidTerm2 is not
+              // allowed.
+              HandleError(BalsaFrameEnums::INVALID_CHUNK_FRAMING);
+              return current - input;
+            }
+
             parse_state_ = BalsaFrameEnums::MESSAGE_FULLY_READ;
             visitor_->OnRawBodyInput(
                 absl::string_view(on_entry, current - on_entry));

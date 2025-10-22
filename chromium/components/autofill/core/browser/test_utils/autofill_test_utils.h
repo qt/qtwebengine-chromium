@@ -231,12 +231,14 @@ CreditCardMerchantBenefit GetActiveCreditCardMerchantBenefit();
 // benefit.
 base::flat_set<url::Origin> GetOriginsForMerchantBenefit();
 
-// Adds `card` with a set `benefit` and `issuer_id` to `personal_data`. Also
-// configures a category benefit with the `optimization_guide`.
+// Adds `card` with a set `issuer_id`, `benefit` and `benefit_source` to
+// `personal_data`. Also configures a category benefit with the
+// `optimization_guide`.
 void SetUpCreditCardAndBenefitData(
     CreditCard& card,
-    const CreditCardBenefit& benefit,
     const std::string& issuer_id,
+    const CreditCardBenefit& benefit,
+    const std::string& benefit_source,
     TestPersonalDataManager& personal_data,
     AutofillOptimizationGuide* optimization_guide);
 
@@ -327,16 +329,19 @@ CreditCard CreateCreditCardWithInfo(const char* name_on_card,
 void SetServerCreditCards(PaymentsAutofillTable* table,
                           const std::vector<CreditCard>& cards);
 
-struct PassportEntityOptions {
+template <typename = void>
+struct PassportEntityOptionsT {
   const char16_t* name = u"Pippi Långstrump";
-  const char16_t* number = u"123";
+  const char16_t* number = u"LR1234567";
   const char16_t* country = u"Sweden";
   const char16_t* expiry_date = u"2019-08-30";
   const char16_t* issue_date = u"2010-09-01";
   std::string_view guid = "00000000-0000-4000-8000-000000000000";
   std::string_view nickname = "Passie";
   base::Time date_modified = kJune2017;
+  std::string_view app_locale = "en-US";
 };
+using PassportEntityOptions = PassportEntityOptionsT<>;
 
 // Creates a test passport instance with the values from `options`.
 // Attributes whose value in `options` is `nullptr` are left absent.
@@ -345,7 +350,8 @@ struct PassportEntityOptions {
 // base::Time in the database is seconds).
 EntityInstance GetPassportEntityInstance(PassportEntityOptions options = {});
 
-struct DriversLicenseOptions {
+template <typename = void>
+struct DriversLicenseOptionsT {
   const char16_t* name = u"Knecht Ruprecht";
   const char16_t* region = u"California";
   const char16_t* number = u"12312345";
@@ -354,12 +360,15 @@ struct DriversLicenseOptions {
   std::string_view guid = "00000000-0000-4000-8000-100000000000";
   std::string_view nickname = "License";
   base::Time date_modified = kJune2017;
+  std::string_view app_locale = "en-US";
 };
+using DriversLicenseOptions = DriversLicenseOptionsT<>;
 
 EntityInstance GetDriversLicenseEntityInstance(
     DriversLicenseOptions options = {});
 
-struct VehicleOptions {
+template <typename = void>
+struct VehicleOptionsT {
   const char16_t* name = u"Knecht Ruprecht";
   const char16_t* plate = u"123456";
   const char16_t* number = u"12312345";
@@ -369,9 +378,51 @@ struct VehicleOptions {
   const char16_t* state = u"California";
   std::string_view guid = "00000000-0000-4000-8000-200000000000";
   std::string_view nickname = "Vehicle";
+  std::string_view app_locale = "en-US";
 };
+using VehicleOptions = VehicleOptionsT<>;
 
 EntityInstance GetVehicleEntityInstance(VehicleOptions options = {});
+
+template <typename = void>
+struct NationalIdCardOptionsT {
+  const char16_t* number = u"987654321";
+  const char16_t* country = u"United States";
+  const char16_t* issue_date = u"01/12/2020";
+  const char16_t* expiry_date = u"01/12/2030";
+  std::string_view guid = "00000000-0000-4000-8000-300000000000";
+  std::string_view nickname = "IdCard";
+  std::string_view app_locale = "en-US";
+};
+using NationalIdCardOptions = NationalIdCardOptionsT<>;
+
+EntityInstance GetNationalIdCardEntityInstance(
+    NationalIdCardOptions options = {});
+
+template <typename = void>
+struct KnownTravelerNumberOptionsT {
+  const char16_t* number = u"987654321";
+  const char16_t* expiration_date = u"01/12/2030";
+  std::string_view guid = "00000000-0000-4000-8000-400000000000";
+  std::string_view nickname = "Known Traveler Number";
+  std::string_view app_locale = "en-US";
+};
+using KnownTravelerNumberOptions = KnownTravelerNumberOptionsT<>;
+
+EntityInstance GetKnownTravelerNumberInstance(
+    KnownTravelerNumberOptions options = {});
+
+template <typename = void>
+struct RedressNumberOptionsT {
+  const char16_t* number = u"987654321";
+  std::string_view guid = "00000000-0000-4000-8000-500000000000";
+  std::string_view nickname = "RedressNumber";
+  std::string_view app_locale = "en-US";
+};
+using RedressNumberOptions = RedressNumberOptionsT<>;
+
+EntityInstance GetRedressNumberEntityInstance(
+    RedressNumberOptions options = {});
 
 // Adds `possible_types` at the end of `possible_field_types`.
 void InitializePossibleTypes(std::vector<FieldTypeSet>& possible_field_types,
@@ -447,7 +498,8 @@ Suggestion CreateAutofillSuggestion(
     const std::u16string& main_text_value = std::u16string(),
     const Suggestion::Payload& payload = Suggestion::Payload());
 
-Suggestion CreateAutofillSuggestion(const std::u16string& main_text_value,
+Suggestion CreateAutofillSuggestion(SuggestionType type,
+                                    const std::u16string& main_text_value,
                                     const std::u16string& minor_text_value,
                                     bool has_deactivated_style);
 
@@ -476,11 +528,16 @@ sync_pb::PaymentInstrument CreatePaymentInstrumentWithLinkedBnplIssuer(
     std::string issuer_id,
     std::string currency,
     uint64_t min_price_in_micros,
-    uint64_t max_price_in_micros);
+    uint64_t max_price_in_micros,
+    std::vector<sync_pb::PaymentInstrument_ActionRequired> actions_required =
+        {});
 
 // Returns a linked BNPL issuer with fake data.
 BnplIssuer GetTestLinkedBnplIssuer(
-    std::string_view issuer_id = kBnplAffirmIssuerId);
+    autofill::BnplIssuer::IssuerId issuer_id =
+        autofill::BnplIssuer::IssuerId::kBnplAffirm,
+    DenseSet<PaymentInstrument::ActionRequired> actions_required =
+        DenseSet<PaymentInstrument::ActionRequired>());
 
 // Returns an unlinked BNPL issuer with fake data.
 BnplIssuer GetTestUnlinkedBnplIssuer();

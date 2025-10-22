@@ -19,17 +19,16 @@
 
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <variant>
 
+#include "perfetto/base/build_config.h"
+#include "perfetto/ext/base/flat_hash_map.h"
+#include "src/trace_processor/containers/string_pool.h"
 #include "src/trace_processor/dataframe/impl/slab.h"
 #include "src/trace_processor/dataframe/impl/types.h"
 
 namespace perfetto::trace_processor::dataframe::impl::bytecode::reg {
-
-// Set an upper bound on registers to allow for using std::array to
-// store register values.
-// Arbitrary value chosen to be larger than any reasonable bytecode program.
-static constexpr uint32_t kMaxRegisters = 64;
 
 // Register system for the bytecode interpreter.
 // Provides typed handles for accessing virtual registers with appropriate
@@ -46,23 +45,27 @@ struct RwHandle : HandleBase {
   RwHandle() = default;
   explicit RwHandle(uint32_t _index) : HandleBase{_index} {}
 
+#if !PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
   static constexpr bool VerifyPreconditions() {
     static_assert(std::is_trivial_v<RwHandle<T>>);
     static_assert(sizeof(RwHandle<T>) == sizeof(uint32_t));
     return true;
   }
   static constexpr bool kPreconditions = VerifyPreconditions();
+#endif
 };
 
 // Handle for read-only registers of type T.
 template <typename T>
 struct ReadHandle : HandleBase {
+#if !PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
   static constexpr bool VerifyPreconditions() {
     static_assert(std::is_trivial_v<ReadHandle<T>>);
     static_assert(sizeof(ReadHandle<T>) == sizeof(uint32_t));
     return true;
   }
   static constexpr bool kPreconditions = VerifyPreconditions();
+#endif
   ReadHandle() = default;
   ReadHandle(RwHandle<T> _index) : HandleBase{_index.index} {}
   explicit ReadHandle(uint32_t _index) : HandleBase{_index} {}
@@ -71,12 +74,14 @@ struct ReadHandle : HandleBase {
 // Handle for write-only registers of type T.
 template <typename T>
 struct WriteHandle : HandleBase {
+#if !PERFETTO_BUILDFLAG(PERFETTO_COMPILER_MSVC)
   static constexpr bool VerifyPreconditions() {
     static_assert(std::is_trivial_v<WriteHandle<T>>);
     static_assert(sizeof(WriteHandle<T>) == sizeof(uint32_t));
     return true;
   }
   static constexpr bool kPreconditions = VerifyPreconditions();
+#endif
   WriteHandle() = default;
   WriteHandle(RwHandle<T> _index) : HandleBase{_index.index} {}
   explicit WriteHandle(uint32_t _index) : HandleBase{_index} {}
@@ -85,12 +90,18 @@ struct WriteHandle : HandleBase {
 // Empty placeholder type for register values.
 struct Empty {};
 
+using StringIdToRankMap =
+    std::unique_ptr<base::FlatHashMap<StringPool::Id, uint32_t>>;
+
 // Values that can be stored in a register.
 using Value = std::variant<Empty,
                            Range,
                            Slab<uint32_t>,
                            Span<uint32_t>,
-                           CastFilterValueResult>;
+                           CastFilterValueResult,
+                           CastFilterValueListResult,
+                           Slab<uint8_t>,
+                           StringIdToRankMap>;
 
 }  // namespace perfetto::trace_processor::dataframe::impl::bytecode::reg
 

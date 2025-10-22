@@ -14,6 +14,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "include/v8-primitive.h"
 #include "include/v8-source-location.h"
 #include "src/base/logging.h"
 #include "src/base/macros.h"
@@ -21,6 +22,7 @@
 #include "src/base/string-format.h"
 #include "src/base/template-utils.h"
 #include "src/base/vector.h"
+#include "src/builtins/constants-table-builder.h"
 #include "src/codegen/callable.h"
 #include "src/codegen/code-factory.h"
 #include "src/codegen/heap-object-list.h"
@@ -46,6 +48,7 @@
 #include "src/compiler/turboshaft/uniform-reducer-adapter.h"
 #include "src/compiler/turboshaft/utils.h"
 #include "src/compiler/write-barrier-kind.h"
+#include "src/execution/isolate.h"
 #include "src/flags/flags.h"
 #include "src/logging/runtime-call-stats.h"
 #include "src/objects/dictionary.h"
@@ -58,7 +61,6 @@
 #include "src/objects/swiss-name-dictionary.h"
 #include "src/objects/tagged.h"
 #include "src/objects/turbofan-types.h"
-#include "v8-primitive.h"
 
 #ifdef V8_ENABLE_WEBASSEMBLY
 #include "src/wasm/wasm-objects.h"
@@ -732,6 +734,8 @@ template <typename T>
 using LoopLabelFor = detail::LoopLabelForHelper<T>::type;
 
 Handle<Code> BuiltinCodeHandle(Builtin builtin, Isolate* isolate);
+V8_EXPORT_PRIVATE void CanonicalizeEmbeddedBuiltinsConstantIfNeededImpl(
+    Isolate* isolate, Handle<HeapObject> object);
 
 template <typename Next>
 class TurboshaftAssemblerOpInterface;
@@ -979,8 +983,8 @@ class TSReducerBase : public Next {
 
   template <class Op, class... Args>
   OpIndex Emit(Args... args) {
-    static_assert((std::is_base_of<Operation, Op>::value));
-    static_assert(!(std::is_same<Op, Operation>::value));
+    static_assert((std::is_base_of_v<Operation, Op>));
+    static_assert(!(std::is_same_v<Op, Operation>));
     DCHECK_NOT_NULL(Asm().current_block());
     OpIndex result = Asm().output_graph().next_operation_index();
     Op& op = Asm().output_graph().template Add<Op>(args...);
@@ -1890,6 +1894,12 @@ class TurboshaftAssemblerOpInterface
                                        FloatRepresentation::Float64());
   }
 
+  V<Float64> Float64Binary(V<Float64> lhs, V<Float64> rhs,
+                           FloatBinopOp::Kind kind) {
+    return ReduceIfReachableFloatBinop(lhs, rhs, kind,
+                                       FloatRepresentation::Float64());
+  }
+
 #define DECL_MULTI_REP_UNARY(name, operation, rep_type, kind)                \
   OpIndex name(OpIndex input, rep_type rep) {                                \
     return ReduceIfReachable##operation(input, operation##Op::Kind::k##kind, \
@@ -2120,6 +2130,14 @@ class TurboshaftAssemblerOpInterface
   V<Word32> Float64IsHole(V<Float64> input) {
     return Float64Is(input, NumericKind::kFloat64Hole);
   }
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+  V<Word32> Float64IsUndefined(V<Float64> input) {
+    return Float64Is(input, NumericKind::kFloat64Undefined);
+  }
+  V<Word32> Float64IsUndefinedOrHole(V<Float64> input) {
+    return Float64Is(input, NumericKind::kFloat64UndefinedOrHole);
+  }
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
   // Float64IsSmi returns true if {input} is an integer in smi range.
   V<Word32> Float64IsSmi(V<Float64> input) {
     return Float64Is(input, NumericKind::kSmi);
@@ -2343,6 +2361,7 @@ class TurboshaftAssemblerOpInterface
   V<T> HeapConstant(Handle<T> value)
     requires(is_subtype_v<T, HeapObject>)
   {
+    CanonicalizeEmbeddedBuiltinsConstantIfNeeded(value);
     return ReduceIfReachableConstant(ConstantOp::Kind::kHeapObject,
                                      ConstantOp::Storage{value});
   }
@@ -2367,10 +2386,12 @@ class TurboshaftAssemblerOpInterface
     return HeapConstant(BuiltinCodeHandle(builtin, isolate));
   }
   OpIndex CompressedHeapConstant(Handle<HeapObject> value) {
+    CanonicalizeEmbeddedBuiltinsConstantIfNeeded(value);
     return ReduceIfReachableConstant(ConstantOp::Kind::kHeapObject, value);
   }
   OpIndex TrustedHeapConstant(Handle<HeapObject> value) {
     DCHECK(IsTrustedObject(*value));
+    CanonicalizeEmbeddedBuiltinsConstantIfNeeded(value);
     return ReduceIfReachableConstant(ConstantOp::Kind::kTrustedHeapObject,
                                      value);
   }
@@ -2661,25 +2682,38 @@ class TurboshaftAssemblerOpInterface
         BitcastSmiToWordPtr(input), kSmiShiftBits));
   }
 
-  OpIndex AtomicRMW(V<WordPtr> base, V<WordPtr> index, OpIndex value,
+  V<WordPtr> LoadPageFlags(V<HeapObject> object) {
+    V<WordPtr> header = MemoryChunkFromAddress(BitcastTaggedToWordPtr(object));
+    return Load(header, {}, LoadOp::Kind::RawAligned(),
+                MemoryRepresentation::UintPtr(), MemoryChunk::FlagsOffset());
+  }
+
+  V<WordPtr> MemoryChunkFromAddress(V<WordPtr> address) {
+    return WordPtrBitwiseAnd(address,
+                             ~MemoryChunk::GetAlignmentMaskForAssembler());
+  }
+
+  OpIndex AtomicRMW(V<Any> base, V<WordPtr> index, OpIndex value,
                     AtomicRMWOp::BinOp bin_op,
                     RegisterRepresentation in_out_rep,
                     MemoryRepresentation memory_rep,
-                    MemoryAccessKind memory_access_kind) {
+                    MemoryAccessKind memory_access_kind,
+                    RegisterRepresentation base_rep) {
     DCHECK_NE(bin_op, AtomicRMWOp::BinOp::kCompareExchange);
     return ReduceIfReachableAtomicRMW(base, index, value, OpIndex::Invalid(),
                                       bin_op, in_out_rep, memory_rep,
-                                      memory_access_kind);
+                                      memory_access_kind, base_rep);
   }
 
-  OpIndex AtomicCompareExchange(V<WordPtr> base, V<WordPtr> index,
-                                OpIndex expected, OpIndex new_value,
+  OpIndex AtomicCompareExchange(V<Any> base, V<WordPtr> index, OpIndex expected,
+                                OpIndex new_value,
                                 RegisterRepresentation result_rep,
                                 MemoryRepresentation input_rep,
-                                MemoryAccessKind memory_access_kind) {
+                                MemoryAccessKind memory_access_kind,
+                                RegisterRepresentation base_rep) {
     return ReduceIfReachableAtomicRMW(
         base, index, new_value, expected, AtomicRMWOp::BinOp::kCompareExchange,
-        result_rep, input_rep, memory_access_kind);
+        result_rep, input_rep, memory_access_kind, base_rep);
   }
 
   OpIndex AtomicWord32Pair(V<WordPtr> base, OptionalV<WordPtr> index,
@@ -2722,6 +2756,8 @@ class TurboshaftAssemblerOpInterface
   OpIndex MemoryBarrier(AtomicMemoryOrder memory_order) {
     return ReduceIfReachableMemoryBarrier(memory_order);
   }
+
+  OpIndex Pause() { return ReduceIfReachablePause(); }
 
   OpIndex Load(OpIndex base, OptionalOpIndex index, LoadOp::Kind kind,
                MemoryRepresentation loaded_rep,
@@ -2952,7 +2988,8 @@ class TurboshaftAssemblerOpInterface
     V<Rep> value = Load(object, kind, rep, access.offset);
 #ifdef V8_ENABLE_SANDBOX
     if (is_sandboxed_external) {
-      value = DecodeExternalPointer(value, access.external_pointer_tag);
+      value = V<Rep>::Cast(DecodeExternalPointer(V<Word32>::Cast(value),
+                                                 access.external_pointer_tag));
     }
     if (access.is_bounded_size_access) {
       DCHECK(!is_sandboxed_external);
@@ -2982,11 +3019,6 @@ class TurboshaftAssemblerOpInterface
   V<Float64> LoadHeapNumberValue(V<HeapNumber> heap_number) {
     return __ template LoadField<HeapNumber, HeapNumber, Float64>(
         heap_number, AccessBuilderTS::ForHeapNumberValue());
-  }
-
-  V<Word32> LoadHeapInt32Value(V<HeapNumber> heap_number) {
-    return __ template LoadField<HeapNumber, HeapNumber, Word32>(
-        heap_number, AccessBuilderTS::ForHeapInt32Value());
   }
 
   template <typename Type = Object>
@@ -3157,11 +3189,13 @@ class TurboshaftAssemblerOpInterface
   }
 
   template <typename T = HeapObject>
-  Uninitialized<T> Allocate(ConstOrV<WordPtr> size, AllocationType type) {
+  Uninitialized<T> Allocate(ConstOrV<WordPtr> size, AllocationType type,
+                            AllocationAlignment alignment) {
     static_assert(is_subtype_v<T, HeapObject>);
     DCHECK(!in_object_initialization_);
     in_object_initialization_ = true;
-    return Uninitialized<T>{ReduceIfReachableAllocate(resolve(size), type)};
+    return Uninitialized<T>{
+        ReduceIfReachableAllocate(resolve(size), type, alignment)};
   }
 
   template <typename T>
@@ -3174,20 +3208,30 @@ class TurboshaftAssemblerOpInterface
   V<HeapNumber> AllocateHeapNumberWithValue(V<Float64> value,
                                             Factory* factory) {
     auto result = __ template Allocate<HeapNumber>(
-        __ IntPtrConstant(sizeof(HeapNumber)), AllocationType::kYoung);
+        __ IntPtrConstant(sizeof(HeapNumber)), AllocationType::kYoung,
+        kTaggedAligned);
     __ InitializeField(result, AccessBuilder::ForMap(),
                        __ HeapConstant(factory->heap_number_map()));
     __ InitializeField(result, AccessBuilder::ForHeapNumberValue(), value);
     return __ FinishInitialization(std::move(result));
   }
 
-  OpIndex DecodeExternalPointer(OpIndex handle, ExternalPointerTag tag) {
+  V<WordPtr> DecodeExternalPointer(V<Word32> handle, ExternalPointerTag tag) {
     return ReduceIfReachableDecodeExternalPointer(handle, tag);
   }
 
 #if V8_ENABLE_WEBASSEMBLY
   void WasmStackCheck(WasmStackCheckOp::Kind kind) {
     ReduceIfReachableWasmStackCheck(kind);
+  }
+
+  void MemoryCopy(V<WordPtr> dst_base, V<WordPtr> src_base,
+                  V<WordPtr> num_bytes) {
+    ReduceIfReachableMemoryCopy(dst_base, src_base, num_bytes);
+  }
+
+  void MemoryFill(V<WordPtr> dst_base, V<Word32> value, V<WordPtr> num_bytes) {
+    ReduceIfReachableMemoryFill(dst_base, value, num_bytes);
   }
 #endif
 
@@ -3407,7 +3451,8 @@ class TurboshaftAssemblerOpInterface
     DCHECK(frame_state.valid());
     auto arguments = std::apply(
         [](auto&&... as) {
-          return base::SmallVector<OpIndex, std::tuple_size_v<decltype(args)>>{
+          return base::SmallVector<
+              OpIndex, std::tuple_size_v<typename Descriptor::arguments_t>>{
               std::forward<decltype(as)>(as)...};
         },
         args);
@@ -3699,6 +3744,13 @@ class TurboshaftAssemblerOpInterface
                                      V<JSPrimitive> object) {
     return CallBuiltin<typename BuiltinCallDescriptor::ToObject>(
         isolate, context, {object});
+  }
+  void CallBuiltin_DetachContextCell(Isolate* isolate,
+                                     V<turboshaft::FrameState> frame_state,
+                                     V<Context> context, V<Object> new_value,
+                                     ConstOrV<WordPtr> index) {
+    CallBuiltin<typename BuiltinCallDescriptor::DetachContextCell>(
+        isolate, frame_state, {context, new_value, resolve(index)});
   }
   V<Context> CallBuiltin_FastNewFunctionContextFunction(
       Isolate* isolate, V<turboshaft::FrameState> frame_state,
@@ -4022,6 +4074,39 @@ class TurboshaftAssemblerOpInterface
         {object, prototype});
   }
 
+#if V8_ENABLE_WEBASSEMBLY
+  // TODO(14108): Annotate runtime functions as not having side effects
+  // where appropriate.
+  OpIndex WasmCallRuntime(Zone* zone, Runtime::FunctionId f,
+                          std::initializer_list<const OpIndex> args,
+                          V<Context> context) {
+    const Runtime::Function* fun = Runtime::FunctionForId(f);
+    OpIndex isolate_root = __ LoadRootRegister();
+    DCHECK_EQ(1, fun->result_size);
+    int builtin_slot_offset =
+        IsolateData::BuiltinSlotOffset(Builtin::kWasmCEntry);
+    OpIndex centry_stub =
+        __ Load(isolate_root, LoadOp::Kind::RawAligned(),
+                MemoryRepresentation::UintPtr(), builtin_slot_offset);
+    // CallRuntime is always called with 0 or 1 argument, so a vector of size 4
+    // always suffices.
+    SmallZoneVector<OpIndex, 4> centry_args(zone);
+    for (OpIndex arg : args) centry_args.emplace_back(arg);
+    centry_args.emplace_back(__ ExternalConstant(ExternalReference::Create(f)));
+    centry_args.emplace_back(__ Word32Constant(fun->nargs));
+    centry_args.emplace_back(context);
+    const CallDescriptor* call_descriptor =
+        compiler::Linkage::GetRuntimeCallDescriptor(
+            __ graph_zone(), f, fun->nargs, Operator::kNoProperties,
+            CallDescriptor::kNoFlags);
+    const TSCallDescriptor* ts_call_descriptor = TSCallDescriptor::Create(
+        call_descriptor, compiler::CanThrow::kYes,
+        compiler::LazyDeoptOnThrow::kNo, __ graph_zone());
+    return __ Call(centry_stub, OpIndex::Invalid(), base::VectorOf(centry_args),
+                   ts_call_descriptor);
+  }
+#endif
+
   void TailCall(V<CallTarget> callee, base::Vector<const OpIndex> arguments,
                 const TSCallDescriptor* descriptor) {
     ReduceIfReachableTailCall(callee, arguments, descriptor);
@@ -4232,9 +4317,11 @@ class TurboshaftAssemblerOpInterface
     Isolate* isolate = Asm().data()->isolate();
     DCHECK_NOT_NULL(isolate);
     DCHECK_EQ(ThreadId::Current(), isolate->thread_id());
-    V<String> string_constant =
-        __ HeapConstantNoHole(isolate->factory()->NewStringFromAsciiChecked(
-            stream.str().c_str(), AllocationType::kOld));
+    const std::string str = stream.str();
+    Handle<String> internalized_string = isolate->factory()->InternalizeString(
+        base::OneByteVector(str.c_str(), str.length()));
+    CanonicalizeEmbeddedBuiltinsConstantIfNeeded(internalized_string);
+    V<String> string_constant = __ HeapConstantNoHole(internalized_string);
 
     AbortCSADcheck(string_constant);
     Unreachable();
@@ -4585,8 +4672,10 @@ class TurboshaftAssemblerOpInterface
                               StringComparisonOp::Kind kind) {
     return ReduceIfReachableStringComparison(left, right, kind);
   }
-  V<Boolean> StringEqual(V<String> left, V<String> right) {
-    return StringComparison(left, right, StringComparisonOp::Kind::kEqual);
+  V<Boolean> StringEqual(
+      V<String> left, V<String> right,
+      StringComparisonOp::Kind kind = StringComparisonOp::Kind::kEqual) {
+    return StringComparison(left, right, kind);
   }
   V<Boolean> StringLessThan(V<String> left, V<String> right) {
     return StringComparison(left, right, StringComparisonOp::Kind::kLessThan);
@@ -4594,6 +4683,9 @@ class TurboshaftAssemblerOpInterface
   V<Boolean> StringLessThanOrEqual(V<String> left, V<String> right) {
     return StringComparison(left, right,
                             StringComparisonOp::Kind::kLessThanOrEqual);
+  }
+  V<Boolean> StringOrOddballStrictEqual(V<String> left, V<String> right) {
+    return ReduceIfReachableStringOrOddballStrictEqual(left, right);
   }
 
   V<Smi> ArgumentsLength() {
@@ -4897,8 +4989,8 @@ class TurboshaftAssemblerOpInterface
     return ReduceIfReachableWasmTypeCast(object, rtt, config);
   }
 
-  V<Object> AnyConvertExtern(V<Object> input) {
-    return ReduceIfReachableAnyConvertExtern(input);
+  V<Object> AnyConvertExtern(V<Object> input, bool is_shared) {
+    return ReduceIfReachableAnyConvertExtern(input, is_shared);
   }
 
   V<Object> ExternConvertAny(V<Object> input) {
@@ -4912,26 +5004,52 @@ class TurboshaftAssemblerOpInterface
 
   V<Any> StructGet(V<WasmStructNullable> object, const wasm::StructType* type,
                    wasm::ModuleTypeIndex type_index, int field_index,
-                   bool is_signed, CheckForNull null_check) {
+                   bool is_signed, CheckForNull null_check,
+                   std::optional<AtomicMemoryOrder> memory_order) {
     return ReduceIfReachableStructGet(object, type, type_index, field_index,
-                                      is_signed, null_check);
+                                      is_signed, null_check, memory_order);
   }
 
   void StructSet(V<WasmStructNullable> object, V<Any> value,
                  const wasm::StructType* type, wasm::ModuleTypeIndex type_index,
-                 int field_index, CheckForNull null_check) {
+                 int field_index, CheckForNull null_check,
+                 std::optional<AtomicMemoryOrder> memory_order) {
     ReduceIfReachableStructSet(object, value, type, type_index, field_index,
-                               null_check);
+                               null_check, memory_order);
+  }
+
+  V<Any> StructAtomicRMW(V<WasmStructNullable> object, V<Any> value,
+                         OptionalV<Any> expected,
+                         StructAtomicRMWOp::BinOp bin_op,
+                         const wasm::StructType* type,
+                         wasm::ModuleTypeIndex type_index, int field_index,
+                         CheckForNull null_check,
+                         AtomicMemoryOrder memory_order) {
+    return ReduceIfReachableStructAtomicRMW(object, value, expected, bin_op,
+                                            type, type_index, field_index,
+                                            null_check, memory_order);
+  }
+
+  V<Any> ArrayAtomicRMW(V<WasmArrayNullable> array, V<Word32> index,
+                        V<Any> value, OptionalV<Any> expected,
+                        ArrayAtomicRMWOp::BinOp bin_op,
+                        wasm::ValueType element_type,
+                        AtomicMemoryOrder memory_order) {
+    return ReduceIfReachableArrayAtomicRMW(array, index, value, expected,
+                                           bin_op, element_type, memory_order);
   }
 
   V<Any> ArrayGet(V<WasmArrayNullable> array, V<Word32> index,
-                  const wasm::ArrayType* array_type, bool is_signed) {
-    return ReduceIfReachableArrayGet(array, index, array_type, is_signed);
+                  const wasm::ArrayType* array_type, bool is_signed,
+                  std::optional<AtomicMemoryOrder> memory_order) {
+    return ReduceIfReachableArrayGet(array, index, array_type, is_signed,
+                                     memory_order);
   }
 
   void ArraySet(V<WasmArrayNullable> array, V<Word32> index, V<Any> value,
-                wasm::ValueType element_type) {
-    ReduceIfReachableArraySet(array, index, value, element_type);
+                wasm::ValueType element_type,
+                std::optional<AtomicMemoryOrder> memory_order) {
+    ReduceIfReachableArraySet(array, index, value, element_type, memory_order);
   }
 
   V<Word32> ArrayLength(V<WasmArrayNullable> array, CheckForNull null_check) {
@@ -4939,13 +5057,16 @@ class TurboshaftAssemblerOpInterface
   }
 
   V<WasmArray> WasmAllocateArray(V<Map> rtt, ConstOrV<Word32> length,
-                                 const wasm::ArrayType* array_type) {
-    return ReduceIfReachableWasmAllocateArray(rtt, resolve(length), array_type);
+                                 const wasm::ArrayType* array_type,
+                                 bool is_shared) {
+    return ReduceIfReachableWasmAllocateArray(rtt, resolve(length), array_type,
+                                              is_shared);
   }
 
   V<WasmStruct> WasmAllocateStruct(V<Map> rtt,
-                                   const wasm::StructType* struct_type) {
-    return ReduceIfReachableWasmAllocateStruct(rtt, struct_type);
+                                   const wasm::StructType* struct_type,
+                                   bool is_shared) {
+    return ReduceIfReachableWasmAllocateStruct(rtt, struct_type, is_shared);
   }
 
   V<WasmFuncRef> WasmRefFunc(V<Object> wasm_instance, uint32_t function_index) {
@@ -5127,6 +5248,10 @@ class TurboshaftAssemblerOpInterface
   void SetStackPointer(V<WordPtr> value) {
     ReduceIfReachableSetStackPointer(value);
   }
+
+  V<None> WasmIncCoverageCounter(Address counter_addr) {
+    return ReduceIfReachableWasmIncCoverageCounter(counter_addr);
+  }
 #endif  // V8_ENABLE_WEBASSEMBLY
 
 #ifdef V8_ENABLE_CONTINUATION_PRESERVED_EMBEDDER_DATA
@@ -5154,6 +5279,13 @@ class TurboshaftAssemblerOpInterface
   }
   V<Float64> resolve(const ConstOrV<Float64>& v) {
     return v.is_constant() ? Float64Constant(v.constant_value()) : v.value();
+  }
+
+  void CanonicalizeEmbeddedBuiltinsConstantIfNeeded(Handle<HeapObject> object) {
+    Isolate* isolate = __ data() -> isolate();
+    if (!isolate) return;
+    if (!isolate->IsGeneratingEmbeddedBuiltins()) return;
+    CanonicalizeEmbeddedBuiltinsConstantIfNeededImpl(isolate, object);
   }
 
  private:

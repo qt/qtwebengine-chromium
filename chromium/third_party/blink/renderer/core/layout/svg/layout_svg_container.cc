@@ -53,8 +53,12 @@ SVGLayoutResult LayoutSVGContainer::UpdateSVGLayout(
     const SVGLayoutInfo& layout_info) {
   NOT_DESTROYED();
   DCHECK(NeedsLayout());
+  // TODO: Inherit `LayoutSVGViewportContainer` from
+  // `LayoutSVGTransformableContainer` so below condition can be simplified.
   if (layout_info.viewport_changed && HasViewportDependence() &&
-      IsSVGTransformableContainer()) {
+      (IsSVGTransformableContainer() ||
+       (IsSVGViewportContainer() &&
+        RuntimeEnabledFeatures::SvgTransformOnNestedSvgElementEnabled()))) {
     // TODO: This will be called if any descendant has a viewport dependency,
     // not just if this container has one.
     SetNeedsTransformUpdate();
@@ -116,13 +120,16 @@ bool LayoutSVGContainer::UpdateAfterSVGLayout(
 
   if (!IsSVGHiddenContainer()) {
     SetTransformAffectsVectorEffect(false);
-    ClearSVGDescendantMayHaveTransformRelatedAnimation();
+    ClearSVGDescendantMayHaveTransformRelatedOperations();
     for (auto* child = FirstChild(); child; child = child->NextSibling()) {
       if (child->TransformAffectsVectorEffect())
         SetTransformAffectsVectorEffect(true);
       if (child->StyleRef().HasCurrentTransformRelatedAnimation() ||
-          child->SVGDescendantMayHaveTransformRelatedAnimation()) {
-        SetSVGDescendantMayHaveTransformRelatedAnimation();
+          child->SVGDescendantMayHaveTransformRelatedOperations() ||
+          (RuntimeEnabledFeatures::
+               SvgAvoidCullingElementsWithTransformOperationsEnabled() &&
+           child->StyleRef().HasNonIdentityTransformOperation())) {
+        SetSVGDescendantMayHaveTransformRelatedOperations();
       }
     }
   }

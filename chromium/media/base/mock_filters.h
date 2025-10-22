@@ -106,7 +106,7 @@ class MockPipeline : public Pipeline {
   }
   MOCK_METHOD2(OnResume, void(base::TimeDelta, PipelineStatusCallback&));
   MOCK_METHOD2(OnEnabledAudioTracksChanged,
-               void(const std::vector<MediaTrack::Id>&, base::OnceClosure));
+               void(std::optional<MediaTrack::Id>, base::OnceClosure));
   MOCK_METHOD2(OnSelectedVideoTrackChanged,
                void(std::optional<MediaTrack::Id>, base::OnceClosure));
   MOCK_METHOD0(OnExternalVideoFrameRequest, void());
@@ -147,10 +147,8 @@ class MockMediaResource : public MediaResource {
   ~MockMediaResource() override;
 
   // MediaResource implementation.
-  MOCK_CONST_METHOD0(GetType, MediaResource::Type());
   MOCK_METHOD0(GetAllStreams, std::vector<DemuxerStream*>());
   MOCK_METHOD1(GetFirstStream, DemuxerStream*(DemuxerStream::Type type));
-  MOCK_CONST_METHOD0(GetMediaUrlParams, const MediaUrlParams&());
 };
 
 class MockDemuxer : public Demuxer {
@@ -195,14 +193,9 @@ class MockDemuxer : public Demuxer {
               (),
               (const, override));
   MOCK_METHOD(void,
-              OnEnabledAudioTracksChanged,
-              (const std::vector<MediaTrack::Id>&,
-               base::TimeDelta,
-               TrackChangeCB),
-              (override));
-  MOCK_METHOD(void,
-              OnSelectedVideoTrackChanged,
-              (const std::vector<MediaTrack::Id>&,
+              OnTracksChanged,
+              (DemuxerStream::Type,
+               std::optional<MediaTrack::Id>,
                base::TimeDelta,
                TrackChangeCB),
               (override));
@@ -879,6 +872,7 @@ class MockMediaClient : public media::MediaClient {
   MOCK_METHOD1(IsDecoderSupportedVideoType, bool(const media::VideoType& type));
   MOCK_METHOD1(IsEncoderSupportedVideoType, bool(const media::VideoType& type));
   MOCK_METHOD1(IsSupportedBitstreamAudioCodec, bool(media::AudioCodec codec));
+  MOCK_METHOD0(ShouldSuppressAudioTracks, bool());
   MOCK_METHOD1(GetAudioRendererAlgorithmParameters,
                std::optional<::media::AudioRendererAlgorithmParameters>(
                    media::AudioParameters audio_parameters));

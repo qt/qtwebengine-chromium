@@ -8,7 +8,6 @@
 
 #include "base/containers/contains.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/state_transitions.h"
 #include "third_party/blink/public/common/features.h"
@@ -77,6 +76,8 @@ String SpeculationActionAsString(mojom::blink::SpeculationAction action) {
     case mojom::blink::SpeculationAction::kPrefetch:
     case mojom::blink::SpeculationAction::kPrefetchWithSubresources:
       return "prefetch";
+    case mojom::blink::SpeculationAction::kPrerenderUntilScript:
+      return "prerender-until-script";
     case mojom::blink::SpeculationAction::kPrerender:
       return "prerender";
   }
@@ -330,8 +331,7 @@ void DocumentSpeculationRules::AddRuleSet(SpeculationRuleSet* rule_set) {
 
 void DocumentSpeculationRules::RemoveRuleSet(SpeculationRuleSet* rule_set) {
   auto removed = std::ranges::remove(rule_sets_, rule_set);
-  CHECK(!removed.empty(), base::NotFatalUntil::M130)
-      << "rule set was removed without existing";
+  CHECK(!removed.empty()) << "rule set was removed without existing";
   rule_sets_.erase(removed.begin(), removed.end());
   if (rule_set->has_document_rule()) {
     InvalidateAllLinks();
@@ -461,6 +461,24 @@ void DocumentSpeculationRules::LinkGainedOrLostComputedStyle(
 void DocumentSpeculationRules::DocumentStyleUpdated() {
   if (pending_update_state_ == PendingUpdateState::kOnNextStyleUpdate) {
     UpdateSpeculationCandidates();
+  }
+}
+
+void DocumentSpeculationRules::DisplayLockedRootsForceUpdateEnded(
+    const HeapVector<Member<Element>>& roots) {
+  if (!initialized_) {
+    return;
+  }
+  // During force update, the links under display-locked roots can by styled
+  // and removed from stale_links_. These links shall be added back to
+  // stale_links_ when the force update ends. To avoid repeatedly traverse
+  // through all the child nodes of these roots, we remove the roots from
+  // elements_blocking_child_style_recalc_ and then add them back.
+  for (Element* root : roots) {
+    elements_blocking_child_style_recalc_.erase(root);
+  }
+  for (Element* root : roots) {
+    ChildStyleRecalcBlocked(root);
   }
 }
 
@@ -658,28 +676,25 @@ void DocumentSpeculationRules::UpdateSpeculationCandidates() {
 
         // Ensured by `SpeculationRuleSet`.
         CHECK(!rule->target_browsing_context_name_hint() ||
-              action == mojom::blink::SpeculationAction::kPrerender);
+              action == mojom::blink::SpeculationAction::kPrerender ||
+              action == mojom::blink::SpeculationAction::kPrerenderUntilScript);
         CHECK(!rule->requires_anonymous_client_ip_when_cross_origin() ||
               action == mojom::blink::SpeculationAction::kPrefetch);
 
         Vector<WTF::String> tags;
-        if (RuntimeEnabledFeatures::SpeculationRulesTagEnabled(
-                document.domWindow())) {
-          if (rule->rule_tag()) {
-            tags.push_back(rule->rule_tag());
-          }
-          if (rule->ruleset_tag()) {
-            tags.push_back(rule->ruleset_tag());
-          }
-
-          // Put the default value.
-          if (tags.empty()) {
-            tags.push_back(g_null_atom);
-          } else {
-            // Record that the valid tag is specified by the page.
-            UseCounter::Count(GetSupplementable(),
-                              WebFeature::kSpeculationRulesTags);
-          }
+        if (rule->rule_tag()) {
+          tags.push_back(rule->rule_tag());
+        }
+        if (rule->ruleset_tag()) {
+          tags.push_back(rule->ruleset_tag());
+        }
+        // Put the default value.
+        if (tags.empty()) {
+          tags.push_back(g_null_atom);
+        } else {
+          // Record that the valid tag is specified by the page.
+          UseCounter::Count(GetSupplementable(),
+                            WebFeature::kSpeculationRulesTags);
         }
 
         candidates.push_back(MakeGarbageCollected<SpeculationCandidate>(
@@ -705,19 +720,20 @@ void DocumentSpeculationRules::UpdateSpeculationCandidates() {
           rule_set->prefetch_with_subresources_rules());
     }
 
-    // If kPrerender2 is enabled, collect all prerender speculation rules.
-    if (RuntimeEnabledFeatures::Prerender2Enabled(execution_context)) {
-      push_candidates(mojom::blink::SpeculationAction::kPrerender, rule_set,
-                      rule_set->prerender_rules());
+    push_candidates(mojom::blink::SpeculationAction::kPrerender, rule_set,
+                    rule_set->prerender_rules());
 
-      // Set the flag to evict the cached data of Session Storage when the
-      // document is frozen or unload to avoid reusing old data in the cache
-      // after the session storage has been modified by another renderer
-      // process. See crbug.com/1215680 for more details.
-      LocalFrame* frame = document.GetFrame();
-      if (frame && frame->IsMainFrame()) {
-        frame->SetEvictCachedSessionStorageOnFreezeOrUnload();
-      }
+    if (RuntimeEnabledFeatures::PrerenderUntilScriptEnabled()) {
+      push_candidates(mojom::blink::SpeculationAction::kPrerenderUntilScript,
+                      rule_set, rule_set->prerender_until_script_rules());
+    }
+    // Set the flag to evict the cached data of Session Storage when the
+    // document is frozen or unload to avoid reusing old data in the cache
+    // after the session storage has been modified by another renderer process.
+    // See crbug.com/1215680 for more details.
+    LocalFrame* frame = document.GetFrame();
+    if (frame && frame->IsMainFrame()) {
+      frame->SetEvictCachedSessionStorageOnFreezeOrUnload();
     }
   }
 
@@ -767,6 +783,10 @@ void DocumentSpeculationRules::UpdateSpeculationCandidates() {
   if (eagerness_set.Has(SpeculationEagerness::kEager)) {
     UseCounter::Count(document, WebFeature::kSpeculationRulesEagernessEager);
   }
+  if (eagerness_set.Has(SpeculationEagerness::kImmediate)) {
+    UseCounter::Count(document,
+                      WebFeature::kSpeculationRulesEagernessImmediate);
+  }
 
   base::UmaHistogramEnumeration(
       "Preloading.Experimental.UpdateSpeculationCandidatesReason",
@@ -783,8 +803,8 @@ void DocumentSpeculationRules::AddLinkBasedSpeculationCandidates(
   while (!pending_links_.empty()) {
     auto it = pending_links_.begin();
     HTMLAnchorElementBase* link = *it;
-    HeapVector<Member<SpeculationCandidate>>* link_candidates =
-        MakeGarbageCollected<HeapVector<Member<SpeculationCandidate>>>();
+    GCedHeapVector<Member<SpeculationCandidate>>* link_candidates =
+        MakeGarbageCollected<GCedHeapVector<Member<SpeculationCandidate>>>();
     Document& document = *GetSupplementable();
     ExecutionContext* execution_context = document.GetExecutionContext();
     CHECK(execution_context);
@@ -830,7 +850,9 @@ void DocumentSpeculationRules::AddLinkBasedSpeculationCandidates(
                 mojom::blink::SpeculationTargetHint::kNoHint;
             if (RuntimeEnabledFeatures::SpeculationRulesTargetHintEnabled(
                     execution_context) &&
-                action == mojom::blink::SpeculationAction::kPrerender) {
+                (action == mojom::blink::SpeculationAction::kPrerender ||
+                 action ==
+                     mojom::blink::SpeculationAction::kPrerenderUntilScript)) {
               if (rule->target_browsing_context_name_hint()) {
                 target_hint = rule->target_browsing_context_name_hint().value();
               } else {
@@ -877,9 +899,13 @@ void DocumentSpeculationRules::AddLinkBasedSpeculationCandidates(
             rule_set, rule_set->prefetch_with_subresources_rules());
       }
 
-      if (RuntimeEnabledFeatures::Prerender2Enabled(execution_context)) {
-        push_link_candidates(mojom::blink::SpeculationAction::kPrerender,
-                             rule_set, rule_set->prerender_rules());
+      push_link_candidates(mojom::blink::SpeculationAction::kPrerender,
+                           rule_set, rule_set->prerender_rules());
+
+      if (RuntimeEnabledFeatures::PrerenderUntilScriptEnabled()) {
+        push_link_candidates(
+            mojom::blink::SpeculationAction::kPrerenderUntilScript, rule_set,
+            rule_set->prerender_until_script_rules());
       }
     }
 
@@ -964,7 +990,7 @@ void DocumentSpeculationRules::RemoveLink(HTMLAnchorElementBase* link) {
     return;
   }
   auto it = pending_links_.find(link);
-  CHECK(it != pending_links_.end(), base::NotFatalUntil::M130);
+  CHECK(it != pending_links_.end());
   pending_links_.erase(it);
 }
 
@@ -1034,6 +1060,10 @@ void DocumentSpeculationRules::SetPendingUpdateState(
   }
 #endif
   pending_update_state_ = new_state;
+}
+
+void DocumentSpeculationRules::FlushMojoMessageForTesting() {
+  host_.FlushForTesting();
 }
 
 }  // namespace blink

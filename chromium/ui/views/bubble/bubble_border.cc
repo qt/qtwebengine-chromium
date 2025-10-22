@@ -36,6 +36,7 @@
 #include "ui/views/bubble/bubble_border_arrow_utils.h"
 #include "ui/views/metadata/type_conversion.h"
 #include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 #include "ui/wm/core/shadow_controller.h"
 
 namespace views {
@@ -129,7 +130,7 @@ SkPath GetVisibleArrowPath(BubbleBorder::Arrow arrow,
       break;
   }
 
-  return SkPath::Polygon(points, kNumPoints, part == BubbleArrowPart::kFill);
+  return SkPath::Polygon(points, part == BubbleArrowPart::kFill);
 }
 
 const gfx::ShadowValues& GetShadowValues(
@@ -260,6 +261,15 @@ void DrawBorderAndShadowImpl(
       rect, GetBorderAndShadowFlags(color_provider, elevation, shadow_type));
 }
 
+// Shadow is set to NO_SHADOW if compositing is not supported. This checks for
+// NO_SHADOW in cases where it would have to be explicitly set.
+bool IsExplicitNoShadow(BubbleBorder::Shadow shadow) {
+  if (shadow == BubbleBorder::NO_SHADOW) {
+    return Widget::IsWindowCompositingSupported();
+  }
+  return false;
+}
+
 }  // namespace
 
 BubbleBorder::BubbleBorder(Arrow arrow, Shadow shadow)
@@ -281,10 +291,6 @@ gfx::Insets BubbleBorder::GetBorderAndShadowInsets(
                  : 0) -
          gfx::ShadowValue::GetMargin(
              GetShadowValues(nullptr, elevation, shadow_type));
-}
-
-void BubbleBorder::SetCornerRadius(int corner_radius) {
-  corner_radius_ = corner_radius;
 }
 
 gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
@@ -339,7 +345,7 @@ gfx::Rect BubbleBorder::GetBounds(const gfx::Rect& anchor_rect,
 
   // With NO_SHADOW, there should be further insets, but the same logic is
   // used to position the bubble origin according to |anchor_rect|.
-  DCHECK(shadow_ != NO_SHADOW || insets_.has_value() ||
+  DCHECK(!IsExplicitNoShadow(shadow_) || insets_.has_value() ||
          shadow_insets.IsEmpty() || visible_arrow_);
   if (!avoid_shadow_overlap_) {
     contents_bounds.Inset(-shadow_insets);
@@ -467,7 +473,7 @@ void BubbleBorder::DrawBorderAndShadow(
 
 gfx::Insets BubbleBorder::GetInsets() const {
   // Visible arrow is not compatible with OS-drawn shadow or with manual insets.
-  DCHECK((!insets_ && shadow_ != NO_SHADOW) || !visible_arrow_);
+  DCHECK((!insets_ && !IsExplicitNoShadow(shadow_)) || !visible_arrow_);
   if (insets_.has_value()) {
     return insets_.value();
   }
@@ -673,13 +679,7 @@ void BubbleBorder::CalculateVisibleArrowRect(
 SkRRect BubbleBorder::GetClientRect(const View& view) const {
   gfx::RectF bounds(view.GetLocalBounds());
   bounds.Inset(gfx::InsetsF(GetInsets()));
-
-  // Give precedence to customized rounded corners when non-empty.
-  const gfx::RoundedCornersF corners =
-      rounded_corners_.IsEmpty() ? gfx::RoundedCornersF(corner_radius_)
-                                 : rounded_corners_;
-
-  return SkRRect(gfx::RRectF(bounds, corners));
+  return SkRRect(gfx::RRectF(bounds, rounded_corners_));
 }
 
 bool BubbleBorder::ShouldDrawStroke() const {
@@ -728,7 +728,7 @@ void BubbleBorder::PaintVisibleArrow(const View& view, gfx::Canvas* canvas) {
         flags);
   }
 
-  flags.setColor(color().ConvertToSkColor(view.GetColorProvider()));
+  flags.setColor(color().ResolveToSkColor(view.GetColorProvider()));
   flags.setStyle(cc::PaintFlags::kFill_Style);
   flags.setStrokeWidth(1.0);
   flags.setAntiAlias(true);
@@ -743,17 +743,12 @@ void BubbleBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   cc::PaintFlags flags;
   flags.setAntiAlias(true);
   flags.setStyle(cc::PaintFlags::kFill_Style);
-  flags.setColor(border_->color().ConvertToSkColor(view->GetColorProvider()));
+  flags.setColor(border_->color().ResolveToSkColor(view->GetColorProvider()));
   gfx::RectF bounds(view->GetLocalBounds());
   bounds.Inset(gfx::InsetsF(border_->GetInsets()));
 
-  // Give precedence to customized rounded corners when non-empty.
-  const gfx::RoundedCornersF corners =
-      border_->rounded_corners().IsEmpty()
-          ? gfx::RoundedCornersF(border_->corner_radius())
-          : border_->rounded_corners();
-
-  canvas->sk_canvas()->drawRRect(SkRRect(gfx::RRectF(bounds, corners)), flags);
+  canvas->sk_canvas()->drawRRect(
+      SkRRect(gfx::RRectF(bounds, border_->rounded_corners())), flags);
 }
 
 }  // namespace views

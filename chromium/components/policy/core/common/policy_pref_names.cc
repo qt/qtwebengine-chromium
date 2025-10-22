@@ -24,6 +24,12 @@ const char kEnterpriseMDMManagementMac[] =
     "management.platform.enterprise_mdm_mac";
 #endif
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
+// Boolean pref indicating whether protected content identifiers are allowed.
+const char kProtectedContentIdentifiersAllowed[] =
+    "policy.protected_content_identifiers.allowed";
+#endif
+
 // Enterprise policy controlled value representing whether the user may be shown
 // HaTS surveys.
 const char kFeedbackSurveysEnabled[] = "policy.feedback_surveys_enabled";
@@ -100,6 +106,10 @@ const char kLastPolicyCheckTime[] = "policy.last_policy_check_time";
 #if BUILDFLAG(IS_IOS)
 const char kUserPolicyNotificationWasShown[] =
     "policy.user_policy_notification_was_shown";
+
+// A bool for storing whether the user has seen the sync disabled alert since
+// sync was disabled.
+const char kSyncDisabledAlertShown[] = "sync.disabled_alert_shown";
 #endif
 
 // Boolean controlling whether SafeSearch is mandatory for Google Web Searches.
@@ -119,11 +129,6 @@ const char kHideWebStoreIcon[] = "hide_web_store_icon";
 // 2 - Forced. All pages/sessions are forced into Incognito.
 const char kIncognitoModeAvailability[] = "incognito.mode_availability";
 
-// A boolean indicating whether scrollers should be focusable. If true, then
-// scrollers without focusable children are keyboard-focusable by default.
-const char kKeyboardFocusableScrollersEnabled[] =
-    "policy.keyboard_focusable_scrollers_enabled";
-
 // Enables the newly-specified behavior of the CSS "zoom" property.
 const char kStandardizedBrowserZoomEnabled[] =
     "policy.standardized_browser_zoom_enabled";
@@ -140,6 +145,13 @@ const char kPolicyTestPageEnabled[] = "policy_test_page_enabled";
 const char kHasDismissedPolicyPagePromotionBanner[] =
     "has_dismissed_policy_page_promotion_banner";
 
+// Boolean indicating if the user has permanently dismissed the promotion
+// banner on the chrome://management page. If it's true, it means the user
+// has clicked the "dismiss" button and has the banner turned off, if the
+// value is false, the user has taken no action to turn off the banner.
+const char kHasDismissedManagementPagePromotionBanner[] =
+    "has_dismissed_management_page_promotion_banner";
+
 // A boolean pref indicating whether the new the page with "Cache-Control:
 // no-store" header is allowed to be stored in back/forward cache.
 const char kAllowBackForwardCacheForCacheControlNoStorePageEnabled[] =
@@ -147,11 +159,6 @@ const char kAllowBackForwardCacheForCacheControlNoStorePageEnabled[] =
 
 const char kLocalTestPoliciesForNextStartup[] =
     "local_test_policies_for_next_startup";
-
-// A boolean pref indicating whether to fire deprecated/removed mutation events.
-// If false, mutation events might not be fired.
-const char kMutationEventsEnabled[] =
-    "policy.deprecated_mutation_events_enabled";
 
 // Enables the deprecated :--foo syntax of CSS custom state. The :--foo syntax
 // was deprecated and replaced by :state(foo).
@@ -188,5 +195,14 @@ const char kAlwaysOnVpnPreConnectUrlAllowlist[] =
 // Boolean value for the FloatingWorkspaceEnabled policy
 const char kFloatingWorkspaceEnabled[] = "ash.floating_workspace_enabled";
 #endif
+
+// A boolean value indicating whether the built-in AI APIs are enabled.
+const char kBuiltInAIAPIsEnabled[] = "policy.built_in_ai_apis_enabled";
+#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) || \
+    BUILDFLAG(IS_MAC)
+// List of urls for which password manager is disabled/blocked.
+const char kPasswordManagerBlocklist[] = "policy.password_manager_blocklist";
+#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN) ||
+        // BUILDFLAG(IS_MAC)
 }  // namespace policy_prefs
 }  // namespace policy

@@ -8,6 +8,7 @@
 
 #include "base/feature_list.h"
 #include "base/task/thread_pool.h"
+#include "base/trace_event/trace_event.h"
 #include "build/android_buildflags.h"
 #include "build/build_config.h"
 #include "mojo/public/cpp/bindings/binder_map.h"
@@ -47,9 +48,9 @@
 #include "third_party/blink/renderer/modules/canvas/imagebitmap/image_bitmap_rendering_context.h"
 #include "third_party/blink/renderer/modules/canvas/offscreencanvas2d/offscreen_canvas_rendering_context_2d.h"
 #include "third_party/blink/renderer/modules/content_extraction/ai_page_content_agent.h"
+#include "third_party/blink/renderer/modules/content_extraction/frame_metadata_observer_registry.h"
 #include "third_party/blink/renderer/modules/content_extraction/inner_html_agent.h"
 #include "third_party/blink/renderer/modules/content_extraction/inner_text_agent.h"
-#include "third_party/blink/renderer/modules/context_menu/context_menu.h"
 #include "third_party/blink/renderer/modules/csspaint/css_paint_image_generator_impl.h"
 #include "third_party/blink/renderer/modules/csspaint/nativepaint/background_color_paint_image_generator_impl.h"
 #include "third_party/blink/renderer/modules/csspaint/nativepaint/clip_path_paint_image_generator_impl.h"
@@ -94,10 +95,7 @@
 #include "third_party/blink/renderer/modules/storage/storage_namespace.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
 #include "third_party/blink/renderer/modules/webaudio/inspector_web_audio_agent.h"
-#include "third_party/blink/renderer/modules/webdatabase/database_client.h"
-#include "third_party/blink/renderer/modules/webdatabase/web_database_host.h"
-#include "third_party/blink/renderer/modules/webdatabase/web_database_impl.h"
-#include "third_party/blink/renderer/modules/webgl/webgl2_rendering_context.h"
+#include "third_party/blink/renderer/modules/webgl/webgl_context_factory.h"
 #include "third_party/blink/renderer/modules/webgl/webgl_rendering_context.h"
 #include "third_party/blink/renderer/modules/webgpu/gpu_canvas_context.h"
 #include "third_party/blink/renderer/modules/worklet/animation_and_paint_worklet_thread.h"
@@ -200,7 +198,6 @@ void ModulesInitializer::Initialize() {
   BackgroundColorPaintImageGenerator::Init(
       BackgroundColorPaintImageGeneratorImpl::Create);
   ClipPathPaintImageGenerator::Init(ClipPathPaintImageGeneratorImpl::Create);
-  WebDatabaseHost::GetInstance().Init();
   MediaSourceRegistryImpl::Init();
   if (::features::IsTextBasedAudioDescriptionEnabled())
     SpeechSynthesisBase::Init(SpeechSynthesis::Create);
@@ -211,9 +208,9 @@ void ModulesInitializer::Initialize() {
   HTMLCanvasElement::RegisterRenderingContextFactory(
       std::make_unique<CanvasRenderingContext2D::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
-      std::make_unique<WebGLRenderingContext::Factory>());
+      WebGLContextFactory::MakeWebGL1());
   HTMLCanvasElement::RegisterRenderingContextFactory(
-      std::make_unique<WebGL2RenderingContext::Factory>());
+      WebGLContextFactory::MakeWebGL2());
   HTMLCanvasElement::RegisterRenderingContextFactory(
       std::make_unique<ImageBitmapRenderingContext::Factory>());
   HTMLCanvasElement::RegisterRenderingContextFactory(
@@ -223,9 +220,9 @@ void ModulesInitializer::Initialize() {
   OffscreenCanvas::RegisterRenderingContextFactory(
       std::make_unique<OffscreenCanvasRenderingContext2D::Factory>());
   OffscreenCanvas::RegisterRenderingContextFactory(
-      std::make_unique<WebGLRenderingContext::Factory>());
+      WebGLContextFactory::MakeWebGL1());
   OffscreenCanvas::RegisterRenderingContextFactory(
-      std::make_unique<WebGL2RenderingContext::Factory>());
+      WebGLContextFactory::MakeWebGL2());
   OffscreenCanvas::RegisterRenderingContextFactory(
       std::make_unique<ImageBitmapRenderingContext::Factory>());
   OffscreenCanvas::RegisterRenderingContextFactory(
@@ -276,13 +273,18 @@ void ModulesInitializer::InitLocalFrame(LocalFrame& frame) const {
     frame.GetInterfaceRegistry()->AddInterface(WTF::BindRepeating(
         &InnerHtmlAgent::BindReceiver, WrapWeakPersistent(&frame)));
   }
+
+  if (base::FeatureList::IsEnabled(features::kFrameMetadataObserver)) {
+    frame.GetInterfaceRegistry()->AddInterface(
+        WTF::BindRepeating(&FrameMetadataObserverRegistry::BindReceiver,
+                           WrapWeakPersistent(&frame)));
+  }
 }
 
 void ModulesInitializer::InstallSupplements(LocalFrame& frame) const {
   DCHECK(WebLocalFrameImpl::FromFrame(&frame)->Client());
   InspectorAccessibilityAgent::ProvideTo(&frame);
   ImageDownloaderImpl::ProvideTo(frame);
-  ContextMenu::ProvideTo(frame);
   AudioRendererSinkCache::InstallWindowObserver(*frame.DomWindow());
 }
 
@@ -373,7 +375,6 @@ RemotePlaybackClient* ModulesInitializer::CreateRemotePlaybackClient(
 void ModulesInitializer::ProvideModulesToPage(
     Page& page,
     const SessionStorageNamespaceId& namespace_id) const {
-  page.ProvideSupplement(MakeGarbageCollected<DatabaseClient>(page));
   StorageNamespace::ProvideSessionStorageNamespaceTo(page, namespace_id);
   AudioGraphTracer::ProvideAudioGraphTracerTo(page);
 #if BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_DESKTOP_ANDROID)
@@ -447,14 +448,6 @@ void ModulesInitializer::SetSessionStorageArea(
 mojom::blink::FileSystemManager& ModulesInitializer::GetFileSystemManager(
     ExecutionContext* context) {
   return FileSystemDispatcher::From(context).GetFileSystemManager();
-}
-
-void ModulesInitializer::RegisterInterfaces(mojo::BinderMap& binders) {
-  DCHECK(Platform::Current());
-  binders.Add<mojom::blink::WebDatabase>(
-      ConvertToBaseRepeatingCallback(
-          CrossThreadBindRepeating(&WebDatabaseImpl::Bind)),
-      Platform::Current()->GetIOTaskRunner());
 }
 
 }  // namespace blink

@@ -5,19 +5,20 @@
 from __future__ import annotations
 
 import dataclasses
-from typing import TYPE_CHECKING, List, Self, Type
+from typing import TYPE_CHECKING, Self, Type
 
-from immutabledict import immutabledict
 from typing_extensions import override
 
-from crossbench import path as pth
 from crossbench.probes.cpu_frequency_map import CPUFrequencyMap
 from crossbench.probes.env_modifier import EnvModifier
 from crossbench.probes.probe import ProbeConfigParser, ProbeContext, ProbeKeyT
 
 if TYPE_CHECKING:
+  from immutabledict import immutabledict
+
+  from crossbench import path as pth
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
@@ -89,7 +90,7 @@ class FrequencyProbe(EnvModifier):
     return super().key + (("cpus", self._cpu_frequency_map.key),)
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     # As long as a valid platform map can be derived, all is good.
     self._cpu_frequency_map.get_target_frequencies(browser.platform)
@@ -118,7 +119,7 @@ class FrequencyProbeContext(ProbeContext[FrequencyProbe]):
 
   def __init__(self, probe: FrequencyProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._previous_frequencies: List[_FrequencyState] = []
+    self._previous_frequencies: list[_FrequencyState] = []
 
   def start(self) -> None:
     target_cpu_frequencies: immutabledict[pth.AnyPosixPath, int] = (
@@ -134,10 +135,10 @@ class FrequencyProbeContext(ProbeContext[FrequencyProbe]):
 
     try:
       for cpu_dir, frequency in target_cpu_frequencies.items():
-        self.browser_platform.set_file_contents(
-            cpu_dir / self._MIN_FREQUENCY_FILE, f"{frequency}\n")
-        self.browser_platform.set_file_contents(
-            cpu_dir / self._MAX_FREQUENCY_FILE, f"{frequency}\n")
+        self.browser_platform.write_text(cpu_dir / self._MIN_FREQUENCY_FILE,
+                                         f"{frequency}\n")
+        self.browser_platform.write_text(cpu_dir / self._MAX_FREQUENCY_FILE,
+                                         f"{frequency}\n")
     except Exception:
       self._restore_frequencies()
       raise
@@ -147,10 +148,10 @@ class FrequencyProbeContext(ProbeContext[FrequencyProbe]):
 
   def _restore_frequencies(self) -> None:
     for state in self._previous_frequencies:
-      self.browser_platform.set_file_contents(
-          state.dir / self._MIN_FREQUENCY_FILE, state.min)
-      self.browser_platform.set_file_contents(
-          state.dir / self._MAX_FREQUENCY_FILE, state.max)
+      self.browser_platform.write_text(state.dir / self._MIN_FREQUENCY_FILE,
+                                       state.min)
+      self.browser_platform.write_text(state.dir / self._MAX_FREQUENCY_FILE,
+                                       state.max)
 
   def teardown(self) -> ProbeResult:
     return self.empty_result()

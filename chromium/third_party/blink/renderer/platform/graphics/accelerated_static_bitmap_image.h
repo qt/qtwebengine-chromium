@@ -55,10 +55,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
       scoped_refptr<gpu::ClientSharedImage>,
       const gpu::SyncToken&,
       GLuint shared_image_texture_id,
-      const gfx::Size& size,
-      viz::SharedImageFormat format,
       SkAlphaType alpha_type,
-      const gfx::ColorSpace& color_space,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
       base::PlatformThreadRef context_thread_ref,
       scoped_refptr<base::SingleThreadTaskRunner> context_task_runner,
@@ -72,13 +69,10 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   CreateFromExternalSharedImage(
       gpu::ExportedSharedImage exported_shared_image,
       const gpu::SyncToken& sync_token,
-      const gfx::Size& size,
-      viz::SharedImageFormat format,
       SkAlphaType alpha_type,
-      const gfx::ColorSpace& color_space,
       base::OnceCallback<void(const gpu::SyncToken&)> release_callback);
 
-  bool CurrentFrameKnownToBeOpaque() override;
+  bool IsOpaque() override;
   bool IsTextureBacked() const override { return true; }
 
   void Draw(cc::PaintCanvas*,
@@ -97,10 +91,10 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
                      GLenum dest_target,
                      GLuint dest_texture_id,
                      GLint dest_level,
-                     bool unpack_premultiply_alpha,
-                     bool unpack_flip_y,
+                     SkAlphaType dest_alpha_type,
+                     GrSurfaceOrigin destination_origin,
                      const gfx::Point& dest_point,
-                     const gfx::Rect& source_sub_rectangle) override;
+                     const gfx::Rect& src_rect) override;
 
   bool CopyToResourceProvider(CanvasResourceProvider* resource_provider,
                               const gfx::Rect& copy_rect) override;
@@ -124,23 +118,16 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   gpu::MailboxHolder GetMailboxHolder() const final;
   scoped_refptr<gpu::ClientSharedImage> GetSharedImage() const final;
   gpu::SyncToken GetSyncToken() const final;
-  bool IsOriginTopLeft() const final {
-    return shared_image_->surface_origin() == kTopLeft_GrSurfaceOrigin;
-  }
 
   PaintImage PaintImageForCurrentFrame() override;
 
-  gfx::Size GetSize() const override { return size_; }
+  gfx::Size GetSize() const override { return shared_image_->size(); }
   SkAlphaType GetAlphaType() const override { return alpha_type_; }
-  SkColorType GetSkColorType() const override {
-    return viz::ToClosestSkColorType(format_);
+  gfx::ColorSpace GetColorSpace() const override {
+    return shared_image_->color_space();
   }
-  sk_sp<SkColorSpace> GetSkColorSpace() const override {
-    return color_space_.ToSkColorSpace();
-  }
-  gfx::ColorSpace GetColorSpace() const override { return color_space_; }
   viz::SharedImageFormat GetSharedImageFormat() const override {
-    return format_;
+    return shared_image_->format();
   }
 
  private:
@@ -156,10 +143,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
       scoped_refptr<gpu::ClientSharedImage>,
       const gpu::SyncToken&,
       GLuint shared_image_texture_id,
-      const gfx::Size& size,
-      viz::SharedImageFormat format,
       SkAlphaType alpha_type,
-      const gfx::ColorSpace& color_space,
       const ImageOrientation& orientation,
       base::WeakPtr<WebGraphicsContext3DProviderWrapper>,
       base::PlatformThreadRef context_thread_ref,
@@ -170,10 +154,7 @@ class PLATFORM_EXPORT AcceleratedStaticBitmapImage final
   void InitializeTextureBacking(GLuint shared_image_texture_id);
 
   scoped_refptr<gpu::ClientSharedImage> shared_image_;
-  gfx::Size size_;
-  viz::SharedImageFormat format_;
   SkAlphaType alpha_type_;
-  gfx::ColorSpace color_space_;
 
   base::WeakPtr<WebGraphicsContext3DProviderWrapper> context_provider_wrapper_;
   scoped_refptr<MailboxRef> mailbox_ref_;

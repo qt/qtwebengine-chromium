@@ -53,3 +53,21 @@ source_set("enhanced_safe_browsing_promo") {
   ]
   frameworks = [ "UIKit.framework" ]
 }
+
+source_set("search_what_you_see_promo") {
+  sources = [
+    "search_what_you_see_promo_instructions_view_controller.h",
+    "search_what_you_see_promo_instructions_view_controller.mm",
+    "search_what_you_see_promo_view_controller.h",
+    "search_what_you_see_promo_view_controller.mm",
+  ]
+  public_deps = [
+    ":shared",
+    "//ios/chrome/browser/shared/ui/animated_promo",
+  ]
+  deps = [
+    "//ios/chrome/app/strings",
+    "//ui/base",
+  ]
+  frameworks = [ "UIKit.framework" ]
+}

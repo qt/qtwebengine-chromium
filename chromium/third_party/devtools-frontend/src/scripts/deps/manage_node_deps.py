@@ -35,6 +35,7 @@ LICENSES = [
     "MPL-2.0",
     "Python-2.0",
     "W3C",
+    "BlueOak-1.0.0",
 ]
 
 
@@ -183,15 +184,6 @@ def run_npm_command():
     if exec_command([
             'npm',
             'install',
-    ]):
-        return True
-
-    # To minimize disk usage for Chrome DevTools node_modules, always try to dedupe dependencies.
-    # We need to perform this every time, as the order of dependencies added could lead to a
-    # non-optimal dependency tree, resulting in unnecessary disk usage.
-    if exec_command([
-            'npm',
-            'dedupe',
     ]):
         return True
 

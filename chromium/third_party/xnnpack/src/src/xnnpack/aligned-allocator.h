@@ -4,7 +4,8 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#pragma once
+#ifndef XNNPACK_SRC_XNNPACK_ALIGNED_ALLOCATOR_H_
+#define XNNPACK_SRC_XNNPACK_ALIGNED_ALLOCATOR_H_
 
 #include <stdlib.h>
 
@@ -15,9 +16,8 @@
 #include <utility>
 
 #if defined(__ANDROID__) || defined(_WIN32) || defined(__CYGWIN__)
-  #include <malloc.h>
+#include <malloc.h>
 #endif
-
 
 template <typename T, size_t Alignment>
 class AlignedAllocator;
@@ -64,7 +64,7 @@ class AlignedAllocator {
 
   inline size_type max_size() const noexcept {
     return (std::numeric_limits<size_type>::max() - size_type(Alignment)) /
-        sizeof(T);
+           sizeof(T);
   }
 
   inline pointer address(reference x) const noexcept {
@@ -82,7 +82,8 @@ class AlignedAllocator {
     void* memory = nullptr;
     memory = _aligned_malloc(n * sizeof(T), Alignment);
     if (memory == 0) {
-#if !defined(__GNUC__) && !defined(_MSC_VER) || defined(__EXCEPTIONS) || defined(_CPPUNWIND)
+#if !defined(__GNUC__) && !defined(_MSC_VER) || defined(__EXCEPTIONS) || \
+    defined(_CPPUNWIND)
       throw std::bad_alloc();
 #endif
     }
@@ -122,3 +123,5 @@ class AlignedAllocator {
     p->~U();
   }
 };
+
+#endif  // XNNPACK_SRC_XNNPACK_ALIGNED_ALLOCATOR_H_

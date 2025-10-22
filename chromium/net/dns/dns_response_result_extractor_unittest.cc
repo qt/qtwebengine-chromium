@@ -466,6 +466,24 @@ TEST_F(DnsResponseResultExtractorTest, RejectsMalformedTxtRecord) {
             ExtractionError::kMalformedRecord);
 }
 
+TEST_F(DnsResponseResultExtractorTest, RejectsMalformedEmptyTxtRecord) {
+  constexpr char kName[] = "name.test";
+
+  DnsResponse response =
+      BuildTestDnsResponse(kName, dns_protocol::kTypeTXT,
+                           /*answers=*/
+                           {BuildTestDnsRecord(kName, dns_protocol::kTypeTXT,
+                                               /*rdata=*/{})});
+  DnsResponseResultExtractor extractor(response, clock_, tick_clock_);
+
+  EXPECT_EQ(extractor
+                .ExtractDnsResults(DnsQueryType::TXT,
+                                   /*original_domain_name=*/kName,
+                                   /*request_port=*/0)
+                .error_or(ExtractionError::kOk),
+            ExtractionError::kMalformedRecord);
+}
+
 TEST_F(DnsResponseResultExtractorTest, RejectsWrongNameTxtRecord) {
   constexpr char kName[] = "name.test";
 
@@ -863,6 +881,8 @@ TEST_F(DnsResponseResultExtractorTest, ExtractsComprehensiveHttpsResponses) {
   constexpr char kAlpn[] = "foo";
   constexpr uint8_t kEchConfig[] = "EEEEEEEEECH!";
   constexpr auto kTtl = base::Hours(12);
+  const std::vector<std::vector<uint8_t>> kTrustAnchorIDs = {{0x01, 0x02, 0x03},
+                                                             {0x02, 0x02}};
 
   DnsResponse response = BuildTestDnsResponse(
       kName, dns_protocol::kTypeHttps,
@@ -871,7 +891,8 @@ TEST_F(DnsResponseResultExtractorTest, ExtractsComprehensiveHttpsResponses) {
            /*service_name=*/".",
            /*params=*/
            {BuildTestHttpsServiceAlpnParam({kAlpn}),
-            BuildTestHttpsServiceEchConfigParam(kEchConfig)},
+            BuildTestHttpsServiceEchConfigParam(kEchConfig),
+            BuildTestHttpsServiceTrustAnchorIDsParam(kTrustAnchorIDs)},
            kTtl),
        BuildTestHttpsServiceRecord(
            kName, /*priority=*/3,
@@ -900,7 +921,8 @@ TEST_F(DnsResponseResultExtractorTest, ExtractsComprehensiveHttpsResponses) {
               Pair(4, ExpectConnectionEndpointMetadata(
                           ElementsAre(kAlpn,
                                       dns_protocol::kHttpsServiceDefaultAlpn),
-                          ElementsAreArray(kEchConfig), kName)))))));
+                          ElementsAreArray(kEchConfig), kName,
+                          ElementsAreArray(kTrustAnchorIDs))))))));
 }
 
 TEST_F(DnsResponseResultExtractorTest, IgnoresHttpsResponseWithJustAlias) {

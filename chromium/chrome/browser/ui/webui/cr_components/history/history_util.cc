@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "chrome/browser/ui/webui/cr_components/history/history_util.h"
 
@@ -70,6 +66,7 @@ content::WebUIDataSource* HistoryUtil::PopulateSourceForSidePanelHistory(
       {"menu", IDS_MENU},
       {"moreFromSite", IDS_HISTORY_MORE_FROM_SITE},
       {"openAll", IDS_HISTORY_OTHER_SESSIONS_OPEN_ALL},
+      {"openSelected", IDS_HISTORY_OPEN},
       {"openTabsMenuItem", IDS_HISTORY_OPEN_TABS_MENU_ITEM},
       {"noResults", IDS_HISTORY_NO_RESULTS},
       {"noSearchResults", IDS_HISTORY_NO_SEARCH_RESULTS},

@@ -25,6 +25,8 @@
 
 #include "third_party/blink/renderer/modules/webaudio/media_stream_audio_destination_node.h"
 
+#include <inttypes.h>
+
 #include "base/memory/ptr_util.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_audio_node_options.h"
@@ -32,8 +34,10 @@
 #include "third_party/blink/renderer/modules/webaudio/audio_context.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_graph_tracer.h"
 #include "third_party/blink/renderer/modules/webaudio/media_stream_audio_destination_handler.h"
+#include "third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.h"
 #include "third_party/blink/renderer/platform/mediastream/webaudio_media_stream_source.h"
 #include "third_party/blink/renderer/platform/scheduler/public/main_thread.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/uuid.h"
 
 namespace blink {
@@ -55,11 +59,12 @@ MediaStreamAudioDestinationNode::MediaStreamAudioDestinationNode(
     context.GetExecutionContext()->GetTaskRunner(TaskType::kInternalMedia));
   WebAudioMediaStreamSource* audio_source_ptr = audio_source.get();
 
-  String source_id = "WebAudio-" + WTF::CreateCanonicalUUIDString();
+  String source_id = StrCat({"WebAudio-", CreateCanonicalUUIDString()});
 
   MediaStreamSource::Capabilities capabilities;
   capabilities.device_id = source_id;
-  capabilities.echo_cancellation = Vector<bool>({false});
+  capabilities.echo_cancellation =
+      Vector<EchoCancellationMode>({EchoCancellationMode::kDisabled});
   capabilities.auto_gain_control = Vector<bool>({false});
   capabilities.noise_suppression = Vector<bool>({false});
   capabilities.voice_isolation = Vector<bool>({false});

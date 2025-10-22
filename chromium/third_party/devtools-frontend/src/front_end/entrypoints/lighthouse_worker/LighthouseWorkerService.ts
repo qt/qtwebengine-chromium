@@ -26,7 +26,7 @@ class ConnectionProxy implements SDK.Connections.ParallelConnectionInterface {
     this.onDisconnect = null;
   }
 
-  setOnMessage(onMessage: (arg0: (Object|string)) => void): void {
+  setOnMessage(onMessage: (arg0: Object|string) => void): void {
     this.onMessage = onMessage;
   }
 
@@ -164,8 +164,8 @@ async function fetchLocaleData(locales: string[]): Promise<string|void> {
       localeUrl = new URL(`../../third_party/lighthouse/locales/${locale}.json`, import.meta.url).toString();
     }
 
-    const timeoutPromise = new Promise<string>(
-        (resolve, reject) => setTimeout(() => reject(new Error('timed out fetching locale')), 5000));
+    const timeoutPromise =
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out fetching locale')), 5000));
     const localeData = await Promise.race([timeoutPromise, fetch(localeUrl).then(result => result.json())]);
     // @ts-expect-error https://github.com/GoogleChrome/lighthouse/issues/11628
     self.registerLocaleData(locale, localeData);

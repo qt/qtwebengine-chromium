@@ -171,7 +171,7 @@ KeyframeEffect* KeyframeEffect::Create(
       element->GetDocument().UpdateStyleAndLayoutTreeForElement(
           element, DocumentUpdateReason::kWebAnimation);
 
-      AtomicString pseudo_argument = WTF::g_null_atom;
+      AtomicString pseudo_argument = g_null_atom;
 
       PseudoId pseudo_id = CSSSelectorParser::ParsePseudoElement(
           pseudo, element, pseudo_argument);
@@ -222,8 +222,8 @@ KeyframeEffect::KeyframeEffect(Element* target,
   // fix target for css animations and transitions
   if (target && target->IsPseudoElement()) {
     // The |target_element_| is used to target events in script when
-    // animating pseudo elements. This requires using the DOM element that the
-    // pseudo element originates from.
+    // animating pseudo-elements. This requires using the DOM element that the
+    // pseudo-element originates from.
     target_element_ =
         &DynamicTo<PseudoElement>(target)->UltimateOriginatingElement();
     DCHECK(!target_element_->IsPseudoElement());
@@ -453,7 +453,7 @@ bool KeyframeEffect::HasActiveAnimationsOnCompositor() const {
 bool KeyframeEffect::HasActiveAnimationsOnCompositor(
     const PropertyHandle& property) const {
   return HasActiveAnimationsOnCompositor() &&
-         model_->EnsureDynamicProperties().Contains(property);
+         model_->DynamicProperties().Contains(property);
 }
 
 bool KeyframeEffect::CancelAnimationOnCompositor(
@@ -683,9 +683,6 @@ void KeyframeEffect::ApplyEffects() {
 
   if (changed) {
     effect_target_->SetNeedsAnimationStyleRecalc();
-    auto* svg_element = DynamicTo<SVGElement>(effect_target_.Get());
-    if (RuntimeEnabledFeatures::WebAnimationsSVGEnabled() && svg_element)
-      svg_element->SetWebAnimationsPending();
   }
 }
 
@@ -700,9 +697,6 @@ void KeyframeEffect::ClearEffects() {
   if (!effect_target_->GetDocument().Lifecycle().InDetach()) {
     effect_target_->SetNeedsAnimationStyleRecalc();
   }
-  auto* svg_element = DynamicTo<SVGElement>(effect_target_.Get());
-  if (RuntimeEnabledFeatures::WebAnimationsSVGEnabled() && svg_element)
-    svg_element->ClearWebAnimatedAttributes();
   Invalidate();
 }
 
@@ -733,9 +727,6 @@ void KeyframeEffect::AttachTarget(Animation* animation) {
     return;
   effect_target_->EnsureElementAnimations().Animations().insert(animation);
   effect_target_->SetNeedsAnimationStyleRecalc();
-  auto* svg_element = DynamicTo<SVGElement>(effect_target_.Get());
-  if (RuntimeEnabledFeatures::WebAnimationsSVGEnabled() && svg_element)
-    svg_element->SetWebAnimationsPending();
 }
 
 void KeyframeEffect::DetachTarget(Animation* animation) {
@@ -862,15 +853,10 @@ ActiveInterpolationsMap KeyframeEffect::InterpolationsForCommitStyles() {
   if (removed)
     ApplyEffects();
 
-  auto property_pass_filter = [](const PropertyHandle& property) {
-    return property.IsCSSProperty();
-  };
-
   ActiveInterpolationsMap results = EffectStack::ActiveInterpolations(
       &target()->GetElementAnimations()->GetEffectStack(),
       /*new_animations=*/nullptr,
-      /*suppressed_animations=*/nullptr, kDefaultPriority, property_pass_filter,
-      this);
+      /*suppressed_animations=*/nullptr, kDefaultPriority, this);
 
   if (removed) {
     ClearEffects();

@@ -41,7 +41,6 @@
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
 #include "services/network/public/cpp/permissions_policy/permissions_policy_declaration.h"
-#include "third_party/blink/public/common/performance/performance_timeline_constants.h"
 #include "third_party/blink/public/common/subresource_load_metrics.h"
 #include "third_party/blink/public/mojom/devtools/devtools_agent.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -140,10 +139,11 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
       network::mojom::CSPDisposition should_bypass_main_world_csp,
       mojo::PendingRemote<mojom::blink::BlobURLToken>,
       base::TimeTicks input_start_time,
+      base::TimeTicks actual_navigation_start,
       const String& href_translate,
       const std::optional<Impression>& impression,
       const LocalFrameToken* initiator_frame_token,
-      std::unique_ptr<SourceLocation> source_location,
+      SourceLocation* source_location,
       mojo::PendingRemote<mojom::blink::NavigationStateKeepAliveHandle>
           initiator_navigation_state_keep_alive_handle,
       bool is_container_initiated,
@@ -153,6 +153,7 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   void DidStopLoading() override;
   bool NavigateBackForward(
       int offset,
+      base::TimeTicks actual_navigation_start,
       std::optional<scheduler::TaskAttributionId>
           soft_navigation_heuristics_task_id) const override;
   void DidDispatchPingLoader(const KURL&) override;
@@ -169,7 +170,8 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   void DidObserveSubresourceLoad(
       const SubresourceLoadMetrics& subresource_load_metrics) override;
   void DidObserveNewFeatureUsage(const UseCounterFeature&) override;
-  void DidObserveSoftNavigation(SoftNavigationMetrics metrics) override;
+  void DidObserveSoftNavigation(
+      SoftNavigationMetricsForReporting metrics) override;
   void DidObserveLayoutShift(double score, bool after_input_or_scroll) override;
   void SelectorMatchChanged(const Vector<String>& added_selectors,
                             const Vector<String>& removed_selectors) override;
@@ -181,7 +183,7 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   std::optional<blink::UserAgentMetadata> UserAgentMetadata() override;
   WTF::String DoNotTrackValue() override;
   void TransitionToCommittedForNewPage() override;
-  LocalFrame* CreateFrame(const WTF::AtomicString& name,
+  LocalFrame* CreateFrame(const AtomicString& name,
                           HTMLFrameOwnerElement*) override;
 
   RemoteFrame* CreateFencedFrame(
@@ -272,9 +274,8 @@ class CORE_EXPORT LocalFrameClientImpl final : public LocalFrameClient {
   v8::Local<v8::Object> GetScriptableObject(HTMLPlugInElement&,
                                             v8::Isolate*) override;
 
-  scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext() override;
-  scoped_refptr<WebWorkerFetchContext>
-  CreateWorkerFetchContextForPlzDedicatedWorker(
+  scoped_refptr<WebWorkerFetchContext> CreateWorkletFetchContext() override;
+  scoped_refptr<WebWorkerFetchContext> CreateWorkerFetchContext(
       WebDedicatedWorkerHostFactoryClient*) override;
   std::unique_ptr<WebContentSettingsClient> CreateWorkerContentSettingsClient()
       override;

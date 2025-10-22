@@ -9,7 +9,10 @@
 
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
+#include "base/threading/thread_checker.h"
+#include "components/collaboration/internal/collaboration_controller.h"
 #include "components/collaboration/public/collaboration_service.h"
+#include "components/prefs/pref_change_registrar.h"
 #include "components/prefs/pref_service.h"
 #include "components/signin/public/identity_manager/account_managed_status_finder.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
@@ -31,19 +34,34 @@ class TabGroupSyncService;
 }  // namespace tab_groups
 
 namespace collaboration {
-class CollaborationController;
+
+#if BUILDFLAG(IS_IOS)
+// TODO(crbug.com/424385780): Clean this duplicate.
+// Values for the BrowserSignin policy.
+// VALUES MUST COINCIDE WITH THE BrowserSignin POLICY DEFINITION.
+// LINT.IfChange(BrowserSigninMode)
+enum class BrowserSigninMode {
+  kDisabled = 0,
+  kEnabled = 1,
+  kForced = 2,
+};
+// LINT.ThenChange(//ios/chrome/browser/policy/model/policy_util.h:BrowserSigninMode)
+#endif
 
 // The internal implementation of the CollaborationService.
 class CollaborationServiceImpl : public CollaborationService,
                                  public syncer::SyncServiceObserver,
                                  public signin::IdentityManager::Observer {
  public:
+  // `local_prefs` is specific to iOS, providing access to device-level
+  // preferences. It will be `nullptr` on other platforms where these
+  // preferences are managed differently.
   CollaborationServiceImpl(
       tab_groups::TabGroupSyncService* tab_group_sync_service,
       data_sharing::DataSharingService* data_sharing_service,
       signin::IdentityManager* identity_manager,
-      syncer::SyncService* sync_service,
-      PrefService* profile_prefs);
+      PrefService* profile_prefs,
+      PrefService* local_prefs);
   ~CollaborationServiceImpl() override;
 
   // CollaborationService implementation.
@@ -51,14 +69,18 @@ class CollaborationServiceImpl : public CollaborationService,
   void AddObserver(CollaborationService::Observer* observer) override;
   void RemoveObserver(CollaborationService::Observer* observer) override;
   void StartJoinFlow(std::unique_ptr<CollaborationControllerDelegate> delegate,
-                     const GURL& url,
-                     CollaborationServiceJoinEntryPoint entry) override;
+                     const GURL& url) override;
   void StartShareOrManageFlow(
       std::unique_ptr<CollaborationControllerDelegate> delegate,
       const tab_groups::EitherGroupID& either_id,
       CollaborationServiceShareOrManageEntryPoint entry) override;
-  void CancelAllFlows(base::OnceCallback<void()> finish_callback) override;
+  void StartLeaveOrDeleteFlow(
+      std::unique_ptr<CollaborationControllerDelegate> delegate,
+      const tab_groups::EitherGroupID& either_id,
+      CollaborationServiceLeaveOrDeleteEntryPoint entry) override;
+  void CancelAllFlows() override;
   ServiceStatus GetServiceStatus() override;
+  void OnSyncServiceInitialized(syncer::SyncService* sync_service) override;
   data_sharing::MemberRole GetCurrentUserRoleForGroup(
       const data_sharing::GroupId& group_id) override;
   std::optional<data_sharing::GroupData> GetGroupData(
@@ -67,6 +89,11 @@ class CollaborationServiceImpl : public CollaborationService,
                    base::OnceCallback<void(bool)> callback) override;
   void LeaveGroup(const data_sharing::GroupId& group_id,
                   base::OnceCallback<void(bool)> callback) override;
+  bool ShouldInterceptNavigationForShareURL(const GURL& url) override;
+  void HandleShareURLNavigationIntercepted(
+      const GURL& url,
+      std::unique_ptr<data_sharing::ShareURLInterceptionContext> context,
+      CollaborationServiceJoinEntryPoint entry) override;
 
   // SyncServiceObserver implementation.
   void OnStateChanged(syncer::SyncService* sync) override;
@@ -86,26 +113,25 @@ class CollaborationServiceImpl : public CollaborationService,
   const std::map<data_sharing::GroupToken,
                  std::unique_ptr<CollaborationController>>&
   GetJoinControllersForTesting();
+  int GetDeletingControllersCountForTesting();
 
   // Called to clean up a flow given a GroupToken.
-  void FinishJoinFlow(const data_sharing::GroupToken& token);
-  void FinishShareFlow(const tab_groups::EitherGroupID& group_id);
+  void FinishCollaborationFlow(const void* controller);
 
  private:
   SyncStatus GetSyncStatus();
   SigninStatus GetSigninStatus();
   CollaborationStatus GetCollaborationStatus();
   void RefreshServiceStatus();
-  void StartJoinFlowInternal(
-      std::unique_ptr<CollaborationControllerDelegate> delegate,
-      const data_sharing::GroupToken& token);
-  void StartShareOrManageFlowInternal(
-      std::unique_ptr<CollaborationControllerDelegate> delegate,
-      const tab_groups::EitherGroupID& group_id);
   void OnCollaborationGroupRemoved(
       const data_sharing::GroupId& group_id,
       base::OnceCallback<void(bool)> callback,
       data_sharing::DataSharingService::PeopleGroupActionOutcome result);
+  std::unique_ptr<CollaborationController> CreateCollaborationController(
+      CollaborationController::Flow flow,
+      std::unique_ptr<CollaborationControllerDelegate> delegate);
+
+  THREAD_CHECKER(thread_checker_);
 
   ServiceStatus current_status_;
   base::ScopedObservation<syncer::SyncService, syncer::SyncServiceObserver>
@@ -127,16 +153,23 @@ class CollaborationServiceImpl : public CollaborationService,
   const raw_ptr<signin::IdentityManager> identity_manager_;
 
   // Service providing information about sync.
-  const raw_ptr<syncer::SyncService> sync_service_;
+  raw_ptr<syncer::SyncService> sync_service_;
 
-  const raw_ptr<PrefService> profile_prefs_;
+  // Used to listen for sharing policy pref change notification.
+  PrefChangeRegistrar registrar_;
+
+  raw_ptr<PrefService> profile_prefs_;
+  raw_ptr<PrefService> local_prefs_;
 
   // Started flows.
   // Join controllers: <GroupId, CollaborationController>
   std::map<data_sharing::GroupToken, std::unique_ptr<CollaborationController>>
       join_controllers_;
   std::map<tab_groups::EitherGroupID, std::unique_ptr<CollaborationController>>
-      share_controllers_;
+      collaboration_controllers_;
+
+  // List of pointers that are cleaning up asynchronously.
+  std::set<std::unique_ptr<CollaborationController>> cancelled_controllers_;
 
   base::WeakPtrFactory<CollaborationServiceImpl> weak_ptr_factory_{this};
 };

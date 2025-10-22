@@ -18,8 +18,10 @@
 #include "components/autofill/content/browser/content_autofill_driver.h"
 #include "components/autofill/core/browser/autofill_trigger_source.h"
 #include "components/autofill/core/browser/crowdsourcing/votes_uploader.h"
+#include "components/autofill/core/browser/data_manager/valuables/valuables_data_manager.h"
 #include "components/autofill/core/browser/metrics/form_interactions_ukm_logger.h"
 #include "components/autofill/core/browser/payments/legal_message_line.h"
+#include "components/credential_management/content_credential_manager.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "ui/android/view_android.h"
 
@@ -89,6 +91,7 @@ class AndroidAutofillClient : public autofill::ContentAutofillClient {
   autofill::AutofillCrowdsourcingManager& GetCrowdsourcingManager() final;
   autofill::VotesUploader& GetVotesUploader() override;
   autofill::PersonalDataManager& GetPersonalDataManager() final;
+  autofill::ValuablesDataManager* GetValuablesDataManager() override;
   autofill::EntityDataManager* GetEntityDataManager() override;
   autofill::SingleFieldFillRouter& GetSingleFieldFillRouter() final;
   autofill::AutocompleteHistoryManager* GetAutocompleteHistoryManager() final;
@@ -135,6 +138,9 @@ class AndroidAutofillClient : public autofill::ContentAutofillClient {
       base::PassKey<autofill::ContentAutofillDriver> pass_key,
       autofill::ContentAutofillDriver& driver) final;
 
+  credential_management::ContentCredentialManager* GetContentCredentialManager()
+      override;
+
  protected:
   // Protected for testing.
   explicit AndroidAutofillClient(content::WebContents* web_contents);
@@ -153,6 +159,9 @@ class AndroidAutofillClient : public autofill::ContentAutofillClient {
 
   autofill::autofill_metrics::FormInteractionsUkmLogger
       form_interactions_ukm_logger_{this};
+
+  // Content credential manager to handle navigator.credentials calls.
+  credential_management::ContentCredentialManager content_credential_manager_;
 
   base::WeakPtrFactory<AndroidAutofillClient> weak_ptr_factory_{this};
 };

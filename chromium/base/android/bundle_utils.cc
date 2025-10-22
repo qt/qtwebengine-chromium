@@ -9,7 +9,7 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
-#include "base/base_jni/BundleUtils_jni.h"
+#include "base/bundle_utils_jni/BundleUtils_jni.h"
 #include "base/check.h"
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
@@ -41,9 +41,8 @@ namespace {
 // contains the offset to add to the pointer, in order to find the actual
 // desired pointer address.
 //
-// # Safety
-// If the value in the pointer does not provide an offset from the pointer that
-// stays inside the same allocation, Undefined Behaviour can result.
+// PRECONDITIONS: The value in the pointer must provide an offset from the
+// pointer that stays inside the same allocation.
 UNSAFE_BUFFER_USAGE void* ReadRelPtr(int32_t* relptr) {
   // SAFETY: This relies on the caller to provide a valid pointer + value.
   return UNSAFE_BUFFERS(reinterpret_cast<char*>(relptr) + *relptr);
@@ -59,8 +58,8 @@ std::string BundleUtils::ResolveLibraryPath(const std::string& library_name,
 }
 
 // static
-bool BundleUtils::IsBundle() {
-  return Java_BundleUtils_isBundle(AttachCurrentThread());
+bool BundleUtils::HasAnyInstalledSplits() {
+  return Java_BundleUtils_hasAnyInstalledSplits(AttachCurrentThread());
 }
 
 // static

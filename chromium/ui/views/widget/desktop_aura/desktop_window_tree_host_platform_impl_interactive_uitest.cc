@@ -16,6 +16,7 @@
 #include "ui/platform_window/wm/wm_move_resize_handler.h"
 #include "ui/views/accessibility/view_accessibility.h"
 #include "ui/views/controls/textfield/textfield.h"
+#include "ui/views/test/configurable_test_frame_view.h"
 #include "ui/views/test/widget_activation_waiter.h"
 #include "ui/views/test/widget_test.h"
 #include "ui/views/widget/desktop_aura/desktop_native_widget_aura.h"
@@ -23,7 +24,6 @@
 #include "ui/views/widget/desktop_aura/desktop_window_tree_host_platform.h"
 #include "ui/views/widget/desktop_aura/window_event_filter_linux.h"
 #include "ui/views/widget/widget_delegate.h"
-#include "ui/views/window/native_frame_view.h"
 
 // TODO(crbug.com/c/373971535): remove this and apply renaming.
 using DesktopWindowTreeHostPlatformImpl = views::DesktopWindowTreeHostLinux;
@@ -111,11 +111,11 @@ class FakeWmMoveResizeHandler : public ui::WmMoveResizeHandler {
   ~FakeWmMoveResizeHandler() override = default;
 
   void Reset() {
-    hittest_ = -1;
+    hittest_.reset();
     pointer_location_in_px_ = gfx::Point();
   }
 
-  int hittest() const { return hittest_; }
+  std::optional<int> hittest() const { return hittest_; }
   gfx::Point pointer_location_in_px() const { return pointer_location_in_px_; }
 
   void set_bounds(const gfx::Rect& bounds) { bounds_ = bounds; }
@@ -138,7 +138,7 @@ class FakeWmMoveResizeHandler : public ui::WmMoveResizeHandler {
   raw_ptr<ui::PlatformWindow> platform_window_;
   gfx::Rect bounds_;
 
-  int hittest_ = -1;
+  std::optional<int> hittest_;
   gfx::Point pointer_location_in_px_;
 };
 
@@ -151,38 +151,16 @@ void SetExpectationBasedOnHittestValue(
     // fake move/resize handler.
     EXPECT_EQ(handler.pointer_location_in_px().ToString(),
               pointer_location_in_px.ToString());
-    EXPECT_EQ(handler.hittest(), hittest);
+    ASSERT_TRUE(handler.hittest().has_value());
+    EXPECT_EQ(*handler.hittest(), hittest);
     return;
   }
 
   // Ensure the handler does not receive the hittest value or the pointer
   // location.
   EXPECT_TRUE(handler.pointer_location_in_px().IsOrigin());
-  EXPECT_NE(handler.hittest(), hittest);
+  EXPECT_FALSE(handler.hittest().has_value());
 }
-
-// This is used to return a customized result to NonClientHitTest.
-class HitTestNonClientFrameView : public NativeFrameView {
- public:
-  explicit HitTestNonClientFrameView(Widget* widget)
-      : NativeFrameView(widget) {}
-
-  HitTestNonClientFrameView(const HitTestNonClientFrameView&) = delete;
-  HitTestNonClientFrameView& operator=(const HitTestNonClientFrameView&) =
-      delete;
-
-  ~HitTestNonClientFrameView() override = default;
-
-  void set_hit_test_result(int component) { hit_test_result_ = component; }
-
-  // NonClientFrameView overrides:
-  int NonClientHitTest(const gfx::Point& point) override {
-    return hit_test_result_;
-  }
-
- private:
-  int hit_test_result_ = HTNOWHERE;
-};
 
 // This is used to return HitTestNonClientFrameView on create call.
 class HitTestWidgetDelegate : public WidgetDelegate {
@@ -194,19 +172,20 @@ class HitTestWidgetDelegate : public WidgetDelegate {
 
   ~HitTestWidgetDelegate() override = default;
 
-  HitTestNonClientFrameView* frame_view() { return frame_view_; }
+  test::ConfigurableTestFrameView* frame_view() { return frame_view_; }
 
   // WidgetDelegate:
   std::unique_ptr<NonClientFrameView> CreateNonClientFrameView(
       Widget* widget) override {
     DCHECK(!frame_view_);
-    auto frame_view = std::make_unique<HitTestNonClientFrameView>(widget);
+    auto frame_view = std::make_unique<test::ConfigurableTestFrameView>(widget);
     frame_view_ = frame_view.get();
     return frame_view;
   }
 
  private:
-  raw_ptr<HitTestNonClientFrameView, DanglingUntriaged> frame_view_ = nullptr;
+  raw_ptr<test::ConfigurableTestFrameView, DanglingUntriaged> frame_view_ =
+      nullptr;
 };
 
 // Test host that can intercept calls to the real host.

@@ -52,7 +52,7 @@ std::string ToLowerASCIIInternal(base::span<const CharType> chars) {
 std::string ToLowerASCIIOrEmpty(const String& str) {
   if (str.empty() || !str.ContainsOnlyASCIIOrEmpty())
     return std::string();
-  return WTF::VisitCharacters(
+  return VisitCharacters(
       str, [](auto chars) { return ToLowerASCIIInternal(chars); });
 }
 
@@ -115,6 +115,10 @@ bool MIMETypeRegistry::IsSupportedImageMIMETypeForEncoding(
 
 bool MIMETypeRegistry::IsSupportedJavaScriptMIMEType(const String& mime_type) {
   return blink::IsSupportedJavascriptMimeType(ToLowerASCIIOrEmpty(mime_type));
+}
+
+bool MIMETypeRegistry::IsWasmMIMEType(const String& mime_type) {
+  return blink::IsWasmMIMEType(ToLowerASCIIOrEmpty(mime_type));
 }
 
 bool MIMETypeRegistry::IsJSONMimeType(const String& mime_type) {

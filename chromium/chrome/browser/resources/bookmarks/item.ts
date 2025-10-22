@@ -6,6 +6,7 @@ import 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import '/strings.m.js';
 
 import type {CrIconButtonElement} from 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
+import {WebUiListenerMixinLit} from 'chrome://resources/cr_elements/web_ui_listener_mixin_lit.js';
 import {focusWithoutInk} from 'chrome://resources/js/focus_without_ink.js';
 import {getFaviconForPageURL} from 'chrome://resources/js/icon.js';
 import {loadTimeData} from 'chrome://resources/js/load_time_data.js';
@@ -14,6 +15,7 @@ import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {selectItem} from './actions.js';
+import {BrowserProxyImpl} from './browser_proxy.js';
 import {BookmarksCommandManagerElement} from './command_manager.js';
 import {Command, MenuSource} from './constants.js';
 import {getCss} from './item.css.js';
@@ -21,7 +23,8 @@ import {getHtml} from './item.html.js';
 import {StoreClientMixinLit} from './store_client_mixin_lit.js';
 import type {BookmarkNode, BookmarksPageState} from './types.js';
 
-const BookmarksItemElementBase = StoreClientMixinLit(CrLitElement);
+const BookmarksItemElementBase =
+    WebUiListenerMixinLit(StoreClientMixinLit(CrLitElement));
 
 export interface BookmarksItemElement {
   $: {
@@ -55,6 +58,7 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
       isMultiSelect_: {type: Boolean},
       isFolder_: {type: Boolean},
       lastTouchPoints_: {type: Number},
+      canUploadAsAccountBookmark_: {type: Boolean},
     };
   }
 
@@ -65,6 +69,8 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
   private accessor isMultiSelect_: boolean = false;
   private accessor isFolder_: boolean = false;
   private accessor lastTouchPoints_: number = -1;
+  // This is always false if `SyncEnableBookmarksInTransportMode` is disabled.
+  protected accessor canUploadAsAccountBookmark_: boolean = false;
 
   override firstUpdated(changedProperties: PropertyValues<this>) {
     super.firstUpdated(changedProperties);
@@ -81,6 +87,10 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
   override connectedCallback() {
     super.connectedCallback();
     this.updateFromStore();
+
+    this.addWebUiListener(
+        'bookmarks-sync-state-changed',
+        this.updateCanUploadAsAccountBookmark_.bind(this));
   }
 
   override willUpdate(changedProperties: PropertyValues<this>) {
@@ -96,6 +106,7 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
       this.isFolder_ = !!this.item_ && !this.item_.url;
       this.ariaLabel = this.item_?.title || this.item_?.url ||
           loadTimeData.getString('folderLabel');
+      this.updateCanUploadAsAccountBookmark_();
     }
   }
 
@@ -179,6 +190,15 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
     }));
   }
 
+  protected onUploadButtonClick_() {
+    // Skip selecting the item if this item is part of a multi-selected group.
+    if (!this.isMultiSelectMenu_()) {
+      this.selectThisItem_();
+    }
+
+    BrowserProxyImpl.getInstance().onSingleBookmarkUploadClicked(this.itemId);
+  }
+
   private selectThisItem_() {
     this.dispatch(selectItem(this.itemId, this.getState(), {
       clear: true,
@@ -211,11 +231,13 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
   }
 
   private onKeydown_(e: KeyboardEvent) {
+    const cursorModifier = isMac ? e.metaKey : e.ctrlKey;
     if (e.key === 'ArrowLeft') {
       this.focus();
     } else if (e.key === 'ArrowRight') {
       this.$.menuButton.focus();
-    } else if (e.key === ' ') {
+    } else if (e.key === ' ' && !cursorModifier) {
+      // Spacebar with the modifier is handled by the list.
       this.dispatch(selectItem(this.itemId, this.getState(), {
         clear: false,
         range: false,
@@ -293,6 +315,14 @@ export class BookmarksItemElement extends BookmarksItemElementBase {
    */
   private isMultiSelectMenu_(): boolean {
     return this.isSelectedItem_ && this.isMultiSelect_;
+  }
+
+  private updateCanUploadAsAccountBookmark_() {
+    BrowserProxyImpl.getInstance()
+        .getCanUploadBookmarkToAccountStorage(this.itemId)
+        .then((canUpload) => {
+          this.canUploadAsAccountBookmark_ = canUpload;
+        });
   }
 }
 

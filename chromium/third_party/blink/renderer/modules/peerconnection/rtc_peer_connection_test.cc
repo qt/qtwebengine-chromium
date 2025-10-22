@@ -38,6 +38,7 @@
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
+#include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_track_platform.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_rtp_receiver_platform.h"
 #include "third_party/blink/renderer/platform/peerconnection/rtc_rtp_sender_platform.h"
@@ -108,14 +109,14 @@ class RTCPeerConnectionTest : public testing::Test {
   void AddStream(V8TestingScope& scope,
                  RTCPeerConnection* pc,
                  MediaStream* stream) {
-    pc->addStream(scope.GetIsolate(), stream, scope.GetExceptionState());
+    pc->addStream(scope.GetScriptState(), stream, scope.GetExceptionState());
     EXPECT_EQ("", GetExceptionMessage(scope));
   }
 
   void RemoveStream(V8TestingScope& scope,
                     RTCPeerConnection* pc,
                     MediaStream* stream) {
-    pc->removeStream(scope.GetIsolate(), stream, scope.GetExceptionState());
+    pc->removeStream(stream, scope.GetExceptionState());
     EXPECT_EQ("", GetExceptionMessage(scope));
   }
 
@@ -212,10 +213,8 @@ TEST_F(RTCPeerConnectionTest, GetTrackRemoveStreamAndGCAll) {
     // Transceivers will still reference the stream even after it is "removed".
     // To make the GC tests work, clear the stream from tracks so that the
     // stream does not keep tracks alive.
-    while (!stream->getTracks().empty()) {
-      stream->removeTrack(scope.GetIsolate(), stream->getTracks()[0],
-                          scope.GetExceptionState());
-    }
+    while (!stream->getTracks().empty())
+      stream->removeTrack(stream->getTracks()[0], scope.GetExceptionState());
   }
 
   // This will destroy |MediaStream|, |MediaStreamTrack| and its
@@ -251,10 +250,8 @@ TEST_F(RTCPeerConnectionTest,
     // Transceivers will still reference the stream even after it is "removed".
     // To make the GC tests work, clear the stream from tracks so that the
     // stream does not keep tracks alive.
-    while (!stream->getTracks().empty()) {
-      stream->removeTrack(scope.GetIsolate(), stream->getTracks()[0],
-                          scope.GetExceptionState());
-    }
+    while (!stream->getTracks().empty())
+      stream->removeTrack(stream->getTracks()[0], scope.GetExceptionState());
   }
 
   // This will destroy |MediaStream| and |MediaStreamTrack| (but not

@@ -23,7 +23,7 @@ This currently doesnt work on Windows due to different deps handling.
 
 Example usage: (Remove use_remoteexec=true if you don't have reclient access.)
 
-$ gn gen out/Debug --args="system_headers_in_deps=true enable_nacl=false
+$ gn gen out/Debug --args="system_headers_in_deps=true \
       symbol_level=0 use_remoteexec=true"
 $ autoninja -C out/Debug chrome
 $ tools/clang/scripts/compiler_inputs_size.py out/Debug \
@@ -180,7 +180,7 @@ def parse_commands(build_dir, commands_output):
   ...  'clang-cl.exe /Fobaz.o /c baz.cc\n'.splitlines(keepends=True)))
   ['bar.c', 'dir1/dir2/baz.cc', 'foo.cc']
   """
-  COMPILE_RE = re.compile(r'.*clang.* [/-]c (\S+)')
+  COMPILE_RE = re.compile(r'.*\bclang\b.* [/-]c (\S+)')
   files = set()
   for line in commands_output:
     m = COMPILE_RE.match(line)

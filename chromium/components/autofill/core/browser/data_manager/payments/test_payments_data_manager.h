@@ -17,6 +17,7 @@
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/data_model/payments/iban.h"
 #include "components/autofill/core/browser/payments/payments_customer_data.h"
+#include "components/autofill/core/browser/ui/test_autofill_image_fetcher.h"
 
 namespace autofill {
 
@@ -60,6 +61,7 @@ class TestPaymentsDataManager : public PaymentsDataManager {
       const CreditCard& imported_credit_card) override;
   bool IsPaymentCvcStorageEnabled() override;
   bool IsSyncFeatureEnabledForPaymentsServerMetrics() const override;
+  bool IsAutofillBnplPrefEnabled() const override;
   CoreAccountInfo GetAccountInfoForPaymentsServer() const override;
 
   // Clears |local_credit_cards_| and |server_credit_cards_|.
@@ -87,6 +89,10 @@ class TestPaymentsDataManager : public PaymentsDataManager {
     payments_cvc_storage_enabled_ = enabled;
   }
 
+  void SetIsAutofillBnplPrefEnabled(bool enabled) {
+    autofill_bnpl_enabled_ = enabled;
+  }
+
   // Adds a card to `server_credit_cards_`. This test class treats masked and
   // full server cards equally, relying on their preset RecordType to
   // differentiate them.
@@ -111,9 +117,9 @@ class TestPaymentsDataManager : public PaymentsDataManager {
 
   // Adds a `url` to `image` mapping to the local `credit_card_art_images_`
   // cache.
-  void AddCardArtImage(const GURL& url, const gfx::Image& image);
+  void CacheImage(const GURL& url, const gfx::Image& image);
 
-  void ClearCreditCardArtImages() { credit_card_art_images_.clear(); }
+  void ClearCachedImages() { owned_image_fetcher_->ClearCachedImages(); }
 
   // Adds `usage_data` to `autofill_virtual_card_usage_data_`.
   void AddVirtualCardUsageData(const VirtualCardUsageData& usage_data);
@@ -127,6 +133,8 @@ class TestPaymentsDataManager : public PaymentsDataManager {
     payments_customer_data_ = std::move(customer_data);
   }
 
+  void ClearPaymentsCustomerData() { payments_customer_data_ = nullptr; }
+
   void SetAccountInfoForPayments(const CoreAccountInfo& account_info) {
     account_info_ = account_info;
   }
@@ -139,7 +147,9 @@ class TestPaymentsDataManager : public PaymentsDataManager {
   std::optional<bool> payments_wallet_sync_transport_enabled_;
   std::optional<bool> payment_methods_mandatory_reauth_enabled_;
   std::optional<bool> payments_cvc_storage_enabled_;
+  std::optional<bool> autofill_bnpl_enabled_;
   CoreAccountInfo account_info_;
+  std::unique_ptr<TestAutofillImageFetcher> owned_image_fetcher_;
 };
 
 }  // namespace autofill

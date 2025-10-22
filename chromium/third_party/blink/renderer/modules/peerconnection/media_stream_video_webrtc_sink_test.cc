@@ -4,6 +4,7 @@
 
 #include "third_party/blink/renderer/modules/peerconnection/media_stream_video_webrtc_sink.h"
 
+#include "media/base/video_frame.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/renderer/modules/mediastream/mock_media_stream_registry.h"
@@ -23,7 +24,8 @@ using ::testing::Invoke;
 using ::testing::Mock;
 using ::testing::Optional;
 
-class MockWebRtcVideoSink : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class MockWebRtcVideoSink
+    : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   MOCK_METHOD(void, OnFrame, (const webrtc::VideoFrame&), (override));
   MOCK_METHOD(void, OnDiscardedFrame, (), (override));
@@ -119,7 +121,8 @@ TEST_F(MediaStreamVideoWebRtcSinkTest, NotifiesFrameDropped) {
       blink::scheduler::GetSingleThreadTaskRunnerForTesting());
   webrtc::VideoTrackInterface* webrtc_track = my_sink.webrtc_video_track();
   MockWebRtcVideoSink mock_sink;
-  webrtc_track->GetSource()->AddOrUpdateSink(&mock_sink, rtc::VideoSinkWants());
+  webrtc_track->GetSource()->AddOrUpdateSink(&mock_sink,
+                                             webrtc::VideoSinkWants());
 
   // Drive two frames too closely spaced through. Expect one frame drop.
   base::RunLoop run_loop;

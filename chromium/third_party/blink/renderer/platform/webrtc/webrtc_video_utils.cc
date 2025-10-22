@@ -217,7 +217,9 @@ gfx::ColorSpace WebRtcToGfxColorSpace(const webrtc::ColorSpace& color_space) {
   gfx::ColorSpace::MatrixID matrix = gfx::ColorSpace::MatrixID::INVALID;
   switch (color_space.matrix()) {
     case webrtc::ColorSpace::MatrixID::kRGB:
-      matrix = gfx::ColorSpace::MatrixID::RGB;
+      // RGB-encoded video actually puts the green in the Y channel,
+      // the blue in the Cb (U) channel and the red in the Cr (V) channel.
+      matrix = gfx::ColorSpace::MatrixID::GBR;
       break;
     case webrtc::ColorSpace::MatrixID::kBT709:
     case webrtc::ColorSpace::MatrixID::kUnspecified:
@@ -365,6 +367,11 @@ webrtc::ColorSpace GfxToWebRtcColorSpace(const gfx::ColorSpace& color_space) {
       webrtc::ColorSpace::MatrixID::kUnspecified;
   switch (color_space.GetMatrixID()) {
     case gfx::ColorSpace::MatrixID::RGB:
+      matrix = webrtc::ColorSpace::MatrixID::kRGB;
+      break;
+    case gfx::ColorSpace::MatrixID::GBR:
+      // This is used only for RGB YUV images in chrome,
+      // But webrtc always converts to YUV anyway.
       matrix = webrtc::ColorSpace::MatrixID::kRGB;
       break;
     case gfx::ColorSpace::MatrixID::BT709:

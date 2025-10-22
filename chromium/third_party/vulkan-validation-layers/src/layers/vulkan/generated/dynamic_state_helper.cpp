@@ -3,8 +3,8 @@
 
 /***************************************************************************
  *
- * Copyright (c) 2023-2024 Valve Corporation
- * Copyright (c) 2023-2024 LunarG, Inc.
+ * Copyright (c) 2023-2025 Valve Corporation
+ * Copyright (c) 2023-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -624,6 +624,13 @@ std::string DescribeDynamicStateDependency(CBDynamicState dynamic_state, const v
                 ss << "VkPipelineRasterizationStateCreateInfo::depthTestEnable was VK_TRUE in the last bound graphics pipeline.\n";
             }
             break;
+        case CB_DYNAMIC_STATE_BLEND_CONSTANTS:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
         case CB_DYNAMIC_STATE_DEPTH_BOUNDS:
             if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
                 ss << rasterizer_discard_enable_dynamic;
@@ -699,6 +706,11 @@ std::string DescribeDynamicStateDependency(CBDynamicState dynamic_state, const v
                 ss << rasterizer_discard_enable_dynamic;
             } else {
                 ss << rasterizer_discard_enable_static;
+            }
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_DEPTH_TEST_ENABLE)) {
+                ss << "vkCmdSetDepthTestEnable last set depthTestEnable to VK_TRUE.\n";
+            } else {
+                ss << "VkPipelineDepthStencilStateCreateInfo::depthTestEnable was VK_TRUE in the last bound graphics pipeline.\n";
             }
             break;
         case CB_DYNAMIC_STATE_DEPTH_COMPARE_OP:
@@ -854,6 +866,13 @@ std::string DescribeDynamicStateDependency(CBDynamicState dynamic_state, const v
                 ss << "VkPipelineColorBlendStateCreateInfo::logicOpEnable was VK_TRUE in the last bound graphics pipeline.\n";
             }
             break;
+        case CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
         case CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT:
             if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
                 ss << rasterizer_discard_enable_dynamic;
@@ -875,6 +894,27 @@ std::string DescribeDynamicStateDependency(CBDynamicState dynamic_state, const v
                 ss << rasterizer_discard_enable_static;
             }
             break;
+        case CB_DYNAMIC_STATE_COLOR_BLEND_ENABLE_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
+        case CB_DYNAMIC_STATE_COLOR_BLEND_EQUATION_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
+        case CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
         case CB_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT:
             if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
                 ss << rasterizer_discard_enable_dynamic;
@@ -890,6 +930,27 @@ std::string DescribeDynamicStateDependency(CBDynamicState dynamic_state, const v
             }
             break;
         case CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
+        case CB_DYNAMIC_STATE_COLOR_BLEND_ADVANCED_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
+        case CB_DYNAMIC_STATE_LINE_RASTERIZATION_MODE_EXT:
+            if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
+                ss << rasterizer_discard_enable_dynamic;
+            } else {
+                ss << rasterizer_discard_enable_static;
+            }
+            break;
+        case CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT:
             if (!pipeline || pipeline->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
                 ss << rasterizer_discard_enable_dynamic;
             } else {

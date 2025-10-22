@@ -14,7 +14,6 @@
 #include <optional>
 #include <string>
 
-#include "base/base_paths_win.h"
 #include "base/environment.h"
 #include "base/files/dir_reader_posix.h"
 #include "base/files/file.h"
@@ -32,6 +31,9 @@
 #include "components/device_signals/core/common/common_types.h"
 #include "components/device_signals/core/common/platform_utils.h"
 #include "components/device_signals/core/common/signals_constants.h"
+#if defined(USE_GIO)
+#include "ui/base/glib/gsettings.h"
+#endif  // defined(USE_GIO)
 
 namespace {
 std::string ReadFile(std::string path_str) {
@@ -55,6 +57,17 @@ std::string GetSerialNumber() {
   return ReadFile("/sys/class/dmi/id/product_serial");
 }
 
+base::FilePath GetCrowdStrikeAgentInstallPath() {
+  static constexpr base::FilePath::CharType kCrowdstrikeAgentPath[] =
+      FILE_PATH_LITERAL("/opt/CrowdStrike/");
+  return base::FilePath(kCrowdstrikeAgentPath);
+}
+
+base::FilePath GetCrowdStrikeZtaFilePath() {
+  // ZTA files currently are not stored locally on linux platforms.
+  return base::FilePath();
+}
+
 // Implements the logic from the native client setup script. It reads the
 // setting value straight from gsettings but picks the schema relevant to the
 // currently active desktop environment.
@@ -76,20 +89,18 @@ SettingValue GetScreenlockSecured() {
       desktop_env == base::nix::DESKTOP_ENVIRONMENT_CINNAMON ? "cinnamon"
                                                              : "gnome");
 
-  GSettingsSchema* screensaver_schema = g_settings_schema_source_lookup(
-      g_settings_schema_source_get_default(), settings_schema.c_str(), FALSE);
-  GSettings* screensaver_settings = nullptr;
-  if (!screensaver_schema ||
-      !g_settings_schema_has_key(screensaver_schema, kLockScreenKey)) {
-    return SettingValue::UNKNOWN;
-  }
-  screensaver_settings = g_settings_new(settings_schema.c_str());
+  auto screensaver_settings = ui::GSettingsNew(settings_schema.c_str());
   if (!screensaver_settings) {
     return SettingValue::UNKNOWN;
   }
+  GSettingsSchema* screensaver_schema = g_settings_schema_source_lookup(
+      g_settings_schema_source_get_default(), settings_schema.c_str(), true);
+  if (!g_settings_schema_has_key(screensaver_schema, kLockScreenKey)) {
+    return SettingValue::UNKNOWN;
+  }
+  g_settings_schema_unref(screensaver_schema);
   gboolean lock_screen_enabled =
       g_settings_get_boolean(screensaver_settings, kLockScreenKey);
-  g_object_unref(screensaver_settings);
 
   return lock_screen_enabled ? SettingValue::ENABLED : SettingValue::DISABLED;
 #else
@@ -125,7 +136,7 @@ SettingValue GetDiskEncrypted() {
   return SettingValue::DISABLED;
 }
 
-std::vector<std::string> GetMacAddresses() {
+std::vector<std::string> internal::GetMacAddressesImpl() {
   std::vector<std::string> result;
   base::DirReaderPosix reader("/sys/class/net");
   if (!reader.IsValid()) {
@@ -152,6 +163,24 @@ std::vector<std::string> GetMacAddresses() {
     result.push_back(address);
   }
   return result;
+}
+
+std::optional<std::string> GetDistributionVersion() {
+  base::FilePath os_release_file("/etc/os-release");
+  std::string release_info;
+  base::StringPairs values;
+  if (base::PathExists(os_release_file) &&
+      base::ReadFileToStringWithMaxSize(os_release_file, &release_info, 8192) &&
+      base::SplitStringIntoKeyValuePairs(release_info, '=', '\n', &values)) {
+    auto version_id = std::ranges::find(
+        values, "VERSION_ID", &std::pair<std::string, std::string>::first);
+    if (version_id != values.end()) {
+      return std::string(
+          base::TrimString(version_id->second, "\"", base::TRIM_ALL));
+    }
+  }
+
+  return std::nullopt;
 }
 
 }  // namespace device_signals

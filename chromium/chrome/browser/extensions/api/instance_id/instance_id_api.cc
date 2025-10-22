@@ -13,7 +13,10 @@
 #include "chrome/common/extensions/api/instance_id.h"
 #include "components/gcm_driver/instance_id/instance_id_driver.h"
 #include "components/gcm_driver/instance_id/instance_id_profile_service.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -95,7 +98,7 @@ ExtensionFunction::ResponseAction InstanceIDGetCreationTimeFunction::DoWork() {
 
 void InstanceIDGetCreationTimeFunction::GetCreationTimeCompleted(
     const base::Time& creation_time) {
-  Respond(WithArguments(creation_time.InSecondsFSinceUnixEpoch()));
+  Respond(WithArguments(creation_time.InMillisecondsFSinceUnixEpoch()));
 }
 
 InstanceIDGetTokenFunction::InstanceIDGetTokenFunction() = default;

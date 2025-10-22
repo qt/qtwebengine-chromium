@@ -49,35 +49,14 @@ CSSMathFunctionValue* CSSMathFunctionValue::Create(
 CSSMathFunctionValue* CSSMathFunctionValue::Create(const Length& length,
                                                    float zoom) {
   DCHECK(length.IsCalculated());
-  auto calc = length.GetCalculationValue().Zoom(1.0 / zoom);
+  const auto* calc = length.GetCalculationValue().Zoom(1.0 / zoom);
   return Create(
       CSSMathExpressionNode::Create(*calc),
       CSSPrimitiveValue::ValueRangeForLengthValueRange(calc->GetValueRange()));
 }
 
 bool CSSMathFunctionValue::MayHaveRelativeUnit() const {
-  UnitType resolved_type = expression_->ResolvedUnitType();
-  return IsRelativeUnit(resolved_type) || resolved_type == UnitType::kUnknown;
-}
-
-double CSSMathFunctionValue::DoubleValue() const {
-#if DCHECK_IS_ON()
-  if (IsPercentage()) {
-    DCHECK(!AllowsNegativePercentageReference() ||
-           !expression_->InvolvesPercentageComparisons());
-  }
-#endif
-  return ClampToPermittedRange(expression_->DoubleValue());
-}
-
-double CSSMathFunctionValue::ComputeSeconds() const {
-  DCHECK_EQ(kCalcTime, expression_->Category());
-  return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
-}
-
-double CSSMathFunctionValue::ComputeDegrees() const {
-  DCHECK_EQ(kCalcAngle, expression_->Category());
-  return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
+  return expression_->MayHaveRelativeUnit();
 }
 
 double CSSMathFunctionValue::ComputeDegrees(
@@ -113,7 +92,7 @@ int CSSMathFunctionValue::ComputeInteger(
   // percentages.
   DCHECK_EQ(kCalcNumber, expression_->Category());
   DCHECK(!expression_->HasPercentage());
-  return ClampTo<int>(
+  return ClampToWithNaNTo0<int>(
       ClampToPermittedRange(expression_->ComputeNumber(length_resolver)));
 }
 
@@ -156,11 +135,6 @@ double CSSMathFunctionValue::ComputeValueInCanonicalUnit(
   return std::isnan(value) ? 0.0 : value;
 }
 
-double CSSMathFunctionValue::ComputeDotsPerPixel() const {
-  DCHECK_EQ(kCalcResolution, expression_->Category());
-  return ClampToPermittedRange(*expression_->ComputeValueInCanonicalUnit());
-}
-
 bool CSSMathFunctionValue::AccumulateLengthArray(CSSLengthArray& length_array,
                                                  double multiplier) const {
   return expression_->AccumulateLengthArray(length_array, multiplier);
@@ -177,9 +151,18 @@ Length CSSMathFunctionValue::ConvertToLength(
 static String BuildCSSText(const String& expression) {
   StringBuilder result;
   result.Append("calc");
-  result.Append('(');
-  result.Append(expression);
-  result.Append(')');
+  // https://drafts.csswg.org/css-values-4/#serialize-a-math-function
+  // “If a result of this serialization starts with a "(" (open parenthesis) and
+  // ends with a ")" (close parenthesis), remove those characters from the
+  // result.”
+  if (expression.StartsWith('(')) {
+    DCHECK(expression.EndsWith(')'));
+    result.Append(expression);
+  } else {
+    result.Append('(');
+    result.Append(expression);
+    result.Append(')');
+  }
   return result.ReleaseString();
 }
 
@@ -226,7 +209,7 @@ bool CSSMathFunctionValue::IsElementDependent() const {
   return expression_->IsElementDependent();
 }
 
-scoped_refptr<const CalculationValue> CSSMathFunctionValue::ToCalcValue(
+const CalculationValue* CSSMathFunctionValue::ToCalcValue(
     const CSSLengthResolver& length_resolver) const {
   DCHECK_NE(value_range_in_target_context_,
             CSSPrimitiveValue::ValueRange::kInteger);

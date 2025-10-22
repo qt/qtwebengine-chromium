@@ -13,6 +13,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/unguessable_token.h"
 #include "components/safe_browsing/core/browser/db/hit_report.h"
+#include "components/safe_browsing/core/browser/db/util.h"
 #include "components/safe_browsing/core/common/proto/realtimeapi.pb.h"
 #include "components/security_interstitials/core/unsafe_resource_locator.h"
 #include "services/network/public/mojom/fetch_api.mojom.h"
@@ -81,6 +82,8 @@ struct UnsafeResource {
   GURL referrer_url;
   std::vector<GURL> redirect_urls;
   safe_browsing::SBThreatType threat_type;
+  safe_browsing::ThreatSubtype threat_subtype =
+      safe_browsing::ThreatSubtype::UNKNOWN;
   safe_browsing::ThreatMetadata threat_metadata;
   safe_browsing::RTLookupResponse rt_lookup_response;
   // A callback to deliver the |UrlCheckResult| back to the creator of the

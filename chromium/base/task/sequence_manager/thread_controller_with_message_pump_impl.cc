@@ -22,7 +22,7 @@
 #include "base/threading/hang_watcher.h"
 #include "base/time/tick_clock.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_IOS)
@@ -545,7 +545,7 @@ void ThreadControllerWithMessagePumpImpl::DoIdleWork() {
     // going to sleep after resume.
 
     const bool need_high_res_mode =
-        main_thread_only().task_source->HasPendingHighResolutionTasks();
+        main_thread_only().task_source->NextWakeUpNeedsHighRes();
     if (main_thread_only().in_high_res_mode != need_high_res_mode) {
       // On Windows we activate the high resolution timer so that the wait
       // _if_ triggered by the timer happens with good resolution. If we don't

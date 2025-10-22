@@ -49,6 +49,7 @@
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_controller.h"
+#include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/view_utils.h"
 #include "ui/views/views_delegate.h"
 #include "ui/views/widget/native_widget_mac.h"
@@ -78,6 +79,7 @@ class BridgedNativeWidgetHostDummy
 
  private:
   void OnVisibilityChanged(bool visible) override {}
+  void OnSpaceActivationChanged(bool is_space_active) override {}
   void OnWindowNativeThemeChanged() override {}
   void OnViewSizeChanged(const gfx::Size& new_size) override {}
   void SetKeyboardAccessible(bool enabled) override {}
@@ -139,11 +141,11 @@ class BridgedNativeWidgetHostDummy
     bool has_menu_controller = false;
     std::move(callback).Run(has_menu_controller);
   }
-  void GetIsDraggableBackgroundAt(
-      const gfx::Point& location_in_content,
-      GetIsDraggableBackgroundAtCallback callback) override {
-    bool is_draggable_background = false;
-    std::move(callback).Run(is_draggable_background);
+  void GetHitTestResult(const gfx::Point& location_in_content,
+                        GetHitTestResultCallback callback) override {
+    remote_cocoa::mojom::HitTestResult hit_test_result =
+        remote_cocoa::mojom::HitTestResult::kOther;
+    std::move(callback).Run(hit_test_result);
   }
   void GetTooltipTextAt(const gfx::Point& location_in_content,
                         GetTooltipTextAtCallback callback) override {
@@ -355,9 +357,10 @@ NativeWidgetMacNSWindow* NativeWidgetMacNSWindowHost::GetInProcessNSWindow()
 gfx::NativeViewAccessible
 NativeWidgetMacNSWindowHost::GetNativeViewAccessibleForNSView() const {
   if (in_process_ns_window_bridge_) {
-    return in_process_ns_window_bridge_->ns_view();
+    return gfx::NativeViewAccessible(in_process_ns_window_bridge_->ns_view());
   }
-  return remote_view_accessible_;
+  return gfx::NativeViewAccessible(
+      (id<NSAccessibility>)remote_view_accessible_);
 }
 
 gfx::NativeViewAccessible
@@ -369,10 +372,12 @@ NativeWidgetMacNSWindowHost::GetNativeViewAccessibleForNSWindow() const {
     // the overlay window's contentView is moved to NSToolbarFullScreenWindow.
     // Regardless of the mode (fullscreen or not), `[ns_view() window]` would
     // always yield the correct NSWindow that contains `ns_view()`.
-    return [in_process_ns_window_bridge_->ns_view() window];
+    return gfx::NativeViewAccessible(
+        [in_process_ns_window_bridge_->ns_view() window]);
   }
 
-  return remote_window_accessible_;
+  return gfx::NativeViewAccessible(
+      (id<NSAccessibility>)remote_window_accessible_);
 }
 
 remote_cocoa::mojom::NativeWidgetNSWindow*
@@ -985,7 +990,7 @@ void NativeWidgetMacNSWindowHost::SetColorMode(
 // NativeWidgetMacNSWindowHost, remote_cocoa::BridgedNativeWidgetHostHelper:
 
 id NativeWidgetMacNSWindowHost::GetNativeViewAccessible() {
-  return root_view_ ? root_view_->GetNativeViewAccessible() : nil;
+  return root_view_ ? root_view_->GetNativeViewAccessible().Get() : nil;
 }
 
 void NativeWidgetMacNSWindowHost::DispatchKeyEvent(ui::KeyEvent* event) {
@@ -1044,6 +1049,7 @@ void NativeWidgetMacNSWindowHost::OnApplicationHostDestroying(
 // remote_cocoa::mojom::NativeWidgetNSWindowHost:
 
 void NativeWidgetMacNSWindowHost::OnVisibilityChanged(bool window_visible) {
+  const bool was_visible_on_screen = IsVisibleOnScreen();
   is_visible_ = window_visible;
   if (compositor_) {
     layer()->SetVisible(window_visible);
@@ -1054,8 +1060,26 @@ void NativeWidgetMacNSWindowHost::OnVisibilityChanged(bool window_visible) {
       compositor_->Suspend();
     }
   }
-  if (Widget* widget = GetWidget()) {
-    widget->OnNativeWidgetVisibilityChanged(window_visible);
+
+  Widget* widget = GetWidget();
+  if (!widget) {
+    return;
+  }
+
+  widget->OnNativeWidgetVisibilityChanged(window_visible);
+
+  if (was_visible_on_screen != IsVisibleOnScreen()) {
+    widget->OnNativeWidgetVisibilityOnScreenChanged(IsVisibleOnScreen());
+  }
+}
+
+void NativeWidgetMacNSWindowHost::OnSpaceActivationChanged(
+    bool is_on_active_space) {
+  const bool was_visible_on_screen = IsVisibleOnScreen();
+  is_on_active_space_ = is_on_active_space;
+
+  if (was_visible_on_screen != IsVisibleOnScreen() && GetWidget()) {
+    GetWidget()->OnNativeWidgetVisibilityOnScreenChanged(IsVisibleOnScreen());
   }
 }
 
@@ -1201,15 +1225,39 @@ void NativeWidgetMacNSWindowHost::OnMouseCaptureActiveChanged(bool is_active) {
   }
 }
 
-bool NativeWidgetMacNSWindowHost::GetIsDraggableBackgroundAt(
+bool NativeWidgetMacNSWindowHost::GetHitTestResult(
     const gfx::Point& location_in_content,
-    bool* is_draggable_background) {
+    remote_cocoa::mojom::HitTestResult* hit_test_result) {
   if (!root_view_) {
     return false;
   }
   int component =
       root_view_->GetWidget()->GetNonClientComponent(location_in_content);
-  *is_draggable_background = component == HTCAPTION;
+  if (component == HTCAPTION) {
+    *hit_test_result = remote_cocoa::mojom::HitTestResult::kDraggableBackground;
+    return true;
+  }
+
+  views::View* target_view =
+      root_view_->GetEventHandlerForPoint(location_in_content);
+
+  if (!target_view) {
+    // No View is under this location. This means the event is likely in
+    // a non-client area like the resize handles or native title bar.
+    *hit_test_result = remote_cocoa::mojom::HitTestResult::kOther;
+    return true;
+  }
+
+  // If `target_view` is a NativeViewHost, an embedded child NSView (e.g.
+  // a WebView) is at this location. The event needs to be sent to that NSView
+  // directly. It will eventually handled by the owner of that NSView, e.g.
+  // RenderWidgetHostViewCocoa.
+  if (views::IsViewClass<views::NativeViewHost>(target_view)) {
+    *hit_test_result = remote_cocoa::mojom::HitTestResult::kSubView;
+    return true;
+  }
+
+  *hit_test_result = remote_cocoa::mojom::HitTestResult::kRootView;
   return true;
 }
 
@@ -1327,6 +1375,10 @@ void NativeWidgetMacNSWindowHost::OnWindowFullscreenTransitionComplete(
 
   ui::NSWindowFullscreenNotificationWaiter::NotifyFullscreenTransitionComplete(
       native_widget_mac_->GetNativeWindow(), actual_fullscreen_state);
+
+  if (Widget* widget = GetWidget()) {
+    widget->OnNativeWidgetWindowShowStateChanged();
+  }
 }
 
 void NativeWidgetMacNSWindowHost::OnWindowMiniaturizedChanged(
@@ -1339,6 +1391,9 @@ void NativeWidgetMacNSWindowHost::OnWindowMiniaturizedChanged(
 
 void NativeWidgetMacNSWindowHost::OnWindowZoomedChanged(bool zoomed) {
   is_zoomed_ = zoomed;
+  if (Widget* widget = GetWidget()) {
+    widget->OnNativeWidgetWindowShowStateChanged();
+  }
 }
 
 void NativeWidgetMacNSWindowHost::OnWindowDisplayChanged(
@@ -1638,12 +1693,12 @@ void NativeWidgetMacNSWindowHost::GetHasMenuController(
   std::move(callback).Run(has_menu_controller);
 }
 
-void NativeWidgetMacNSWindowHost::GetIsDraggableBackgroundAt(
+void NativeWidgetMacNSWindowHost::GetHitTestResult(
     const gfx::Point& location_in_content,
-    GetIsDraggableBackgroundAtCallback callback) {
-  bool is_draggable_background = false;
-  GetIsDraggableBackgroundAt(location_in_content, &is_draggable_background);
-  std::move(callback).Run(is_draggable_background);
+    GetHitTestResultCallback callback) {
+  remote_cocoa::mojom::HitTestResult hit_test_result;
+  GetHitTestResult(location_in_content, &hit_test_result);
+  std::move(callback).Run(hit_test_result);
 }
 
 void NativeWidgetMacNSWindowHost::GetTooltipTextAt(

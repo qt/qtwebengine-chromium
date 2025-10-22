@@ -13,13 +13,13 @@
 #include "base/format_macros.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/hash/md5.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
 #include "base/test/task_environment.h"
 #include "base/threading/platform_thread.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "crypto/hash.h"
 #include "media/base/audio_buffer.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_hash.h"
@@ -207,9 +207,7 @@ class AudioDecoderTest
   void Initialize() {
     // Load the test data file.
     data_ = ReadTestDataFile(params_.filename);
-    auto data_span = base::span(*data_);
-    protocol_ = std::make_unique<InMemoryUrlProtocol>(data_span.data(),
-                                                      data_span.size(), false);
+    protocol_ = std::make_unique<InMemoryUrlProtocol>(*data_, false);
     reader_ = std::make_unique<AudioFileReader>(protocol_.get());
     ASSERT_TRUE(reader_->OpenDemuxerForTesting());
 
@@ -230,11 +228,11 @@ class AudioDecoderTest
 
 #if (BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)) && \
     BUILDFLAG(USE_PROPRIETARY_CODECS)
-    // MediaCodec type requires config->aac_extra_data() for AAC codec. For ADTS
+    // MediaCodec type requires config->extra_data() for AAC codec. For ADTS
     // streams we need to extract it with a separate procedure.
     if ((decoder_type_ == AudioDecoderType::kMediaCodec ||
          decoder_type_ == AudioDecoderType::kMediaFoundation) &&
-        params_.codec == AudioCodec::kAAC && config.aac_extra_data().empty()) {
+        params_.codec == AudioCodec::kAAC && config.extra_data().empty()) {
       int sample_rate;
       ChannelLayout channel_layout;
       std::vector<uint8_t> extra_data;
@@ -245,7 +243,6 @@ class AudioDecoderTest
       config.Initialize(AudioCodec::kAAC, kSampleFormatS16, channel_layout,
                         sample_rate, extra_data, EncryptionScheme::kUnencrypted,
                         base::TimeDelta(), 0);
-      config.set_aac_extra_data(extra_data);
       ASSERT_FALSE(config.extra_data().empty());
     }
 #endif
@@ -336,9 +333,9 @@ class AudioDecoderTest
     pending_reset_ = false;
   }
 
-  // Generates an MD5 hash of the audio signal.  Should not be used for checks
-  // across platforms as audio varies slightly across platforms.
-  std::string GetDecodedAudioMD5(size_t i) {
+  // Generates a SHA-256 hash of the audio signal.  Should not be used for
+  // checks across platforms as audio varies slightly across platforms.
+  std::string GetDecodedAudioSHA256(size_t i) {
     CHECK_LT(i, decoded_audio_.size());
     const scoped_refptr<AudioBuffer>& buffer = decoded_audio_[i];
 
@@ -346,17 +343,20 @@ class AudioDecoderTest
         AudioBus::Create(buffer->channel_count(), buffer->frame_count());
     buffer->ReadFrames(buffer->frame_count(), 0, 0, output.get());
 
-    base::MD5Context context;
-    base::MD5Init(&context);
+    crypto::hash::Hasher hasher(crypto::hash::kSha256);
     for (int ch = 0; ch < output->channels(); ++ch) {
-      base::MD5Update(
-          &context,
-          std::string_view(reinterpret_cast<char*>(output->channel(ch)),
-                           output->frames() * sizeof(*output->channel(ch))));
+      // This is a bit dangerous: equivalent floats do not necessarily have the
+      // same bit-for-bit representation, which is why we have to pass
+      // allow_nonunique_obj in here. That makes this test a bit
+      // over-conservative, since it will require that the output be a sequence
+      // of bit-for-bit identical floats rather than a sequence of equivalent
+      // floats, but that's okay.
+      hasher.Update(base::as_byte_span(base::allow_nonunique_obj,
+                                       output->channel_span(ch)));
     }
-    base::MD5Digest digest;
-    base::MD5Final(&digest, &context);
-    return base::MD5DigestToBase16(digest);
+    std::array<uint8_t, crypto::hash::kSha256Size> digest;
+    hasher.Finish(digest);
+    return base::ToLowerASCII(base::HexEncode(digest));
   }
 
   void ExpectDecodedAudio(size_t i, const std::string& exact_hash) {
@@ -382,12 +382,12 @@ class AudioDecoderTest
     }
 
     if (!exact_hash.empty()) {
-      EXPECT_EQ(exact_hash, GetDecodedAudioMD5(i));
+      EXPECT_EQ(exact_hash, GetDecodedAudioSHA256(i));
 
       // Verify different hashes are being generated.  None of our test data
       // files have audio that hashes out exactly the same.
       if (i > 0)
-        EXPECT_NE(exact_hash, GetDecodedAudioMD5(i - 1));
+        EXPECT_NE(exact_hash, GetDecodedAudioSHA256(i - 1));
     }
   }
 
@@ -651,7 +651,7 @@ TEST_P(AudioDecoderTest, ProduceAudioSamples) {
   ASSERT_NO_FATAL_FAILURE(Initialize());
 
   // Run the test multiple times with a seek back to the beginning in between.
-  std::vector<std::string> decoded_audio_md5_hashes;
+  std::vector<std::string> decoded_audio_sha256_hashes;
   for (int i = 0; i < 2; ++i) {
     // Run decoder until we get at least |kDecodeRuns| output buffers.
     // Keeping Decode() in a loop seems to be the simplest way to guarantee that
@@ -667,17 +667,17 @@ TEST_P(AudioDecoderTest, ProduceAudioSamples) {
     // buffers when they eventually appear might exceed |kDecodeRuns|.
     ASSERT_LE(kDecodeRuns, decoded_audio_size());
 
-    // On the first pass record the exact MD5 hash for each decoded buffer.
+    // On the first pass record the exact SHA-256 hash for each decoded buffer.
     if (i == 0) {
       for (size_t j = 0; j < kDecodeRuns; ++j)
-        decoded_audio_md5_hashes.push_back(GetDecodedAudioMD5(j));
+        decoded_audio_sha256_hashes.push_back(GetDecodedAudioSHA256(j));
     }
 
     // On the first pass verify the basic audio hash and sample info.  On the
-    // second, verify the exact MD5 sum for each packet.  It shouldn't change.
+    // second, verify the exact SHA-256 for each packet.  It shouldn't change.
     for (size_t j = 0; j < kDecodeRuns; ++j) {
       SCOPED_TRACE(base::StringPrintf("i = %d, j = %" PRIuS, i, j));
-      ExpectDecodedAudio(j, i == 0 ? "" : decoded_audio_md5_hashes[j]);
+      ExpectDecodedAudio(j, i == 0 ? "" : decoded_audio_sha256_hashes[j]);
     }
 
     SendEndOfStream();

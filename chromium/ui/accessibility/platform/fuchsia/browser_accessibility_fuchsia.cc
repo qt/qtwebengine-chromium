@@ -19,7 +19,7 @@ BrowserAccessibilityFuchsia::BrowserAccessibilityFuchsia(
     BrowserAccessibilityManager* manager,
     AXNode* node)
     : BrowserAccessibility(manager, node),
-      platform_node_(AXPlatformNode::Create(this)) {}
+      platform_node_(AXPlatformNode::Create(*this)) {}
 
 AccessibilityBridgeFuchsia*
 BrowserAccessibilityFuchsia::GetAccessibilityBridge() const {
@@ -397,8 +397,9 @@ uint32_t BrowserAccessibilityFuchsia::GetOffsetContainerOrRootNodeID() const {
   int offset_container_id = GetData().relative_bounds.offset_container_id;
 
   BrowserAccessibility* offset_container =
-      offset_container_id == -1 ? manager()->GetBrowserAccessibilityRoot()
-                                : manager()->GetFromID(offset_container_id);
+      offset_container_id == kInvalidAXNodeID
+          ? manager()->GetBrowserAccessibilityRoot()
+          : manager()->GetFromID(offset_container_id);
 
   BrowserAccessibilityFuchsia* fuchsia_container =
       ToBrowserAccessibilityFuchsia(offset_container);

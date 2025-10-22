@@ -145,12 +145,8 @@ ScrollTimeline::TimelineState ScrollTimeline::ComputeTimelineState() const {
 void ScrollTimeline::CalculateOffsets(PaintLayerScrollableArea* scrollable_area,
                                       ScrollOrientation physical_orientation,
                                       TimelineState* state) const {
-  ScrollOffset scroll_dimensions = scrollable_area->MaximumScrollOffset() -
-                                   scrollable_area->MinimumScrollOffset();
-  double end_offset = physical_orientation == kHorizontalScroll
-                          ? scroll_dimensions.x()
-                          : scroll_dimensions.y();
-  state->scroll_offsets = std::make_optional<ScrollOffsets>(0, end_offset);
+  CalculateScrollLimits(scrollable_area, physical_orientation, state);
+  state->scroll_offsets = state->scroll_limits;
 }
 
 Element* ScrollTimeline::source() const {
@@ -223,7 +219,7 @@ void ScrollTimeline::AnimationAttached(Animation* animation) {
 void ScrollTimeline::AnimationDetached(Animation* animation) {
   AnimationTimeline::AnimationDetached(animation);
 
-  if (RetainingElement() && !HasAnimations()) {
+  if (RetainingElement() && !HasAnimations() && triggers_.empty()) {
     RetainingElement()->UnregisterScrollTimeline(this);
   }
 }
@@ -289,6 +285,20 @@ std::optional<double> ScrollTimeline::GetCurrentScrollPosition() const {
       ToPhysicalScrollOrientation(GetAxis(), *scroll_container);
   return (physical_orientation == kHorizontalScroll) ? scroll_offset.x()
                                                      : scroll_offset.y();
+}
+
+void ScrollTimeline::AddAnimationTrigger(AnimationTrigger* trigger) {
+  AnimationTimeline::AddAnimationTrigger(trigger);
+  if (RetainingElement()) {
+    RetainingElement()->RegisterScrollTimeline(this);
+  }
+}
+
+void ScrollTimeline::RemoveAnimationTrigger(AnimationTrigger* trigger) {
+  AnimationTimeline::RemoveAnimationTrigger(trigger);
+  if (RetainingElement() && triggers_.empty() && !HasAnimations()) {
+    RetainingElement()->UnregisterScrollTimeline(this);
+  }
 }
 
 // static

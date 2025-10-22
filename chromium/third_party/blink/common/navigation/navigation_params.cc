@@ -11,6 +11,7 @@ namespace blink {
 mojom::CommonNavigationParamsPtr CreateCommonNavigationParams() {
   auto common_params = mojom::CommonNavigationParams::New();
   common_params->referrer = mojom::Referrer::New();
+  common_params->actual_navigation_start = base::TimeTicks::Now();
   common_params->navigation_start = base::TimeTicks::Now();
   common_params->source_location = network::mojom::SourceLocation::New();
 
@@ -24,6 +25,7 @@ mojom::CommitNavigationParamsPtr CreateCommitNavigationParams() {
   commit_params->navigation_api_history_entry_arrays =
       mojom::NavigationApiHistoryEntryArrays::New();
   commit_params->content_settings = CreateDefaultRendererContentSettings();
+  commit_params->navigation_metrics_token = base::UnguessableToken::Create();
 
   return commit_params;
 }

@@ -26,7 +26,12 @@
 
 #include "generated/spirv_tools_commit_id.h"
 
+#include <cstring>
 #include <fstream>
+
+// Profiled that having filesystem included in shader_utils.h adds significant compile time to all files
+#include <filesystem>
+namespace fs = std::filesystem;
 
 void ValidationCache::GetUUID(uint8_t *uuid) {
     const char *sha1_str = SPIRV_TOOLS_COMMIT_ID;
@@ -139,6 +144,7 @@ void AdjustValidatorOptions(const DeviceExtensions &device_extensions, const Dev
         bool workgroup_scalar_block_layout;
         bool allow_local_size_id;
         bool allow_offset_texture_operand;
+        bool allow_vulkan_32_bit_bitwise;
     } settings;
 
     // VK_KHR_relaxed_block_layout never had a feature bit so just enabling the extension allows relaxed layout
@@ -151,6 +157,7 @@ void AdjustValidatorOptions(const DeviceExtensions &device_extensions, const Dev
     settings.workgroup_scalar_block_layout = enabled_features.workgroupMemoryExplicitLayoutScalarBlockLayout == VK_TRUE;
     settings.allow_local_size_id = enabled_features.maintenance4 == VK_TRUE;
     settings.allow_offset_texture_operand = enabled_features.maintenance8 == VK_TRUE;
+    settings.allow_vulkan_32_bit_bitwise = enabled_features.maintenance9 == VK_TRUE;
 
     if (settings.relax_block_layout) {
         // --relax-block-layout
@@ -176,6 +183,10 @@ void AdjustValidatorOptions(const DeviceExtensions &device_extensions, const Dev
         // --allow-offset-texture-operand
         out_options.SetAllowOffsetTextureOperand(true);
     }
+    if (settings.allow_vulkan_32_bit_bitwise) {
+        // --allow-vulkan-32-bit-bitwise
+        out_options.SetAllowVulkan32BitBitwise(true);
+    }
 
     // Faster validation without friendly names.
     out_options.SetFriendlyNames(false);
@@ -187,7 +198,7 @@ void AdjustValidatorOptions(const DeviceExtensions &device_extensions, const Dev
 }
 
 // This is used to help dump SPIR-V while debugging intermediate phases of any altercations to the SPIR-V
-void DumpSpirvToFile(const fs::path &file_path, const uint32_t *spirv, size_t spirv_dwords_count) {
+void DumpSpirvToFile(const std::string &file_path, const uint32_t *spirv, size_t spirv_dwords_count) {
     std::ofstream debug_file(file_path, std::ios::out | std::ios::binary);
     debug_file.write(reinterpret_cast<const char *>(spirv), spirv_dwords_count * sizeof(uint32_t));
 }

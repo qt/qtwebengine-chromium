@@ -15,6 +15,8 @@
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
+#include "chrome/browser/ash/drive/drive_integration_service.h"
+#include "chrome/browser/ash/drive/drive_integration_service_factory.h"
 #include "chrome/browser/ash/drive/file_system_util.h"
 #include "chrome/browser/ash/file_manager/copy_or_move_io_task.h"
 #include "chrome/browser/ash/file_manager/delete_io_task.h"
@@ -63,6 +65,7 @@ std::string GetTargetAppName(base::FilePath file_path) {
 DriveUploadHandler::DriveUploadHandler(
     Profile* profile,
     const FileSystemURL& source_url,
+    UploadType upload_type,
     UploadCallback callback,
     base::SafeRef<CloudOpenMetrics> cloud_open_metrics)
     : profile_(profile),
@@ -70,7 +73,7 @@ DriveUploadHandler::DriveUploadHandler(
           file_manager::util::GetFileManagerFileSystemContext(profile)),
       drive_integration_service_(
           drive::DriveIntegrationServiceFactory::FindForProfile(profile)),
-      upload_type_(GetUploadType(profile, source_url)),
+      upload_type_(upload_type),
       notification_manager_(
           base::MakeRefCounted<CloudUploadNotificationManager>(
               profile,

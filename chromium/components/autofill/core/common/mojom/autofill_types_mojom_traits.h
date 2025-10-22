@@ -95,79 +95,6 @@ struct StructTraits<autofill::mojom::SelectOptionDataView,
 };
 
 template <>
-struct UnionTraits<autofill::mojom::SectionValueDataView,
-                   autofill::Section::SectionValue> {
-  static autofill::mojom::SectionValueDataView::Tag GetTag(
-      const autofill::Section::SectionValue& r);
-
-  static bool default_section(const autofill::Section::SectionValue& r) {
-    DCHECK(std::holds_alternative<autofill::Section::Default>(r));
-    return true;
-  }
-
-  static const autofill::Section::Autocomplete& autocomplete(
-      const autofill::Section::SectionValue& r) {
-    return std::get<autofill::Section::Autocomplete>(r);
-  }
-
-  static const autofill::Section::FieldIdentifier& field_identifier(
-      const autofill::Section::SectionValue& r) {
-    return std::get<autofill::Section::FieldIdentifier>(r);
-  }
-
-  static bool Read(autofill::mojom::SectionValueDataView data,
-                   autofill::Section::SectionValue* out);
-};
-
-template <>
-struct StructTraits<autofill::mojom::SectionAutocompleteDataView,
-                    autofill::Section::Autocomplete> {
-  static const std::string& section(const autofill::Section::Autocomplete& r) {
-    return r.section;
-  }
-
-  static autofill::mojom::HtmlFieldMode html_field_mode(
-      const autofill::Section::Autocomplete& r) {
-    return r.mode;
-  }
-
-  static bool Read(autofill::mojom::SectionAutocompleteDataView data,
-                   autofill::Section::Autocomplete* out);
-};
-
-template <>
-struct StructTraits<autofill::mojom::SectionFieldIdentifierDataView,
-                    autofill::Section::FieldIdentifier> {
-  static const std::string& field_name(
-      const autofill::Section::FieldIdentifier& r) {
-    return r.field_name;
-  }
-
-  static size_t local_frame_id(const autofill::Section::FieldIdentifier& r) {
-    return r.local_frame_id;
-  }
-
-  static autofill::FieldRendererId field_renderer_id(
-      const autofill::Section::FieldIdentifier& r) {
-    return r.field_renderer_id;
-  }
-
-  static bool Read(autofill::mojom::SectionFieldIdentifierDataView data,
-                   autofill::Section::FieldIdentifier* out);
-};
-
-template <>
-struct StructTraits<autofill::mojom::SectionDataView, autofill::Section> {
-  static const autofill::Section::SectionValue& value(
-      const autofill::Section& r) {
-    return r.value_;
-  }
-
-  static bool Read(autofill::mojom::SectionDataView data,
-                   autofill::Section* out);
-};
-
-template <>
 struct StructTraits<autofill::mojom::AutocompleteParsingResultDataView,
                     autofill::AutocompleteParsingResult> {
   static const std::string& section(
@@ -187,6 +114,10 @@ struct StructTraits<autofill::mojom::AutocompleteParsingResultDataView,
 
   static bool webauthn(const autofill::AutocompleteParsingResult& r) {
     return r.webauthn;
+  }
+
+  static bool webidentity(const autofill::AutocompleteParsingResult& r) {
+    return r.webidentity;
   }
 
   static bool Read(autofill::mojom::AutocompleteParsingResultDataView data,
@@ -285,10 +216,6 @@ struct StructTraits<autofill::mojom::FormFieldDataDataView,
 
   static bool is_autofilled(const autofill::FormFieldData& r) {
     return r.is_autofilled();
-  }
-
-  static const autofill::Section& section(const autofill::FormFieldData& r) {
-    return r.section();
   }
 
   static autofill::FormFieldData::CheckStatus check_status(
@@ -502,9 +429,9 @@ struct StructTraits<autofill::mojom::FormFieldDataPredictionsDataView,
     return r.overall_type;
   }
 
-  static const std::string& autofill_ai_type(
+  static const std::string& attribute_types(
       const autofill::FormFieldDataPredictions& r) {
-    return r.autofill_ai_type;
+    return r.attribute_types;
   }
 
   static const std::string& format_string(
@@ -625,11 +552,6 @@ struct StructTraits<autofill::mojom::PasswordFormFillDataDataView,
     return r.password_element_renderer_id;
   }
 
-  static bool username_may_use_prefilled_placeholder(
-      const autofill::PasswordFormFillData& r) {
-    return r.username_may_use_prefilled_placeholder;
-  }
-
   static const autofill::PasswordAndMetadata& preferred_login(
       const autofill::PasswordFormFillData& r) {
     return r.preferred_login;
@@ -748,6 +670,10 @@ struct StructTraits<autofill::mojom::TriggeringFieldDataView,
 
   static int show_webauthn_credentials(const autofill::TriggeringField& r) {
     return r.show_webauthn_credentials;
+  }
+
+  static int show_identity_credentials(const autofill::TriggeringField& r) {
+    return r.show_identity_credentials;
   }
 
   static const gfx::RectF& bounds(const autofill::TriggeringField& r) {

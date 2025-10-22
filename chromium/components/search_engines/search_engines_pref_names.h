@@ -13,20 +13,19 @@ namespace prefs {
 // like a pointer to which synced search engine should be the default, rather
 // than the prefs below which describe the locally saved default search provider
 // details. This is ignored in the case of the default search provider being
-// managed by policy. This pref is in the process of replacing
-// `kSyncedDefaultSearchProviderGUID`.
+// managed by policy.
 inline constexpr char kDefaultSearchProviderGUID[] =
     "default_search_provider.guid";
 
-// The GUID of the synced default search provider. Note that this acts like a
-// pointer to which synced search engine should be the default, rather than the
-// prefs below which describe the locally saved default search provider details
-// (and are not synced). This is ignored in the case of the default search
-// provider being managed by policy.
-// This pref is in the process of being replaced by
-// `kDefaultSearchProviderGUID`.
-inline constexpr char kSyncedDefaultSearchProviderGUID[] =
-    "default_search_provider.synced_guid";
+// Epoch timestamp in seconds of when the user's search engine choice was
+// invalidated.
+// While Chrome is processing detected restored installs on a just-in-time
+// basis, we use this pref to flag the detected installs and differentiate them
+// from the ones we missed.
+// TODO(crbug.com/434651685): Remove this pref and the associated code when we
+// fully transition to retroactive detection.
+inline constexpr char kDefaultSearchProviderChoiceInvalidationTimestamp[] =
+    "default_search_provider.choice_invalidation_timestamp";
 
 // Epoch timestamp in seconds of when the user chose a search engine in
 // the choice screen.
@@ -64,10 +63,6 @@ inline constexpr char kDefaultSearchProviderPendingChoiceScreenDisplayState[] =
 // the choice screen elements.
 inline constexpr char kDefaultSearchProviderChoiceScreenRandomShuffleSeed[] =
     "default_search_provider.choice_screen_random_shuffle_seed";
-
-// The Chrome milestone number at which the random seed was last set.
-inline constexpr char kDefaultSearchProviderChoiceScreenShuffleMilestone[] =
-    "default_search_provider.choice_screen_shuffle_milestone";
 
 // Whether a search context menu item is allowed.
 inline constexpr char kDefaultSearchProviderContextMenuAccessAllowed[] =

@@ -5,6 +5,8 @@
 #ifndef COMPONENTS_COLLABORATION_INTERNAL_ANDROID_MESSAGING_CONVERSION_UTILS_H_
 #define COMPONENTS_COLLABORATION_INTERNAL_ANDROID_MESSAGING_CONVERSION_UTILS_H_
 
+#include <set>
+
 #include "base/android/jni_android.h"
 #include "base/android/scoped_java_ref.h"
 #include "components/collaboration/public/messaging/activity_log.h"
@@ -29,6 +31,10 @@ base::android::ScopedJavaLocalRef<jobject> PersistentMessagesToJava(
 base::android::ScopedJavaLocalRef<jobject> InstantMessageToJava(
     JNIEnv* env,
     const InstantMessage& message);
+
+base::android::ScopedJavaLocalRef<jobject> UuidSetToJavaStringSet(
+    JNIEnv* env,
+    const std::set<base::Uuid>& uuids);
 
 // Helper method to convert a ActivityLogItem C++ list to a
 // List<ActivityLogItem> Java object.

@@ -25,8 +25,8 @@ OBJS-$(CONFIG_LPC)                     += x86/lpc_init.o
 OBJS-$(CONFIG_ME_CMP)                  += x86/me_cmp_init.o
 OBJS-$(CONFIG_MPEGAUDIODSP)            += x86/mpegaudiodsp.o
 OBJS-$(CONFIG_MPEGVIDEO)               += x86/mpegvideo.o
-OBJS-$(CONFIG_MPEGVIDEOENC)            += x86/mpegvideoenc.o           \
-                                          x86/mpegvideoencdsp_init.o
+OBJS-$(CONFIG_MPEGVIDEOENC)            += x86/mpegvideoenc.o
+OBJS-$(CONFIG_MPEGVIDEOENCDSP)         += x86/mpegvideoencdsp_init.o
 OBJS-$(CONFIG_PIXBLOCKDSP)             += x86/pixblockdsp_init.o
 OBJS-$(CONFIG_QPELDSP)                 += x86/qpeldsp_init.o
 OBJS-$(CONFIG_RV34DSP)                 += x86/rv34dsp_init.o
@@ -44,6 +44,7 @@ OBJS-$(CONFIG_ADPCM_G722_DECODER)      += x86/g722dsp_init.o
 OBJS-$(CONFIG_ADPCM_G722_ENCODER)      += x86/g722dsp_init.o
 OBJS-$(CONFIG_ALAC_DECODER)            += x86/alacdsp_init.o
 OBJS-$(CONFIG_APNG_DECODER)            += x86/pngdsp_init.o
+OBJS-$(CONFIG_APV_DECODER)             += x86/apv_dsp_init.o
 OBJS-$(CONFIG_CAVS_DECODER)            += x86/cavsdsp.o
 OBJS-$(CONFIG_CFHD_DECODER)            += x86/cfhddsp_init.o
 OBJS-$(CONFIG_CFHD_ENCODER)            += x86/cfhdencdsp_init.o
@@ -121,7 +122,7 @@ X86ASM-OBJS-$(CONFIG_LLVIDENCDSP)      += x86/lossless_videoencdsp.o
 X86ASM-OBJS-$(CONFIG_LPC)              += x86/lpc.o
 X86ASM-OBJS-$(CONFIG_ME_CMP)           += x86/me_cmp.o
 X86ASM-OBJS-$(CONFIG_MPEGAUDIODSP)     += x86/dct32.o x86/imdct36.o
-X86ASM-OBJS-$(CONFIG_MPEGVIDEOENC)     += x86/mpegvideoencdsp.o
+X86ASM-OBJS-$(CONFIG_MPEGVIDEOENCDSP)  += x86/mpegvideoencdsp.o
 X86ASM-OBJS-$(CONFIG_OPUS_DECODER)     += x86/opusdsp.o
 X86ASM-OBJS-$(CONFIG_OPUS_ENCODER)     += x86/celt_pvq_search.o
 X86ASM-OBJS-$(CONFIG_PIXBLOCKDSP)      += x86/pixblockdsp.o
@@ -149,6 +150,7 @@ X86ASM-OBJS-$(CONFIG_ADPCM_G722_DECODER) += x86/g722dsp.o
 X86ASM-OBJS-$(CONFIG_ADPCM_G722_ENCODER) += x86/g722dsp.o
 X86ASM-OBJS-$(CONFIG_ALAC_DECODER)     += x86/alacdsp.o
 X86ASM-OBJS-$(CONFIG_APNG_DECODER)     += x86/pngdsp.o
+X86ASM-OBJS-$(CONFIG_APV_DECODER)      += x86/apv_dsp.o
 X86ASM-OBJS-$(CONFIG_CAVS_DECODER)     += x86/cavsidct.o
 X86ASM-OBJS-$(CONFIG_CFHD_ENCODER)     += x86/cfhdencdsp.o
 X86ASM-OBJS-$(CONFIG_CFHD_DECODER)     += x86/cfhddsp.o
@@ -182,7 +184,9 @@ X86ASM-OBJS-$(CONFIG_VP6_DECODER)      += x86/vp6dsp.o
 X86ASM-OBJS-$(CONFIG_VP9_DECODER)      += x86/vp9intrapred.o            \
                                           x86/vp9intrapred_16bpp.o      \
                                           x86/vp9itxfm.o                \
+                                          x86/vp9itxfm_avx512.o         \
                                           x86/vp9itxfm_16bpp.o          \
+                                          x86/vp9itxfm_16bpp_avx512.o   \
                                           x86/vp9lpf.o                  \
                                           x86/vp9lpf_16bpp.o            \
                                           x86/vp9mc.o                   \

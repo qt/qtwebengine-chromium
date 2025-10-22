@@ -595,6 +595,11 @@ declare namespace ProtocolProxyApi {
     invoke_setWindowBounds(params: Protocol.Browser.SetWindowBoundsRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
+     * Set size of the browser contents resizing browser window as necessary.
+     */
+    invoke_setContentsSize(params: Protocol.Browser.SetContentsSizeRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
      * Set dock tile details, platform-specific.
      */
     invoke_setDockTile(params: Protocol.Browser.SetDockTileRequest): Promise<Protocol.ProtocolResponseWithError>;
@@ -683,6 +688,11 @@ declare namespace ProtocolProxyApi {
      * For example, a value of '1em' is evaluated according to the computed
      * 'font-size' of the element and a value 'calc(1px + 2px)' will be
      * resolved to '3px'.
+     * If the `propertyName` was specified the `values` are resolved as if
+     * they were property's declaration. If a value cannot be parsed according
+     * to the provided property syntax, the value is parsed using combined
+     * syntax as if null `propertyName` was provided. If the value cannot be
+     * resolved even then, return the provided value without any changes.
      */
     invoke_resolveValues(params: Protocol.CSS.ResolveValuesRequest): Promise<Protocol.CSS.ResolveValuesResponse>;
 
@@ -704,6 +714,11 @@ declare namespace ProtocolProxyApi {
      * Returns requested styles for a DOM node identified by `nodeId`.
      */
     invoke_getMatchedStylesForNode(params: Protocol.CSS.GetMatchedStylesForNodeRequest): Promise<Protocol.CSS.GetMatchedStylesForNodeResponse>;
+
+    /**
+     * Returns the values of the default UA-defined environment variables used in env()
+     */
+    invoke_getEnvironmentVariables(): Promise<Protocol.CSS.GetEnvironmentVariablesResponse>;
 
     /**
      * Returns all media queries parsed by the rendering engine.
@@ -1218,9 +1233,9 @@ declare namespace ProtocolProxyApi {
     /**
      * Returns the query container of the given node based on container query
      * conditions: containerName, physical and logical axes, and whether it queries
-     * scroll-state. If no axes are provided and queriesScrollState is false, the
-     * style container is returned, which is the direct parent or the closest
-     * element with a matching container-name.
+     * scroll-state or anchored elements. If no axes are provided and
+     * queriesScrollState is false, the style container is returned, which is the
+     * direct parent or the closest element with a matching container-name.
      */
     invoke_getContainerForNode(params: Protocol.DOM.GetContainerForNodeRequest): Promise<Protocol.DOM.GetContainerForNodeResponse>;
 
@@ -1235,6 +1250,12 @@ declare namespace ProtocolProxyApi {
      * https://www.w3.org/TR/css-anchor-position-1/#target.
      */
     invoke_getAnchorElement(params: Protocol.DOM.GetAnchorElementRequest): Promise<Protocol.DOM.GetAnchorElementResponse>;
+
+    /**
+     * When enabling, this API force-opens the popover identified by nodeId
+     * and keeps it open until disabled.
+     */
+    invoke_forceShowPopover(params: Protocol.DOM.ForceShowPopoverRequest): Promise<Protocol.DOM.ForceShowPopoverResponse>;
 
   }
   export interface DOMDispatcher {
@@ -1573,8 +1594,13 @@ declare namespace ProtocolProxyApi {
     invoke_setEmulatedVisionDeficiency(params: Protocol.Emulation.SetEmulatedVisionDeficiencyRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Overrides the Geolocation Position or Error. Omitting any of the parameters emulates position
-     * unavailable.
+     * Emulates the given OS text scale.
+     */
+    invoke_setEmulatedOSTextScale(params: Protocol.Emulation.SetEmulatedOSTextScaleRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Overrides the Geolocation Position or Error. Omitting latitude, longitude or
+     * accuracy emulates position unavailable.
      */
     invoke_setGeolocationOverride(params: Protocol.Emulation.SetGeolocationOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -1604,11 +1630,19 @@ declare namespace ProtocolProxyApi {
     invoke_setPressureSourceOverrideEnabled(params: Protocol.Emulation.SetPressureSourceOverrideEnabledRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
+     * TODO: OBSOLETE: To remove when setPressureDataOverride is merged.
      * Provides a given pressure state that will be processed and eventually be
      * delivered to PressureObserver users. |source| must have been previously
      * overridden by setPressureSourceOverrideEnabled.
      */
     invoke_setPressureStateOverride(params: Protocol.Emulation.SetPressureStateOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Provides a given pressure data set that will be processed and eventually be
+     * delivered to PressureObserver users. |source| must have been previously
+     * overridden by setPressureSourceOverrideEnabled.
+     */
+    invoke_setPressureDataOverride(params: Protocol.Emulation.SetPressureDataOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Overrides the Idle state.
@@ -1665,6 +1699,11 @@ declare namespace ProtocolProxyApi {
 
     invoke_setDisabledImageTypes(params: Protocol.Emulation.SetDisabledImageTypesRequest): Promise<Protocol.ProtocolResponseWithError>;
 
+    /**
+     * Override the value of navigator.connection.saveData
+     */
+    invoke_setDataSaverOverride(params: Protocol.Emulation.SetDataSaverOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
+
     invoke_setHardwareConcurrencyOverride(params: Protocol.Emulation.SetHardwareConcurrencyOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
@@ -1677,6 +1716,12 @@ declare namespace ProtocolProxyApi {
      * Allows overriding the automation flag.
      */
     invoke_setAutomationOverride(params: Protocol.Emulation.SetAutomationOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Allows overriding the difference between the small and large viewport sizes, which determine the
+     * value of the `svh` and `lvh` unit, respectively. Only supported for top-level frames.
+     */
+    invoke_setSmallViewportHeightDifferenceOverride(params: Protocol.Emulation.SetSmallViewportHeightDifferenceOverrideRequest): Promise<Protocol.ProtocolResponseWithError>;
 
   }
   export interface EmulationDispatcher {
@@ -2244,7 +2289,7 @@ declare namespace ProtocolProxyApi {
 
     /**
      * Sets Controls for third-party cookie access
-     * Page reload is required before the new cookie bahavior will be observed
+     * Page reload is required before the new cookie behavior will be observed
      */
     invoke_setCookieControls(params: Protocol.Network.SetCookieControlsRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -2371,6 +2416,46 @@ declare namespace ProtocolProxyApi {
      * Fired when direct_socket.TCPSocket is closed.
      */
     directTCPSocketClosed(params: Protocol.Network.DirectTCPSocketClosedEvent): void;
+
+    /**
+     * Fired when data is sent to tcp direct socket stream.
+     */
+    directTCPSocketChunkSent(params: Protocol.Network.DirectTCPSocketChunkSentEvent): void;
+
+    /**
+     * Fired when data is received from tcp direct socket stream.
+     */
+    directTCPSocketChunkReceived(params: Protocol.Network.DirectTCPSocketChunkReceivedEvent): void;
+
+    /**
+     * Fired upon direct_socket.UDPSocket creation.
+     */
+    directUDPSocketCreated(params: Protocol.Network.DirectUDPSocketCreatedEvent): void;
+
+    /**
+     * Fired when direct_socket.UDPSocket connection is opened.
+     */
+    directUDPSocketOpened(params: Protocol.Network.DirectUDPSocketOpenedEvent): void;
+
+    /**
+     * Fired when direct_socket.UDPSocket is aborted.
+     */
+    directUDPSocketAborted(params: Protocol.Network.DirectUDPSocketAbortedEvent): void;
+
+    /**
+     * Fired when direct_socket.UDPSocket is closed.
+     */
+    directUDPSocketClosed(params: Protocol.Network.DirectUDPSocketClosedEvent): void;
+
+    /**
+     * Fired when message is sent to udp direct socket stream.
+     */
+    directUDPSocketChunkSent(params: Protocol.Network.DirectUDPSocketChunkSentEvent): void;
+
+    /**
+     * Fired when message is received from udp direct socket stream.
+     */
+    directUDPSocketChunkReceived(params: Protocol.Network.DirectUDPSocketChunkReceivedEvent): void;
 
     /**
      * Fired when additional information about a requestWillBeSent event is available from the
@@ -2690,7 +2775,7 @@ declare namespace ProtocolProxyApi {
      */
     invoke_getAppId(): Promise<Protocol.Page.GetAppIdResponse>;
 
-    invoke_getAdScriptId(params: Protocol.Page.GetAdScriptIdRequest): Promise<Protocol.Page.GetAdScriptIdResponse>;
+    invoke_getAdScriptAncestry(params: Protocol.Page.GetAdScriptAncestryRequest): Promise<Protocol.Page.GetAdScriptAncestryResponse>;
 
     /**
      * Returns present frame tree structure.
@@ -3074,8 +3159,7 @@ declare namespace ProtocolProxyApi {
     windowOpen(params: Protocol.Page.WindowOpenEvent): void;
 
     /**
-     * Issued for every compilation cache generated. Is only available
-     * if Page.setGenerateCompilationCache is enabled.
+     * Issued for every compilation cache generated.
      */
     compilationCacheProduced(params: Protocol.Page.CompilationCacheProducedEvent): void;
 
@@ -3188,8 +3272,6 @@ declare namespace ProtocolProxyApi {
     invoke_dispatchPeriodicSyncEvent(params: Protocol.ServiceWorker.DispatchPeriodicSyncEventRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     invoke_enable(): Promise<Protocol.ProtocolResponseWithError>;
-
-    invoke_inspectWorker(params: Protocol.ServiceWorker.InspectWorkerRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     invoke_setForceUpdateOnPageLoad(params: Protocol.ServiceWorker.SetForceUpdateOnPageLoadRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -3403,6 +3485,8 @@ declare namespace ProtocolProxyApi {
      */
     invoke_getAffectedUrlsForThirdPartyCookieMetadata(params: Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataRequest): Promise<Protocol.Storage.GetAffectedUrlsForThirdPartyCookieMetadataResponse>;
 
+    invoke_setProtectedAudienceKAnonymity(params: Protocol.Storage.SetProtectedAudienceKAnonymityRequest): Promise<Protocol.ProtocolResponseWithError>;
+
   }
   export interface StorageDispatcher {
     /**
@@ -3451,6 +3535,12 @@ declare namespace ProtocolProxyApi {
      */
     sharedStorageAccessed(params: Protocol.Storage.SharedStorageAccessedEvent): void;
 
+    /**
+     * A shared storage run or selectURL operation finished its execution.
+     * The following parameters are included in all events.
+     */
+    sharedStorageWorkletOperationExecutionFinished(params: Protocol.Storage.SharedStorageWorkletOperationExecutionFinishedEvent): void;
+
     storageBucketCreatedOrUpdated(params: Protocol.Storage.StorageBucketCreatedOrUpdatedEvent): void;
 
     storageBucketDeleted(params: Protocol.Storage.StorageBucketDeletedEvent): void;
@@ -3458,6 +3548,10 @@ declare namespace ProtocolProxyApi {
     attributionReportingSourceRegistered(params: Protocol.Storage.AttributionReportingSourceRegisteredEvent): void;
 
     attributionReportingTriggerRegistered(params: Protocol.Storage.AttributionReportingTriggerRegisteredEvent): void;
+
+    attributionReportingReportSent(params: Protocol.Storage.AttributionReportingReportSentEvent): void;
+
+    attributionReportingVerboseDebugReportSent(params: Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent): void;
 
   }
 
@@ -3559,11 +3653,14 @@ declare namespace ProtocolProxyApi {
     invoke_sendMessageToTarget(params: Protocol.Target.SendMessageToTargetRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
-     * Controls whether to automatically attach to new targets which are considered to be related to
-     * this one. When turned on, attaches to all existing related targets as well. When turned off,
+     * Controls whether to automatically attach to new targets which are considered
+     * to be directly related to this one (for example, iframes or workers).
+     * When turned on, attaches to all existing related targets as well. When turned off,
      * automatically detaches from all currently attached targets.
      * This also clears all targets added by `autoAttachRelated` from the list of targets to watch
      * for creation of related targets.
+     * You might want to call this recursively for auto-attached targets to attach
+     * to all available targets.
      */
     invoke_setAutoAttach(params: Protocol.Target.SetAutoAttachRequest): Promise<Protocol.ProtocolResponseWithError>;
 
@@ -3587,6 +3684,11 @@ declare namespace ProtocolProxyApi {
      * `true`.
      */
     invoke_setRemoteLocations(params: Protocol.Target.SetRemoteLocationsRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Opens a DevTools window for the target.
+     */
+    invoke_openDevTools(params: Protocol.Target.OpenDevToolsRequest): Promise<Protocol.Target.OpenDevToolsResponse>;
 
   }
   export interface TargetDispatcher {
@@ -4117,15 +4219,30 @@ declare namespace ProtocolProxyApi {
     invoke_getOsAppState(params: Protocol.PWA.GetOsAppStateRequest): Promise<Protocol.PWA.GetOsAppStateResponse>;
 
     /**
-     * Installs the given manifest identity, optionally using the given install_url
-     * or IWA bundle location.
+     * Installs the given manifest identity, optionally using the given installUrlOrBundleUrl
      *
-     * TODO(crbug.com/337872319) Support IWA to meet the following specific
-     * requirement.
-     * IWA-specific install description: If the manifest_id is isolated-app://,
-     * install_url_or_bundle_url is required, and can be either an http(s) URL or
-     * file:// URL pointing to a signed web bundle (.swbn). The .swbn file's
-     * signing key must correspond to manifest_id. If Chrome is not in IWA dev
+     * IWA-specific install description:
+     * manifestId corresponds to isolated-app:// + web_package::SignedWebBundleId
+     *
+     * File installation mode:
+     * The installUrlOrBundleUrl can be either file:// or http(s):// pointing
+     * to a signed web bundle (.swbn). In this case SignedWebBundleId must correspond to
+     * The .swbn file's signing key.
+     *
+     * Dev proxy installation mode:
+     * installUrlOrBundleUrl must be http(s):// that serves dev mode IWA.
+     * web_package::SignedWebBundleId must be of type dev proxy.
+     *
+     * The advantage of dev proxy mode is that all changes to IWA
+     * automatically will be reflected in the running app without
+     * reinstallation.
+     *
+     * To generate bundle id for proxy mode:
+     * 1. Generate 32 random bytes.
+     * 2. Add a specific suffix 0x00 at the end.
+     * 3. Encode the entire sequence using Base32 without padding.
+     *
+     * If Chrome is not in IWA dev
      * mode, the installation will fail, regardless of the state of the allowlist.
      */
     invoke_install(params: Protocol.PWA.InstallRequest): Promise<Protocol.ProtocolResponseWithError>;
@@ -4219,27 +4336,60 @@ declare namespace ProtocolProxyApi {
     invoke_simulateGATTOperationResponse(params: Protocol.BluetoothEmulation.SimulateGATTOperationResponseRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
+     * Simulates the response from the characteristic with |characteristicId| for a
+     * characteristic operation of |type|. The |code| value follows the Error
+     * Codes from Bluetooth Core Specification Vol 3 Part F 3.4.1.1 Error Response.
+     * The |data| is expected to exist when simulating a successful read operation
+     * response.
+     */
+    invoke_simulateCharacteristicOperationResponse(params: Protocol.BluetoothEmulation.SimulateCharacteristicOperationResponseRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Simulates the response from the descriptor with |descriptorId| for a
+     * descriptor operation of |type|. The |code| value follows the Error
+     * Codes from Bluetooth Core Specification Vol 3 Part F 3.4.1.1 Error Response.
+     * The |data| is expected to exist when simulating a successful read operation
+     * response.
+     */
+    invoke_simulateDescriptorOperationResponse(params: Protocol.BluetoothEmulation.SimulateDescriptorOperationResponseRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
      * Adds a service with |serviceUuid| to the peripheral with |address|.
      */
     invoke_addService(params: Protocol.BluetoothEmulation.AddServiceRequest): Promise<Protocol.BluetoothEmulation.AddServiceResponse>;
 
     /**
-     * Removes the service respresented by |serviceId| from the peripheral with
-     * |address|.
+     * Removes the service respresented by |serviceId| from the simulated central.
      */
     invoke_removeService(params: Protocol.BluetoothEmulation.RemoveServiceRequest): Promise<Protocol.ProtocolResponseWithError>;
 
     /**
      * Adds a characteristic with |characteristicUuid| and |properties| to the
-     * service represented by |serviceId| in the peripheral with |address|.
+     * service represented by |serviceId|.
      */
     invoke_addCharacteristic(params: Protocol.BluetoothEmulation.AddCharacteristicRequest): Promise<Protocol.BluetoothEmulation.AddCharacteristicResponse>;
 
     /**
      * Removes the characteristic respresented by |characteristicId| from the
-     * service respresented by |serviceId| in the peripheral with |address|.
+     * simulated central.
      */
     invoke_removeCharacteristic(params: Protocol.BluetoothEmulation.RemoveCharacteristicRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Adds a descriptor with |descriptorUuid| to the characteristic respresented
+     * by |characteristicId|.
+     */
+    invoke_addDescriptor(params: Protocol.BluetoothEmulation.AddDescriptorRequest): Promise<Protocol.BluetoothEmulation.AddDescriptorResponse>;
+
+    /**
+     * Removes the descriptor with |descriptorId| from the simulated central.
+     */
+    invoke_removeDescriptor(params: Protocol.BluetoothEmulation.RemoveDescriptorRequest): Promise<Protocol.ProtocolResponseWithError>;
+
+    /**
+     * Simulates a GATT disconnection from the peripheral with |address|.
+     */
+    invoke_simulateGATTDisconnection(params: Protocol.BluetoothEmulation.SimulateGATTDisconnectionRequest): Promise<Protocol.ProtocolResponseWithError>;
 
   }
   export interface BluetoothEmulationDispatcher {
@@ -4248,6 +4398,20 @@ declare namespace ProtocolProxyApi {
      * happened.
      */
     gattOperationReceived(params: Protocol.BluetoothEmulation.GattOperationReceivedEvent): void;
+
+    /**
+     * Event for when a characteristic operation of |type| to the characteristic
+     * respresented by |characteristicId| happened. |data| and |writeType| is
+     * expected to exist when |type| is write.
+     */
+    characteristicOperationReceived(params: Protocol.BluetoothEmulation.CharacteristicOperationReceivedEvent): void;
+
+    /**
+     * Event for when a descriptor operation of |type| to the descriptor
+     * respresented by |descriptorId| happened. |data| is expected to exist when
+     * |type| is write.
+     */
+    descriptorOperationReceived(params: Protocol.BluetoothEmulation.DescriptorOperationReceivedEvent): void;
 
   }
 

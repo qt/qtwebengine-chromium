@@ -59,6 +59,10 @@
 #include "ui/gfx/font_fallback_linux.h"
 #endif
 
+#if BUILDFLAG(IS_MAC)
+#include "third_party/blink/renderer/platform/fonts/mac/character_fallback_cache.h"
+#endif
+
 class SkString;
 class SkTypeface;
 
@@ -317,11 +321,12 @@ class PLATFORM_EXPORT FontCache final {
                                    std::string& name);
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
-  static AtomicString GetFamilyNameForCharacter(SkFontMgr*,
-                                                UChar32,
-                                                const FontDescription&,
-                                                const char* family_name,
-                                                FontFallbackPriority);
+  static const FontPlatformData* CreateFontPlatformDataForCharacter(
+      SkFontMgr*,
+      UChar32,
+      const FontDescription&,
+      const char* family_name,
+      FontFallbackPriority);
 #endif  // BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_LINUX) ||
         // BUILDFLAG(IS_CHROMEOS)
 
@@ -369,6 +374,10 @@ class PLATFORM_EXPORT FontCache final {
   FontDataCache font_data_cache_;
 
   Member<FontFallbackMap> font_fallback_map_;
+
+#if BUILDFLAG(IS_MAC)
+  CharacterFallbackCache character_fallback_cache_;
+#endif
 
   void PurgeFallbackListShaperCache();
 

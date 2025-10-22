@@ -2,15 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/browser/web_package/signed_exchange_prologue.h"
 
 #include <string_view>
 
+#include "base/compiler_specific.h"
+#include "base/containers/span.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/trace_event/trace_event.h"
@@ -64,8 +61,7 @@ BeforeFallbackUrl BeforeFallbackUrl::Parse(
       sizeof(kSignedExchangeMagic), kFallbackUrlLengthFieldSizeInBytes);
 
   bool is_valid = true;
-  if (memcmp(magic_string.data(), kSignedExchangeMagic,
-             sizeof(kSignedExchangeMagic)) != 0) {
+  if (magic_string != base::span_with_nul_from_cstring(kSignedExchangeMagic)) {
     signed_exchange_utils::ReportErrorAndTraceEvent(devtools_proxy,
                                                     "Wrong magic string");
     is_valid = false;

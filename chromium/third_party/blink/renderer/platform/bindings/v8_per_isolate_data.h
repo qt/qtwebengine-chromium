@@ -26,13 +26,13 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_V8_PER_ISOLATE_DATA_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_BINDINGS_V8_PER_ISOLATE_DATA_H_
 
+#include <array>
 #include <memory>
 
 #include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "gin/public/gin_embedders.h"
 #include "gin/public/isolate_holder.h"
-#include "third_party/blink/renderer/platform/bindings/active_script_wrappable_manager.h"
 #include "third_party/blink/renderer/platform/bindings/dom_wrapper_world.h"
 #include "third_party/blink/renderer/platform/bindings/runtime_call_stats.h"
 #include "third_party/blink/renderer/platform/bindings/script_regexp.h"
@@ -193,23 +193,6 @@ class PLATFORM_EXPORT V8PerIsolateData final {
   void SetPasswordRegexp(ScriptRegexp*);
   ScriptRegexp* GetPasswordRegexp();
 
-  ActiveScriptWrappableManager* GetActiveScriptWrappableManager() const {
-    return active_script_wrappable_manager_;
-  }
-
-  void SetActiveScriptWrappableManager(ActiveScriptWrappableManager* manager) {
-    DCHECK(manager);
-    active_script_wrappable_manager_ = manager;
-  }
-
-  void SetGCCallbacks(v8::Isolate* isolate,
-                      v8::Isolate::GCCallback prologue_callback,
-                      v8::Isolate::GCCallback epilogue_callback);
-
-  void EnterGC() { gc_callback_depth_++; }
-
-  void LeaveGC() { gc_callback_depth_--; }
-
   // Set the factory function used to initialize task attribution for the
   // isolate upon creating main thread `V8PerIsolateData`. This should be set
   // once per process before creating any isolates.
@@ -337,16 +320,11 @@ class PLATFORM_EXPORT V8PerIsolateData final {
   bool is_handling_recursion_level_error_ = false;
 
   Persistent<ScriptRegexp> password_regexp_;
-  Persistent<UserData>
-      user_data_[static_cast<size_t>(UserData::Key::kNumberOfKeys)];
-
-  Persistent<ActiveScriptWrappableManager> active_script_wrappable_manager_;
+  std::array<Persistent<UserData>,
+             static_cast<size_t>(UserData::Key::kNumberOfKeys)>
+      user_data_;
 
   RuntimeCallStats runtime_call_stats_;
-
-  v8::Isolate::GCCallback prologue_callback_;
-  v8::Isolate::GCCallback epilogue_callback_;
-  size_t gc_callback_depth_ = 0;
 
   Persistent<DOMWrapperWorld> main_world_;
 

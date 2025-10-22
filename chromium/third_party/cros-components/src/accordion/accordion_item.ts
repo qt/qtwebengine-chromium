@@ -217,19 +217,19 @@ export class AccordionItem extends LitElement {
    * Whether or not the accordion item is disabled.
    * @export
    */
-  disabled: boolean;
+  declare disabled: boolean;
 
   /**
    * Whether or not the accordion content is visible.
    * @export
    */
-  expanded: boolean;
+  declare expanded: boolean;
 
   /**
    * Whether or not to skip animations.
    * @export
    */
-  quick: boolean;
+  declare quick: boolean;
 
   // TODO(b/352151998): The `compact` variant should also change the
   // leading icon size.
@@ -238,19 +238,19 @@ export class AccordionItem extends LitElement {
    * title-only}.
    * @export
    */
-  variant: AccordionItemVariant;
+  declare variant: AccordionItemVariant;
 
   /**
    * Whether or not to show a tooltip on the arrow button.
    * @export
    */
-  showButtonTooltip: boolean;
+  declare showButtonTooltip: boolean;
 
   /**
    * The label for the button tooltip.
    * @export
    */
-  buttonTooltipLabel: string;
+  declare buttonTooltipLabel: string;
 
   constructor() {
     super();

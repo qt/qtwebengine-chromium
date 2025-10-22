@@ -1,6 +1,7 @@
 // Copyright (c) 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/icon_button/icon_button.js';
 import '../../../ui/components/node_text/node_text.js';
@@ -10,11 +11,7 @@ import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
 import type {DOMNode} from './Helper.js';
-import queryContainerStylesRaw from './queryContainer.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const queryContainerStyles = new CSSStyleSheet();
-queryContainerStyles.replaceSync(queryContainerStylesRaw.cssText);
+import queryContainerStyles from './queryContainer.css.js';
 
 const {render, html} = Lit;
 const {PhysicalAxis, QueryAxis} = SDK.CSSContainerQuery;
@@ -45,10 +42,6 @@ export class QueryContainer extends HTMLElement {
     this.#container = data.container;
     this.#onContainerLinkClick = data.onContainerLinkClick;
     this.#render();
-  }
-
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [queryContainerStyles];
   }
 
   updateContainerQueriedSizeDetails(details: SDK.CSSContainerQuery.ContainerQueriedSizeDetails): void {
@@ -85,21 +78,20 @@ export class QueryContainer extends HTMLElement {
     // clang-format off
     // eslint-disable-next-line rulesdir/no-a-tags-in-lit
     render(html`
+      <style>${queryContainerStyles}</style>
       →
-      <a href="#"
-        draggable=false
-        class="container-link"
-        jslog=${VisualLogging.cssRuleHeader('container-query').track({click: true})}
-        @click=${this.#onContainerLinkClick}
-        @mouseenter=${this.#onContainerLinkMouseEnter}
-        @mouseleave=${this.#onContainerLinkMouseLeave}
-      ><devtools-node-text
-          data-node-title=${nodeTitle}
-          .data=${{
-        nodeTitle,
-        nodeId: idToDisplay,
-        nodeClasses: classesToDisplay,
-      }}></devtools-node-text></a>
+      <a href="#" draggable=false class="container-link"
+         jslog=${VisualLogging.cssRuleHeader('container-query').track({click: true})}
+         @click=${this.#onContainerLinkClick}
+         @mouseenter=${this.#onContainerLinkMouseEnter}
+         @mouseleave=${this.#onContainerLinkMouseLeave}>
+        <devtools-node-text data-node-title=${nodeTitle} .data=${{
+          nodeTitle,
+          nodeId: idToDisplay,
+          nodeClasses: classesToDisplay,
+        }}>
+        </devtools-node-text>
+      </a>
       ${this.#isContainerLinkHovered ? this.#renderQueriedSizeDetails() : Lit.nothing}
     `, this.#shadow, {
       host: this,
@@ -124,18 +116,19 @@ export class QueryContainer extends HTMLElement {
     // clang-format off
     return html`
       <span class="queried-size-details">
-        (${this.#queriedSizeDetails.queryAxis}<devtools-icon
+        (${this.#queriedSizeDetails.queryAxis}
+        <devtools-icon
           class=${axisIconClasses} .data=${{
             iconName: 'width',
             color: 'var(--icon-default)',
-          }}></devtools-icon>)
-        ${areBothAxesQueried && this.#queriedSizeDetails.width ? 'width:' : Lit.nothing}
+          }}></devtools-icon>
+        ) ${areBothAxesQueried && this.#queriedSizeDetails.width ? ' width: ' : Lit.nothing}
         ${this.#queriedSizeDetails.width || Lit.nothing}
-        ${areBothAxesQueried && this.#queriedSizeDetails.height ? 'height:' : Lit.nothing}
+        ${areBothAxesQueried && this.#queriedSizeDetails.height ? ' height: ' : Lit.nothing}
         ${this.#queriedSizeDetails.height || Lit.nothing}
       </span>
     `;
-          // clang-format on
+    // clang-format on
   }
 }
 

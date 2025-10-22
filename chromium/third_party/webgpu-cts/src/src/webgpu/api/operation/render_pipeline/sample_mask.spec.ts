@@ -19,7 +19,8 @@ Details could be found at: https://github.com/gpuweb/cts/issues/2201
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert, range } from '../../../../common/util/util.js';
-import { AllFeaturesMaxLimitsGPUTest, TextureTestMixin } from '../../../gpu_test.js';
+import { AllFeaturesMaxLimitsGPUTest } from '../../../gpu_test.js';
+import * as ttu from '../../../texture_test_utils.js';
 import { checkElementsPassPredicate, checkElementsEqual } from '../../../util/check_contents.js';
 import { Type } from '../../../util/conversion.js';
 import { TexelView } from '../../../util/texture/texel_view.js';
@@ -263,7 +264,7 @@ struct FragmentOutput2 {
 }
 `;
 
-class F extends TextureTestMixin(AllFeaturesMaxLimitsGPUTest) {
+class F extends AllFeaturesMaxLimitsGPUTest {
   private sampleTexture: GPUTexture | undefined;
   private sampler: GPUSampler | undefined;
 
@@ -278,7 +279,8 @@ class F extends TextureTestMixin(AllFeaturesMaxLimitsGPUTest) {
     // texel 2 - Blue
     // texel 3 - Yellow
     const kSampleTextureSize = 2;
-    this.sampleTexture = this.createTextureFromTexelView(
+    this.sampleTexture = ttu.createTextureFromTexelView(
+      this,
       TexelView.fromTexelsAsBytes(format, coord => {
         const id = coord.x + coord.y * kSampleTextureSize;
         return kColors[id];
@@ -298,7 +300,7 @@ class F extends TextureTestMixin(AllFeaturesMaxLimitsGPUTest) {
     });
   }
 
-  GetTargetTexture(
+  getTargetTexture(
     sampleCount: number,
     rasterizationMask: number,
     pipeline: GPURenderPipeline,
@@ -430,7 +432,7 @@ class F extends TextureTestMixin(AllFeaturesMaxLimitsGPUTest) {
     };
   }
 
-  CheckColorAttachmentResult(
+  checkColorAttachmentResult(
     texture: GPUTexture,
     sampleCount: number,
     rasterizationMask: number,
@@ -453,7 +455,7 @@ class F extends TextureTestMixin(AllFeaturesMaxLimitsGPUTest) {
     this.expectGPUBufferValuesEqual(buffer, expected);
   }
 
-  CheckDepthStencilResult(
+  checkDepthStencilResult(
     aspect: 'depth-only' | 'stencil-only',
     depthStencilTexture: GPUTexture,
     sampleCount: number,
@@ -572,14 +574,14 @@ textureLoad each sample index from the texture and write to a storage buffer to 
       },
     });
 
-    const { color, depthStencil } = t.GetTargetTexture(
+    const { color, depthStencil } = t.getTargetTexture(
       sampleCount,
       rasterizationMask,
       pipeline,
       fragmentMaskUniformBuffer
     );
 
-    t.CheckColorAttachmentResult(
+    t.checkColorAttachmentResult(
       color,
       sampleCount,
       rasterizationMask,
@@ -587,7 +589,7 @@ textureLoad each sample index from the texture and write to a storage buffer to 
       fragmentShaderOutputMask
     );
 
-    t.CheckDepthStencilResult(
+    t.checkDepthStencilResult(
       'depth-only',
       depthStencil,
       sampleCount,
@@ -596,7 +598,7 @@ textureLoad each sample index from the texture and write to a storage buffer to 
       fragmentShaderOutputMask
     );
 
-    t.CheckDepthStencilResult(
+    t.checkDepthStencilResult(
       'stencil-only',
       depthStencil,
       sampleCount,
@@ -694,7 +696,7 @@ color' <= color.
       alphaValues[1] = alpha1;
       t.device.queue.writeBuffer(alphaValueUniformBuffer, 0, alphaValues);
 
-      const { color, depthStencil } = t.GetTargetTexture(
+      const { color, depthStencil } = t.getTargetTexture(
         sampleCount,
         rasterizationMask,
         pipeline,

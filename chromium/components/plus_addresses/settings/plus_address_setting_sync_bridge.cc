@@ -190,12 +190,12 @@ bool PlusAddressSettingSyncBridge::IsEntityDataValid(
 }
 
 std::string PlusAddressSettingSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return GetStorageKey(entity_data);
 }
 
 std::string PlusAddressSettingSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return entity_data.specifics.plus_address_setting().name();
 }
 
@@ -222,7 +222,9 @@ void PlusAddressSettingSyncBridge::StartSyncingWithDataAndMetadata(
   for (const syncer::DataTypeStore::Record& record : *data) {
     sync_pb::PlusAddressSettingSpecifics specifics;
     if (!specifics.ParseFromString(record.value)) {
-      change_processor()->ReportError({FROM_HERE, "Couldn't parse specifics"});
+      change_processor()->ReportError(
+          {FROM_HERE, syncer::ModelError::Type::
+                          kPlusAddressSettingFailedToParseSpecifics});
       return;
     }
     processed_entries.emplace_back(record.id, std::move(specifics));

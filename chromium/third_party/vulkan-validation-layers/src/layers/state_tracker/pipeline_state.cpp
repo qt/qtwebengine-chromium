@@ -17,20 +17,19 @@
  * limitations under the License.
  */
 #include "state_tracker/pipeline_state.h"
+#include "error_message/error_location.h"
 #include "generated/dynamic_state_helper.h"
 #include "state_tracker/descriptor_sets.h"
 #include "state_tracker/cmd_buffer_state.h"
 #include "state_tracker/render_pass_state.h"
 #include "state_tracker/state_object.h"
-#include "generated/enum_flag_bits.h"
-#include "state_tracker/shader_object_state.h"
 #include "chassis/chassis_modification_state.h"
 
 namespace vvl {
 
 static vku::safe_VkGraphicsPipelineCreateInfo MakeGraphicsCreateInfo(const VkGraphicsPipelineCreateInfo &ci,
                                                                      std::shared_ptr<const vvl::RenderPass> rpstate,
-                                                                     const Device &state_data) {
+                                                                     const DeviceState &state_data) {
     bool use_color = false;
     bool use_depth_stencil = false;
 
@@ -51,13 +50,13 @@ static vku::safe_VkGraphicsPipelineCreateInfo MakeGraphicsCreateInfo(const VkGra
 
     vku::PNextCopyState copy_state = {
         [&state_data, &ci](VkBaseOutStructure *safe_struct, const VkBaseOutStructure *in_struct) -> bool {
-            return Pipeline::PnextRenderingInfoCustomCopy(&state_data, ci, safe_struct, in_struct);
+            return Pipeline::PnextRenderingInfoCustomCopy(state_data, ci, safe_struct, in_struct);
         }};
     return vku::safe_VkGraphicsPipelineCreateInfo(&ci, use_color, use_depth_stencil, &copy_state);
 }
 
 // static
-std::vector<ShaderStageState> Pipeline::GetStageStates(const Device &state_data, const Pipeline &pipe_state,
+std::vector<ShaderStageState> Pipeline::GetStageStates(const DeviceState &state_data, const Pipeline &pipe_state,
                                                        spirv::StatelessData *stateless_data) {
     std::vector<ShaderStageState> stage_states;
 
@@ -187,7 +186,7 @@ static uint32_t GetCreateInfoShaders(const Pipeline &pipe_state) {
     return result;
 }
 
-static uint32_t GetLinkingShaders(const VkPipelineLibraryCreateInfoKHR *link_info, const Device &state_data) {
+static uint32_t GetLinkingShaders(const VkPipelineLibraryCreateInfoKHR *link_info, const DeviceState &state_data) {
     uint32_t result = 0;
     if (link_info) {
         for (uint32_t i = 0; i < link_info->libraryCount; ++i) {
@@ -369,6 +368,68 @@ static CBDynamicFlags GetGraphicsDynamicState(Pipeline &pipe_state) {
     return flags;
 }
 
+// This will only get the topology if possible
+static VkPrimitiveTopology GetRasterizationInputTopology(const Pipeline &pipe_state, const DeviceState &state) {
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+    if (!pipe_state.RasterizationState()) {
+        return topology;
+    }
+
+    // Get Clip Space Topology first
+    if (pipe_state.active_shaders & (VK_SHADER_STAGE_GEOMETRY_BIT | VK_SHADER_STAGE_MESH_BIT_EXT)) {
+        for (const ShaderStageState &shader_stage_state : pipe_state.stage_states) {
+            if (shader_stage_state.GetStage() == VK_SHADER_STAGE_MESH_BIT_EXT ||
+                shader_stage_state.GetStage() == VK_SHADER_STAGE_GEOMETRY_BIT) {
+                if (shader_stage_state.spirv_state && shader_stage_state.entrypoint) {
+                    topology = shader_stage_state.entrypoint->execution_mode.GetGeometryMeshOutputTopology();
+                    break;
+                }
+            }
+        }
+    } else if (pipe_state.active_shaders & VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) {
+        for (const ShaderStageState &shader_stage_state : pipe_state.stage_states) {
+            const VkShaderStageFlagBits stage = shader_stage_state.GetStage();
+            if (stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT || stage == VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT) {
+                if (shader_stage_state.spirv_state && shader_stage_state.entrypoint) {
+                    if (shader_stage_state.entrypoint->execution_mode.Has(spirv::ExecutionModeSet::point_mode_bit)) {
+                        // In tessellation shaders, PointMode is separate and trumps the tessellation topology.
+                        // Can be found in both tessellation shaders
+                        topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+                        break;
+                    } else if (stage == VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT) {
+                        topology = shader_stage_state.entrypoint->execution_mode.GetTessellationEvalOutputTopology();
+                    }
+                }
+            }
+        }
+    } else if (pipe_state.active_shaders & VK_SHADER_STAGE_VERTEX_BIT) {
+        if (pipe_state.IsDynamic(CB_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY) &&
+            state.phys_dev_ext_props.extended_dynamic_state3_props.dynamicPrimitiveTopologyUnrestricted) {
+            return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;  // will detect at draw time
+        }
+        if (!pipe_state.InputAssemblyState()) {
+            return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+        }
+        topology = pipe_state.InputAssemblyState()->topology;
+    }
+
+    // Now apply the Polygon mode
+    VkPolygonMode polygon_mode = pipe_state.RasterizationState()->polygonMode;
+
+    // If we have point topology now, the polygon won't effect it
+    if (IsPointTopology(topology)) {
+        return topology;
+    } else if (pipe_state.IsDynamic(CB_DYNAMIC_STATE_POLYGON_MODE_EXT)) {
+        return VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;  // will detect at draw time
+    } else if (polygon_mode == VK_POLYGON_MODE_POINT && (IsLineTopology(topology) || IsTriangleTopology(topology))) {
+        topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    } else if (polygon_mode == VK_POLYGON_MODE_LINE && IsTriangleTopology(topology)) {
+        topology = TriangleToLineTopology(topology);
+    }
+
+    return topology;
+}
+
 static CBDynamicFlags GetRayTracingDynamicState(Pipeline &pipe_state) {
     CBDynamicFlags flags = 0;
 
@@ -435,7 +496,7 @@ static bool UsesPipelineVertexRobustness(const void *pNext, const Pipeline &pipe
     return result;
 }
 
-static bool IgnoreColorAttachments(const Device &state_data, Pipeline &pipe_state) {
+static bool IgnoreColorAttachments(const DeviceState &state_data, Pipeline &pipe_state) {
     // If the libraries used to create this pipeline are ignoring color attachments, this pipeline should as well
     if (pipe_state.library_create_info) {
         for (uint32_t i = 0; i < pipe_state.library_create_info->libraryCount; i++) {
@@ -491,28 +552,7 @@ static vvl::unordered_set<uint32_t> GetFSOutputLocations(const std::vector<Shade
     return result;
 }
 
-static VkPrimitiveTopology GetTopologyAtRasterizer(const Pipeline &pipeline) {
-    auto result = (pipeline.InputAssemblyState()) ? pipeline.InputAssemblyState()->topology : VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
-
-    // When dealing with GPL, if there is no Vertex Input stage, check if the topology was linked in, but don't go searching in
-    // shaders, otherwise a pre-raster GPL stage can have a mismatched topology
-    if (!pipeline.OwnsSubState(pipeline.vertex_input_state)) {
-        return result;
-    }
-
-    for (const auto &stage : pipeline.stage_states) {
-        if (!stage.entrypoint) {
-            continue;
-        }
-        auto stage_topo = stage.spirv_state->GetTopology(*stage.entrypoint);
-        if (stage_topo) {
-            result = *stage_topo;
-        }
-    }
-    return result;
-}
-
-static VkPipelineCreateFlags2KHR GetPipelineCreateFlags(const void *pNext, VkPipelineCreateFlags flags) {
+static VkPipelineCreateFlags2 GetPipelineCreateFlags(const void *pNext, VkPipelineCreateFlags flags) {
     const auto flags2 = vku::FindStructInPNextChain<VkPipelineCreateFlags2CreateInfo>(pNext);
     if (flags2) {
         return flags2->flags;
@@ -520,80 +560,85 @@ static VkPipelineCreateFlags2KHR GetPipelineCreateFlags(const void *pNext, VkPip
     return flags;
 }
 
+const Location Pipeline::GetCreateFlagsLoc(const Location &create_info_loc) const {
+    if (vku::FindStructInPNextChain<VkPipelineCreateFlags2CreateInfo>(GetCreateInfoPNext())) {
+        return create_info_loc.pNext(Struct::VkPipelineCreateFlags2CreateInfo, Field::flags);
+    } else {
+        return create_info_loc.dot(Field::flags);
+    }
+}
+
 // static
-std::shared_ptr<VertexInputState> Pipeline::CreateVertexInputState(const Pipeline &p, const Device &state,
+std::shared_ptr<VertexInputState> Pipeline::CreateVertexInputState(const Pipeline &p, const DeviceState &state,
                                                                    const vku::safe_VkGraphicsPipelineCreateInfo &create_info) {
     const auto lib_type = GetGraphicsLibType(create_info);
-    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT) {  // Vertex input graphics library
+    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT) {
+        // Vertex input graphics library
         return std::make_shared<VertexInputState>(p, create_info);
-    }
-
-    if (p.library_create_info) {
+    } else if (p.library_create_info) {
         auto ss = GetLibSubState<VK_GRAPHICS_PIPELINE_LIBRARY_VERTEX_INPUT_INTERFACE_BIT_EXT>(state, *p.library_create_info);
+        // null if linking together 2 other libraries
         if (ss) {
             return ss;
         }
-    } else {
-        if (lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) {  // Not a graphics library
-            return std::make_shared<VertexInputState>(p, create_info);
-        }
+    } else if (lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) {
+        // Not a graphics library
+        return std::make_shared<VertexInputState>(p, create_info);
     }
 
-    // We shouldn't get here...
+    // Creating another pipeline library
     return {};
 }
 
 // static
 std::shared_ptr<PreRasterState> Pipeline::CreatePreRasterState(
-    const Pipeline &p, const Device &state, const vku::safe_VkGraphicsPipelineCreateInfo &create_info,
+    const Pipeline &p, const DeviceState &state, const vku::safe_VkGraphicsPipelineCreateInfo &create_info,
     const std::shared_ptr<const vvl::RenderPass> &rp, spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) {
     const auto lib_type = GetGraphicsLibType(create_info);
-    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) {  // Pre-raster graphics library
+    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT) {
+        // Pre-raster graphics library
         return std::make_shared<PreRasterState>(p, state, create_info, rp, stateless_data);
-    }
-
-    if (p.library_create_info) {
+    } else if (p.library_create_info) {
         auto ss = GetLibSubState<VK_GRAPHICS_PIPELINE_LIBRARY_PRE_RASTERIZATION_SHADERS_BIT_EXT>(state, *p.library_create_info);
+        // null if linking together 2 other libraries
         if (ss) {
             return ss;
         }
-    } else {
-        if (lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) {  // Not a graphics library
-            return std::make_shared<PreRasterState>(p, state, create_info, rp, stateless_data);
-        }
+    } else if (lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) {
+        // Not a graphics library
+        return std::make_shared<PreRasterState>(p, state, create_info, rp, stateless_data);
     }
 
-    // We shouldn't get here...
+    // Creating another pipeline library
     return {};
 }
 
 // static
 std::shared_ptr<FragmentShaderState> Pipeline::CreateFragmentShaderState(
-    const Pipeline &p, const Device &state, const VkGraphicsPipelineCreateInfo &create_info,
+    const Pipeline &p, const DeviceState &state, const VkGraphicsPipelineCreateInfo &create_info,
     const vku::safe_VkGraphicsPipelineCreateInfo &safe_create_info, const std::shared_ptr<const vvl::RenderPass> &rp,
     spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) {
     const auto lib_type = GetGraphicsLibType(create_info);
 
-    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {  // Fragment shader graphics library
+    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT) {
+        // Fragment shader graphics library
         return std::make_shared<FragmentShaderState>(p, state, create_info, rp, stateless_data);
-    }
-
-    if (p.library_create_info) {
+    } else if (p.library_create_info) {
         auto ss = GetLibSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_SHADER_BIT_EXT>(state, *p.library_create_info);
+        // null if linking together 2 other libraries
         if (ss && EnablesRasterizationStates(p.pre_raster_state)) {
             return ss;
         }
-    } else {
-        if ((lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) &&  // Not a graphics library
-            EnablesRasterizationStates(p.pre_raster_state)) {
-            // No fragment shader _should_ imply no fragment shader state, however, for historical (GL) reasons, a pipeline _can_
-            // be created with a VS but no FS and still have valid fragment shader state.
-            // See https://gitlab.khronos.org/vulkan/vulkan/-/issues/3178 for more details.
-            return std::make_shared<FragmentShaderState>(p, state, safe_create_info, rp, stateless_data);
-        }
+    } else if ((lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) && EnablesRasterizationStates(p.pre_raster_state)) {
+        // Not a graphics library
+        //
+        // No fragment shader _should_ imply no fragment shader state, however, for historical (GL) reasons, a pipeline _can_
+        // be created with a VS but no FS and still have valid fragment shader state.
+        // See https://gitlab.khronos.org/vulkan/vulkan/-/issues/3178 for more details.
+        return std::make_shared<FragmentShaderState>(p, state, safe_create_info, rp, stateless_data);
     }
 
-    // The conditions for containing FS state were not met, so return null
+    // Creating another pipeline library
     return {};
 }
 
@@ -601,32 +646,28 @@ std::shared_ptr<FragmentShaderState> Pipeline::CreateFragmentShaderState(
 // Pointers that should be ignored have been set to null in safe_create_info, but if this is a graphics library we need the "raw"
 // create_info.
 std::shared_ptr<FragmentOutputState> Pipeline::CreateFragmentOutputState(
-    const Pipeline &p, const Device &state, const VkGraphicsPipelineCreateInfo &create_info,
+    const Pipeline &p, const DeviceState &state, const VkGraphicsPipelineCreateInfo &create_info,
     const vku::safe_VkGraphicsPipelineCreateInfo &safe_create_info, const std::shared_ptr<const vvl::RenderPass> &rp) {
     // If this pipeline is being created a non-executable (i.e., does not contain complete state) pipeline with FO state, then
     // unconditionally set this pipeline's FO state.
     const auto lib_type = GetGraphicsLibType(create_info);
-    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) {  // Fragment output graphics library
+    if (lib_type & VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT) {
+        // Fragment output graphics library
         return std::make_shared<FragmentOutputState>(p, create_info, rp);
-    }
-
-    if (p.library_create_info) {
-        auto ss = GetLibSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT>(state, *p.library_create_info);
+    } else if (p.library_create_info) {
         // If this pipeline is linking in a library that contains FO state, check to see if the FO state is valid before creating it
         // for this pipeline
+        auto ss = GetLibSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT>(state, *p.library_create_info);
+        // null if linking together 2 other libraries
         if (ss && EnablesRasterizationStates(p.pre_raster_state)) {
             return ss;
         }
-    } else {
-        // This is a complete pipeline that does not link to any graphics libraries. Check its create info to see if it has valid FO
-        // state
-        if ((lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) &&  // Not a graphics library
-            EnablesRasterizationStates(p.pre_raster_state)) {
-            return std::make_shared<FragmentOutputState>(p, safe_create_info, rp);
-        }
+    } else if ((lib_type == static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0)) && EnablesRasterizationStates(p.pre_raster_state)) {
+        // Not a graphics library
+        return std::make_shared<FragmentOutputState>(p, safe_create_info, rp);
     }
 
-    // The conditions for containing FO state were not met, so return null
+    // Creating another pipeline library
     return {};
 }
 
@@ -689,7 +730,7 @@ std::shared_ptr<const vvl::ShaderModule> Pipeline::GetSubStateShader(VkShaderSta
     }
 }
 
-Pipeline::Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
+Pipeline::Pipeline(const DeviceState &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
                    std::shared_ptr<const vvl::PipelineCache> pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
                    std::shared_ptr<const vvl::PipelineLayout> &&layout,
                    spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages])
@@ -717,7 +758,7 @@ Pipeline::Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo 
       active_slots(GetActiveSlots(stage_states)),
       max_active_slot(GetMaxActiveSlot(active_slots)),
       dynamic_state(GetGraphicsDynamicState(*this)),
-      topology_at_rasterizer(GetTopologyAtRasterizer(*this)),
+      topology_at_rasterizer(GetRasterizationInputTopology(*this, state_data)),
       descriptor_buffer_mode((create_flags & VK_PIPELINE_CREATE_2_DESCRIPTOR_BUFFER_BIT_EXT) != 0),
       uses_pipeline_robustness(UsesPipelineRobustness(GraphicsCreateInfo().pNext, *this)),
       uses_pipeline_vertex_robustness(UsesPipelineVertexRobustness(GraphicsCreateInfo().pNext, *this)),
@@ -731,6 +772,7 @@ Pipeline::Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo 
                                                  ? fragment_shader_state->pipeline_layout.get()
                                                  : nullptr;
         std::array<decltype(exe_layout), 3> layouts;
+        // We assume in GetCreateFlags() that the executable layout is first in this array
         layouts[0] = exe_layout;
         layouts[1] = fragment_shader_layout;
         layouts[2] = pre_raster_layout;
@@ -747,7 +789,7 @@ Pipeline::Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo 
     }
 }
 
-Pipeline::Pipeline(const Device &state_data, const VkComputePipelineCreateInfo *pCreateInfo,
+Pipeline::Pipeline(const DeviceState &state_data, const VkComputePipelineCreateInfo *pCreateInfo,
                    std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
                    spirv::StatelessData *stateless_data)
     : StateObject(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
@@ -771,7 +813,7 @@ Pipeline::Pipeline(const Device &state_data, const VkComputePipelineCreateInfo *
     assert(active_shaders == VK_SHADER_STAGE_COMPUTE_BIT);
 }
 
-Pipeline::Pipeline(const Device &state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+Pipeline::Pipeline(const DeviceState &state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                    std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
                    spirv::StatelessData *stateless_data)
     : StateObject(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
@@ -796,7 +838,7 @@ Pipeline::Pipeline(const Device &state_data, const VkRayTracingPipelineCreateInf
     assert(0 == (active_shaders & ~(kShaderStageAllRayTracing)));
 }
 
-Pipeline::Pipeline(const Device &state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
+Pipeline::Pipeline(const DeviceState &state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
                    std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
                    spirv::StatelessData *stateless_data)
     : StateObject(static_cast<VkPipeline>(VK_NULL_HANDLE), kVulkanObjectTypePipeline),
@@ -823,609 +865,6 @@ Pipeline::Pipeline(const Device &state_data, const VkRayTracingPipelineCreateInf
 
 }  // namespace vvl
 
-void LastBound::UnbindAndResetPushDescriptorSet(std::shared_ptr<vvl::DescriptorSet> &&ds) {
-    if (push_descriptor_set) {
-        for (auto &ds_slot : ds_slots) {
-            if (ds_slot.ds_state == push_descriptor_set) {
-                cb_state.RemoveChild(ds_slot.ds_state);
-                ds_slot.ds_state.reset();
-            }
-        }
-    }
-    cb_state.AddChild(ds);
-    push_descriptor_set = std::move(ds);
-}
-
-void LastBound::Reset() {
-    pipeline_state = nullptr;
-    desc_set_pipeline_layout = VK_NULL_HANDLE;
-    if (push_descriptor_set) {
-        cb_state.RemoveChild(push_descriptor_set);
-        push_descriptor_set->Destroy();
-    }
-    push_descriptor_set.reset();
-    ds_slots.clear();
-}
-
-bool LastBound::IsDepthTestEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DEPTH_TEST_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DEPTH_TEST_ENABLE)) {
-            return cb_state.dynamic_state_value.depth_test_enable;
-        }
-    } else {
-        if (pipeline_state->DepthStencilState()) {
-            return pipeline_state->DepthStencilState()->depthTestEnable;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsDepthBoundTestEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DEPTH_BOUNDS_TEST_ENABLE)) {
-            return cb_state.dynamic_state_value.depth_bounds_test_enable;
-        }
-    } else {
-        if (pipeline_state->DepthStencilState()) {
-            return pipeline_state->DepthStencilState()->depthBoundsTestEnable;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsDepthWriteEnable() const {
-    // "Depth writes are always disabled when depthTestEnable is VK_FALSE"
-    if (!IsDepthTestEnable()) {
-        return false;
-    }
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DEPTH_WRITE_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DEPTH_WRITE_ENABLE)) {
-            return cb_state.dynamic_state_value.depth_write_enable;
-        }
-    } else {
-        if (pipeline_state->DepthStencilState()) {
-            return pipeline_state->DepthStencilState()->depthWriteEnable;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsDepthBiasEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DEPTH_BIAS_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DEPTH_BIAS_ENABLE)) {
-            return cb_state.dynamic_state_value.depth_bias_enable;
-        }
-    } else {
-        if (pipeline_state->RasterizationState()) {
-            return pipeline_state->RasterizationState()->depthBiasEnable;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsDepthClampEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DEPTH_CLAMP_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.depth_clamp_enable;
-        }
-    } else {
-        if (pipeline_state->RasterizationState()) {
-            return pipeline_state->RasterizationState()->depthClampEnable;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsStencilTestEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_STENCIL_TEST_ENABLE)) {
-            return cb_state.dynamic_state_value.stencil_test_enable;
-        }
-    } else {
-        if (pipeline_state->DepthStencilState()) {
-            return pipeline_state->DepthStencilState()->stencilTestEnable;
-        }
-    }
-    return false;
-}
-
-VkStencilOpState LastBound::GetStencilOpStateFront() const {
-    VkStencilOpState front = {};
-    if (pipeline_state) {
-        front = pipeline_state->DepthStencilState()->front;
-    }
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_STENCIL_WRITE_MASK)) {
-        front.writeMask = cb_state.dynamic_state_value.write_mask_front;
-    }
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_STENCIL_OP)) {
-        front.failOp = cb_state.dynamic_state_value.fail_op_front;
-        front.passOp = cb_state.dynamic_state_value.pass_op_front;
-        front.depthFailOp = cb_state.dynamic_state_value.depth_fail_op_front;
-    }
-    return front;
-}
-
-VkStencilOpState LastBound::GetStencilOpStateBack() const {
-    VkStencilOpState back = {};
-    if (pipeline_state) {
-        back = pipeline_state->DepthStencilState()->back;
-    }
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_STENCIL_WRITE_MASK)) {
-        back.writeMask = cb_state.dynamic_state_value.write_mask_back;
-    }
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_STENCIL_OP)) {
-        back.failOp = cb_state.dynamic_state_value.fail_op_back;
-        back.passOp = cb_state.dynamic_state_value.pass_op_back;
-        back.depthFailOp = cb_state.dynamic_state_value.depth_fail_op_back;
-    }
-    return back;
-}
-
-VkSampleCountFlagBits LastBound::GetRasterizationSamples() const {
-    // For given pipeline, return number of MSAA samples, or one if MSAA disabled
-    VkSampleCountFlagBits rasterization_samples = VK_SAMPLE_COUNT_1_BIT;
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_RASTERIZATION_SAMPLES_EXT)) {
-        rasterization_samples = cb_state.dynamic_state_value.rasterization_samples;
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            rasterization_samples = ms_state->rasterizationSamples;
-        }
-    }
-    return rasterization_samples;
-}
-
-bool LastBound::IsRasterizationDisabled() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_RASTERIZER_DISCARD_ENABLE)) {
-            return cb_state.dynamic_state_value.rasterizer_discard_enable;
-        }
-    } else {
-        return (pipeline_state->RasterizationDisabled());
-    }
-    return false;
-}
-
-bool LastBound::IsLogicOpEnabled() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_LOGIC_OP_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.logic_op_enable;
-        }
-    } else {
-        return pipeline_state->ColorBlendState() && pipeline_state->ColorBlendState()->logicOpEnable;
-    }
-    return false;
-}
-
-VkColorComponentFlags LastBound::GetColorWriteMask(uint32_t i) const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_COLOR_WRITE_MASK_EXT)) {
-        if (i < cb_state.dynamic_state_value.color_write_masks.size()) {
-            return cb_state.dynamic_state_value.color_write_masks[i];
-        }
-    } else {
-        if (pipeline_state->ColorBlendState() && i < pipeline_state->ColorBlendState()->attachmentCount) {
-            return pipeline_state->ColorBlendState()->pAttachments[i].colorWriteMask;
-        }
-    }
-    return (VkColorComponentFlags)0u;
-}
-
-bool LastBound::IsColorWriteEnabled(uint32_t i) const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COLOR_WRITE_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.color_write_enabled[i];
-        }
-    } else {
-        if (pipeline_state->ColorBlendState()) {
-            auto color_write =
-                vku::FindStructInPNextChain<VkPipelineColorWriteCreateInfoEXT>(pipeline_state->ColorBlendState()->pNext);
-            if (color_write && i < color_write->attachmentCount) {
-                return color_write->pColorWriteEnables[i];
-            }
-        }
-    }
-    return true;
-}
-
-VkPrimitiveTopology LastBound::GetPrimitiveTopology() const {
-    if (!pipeline_state) {
-        return GetShaderState(ShaderObjectStage::VERTEX)->GetTopology();
-    } else if (pipeline_state->IsDynamic(CB_DYNAMIC_STATE_PRIMITIVE_TOPOLOGY)) {
-        return cb_state.dynamic_state_value.primitive_topology;
-    } else {
-        return pipeline_state->topology_at_rasterizer;
-    }
-}
-
-VkCullModeFlags LastBound::GetCullMode() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_CULL_MODE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_CULL_MODE)) {
-            return cb_state.dynamic_state_value.cull_mode;
-        }
-    } else {
-        if (auto raster_state = pipeline_state->RasterizationState()) {
-            return raster_state->cullMode;
-        }
-    }
-    return VK_CULL_MODE_NONE;
-}
-
-VkConservativeRasterizationModeEXT LastBound::GetConservativeRasterizationMode() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_CONSERVATIVE_RASTERIZATION_MODE_EXT)) {
-            return cb_state.dynamic_state_value.conservative_rasterization_mode;
-        }
-    } else {
-        if (const auto rasterization_conservative_state_ci =
-                vku::FindStructInPNextChain<VkPipelineRasterizationConservativeStateCreateInfoEXT>(
-                    pipeline_state->RasterizationStatePNext())) {
-            return rasterization_conservative_state_ci->conservativeRasterizationMode;
-        }
-    }
-    return VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT;
-}
-
-bool LastBound::IsSampleLocationsEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_SAMPLE_LOCATIONS_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.sample_locations_enable;
-        }
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            if (const auto *sample_location_state = vku::FindStructInPNextChain<VkPipelineSampleLocationsStateCreateInfoEXT>(ms_state->pNext)) {
-                return sample_location_state->sampleLocationsEnable;
-            }
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsExclusiveScissorEnabled() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_EXCLUSIVE_SCISSOR_ENABLE_NV)) {
-            for (uint32_t i = 0; i < cb_state.dynamic_state_value.exclusive_scissor_enable_count; ++i) {
-                if (cb_state.dynamic_state_value
-                        .exclusive_scissor_enables[cb_state.dynamic_state_value.exclusive_scissor_enable_first + i]) {
-                    return true;
-                }
-            }
-        }
-    } else {
-        return true;  // no pipeline state, but if not dynamic, defaults to being enabled
-    }
-    return false;
-}
-
-bool LastBound::IsCoverageToColorEnabled() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COVERAGE_TO_COLOR_ENABLE_NV)) {
-            return cb_state.dynamic_state_value.coverage_to_color_enable;
-        }
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            if (const auto *coverage_to_color_state =
-                    vku::FindStructInPNextChain<VkPipelineCoverageToColorStateCreateInfoNV>(ms_state->pNext)) {
-                return coverage_to_color_state->coverageToColorEnable;
-            }
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsCoverageModulationTableEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COVERAGE_MODULATION_TABLE_ENABLE_NV)) {
-            return cb_state.dynamic_state_value.coverage_modulation_table_enable;
-        }
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            if (const auto *coverage_modulation_state =
-                    vku::FindStructInPNextChain<VkPipelineCoverageModulationStateCreateInfoNV>(ms_state->pNext)) {
-                return coverage_modulation_state->coverageModulationTableEnable;
-            }
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsStippledLineEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_LINE_STIPPLE_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.stippled_line_enable;
-        }
-    } else {
-        if (const auto line_state_ci = vku::FindStructInPNextChain<VkPipelineRasterizationLineStateCreateInfo>(
-                pipeline_state->RasterizationStatePNext())) {
-            return line_state_ci->stippledLineEnable;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsDiscardRectangleEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.discard_rectangle_enable;
-        }
-    } else {
-        // VK_EXT_discard_rectangles had a special v2 added right away to give it dynamic state
-        // "If the VK_DYNAMIC_STATE_DISCARD_RECTANGLE_ENABLE_EXT dynamic state is not enabled for the pipeline the presence of this
-        // structure in the VkGraphicsPipelineCreateInfo chain, and a discardRectangleCount greater than zero, implicitly enables
-        // discard rectangles in the pipeline"
-        const void *pipeline_pnext = pipeline_state->GetCreateInfoPNext();
-        if (const auto *discard_rectangle_state =
-                vku::FindStructInPNextChain<VkPipelineDiscardRectangleStateCreateInfoEXT>(pipeline_pnext)) {
-            return discard_rectangle_state->discardRectangleCount > 0;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsShadingRateImageEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_SHADING_RATE_IMAGE_ENABLE_NV)) {
-            return cb_state.dynamic_state_value.shading_rate_image_enable;
-        }
-    } else {
-        if (auto viewport_state = pipeline_state->ViewportState()) {
-            if (const auto *shading_rate_image_state =
-                    vku::FindStructInPNextChain<VkPipelineViewportShadingRateImageStateCreateInfoNV>(viewport_state->pNext)) {
-                return shading_rate_image_state->shadingRateImageEnable;
-            }
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsViewportWScalingEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_VIEWPORT_W_SCALING_ENABLE_NV)) {
-            return cb_state.dynamic_state_value.viewport_w_scaling_enable;
-        }
-    } else {
-        if (auto viewport_state = pipeline_state->ViewportState()) {
-            if (const auto *viewport_w_scaling_state =
-                    vku::FindStructInPNextChain<VkPipelineViewportWScalingStateCreateInfoNV>(viewport_state->pNext)) {
-                return viewport_w_scaling_state->viewportWScalingEnable;
-            }
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsPrimitiveRestartEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_PRIMITIVE_RESTART_ENABLE)) {
-            return cb_state.dynamic_state_value.primitive_restart_enable;
-        }
-    } else {
-        if (auto ia_state = pipeline_state->InputAssemblyState()) {
-            return ia_state->primitiveRestartEnable == VK_TRUE;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsAlphaToCoverageEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_ALPHA_TO_COVERAGE_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.alpha_to_coverage_enable;
-        }
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            return ms_state->alphaToCoverageEnable == VK_TRUE;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsAlphaToOneEnable() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_ALPHA_TO_ONE_ENABLE_EXT)) {
-            return cb_state.dynamic_state_value.alpha_to_one_enable;
-        }
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            return ms_state->alphaToOneEnable == VK_TRUE;
-        }
-    }
-    return false;
-}
-
-VkCoverageModulationModeNV LastBound::GetCoverageModulationMode() const {
-    if (!pipeline_state || pipeline_state->IsDynamic(CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV)) {
-        if (cb_state.IsDynamicStateSet(CB_DYNAMIC_STATE_COVERAGE_MODULATION_MODE_NV)) {
-            return cb_state.dynamic_state_value.coverage_modulation_mode;
-        }
-    } else {
-        if (auto ms_state = pipeline_state->MultisampleState()) {
-            if (const auto *coverage_modulation_state =
-                    vku::FindStructInPNextChain<VkPipelineCoverageModulationStateCreateInfoNV>(ms_state->pNext)) {
-                return coverage_modulation_state->coverageModulationMode;
-            }
-        }
-    }
-    return VK_COVERAGE_MODULATION_MODE_NONE_NV;
-}
-
-bool LastBound::ValidShaderObjectCombination(const VkPipelineBindPoint bind_point, const DeviceFeatures &device_features) const {
-    if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
-        if (!IsValidShaderOrNullBound(ShaderObjectStage::COMPUTE) ||
-            !IsValidShaderOrNullBound(ShaderObjectStage::COMPUTE))
-            return false;
-    } else {
-        if (!IsValidShaderOrNullBound(ShaderObjectStage::VERTEX)) return false;
-        if (device_features.tessellationShader && !IsValidShaderOrNullBound(ShaderObjectStage::TESSELLATION_CONTROL)) return false;
-        if (device_features.tessellationShader && !IsValidShaderOrNullBound(ShaderObjectStage::TESSELLATION_EVALUATION))
-            return false;
-        if (device_features.geometryShader && !IsValidShaderOrNullBound(ShaderObjectStage::GEOMETRY)) return false;
-        if (!IsValidShaderOrNullBound(ShaderObjectStage::FRAGMENT)) return false;
-        if (device_features.taskShader && !IsValidShaderOrNullBound(ShaderObjectStage::TASK)) return false;
-        if (device_features.meshShader && !IsValidShaderOrNullBound(ShaderObjectStage::MESH)) return false;
-        if (GetShader(ShaderObjectStage::VERTEX) == VK_NULL_HANDLE &&
-            (!device_features.meshShader || GetShader(ShaderObjectStage::MESH) == VK_NULL_HANDLE))
-            return false;
-    }
-    return true;
-}
-
-VkShaderEXT LastBound::GetShader(ShaderObjectStage stage) const {
-    if (!IsValidShaderBound(stage) || GetShaderState(stage) == nullptr) return VK_NULL_HANDLE;
-    return shader_object_states[static_cast<uint32_t>(stage)]->VkHandle();
-}
-
-vvl::ShaderObject *LastBound::GetShaderState(ShaderObjectStage stage) const {
-    return shader_object_states[static_cast<uint32_t>(stage)];
-}
-
-const vvl::ShaderObject *LastBound::GetShaderStateIfValid(ShaderObjectStage stage) const {
-    if (!shader_object_bound[static_cast<uint32_t>(stage)]) {
-        return nullptr;
-    }
-    return shader_object_states[static_cast<uint32_t>(stage)];
-}
-
-const vvl::ShaderObject *LastBound::GetFirstShader(VkPipelineBindPoint bind_point) const {
-    if (bind_point == VK_PIPELINE_BIND_POINT_COMPUTE) {
-        return GetShaderStateIfValid(ShaderObjectStage::COMPUTE);
-    } else if (bind_point == VK_PIPELINE_BIND_POINT_GRAPHICS) {
-        if (const vvl::ShaderObject *vs = GetShaderStateIfValid(ShaderObjectStage::VERTEX)) {
-            return vs;
-        }
-
-        if (const vvl::ShaderObject *ms = GetShaderStateIfValid(ShaderObjectStage::MESH)) {
-            return ms;
-        }
-    }
-
-    return nullptr;
-}
-
-bool LastBound::HasShaderObjects() const {
-    for (uint32_t i = 0; i < kShaderObjectStageCount; ++i) {
-        if (GetShader(static_cast<ShaderObjectStage>(i)) != VK_NULL_HANDLE) {
-            return true;
-        }
-    }
-    return false;
-}
-
-bool LastBound::IsValidShaderBound(ShaderObjectStage stage) const { return GetShaderStateIfValid(stage) != nullptr; }
-
-bool LastBound::IsValidShaderOrNullBound(ShaderObjectStage stage) const {
-    return shader_object_bound[static_cast<uint32_t>(stage)];
-}
-
-std::vector<vvl::ShaderObject *> LastBound::GetAllBoundGraphicsShaders() {
-    std::vector<vvl::ShaderObject *> shaders;
-
-    if (IsValidShaderBound(ShaderObjectStage::VERTEX)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::VERTEX)]);
-    }
-    if (IsValidShaderBound(ShaderObjectStage::TESSELLATION_CONTROL)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TESSELLATION_CONTROL)]);
-    }
-    if (IsValidShaderBound(ShaderObjectStage::TESSELLATION_EVALUATION)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TESSELLATION_EVALUATION)]);
-    }
-    if (IsValidShaderBound(ShaderObjectStage::GEOMETRY)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::GEOMETRY)]);
-    }
-    if (IsValidShaderBound(ShaderObjectStage::FRAGMENT)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::FRAGMENT)]);
-    }
-    if (IsValidShaderBound(ShaderObjectStage::TASK)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::TASK)]);
-    }
-    if (IsValidShaderBound(ShaderObjectStage::MESH)) {
-        shaders.emplace_back(shader_object_states[static_cast<uint32_t>(ShaderObjectStage::MESH)]);
-    }
-
-    return shaders;
-}
-
-bool LastBound::IsAnyGraphicsShaderBound() const {
-    return IsValidShaderBound(ShaderObjectStage::VERTEX) ||
-        IsValidShaderBound(ShaderObjectStage::TESSELLATION_CONTROL) ||
-        IsValidShaderBound(ShaderObjectStage::TESSELLATION_EVALUATION) ||
-        IsValidShaderBound(ShaderObjectStage::GEOMETRY) ||
-        IsValidShaderBound(ShaderObjectStage::FRAGMENT) ||
-        IsValidShaderBound(ShaderObjectStage::TASK) ||
-        IsValidShaderBound(ShaderObjectStage::MESH);
-}
-
-VkShaderStageFlags LastBound::GetAllActiveBoundStages() const {
-    if (pipeline_state) {
-        return pipeline_state->active_shaders;
-    }
-    // else shader object
-    VkShaderStageFlags stages = 0;
-    if (IsValidShaderBound(ShaderObjectStage::VERTEX)) {
-        stages |= VK_SHADER_STAGE_VERTEX_BIT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::TESSELLATION_CONTROL)) {
-        stages |= VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::TESSELLATION_EVALUATION)) {
-        stages |= VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::GEOMETRY)) {
-        stages |= VK_SHADER_STAGE_GEOMETRY_BIT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::FRAGMENT)) {
-        stages |= VK_SHADER_STAGE_FRAGMENT_BIT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::COMPUTE)) {
-        stages |= VK_SHADER_STAGE_COMPUTE_BIT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::TASK)) {
-        stages |= VK_SHADER_STAGE_TASK_BIT_EXT;
-    }
-    if (IsValidShaderBound(ShaderObjectStage::MESH)) {
-        stages |= VK_SHADER_STAGE_MESH_BIT_EXT;
-    }
-    return stages;
-}
-
-bool LastBound::IsBoundSetCompatible(uint32_t set, const vvl::PipelineLayout &pipeline_layout) const {
-    if ((set >= ds_slots.size()) || (set >= pipeline_layout.set_compat_ids.size())) {
-        return false;
-    }
-    return (*(ds_slots[set].compat_id_for_set) == *(pipeline_layout.set_compat_ids[set]));
-}
-
-bool LastBound::IsBoundSetCompatible(uint32_t set, const vvl::ShaderObject &shader_object_state) const {
-    if ((set >= ds_slots.size()) || (set >= shader_object_state.set_compat_ids.size())) {
-        return false;
-    }
-    return (*(ds_slots[set].compat_id_for_set) == *(shader_object_state.set_compat_ids[set]));
-};
-
-std::string LastBound::DescribeNonCompatibleSet(uint32_t set, const vvl::PipelineLayout &pipeline_layout) const {
-    std::ostringstream ss;
-    if (set >= ds_slots.size()) {
-        ss << "The set (" << set << ") is out of bounds for the number of sets bound (" << ds_slots.size() << ")\n";
-    } else if (set >= pipeline_layout.set_compat_ids.size()) {
-        ss << "The set (" << set << ") is out of bounds for the number of sets in the non-compatible VkPipelineLayout ("
-           << pipeline_layout.set_compat_ids.size() << ")\n";
-    } else {
-        return ds_slots[set].compat_id_for_set->DescribeDifference(*(pipeline_layout.set_compat_ids[set]));
-    }
-    return ss.str();
-}
-
-std::string LastBound::DescribeNonCompatibleSet(uint32_t set, const vvl::ShaderObject &shader_object_state) const {
-    std::ostringstream ss;
-    if (set >= ds_slots.size()) {
-        ss << "The set (" << set << ") is out of bounds for the number of sets bound (" << ds_slots.size() << ")\n";
-    } else if (set >= shader_object_state.set_compat_ids.size()) {
-        ss << "The set (" << set << ") is out of bounds for the number of sets in the non-compatible VkDescriptorSetLayout ("
-           << shader_object_state.set_compat_ids.size() << ")\n";
-    } else {
-        return ds_slots[set].compat_id_for_set->DescribeDifference(*(shader_object_state.set_compat_ids[set]));
-    }
-    return ss.str();
-}
-
 bool IsPipelineLayoutSetCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b) {
     if (!a || !b) {
         return false;
@@ -1450,43 +889,4 @@ std::string DescribePipelineLayoutSetNonCompatible(uint32_t set, const vvl::Pipe
         return a->set_compat_ids[set]->DescribeDifference(*(b->set_compat_ids[set]));
     }
     return ss.str();
-}
-
-const spirv::EntryPoint *LastBound::GetVertexEntryPoint() const {
-    if (pipeline_state) {
-        for (const ShaderStageState &shader_stage_state : pipeline_state->stage_states) {
-            if (shader_stage_state.GetStage() != VK_SHADER_STAGE_VERTEX_BIT) {
-                continue;
-            }
-            return shader_stage_state.entrypoint.get();
-        }
-        return nullptr;
-    } else if (const auto *shader_object = GetShaderState(ShaderObjectStage::VERTEX)) {
-        return shader_object->entrypoint.get();
-    }
-    return nullptr;
-}
-
-const spirv::EntryPoint *LastBound::GetFragmentEntryPoint() const {
-    if (pipeline_state && pipeline_state->fragment_shader_state) {
-        return pipeline_state->fragment_shader_state->fragment_entry_point.get();
-    } else if (const auto *shader_object = GetShaderState(ShaderObjectStage::FRAGMENT)) {
-        return shader_object->entrypoint.get();
-    }
-    return nullptr;
-}
-
-bool LastBound::WasInstrumented() const {
-    if (pipeline_state) {
-        return pipeline_state->instrumentation_data.was_instrumented;
-    }
-    for (uint32_t i = 0; i < kShaderObjectStageCount; ++i) {
-        const auto stage = static_cast<ShaderObjectStage>(i);
-        if (!IsValidShaderBound(stage)) continue;
-        const vvl::ShaderObject *shader = GetShaderState(stage);
-        if (shader && shader->instrumentation_data.was_instrumented) {
-            return true;
-        }
-    }
-    return false;
 }

@@ -70,7 +70,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, NoModify_ModuleScopeVariable_Rgba) {
     auto* value = b.FunctionParam("value", ty.vec4<f32>());
     func->SetParams({value, coords});
     b.Append(func->Block(), [&] {
-        auto* load = b.Load(var->Result(0));
+        auto* load = b.Load(var->Result());
         b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load, coords, value);
         b.Return(func);
     });
@@ -139,7 +139,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, ModuleScopeVariable) {
     auto* value = b.FunctionParam("value", ty.vec4<f32>());
     func->SetParams({value, coords});
     b.Append(func->Block(), [&] {
-        auto* load = b.Load(var->Result(0));
+        auto* load = b.Load(var->Result());
         b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load, coords, value);
         b.Return(func);
     });
@@ -242,7 +242,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, ModuleScopePassedToUserFunction) {
         auto* value = b.FunctionParam("value", ty.vec4<f32>());
         foo->SetParams({coords, value});
         b.Append(foo->Block(), [&] {
-            auto* load = b.Load(var->Result(0));
+            auto* load = b.Load(var->Result());
             b.Call(ty.void_(), bar, load, coords, value);
             b.Return(foo);
         });
@@ -330,9 +330,9 @@ TEST_F(IR_Bgra8UnormPolyfillTest, ModuleScopePassedToUserFunction_MultipleTextur
         auto* value = b.FunctionParam("value", ty.vec4<f32>());
         foo->SetParams({coords, value});
         b.Append(foo->Block(), [&] {
-            auto* load_a = b.Load(var_a->Result(0));
-            auto* load_b = b.Load(var_b->Result(0));
-            auto* load_c = b.Load(var_c->Result(0));
+            auto* load_a = b.Load(var_a->Result());
+            auto* load_b = b.Load(var_b->Result());
+            auto* load_c = b.Load(var_c->Result());
             b.Call(ty.void_(), bar, load_a, load_b, load_c, coords, value);
             b.Return(foo);
         });
@@ -426,11 +426,11 @@ TEST_F(IR_Bgra8UnormPolyfillTest, MutipleUsesOfOneTexture) {
         auto* value = b.FunctionParam("value", ty.vec4<f32>());
         foo->SetParams({coords, value});
         b.Append(foo->Block(), [&] {
-            auto* load_a = b.Load(var_a->Result(0));
+            auto* load_a = b.Load(var_a->Result());
             b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load_a, coords, value);
-            auto* load_b = b.Load(var_a->Result(0));
+            auto* load_b = b.Load(var_a->Result());
             b.Call(ty.void_(), bar, load_b, coords, value);
-            auto* load_c = b.Load(var_a->Result(0));
+            auto* load_c = b.Load(var_a->Result());
             b.Call(ty.void_(), bar, load_c, coords, value);
             b.Return(foo);
         });
@@ -511,7 +511,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, ArrayedImage) {
     auto* value = b.FunctionParam("value", ty.vec4<f32>());
     func->SetParams({coords, index, value});
     b.Append(func->Block(), [&] {
-        auto* load = b.Load(var->Result(0));
+        auto* load = b.Load(var->Result());
         b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load, coords, index, value);
         b.Return(func);
     });
@@ -560,7 +560,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, TextureDimensions) {
 
     auto* func = b.Function("foo", ty.vec2<u32>());
     b.Append(func->Block(), [&] {
-        auto* load = b.Load(var->Result(0));
+        auto* load = b.Load(var->Result());
         auto* dims = b.Call(ty.vec2<u32>(), core::BuiltinFn::kTextureDimensions, load);
         b.Return(func, dims);
         mod.SetName(dims, "dims");
@@ -611,7 +611,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, TextureLoad) {
     auto* coords = b.FunctionParam("coords", ty.vec2<u32>());
     func->SetParams({coords});
     b.Append(func->Block(), [&] {
-        auto* load = b.Load(var->Result(0));
+        auto* load = b.Load(var->Result());
         auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load, coords);
         b.Return(func, result);
         mod.SetName(result, "result");
@@ -663,7 +663,7 @@ TEST_F(IR_Bgra8UnormPolyfillTest, TextureLoadAndStore) {
     auto* coords = b.FunctionParam("coords", ty.vec2<u32>());
     func->SetParams({coords});
     b.Append(func->Block(), [&] {
-        auto* load = b.Load(var->Result(0));
+        auto* load = b.Load(var->Result());
         auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load, coords);
         b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load, coords, result);
         b.Return(func);
@@ -696,6 +696,167 @@ $B1: {  # root
     %6:vec4<f32> = swizzle %result, zyxw
     %7:vec4<f32> = swizzle %6, zyxw
     %8:void = textureStore %4, %coords, %7
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    Run(Bgra8UnormPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_Bgra8UnormPolyfillTest, TexelBuffer_TextureLoad) {
+    auto format = core::TexelFormat::kBgra8Unorm;
+    auto* buffer_ty = ty.texel_buffer(format, core::Access::kRead);
+
+    auto* var = b.Var("buffer", ty.ptr(handle, buffer_ty));
+    var->SetBindingPoint(1, 2);
+    mod.root_block->Append(var);
+
+    auto* func = b.Function("foo", ty.vec4<f32>());
+    auto* coord = b.FunctionParam("coord", ty.u32());
+    func->SetParams({coord});
+    b.Append(func->Block(), [&] {
+        auto* load = b.Load(var->Result());
+        auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load, coord);
+        b.Return(func, result);
+        mod.SetName(result, "result");
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %buffer:ptr<handle, texel_buffer<bgra8unorm, read>, read> = var undef @binding_point(1, 2)
+}
+
+%foo = func(%coord:u32):vec4<f32> {
+  $B2: {
+    %4:texel_buffer<bgra8unorm, read> = load %buffer
+    %result:vec4<f32> = textureLoad %4, %coord
+    ret %result
+  }
+}
+)";
+    auto* expect = R"(
+$B1: {  # root
+  %buffer:ptr<handle, texel_buffer<rgba8unorm, read>, read> = var undef @binding_point(1, 2)
+}
+
+%foo = func(%coord:u32):vec4<f32> {
+  $B2: {
+    %4:texel_buffer<rgba8unorm, read> = load %buffer
+    %result:vec4<f32> = textureLoad %4, %coord
+    %6:vec4<f32> = swizzle %result, zyxw
+    ret %6
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    Run(Bgra8UnormPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_Bgra8UnormPolyfillTest, TexelBuffer_TextureStore) {
+    auto format = core::TexelFormat::kBgra8Unorm;
+    auto* buffer_ty = ty.texel_buffer(format, core::Access::kReadWrite);
+
+    auto* var = b.Var("buffer", ty.ptr(handle, buffer_ty));
+    var->SetBindingPoint(1, 2);
+    mod.root_block->Append(var);
+
+    auto* func = b.Function("foo", ty.void_());
+    auto* coord = b.FunctionParam("coord", ty.u32());
+    auto* value = b.FunctionParam("value", ty.vec4<f32>());
+    func->SetParams({coord, value});
+    b.Append(func->Block(), [&] {
+        auto* load = b.Load(var->Result());
+        b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load, coord, value);
+        b.Return(func);
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %buffer:ptr<handle, texel_buffer<bgra8unorm, read_write>, read> = var undef @binding_point(1, 2)
+}
+
+%foo = func(%coord:u32, %value:vec4<f32>):void {
+  $B2: {
+    %5:texel_buffer<bgra8unorm, read_write> = load %buffer
+    %6:void = textureStore %5, %coord, %value
+    ret
+  }
+}
+)";
+    auto* expect = R"(
+$B1: {  # root
+  %buffer:ptr<handle, texel_buffer<rgba8unorm, read_write>, read> = var undef @binding_point(1, 2)
+}
+
+%foo = func(%coord:u32, %value:vec4<f32>):void {
+  $B2: {
+    %5:texel_buffer<rgba8unorm, read_write> = load %buffer
+    %6:vec4<f32> = swizzle %value, zyxw
+    %7:void = textureStore %5, %coord, %6
+    ret
+  }
+}
+)";
+
+    EXPECT_EQ(src, str());
+
+    Run(Bgra8UnormPolyfill);
+    EXPECT_EQ(expect, str());
+}
+
+TEST_F(IR_Bgra8UnormPolyfillTest, TexelBuffer_TextureLoadAndStore) {
+    auto format = core::TexelFormat::kBgra8Unorm;
+    auto* buffer_ty = ty.texel_buffer(format, core::Access::kReadWrite);
+
+    auto* var = b.Var("buffer", ty.ptr(handle, buffer_ty));
+    var->SetBindingPoint(1, 2);
+    mod.root_block->Append(var);
+
+    auto* func = b.Function("foo", ty.void_());
+    auto* coord = b.FunctionParam("coord", ty.u32());
+    auto* value = b.FunctionParam("value", ty.vec4<f32>());
+    func->SetParams({coord, value});
+    b.Append(func->Block(), [&] {
+        auto* load = b.Load(var->Result());
+        auto* result = b.Call(ty.vec4<f32>(), core::BuiltinFn::kTextureLoad, load, coord);
+        b.Call(ty.void_(), core::BuiltinFn::kTextureStore, load, coord, result);
+        b.Return(func);
+        mod.SetName(result, "result");
+    });
+
+    auto* src = R"(
+$B1: {  # root
+  %buffer:ptr<handle, texel_buffer<bgra8unorm, read_write>, read> = var undef @binding_point(1, 2)
+}
+
+%foo = func(%coord:u32, %value:vec4<f32>):void {
+  $B2: {
+    %5:texel_buffer<bgra8unorm, read_write> = load %buffer
+    %result:vec4<f32> = textureLoad %5, %coord
+    %7:void = textureStore %5, %coord, %result
+    ret
+  }
+}
+)";
+    auto* expect = R"(
+$B1: {  # root
+  %buffer:ptr<handle, texel_buffer<rgba8unorm, read_write>, read> = var undef @binding_point(1, 2)
+}
+
+%foo = func(%coord:u32, %value:vec4<f32>):void {
+  $B2: {
+    %5:texel_buffer<rgba8unorm, read_write> = load %buffer
+    %result:vec4<f32> = textureLoad %5, %coord
+    %7:vec4<f32> = swizzle %result, zyxw
+    %8:vec4<f32> = swizzle %7, zyxw
+    %9:void = textureStore %5, %coord, %8
     ret
   }
 }

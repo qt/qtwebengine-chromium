@@ -202,7 +202,7 @@ struct OAuth2ErrorDetails {
 OAuth2ErrorDetails ParseErrorResponse(
     int net_error,
     const network::mojom::URLResponseHead* head,
-    std::unique_ptr<std::string> body) {
+    std::optional<std::string> body) {
   if (net_error == net::ERR_ABORTED) {
     return {GoogleServiceAuthError(GoogleServiceAuthError::REQUEST_CANCELED),
             std::nullopt};
@@ -214,13 +214,8 @@ OAuth2ErrorDetails ParseErrorResponse(
             std::nullopt};
   }
 
-  std::string_view response_body;
-  if (body) {
-    response_body = *body;
-  }
-
   std::optional<base::Value::Dict> dict =
-      base::JSONReader::ReadDict(response_body);
+      base::JSONReader::ReadDict(body.value_or(""));
   const std::string* message = FindMessageInErrorResponse(dict);
   const std::string* reason = FindReasonInErrorResponse(dict);
   OAuth2Response oauth2_response = GetOAuth2ResponseFromErrorReason(reason);
@@ -252,11 +247,6 @@ std::string FindTokenBindingChallenge(
       .value_or(std::string());
 }
 
-bool AreCookiesEqual(const net::CanonicalCookie& lhs,
-                     const net::CanonicalCookie& rhs) {
-  return lhs.IsEquivalent(rhs);
-}
-
 void RecordApiCallMetrics(OAuth2MintTokenApiCallResult result,
                           std::optional<OAuth2Response> response) {
   // TODO(crbug.com/401211492): remove the "ApiCallResult" histogram in favor of
@@ -275,12 +265,6 @@ RemoteConsentResolutionData::RemoteConsentResolutionData(
     const RemoteConsentResolutionData& other) = default;
 RemoteConsentResolutionData& RemoteConsentResolutionData::operator=(
     const RemoteConsentResolutionData& other) = default;
-
-bool RemoteConsentResolutionData::operator==(
-    const RemoteConsentResolutionData& rhs) const {
-  return url == rhs.url &&
-         std::ranges::equal(cookies, rhs.cookies, &AreCookiesEqual);
-}
 
 OAuth2MintTokenFlow::Parameters::Parameters() = default;
 
@@ -452,14 +436,9 @@ std::string OAuth2MintTokenFlow::CreateAuthorizationHeaderValue(
 
 void OAuth2MintTokenFlow::ProcessApiCallSuccess(
     const network::mojom::URLResponseHead* head,
-    std::unique_ptr<std::string> body) {
-  std::string response_body;
-  if (body) {
-    response_body = std::move(*body);
-  }
-
+    std::optional<std::string> body) {
   std::optional<base::Value::Dict> dict =
-      base::JSONReader::ReadDict(response_body);
+      base::JSONReader::ReadDict(body.value_or(""));
   if (!dict) {
     RecordApiCallMetrics(OAuth2MintTokenApiCallResult::kParseJsonFailure,
                          OAuth2Response::kOkUnexpectedFormat);
@@ -514,7 +493,7 @@ void OAuth2MintTokenFlow::ProcessApiCallSuccess(
 void OAuth2MintTokenFlow::ProcessApiCallFailure(
     int net_error,
     const network::mojom::URLResponseHead* head,
-    std::unique_ptr<std::string> body) {
+    std::optional<std::string> body) {
   std::string challenge = FindTokenBindingChallenge(net_error, head);
   if (!challenge.empty()) {
     RecordApiCallMetrics(
@@ -644,7 +623,7 @@ bool OAuth2MintTokenFlow::ParseRemoteConsentResponse(
               time_now, expiration_time, time_now,
               is_secure ? *is_secure : false,
               is_http_only ? *is_http_only : false,
-              net::StringToCookieSameSite(same_site ? *same_site : ""),
+              net::StringToCookieSameSite(same_site ? *same_site : "").first,
               net::COOKIE_PRIORITY_DEFAULT,
               /* partition_key */ std::nullopt, /*status=*/nullptr);
       cookies.push_back(*cookie);

@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 // clang-format off
-// <if expr="not chromeos_ash">
+// <if expr="not is_chromeos">
 import {assert} from 'chrome://resources/js/assert.js';
 import {sendWithPromise} from 'chrome://resources/js/cr.js';
 import {$, appendParam} from 'chrome://resources/js/util.js';
 // </if>
-// <if expr="chromeos_ash">
+// <if expr="is_chromeos">
 import {assert} from 'chrome://resources/ash/common/assert.js';
 import {sendWithPromise} from 'chrome://resources/ash/common/cr.m.js';
 import {NativeEventTarget as EventTarget} from 'chrome://resources/ash/common/event_target.js';
@@ -613,6 +613,9 @@ export class Authenticator extends EventTarget {
     this.webviewEventManager_.addEventListener(
         this.samlHandler_, 'challengeMachineKeyRequired',
         e => this.onChallengeMachineKeyRequired_(e));
+    this.webviewEventManager_.addEventListener(
+        this.samlHandler_, 'isSamlFlowChange',
+        e => this.onIsSamlFlowChanged_(e));
 
     this.webviewEventManager_.addEventListener(
         this.webview_, 'droplink', e => this.onDropLink_(e));
@@ -1012,15 +1015,43 @@ export class Authenticator extends EventTarget {
       const header = headers[i];
       const headerName = header.name.toLowerCase();
       if (headerName === SIGN_IN_HEADER) {
+        // See go/gaia-response-headers#google-accounts-signin for the expected
+        // format of the sign-in header fields.
         const headerValues = header.value.toLowerCase().split(',');
         const signinDetails = {};
         headerValues.forEach(function(e) {
           const pair = e.split('=');
-          signinDetails[pair[0].trim()] = pair[1].trim();
+          const key = pair[0].trim();
+          if (key in signinDetails) {
+            // TODO(crbug.com/427954993): temporary log to learn if this ever
+            // happens in the wild. Should be replaced either with some error
+            // handling or an assert.
+            console.error(
+                'Authenticator: the sign-in header contains multiple ' + key +
+                ' values');
+          }
+          signinDetails[key] = pair[1].trim();
         });
-        // Removes "" around.
-        const email = signinDetails['email'].slice(1, -1);
-        this.setEmail_(email);
+        // Email and obfuscated ID are expected to be quoted strings.
+        if (!signinDetails['email'].startsWith('"') ||
+            !signinDetails['email'].endsWith('"')) {
+          // TODO(crbug.com/427954993): temporary log to learn if this ever
+          // happens in the wild. Should be replaced either with some error
+          // handling or an assert.
+          console.error(
+              'Authenticator: unexpected format of the email field in the ' +
+              'sign-in header');
+        }
+        this.setEmail_(signinDetails['email'].slice(1, -1));
+        if (!signinDetails['obfuscatedid'].startsWith('"') ||
+            !signinDetails['obfuscatedid'].endsWith('"')) {
+          // TODO(crbug.com/427954993): temporary log to learn if this ever
+          // happens in the wild. Should be replaced either with some error
+          // handling or an assert.
+          console.error(
+              'Authenticator: unexpected format of the obfuscatedid field in ' +
+              'the sign-in header');
+        }
         this.gaiaId_ = signinDetails['obfuscatedid'].slice(1, -1);
         this.sessionIndex_ = signinDetails['sessionindex'];
       }
@@ -1296,6 +1327,7 @@ export class Authenticator extends EventTarget {
     if (!e.detail.isSAMLPage) {
       return;
     }
+    this.dispatchEvent(new Event('samlPageLoaded'));
 
     this.authFlow = AuthFlow.SAML;
 
@@ -1348,6 +1380,17 @@ export class Authenticator extends EventTarget {
   onChallengeMachineKeyRequired_(e) {
     sendWithPromise('samlChallengeMachineKey', e.detail.url, e.detail.challenge)
         .then(e.detail.callback);
+  }
+
+  /**
+   * Invoked when |samlHandler_| fires 'isSamlFlowChange' event.
+   * @private
+   */
+  onIsSamlFlowChanged_(e) {
+    const isSamlFlow = e.detail.isSamlFlow;
+    if (isSamlFlow) {
+      this.authFlow = AuthFlow.SAML;
+    }
   }
 
   /**

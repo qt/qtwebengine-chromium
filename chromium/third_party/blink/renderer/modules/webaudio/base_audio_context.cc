@@ -81,6 +81,7 @@
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 #include "third_party/blink/renderer/platform/wtf/uuid.h"
 
@@ -186,16 +187,15 @@ void BaseAudioContext::Dispose() {
 }
 
 void BaseAudioContext::ContextLifecycleStateChanged(
-    mojom::FrameLifecycleState state) {
+    mojom::blink::FrameLifecycleState state) {
   // Don't need to do anything for an offline context.
   if (!HasRealtimeConstraint()) {
     return;
   }
 
-  if (state == mojom::FrameLifecycleState::kRunning) {
+  if (state == mojom::blink::FrameLifecycleState::kRunning) {
     destination()->GetAudioDestinationHandler().Resume();
-  } else if (state == mojom::FrameLifecycleState::kFrozen ||
-             state == mojom::FrameLifecycleState::kFrozenAutoResumeMedia) {
+  } else if (state == mojom::blink::FrameLifecycleState::kFrozen) {
     destination()->GetAudioDestinationHandler().Pause();
   }
 }
@@ -231,8 +231,8 @@ void BaseAudioContext::WarnIfContextClosed(const AudioHandler* handler) const {
         MakeGarbageCollected<ConsoleMessage>(
             mojom::ConsoleMessageSource::kOther,
             mojom::ConsoleMessageLevel::kWarning,
-            "Construction of " + handler->NodeTypeName() +
-                " is not useful when context is closed."));
+            StrCat({"Construction of ", handler->NodeTypeName(),
+                    " is not useful when context is closed."})));
   }
 }
 
@@ -339,7 +339,7 @@ ScriptPromise<AudioBuffer> BaseAudioContext::decodeAudioData(
         "Cannot decode detached ArrayBuffer");
     // Fall through in order to invoke the error_callback.
   } else if (!audio_data->Transfer(isolate, buffer_contents,
-                                   IgnoreException(isolate))) {
+                                   IGNORE_EXCEPTION)) {
     // Transfer may throw a TypeError, which is not a DOMException. However, the
     // spec requires throwing a DOMException with kDataCloneError. Hence ignore
     // that exception and throw a DOMException instead.
@@ -645,11 +645,6 @@ void BaseAudioContext::SetContextState(V8AudioContextState::Enum new_state) {
 
   // The closed AudioContext does not accept any state change.
   if (control_thread_state_ == V8AudioContextState::Enum::kClosed) {
-    return;
-  }
-
-  if (!RuntimeEnabledFeatures::AudioContextInterruptedStateEnabled() &&
-      new_state == V8AudioContextState::Enum::kInterrupted) {
     return;
   }
 

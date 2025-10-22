@@ -93,40 +93,42 @@ export class RehydratingConnection implements ProtocolClient.InspectorBackend.Co
    */
   #onReceiveHostWindowPayload(event: MessageEvent): void {
     if (event.data.type === 'REHYDRATING_TRACE_FILE') {
-      const {traceFile} = event.data;
-      const reader = new FileReader();
-      reader.onload = async(): Promise<void> => {
-        await this.startHydration(reader.result as string);
-      };
-      reader.onerror = (): void => {
+      const traceJson = event.data.traceJson as string;
+      let trace;
+      try {
+        trace = JSON.parse(traceJson) as TraceFile;
+      } catch {
         this.#onConnectionLost(i18nString(UIStrings.errorLoadingLog));
-      };
-      reader.readAsText(traceFile);
+        return;
+      }
+      void this.startHydration(trace);
     }
     this.#rehydratingWindow.removeEventListener('message', this.#onReceiveHostWindowPayloadBound);
   }
 
-  async startHydration(logPayload: string): Promise<boolean> {
+  async startHydration(trace: TraceFile): Promise<boolean> {
     // OnMessage should've been set before hydration, and the connection should
     // be initialized and not hydrated already.
     if (!this.onMessage || this.rehydratingConnectionState !== RehydratingConnectionState.INITIALIZED) {
       return false;
     }
 
-    const payload = JSON.parse(logPayload) as TraceFile;
-    if (!('traceEvents' in payload)) {
+    if (!('traceEvents' in trace)) {
       console.error('RehydratingConnection failed to initialize due to missing trace events in payload');
       return false;
     }
 
-    this.trace = payload;
-    const enhancedTracesParser = new EnhancedTraces.EnhancedTracesParser(payload);
-    const dataPerTarget = enhancedTracesParser.data();
+    this.trace = trace;
+    const enhancedTracesParser = new EnhancedTraces.EnhancedTracesParser(trace);
+    const hydratingData = enhancedTracesParser.data();
 
     let sessionId = 0;
     // Set up default rehydrating session.
     this.sessions.set(sessionId, new RehydratingSessionBase(this));
-    for (const [target, [executionContexts, scripts]] of dataPerTarget.entries()) {
+    for (const hydratingDataPerTarget of hydratingData) {
+      const target = hydratingDataPerTarget.target;
+      const executionContexts = hydratingDataPerTarget.executionContexts;
+      const scripts = hydratingDataPerTarget.scripts;
       this.postToFrontend({
         method: 'Target.targetCreated',
         params: {
@@ -161,7 +163,7 @@ export class RehydratingConnection implements ProtocolClient.InspectorBackend.Co
     await Common.Revealer.reveal(trace);
   }
 
-  setOnMessage(onMessage: (arg0: (Object|string)) => void): void {
+  setOnMessage(onMessage: (arg0: Object|string) => void): void {
     this.onMessage = onMessage;
     this.rehydratingConnectionState = RehydratingConnectionState.INITIALIZED;
   }

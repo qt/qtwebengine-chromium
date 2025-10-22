@@ -14,8 +14,10 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <vector>
 #include <memory>
+#include "containers/custom_containers.h"
 #include "state_tracker/shader_instruction.h"
 #include "generated/spirv_grammar_helper.h"
 
@@ -112,6 +114,7 @@ class TypeManager {
     TypeManager(Module& module) : module_(module) {}
 
     const Type& AddType(std::unique_ptr<Instruction> new_inst, SpvType spv_type);
+
     const Type* FindTypeById(uint32_t id) const;
     const Type* FindValueTypeById(uint32_t id) const;
     const Type* FindFunctionType(const Instruction& inst) const;
@@ -132,6 +135,10 @@ class TypeManager {
     const Type& GetTypePointerBuiltInInput(spv::BuiltIn built_in);
     uint32_t TypeLength(const Type& type);
 
+    // Special struct type helpers for Linking
+    void AddStructTypeForLinking(const Type* new_type);
+    uint32_t FindLinkingStructType(const Instruction& inst, vvl::unordered_map<uint32_t, uint32_t>& id_swap_map) const;
+
     const Constant& AddConstant(std::unique_ptr<Instruction> new_inst, const Type& type);
     const Constant* FindConstantById(uint32_t id) const;
     const Constant* FindConstantInt32(uint32_t type_id, uint32_t value) const;
@@ -142,10 +149,12 @@ class TypeManager {
     const Constant& GetConstantZeroUint32();
     const Constant& GetConstantZeroFloat32();
     const Constant& GetConstantZeroVec3();
+    const Constant& GetConstantZeroUvec4();
     const Constant& GetConstantNull(const Type& type);
 
     const Variable& AddVariable(std::unique_ptr<Instruction> new_inst, const Type& type);
     const Variable* FindVariableById(uint32_t id) const;
+    const Variable* FindPushConstantVariable() const;
 
   private:
     Module& module_;
@@ -174,15 +183,25 @@ class TypeManager {
     std::vector<const Type*> pointer_types_;
     std::vector<const Type*> forward_pointer_types_;
     std::vector<const Type*> function_types_;
+    // Only for types we want to avoid when linking
+    std::vector<const Type*> linking_struct_types_;
 
     std::vector<const Constant*> int_32bit_constants_;
     std::vector<const Constant*> float_32bit_constants_;
     const Constant* uint_32bit_zero_constants_ = nullptr;
     const Constant* float_32bit_zero_constants_ = nullptr;
+    const Constant* vec3_zero_constants_ = nullptr;
+    const Constant* uvec4_zero_constants_ = nullptr;
     std::vector<const Constant*> null_constants_;
 
     std::vector<const Variable*> input_variables_;
     std::vector<const Variable*> output_variables_;
+    // There is invalid to have more than 1 push constant variable per entrypoint
+    const Variable* push_constant_variable_ = nullptr;
+
+    // Save the length of a struct so we don't have to look it up everytime
+    // <struct_id, struct size>
+    vvl::unordered_map<uint32_t, uint32_t> struct_size_map_;
 };
 
 }  // namespace spirv

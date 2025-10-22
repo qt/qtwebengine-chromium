@@ -36,13 +36,13 @@ proto_sources_non_minimal = [
   "extension_descriptor.proto",
   "memory_graph.proto",
   "ui_state.proto",
+  "evdev.proto",
 ]
 
 proto_sources_minimal = [
   "clock_snapshot.proto",
   "trace_uuid.proto",
   "trigger.proto",
-  "system_info.proto",
 ]
 
 # Most targets should either depend on :zero (writers) / :lite (readers)
@@ -87,6 +87,7 @@ perfetto_proto_library("non_minimal_@TYPE@") {
     "etw:@TYPE@",
     "filesystem:@TYPE@",
     "ftrace:@TYPE@",
+    "generic_kernel:@TYPE@",
     "gpu:@TYPE@",
     "interned_data:@TYPE@",
     "perfetto:@TYPE@",
@@ -112,6 +113,8 @@ perfetto_proto_library("@TYPE@") {
   deps = [ ":non_minimal_@TYPE@" ]
   sources = []
   generate_descriptor = "trace.descriptor"
+  generator_visibility =
+      [ "../../../src/trace_processor/importers/proto:gen_cc_trace_descriptor" ]
   descriptor_root_source = "trace.proto"
 }
 

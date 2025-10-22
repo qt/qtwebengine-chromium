@@ -46,10 +46,6 @@ BASE_DECLARE_FEATURE(kCrossOriginOpenerPolicyByDefault);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kCoopNoopenerAllowPopups);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kCoopRestrictProperties);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kCoopRestrictPropertiesOriginTrial);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kSplitAuthCacheByNetworkIsolationKey);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kDnsOverHttpsUpgrade);
@@ -61,14 +57,18 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(bool, kSplitMaskedDomainList);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kMdnsResponderGeneratedNameListing);
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kMaskedDomainListFlatbufferImpl);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kOpaqueResponseBlockingErrorsForAllFetches);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kAcceptCHFrame);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kOffloadAcceptCHFrameCheck);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(bool, kAcceptCHOffloadWithRedirect);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(bool, kAcceptCHOffloadForSubframe);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kCorsNonWildcardRequestHeadersSupport);
@@ -87,12 +87,12 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kPrivateNetworkAccessPreflightShortTimeout);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kPrivateNetworkAccessPermissionPrompt);
-
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kLocalNetworkAccessChecks);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(bool, kLocalNetworkAccessChecksWarn);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kLocalNetworkAccessChecksWebRTC);
 
 // If enabled, then the network service will parse the Cookie-Indices header.
 // This does not currently control changing cache behavior according to the
@@ -113,7 +113,7 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kPreloadedDictionaryConditionalUse);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kCSPRequireSRIFor);
+BASE_DECLARE_FEATURE(kIntegrityPolicyScript);
 
 // Enables visibility aware network service resource scheduler. When enabled,
 // request may be prioritized or de-prioritized based on the visibility of
@@ -122,10 +122,6 @@ BASE_DECLARE_FEATURE(kCSPRequireSRIFor);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kVisibilityAwareResourceScheduler);
 
-// Enables Compression Dictionary Transport with Zstandard (aka Shared Zstd).
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kSharedZstd);
-
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kReduceTransferSizeUpdatedIPC);
 
@@ -133,6 +129,10 @@ COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kRendererSideContentDecoding);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(int, kRendererSideContentDecodingPipeSize);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(
+    bool,
+    kRendererSideContentDecodingForceMojoFailureForTesting);
 
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kSkipTpcdMitigationsForAds);
@@ -165,17 +165,10 @@ BASE_DECLARE_FEATURE(kTreatNullIPAsPublicAddressSpace);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kCloneDevToolsConnectionOnlyIfRequested);
 
-// Enables the Storage Access Headers semantics.
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kStorageAccessHeaders);
-
 // Should SRI-compliant HTTP Message Signatures be enforced?
 // https://wicg.github.io/signature-based-sri/
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kSRIMessageSignatureEnforcement);
-
-COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kCreateURLLoaderPipeAsync);
 
 // Should Sec-Ad-Auction-Event-Recording-Eligible be sent on requests made
 // with attributionsrc, and should Ad-Auction-Register-Event responses on
@@ -199,7 +192,9 @@ BASE_DECLARE_FEATURE_PARAM(int, kDeprecateUnloadBucket);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE_PARAM(std::string, kDeprecateUnloadAllowlist);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
-BASE_DECLARE_FEATURE(kFrameAncestorHeaders);
+BASE_DECLARE_FEATURE(kFrameTopHeader);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kFrameAncestorsHeader);
 
 // Updates the request body, headers, and referrer policy for CORS
 // redirects, following 4.4. HTTP-redirect fetch:
@@ -298,6 +293,12 @@ BASE_DECLARE_FEATURE_PARAM(int, kInterestGroupStorageMaxOpsBeforeMaintenance);
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kGetCookiesOnSet);
 
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kIncreaseCookieAccessCacheSize);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(int, kCookieAccessCacheSize);
+
 // If enabled, permissions policies relevant to a request are populated on
 // `network:ResourceRequest`.
 //
@@ -310,6 +311,60 @@ BASE_DECLARE_FEATURE(kPopulatePermissionsPolicyOnRequest);
 // Content-Type.
 COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
 BASE_DECLARE_FEATURE(kProtectedAudienceCorsSafelistKVv2Signals);
+
+// If enabled and `kPopulatePermissionsPolicyOnRequest` is also enabled, storage
+// access headers will respect the "storage-access" permissions policy when
+// calculating storage access status.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kStorageAccessHeadersRespectPermissionsPolicy);
+
+// When enabled, a shared remote Mojo interface of
+// DeviceBoundSessionAccessObserver is used to reduce Clone() IPC.
+// See https://crbug.com/407680127 for more details.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kDeviceBoundSessionAccessObserverSharedRemote);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kCSPScriptSrcV2);
+
+// When enabled, allowlisting script urls and scripts used in eval via hashes
+// will be supported in script-src.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kCSPScriptSrcHashesInV1);
+
+// When enabled, fetches for "pervasive" scripts that match one of the
+// configured patterns will use a shared, single-keyed cache.
+// See https://chromestatus.com/feature/5202380930678784
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kCacheSharingForPervasiveScripts);
+
+// newline-delimited list of URL patterns for "pervasive" scripts.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(std::string, kPervasiveScriptURLPatterns);
+
+// When enabled, disk-based shared dictionaries will use a memory cache to
+// keep frequently used dictionaries in memory.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kSharedDictionaryCache);
+
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(size_t, kSharedDictionaryCacheSize);
+
+// Maximum size of dictionaries that are allowed to be stored in the cache.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(size_t, kSharedDictionaryCacheMaxSizeBytes);
+
+// When enabled, Network Service Task Scheduler is enabled on the Network
+// Service's IO Thread.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE(kNetworkServiceTaskScheduler);
+
+// These parameters control whether the Network Service Task Scheduler is used
+// for specific classes.
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(bool, kNetworkServiceTaskSchedulerResourceScheduler);
+COMPONENT_EXPORT(NETWORK_CPP_FLAGS_AND_SWITCHES)
+BASE_DECLARE_FEATURE_PARAM(bool, kNetworkServiceTaskSchedulerURLLoader);
 
 }  // namespace network::features
 

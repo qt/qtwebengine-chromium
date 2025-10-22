@@ -16,6 +16,8 @@
 #include <memory>
 
 #include "api/peer_connection_interface.h"
+#include "api/scoped_refptr.h"
+#include "rtc_base/socket_factory.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
@@ -23,7 +25,7 @@ namespace webrtc {
 // Creates java PeerConnectionFactory with specified `pcf`.
 jobject NativeToJavaPeerConnectionFactory(
     JNIEnv* jni,
-    rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pcf,
+    scoped_refptr<webrtc::PeerConnectionFactoryInterface> pcf,
     std::unique_ptr<SocketFactory> socket_factory,
     std::unique_ptr<Thread> network_thread,
     std::unique_ptr<Thread> worker_thread,

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Trace from '../../../models/trace/trace.js';
 
@@ -9,6 +10,8 @@ interface TreemapNode {
   /** Could be a url, a path component from a source map, or an arbitrary string. */
   name: string;
   resourceBytes: number;
+  /** Transfer size of the script. Only set for non-inline top-level script nodes. */
+  encodedBytes?: number;
   /** If present, this module is a duplicate. String is normalized source path. See ScriptDuplication.normalizeSource */
   duplicatedNormalizedModuleName?: string;
   children?: TreemapNode[];
@@ -18,28 +21,12 @@ export type TreemapData = TreemapNode[];
 type SourceData = Omit<TreemapNode, 'name'|'children'>;
 
 /**
- * Takes an UTF-8 string and returns a base64 encoded string. The UTF-8 bytes are
- * gzipped before base64'd using CompressionStream.
+ * Takes an UTF-8, gzips then base64's it.
  */
 async function toCompressedBase64(string: string): Promise<string> {
-  let bytes = new TextEncoder().encode(string);
-
-  const cs = new CompressionStream('gzip');
-  const writer = cs.writable.getWriter();
-  void writer.write(bytes);
-  void writer.close();
-  const compAb = await new Response(cs.readable).arrayBuffer();
-  bytes = new Uint8Array(compAb);
-
-  let binaryString = '';
-  // This is ~25% faster than building the string one character at a time.
-  // https://jsbench.me/2gkoxazvjl
-  const chunkSize = 5000;
-  for (let i = 0; i < bytes.length; i += chunkSize) {
-    binaryString += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-  }
-
-  return btoa(binaryString);
+  const compAb = await Common.Gzip.compress(string);
+  const strb64 = await Common.Base64.encode(compAb);
+  return strb64;
 }
 
 /**
@@ -90,6 +77,7 @@ export function makeScriptNode(src: string, sourceRoot: string, sourcesData: Rec
     return {
       name,
       resourceBytes: 0,
+      encodedBytes: undefined,
     };
   }
 
@@ -179,6 +167,17 @@ export function makeScriptNode(src: string, sourceRoot: string, sourcesData: Rec
   return scriptNode;
 }
 
+function getNetworkRequestSizes(request: Trace.Types.Events.SyntheticNetworkRequest):
+    {resourceSize: number, transferSize: number, headersTransferSize: number} {
+  const resourceSize = request.args.data.decodedBodyLength;
+  const transferSize = request.args.data.encodedDataLength;
+  // TODO: add something like `responseHeadersTransferSize` to trace
+  // SyntheticNetworkRequest (see Lighthouse). For now, incorrectly include the size
+  // of the headers here.
+  const headersTransferSize = 0;
+  return {resourceSize, transferSize, headersTransferSize};
+}
+
 /**
  * Returns an array of nodes, where the first level of nodes represents every script.
  *
@@ -216,6 +215,7 @@ export function createTreemapData(
       for (const [source, resourceBytes] of Object.entries(sizes.files)) {
         const sourceData: SourceData = {
           resourceBytes,
+          encodedBytes: undefined,
         };
 
         const key = Trace.Extras.ScriptDuplication.normalizeSource(source);
@@ -239,6 +239,7 @@ export function createTreemapData(
       node = {
         name,
         resourceBytes: script.content?.length ?? 0,
+        encodedBytes: undefined,
       };
     }
 
@@ -251,6 +252,7 @@ export function createTreemapData(
         htmlNode = {
           name,
           resourceBytes: 0,
+          encodedBytes: undefined,
           children: [],
         };
         htmlNodesByFrameId.set(script.frame, htmlNode);
@@ -262,6 +264,29 @@ export function createTreemapData(
     } else {
       // Non-inline scripts each have their own top-level node.
       nodes.push(node);
+
+      if (script.request) {
+        const {transferSize, headersTransferSize} = getNetworkRequestSizes(script.request);
+        const bodyTransferSize = transferSize - headersTransferSize;
+        node.encodedBytes = bodyTransferSize;
+      } else {
+        node.encodedBytes = node.resourceBytes;
+      }
+    }
+  }
+
+  // For the HTML nodes, set encodedBytes to be the size of all the inline
+  // scripts multiplied by the average compression ratio of the HTML document.
+  for (const [frameId, node] of htmlNodesByFrameId) {
+    const script = scripts.scripts.find(
+        s => s.request?.args.data.resourceType === 'Document' && s.request?.args.data.frame === frameId);
+    if (script?.request) {
+      const {resourceSize, transferSize, headersTransferSize} = getNetworkRequestSizes(script.request);
+      const inlineScriptsPct = node.resourceBytes / resourceSize;
+      const bodyTransferSize = transferSize - headersTransferSize;
+      node.encodedBytes = Math.floor(bodyTransferSize * inlineScriptsPct);
+    } else {
+      node.encodedBytes = node.resourceBytes;
     }
   }
 

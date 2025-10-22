@@ -11,15 +11,20 @@
 #ifndef RTC_BASE_TEST_CLIENT_H_
 #define RTC_BASE_TEST_CLIENT_H_
 
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include "api/units/timestamp.h"
-#include "rtc_base/async_udp_socket.h"
+#include "rtc_base/async_packet_socket.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/fake_clock.h"
 #include "rtc_base/network/received_packet.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
 
 namespace webrtc {
 
@@ -29,7 +34,7 @@ class TestClient : public sigslot::has_slots<> {
  public:
   // Records the contents of a packet that was received.
   struct Packet {
-    Packet(const rtc::ReceivedPacket& received_packet);
+    Packet(const ReceivedIpPacket& received_packet);
     Packet(const Packet& p);
 
     SocketAddress addr;
@@ -96,7 +101,7 @@ class TestClient : public sigslot::has_slots<> {
   Socket::ConnState GetState();
 
   void OnPacket(AsyncPacketSocket* socket,
-                const rtc::ReceivedPacket& received_packet);
+                const ReceivedIpPacket& received_packet);
   void OnReadyToSend(AsyncPacketSocket* socket);
   bool CheckTimestamp(std::optional<Timestamp> packet_timestamp);
   void AdvanceTime(int ms);
@@ -111,10 +116,5 @@ class TestClient : public sigslot::has_slots<> {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::TestClient;
-}  // namespace rtc
 
 #endif  // RTC_BASE_TEST_CLIENT_H_

@@ -348,7 +348,32 @@ EncoderStatus CheckD3D12VideoEncoderSupport1(
       base::StrAppend(&error,
                       {"D3D12VideoEncoder does not support GOP structure. "});
     }
+    if (support->ValidationFlags &
+        D3D12_VIDEO_ENCODER_VALIDATION_FLAG_SUBREGION_LAYOUT_DATA_NOT_SUPPORTED) {
+      base::StrAppend(
+          &error,
+          {"D3D12VideoEncoder does not support the subregion layout data. "});
+    }
     return {EncoderStatus::Codes::kEncoderUnsupportedConfig, error};
+  }
+  return EncoderStatus::Codes::kOk;
+}
+
+EncoderStatus CheckD3D12VideoEncoderCodecPictureControlSupport(
+    ID3D12VideoDevice* video_device,
+    D3D12_FEATURE_DATA_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT*
+        picture_control_support) {
+  HRESULT hr = video_device->CheckFeatureSupport(
+      D3D12_FEATURE_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT,
+      picture_control_support, sizeof(*picture_control_support));
+  RETURN_ON_HR_FAILURE(
+      hr,
+      "CheckFeatureSupport for "
+      "D3D12_FEATURE_VIDEO_ENCODER_CODEC_PICTURE_CONTROL_SUPPORT failed",
+      EncoderStatus::Codes::kSystemAPICallError);
+  if (!picture_control_support->IsSupported) {
+    return {EncoderStatus::Codes::kEncoderUnsupportedProfile,
+            "D3D12VideoEncoder does not support profile"};
   }
   return EncoderStatus::Codes::kOk;
 }

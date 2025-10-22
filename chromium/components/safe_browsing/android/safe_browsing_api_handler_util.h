@@ -14,9 +14,12 @@
 namespace safe_browsing {
 
 // Threat types as per the Java code.
-// This must match those in SafeBrowsingThreat.java in GMS's SafetyNet API.
+// Threat type values must be consistent with values in SafeBrowsingThreat.java
+// in GMS's SafetyNet API.
 enum class SafetyNetJavaThreatType {
-  // Magic numbers for allowlists. Not actually used by GMSCore.
+  // Below listed entries are magic numbers for allowlists. These are not
+  // actually threat types used by GMSCore.
+  CSD_DOWNLOAD_ALLOWLIST = 9,
   CSD_ALLOWLIST = 16,
   MAX_VALUE
 };
@@ -99,11 +102,8 @@ enum class SafeBrowsingJavaValidationResult {
   kMaxValue = INVALID_THREAT_ATTRIBUTE
 };
 
-// LINT.IfChange(VerifyAppsEnabledResult)
 // The result of either SafetyNet.isVerifyAppsEnabled or
-// SafetyNet.enableVerifyApps. These values are persisted to
-// logs. Entries should not be renumbered and numeric values should
-// never be reused.
+// SafetyNet.enableVerifyApps.
 // GENERATED_JAVA_ENUM_PACKAGE: org.chromium.components.safe_browsing
 // GENERATED_JAVA_CLASS_NAME_OVERRIDE: VerifyAppsResult
 enum class VerifyAppsEnabledResult {
@@ -114,7 +114,6 @@ enum class VerifyAppsEnabledResult {
   SUCCESS_ALREADY_ENABLED = 4,
   kMaxValue = SUCCESS_ALREADY_ENABLED,
 };
-// LINT.ThenChange(//tools/metrics/histograms/metadata/sb_client/enums.xml:SafeBrowsingVerifyAppsEnabledResult)
 
 // Translates |threat_type| and |threat_attributes| from the Safe Browsing API
 // into ThreatMetadata.

@@ -99,8 +99,8 @@ export class Tab extends LitElement {
     badged: {type: Boolean, reflect: true},
   };
 
-  active: boolean;
-  badged: boolean;
+  declare active: boolean;
+  declare badged: boolean;
 
   constructor() {
     super();

@@ -10,6 +10,7 @@ import * as Bindings from '../../models/bindings/bindings.js';
 import * as Breakpoints from '../../models/breakpoints/breakpoints.js';
 import * as Persistence from '../../models/persistence/persistence.js';
 import * as Workspace from '../../models/workspace/workspace.js';
+import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {
   createTarget,
   describeWithEnvironment,
@@ -33,10 +34,12 @@ describeWithEnvironment('SourcesView', () => {
     const workspace = Workspace.Workspace.WorkspaceImpl.instance();
     const targetManager = SDK.TargetManager.TargetManager.instance();
     const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
+    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
     const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
       resourceMapping,
       targetManager,
+      ignoreListManager,
     });
     const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance(
         {forceNew: true, targetManager, workspace, debuggerWorkspaceBinding});
@@ -47,8 +50,7 @@ describeWithEnvironment('SourcesView', () => {
 
   it('creates new source view of updated type when renamed file requires a different viewer', async () => {
     const sourcesView = new Sources.SourcesView.SourcesView();
-    sourcesView.markAsRoot();
-    sourcesView.show(document.body);
+    renderElementIntoDOM(sourcesView);
     const workspace = Workspace.Workspace.WorkspaceImpl.instance();
     const {uiSourceCode, project} = createFileSystemUISourceCode({
       url: urlString`file:///path/to/overrides/example.html`,
@@ -56,7 +58,7 @@ describeWithEnvironment('SourcesView', () => {
     });
     project.canSetFileContent = () => true;
     project.rename =
-        (uiSourceCode: Workspace.UISourceCode.UISourceCode, newName: string,
+        (_uiSourceCode: Workspace.UISourceCode.UISourceCode, newName: string,
          callback: (
              arg0: boolean, arg1?: string, arg2?: Platform.DevToolsPath.UrlString,
              arg3?: Common.ResourceType.ResourceType) => void) => {
@@ -127,11 +129,11 @@ describeWithEnvironment('SourcesView', () => {
 
     await contentLoadedPromise;
 
-    assert.isTrue(attachSpy.called);
-    assert.isTrue(removeSpy.notCalled);
+    sinon.assert.called(attachSpy);
+    sinon.assert.notCalled(removeSpy);
 
     uiSourceCode.commitWorkingCopy();
-    assert.isTrue(removeSpy.called);
+    sinon.assert.called(removeSpy);
   });
 
   describe('viewForFile', () => {
@@ -149,12 +151,12 @@ describeWithEnvironment('SourcesView', () => {
       const uiSourceCodeFrame = widget;
 
       // Skip creating the DebuggerPlugin, which times out and simulate DOM attach/showing.
-      sinon.stub(uiSourceCodeFrame, 'loadPlugins' as keyof typeof uiSourceCodeFrame).callsFake(() => {});
+      sinon.stub(uiSourceCodeFrame, 'loadPlugins' as keyof typeof uiSourceCodeFrame);
       uiSourceCodeFrame.wasShown();
 
       await contentLoadedPromise;
 
-      assert.isTrue(sourcesPanelFileOpenedSpy.calledWithExactly('text/typescript'));
+      sinon.assert.calledWithExactly(sourcesPanelFileOpenedSpy, 'text/typescript');
     });
   });
 });
@@ -174,12 +176,13 @@ describeWithMockConnection('SourcesView', () => {
 
     const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
     Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.instance({forceNew: true, resourceMapping, targetManager});
+    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
     const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
       resourceMapping,
       targetManager,
+      ignoreListManager,
     });
-    Bindings.IgnoreListManager.IgnoreListManager.instance({forceNew: true, debuggerWorkspaceBinding});
     const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance(
         {forceNew: true, targetManager, workspace, debuggerWorkspaceBinding});
     Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
@@ -214,7 +217,7 @@ describeWithMockConnection('SourcesView', () => {
     new Sources.SourcesView.SourcesView();
     let addedURLs = addUISourceCodeSpy.args.map(args => args[0].url());
     assert.deepEqual(addedURLs, ['http://example.com/a.js', 'http://example.com/b.js']);
-    assert.isTrue(removeUISourceCodesSpy.notCalled);
+    sinon.assert.notCalled(removeUISourceCodesSpy);
 
     addUISourceCodeSpy.resetHistory();
     target2.targetManager().setScopeTarget(target2);
@@ -234,6 +237,6 @@ describeWithMockConnection('SourcesView', () => {
     const sourcesView = new Sources.SourcesView.SourcesView();
     const removeUISourceCodesSpy = sinon.spy(sourcesView.editorContainer, 'removeUISourceCodes');
     target2.targetManager().setScopeTarget(target2);
-    assert.isTrue(removeUISourceCodesSpy.notCalled);
+    sinon.assert.notCalled(removeUISourceCodesSpy);
   });
 });

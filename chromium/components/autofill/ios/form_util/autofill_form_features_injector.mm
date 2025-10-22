@@ -45,19 +45,39 @@ void SetAutofillFormFeatureFlags(WebFrame* web_frame) {
                          features::kAutofillAcrossIframesIosThrottling));
 
   AutofillFormFeaturesJavaScriptFeature::GetInstance()
+      ->SetAutofillIgnoreCheckableElements(
+          web_frame, base::FeatureList::IsEnabled(
+                         features::kAutofillIgnoreCheckableElements));
+
+  AutofillFormFeaturesJavaScriptFeature::GetInstance()
       ->SetAutofillIsolatedContentWorld(
           web_frame,
           base::FeatureList::IsEnabled(kAutofillIsolatedWorldForJavascriptIos));
 
   AutofillFormFeaturesJavaScriptFeature::GetInstance()
-      ->SetAutofillFixPaymentSheetSpam(
-          web_frame,
-          base::FeatureList::IsEnabled(kAutofillFixPaymentSheetSpam));
-
-  AutofillFormFeaturesJavaScriptFeature::GetInstance()
       ->SetAutofillCorrectUserEditedBitInParsedField(
           web_frame, base::FeatureList::IsEnabled(
                          kAutofillCorrectUserEditedBitInParsedField));
+
+  AutofillFormFeaturesJavaScriptFeature::GetInstance()
+      ->SetAutofillAllowDefaultPreventedFormSubmission(
+          web_frame, base::FeatureList::IsEnabled(
+                         kAutofillAllowDefaultPreventedSubmission));
+
+  AutofillFormFeaturesJavaScriptFeature::GetInstance()
+      ->SetAutofillDedupeFormSubmission(
+          web_frame,
+          base::FeatureList::IsEnabled(kAutofillDedupeFormSubmission));
+
+  AutofillFormFeaturesJavaScriptFeature::GetInstance()
+      ->SetAutofillReportFormSubmissionErrors(
+          web_frame,
+          base::FeatureList::IsEnabled(kAutofillReportFormSubmissionErrors));
+
+  AutofillFormFeaturesJavaScriptFeature::GetInstance()
+      ->SetAutofillCountFormSubmissionInRenderer(
+          web_frame,
+          base::FeatureList::IsEnabled(kAutofillCountFormSubmissionInRenderer));
 }
 
 AutofillFormFeaturesInjector::~AutofillFormFeaturesInjector() = default;

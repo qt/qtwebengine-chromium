@@ -29,16 +29,17 @@ export function expectCalled<TArgs extends any[] = any[], TReturnValue = any>(
 }
 
 type Args<T> = T extends(...args: infer TArgs) => unknown ? TArgs : never;
-type Ret<T> = T extends(...args: infer TArgs) => infer TRet ? TRet : never;
+type Ret<T> = T extends(...args: any[]) => infer TRet ? TRet : never;
 
 export function spyCall<T, Fn extends keyof T>(obj: T, method: Fn): Promise<{args: Args<T[Fn]>, result: Ret<T[Fn]>}> {
   const {promise, resolve} = Promise.withResolvers<{args: Args<T[Fn]>, result: Ret<T[Fn]>}>();
 
   const original = obj[method] as (...args: Args<T[Fn]>) => Ret<T[Fn]>;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  sinon.stub(obj, method).callsFake(function(this: any, ...args: any) {
+  const stub = sinon.stub(obj, method).callsFake(function(this: any, ...args: any) {
     const result = original.apply(this, args);
     resolve({args, result});
+    stub.restore();
   });
 
   return promise;

@@ -17,14 +17,11 @@ import("//build/config/cast.gni")
 # flipped elsewhere though.
 import("//build/config/chrome_build.gni")
 import("//build/config/features.gni")
-import("//build/config/nacl/config.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/rust/rust_static_library.gni")
 import("//build/toolchain/kythe.gni")
-import("//components/nacl/features.gni")
 import("//third_party/jinja2/jinja2.gni")
 import("//third_party/ply/ply.gni")
-import("//tools/ipc_fuzzer/ipc_fuzzer.gni")
 declare_args() {
   # Indicates whether typemapping should be supported in this build
   # configuration. This may be disabled when building external projects which
@@ -74,22 +71,13 @@ if (is_chromeos) {
 }
 
 # NOTE: We would like to avoid scrambling message IDs where it doesn't add
-# value, so we limit the behavior to desktop builds for now. There is some
-# redundancy in the conditions here, but it is tolerated for clarity:
-# We're explicit about Mac, Windows, and Linux desktop support, but it's
-# also necessary to ensure that bindings in alternate toolchains (e.g.
-# NaCl IRT) are always consistent with the default toolchain; for that
-# reason we always enable scrambling within NaCl toolchains when possible,
-# as well as within the default toolchain when NaCl is enabled.
-#
-# Finally, because we *cannot* enable scrambling on Chrome OS (it would break
-# ARC) we have to explicitly opt out there even when NaCl is enabled (and
-# consequently also when building for NaCl toolchains.) For this reason we
-# check |target_os| explicitly, as it's consistent across all toolchains.
-enable_scrambled_message_ids =
-    enable_mojom_message_id_scrambling &&
-    (is_mac || is_win || (is_linux && !is_castos) ||
-     ((enable_nacl || is_nacl) && target_os != "chromeos"))
+# value, so we limit the behavior to desktop builds for now.
+# We *cannot* enable scrambling on Chrome OS (it would break ARC).
+enable_scrambled_message_ids = enable_mojom_message_id_scrambling &&
+                               (is_mac || is_win || (is_linux && !is_castos))
+if (enable_scrambled_message_ids) {
+  assert(!is_chromeos)
+}
 
 _mojom_tools_root = "//mojo/public/tools"
 _mojom_library_root = "$_mojom_tools_root/mojom/mojom"
@@ -997,8 +985,10 @@ template("mojom") {
         inputs += [ "$root_gen_dir/$dirname/${filename}-module" ]
 
         outputs += [
+          "$root_gen_dir/$base_path-data-view.h",
           "$root_gen_dir/$base_path-features.h",
           "$root_gen_dir/$base_path-params-data.h",
+          "$root_gen_dir/$base_path-send-validation.h",
           "$root_gen_dir/$base_path-shared-internal.h",
           "$root_gen_dir/$base_path-shared.cc",
           "$root_gen_dir/$base_path-shared.h",
@@ -1049,8 +1039,10 @@ template("mojom") {
       sources = []
       foreach(base_path, output_file_base_paths) {
         sources += [
+          "$root_gen_dir/$base_path-data-view.h",
           "$root_gen_dir/$base_path-features.h",
           "$root_gen_dir/$base_path-params-data.h",
+          "$root_gen_dir/$base_path-send-validation.h",
           "$root_gen_dir/$base_path-shared-internal.h",
           "$root_gen_dir/$base_path-shared.cc",
           "$root_gen_dir/$base_path-shared.h",
@@ -1177,10 +1169,8 @@ template("mojom") {
         import_dirs = [ "//" ]
         proto_in_dir = "${root_gen_dir}"
         proto_out_dir = "."
-        proto_deps = [
-          ":$generator_mojolpm_proto_target_name",
-          "//mojo/public/tools/fuzzers:mojolpm_proto",
-        ]
+        deps = [ "//mojo/public/tools/fuzzers:mojolpm_proto" ]
+        proto_deps = [ ":$generator_mojolpm_proto_target_name" ]
         link_deps = []
 
         foreach(d, all_deps) {
@@ -1188,8 +1178,7 @@ template("mojom") {
           # //mojo/something:something and we can append mojolpm_proto_suffix
           # to get the proto dependency name.
           full_name = get_label_info("$d", "label_no_toolchain")
-          proto_deps += [ "${full_name}_mojolpm_proto" ]
-          link_deps += [ "${full_name}_mojolpm_proto" ]
+          deps += [ "${full_name}_mojolpm_proto" ]
         }
       }
     } else {

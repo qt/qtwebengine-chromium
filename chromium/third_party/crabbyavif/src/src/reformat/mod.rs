@@ -16,6 +16,8 @@
 pub mod libyuv;
 #[cfg(feature = "libyuv")]
 pub mod scale;
+#[cfg(feature = "sharpyuv")]
+pub mod sharpyuv;
 
 pub mod alpha;
 pub mod coeffs;
@@ -30,6 +32,10 @@ pub mod libyuv {
     use crate::*;
 
     pub(crate) fn yuv_to_rgb(_image: &image::Image, _rgb: &mut rgb::Image) -> AvifResult<bool> {
+        Err(AvifError::NotImplemented)
+    }
+
+    pub(crate) fn rgb_to_yuv(_rgb: &rgb::Image, _image: &mut image::Image) -> AvifResult<bool> {
         Err(AvifError::NotImplemented)
     }
 
@@ -49,5 +55,17 @@ pub mod libyuv {
             }
             Err(AvifError::NotImplemented)
         }
+    }
+}
+
+// If libsharpyuv is not present, add placeholder functions so that the library will build successfully
+// without it.
+#[cfg(not(feature = "sharpyuv"))]
+pub mod sharpyuv {
+    use crate::reformat::*;
+    use crate::*;
+
+    pub(crate) fn rgb_to_yuv(_rgb: &rgb::Image, _image: &mut image::Image) -> AvifResult<bool> {
+        Err(AvifError::NotImplemented)
     }
 }

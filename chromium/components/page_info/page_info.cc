@@ -32,7 +32,9 @@
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/content_settings_utils.h"
+#include "components/content_settings/core/common/cookie_controls_state.h"
 #include "components/content_settings/core/common/features.h"
+#include "components/page_info/core/page_info_action.h"
 #include "components/page_info/page_info_delegate.h"
 #include "components/page_info/page_info_ui.h"
 #include "components/permissions/constants.h"
@@ -58,6 +60,7 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/features.h"
@@ -152,10 +155,7 @@ ContentSettingsType kPermissionType[] = {
 #if BUILDFLAG(IS_CHROMEOS)
     ContentSettingsType::WEB_PRINTING,
 #endif  // BUILDFLAG(IS_CHROMEOS)
-#if !BUILDFLAG(IS_ANDROID)
-    // TODO(crbug.com/400455013): Enable on Android.
     ContentSettingsType::LOCAL_NETWORK_ACCESS,
-#endif  // BUIDLFLAG(IS_ANDROID)
 };
 
 // The list of setting types which request permission for a pair of requesting
@@ -363,34 +363,43 @@ PageInfo::~PageInfo() {
 #endif
 }
 
-void PageInfo::OnStatusChanged(
-    bool controls_visible,
-    bool protections_on,
-    CookieControlsEnforcement enforcement,
-    CookieBlocking3pcdStatus blocking_status,
-    base::Time expiration,
-    std::vector<content_settings::TrackingProtectionFeature> features) {
-  if (controls_visible_ != controls_visible ||
-      protections_on_ != protections_on || enforcement != enforcement_ ||
+void PageInfo::OnStatusChanged(CookieControlsState controls_state,
+                               CookieControlsEnforcement enforcement,
+                               CookieBlocking3pcdStatus blocking_status,
+                               base::Time expiration) {
+  if (controls_state_ != controls_state || enforcement != enforcement_ ||
       blocking_status != blocking_status_ ||
-      expiration != cookie_exception_expiration_ || features_ != features) {
-    controls_visible_ = controls_visible;
-    protections_on_ = protections_on;
+      expiration != cookie_exception_expiration_) {
+    controls_state_ = controls_state;
     enforcement_ = enforcement;
     blocking_status_ = blocking_status;
-    features_ = features;
     cookie_exception_expiration_ = expiration;
     PresentSiteData(base::DoNothing());
   }
 }
 
 void PageInfo::OnThirdPartyToggleClicked(bool block_third_party_cookies) {
-  DCHECK(controls_visible_);
+  DCHECK(controls_state_ == CookieControlsState::kAllowed3pc ||
+         controls_state_ == CookieControlsState::kBlocked3pc);
   RecordPageInfoAction(block_third_party_cookies
                            ? page_info::PAGE_INFO_COOKIES_BLOCKED_FOR_SITE
                            : page_info::PAGE_INFO_COOKIES_ALLOWED_FOR_SITE);
   controller_->OnCookieBlockingEnabledForSite(block_third_party_cookies);
   show_info_bar_ = true;
+}
+
+void PageInfo::OnTrackingProtectionButtonPressed() {
+  DCHECK(controls_state_ == CookieControlsState::kPausedTp ||
+         controls_state_ == CookieControlsState::kActiveTp);
+  // Check current controls state to record metrics before updates are made via
+  // `OnTrackingProtectionsChangedForSite`.
+  RecordPageInfoAction(
+      controls_state_ == CookieControlsState::kActiveTp
+          ? page_info::PAGE_INFO_PRIVACY_PAGE_TRACKING_PROTECTIONS_PAUSED
+          : page_info::PAGE_INFO_PRIVACY_PAGE_TRACKING_PROTECTIONS_REENABLED);
+  controller_->OnTrackingProtectionsChangedForSite();
+  show_info_bar_ = true;
+  info_bar_reload_type_ = content::ReloadType::BYPASSING_CACHE;
 }
 
 // static
@@ -595,6 +604,22 @@ void PageInfo::RecordPageInfoAction(page_info::PageInfoAction action) {
       base::RecordAction(
           base::UserMetricsAction("PageInfo.SafeBrowsing.HelpOpened"));
       break;
+    case page_info::PAGE_INFO_SYNC_SETTINGS_OPENED:
+      base::RecordAction(base::UserMetricsAction(
+          "PageInfo.CookiesSubpage.SyncSettingsLinkClicked"));
+      break;
+    case page_info::PAGE_INFO_PRIVACY_PAGE_INCOGNITO_SETTINGS_OPENED:
+      base::RecordAction(base::UserMetricsAction(
+          "PageInfo.PrivacySubpage.IncognitoSettingsOpened"));
+      break;
+    case page_info::PAGE_INFO_PRIVACY_PAGE_TRACKING_PROTECTIONS_REENABLED:
+      base::RecordAction(base::UserMetricsAction(
+          "PageInfo.PrivacySubpage.TrackingProtectionsReenabled"));
+      break;
+    case page_info::PAGE_INFO_PRIVACY_PAGE_TRACKING_PROTECTIONS_PAUSED:
+      base::RecordAction(base::UserMetricsAction(
+          "PageInfo.PrivacySubpage.TrackingProtectionsPaused"));
+      break;
   }
 }
 
@@ -768,7 +793,8 @@ void PageInfo::OnUIClosing(bool* reload_prompt) {
     *reload_prompt = false;
   }
   if (show_info_bar_ && web_contents_ && !web_contents_->IsBeingDestroyed()) {
-    if (delegate_->CreateInfoBarDelegate() && reload_prompt) {
+    if (delegate_->CreateInfoBarDelegate(info_bar_reload_type_) &&
+        reload_prompt) {
       *reload_prompt = true;
     }
   }
@@ -808,6 +834,16 @@ void PageInfo::OpenCookiesSettingsView() {
 #endif
 }
 
+void PageInfo::OpenIncognitoSettingsView() {
+#if BUILDFLAG(IS_ANDROID)
+  NOTREACHED();
+#else
+  RecordPageInfoAction(
+      page_info::PAGE_INFO_PRIVACY_PAGE_INCOGNITO_SETTINGS_OPENED);
+  delegate_->ShowIncognitoSettings();
+#endif
+}
+
 void PageInfo::OpenAllSitesViewFilteredToRws() {
 #if BUILDFLAG(IS_ANDROID)
   NOTREACHED();
@@ -820,6 +856,15 @@ void PageInfo::OpenAllSitesViewFilteredToRws() {
     delegate_->ShowAllSitesSettingsFilteredByRwsOwner(std::u16string());
   }
 
+#endif
+}
+
+void PageInfo::OpenSyncSettingsView() {
+#if BUILDFLAG(IS_ANDROID)
+  NOTREACHED();
+#else
+  RecordPageInfoAction(page_info::PAGE_INFO_SYNC_SETTINGS_OPENED);
+  delegate_->ShowSyncSettings();
 #endif
 }
 
@@ -973,6 +1018,7 @@ void PageInfo::ComputeUIInputs(const GURL& url) {
 
   // Identity section.
   certificate_ = visible_security_state.certificate;
+  two_qwac_ = visible_security_state.two_qwac;
 
   if (certificate_ &&
       (!net::IsCertStatusError(visible_security_state.cert_status))) {
@@ -1503,7 +1549,7 @@ void PageInfo::PresentSiteDataInternal(base::OnceClosure done) {
     return;
   }
 
-  PageInfoUI::CookiesNewInfo cookies_info;
+  PageInfoUI::CookiesInfo cookies_info;
   cookies_info.allowed_sites_count = GetSitesWithAllowedCookiesAccessCount();
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -1513,12 +1559,9 @@ void PageInfo::PresentSiteDataInternal(base::OnceClosure done) {
     cookies_info.rws_info->is_managed = delegate_->IsRwsManaged(site_url_);
   }
 #endif
-
-  cookies_info.controls_visible = controls_visible_;
-  cookies_info.protections_on = protections_on_;
+  cookies_info.controls_state = controls_state_;
   cookies_info.enforcement = enforcement_;
   cookies_info.blocking_status = blocking_status_;
-  cookies_info.features = features_;
   cookies_info.expiration = cookie_exception_expiration_;
   cookies_info.is_incognito = delegate_->IsIncognitoProfile();
   ui_->SetCookieInfo(cookies_info);
@@ -1555,6 +1598,7 @@ void PageInfo::PresentSiteIdentity() {
 #endif
 
   info.certificate = certificate_;
+  info.two_qwac = two_qwac_;
   info.show_ssl_decision_revoke_button = show_ssl_decision_revoke_button_;
   info.show_change_password_buttons = show_change_password_buttons_;
   ui_->SetIdentityInfo(info);

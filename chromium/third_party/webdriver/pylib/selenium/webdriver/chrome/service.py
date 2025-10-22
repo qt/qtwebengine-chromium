@@ -15,34 +15,38 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import List
+
+from typing import List, Mapping, Optional
+
+from selenium.types import SubprocessStdAlias
 from selenium.webdriver.chromium import service
 
 
-DEFAULT_EXECUTEABLE_PATH = "chromedriver"
-
-
 class Service(service.ChromiumService):
+    """A Service class that is responsible for the starting and stopping of
+    `chromedriver`.
+
+    :param executable_path: install path of the chromedriver executable, defaults to `chromedriver`.
+    :param port: Port for the service to run on, defaults to 0 where the operating system will decide.
+    :param service_args: (Optional) List of args to be passed to the subprocess when launching the executable.
+    :param log_output: (Optional) int representation of STDOUT/DEVNULL, any IO instance or String path to file.
+    :param env: (Optional) Mapping of environment variables for the new process, defaults to `os.environ`.
     """
-    Object that manages the starting and stopping of the ChromeDriver
-    """
 
-    def __init__(self, executable_path: str = DEFAULT_EXECUTEABLE_PATH,
-                 port: int = 0, service_args: List[str] = None,
-                 log_path: str = None, env: dict = None):
-        """
-        Creates a new instance of the Service
-
-        :Args:
-         - executable_path : Path to the ChromeDriver
-         - port : Port the service is running on
-         - service_args : List of args to pass to the chromedriver service
-         - log_path : Path for the chromedriver service to log to"""
-
-        super(Service, self).__init__(
-            executable_path,
-            port,
-            service_args,
-            log_path,
-            env,
-            "Please see https://chromedriver.chromium.org/home")
+    def __init__(
+        self,
+        executable_path: Optional[str] = None,
+        port: int = 0,
+        service_args: Optional[List[str]] = None,
+        log_output: Optional[SubprocessStdAlias] = None,
+        env: Optional[Mapping[str, str]] = None,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            executable_path=executable_path,
+            port=port,
+            service_args=service_args,
+            log_output=log_output,
+            env=env,
+            **kwargs,
+        )

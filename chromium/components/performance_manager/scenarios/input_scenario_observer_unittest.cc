@@ -68,20 +68,28 @@ TEST_F(InputScenarioObserverTest, FrameInputState) {
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kNoInput);
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
 
-  frame_input_state().UpdateInputScenario(mock_graph.frame.get(), true);
+  frame_input_state().UpdateInputScenario(
+      mock_graph.frame.get(), InputScenario::kTyping,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kKeyEvent);
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kTyping);
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kTyping);
 
-  frame_input_state().UpdateInputScenario(mock_graph.child_frame.get(), true);
+  frame_input_state().UpdateInputScenario(
+      mock_graph.child_frame.get(), InputScenario::kTyping,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kKeyEvent);
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kTyping);
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kTyping);
 
-  frame_input_state().UpdateInputScenario(mock_graph.frame.get(), false);
+  frame_input_state().UpdateInputScenario(
+      mock_graph.frame.get(), InputScenario::kNoInput,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kTimeout);
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kTyping);
   // Only `child_frame`, which is hosted in `other_process`, still has input.
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
 
-  frame_input_state().UpdateInputScenario(mock_graph.child_frame.get(), false);
+  frame_input_state().UpdateInputScenario(
+      mock_graph.child_frame.get(), InputScenario::kNoInput,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kTimeout);
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kNoInput);
 }
@@ -105,20 +113,75 @@ TEST_F(InputScenarioObserverTest, FrameNodeRemoved) {
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kNoInput);
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
 
-  frame_input_state().UpdateInputScenario(new_frame1.get(), true);
-  frame_input_state().UpdateInputScenario(new_frame2.get(), true);
-  EXPECT_EQ(GlobalInputScenario(), InputScenario::kTyping);
-  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kTyping);
+  frame_input_state().UpdateInputScenario(
+      new_frame1.get(), InputScenario::kScroll,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kScrollStartEvent);
+  frame_input_state().UpdateInputScenario(
+      new_frame2.get(), InputScenario::kScroll,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kScrollStartEvent);
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kScroll);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kScroll);
 
   // Delete a frame receiving input. Another frame is still receiving input.
   new_frame1.reset();
-  EXPECT_EQ(GlobalInputScenario(), InputScenario::kTyping);
-  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kTyping);
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kScroll);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kScroll);
 
   // Delete the last frame receiving input.
   new_frame2.reset();
   EXPECT_EQ(GlobalInputScenario(), InputScenario::kNoInput);
   EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
+}
+
+TEST_F(InputScenarioObserverTest, OverlappingInputScenarios) {
+  MockSinglePageWithMultipleProcessesGraph mock_graph(graph());
+
+  // Map in the read-only scenario memory for the first mock process as the
+  // "current process" state.
+  base::ReadOnlySharedMemoryRegion process_region =
+      GetSharedScenarioRegionForProcessNode(mock_graph.process.get());
+  ASSERT_TRUE(process_region.IsValid());
+  performance_scenarios::ScopedReadOnlyScenarioMemory process_scenario_memory(
+      ScenarioScope::kCurrentProcess, std::move(process_region));
+
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kNoInput);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
+
+  frame_input_state().UpdateInputScenario(
+      mock_graph.frame.get(), InputScenario::kTap,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kTapEvent);
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kTap);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kTap);
+
+  frame_input_state().UpdateInputScenario(
+      mock_graph.child_frame.get(), InputScenario::kTyping,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kKeyEvent);
+  // Tap has priority over typing.
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kTap);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kTap);
+
+  frame_input_state().UpdateInputScenario(
+      mock_graph.frame.get(), InputScenario::kScroll,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kScrollStartEvent);
+  // Scroll has priority over typing. Tap is over because a scroll has started
+  // in the same frame.
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kScroll);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kScroll);
+
+  frame_input_state().UpdateInputScenario(
+      mock_graph.frame.get(), InputScenario::kNoInput,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kScrollEndEvent);
+  // Scroll has ended, but typing is active in the child frame. The child frame
+  // is running in a different process.
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kTyping);
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
+
+  frame_input_state().UpdateInputScenario(
+      mock_graph.child_frame.get(), InputScenario::kNoInput,
+      FrameInputStateDecorator::InputScenarioUpdateReason::kTimeout);
+  // Now all input scenarios have ended.
+  EXPECT_EQ(CurrentProcessInputScenario(), InputScenario::kNoInput);
+  EXPECT_EQ(GlobalInputScenario(), InputScenario::kNoInput);
 }
 
 }  // namespace

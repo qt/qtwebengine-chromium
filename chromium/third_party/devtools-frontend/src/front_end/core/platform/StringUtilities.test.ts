@@ -269,9 +269,9 @@ describe('StringUtilities', () => {
       const stringA = ' '.repeat(10000);
       const stringB = stringA + ' ';
       const hashA = Platform.StringUtilities.hashCode(stringA);
-      assert.isTrue(hashA !== Platform.StringUtilities.hashCode(stringB));
+      assert.notStrictEqual(hashA, Platform.StringUtilities.hashCode(stringB));
       assert.isTrue(isFinite(hashA));
-      assert.isTrue(hashA + 1 !== hashA);
+      assert.notStrictEqual(hashA + 1, hashA);
     });
   });
 
@@ -494,6 +494,9 @@ describe('StringUtilities', () => {
       assert.strictEqual(Platform.StringUtilities.countUnmatchedLeftParentheses('a(b)'), 0);
       assert.strictEqual(Platform.StringUtilities.countUnmatchedLeftParentheses(')a(b)'), 0);
       assert.strictEqual(Platform.StringUtilities.countUnmatchedLeftParentheses(')a(()bc(d(f)('), 3);
+      assert.strictEqual(Platform.StringUtilities.countUnmatchedLeftParentheses('"(\')"'), 0);
+      assert.strictEqual(Platform.StringUtilities.countUnmatchedLeftParentheses('("(\')"'), 1);
+      assert.strictEqual(Platform.StringUtilities.countUnmatchedLeftParentheses('abc(def"g(h)"i)jkl'), 0);
     });
   });
 
@@ -668,6 +671,24 @@ describe('StringUtilities', () => {
 
     it('should handle mixed cases', () => {
       assert.strictEqual(toKebabCase('CamelCase_with.DOTS123'), 'camel-case-with.dots-123');
+    });
+  });
+
+  describe('toKebabCaseKeys', () => {
+    const {toKebabCaseKeys} = Platform.StringUtilities;
+
+    it('converts dictionaries with numeric values', () => {
+      assert.deepEqual(
+          toKebabCaseKeys({['FOO_BAR']: 1, ['FOO_BAZ']: 2}),
+          {['foo-bar']: 1, ['foo-baz']: 2},
+      );
+    });
+
+    it('converts dictionaries with mixed values', () => {
+      assert.deepEqual(
+          toKebabCaseKeys({['FOO_BAR']: 1, ['FOO_BAZ']: 'test'}),
+          {['foo-bar']: 1, ['foo-baz']: 'test'},
+      );
     });
   });
 });

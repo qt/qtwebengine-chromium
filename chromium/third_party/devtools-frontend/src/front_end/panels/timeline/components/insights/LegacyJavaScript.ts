@@ -4,11 +4,14 @@
 
 import './Table.js';
 
+import * as Common from '../../../../core/common/common.js';
 import * as i18n from '../../../../core/i18n/i18n.js';
-import type {LegacyJavaScriptInsightModel} from '../../../../models/trace/insights/LegacyJavaScript.js';
+import * as SDK from '../../../../core/sdk/sdk.js';
+import * as Bindings from '../../../../models/bindings/bindings.js';
+import type {
+  LegacyJavaScriptInsightModel, PatternMatchResult} from '../../../../models/trace/insights/LegacyJavaScript.js';
 import * as Trace from '../../../../models/trace/trace.js';
 import * as Lit from '../../../../ui/lit/lit.js';
-import type * as Overlays from '../../overlays/overlays.js';
 
 import {BaseInsightComponent} from './BaseInsightComponent.js';
 import {scriptRef} from './ScriptRef.js';
@@ -26,32 +29,29 @@ export class LegacyJavaScript extends BaseInsightComponent<LegacyJavaScriptInsig
     return this.model?.metricSavings?.FCP ?? null;
   }
 
-  override getEstimatedSavingsBytes(): number|null {
-    if (!this.model) {
-      return null;
-    }
-
-    let estimatedByteSavings = 0;
-    for (const result of this.model.legacyJavaScriptResults.values()) {
-      estimatedByteSavings += result.estimatedByteSavings;
-    }
-
-    return estimatedByteSavings;
+  protected override hasAskAiSupport(): boolean {
+    return true;
   }
 
-  override createOverlays(): Overlays.Overlays.TimelineOverlay[] {
-    if (!this.model) {
-      return [];
+  async #revealLocation(script: Trace.Handlers.ModelHandlers.Scripts.Script, match: PatternMatchResult): Promise<void> {
+    const target = SDK.TargetManager.TargetManager.instance().primaryPageTarget();
+    if (!target) {
+      return;
     }
 
-    const requests = [...this.model.legacyJavaScriptResults.keys()].map(script => script.request).filter(e => !!e);
-    return requests.map(request => {
-      return {
-        type: 'ENTRY_OUTLINE',
-        entry: request,
-        outlineReason: 'ERROR',
-      };
-    });
+    const debuggerModel = target.model(SDK.DebuggerModel.DebuggerModel);
+    if (!debuggerModel) {
+      return;
+    }
+
+    const location = new SDK.DebuggerModel.Location(debuggerModel, script.scriptId, match.line, match.column);
+    if (!location) {
+      return;
+    }
+
+    const uiLocation =
+        await Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance().rawLocationToUILocation(location);
+    await Common.Revealer.reveal(uiLocation);
   }
 
   override renderContent(): Lit.LitTemplate {
@@ -61,7 +61,7 @@ export class LegacyJavaScript extends BaseInsightComponent<LegacyJavaScriptInsig
 
     const rows: TableDataRow[] =
         [...this.model.legacyJavaScriptResults.entries()].slice(0, 10).map(([script, result]) => {
-          const overlays: Overlays.Overlays.TimelineOverlay[] = [];
+          const overlays: Trace.Types.Overlays.Overlay[] = [];
           if (script.request) {
             overlays.push({
               type: 'ENTRY_OUTLINE',
@@ -75,7 +75,9 @@ export class LegacyJavaScript extends BaseInsightComponent<LegacyJavaScriptInsig
             overlays,
             subRows: result.matches.map(match => {
               return {
-                values: [html`<span title=${`${script.url}:${match.line}:${match.column}`}>${match.name}</span>`],
+                values: [html`<span @click=${
+                    () => this.#revealLocation(
+                        script, match)} title=${`${script.url}:${match.line}:${match.column}`}>${match.name}</span>`],
               };
             })
           };

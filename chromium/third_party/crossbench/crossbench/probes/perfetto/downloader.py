@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final, Mapping, Optional, Tuple
+from typing import TYPE_CHECKING, Final, Mapping, Optional
 
 from crossbench import exception, plt
 
@@ -16,7 +16,7 @@ _BASE_STORAGE_URL = (
 
 # Copied from perfetto sources:
 # https://crsrc.org/c/third_party/perfetto/python/perfetto/prebuilts/manifests/tracebox.py
-PLATFORM_LOOKUP: Final[Mapping[Tuple[str, str], str]] = {
+PLATFORM_LOOKUP: Final[Mapping[tuple[str, str], str]] = {
     ("linux", "x64"): "linux-amd64",
     ("linux", "arm64"): "linux-arm64",
     ("linux", "arm32"): "linux-arm",
@@ -36,7 +36,7 @@ class PerfettoToolDownloader:
 
   def __init__(self,
                tool: str,
-               version: str = "v49.0",
+               version: str = "v51.2",
                platform: Optional[plt.Platform] = None) -> None:
     self._version = version
     self._tool = tool

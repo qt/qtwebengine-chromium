@@ -96,8 +96,9 @@ PositionInFlatTree TextFragmentFinder::NextTextPosition(
       TextIteratorBehavior::Builder().SetEmitsSpaceForNbsp(true).Build();
   CharacterIteratorInFlatTree char_it(position, end_position, options);
   for (; char_it.length(); char_it.Advance(1)) {
-    if (!IsSpaceOrNewline(char_it.CharacterAt(0)))
+    if (!unicode::IsSpaceOrNewline(char_it.CharacterAt(0))) {
       return char_it.StartPosition();
+    }
   }
 
   return end_position;
@@ -113,8 +114,9 @@ PositionInFlatTree TextFragmentFinder::PreviousTextPosition(
       EphemeralRangeInFlatTree(max_position, position), options);
 
   for (; char_it.length(); char_it.Advance(1)) {
-    if (!IsSpaceOrNewline(char_it.CharacterAt(0)))
+    if (!unicode::IsSpaceOrNewline(char_it.CharacterAt(0))) {
       return char_it.EndPosition();
+    }
   }
 
   return max_position;
@@ -375,7 +377,20 @@ TextFragmentFinder::TextFragmentFinder(Client& client,
                                        const TextFragmentSelector& selector,
                                        Document* document,
                                        FindBufferRunnerType runner_type)
-    : client_(client), selector_(selector), document_(document) {
+    : TextFragmentFinder(client,
+                         selector,
+                         document->createRange(),
+                         runner_type) {
+  if (document->body()) {
+    range_->selectNode(document->body());
+  }
+}
+
+TextFragmentFinder::TextFragmentFinder(Client& client,
+                                       const TextFragmentSelector& selector,
+                                       Range* range,
+                                       FindBufferRunnerType runner_type)
+    : client_(client), selector_(selector), range_(range) {
   DCHECK(!selector_.Start().empty());
   DCHECK(selector_.Type() != TextFragmentSelector::SelectorType::kInvalid);
   if (runner_type == TextFragmentFinder::FindBufferRunnerType::kAsynchronous) {
@@ -393,24 +408,22 @@ void TextFragmentFinder::Cancel() {
 void TextFragmentFinder::FindMatch() {
   Cancel();
 
-  auto forced_lock_scope =
-      document_->GetDisplayLockDocumentState().GetScopedForceActivatableLocks();
-  document_->UpdateStyleAndLayout(DocumentUpdateReason::kFindInPage);
+  auto forced_lock_scope = range_->OwnerDocument()
+                               .GetDisplayLockDocumentState()
+                               .GetScopedForceActivatableLocks();
+  range_->OwnerDocument().UpdateStyleAndLayout(
+      DocumentUpdateReason::kFindInPage);
 
   first_match_.Clear();
-  FindMatchFromPosition(PositionInFlatTree::FirstPositionInNode(*document_));
+
+  PositionInFlatTree search_start =
+      ToPositionInFlatTree(range_->StartPosition());
+  FindMatchFromPosition(search_start);
 }
 
 void TextFragmentFinder::FindMatchFromPosition(
     PositionInFlatTree search_start) {
-  PositionInFlatTree search_end;
-  if (document_->documentElement() &&
-      document_->documentElement()->lastChild()) {
-    search_end = PositionInFlatTree::AfterNode(
-        *document_->documentElement()->lastChild());
-  } else {
-    search_end = PositionInFlatTree::LastPositionInNode(*document_);
-  }
+  PositionInFlatTree search_end = ToPositionInFlatTree(range_->EndPosition());
   search_range_ =
       MakeGarbageCollected<RangeInFlatTree>(search_start, search_end);
   match_range_ =
@@ -436,7 +449,7 @@ void TextFragmentFinder::OnMatchComplete() {
 }
 
 void TextFragmentFinder::Trace(Visitor* visitor) const {
-  visitor->Trace(document_);
+  visitor->Trace(range_);
   visitor->Trace(range_end_search_start_);
   visitor->Trace(potential_match_);
   visitor->Trace(prefix_match_);

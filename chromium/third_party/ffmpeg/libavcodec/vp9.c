@@ -1140,7 +1140,8 @@ static void decode_sb(VP9TileData *td, int row, int col, VP9Filter *lflvl,
                           uvoff + (8 * hbs * bytesperpixel >> s->ss_h), bl + 1);
                 break;
             default:
-                av_assert0(0);
+                av_unreachable("ff_vp9_partition_tree only has "
+                               "the four PARTITION_* terminal codes");
             }
         } else if (vpx_rac_get_prob_branchy(td->c, p[1])) {
             bp = PARTITION_SPLIT;
@@ -1618,7 +1619,7 @@ static int vp9_decode_frame(AVCodecContext *avctx, AVFrame *frame,
 
     if (avctx->hwaccel) {
         const FFHWAccel *hwaccel = ffhwaccel(avctx->hwaccel);
-        ret = hwaccel->start_frame(avctx, NULL, 0);
+        ret = hwaccel->start_frame(avctx, pkt->buf, pkt->data, pkt->size);
         if (ret < 0)
             return ret;
         ret = hwaccel->decode_slice(avctx, pkt->data, pkt->size);

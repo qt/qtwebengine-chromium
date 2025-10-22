@@ -15,6 +15,7 @@
 #include "base/apple/foundation_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
+#include "components/viz/common/resources/shared_image_format.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/ca_layer_params.h"
 #include "ui/gfx/geometry/skia_conversions.h"
@@ -78,10 +79,10 @@ void SoftwareOutputDeviceMac::UpdateAndCopyBufferDamage(
 
   {
     TRACE_EVENT0("browser", "IOSurfaceLock for software copy");
-    IOReturn io_result = IOSurfaceLock(
+    kern_return_t io_result = IOSurfaceLock(
         previous_io_surface, kIOSurfaceLockReadOnly | kIOSurfaceLockAvoidSync,
         nullptr);
-    if (io_result) {
+    if (io_result != KERN_SUCCESS) {
       DLOG(ERROR) << "Failed to lock previous IOSurface " << io_result;
       return;
     }
@@ -101,11 +102,12 @@ void SoftwareOutputDeviceMac::UpdateAndCopyBufferDamage(
 
   {
     TRACE_EVENT0("browser", "IOSurfaceUnlock");
-    IOReturn io_result = IOSurfaceUnlock(
+    kern_return_t io_result = IOSurfaceUnlock(
         previous_io_surface, kIOSurfaceLockReadOnly | kIOSurfaceLockAvoidSync,
         nullptr);
-    if (io_result)
+    if (io_result != KERN_SUCCESS) {
       DLOG(ERROR) << "Failed to unlock previous IOSurface " << io_result;
+    }
   }
 }
 
@@ -133,7 +135,7 @@ SkCanvas* SoftwareOutputDeviceMac::BeginPaint(
   if (!current_paint_buffer_) {
     std::unique_ptr<Buffer> new_buffer(new Buffer);
     new_buffer->io_surface =
-        gfx::CreateIOSurface(pixel_size_, gfx::BufferFormat::BGRA_8888);
+        gfx::CreateIOSurface(pixel_size_, SinglePlaneFormat::kBGRA_8888);
     if (!new_buffer->io_surface)
       return nullptr;
     // Set the initial damage to be the full buffer.
@@ -156,9 +158,10 @@ SkCanvas* SoftwareOutputDeviceMac::BeginPaint(
   // |current_paint_canvas_|.
   {
     TRACE_EVENT0("browser", "IOSurfaceLock for software paint");
-    IOReturn io_result = IOSurfaceLock(current_paint_buffer_->io_surface.get(),
-                                       kIOSurfaceLockAvoidSync, nullptr);
-    if (io_result) {
+    kern_return_t io_result =
+        IOSurfaceLock(current_paint_buffer_->io_surface.get(),
+                      kIOSurfaceLockAvoidSync, nullptr);
+    if (io_result != KERN_SUCCESS) {
       DLOG(ERROR) << "Failed to lock IOSurface " << io_result;
       current_paint_buffer_ = nullptr;
       return nullptr;
@@ -186,11 +189,12 @@ void SoftwareOutputDeviceMac::EndPaint() {
 
   {
     TRACE_EVENT0("browser", "IOSurfaceUnlock");
-    IOReturn io_result =
+    kern_return_t io_result =
         IOSurfaceUnlock(current_paint_buffer_->io_surface.get(),
                         kIOSurfaceLockAvoidSync, nullptr);
-    if (io_result)
+    if (io_result != KERN_SUCCESS) {
       DLOG(ERROR) << "Failed to unlock IOSurface " << io_result;
+    }
   }
   current_paint_canvas_.reset();
 

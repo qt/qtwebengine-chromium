@@ -1,6 +1,8 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import './Toolbar.js';
 
@@ -62,8 +64,8 @@ export class ListWidget<T> extends VBox {
   private editElement: Element|null;
   private emptyPlaceholder: Element|null;
   private isTable: boolean;
-  constructor(delegate: Delegate<T>, delegatesFocus: boolean|undefined = true, isTable = false) {
-    super(true, delegatesFocus);
+  constructor(delegate: Delegate<T>, delegatesFocus = true, isTable = false) {
+    super({useShadowDom: true, delegatesFocus});
     this.registerRequiredCSS(listWidgetStyles);
     this.delegate = delegate;
 
@@ -208,7 +210,7 @@ export class ListWidget<T> extends VBox {
       const index = this.elements.indexOf(element);
       this.element.focus();
       this.delegate.removeItemRequested(this.items[index], index);
-      ARIAUtils.alert(i18nString(UIStrings.removedItem));
+      ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.removedItem));
       if (this.elements.length >= 1) {
         // focus on the next item in the list, or the last item if we're removing the last item
         (this.elements[Math.min(index, this.elements.length - 1)] as HTMLElement).focus();
@@ -267,7 +269,7 @@ export class ListWidget<T> extends VBox {
     this.stopEditing();
     if (editItem !== null) {
       this.delegate.commitEdit(editItem, editor, isNew);
-      ARIAUtils.alert(i18nString(UIStrings.changesSaved));
+      ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.changesSaved));
       if (this.elements[focusElementIndex]) {
         (this.elements[focusElementIndex] as HTMLElement).focus();
       }

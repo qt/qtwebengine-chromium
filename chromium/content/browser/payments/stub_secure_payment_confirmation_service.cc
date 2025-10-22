@@ -4,6 +4,7 @@
 
 #include "content/browser/payments/stub_secure_payment_confirmation_service.h"
 
+#include "content/browser/webauth/authenticator_common_impl.h"
 #include "third_party/blink/public/mojom/webauthn/authenticator.mojom.h"
 
 namespace content {
@@ -29,11 +30,22 @@ StubSecurePaymentConfirmationService::StubSecurePaymentConfirmationService(
     RenderFrameHost& render_frame_host,
     mojo::PendingReceiver<payments::mojom::SecurePaymentConfirmationService>
         receiver)
-    : DocumentService(render_frame_host, std::move(receiver)) {}
+    : DocumentService(render_frame_host, std::move(receiver)),
+      authenticator_common_impl_(std::make_unique<AuthenticatorCommonImpl>(
+          &render_frame_host,
+          // The real SecurePaymentConfirmationService uses an
+          // InternalAuthenticator so kInternalUses is set here.
+          AuthenticatorCommonImpl::ServingRequestsFor::kInternalUses)) {}
 
-void StubSecurePaymentConfirmationService::IsSecurePaymentConfirmationAvailable(
-    IsSecurePaymentConfirmationAvailableCallback callback) {
-  std::move(callback).Run(false);
+StubSecurePaymentConfirmationService::~StubSecurePaymentConfirmationService() =
+    default;
+
+void StubSecurePaymentConfirmationService::
+    SecurePaymentConfirmationAvailability(
+        SecurePaymentConfirmationAvailabilityCallback callback) {
+  std::move(callback).Run(
+      payments::mojom::SecurePaymentConfirmationAvailabilityEnum::
+          kUnavailableFeatureNotEnabled);
 }
 
 void StubSecurePaymentConfirmationService::StorePaymentCredential(
@@ -48,11 +60,8 @@ void StubSecurePaymentConfirmationService::StorePaymentCredential(
 void StubSecurePaymentConfirmationService::MakePaymentCredential(
     blink::mojom::PublicKeyCredentialCreationOptionsPtr options,
     MakePaymentCredentialCallback callback) {
-  // This method on this stub is not implemented.
-  std::move(callback).Run(
-      blink::mojom::AuthenticatorStatus::UNKNOWN_ERROR,
-      /*make_credential_authenticator_response_ptr=*/nullptr,
-      /*webauthn_dom_exception_details_ptr=*/nullptr);
+  authenticator_common_impl_->MakeCredential(origin(), std::move(options),
+                                             std::move(callback));
 }
 
 }  // namespace content

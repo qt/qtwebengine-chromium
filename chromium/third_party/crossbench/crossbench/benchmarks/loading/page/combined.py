@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, Iterable, Tuple
+from typing import TYPE_CHECKING, Iterable
 
 from typing_extensions import override
 
-from crossbench.benchmarks.loading.page.base import Page, get_action_runner
+from crossbench.benchmarks.loading.page.base import Page
 from crossbench.benchmarks.loading.playback_controller import \
     PlaybackController
 from crossbench.benchmarks.loading.tab_controller import TabController
@@ -53,7 +53,7 @@ class CombinedPage(Page):
 
   @property
   @override
-  def substories(self) -> Tuple[str, ...]:
+  def substories(self) -> tuple[str, ...]:
     return tuple(
         substory for page in self._pages for substory in page.substories)
 
@@ -73,11 +73,15 @@ class CombinedPage(Page):
     for page in self._pages:
       page.teardown(run)
 
-  def run(self, run: Run) -> None:
-    action_runner = get_action_runner(run)
+  @override
+  def setup(self, run: Run) -> None:
+    for page in self.pages:
+      page.setup(run)
+
+  def run_once(self, run: Run) -> None:
+    action_runner = run.action_runner
     multiple_tabs = self.tabs.multiple_tabs
-    for _ in self._playback:
-      action_runner.run_combined_page(run, self, multiple_tabs)
+    action_runner.run_combined_page(run, self, multiple_tabs)
 
   @override
   def run_with(self, run: Run, action_runner: ActionRunner,

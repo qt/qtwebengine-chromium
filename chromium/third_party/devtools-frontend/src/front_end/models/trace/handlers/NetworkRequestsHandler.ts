@@ -47,26 +47,19 @@ export interface WebSocketTraceDataForWorker {
 export type WebSocketTraceData = WebSocketTraceDataForFrame|WebSocketTraceDataForWorker;
 
 const webSocketData = new Map<number, WebSocketTraceData>();
+const linkPreconnectEvents: Types.Events.LinkPreconnect[] = [];
+
 interface NetworkRequestData {
   byId: Map<string, Types.Events.SyntheticNetworkRequest>;
-  byOrigin: Map<string, {
-    renderBlocking: Types.Events.SyntheticNetworkRequest[],
-    nonRenderBlocking: Types.Events.SyntheticNetworkRequest[],
-    all: Types.Events.SyntheticNetworkRequest[],
-  }>;
   byTime: Types.Events.SyntheticNetworkRequest[];
   eventToInitiator: Map<Types.Events.SyntheticNetworkRequest, Types.Events.SyntheticNetworkRequest>;
   webSocket: WebSocketTraceData[];
   entityMappings: HandlerHelpers.EntityMappings;
+  linkPreconnectEvents: Types.Events.LinkPreconnect[];
 }
 
 const requestMap = new Map<string, TraceEventsForNetworkRequest>();
 const requestsById = new Map<string, Types.Events.SyntheticNetworkRequest>();
-const requestsByOrigin = new Map<string, {
-  renderBlocking: Types.Events.SyntheticNetworkRequest[],
-  nonRenderBlocking: Types.Events.SyntheticNetworkRequest[],
-  all: Types.Events.SyntheticNetworkRequest[],
-}>();
 const requestsByTime: Types.Events.SyntheticNetworkRequest[] = [];
 
 const networkRequestEventByInitiatorUrl = new Map<string, Types.Events.SyntheticNetworkRequest[]>();
@@ -103,9 +96,9 @@ function storeTraceEventWithRequestId<K extends keyof TraceEventsForNetworkReque
   }
 }
 
-function firstPositiveValueInList(entries: number[]): number {
+function firstPositiveValueInList(entries: Array<number|null>): number {
   for (const entry of entries) {
-    if (entry > 0) {
+    if (entry && entry > 0) {
       return entry;
     }
   }
@@ -118,7 +111,6 @@ function firstPositiveValueInList(entries: number[]): number {
 
 export function reset(): void {
   requestsById.clear();
-  requestsByOrigin.clear();
   requestMap.clear();
   requestsByTime.length = 0;
   networkRequestEventByInitiatorUrl.clear();
@@ -127,6 +119,7 @@ export function reset(): void {
   entityMappings.eventsByEntity.clear();
   entityMappings.entityByEvent.clear();
   entityMappings.createdEntityCache.clear();
+  linkPreconnectEvents.length = 0;
 }
 
 export function handleEvent(event: Types.Events.Event): void {
@@ -188,6 +181,11 @@ export function handleEvent(event: Types.Events.Event): void {
 
     webSocketData.get(identifier)?.events.push(event);
   }
+
+  if (Types.Events.isLinkPreconnect(event)) {
+    linkPreconnectEvents.push(event);
+    return;
+  }
 }
 
 export async function finalize(): Promise<void> {
@@ -195,7 +193,7 @@ export async function finalize(): Promise<void> {
   for (const [requestId, request] of requestMap.entries()) {
     // If we have an incomplete set of events here, we choose to drop the network
     // request rather than attempt to synthesize the missing data.
-    if (!request.sendRequests || !request.receiveResponse) {
+    if (!request.sendRequests) {
       continue;
     }
 
@@ -235,12 +233,41 @@ export async function finalize(): Promise<void> {
       });
     }
 
+    const firstSendRequest = request.sendRequests[0];
+    const finalSendRequest = request.sendRequests[request.sendRequests.length - 1];
+
+    // We currently do not want to include data URI requests. We may revisit this in the future.
+    if (finalSendRequest.args.data.url.startsWith('data:')) {
+      continue;
+    }
+
+    /**
+     * LR loses transfer size information, but passes it in the 'X-TotalFetchedSize' header.
+     * 'X-TotalFetchedSize' is the canonical transfer size in LR.
+     *
+     * In Lightrider, due to instrumentation limitations, our values for encodedDataLength are bogus
+     * and not valid. However the resource's true encodedDataLength/transferSize is shared via a
+     * special response header, X-TotalFetchedSize. In this situation, we read this value from
+     * responseReceived, use it for the transferSize and ignore the original encodedDataLength values.
+     */
+    // @ts-expect-error
+    const isLightrider = globalThis.isLightrider;
+    if (isLightrider && request.resourceFinish && request.receiveResponse?.args.data.headers) {
+      const lrSizeHeader = request.receiveResponse.args.data.headers.find(h => h.name === 'X-TotalFetchedSize');
+      if (lrSizeHeader) {
+        const size = parseFloat(lrSizeHeader.value);
+        if (!isNaN(size)) {
+          request.resourceFinish.args.data.encodedDataLength = size;
+        }
+      }
+    }
+
     // If a ResourceFinish event with an encoded data length is received,
     // then the resource was not cached; it was fetched before it was
     // requested, e.g. because it was pushed in this navigation.
     const isPushedResource = request.resourceFinish?.args.data.encodedDataLength !== 0;
     // This works around crbug.com/998397, which reports pushed resources, and resources served by a service worker as disk cached.
-    const isDiskCached = request.receiveResponse.args.data.fromCache &&
+    const isDiskCached = !!request.receiveResponse && request.receiveResponse.args.data.fromCache &&
         !request.receiveResponse.args.data.fromServiceWorker && !isPushedResource;
     // If the request contains a resourceMarkAsCached event, it was served from memory cache.
     // The timing data returned is from the original (uncached) request, which
@@ -256,14 +283,62 @@ export async function finalize(): Promise<void> {
     const isMemoryCached = request.resourceMarkAsCached !== undefined;
     // If a request has `resourceMarkAsCached` field, the `timing` field is not correct.
     // So let's discard it and override to 0 (which will be handled in later logic if timing field is undefined).
-    const timing = isMemoryCached ? undefined : request.receiveResponse.args.data.timing;
-    // If a non-cached request has no |timing| indicates data URLs, we ignore it.
-    if (!timing && !isMemoryCached) {
-      continue;
+    let timing = isMemoryCached ? undefined : request.receiveResponse?.args.data.timing;
+
+    /**
+     * LR gets additional, accurate timing information from its underlying fetch infrastructure.  This
+     * is passed in via X-Headers similar to 'X-TotalFetchedSize'.
+     *
+     * See `_updateTimingsForLightrider` in Lighthouse for more detail.
+     */
+    if (isLightrider && request.receiveResponse?.args.data.headers) {
+      timing = {
+        requestTime: Helpers.Timing.microToSeconds(request.sendRequests.at(0)?.ts ?? 0 as Types.Timing.Micro),
+        connectEnd: 0 as Types.Timing.Milli,
+        connectStart: 0 as Types.Timing.Milli,
+        dnsEnd: 0 as Types.Timing.Milli,
+        dnsStart: 0 as Types.Timing.Milli,
+        proxyEnd: 0 as Types.Timing.Milli,
+        proxyStart: 0 as Types.Timing.Milli,
+        pushEnd: 0 as Types.Timing.Milli,
+        pushStart: 0 as Types.Timing.Milli,
+        receiveHeadersEnd: 0 as Types.Timing.Milli,
+        receiveHeadersStart: 0 as Types.Timing.Milli,
+        sendEnd: 0 as Types.Timing.Milli,
+        sendStart: 0 as Types.Timing.Milli,
+        sslEnd: 0 as Types.Timing.Milli,
+        sslStart: 0 as Types.Timing.Milli,
+        workerReady: 0 as Types.Timing.Milli,
+        workerStart: 0 as Types.Timing.Milli,
+
+        ...timing,
+      };
+
+      const TCPMsHeader = request.receiveResponse.args.data.headers.find(h => h.name === 'X-TCPMs');
+      const TCPMs = TCPMsHeader ? Math.max(0, parseInt(TCPMsHeader.value, 10)) : 0;
+
+      if (request.receiveResponse.args.data.protocol.startsWith('h3')) {
+        timing.connectStart = 0 as Types.Timing.Milli;
+        timing.connectEnd = TCPMs as Types.Timing.Milli;
+      } else {
+        timing.connectStart = 0 as Types.Timing.Milli;
+        timing.sslStart = TCPMs / 2 as Types.Timing.Milli;
+        timing.connectEnd = TCPMs as Types.Timing.Milli;
+        timing.sslEnd = TCPMs as Types.Timing.Milli;
+      }
     }
 
-    const firstSendRequest = request.sendRequests[0];
-    const finalSendRequest = request.sendRequests[request.sendRequests.length - 1];
+    // TODO: consider allowing chrome / about.
+    const allowedProtocols = [
+      'blob:',
+      'file:',
+      'filesystem:',
+      'http:',
+      'https:',
+    ];
+    if (!allowedProtocols.some(p => firstSendRequest.args.data.url.startsWith(p))) {
+      continue;
+    }
 
     const initialPriority = finalSendRequest.args.data.priority;
     let finalPriority = initialPriority;
@@ -334,13 +409,14 @@ export async function finalize(): Promise<void> {
     // Otherwise it is whichever positive number comes first from the following timing info:
     // DNS start, Connection start, Send Start, or the time duration between our start time and
     // receiving a response.
-    const stalled = timing ? Types.Timing.Micro(firstPositiveValueInList([
-      timing.dnsStart * MILLISECONDS_TO_MICROSECONDS,
-      timing.connectStart * MILLISECONDS_TO_MICROSECONDS,
-      timing.sendStart * MILLISECONDS_TO_MICROSECONDS,
-      (request.receiveResponse.ts - endRedirectTime),
-    ])) :
-                             Types.Timing.Micro(request.receiveResponse.ts - startTime);
+    const stalled = timing ?
+        Types.Timing.Micro(firstPositiveValueInList([
+          timing.dnsStart * MILLISECONDS_TO_MICROSECONDS,
+          timing.connectStart * MILLISECONDS_TO_MICROSECONDS,
+          timing.sendStart * MILLISECONDS_TO_MICROSECONDS,
+          request.receiveResponse ? (request.receiveResponse.ts - endRedirectTime) : null,
+        ])) :
+        (request.receiveResponse ? Types.Timing.Micro(request.receiveResponse.ts - startTime) : Types.Timing.Micro(0));
 
     // Sending HTTP request
     // =======================
@@ -364,8 +440,9 @@ export async function finalize(): Promise<void> {
         Types.Timing.Micro(
             timing.requestTime * SECONDS_TO_MICROSECONDS + timing.receiveHeadersEnd * MILLISECONDS_TO_MICROSECONDS) :
         startTime;
-    const download = timing ? Types.Timing.Micro(((finishTime || downloadStart) - downloadStart)) :
-                              Types.Timing.Micro(endTime - request.receiveResponse.ts);
+    const download = timing     ? Types.Timing.Micro(((finishTime || downloadStart) - downloadStart)) :
+        request.receiveResponse ? Types.Timing.Micro(endTime - request.receiveResponse.ts) :
+                                  Types.Timing.Micro(0);
 
     const totalTime = Types.Timing.Micro(networkDuration + processingDuration);
 
@@ -426,12 +503,12 @@ export async function finalize(): Promise<void> {
               decodedBodyLength,
               encodedDataLength,
               frame,
-              fromServiceWorker: request.receiveResponse.args.data.fromServiceWorker,
+              fromServiceWorker: request.receiveResponse?.args.data.fromServiceWorker,
               isLinkPreload: finalSendRequest.args.data.isLinkPreload || false,
-              mimeType: request.receiveResponse.args.data.mimeType,
+              mimeType: request.receiveResponse?.args.data.mimeType ?? '',
               priority: finalPriority,
               initialPriority,
-              protocol: request.receiveResponse.args.data.protocol ?? 'unknown',
+              protocol: request.receiveResponse?.args.data.protocol ?? 'unknown',
               redirects,
               // In the event the property isn't set, assume non-blocking.
               renderBlocking: renderBlocking ?? 'non_blocking',
@@ -439,8 +516,8 @@ export async function finalize(): Promise<void> {
               requestingFrameUrl,
               requestMethod: finalSendRequest.args.data.requestMethod,
               resourceType: finalSendRequest.args.data.resourceType ?? Protocol.Network.ResourceType.Other,
-              statusCode: request.receiveResponse.args.data.statusCode,
-              responseHeaders: request.receiveResponse.args.data.headers || [],
+              statusCode: request.receiveResponse?.args.data.statusCode ?? 0,
+              responseHeaders: request.receiveResponse?.args.data.headers ?? null,
               fetchPriorityHint: finalSendRequest.args.data.fetchPriorityHint ?? 'auto',
               initiator: finalSendRequest.args.data.initiator,
               stackTrace: finalSendRequest.args.data.stackTrace,
@@ -448,8 +525,9 @@ export async function finalize(): Promise<void> {
               url,
               failed: request.resourceFinish?.args.data.didFail ?? false,
               finished: Boolean(request.resourceFinish),
-              connectionId: request.receiveResponse.args.data.connectionId,
-              connectionReused: request.receiveResponse.args.data.connectionReused,
+              hasResponse: Boolean(request.receiveResponse),
+              connectionId: request.receiveResponse?.args.data.connectionId,
+              connectionReused: request.receiveResponse?.args.data.connectionReused,
             },
           },
           cat: 'loading',
@@ -463,25 +541,8 @@ export async function finalize(): Promise<void> {
           tid: finalSendRequest.tid,
         });
 
-    const requests = Platform.MapUtilities.getWithDefault(requestsByOrigin, parsedUrl.host, () => {
-      return {
-        renderBlocking: [],
-        nonRenderBlocking: [],
-        all: [],
-      };
-    });
-
-    // For ease of rendering we sometimes want to differentiate between
-    // render-blocking and non-render-blocking, so we divide the data here.
-    if (!Helpers.Network.isSyntheticNetworkRequestEventRenderBlocking(networkEvent)) {
-      requests.nonRenderBlocking.push(networkEvent);
-    } else {
-      requests.renderBlocking.push(networkEvent);
-    }
-
     // However, there are also times where we just want to loop through all
     // the captured requests, so here we store all of them together.
-    requests.all.push(networkEvent);
     requestsByTime.push(networkEvent);
     requestsById.set(networkEvent.args.data.requestId, networkEvent);
 
@@ -490,7 +551,7 @@ export async function finalize(): Promise<void> {
 
     // Establish initiator relationships
     const initiatorUrl = networkEvent.args.data.initiator?.url ||
-        Helpers.Trace.getZeroIndexedStackTraceForEvent(networkEvent)?.at(0)?.url;
+        Helpers.Trace.getZeroIndexedStackTraceInEventPayload(networkEvent)?.at(0)?.url;
     if (initiatorUrl) {
       const events = networkRequestEventByInitiatorUrl.get(initiatorUrl) ?? [];
       events.push(networkEvent);
@@ -507,13 +568,13 @@ export async function finalize(): Promise<void> {
       }
     }
   }
+
   finalizeWebSocketData();
 }
 
 export function data(): NetworkRequestData {
   return {
     byId: requestsById,
-    byOrigin: requestsByOrigin,
     byTime: requestsByTime,
     eventToInitiator: eventToInitiatorMap,
     webSocket: [...webSocketData.values()],
@@ -522,6 +583,7 @@ export function data(): NetworkRequestData {
       eventsByEntity: new Map(entityMappings.eventsByEntity),
       createdEntityCache: new Map(entityMappings.createdEntityCache),
     },
+    linkPreconnectEvents,
   };
 }
 

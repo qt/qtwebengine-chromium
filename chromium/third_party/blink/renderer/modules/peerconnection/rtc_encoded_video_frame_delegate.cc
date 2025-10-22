@@ -9,6 +9,7 @@
 
 #include "base/time/time.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
+#include "third_party/blink/renderer/modules/peerconnection/peer_connection_util.h"
 #include "third_party/blink/renderer/platform/bindings/exception_code.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_binding.h"
@@ -78,7 +79,7 @@ DOMArrayBuffer* RTCEncodedVideoFrameDelegate::CreateDataBuffer(
 void RTCEncodedVideoFrameDelegate::SetData(const DOMArrayBuffer* data) {
   base::AutoLock lock(lock_);
   if (webrtc_frame_ && data) {
-    webrtc_frame_->SetData(rtc::ArrayView<const uint8_t>(
+    webrtc_frame_->SetData(webrtc::ArrayView<const uint8_t>(
         static_cast<const uint8_t*>(data->Data()), data->ByteLength()));
   }
 }
@@ -112,14 +113,17 @@ std::optional<base::TimeTicks> RTCEncodedVideoFrameDelegate::ReceiveTime()
   return ConvertToOptionalTimeTicks(webrtc_frame_->ReceiveTime());
 }
 
-std::optional<base::TimeTicks> RTCEncodedVideoFrameDelegate::CaptureTime()
+std::optional<CaptureTimeInfo> RTCEncodedVideoFrameDelegate::CaptureTime()
     const {
   base::AutoLock lock(lock_);
-  if (!webrtc_frame_) {
+  if (!webrtc_frame_ || !webrtc_frame_->CaptureTime() ||
+      webrtc_frame_->GetDirection() !=
+          webrtc::TransformableFrameInterface::Direction::kReceiver) {
     return std::nullopt;
   }
-  return ConvertToOptionalTimeTicks(webrtc_frame_->CaptureTime(),
-                                    WebRTCFrameNtpEpoch());
+  return CaptureTimeInfo(
+      {.capture_time = base::Microseconds(webrtc_frame_->CaptureTime()->us()),
+       .clock_type = CaptureTimeInfo::ClockType::kNtpRealClock});
 }
 
 std::optional<base::TimeDelta>

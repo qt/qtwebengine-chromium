@@ -176,9 +176,7 @@ To maintain reproducibility, the benchmark uses the
 [web page replay](https://chromium.googlesource.com/catapult/+/HEAD/web_page_replay_go/README.md)
 mechanism. Archives of the web pages are stored in the
 `chrome-partner-telemetry` cloud bucket, so you'll need access to that bucket to
-run the benchmark on recorded pages (you can still run the benchmark on live
-sites if you don't have the access, but there's no guarantee that results will
-be reproducible/comparable).
+run the benchmark on recorded pages.
 
 ### Repetitions {#repetitions}
 
@@ -204,7 +202,7 @@ detect thermal throttling based on the device's overall thermal status. If you
 still see thermal issues while using this flag, try adding fixed delays between
 repetitions via `--cool-down-time` instead.
 
-## Configuration
+## Debugging / Alternative running options
 
 In its standard configuration, the benchmark will run 100 iterations. In
 addition, the WPR server will run on device, rather than on the host, to reduce
@@ -213,25 +211,21 @@ the noise caused by the latency introduced by the host to device connection.
 Both these settings can be overridden if needed / desirable.
 ([Repetitions](#repetitions), [WPR on host](#host_wpr))
 
-### Run the benchmark on live sites
+### Record a new WPR archive
 
+Uncomment the `wpr: {},` line in the probe config and run the benchmark on live
+sites using
 ```
 ./cb.py loadline-phone --browser <browser> --network live
 ```
 
-*Attention:* This benchmark uses various custom metrics tailored to the
-individual pages. If the pages change, it is not guaranteed that these metrics
-will keep working.
-
-### Record a new WPR archive
-
-Uncomment the `wpr: {},` line in the probe config and run the benchmark on live
-sites (see the command above). The archive will be located in
+The archive will be located in
 `results/latest/archive.wprgo`.
 
-*Attention:* This benchmark uses various custom metrics tailored to the
-individual pages. If the pages change, it is not guaranteed that these metrics
-will keep working.
+*WARNING:* Running the benchmark on the new archive will produce different
+scores, which will not be comparable with the default benchmark configuration.
+Some metrics might break completely. Only use this option if you are ready to
+debug and modify metrics as well.
 
 ### Running WPR on the host {#host_wpr}
 

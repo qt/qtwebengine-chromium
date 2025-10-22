@@ -63,7 +63,8 @@ struct COMPONENT_EXPORT(GOOGLE_APIS) RemoteConsentResolutionData {
   GURL url;
   net::CookieList cookies;
 
-  bool operator==(const RemoteConsentResolutionData& rhs) const;
+  friend bool operator==(const RemoteConsentResolutionData&,
+                         const RemoteConsentResolutionData&) = default;
 };
 
 // This class implements the OAuth2 flow to Google to mint an OAuth2 access
@@ -184,10 +185,10 @@ class COMPONENT_EXPORT(GOOGLE_APIS) OAuth2MintTokenFlow
       const std::string& access_token) override;
 
   void ProcessApiCallSuccess(const network::mojom::URLResponseHead* head,
-                             std::unique_ptr<std::string> body) override;
+                             std::optional<std::string> body) override;
   void ProcessApiCallFailure(int net_error,
                              const network::mojom::URLResponseHead* head,
-                             std::unique_ptr<std::string> body) override;
+                             std::optional<std::string> body) override;
   net::PartialNetworkTrafficAnnotationTag GetNetworkTrafficAnnotationTag()
       override;
 

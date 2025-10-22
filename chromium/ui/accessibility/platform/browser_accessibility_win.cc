@@ -5,6 +5,7 @@
 #include "ui/accessibility/platform/browser_accessibility_win.h"
 
 #include "base/memory/ptr_util.h"
+#include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/browser_accessibility_manager.h"
 #include "ui/accessibility/platform/browser_accessibility_manager_win.h"
 #include "ui/base/win/atl_module.h"
@@ -27,7 +28,7 @@ BrowserAccessibilityWin::BrowserAccessibilityWin(
   HRESULT hr =
       CComObject<BrowserAccessibilityComWin>::CreateInstance(&instance);
   DCHECK(SUCCEEDED(hr));
-  instance->Init(this);
+  instance->Init(*this);
   instance->AddRef();
   browser_accessibility_com_.reset(instance);
 }

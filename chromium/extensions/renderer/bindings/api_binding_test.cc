@@ -76,8 +76,8 @@ void APIBindingTest::DisposeAllContexts() {
           OnWillDisposeContext(context);
           if (exit)
             context->Exit();
+          holder.reset();
         }
-        holder.reset();
 
         // Garbage collect everything so that we find any issues where we might
         // be double-freeing.
@@ -130,7 +130,7 @@ void APIBindingTest::RunGarbageCollection() {
   // hopefully clean up all the various paths.
   for (int i = 0; i < 5; ++i) {
     isolate()->RequestGarbageCollectionForTesting(
-        v8::Isolate::kFullGarbageCollection);
+        v8::Isolate::kFullGarbageCollection, v8::StackState::kNoHeapPointers);
   }
 }
 

@@ -8,7 +8,6 @@
 #include <fidl/fuchsia.component/cpp/fidl.h>
 #include <fidl/fuchsia.ui.app/cpp/wire_messaging.h>
 #include <lib/fidl/cpp/natural_types.h>
-
 #include <stdint.h>
 
 #include <string>
@@ -17,7 +16,7 @@
 
 #include "base/files/file_util.h"
 #include "base/fuchsia/fuchsia_logging.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/numerics/byte_conversions.h"
 
 namespace {
@@ -54,7 +53,7 @@ uint64_t FetchAbiRevision() {
   std::optional<uint64_t> read_bytes =
       base::ReadFile(base::FilePath(kPkgAbiRevisionPath), abi_revision_le);
   CHECK_EQ(read_bytes.value(), sizeof(abi_revision_le));
-  return base::numerics::U64FromLittleEndian(abi_revision_le);
+  return base::U64FromLittleEndian(abi_revision_le);
 }
 
 }  // namespace

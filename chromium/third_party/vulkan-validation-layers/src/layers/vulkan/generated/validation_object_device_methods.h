@@ -2835,6 +2835,14 @@ virtual void PreCallRecordGetImageSubresourceLayout2KHR(VkDevice device, VkImage
                                                         VkSubresourceLayout2* pLayout, const RecordObject& record_obj) {}
 virtual void PostCallRecordGetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2* pSubresource,
                                                          VkSubresourceLayout2* pLayout, const RecordObject& record_obj) {}
+virtual bool PreCallValidateWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                               const VkPresentWait2InfoKHR* pPresentWait2Info, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                             const VkPresentWait2InfoKHR* pPresentWait2Info, const RecordObject& record_obj) {}
+virtual void PostCallRecordWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                              const VkPresentWait2InfoKHR* pPresentWait2Info, const RecordObject& record_obj) {}
 virtual bool PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
                                                       const VkAllocationCallbacks* pAllocator,
                                                       VkPipelineBinaryHandlesInfoKHR* pBinaries,
@@ -2884,6 +2892,14 @@ virtual void PreCallRecordReleaseCapturedPipelineDataKHR(VkDevice device, const 
 virtual void PostCallRecordReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
                                                           const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {
 }
+virtual bool PreCallValidateReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
+                                                      const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
+                                                    const RecordObject& record_obj) {}
+virtual void PostCallRecordReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
+                                                     const RecordObject& record_obj) {}
 virtual bool PreCallValidateCmdSetLineStippleKHR(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor,
                                                  uint16_t lineStipplePattern, const ErrorObject& error_obj) const {
     return false;
@@ -4129,13 +4145,13 @@ virtual void PreCallRecordGetImageSubresourceLayout2EXT(VkDevice device, VkImage
                                                         VkSubresourceLayout2* pLayout, const RecordObject& record_obj) {}
 virtual void PostCallRecordGetImageSubresourceLayout2EXT(VkDevice device, VkImage image, const VkImageSubresource2* pSubresource,
                                                          VkSubresourceLayout2* pLayout, const RecordObject& record_obj) {}
-virtual bool PreCallValidateReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo,
+virtual bool PreCallValidateReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
                                                       const ErrorObject& error_obj) const {
     return false;
 }
-virtual void PreCallRecordReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo,
+virtual void PreCallRecordReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
                                                     const RecordObject& record_obj) {}
-virtual void PostCallRecordReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo,
+virtual void PostCallRecordReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo,
                                                      const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetGeneratedCommandsMemoryRequirementsNV(VkDevice device,
                                                                      const VkGeneratedCommandsMemoryRequirementsInfoNV* pInfo,
@@ -4308,6 +4324,33 @@ virtual void PreCallRecordCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, c
 virtual void PostCallRecordCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, const VkCudaLaunchInfoNV* pLaunchInfo,
                                                  const RecordObject& record_obj) {}
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+virtual bool PreCallValidateCmdDispatchTileQCOM(VkCommandBuffer commandBuffer, const VkDispatchTileInfoQCOM* pDispatchTileInfo,
+                                                const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdDispatchTileQCOM(VkCommandBuffer commandBuffer, const VkDispatchTileInfoQCOM* pDispatchTileInfo,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdDispatchTileQCOM(VkCommandBuffer commandBuffer, const VkDispatchTileInfoQCOM* pDispatchTileInfo,
+                                               const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
+                                                         const VkPerTileBeginInfoQCOM* pPerTileBeginInfo,
+                                                         const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
+                                                       const VkPerTileBeginInfoQCOM* pPerTileBeginInfo,
+                                                       const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
+                                                        const VkPerTileBeginInfoQCOM* pPerTileBeginInfo,
+                                                        const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileEndInfoQCOM* pPerTileEndInfo,
+                                                       const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileEndInfoQCOM* pPerTileEndInfo,
+                                                     const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileEndInfoQCOM* pPerTileEndInfo,
+                                                      const RecordObject& record_obj) {}
 #ifdef VK_USE_PLATFORM_METAL_EXT
 virtual bool PreCallValidateExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo,
                                                   const ErrorObject& error_obj) const {
@@ -5223,6 +5266,104 @@ virtual void PreCallRecordCmdSetCoverageReductionModeNV(VkCommandBuffer commandB
 virtual void PostCallRecordCmdSetCoverageReductionModeNV(VkCommandBuffer commandBuffer,
                                                          VkCoverageReductionModeNV coverageReductionMode,
                                                          const RecordObject& record_obj) {}
+virtual bool PreCallValidateCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM* pCreateInfo,
+                                            const VkAllocationCallbacks* pAllocator, VkTensorARM* pTensor,
+                                            const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM* pCreateInfo,
+                                          const VkAllocationCallbacks* pAllocator, VkTensorARM* pTensor,
+                                          const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM* pCreateInfo,
+                                           const VkAllocationCallbacks* pAllocator, VkTensorARM* pTensor,
+                                           const RecordObject& record_obj) {}
+virtual bool PreCallValidateDestroyTensorARM(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks* pAllocator,
+                                             const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordDestroyTensorARM(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks* pAllocator,
+                                           const RecordObject& record_obj) {}
+virtual void PostCallRecordDestroyTensorARM(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks* pAllocator,
+                                            const RecordObject& record_obj) {}
+virtual bool PreCallValidateCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM* pCreateInfo,
+                                                const VkAllocationCallbacks* pAllocator, VkTensorViewARM* pView,
+                                                const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM* pCreateInfo,
+                                              const VkAllocationCallbacks* pAllocator, VkTensorViewARM* pView,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM* pCreateInfo,
+                                               const VkAllocationCallbacks* pAllocator, VkTensorViewARM* pView,
+                                               const RecordObject& record_obj) {}
+virtual bool PreCallValidateDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView,
+                                                 const VkAllocationCallbacks* pAllocator, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView, const VkAllocationCallbacks* pAllocator,
+                                               const RecordObject& record_obj) {}
+virtual void PostCallRecordDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView,
+                                                const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetTensorMemoryRequirementsARM(VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo,
+                                                           VkMemoryRequirements2* pMemoryRequirements,
+                                                           const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetTensorMemoryRequirementsARM(VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo,
+                                                         VkMemoryRequirements2* pMemoryRequirements,
+                                                         const RecordObject& record_obj) {}
+virtual void PostCallRecordGetTensorMemoryRequirementsARM(VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo,
+                                                          VkMemoryRequirements2* pMemoryRequirements,
+                                                          const RecordObject& record_obj) {}
+virtual bool PreCallValidateBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                const VkBindTensorMemoryInfoARM* pBindInfos, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos,
+                                              const RecordObject& record_obj) {}
+virtual void PostCallRecordBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos,
+                                               const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetDeviceTensorMemoryRequirementsARM(VkDevice device, const VkDeviceTensorMemoryRequirementsARM* pInfo,
+                                                                 VkMemoryRequirements2* pMemoryRequirements,
+                                                                 const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetDeviceTensorMemoryRequirementsARM(VkDevice device, const VkDeviceTensorMemoryRequirementsARM* pInfo,
+                                                               VkMemoryRequirements2* pMemoryRequirements,
+                                                               const RecordObject& record_obj) {}
+virtual void PostCallRecordGetDeviceTensorMemoryRequirementsARM(VkDevice device, const VkDeviceTensorMemoryRequirementsARM* pInfo,
+                                                                VkMemoryRequirements2* pMemoryRequirements,
+                                                                const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdCopyTensorARM(VkCommandBuffer commandBuffer, const VkCopyTensorInfoARM* pCopyTensorInfo,
+                                             const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdCopyTensorARM(VkCommandBuffer commandBuffer, const VkCopyTensorInfoARM* pCopyTensorInfo,
+                                           const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdCopyTensorARM(VkCommandBuffer commandBuffer, const VkCopyTensorInfoARM* pCopyTensorInfo,
+                                            const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                    const VkTensorCaptureDescriptorDataInfoARM* pInfo, void* pData,
+                                                                    const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                  const VkTensorCaptureDescriptorDataInfoARM* pInfo, void* pData,
+                                                                  const RecordObject& record_obj) {}
+virtual void PostCallRecordGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                   const VkTensorCaptureDescriptorDataInfoARM* pInfo, void* pData,
+                                                                   const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                        const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+                                                                        void* pData, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                      const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+                                                                      void* pData, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                       const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+                                                                       void* pData, const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule,
                                                          VkShaderModuleIdentifierEXT* pIdentifier,
                                                          const ErrorObject& error_obj) const {
@@ -5417,6 +5558,126 @@ virtual void PreCallRecordQueueNotifyOutOfBandNV(VkQueue queue, const VkOutOfBan
                                                  const RecordObject& record_obj) {}
 virtual void PostCallRecordQueueNotifyOutOfBandNV(VkQueue queue, const VkOutOfBandQueueTypeInfoNV* pQueueTypeInfo,
                                                   const RecordObject& record_obj) {}
+virtual bool PreCallValidateCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                        VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                        const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                        const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                        const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                      VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                      const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                      const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                      const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                       VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                       const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                       const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines,
+                                                       const RecordObject& record_obj) {}
+virtual bool PreCallValidateCreateDataGraphPipelineSessionARM(VkDevice device,
+                                                              const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                                              const VkAllocationCallbacks* pAllocator,
+                                                              VkDataGraphPipelineSessionARM* pSession,
+                                                              const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateDataGraphPipelineSessionARM(VkDevice device,
+                                                            const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            VkDataGraphPipelineSessionARM* pSession,
+                                                            const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateDataGraphPipelineSessionARM(VkDevice device,
+                                                             const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                                             const VkAllocationCallbacks* pAllocator,
+                                                             VkDataGraphPipelineSessionARM* pSession,
+                                                             const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements, const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements, const RecordObject& record_obj) {}
+virtual void PostCallRecordGetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetDataGraphPipelineSessionMemoryRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements,
+    const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetDataGraphPipelineSessionMemoryRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements,
+    const RecordObject& record_obj) {}
+virtual void PostCallRecordGetDataGraphPipelineSessionMemoryRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements,
+    const RecordObject& record_obj) {}
+virtual bool PreCallValidateBindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                                  const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos,
+                                                                  const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordBindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                                const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos,
+                                                                const RecordObject& record_obj) {}
+virtual void PostCallRecordBindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                                 const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos,
+                                                                 const RecordObject& record_obj) {}
+virtual bool PreCallValidateDestroyDataGraphPipelineSessionARM(VkDevice device, VkDataGraphPipelineSessionARM session,
+                                                               const VkAllocationCallbacks* pAllocator,
+                                                               const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordDestroyDataGraphPipelineSessionARM(VkDevice device, VkDataGraphPipelineSessionARM session,
+                                                             const VkAllocationCallbacks* pAllocator,
+                                                             const RecordObject& record_obj) {}
+virtual void PostCallRecordDestroyDataGraphPipelineSessionARM(VkDevice device, VkDataGraphPipelineSessionARM session,
+                                                              const VkAllocationCallbacks* pAllocator,
+                                                              const RecordObject& record_obj) {}
+virtual bool PreCallValidateCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session,
+                                                    const VkDataGraphPipelineDispatchInfoARM* pInfo,
+                                                    const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session,
+                                                  const VkDataGraphPipelineDispatchInfoARM* pInfo, const RecordObject& record_obj) {
+}
+virtual void PostCallRecordCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session,
+                                                   const VkDataGraphPipelineDispatchInfoARM* pInfo,
+                                                   const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetDataGraphPipelineAvailablePropertiesARM(VkDevice device,
+                                                                       const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                                       uint32_t* pPropertiesCount,
+                                                                       VkDataGraphPipelinePropertyARM* pProperties,
+                                                                       const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetDataGraphPipelineAvailablePropertiesARM(VkDevice device,
+                                                                     const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                                     uint32_t* pPropertiesCount,
+                                                                     VkDataGraphPipelinePropertyARM* pProperties,
+                                                                     const RecordObject& record_obj) {}
+virtual void PostCallRecordGetDataGraphPipelineAvailablePropertiesARM(VkDevice device,
+                                                                      const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                                      uint32_t* pPropertiesCount,
+                                                                      VkDataGraphPipelinePropertyARM* pProperties,
+                                                                      const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetDataGraphPipelinePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                              uint32_t propertiesCount,
+                                                              VkDataGraphPipelinePropertyQueryResultARM* pProperties,
+                                                              const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetDataGraphPipelinePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                            uint32_t propertiesCount,
+                                                            VkDataGraphPipelinePropertyQueryResultARM* pProperties,
+                                                            const RecordObject& record_obj) {}
+virtual void PostCallRecordGetDataGraphPipelinePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                             uint32_t propertiesCount,
+                                                             VkDataGraphPipelinePropertyQueryResultARM* pProperties,
+                                                             const RecordObject& record_obj) {}
 virtual bool PreCallValidateCmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask,
                                                                   const ErrorObject& error_obj) const {
     return false;
@@ -5436,6 +5697,47 @@ virtual void PreCallRecordGetScreenBufferPropertiesQNX(VkDevice device, const st
 virtual void PostCallRecordGetScreenBufferPropertiesQNX(VkDevice device, const struct _screen_buffer* buffer,
                                                         VkScreenBufferPropertiesQNX* pProperties, const RecordObject& record_obj) {}
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+virtual bool PreCallValidateCmdBindTileMemoryQCOM(VkCommandBuffer commandBuffer,
+                                                  const VkTileMemoryBindInfoQCOM* pTileMemoryBindInfo,
+                                                  const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCmdBindTileMemoryQCOM(VkCommandBuffer commandBuffer, const VkTileMemoryBindInfoQCOM* pTileMemoryBindInfo,
+                                                const RecordObject& record_obj) {}
+virtual void PostCallRecordCmdBindTileMemoryQCOM(VkCommandBuffer commandBuffer, const VkTileMemoryBindInfoQCOM* pTileMemoryBindInfo,
+                                                 const RecordObject& record_obj) {}
+virtual bool PreCallValidateCreateExternalComputeQueueNV(VkDevice device, const VkExternalComputeQueueCreateInfoNV* pCreateInfo,
+                                                         const VkAllocationCallbacks* pAllocator,
+                                                         VkExternalComputeQueueNV* pExternalQueue,
+                                                         const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordCreateExternalComputeQueueNV(VkDevice device, const VkExternalComputeQueueCreateInfoNV* pCreateInfo,
+                                                       const VkAllocationCallbacks* pAllocator,
+                                                       VkExternalComputeQueueNV* pExternalQueue, const RecordObject& record_obj) {}
+virtual void PostCallRecordCreateExternalComputeQueueNV(VkDevice device, const VkExternalComputeQueueCreateInfoNV* pCreateInfo,
+                                                        const VkAllocationCallbacks* pAllocator,
+                                                        VkExternalComputeQueueNV* pExternalQueue, const RecordObject& record_obj) {}
+virtual bool PreCallValidateDestroyExternalComputeQueueNV(VkDevice device, VkExternalComputeQueueNV externalQueue,
+                                                          const VkAllocationCallbacks* pAllocator,
+                                                          const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordDestroyExternalComputeQueueNV(VkDevice device, VkExternalComputeQueueNV externalQueue,
+                                                        const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {}
+virtual void PostCallRecordDestroyExternalComputeQueueNV(VkDevice device, VkExternalComputeQueueNV externalQueue,
+                                                         const VkAllocationCallbacks* pAllocator, const RecordObject& record_obj) {}
+virtual bool PreCallValidateGetExternalComputeQueueDataNV(VkExternalComputeQueueNV externalQueue,
+                                                          VkExternalComputeQueueDataParamsNV* params, void* pData,
+                                                          const ErrorObject& error_obj) const {
+    return false;
+}
+virtual void PreCallRecordGetExternalComputeQueueDataNV(VkExternalComputeQueueNV externalQueue,
+                                                        VkExternalComputeQueueDataParamsNV* params, void* pData,
+                                                        const RecordObject& record_obj) {}
+virtual void PostCallRecordGetExternalComputeQueueDataNV(VkExternalComputeQueueNV externalQueue,
+                                                         VkExternalComputeQueueDataParamsNV* params, void* pData,
+                                                         const RecordObject& record_obj) {}
 virtual bool PreCallValidateGetClusterAccelerationStructureBuildSizesNV(VkDevice device,
                                                                         const VkClusterAccelerationStructureInputInfoNV* pInfo,
                                                                         VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo,

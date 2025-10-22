@@ -27,8 +27,11 @@
 #include "ui/views/interaction/interaction_test_util_mouse.h"
 #include "ui/views/interaction/widget_focus_observer.h"
 
-namespace views {
+namespace ui {
 class NativeWindowTracker;
+}  // namespace ui
+
+namespace views {
 class View;
 }  // namespace views
 
@@ -56,7 +59,9 @@ class InteractiveViewsTestPrivate
 
   InteractionTestUtilMouse& mouse_util() { return *mouse_util_; }
 
-  gfx::NativeWindow GetWindowHintFor(ui::TrackedElement* el);
+  InteractionTestUtilMouse::GestureParams GetGestureParamsForStep(
+      ui::TrackedElement* el,
+      const ui::InteractionSequence* seq);
 
   // Represents a temporary data stucture used when building Views hierarchies
   // into `DebugTreeNode`s.

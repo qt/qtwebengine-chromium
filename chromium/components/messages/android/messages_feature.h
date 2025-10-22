@@ -6,6 +6,7 @@
 #define COMPONENTS_MESSAGES_ANDROID_MESSAGES_FEATURE_H_
 
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 
 namespace messages {
 
@@ -15,6 +16,9 @@ BASE_DECLARE_FEATURE(kMessagesForAndroidFullyVisibleCallback);
 
 // Feature that enables extra histogram recordings.
 BASE_DECLARE_FEATURE(kMessagesAndroidExtraHistograms);
+
+// Feature that enables a close button when mouses hovers over.
+BASE_DECLARE_FEATURE(kMessagesCloseButton);
 
 }  // namespace messages
 

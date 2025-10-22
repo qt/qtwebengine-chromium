@@ -32,7 +32,6 @@
 #include <utility>
 
 #include "dawn/common/Assert.h"
-#include "dawn/common/BitSetIterator.h"
 #include "dawn/common/Log.h"
 #include "dawn/common/SystemUtils.h"
 #include "dawn/native/ChainUtils.h"
@@ -132,15 +131,6 @@ constexpr SkippedMessage kSkippedMessages[] = {
 
     // https://issues.chromium.org/issues/41479545
     {"SYNC-HAZARD-WRITE-AFTER-WRITE",
-     "Access info (usage: SYNC_COPY_TRANSFER_WRITE, prior_usage: SYNC_COPY_TRANSFER_WRITE, "
-     "write_barriers: 0, command: vkCmdCopyBufferToImage"},
-    {"SYNC-HAZARD-READ-AFTER-WRITE",
-     "Access info (usage: SYNC_COPY_TRANSFER_READ, prior_usage: SYNC_COPY_TRANSFER_WRITE, "
-     "write_barriers: 0, command: vkCmdCopyBufferToImage"},
-    {"SYNC-HAZARD-WRITE-AFTER-WRITE",
-     "Access info (usage: SYNC_IMAGE_LAYOUT_TRANSITION, prior_usage: SYNC_COPY_TRANSFER_WRITE, "
-     "write_barriers: 0, command: vkCmdCopyBufferToImage"},
-    {"SYNC-HAZARD-WRITE-AFTER-WRITE",
      "Access info (usage: SYNC_ACCESS_INDEX_NONE, prior_usage: SYNC_CLEAR_TRANSFER_WRITE, "
      "write_barriers: "
      "SYNC_VERTEX_SHADER_SHADER_BINDING_TABLE_READ|SYNC_VERTEX_SHADER_SHADER_SAMPLED_READ|SYNC_"
@@ -174,12 +164,6 @@ constexpr SkippedMessage kSkippedMessages[] = {
      "vkAllocateMemory(): pAllocateInfo->pNext<VkMemoryDedicatedAllocateInfo>"},
     // crbug.com/324282958
     {"NVIDIA", "vkBindImageMemory: memoryTypeIndex"},
-
-    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9537
-    {"VUID-vkCmdCopyBufferToImage-pRegions-00173",
-     "Detected overlap between source and dest regions in memory"},
-    {"VUID-vkCmdCopyImageToBuffer-pRegions-00184",
-     "Detected overlap between source and dest regions in memory"},
 };
 
 namespace dawn::native::vulkan {
@@ -467,7 +451,7 @@ ResultOrError<VulkanGlobalKnobs> VulkanInstance::CreateVkInstance(const Instance
     usedKnobs.extensions = extensionsToRequest;
 
     std::vector<const char*> extensionNames;
-    for (InstanceExt ext : IterateBitSet(extensionsToRequest)) {
+    for (InstanceExt ext : extensionsToRequest) {
         const InstanceExtInfo& info = GetInstanceExtInfo(ext);
 
         if (info.versionPromoted > mGlobalInfo.apiVersion) {

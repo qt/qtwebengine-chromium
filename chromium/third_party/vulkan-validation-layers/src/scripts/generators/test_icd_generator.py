@@ -23,6 +23,7 @@ class TestIcdGenerator(BaseGenerator):
         BaseGenerator.__init__(self)
 
         self.manual_functions = [
+            'vkGetTensorMemoryRequirementsARM',
             'vkCreateInstance',
             'vkDestroyInstance',
             'vkAllocateCommandBuffers',
@@ -105,6 +106,7 @@ class TestIcdGenerator(BaseGenerator):
             'vkGetAccelerationStructureDeviceAddressKHR',
             'vkGetVideoSessionMemoryRequirementsKHR',
             'vkGetPhysicalDeviceCooperativeMatrixPropertiesKHR',
+            'vkGetPhysicalDeviceCooperativeVectorPropertiesNV',
             'vkGetPhysicalDeviceVideoCapabilitiesKHR',
             'vkGetPhysicalDeviceVideoFormatPropertiesKHR',
             'vkGetDescriptorSetLayoutSupport',
@@ -119,6 +121,7 @@ class TestIcdGenerator(BaseGenerator):
             'vkRegisterDisplayEventEXT',
             'vkCreatePipelineBinariesKHR',
             'vkGetPipelineBinaryDataKHR',
+            'vkGetPartitionedAccelerationStructuresBuildSizesNV',
         ]
 
     def generate(self):

@@ -10,10 +10,11 @@ import type {SpritePosition} from './sprite_position.js';
 import {getRandomNum} from './utils.js';
 
 export class Cloud {
-  private xPos: number;
+  gap: number;
+  xPos: number;
+  remove: boolean = false;
   private yPos: number = 0;
   private canvasCtx: CanvasRenderingContext2D;
-  private remove: boolean = false;
   private spritePos: SpritePosition;
 
   /**
@@ -28,6 +29,7 @@ export class Cloud {
     this.canvasCtx = canvasContext;
     this.xPos = containerWidth;
     this.spritePos = spritePos;
+    this.gap = getRandomNum(Config.MIN_CLOUD_GAP, Config.MAX_CLOUD_GAP);
 
     this.init();
   }
@@ -44,8 +46,7 @@ export class Cloud {
    * Draw the cloud.
    */
   draw() {
-    const runnerImageSprite = this.getRunnerImageSprite();
-    assert(runnerImageSprite);
+    const runnerImageSprite = Runner.getInstance().getRunnerImageSprite();
 
     this.canvasCtx.save();
     let sourceWidth = Config.WIDTH;
@@ -62,19 +63,6 @@ export class Cloud {
         sourceHeight, this.xPos, this.yPos, outputWidth, outputHeight);
 
     this.canvasCtx.restore();
-  }
-
-  /**
-   * Gets the static 'imageSprite' property from the Runner class. To be used
-   * only during typescript migration. Should be moved to utils.ts once other
-   * classes start using the property.
-   * TODO(373951324): Remove once Runner is migrated to ts.
-   */
-  getRunnerImageSprite(): CanvasImageSource|null {
-    if ('imageSprite' in Runner) {
-      return Runner.imageSprite as CanvasImageSource;
-    }
-    return null;
   }
 
   /**

@@ -79,6 +79,18 @@ bool ColorCSSValueIsCacheable(const CSSValue& value) {
   return IsA<CSSColor>(value);
 }
 
+bool PositionCSSValueIsDefault(const CSSValue* pos) {
+  if (IsA<CSSNumericLiteralValue>(pos)) {
+    const auto* value = To<CSSNumericLiteralValue>(pos);
+    return value->IsPercentage() && value->ComputePercentage() == 50.0;
+  }
+  if (IsA<CSSIdentifierValue>(pos)) {
+    // Center comoutes to 50%.
+    return To<CSSIdentifierValue>(pos)->GetValueID() == CSSValueID::kCenter;
+  }
+  return false;
+}
+
 bool AppendPosition(StringBuilder& result,
                     const CSSValue* x,
                     const CSSValue* y,
@@ -87,10 +99,7 @@ bool AppendPosition(StringBuilder& result,
     return false;
   }
 
-  if (IsA<CSSIdentifierValue>(x) &&
-      To<CSSIdentifierValue>(x)->GetValueID() == CSSValueID::kCenter &&
-      IsA<CSSIdentifierValue>(y) &&
-      To<CSSIdentifierValue>(y)->GetValueID() == CSSValueID::kCenter) {
+  if (PositionCSSValueIsDefault(x) && PositionCSSValueIsDefault(y)) {
     return false;
   }
 
@@ -122,10 +131,9 @@ bool CSSGradientColorStop::IsCacheable() const {
     }
   }
 
-  // TODO(crbug.com/979895): This is the result of a refactoring, which might
-  // have revealed an existing bug with calculated lengths. Investigate.
-  return !offset_ || offset_->IsMathFunctionValue() ||
-         !To<CSSNumericLiteralValue>(*offset_).IsFontRelativeLength();
+  return !offset_ ||
+         (!offset_->IsMathFunctionValue() &&
+          !To<CSSNumericLiteralValue>(*offset_).IsFontRelativeLength());
 }
 
 void CSSGradientColorStop::Trace(Visitor* visitor) const {
@@ -135,7 +143,7 @@ void CSSGradientColorStop::Trace(Visitor* visitor) const {
 
 scoped_refptr<Image> CSSGradientValue::GetImage(
     const ImageResourceObserver& client,
-    const Document& document,
+    const Node& node,
     const ComputedStyle& style,
     const ContainerSizes& container_sizes,
     const gfx::SizeF& size) const {
@@ -153,6 +161,15 @@ scoped_refptr<Image> CSSGradientValue::GetImage(
     }
   }
 
+  const Document& document = node.GetDocument();
+  const Element* element = DynamicTo<Element>(node);
+  if (!element) {
+    element = document.documentElement();
+  }
+  if (!element) {
+    return nullptr;
+  }
+
   // We need to create an image.
   const ComputedStyle* root_style =
       document.documentElement()->GetComputedStyle();
@@ -163,7 +180,7 @@ scoped_refptr<Image> CSSGradientValue::GetImage(
       style, &style, root_style,
       CSSToLengthConversionData::ViewportSize(document.GetLayoutView()),
       container_sizes, CSSToLengthConversionData::AnchorData(),
-      style.EffectiveZoom(), ignored_flags, /*element=*/nullptr);
+      style.EffectiveZoom(), ignored_flags, element);
 
   scoped_refptr<Gradient> gradient;
   switch (GetClassType()) {
@@ -365,13 +382,13 @@ static void ReplaceColorHintsWithColorStops(
   }
 }
 
-static Color ResolveStopColor(const CSSLengthResolver& length_resolver,
+static Color ResolveStopColor(const CSSToLengthConversionData& conversion_data,
                               const CSSValue& stop_color,
                               const Document& document,
                               const ComputedStyle& style) {
   mojom::blink::ColorScheme color_scheme = style.UsedColorScheme();
   const ResolveColorValueContext context{
-      .length_resolver = length_resolver,
+      .conversion_data = conversion_data,
       .text_link_colors = document.GetTextLinkColors(),
       .used_color_scheme = color_scheme,
       .color_provider = document.GetColorProviderForPainting(color_scheme),
@@ -426,7 +443,7 @@ static const CSSValue* GetComputedStopColor(const CSSValue& color,
   const mojom::blink::ColorScheme color_scheme = style.UsedColorScheme();
   // TODO(40946458): Don't use default length resolver here!
   const ResolveColorValueContext context{
-      .length_resolver = CSSToLengthConversionData(/*element=*/nullptr),
+      .conversion_data = CSSToLengthConversionData(/*element=*/nullptr),
       .text_link_colors = TextLinkColors(),
       .used_color_scheme = color_scheme};
   const StyleColor style_stop_color = ResolveColorValue(color, context);
@@ -1829,6 +1846,25 @@ void CSSRadialGradientValue::TraceAfterDispatch(blink::Visitor* visitor) const {
   CSSGradientValue::TraceAfterDispatch(visitor);
 }
 
+bool AppendAngle(StringBuilder& result,
+                 const CSSPrimitiveValue* angle,
+                 bool wrote_something) {
+  if (!angle) {
+    return false;
+  }
+
+  if (IsA<CSSNumericLiteralValue>(angle) &&
+      To<CSSNumericLiteralValue>(angle)->ComputeDegrees() == 0) {
+    // 0deg is the default, so we don't need to write it.
+    return false;
+  }
+
+  result.Append("from ");
+  result.Append(angle->CssText());
+
+  return true;
+}
+
 String CSSConicGradientValue::CustomCSSText() const {
   StringBuilder result;
 
@@ -1839,11 +1875,7 @@ String CSSConicGradientValue::CustomCSSText() const {
 
   bool wrote_something = false;
 
-  if (from_angle_) {
-    result.Append("from ");
-    result.Append(from_angle_->CssText());
-    wrote_something = true;
-  }
+  wrote_something |= AppendAngle(result, from_angle_, wrote_something);
 
   wrote_something |= AppendPosition(result, x_, y_, wrote_something);
 

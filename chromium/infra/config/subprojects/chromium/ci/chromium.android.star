@@ -3,31 +3,37 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium.android builder group."""
 
-load("//lib/args.star", "args")
-load("//lib/branches.star", "branches")
-load("//lib/builder_config.star", "builder_config")
-load("//lib/builder_health_indicators.star", "health_spec")
-load("//lib/builders.star", "builders", "gardener_rotations", "os", "siso")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
-load("//lib/gn_args.star", "gn_args")
-load("//lib/targets.star", "targets")
-load("//project.star", "settings")
+load("@chromium-luci//args.star", "args")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_config.star", "builder_config")
+load("@chromium-luci//builder_health_indicators.star", "health_spec")
+load("@chromium-luci//builders.star", "builders", "os")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("@chromium-luci//gn_args.star", "gn_args")
+load("@chromium-luci//targets.star", "targets")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
+load("//lib/siso.star", "siso")
 
 ci.defaults.set(
-    executable = ci.DEFAULT_EXECUTABLE,
+    executable = ci_constants.DEFAULT_EXECUTABLE,
     builder_group = "chromium.android",
-    pool = ci.DEFAULT_POOL,
+    builder_config_settings = builder_config.ci_settings(
+        retry_failed_shards = True,
+        # Android emulator tasks often flake during emulator start-up, which
+        # leads to the whole shard being marked as invalid.
+        retry_invalid_shards = True,
+    ),
+    pool = ci_constants.DEFAULT_POOL,
     cores = 8,
     os = os.LINUX_DEFAULT,
     gardener_rotations = gardener_rotations.ANDROID,
-    tree_closing_notifiers = ci.DEFAULT_TREE_CLOSING_NOTIFIERS,
-    execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
-    health_spec = health_spec.DEFAULT,
-    reclient_enabled = False,
-    service_account = ci.DEFAULT_SERVICE_ACCOUNT,
-    shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
-    siso_enabled = True,
+    tree_closing_notifiers = ci_constants.DEFAULT_TREE_CLOSING_NOTIFIERS,
+    execution_timeout = ci_constants.DEFAULT_EXECUTION_TIMEOUT,
+    health_spec = health_spec.default(),
+    service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
+    shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
     siso_project = siso.project.DEFAULT_TRUSTED,
     siso_remote_jobs = siso.remote_jobs.HIGH_JOBS_FOR_CI,
 )
@@ -57,8 +63,8 @@ consoles.console_view(
 
 ci.thin_tester(
     name = "Android WebView O (dbg)",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    triggered_by = ["ci/Android arm64 Builder (dbg)"],
+    # branch_selector = branches.selector.ANDROID_BRANCHES,
+    parent = "ci/Android arm64 Builder (dbg)",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -99,6 +105,7 @@ ci.thin_tester(
             ),
         ],
     ),
+    gardener_rotations = args.ignore_default(None),
     console_view_entry = consoles.console_view_entry(
         category = "tester|webview",
         short_name = "O",
@@ -111,8 +118,8 @@ ci.thin_tester(
 
 ci.thin_tester(
     name = "Android WebView P (dbg)",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    triggered_by = ["ci/Android arm64 Builder (dbg)"],
+    # branch_selector = branches.selector.ANDROID_BRANCHES,
+    parent = "ci/Android arm64 Builder (dbg)",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -147,6 +154,7 @@ ci.thin_tester(
             "has_native_resultdb_integration",
         ],
     ),
+    gardener_rotations = args.ignore_default(None),
     console_view_entry = consoles.console_view_entry(
         category = "tester|webview",
         short_name = "P",
@@ -184,6 +192,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "debug_builder",
             "remoteexec",
             "arm",
@@ -241,6 +250,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "debug_static_builder",
             "enable_android_secondary_abi",
             "remoteexec",
@@ -302,6 +312,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "debug_static_builder",
             "enable_android_secondary_abi",
             "remoteexec",
@@ -336,6 +347,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "debug_static_builder",
             "enable_android_secondary_abi",
             "remoteexec",
@@ -387,6 +399,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "debug_static_builder",
             "enable_android_secondary_abi",
             "remoteexec",
@@ -408,6 +421,13 @@ ci.builder(
     cq_mirrors_console_view = "mirrors",
     contact_team_email = "clank-engprod@google.com",
     execution_timeout = 7 * time.hour,
+    # prevent from bot died by OOM. https://crbug.com/425441534
+    siso_experiments = [
+        "oom-score-adj",
+    ],
+    # enable remote link to mitigate bot died https://crbug.com/418817397
+    siso_output_local_strategy = "greedy",
+    siso_remote_linking = True,
 )
 
 ci.builder(
@@ -436,6 +456,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "debug_static_builder",
             "remoteexec",
             "x86",
@@ -505,7 +526,7 @@ ci.builder(
 
 ci.thin_tester(
     name = "android-webview-10-x86-rel-tests",
-    triggered_by = ["ci/android-x86-rel"],
+    parent = "ci/android-x86-rel",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -581,6 +602,7 @@ ci.builder(
             "cast_debug",
             "cast_java_debug",
             "android_builder",
+            "android_with_static_analysis",
             "clang",
             "remoteexec",
             "arm",
@@ -634,9 +656,11 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "cast_android",
-            "cast_release",
             "cast_java_release",
+            "cast_release",
+            "disable_jni_multiplexing",
             "android_builder",
+            "android_with_static_analysis",
             "clang",
             "remoteexec",
             "arm",
@@ -693,6 +717,7 @@ ci.builder(
             "cast_debug",
             "cast_java_debug",
             "android_builder",
+            "android_with_static_analysis",
             "clang",
             "remoteexec",
             "arm64",
@@ -746,9 +771,11 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "cast_android",
-            "cast_release",
             "cast_java_release",
+            "cast_release",
+            "disable_jni_multiplexing",
             "android_builder",
+            "android_with_static_analysis",
             "clang",
             "remoteexec",
             "arm64",
@@ -779,6 +806,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "release_builder",
             "remoteexec",
             "minimal_symbols",
@@ -803,6 +831,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "debug_builder",
             "remoteexec",
             "arm",
@@ -822,65 +851,10 @@ ci.builder(
     siso_remote_jobs = siso.remote_jobs.DEFAULT,
 )
 
-ci.thin_tester(
-    name = "Oreo Phone Tester",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    triggered_by = ["ci/Android arm64 Builder (dbg)"],
-    builder_spec = builder_config.builder_spec(
-        execution_mode = builder_config.execution_mode.TEST,
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "mb",
-                "download_xr_test_apks",
-            ],
-            build_config = builder_config.build_config.DEBUG,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    targets = targets.bundle(
-        targets = "android_oreo_gtests",
-        mixins = [
-            "has_native_resultdb_integration",
-            "oreo_mr1_fleet",
-            "walleye",
-        ],
-        per_test_modifications = {
-            "chrome_public_test_apk": targets.mixin(
-                # TODO(crbug.com/41414027): Re-enable this once the test
-                # are either passing or there is more capacity.
-                experiment_percentage = 0,
-            ),
-            "webview_instrumentation_test_apk": targets.mixin(
-                # TODO(crbug.com/40641956): Enable this once it's passing.
-                # TODO(crbug.com/41414027): Re-enable this once the tests
-                # are either passing or there is more capacity.
-                experiment_percentage = 0,
-            ),
-        },
-    ),
-    gardener_rotations = args.ignore_default(None),
-    console_view_entry = consoles.console_view_entry(
-        category = "tester|phone",
-        short_name = "O",
-    ),
-    cq_mirrors_console_view = "mirrors",
-)
-
 ci.builder(
     name = "android-10-arm64-rel",
+    branch_selector = branches.selector.ANDROID_BRANCHES,
+    description_html = "Run chromium and XR tests on Android 10 devices.",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
             config = "chromium",
@@ -926,16 +900,9 @@ ci.builder(
             "check_chrome_static_initializers",
         ],
         mixins = [
-            targets.mixin(
-                swarming = targets.swarming(
-                    dimensions = {
-                        "device_os": "QQ1A.191205.008",
-                        "device_os_flavor": "google",
-                    },
-                ),
-            ),
             "has_native_resultdb_integration",
             "walleye",
+            "10_fleet",
         ],
     ),
     console_view_entry = consoles.console_view_entry(
@@ -948,7 +915,7 @@ ci.builder(
 ci.builder(
     name = "android-12l-x64-dbg-tests",
     description_html = "Run Chromium tests on Android 12l tablet-flavor emulator.",
-    triggered_by = ["ci/Android x64 Builder (dbg)"],
+    parent = "ci/Android x64 Builder (dbg)",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -1070,7 +1037,7 @@ ci.builder(
     name = "android-12l-landscape-x64-dbg-tests",
     description_html = "Run Chromium tests on Android 12l tablet-flavor " +
                        "emulator in Landscape Mode.",
-    triggered_by = ["ci/Android x64 Builder (dbg)"],
+    parent = "ci/Android x64 Builder (dbg)",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -1177,6 +1144,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "enable_android_secondary_abi",
             "release_builder",
             "remoteexec",
@@ -1195,7 +1163,7 @@ ci.builder(
             "all",
         ],
         mixins = [
-            "chromium_pixel_2_pie",
+            "chromium_pixel_2_q",
             "has_native_resultdb_integration",
         ],
         per_test_modifications = {
@@ -1222,7 +1190,7 @@ ci.builder(
             "gin_unittests": targets.mixin(
                 args = [
                     # https://crbug.com/1404782
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64.gin_unittests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.device_10.proguard_rel.gin_unittests.filter",
                 ],
             ),
             "gl_tests_validating": targets.mixin(
@@ -1290,9 +1258,6 @@ ci.builder(
         ],
         per_test_modifications = {
             "bf_cache_content_browsertests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_p.content_browsertests.filter",
-                ],
                 swarming = targets.swarming(
                     shards = 30,
                 ),
@@ -1304,6 +1269,7 @@ ci.builder(
             ),
         },
     ),
+    gardener_rotations = args.ignore_default(None),
     console_view_entry = consoles.console_view_entry(
         category = "bfcache",
         short_name = "bfc",
@@ -1370,6 +1336,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -1473,6 +1440,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -1492,58 +1460,6 @@ ci.builder(
     console_view_entry = consoles.console_view_entry(
         category = "cronet|arm64",
         short_name = "dbg",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
-ci.builder(
-    name = "android-cronet-arm64-gn2bp-dbg",
-    description_html = "Builds the gn2bp verification workflow.",
-    schedule = "0 */6 * * *",  # Run every 6 hours.
-    triggered_by = [],
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-                "checkout_copybara",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.DEBUG,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "debug_static_builder",
-            "remoteexec",
-            "arm64",
-        ],
-    ),
-    targets = targets.bundle(
-        additional_compile_targets = [
-            "cronet_gn2bp_aosp_feedback_loop",
-            "cronet_package",
-            "cronet_package_ci",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|gn2bp",
-        short_name = "gn2bp",
     ),
     contact_team_email = "cronet-team@google.com",
     notifies = ["cronet"],
@@ -1624,6 +1540,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "release_builder",
             "remoteexec",
@@ -1656,298 +1573,6 @@ ci.builder(
     notifies = ["cronet"],
 )
 
-# Compiles with Android Mainline Clang
-ci.builder(
-    name = "android-cronet-mainline-clang-arm64-dbg",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = ["android"],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.DEBUG,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "debug_static_builder",
-            "remoteexec",
-            "arm64",
-            "cronet_android_mainline_clang",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "cronet_common_compile_targets",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|mainline_clang|arm64",
-        short_name = "dbg",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
-# Compiles with Android Mainline Clang (coverage-enabled)
-ci.builder(
-    name = "android-cronet-mainline-clang-arm64-rel",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = ["android"],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "official_optimize",
-            "release_builder",
-            "remoteexec",
-            "minimal_symbols",
-            "arm64",
-            "strip_debug_info",
-            "cronet_android_mainline_clang",
-            "use_clang_coverage",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "cronet_common_compile_targets",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|mainline_clang_coverage|arm64",
-        short_name = "rel",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
-# Compiles with Android Mainline Clang
-ci.builder(
-    name = "android-cronet-mainline-clang-riscv64-dbg",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = ["android"],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.DEBUG,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "debug_static_builder",
-            "remoteexec",
-            "riscv64",
-            "cronet_android_mainline_clang",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "cronet_common_compile_targets",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|mainline_clang|riscv64",
-        short_name = "dbg",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
-# Compiles with Android Mainline Clang
-ci.builder(
-    name = "android-cronet-mainline-clang-riscv64-rel",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = ["android"],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "official_optimize",
-            "release_builder",
-            "remoteexec",
-            "minimal_symbols",
-            "riscv64",
-            "strip_debug_info",
-            "cronet_android_mainline_clang",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "cronet_common_compile_targets",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|mainline_clang|riscv64",
-        short_name = "rel",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
-# Compiles with Android Mainline Clang
-ci.builder(
-    name = "android-cronet-mainline-clang-x86-dbg",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.DEBUG,
-            target_arch = builder_config.target_arch.INTEL,
-            target_bits = 32,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "debug_static_builder",
-            "remoteexec",
-            "x86",
-            "cronet_android_mainline_clang",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "cronet_common_compile_targets",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|mainline_clang|x86",
-        short_name = "dbg",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
-# Compiles with Android Mainline Clang (coverage-enabled)
-ci.builder(
-    name = "android-cronet-mainline-clang-x86-rel",
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = ["android"],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "cronet_builder",
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.INTEL,
-            target_bits = 32,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(config = "base_config"),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder_without_codecs",
-            "cronet_android",
-            "official_optimize",
-            "release_builder",
-            "remoteexec",
-            "minimal_symbols",
-            "x86",
-            "strip_debug_info",
-            "cronet_android_mainline_clang",
-            "use_clang_coverage",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            "cronet_common_compile_targets",
-        ],
-    ),
-    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
-    console_view_entry = consoles.console_view_entry(
-        category = "cronet|mainline_clang_coverage|x86",
-        short_name = "rel",
-    ),
-    contact_team_email = "cronet-team@google.com",
-    notifies = ["cronet"],
-)
-
 ci.builder(
     name = "android-cronet-riscv64-dbg",
     description_html = "Verifies building Cronet against RISC-V64",
@@ -1973,6 +1598,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -2072,6 +1698,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -2133,6 +1760,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder_without_codecs",
+            "android_with_static_analysis",
             "cronet_android",
             "debug_static_builder",
             "remoteexec",
@@ -2167,7 +1795,7 @@ ci.builder(
 
 ci.thin_tester(
     name = "android-cronet-x64-dbg-12-tests",
-    triggered_by = ["ci/android-cronet-x64-dbg"],
+    parent = "ci/android-cronet-x64-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2215,7 +1843,7 @@ ci.thin_tester(
 
 ci.thin_tester(
     name = "android-cronet-x64-dbg-13-tests",
-    triggered_by = ["ci/android-cronet-x64-dbg"],
+    parent = "ci/android-cronet-x64-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2264,7 +1892,7 @@ ci.thin_tester(
 ci.thin_tester(
     name = "android-cronet-x64-dbg-14-tests",
     description_html = "Tests Cronet against Android 14",
-    triggered_by = ["ci/android-cronet-x64-dbg"],
+    parent = "ci/android-cronet-x64-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2314,7 +1942,7 @@ ci.thin_tester(
 ci.thin_tester(
     name = "android-cronet-x64-dbg-15-tests",
     description_html = "Tests Cronet against Android 15",
-    triggered_by = ["ci/android-cronet-x64-dbg"],
+    parent = "ci/android-cronet-x64-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2362,8 +1990,57 @@ ci.thin_tester(
 )
 
 ci.thin_tester(
+    name = "android-cronet-x64-dbg-16-tests",
+    description_html = "Tests Cronet against Android 16",
+    parent = "ci/android-cronet-x64-dbg",
+    builder_spec = builder_config.builder_spec(
+        execution_mode = builder_config.execution_mode.TEST,
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "android",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "main_builder",
+            apply_configs = [
+                "cronet_builder",
+                "mb",
+            ],
+            build_config = builder_config.build_config.DEBUG,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.ANDROID,
+        ),
+        android_config = builder_config.android_config(
+            config = "base_config",
+        ),
+        build_gs_bucket = "chromium-android-archive",
+    ),
+    targets = targets.bundle(
+        targets = [
+            "cronet_gtests",
+        ],
+        mixins = [
+            "16-x64-emulator",
+            "emulator-8-cores",
+            "has_native_resultdb_integration",
+            "isolate_profile_data",
+            "linux-jammy",
+            "x86-64",
+        ],
+    ),
+    gardener_rotations = args.ignore_default(gardener_rotations.CRONET),
+    console_view_entry = consoles.console_view_entry(
+        category = "cronet|test",
+        short_name = "16",
+    ),
+    contact_team_email = "cronet-team@google.com",
+    notifies = ["cronet"],
+)
+
+ci.thin_tester(
     name = "android-cronet-x86-dbg-marshmallow-tests",
-    triggered_by = ["ci/android-cronet-x86-dbg"],
+    parent = "ci/android-cronet-x86-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2411,7 +2088,7 @@ ci.thin_tester(
 
 ci.thin_tester(
     name = "android-cronet-x86-dbg-nougat-tests",
-    triggered_by = ["ci/android-cronet-x86-dbg"],
+    parent = "ci/android-cronet-x86-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2459,7 +2136,7 @@ ci.thin_tester(
 
 ci.thin_tester(
     name = "android-cronet-x86-dbg-oreo-tests",
-    triggered_by = ["ci/android-cronet-x86-dbg"],
+    parent = "ci/android-cronet-x86-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2514,7 +2191,7 @@ ci.thin_tester(
 
 ci.thin_tester(
     name = "android-cronet-x86-dbg-pie-tests",
-    triggered_by = ["ci/android-cronet-x86-dbg"],
+    parent = "ci/android-cronet-x86-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2571,7 +2248,7 @@ ci.thin_tester(
 ci.thin_tester(
     name = "android-cronet-x86-dbg-10-tests",
     branch_selector = branches.selector.ANDROID_BRANCHES,
-    triggered_by = ["ci/android-cronet-x86-dbg"],
+    parent = "ci/android-cronet-x86-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2626,7 +2303,7 @@ ci.thin_tester(
 
 ci.thin_tester(
     name = "android-cronet-x86-dbg-11-tests",
-    triggered_by = ["ci/android-cronet-x86-dbg"],
+    parent = "ci/android-cronet-x86-dbg",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -2776,676 +2453,8 @@ ci.builder(
 )
 
 ci.builder(
-    name = "android-oreo-x86-rel",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-                # This is necessary due to this builder running the
-                # telemetry_perf_unittests suite.
-                "chromium_with_telemetry_dependencies",
-                "enable_wpr_tests",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = ["mb"],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.INTEL,
-            target_bits = 32,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder",
-            "release_builder",
-            "remoteexec",
-            "minimal_symbols",
-            "x86",
-            "strip_debug_info",
-            "android_fastbuild",
-            "webview_monochrome",
-            "webview_shell",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            targets.bundle(
-                targets = [
-                    "android_oreo_emulator_gtests",
-                    "oreo_isolated_scripts",
-                ],
-                mixins = targets.mixin(
-                    args = [
-                        "--use-persistent-shell",
-                    ],
-                ),
-            ),
-            "chromium_android_scripts",
-        ],
-        additional_compile_targets = [
-            "chrome_nocompile_tests",
-        ],
-        mixins = [
-            "has_native_resultdb_integration",
-            "isolate_profile_data",
-            "oreo-x86-emulator",
-            "emulator-4-cores",
-            "linux-jammy",
-            "x86-64",
-        ],
-        per_test_modifications = {
-            # If you change this, make similar changes in android-x86-code-coverage
-            "android_browsertests": targets.mixin(
-                ci_only = True,
-                swarming = targets.swarming(
-                    shards = 9,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "android_sync_integration_tests": targets.mixin(
-                ci_only = True,
-                swarming = targets.swarming(
-                    shards = 2,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "chrome_public_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.chrome_public_test_apk.filter",
-                ],
-                swarming = targets.swarming(
-                    dimensions = {
-                        # use 8-core to shorten runtime
-                        "cores": "8",
-                    },
-                    shards = 75,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "chrome_public_unit_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.chrome_public_unit_test_apk.filter",
-                ],
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "components_browsertests": targets.mixin(
-                swarming = targets.swarming(
-                    shards = 4,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "content_browsertests": targets.mixin(
-                args = [
-                    "--gtest-also-run-pre-tests",
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.content_browsertests.filter",
-                ],
-                swarming = targets.swarming(
-                    dimensions = {
-                        # use 8-core to shorten runtime
-                        "cores": "8",
-                    },
-                    shards = 75,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "content_shell_crash_test": targets.remove(
-                reason = "crbug.com/1084353",
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "content_shell_test_apk": targets.mixin(
-                swarming = targets.swarming(
-                    dimensions = {
-                        # use 8-core to shorten runtime
-                        "cores": "8",
-                    },
-                    shards = 6,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "gl_tests_validating": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o_p.gl_tests.filter",
-                ],
-            ),
-            "leveldb_unittests": targets.remove(
-                reason = "TODO(crbug.com/40264100): Runs too slowly in this configuration",
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "perfetto_unittests": targets.mixin(
-                args = [
-                    # TODO(crbug.com/40201873): Fix the failed test
-                    "--gtest_filter=-ScopedDirTest.CloseOutOfScope",
-                ],
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "services_unittests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o.services_unittests.filter",
-                ],
-                ci_only = True,
-                swarming = targets.swarming(
-                    shards = 3,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "telemetry_chromium_minidump_unittests": targets.mixin(
-                ci_only = True,
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "telemetry_monochrome_minidump_unittests": targets.mixin(
-                ci_only = True,
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "telemetry_perf_unittests_android_chrome": targets.mixin(
-                # For whatever reason, automatic browser selection on this bot chooses
-                # webview instead of the full browser, so explicitly specify it here.
-                args = [
-                    "--browser=android-chromium",
-                ],
-                ci_only = True,
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
-                swarming = targets.swarming(
-                    shards = 15,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
-                # This builder is mirrored by CQ builder. Only multiple process
-                # tests run in CQ.
-                ci_only = True,
-                swarming = targets.swarming(
-                    shards = 9,
-                ),
-            ),
-        },
-    ),
-    targets_settings = targets.settings(
-        os_type = targets.os_type.ANDROID,
-    ),
-    # TODO(crbug.com/355704916): Revert back to builderless after compile OOM
-    # issue is resolved.
-    builderless = not settings.is_main,
-    tree_closing = True,
-    console_view_entry = consoles.console_view_entry(
-        category = "on_cq|x86",
-        short_name = "O",
-    ),
-    contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
-)
-
-ci.thin_tester(
-    name = "android-pie-arm64-dbg",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    triggered_by = ["ci/Android arm64 Builder (dbg)"],
-    builder_spec = builder_config.builder_spec(
-        execution_mode = builder_config.execution_mode.TEST,
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "mb",
-                "download_xr_test_apks",
-            ],
-            build_config = builder_config.build_config.DEBUG,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    targets = targets.bundle(
-        targets = "android_pie_gtests",
-        mixins = [
-            "chromium_pixel_2_pie",
-            "has_native_resultdb_integration",
-        ],
-    ),
-    console_view_entry = consoles.console_view_entry(
-        category = "tester|phone",
-        short_name = "P",
-    ),
-    cq_mirrors_console_view = "mirrors",
-    contact_team_email = "clank-engprod@google.com",
-)
-
-ci.builder(
-    name = "android-pie-arm64-rel",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "download_xr_test_apks",
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.ARM,
-            target_bits = 64,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder",
-            "release_builder",
-            "remoteexec",
-            "minimal_symbols",
-            "arm64",
-            "strip_debug_info",
-            "webview_monochrome",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            targets.bundle(
-                targets = [
-                    "android_pie_rel_gtests",
-                    # TODO(crbug.com/40142574): Re-enable this if/when
-                    # additional capacity has been deployed.
-                    # "marshmallow_nougat_pie_isolated_scripts_with_proguard",
-                ],
-                mixins = targets.mixin(
-                    args = [
-                        "--use-persistent-shell",
-                    ],
-                ),
-            ),
-            "chromium_android_scripts",
-        ],
-        mixins = [
-            "chromium_pixel_2_pie",
-            "has_native_resultdb_integration",
-            "isolate_profile_data",
-        ],
-        per_test_modifications = {
-            "android_browsertests": targets.mixin(
-                args = [
-                    # https://crbug.com/1034001
-                    "--gtest_filter=-ImportantSitesUtilBrowserTest.DSENotConsideredImportantInRegularMode",
-                ],
-                ci_only = True,
-                swarming = targets.swarming(
-                    dimensions = {
-                        "device_type": "crosshatch",
-                    },
-                    # TODO(crbug.com/40917979): Temporarily increase the shard
-                    # by 1 for the surging number of tests. Recover to original
-                    # number of shards(4) after the bug is fixed.
-                    shards = 5,
-                ),
-            ),
-            "blink_platform_unittests": targets.mixin(
-                ci_only = True,
-                # TODO(crbug.com/40142574): Move this back to walleye if/when
-                # capacity has been deployed.
-                swarming = targets.swarming(
-                    dimensions = {
-                        "device_type": "crosshatch",
-                    },
-                ),
-            ),
-            "cc_unittests": targets.mixin(
-                ci_only = True,
-            ),
-            "chrome_public_smoke_test": targets.mixin(
-                ci_only = True,
-            ),
-            "chrome_public_test_apk": targets.mixin(
-                args = [
-                    # https://crbug.com/1010211
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64_rel.chrome_public_test_apk.filter",
-                    "--use-persistent-shell",
-                ],
-                # https://crbug.com/1233700
-                ci_only = True,
-            ),
-            # TODO(crbug.com/40142574) Remove or restore as appropriate if
-            # marshmallow_nougat_pie_isolated_scripts_with_proguard is reenabled
-            # "chrome_public_test_vr_apk": targets.remove(
-            #     reason = "https://crbug.com/1010211",
-            # ),
-            "chrome_public_unit_test_apk": targets.mixin(
-                swarming = targets.swarming(
-                    dimensions = {
-                        "device_type": "crosshatch",
-                    },
-                    # TODO(crbug.com/40922014): Temporarily increase the shard
-                    # to 5 for the network issue.
-                    shards = 5,
-                ),
-            ),
-            "content_browsertests": targets.mixin(
-                args = [
-                    "--gtest-also-run-pre-tests",
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64.content_browsertests_coverage.filter",
-                ],
-                ci_only = True,
-                swarming = targets.swarming(
-                    # TODO(crbug.com/40922014): Temporarily increase the shard
-                    # by 5 for the surging number of tests. Recover to default
-                    # number of shards(20) after the bug is fixed.
-                    shards = 25,
-                ),
-            ),
-            # TODO(crbug.com/40142574) Remove or restore as appropriate if
-            # marshmallow_nougat_pie_isolated_scripts_with_proguard is reenabled
-            # "gl_tests_validating": targets.mixin(
-            #     args = [
-            #         # https://crbug.com/1034007
-            #         "--test-launcher-filter-file=../../testing/buildbot/filters/android.pie_arm64_rel.gl_tests.filter",
-            #     ],
-            # ),
-            # TODO(crbug.com/40142574) Remove or restore as appropriate if
-            # marshmallow_nougat_pie_isolated_scripts_with_proguard is reenabled
-            # "media_unittests": targets.mixin(
-            #     args = [
-            #         # https://crbug.com/1034009
-            #         "--gtest_filter=-AAudio/AudioOutputTest.Play200HzTone/0",
-            #     ],
-            # ),
-            "monochrome_public_bundle_smoke_test": targets.mixin(
-                ci_only = True,
-            ),
-            "monochrome_public_smoke_test": targets.mixin(
-                ci_only = True,
-            ),
-            # TODO(crbug.com/40142574) Remove or restore as appropriate if
-            # marshmallow_nougat_pie_isolated_scripts_with_proguard is reenabled
-            # "perfetto_unittests": targets.remove(
-            #     reason = "TODO(crbug.com/41440830) Fix permission issue when creating tmp files",
-            # ),
-            # TODO(crbug.com/40142574) Remove or restore as appropriate if
-            # marshmallow_nougat_pie_isolated_scripts_with_proguard is reenabled
-            # "telemetry_perf_unittests": targets.remove(
-            #     reason = "existed at migration, originally removed in https://crrev.com/c/1968238",
-            # ),
-            # TODO(crbug.com/40142574) Remove or restore as appropriate if
-            # marshmallow_nougat_pie_isolated_scripts_with_proguard is reenabled
-            # "unit_tests": targets.remove(
-            #     reason = "https://crbug.com/1010211",
-            # ),
-            "viz_unittests": targets.mixin(
-                ci_only = True,
-            ),
-            "webview_64_cts_tests": targets.mixin(
-                # TODO(crbug.com/40142574): Move this back to walleye if/when
-                # additional capacity has been deployed.
-                swarming = targets.swarming(
-                    dimensions = {
-                        "device_type": "crosshatch",
-                    },
-                ),
-            ),
-            "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
-                # crbug/1368281
-                ci_only = True,
-                swarming = targets.swarming(
-                    shards = 6,
-                ),
-            ),
-            "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
-                args = [
-                    "--use-persistent-shell",
-                ],
-                # This builder is mirrored by CQ builder. Only multiple process
-                # tests run in CQ.
-                ci_only = True,
-                swarming = targets.swarming(
-                    shards = 3,
-                ),
-            ),
-        },
-    ),
-    targets_settings = targets.settings(
-        os_type = targets.os_type.ANDROID,
-    ),
-    tree_closing = True,
-    console_view_entry = consoles.console_view_entry(
-        category = "on_cq",
-        short_name = "P",
-    ),
-    cq_mirrors_console_view = "mirrors",
-    contact_team_email = "clank-engprod@google.com",
-    execution_timeout = 4 * time.hour,
-)
-
-ci.builder(
-    name = "android-pie-x86-rel",
-    branch_selector = branches.selector.ANDROID_BRANCHES,
-    builder_spec = builder_config.builder_spec(
-        gclient_config = builder_config.gclient_config(
-            config = "chromium",
-            apply_configs = [
-                "android",
-                # This is necessary due to this builder running the
-                # telemetry_perf_unittests suite.
-                "chromium_with_telemetry_dependencies",
-                "enable_wpr_tests",
-            ],
-        ),
-        chromium_config = builder_config.chromium_config(
-            config = "main_builder",
-            apply_configs = [
-                "mb",
-            ],
-            build_config = builder_config.build_config.RELEASE,
-            target_arch = builder_config.target_arch.INTEL,
-            target_bits = 32,
-            target_platform = builder_config.target_platform.ANDROID,
-        ),
-        android_config = builder_config.android_config(
-            config = "base_config",
-        ),
-        build_gs_bucket = "chromium-android-archive",
-    ),
-    gn_args = gn_args.config(
-        configs = [
-            "android_builder",
-            "release_builder",
-            "remoteexec",
-            "minimal_symbols",
-            "x86",
-            "strip_debug_info",
-            "android_fastbuild",
-            "webview_monochrome",
-            "webview_shell",
-        ],
-    ),
-    targets = targets.bundle(
-        targets = [
-            targets.bundle(
-                targets = [
-                    "android_pie_emulator_gtests",
-                    "pie_isolated_scripts",
-                ],
-            ),
-            "chromium_android_scripts",
-        ],
-        additional_compile_targets = [
-            "chrome_nocompile_tests",
-        ],
-        mixins = [
-            "has_native_resultdb_integration",
-            "isolate_profile_data",
-            "pie-x86-emulator",
-            "emulator-4-cores",
-            "linux-jammy",
-            "x86-64",
-        ],
-        per_test_modifications = {
-            "android_browsertests": targets.mixin(
-                args = [
-                    # https://crbug.com/1034001
-                    "--gtest_filter=-ImportantSitesUtilBrowserTest.DSENotConsideredImportantInRegularMode",
-                ],
-                swarming = targets.swarming(
-                    dimensions = {
-                        # crbug.com/1292221
-                        "cores": "8",
-                    },
-                    shards = 9,
-                ),
-            ),
-            "android_sync_integration_tests": targets.mixin(
-                swarming = targets.swarming(
-                    shards = 2,
-                ),
-            ),
-            "cc_unittests": targets.mixin(
-                args = [
-                    # https://crbug.com/1039860
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.cc_unittests.filter",
-                ],
-            ),
-            "chrome_public_test_apk": targets.mixin(
-                args = [
-                    # https://crbug.com/1046059
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_p.chrome_public_test_apk.filter",
-                ],
-                swarming = targets.swarming(
-                    dimensions = {
-                        "cores": "8",
-                    },
-                    # See https://crbug.com/1230192, runs of 40-60 minutes at 20 shards.
-                    shards = 75,
-                ),
-            ),
-            "components_browsertests": targets.mixin(
-                swarming = targets.swarming(
-                    shards = 4,
-                ),
-            ),
-            "content_browsertests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_p.content_browsertests.filter",
-                ],
-                swarming = targets.swarming(
-                    dimensions = {
-                        # use 8-core to shorten runtime
-                        "cores": "8",
-                    },
-                    shards = 75,
-                ),
-            ),
-            # If you change this, make similar changes in android-x86-code-coverage
-            "content_shell_crash_test": targets.remove(
-                reason = "crbug.com/1084353",
-            ),
-            "content_shell_test_apk": targets.mixin(
-                args = [
-                    "--gtest_filter=-org.chromium.content.browser.input.ImeInputModeTest.testShowAndHideInputMode*",
-                ],
-                swarming = targets.swarming(
-                    dimensions = {
-                        # use 8-core to shorten runtime
-                        "cores": "8",
-                    },
-                    shards = 6,
-                ),
-            ),
-            "gl_tests_validating": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_o_p.gl_tests.filter",
-                ],
-            ),
-            "net_unittests": targets.mixin(
-                # crbug.com/1046060
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.net_unittests.filter",
-                ],
-            ),
-            "perfetto_unittests": targets.remove(
-                reason = "TODO(crbug.com/41440830): Fix permission issue when creating tmp files",
-            ),
-            "services_unittests": targets.mixin(
-                args = [
-                    # TODO(crbug.com/40203477): Fix the failed tests
-                    "--gtest_filter=-PacLibraryTest.ActualPacMyIpAddress*",
-                ],
-                swarming = targets.swarming(
-                    shards = 3,
-                ),
-            ),
-            "telemetry_perf_unittests_android_chrome": targets.mixin(
-                # For whatever reason, automatic browser selection on this bot chooses
-                # webview instead of the full browser, so explicitly specify it here.
-                args = [
-                    "--browser=android-chromium",
-                ],
-            ),
-            "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.webview_instrumentation_test_apk.filter",
-                ],
-                swarming = targets.swarming(
-                    # crbug.com/1294924
-                    shards = 15,
-                ),
-            ),
-            "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.webview_instrumentation_test_apk.filter",
-                ],
-                swarming = targets.swarming(
-                    # crbug.com/1294924
-                    shards = 9,
-                ),
-            ),
-        },
-    ),
-    targets_settings = targets.settings(
-        os_type = targets.os_type.ANDROID,
-    ),
-    cores = 16,
-    ssd = True,
-    tree_closing = True,
-    console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|x86",
-        short_name = "P",
-    ),
-    contact_team_email = "clank-engprod@google.com",
-)
-
-ci.builder(
     name = "android-10-x86-rel",
+    branch_selector = branches.selector.ANDROID_BRANCHES,
     description_html = "Run chromium tests on Android 10 emulators.",
     builder_spec = builder_config.builder_spec(
         gclient_config = builder_config.gclient_config(
@@ -3487,7 +2496,7 @@ ci.builder(
             targets.bundle(
                 targets = [
                     "android_10_emulator_gtests",
-                    "q_isolated_scripts",
+                    "android_10_isolated_scripts",
                 ],
                 mixins = targets.mixin(
                     args = [
@@ -3509,19 +2518,24 @@ ci.builder(
             "x86-64",
         ],
         per_test_modifications = {
+            # If you change this, make similar changes in android-x86-code-coverage
             "android_browsertests": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.android_browsertests.filter",
                 ],
+                ci_only = True,
                 swarming = targets.swarming(
                     shards = 9,
                 ),
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "android_sync_integration_tests": targets.mixin(
+                ci_only = True,
                 swarming = targets.swarming(
                     shards = 2,
                 ),
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "chrome_public_test_apk": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.chrome_public_test_apk.filter",
@@ -3531,19 +2545,33 @@ ci.builder(
                         # use 8-core to shorten runtime
                         "cores": "8",
                     },
+                    shards = 75,
                 ),
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "components_browsertests": targets.mixin(
                 swarming = targets.swarming(
                     shards = 4,
                 ),
             ),
-            "content_browsertests": targets.remove(
-                reason = "crbug.com/392124787",
+            # If you change this, make similar changes in android-x86-code-coverage
+            "content_browsertests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.content_browsertests.filter",
+                ],
+                swarming = targets.swarming(
+                    dimensions = {
+                        # use 8-core to shorten runtime
+                        "cores": "8",
+                    },
+                    shards = 75,
+                ),
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "content_shell_crash_test": targets.remove(
                 reason = "crbug.com/1084353",
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "content_shell_test_apk": targets.mixin(
                 swarming = targets.swarming(
                     dimensions = {
@@ -3553,38 +2581,50 @@ ci.builder(
                     shards = 6,
                 ),
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "content_unittests": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.content_unittests.filter",
-                ],
+                ci_only = True,
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "gl_tests_validating": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.gl_tests.filter",
                 ],
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "perfetto_unittests": targets.mixin(
                 args = [
                     # TODO(crbug.com/40201873): Fix the failed test
                     "--gtest_filter=-ScopedDirTest.CloseOutOfScope",
                 ],
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "media_unittests": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.media_unittests.filter",
                 ],
+                ci_only = True,
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "services_unittests": targets.mixin(
+                ci_only = True,
                 swarming = targets.swarming(
                     shards = 3,
                 ),
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "system_webview_shell_layout_test_apk": targets.mixin(
                 args = [
                     # TODO(crbug.com/390676579): Fix the failed test
                     "--gtest_filter=-org.chromium.webview_shell.test.WebViewLayoutTest.*",
                 ],
+                ci_only = True,
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
+            "telemetry_chromium_minidump_unittests": targets.mixin(
+                ci_only = True,
+            ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "telemetry_perf_unittests_android_chrome": targets.mixin(
                 # For whatever reason, automatic browser selection on this bot chooses
                 # webview instead of the full browser, so explicitly specify it here.
@@ -3593,10 +2633,26 @@ ci.builder(
                 ],
                 ci_only = True,
             ),
+            # If you change this, make similar changes in android-x86-code-coverage
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_10.webview_instrumentation_test_apk.filter",
+                    "--use-persistent-shell",
                 ],
+                swarming = targets.swarming(
+                    shards = 18,
+                ),
+            ),
+            # If you change this, make similar changes in android-x86-code-coverage
+            "webview_instrumentation_test_apk_single_process_mode": targets.mixin(
+                args = [
+                    "--use-persistent-shell",
+                ],
+                # Only multiple process tests run in CQ.
+                ci_only = True,
+                swarming = targets.swarming(
+                    shards = 9,
+                ),
             ),
         },
     ),
@@ -3605,7 +2661,7 @@ ci.builder(
     ),
     tree_closing = True,
     console_view_entry = consoles.console_view_entry(
-        category = "builder_tester|x86",
+        category = "on_cq|x86",
         short_name = "10",
     ),
     contact_team_email = "clank-engprod@google.com",
@@ -3986,6 +3042,15 @@ ci.builder(
                     shards = 12,
                 ),
             ),
+            "android_chrome_wpt_tests": targets.remove(
+                reason = "Only run this step on Android 15 for now.",
+            ),
+            "android_webdriver_wpt_tests": targets.remove(
+                reason = "Only run this step on Android 15 for now.",
+            ),
+            "android_webview_wpt_tests": targets.remove(
+                reason = "Only run this step on Android 15 for now.",
+            ),
             "android_sync_integration_tests": targets.mixin(
                 swarming = targets.swarming(
                     shards = 2,
@@ -4097,6 +3162,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "release_builder",
             "remoteexec",
             "minimal_symbols",
@@ -4135,9 +3201,11 @@ ci.builder(
             ),
             "content_browsertests": targets.mixin(
                 args = [
-                    "--gtest-also-run-pre-tests",
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.device_14.content_browsertests.filter",
                 ],
+                # TODO(crbug.com/410638690): Re-enable on CQ once the high
+                # pending time is gone.
+                ci_only = True,
             ),
             "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
                 args = [
@@ -4294,7 +3362,7 @@ ci.builder(
             ),
             "media_unittests": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.media_unittests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14.media_unittests.filter",
                 ],
             ),
             "perfetto_unittests": targets.mixin(
@@ -4306,6 +3374,12 @@ ci.builder(
             "unit_tests": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.unit_tests.filter",
+                ],
+            ),
+            "viz_unittests": targets.mixin(
+                args = [
+                    # TODO(crbug.com/338436747): Fix the failed test
+                    "--gtest_filter=-SkiaOutputSurfaceImplTest.EndPaintReleaseFence",
                 ],
             ),
             "webkit_unit_tests": targets.mixin(
@@ -4327,13 +3401,73 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
-    # TODO(crbug.com/40286106): Enable gardening once tests are stable
-    gardener_rotations = args.ignore_default(None),
-    # TODO(crbug.com/40286106): Enable tree_closing once compile are stable
-    #tree_closing = True,
+    tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
         short_name = "14",
+    ),
+    contact_team_email = "clank-engprod@google.com",
+    execution_timeout = 4 * time.hour,
+)
+
+ci.builder(
+    name = "android-14-automotive-landscape-x64-rel",
+    description_html = "Run chromium tests on Android 14 automotive landscape emulators.",
+    # TODO(crbug.com/40286106): Enable on branches once stable
+    #branch_selector = branches.selector.ANDROID_BRANCHES,
+    builder_spec = builder_config.builder_spec(
+        gclient_config = builder_config.gclient_config(
+            config = "chromium",
+            apply_configs = [
+                "android",
+            ],
+        ),
+        chromium_config = builder_config.chromium_config(
+            config = "main_builder",
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
+            target_arch = builder_config.target_arch.INTEL,
+            target_bits = 64,
+            target_platform = builder_config.target_platform.ANDROID,
+        ),
+        android_config = builder_config.android_config(
+            config = "base_config",
+        ),
+        build_gs_bucket = "chromium-android-archive",
+    ),
+    gn_args = gn_args.config(
+        configs = [
+            "android_builder",
+            "release_builder",
+            "remoteexec",
+            "minimal_symbols",
+            "x64",
+            "strip_debug_info",
+            "android_fastbuild",
+        ],
+    ),
+    targets = targets.bundle(
+        targets = [
+            "android_14_automotive_landscape_emulator_gtests",
+        ],
+        mixins = [
+            "14-automotive-landscape-x64-emulator",
+            "emulator-8-cores",
+            "has_native_resultdb_integration",
+            "linux-jammy",
+            "x86-64",
+        ],
+    ),
+    targets_settings = targets.settings(
+        os_type = targets.os_type.ANDROID,
+    ),
+    gardener_rotations = args.ignore_default(None),
+    #tree_closing = True,
+    console_view_entry = consoles.console_view_entry(
+        category = "builder_tester|x64",
+        short_name = "14A",
     ),
     contact_team_email = "clank-engprod@google.com",
     execution_timeout = 4 * time.hour,
@@ -4366,6 +3500,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "release_builder",
             "remoteexec",
             "minimal_symbols",
@@ -4679,7 +3814,6 @@ ci.builder(
             "chrome_public_test_apk": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_tablet_landscape.chrome_public_test_apk.filter",
-                    "--emulator-debug-tags=all",
                 ],
             ),
         },
@@ -4687,9 +3821,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
-    # TODO(crbug.com/376748979 ): Enable gardening once tests are stable
-    gardener_rotations = args.ignore_default(None),
-    # tree_closing = True,
+    tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
         short_name = "15T-L",
@@ -4748,14 +3880,8 @@ ci.builder(
             "x86-64",
         ],
         per_test_modifications = {
-            "android_browsertests": targets.mixin(
-                args = [
-                    # https://crbug.com/375086487
-                    "--gtest_filter=-InstallableManagerBrowserTest.CheckManifestWithIconThatIsTooSmall",
-                ],
-                swarming = targets.swarming(
-                    shards = 6,
-                ),
+            "android_browsertests": targets.remove(
+                reason = "TODO(crbug.com/388919418): Temporarily remove it from builder due to flakiness.",
             ),
             "base_unittests": targets.mixin(
                 args = [
@@ -4766,8 +3892,6 @@ ci.builder(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_tablet.content_browsertests.filter",
                 ],
-                # TODO(crbug.com/388525813) Remove experiment once suite is stable
-                experiment_percentage = 100,
                 swarming = targets.swarming(
                     shards = 40,
                 ),
@@ -4814,9 +3938,7 @@ ci.builder(
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
-    # TODO(crbug.com/376748979 ): Enable gardening once tests are stable
-    gardener_rotations = args.ignore_default(None),
-    # tree_closing = True,
+    tree_closing = True,
     console_view_entry = consoles.console_view_entry(
         category = "builder_tester|x64",
         short_name = "15T",
@@ -4825,10 +3947,10 @@ ci.builder(
     execution_timeout = 4 * time.hour,
 )
 
-ci.thin_tester(
-    name = "android-15-tablet-x64-dbg-tests",
-    description_html = "Run chromium tests on Android 15 tablet emulators.",
-    triggered_by = ["Android x64 Builder (dbg)"],
+ci.builder(
+    name = "android-16-x64-dbg-tests",
+    description_html = "Run chromium tests on Android 16 emulators.",
+    parent = "ci/Android x64 Builder (dbg)",
     builder_spec = builder_config.builder_spec(
         execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
@@ -4839,7 +3961,9 @@ ci.thin_tester(
         ),
         chromium_config = builder_config.chromium_config(
             config = "main_builder",
-            apply_configs = ["mb"],
+            apply_configs = [
+                "mb",
+            ],
             build_config = builder_config.build_config.DEBUG,
             target_arch = builder_config.target_arch.INTEL,
             target_bits = 64,
@@ -4852,25 +3976,16 @@ ci.thin_tester(
     ),
     targets = targets.bundle(
         targets = [
-            "android_lff_emulator_gtests",
+            "android_16_emulator_gtests",
         ],
         mixins = [
-            "15-tablet-x64-emulator",
+            "16-x64-emulator",
             "emulator-8-cores",
             "has_native_resultdb_integration",
             "linux-jammy",
             "x86-64",
         ],
         per_test_modifications = {
-            "android_browsertests": targets.mixin(
-                args = [
-                    # https://crbug.com/375086487
-                    "--gtest_filter=-InstallableManagerBrowserTest.CheckManifestWithIconThatIsTooSmall",
-                ],
-                swarming = targets.swarming(
-                    shards = 6,
-                ),
-            ),
             "base_unittests": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.base_unittests.filter",
@@ -4878,34 +3993,20 @@ ci.thin_tester(
             ),
             "content_browsertests": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_tablet.content_browsertests.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_16.content_browsertests.filter",
                 ],
-                # TODO(crbug.com/388525813) Remove experiment once suite is stable
-                experiment_percentage = 100,
                 swarming = targets.swarming(
-                    shards = 40,
+                    shards = 30,
                 ),
             ),
-            "chrome_public_test_apk": targets.mixin(
+            "content_shell_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_tablet.chrome_public_test_apk.filter",
-                    "--emulator-debug-tags=all",
-                ],
-            ),
-            "chrome_public_unit_test_apk": targets.mixin(
-                args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_tablet.chrome_public_unit_test_apk.filter",
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.content_shell_test_apk.filter",
                 ],
             ),
             "content_unittests": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_16.content_unittests.filter",
-                ],
-            ),
-            "perfetto_unittests": targets.mixin(
-                args = [
-                    # TODO(crbug.com/40201873): Fix the failed test
-                    "--gtest_filter=-ScopedDirTest.CloseOutOfScope",
                 ],
             ),
             "gl_tests_validating": targets.mixin(
@@ -4918,32 +4019,46 @@ ci.thin_tester(
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_16.gwp_asan_unittests.filter",
                 ],
             ),
+            "media_unittests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.media_unittests.filter",
+                ],
+            ),
+            "perfetto_unittests": targets.mixin(
+                args = [
+                    # TODO(crbug.com/40201873): Fix the failed test
+                    "--gtest_filter=-ScopedDirTest.CloseOutOfScope",
+                ],
+            ),
             "unit_tests": targets.mixin(
                 args = [
                     "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.unit_tests.filter",
                 ],
+            ),
+            "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 12,
+                ),
             ),
         },
     ),
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
-    # TODO(crbug.com/376748979 ): Enable gardening once tests are stable
-    gardener_rotations = args.ignore_default(None),
+    tree_closing = True,
     console_view_entry = consoles.console_view_entry(
-        category = "tester|tablet",
-        short_name = "15T",
+        category = "tester|x64",
+        short_name = "16",
     ),
     contact_team_email = "clank-engprod@google.com",
+    execution_timeout = 4 * time.hour,
 )
 
-ci.thin_tester(
-    name = "android-15-tablet-landscape-x64-dbg-tests",
-    description_html = "Run chromium tests on Android 15 tablet emulators " +
-                       "in Landscape mode.",
-    triggered_by = ["Android x64 Builder (dbg)"],
+ci.builder(
+    name = "android-16-x64-rel",
+    branch_selector = branches.selector.ANDROID_BRANCHES,
+    description_html = "Run chromium tests on Android 16 emulators.",
     builder_spec = builder_config.builder_spec(
-        execution_mode = builder_config.execution_mode.TEST,
         gclient_config = builder_config.gclient_config(
             config = "chromium",
             apply_configs = [
@@ -4952,8 +4067,10 @@ ci.thin_tester(
         ),
         chromium_config = builder_config.chromium_config(
             config = "main_builder",
-            apply_configs = ["mb"],
-            build_config = builder_config.build_config.DEBUG,
+            apply_configs = [
+                "mb",
+            ],
+            build_config = builder_config.build_config.RELEASE,
             target_arch = builder_config.target_arch.INTEL,
             target_bits = 64,
             target_platform = builder_config.target_platform.ANDROID,
@@ -4963,36 +4080,137 @@ ci.thin_tester(
         ),
         build_gs_bucket = "chromium-android-archive",
     ),
+    gn_args = gn_args.config(
+        configs = [
+            "android_builder",
+            "release_builder",
+            "remoteexec",
+            "minimal_symbols",
+            "x64",
+            "strip_debug_info",
+            "android_fastbuild",
+            "webview_trichrome",
+            "webview_shell",
+        ],
+    ),
     targets = targets.bundle(
         targets = [
-            "android_lff_landscape_emulator_gtests",
+            "android_16_emulator_gtests",
+            "android_rel_isolated_scripts",
+            "gtests_once",
         ],
         mixins = [
-            "15-tablet-landscape-x64-emulator",
+            "16-x64-emulator",
             "emulator-8-cores",
             "has_native_resultdb_integration",
             "linux-jammy",
             "x86-64",
         ],
         per_test_modifications = {
+            "android_browsertests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 10,
+                ),
+            ),
+            "android_sync_integration_tests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 2,
+                ),
+            ),
+            "base_unittests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.base_unittests.filter",
+                ],
+            ),
+            "components_browsertests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 23,
+                ),
+            ),
             "chrome_public_test_apk": targets.mixin(
                 args = [
-                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_tablet_landscape.chrome_public_test_apk.filter",
                     "--emulator-debug-tags=all",
                 ],
+                swarming = targets.swarming(
+                    shards = 47,
+                ),
+            ),
+            "content_browsertests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_16.content_browsertests.filter",
+                ],
+                ci_only = True,
+                swarming = targets.swarming(
+                    shards = 40,
+                ),
+            ),
+            "content_shell_test_apk": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.content_shell_test_apk.filter",
+                ],
+                ci_only = True,
+            ),
+            "content_unittests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_16.content_unittests.filter",
+                ],
+            ),
+            "crashpad_tests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.crashpad_tests.filter",
+                ],
+            ),
+            "gl_tests_validating": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_12_12l_13.gl_tests.filter",
+                ],
+            ),
+            "gwp_asan_unittests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_15_16.gwp_asan_unittests.filter",
+                ],
+            ),
+            "media_unittests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator.media_unittests.filter",
+                ],
+            ),
+            "perfetto_unittests": targets.mixin(
+                args = [
+                    # TODO(crbug.com/40201873): Fix the failed test
+                    "--gtest_filter=-ScopedDirTest.CloseOutOfScope",
+                ],
+            ),
+            "services_unittests": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 2,
+                ),
+            ),
+            "unit_tests": targets.mixin(
+                args = [
+                    "--test-launcher-filter-file=../../testing/buildbot/filters/android.emulator_14_15_16.unit_tests.filter",
+                ],
+            ),
+            "webview_ui_test_app_test_apk_no_field_trial": targets.mixin(
+                ci_only = True,
+            ),
+            "webview_instrumentation_test_apk_multiple_process_mode": targets.mixin(
+                swarming = targets.swarming(
+                    shards = 12,
+                ),
             ),
         },
     ),
     targets_settings = targets.settings(
         os_type = targets.os_type.ANDROID,
     ),
-    # TODO(crbug.com/376748979 ): Enable gardening once tests are stable
-    gardener_rotations = args.ignore_default(None),
+    tree_closing = True,
     console_view_entry = consoles.console_view_entry(
-        category = "tester|tablet",
-        short_name = "15T-L",
+        category = "emulator|x64|rel",
+        short_name = "16",
     ),
     contact_team_email = "clank-engprod@google.com",
+    execution_timeout = 4 * time.hour,
 )
 
 ci.builder(
@@ -5086,6 +4304,7 @@ ci.builder(
     gn_args = gn_args.config(
         configs = [
             "android_builder",
+            "android_with_static_analysis",
             "release_builder",
             "remoteexec",
             "minimal_symbols",

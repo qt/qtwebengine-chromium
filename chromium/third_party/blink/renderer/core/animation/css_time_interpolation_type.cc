@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/animation/css_time_interpolation_type.h"
 
 #include "base/notreached.h"
+#include "third_party/blink/renderer/core/animation/tree_counting_checker.h"
 #include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
@@ -19,14 +20,29 @@ InterpolationValue CSSTimeInterpolationType::MaybeConvertNeutral(
   return CreateTimeValue(0);
 }
 
+InterpolationValue CSSTimeInterpolationType::MaybeConvertTime(
+    const CSSValue& value,
+    const CSSToLengthConversionData& conversion_data) const {
+  const auto* primitive_value = DynamicTo<CSSPrimitiveValue>(value);
+  if (!primitive_value || !primitive_value->IsTime()) {
+    return nullptr;
+  }
+  return CreateTimeValue(primitive_value->ComputeSeconds(conversion_data));
+}
+
 InterpolationValue CSSTimeInterpolationType::MaybeConvertValue(
     const CSSValue& value,
-    const StyleResolverState*,
-    ConversionCheckers&) const {
-  auto* primitive_value = DynamicTo<CSSPrimitiveValue>(value);
-  if (!primitive_value || !primitive_value->IsTime())
-    return nullptr;
-  return CreateTimeValue(primitive_value->ComputeSeconds());
+    const StyleResolverState& state,
+    ConversionCheckers& conversion_checkers) const {
+  const CSSToLengthConversionData& conversion_data =
+      state.CssToLengthConversionData();
+  if (const auto* primitive_value = DynamicTo<CSSPrimitiveValue>(value)) {
+    if (primitive_value->IsElementDependent()) {
+      conversion_checkers.push_back(
+          TreeCountingChecker::Create(conversion_data));
+    }
+  }
+  return MaybeConvertTime(value, conversion_data);
 }
 
 const CSSValue* CSSTimeInterpolationType::CreateCSSValue(
@@ -47,10 +63,10 @@ std::optional<double> CSSTimeInterpolationType::GetSeconds(
     const CSSPropertyID& property,
     const ComputedStyle& style) {
   switch (property) {
-    case CSSPropertyID::kInterestTargetShowDelay:
-      return style.InterestTargetShowDelay();
-    case CSSPropertyID::kInterestTargetHideDelay:
-      return style.InterestTargetHideDelay();
+    case CSSPropertyID::kInterestShowDelay:
+      return style.InterestShowDelay();
+    case CSSPropertyID::kInterestHideDelay:
+      return style.InterestHideDelay();
     default:
       NOTREACHED();
   }
@@ -68,8 +84,8 @@ std::optional<double> CSSTimeInterpolationType::GetSeconds(
 double CSSTimeInterpolationType::ClampTime(const CSSPropertyID& property,
                                            double value) const {
   switch (property) {
-    case CSSPropertyID::kInterestTargetShowDelay:
-    case CSSPropertyID::kInterestTargetHideDelay:
+    case CSSPropertyID::kInterestShowDelay:
+    case CSSPropertyID::kInterestHideDelay:
       return ClampTo<float>(value, 0);
     default:
       NOTREACHED();
@@ -84,6 +100,13 @@ CSSTimeInterpolationType::MaybeConvertStandardPropertyUnderlyingValue(
   return nullptr;
 }
 
+InterpolationValue
+CSSTimeInterpolationType::MaybeConvertCustomPropertyUnderlyingValue(
+    const CSSValue& value) const {
+  return MaybeConvertTime(value,
+                          CSSToLengthConversionData(/*element=*/nullptr));
+}
+
 void CSSTimeInterpolationType::ApplyStandardPropertyValue(
     const InterpolableValue& interpolable_value,
     const NonInterpolableValue*,
@@ -93,11 +116,11 @@ void CSSTimeInterpolationType::ApplyStandardPropertyValue(
   double clamped_seconds =
       ClampTime(property, To<InterpolableNumber>(interpolable_value).Value());
   switch (property) {
-    case CSSPropertyID::kInterestTargetShowDelay:
-      builder.SetInterestTargetShowDelay(clamped_seconds);
+    case CSSPropertyID::kInterestShowDelay:
+      builder.SetInterestShowDelay(clamped_seconds);
       break;
-    case CSSPropertyID::kInterestTargetHideDelay:
-      builder.SetInterestTargetHideDelay(clamped_seconds);
+    case CSSPropertyID::kInterestHideDelay:
+      builder.SetInterestHideDelay(clamped_seconds);
       break;
     default:
       NOTREACHED();

@@ -52,11 +52,14 @@ TEST(CPDFToUnicodeMapTest, StringToWideString) {
   WideString res = L"\xc2ab";
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab>"));
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2abab>"));
-  EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab 1234>"));
 
   res += L"\xfaab";
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2abFaAb>"));
   EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2abFaAb12>"));
+  EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab FaAb>"));
+  EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab FaAb12>"));
+  EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("<c2ab FaAb 12>"));
+  EXPECT_EQ(res, CPDF_ToUnicodeMap::StringToWideString("< c 2 a b  F a A b  1 2 >"));
 }
 
 TEST(CPDFToUnicodeMapTest, HandleBeginBFCharBadCount) {
@@ -339,7 +342,7 @@ TEST(CPDFToUnicodeMapTest, InsertIntoMultimap) {
   }
   {
     // Duplicate mappings of CID 0 to unicode "A". There should be only 1 entry
-    // in `m_Multimap`.
+    // in `multimap_`.
     static constexpr uint8_t kInput3[] =
         "1 beginbfrange<0><0>[<0041>]endbfrange\n"
         "1 beginbfchar<0><0041>endbfchar";

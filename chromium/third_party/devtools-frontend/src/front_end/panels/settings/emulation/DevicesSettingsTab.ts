@@ -1,6 +1,7 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../../ui/components/cards/cards.js';
 
@@ -85,10 +86,8 @@ export class DevicesSettingsTab extends UI.Widget.VBox implements
   private editor?: UI.ListWidget.Editor<EmulationModel.EmulatedDevices.EmulatedDevice>;
 
   constructor() {
-    super();
+    super({jslog: `${VisualLogging.pane('devices')}`});
     this.registerRequiredCSS(devicesSettingsTabStyles);
-
-    this.element.setAttribute('jslog', `${VisualLogging.pane('devices')}`);
 
     this.containerElement =
         this.contentElement.createChild('div', 'settings-card-container-wrapper').createChild('div');
@@ -340,7 +339,7 @@ export class DevicesSettingsTab extends UI.Widget.VBox implements
     }
 
     function titleValidator(
-        item: EmulationModel.EmulatedDevices.EmulatedDevice, index: number,
+        _item: EmulationModel.EmulatedDevices.EmulatedDevice, _index: number,
         input: UI.ListWidget.EditorControl): UI.ListWidget.ValidatorResult {
       let valid = false;
       let errorMessage;
@@ -359,19 +358,19 @@ export class DevicesSettingsTab extends UI.Widget.VBox implements
     }
 
     function widthValidator(
-        item: EmulationModel.EmulatedDevices.EmulatedDevice, index: number,
+        _item: EmulationModel.EmulatedDevices.EmulatedDevice, _index: number,
         input: UI.ListWidget.EditorControl): UI.ListWidget.ValidatorResult {
       return EmulationModel.DeviceModeModel.DeviceModeModel.widthValidator(input.value);
     }
 
     function heightValidator(
-        item: EmulationModel.EmulatedDevices.EmulatedDevice, index: number,
+        _item: EmulationModel.EmulatedDevices.EmulatedDevice, _index: number,
         input: UI.ListWidget.EditorControl): UI.ListWidget.ValidatorResult {
       return EmulationModel.DeviceModeModel.DeviceModeModel.heightValidator(input.value);
     }
 
     function scaleValidator(
-        item: EmulationModel.EmulatedDevices.EmulatedDevice, index: number,
+        _item: EmulationModel.EmulatedDevices.EmulatedDevice, _index: number,
         input: UI.ListWidget.EditorControl): UI.ListWidget.ValidatorResult {
       return EmulationModel.DeviceModeModel.DeviceModeModel.scaleValidator(input.value);
     }

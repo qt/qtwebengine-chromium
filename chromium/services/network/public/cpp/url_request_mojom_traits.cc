@@ -26,6 +26,7 @@
 #include "services/network/public/mojom/data_pipe_getter.mojom.h"
 #include "services/network/public/mojom/device_bound_sessions.mojom.h"
 #include "services/network/public/mojom/devtools_observer.mojom.h"
+#include "services/network/public/mojom/fetch_retry_options.mojom.h"
 #include "services/network/public/mojom/ip_address_space.mojom.h"
 #include "services/network/public/mojom/trust_token_access_observer.mojom.h"
 #include "services/network/public/mojom/trust_tokens.mojom.h"
@@ -36,6 +37,20 @@
 #include "url/mojom/url_gurl_mojom_traits.h"
 
 namespace mojo {
+
+bool StructTraits<network::mojom::EnabledClientHintsDataView,
+                  network::ResourceRequest::TrustedParams::EnabledClientHints>::
+    Read(network::mojom::EnabledClientHintsDataView data,
+         network::ResourceRequest::TrustedParams::EnabledClientHints* out) {
+  if (!data.ReadOrigin(&out->origin)) {
+    return false;
+  }
+  out->is_outermost_main_frame = data.is_outermost_main_frame();
+  if (!data.ReadHints(&out->hints)) {
+    return false;
+  }
+  return true;
+}
 
 bool StructTraits<network::mojom::TrustedUrlRequestParamsDataView,
                   network::ResourceRequest::TrustedParams>::
@@ -49,6 +64,9 @@ bool StructTraits<network::mojom::TrustedUrlRequestParamsDataView,
   out->allow_cookies_from_browser = data.allow_cookies_from_browser();
   out->include_request_cookies_with_response =
       data.include_request_cookies_with_response();
+  if (!data.ReadEnabledClientHints(&out->enabled_client_hints)) {
+    return false;
+  }
   out->cookie_observer = data.TakeCookieObserver<
       mojo::PendingRemote<network::mojom::CookieAccessObserver>>();
   out->trust_token_observer = data.TakeTrustTokenObserver<
@@ -139,7 +157,8 @@ bool StructTraits<
       !data.ReadKeepaliveToken(&out->keepalive_token) ||
       !data.ReadStorageAccessApiStatus(&out->storage_access_api_status) ||
       !data.ReadSocketTag(&out->socket_tag) ||
-      !data.ReadPermissionsPolicy(&out->permissions_policy)) {
+      !data.ReadPermissionsPolicy(&out->permissions_policy) ||
+      !data.ReadFetchRetryOptions(&out->fetch_retry_options)) {
     // Note that data.ReadTrustTokenParams is temporarily handled below.
     return false;
   }
@@ -188,7 +207,8 @@ bool StructTraits<
   out->client_side_content_decoding_enabled =
       data.client_side_content_decoding_enabled();
   out->required_ip_address_space = data.required_ip_address_space();
-  out->allows_device_bound_sessions = data.allows_device_bound_sessions();
+  out->allows_device_bound_session_registration =
+      data.allows_device_bound_session_registration();
   return true;
 }
 
@@ -310,6 +330,22 @@ bool StructTraits<network::mojom::SocketTagDataView, net::SocketTag>::Read(
 #else
   *out = net::SocketTag();
 #endif  // BUILDFLAG(IS_ANDROID)
+  return true;
+}
+
+bool StructTraits<network::mojom::FetchRetryOptionsDataView,
+                  network::FetchRetryOptions>::
+    Read(network::mojom::FetchRetryOptionsDataView data,
+         FetchRetryOptions* out) {
+  out->max_attempts = data.max_attempts();
+  if (!data.ReadInitialDelay(&out->initial_delay) ||
+      !data.ReadMaxAge(&out->max_age)) {
+    return false;
+  }
+  out->backoff_factor = data.backoff_factor();
+  out->retry_after_unload = data.retry_after_unload();
+  out->retry_non_idempotent = data.retry_non_idempotent();
+  out->retry_only_if_server_unreached = data.retry_only_if_server_unreached();
   return true;
 }
 

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifdef PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_OVERRIDE_LINKER_WRAPPED_SYMBOLS_H_
 #error This header is meant to be included only once by allocator_shim.cc
 #endif
@@ -26,6 +31,10 @@
 #include "partition_alloc/shim/allocator_shim_internals.h"
 
 extern "C" {
+
+SHIM_ALWAYS_EXPORT void* __wrap_aligned_alloc(size_t alignment, size_t size) {
+  return ShimMemalign(alignment, size, nullptr);
+}
 
 SHIM_ALWAYS_EXPORT void* __wrap_calloc(size_t n, size_t size) {
   return ShimCalloc(n, size, nullptr);

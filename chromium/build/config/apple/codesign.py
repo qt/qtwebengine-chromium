@@ -34,16 +34,39 @@ else:
   basestring_compat = str
 
 
-def GetProvisioningProfilesDir():
+class FileListAction(argparse.Action):
+  """Action that load a file and interpret it as a list of file names."""
+
+  def __init__(self, option_strings, dest, nargs=None, **kwds):
+    if nargs is not None:
+      raise ValueError("nargs not allowed")
+    super().__init__(option_strings, dest, nargs, **kwds)
+
+  def __call__(self, parser, namespace, values, option_strings):
+    dest = getattr(namespace, self.dest)
+    with open(values, 'r', encoding='utf-8') as stream:
+      for line in stream:
+        path = line[:-1]
+        dest.append(path)
+
+
+def GetProvisioningProfilesDirs():
   """Returns the location of the installed mobile provisioning profiles.
 
   Returns:
-    The path to the directory containing the installed mobile provisioning
+    The paths to the directory containing the installed mobile provisioning
     profiles as a string.
   """
-  return os.path.join(
-      os.environ['HOME'], 'Library', 'MobileDevice', 'Provisioning Profiles')
-
+  paths = []
+  paths.append(
+      os.path.join(os.environ['HOME'], 'Library', 'MobileDevice',
+                   'Provisioning Profiles'))
+  # For Xcode 16 and later, include the new location,
+  # `~/Library/Developer/Xcode/UserData/Provisioning Profiles`.
+  paths.append(
+      os.path.join(os.environ['HOME'], 'Library', 'Developer', 'Xcode',
+                   'UserData', 'Provisioning Profiles'))
+  return paths
 
 def ReadPlistFromString(plist_bytes):
   """Parse property list from given |plist_bytes|.
@@ -302,8 +325,9 @@ def FindProvisioningProfile(provisioning_profile_paths, bundle_identifier,
     object or None if no matching provisioning profile was found.
   """
   if not provisioning_profile_paths:
-    provisioning_profile_paths = glob.glob(
-        os.path.join(GetProvisioningProfilesDir(), '*.mobileprovision'))
+    for path in GetProvisioningProfilesDirs():
+      provisioning_profile_paths.extend(
+          glob.glob(os.path.join(path, '*.mobileprovision')))
 
   # Iterate over all installed mobile provisioning profiles and filter those
   # that can be used to sign the bundle, ignoring expired ones.
@@ -486,6 +510,14 @@ class CodeSignBundleAction(Action):
         dest='mobileprovision_files',
         help='list of mobileprovision files to use. If empty, uses the files ' +
         'in $HOME/Library/MobileDevice/Provisioning Profiles')
+    parser.add_argument(
+        '--mobileprovision-list',
+        '-M',
+        action=FileListAction,
+        dest='mobileprovision_files',
+        help='path to a file containing a list of mobileprovision files to ' +
+        'use (this will behave as each "-m $line" was passsed for each line ' +
+        'in that file)')
     parser.set_defaults(no_signature=False)
 
   @staticmethod
@@ -665,6 +697,14 @@ class GenerateEntitlementsAction(Action):
         dest='mobileprovision_files',
         help='set of mobileprovision files to use. If empty, uses the files ' +
         'in $HOME/Library/MobileDevice/Provisioning Profiles')
+    parser.add_argument(
+        '--mobileprovision-list',
+        '-M',
+        action=FileListAction,
+        dest='mobileprovision_files',
+        help='path to a file containing a list of mobileprovision files to ' +
+        'use (this will behave as each "-m $line" was passsed for each line ' +
+        'in that file)')
 
   @staticmethod
   def _Execute(args):
@@ -697,6 +737,14 @@ class FindProvisioningProfileAction(Action):
         dest='mobileprovision_files',
         help='set of mobileprovision files to use. If empty, uses the files ' +
         'in $HOME/Library/MobileDevice/Provisioning Profiles')
+    parser.add_argument(
+        '--mobileprovision-list',
+        '-M',
+        action=FileListAction,
+        dest='mobileprovision_files',
+        help='path to a file containing a list of mobileprovision files to ' +
+        'use (this will behave as each "-m $line" was passsed for each line ' +
+        'in that file)')
 
   @staticmethod
   def _Execute(args):

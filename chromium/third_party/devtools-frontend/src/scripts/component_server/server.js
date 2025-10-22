@@ -6,8 +6,10 @@ const fs = require('fs');
 const http = require('http');
 const path = require('path');
 const parseURL = require('url').parse;
-const {argv} = require('yargs');
+const yargs = require('yargs');
+const {hideBin} = require('yargs/helpers');
 
+const argv = yargs(hideBin(process.argv)).parseSync();
 const tracesMode = argv.traces || false;
 const serverPort = parseInt(process.env.PORT, 10) || (tracesMode ? 11010 : 8090);
 
@@ -289,8 +291,8 @@ async function checkFileExists(filePath) {
 }
 
 /**
- * @param {http.IncomingMessage} request
- * @param {http.ServerResponse} response
+ * @param request
+ * @param response
  */
 async function requestHandler(request, response) {
   const filePath = parseURL(request.url).pathname;
@@ -547,9 +549,9 @@ function createTracesIndexFile(traceFilenames) {
 }
 
 /**
- * @param {http.IncomingMessage} request
- * @param {http.ServerResponse} response
- * @param {string|null} filePath
+ * @param request
+ * @param response
+ * @param filePath
  */
 async function handleTracesModeRequest(request, response, filePath) {
   const traceFolder = path.resolve(

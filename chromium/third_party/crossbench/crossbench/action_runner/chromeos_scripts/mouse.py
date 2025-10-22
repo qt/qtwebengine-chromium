@@ -9,6 +9,7 @@
 
 import sys
 import time
+
 import uinput
 
 screen_width = int(sys.argv[1])

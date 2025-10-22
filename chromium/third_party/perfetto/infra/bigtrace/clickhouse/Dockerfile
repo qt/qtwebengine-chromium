@@ -16,11 +16,11 @@
 
 FROM clickhouse/clickhouse-server
 
-RUN apt update && apt install python3 pip curl git -y
+RUN apt update && apt install python3 pip curl git python3-venv -y
 RUN pip install grpcio grpcio-tools protobuf perfetto==0.7.0 pandas numpy
 
 WORKDIR /tmp
-RUN git clone --depth 1 https://android.googlesource.com/platform/external/perfetto/
+RUN git clone --depth 1 https://github.com/google/perfetto/
 WORKDIR /tmp/perfetto
 RUN tools/install-build-deps --grpc
 RUN tools/gn gen out/dist '--args=is_clang=true enable_perfetto_grpc=true'

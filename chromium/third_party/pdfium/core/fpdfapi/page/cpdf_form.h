@@ -36,10 +36,10 @@ class CPDF_Form final : public CPDF_PageObjectHolder,
                                               CPDF_Dictionary* pParentResources,
                                               CPDF_Dictionary* pPageResources);
 
-  CPDF_Form(CPDF_Document* pDocument,
+  CPDF_Form(CPDF_Document* document,
             RetainPtr<CPDF_Dictionary> pPageResources,
             RetainPtr<CPDF_Stream> pFormStream);
-  CPDF_Form(CPDF_Document* pDocument,
+  CPDF_Form(CPDF_Document* document,
             RetainPtr<CPDF_Dictionary> pPageResources,
             RetainPtr<CPDF_Stream> pFormStream,
             CPDF_Dictionary* pParentResources);
@@ -65,8 +65,8 @@ class CPDF_Form final : public CPDF_PageObjectHolder,
                             CPDF_Type3Char* pType3Char,
                             RecursionState* recursion_state);
 
-  RecursionState m_RecursionState;
-  RetainPtr<CPDF_Stream> const m_pFormStream;
+  RecursionState recursion_state_;
+  RetainPtr<CPDF_Stream> const form_stream_;
 };
 
 #endif  // CORE_FPDFAPI_PAGE_CPDF_FORM_H_

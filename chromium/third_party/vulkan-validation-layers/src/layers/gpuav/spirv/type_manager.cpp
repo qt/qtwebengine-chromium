@@ -112,6 +112,35 @@ const Type& TypeManager::AddType(std::unique_ptr<Instruction> new_inst, SpvType 
     return *new_type;
 }
 
+// We don't want to waste time trying to look up potential recursive struct type
+// This is added for those we want to spend time to not duplicate and link with.
+// We also will hit spirv-val errors if using 2 OpTypeStruct, even if same internals
+void TypeManager::AddStructTypeForLinking(const Type* new_type) {
+    assert(new_type && new_type->spv_type_ == SpvType::kStruct);
+    linking_struct_types_.push_back(new_type);
+}
+
+uint32_t TypeManager::FindLinkingStructType(const Instruction& inst, vvl::unordered_map<uint32_t, uint32_t>& id_swap_map) const {
+    for (const auto& struct_type : linking_struct_types_) {
+        if (struct_type->inst_.Length() != inst.Length()) continue;
+        // Assume currently structs are not nested and only need to examine one level
+        const uint32_t length = inst.Length();
+        bool found = true;
+        for (uint32_t i = 2; i < length; i++) {
+            const Type* type_a = FindTypeById(struct_type->inst_.Word(i));
+            const Type* type_b = FindTypeById(id_swap_map[inst.Word(i)]);
+            if (!type_a || !type_b || type_a->Id() != type_b->Id()) {
+                found = false;
+                break;
+            }
+        }
+        if (found) {
+            return struct_type->Id();
+        }
+    }
+    return 0;
+}
+
 const Type* TypeManager::FindTypeById(uint32_t id) const {
     auto type = id_to_type_.find(id);
     return (type == id_to_type_.end()) ? nullptr : type->second.get();
@@ -405,6 +434,15 @@ uint32_t TypeManager::TypeLength(const Type& type) {
             uint32_t last_offset = 0;
             uint32_t last_offset_index = 0;
             const uint32_t struct_id = type.inst_.ResultId();
+
+            // cached lookup if we already have seen this struct
+            {
+                auto it = struct_size_map_.find(struct_id);
+                if (it != struct_size_map_.end()) {
+                    return it->second;
+                }
+            }
+
             for (const auto& annotation : module_.annotations_) {
                 if (annotation->Opcode() == spv::OpMemberDecorate && annotation->Word(1) == struct_id &&
                     annotation->Word(3) == spv::DecorationOffset) {
@@ -419,7 +457,9 @@ uint32_t TypeManager::TypeLength(const Type& type) {
 
             const Type* last_element_type = FindTypeById(type.inst_.Operand(last_offset_index));
             const uint32_t last_length = TypeLength(*last_element_type);
-            return last_offset + last_length;
+            const uint32_t struct_size = last_offset + last_length;
+            struct_size_map_[struct_id] = struct_size;
+            return struct_size;
         }
         case spv::OpTypeRuntimeArray:
             assert(false && "unsupported type");
@@ -521,15 +561,34 @@ const Constant& TypeManager::GetConstantZeroFloat32() {
     return *float_32bit_zero_constants_;
 }
 
+// It is common to use vec3(0) as a default, so having it cached is helpful
 const Constant& TypeManager::GetConstantZeroVec3() {
-    const Type& float_32_type = GetTypeFloat(32);
-    const Type& vec3_type = GetTypeVector(float_32_type, 3);
-    const uint32_t float32_0_id = module_.type_manager_.GetConstantZeroFloat32().Id();
+    if (!vec3_zero_constants_) {
+        const Type& float_32_type = GetTypeFloat(32);
+        const Type& vec3_type = GetTypeVector(float_32_type, 3);
+        const uint32_t float32_0_id = module_.type_manager_.GetConstantZeroFloat32().Id();
 
-    const uint32_t constant_id = module_.TakeNextId();
-    auto new_inst = std::make_unique<Instruction>(6, spv::OpConstantComposite);
-    new_inst->Fill({vec3_type.Id(), constant_id, float32_0_id, float32_0_id, float32_0_id});
-    return AddConstant(std::move(new_inst), vec3_type);
+        const uint32_t constant_id = module_.TakeNextId();
+        auto new_inst = std::make_unique<Instruction>(6, spv::OpConstantComposite);
+        new_inst->Fill({vec3_type.Id(), constant_id, float32_0_id, float32_0_id, float32_0_id});
+        vec3_zero_constants_ = &AddConstant(std::move(new_inst), vec3_type);
+    }
+    return *vec3_zero_constants_;
+}
+
+// It is common to use uvec4(0) as a default, so having it cached is helpful
+const Constant& TypeManager::GetConstantZeroUvec4() {
+    if (!uvec4_zero_constants_) {
+        const Type& uint32_type = module_.type_manager_.GetTypeInt(32, false);
+        const Type& uvec4_type = module_.type_manager_.GetTypeVector(uint32_type, 4);
+        const uint32_t uint32_0_id = module_.type_manager_.GetConstantZeroUint32().Id();
+
+        const uint32_t constant_id = module_.TakeNextId();
+        auto new_inst = std::make_unique<Instruction>(7, spv::OpConstantComposite);
+        new_inst->Fill({uvec4_type.Id(), constant_id, uint32_0_id, uint32_0_id, uint32_0_id, uint32_0_id});
+        uvec4_zero_constants_ = &AddConstant(std::move(new_inst), uvec4_type);
+    }
+    return *uvec4_zero_constants_;
 }
 
 const Constant& TypeManager::GetConstantNull(const Type& type) {
@@ -555,6 +614,8 @@ const Variable& TypeManager::AddVariable(std::unique_ptr<Instruction> new_inst, 
         input_variables_.push_back(new_variable);
     } else if (new_variable->StorageClass() == spv::StorageClassOutput) {
         output_variables_.push_back(new_variable);
+    } else if (new_variable->StorageClass() == spv::StorageClassPushConstant) {
+        push_constant_variable_ = new_variable;
     }
 
     return *new_variable;
@@ -564,6 +625,8 @@ const Variable* TypeManager::FindVariableById(uint32_t id) const {
     auto variable = id_to_variable_.find(id);
     return (variable == id_to_variable_.end()) ? nullptr : variable->second.get();
 }
+
+const Variable* TypeManager::FindPushConstantVariable() const { return push_constant_variable_; }
 
 bool Type::IsArray() const { return spv_type_ == SpvType::kArray || spv_type_ == SpvType::kRuntimeArray; }
 

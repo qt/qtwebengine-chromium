@@ -22,7 +22,7 @@ from crossbench.probes.results import EmptyProbeResult, LocalProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.probes.probe_context import ProbeContext
   from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
@@ -95,7 +95,7 @@ class ThermalMonitorProbe(InternalJsonResultProbe):
     raise NotImplementedError("Should not be called, data comes from context")
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     if self.threshold is not None and not browser.platform.is_android:
       raise ProbeIncompatibleBrowser(

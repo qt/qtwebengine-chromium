@@ -14,53 +14,50 @@
 # KIND, either express or implied.  See the License for the
 # specific language governing permissions and limitations
 # under the License.
+from typing import List, Mapping, Optional
 
-from typing import List
-
-from selenium.webdriver.common import (service, utils)
-
-
-DEFAULT_EXECUTABLE_PATH = "geckodriver"
+from selenium.types import SubprocessStdAlias
+from selenium.webdriver.common import service, utils
 
 
 class Service(service.Service):
-    """Object that manages the starting and stopping of the
-    GeckoDriver."""
+    """A Service class that is responsible for the starting and stopping of
+    `geckodriver`.
 
-    def __init__(self, executable_path: str = DEFAULT_EXECUTABLE_PATH,
-                 port: int = 0, service_args: List[str] = None,
-                 log_path: str = "geckodriver.log", env: dict = None):
-        """Creates a new instance of the GeckoDriver remote service proxy.
+    :param executable_path: install path of the geckodriver executable, defaults to `geckodriver`.
+    :param port: Port for the service to run on, defaults to 0 where the operating system will decide.
+    :param service_args: (Optional) List of args to be passed to the subprocess when launching the executable.
+    :param log_output: (Optional) int representation of STDOUT/DEVNULL, any IO instance or String path to file.
+    :param env: (Optional) Mapping of environment variables for the new process, defaults to `os.environ`.
+    :param driver_path_env_key: (Optional) Environment variable to use to get the path to the driver executable.
+    """
 
-        GeckoDriver provides a HTTP interface speaking the W3C WebDriver
-        protocol to Marionette.
-
-        :param executable_path: Path to the GeckoDriver binary.
-        :param port: Run the remote service on a specified port.
-            Defaults to 0, which binds to a random open port of the
-            system's choosing.
-        :param service_args: Optional list of arguments to pass to the
-            GeckoDriver binary.
-        :param log_path: Optional path for the GeckoDriver to log to.
-            Defaults to _geckodriver.log_ in the current working directory.
-        :param env: Optional dictionary of output variables to expose
-            in the services' environment.
-
-        """
-        log_file = open(log_path, "a+") if log_path else None
-
-        service.Service.__init__(
-            self, executable_path, port=port, log_file=log_file, env=env)
+    def __init__(
+        self,
+        executable_path: Optional[str] = None,
+        port: int = 0,
+        service_args: Optional[List[str]] = None,
+        log_output: Optional[SubprocessStdAlias] = None,
+        env: Optional[Mapping[str, str]] = None,
+        driver_path_env_key: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         self.service_args = service_args or []
+        driver_path_env_key = driver_path_env_key or "SE_GECKODRIVER"
+
+        super().__init__(
+            executable_path=executable_path,
+            port=port,
+            log_output=log_output,
+            env=env,
+            driver_path_env_key=driver_path_env_key,
+            **kwargs,
+        )
+
         # Set a port for CDP
-        self.service_args.append("--websocket-port")
-        self.service_args.append("%d" % utils.free_port())
-        # Set the webdriver port
-        self.service_args.append("--port")
-        self.service_args.append("%d" % self.port)
+        if "--connect-existing" not in self.service_args:
+            self.service_args.append("--websocket-port")
+            self.service_args.append(f"{utils.free_port()}")
 
     def command_line_args(self) -> List[str]:
-        return self.service_args
-
-    def send_remote_shutdown_command(self):
-        pass
+        return ["--port", f"{self.port}"] + self.service_args

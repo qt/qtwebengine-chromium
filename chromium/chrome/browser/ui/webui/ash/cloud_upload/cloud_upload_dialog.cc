@@ -20,12 +20,18 @@
 #include "base/strings/escape.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/types/cxx23_to_underlying.h"
 #include "chrome/browser/apps/app_service/app_service_proxy.h"
 #include "chrome/browser/apps/app_service/app_service_proxy_factory.h"
 #include "chrome/browser/ash/arc/fileapi/arc_documents_provider_util.h"
+#include "chrome/browser/ash/browser_delegate/browser_controller.h"
+#include "chrome/browser/ash/browser_delegate/browser_delegate.h"
+#include "chrome/browser/ash/drive/drive_integration_service.h"
+#include "chrome/browser/ash/drive/drive_integration_service_factory.h"
 #include "chrome/browser/ash/extensions/file_manager/event_router_factory.h"
 #include "chrome/browser/ash/file_manager/file_tasks.h"
 #include "chrome/browser/ash/file_manager/io_task.h"
@@ -40,8 +46,6 @@
 #include "chrome/browser/ui/ash/system_web_apps/system_web_app_ui_utils.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
-#include "chrome/browser/ui/webui/ash/cloud_upload/cloud_upload.mojom-forward.h"
-#include "chrome/browser/ui/webui/ash/cloud_upload/cloud_upload.mojom-shared.h"
 #include "chrome/browser/ui/webui/ash/cloud_upload/cloud_upload.mojom.h"
 #include "chrome/browser/ui/webui/ash/cloud_upload/cloud_upload_ui.h"
 #include "chrome/browser/ui/webui/ash/cloud_upload/cloud_upload_util.h"
@@ -481,8 +485,17 @@ bool CloudOpenTask::Execute(
     LOG(ERROR) << "Cannot get EventRouter";
   }
 
-  scoped_refptr<CloudOpenTask> upload_task = WrapRefCounted(new CloudOpenTask(
-      profile, file_urls, task, cloud_provider, std::move(cloud_open_metrics)));
+  std::optional<SourceType> source_type =
+      GetSourceType(profile, file_urls.front());
+  if (!source_type.has_value()) {
+    LOG(ERROR) << "Cannot get source type";
+    cloud_open_metrics->LogTaskResult(OfficeTaskResult::kCannotGetSourceType);
+    return false;
+  }
+
+  scoped_refptr<CloudOpenTask> upload_task = WrapRefCounted(
+      new CloudOpenTask(profile, file_urls, task, source_type.value(),
+                        cloud_provider, std::move(cloud_open_metrics)));
   // Keep `upload_task` alive until `TaskFinished` executes.
   bool status = upload_task->ExecuteInternal();
   return status;
@@ -492,11 +505,13 @@ CloudOpenTask::CloudOpenTask(
     Profile* profile,
     std::vector<storage::FileSystemURL> file_urls,
     const fm_tasks::TaskDescriptor& task,
+    const SourceType source_type,
     const CloudProvider cloud_provider,
     std::unique_ptr<CloudOpenMetrics> cloud_open_metrics)
     : profile_(profile),
       file_urls_(file_urls),
       task_(task),
+      source_type_(source_type),
       cloud_provider_(cloud_provider),
       cloud_open_metrics_(std::move(cloud_open_metrics)) {
   BrowserList::AddObserver(this);
@@ -618,10 +633,9 @@ bool CloudOpenTask::OpenOrMoveFiles() {
   }
 
   // The files need to be moved.
-  auto operation =
-      GetUploadType(profile_, file_urls_.front()) == UploadType::kCopy
-          ? OfficeFilesTransferRequired::kCopy
-          : OfficeFilesTransferRequired::kMove;
+  auto operation = SourceTypeToUploadType(source_type_) == UploadType::kCopy
+                       ? OfficeFilesTransferRequired::kCopy
+                       : OfficeFilesTransferRequired::kMove;
   // Set as WARNING as INFO is not allowed.
   LOG(WARNING) << (operation == OfficeFilesTransferRequired::kCopy ? "Copy"
                                                                    : "Mov")
@@ -733,10 +747,8 @@ void CloudOpenTask::OpenODFSUrls(const OfficeTaskResult task_result_uma) {
 // file to a cloud location and opening it.
 bool CloudOpenTask::ShouldShowConfirmationDialog() {
   bool force_show_confirmation_dialog = false;
-  SourceType source_type = GetSourceType(profile_, file_urls_[0]);
-
   if (cloud_provider_ == CloudProvider::kGoogleDrive) {
-    switch (source_type) {
+    switch (source_type_) {
       case SourceType::READ_ONLY:
         force_show_confirmation_dialog =
             !fm_tasks::GetOfficeMoveConfirmationShownForLocalToDrive(
@@ -755,7 +767,7 @@ bool CloudOpenTask::ShouldShowConfirmationDialog() {
     return force_show_confirmation_dialog ||
            !fm_tasks::GetAlwaysMoveOfficeFilesToDrive(profile_);
   } else if (cloud_provider_ == CloudProvider::kOneDrive) {
-    switch (source_type) {
+    switch (source_type_) {
       case SourceType::READ_ONLY:
         force_show_confirmation_dialog =
             !fm_tasks::GetOfficeMoveConfirmationShownForLocalToOneDrive(
@@ -947,6 +959,7 @@ void CloudOpenTask::StartNextGoogleDriveUpload() {
   DCHECK_LT(file_urls_idx_, file_urls_.size());
   drive_upload_handler_ = std::make_unique<DriveUploadHandler>(
       profile_, file_urls_[file_urls_idx_],
+      SourceTypeToUploadType(source_type_),
       base::BindOnce(&CloudOpenTask::FinishedDriveUpload, this),
       cloud_open_metrics_->GetSafeRef());
   drive_upload_handler_->Run();
@@ -956,6 +969,7 @@ void CloudOpenTask::StartNextOneDriveUpload() {
   DCHECK_LT(file_urls_idx_, file_urls_.size());
   one_drive_upload_handler_ = std::make_unique<OneDriveUploadHandler>(
       profile_, file_urls_[file_urls_idx_],
+      SourceTypeToUploadType(source_type_),
       base::BindOnce(&CloudOpenTask::FinishedOneDriveUpload, this,
                      profile_->GetWeakPtr()),
       cloud_open_metrics_->GetSafeRef());
@@ -1136,7 +1150,7 @@ mojom::DialogArgsPtr CloudOpenTask::CreateDialogArgs(
       auto move_confirmation_one_drive_dialog_args =
           mojom::MoveConfirmationOneDriveDialogArgs::New();
       move_confirmation_one_drive_dialog_args->operation_type =
-          UploadTypeToOperationType(GetUploadType(profile_, file_urls_[0]));
+          UploadTypeToOperationType(SourceTypeToUploadType(source_type_));
       args->dialog_specific_args =
           mojom::DialogSpecificArgs::NewMoveConfirmationOneDriveDialogArgs(
               std::move(move_confirmation_one_drive_dialog_args));
@@ -1146,7 +1160,7 @@ mojom::DialogArgsPtr CloudOpenTask::CreateDialogArgs(
       auto move_confirmation_google_drive_dialog_args =
           mojom::MoveConfirmationGoogleDriveDialogArgs::New();
       move_confirmation_google_drive_dialog_args->operation_type =
-          UploadTypeToOperationType(GetUploadType(profile_, file_urls_[0]));
+          UploadTypeToOperationType(SourceTypeToUploadType(source_type_));
       args->dialog_specific_args =
           mojom::DialogSpecificArgs::NewMoveConfirmationGoogleDriveDialogArgs(
               std::move(move_confirmation_google_drive_dialog_args));
@@ -1215,11 +1229,10 @@ void CloudOpenTask::ShowDialog(
                             office_move_confirmation_shown);
 
   // Get Files App window, if it exists.
-  files_app_browser_ =
-      FindSystemWebAppBrowser(profile_, ash::SystemWebAppType::FILE_MANAGER);
+  files_app_browser_ = FindSystemWebAppBrowser(
+      profile_, ash::SystemWebAppType::FILE_MANAGER, ash::BrowserType::kApp);
   gfx::NativeWindow modal_parent =
-      files_app_browser_ ? files_app_browser_->window()->GetNativeWindow()
-                         : nullptr;
+      files_app_browser_ ? files_app_browser_->GetNativeWindow() : nullptr;
 
   if (!modal_parent) {
     need_new_files_app_ = true;
@@ -1279,15 +1292,15 @@ void CloudOpenTask::OnBrowserAdded(Browser* browser) {
     return;
   }
   need_new_files_app_ = false;
-  files_app_browser_ = browser;
-  pending_dialog_->ShowSystemDialog(
-      files_app_browser_->window()->GetNativeWindow());
+  files_app_browser_ = BrowserController::GetInstance()->GetDelegate(browser);
+  pending_dialog_->ShowSystemDialog(files_app_browser_->GetNativeWindow());
   // The dialog is deleted in `SystemWebDialogDelegate::OnDialogClosed`.
   pending_dialog_ = nullptr;
 }
 
 void CloudOpenTask::OnBrowserClosing(Browser* browser) {
-  if (browser == files_app_browser_) {
+  if (BrowserController::GetInstance()->GetDelegate(browser) ==
+      files_app_browser_) {
     // The Files app that the dialog is modal to is closed. This will close the
     // dialog with an empty user response.
     files_app_closed_ = true;
@@ -1370,8 +1383,7 @@ void CloudOpenTask::OnMoveConfirmationComplete(
   // (and for StartUpload?).
   if (user_response == kUserActionUploadToGoogleDrive) {
     fm_tasks::SetOfficeMoveConfirmationShownForDrive(profile_, true);
-    SourceType source_type = GetSourceType(profile_, file_urls_[0]);
-    switch (source_type) {
+    switch (source_type_) {
       case SourceType::LOCAL:
         fm_tasks::SetOfficeMoveConfirmationShownForLocalToDrive(profile_, true);
         break;
@@ -1385,8 +1397,7 @@ void CloudOpenTask::OnMoveConfirmationComplete(
     StartUpload();
   } else if (user_response == kUserActionUploadToOneDrive) {
     fm_tasks::SetOfficeMoveConfirmationShownForOneDrive(profile_, true);
-    SourceType source_type = GetSourceType(profile_, file_urls_[0]);
-    switch (source_type) {
+    switch (source_type_) {
       case SourceType::LOCAL:
         fm_tasks::SetOfficeMoveConfirmationShownForLocalToOneDrive(profile_,
                                                                    true);

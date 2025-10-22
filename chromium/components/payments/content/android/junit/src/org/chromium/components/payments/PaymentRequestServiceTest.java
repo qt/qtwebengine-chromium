@@ -23,6 +23,7 @@ import org.chromium.base.test.BaseRobolectricTestRunner;
 import org.chromium.base.test.util.Feature;
 import org.chromium.base.test.util.Features.DisableFeatures;
 import org.chromium.base.test.util.Features.EnableFeatures;
+import org.chromium.blink_public.common.BlinkFeatures;
 import org.chromium.components.payments.test_support.DefaultPaymentFeatureConfig;
 import org.chromium.components.payments.test_support.PaymentRequestServiceBuilder;
 import org.chromium.content.browser.webcontents.WebContentsImpl;
@@ -48,8 +49,10 @@ import java.util.Set;
 /** A test for PaymentRequestService. */
 @RunWith(BaseRobolectricTestRunner.class)
 @Config(manifest = Config.NONE)
-@DisableFeatures({PaymentFeatureList.WEB_PAYMENTS_EXPERIMENTAL_FEATURES,
-        PaymentFeatureList.ANDROID_PAYMENT_INTENTS_OMIT_DEPRECATED_PARAMETERS})
+@DisableFeatures({
+    PaymentFeatureList.WEB_PAYMENTS_EXPERIMENTAL_FEATURES,
+    PaymentFeatureList.ANDROID_PAYMENT_INTENTS_OMIT_DEPRECATED_PARAMETERS
+})
 public class PaymentRequestServiceTest implements PaymentRequestClient {
     private static final int NATIVE_WEB_CONTENTS_ANDROID = 1;
     private static final int NO_PAYMENT_ERROR = PaymentErrorReason.MIN_VALUE;
@@ -850,5 +853,54 @@ public class PaymentRequestServiceTest implements PaymentRequestClient {
 
         Mockito.verify(mWebContentsDataJniMock, Mockito.times(1))
                 .recordActivationlessShow(Mockito.any());
+    }
+
+    @Test
+    @Feature({"Payments"})
+    @EnableFeatures({PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION_FALLBACK})
+    @DisableFeatures({BlinkFeatures.SECURE_PAYMENT_CONFIRMATION_UX_REFRESH})
+    public void
+            disconnectFromClientWithDebugMessage_userCancelPaymentErrorReason_whenSpcFallbackEnabled() {
+        PaymentRequestService service =
+                defaultBuilder().setOnlySpcMethodWithoutPaymentOptions().build();
+
+        service.disconnectFromClientWithDebugMessage(
+                ErrorStrings.USER_CANCELLED, PaymentErrorReason.USER_CANCEL);
+
+        assertErrorAndReason(ErrorStrings.USER_CANCELLED, PaymentErrorReason.USER_CANCEL);
+    }
+
+    @Test
+    @Feature({"Payments"})
+    @EnableFeatures({BlinkFeatures.SECURE_PAYMENT_CONFIRMATION_UX_REFRESH})
+    @DisableFeatures({PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION_FALLBACK})
+    public void
+            disconnectFromClientWithDebugMessage_userCancelPaymentErrorReason_whenUxRefreshEnabled() {
+        PaymentRequestService service =
+                defaultBuilder().setOnlySpcMethodWithoutPaymentOptions().build();
+
+        service.disconnectFromClientWithDebugMessage(
+                ErrorStrings.USER_CANCELLED, PaymentErrorReason.USER_CANCEL);
+
+        assertErrorAndReason(ErrorStrings.USER_CANCELLED, PaymentErrorReason.USER_CANCEL);
+    }
+
+    @Test
+    @Feature({"Payments"})
+    @DisableFeatures({
+        BlinkFeatures.SECURE_PAYMENT_CONFIRMATION_UX_REFRESH,
+        PaymentFeatureList.SECURE_PAYMENT_CONFIRMATION_FALLBACK
+    })
+    public void
+            disconnectFromClientWithDebugMessage_userCancelPaymentErrorReason_whenSpcFallbackAndUxRefreshDisabled() {
+        PaymentRequestService service =
+                defaultBuilder().setOnlySpcMethodWithoutPaymentOptions().build();
+
+        service.disconnectFromClientWithDebugMessage(
+                ErrorStrings.USER_CANCELLED, PaymentErrorReason.USER_CANCEL);
+
+        assertErrorAndReason(
+                ErrorStrings.WEB_AUTHN_OPERATION_TIMED_OUT_OR_NOT_ALLOWED,
+                PaymentErrorReason.NOT_ALLOWED_ERROR);
     }
 }

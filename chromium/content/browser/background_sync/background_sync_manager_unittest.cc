@@ -55,6 +55,11 @@
 
 using blink::PermissionType;
 
+MATCHER_P(PermissionTypeMatcher, id, "") {
+  return ::testing::Matches(::testing::Eq(id))(
+      blink::PermissionDescriptorToPermissionType(arg));
+}
+
 namespace content {
 
 namespace {
@@ -124,14 +129,17 @@ class BackgroundSyncManagerTest
     std::unique_ptr<MockPermissionManager> mock_permission_manager(
         new testing::NiceMock<MockPermissionManager>());
     ON_CALL(*mock_permission_manager,
-            GetPermissionStatusForWorker(PermissionType::BACKGROUND_SYNC, _, _))
+            GetPermissionStatusForWorker(
+                PermissionTypeMatcher(PermissionType::BACKGROUND_SYNC), _, _))
         .WillByDefault(Return(blink::mojom::PermissionStatus::GRANTED));
     ON_CALL(*mock_permission_manager,
             GetPermissionStatusForWorker(
-                PermissionType::PERIODIC_BACKGROUND_SYNC, _, _))
+                PermissionTypeMatcher(PermissionType::PERIODIC_BACKGROUND_SYNC),
+                _, _))
         .WillByDefault(Return(blink::mojom::PermissionStatus::GRANTED));
     ON_CALL(*mock_permission_manager,
-            GetPermissionStatusForWorker(PermissionType::NOTIFICATIONS, _, _))
+            GetPermissionStatusForWorker(
+                PermissionTypeMatcher(PermissionType::NOTIFICATIONS), _, _))
         .WillByDefault(Return(blink::mojom::PermissionStatus::DENIED));
     TestBrowserContext::FromBrowserContext(helper_->browser_context())
         ->SetPermissionControllerDelegate(std::move(mock_permission_manager));
@@ -553,6 +561,7 @@ class BackgroundSyncManagerTest
     helper_->context()->UnregisterServiceWorker(
         scope, blink::StorageKey::CreateFirstParty(url::Origin::Create(scope)),
         /*is_immediate=*/false,
+        ServiceWorkerRegistration::DeleteInitiator::kTest,
         base::BindOnce(&UnregisterServiceWorkerCallback, &called));
     base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(called);
@@ -950,20 +959,24 @@ TEST_F(BackgroundSyncManagerTest, RegisterPermissionDenied) {
       GetPermissionControllerDelegate();
 
   EXPECT_CALL(*mock_permission_manager,
-              GetPermissionStatusForWorker(PermissionType::NOTIFICATIONS, _,
-                                           expected_origin))
+              GetPermissionStatusForWorker(
+                  PermissionTypeMatcher(PermissionType::NOTIFICATIONS), _,
+                  expected_origin))
       .Times(2);
 
   EXPECT_CALL(*mock_permission_manager,
-              GetPermissionStatusForWorker(PermissionType::BACKGROUND_SYNC, _,
-                                           expected_origin))
+              GetPermissionStatusForWorker(
+                  PermissionTypeMatcher(PermissionType::BACKGROUND_SYNC), _,
+                  expected_origin))
       .WillOnce(testing::Return(blink::mojom::PermissionStatus::DENIED));
   EXPECT_FALSE(Register(sync_options_1_));
 
   sync_options_2_.min_interval = 36000;
-  EXPECT_CALL(*mock_permission_manager,
-              GetPermissionStatusForWorker(
-                  PermissionType::PERIODIC_BACKGROUND_SYNC, _, expected_origin))
+  EXPECT_CALL(
+      *mock_permission_manager,
+      GetPermissionStatusForWorker(
+          PermissionTypeMatcher(PermissionType::PERIODIC_BACKGROUND_SYNC), _,
+          expected_origin))
       .WillOnce(testing::Return(blink::mojom::PermissionStatus::DENIED));
   EXPECT_FALSE(Register(sync_options_2_));
 }
@@ -974,20 +987,24 @@ TEST_F(BackgroundSyncManagerTest, RegisterPermissionGranted) {
       GetPermissionControllerDelegate();
 
   EXPECT_CALL(*mock_permission_manager,
-              GetPermissionStatusForWorker(PermissionType::NOTIFICATIONS, _,
-                                           expected_origin))
+              GetPermissionStatusForWorker(
+                  PermissionTypeMatcher(PermissionType::NOTIFICATIONS), _,
+                  expected_origin))
       .Times(2);
 
   EXPECT_CALL(*mock_permission_manager,
-              GetPermissionStatusForWorker(PermissionType::BACKGROUND_SYNC, _,
-                                           expected_origin))
+              GetPermissionStatusForWorker(
+                  PermissionTypeMatcher(PermissionType::BACKGROUND_SYNC), _,
+                  expected_origin))
       .WillOnce(testing::Return(blink::mojom::PermissionStatus::GRANTED));
   EXPECT_TRUE(Register(sync_options_1_));
 
   sync_options_2_.min_interval = 36000;
-  EXPECT_CALL(*mock_permission_manager,
-              GetPermissionStatusForWorker(
-                  PermissionType::PERIODIC_BACKGROUND_SYNC, _, expected_origin))
+  EXPECT_CALL(
+      *mock_permission_manager,
+      GetPermissionStatusForWorker(
+          PermissionTypeMatcher(PermissionType::PERIODIC_BACKGROUND_SYNC), _,
+          expected_origin))
       .WillOnce(testing::Return(blink::mojom::PermissionStatus::GRANTED));
   EXPECT_TRUE(Register(sync_options_2_));
 }
@@ -2490,7 +2507,8 @@ TEST_F(BackgroundSyncManagerTest, MaxSyncAttemptsWithNotificationPermission) {
 
   {
     ON_CALL(*mock_permission_manager,
-            GetPermissionStatusForWorker(PermissionType::NOTIFICATIONS, _, _))
+            GetPermissionStatusForWorker(
+                PermissionTypeMatcher(PermissionType::NOTIFICATIONS), _, _))
         .WillByDefault(Return(blink::mojom::PermissionStatus::GRANTED));
     EXPECT_TRUE(Register(sync_options_2_));
     EXPECT_EQ(callback_one_shot_sync_registration_->max_attempts(),

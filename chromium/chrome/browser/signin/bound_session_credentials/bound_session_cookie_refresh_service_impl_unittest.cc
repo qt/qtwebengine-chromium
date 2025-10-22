@@ -37,6 +37,7 @@
 #include "chrome/common/renderer_configuration.mojom.h"
 #include "components/prefs/testing_pref_service.h"
 #include "components/signin/public/base/signin_switches.h"
+#include "components/signin/public/identity_manager/tribool.h"
 #include "components/sync_preferences/testing_pref_service_syncable.h"
 #include "components/unexportable_keys/fake_unexportable_key_service.h"
 #include "content/public/browser/network_service_instance.h"
@@ -119,7 +120,15 @@ class FakeBoundSessionCookieController : public BoundSessionCookieController {
     }
   }
 
+  void Initialize(bool is_new_session) override {
+    was_new_session_at_init_ = signin::TriboolFromBool(is_new_session);
+  }
+
   const std::vector<uint8_t>& wrapped_key() const { return wrapped_key_; }
+
+  // `signin::Tribool::kUnknown` means that the controller hasn't been
+  // initialized yet.
+  signin::Tribool was_new_session_at_init() { return was_new_session_at_init_; }
 
   void HandleRequestBlockedOnCookie(
       chrome::mojom::BoundSessionRequestThrottledHandler::
@@ -180,6 +189,7 @@ class FakeBoundSessionCookieController : public BoundSessionCookieController {
                   HandleRequestBlockedOnCookieCallback>
       resume_blocked_requests_;
   std::vector<uint8_t> wrapped_key_;
+  signin::Tribool was_new_session_at_init_ = signin::Tribool::kUnknown;
   bool throttling_requests_paused_ = false;
   base::WeakPtrFactory<FakeBoundSessionCookieController> weak_ptr_factory_{
       this};
@@ -302,6 +312,7 @@ class FakeBoundSessionDebugReportFetcher
   base::flat_set<std::string> GetNonRefreshedCookieNames() override {
     return {};
   }
+  Trigger GetTrigger() const override { return Trigger::kOther; }
 };
 
 class MockObserver : public BoundSessionCookieRefreshService::Observer {
@@ -594,6 +605,8 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest, VerifyControllerParams) {
   SetupPreConditionForBoundSession();
   GetCookieRefreshServiceImpl();
   VerifyBoundSession(CreateTestBoundSessionParams());
+  EXPECT_EQ(cookie_controller()->was_new_session_at_init(),
+            signin::Tribool::kFalse);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1000,6 +1013,8 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest, RegisterNewBoundSession) {
   auto params = CreateTestBoundSessionParams();
   service->RegisterNewBoundSession(params);
   VerifyBoundSession(params);
+  EXPECT_EQ(cookie_controller()->was_new_session_at_init(),
+            signin::Tribool::kTrue);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1118,6 +1133,8 @@ TEST_F(BoundSessionCookieRefreshServiceImplTest, CreateRegistrationRequest) {
   registration_fetcher()->SimulateRegistrationFetchCompleted(params);
   EXPECT_FALSE(registration_fetcher());
   VerifyBoundSession(params);
+  EXPECT_EQ(cookie_controller()->was_new_session_at_init(),
+            signin::Tribool::kTrue);
 }
 
 TEST_F(BoundSessionCookieRefreshServiceImplTest,
@@ -1665,19 +1682,40 @@ TEST_F(BoundSessionCookieRefreshServiceImplMultiSessionTest, ReportsCountUma) {
       /*expected_bucket_count=*/1);
 }
 
+// Testing params:
+// - bool controlling `kEnableBoundSessionCredentialsWsbetaBypass` feature state
+// - bool controlling `kEnableBoundSessionCredentialsContinuity` feature state
 class BoundSessionCookieRefreshServiceImplFeatureDisabledTest
-    : public BoundSessionCookieRefreshServiceImplMultiSessionTest {
+    : public testing::WithParamInterface<std::tuple<bool, bool>>,
+      public BoundSessionCookieRefreshServiceImplMultiSessionTest {
  public:
   BoundSessionCookieRefreshServiceImplFeatureDisabledTest() {
-    scoped_feature_list_.InitAndDisableFeature(
-        switches::kEnableBoundSessionCredentials);
+    std::vector<base::test::FeatureRef> enabled_features;
+    std::vector<base::test::FeatureRef> disabled_features;
+
+    auto& wsbeta_container =
+        IsWsbetaEnabled() ? enabled_features : disabled_features;
+    wsbeta_container.push_back(kEnableBoundSessionCredentialsWsbetaBypass);
+
+    auto& continuity_container =
+        IsContinuityEnabled() ? enabled_features : disabled_features;
+    continuity_container.push_back(kEnableBoundSessionCredentialsContinuity);
+
+    disabled_features.push_back(switches::kEnableBoundSessionCredentials);
+
+    scoped_feature_list_.InitWithFeatures(enabled_features, disabled_features);
   }
+
+  bool IsWsbetaEnabled() { return std::get<0>(GetParam()); }
+
+  bool IsContinuityEnabled() { return std::get<1>(GetParam()); }
 
  private:
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
-TEST_F(BoundSessionCookieRefreshServiceImplFeatureDisabledTest, Initialize) {
+TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
+       InitializeSession) {
   std::vector<bound_session_credentials::BoundSessionParams> all_params = {
       CreateBoundSessionParams(kGoogleSessionKeyOne, {"cookieA", "cookieB"}),
       CreateBoundSessionParams(kGoogleSessionKeyTwo, {"cookieC"},
@@ -1687,24 +1725,48 @@ TEST_F(BoundSessionCookieRefreshServiceImplFeatureDisabledTest, Initialize) {
     ASSERT_TRUE(storage()->SaveParams(params));
   }
   GetCookieRefreshServiceImpl();
-  // Only a session with `is_wsbeta` will run.
-  VerifyBoundSessions({all_params[1]}, /*verify_storage=*/false);
+  std::vector<bound_session_credentials::BoundSessionParams> expected_sessions;
+  if (IsContinuityEnabled()) {
+    // All sessions are expected to run.
+    expected_sessions = all_params;
+  } else if (IsWsbetaEnabled()) {
+    // Only a session with `is_wsbeta` will run.
+    expected_sessions = {all_params[1]};
+  }
+  VerifyBoundSessions(expected_sessions, /*verify_storage=*/false);
 }
 
-TEST_F(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
+TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
        CreateRegistrationRequest) {
   BoundSessionCookieRefreshServiceImpl* service = GetCookieRefreshServiceImpl();
   service->CreateRegistrationRequest(
       CreateTestRegistrationFetcherParams("/RegisterSession"));
+  // New sessions shouldn't be registered no matter the extra feature state.
   EXPECT_THAT(registration_fetchers(), IsEmpty());
 }
 
-TEST_F(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
+TEST_P(BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
        CreateRegistrationRequestWithWsbeta) {
   BoundSessionCookieRefreshServiceImpl* service = GetCookieRefreshServiceImpl();
   service->CreateRegistrationRequest(CreateTestRegistrationFetcherParams(
       "/RegisterSession", /*is_wsbeta=*/true));
-  EXPECT_THAT(
-      registration_fetchers(),
-      ElementsAre(IsBoundSessionRegistrationFetcher("/RegisterSession", true)));
+  if (IsWsbetaEnabled()) {
+    EXPECT_THAT(registration_fetchers(),
+                ElementsAre(IsBoundSessionRegistrationFetcher(
+                    "/RegisterSession", true)));
+  } else {
+    EXPECT_THAT(registration_fetchers(), IsEmpty());
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ,
+    BoundSessionCookieRefreshServiceImplFeatureDisabledTest,
+    testing::Combine(testing::Bool(), testing::Bool()),
+    [](const auto& info) {
+      bool wsbeta_enabled = std::get<0>(info.param);
+      bool continuity_enabled = std::get<1>(info.param);
+      return base::StrCat({wsbeta_enabled ? "With" : "Without", "Wsbeta",
+                           continuity_enabled ? "With" : "Without",
+                           "Continuity"});
+    });

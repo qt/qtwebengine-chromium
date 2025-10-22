@@ -1,9 +1,10 @@
 Name: smallvec
 URL: https://crates.io/crates/smallvec
-Version: 1.14.0
-Revision: 174f4f02566d7377aa0e8f9566e73f21f14ce4eb
+Version: 1.15.1
+Revision: d0f47a3ea99296498ee940b5d99f59b403c498a2
+Update Mechanism: Manual
 License: Apache-2.0
-License File: //third_party/rust/chromium_crates_io/vendor/smallvec-1.14.0/LICENSE-APACHE
+License File: //third_party/rust/chromium_crates_io/vendor/smallvec-v1/LICENSE-APACHE
 Shipped: yes
 Security Critical: yes
 

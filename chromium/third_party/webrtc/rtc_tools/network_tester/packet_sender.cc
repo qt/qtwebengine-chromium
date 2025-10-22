@@ -11,13 +11,19 @@
 #include "rtc_tools/network_tester/packet_sender.h"
 
 #include <algorithm>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "absl/functional/any_invocable.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
+#include "api/units/time_delta.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_tools/network_tester/config_reader.h"
 #include "rtc_tools/network_tester/test_controller.h"
@@ -28,7 +34,7 @@ namespace {
 
 absl::AnyInvocable<void() &&> SendPacketTask(
     PacketSender* packet_sender,
-    rtc::scoped_refptr<webrtc::PendingTaskSafetyFlag> task_safety_flag,
+    scoped_refptr<PendingTaskSafetyFlag> task_safety_flag,
     int64_t target_time_ms = TimeMillis()) {
   return [target_time_ms, packet_sender,
           task_safety_flag = std::move(task_safety_flag)]() mutable {
@@ -48,7 +54,7 @@ absl::AnyInvocable<void() &&> SendPacketTask(
 absl::AnyInvocable<void() &&> UpdateTestSettingTask(
     PacketSender* packet_sender,
     std::unique_ptr<ConfigReader> config_reader,
-    rtc::scoped_refptr<webrtc::PendingTaskSafetyFlag> task_safety_flag) {
+    scoped_refptr<PendingTaskSafetyFlag> task_safety_flag) {
   return [packet_sender, config_reader = std::move(config_reader),
           task_safety_flag = std::move(task_safety_flag)]() mutable {
     if (!task_safety_flag->alive()) {
@@ -72,8 +78,8 @@ absl::AnyInvocable<void() &&> UpdateTestSettingTask(
 
 PacketSender::PacketSender(
     TestController* test_controller,
-    webrtc::TaskQueueBase* worker_queue,
-    rtc::scoped_refptr<webrtc::PendingTaskSafetyFlag> task_safety_flag,
+    TaskQueueBase* worker_queue,
+    scoped_refptr<PendingTaskSafetyFlag> task_safety_flag,
     const std::string& config_file_path)
     : packet_size_(0),
       send_interval_ms_(0),

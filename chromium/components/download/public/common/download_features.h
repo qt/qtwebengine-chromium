@@ -6,6 +6,7 @@
 #define COMPONENTS_DOWNLOAD_PUBLIC_COMMON_DOWNLOAD_FEATURES_H_
 
 #include "base/feature_list.h"
+#include "base/metrics/field_trial_params.h"
 #include "build/build_config.h"
 #include "components/download/public/common/download_export.h"
 
@@ -13,6 +14,12 @@ namespace download {
 namespace features {
 // Whether a download can be handled by parallel jobs.
 COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kParallelDownloading);
+
+// Whether we allow the download job resume in a backoff.
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kBackoffInDownloading);
+#endif
+COMPONENTS_DOWNLOAD_EXPORT bool IsBackoffInDownloadingEnabled();
 
 #if BUILDFLAG(IS_ANDROID)
 // Whether download expiration date will be refreshed on resumption.
@@ -22,6 +29,11 @@ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kRefreshExpirationDate);
 COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(
     kSmartSuggestionForLargeDownloads);
 #endif
+
+// On downloads-related UI surfaces, attribute the download to the initiator
+// origin of the download request in UI displays, rather than the URL of the
+// download itself.
+COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kDisplayInitiatorOrigin);
 
 // Whether download notification service uses new unified API based on offline
 // item and native persistence of notification IDs.
@@ -61,6 +73,12 @@ COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(kCopyImageFilenameToClipboard);
 // Whether to enable async notification manager for downloads.
 COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(
     kEnableAsyncNotificationManagerForDownload);
+
+#if BUILDFLAG(IS_ANDROID)
+// Whether to enable save package for off the record mode.
+COMPONENTS_DOWNLOAD_EXPORT BASE_DECLARE_FEATURE(
+    kEnableSavePackageForOffTheRecord);
+#endif  // BUILDFLAG(IS_ANDROID)
 }  // namespace features
 
 }  // namespace download

@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/bindings/core/v8/serialization/v8_script_value_deserializer.h"
 
 #include <array>
@@ -15,12 +10,15 @@
 
 #include "base/feature_list.h"
 #include "base/numerics/checked_math.h"
+#include "base/rand_util.h"
 #include "base/time/time.h"
+#include "gin/public/isolate_holder.h"
 #include "third_party/blink/public/common/fenced_frame/fenced_frame_utils.h"
 #include "third_party/blink/public/platform/web_blob_info.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/serialization_tag.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/trailer_reader.h"
 #include "third_party/blink/renderer/bindings/core/v8/serialization/unpacked_serialized_script_value.h"
+#include "third_party/blink/renderer/bindings/core/v8/serialization/v8_script_value_serializer.h"
 #include "third_party/blink/renderer/bindings/core/v8/to_v8_traits.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_blob.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
@@ -71,6 +69,7 @@
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_shared_array_buffer.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
+#include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
 #include "third_party/blink/renderer/platform/file_metadata.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
@@ -184,6 +183,7 @@ V8ScriptValueDeserializer::V8ScriptValueDeserializer(
     : script_state_(script_state),
       unpacked_value_(unpacked_value),
       serialized_script_value_(value),
+      slow_mode_(options.slow_mode),
       deserializer_(script_state_->GetIsolate(),
                     serialized_script_value_->Data(),
                     serialized_script_value_->DataLengthInBytes(),
@@ -231,7 +231,118 @@ v8::Local<v8::Value> V8ScriptValueDeserializer::Deserialize() {
   v8::Local<v8::Value> value;
   if (!deserializer_.ReadValue(context).ToLocal(&value))
     return v8::Null(isolate);
+  if (slow_mode_ && value->IsObject()) {
+    // TODO(caseq): consider additionally gating this on payload size.
+    MaskDeserializationTimings(value.As<v8::Object>());
+  }
   return scope.Escape(value);
+}
+
+namespace {
+
+class DummyDeserializerDelegate final : public v8::ValueDeserializer::Delegate {
+  STACK_ALLOCATED();
+
+ public:
+  explicit DummyDeserializerDelegate(SerializedScriptValue& value)
+      : serialized_script_value_(value) {}
+
+  ~DummyDeserializerDelegate() override = default;
+
+ private:
+  v8::MaybeLocal<v8::Object> ReadHostObject(v8::Isolate* isolate) override {
+    return v8::Object::New(isolate);
+  }
+
+  // This and the one below are simplified version of implementations in the
+  // 'production' delegate that remove dependencies on
+  // ExecutionContext/ScriptState and assume additional invariants following
+  // from the fact that the serialization is performed in the same process.
+  v8::MaybeLocal<v8::WasmModuleObject> GetWasmModuleFromId(
+      v8::Isolate* isolate,
+      uint32_t id) override {
+    if (id < serialized_script_value_.WasmModules().size()) {
+      return v8::WasmModuleObject::FromCompiledModule(
+          isolate, serialized_script_value_.WasmModules()[id]);
+    }
+    CHECK(serialized_script_value_.WasmModules().empty());
+    return v8::MaybeLocal<v8::WasmModuleObject>();
+  }
+
+  v8::MaybeLocal<v8::SharedArrayBuffer> GetSharedArrayBufferFromId(
+      v8::Isolate* isolate,
+      uint32_t id) override {
+    auto& shared_array_buffers_contents =
+        serialized_script_value_.SharedArrayBuffersContents();
+    CHECK_LT(id, shared_array_buffers_contents.size());
+    ArrayBufferContents& contents = shared_array_buffers_contents.at(id);
+    return v8::SharedArrayBuffer::New(isolate, contents.BackingStore());
+  }
+
+  const v8::SharedValueConveyor* GetSharedValueConveyor(
+      v8::Isolate* isolate) override {
+    return serialized_script_value_.MaybeGetSharedValueConveyor();
+  }
+
+  SerializedScriptValue& serialized_script_value_;
+};
+
+}  // namespace
+
+void V8ScriptValueDeserializer::MaskDeserializationTimings(
+    v8::Local<v8::Object> value) {
+  UseCounter::Count(ExecutionContext::From(script_state_),
+                    WebFeature::kSlowDeserialization);
+  V8ScriptValueSerializer::Options options;
+  // Re-serialize the message while omitting script wrapped objects, so
+  // that we don't have to deal wrapped objects while deserializing,
+  // as our current wire format would require the delegate to explicitly
+  // support many different types of objects, while not allowing us to
+  // reuse production delegate, since it requires an ExecutionContext
+  // which we do not have.
+
+  options.script_wrappable_policy =
+      V8ScriptValueSerializer::Options::kOmitWrappedObjects;
+  options.wasm_policy = V8ScriptValueSerializer::Options::kTransfer;
+  V8ScriptValueSerializer serializer(script_state_, options);
+  ExceptionState exception_state(script_state_->GetIsolate());
+  scoped_refptr<SerializedScriptValue> serialized =
+      serializer.Serialize(value, exception_state);
+  CHECK(!exception_state.HadException());
+
+  auto task_runner = ExecutionContext::From(script_state_)
+                         ->GetTaskRunner(TaskType::kPostedMessage);
+
+  std::unique_ptr<v8::Isolate::CreateParams> params =
+      gin::IsolateHolder::getDefaultIsolateParams();
+  auto isolate_holder = std::make_unique<gin::IsolateHolder>(
+      task_runner, gin::IsolateHolder::kSingleThread,
+      gin::IsolateHolder::IsolateType::kUtility, std::move(params));
+  v8::Isolate* isolate = isolate_holder->isolate();
+  DummyDeserializerDelegate delegate(*serialized);
+  v8::Isolate::Scope isolate_scope(isolate);
+  v8::HandleScope handle_scope(isolate);
+  v8::Local<v8::Context> context = v8::Context::New(isolate);
+
+  // Deserialize the message in an empty isolate a random number of times
+  // to mask whether the time of the original deserialization in the
+  // target isolate.
+  int iterations = base::RandInt(4, 8);
+
+  while (iterations--) {
+    v8::ValueDeserializer deserializer(isolate, serialized->Data(),
+                                       serialized->DataLengthInBytes(),
+                                       &delegate);
+
+    uint32_t version;
+    size_t version_envelope_size =
+        ReadVersionEnvelope(serialized.get(), &version);
+    CHECK(version_envelope_size);
+    const void* blink_envelope;
+    CHECK(deserializer.ReadRawBytes(version_envelope_size, &blink_envelope));
+    CHECK(deserializer.ReadHeader(context).FromMaybe(false));
+    CHECK(!deserializer.ReadValue(context).IsEmpty());
+  }
 }
 
 void V8ScriptValueDeserializer::Transfer() {
@@ -284,12 +395,12 @@ bool V8ScriptValueDeserializer::ReadUnguessableToken(
 
 bool V8ScriptValueDeserializer::ReadUTF8String(String* string) {
   uint32_t utf8_length = 0;
-  const void* utf8_data = nullptr;
-  if (!ReadUint32(&utf8_length) || !ReadRawBytes(utf8_length, &utf8_data))
+  base::span<const uint8_t> utf8_data;
+  if (!ReadUint32(&utf8_length) ||
+      !ReadRawBytesToSpan(utf8_length, &utf8_data)) {
     return false;
-  // SAFETY: ReadRawBytes() guarantees `utf8_data` and `utf8_length` are safe.
-  *string = String::FromUTF8(UNSAFE_BUFFERS(
-      base::span(reinterpret_cast<const LChar*>(utf8_data), utf8_length)));
+  }
+  *string = String::FromUTF8(utf8_data);
 
   // Decoding must have failed; this encoding does not distinguish between null
   // and empty strings.
@@ -452,8 +563,6 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
           SerializedPredefinedColorSpace::kSRGB;
       SerializedImageDataPixelFormat image_data_pixel_format =
           SerializedImageDataPixelFormat::kRgbaUnorm8;
-      uint32_t width = 0, height = 0;
-      const void* pixels = nullptr;
       if (Version() >= 18) {
         bool is_done = false;
         do {
@@ -488,12 +597,17 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
         } while (!is_done);
       }
 
+      uint32_t width = 0, height = 0;
+      if (!ReadUint32(&width) || !ReadUint32(&height)) {
+        return nullptr;
+      }
+
       uint64_t byte_length_64 = 0;
       size_t byte_length = 0;
-      if (!ReadUint32(&width) || !ReadUint32(&height) ||
-          !ReadUint64(&byte_length_64) ||
+      base::span<const uint8_t> pixel_data;
+      if (!ReadUint64(&byte_length_64) ||
           !base::MakeCheckedNum(byte_length_64).AssignIfValid(&byte_length) ||
-          !ReadRawBytes(byte_length, &pixels)) {
+          !ReadRawBytesToSpan(byte_length, &pixel_data)) {
         return nullptr;
       }
 
@@ -502,12 +616,14 @@ ScriptWrappable* V8ScriptValueDeserializer::ReadDOMObject(
       ImageData* image_data = ImageData::ValidateAndCreate(
           width, height, std::nullopt, settings.GetImageDataSettings(),
           ImageData::ValidateAndCreateParams(), exception_state);
-      if (!image_data)
+      if (!image_data) {
         return nullptr;
-      SkPixmap image_data_pixmap = image_data->GetSkPixmap();
-      if (image_data_pixmap.computeByteSize() != byte_length)
+      }
+      base::span<uint8_t> image_data_bytes = image_data->RawByteSpan();
+      if (image_data_bytes.size() != pixel_data.size()) {
         return nullptr;
-      memcpy(image_data_pixmap.writable_addr(), pixels, byte_length);
+      }
+      image_data_bytes.copy_from(pixel_data);
       return image_data;
     }
     case kDOMPointTag: {

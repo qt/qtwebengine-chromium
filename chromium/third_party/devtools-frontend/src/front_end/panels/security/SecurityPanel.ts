@@ -1,6 +1,8 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -557,7 +559,7 @@ export class SecurityPanel extends UI.Panel.Panel implements SDK.TargetManager.S
   private securityModel: SecurityModel|null;
   readonly splitWidget!: UI.SplitWidget.SplitWidget;
 
-  constructor(private view: View = (input, output, target) => {
+  constructor(private view: View = (_input, output, target) => {
     // clang-format off
     render(
       html`
@@ -659,7 +661,7 @@ export class SecurityPanel extends UI.Panel.Panel implements SDK.TargetManager.S
       return;
     }
     if (!originState.originView) {
-      originState.originView = new SecurityOriginView(this, origin, originState);
+      originState.originView = new SecurityOriginView(origin, originState);
     }
 
     this.setVisibleView(originState.originView);
@@ -872,9 +874,8 @@ export class SecurityMainView extends UI.Widget.VBox {
   private explanations: Array<Protocol.Security.SecurityStateExplanation|SecurityStyleExplanation>|null;
   private securityState: Protocol.Security.SecurityState|null;
   constructor(element?: HTMLElement) {
-    super(undefined, undefined, element);
+    super(element, {jslog: `${VisualLogging.pane('security.main-view')}`});
     this.registerRequiredCSS(lockIconStyles, mainViewStyles);
-    this.element.setAttribute('jslog', `${VisualLogging.pane('security.main-view')}`);
 
     this.setMinimumSize(200, 100);
 
@@ -1061,11 +1062,11 @@ export class SecurityMainView extends UI.Widget.VBox {
     } else if (securityStateIssueIds.includes('lookalike') && safetyTipInfo?.safeUrl) {
       const hostname = new URL(safetyTipInfo.safeUrl).hostname;
       const hostnamePlaceholder = {PH1: hostname};
-      const formatedDescriptionSafety =
+      const formattedDescriptionSafety =
           `${i18nString(UIStrings.thisSitesHostnameLooksSimilarToP, hostnamePlaceholder)}\n\n${
               i18nString(UIStrings.ifYouBelieveThisIsShownInErrorSafety)}`;
       currentExplanations.push(
-          {summary: i18nString(UIStrings.possibleSpoofingUrl), description: formatedDescriptionSafety});
+          {summary: i18nString(UIStrings.possibleSpoofingUrl), description: formattedDescriptionSafety});
     }
 
     if (currentExplanations.length > 0) {
@@ -1319,13 +1320,10 @@ export class SecurityMainView extends UI.Widget.VBox {
 }
 
 export class SecurityOriginView extends UI.Widget.VBox {
-  private readonly panel: SecurityPanel;
   private readonly originLockIcon: HTMLElement;
-  constructor(panel: SecurityPanel, origin: Platform.DevToolsPath.UrlString, originState: OriginState) {
-    super();
+  constructor(origin: Platform.DevToolsPath.UrlString, originState: OriginState) {
+    super({jslog: `${VisualLogging.pane('security.origin-view')}`});
     this.registerRequiredCSS(originViewStyles, lockIconStyles);
-    this.element.setAttribute('jslog', `${VisualLogging.pane('security.origin-view')}`);
-    this.panel = panel;
     this.setMinimumSize(200, 100);
 
     this.element.classList.add('security-origin-view');

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING, Iterable, Tuple
+from typing import TYPE_CHECKING, Iterable
 
 from ordered_set import OrderedSet
 
@@ -65,11 +65,11 @@ class RunThreadGroup(threading.Thread):
     return self._runner
 
   @property
-  def runs(self) -> Tuple[Run, ...]:
+  def runs(self) -> tuple[Run, ...]:
     return tuple(self._runs)
 
   @property
-  def browser_sessions(self) -> Tuple[BrowserSessionRunGroup, ...]:
+  def browser_sessions(self) -> tuple[BrowserSessionRunGroup, ...]:
     return tuple(self._browser_sessions)
 
   @property
@@ -107,20 +107,12 @@ class RunThreadGroup(threading.Thread):
       self._log_run(browser_session.first_run)
     else:
       logging.info("=" * 80)
-    with browser_session.open() as is_success:
+    with browser_session.open(self.is_dry_run) as is_success:
       if not is_success:
-        self._handle_session_startup_failure(browser_session)
+        browser_session.handle_startup_failure()
       else:
         for run in browser_session.runs:
           self._run_browser_session_run(browser_session, run)
-
-  def _handle_session_startup_failure(
-      self, browser_session: BrowserSessionRunGroup) -> None:
-    runs = tuple(browser_session.runs)
-    logging.info("%s: Skipping %s runs due to browser session setup errors.",
-                 self, len(runs))
-    for run in runs:
-      run.exceptions.extend(browser_session.exceptions)
 
   def _run_browser_session_run(self, browser_session: BrowserSessionRunGroup,
                                run: Run) -> None:
@@ -130,8 +122,17 @@ class RunThreadGroup(threading.Thread):
       logging.warning("%s: Got setup errors.", run)
     run.run(self.is_dry_run)
     run.log_annotations()
+
     if run.is_success:
-      run.log_results()
+      if not self.is_dry_run:
+        run.log_results()
     else:
       browser_session.exceptions.extend(run.exceptions)
       run.log_failure()
+
+
+class RunMainGroup(RunThreadGroup):
+  """ Renamed subclass for single-threaded runs"""
+
+  def start(self):
+    raise RuntimeError("RunMainGroup cannot run on a background thread")

@@ -119,11 +119,9 @@ class SurfaceAggregatorPerfTest : public VizPerfTest {
                 {SinglePlaneFormat::kBGRA_8888, size, gfx::ColorSpace(),
                  gpu::SHARED_IMAGE_USAGE_CPU_WRITE_ONLY,
                  "SurfaceAggregatorPerfTest"});
-        auto sync_token = shared_image_interface->GenVerifiedSyncToken();
-        TransferableResource resource =
-            TransferableResource::MakeSoftwareSharedImage(
-                shared_image, sync_token, size, SinglePlaneFormat::kBGRA_8888,
-                TransferableResource::ResourceSource::kTileRasterTask);
+        TransferableResource resource = TransferableResource::Make(
+            shared_image, TransferableResource::ResourceSource::kTileRasterTask,
+            shared_image->creation_sync_token());
 
         resource.id = ResourceId(j);
         frame_builder.AddTransferableResource(resource);
@@ -134,16 +132,14 @@ class SurfaceAggregatorPerfTest : public VizPerfTest {
         gfx::Rect visible_rect =
             j % 2 == 0 ? gfx::Rect(0, 0, 1, 2) : gfx::Rect(0, 1, 1, 1);
         bool needs_blending = false;
-        bool premultiplied_alpha = false;
         const gfx::PointF uv_top_left;
         const gfx::PointF uv_bottom_right;
         SkColor4f background_color = SkColors::kGreen;
         bool nearest_neighbor = false;
         quad->SetAll(sqs, rect, visible_rect, needs_blending, ResourceId(j),
-                     gfx::Size(), premultiplied_alpha, uv_top_left,
-                     uv_bottom_right, background_color, nearest_neighbor,
-                     /*secure_output_only=*/false,
-                     gfx::ProtectedVideoType::kClear);
+                     uv_top_left, uv_bottom_right, background_color,
+                     nearest_neighbor,
+                     /*secure_output=*/false, gfx::ProtectedVideoType::kClear);
       }
       sqs = pass->CreateAndAppendSharedQuadState();
       sqs->opacity = opacity;
@@ -247,13 +243,11 @@ class SurfaceAggregatorPerfTest : public VizPerfTest {
                     {SinglePlaneFormat::kBGRA_8888, quad->rect.size(),
                      gfx::ColorSpace(), gpu::SHARED_IMAGE_USAGE_CPU_WRITE_ONLY,
                      "SurfaceAggregatorPerfTest"});
-            auto sync_token = shared_image_interface->GenVerifiedSyncToken();
 
-            created_resources[resource_id] =
-                TransferableResource::MakeSoftwareSharedImage(
-                    shared_image, sync_token, quad->rect.size(),
-                    SinglePlaneFormat::kBGRA_8888,
-                    TransferableResource::ResourceSource::kTileRasterTask);
+            created_resources[resource_id] = TransferableResource::Make(
+                shared_image,
+                TransferableResource::ResourceSource::kTileRasterTask,
+                shared_image->creation_sync_token());
 
             created_resources[resource_id].id = resource_id;
           }

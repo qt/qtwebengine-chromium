@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/core/css/css_numeric_literal_value.h"
 
 #include "build/build_config.h"
@@ -219,7 +214,7 @@ static String FormatInfinityOrNaN(double number, const char* suffix) {
   }
 
   if (strlen(suffix) > 0) {
-    result = result + String::Format(" * 1%s", suffix);
+    result = StrCat({result, " * 1", suffix});
   }
   return result;
 }
@@ -379,8 +374,7 @@ bool CSSNumericLiteralValue::Equals(const CSSNumericLiteralValue& other) const {
 
 unsigned CSSNumericLiteralValue::CustomHash() const {
   uint64_t val = base::bit_cast<uint64_t>(num_);
-  return WTF::HashInts(static_cast<unsigned>(GetType()),
-                       WTF::HashInts(val >> 32, val));
+  return HashInts(static_cast<unsigned>(GetType()), HashInts(val >> 32, val));
 }
 
 CSSPrimitiveValue::UnitType CSSNumericLiteralValue::CanonicalUnit() const {

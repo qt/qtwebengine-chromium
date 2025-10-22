@@ -22,9 +22,9 @@
 #include <openssl/asn1.h>
 #include <openssl/err.h>
 #include <openssl/mem.h>
-#include <openssl/thread.h>
 
 #include "../internal.h"
+#include "internal.h"
 
 
 static CRYPTO_EX_DATA_CLASS g_ex_data_class =
@@ -63,7 +63,7 @@ int BIO_free(BIO *bio) {
       bio->method->destroy(bio);
     }
 
-    CRYPTO_free_ex_data(&g_ex_data_class, bio, &bio->ex_data);
+    CRYPTO_free_ex_data(&g_ex_data_class, &bio->ex_data);
     OPENSSL_free(bio);
   }
   return 1;
@@ -244,7 +244,7 @@ void BIO_copy_next_retry(BIO *bio) {
   bio->retry_reason = bio->next_bio->retry_reason;
 }
 
-long BIO_callback_ctrl(BIO *bio, int cmd, bio_info_cb fp) {
+long BIO_callback_ctrl(BIO *bio, int cmd, BIO_info_cb *fp) {
   if (bio == NULL) {
     return 0;
   }
@@ -622,6 +622,13 @@ int BIO_meth_set_gets(BIO_METHOD *method,
 int BIO_meth_set_ctrl(BIO_METHOD *method,
                       long (*ctrl_func)(BIO *, int, long, void *)) {
   method->ctrl = ctrl_func;
+  return 1;
+}
+
+int BIO_meth_set_callback_ctrl(BIO_METHOD *method,
+                               long (*callback_ctrl_func)(BIO *, int,
+                                                          BIO_info_cb *)) {
+  method->callback_ctrl = callback_ctrl_func;
   return 1;
 }
 

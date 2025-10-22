@@ -4,17 +4,17 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Dict, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Iterable
 
 from typing_extensions import override
 
 from crossbench.helper import collection_helper
-from crossbench.path import LocalPath
 from crossbench.runner.groups.base import RunGroup
 
 if TYPE_CHECKING:
   from crossbench import exception
   from crossbench.browsers.browser import Browser
+  from crossbench.path import LocalPath
   from crossbench.probes.probe import Probe
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.groups.cache_temperatures import \
@@ -33,7 +33,7 @@ class RepetitionsRunGroup(RunGroup):
   @classmethod
   def groups(cls,
              run_groups: Iterable[CacheTemperaturesRunGroup],
-             throw: bool = False) -> Tuple[RepetitionsRunGroup, ...]:
+             throw: bool = False) -> tuple[RepetitionsRunGroup, ...]:
     return tuple(
         collection_helper.group_by(
             run_groups,
@@ -43,8 +43,8 @@ class RepetitionsRunGroup(RunGroup):
 
   def __init__(self, throw: bool = False) -> None:
     super().__init__(throw)
-    self._cache_temperatures_groups: List[CacheTemperaturesRunGroup] = []
-    self._cache_temperature_repetitions_groups: Dict[
+    self._cache_temperatures_groups: list[CacheTemperaturesRunGroup] = []
+    self._cache_temperature_repetitions_groups: dict[
         str, CacheTemperatureRepetitionsRunGroup] = {}
     self._story: Story | None = None
     self._browser: Browser | None = None
@@ -80,12 +80,12 @@ class RepetitionsRunGroup(RunGroup):
     return self._browser
 
   @property
-  def cache_temperatures_groups(self) -> List[CacheTemperaturesRunGroup]:
+  def cache_temperatures_groups(self) -> list[CacheTemperaturesRunGroup]:
     return self._cache_temperatures_groups
 
   @property
   def cache_temperature_repetitions_groups(
-      self) -> List[CacheTemperatureRepetitionsRunGroup]:
+      self) -> list[CacheTemperatureRepetitionsRunGroup]:
     return list(self._cache_temperature_repetitions_groups.values())
 
   @property
@@ -125,7 +125,7 @@ class CacheTemperatureRepetitionsRunGroup(RunGroup):
     self._repetitions_group = repetitions_group
     self._set_path(repetitions_group.path)
     self._cache_temperature: str = ""
-    self._runs: List[Run] = []
+    self._runs: list[Run] = []
 
   @property
   def repetitions_group(self) -> RepetitionsRunGroup:

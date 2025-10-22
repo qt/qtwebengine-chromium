@@ -8,11 +8,13 @@
 #include <zircon/process.h>
 #include <zircon/syscalls.h>
 
+#include <algorithm>
+
 #include "base/clang_profiling_buildflags.h"
 #include "base/fuchsia/default_job.h"
 #include "base/fuchsia/fuchsia_logging.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 
 #if BUILDFLAG(CLANG_PROFILING)
 #include "base/test/clang_profiling.h"
@@ -237,6 +239,7 @@ bool Process::WaitForExitWithTimeout(TimeDelta timeout, int* exit_code) const {
 
   TRACE_EVENT0("base", "Process::WaitForExitWithTimeout");
 
+  timeout = std::max(timeout, TimeDelta());
   if (!timeout.is_zero()) {
     // Assert that this thread is allowed to wait below. This intentionally
     // doesn't use ScopedBlockingCallWithBaseSyncPrimitives because the process

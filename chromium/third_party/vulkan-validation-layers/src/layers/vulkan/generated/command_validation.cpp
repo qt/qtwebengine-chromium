@@ -23,6 +23,7 @@
 
 #include "error_message/logging.h"
 #include "core_checks/core_validation.h"
+#include "state_tracker/cmd_buffer_state.h"
 
 enum CMD_SCOPE_TYPE { CMD_SCOPE_INSIDE, CMD_SCOPE_OUTSIDE, CMD_SCOPE_BOTH };
 
@@ -47,7 +48,7 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
 {Func::vkCmdBindPipeline, {
     "VUID-vkCmdBindPipeline-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindPipeline-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM, "VUID-vkCmdBindPipeline-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindPipeline-videocoding",
 }},
@@ -117,7 +118,7 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
 {Func::vkCmdBindDescriptorSets, {
     "VUID-vkCmdBindDescriptorSets-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorSets-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM, "VUID-vkCmdBindDescriptorSets-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindDescriptorSets-videocoding",
 }},
@@ -167,14 +168,14 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     "VUID-vkCmdDispatch-commandBuffer-recording",
     nullptr,
     VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatch-commandBuffer-cmdpool",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatch-renderpass",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatch-videocoding",
 }},
 {Func::vkCmdDispatchIndirect, {
     "VUID-vkCmdDispatchIndirect-commandBuffer-recording",
     nullptr,
     VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchIndirect-commandBuffer-cmdpool",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchIndirect-renderpass",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchIndirect-videocoding",
 }},
 {Func::vkCmdCopyBuffer, {
@@ -363,7 +364,7 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     "VUID-vkCmdDispatchBase-commandBuffer-recording",
     nullptr,
     VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchBase-commandBuffer-cmdpool",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchBase-renderpass",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchBase-videocoding",
 }},
 {Func::vkCmdDrawIndirectCount, {
@@ -720,7 +721,7 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     "VUID-vkCmdDispatchBase-commandBuffer-recording",
     nullptr,
     VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchBase-commandBuffer-cmdpool",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchBase-renderpass",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchBase-videocoding",
 }},
 {Func::vkCmdPushDescriptorSetKHR, {
@@ -929,7 +930,7 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
 {Func::vkCmdSetDescriptorBufferOffsets2EXT, {
     "VUID-vkCmdSetDescriptorBufferOffsets2EXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdSetDescriptorBufferOffsets2EXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM, "VUID-vkCmdSetDescriptorBufferOffsets2EXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdSetDescriptorBufferOffsets2EXT-videocoding",
 }},
@@ -943,23 +944,23 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
 {Func::vkCmdDebugMarkerBeginEXT, {
     "VUID-vkCmdDebugMarkerBeginEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDebugMarkerBeginEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdDebugMarkerBeginEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDebugMarkerBeginEXT-videocoding",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
 }},
 {Func::vkCmdDebugMarkerEndEXT, {
     "VUID-vkCmdDebugMarkerEndEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDebugMarkerEndEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdDebugMarkerEndEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDebugMarkerEndEXT-videocoding",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
 }},
 {Func::vkCmdDebugMarkerInsertEXT, {
     "VUID-vkCmdDebugMarkerInsertEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDebugMarkerInsertEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdDebugMarkerInsertEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDebugMarkerInsertEXT-videocoding",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
 }},
 {Func::vkCmdBindTransformFeedbackBuffersEXT, {
     "VUID-vkCmdBindTransformFeedbackBuffersEXT-commandBuffer-recording",
@@ -1069,23 +1070,23 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
 {Func::vkCmdBeginDebugUtilsLabelEXT, {
     "VUID-vkCmdBeginDebugUtilsLabelEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBeginDebugUtilsLabelEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdBeginDebugUtilsLabelEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdBeginDebugUtilsLabelEXT-videocoding",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
 }},
 {Func::vkCmdEndDebugUtilsLabelEXT, {
     "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdEndDebugUtilsLabelEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdEndDebugUtilsLabelEXT-videocoding",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
 }},
 {Func::vkCmdInsertDebugUtilsLabelEXT, {
     "VUID-vkCmdInsertDebugUtilsLabelEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdInsertDebugUtilsLabelEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT | VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR | VK_QUEUE_OPTICAL_FLOW_BIT_NV, "VUID-vkCmdInsertDebugUtilsLabelEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
-    CMD_SCOPE_OUTSIDE, "VUID-vkCmdInsertDebugUtilsLabelEXT-videocoding",
+    CMD_SCOPE_BOTH, "kVUIDUndefined",
 }},
 {Func::vkCmdInitializeGraphScratchMemoryAMDX, {
     "VUID-vkCmdInitializeGraphScratchMemoryAMDX-commandBuffer-recording",
@@ -1374,17 +1375,38 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdCudaLaunchKernelNV-videocoding",
 }},
+{Func::vkCmdDispatchTileQCOM, {
+    "VUID-vkCmdDispatchTileQCOM-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdDispatchTileQCOM-commandBuffer-cmdpool",
+    CMD_SCOPE_INSIDE, "VUID-vkCmdDispatchTileQCOM-renderpass",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchTileQCOM-videocoding",
+}},
+{Func::vkCmdBeginPerTileExecutionQCOM, {
+    "VUID-vkCmdBeginPerTileExecutionQCOM-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBeginPerTileExecutionQCOM-commandBuffer-cmdpool",
+    CMD_SCOPE_INSIDE, "VUID-vkCmdBeginPerTileExecutionQCOM-renderpass",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdBeginPerTileExecutionQCOM-videocoding",
+}},
+{Func::vkCmdEndPerTileExecutionQCOM, {
+    "VUID-vkCmdEndPerTileExecutionQCOM-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdEndPerTileExecutionQCOM-commandBuffer-cmdpool",
+    CMD_SCOPE_INSIDE, "VUID-vkCmdEndPerTileExecutionQCOM-renderpass",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdEndPerTileExecutionQCOM-videocoding",
+}},
 {Func::vkCmdBindDescriptorBuffersEXT, {
     "VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM, "VUID-vkCmdBindDescriptorBuffersEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindDescriptorBuffersEXT-videocoding",
 }},
 {Func::vkCmdSetDescriptorBufferOffsetsEXT, {
     "VUID-vkCmdSetDescriptorBufferOffsetsEXT-commandBuffer-recording",
     nullptr,
-    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdSetDescriptorBufferOffsetsEXT-commandBuffer-cmdpool",
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_DATA_GRAPH_BIT_ARM, "VUID-vkCmdSetDescriptorBufferOffsetsEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdSetDescriptorBufferOffsetsEXT-videocoding",
 }},
@@ -1780,6 +1802,13 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdSetCoverageReductionModeNV-videocoding",
 }},
+{Func::vkCmdCopyTensorARM, {
+    "VUID-vkCmdCopyTensorARM-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT, "VUID-vkCmdCopyTensorARM-commandBuffer-cmdpool",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdCopyTensorARM-renderpass",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdCopyTensorARM-videocoding",
+}},
 {Func::vkCmdOpticalFlowExecuteNV, {
     "VUID-vkCmdOpticalFlowExecuteNV-commandBuffer-recording",
     nullptr,
@@ -1808,12 +1837,26 @@ static const vvl::unordered_map<Func, CommandValidationInfo> kCommandValidationT
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdConvertCooperativeVectorMatrixNV-renderpass",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdConvertCooperativeVectorMatrixNV-videocoding",
 }},
+{Func::vkCmdDispatchDataGraphARM, {
+    "VUID-vkCmdDispatchDataGraphARM-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_DATA_GRAPH_BIT_ARM, "VUID-vkCmdDispatchDataGraphARM-commandBuffer-cmdpool",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchDataGraphARM-renderpass",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdDispatchDataGraphARM-videocoding",
+}},
 {Func::vkCmdSetAttachmentFeedbackLoopEnableEXT, {
     "VUID-vkCmdSetAttachmentFeedbackLoopEnableEXT-commandBuffer-recording",
     nullptr,
     VK_QUEUE_GRAPHICS_BIT, "VUID-vkCmdSetAttachmentFeedbackLoopEnableEXT-commandBuffer-cmdpool",
     CMD_SCOPE_BOTH, "kVUIDUndefined",
     CMD_SCOPE_OUTSIDE, "VUID-vkCmdSetAttachmentFeedbackLoopEnableEXT-videocoding",
+}},
+{Func::vkCmdBindTileMemoryQCOM, {
+    "VUID-vkCmdBindTileMemoryQCOM-commandBuffer-recording",
+    nullptr,
+    VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT, "VUID-vkCmdBindTileMemoryQCOM-commandBuffer-cmdpool",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindTileMemoryQCOM-renderpass",
+    CMD_SCOPE_OUTSIDE, "VUID-vkCmdBindTileMemoryQCOM-videocoding",
 }},
 {Func::vkCmdBuildClusterAccelerationStructureIndirectNV, {
     "VUID-vkCmdBuildClusterAccelerationStructureIndirectNV-commandBuffer-recording",
@@ -1958,14 +2001,20 @@ bool CoreChecks::ValidateCmd(const vvl::CommandBuffer& cb_state, const Location&
             skip |= ValidateCmdSubpassState(cb_state, loc, info.recording_vuid);
             break;
 
-        case CbState::InvalidComplete:
         case CbState::InvalidIncomplete:
             skip |= ReportInvalidCommandBuffer(cb_state, loc, info.recording_vuid);
             break;
 
-        default:
-            assert(loc.function != Func::Empty);
+        case CbState::New:
             skip |= LogError(info.recording_vuid, cb_state.Handle(), loc, "was called before vkBeginCommandBuffer().");
+            break;
+
+        case CbState::Recorded:
+        case CbState::InvalidComplete:
+            assert(loc.function != Func::Empty);
+            skip |= LogError(info.recording_vuid, cb_state.Handle(), loc,
+                             "was recorded, but vkBeginCommandBuffer() was not called prior to this command.");
+            break;
     }
 
     // Validate the command pool from which the command buffer is from that the command is allowed for queue type

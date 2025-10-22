@@ -55,7 +55,6 @@
 #include "ui/gfx/display_color_spaces.h"
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/vector2d.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/overlay_transform.h"
 
@@ -387,8 +386,8 @@ class COMPOSITOR_EXPORT Compositor : public base::PowerSuspendObserver,
   // Creates a CompositorMetricsTracker for tracking this Compositor.
   CompositorMetricsTracker RequestNewCompositorMetricsTracker();
 
-  // Returns a percentage of dropped frames of the last second.
-  double GetPercentDroppedFrames() const;
+  // Returns average throughput as measured by the FrameSorter.
+  double GetAverageThroughput() const;
 
   // Activates a scoped monitor for the current event to track its metrics.
   // `done_callback` is called when the monitor goes out of scope.
@@ -548,6 +547,8 @@ class COMPOSITOR_EXPORT Compositor : public base::PowerSuspendObserver,
   CompositorPropertyTreeDelegate* property_tree_delegate() {
     return property_tree_delegate_.get();
   }
+
+  const cc::PropertyTrees* property_trees() const;
 
   ExternalBeginFrameControllerClientFactory*
   external_begin_frame_controler_client_factory() {
@@ -738,6 +739,7 @@ class COMPOSITOR_EXPORT Compositor : public base::PowerSuspendObserver,
   bool uses_layer_lists_ = false;
   std::unique_ptr<CompositorPropertyTreeDelegate> property_tree_delegate_;
   std::optional<cc::PropertyTrees> property_trees_;
+  int viewport_clip_id_ = cc::kInvalidPropertyNodeId;
 
   base::WeakPtrFactory<Compositor> context_creation_weak_ptr_factory_{this};
   base::WeakPtrFactory<Compositor> weak_ptr_factory_{this};

@@ -109,7 +109,7 @@ class LocalFrameMojoHandler
   void NotifyUserActivation(
       mojom::blink::UserActivationNotificationType notification_type) final;
   void NotifyVirtualKeyboardOverlayRect(const gfx::Rect& keyboard_rect) final;
-  void NotifyContextMenuInsetsObservers(const gfx::Rect&) final;
+  void ShowInterestInElement(int) final;
   void AddMessageToConsole(mojom::blink::ConsoleMessageLevel level,
                            const WTF::String& message,
                            bool discard_duplicates) final;
@@ -258,15 +258,15 @@ class LocalFrameMojoHandler
   void InstallCoopAccessMonitor(
       const FrameToken& accessed_window,
       network::mojom::blink::CrossOriginOpenerPolicyReporterParamsPtr
-          coop_reporter_params,
-      bool is_in_same_virtual_coop_related_group) final;
+          coop_reporter_params) final;
   void UpdateBrowserControlsState(
       cc::BrowserControlsState constraints,
       cc::BrowserControlsState current,
       bool animate,
       const std::optional<cc::BrowserControlsOffsetTagModifications>&
           offset_tag_modifications) override;
-  void Discard() final;
+  void Discard(
+      mojom::blink::LocalMainFrame::DiscardCallback completion_callback) final;
   void FinalizeNavigationConfidence(
       double randomized_trigger_rate,
       mojom::blink::ConfidenceLevel confidence) final;

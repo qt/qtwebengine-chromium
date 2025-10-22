@@ -3,9 +3,11 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+from __future__ import annotations
+
 import argparse
 import logging
-from typing import Dict, Sequence
+from typing import Sequence
 
 from perfetto.batch_trace_processor.api import (BatchTraceProcessor,
                                                 BatchTraceProcessorConfig,
@@ -29,7 +31,7 @@ class MergedTraceUriResolver(TraceUriResolver):
 
   def __init__(self, result_path: pth.LocalPath) -> None:
 
-    def metadata(path) -> Dict[str, str]:
+    def metadata(path) -> dict[str, str]:
       parts = str(path).split("/")
       return {
           "cb_browser": parts[-7],
@@ -81,7 +83,7 @@ class BTPUtil:
   def run(self, argv: Sequence[str]) -> None:
     args = self.parser.parse_args(argv)
 
-    probe_config = ProbeListConfig.parse_path(args.probe_config)
+    probe_config = ProbeListConfig.parse(args.probe_config)
     tp: TraceProcessorProbe | None = None
     for probe in probe_config.probes:
       if isinstance(probe, TraceProcessorProbe):

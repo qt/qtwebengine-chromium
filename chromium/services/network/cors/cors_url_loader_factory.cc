@@ -11,6 +11,7 @@
 #include "base/functional/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/typed_macros.h"
@@ -41,6 +42,7 @@
 #include "services/network/shared_dictionary/shared_dictionary_storage.h"
 #include "services/network/url_loader.h"
 #include "services/network/url_loader_factory.h"
+#include "services/network/url_loader_util.h"
 #include "services/network/web_bundle/web_bundle_url_loader_factory.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -211,7 +213,6 @@ CorsURLLoaderFactory::CorsURLLoaderFactory(
     NetworkContext* context,
     mojom::URLLoaderFactoryParamsPtr params,
     scoped_refptr<ResourceSchedulerClient> resource_scheduler_client,
-    mojo::PendingReceiver<mojom::URLLoaderFactory> receiver,
     const OriginAccessList* origin_access_list,
     PrefetchMatchingURLLoaderFactory* owner)
     : context_(context),
@@ -294,12 +295,6 @@ CorsURLLoaderFactory::CorsURLLoaderFactory(
   } else {
     network_loader_factory_ = std::move(network_loader_factory);
   }
-
-  if (receiver.is_valid()) {
-    receivers_.Add(this, std::move(receiver));
-  }
-  receivers_.set_disconnect_handler(base::BindRepeating(
-      &CorsURLLoaderFactory::DeleteIfNeeded, base::Unretained(this)));
 }
 
 CorsURLLoaderFactory::~CorsURLLoaderFactory() {
@@ -418,7 +413,7 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
   DCHECK(inner_url_loader_factory);
 
   const net::IsolationInfo* isolation_info_ptr = &isolation_info_;
-  auto isolation_info = URLLoader::GetIsolationInfo(
+  auto isolation_info = url_loader_util::GetIsolationInfo(
       isolation_info_, automatically_assign_isolation_info_, resource_request);
   if (isolation_info.has_value()) {
     isolation_info_ptr = &isolation_info.value();
@@ -472,10 +467,9 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
           std::move(client), traffic_annotation, inner_url_loader_factory,
           factory_override_ ? nullptr : network_loader_factory_.get(),
           origin_access_list_, GetAllowAnyCorsExemptHeaderForBrowser(),
-          HasFactoryOverride(!!factory_override_), *isolation_info_ptr,
-          std::move(devtools_observer), client_security_state_.get(),
-          &url_loader_network_service_observer_, cross_origin_embedder_policy_,
-          shared_dictionary_storage,
+          *isolation_info_ptr, std::move(devtools_observer),
+          client_security_state_.get(), &url_loader_network_service_observer_,
+          cross_origin_embedder_policy_, shared_dictionary_storage,
           shared_dictionary_observer_ ? shared_dictionary_observer_.get()
                                       : nullptr,
           context_, factory_cookie_setting_overrides_,
@@ -491,10 +485,9 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
           std::move(client), traffic_annotation, inner_url_loader_factory,
           factory_override_ ? nullptr : network_loader_factory_.get(),
           origin_access_list_, GetAllowAnyCorsExemptHeaderForBrowser(),
-          HasFactoryOverride(!!factory_override_), *isolation_info_ptr,
-          std::move(devtools_observer), client_security_state_.get(),
-          &url_loader_network_service_observer_, cross_origin_embedder_policy_,
-          shared_dictionary_storage,
+          *isolation_info_ptr, std::move(devtools_observer),
+          client_security_state_.get(), &url_loader_network_service_observer_,
+          cross_origin_embedder_policy_, shared_dictionary_storage,
           shared_dictionary_observer_ ? shared_dictionary_observer_.get()
                                       : nullptr,
           context_, factory_cookie_setting_overrides_,
@@ -525,17 +518,11 @@ void CorsURLLoaderFactory::CreateLoaderAndStart(
 
 void CorsURLLoaderFactory::Clone(
     mojo::PendingReceiver<mojom::URLLoaderFactory> receiver) {
-  // The cloned factories stop working when this factory is destructed.
-  receivers_.Add(this, std::move(receiver));
-}
-
-void CorsURLLoaderFactory::ClearBindings() {
-  receivers_.Clear();
-  DeleteIfNeeded();
+  NOTREACHED() << "CorsURLLoaderFactory::Clone must not be called";
 }
 
 void CorsURLLoaderFactory::DeleteIfNeeded() {
-  if (receivers_.empty() && url_loaders_.empty() && cors_url_loaders_.empty() &&
+  if (url_loaders_.empty() && cors_url_loaders_.empty() &&
       !owner_->HasAdditionalReferences()) {
     owner_->DestroyURLLoaderFactory(this);
   }
@@ -852,18 +839,7 @@ bool CorsURLLoaderFactory::IsValidRequest(const ResourceRequest& request,
       return false;
     }
 
-    if (client_security_state_ &&
-        PrivateNetworkAccessChecker::NeedPermission(
-            request.url, client_security_state_->is_web_secure_context,
-            request.required_ip_address_space)) {
-      if (request.required_ip_address_space == mojom::IPAddressSpace::kPublic) {
-        mojo::ReportBadMessage(
-            "CorsURLLoaderFactory: required_ip_address_space "
-            "is set to public.");
-        return false;
-      }
-    } else if (request.target_ip_address_space !=
-               mojom::IPAddressSpace::kUnknown) {
+    if (request.target_ip_address_space != mojom::IPAddressSpace::kUnknown) {
       mojo::ReportBadMessage(
           "CorsURLLoaderFactory: target_ip_address_space is "
           "set.");

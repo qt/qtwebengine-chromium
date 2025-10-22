@@ -52,10 +52,6 @@ BASE_FEATURE(kWallpaperSearchGraduated,
              "WallpaperSearchGraduated",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kExperimentalAIIPHPromoRampUp,
-             "ExperimentalAIIPHPromoRampUp",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 BASE_FEATURE(kModelExecutionCapabilityDisable,
              "ModelExecutionCapabilityDisable",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -84,11 +80,6 @@ bool IsGraduatedFeature(UserVisibleFeatureKey feature) {
     case UserVisibleFeatureKey::kPasswordChangeSubmission:
       break;
   }
-  DCHECK(!is_graduated ||
-         !base::FeatureList::IsEnabled(
-             *GetFeatureToUseToCheckSettingsVisibility(feature)))
-      << "Feature should not be both graduated and visible in settings: "
-      << GetFeatureToUseToCheckSettingsVisibility(feature)->name;
   return is_graduated;
 }
 
@@ -165,10 +156,10 @@ std::optional<proto::OptimizationTarget> GetOptimizationTargetForCapability(
     case ModelBasedCapabilityKey::kWritingAssistanceApi:
       return proto::
           OPTIMIZATION_TARGET_MODEL_EXECUTION_FEATURE_WRITING_ASSISTANCE_API;
+    case ModelBasedCapabilityKey::kProofreaderApi:
+      return proto::OPTIMIZATION_TARGET_MODEL_EXECUTION_FEATURE_PROOFREADER_API;
     // The below capabilities never support on-device execution.
-    case ModelBasedCapabilityKey::kFormsAnnotations:
     case ModelBasedCapabilityKey::kFormsClassifications:
-    case ModelBasedCapabilityKey::kFormsPredictions:
     case ModelBasedCapabilityKey::kTabOrganization:
     case ModelBasedCapabilityKey::kWallpaperSearch:
     case ModelBasedCapabilityKey::kTextSafety:

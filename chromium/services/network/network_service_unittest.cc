@@ -59,7 +59,6 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
 #include "net/test/test_net_log_manager.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
@@ -174,78 +173,6 @@ TEST_F(NetworkServiceTest, CreateContextWithoutChannelID) {
   mojo::Remote<mojom::NetworkContext> network_context;
   service()->CreateNetworkContext(network_context.BindNewPipeAndPassReceiver(),
                                   std::move(params));
-  network_context.reset();
-  // Make sure the NetworkContext is destroyed.
-  base::RunLoop().RunUntilIdle();
-}
-
-TEST_F(NetworkServiceTest, CreateContextWithMaskedDomainListProxyConfig) {
-  base::test::ScopedFeatureList scoped_feature_list_;
-  scoped_feature_list_.InitAndEnableFeature(
-      net::features::kEnableIpProtectionProxy);
-
-  masked_domain_list::MaskedDomainList mdl;
-  auto* resourceOwner = mdl.add_resource_owners();
-  resourceOwner->set_owner_name("foo");
-  resourceOwner->add_owned_resources()->set_domain("example.com");
-  service()->UpdateMaskedDomainList(
-      mojo_base::ProtoWrapper(mdl),
-      /*exclusion_list=*/std::vector<std::string>());
-  task_environment()->RunUntilIdle();
-
-  mojom::NetworkContextParamsPtr params = CreateContextParams();
-  mojo::Remote<mojom::NetworkContext> network_context;
-  service()->CreateNetworkContext(network_context.BindNewPipeAndPassReceiver(),
-                                  std::move(params));
-
-  // TODO(aakallam): verify that the allow list is used
-
-  network_context.reset();
-  // Make sure the NetworkContext is destroyed.
-  base::RunLoop().RunUntilIdle();
-}
-
-TEST_F(NetworkServiceTest,
-       CreateContextWithCustomProxyConfig_MdlConfigIsNotUsed) {
-  base::test::ScopedFeatureList scoped_feature_list_;
-  scoped_feature_list_.InitAndEnableFeature(
-      net::features::kEnableIpProtectionProxy);
-
-  masked_domain_list::MaskedDomainList mdl;
-  auto* resourceOwner = mdl.add_resource_owners();
-  resourceOwner->set_owner_name("foo");
-  resourceOwner->add_owned_resources()->set_domain("example.com");
-  service()->UpdateMaskedDomainList(
-      mojo_base::ProtoWrapper(mdl),
-      /*exclusion_list=*/std::vector<std::string>());
-  task_environment()->RunUntilIdle();
-
-  mojom::NetworkContextParamsPtr params = CreateContextParams();
-  params->initial_custom_proxy_config =
-      network::mojom::CustomProxyConfig::New();
-  mojo::Remote<mojom::NetworkContext> network_context;
-  service()->CreateNetworkContext(network_context.BindNewPipeAndPassReceiver(),
-                                  std::move(params));
-
-  // TODO(aakallam): verify that the allow list isn't used
-
-  network_context.reset();
-  // Make sure the NetworkContext is destroyed.
-  base::RunLoop().RunUntilIdle();
-}
-
-TEST_F(NetworkServiceTest, CreateContextWithoutMaskedDomainListData) {
-  base::test::ScopedFeatureList scoped_feature_list_;
-  scoped_feature_list_.InitAndEnableFeature(
-      net::features::kEnableIpProtectionProxy);
-
-  mojom::NetworkContextParamsPtr params = CreateContextParams();
-  mojo::Remote<mojom::NetworkContext> network_context;
-  service()->CreateNetworkContext(network_context.BindNewPipeAndPassReceiver(),
-                                  std::move(params));
-
-  // TODO(aakallam): verify that the allow list isn't used
-
   network_context.reset();
   // Make sure the NetworkContext is destroyed.
   base::RunLoop().RunUntilIdle();
@@ -1108,25 +1035,6 @@ TEST_F(NetworkServiceTest, DisableCTEnforcement) {
 }
 #endif  // BUILDFLAG(IS_CT_SUPPORTED)
 
-TEST_F(NetworkServiceTest, SetMaskedDomainList) {
-  base::test::ScopedFeatureList scoped_feature_list_;
-  scoped_feature_list_.InitWithFeatures(
-      {net::features::kEnableIpProtectionProxy,
-       network::features::kMaskedDomainList},
-      {});
-
-  masked_domain_list::MaskedDomainList mdl;
-  auto* resourceOwner = mdl.add_resource_owners();
-  resourceOwner->set_owner_name("foo");
-  resourceOwner->add_owned_resources()->set_domain("example.com");
-
-  service()->UpdateMaskedDomainList(
-      mojo_base::ProtoWrapper(mdl),
-      /*exclusion_list=*/std::vector<std::string>());
-
-  EXPECT_TRUE(service()->masked_domain_list_manager()->IsPopulated());
-}
-
 class TestCookieEncryptionProvider : public mojom::CookieEncryptionProvider {
  public:
   TestCookieEncryptionProvider() = default;
@@ -1265,8 +1173,11 @@ INSTANTIATE_TEST_SUITE_P(/*no prefix*/,
 
 class NetworkServiceTestWithService : public testing::Test {
  public:
-  NetworkServiceTestWithService()
-      : task_environment_(base::test::TaskEnvironment::MainThreadType::IO) {}
+  explicit NetworkServiceTestWithService(
+      base::test::TaskEnvironment::TimeSource time_source =
+          base::test::TaskEnvironment::TimeSource::SYSTEM_TIME)
+      : task_environment_(base::test::TaskEnvironment::MainThreadType::IO,
+                          time_source) {}
 
   NetworkServiceTestWithService(const NetworkServiceTestWithService&) = delete;
   NetworkServiceTestWithService& operator=(
@@ -1377,7 +1288,7 @@ TEST_F(NetworkServiceTestWithService, StartsNetLog) {
   network_service_->StartNetLog(
       std::move(log_file), net::FileNetLogObserver::kNoLimit,
       net::NetLogCaptureMode::kDefault,
-      base::Value::Dict().Set("amiatest", "iamatest"));
+      base::Value::Dict().Set("amiatest", "iamatest"), std::nullopt);
   CreateNetworkContext();
   LoadURL(test_server()->GetURL("/echo"));
   EXPECT_EQ(net::OK, client()->completion_status().error_code);
@@ -1411,7 +1322,7 @@ TEST_F(NetworkServiceTestWithService, StartsNetLogBounded) {
                       base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
   network_service_->StartNetLog(std::move(log_file), kMaxSizeBytes,
                                 net::NetLogCaptureMode::kEverything,
-                                base::Value::Dict());
+                                base::Value::Dict(), std::nullopt);
   CreateNetworkContext();
 
   // Through trial and error it was found that this looping navigation results
@@ -1458,6 +1369,43 @@ TEST_F(NetworkServiceTestWithService, RawRequestHeadersAbsent) {
   EXPECT_TRUE(client()->has_received_redirect());
   loader()->FollowRedirect({}, {}, {}, std::nullopt);
   client()->RunUntilComplete();
+}
+
+class NetworkServiceTestWithServiceMockTime
+    : public NetworkServiceTestWithService {
+ public:
+  NetworkServiceTestWithServiceMockTime()
+      : NetworkServiceTestWithService(
+            base::test::TaskEnvironment::TimeSource::MOCK_TIME) {}
+};
+
+TEST_F(NetworkServiceTestWithServiceMockTime, StartsNetLogWithDuration) {
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  base::FilePath log_dir = temp_dir.GetPath();
+  base::FilePath log_path = log_dir.Append(FILE_PATH_LITERAL("test_log.json"));
+  base::TimeDelta log_duration = base::Seconds(20);
+
+  base::File log_file(log_path,
+                      base::File::FLAG_CREATE_ALWAYS | base::File::FLAG_WRITE);
+  network_service_->StartNetLog(
+      std::move(log_file), net::FileNetLogObserver::kNoLimit,
+      net::NetLogCaptureMode::kDefault,
+      base::Value::Dict().Set("amiatest", "iamatest"), log_duration);
+  CreateNetworkContext();
+  LoadURL(test_server()->GetURL("/echo"));
+  EXPECT_EQ(net::OK, client()->completion_status().error_code);
+  task_environment_.FastForwardBy(log_duration);
+
+  base::Value::Dict log_dict = base::test::ParseJsonDictFromFile(log_path);
+  ASSERT_EQ(*log_dict.FindStringByDottedPath("constants.amiatest"), "iamatest");
+
+  // The log should have a "polledData" list.
+  ASSERT_TRUE(log_dict.FindList("polledData"));
+
+  // Tear down the network context we created above.
+  Shutdown();
+  task_environment_.RunUntilIdle();
 }
 
 class NetworkServiceTestWithResolverMap : public NetworkServiceTestWithService {
@@ -2067,13 +2015,12 @@ class StubHostResolverClient : public mojom::ResolveHostClient {
   void OnTextResults(const std::vector<std::string>& text_results) override {}
   void OnHostnameResults(const std::vector<net::HostPortPair>& hosts) override {
   }
-  void OnComplete(int result,
-                  const net::ResolveErrorInfo& resolve_error_info,
-                  const std::optional<net::AddressList>& resolved_addresses,
-                  const std::optional<net::HostResolverEndpointResults>&
-                      endpoint_results_with_metadata) override {
-    std::move(resolve_host_callback_)
-        .Run(resolved_addresses.value_or(net::AddressList()));
+  void OnComplete(
+      int result,
+      const net::ResolveErrorInfo& resolve_error_info,
+      const net::AddressList& resolved_addresses,
+      const net::HostResolverEndpointResults& alternative_endpoints) override {
+    std::move(resolve_host_callback_).Run(resolved_addresses);
   }
 
  private:

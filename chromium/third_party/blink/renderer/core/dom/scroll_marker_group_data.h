@@ -49,52 +49,16 @@ class ScrollMarkerChooser {
   HeapVector<Member<Element>> Choose();
 
  private:
-  // An auxiliary struct to help with selecting scroll markers.
-  // It is only created when selecting scroll markers.
-  struct ScrollTargetOffsetData {
-    ScrollTargetOffsetData(float scroll_offset,
-                           float layout_offset,
-                           float layout_size)
-        : aligned_scroll_offset(scroll_offset),
-          layout_offset(layout_offset),
-          layout_size(layout_size) {}
-
-    // The scroll offset at which the scroll marker, for which this object was
-    // created, is considered aligned in the particular axis for which this
-    // object was generated.
-    float aligned_scroll_offset;
-    // The position, in coordinates of the associated scroll container's content
-    // area, occupied by the scroll marker generating this object in the
-    // particular axis for which this object was generated.
-    float layout_offset;
-    // The size of the scroll marker generating this object in the particular
-    // axis for which this object was generated.
-    float layout_size;
-  };
-
-  // Compute a ScrollTargetOffsetData for a given element, |scroll_marker|
+  // Compute the target position for the target of the given |scroll_marker|
   // within |scrollable_area|'s content area along the |axis| specified.
-  std::optional<ScrollMarkerChooser::ScrollTargetOffsetData>
-  GetScrollTargetOffsetData(Element* scroll_marker);
+  std::optional<double> GetScrollTargetPosition(Element* scroll_marker);
 
-  // Select a scroll marker from the given |candidates| if the
-  // |intended_scroll_offset_| is within the region "reserved" so that
-  // unreachable scroll markers can be selected.
-  HeapVector<Member<Element>> ChooseReserved(
-      const HeapVector<Member<Element>>& candidates);
+  // Implements the search for the active targets in a particular axis as
+  // described at https://drafts.csswg.org/css-overflow-5/#example-d2ca6884.
+  HeapVector<Member<Element>> ChooseInternal();
 
-  // Select a scroll marker from the given |candidates| in the |axis|
-  // by selecting the scroll marker with the largest target position which is at
-  // or before |intended_scroll_offset_| in the relevant |axis|.
-  HeapVector<Member<Element>> ChooseGeneric(
-      const HeapVector<Member<Element>>& candidates);
-
-  // Select a scroll marker from the given |candidates| using their positions
-  // within |scrollable_area_|'s content area (rather than their aligned scroll
-  // positions). This should only be used to break ties between items at the
-  // same aligned scroll positions.
-  HeapVector<Member<Element>> ChooseVisual(
-      const HeapVector<Member<Element>>& candidates);
+  HeapVector<Member<Element>> ComputeTargetPositions(
+      HeapHashMap<Member<Element>, double>& target_positions);
 
   // The axis this chooser is picking a target in.
   const ScrollAxis axis_;
@@ -129,11 +93,14 @@ class ScrollMarkerGroupData : public GarbageCollected<ScrollMarkerGroupData>,
   void AddToFocusGroup(Element& scroll_marker);
   void RemoveFromFocusGroup(Element& scroll_marker);
   void ClearFocusGroup();
-  const HeapVector<Member<Element>>& ScrollMarkers() { return focus_group_; }
+  HeapVector<Member<Element>>& ScrollMarkers() { return focus_group_; }
 
-  // Set selected scroll marker. Returns true if the selected marker changed.
-  CORE_EXPORT bool SetSelected(Element* scroll_marker,
-                               bool apply_snap_alignment = true);
+  // Sets the pending_selected_marker_ to be updated at the next
+  // snapshot, if it's not pinned.
+  CORE_EXPORT void MaybeSetPendingSelectedMarker(Element* scroll_marker,
+                                                 bool apply_snap_alignment);
+  // Returns the currently selected scroll marker (selected_marker_).
+  // Might be replaced by pending_selected_marker_ at the next snapshot.
   Element* Selected() const;
   void UpdateSelectedScrollMarker();
 
@@ -148,20 +115,36 @@ class ScrollMarkerGroupData : public GarbageCollected<ScrollMarkerGroupData>,
   void Trace(Visitor* v) const final;
 
   // ScrollSnapshotClient:
-  void UpdateSnapshot() override;
-  bool ValidateSnapshot() override;
+  bool UpdateSnapshot() override;
   bool ShouldScheduleNextService() override;
 
   // When a "targeted" scroll occurs, we should consider the selected scroll
   // marker pinned until a non-targeted scroll occurs.
   void PinSelectedMarker(Element* scroll_marker) {
-    pending_selected_marker_ = scroll_marker;
+    SetPendingSelectedMarker(scroll_marker, /*apply_snap_alignment=*/true);
     selected_marker_is_pinned_ = true;
   }
   void UnPinSelectedMarker() { selected_marker_is_pinned_ = false; }
   bool SelectedMarkerIsPinned() const { return selected_marker_is_pinned_; }
 
+  // TODO(384523570) Temporary solution to fix lifecycle issues, as scroll
+  // marker calculation requires post-layout state, but UpdateSnapshot is
+  // sometimes called pre-layout.
+  // ScrollSnapshotClient:
+  void UpdateSnapshotForServiceAnimations() override {}
+
  private:
+  // Sets the pending_selected_marker_ to be updated at the next
+  // snapshot.
+  void SetPendingSelectedMarker(Element* scroll_marker,
+                                bool apply_snap_alignment);
+  // Applies the pending scroll marker update to the selected_marker_.
+  // If the selected_marker_is_invalid_ is true, it clears the selected_marker_,
+  // notifying it of a pseudo class change.
+  // If the pending_scroll_marker_ is not null, it sets the selected_marker_ to
+  // it.
+  void ApplyPendingScrollMarker();
+
   Element* ChooseMarker(const ScrollOffset& scroll_offset,
                         ScrollableArea* scrollable_area,
                         LayoutBox* scroller_box,
@@ -173,6 +156,16 @@ class ScrollMarkerGroupData : public GarbageCollected<ScrollMarkerGroupData>,
   // TODO(332396355): Add spec link, once it's created.
   HeapVector<Member<Element>> focus_group_;
 
+  enum class InvalidationState {
+    kClean,
+    // kNeedsActiveMarkerUpdate, if selected marker became null during style
+    // recalc, and we should update it at the next snapshot.
+    kNeedsActiveMarkerUpdate,
+    // kNeedsFullUpdate, if we should recalculate the selected scroll marker at
+    // the next snapshot.
+    kNeedsFullUpdate,
+  };
+  InvalidationState invalidation_state_ = InvalidationState::kClean;
   // True, if some <a> scroll markers have been added or removed. It signals
   // to Document that ScrollMarkerGroupData -> "scrollers with <a> scroll
   // marker targets" map should be updated.
@@ -181,7 +174,10 @@ class ScrollMarkerGroupData : public GarbageCollected<ScrollMarkerGroupData>,
   // the last selected scroll marker if it was selected due to a targeted
   // scroll. It should remain the selected scroll marker until we clear this bit
   // due to a non-targeted scroll.
-  bool selected_marker_is_pinned_;
+  bool selected_marker_is_pinned_ = false;
+  // The latest apply_snap_alignment status received via
+  // SetPendingSelectedMarker.
+  bool apply_snap_alignment_ = false;
   // The scroll marker selected based on the last scroll update observed.
   // At the next snapshot, it will become the |selected_marker_|, if it isn't
   // already, and be cleared.

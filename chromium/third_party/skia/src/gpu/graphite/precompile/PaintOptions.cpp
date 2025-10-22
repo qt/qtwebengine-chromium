@@ -16,7 +16,9 @@
 #include "src/gpu/graphite/ContextUtils.h"
 #include "src/gpu/graphite/KeyContext.h"
 #include "src/gpu/graphite/PaintParamsKey.h"
+#include "src/gpu/graphite/PipelineData.h"
 #include "src/gpu/graphite/PrecompileInternal.h"
+#include "src/gpu/graphite/RenderPassDesc.h"
 #include "src/gpu/graphite/Renderer.h"
 #include "src/gpu/graphite/ShaderCodeDictionary.h"
 #include "src/gpu/graphite/precompile/PaintOption.h"
@@ -150,10 +152,12 @@ int PaintOptions::numCombinations() const {
 }
 
 void PaintOptions::createKey(const KeyContext& keyContext,
+                             TextureFormat targetFormat,
                              PaintParamsKeyBuilder* keyBuilder,
                              PipelineDataGatherer* gatherer,
                              int desiredCombination,
                              bool addPrimitiveBlender,
+                             bool addAnalyticClip,
                              Coverage coverage) const {
     SkDEBUGCODE(keyBuilder->checkReset();)
     SkASSERT(desiredCombination < this->numCombinations());
@@ -174,9 +178,6 @@ void PaintOptions::createKey(const KeyContext& keyContext,
     const int desiredShaderCombination = remainingCombinations;
     SkASSERT(desiredShaderCombination < this->numShaderCombinations());
 
-    // TODO: this probably needs to be passed in just like addPrimitiveBlender
-    const bool kOpaquePaintColor = true;
-
     auto clipShader = PrecompileBase::SelectOption(SkSpan(fClipShaderOptions),
                                                    desiredClipShaderCombination);
 
@@ -195,16 +196,22 @@ void PaintOptions::createKey(const KeyContext& keyContext,
     PrecompileBlender* blender = finalBlender.first.get();
     std::optional<SkBlendMode> blendMode = blender ? blender->priv().asBlendMode()
                                                    : SkBlendMode::kSrcOver;
-    PaintOption option(kOpaquePaintColor,
+    PaintOption option(fPaintColorIsOpaque,
                        finalBlender,
                        PrecompileBase::SelectOption(SkSpan(fShaderOptions),
                                                     desiredShaderCombination),
                        PrecompileBase::SelectOption(SkSpan(fColorFilterOptions),
                                                     desiredColorFilterCombination),
                        addPrimitiveBlender,
+                       fPrimitiveBlendMode,
+                       fSkipColorXform,
                        clipShader,
-                       IsDstReadRequired(keyContext.caps(), blendMode, coverage),
-                       fDither);
+                       /*dstReadRequired=*/!CanUseHardwareBlending(keyContext.caps(),
+                                                                   targetFormat,
+                                                                   blendMode,
+                                                                   coverage),
+                       fDither,
+                       addAnalyticClip);
 
     option.toKey(keyContext, keyBuilder, gatherer);
 }
@@ -219,8 +226,8 @@ void create_image_drawing_pipelines(const KeyContext& keyContext,
     PaintOptions imagePaintOptions;
 
     // For imagefilters we know we don't have alpha-only textures and don't need cubic filtering.
-    sk_sp<PrecompileShader> imageShader = PrecompileShadersPriv::Image(
-            PrecompileImageShaderFlags::kExcludeAlpha | PrecompileImageShaderFlags::kExcludeCubic);
+    sk_sp<PrecompileShader> imageShader = PrecompileShaders::Image(
+            PrecompileShaders::ImageShaderFlags::kNoAlphaNoCubic);
 
     imagePaintOptions.setShaders({ imageShader });
     imagePaintOptions.setBlendModes(orig.getBlendModes());
@@ -308,9 +315,12 @@ void PaintOptions::buildCombinations(
         for (int i = 0; i < numCombinations; ++i) {
             // Since the precompilation path's uniforms aren't used and don't change the key,
             // the exact layout doesn't matter
-            gatherer->resetWithNewLayout(Layout::kMetal);
 
-            this->createKey(keyContext, &builder, gatherer, i, withPrimitiveBlender, coverage);
+            gatherer->resetForDraw();
+
+            this->createKey(keyContext, renderPassDesc.fColorAttachment.fFormat,
+                            &builder, gatherer, i, withPrimitiveBlender,
+                            SkToBool(drawTypes & DrawTypeFlags::kAnalyticClip), coverage);
 
             // The 'findOrCreate' calls lockAsKey on builder and then destroys the returned
             // PaintParamsKey. This serves to reset the builder.

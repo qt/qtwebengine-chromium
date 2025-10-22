@@ -21,7 +21,6 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
-#include "chrome/browser/extensions/account_extension_tracker.h"
 #include "chrome/browser/extensions/api/developer_private/developer_private_api.h"
 #include "chrome/browser/extensions/api/developer_private/inspectable_views_finder.h"
 #include "chrome/browser/extensions/chrome_test_extension_loader.h"
@@ -29,7 +28,6 @@
 #include "chrome/browser/extensions/extension_action_test_util.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_service_test_with_install.h"
-#include "chrome/browser/extensions/extension_sync_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/manifest_v2_experiment_manager.h"
 #include "chrome/browser/extensions/mv2_experiment_stage.h"
@@ -37,10 +35,10 @@
 #include "chrome/browser/extensions/permissions/permissions_updater.h"
 #include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
 #include "chrome/browser/extensions/signin_test_util.h"
+#include "chrome/browser/extensions/sync/account_extension_tracker.h"
+#include "chrome/browser/extensions/sync/extension_sync_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
-#include "chrome/browser/supervised_user/supervised_user_extensions_delegate_impl.h"
-#include "chrome/browser/supervised_user/supervised_user_test_util.h"
 #include "chrome/browser/ui/toolbar/toolbar_actions_model.h"
 #include "chrome/common/chrome_features.h"
 #include "chrome/common/extensions/api/developer_private.h"
@@ -52,13 +50,13 @@
 #include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/signin/public/identity_manager/identity_test_utils.h"
-#include "components/supervised_user/core/common/features.h"
 #include "extensions/browser/blocklist_state.h"
 #include "extensions/browser/disable_reason.h"
 #include "extensions/browser/extension_prefs.h"
 #include "extensions/browser/extension_registrar.h"
 #include "extensions/browser/extension_registry.h"
 #include "extensions/browser/supervised_user_extensions_delegate.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/api/extension_action/action_info.h"
 #include "extensions/common/constants.h"
 #include "extensions/common/extension.h"
@@ -76,6 +74,14 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
+
+#if BUILDFLAG(ENABLE_SUPERVISED_USERS)
+#include "chrome/browser/supervised_user/supervised_user_extensions_delegate_impl.h"
+#include "chrome/browser/supervised_user/supervised_user_test_util.h"
+#include "components/supervised_user/core/common/features.h"
+#endif
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace extensions {
 
@@ -919,17 +925,20 @@ TEST_F(ExtensionInfoGeneratorUnitTest,
   scoped_refptr<const Extension> active_tab_extension =
       CreateExtension("activeTab", base::Value::List().Append("activeTab"),
                       ManifestLocation::kInternal);
+  std::unique_ptr<developer::ExtensionInfo> active_tab_info =
+      GenerateExtensionInfo(active_tab_extension->id());
+  EXPECT_TRUE(active_tab_info->permissions.can_access_site_data);
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+  // TODO(crbug.com/427285233): Desktop Android does not support the debugger
+  // API nor its permission.
   scoped_refptr<const Extension> debugger_extension =
       CreateExtension("activeTab", base::Value::List().Append("debugger"),
                       ManifestLocation::kInternal);
-
-  std::unique_ptr<developer::ExtensionInfo> active_tab_info =
-      GenerateExtensionInfo(active_tab_extension->id());
   std::unique_ptr<developer::ExtensionInfo> debugger_info =
       GenerateExtensionInfo(debugger_extension->id());
-
-  EXPECT_TRUE(active_tab_info->permissions.can_access_site_data);
   EXPECT_TRUE(debugger_info->permissions.can_access_site_data);
+#endif
 }
 
 // Tests that the granted optional API permissions, when revoked, are not
@@ -938,7 +947,6 @@ TEST_F(ExtensionInfoGeneratorUnitTest,
        RevokedOptionalNonHostPermissionsInfoTest) {
   scoped_refptr<const Extension> extension =
       ExtensionBuilder("test")
-          .SetManifestVersion(3)
           .AddOptionalAPIPermission("notifications")
           .Build();
   registrar()->AddExtension(extension.get());
@@ -1223,8 +1231,8 @@ TEST_F(ExtensionInfoGeneratorUnitTest, IsPinnedToToolbar) {
 
   // Disable the extension. Since disabled extensions have no action, the
   // `pinned_to_toolbar` field should not exist.
-  service()->DisableExtension(extension->id(),
-                              disable_reason::DISABLE_USER_ACTION);
+  registrar()->DisableExtension(extension->id(),
+                                {disable_reason::DISABLE_USER_ACTION});
   info = GenerateExtensionInfo(extension->id());
   EXPECT_FALSE(info->pinned_to_toolbar.has_value());
 }
@@ -1433,27 +1441,10 @@ TEST_P(ExtensionInfoGeneratorWithMV2DeprecationUnitTest,
 
 #if BUILDFLAG(ENABLE_SUPERVISED_USERS)
 
-// Whether parental controls apply to extensions.
-enum class ExtensionsParentalControlState : int { kEnabled = 0, kDisabled = 1 };
-
-// Whether the parental controls on Extensions are managed by the preference
-// `SkipParentApprovalToInstallExtensions`, which corresponds to the
-// "Allow to add extensions without asking permission" Family Link switch
-// or by the preference `kSupervisedUserExtensionsMayRequestPermissions`
-// which corresponds to the "Permissions for Sites, Apps and Extensions"
-// Family Link switch.
-enum class ExtensionManagementFamilyLinkSwitch : int {
-  kManagedByExtensionsSwitch = 0,
-  kManagedByPermissionsSwitch = 1
-};
-
 // Tests for supervised users (child accounts). Supervised users are not allowed
 // to install apps or extensions unless their parent approves.
 class ExtensionInfoGeneratorUnitTestSupervised
-    : public ExtensionInfoGeneratorUnitTest,
-      public testing::WithParamInterface<
-          std::tuple<ExtensionsParentalControlState,
-                     ExtensionManagementFamilyLinkSwitch>> {
+    : public ExtensionInfoGeneratorUnitTest {
  public:
   ExtensionInfoGeneratorUnitTestSupervised() = default;
   ~ExtensionInfoGeneratorUnitTestSupervised() override = default;
@@ -1471,70 +1462,17 @@ class ExtensionInfoGeneratorUnitTestSupervised
 
     // Set up custodians (parents) for the child.
     supervised_user_test_util::AddCustodians(profile());
-
-    // Set the pref to allow the child to request extension install.
-    supervised_user_test_util::
-        SetSupervisedUserExtensionsMayRequestPermissionsPref(profile(), true);
-
   }
 
   void TearDown() override {
     ExtensionInfoGeneratorUnitTest::TearDown();
   }
-
-  bool ApplyParentalControlsOnExtensions() {
-    return std::get<0>(GetParam()) == ExtensionsParentalControlState::kEnabled;
-  }
-
-  ExtensionManagementFamilyLinkSwitch GetExtensionManagementFamilyLinkSwitch() {
-    return std::get<1>(GetParam());
-  }
 };
 
-// Tests that when an extension:
-// 1) is disabled pending permission updates and
-// 2) the parent has turned off the "Permissions for sites, apps and extensions"
-// toggle on Family Link and
-// 3) the extension parental controls are managed by the Family link
-// "Permissions for sites, apps and extensions" (legacy flow), instead of the
-// "Allow to add extensions without asking permission" Family Link switch (new
-// flow)" then supervised users will see a kite error icon with a tooltip.
-TEST_P(ExtensionInfoGeneratorUnitTestSupervised,
-       ParentDisabledPermissionsForSupervisedUsers) {
-  // Extension permissions for supervised users is already enabled on ChromeOS.
-  base::test::ScopedFeatureList feature_list;
-  std::vector<base::test::FeatureRef> enabled_features;
-  std::vector<base::test::FeatureRef> disabled_features;
-
-  if (ApplyParentalControlsOnExtensions()) {
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-    enabled_features.push_back(
-        supervised_user::
-            kEnableExtensionsPermissionsForSupervisedUsersOnDesktop);
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-    if (GetExtensionManagementFamilyLinkSwitch() ==
-        ExtensionManagementFamilyLinkSwitch::kManagedByExtensionsSwitch) {
-      enabled_features.push_back(
-          supervised_user::
-              kEnableSupervisedUserSkipParentApprovalToInstallExtensions);
-
-    } else {
-      disabled_features.push_back(
-          supervised_user::
-              kEnableSupervisedUserSkipParentApprovalToInstallExtensions);
-    }
-  } else {
-    disabled_features.push_back(
-        supervised_user::
-            kEnableSupervisedUserSkipParentApprovalToInstallExtensions);
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-    disabled_features.push_back(
-        supervised_user::
-            kEnableExtensionsPermissionsForSupervisedUsersOnDesktop);
-#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-  }
-  feature_list.InitWithFeatures(enabled_features, disabled_features);
-
+// Tests that when a supervised user is never blocked from
+// updating the permissions of an extension after a permissions' increase.
+TEST_F(ExtensionInfoGeneratorUnitTestSupervised,
+       AlwaysAllowPermissionUpdatesForSupervisedUsers) {
   ASSERT_TRUE(profile()->IsChild());
 
   std::unique_ptr<SupervisedUserExtensionsDelegate>
@@ -1544,33 +1482,22 @@ TEST_P(ExtensionInfoGeneratorUnitTestSupervised,
   base::FilePath pem_path = base_path.AppendASCII("permissions.pem");
   base::FilePath path = base_path.AppendASCII("v1");
 
-  // When extension parental controls apply, on the default behaviour
-  // the extensions will be installed but disabled until custodian approvals are
-  // performed. When extension parental controls do not apply, the extensions
-  // will be installed and enabled.
-  InstallState install_state =
-      ApplyParentalControlsOnExtensions() ? INSTALL_WITHOUT_LOAD : INSTALL_NEW;
+  // The extensions will be installed but disabled until custodian approvals are
+  // performed.
+  InstallState install_state = INSTALL_WITHOUT_LOAD;
   const Extension* extension = PackAndInstallCRX(path, pem_path, install_state);
   ASSERT_TRUE(extension);
-  if (ApplyParentalControlsOnExtensions()) {
     EXPECT_TRUE(registry()->disabled_extensions().Contains(extension->id()));
-  } else {
-    EXPECT_TRUE(registry()->enabled_extensions().Contains(extension->id()));
-  }
 
   // Save the id, as |extension| will be destroyed during updating.
   ExtensionId extension_id = extension->id();
 
   ExtensionPrefs* prefs = ExtensionPrefs::Get(profile());
-  if (ApplyParentalControlsOnExtensions()) {
     EXPECT_TRUE(prefs->HasDisableReason(
         extension_id, disable_reason::DISABLE_CUSTODIAN_APPROVAL_REQUIRED));
 
     // Simulate parent approval for the extension installation.
     supervised_user_extensions_delegate->AddExtensionApproval(*extension);
-  } else {
-    EXPECT_FALSE(prefs->IsExtensionDisabled(extension_id));
-  }
 
   // The extension should be enabled.
   EXPECT_TRUE(registry()->enabled_extensions().Contains(extension_id));
@@ -1585,51 +1512,19 @@ TEST_P(ExtensionInfoGeneratorUnitTestSupervised,
   // Due to a permission increase, prefs will contain escalation information.
   EXPECT_TRUE(prefs->DidExtensionEscalatePermissions(extension_id));
 
-  // Simulate the parent disallowing the child from approving permission
-  // updates. If extensions parental controls don't apply, or the extensions
-  // are managed by the `SkipParentApprovalToInstallExtensions` preference
-  // then this has no effect.
+  // Disable the supervised user preferences relating to permissions and
+  // extensions.
   supervised_user_test_util::
       SetSupervisedUserExtensionsMayRequestPermissionsPref(profile(), false);
+  supervised_user_test_util::SetSkipParentApprovalToInstallExtensionsPref(
+      profile(), false); /* Default value. */
 
-  // The extension should be disabled only if the extension parental controls
-  // are enabled and the extensions are governed by the
-  // `kSupervisedUserExtensionsMayRequestPermissions` preference.
+  // The supervised user is never blocked from updating the permissions of an
+  // extension.
   std::unique_ptr<api::developer_private::ExtensionInfo> info =
       GenerateExtensionInfo(extension_id);
-  bool is_extension_disabled =
-      ApplyParentalControlsOnExtensions() &&
-      GetExtensionManagementFamilyLinkSwitch() ==
-          ExtensionManagementFamilyLinkSwitch::kManagedByPermissionsSwitch;
-  EXPECT_EQ(info->disable_reasons.parent_disabled_permissions,
-            is_extension_disabled);
+  EXPECT_FALSE(info->disable_reasons.parent_disabled_permissions);
 }
-
-INSTANTIATE_TEST_SUITE_P(
-    ExtensionsForSupervisedUsers,
-    ExtensionInfoGeneratorUnitTestSupervised,
-    testing::Combine(
-#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN)
-        testing::Values(ExtensionsParentalControlState::kEnabled,
-                        ExtensionsParentalControlState::kDisabled),
-#else
-        // For ChromeOS the extension parental controls are on by default.
-        testing::Values(ExtensionsParentalControlState::kEnabled),
-#endif
-        testing::Values(
-            ExtensionManagementFamilyLinkSwitch::kManagedByPermissionsSwitch,
-            ExtensionManagementFamilyLinkSwitch::kManagedByExtensionsSwitch)),
-    [](const auto& info) {
-      return std::string(std::get<0>(info.param) ==
-                                 ExtensionsParentalControlState::kEnabled
-                             ? "WithExtensionParentalControls"
-                             : "WithoutExtensionParentalControls") +
-             std::string(std::get<1>(info.param) ==
-                                 ExtensionManagementFamilyLinkSwitch::
-                                     kManagedByExtensionsSwitch
-                             ? "ManagedByExtensionsFamilyLinkSwitch"
-                             : "ManagedByPermissionsFamilyLinkSwitch");
-    });
 
 #endif  // BUILDFLAG(ENABLE_SUPERVISED_USERS)
 

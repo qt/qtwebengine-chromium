@@ -36,7 +36,7 @@
 #include "meta/meta-context.h"
 #include "meta/meta-debug.h"
 #include "meta/meta-window-actor.h"
-#include "ui-controls-unstable-v1-server-protocol.h"
+#include "ui-controls-unstable-v2-server-protocol.h"
 #include "wayland/meta-wayland-private.h"
 #include "wayland/meta-wayland-types.h"
 #include "wayland/meta-wayland-versions.h"
@@ -72,7 +72,7 @@ notify_request_done (MetaWaylandUiControlsRequest *request)
 {
 
   meta_topic (META_DEBUG_INPUT, "%s %u", __func__, request->id);
-  zcr_ui_controls_v1_send_request_processed (request->resource, request->id);
+  zcr_ui_controls_v2_send_request_processed (request->resource, request->id);
   g_free (request);
 }
 
@@ -278,19 +278,19 @@ notify_modifiers (MetaWaylandUiControls *ui_controls,
 {
   if (pressed_modifiers != 0)
     {
-      if (pressed_modifiers & ZCR_UI_CONTROLS_V1_MODIFIER_SHIFT)
+      if (pressed_modifiers & ZCR_UI_CONTROLS_V2_MODIFIER_SHIFT)
         {
           clutter_virtual_input_device_notify_key (
             ui_controls->virtual_keyboard, g_get_monotonic_time (),
             KEY_LEFTSHIFT, key_state);
         }
-      if (pressed_modifiers & ZCR_UI_CONTROLS_V1_MODIFIER_CONTROL)
+      if (pressed_modifiers & ZCR_UI_CONTROLS_V2_MODIFIER_CONTROL)
         {
           clutter_virtual_input_device_notify_key (
             ui_controls->virtual_keyboard, g_get_monotonic_time (),
             KEY_LEFTCTRL, key_state);
         }
-      if (pressed_modifiers & ZCR_UI_CONTROLS_V1_MODIFIER_ALT)
+      if (pressed_modifiers & ZCR_UI_CONTROLS_V2_MODIFIER_ALT)
         {
           clutter_virtual_input_device_notify_key (
             ui_controls->virtual_keyboard, g_get_monotonic_time (),
@@ -335,7 +335,7 @@ ui_controls_send_key_events (struct wl_client   *client,
   meta_topic (META_DEBUG_INPUT, "%s id=%u key=%u state=%u has_modifiers=%d",
               __func__, id, key, key_state, pressed_modifiers != 0);
 
-  if (key_state & ZCR_UI_CONTROLS_V1_KEY_STATE_PRESS)
+  if (key_state & ZCR_UI_CONTROLS_V2_KEY_STATE_PRESS)
     {
       event_type = CLUTTER_KEY_PRESS;
       time_us = g_get_monotonic_time ();
@@ -345,7 +345,7 @@ ui_controls_send_key_events (struct wl_client   *client,
                                                time_us, key,
                                                CLUTTER_KEY_STATE_PRESSED);
     }
-  if (key_state & ZCR_UI_CONTROLS_V1_KEY_STATE_RELEASE)
+  if (key_state & ZCR_UI_CONTROLS_V2_KEY_STATE_RELEASE)
     {
       event_type = CLUTTER_KEY_RELEASE;
       time_us = g_get_monotonic_time ();
@@ -391,34 +391,29 @@ ui_controls_send_mouse_move(struct wl_client   *client,
                             int32_t             y,
                             struct wl_resource *surface_resource,
                             uint32_t            id) {
-  MetaWaylandXdgSurface*xdg_surface;
-  MetaWaylandSurfaceRole *surface_role;
   MetaWaylandSurface *surface;
   MetaWindow *window;
   MetaWindowActor *window_actor;
   MetaWaylandUiControls *ui_controls = wl_resource_get_user_data (resource);
-  double abs_x, abs_y;
+  float abs_x, abs_y;
   bool effects_in_progress = false;
   uint64_t time_us = g_get_monotonic_time ();
   // Wait for pointer focus if mouse move was requested relative to a surface.
   const bool wait_for_pointer_focus = surface_resource != 0;
 
-  meta_topic (META_DEBUG_INPUT, "%s id=%u x=%d y=%d has_surface=%d", __func__,
-              id, x, y, surface_resource != 0);
-
   if (surface_resource)
   // A surface was provided. Use coordinates relative to it.
     {
-      xdg_surface = wl_resource_get_user_data (surface_resource);
-      surface_role = META_WAYLAND_SURFACE_ROLE (xdg_surface);
-      surface = meta_wayland_surface_role_get_surface (surface_role);
+      surface = wl_resource_get_user_data (surface_resource);
       window = meta_wayland_surface_get_window (surface);
       window_actor = meta_window_actor_from_window (window);
       effects_in_progress = meta_window_actor_effect_in_progress (window_actor);
       if (effects_in_progress)
         wait_for_window_effects_completed (window_actor);
-      meta_window_actor_transform_relative_position (window_actor, x, y, &abs_x,
+      meta_wayland_surface_get_absolute_coordinates (surface, x, y, &abs_x,
                                                      &abs_y);
+      abs_x = roundf (abs_x);
+      abs_y = roundf (abs_y);
     }
   else
   // No surface was provided. Use global coordinates.
@@ -426,6 +421,11 @@ ui_controls_send_mouse_move(struct wl_client   *client,
       abs_x = x;
       abs_y = y;
     }
+
+  meta_topic (META_DEBUG_INPUT,
+              "%s id=%u x=%d y=%d has_surface=%d, abs_x=%f, abs_y=%f", __func__,
+              id, x, y, surface_resource != 0, abs_x, abs_y);
+
   clutter_virtual_input_device_notify_absolute_motion (
     ui_controls->virtual_pointer, time_us, abs_x, abs_y);
   store_request (ui_controls, resource, id, CLUTTER_MOTION, time_us,
@@ -450,20 +450,20 @@ ui_controls_send_mouse_button (struct wl_client   *client,
 
   switch (button)
     {
-    case ZCR_UI_CONTROLS_V1_MOUSE_BUTTON_LEFT:
+    case ZCR_UI_CONTROLS_V2_MOUSE_BUTTON_LEFT:
       clutter_button = CLUTTER_BUTTON_PRIMARY;
       break;
-    case ZCR_UI_CONTROLS_V1_MOUSE_BUTTON_RIGHT:
+    case ZCR_UI_CONTROLS_V2_MOUSE_BUTTON_RIGHT:
       clutter_button = CLUTTER_BUTTON_SECONDARY;
       break;
-    case ZCR_UI_CONTROLS_V1_MOUSE_BUTTON_MIDDLE:
+    case ZCR_UI_CONTROLS_V2_MOUSE_BUTTON_MIDDLE:
       clutter_button = CLUTTER_BUTTON_MIDDLE;
       break;
     default:
       g_assert_not_reached ();
     }
 
-  if (button_state & ZCR_UI_CONTROLS_V1_MOUSE_BUTTON_STATE_DOWN)
+  if (button_state & ZCR_UI_CONTROLS_V2_MOUSE_BUTTON_STATE_DOWN)
     {
       event_type = CLUTTER_BUTTON_PRESS;
       time_us = g_get_monotonic_time ();
@@ -474,7 +474,7 @@ ui_controls_send_mouse_button (struct wl_client   *client,
                                                   CLUTTER_BUTTON_STATE_PRESSED);
     }
 
-  if (button_state & ZCR_UI_CONTROLS_V1_MOUSE_BUTTON_STATE_UP)
+  if (button_state & ZCR_UI_CONTROLS_V2_MOUSE_BUTTON_STATE_UP)
     {
       event_type = CLUTTER_BUTTON_RELEASE;
       time_us = g_get_monotonic_time ();
@@ -489,69 +489,10 @@ ui_controls_send_mouse_button (struct wl_client   *client,
                  false /*wait_for_pointer_focus=*/);
 }
 
-static void
-ui_controls_send_touch (struct wl_client   *client,
-                        struct wl_resource *resource,
-                        uint32_t            action,
-                        uint32_t            touch_id,
-                        int32_t             x,
-                        int32_t             y,
-                        struct wl_resource *surface,
-                        uint32_t            id)
-{
-  g_error ("%s: Unsupported", __func__);
-}
-
-static void
-ui_controls_set_display_info_id (struct wl_client   *client,
-                                 struct wl_resource *resource,
-                                 uint32_t            display_id_hi,
-                                 uint32_t            display_id_low)
-{
-  g_error ("%s: Unsupported", __func__);
-}
-static void
-ui_controls_set_display_info_size (struct wl_client   *client,
-                                   struct wl_resource *resource,
-                                   uint32_t            width,
-                                   uint32_t            height)
-{
-  g_error ("%s: Unsupported", __func__);
-}
-
-static void
-ui_controls_set_display_info_device_scale_factor (
-  struct wl_client   *client,
-  struct wl_resource *resource,
-  uint32_t            device_scale_factor_as_uint)
-{
-  g_error ("%s: Unsupported", __func__);
-}
-static void
-ui_controls_display_info_done (struct wl_client   *client,
-                               struct wl_resource *resource)
-{
-  g_error ("%s: Unsupported", __func__);
-}
-
-static void
-ui_controls_display_info_list_done (struct wl_client   *client,
-                                    struct wl_resource *resource,
-                                    uint32_t            id)
-{
-  g_error ("%s: Unsupported", __func__);
-}
-
-static const struct zcr_ui_controls_v1_interface meta_ui_controls_interface = {
+static const struct zcr_ui_controls_v2_interface meta_ui_controls_interface = {
   ui_controls_send_key_events,
   ui_controls_send_mouse_move,
   ui_controls_send_mouse_button,
-  ui_controls_send_touch,
-  ui_controls_set_display_info_id,
-  ui_controls_set_display_info_size,
-  ui_controls_set_display_info_device_scale_factor,
-  ui_controls_display_info_done,
-  ui_controls_display_info_list_done,
 };
 
 static void
@@ -589,8 +530,8 @@ bind_ui_controls (struct wl_client *client,
 
   ui_controls->has_client = true;
 
-  resource = wl_resource_create (client, &zcr_ui_controls_v1_interface,
-                                 META_UI_CONTROLS_V1_VERSION, id);
+  resource = wl_resource_create (client, &zcr_ui_controls_v2_interface,
+                                 META_UI_CONTROLS_V2_VERSION, id);
   wl_resource_set_implementation (resource, &meta_ui_controls_interface,
                                   ui_controls, &destroy_ui_controls);
 }
@@ -623,8 +564,8 @@ meta_wayland_ui_controls_init (MetaWaylandCompositor *compositor)
 
       compositor->ui_controls->global =
         wl_global_create (wayland_display,
-                          &zcr_ui_controls_v1_interface,
-                          META_UI_CONTROLS_V1_VERSION,
+                          &zcr_ui_controls_v2_interface,
+                          META_UI_CONTROLS_V2_VERSION,
                           compositor->ui_controls, bind_ui_controls);
       if (!compositor->ui_controls->global)
         g_error ("Could not create ui controls global");

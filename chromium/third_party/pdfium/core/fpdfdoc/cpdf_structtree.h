@@ -22,16 +22,16 @@ class CPDF_StructElement;
 class CPDF_StructTree {
  public:
   static std::unique_ptr<CPDF_StructTree> LoadPage(
-      const CPDF_Document* pDoc,
+      const CPDF_Document* doc,
       RetainPtr<const CPDF_Dictionary> pPageDict);
 
-  explicit CPDF_StructTree(const CPDF_Document* pDoc);
+  explicit CPDF_StructTree(const CPDF_Document* doc);
   ~CPDF_StructTree();
 
-  size_t CountTopElements() const { return m_Kids.size(); }
-  CPDF_StructElement* GetTopElement(size_t i) const { return m_Kids[i].Get(); }
-  uint32_t GetPageObjNum() const { return m_pPage->GetObjNum(); }
-  ByteString GetRoleMapNameFor(const ByteString& type) const;
+  size_t CountTopElements() const { return kids_.size(); }
+  CPDF_StructElement* GetTopElement(size_t i) const { return kids_[i].Get(); }
+  uint32_t GetPageObjNum() const { return page_->GetObjNum(); }
+  ByteString GetRoleMapNameFor(ByteStringView type) const;
 
  private:
   using StructElementMap = std::map<RetainPtr<const CPDF_Dictionary>,
@@ -40,16 +40,16 @@ class CPDF_StructTree {
 
   void LoadPageTree(RetainPtr<const CPDF_Dictionary> pPageDict);
   RetainPtr<CPDF_StructElement> AddPageNode(
-      RetainPtr<const CPDF_Dictionary> pDict,
+      RetainPtr<const CPDF_Dictionary> dict,
       StructElementMap* map,
       int nLevel);
-  bool AddTopLevelNode(const CPDF_Dictionary* pDict,
+  bool AddTopLevelNode(const CPDF_Dictionary* dict,
                        const RetainPtr<CPDF_StructElement>& pElement);
 
-  RetainPtr<const CPDF_Dictionary> const m_pTreeRoot;
-  RetainPtr<const CPDF_Dictionary> const m_pRoleMap;
-  RetainPtr<const CPDF_Dictionary> m_pPage;
-  std::vector<RetainPtr<CPDF_StructElement>> m_Kids;
+  RetainPtr<const CPDF_Dictionary> const tree_root_;
+  RetainPtr<const CPDF_Dictionary> const role_map_;
+  RetainPtr<const CPDF_Dictionary> page_;
+  std::vector<RetainPtr<CPDF_StructElement>> kids_;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_STRUCTTREE_H_

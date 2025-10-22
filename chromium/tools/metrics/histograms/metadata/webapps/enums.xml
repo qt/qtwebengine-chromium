@@ -108,6 +108,13 @@ chromium-metrics-reviews@google.com.
   <int value="13" label="Short name, App name, and Icon changing."/>
   <int value="14" label="Short name, App name, and Mask changing."/>
   <int value="15" label="Short name, App name, Mask and Icon changing."/>
+  <int value="17" label="App Icon changing, icon below threshold."/>
+  <int value="19" label="App Icon and Mask changing, icon below threshold."/>
+  <int value="21" label="App Icon and Name changing, icon below threshold."/>
+  <int value="23"
+      label="App Icon, Mask, and Name changing, icon below threshold."/>
+  <int value="29"
+      label="App Icon, Name, and Short Name changing, icon below threshold."/>
 </enum>
 
 <enum name="AppSettingsPageEntryPoints">
@@ -164,9 +171,29 @@ chromium-metrics-reviews@google.com.
   <int value="6" label="Ambient badge dismissed"/>
 </enum>
 
+<enum name="IsolatedWebAppCleanupBundleCacheError">
+  <int value="0" label="System shutdown"/>
+  <int value="1" label="Could not delete all bundles"/>
+</enum>
+
 <enum name="IsolatedWebAppCleanupOrphanedIWAsError">
   <int value="1" label="Could not delete all orphaned isolated web apps."/>
   <int value="2" label="Skipped execution during system shutdown."/>
+</enum>
+
+<enum name="IsolatedWebAppCopyBundleToCacheError">
+  <int value="0" label="System shutdown"/>
+  <int value="1" label="App not installed"/>
+  <int value="2" label="Not IWA"/>
+  <int value="3" label="Cannot extract owned bundle path"/>
+  <int value="4" label="Failed to create dir"/>
+  <int value="5" label="Failed to copy file"/>
+</enum>
+
+<enum name="IsolatedWebAppGetBundleCachePathError">
+  <int value="0" label="System shutdown"/>
+  <int value="1" label="Provided version not found"/>
+  <int value="2" label="IWA not cached"/>
 </enum>
 
 <enum name="IsolatedWebAppInstallError">
@@ -183,6 +210,13 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Response head parsing: Internal error"/>
   <int value="2" label="Response head parsing: Format error"/>
   <int value="3" label="Response not found"/>
+</enum>
+
+<enum name="IsolatedWebAppRemoveObsoleteBundleVersionsError">
+  <int value="0" label="System shutdown"/>
+  <int value="1" label="IWA not installed"/>
+  <int value="2" label="Installed version not cached"/>
+  <int value="3" label="Could not delete all versions"/>
 </enum>
 
 <enum name="IsolatedWebAppResponseReaderCacheState">
@@ -216,6 +250,9 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="Bundle download error"/>
   <int value="9" label="Update dry run failed"/>
   <int value="10" label="Update apply failed"/>
+  <int value="11" label="System shutdown"/>
+  <int value="12" label="Version pinning is not allowed"/>
+  <int value="13" label="Downgrade is not allowed"/>
 </enum>
 
 <enum name="IwaComponentUpdateError">
@@ -253,6 +290,52 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Image download successful"/>
 </enum>
 
+<enum name="NavigationCapturingDisplayMode">
+  <int value="0"
+      label="Opened in standalone window when display mode was standalone"/>
+  <int value="1"
+      label="Opened in browser tab when display mode was browser tab"/>
+  <int value="2"
+      label="Opened in standalone window when display mode was browser tab"/>
+  <int value="3"
+      label="Opened in browser tab when display mode was standalone"/>
+</enum>
+
+<enum name="NavigationCapturingRedirectionResult">
+  <int value="0" label="Browser tab reparented into tab"/>
+  <int value="1" label="Browser tab reparented into app window"/>
+  <int value="2" label="App window reparented into browser tab"/>
+  <int value="3" label="App window reparented into app"/>
+  <int value="4" label="New app window opened"/>
+  <int value="5" label="New tab belonging to an app opened"/>
+  <int value="6" label="Navigated existing app tab"/>
+  <int value="7" label="Navigated existing app window"/>
+  <int value="8" label="Focused existing app tab"/>
+  <int value="9" label="Focused existing app window"/>
+  <int value="10"
+      label="Redirection happening in same context as triggered in"/>
+  <int value="11" label="Final url not capturable"/>
+  <int value="12" label="Redirection not handled"/>
+</enum>
+
+<enum name="NavigationCapturingResult">
+  <int value="0" label="New app tab opened"/>
+  <int value="1" label="New app window opened"/>
+  <int value="2" label="Focused existing app tab"/>
+  <int value="3" label="Focused existing app window"/>
+  <int value="4" label="Navigated existing app tab"/>
+  <int value="5" label="Navigated existing app window"/>
+  <int value="6" label="Opened new app tab from user modified click"/>
+  <int value="7" label="Opened new app window from user modified click"/>
+  <int value="8" label="Opened new app tab from auxiliary context"/>
+  <int value="9" label="Opened new app window from auxiliary context"/>
+  <int value="10" label="Navigation canceled"/>
+  <int value="11" label="Override browser for navigation"/>
+  <int value="12"
+      label="Intermediary tab opened, possible for redirection to be captured"/>
+  <int value="13" label="Not handled"/>
+</enum>
+
 <enum name="PreinstalledAppDisabledReason">
   <int value="0" label="kNotDisabled"/>
   <int value="1" label="kUninstallPreinstalledAppsNotEnabled"/>
@@ -272,6 +355,13 @@ chromium-metrics-reviews@google.com.
   <int value="15" label="kInstallOverridePreviousUserUninstall"/>
   <int value="16" label="kIgnoreStylusRequiredNoDeviceData"/>
   <int value="17" label="kIgnorePreviouslyUninstalledByUser"/>
+</enum>
+
+<enum name="RewriteIconResult">
+  <int value="0" label="The app's state was changed unexpectedly"/>
+  <int value="1" label="Icon successfully rewritten with mask"/>
+  <int value="2" label="Failed to fetch shortcut info"/>
+  <int value="3" label="Failed to update shortcuts"/>
 </enum>
 
 <enum name="RunOnOSLoginCommandCompletionState">
@@ -354,6 +444,16 @@ chromium-metrics-reviews@google.com.
   <int value="1" label="Invalid Manifest Id"/>
   <int value="2" label="Manifest ID Resolution Failure"/>
   <int value="3" label="Manifest ID Mismatch"/>
+</enum>
+
+<enum name="WebAppManifestSilentUpdateCheckResult">
+  <int value="0" label="App not installed"/>
+  <int value="1" label="App update failed during installation"/>
+  <int value="2" label="System shutdown"/>
+  <int value="3" label="App silently updated"/>
+  <int value="4" label="App is up to date"/>
+  <int value="5" label="Icon read from disk failed"/>
+  <int value="6" label="WebContents destroyed"/>
 </enum>
 
 <enum name="WebAppManifestUpdateResult">

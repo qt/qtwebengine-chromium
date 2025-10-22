@@ -52,6 +52,7 @@
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/page/page_popup.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/modules/accessibility/ax_object-inl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_object_cache_impl.h"
 #include "third_party/blink/renderer/modules/accessibility/ax_position.h"
@@ -519,11 +520,14 @@ void WebAXObject::Selection(bool& is_selection_backward,
   if (focus.IsDetached())
     return;
 
+  const Document* document = GetDocument().ConstUnwrap<Document>();
+  auto* cache = To<AXObjectCacheImpl>(document->ExistingAXObjectCache());
   const auto ax_selection =
       focus.private_->IsAtomicTextField()
           ? AXSelection::FromCurrentSelection(
-                ToTextControl(*focus.private_->GetNode()))
-          : AXSelection::FromCurrentSelection(*focus.private_->GetDocument());
+                ToTextControl(*focus.private_->GetNode()), *cache)
+          : AXSelection::FromCurrentSelection(*focus.private_->GetDocument(),
+                                              *cache);
   if (!ax_selection)
     return;
 
@@ -601,7 +605,9 @@ bool WebAXObject::SetSelection(const WebAXObject& anchor_object,
         *focus_object.ChildAt(static_cast<unsigned int>(focus_offset)));
   }
 
-  AXSelection::Builder builder;
+  const Document* document = GetDocument().ConstUnwrap<Document>();
+  auto* cache = To<AXObjectCacheImpl>(document->ExistingAXObjectCache());
+  AXSelection::Builder builder(*cache);
   AXSelection ax_selection =
       builder.SetAnchor(ax_anchor).SetFocus(ax_focus).Build();
   return ax_selection.Select();
@@ -641,7 +647,8 @@ WebString WebAXObject::GetName(
   ScopedFreezeAXCache freeze(private_->AXObjectCache());
 
   HeapVector<Member<AXObject>> name_objects;
-  WebString result = private_->GetName(out_name_from, &name_objects);
+  WebString result =
+      private_->GetName(out_name_from, &name_objects, /*name_sources=*/nullptr);
 
   out_name_objects.reserve(name_objects.size());
   out_name_objects.resize(name_objects.size());
@@ -658,7 +665,7 @@ WebString WebAXObject::GetName() const {
 
   ax::mojom::NameFrom name_from;
   HeapVector<Member<AXObject>> name_objects;
-  return private_->GetName(name_from, &name_objects);
+  return private_->GetName(name_from, &name_objects, /*name_sources=*/nullptr);
 }
 
 WebString WebAXObject::Description(

@@ -8,6 +8,8 @@
 
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/web/web_plugin.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_scroll_container.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_scroll_into_view_options.h"
 #include "third_party/blink/renderer/core/css/css_style_declaration.h"
 #include "third_party/blink/renderer/core/dom/column_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/document.h"
@@ -64,7 +66,7 @@ TEST_F(ElementTest,
   ASSERT_TRUE(writer);
   ASSERT_TRUE(sticky);
 
-  scroller->scrollTo(50.0, 200.0);
+  scroller->scrollToForTesting(50.0, 200.0);
 
   // The sticky element should remain at (0, 25) relative to the viewport due to
   // the constraints.
@@ -74,7 +76,8 @@ TEST_F(ElementTest,
 
   // Insert a new <div> above the sticky. This will dirty layout and invalidate
   // the sticky constraints.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLWithoutTrustedTypes(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -105,7 +108,7 @@ TEST_F(ElementTest, OffsetTopAndLeftCorrectForStickyElementsAfterInsertion) {
   ASSERT_TRUE(writer);
   ASSERT_TRUE(sticky);
 
-  scroller->scrollTo(50.0, 200.0);
+  scroller->scrollToForTesting(50.0, 200.0);
 
   // The sticky element should be offset to stay at (0, 25) relative to the
   // viewport due to the constraints.
@@ -114,7 +117,8 @@ TEST_F(ElementTest, OffsetTopAndLeftCorrectForStickyElementsAfterInsertion) {
 
   // Insert a new <div> above the sticky. This will dirty layout and invalidate
   // the sticky constraints.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLWithoutTrustedTypes(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -124,7 +128,8 @@ TEST_F(ElementTest, OffsetTopAndLeftCorrectForStickyElementsAfterInsertion) {
   EXPECT_EQ(DocumentLifecycle::kLayoutClean, document.Lifecycle().GetState());
 
   // Dirty layout again, since |OffsetTop| will have cleaned it.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLWithoutTrustedTypes(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -152,7 +157,7 @@ TEST_F(ElementTest, BoundsInWidgetCorrectForStickyElementsAfterInsertion) {
   ASSERT_TRUE(writer);
   ASSERT_TRUE(sticky);
 
-  scroller->scrollTo(50.0, 200.0);
+  scroller->scrollToForTesting(50.0, 200.0);
 
   // The sticky element should remain at (0, 25) relative to the viewport due to
   // the constraints.
@@ -162,7 +167,8 @@ TEST_F(ElementTest, BoundsInWidgetCorrectForStickyElementsAfterInsertion) {
 
   // Insert a new <div> above the sticky. This will dirty layout and invalidate
   // the sticky constraints.
-  writer->setInnerHTML("<div style='height: 100px; width: 700px;'></div>");
+  writer->SetInnerHTMLWithoutTrustedTypes(
+      "<div style='height: 100px; width: 700px;'></div>");
   EXPECT_EQ(DocumentLifecycle::kVisualUpdatePending,
             document.Lifecycle().GetState());
 
@@ -692,7 +698,7 @@ TEST_F(ElementTest, ParseFocusgroupAttrSupportedAxesAreValid) {
 
 TEST_F(ElementTest, ParseFocusgroupAttrExtendCorrectly) {
   Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"HTML(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <div id=fg1 focusgroup>
       <div id=fg2 focusgroup=extend>
         <div>
@@ -1145,7 +1151,7 @@ TEST_F(ElementTest, MixStyleAttributeAndCSSOMChanges) {
 }
 
 TEST_F(ElementTest, GetPseudoElement) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
     #before::before { content:"a"; }
     #after::after { content:"a"; }
@@ -1183,7 +1189,7 @@ TEST_F(ElementTest, GetPseudoElement) {
 }
 
 TEST_F(ElementTest, ColumnPseudoElements) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style id="test-style">
     #test::column { content: "*"; opacity: 0.5; }
     #test::column::scroll-marker { content: "+"; opacity: 0.3; }
@@ -1234,14 +1240,14 @@ TEST_F(ElementTest, ColumnPseudoElements) {
   EXPECT_EQ(element->GetColumnPseudoElements()->size(), 3u);
 
   Element* style = GetElementById("test-style");
-  style->setInnerHTML("");
+  style->SetInnerHTMLWithoutTrustedTypes("");
   GetDocument().UpdateStyleAndLayoutTree();
 
   EXPECT_EQ(element->GetColumnPseudoElements()->size(), 0u);
 }
 
 TEST_F(ElementTest, TheCheckMarkPseudoElement) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       .checked::checkmark {
         content: "*";
@@ -1283,7 +1289,7 @@ TEST_F(ElementTest, TheCheckMarkPseudoElement) {
     return e->GetPseudoElement(kPseudoIdCheckMark);
   };
 
-  // The `::checkmark` pseudo element should only be created for option
+  // The `::checkmark` pseudo-element should only be created for option
   // elements in an appearance:base-select.
   EXPECT_EQ(nullptr, checkmark_pseudo_for("a-div"));
   EXPECT_EQ(nullptr, checkmark_pseudo_for("not-base-option"));
@@ -1303,7 +1309,7 @@ TEST_F(ElementTest, TheCheckMarkPseudoElement) {
 }
 
 TEST_F(ElementTest, ThePickerIconPseudoElement) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
       #a-div::picker-icon {
         content: "*";
@@ -1327,7 +1333,7 @@ TEST_F(ElementTest, ThePickerIconPseudoElement) {
   Element* div = GetElementById("a-div");
   EXPECT_EQ(nullptr, div->GetPseudoElement(kPseudoIdPickerIcon));
 
-  // The `::picker-icon` pseudo element should only be created for select
+  // The `::picker-icon` pseudo-element should only be created for select
   // elements.
   Element* target = GetElementById("target");
   EXPECT_NE(nullptr, target->GetPseudoElement(kPseudoIdPickerIcon));
@@ -1337,7 +1343,7 @@ TEST_F(ElementTest, ThePickerIconPseudoElement) {
 }
 
 TEST_F(ElementTest, GenerateScrollMarkerGroup) {
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style id="test-style">
       #scroller {
         scroll-marker-group: before;
@@ -1363,7 +1369,7 @@ TEST_F(ElementTest, GenerateScrollMarkerGroup) {
 
 TEST_F(ElementTest, NestedMarkerInheritsFromPseudoParent) {
   ScopedCSSNestedPseudoElementsForTest feature(false);
-  GetDocument().body()->setInnerHTML(R"HTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <style>
     li {
       list-style-type: none;
@@ -1390,6 +1396,22 @@ TEST_F(ElementTest, NestedMarkerInheritsFromPseudoParent) {
 
   EXPECT_EQ(marker->GetComputedStyle()->ListStyleType()->GetCounterStyleName(),
             AtomicString("disc"));
+}
+
+TEST_F(ElementTest, ScrollIntoViewNearestUseCounted) {
+  // Set via setAttribute
+  SetBodyInnerHTML(R"HTML(
+    <body>
+      <div id=target></div>
+    </body>
+  )HTML");
+  EXPECT_FALSE(
+      GetDocument().IsUseCounted(WebFeature::kScrollIntoViewContainerNearest));
+  ScrollIntoViewOptions* options = ScrollIntoViewOptions::Create();
+  options->setContainer(V8ScrollContainer::Enum::kNearest);
+  GetElementById("target")->scrollIntoViewWithOptions(options);
+  EXPECT_TRUE(
+      GetDocument().IsUseCounted(WebFeature::kScrollIntoViewContainerNearest));
 }
 
 }  // namespace blink

@@ -46,7 +46,7 @@
   <message name="IDS_PRIVACY_SANDBOX_M1_CONSENT_LEARN_MORE_BULLET_3" desc="* This is 3 of 3 bullets. The label above the bullets is 'More about ad topics'. That string appears on the Consent page as an actionable label that leads the user to more information (this page) about the Ad topics setting. * 'How you can manage your data:': This string appears in bold and serves as a label for this bullet. * 'auto-deletes': this could also read 'Chrome also deletes...' We included the 'auto' to reinforce that this is part of a system and the deletion is done regularly. * 'As you keep browsing...': If a user visits similar sites every week for months on end, the same topic may appear on their list of topics and appear 'permanent'. This sentence explains why a topic might persist despite having just said that topics are deleted every 4 weeks. **** CONTEXT PRIVACY SANDBOX **** Chrome’s Privacy Sandbox initiative 1) deprecates third-party cookies in Chrome, 2) supports free and open content on the web (by finding better ways to support ads online), 3) while providing stronger privacy protections for users. You can see a high-level description of this public project at www.privacysanbox.com. " formatter_data="android_java">
     <ph name="BEGIN_BOLD">&lt;b&gt;</ph>How you can manage your data:<ph name="END_BOLD">&lt;/b&gt;</ph> Chrome auto-deletes topics that are older than 4 weeks. As you keep browsing, a topic might reappear on the list. You can also block topics you don’t want Chrome to share with sites and turn ad topics off at any time in Chrome settings.
   </message>
-  <message name="IDS_PRIVACY_SANDBOX_M1_CONSENT_LEARN_MORE_LINK" desc="A sentence that appears alone at the bottom of the learn more page. It offers the user a path towards additional information about how Google protects their data." formatter_data="android_java">
+  <message name="IDS_PRIVACY_SANDBOX_M1_CONSENT_LEARN_MORE_LINK" desc="A sentence that appears alone at the bottom of the learn more page. It offers the user a path towards additional information about how Google protects their data.">
     Learn more about how Google protects your data in our Privacy Policy.
   </message>
 
@@ -225,7 +225,7 @@
   <message name="IDS_SETTINGS_TOPICS_PAGE_FOOTER_CANONICAL" desc="This footer helps the user understand that this setting is just one signal among others that affect whether this user sees personalized ads on a site. We define 'personalize' as 'when Google provides recommendations and other content for users based on their data'. At a high level, there are 4 things that affect whether an ad is personalized in this context: * 'this setting' refers to the 'Ad topics' setting. The user is on this page. * 'Site-suggested ads': this is a link to the other new ad setting Chrome is launching and that sites can use to personalize ads a user sees. * 'cookie settings': this is a link to the cookies control section in Chrome settings. The Privacy Sandbox project deprecates third-party cookies, but it's a process, and we're launching new functionality that will replace important functionality of cookies. Until third-party cookies are deprecated, the two systems remain active in Chrome. * 'site you're viewing personalizes ads': When a user engages with a site, Chrome has no control over whether that site shows the user personalized ads. Imagine you visit www.interesting-site.com and they know a lot about you already based on previous visits. They can personalize content and ads to you if they like. They can use an ad-serving product, like Facebook or Google Ads to deliver personalized ads. They can also use the new Privacy Sandbox APIs (if they so choose) in order to get more information about the user that could be helpful to them in order to personalize ads. Those 2 APIs (settings, from the user's perspective), are 'Ad topics' and 'Site-suggested ads'.">
        As you browse, whether an ad you see is personalized depends on this setting, Site-suggested ads, your cookie settings, and if the site you’re viewing personalizes ads
   </message>
-  <message name="IDS_SETTINGS_TOPICS_PAGE_FIRST_LEVEL_TOPIC_DESCRIPTOR" desc="Description of a couple of popular topics. Used in the Manage Topics page." translateable="false">
+  <message name="IDS_SETTINGS_TOPICS_PAGE_FIRST_LEVEL_TOPIC_DESCRIPTOR" desc="Description of a couple of popular topics. Used in the Manage Topics page.">
     <ph name="TOPIC_1">$1<ex>American football</ex></ph>, <ph name="TOPIC_2">$2<ex>Tennis</ex></ph> and more
   </message>
 
@@ -2224,14 +2224,6 @@
   </message>
   <message name="IDS_PRIVACY_SANDBOX_TOPICS_TAXONOMY_V2_TOPIC_ID_629" desc="Taxonomy Member. Meaning: [holiday &amp; vacation packages, these typically include transportation &amp; accommodation and sometimes meals; also theme or activity-based travel packages] Existing Ref: http://tc-message/message/FatCatTaxonomy_Verticals4/3495940381581141578">
     Vacation Offers
-  </message>
-
-  <!-- Ip Protection -->
-  <message name="IDS_PRIVACY_SANDBOX_IP_PROTECTION_TITLE" desc="Title for the 'IP protection' preference." formatter_data="android_java" translateable="false">
-   Hide your IP address
-  </message>
-  <message name="IDS_PRIVACY_SANDBOX_IP_PROTECTION_SUMMARY" desc="A string which explains how the IP protection functionality works when user is signed in to Chrome."  formatter_data="android_java" translateable="false">
-   When you’re signed in to Chrome, this setting can limit what suspected trackers can see as you browse. When a page loads, some requests for content get sent through privacy servers. Learn more about <ph name="BEGIN_LINK">&lt;link&gt;</ph>how IP protection works.<ph name="END_LINK">&lt;/link&gt;</ph>
   </message>
 
   <!-- Tracking Protection -->

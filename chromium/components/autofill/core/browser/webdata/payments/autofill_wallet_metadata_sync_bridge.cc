@@ -16,8 +16,10 @@
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/pickle.h"
+#include "base/strings/string_number_conversions.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/data_model/payments/payments_metadata.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
@@ -242,7 +244,7 @@ bool AddServerMetadata(PaymentsAutofillTable* table,
                        const PaymentsMetadata& metadata) {
   switch (type) {
     case WalletMetadataSpecifics::CARD:
-      return table->AddServerCardMetadata(metadata);
+      return table->AddOrUpdateServerCardMetadata(metadata);
     case WalletMetadataSpecifics::IBAN:
       return table->AddOrUpdateServerIbanMetadata(metadata);
     // ADDRESS metadata syncing is deprecated.
@@ -272,7 +274,7 @@ bool UpdateServerMetadata(PaymentsAutofillTable* table,
                           const PaymentsMetadata& metadata) {
   switch (type) {
     case WalletMetadataSpecifics::CARD:
-      return table->UpdateServerCardMetadata(metadata);
+      return table->AddOrUpdateServerCardMetadata(metadata);
     case WalletMetadataSpecifics::IBAN:
       return table->AddOrUpdateServerIbanMetadata(metadata);
     // ADDRESS metadata syncing is deprecated.
@@ -390,7 +392,7 @@ AutofillWalletMetadataSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string AutofillWalletMetadataSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   const WalletMetadataSpecifics& remote_metadata =
       entity_data.specifics.wallet_metadata();
@@ -399,11 +401,18 @@ std::string AutofillWalletMetadataSyncBridge::GetClientTag(
 }
 
 std::string AutofillWalletMetadataSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return GetStorageKeyForWalletMetadataTypeAndSpecificsId(
       entity_data.specifics.wallet_metadata().type(),
       entity_data.specifics.wallet_metadata().id());
+}
+
+bool AutofillWalletMetadataSyncBridge::IsEntityDataValid(
+    const syncer::EntityData& entity_data) const {
+  CHECK(entity_data.specifics.has_wallet_metadata());
+  return entity_data.specifics.wallet_metadata().has_id() &&
+         entity_data.specifics.wallet_metadata().has_type();
 }
 
 void AutofillWalletMetadataSyncBridge::ApplyDisableSyncChanges(
@@ -471,7 +480,8 @@ void AutofillWalletMetadataSyncBridge::LoadDataCacheAndMetadata() {
   if (!web_data_backend_ || !web_data_backend_->GetDatabase() ||
       !GetAutofillTable() || !GetSyncMetadataStore()) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load AutofillWebDatabase."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kWalletMetadataFailedToLoadDatabase});
     return;
   }
 
@@ -481,7 +491,7 @@ void AutofillWalletMetadataSyncBridge::LoadDataCacheAndMetadata() {
   if (!GetAutofillTable()->GetServerCardsMetadata(cards_metadata) ||
       !GetAutofillTable()->GetServerIbansMetadata(ibans_metadata)) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed reading autofill data from WebDatabase."});
+        {FROM_HERE, syncer::ModelError::Type::kWalletMetadataFailedToReadData});
     return;
   }
   for (const PaymentsMetadata& card_metadata : cards_metadata) {
@@ -499,7 +509,8 @@ void AutofillWalletMetadataSyncBridge::LoadDataCacheAndMetadata() {
   if (!GetSyncMetadataStore()->GetAllSyncMetadata(
           syncer::AUTOFILL_WALLET_METADATA, batch.get())) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed reading autofill metadata from WebDatabase."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kWalletMetadataFailedToReadMetadata});
     return;
   }
 

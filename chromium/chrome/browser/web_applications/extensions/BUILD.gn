@@ -36,7 +36,7 @@ source_set("extensions") {
     "//components/pref_registry",
     "//components/services/app_service",
     "//components/sync/model",
-    "//components/webapps/browser:browser",
+    "//components/webapps/browser",
     "//components/webapps/common",
     "//content/public/browser",
     "//extensions/browser",
@@ -52,6 +52,7 @@ source_set("unit_tests") {
   deps = [
     ":extensions",
     "//chrome/browser/web_applications",
+    "//chrome/browser/web_applications:web_app_test",
     "//chrome/browser/web_applications:web_applications_test_support",
     "//chrome/browser/web_applications:web_applications_unit_tests",
     "//chrome/common",

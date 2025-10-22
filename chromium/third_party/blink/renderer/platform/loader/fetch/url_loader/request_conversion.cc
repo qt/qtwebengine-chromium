@@ -21,6 +21,7 @@
 #include "services/network/public/mojom/chunked_data_pipe_getter.mojom-blink.h"
 #include "services/network/public/mojom/data_pipe_getter.mojom-blink.h"
 #include "services/network/public/mojom/data_pipe_getter.mojom.h"
+#include "services/network/public/mojom/fetch_retry_options.mojom-shared.h"
 #include "services/network/public/mojom/trust_tokens.mojom-blink.h"
 #include "services/network/public/mojom/trust_tokens.mojom.h"
 #include "third_party/blink/public/common/loader/network_utils.h"
@@ -326,8 +327,9 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->redirect_mode = src.GetRedirectMode();
   dest->fetch_integrity = src.GetFetchIntegrity().Utf8();
   dest->expected_public_keys.reserve(src.GetExpectedPublicKeys().size());
-  for (const String& public_key : src.GetExpectedPublicKeys()) {
-    dest->expected_public_keys.push_back(public_key.Utf8());
+  for (const auto& public_key : src.GetExpectedPublicKeys()) {
+    dest->expected_public_keys.emplace_back(public_key.begin(),
+                                            public_key.end());
   }
   if (src.GetWebBundleTokenParams().has_value()) {
     dest->web_bundle_token_params =
@@ -362,6 +364,9 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
   dest->throttling_profile_id = src.GetDevToolsToken();
   dest->trust_token_params = ConvertTrustTokenParams(src.TrustTokenParams());
   dest->required_ip_address_space = src.GetTargetAddressSpace();
+  if (src.HasFetchRetryOptions()) {
+    dest->fetch_retry_options = src.FetchRetryOptions();
+  }
 
   if (base::UnguessableToken window_id = src.GetFetchWindowId())
     dest->fetch_window_id = std::make_optional(window_id);
@@ -426,7 +431,8 @@ void PopulateResourceRequest(const ResourceRequestHead& src,
 
   dest->is_ad_tagged = src.IsAdResource();
 
-  dest->allows_device_bound_sessions = src.AllowsDeviceBoundSessions();
+  dest->allows_device_bound_session_registration =
+      src.AllowsDeviceBoundSessionRegistration();
 }
 
 }  // namespace blink

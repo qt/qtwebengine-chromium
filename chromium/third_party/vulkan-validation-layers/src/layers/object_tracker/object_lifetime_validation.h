@@ -42,9 +42,7 @@ typedef vvl::concurrent_unordered_map<uint64_t, std::shared_ptr<ObjTrackState>, 
 typedef vvl::concurrent_unordered_map<uint64_t, small_vector<std::shared_ptr<ObjTrackState>, 4>, 6> object_list_map_type;
 
 class Tracker : public Logger {
-public:
-    VulkanTypedHandle handle;
-
+  public:
     Tracker(DebugReport *dr) : Logger(dr) {}
 
     void DestroyUndestroyedObjects(VulkanObjectType object_type, const Location &loc);
@@ -140,6 +138,13 @@ public:
                              const char *wrong_parent_vuid, const Location &loc, VulkanObjectType parent_type) const;
     // Vector of unordered_maps per object type to hold ObjTrackState info
     object_map_type object_map[kVulkanObjectTypeMax + 1];
+
+    void SetDeviceHandle(VkDevice device);
+    void SetInstanceHandle(VkInstance instance);
+
+  private:
+    // We don't know the handle (VkDevice or VkInstance) when Tracker is created and need to set afterwards
+    VulkanTypedHandle handle_;
 };
 
 class Instance : public vvl::base::Instance {
@@ -210,6 +215,8 @@ class Device : public vvl::base::Device {
     Device(vvl::dispatch::Device *dev, Instance *instance);
     ~Device();
 
+    void FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) override;
+
     void DestroyLeakedObjects();
     bool ReportUndestroyedObjects(const Location &loc) const;
     bool ReportLeakedObjects(VulkanObjectType object_type, const std::string &error_code,
@@ -225,7 +232,7 @@ class Device : public vvl::base::Device {
     bool ValidateDescriptorSet(VkDescriptorPool descriptor_pool, VkDescriptorSet descriptor_set, const Location &loc) const;
     bool ValidateDescriptorSetLayoutCreateInfo(const VkDescriptorSetLayoutCreateInfo &create_info,
                                                const Location &create_info_loc) const;
-    bool ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool isPush, const Location &loc) const;
+    bool ValidateDescriptorWrite(VkWriteDescriptorSet const *desc, bool is_push_descriptor, const Location &loc) const;
     bool ValidateAnonymousObject(uint64_t object, VkObjectType core_object_type, const char *invalid_handle_vuid,
                                  const char *wrong_parent_vuid, const Location &loc) const;
     bool ValidateAccelerationStructures(const char *src_handle_vuid, const char *dst_handle_vuid, uint32_t count,

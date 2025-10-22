@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.action.base_tab_action import BaseTabAction
 from crossbench.action_runner.action.action_type import ActionType
+from crossbench.action_runner.action.base_tab_action import BaseTabAction
 
 if TYPE_CHECKING:
   from crossbench.action_runner.action.action import ActionT

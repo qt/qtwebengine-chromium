@@ -518,6 +518,14 @@ structures:
    to determine if a hit-test can be done directly on the compositor or must be
    done on the main thread.
 
+6. [`HitTestData::xr_regions`](../../platform/graphics/paint/hit_test_data.h)
+
+   Used on Android XR to help keep track of the hit order / paint order of targets
+   on a page. On this platform, to support privacy requirements for eye gaze input,
+   the system renders hover effects for interactable elements. To do this it
+   requires information about those elements and how they're stacked on top of
+   each other.
+
 ### Scrollbar painting
 
 During painting, for a non-custom scrollbar we create a
@@ -531,3 +539,11 @@ of type cc::SolidColorScrollbarLayer, cc::PaintedScrollbarLayer or
 cc::PaintedOverlayScrollbarLayer depending on the type of the scrollbar.
 
 Custom scrollbars are still painted into drawing display items directly.
+
+## Pixel snapping and bluriness
+
+Bluriness can happen when drawings are not aligned to screen pixels. In
+Chromium, we try to align drawings to screen pixels when possible /
+necessary in almost every stage of rendering.
+[This document](https://docs.google.com/document/d/14qWYuGOJRELueTORi2ais5BIJGdo8HADXe07BjjThIs/edit)
+contains some useful links to related docs and bugs.

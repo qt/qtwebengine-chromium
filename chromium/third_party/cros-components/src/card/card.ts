@@ -161,16 +161,16 @@ export class Card extends LitElement {
   };
 
   /** @export */
-  disabled = false;
+  declare disabled: boolean;
 
   /** @export */
-  selected = false;
+  declare selected: boolean;
 
   /** @export */
-  interactive = false;
+  declare interactive: boolean;
 
   /** @export */
-  cardStyle: CardStyle = 'outline';
+  declare cardStyle: CardStyle;
 
   /**
    * The card's aria role. Allowed values are a short list of expected roles for
@@ -178,8 +178,8 @@ export class Card extends LitElement {
    * https://developer.mozilla.org/en-US/docs/Web/Accessibility/ARIA/Roles
    * @export
    */
-  override role: 'button'|'dialog'|'none'|'presentation'|'link'|'img'|'cell'|
-      null = null;
+  declare role: 'button'|'dialog'|'none'|'presentation'|'link'|'img'|'cell'|
+      null;
 
   /** @nocollapse */
   static override properties = {
@@ -192,6 +192,15 @@ export class Card extends LitElement {
     role: {type: String},
     tabIndex: {type: Number},
   };
+
+  constructor() {
+    super();
+    this.disabled = false;
+    this.selected = false;
+    this.interactive = false;
+    this.cardStyle = 'outline';
+    this.role = null;
+  }
 
   override render() {
     const interactive = !this.disabled && this.interactive;

@@ -33,6 +33,8 @@ target_sources(gpu_av_spirv PRIVATE
     post_process_descriptor_indexing_pass.cpp
     vertex_attribute_fetch_oob.h
     vertex_attribute_fetch_oob.cpp
+    log_error_pass.h
+    log_error_pass.cpp
 
     # Framework
     function_basic_block.h
@@ -47,24 +49,8 @@ target_sources(gpu_av_spirv PRIVATE
     pass.cpp
     ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/spirv_grammar_helper.cpp
 
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_non_bindless_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_indexing_oob_non_bindless_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_class_general_buffer_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_class_general_buffer_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_class_texel_buffer_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_descriptor_class_texel_buffer_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_buffer_device_address_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_buffer_device_address_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_ray_query_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_ray_query_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_post_process_descriptor_index_comp.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_post_process_descriptor_index_comp.cpp
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_vertex_attribute_fetch_oob_vert.h
-    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/instrumentation_vertex_attribute_fetch_oob_vert.cpp
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/gpuav_offline_spirv.h
+    ${VVL_SOURCE_DIR}/layers/${API_TYPE}/generated/gpuav_offline_spirv.cpp
 )
 
 target_include_directories(gpu_av_spirv PRIVATE .

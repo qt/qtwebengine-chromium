@@ -6,9 +6,8 @@ from __future__ import annotations
 
 import abc
 import logging
-import subprocess
 from functools import cached_property
-from typing import TYPE_CHECKING, Tuple, cast
+from typing import TYPE_CHECKING, cast
 
 from typing_extensions import override
 
@@ -17,6 +16,8 @@ from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.v8.log import V8LogProbe
 
 if TYPE_CHECKING:
+  import subprocess
+
   from crossbench.probes.profiling.system_profiling import ProfilingProbe
   from crossbench.runner.run import Run
 
@@ -42,7 +43,7 @@ class ProfilingContext(ProbeContext, metaclass=abc.ABCMeta):
     self._story_ready = True
 
   @cached_property
-  def renderer_pid_tid(self) -> Tuple[int, int]:
+  def renderer_pid_tid(self) -> tuple[int, int]:
     assert self._story_ready, (
         "Fetching renderer PID/TID before the story is loaded could lead to "
         "the wrong PID/TID being used. This should never happen TM!")

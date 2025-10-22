@@ -17,6 +17,7 @@
 #include "quiche/quic/moqt/moqt_messages.h"
 #include "quiche/quic/moqt/moqt_outgoing_queue.h"
 #include "quiche/quic/moqt/moqt_priority.h"
+#include "quiche/quic/moqt/moqt_publisher.h"
 #include "quiche/quic/moqt/moqt_session.h"
 #include "quiche/quic/moqt/moqt_track.h"
 #include "quiche/quic/moqt/tools/moqt_client.h"
@@ -92,19 +93,20 @@ class ChatClient {
     RemoteTrackVisitor(ChatClient* client) : client_(client) {}
 
     void OnReply(const moqt::FullTrackName& full_track_name,
-                 std::optional<FullSequence> largest_id,
+                 std::optional<Location> largest_id,
                  std::optional<absl::string_view> reason_phrase) override;
 
     void OnCanAckObjects(MoqtObjectAckFunction) override {}
 
     void OnObjectFragment(const moqt::FullTrackName& full_track_name,
-                          FullSequence sequence,
-                          moqt::MoqtPriority publisher_priority,
-                          moqt::MoqtObjectStatus status,
+                          const PublishedObjectMetadata& metadata,
                           absl::string_view object,
                           bool end_of_message) override;
 
-    void OnSubscribeDone(FullTrackName full_track_name) override {}
+    void OnSubscribeDone(FullTrackName /*full_track_name*/) override {}
+
+    // TODO(martinduke): Implement this.
+    void OnMalformedTrack(const FullTrackName& /*full_track_name*/) override {}
 
    private:
     ChatClient* client_;
@@ -127,7 +129,8 @@ class ChatClient {
   void RunEventLoop() { event_loop_->RunEventLoopOnce(kChatEventLoopDuration); }
   // Callback for incoming announces.
   std::optional<MoqtAnnounceErrorReason> OnIncomingAnnounce(
-      const moqt::FullTrackName& track_namespace, AnnounceEvent announce_type);
+      const moqt::TrackNamespace& track_namespace,
+      std::optional<VersionSpecificParameters> parameters);
 
   // Basic session information
   FullTrackName my_track_name_;

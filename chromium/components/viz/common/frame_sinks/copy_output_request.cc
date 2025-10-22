@@ -9,7 +9,9 @@
 
 #include "base/check_op.h"
 #include "base/functional/bind.h"
+#include "base/no_destructor.h"
 #include "base/strings/stringprintf.h"
+#include "base/synchronization/lock.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/trace_event/trace_event.h"
@@ -17,6 +19,8 @@
 #include "third_party/skia/include/core/SkBitmap.h"
 
 namespace {
+
+constexpr int kMaxPendingSendResult = 4;
 
 const char* ResultFormatToShortString(
     viz::CopyOutputRequest::ResultFormat result_format) {
@@ -27,6 +31,8 @@ const char* ResultFormatToShortString(
       return "I420";
     case viz::CopyOutputRequest::ResultFormat::NV12:
       return "NV12";
+    case viz::CopyOutputRequest::ResultFormat::RGBAF16:
+      return "RGBAF16";
   }
 }
 
@@ -35,9 +41,16 @@ const char* ResultDestinationToShortString(
   switch (result_destination) {
     case viz::CopyOutputRequest::ResultDestination::kSystemMemory:
       return "CPU";
-    case viz::CopyOutputRequest::ResultDestination::kNativeTextures:
+    case viz::CopyOutputRequest::ResultDestination::kSharedImage:
       return "GPU";
   }
+}
+
+int g_pending_send_result_count = 0;
+
+base::Lock& GetPendingSendResultLock() {
+  static base::NoDestructor<base::Lock> lock;
+  return *lock;
 }
 
 }  // namespace
@@ -107,9 +120,10 @@ void CopyOutputRequest::SetUniformScaleRatio(int scale_from, int scale_to) {
 
 void CopyOutputRequest::set_blit_request(BlitRequest blit_request) {
   DCHECK(!blit_request_);
-  DCHECK_EQ(result_destination(), ResultDestination::kNativeTextures);
+  DCHECK_EQ(result_destination(), ResultDestination::kSharedImage);
   DCHECK(result_format() == ResultFormat::NV12 ||
-         result_format() == ResultFormat::RGBA);
+         result_format() == ResultFormat::RGBA ||
+         result_format() == ResultFormat::RGBAF16);
   DCHECK(has_result_selection());
 
   if (result_format() == ResultFormat::NV12) {
@@ -118,7 +132,7 @@ void CopyOutputRequest::set_blit_request(BlitRequest blit_request) {
     DCHECK_EQ(blit_request.destination_region_offset().y() % 2, 0);
   }
 
-  CHECK(!blit_request.mailbox().IsZero());
+  CHECK(blit_request.shared_image());
 
   blit_request_ = std::move(blit_request);
 }
@@ -128,9 +142,28 @@ void CopyOutputRequest::SendResult(std::unique_ptr<CopyOutputResult> result) {
       "viz", "CopyOutputRequest", this, "success", !result->IsEmpty(),
       "has_provided_task_runner", !!result_task_runner_);
   CHECK(result_task_runner_);
-  result_task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(std::move(result_callback_), std::move(result)));
+  auto task = base::BindOnce(std::move(result_callback_), std::move(result));
+
+  if (send_result_delay_.is_zero()) {
+    result_task_runner_->PostTask(FROM_HERE, std::move(task));
+  } else {
+    base::AutoLock locked_counter(GetPendingSendResultLock());
+    if (g_pending_send_result_count >= kMaxPendingSendResult) {
+      result_task_runner_->PostTask(FROM_HERE, std::move(task));
+    } else {
+      g_pending_send_result_count++;
+      result_task_runner_->PostDelayedTask(
+          FROM_HERE,
+          base::BindOnce(
+              [](base::OnceClosure callback) {
+                std::move(callback).Run();
+                base::AutoLock locked_counter(GetPendingSendResultLock());
+                g_pending_send_result_count--;
+              },
+              std::move(task)),
+          send_result_delay_);
+    }
+  }
   // Remove the reference to the task runner (no-op if we didn't have one).
   result_task_runner_ = nullptr;
 }

@@ -141,6 +141,7 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
       {"safetyCheckExtensionsKeep", IDS_CONFIRM_DOWNLOAD},
       {"stackTrace", IDS_EXTENSIONS_ERROR_STACK_TRACE},
       {"sidebarDiscoverMore", IDS_EXTENSIONS_SIDEBAR_DISCOVER_MORE},
+      {"sidebarDocsPromo", IDS_EXTENSIONS_WHATS_NEW_SIDEBAR_PROMO},
       {"keyboardShortcuts", IDS_EXTENSIONS_SIDEBAR_KEYBOARD_SHORTCUTS},
       {"incognitoInfoWarning", IDS_EXTENSIONS_INCOGNITO_WARNING},
       {"userScriptInfoWarning", IDS_EXTENSIONS_ALLOW_USER_SCRIPTS_WARNING},
@@ -398,15 +399,7 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
       {"safetyCheckExtensionThreeDotDetails",
        IDS_EXTENSIONS_SC_THREEDOT_DETAILS},
       {"safetyCheckRemoveAll", IDS_EXTENSIONS_SC_REMOVE_ALL},
-
-// TODO(crbug.com/391777809): Make the message available on desktop android
-// without adding unused strings.
-#if BUILDFLAG(IS_ANDROID)
-      {"safetyHubHeader", IDS_OK /* placeholder to avoid crash */},
-#else
-      {"safetyHubHeader", IDS_SETTINGS_SAFETY_HUB},
-#endif  // BUILDFLAG(IS_ANDROID)
-
+      {"safetyHubHeader", IDS_EXTENSIONS_SAFETY_HUB_HEADER},
       {"safetyCheckRemoveButtonA11yLabel",
        IDS_EXTENSIONS_SC_REMOVE_BUTTON_A11Y_LABEL},
       {"safetyCheckOptionMenuA11yLabel",
@@ -460,6 +453,14 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
               g_browser_process->GetApplicationLocale())
               .spec()));
   source->AddString(
+      "extensionsWhatsNewURL",
+      base::ASCIIToUTF16(google_util::AppendGoogleLocaleParam(
+                             extension_urls::AppendUtmSource(
+                                 extension_urls::GetDocsWhatsNewURL(),
+                                 extension_urls::kExtensionsSidebarUtmSource),
+                             g_browser_process->GetApplicationLocale())
+                             .spec()));
+  source->AddString(
       "hostPermissionsLearnMoreLink",
       extension_permissions_constants::kRuntimeHostPermissionsHelpURL);
   source->AddBoolean(kInDevModeKey, in_dev_mode);
@@ -483,13 +484,6 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
       "safetyHubThreeDotDetails",
       base::FeatureList::IsEnabled(features::kSafetyHubThreeDotDetails));
 
-#if BUILDFLAG(IS_ANDROID)
-  source->AddResourcePath("images/product_logo.png",
-                          webui::CurrentChannelLogoResourceId());
-  // TODO(crbug.com/392777363): Clean these up with non-placeholder values.
-  source->AddInteger("MV2ExperimentStage", 0);
-  source->AddBoolean("MV2DeprecationNoticeDismissed", true);
-#else
   // MV2 deprecation.
   auto* mv2_experiment_manager = ManifestV2ExperimentManager::Get(profile);
   MV2ExperimentStage experiment_stage =
@@ -498,6 +492,10 @@ content::WebUIDataSource* CreateAndAddExtensionsSource(Profile* profile,
   source->AddBoolean(
       "MV2DeprecationNoticeDismissed",
       mv2_experiment_manager->DidUserAcknowledgeNoticeGlobally());
+
+#if BUILDFLAG(IS_ANDROID)
+  source->AddResourcePath("images/product_logo.png",
+                          webui::CurrentChannelLogoResourceId());
 #endif  // BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_CHROMEOS)

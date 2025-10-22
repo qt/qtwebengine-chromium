@@ -26,21 +26,8 @@ using ::autofill::i18n_model_definition::kLegacyHierarchyCountryCode;
 using ::base::ASCIIToUTF16;
 
 class AddressTest : public testing::Test {
- public:
-  AddressTest() {
-    features_.InitWithFeatures(
-        {
-            features::kAutofillUseFRAddressModel,
-            features::kAutofillUseINAddressModel,
-            features::kAutofillUseITAddressModel,
-            features::kAutofillUseNLAddressModel,
-            features::kAutofillUsePLAddressModel,
-        },
-        {});
-  }
-
  private:
-  base::test::ScopedFeatureList features_;
+  base::test::ScopedFeatureList features_{features::kAutofillUseINAddressModel};
 };
 
 // Test that country data can be properly returned as either a country code or a
@@ -773,7 +760,7 @@ TEST_F(AddressTest, TestSynthesizedNodesGeneration) {
   EXPECT_EQ(address2.GetRawInfo(ADDRESS_HOME_STREET_LOCATION_AND_LOCALITY),
             u"12/110, Flat no. 504, Raja Apartments, Kondapur");
   EXPECT_EQ(address2.GetRawInfo(ADDRESS_HOME_STREET_ADDRESS),
-            u"12/110, Flat no. 504, Raja Apartments, Kondapur, Opp to Ayyappa "
+            u"12/110, Flat no. 504, Raja Apartments, Kondapur\nOpp to Ayyappa "
             u"Swamy temple");
 }
 

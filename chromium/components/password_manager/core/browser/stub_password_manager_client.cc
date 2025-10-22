@@ -209,6 +209,8 @@ version_info::Channel StubPasswordManagerClient::GetChannel() const {
     BUILDFLAG(IS_CHROMEOS)
 void StubPasswordManagerClient::OpenPasswordDetailsBubble(
     const password_manager::PasswordForm& form) {}
+void StubPasswordManagerClient::MaybeShowSavePasswordPrimingPromo(
+    const GURL& current_url) {}
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
         // BUILDFLAG(IS_CHROMEOS)
 
@@ -225,5 +227,10 @@ StubPasswordManagerClient::ShowCrossDomainConfirmationPopup(
   return nullptr;
 }
 #endif  // !BUILDFLAG(IS_IOS)
+
+password_manager::UndoPasswordChangeController*
+StubPasswordManagerClient::GetUndoPasswordChangeController() {
+  return &undo_password_change_controller_;
+}
 
 }  // namespace password_manager

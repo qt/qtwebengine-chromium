@@ -9,6 +9,7 @@
 #include <algorithm>
 
 #include "base/functional/callback.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
@@ -260,6 +261,9 @@ void VideoEncodeAccelerator::SetCommandBufferHelperCB(
     base::RepeatingCallback<scoped_refptr<CommandBufferHelper>()>
         get_command_buffer_helper_cb,
     scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner) {}
+
+void VideoEncodeAccelerator::SetSharedImageInterfaceForTesting(
+    scoped_refptr<gpu::SharedImageInterface> sii) {}
 
 void VideoEncodeAccelerator::RequestEncodingParametersChange(
     const VideoBitrateAllocation& bitrate_allocation,

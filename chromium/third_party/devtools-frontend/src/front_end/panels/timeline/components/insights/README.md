@@ -52,7 +52,7 @@ override renderContent(): LitHtml.LitTemplate {
 
 If your component should render overlays when it is expanded, you will need to define those in the `createOverlays` method.
 
-This should return an array of `Overlays.Overlays.TimelineOverlay` objects. When your insight is expanded/collapsed, they will automatically be created / destroyed.
+This should return an array of `Trace.Types.Overlays.TimelineOverlay` objects. When your insight is expanded/collapsed, they will automatically be created / destroyed.
 
 ## 4. Custom styling
 
@@ -71,9 +71,8 @@ override connectedCallback(): void {
 
 Add your insight to the UI in `SidebarSingleInsightSet.ts` in the `INSIGHT_NAME_TO_COMPONENT` method.
 
-
 ## 6. Before you submit your CL
 
-- Add your related VE loggine context values in the `KnownContextValues.ts`
+- Add your related VE logging context values in the `KnownContextValues.ts`
 - Update the tests in `SidebarSingleInsightSet.test.ts`
 - WHen you want to ship the insight, make sure it is not in the experiments: `EXPERIMENTAL_INSIGHTS`.

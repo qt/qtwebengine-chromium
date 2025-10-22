@@ -152,7 +152,8 @@ class PLATFORM_EXPORT ShapeResultBloberizer {
   void AddEmphasisMark(const GlyphData& emphasis_data,
                        CanvasRotationInVertical canvas_rotation,
                        gfx::PointF glyph_center,
-                       float mid_glyph_offset);
+                       float mid_glyph_offset,
+                       float letter_spacing);
   static void AddEmphasisMarkToBloberizer(
       void* context,
       unsigned character_index,
@@ -241,13 +242,6 @@ struct PLATFORM_EXPORT ShapeResultBloberizer::FillGlyphs
                       const ShapeList& list,
                       unsigned from,
                       unsigned to);
-};
-struct PLATFORM_EXPORT ShapeResultBloberizer::FillTextEmphasisGlyphs
-    : public ShapeResultBloberizer {
-  FillTextEmphasisGlyphs(const FontDescription&,
-                         const TextRunPaintInfo&,
-                         const ShapeResultBuffer&,
-                         const GlyphData& emphasis_data);
 };
 
 void DrawTextBlobs(const ShapeResultBloberizer::BlobBuffer& blobs,

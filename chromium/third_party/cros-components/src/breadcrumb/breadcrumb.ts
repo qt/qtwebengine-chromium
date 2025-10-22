@@ -19,7 +19,7 @@ export class Breadcrumb extends LitElement {
   /**
    * @export
    */
-  size: 'default'|'small';
+  declare size: 'default'|'small';
   constructor() {
     super();
     this.size = 'default';

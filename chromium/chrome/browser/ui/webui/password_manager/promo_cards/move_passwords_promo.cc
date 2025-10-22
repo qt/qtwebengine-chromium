@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/password_manager/promo_cards/move_passwords_promo.h"
 
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/sync/sync_service_factory.h"
 #include "chrome/grit/generated_resources.h"
@@ -29,6 +30,10 @@ syncer::SyncService* GetSyncService(Profile* profile) {
 }
 
 // Checks if there are passwords saved only to this device.
+// TODO(crbug.com/410001569): The dialog now shows the Batch Upload dialog,
+// which uses the sync service to show the local data. Align whether or not
+// promo is shown and the content shown in the dialog to use the same API: the
+// sync service API.
 bool HasLocalPasswords(extensions::PasswordsPrivateDelegate* delegate) {
   if (!delegate) {
     return false;
@@ -91,10 +96,8 @@ bool MovePasswordsPromo::ShouldShowPromo() const {
   CHECK(profile_);
   syncer::SyncService* sync_service = GetSyncService(profile_);
   if (!sync_service ||
-      !password_manager::features_util::IsAccountStorageEnabled(
-          profile_->GetPrefs(), sync_service) ||
-      (switches::IsBatchUploadDesktopEnabled() &&
-       !sync_service->IsEngineInitialized())) {
+      !password_manager::features_util::IsAccountStorageEnabled(sync_service) ||
+      !sync_service->IsEngineInitialized()) {
     return false;
   }
 

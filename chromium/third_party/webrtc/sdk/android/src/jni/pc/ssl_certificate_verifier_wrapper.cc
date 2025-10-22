@@ -13,6 +13,7 @@
 #include "sdk/android/generated_peerconnection_jni/SSLCertificateVerifier_jni.h"
 #include "sdk/android/native_api/jni/class_loader.h"
 #include "sdk/android/native_api/jni/java_types.h"
+#include "sdk/android/native_api/jni/jvm.h"
 
 namespace webrtc {
 namespace jni {
@@ -24,12 +25,11 @@ SSLCertificateVerifierWrapper::SSLCertificateVerifierWrapper(
 
 SSLCertificateVerifierWrapper::~SSLCertificateVerifierWrapper() = default;
 
-bool SSLCertificateVerifierWrapper::Verify(
-    const rtc::SSLCertificate& certificate) {
+bool SSLCertificateVerifierWrapper::Verify(const SSLCertificate& certificate) {
   JNIEnv* jni = AttachCurrentThreadIfNeeded();
 
   // Serialize the der encoding of the cert into a jbyteArray
-  rtc::Buffer cert_der_buffer;
+  Buffer cert_der_buffer;
   certificate.ToDER(&cert_der_buffer);
   ScopedJavaLocalRef<jbyteArray> jni_buffer(
       jni, jni->NewByteArray(cert_der_buffer.size()));

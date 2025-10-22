@@ -12,6 +12,7 @@
 #include "base/command_line.h"
 #include "base/run_loop.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_ostream_operators.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_service.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_utils.h"
@@ -132,18 +133,20 @@ TEST_F(TemplateURLServiceUnitTest, InvalidDefaultSearchProviderOrigin) {
   EXPECT_TRUE(template_url_service().GetDefaultSearchProviderOrigin().opaque());
 }
 
-TEST_F(
-    TemplateURLServiceUnitTest,
-    GetFeaturedEnterpriseSearchEngines_IgnoresUnfeaturedEnterpriseSearchEngine) {
+TEST_F(TemplateURLServiceUnitTest, GetFeaturedEnterpriseSiteSearchEngines) {
   TemplateURLData sitesearch_turl_data;
   sitesearch_turl_data.SetKeyword(u"sitesearch");
   sitesearch_turl_data.SetShortName(u"sitesearch");
   sitesearch_turl_data.SetURL("https://www.sitesearch.com?q={searchTerms}");
   sitesearch_turl_data.policy_origin =
       TemplateURLData::PolicyOrigin::kSiteSearch;
-  sitesearch_turl_data.enforced_by_policy = false;
+  sitesearch_turl_data.enforced_by_policy = true;
   sitesearch_turl_data.featured_by_policy = false;
   sitesearch_turl_data.safe_for_autoreplace = false;
+  template_url_service().Add(
+      std::make_unique<TemplateURL>(sitesearch_turl_data));
+  sitesearch_turl_data.SetKeyword(u"@sitesearch");
+  sitesearch_turl_data.featured_by_policy = true;
   template_url_service().Add(
       std::make_unique<TemplateURL>(sitesearch_turl_data));
 
@@ -154,62 +157,105 @@ TEST_F(
       "https://www.searchaggregator.com?q={searchTerms}");
   searchaggregator_turl_data.policy_origin =
       TemplateURLData::PolicyOrigin::kSearchAggregator;
-  searchaggregator_turl_data.enforced_by_policy = false;
+  searchaggregator_turl_data.enforced_by_policy = true;
   searchaggregator_turl_data.featured_by_policy = false;
   searchaggregator_turl_data.safe_for_autoreplace = false;
   template_url_service().Add(
       std::make_unique<TemplateURL>(searchaggregator_turl_data));
-
-  EXPECT_TRUE(
-      template_url_service().GetFeaturedEnterpriseSearchEngines().empty());
-}
-
-TEST_F(
-    TemplateURLServiceUnitTest,
-    GetFeaturedEnterpriseSearchEngines_IncludesFeaturedEnterpriseSearchEngines) {
-  TemplateURLData sitesearch_turl_data;
-  sitesearch_turl_data.SetKeyword(u"@sitesearch");
-  sitesearch_turl_data.SetShortName(u"sitesearch");
-  sitesearch_turl_data.SetURL("https://www.sitesearch.com?q={searchTerms}");
-  sitesearch_turl_data.policy_origin =
-      TemplateURLData::PolicyOrigin::kSiteSearch;
-  sitesearch_turl_data.enforced_by_policy = false;
-  sitesearch_turl_data.featured_by_policy = true;
-  sitesearch_turl_data.safe_for_autoreplace = false;
-  template_url_service().Add(
-      std::make_unique<TemplateURL>(sitesearch_turl_data));
-
-  TemplateURLData searchaggregator_turl_data;
   searchaggregator_turl_data.SetKeyword(u"@searchaggregator");
-  searchaggregator_turl_data.SetShortName(u"searchaggregator");
-  searchaggregator_turl_data.SetURL(
-      "https://www.searchaggregator.com?q={searchTerms}");
-  searchaggregator_turl_data.policy_origin =
-      TemplateURLData::PolicyOrigin::kSearchAggregator;
-  searchaggregator_turl_data.enforced_by_policy = false;
   searchaggregator_turl_data.featured_by_policy = true;
-  searchaggregator_turl_data.safe_for_autoreplace = false;
   template_url_service().Add(
       std::make_unique<TemplateURL>(searchaggregator_turl_data));
 
-  EXPECT_EQ(
-      static_cast<int>(
-          template_url_service().GetFeaturedEnterpriseSearchEngines().size()),
-      2);
+  EXPECT_EQ(static_cast<int>(template_url_service()
+                                 .GetFeaturedEnterpriseSiteSearchEngines()
+                                 .size()),
+            1);
   EXPECT_EQ(template_url_service()
-                .GetFeaturedEnterpriseSearchEngines()[0]
+                .GetFeaturedEnterpriseSiteSearchEngines()[0]
+                ->keyword(),
+            u"@sitesearch");
+  EXPECT_EQ(template_url_service()
+                .GetFeaturedEnterpriseSiteSearchEngines()[0]
                 ->short_name(),
             u"sitesearch");
   EXPECT_EQ(
-      template_url_service().GetFeaturedEnterpriseSearchEngines()[0]->url(),
+      template_url_service().GetFeaturedEnterpriseSiteSearchEngines()[0]->url(),
       "https://www.sitesearch.com?q={searchTerms}");
-  EXPECT_EQ(template_url_service()
-                .GetFeaturedEnterpriseSearchEngines()[1]
-                ->short_name(),
-            u"searchaggregator");
-  EXPECT_EQ(
-      template_url_service().GetFeaturedEnterpriseSearchEngines()[1]->url(),
-      "https://www.searchaggregator.com?q={searchTerms}");
+}
+
+TEST_F(TemplateURLServiceUnitTest, HiddenFromLists) {
+  auto create_template_url_data =
+      [](const std::u16string& keyword,
+         TemplateURLData::PolicyOrigin policy_origin,
+         bool featured_by_policy) -> TemplateURLData {
+    TemplateURLData data;
+    data.SetShortName(keyword);
+    data.SetKeyword(keyword);
+    data.SetURL("https://" + base::UTF16ToUTF8(keyword) + "/?q={searchTerms}");
+    data.policy_origin = policy_origin;
+    data.featured_by_policy = featured_by_policy;
+    return data;
+  };
+
+  // Engines with no conflicts. Should NOT be hidden.
+  {
+    TemplateURL* turl = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"work", TemplateURLData::PolicyOrigin::kNoPolicy,
+            /*featured_by_policy=*/false)));
+    TemplateURL* turl_default_search_provider = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"default_search_provider",
+            TemplateURLData::PolicyOrigin::kDefaultSearchProvider,
+            /*featured_by_policy=*/false)));
+    TemplateURL* turl_site_search = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"site_search", TemplateURLData::PolicyOrigin::kSiteSearch,
+            /*featured_by_policy=*/false)));
+    TemplateURL* turl_search_aggregator = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"search_aggregator",
+            TemplateURLData::PolicyOrigin::kSearchAggregator,
+            /*featured_by_policy=*/false)));
+    ASSERT_FALSE(template_url_service().HiddenFromLists(turl));
+    ASSERT_FALSE(
+        template_url_service().HiddenFromLists(turl_default_search_provider));
+    ASSERT_FALSE(template_url_service().HiddenFromLists(turl_site_search));
+    ASSERT_FALSE(
+        template_url_service().HiddenFromLists(turl_search_aggregator));
+  }
+  // User-defined engine and a nonfeatured policy engine exists with the same
+  // keyword. User-defined engine should be hidden. Policy engine should not be
+  // hidden.
+  {
+    TemplateURL* turl = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"conflict", TemplateURLData::PolicyOrigin::kNoPolicy,
+            /*featured_by_policy=*/false)));
+    TemplateURL* turl_policy = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"conflict", TemplateURLData::PolicyOrigin::kSiteSearch,
+            /*featured_by_policy=*/false)));
+    ASSERT_FALSE(template_url_service().HiddenFromLists(turl));
+    ASSERT_TRUE(template_url_service().HiddenFromLists(turl_policy));
+  }
+
+  // User-defined engine and a featured policy engine exists with the same
+  // keyword. User-defined engine should be hidden. Policy engine should not be
+  // hidden.
+  {
+    TemplateURL* turl = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"@conflict", TemplateURLData::PolicyOrigin::kNoPolicy,
+            /*featured_by_policy=*/false)));
+    TemplateURL* turl_featured_policy = template_url_service().Add(
+        std::make_unique<TemplateURL>(create_template_url_data(
+            u"@conflict", TemplateURLData::PolicyOrigin::kSiteSearch,
+            /*featured_by_policy=*/true)));
+    ASSERT_TRUE(template_url_service().HiddenFromLists(turl));
+    ASSERT_FALSE(template_url_service().HiddenFromLists(turl_featured_policy));
+  }
 }
 
 #if BUILDFLAG(IS_ANDROID)

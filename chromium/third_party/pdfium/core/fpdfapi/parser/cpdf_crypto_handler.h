@@ -54,12 +54,14 @@ class CPDF_CryptoHandler {
                      pdfium::span<const uint8_t> source,
                      BinaryBuffer& dest_buf);
   bool DecryptFinish(void* context, BinaryBuffer& dest_buf);
-  void PopulateKey(uint32_t objnum, uint32_t gennum, uint8_t* key) const;
+  void PopulateKey(uint32_t objnum,
+                   uint32_t gennum,
+                   pdfium::span<uint8_t> key) const;
 
-  const size_t m_KeyLen;
-  const Cipher m_Cipher;
-  std::unique_ptr<CRYPT_aes_context, FxFreeDeleter> m_pAESContext;
-  std::array<uint8_t, 32> m_EncryptKey = {};
+  const size_t key_len_;
+  const Cipher cipher_;
+  std::unique_ptr<CRYPT_aes_context, FxFreeDeleter> aes_context_;
+  std::array<uint8_t, 32> encrypt_key_ = {};
 };
 
 #endif  // CORE_FPDFAPI_PARSER_CPDF_CRYPTO_HANDLER_H_

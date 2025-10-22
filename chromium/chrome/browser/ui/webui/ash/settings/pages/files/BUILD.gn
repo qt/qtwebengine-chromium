@@ -32,6 +32,7 @@ static_library("files") {
     "//ash/constants",
     "//ash/webui/system_apps/public:system_web_app_type",
     "//chrome/app:generated_resources",
+    "//chrome/browser/ash/browser_delegate",
     "//chrome/browser/ash/file_manager",
     "//chrome/browser/ash/profiles",
     "//chrome/browser/chromeos/upload_office_to_cloud",
@@ -74,4 +75,8 @@ source_set("browser_tests") {
     "//mojo/public/cpp/bindings",
     "//ui/base",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

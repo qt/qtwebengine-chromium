@@ -43,7 +43,7 @@ export class Radio extends LitElement {
   private checkedInternal = false;
 
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
 
   get mdRadio(): MdRadio|undefined {
     return this.renderRoot?.querySelector('md-radio') || undefined;

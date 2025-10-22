@@ -25,8 +25,8 @@
 #include "third_party/blink/renderer/core/loader/back_forward_cache_loader_helper_impl.h"
 #include "third_party/blink/renderer/core/script/modulator.h"
 #include "third_party/blink/renderer/core/workers/worker_clients.h"
-#include "third_party/blink/renderer/core/workers/worker_navigator.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
+#include "third_party/blink/renderer/platform/heap/cross_thread_persistent.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_load_scheduler.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_loader_options.h"
 #include "third_party/blink/renderer/platform/scheduler/public/worker_scheduler.h"
@@ -43,6 +43,7 @@ class WorkerResourceTimingNotifier;
 class SubresourceFilter;
 class WebContentSettingsClient;
 class WebWorkerFetchContext;
+class WorkerNavigator;
 class WorkerOrWorkletScriptController;
 class WorkerReportingProxy;
 class WorkerThread;
@@ -92,9 +93,8 @@ class CORE_EXPORT WorkerOrWorkletGlobalScope
       BlockingDetails details) override {}
 
   // BackForwardCacheLoaderHelperImpl::Delegate
-  void EvictFromBackForwardCache(
-      mojom::blink::RendererEvictionReason reason,
-      std::unique_ptr<SourceLocation> source_location) override {}
+  void EvictFromBackForwardCache(mojom::blink::RendererEvictionReason reason,
+                                 SourceLocation* source_location) override {}
   void DidBufferLoadWhileInBackForwardCache(bool update_process_wide_count,
                                             size_t num_bytes) override {}
 
@@ -121,15 +121,6 @@ class CORE_EXPORT WorkerOrWorkletGlobalScope
 
   // Returns nullptr if this global scope is a WorkletGlobalScope
   virtual WorkerNavigator* navigator() const { return nullptr; }
-
-  // Returns true when we should reject a response without
-  // cross-origin-embedder-policy: require-corp.
-  // TODO(crbug.com/1064920): Remove this now that PlzDedicatedWorker has
-  // shipped.
-  virtual RejectCoepUnsafeNone ShouldRejectCoepUnsafeNoneTopModuleScript()
-      const {
-    return RejectCoepUnsafeNone(false);
-  }
 
   // Returns the resource fetcher for subresources (a.k.a. inside settings
   // resource fetcher). See core/workers/README.md for details.
@@ -179,10 +170,6 @@ class CORE_EXPORT WorkerOrWorkletGlobalScope
   void SetDefersLoadingForResourceFetchers(LoaderFreezeMode);
 
   virtual int GetOutstandingThrottledLimit() const;
-
-  // TODO(crbug.com/1146824): Remove this once PlzDedicatedWorker and
-  // PlzServiceWorker ship.
-  virtual bool IsInitialized() const = 0;
 
   // TODO(crbug/964467): Currently all workers fetch cached code but only
   // services workers use them. Dedicated / Shared workers don't use the cached

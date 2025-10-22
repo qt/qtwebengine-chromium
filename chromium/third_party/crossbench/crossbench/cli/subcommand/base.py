@@ -5,10 +5,11 @@
 from __future__ import annotations
 
 import abc
-import argparse
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+  import argparse
+
   from crossbench.cli.cli import CrossBenchCLI
 
 

@@ -179,14 +179,14 @@ export class Button extends LitElement {
   `;
 
   /** @export */
-  label: string;
+  declare label: string;
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /**
    * How the button should be styled. One of {primary, secondary, floating}.
    * @export
    */
-  buttonStyle: 'primary'|'secondary'|'floating' = 'primary';
+  declare buttonStyle: 'primary'|'secondary'|'floating';
 
   /**
    * If the button should be in the inverted color scheme, eg for use in
@@ -194,20 +194,20 @@ export class Button extends LitElement {
    * floating button styles.
    * @export
    */
-  inverted = false;
+  declare inverted: boolean;
 
   /**
    * If button should truncate with ellipsis or stack contents if label
    * overflows button container.
    * @export
    */
-  overflow: 'truncate'|'stack' = 'truncate';
+  declare overflow: 'truncate'|'stack';
 
   /**
    * The URL that the link button points to.
    * @export
    */
-  href = '';
+  declare href: string;
 
   /** @nocollapse */
   static override properties = {
@@ -227,6 +227,10 @@ export class Button extends LitElement {
     this.ariaLabel = '';
     this.label = '';
     this.disabled = false;
+    this.buttonStyle = 'primary';
+    this.inverted = false;
+    this.overflow = 'truncate';
+    this.href = '';
   }
 
   override connectedCallback() {

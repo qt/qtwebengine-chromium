@@ -41,7 +41,9 @@ void OpenXrGraphicsBinding::GetRequiredExtensions(
   extensions.push_back(XR_KHR_OPENGL_ES_ENABLE_EXTENSION_NAME);
 }
 
-OpenXrGraphicsBindingOpenGLES::OpenXrGraphicsBindingOpenGLES() = default;
+OpenXrGraphicsBindingOpenGLES::OpenXrGraphicsBindingOpenGLES(
+    const OpenXrExtensionEnumeration* extension_enum)
+    : OpenXrGraphicsBinding(extension_enum) {}
 OpenXrGraphicsBindingOpenGLES::~OpenXrGraphicsBindingOpenGLES() {
   if (back_buffer_fbo_) {
     glDeleteFramebuffersEXT(1, &back_buffer_fbo_);
@@ -52,26 +54,9 @@ OpenXrGraphicsBindingOpenGLES::~OpenXrGraphicsBindingOpenGLES() {
   }
 }
 
-bool OpenXrGraphicsBindingOpenGLES::Initialize(XrInstance instance,
-                                               XrSystemId system) {
-  if (initialized_) {
+bool OpenXrGraphicsBindingOpenGLES::InitializeGl() {
+  if (gl_initialized_) {
     return true;
-  }
-
-  PFN_xrGetOpenGLESGraphicsRequirementsKHR get_graphics_requirements_fn{
-      nullptr};
-  if (XR_FAILED(xrGetInstanceProcAddr(
-          instance, "xrGetOpenGLESGraphicsRequirementsKHR",
-          (PFN_xrVoidFunction*)(&get_graphics_requirements_fn)))) {
-    return false;
-  }
-
-  // TODO(alcooper): Validate/set version based on the output here.
-  XrGraphicsRequirementsOpenGLESKHR graphics_requirements = {
-      XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR};
-  if (XR_FAILED(get_graphics_requirements_fn(instance, system,
-                                             &graphics_requirements))) {
-    return false;
   }
 
   // None of the other runtimes support ANGLE, so we disable it too for now.
@@ -136,6 +121,33 @@ bool OpenXrGraphicsBindingOpenGLES::Initialize(XrInstance instance,
 
   renderer_ = std::make_unique<XrRenderer>();
 
+  gl_initialized_ = true;
+  return true;
+}
+
+bool OpenXrGraphicsBindingOpenGLES::Initialize(XrInstance instance,
+                                               XrSystemId system) {
+  CHECK(gl_initialized_);
+  if (initialized_) {
+    return true;
+  }
+
+  PFN_xrGetOpenGLESGraphicsRequirementsKHR get_graphics_requirements_fn{
+      nullptr};
+  if (XR_FAILED(xrGetInstanceProcAddr(
+          instance, "xrGetOpenGLESGraphicsRequirementsKHR",
+          (PFN_xrVoidFunction*)(&get_graphics_requirements_fn)))) {
+    return false;
+  }
+
+  // TODO(alcooper): Validate/set version based on the output here.
+  XrGraphicsRequirementsOpenGLESKHR graphics_requirements = {
+      XR_TYPE_GRAPHICS_REQUIREMENTS_OPENGL_ES_KHR};
+  if (XR_FAILED(get_graphics_requirements_fn(instance, system,
+                                             &graphics_requirements))) {
+    return false;
+  }
+
   initialized_ = true;
   return true;
 }
@@ -195,7 +207,13 @@ void OpenXrGraphicsBindingOpenGLES::ClearSwapchainImages() {
   color_swapchain_images_.clear();
 }
 
-base::span<SwapChainInfo> OpenXrGraphicsBindingOpenGLES::GetSwapChainImages() {
+base::span<OpenXrSwapchainInfo>
+OpenXrGraphicsBindingOpenGLES::GetSwapChainImages() {
+  return color_swapchain_images_;
+}
+
+base::span<const OpenXrSwapchainInfo>
+OpenXrGraphicsBindingOpenGLES::GetSwapChainImages() const {
   return color_swapchain_images_;
 }
 
@@ -207,7 +225,7 @@ bool OpenXrGraphicsBindingOpenGLES::CanUseSharedImages() const {
 // with just the types changed as needed, and logic extracted out of the
 // mailbox_to_surface_bridge.
 void OpenXrGraphicsBindingOpenGLES::ResizeSharedBuffer(
-    SwapChainInfo& swap_chain_info,
+    OpenXrSwapchainInfo& swap_chain_info,
     gpu::SharedImageInterface* sii) {
   CHECK(sii);
   auto transfer_size = GetTransferSize();
@@ -253,8 +271,6 @@ void OpenXrGraphicsBindingOpenGLES::ResizeSharedBuffer(
   // Create a GMB Handle from scoped_ahb_handle.
   gfx::GpuMemoryBufferHandle gmb_handle;
   gmb_handle.type = gfx::ANDROID_HARDWARE_BUFFER;
-  // GpuMemoryBufferId is not used in this case and hence hardcoding it to 1.
-  gmb_handle.id = gfx::GpuMemoryBufferId(1);
   gmb_handle.android_hardware_buffer =
       swap_chain_info.scoped_ahb_handle.Clone();
 
@@ -305,7 +321,8 @@ void OpenXrGraphicsBindingOpenGLES::CreateSharedImages(
   }
 }
 
-const SwapChainInfo& OpenXrGraphicsBindingOpenGLES::GetActiveSwapchainImage() {
+const OpenXrSwapchainInfo&
+OpenXrGraphicsBindingOpenGLES::GetActiveSwapchainImage() {
   CHECK(has_active_swapchain_image());
   CHECK(active_swapchain_index() < color_swapchain_images_.size());
 
@@ -343,7 +360,7 @@ bool OpenXrGraphicsBindingOpenGLES::Render(
 
   // TODO(https://crbug.com/324596270): This shouldn't be necessary, but we
   // can't seem to get the image set up to be treated as linear any other way.
-  glDisable(GL_FRAMEBUFFER_SRGB);
+  glDisable(GL_FRAMEBUFFER_SRGB_EXT);
   glViewport(0, 0, swapchain_image_size.width(), swapchain_image_size.height());
 
   gfx::Transform transform;
@@ -355,7 +372,7 @@ bool OpenXrGraphicsBindingOpenGLES::Render(
   }
 
   if (overlay_visible_) {
-    glEnable(GL_FRAMEBUFFER_SRGB);
+    glEnable(GL_FRAMEBUFFER_SRGB_EXT);
     if (webxr_visible_) {
       glEnable(GL_BLEND);
       glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -401,7 +418,7 @@ bool OpenXrGraphicsBindingOpenGLES::WaitOnFence(gfx::GpuFence& gpu_fence) {
   return true;
 }
 
-bool OpenXrGraphicsBindingOpenGLES::ShouldFlipSubmittedImage() {
+bool OpenXrGraphicsBindingOpenGLES::ShouldFlipSubmittedImage() const {
   // WebGPU produces textures that are y-flipped relative to WebGL, which needs
   // to be accounted for during frame submission.
   return IsWebGPUSession();
@@ -433,6 +450,14 @@ bool OpenXrGraphicsBindingOpenGLES::SetOverlayTexture(
   CHECK(texture.type == gfx::ANDROID_HARDWARE_BUFFER);
   overlay_handle_ = std::move(texture);
   return true;
+}
+
+gfx::Size OpenXrGraphicsBindingOpenGLES::GetMaxTextureSize() {
+  CHECK(gl_initialized_);
+  int max_texture_size;
+  glGetIntegerv(GL_MAX_TEXTURE_SIZE, &max_texture_size);
+  DVLOG(1) << __func__ << " Max size=" << max_texture_size;
+  return {max_texture_size, max_texture_size};
 }
 
 }  // namespace device

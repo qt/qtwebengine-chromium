@@ -40,7 +40,11 @@ inline constexpr std::array kSpanifyManualPathsToIgnore = {
 
     // span_unittests explicitly wants to test compatibility of certain types,
     // rewriting would break that.
-    "base/containers/span_unittest.cc"
+    "base/containers/span_unittest.cc",
+
+    // The comment atop this test suite explains that it "contains intentional
+    // memory errors" to verify Chromium tooling.
+    "base/tools_sanity_unittest.cc",
 
     // Can't depend on //base, pointers/references under this directory can't be
     // rewritten.
@@ -149,6 +153,9 @@ inline constexpr std::array kSpanifyManualPathsToIgnore = {
     "ui/gl/gl_stub_autogen_gl.cc",
     "ui/gl/gl_stub_autogen_gl.h",
 
+    // Requested in crrev.com/c/6731996.
+    "net/websockets/websocket_frame.cc",
+
     // Exclude these generated files.
     //
     // An example of `spanify` picking them up can be seen at
@@ -158,6 +165,22 @@ inline constexpr std::array kSpanifyManualPathsToIgnore = {
     // https://crrev.com/c/6357073
     "third_party/blink/renderer/core/xml/xpath_grammar_generated.h",
     "third_party/blink/renderer/core/xml/xpath_grammar_generated.cc",
+
+    // Included inside a class declaration. Adding top-level #includes (e.g.,
+    // for span.h, <vector>) here will cause compilation errors.
+    "gpu/command_buffer/client/gles2_interface_autogen.h",
+
+    // This test seems to deliberately go out of bounds into other contiguous
+    // regions of memory.
+    "remoting/base/typed_buffer_unittest.cc",
+
+    // This test is explicitly testing unsafe buffers.
+    "base/unsafe_buffers_unittest.cc",
+
+    // This test does weird things having a heap of size zero, allocating it
+    // somewhere else and then assuming they can index it without knowing the
+    // bounds.
+    "third_party/blink/renderer/platform/heap/test/heap_test.cc",
 };
 
 #endif  // TOOLS_CLANG_SPANIFY_SPANIFYMANUALPATHSTOIGNORE_H_

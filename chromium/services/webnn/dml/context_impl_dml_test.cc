@@ -40,21 +40,25 @@ void RemoveDeviceToDestroyAllContexts(ContextImplDml* context) {
 // computing graph message.
 class FakeWebNNGraphImpl final : public WebNNGraphImpl {
  public:
-  FakeWebNNGraphImpl(ContextImplDml* context,
-                     ComputeResourceInfo compute_resource_info)
-      : WebNNGraphImpl(context, std::move(compute_resource_info)),
-        context_(context) {}
-  ~FakeWebNNGraphImpl() override = default;
+  FakeWebNNGraphImpl(
+      mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
+      base::WeakPtr<WebNNContextImpl> context,
+      ComputeResourceInfo compute_resource_info)
+      : WebNNGraphImpl(std::move(receiver),
+                       std::move(context),
+                       std::move(compute_resource_info),
+                       /*devices=*/{}) {}
 
  private:
-  void DispatchImpl(
-      const base::flat_map<std::string_view, WebNNTensorImpl*>& named_inputs,
-      const base::flat_map<std::string_view, WebNNTensorImpl*>& named_outputs)
-      override {
-    RemoveDeviceToDestroyAllContexts(context_);
-  }
+  ~FakeWebNNGraphImpl() override = default;
 
-  raw_ptr<ContextImplDml> context_;
+  void DispatchImpl(
+      base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>> named_inputs,
+      base::flat_map<std::string, scoped_refptr<WebNNTensorImpl>> named_outputs)
+      override {
+    RemoveDeviceToDestroyAllContexts(
+        static_cast<ContextImplDml*>(context_.get()));
+  }
 };
 
 // A fake WebNNTensor Mojo interface implementation that binds a pipe for
@@ -63,43 +67,51 @@ class FakeWebNNTensorImpl final : public WebNNTensorImpl {
  public:
   FakeWebNNTensorImpl(
       mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
-      ContextImplDml* context,
+      base::WeakPtr<WebNNContextImpl> context,
       mojom::TensorInfoPtr tensor_info)
-      : WebNNTensorImpl(std::move(receiver), context, std::move(tensor_info)),
-        context_(context) {}
-  ~FakeWebNNTensorImpl() override = default;
+      : WebNNTensorImpl(std::move(receiver),
+                        std::move(context),
+                        std::move(tensor_info)) {}
 
  private:
+  ~FakeWebNNTensorImpl() override = default;
+
   void ReadTensorImpl(ReadTensorCallback callback) override {
     std::move(callback).Run(ToError<mojom::ReadTensorResult>(
         mojom::Error::Code::kUnknownError, "Tesing for device removal."));
-    RemoveDeviceToDestroyAllContexts(context_);
+    WebNNContextImpl* context_impl = context_.get();
+    CHECK(context_impl);
+    RemoveDeviceToDestroyAllContexts(
+        static_cast<ContextImplDml*>(context_impl));
   }
   void WriteTensorImpl(mojo_base::BigBuffer src_buffer) override {
-    RemoveDeviceToDestroyAllContexts(context_);
+    WebNNContextImpl* context_impl = context_.get();
+    CHECK(context_impl);
+    RemoveDeviceToDestroyAllContexts(
+        static_cast<ContextImplDml*>(context_impl));
   }
-
-  raw_ptr<ContextImplDml> context_;
 };
 
 // Helper class to create the FakeWebNNGraphImpl that is intended to test
 // the graph validation steps and computation resources.
 class FakeWebNNBackend final : public ContextImplDml::BackendForTesting {
   void CreateGraphImpl(
+      mojo::PendingAssociatedReceiver<mojom::WebNNGraph> receiver,
       ContextImplDml* context,
       WebNNGraphImpl::ComputeResourceInfo compute_resource_info,
       WebNNContextImpl::CreateGraphImplCallback callback) override {
-    std::move(callback).Run(std::make_unique<FakeWebNNGraphImpl>(
-        context, std::move(compute_resource_info)));
+    std::move(callback).Run(base::MakeRefCounted<FakeWebNNGraphImpl>(
+        std::move(receiver), context->AsWeakPtr(),
+        std::move(compute_resource_info)));
   }
 
   void CreateTensorImpl(
-      ContextImplDml* context,
+      base::WeakPtr<WebNNContextImpl> context,
       mojo::PendingAssociatedReceiver<mojom::WebNNTensor> receiver,
       mojom::TensorInfoPtr tensor_info,
       WebNNContextImpl::CreateTensorImplCallback callback) override {
-    std::move(callback).Run(std::make_unique<FakeWebNNTensorImpl>(
-        std::move(receiver), context, std::move(tensor_info)));
+    std::move(callback).Run(base::MakeRefCounted<FakeWebNNTensorImpl>(
+        std::move(receiver), std::move(context), std::move(tensor_info)));
   }
 };
 
@@ -118,7 +130,7 @@ CreateTensorSuccess CreateWebNNTensor(
           *OperandDescriptor::Create(webnn::GetContextPropertiesForTesting(),
                                      data_type, shape, "tensor"),
           MLTensorUsage{MLTensorUsageFlags::kWrite, MLTensorUsageFlags::kRead}),
-      create_tensor_future.GetCallback());
+      mojo_base::BigBuffer(0), create_tensor_future.GetCallback());
   mojom::CreateTensorResultPtr create_tensor_result =
       create_tensor_future.Take();
   mojo::AssociatedRemote<mojom::WebNNTensor> webnn_tensor_remote;
@@ -148,7 +160,7 @@ class WebNNContextDMLImplTest : public TestBase {
     base::test::TestFuture<mojom::CreateContextResultPtr> create_context_future;
     webnn_provider_remote_->CreateWebNNContext(
         mojom::CreateContextOptions::New(
-            mojom::CreateContextOptions::Device::kGpu,
+            mojom::Device::kGpu,
             mojom::CreateContextOptions::PowerPreference::kDefault),
         create_context_future.GetCallback());
     auto create_context_result = create_context_future.Take();
@@ -219,22 +231,24 @@ TEST_F(WebNNContextDMLImplTest, CreateGraphImplTest) {
       graph_builder_remote.BindNewEndpointAndPassReceiver());
   GraphInfoBuilder builder(graph_builder_remote);
 
-  uint64_t input_operand_id =
+  OperandId input_operand_id =
       builder.BuildInput("input", {1, 2, 3, 4}, OperandDataType::kFloat32);
-  uint64_t output_operand_id =
+  OperandId output_operand_id =
       builder.BuildOutput("output", {1, 2, 3, 4}, OperandDataType::kFloat32);
   builder.BuildRelu(input_operand_id, output_operand_id);
 
   // The GraphImplDml should be built successfully.
-  base::test::TestFuture<mojom::CreateGraphResultPtr> create_graph_future;
+  base::test::TestFuture<
+      base::expected<mojom::CreateGraphSuccessPtr, mojom::ErrorPtr>>
+      create_graph_future;
   graph_builder_remote->CreateGraph(builder.TakeGraphInfo(),
                                     create_graph_future.GetCallback());
-  mojom::CreateGraphResultPtr create_graph_result = create_graph_future.Take();
-  EXPECT_TRUE(create_graph_result->is_graph_remote());
+  auto create_graph_result = create_graph_future.Take();
+  EXPECT_TRUE(create_graph_result.has_value());
 
   // Reset the remote to ensure `WebNNGraphImpl` is released.
-  if (create_graph_result->is_graph_remote()) {
-    create_graph_result->get_graph_remote().reset();
+  if (create_graph_result.has_value()) {
+    create_graph_result.value()->graph_remote.reset();
   }
 
   // Ensure `WebNNContextImpl::OnConnectionError()` is called and
@@ -263,18 +277,20 @@ TEST_F(WebNNFakeContextDMLImplTest, DeviceRemovalFromDispatch) {
   webnn_context_remote_->CreateGraphBuilder(
       graph_builder_remote.BindNewEndpointAndPassReceiver());
   GraphInfoBuilder builder(graph_builder_remote);
-  uint64_t input_operand_id = builder.BuildInput("input", shape, data_type);
-  uint64_t output_operand_id = builder.BuildOutput("output", shape, data_type);
+  OperandId input_operand_id = builder.BuildInput("input", shape, data_type);
+  OperandId output_operand_id = builder.BuildOutput("output", shape, data_type);
   builder.BuildRelu(input_operand_id, output_operand_id);
 
   // The GraphImplDml should be built successfully.
-  base::test::TestFuture<mojom::CreateGraphResultPtr> create_graph_future;
+  base::test::TestFuture<
+      base::expected<mojom::CreateGraphSuccessPtr, mojom::ErrorPtr>>
+      create_graph_future;
   graph_builder_remote->CreateGraph(builder.TakeGraphInfo(),
                                     create_graph_future.GetCallback());
-  mojom::CreateGraphResultPtr create_graph_result = create_graph_future.Take();
-  EXPECT_TRUE(create_graph_result->is_graph_remote());
+  auto create_graph_result = create_graph_future.Take();
+  EXPECT_TRUE(create_graph_result.has_value());
   mojo::AssociatedRemote<mojom::WebNNGraph> webnn_graph_remote;
-  webnn_graph_remote.Bind(std::move(create_graph_result->get_graph_remote()));
+  webnn_graph_remote.Bind(std::move(create_graph_result.value()->graph_remote));
 
   CreateTensorSuccess input_tensor =
       CreateWebNNTensor(webnn_context_remote_, data_type, shape);
@@ -291,7 +307,8 @@ TEST_F(WebNNFakeContextDMLImplTest, DeviceRemovalFromDispatch) {
   webnn_graph_remote.reset();
   graph_builder_remote.reset();
   webnn_context_remote_.reset();
-  webnn_provider_remote_.reset();
+  // Ensure the WebNN context remains valid so scheduled callbacks can run
+  // before we check for context loss.
   EXPECT_TRUE(base::test::RunUntil([&]() { return all_contexts_lost; }));
 }
 
@@ -314,7 +331,6 @@ TEST_F(WebNNFakeContextDMLImplTest, DeviceRemovalFromWritingTensor) {
 
   tensor.webnn_tensor_remote.reset();
   webnn_context_remote_.reset();
-  webnn_provider_remote_.reset();
   EXPECT_TRUE(base::test::RunUntil([&]() { return all_contexts_lost; }));
 }
 
@@ -338,7 +354,6 @@ TEST_F(WebNNFakeContextDMLImplTest, DeviceRemovalFromReadingTensor) {
 
   tensor.webnn_tensor_remote.reset();
   webnn_context_remote_.reset();
-  webnn_provider_remote_.reset();
   EXPECT_TRUE(base::test::RunUntil([&]() { return all_contexts_lost; }));
 }
 

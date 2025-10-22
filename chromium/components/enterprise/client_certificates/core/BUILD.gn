@@ -17,7 +17,7 @@ source_set("dm_server_client") {
     "//components/policy/proto",
   ]
 
-  deps = [ "//services/network/public/cpp:cpp_base" ]
+  deps = [ "//services/network/public/cpp" ]
 }
 
 source_set("cloud_management_delegate") {
@@ -108,6 +108,12 @@ source_set("core") {
     "upload_client_error.cc",
   ]
 
+  if (is_win) {
+    public += [ "win/windows_software_private_key_factory.h" ]
+
+    sources += [ "win/windows_software_private_key_factory.cc" ]
+  }
+
   public_deps = [
     "//base",
     "//components/enterprise/client_certificates/proto:db_client_certs",
@@ -125,6 +131,7 @@ source_set("core") {
     "//components/policy/proto",
     "//components/prefs",
     "//net",
+    "//services/network/public/cpp",
     "//third_party/boringssl",
   ]
 
@@ -189,6 +196,10 @@ source_set("unit_tests") {
     "unexportable_private_key_factory_unittest.cc",
     "unexportable_private_key_unittest.cc",
   ]
+
+  if (is_win) {
+    sources += [ "win/windows_software_private_key_factory_unittest.cc" ]
+  }
 
   deps = [
     ":cloud_management_delegate",

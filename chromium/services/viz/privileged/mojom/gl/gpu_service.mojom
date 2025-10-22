@@ -83,30 +83,6 @@ interface GpuService {
   // If no channel can be identified, do nothing.
   CloseChannel(int32 client_id);
 
-  // Create a new ARC VideoDecodeAccelerator and binds it to |vda|.
-  [EnableIf=enable_arc_media]
-  CreateArcVideoDecodeAccelerator(
-      pending_receiver<arc.mojom.VideoDecodeAccelerator> vda);
-
-  // Create a new ARC VideoDecoder and binds it to |vd|.
-  [EnableIf=enable_arc_media]
-  CreateArcVideoDecoder(pending_receiver<arc.mojom.VideoDecoder> vd);
-
-  // Create a new ARC VideoEncodeAccelerator and binds it to |vea|.
-  [EnableIf=enable_arc_media]
-  CreateArcVideoEncodeAccelerator(
-      pending_receiver<arc.mojom.VideoEncodeAccelerator> vea);
-
-  // Create a new ARC VideoProtectedBufferAllocator and binds it to |pba|.
-  [EnableIf=enable_arc_media]
-  CreateArcVideoProtectedBufferAllocator(
-      pending_receiver<arc.mojom.VideoProtectedBufferAllocator> pba);
-
-  // Create a new ARC ProtectedBufferManager and binds it to |pbm|.
-  [EnableIf=enable_arc_media]
-  CreateArcProtectedBufferManager(
-      pending_receiver<arc.mojom.ProtectedBufferManager> pbm);
-
   // Creates a new MjpegDecodeAccelerator and binds it to |jda|.
   [EnableIf=is_chromeos]
   CreateJpegDecodeAccelerator(
@@ -143,23 +119,6 @@ interface GpuService {
   BindWebNNContextProvider(
       pending_receiver<webnn.mojom.WebNNContextProvider>? receiver,
       int32 client_id);
-
-  [Sync, NoInterrupt]
-  CreateGpuMemoryBuffer(gfx.mojom.GpuMemoryBufferId id,
-                        gfx.mojom.Size size,
-                        gfx.mojom.BufferFormat format,
-                        gfx.mojom.BufferUsage usage,
-                        int32 client_id,
-                        gpu.mojom.SurfaceHandle surface_handle)
-      => (gfx.mojom.GpuMemoryBufferHandle buffer_handle);
-
-  DestroyGpuMemoryBuffer(gfx.mojom.GpuMemoryBufferId id, int32 client_id);
-
-  // Copies GMB pixel data to |shared_memory|.
-  // Returns |true| if the copy has succeeded.
-  CopyGpuMemoryBuffer(gfx.mojom.GpuMemoryBufferHandle buffer_handle,
-                      mojo_base.mojom.UnsafeSharedMemoryRegion shared_memory)
-      => (bool success);
 
   // Returns current video memory usage.
   GetVideoMemoryUsageStats() => (gpu.mojom.VideoMemoryUsageStats stats);

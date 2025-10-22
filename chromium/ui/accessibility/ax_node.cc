@@ -134,7 +134,8 @@ AXNode* AXNode::GetUnignoredChildAtIndex(size_t index) const {
   // TODO(nektar): Should DCHECK that this node is not ignored.
   DCHECK(!tree_->GetTreeUpdateInProgressState());
 
-  for (auto it = UnignoredChildrenBegin(); it != UnignoredChildrenEnd(); ++it) {
+  for (auto it = UnignoredChildrenBegin(), end = UnignoredChildrenEnd();
+       it != end; ++it) {
     if (index == 0)
       return it.get();
     --index;
@@ -634,16 +635,6 @@ AXNode* AXNode::GetPreviousUnignoredInTreeOrder() const {
   return sibling;
 }
 
-AXNode::AllChildIterator AXNode::AllChildrenBegin() const {
-  DCHECK(!tree_->GetTreeUpdateInProgressState());
-  return AllChildIterator(this, GetFirstChild());
-}
-
-AXNode::AllChildIterator AXNode::AllChildrenEnd() const {
-  DCHECK(!tree_->GetTreeUpdateInProgressState());
-  return AllChildIterator(this, nullptr);
-}
-
 AXNode::AllChildCrossingTreeBoundaryIterator
 AXNode::AllChildrenCrossingTreeBoundaryBegin() const {
   DCHECK(!tree_->GetTreeUpdateInProgressState());
@@ -992,8 +983,7 @@ bool AXNode::CanComputeStringAttribute(
     case ax::mojom::StringAttribute::kName:
       // The name may be suppressed when serializing an AXInlineTextBox if it
       // can be inferred from the parent.
-      return ::features::IsAccessibilityPruneRedundantInlineTextEnabled() &&
-             data().role == ax::mojom::Role::kInlineTextBox &&
+      return data().role == ax::mojom::Role::kInlineTextBox &&
              data().GetNameFrom() == ax::mojom::NameFrom::kContents &&
              GetParent() &&
              GetParent()->data().GetNameFrom() ==
@@ -1160,8 +1150,8 @@ const std::u16string& AXNode::GetHypertext() const {
     static const base::NoDestructor<std::u16string> embedded_character_str(
         AXNode::kEmbeddedObjectCharacterUTF16);
     auto first = UnignoredChildrenCrossingTreeBoundaryBegin();
-    for (auto iter = first; iter != UnignoredChildrenCrossingTreeBoundaryEnd();
-         ++iter) {
+    for (auto iter = first, end = UnignoredChildrenCrossingTreeBoundaryEnd();
+         iter != end; ++iter) {
       // Similar to Firefox, we don't expose text nodes in IAccessible2 and ATK
       // hypertext with the embedded object character. We copy all of their text
       // instead.
@@ -1333,8 +1323,9 @@ std::ostream& operator<<(std::ostream& stream, const AXNode& node) {
   if (node.GetUnignoredChildCountCrossingTreeBoundary()) {
     stream << " unignored_child_ids=";
     bool needs_comma = false;
-    for (auto it = node.UnignoredChildrenBegin();
-         it != node.UnignoredChildrenEnd(); ++it) {
+    for (auto it = node.UnignoredChildrenBegin(),
+              end = node.UnignoredChildrenEnd();
+         it != end; ++it) {
       if (needs_comma) {
         stream << ",";
       } else {
@@ -1546,6 +1537,9 @@ const std::vector<raw_ptr<AXNode, VectorExperimental>>*
 AXNode::GetExtraMacNodes() const {
   DCHECK(!tree_->GetTreeUpdateInProgressState());
   // Should only be available on the table node itself, not any of its children.
+  if (!IsTable() || IsInvisibleOrIgnored()) {
+    return nullptr;
+  }
   const AXTableInfo* table_info = tree_->GetTableInfo(this);
   if (!table_info)
     return nullptr;
@@ -1553,7 +1547,7 @@ AXNode::GetExtraMacNodes() const {
   return &table_info->extra_mac_nodes;
 }
 
-#if BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
 AXNode* AXNode::GetExtraAnnouncementNode(
     ax::mojom::AriaNotificationPriority priority_property) const {
   if (!tree_->extra_announcement_nodes()) {
@@ -1568,7 +1562,7 @@ AXNode* AXNode::GetExtraAnnouncementNode(
   }
   NOTREACHED();
 }
-#endif  // BUILDFLAG(IS_LINUX)
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
 
 bool AXNode::IsGenerated() const {
   bool is_generated_node = id() < 0 && id() > kInitialEmptyDocumentRootNodeID;
@@ -1581,10 +1575,11 @@ bool AXNode::IsGenerated() const {
       GetRole() == ax::mojom::Role::kColumn ||
       GetRole() == ax::mojom::Role::kTableHeaderContainer;
   DCHECK_EQ(is_generated_node, is_extra_mac_node_role);
-#elif BUILDFLAG(IS_LINUX)
-  //  On Linux, generated nodes are always children of the root.
+#elif BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_WIN)
+  // On Linux and Windows, generated nodes are always children of the root, but
+  // not necessarily the root tree.
   if (GetParent() && GetParent()->GetManager()) {
-    DCHECK(GetParent()->GetManager()->IsRoot());
+    DCHECK_EQ(GetParent(), GetManager()->GetRoot());
   }
 #endif
 #endif  // DCHECK_IS_ON()
@@ -1832,11 +1827,13 @@ bool AXNode::IsCellOrHeaderOfAriaGrid() const {
 
 AXTableInfo* AXNode::GetAncestorTableInfo() const {
   const AXNode* node = this;
-  while (node && !node->IsTable())
-    node = node->GetParent();
-  if (node)
-    return tree_->GetTableInfo(node);
-  return nullptr;
+  while (node && !node->IsTable()) {
+    node = node->GetUnignoredParent();
+  }
+  if (!node || node->IsInvisibleOrIgnored()) {
+    return nullptr;
+  }
+  return tree_->GetTableInfo(node);
 }
 
 void AXNode::IdVectorToNodeVector(const std::vector<AXNodeID>& ids,
@@ -2300,16 +2297,20 @@ bool AXNode::IsLikelyARIAActiveDescendant() const {
   if (!ui::IsLikelyActiveDescendantRole(GetRole()))
     return false;
 
+  // False if no explicit ARIA role -- not a perfect rule, but a reasonable
+  // heuristic. Don't apply this rule for table cells or headers that get their
+  // role from their HTML semantics (e.g., <td>, <th>, etc.).
+  if (!HasStringAttribute(ax::mojom::StringAttribute::kRole) &&
+      !ui::IsCellOrTableHeader(GetRole())) {
+    return false;
+  }
+
   // False if invisible, ignored or disabled.
   if (IsInvisibleOrIgnored() ||
       GetIntAttribute(ax::mojom::IntAttribute::kRestriction) ==
           static_cast<int>(ax::mojom::Restriction::kDisabled)) {
     return false;
   }
-
-  // False if no ARIA role -- not a perfect rule, but a reasonable heuristic.
-  if (!HasStringAttribute(ax::mojom::StringAttribute::kRole))
-    return false;
 
   // False if no id attribute -- nothing to point to.
   // This requirement may need to be removed if ARIA element reflection is
@@ -2339,7 +2340,8 @@ bool AXNode::IsLikelyARIAActiveDescendant() const {
                                       ancestor_node->id());
       for (AXNodeID id : nodes_that_control_this_list) {
         if (AXNode* node = tree()->GetFromId(id)) {
-          if (ui::IsTextField(node->GetRole())) {
+          if (ui::IsTextField(node->GetRole()) ||
+              ui::IsComboBox(node->GetRole())) {
             return node->HasIntAttribute(
                 ax::mojom::IntAttribute::kActivedescendantId);
           }

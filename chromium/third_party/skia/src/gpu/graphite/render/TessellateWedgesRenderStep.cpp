@@ -13,6 +13,7 @@
 #include "include/private/base/SkDebug.h"
 #include "include/private/base/SkPoint_impl.h"
 #include "include/private/base/SkSpan_impl.h"
+#include "src/base/SkEnumBitMask.h"
 #include "src/core/SkSLTypeShared.h"
 #include "src/gpu/BufferWriter.h"
 #include "src/gpu/graphite/Attribute.h"
@@ -84,25 +85,29 @@ TessellateWedgesRenderStep::TessellateWedgesRenderStep(RenderStepID renderStepID
                                                        StaticBufferManager* bufferManager)
         : RenderStep(renderStepID,
                      Flags::kRequiresMSAA |
+                     Flags::kAppendDynamicInstances |
+                     Flags::kIgnoreInverseFill |
                      (depthStencilSettings.fDepthWriteEnabled ? Flags::kPerformsShading
                                                               : Flags::kNone),
                      /*uniforms=*/{{"localToDevice", SkSLType::kFloat4x4}},
                      PrimitiveType::kTriangles,
                      depthStencilSettings,
-                     /*vertexAttrs=*/  {{"resolveLevel_and_idx",
-                                         VertexAttribType::kFloat2, SkSLType::kFloat2}},
-                     /*instanceAttrs=*/kAttributes[infinitySupport])
+                     /*staticAttrs=*/{{"resolveLevel_and_idx",
+                                       VertexAttribType::kFloat2, SkSLType::kFloat2}},
+                     /*appendAttrs=*/kAttributes[infinitySupport])
         , fInfinitySupport(infinitySupport) {
-    SkASSERT(this->instanceStride() ==
+    SkASSERT(this->appendDataStride() ==
              PatchStride(infinitySupport ? kAttribs : kAttribsWithCurveType));
 
     // Initialize the static buffers we'll use when recording draw calls.
     // NOTE: Each instance of this RenderStep gets its own copy of the data. If this ends up causing
     // problems, we can modify StaticBufferManager to de-duplicate requests.
-    const size_t vertexSize = FixedCountWedges::VertexBufferSize();
-    auto vertexData = bufferManager->getVertexWriter(vertexSize, &fVertexBuffer);
+    auto vertexData = bufferManager->getVertexWriter(FixedCountWedges::VertexBufferVertexCount(),
+                                                     FixedCountWedges::VertexBufferStride(),
+                                                     &fVertexBuffer);
     if (vertexData) {
-        FixedCountWedges::WriteVertexBuffer(std::move(vertexData), vertexSize);
+        FixedCountWedges::WriteVertexBuffer(std::move(vertexData),
+                                            FixedCountWedges::VertexBufferSize());
     } // otherwise static buffer creation failed, so do nothing; Context initialization will fail.
 
     const size_t indexSize = FixedCountWedges::IndexBufferSize();
@@ -202,6 +207,7 @@ void TessellateWedgesRenderStep::writeVertices(DrawWriter* dw,
 
 void TessellateWedgesRenderStep::writeUniformsAndTextures(const DrawParams& params,
                                                           PipelineDataGatherer* gatherer) const {
+    SkDEBUGCODE(gatherer->checkRewind());
     SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, this->uniforms());)
 
     gatherer->write(params.transform().matrix());

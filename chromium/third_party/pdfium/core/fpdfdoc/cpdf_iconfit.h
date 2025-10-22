@@ -16,7 +16,7 @@ class CPDF_IconFit {
  public:
   enum class ScaleMethod { kAlways = 0, kBigger, kSmaller, kNever };
 
-  explicit CPDF_IconFit(RetainPtr<const CPDF_Dictionary> pDict);
+  explicit CPDF_IconFit(RetainPtr<const CPDF_Dictionary> dict);
   CPDF_IconFit(const CPDF_IconFit& that);
   ~CPDF_IconFit();
 
@@ -33,7 +33,7 @@ class CPDF_IconFit {
  private:
   CFX_PointF GetIconPosition() const;
 
-  RetainPtr<const CPDF_Dictionary> const m_pDict;
+  RetainPtr<const CPDF_Dictionary> const dict_;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_ICONFIT_H_

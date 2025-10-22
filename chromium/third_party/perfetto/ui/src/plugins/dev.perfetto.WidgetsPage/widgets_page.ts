@@ -18,7 +18,13 @@ import {Hotkey, Platform} from '../../base/hotkeys';
 import {isString} from '../../base/object_utils';
 import {Icons} from '../../base/semantic_icons';
 import {Anchor} from '../../widgets/anchor';
-import {Button} from '../../widgets/button';
+import {
+  Button,
+  ButtonAttrs,
+  ButtonBar,
+  ButtonGroup,
+  ButtonVariant,
+} from '../../widgets/button';
 import {Callout} from '../../widgets/callout';
 import {Checkbox} from '../../widgets/checkbox';
 import {Editor} from '../../widgets/editor';
@@ -42,7 +48,6 @@ import {TextInput} from '../../widgets/text_input';
 import {MultiParagraphText, TextParagraph} from '../../widgets/text_paragraph';
 import {LazyTreeNode, Tree, TreeNode} from '../../widgets/tree';
 import {VegaView} from '../../components/widgets/vega_view';
-import {PageAttrs} from '../../public/page';
 import {TableShowcase} from './table_showcase';
 import {TreeTable, TreeTableAttrs} from '../../components/widgets/treetable';
 import {Intent} from '../../widgets/common';
@@ -61,6 +66,18 @@ import {VirtualOverlayCanvas} from '../../widgets/virtual_overlay_canvas';
 import {SplitPanel} from '../../widgets/split_panel';
 import {TabbedSplitPanel} from '../../widgets/tabbed_split_panel';
 import {parseAndPrintTree} from '../../base/perfetto_sql_lang/language';
+import {CursorTooltip} from '../../widgets/cursor_tooltip';
+import {MultiselectInput} from '../../widgets/multiselect_input';
+import {
+  DataGrid,
+  DataGridAttrs,
+} from '../../components/widgets/data_grid/data_grid';
+import {SQLDataSource} from '../../components/widgets/data_grid/sql_data_source';
+import {App} from '../../public/app';
+import {Engine} from '../../trace_processor/engine';
+import {Card, CardStack} from '../../widgets/card';
+import {Stack} from '../../widgets/stack';
+import {Tooltip} from '../../widgets/tooltip';
 
 const DATA_ENGLISH_LETTER_FREQUENCY = {
   table: [
@@ -310,7 +327,6 @@ function PortalButton() {
       return [
         m(Button, {
           label: 'Toggle Portal',
-          intent: Intent.Primary,
           onclick: () => {
             portalOpen = !portalOpen;
           },
@@ -667,21 +683,91 @@ function SegmentedButtonsDemo({attrs}: {attrs: {}}) {
   };
 }
 
-export class WidgetsPage implements m.ClassComponent<PageAttrs> {
-  view() {
+function RadioButtonGroupDemo() {
+  let setting: 'yes' | 'maybe' | 'no' = 'no';
+  console.log(setting);
+  return {
+    view: ({attrs}: m.Vnode<ButtonAttrs>) => {
+      return m(ButtonGroup, [
+        m(Button, {
+          ...attrs,
+          label: 'Yes',
+          active: setting === 'yes',
+          onclick: () => {
+            setting = 'yes';
+          },
+        }),
+        m(Button, {
+          ...attrs,
+          label: 'Maybe',
+          active: setting === 'maybe',
+          onclick: () => {
+            setting = 'maybe';
+          },
+        }),
+        m(Button, {
+          ...attrs,
+          label: 'No',
+          active: setting === 'no',
+          onclick: () => {
+            setting = 'no';
+          },
+        }),
+      ]);
+    },
+  };
+}
+
+export class WidgetsPage implements m.ClassComponent<{app: App}> {
+  view({attrs}: m.Vnode<{app: App}>) {
     return m(
       '.widgets-page',
       m('h1', 'Widgets'),
       m(WidgetShowcase, {
         label: 'Button',
-        renderWidget: ({label, icon, rightIcon, ...rest}) =>
-          m(Button, {
-            icon: arg(icon, 'send'),
-            rightIcon: arg(rightIcon, 'arrow_forward'),
-            label: arg(label, 'Button', ''),
-            onclick: () => alert('button pressed'),
-            ...rest,
-          }),
+        renderWidget: ({
+          label,
+          icon,
+          rightIcon,
+          showAsGrid,
+          showInlineWithText,
+          ...rest
+        }) =>
+          Boolean(showAsGrid)
+            ? m(
+                '',
+                {
+                  style: {
+                    display: 'grid',
+                    gridTemplateColumns: 'auto auto auto',
+                    gap: '4px',
+                  },
+                },
+                Object.values(Intent).map((intent) => {
+                  return Object.values(ButtonVariant).map((variant) => {
+                    return m(Button, {
+                      style: {
+                        width: '80px',
+                      },
+                      ...rest,
+                      label: variant,
+                      variant,
+                      intent,
+                    });
+                  });
+                }),
+              )
+            : m('', [
+                Boolean(showInlineWithText) && 'Inline',
+                m(Button, {
+                  icon: arg(icon, 'send'),
+                  rightIcon: arg(rightIcon, 'arrow_forward'),
+                  label: arg(label, 'Button', ''),
+                  onclick: () => alert('button pressed'),
+                  ...rest,
+                }),
+                Boolean(showInlineWithText) && 'text',
+              ]),
         initialOpts: {
           label: true,
           icon: true,
@@ -691,6 +777,12 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
           active: false,
           compact: false,
           loading: false,
+          variant: new EnumOption(
+            ButtonVariant.Filled,
+            Object.values(ButtonVariant),
+          ),
+          showAsGrid: false,
+          showInlineWithText: false,
         },
       }),
       m(WidgetShowcase, {
@@ -705,6 +797,31 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
         },
       }),
       m(WidgetShowcase, {
+        label: 'ButtonGroup',
+        renderWidget: (opts) =>
+          m(Stack, [
+            m(ButtonGroup, [
+              m(Button, {
+                label: 'Commit',
+                ...opts,
+              }),
+              m(Button, {
+                icon: Icons.ContextMenu,
+                ...opts,
+              }),
+            ]),
+            m(RadioButtonGroupDemo, opts),
+          ]),
+        initialOpts: {
+          variant: new EnumOption(
+            ButtonVariant.Filled,
+            Object.values(ButtonVariant),
+          ),
+          disabled: false,
+          intent: new EnumOption(Intent.None, Object.values(Intent)),
+        },
+      }),
+      m(WidgetShowcase, {
         label: 'Checkbox',
         renderWidget: (opts) => m(Checkbox, {label: 'Checkbox', ...opts}),
         initialOpts: {
@@ -714,23 +831,55 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
       m(WidgetShowcase, {
         label: 'Switch',
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        renderWidget: ({label, ...rest}: any) =>
-          m(Switch, {label: arg(label, 'Switch'), ...rest}),
+        renderWidget: ({label, labelLeft, ...rest}: any) =>
+          m(Switch, {
+            label: arg(label, 'Switch'),
+            labelLeft: arg(labelLeft, 'Left Label'),
+            ...rest,
+          }),
         initialOpts: {
           label: true,
+          labelLeft: false,
           disabled: false,
         },
       }),
       m(WidgetShowcase, {
+        label: 'Anchor',
+        renderWidget: ({icon, showInlineWithText, long}) =>
+          m('', [
+            Boolean(showInlineWithText) && 'Inline',
+            m(
+              Anchor,
+              {
+                icon: arg(icon, 'open_in_new'),
+                href: 'https://perfetto.dev/docs/',
+                target: '_blank',
+              },
+              Boolean(long)
+                ? 'This is some really long text and it will probably overflow the container'
+                : 'Link',
+            ),
+            Boolean(showInlineWithText) && 'text',
+          ]),
+
+        initialOpts: {
+          icon: true,
+          showInlineWithText: false,
+          long: false,
+        },
+      }),
+      m(WidgetShowcase, {
         label: 'Text Input',
-        renderWidget: ({placeholder, ...rest}) =>
+        renderWidget: ({placeholder, leftIcon, ...rest}) =>
           m(TextInput, {
             placeholder: arg(placeholder, 'Placeholder...', ''),
+            leftIcon: arg(leftIcon, 'search'),
             ...rest,
           }),
         initialOpts: {
           placeholder: true,
           disabled: false,
+          leftIcon: true,
         },
       }),
       m(WidgetShowcase, {
@@ -761,19 +910,43 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
         },
       }),
       m(WidgetShowcase, {
-        label: 'Anchor',
-        renderWidget: ({icon}) =>
-          m(
-            Anchor,
-            {
-              icon: arg(icon, 'open_in_new'),
-              href: 'https://perfetto.dev/docs/',
-              target: '_blank',
-            },
-            'This is some really long text and it will probably overflow the container',
-          ),
+        label: 'Card',
+        description: `A card is a simple container with a shadow and rounded
+          corners. It can be used to display grouped content in a visually
+          appealing way.`,
+        renderWidget: ({interactive}) =>
+          m(Card, {interactive}, [
+            m('h1', {style: {margin: 'unset'}}, 'Welcome!'),
+            m('p', 'Would you like to start your journey?'),
+            m(Stack, {orientation: 'horizontal'}, [
+              m(Button, {
+                variant: ButtonVariant.Filled,
+                label: 'No thanks...',
+              }),
+              m(Button, {
+                intent: Intent.Primary,
+                variant: ButtonVariant.Filled,
+                label: "Let's go!",
+              }),
+            ]),
+          ]),
+        initialOpts: {interactive: true},
+      }),
+      m(WidgetShowcase, {
+        label: 'CardStack',
+        description: `A container component that can be used to display
+          multiple Card elements in a vertical stack. Cards placed in this list
+          automatically have their borders adjusted to appear as one continuous
+          card with thin borders between them.`,
+        renderWidget: ({direction, interactive}) =>
+          m(CardStack, {direction}, [
+            m(Card, {interactive}, m(Switch, {label: 'Option 1'})),
+            m(Card, {interactive}, m(Switch, {label: 'Option 2'})),
+            m(Card, {interactive}, m(Switch, {label: 'Option 3'})),
+          ]),
         initialOpts: {
-          icon: true,
+          direction: new EnumOption('vertical', ['vertical', 'horizontal']),
+          interactive: true,
         },
       }),
       m(WidgetShowcase, {
@@ -843,7 +1016,32 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
       m(WidgetShowcase, {
         label: 'Icon',
         renderWidget: (opts) => m(Icon, {icon: 'star', ...opts}),
-        initialOpts: {filled: false},
+        initialOpts: {
+          filled: false,
+          intent: new EnumOption(Intent.None, Object.values(Intent)),
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'Tooltip',
+        description: `A tooltip is a hover-only, useful as an alternative to the browser's inbuilt 'title' tooltip.`,
+        renderWidget: (opts) =>
+          m(
+            Tooltip,
+            {
+              trigger: m(Icon, {icon: 'Warning'}),
+              ...opts,
+            },
+            lorem(),
+          ),
+        initialOpts: {
+          position: new EnumOption(
+            PopupPosition.Auto,
+            Object.values(PopupPosition),
+          ),
+          showArrow: true,
+          offset: 0,
+          edgeOffset: 0,
+        },
       }),
       m(WidgetShowcase, {
         label: 'MultiSelect panel',
@@ -893,6 +1091,13 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
           icon: true,
           showNumSelected: true,
           repeatCheckedItemsAtTop: false,
+        },
+      }),
+      m(WidgetShowcase, {
+        label: 'MultiselectInput',
+        description: `Tag input with options`,
+        renderWidget: () => {
+          return m(MultiselectInputDemo);
         },
       }),
       m(WidgetShowcase, {
@@ -971,6 +1176,11 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
             Object.values(PopupPosition),
           ),
         },
+      }),
+      m(WidgetShowcase, {
+        label: 'CursorTooltip',
+        description: 'A tooltip that follows the mouse around.',
+        renderWidget: () => m(CursorTooltipShowcase),
       }),
       m(WidgetShowcase, {
         label: 'Spinner',
@@ -1089,33 +1299,39 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
             {
               trigger: m(Button, {label: 'Open the popup'}),
             },
-            m(
-              PopupMenu,
-              {
-                trigger: m(Button, {label: 'Select an option'}),
-              },
-              m(MenuItem, {label: 'Option 1'}),
-              m(MenuItem, {label: 'Option 2'}),
-            ),
-            m(Button, {
-              label: 'Done',
-              dismissPopup: true,
-            }),
+            m(ButtonBar, [
+              m(
+                PopupMenu,
+                {
+                  trigger: m(Button, {label: 'Select an option'}),
+                },
+                m(MenuItem, {label: 'Option 1'}),
+                m(MenuItem, {label: 'Option 2'}),
+              ),
+              m(Button, {
+                label: 'Done',
+                dismissPopup: true,
+              }),
+            ]),
           ),
       }),
       m(WidgetShowcase, {
         label: 'Callout',
-        renderWidget: () =>
+        renderWidget: (opts) =>
           m(
             Callout,
             {
               icon: 'info',
+              ...opts,
             },
             'Lorem ipsum dolor sit amet, consectetur adipiscing elit. ' +
               'Nulla rhoncus tempor neque, sed malesuada eros dapibus vel. ' +
               'Aliquam in ligula vitae tortor porttitor laoreet iaculis ' +
               'finibus est.',
           ),
+        initialOpts: {
+          intent: new EnumOption(Intent.None, Object.values(Intent)),
+        },
       }),
       m(WidgetShowcase, {
         label: 'Editor',
@@ -1229,6 +1445,31 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
       }),
       m(WidgetShowcase, {
         label: 'Modal',
+        description: `Shows a dialog box in the center of the screen over the
+                      top of other elements.`,
+        renderWidget: () =>
+          m(Button, {
+            label: 'Show Modal',
+            onclick: () => {
+              showModal({
+                title: 'Attention',
+                icon: Icons.Help,
+                content: () => 'This is a modal dialog',
+                buttons: [
+                  {
+                    text: 'Cancel',
+                  },
+                  {
+                    text: 'OK',
+                    primary: true,
+                  },
+                ],
+              });
+            },
+          }),
+      }),
+      m(WidgetShowcase, {
+        label: 'Advanced Modal',
         description: `A helper for modal dialog.`,
         renderWidget: () => m(ModalShowcase),
       }),
@@ -1482,8 +1723,213 @@ export class WidgetsPage implements m.ClassComponent<PageAttrs> {
           showCloseButtons: true,
         },
       }),
+
+      renderWidgetShowcase({
+        label: 'DataGrid (memory backed)',
+        description: `An interactive data explorer and viewer.`,
+        renderWidget: ({
+          readonlyFilters,
+          readonlySorting,
+          aggregation,
+          ...rest
+        }) =>
+          m(DataGrid, {
+            ...rest,
+            filters: readonlyFilters ? [] : undefined,
+            sorting: readonlySorting ? {direction: 'UNSORTED'} : undefined,
+            columns: [
+              {
+                name: 'id',
+                title: 'ID',
+                aggregation: aggregation ? 'COUNT' : undefined,
+              },
+              {name: 'ts', title: 'Timestamp'},
+              {
+                name: 'dur',
+                aggregation: aggregation ? 'SUM' : undefined,
+                title: 'Duration',
+              },
+              {name: 'name', title: 'Name'},
+              {name: 'data', title: 'Data'},
+              {name: 'maybe_null', title: 'Maybe Null?'},
+              {name: 'category', title: 'Category'},
+            ],
+            data: [
+              {
+                id: 1,
+                name: 'foo',
+                ts: 123n,
+                dur: 16n,
+                data: new Uint8Array(),
+                maybe_null: null,
+                category: 'aaa',
+              },
+              {
+                id: 2,
+                name: 'bar',
+                ts: 185n,
+                dur: 4n,
+                data: new Uint8Array([1, 2, 3]),
+                maybe_null: 'Non null',
+                category: 'aaa',
+              },
+              {
+                id: 3,
+                name: 'baz',
+                ts: 575n,
+                dur: 12n,
+                data: new Uint8Array([1, 2, 3]),
+                maybe_null: null,
+                category: 'aaa',
+              },
+            ],
+          }),
+        initialOpts: {
+          showFiltersInToolbar: true,
+          readonlyFilters: false,
+          readonlySorting: false,
+          aggregation: false,
+        },
+      }),
+
+      renderWidgetShowcase({
+        label: 'DataGrid (query backed)',
+        description: `An interactive data explorer and viewer - fetched from SQL.`,
+        renderWidget: ({
+          readonlyFilters,
+          readonlySorting,
+          aggregation,
+          ...rest
+        }) => {
+          const trace = attrs.app.trace;
+          if (trace) {
+            return m(QueryDataGrid, {
+              ...rest,
+              engine: trace.engine,
+              query: `
+                SELECT
+                  ts.id as id,
+                  dur,
+                  state,
+                  thread.name as thread_name,
+                  dur,
+                  io_wait,
+                  ucpu
+                FROM thread_state ts
+                JOIN thread USING(utid)
+              `,
+              filters: readonlyFilters ? [] : undefined,
+              sorting: readonlySorting ? {direction: 'UNSORTED'} : undefined,
+              columns: [
+                {
+                  name: 'id',
+                  title: 'ID',
+                  aggregation: aggregation ? 'COUNT' : undefined,
+                },
+                {
+                  name: 'dur',
+                  title: 'Duration',
+                  aggregation: aggregation ? 'SUM' : undefined,
+                },
+                {name: 'state', title: 'State'},
+                {name: 'thread_name', title: 'Thread'},
+                {name: 'ucpu', title: 'CPU'},
+                {name: 'io_wait', title: 'IO Wait'},
+              ],
+              maxRowsPerPage: 10,
+            });
+          } else {
+            return 'Load a trace to start';
+          }
+        },
+        initialOpts: {
+          showFiltersInToolbar: true,
+          readonlyFilters: false,
+          readonlySorting: false,
+          aggregation: false,
+        },
+      }),
     );
   }
+}
+
+function renderWidgetShowcase<T extends Options = {}>(attrs: {
+  label: string;
+  description?: string;
+  renderWidget(opts: T): m.Children;
+  initialOpts?: T;
+  wide?: boolean;
+}) {
+  return m(WidgetShowcase, attrs);
+}
+
+function CursorTooltipShowcase() {
+  let show = false;
+  return {
+    view() {
+      return m(
+        '',
+        {
+          style: {
+            width: '150px',
+            height: '150px',
+            border: '1px dashed gray',
+            userSelect: 'none',
+            color: 'gray',
+            textAlign: 'center',
+            lineHeight: '150px',
+          },
+          onmouseover: () => (show = true),
+          onmouseout: () => (show = false),
+        },
+        'Hover here...',
+        show && m(CursorTooltip, 'Hi!'),
+      );
+    },
+  };
+}
+
+function MultiselectInputDemo() {
+  const options = [
+    'foo',
+    'bar',
+    'baz',
+    'qux',
+    'quux',
+    'corge',
+    'grault',
+    'garply',
+    'waldo',
+    'fred',
+  ];
+  let selectedOptions: string[] = [];
+  return {
+    view() {
+      return m(MultiselectInput, {
+        options: options.map((o) => ({key: o, label: o})),
+        selectedOptions,
+        onOptionAdd: (key) => selectedOptions.push(key),
+        onOptionRemove: (key) => {
+          selectedOptions = selectedOptions.filter((x) => x !== key);
+        },
+      });
+    },
+  };
+}
+
+type QueryDataGridAttrs = Omit<DataGridAttrs, 'data'> & {
+  readonly query: string;
+  readonly engine: Engine;
+};
+
+function QueryDataGrid(vnode: m.Vnode<QueryDataGridAttrs>) {
+  const dataSource = new SQLDataSource(vnode.attrs.engine, vnode.attrs.query);
+
+  return {
+    view({attrs}: m.Vnode<QueryDataGridAttrs>) {
+      return m(DataGrid, {...attrs, data: dataSource});
+    },
+  };
 }
 
 class ModalShowcase implements m.ClassComponent {
@@ -1515,7 +1961,6 @@ class ModalShowcase implements m.ClassComponent {
               '',
               `Counter value: ${counter}`,
               m(Button, {
-                intent: Intent.Primary,
                 label: 'Increment Counter',
                 onclick: () => ++counter,
               }),

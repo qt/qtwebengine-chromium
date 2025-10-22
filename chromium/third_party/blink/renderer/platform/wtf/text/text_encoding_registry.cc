@@ -24,16 +24,12 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding_registry.h"
 
 #include <atomic>
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/dcheck_is_on.h"
 #include "base/feature_list.h"
 #include "base/logging.h"
@@ -57,15 +53,13 @@
 #include "third_party/blink/renderer/platform/wtf/text/text_encoding.h"
 #include "third_party/blink/renderer/platform/wtf/wtf.h"
 
-namespace WTF {
+namespace blink {
 
 const size_t kMaxEncodingNameLength = 63;
 
 struct TextCodecFactory {
   NewTextCodecFunction function;
-  const void* additional_data;
-  TextCodecFactory(NewTextCodecFunction f = nullptr, const void* d = nullptr)
-      : function(f), additional_data(d) {}
+  explicit TextCodecFactory(NewTextCodecFunction f = nullptr) : function(f) {}
 };
 
 typedef HashMap<const char*, const char*, CaseFoldingHashTraits<const char*>>
@@ -107,10 +101,11 @@ static void CheckExistingName(const char* alias, const char* atomic_name) {
   if (old_atomic_name == atomic_name)
     return;
   // Keep the warning silent about one case where we know this will happen.
-  if (strcmp(alias, "ISO-8859-8-I") == 0 &&
-      strcmp(old_atomic_name, "ISO-8859-8-I") == 0 &&
-      EqualIgnoringASCIICase(atomic_name, "iso-8859-8"))
+  if (UNSAFE_TODO(strcmp(alias, "ISO-8859-8-I")) == 0 &&
+      UNSAFE_TODO(strcmp(old_atomic_name, "ISO-8859-8-I")) == 0 &&
+      EqualIgnoringASCIICase(atomic_name, "iso-8859-8")) {
     return;
+  }
   LOG(ERROR) << "alias " << alias << " maps to " << old_atomic_name
              << " already, but someone is trying to make it map to "
              << atomic_name;
@@ -121,13 +116,13 @@ static void CheckExistingName(const char* alias, const char* atomic_name) {
 static bool IsUndesiredAlias(const char* alias) {
   // Reject aliases with version numbers that are supported by some back-ends
   // (such as "ISO_2022,locale=ja,version=0" in ICU).
-  if (strchr(alias, ',')) {
+  if (UNSAFE_TODO(strchr(alias, ','))) {
     return true;
   }
   // 8859_1 is known to (at least) ICU, but other browsers don't support this
   // name - and having it caused a compatibility
   // problem, see bug 43554.
-  if (0 == strcmp(alias, "8859_1")) {
+  if (0 == UNSAFE_TODO(strcmp(alias, "8859_1"))) {
     return true;
   }
   return false;
@@ -139,19 +134,17 @@ static void AddToTextEncodingNameMap(const char* alias, const char* name) {
   if (IsUndesiredAlias(alias))
     return;
   const auto it = g_text_encoding_name_map->find(name);
-  DCHECK(strcmp(alias, name) == 0 || it != g_text_encoding_name_map->end());
+  DCHECK(UNSAFE_TODO(strcmp(alias, name)) == 0 ||
+         it != g_text_encoding_name_map->end());
   const char* atomic_name =
       it != g_text_encoding_name_map->end() ? it->value : name;
   CheckExistingName(alias, atomic_name);
   g_text_encoding_name_map->insert(alias, atomic_name);
 }
 
-static void AddToTextCodecMap(const char* name,
-                              NewTextCodecFunction function,
-                              const void* additional_data) {
+static void AddToTextCodecMap(const char* name, NewTextCodecFunction function) {
   EncodingRegistryLock().AssertAcquired();
-  g_text_codec_map->insert(AtomicString(name),
-                           TextCodecFactory(function, additional_data));
+  g_text_codec_map->insert(AtomicString(name), TextCodecFactory(function));
 }
 
 // Note that this can be called both the main thread and worker threads.
@@ -166,11 +159,11 @@ static void BuildBaseTextCodecMaps() {
   TextCodecLatin1::RegisterEncodingNames(AddToTextEncodingNameMap);
   TextCodecLatin1::RegisterCodecs(AddToTextCodecMap);
 
-  TextCodecUTF8::RegisterEncodingNames(AddToTextEncodingNameMap);
-  TextCodecUTF8::RegisterCodecs(AddToTextCodecMap);
+  TextCodecUtf8::RegisterEncodingNames(AddToTextEncodingNameMap);
+  TextCodecUtf8::RegisterCodecs(AddToTextCodecMap);
 
-  TextCodecUTF16::RegisterEncodingNames(AddToTextEncodingNameMap);
-  TextCodecUTF16::RegisterCodecs(AddToTextCodecMap);
+  TextCodecUtf16::RegisterEncodingNames(AddToTextEncodingNameMap);
+  TextCodecUtf16::RegisterCodecs(AddToTextCodecMap);
 
   TextCodecUserDefined::RegisterEncodingNames(AddToTextEncodingNameMap);
   TextCodecUserDefined::RegisterCodecs(AddToTextCodecMap);
@@ -180,11 +173,11 @@ static void ExtendTextCodecMaps() {
   TextCodecReplacement::RegisterEncodingNames(AddToTextEncodingNameMap);
   TextCodecReplacement::RegisterCodecs(AddToTextCodecMap);
 
-  TextCodecCJK::RegisterEncodingNames(AddToTextEncodingNameMap);
-  TextCodecCJK::RegisterCodecs(AddToTextCodecMap);
+  TextCodecCjk::RegisterEncodingNames(AddToTextEncodingNameMap);
+  TextCodecCjk::RegisterCodecs(AddToTextCodecMap);
 
-  TextCodecICU::RegisterEncodingNames(AddToTextEncodingNameMap);
-  TextCodecICU::RegisterCodecs(AddToTextCodecMap);
+  TextCodecIcu::RegisterEncodingNames(AddToTextEncodingNameMap);
+  TextCodecIcu::RegisterCodecs(AddToTextCodecMap);
 }
 
 std::unique_ptr<TextCodec> NewTextCodec(const TextEncoding& encoding) {
@@ -193,7 +186,7 @@ std::unique_ptr<TextCodec> NewTextCodec(const TextEncoding& encoding) {
   DCHECK(g_text_codec_map);
   TextCodecFactory factory = g_text_codec_map->at(encoding.GetName());
   DCHECK(factory.function);
-  return factory.function(encoding, factory.additional_data);
+  return factory.function(encoding);
 }
 
 const char* AtomicCanonicalTextEncodingName(const char* name) {
@@ -265,13 +258,14 @@ Vector<String> TextEncodingAliasesForTesting() {
 #ifndef NDEBUG
 void DumpTextEncodingNameMap() {
   unsigned size = g_text_encoding_name_map->size();
-  fprintf(stderr, "Dumping %u entries in WTF::TextEncodingNameMap...\n", size);
+  fprintf(stderr, "Dumping %u entries in blink::TextEncodingNameMap...\n",
+          size);
 
   base::AutoLock lock(EncodingRegistryLock());
 
   for (const auto& it : *g_text_encoding_name_map)
-    fprintf(stderr, "'%s' => '%s'\n", it.key, it.value);
+    UNSAFE_TODO(fprintf(stderr, "'%s' => '%s'\n", it.key, it.value));
 }
 #endif
 
-}  // namespace WTF
+}  // namespace blink

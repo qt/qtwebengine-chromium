@@ -13,6 +13,7 @@
 #include "base/containers/enum_set.h"
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/time/time.h"
@@ -59,7 +60,7 @@ URLVisitAggregate::URLTypeSet AsURLTypeSet(
 }  // namespace
 
 FetchOptions::FetchOptions(
-    std::map<URLVisitAggregate::URLType, ResultOption> result_sources_arg,
+    ResultSourceOptions result_sources_arg,
     std::map<Fetcher, FetchSources> fetcher_sources_arg,
     base::Time begin_time_arg,
     std::vector<URLVisitAggregatesTransformType> transforms_arg,
@@ -161,7 +162,7 @@ FetchOptions FetchOptions::CreateFetchOptionsForTabResumption(
   int aggregate_count_limit = base::GetFieldTrialParamByFeatureAsInt(
       features::kVisitedURLRankingService, features::kURLAggregateCountLimit,
       features::kURLAggregateCountLimitDefaultValue);
-  std::map<URLVisitAggregate::URLType, ResultOption> result_map;
+  ResultSourceOptions result_map;
   for (URLVisitAggregate::URLType type : result_sources) {
     result_map[type] = ResultOption{.age_limit = GetDefaultAgeLimit(type)};
   }

@@ -9,12 +9,17 @@
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_view_transition_callback.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_view_transition_options.h"
+#include "third_party/blink/renderer/core/css/style_change_reason.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
+#include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/page/page_animator.h"
+#include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/view_transition/dom_view_transition.h"
 #include "third_party/blink/renderer/core/view_transition/page_swap_event.h"
@@ -63,10 +68,10 @@ DOMViewTransition* ViewTransitionSupplement::StartViewTransitionForElement(
   if (callback) {
     auto* tracker =
         scheduler::TaskAttributionTracker::From(script_state->GetIsolate());
-    // Set the parent task ID if we're not in an extension task (as extensions
+    // Set the task state if we're not in an extension task (as extensions
     // are not currently supported in TaskAttributionTracker).
     if (tracker && script_state->World().IsMainWorld()) {
-      callback->SetParentTask(tracker->RunningTask());
+      callback->SetTaskState(tracker->CurrentTaskState());
     }
   }
   return supplement->StartTransition(*element, callback, types,
@@ -121,11 +126,20 @@ DOMViewTransition* ViewTransitionSupplement::StartTransition(
 
   ViewTransition* active_transition = GetTransition(element);
   if (active_transition) {
+    // Starting a view-transition skips the currently active view-transition.
     active_transition->SkipTransition();
+  } else {
+    auto it = skipped_with_pending_dom_callback_.find(&element);
+    if (it != skipped_with_pending_dom_callback_.end()) {
+      // A recently skipped view transition might not have triggered its DOM
+      // callback. This step needs to complete ahead of the capture phase for
+      // the new view-transition.
+      active_transition = it->value;
+    }
   }
 
   DCHECK(!GetTransition(element))
-      << "SkipTransition() should finish existing |document_transition_|";
+      << "SkipTransition() should finish previously active view transition";
 
   // We need to be connected to a view to have a transition.
   if (!document.View()) {
@@ -190,7 +204,6 @@ void ViewTransitionSupplement::SnapshotDocumentForNavigation(
     const blink::ViewTransitionToken& navigation_id,
     mojom::blink::PageSwapEventParamsPtr params,
     ViewTransition::ViewTransitionStateCallback callback) {
-  DCHECK(RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled());
   auto* supplement = From(document);
   supplement->StartTransition(document, navigation_id, std::move(params),
                               std::move(callback));
@@ -226,7 +239,6 @@ void ViewTransitionSupplement::StartTransition(
 void ViewTransitionSupplement::CreateFromSnapshotForNavigation(
     Document& document,
     ViewTransitionState transition_state) {
-  DCHECK(RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled());
   auto* supplement = From(document);
   supplement->StartTransition(document, std::move(transition_state));
 }
@@ -251,13 +263,46 @@ void ViewTransitionSupplement::StartTransition(
 void ViewTransitionSupplement::OnTransitionFinished(
     ViewTransition* transition) {
   CHECK(transition);
+
   // Clear the transition so it can be garbage collected if needed (and to
   // prevent callers of GetTransition thinking there's an ongoing transition).
   if (transition == document_transition_) {
     document_transition_ = nullptr;
   } else {
-    element_transitions_.erase(transition->Scope());
+    Element* scope = transition->Scope();
+    element_transitions_.erase(scope);
+    LayoutObject* layout_object = scope->GetLayoutObject();
+    if (scope != scope->GetDocument().documentElement() && layout_object &&
+        !(layout_object->StyleRef().Contain() & kContainsViewTransition) &&
+        layout_object->HasLayer()) {
+      // Element may have had an added stacking context purely for being the
+      // scope of a view transition. Ensure correctness of the adjusted style.
+      layout_object->EnclosingLayer()->SetNeedsCompositingInputsUpdate();
+      scope->SetNeedsStyleRecalc(kLocalStyleChange,
+                                 StyleChangeReasonForTracing::Create(
+                                     style_change_reason::kViewTransition));
+    }
   }
+
+  // Notify the animator if the set of active view transitions is empty.
+  if (!document_transition_ && element_transitions_.empty()) {
+    Document* document = To<Document>(GetSupplementable());
+    if (auto* page = document->GetPage()) {
+      page->Animator().SetHasViewTransition(false);
+    }
+  }
+}
+
+void ViewTransitionSupplement::OnSkipTransitionWithPendingCallback(
+    ViewTransition* transition) {
+  CHECK(transition);
+  skipped_with_pending_dom_callback_.insert(transition->Scope(), transition);
+}
+
+void ViewTransitionSupplement::OnSkippedTransitionDOMCallback(
+    ViewTransition* transition) {
+  CHECK(transition);
+  skipped_with_pending_dom_callback_.erase(transition->Scope());
 }
 
 ViewTransition* ViewTransitionSupplement::GetTransition() {
@@ -300,6 +345,34 @@ void ViewTransitionSupplement::ForEachTransition(
   }
 }
 
+void ViewTransitionSupplement::WillEnterGetComputedStyleScope() {
+  CHECK(!in_get_computed_style_scope_);
+  in_get_computed_style_scope_ = true;
+
+  ForEachTransition([](ViewTransition& transition) {
+    transition.WillEnterGetComputedStyleScope();
+  });
+}
+
+void ViewTransitionSupplement::WillExitGetComputedStyleScope() {
+  CHECK(in_get_computed_style_scope_);
+  in_get_computed_style_scope_ = false;
+
+  ForEachTransition([](ViewTransition& transition) {
+    transition.WillExitGetComputedStyleScope();
+  });
+}
+
+void ViewTransitionSupplement::WillUpdateStyleAndLayoutTree() {
+  if (in_get_computed_style_scope_ == last_update_had_computed_style_scope_) {
+    return;
+  }
+  last_update_had_computed_style_scope_ = in_get_computed_style_scope_;
+  ForEachTransition([](ViewTransition& transition) {
+    transition.InvalidateInternalPseudoStyle();
+  });
+}
+
 ViewTransitionSupplement::ViewTransitionSupplement(Document& document)
     : Supplement<Document>(document) {}
 
@@ -308,6 +381,7 @@ ViewTransitionSupplement::~ViewTransitionSupplement() = default;
 void ViewTransitionSupplement::Trace(Visitor* visitor) const {
   visitor->Trace(document_transition_);
   visitor->Trace(element_transitions_);
+  visitor->Trace(skipped_with_pending_dom_callback_);
 
   Supplement<Document>::Trace(visitor);
 }
@@ -336,7 +410,6 @@ ViewTransitionSupplement::TakePendingRequests() {
 void ViewTransitionSupplement::OnViewTransitionsStyleUpdated(
     bool cross_document_enabled,
     const Vector<String>& types) {
-  CHECK(RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled());
   SetCrossDocumentOptIn(
       cross_document_enabled
           ? mojom::blink::ViewTransitionSameOriginOptIn::kEnabled
@@ -349,8 +422,6 @@ void ViewTransitionSupplement::WillInsertBody() {
       !document_transition_->IsForNavigationOnNewDocument()) {
     return;
   }
-
-  CHECK(RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled());
 
   auto* document = GetSupplementable();
   CHECK(document);

@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/types/optional_ref.h"
+#include "content/services/auction_worklet/public/cpp/creative_info.h"
 #include "content/services/auction_worklet/public/mojom/auction_network_events_handler.mojom.h"
 #include "content/services/auction_worklet/public/mojom/auction_shared_storage_host.mojom.h"
 #include "content/services/auction_worklet/public/mojom/seller_worklet.mojom.h"
@@ -30,13 +31,14 @@ class AuctionV8Helper;
 
 // The official Javascript, JSON, and WASM MIME types. For JS and JSON there are
 // also other supported MIME types.
-extern const char kJavascriptMimeType[];
-extern const char kJsonMimeType[];
-extern const char kWasmMimeType[];
-extern const char kAdAuctionTrustedSignalsMimeType[];
+inline constexpr char kJavascriptMimeType[] = "application/javascript";
+inline constexpr char kJsonMimeType[] = "application/json";
+inline constexpr char kWasmMimeType[] = "application/wasm";
+inline constexpr char kAdAuctionTrustedSignalsMimeType[] =
+    "message/ad-auction-trusted-signals-response";
 
 // "X-Allow-Fledge: true" header.
-extern const char kAllowFledgeHeader[];
+inline constexpr char kAllowFledgeHeader[] = "Ad-Auction-Allowed: true";
 
 // Enqueues a response to `url_loader_factory` using the specified values.
 //
@@ -189,7 +191,7 @@ class TestAuctionNetworkEventsHandler
 
 // A helper to make testing common cases in trusted seller signals easier, by
 // construsting the larger type it needs from simpler string input.
-std::set<TrustedSignals::CreativeInfo> CreateCreativeInfoSet(
+std::set<CreativeInfo> CreateCreativeInfoSet(
     const std::vector<std::string>& urls);
 std::vector<mojom::CreativeInfoWithoutOwnerPtr>
 CreateMojoCreativeInfoWithoutOwnerVector(const std::vector<std::string>& urls);

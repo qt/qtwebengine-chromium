@@ -25,15 +25,15 @@ class CPDF_NameTree {
   CPDF_NameTree& operator=(const CPDF_NameTree&) = delete;
   ~CPDF_NameTree();
 
-  static std::unique_ptr<CPDF_NameTree> Create(CPDF_Document* pDoc,
-                                               const ByteString& category);
+  static std::unique_ptr<CPDF_NameTree> Create(CPDF_Document* doc,
+                                               ByteStringView category);
 
-  // If necessary, create missing Names dictionary in |pDoc|, and/or missing
+  // If necessary, create missing Names dictionary in |doc|, and/or missing
   // Names array in the dictionary that corresponds to |category|, if necessary.
   // Returns nullptr on failure.
   static std::unique_ptr<CPDF_NameTree> CreateWithRootNameArray(
-      CPDF_Document* pDoc,
-      const ByteString& category);
+      CPDF_Document* doc,
+      ByteStringView category);
 
   static std::unique_ptr<CPDF_NameTree> CreateForTesting(
       CPDF_Dictionary* pRoot);
@@ -49,14 +49,14 @@ class CPDF_NameTree {
   RetainPtr<const CPDF_Object> LookupValue(const WideString& csName) const;
 
   size_t GetCount() const;
-  CPDF_Dictionary* GetRootForTesting() const { return m_pRoot.Get(); }
+  CPDF_Dictionary* GetRootForTesting() const { return root_.Get(); }
 
  private:
   explicit CPDF_NameTree(RetainPtr<CPDF_Dictionary> pRoot);
 
   RetainPtr<const CPDF_Array> LookupNewStyleNamedDest(const ByteString& name);
 
-  RetainPtr<CPDF_Dictionary> const m_pRoot;
+  RetainPtr<CPDF_Dictionary> const root_;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_NAMETREE_H_

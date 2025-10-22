@@ -13,6 +13,7 @@
 #import "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "components/google/core/common/google_util.h"
 #include "components/signin/core/browser/account_reconcilor.h"
@@ -257,11 +258,11 @@ void AccountConsistencyService::AccountConsistencyHandler::ShouldAllowResponse(
   base::UmaHistogramEnumeration("Signin.ManageAccountsResponse.ServiceType",
                                 params.service_type);
 
+  GURL continue_url = GURL(params.continue_url);
+  DLOG_IF(ERROR, !params.continue_url.empty() && !continue_url.is_valid())
+      << "Invalid continuation URL: \"" << continue_url << "\"";
   switch (params.service_type) {
     case signin::GAIA_SERVICE_TYPE_INCOGNITO: {
-      GURL continue_url = GURL(params.continue_url);
-      DLOG_IF(ERROR, !params.continue_url.empty() && !continue_url.is_valid())
-          << "Invalid continuation URL: \"" << continue_url << "\"";
       if (delegate_) {
         delegate_->OnGoIncognito(continue_url);
       }
@@ -274,9 +275,6 @@ void AccountConsistencyService::AccountConsistencyHandler::ShouldAllowResponse(
       if (identity_manager_->HasPrimaryAccount(signin::ConsentLevel::kSignin)) {
         LogIOSGaiaCookiesState(GaiaCookieStateOnSignedInNavigation::
                                    kGaiaCookieAbsentOnAddSessionNavigation);
-        GURL continue_url = GURL(params.continue_url);
-        DLOG_IF(ERROR, !params.continue_url.empty() && !continue_url.is_valid())
-            << "Invalid continuation URL: \"" << continue_url << "\"";
         if (account_consistency_service_->RestoreGaiaCookies(base::BindOnce(
                 &AccountConsistencyHandler::HandleAddAccountRequest,
                 weak_ptr_factory_.GetWeakPtr(), continue_url))) {
@@ -286,13 +284,13 @@ void AccountConsistencyService::AccountConsistencyHandler::ShouldAllowResponse(
         }
       }
       if (delegate_) {
-        delegate_->OnAddAccount();
+        delegate_->OnAddAccount(continue_url);
       }
       break;
     case signin::GAIA_SERVICE_TYPE_SIGNOUT:
     case signin::GAIA_SERVICE_TYPE_DEFAULT:
       if (delegate_) {
-        delegate_->OnManageAccounts();
+        delegate_->OnManageAccounts(continue_url);
       }
       break;
     case signin::GAIA_SERVICE_TYPE_NONE:
@@ -317,7 +315,7 @@ void AccountConsistencyService::AccountConsistencyHandler::
     // are different than those on the web). Fallback to asking the user to
     // add an account.
     if (delegate_) {
-      delegate_->OnAddAccount();
+      delegate_->OnAddAccount(url);
     }
     return;
   }

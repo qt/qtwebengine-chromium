@@ -40,14 +40,13 @@ struct AX_BASE_EXPORT AXRelativeBounds final {
   AXRelativeBounds(AXRelativeBounds&& other) noexcept;
   AXRelativeBounds& operator=(const AXRelativeBounds& other);
   AXRelativeBounds& operator=(AXRelativeBounds&& other) noexcept = default;
-  bool operator!=(const AXRelativeBounds& other) const;
   bool operator==(const AXRelativeBounds& other) const;
 
   std::string ToString() const;
 
   // The id of an ancestor node in the same AXTree that this object's bounding
-  // box is relative to, or -1 if there's no offset container.
-  AXNodeID offset_container_id = -1;
+  // box is relative to, or kInvalidAXNodeID (0) if there's no offset container.
+  AXNodeID offset_container_id = kInvalidAXNodeID;
 
   // The relative bounding box of this node.
   gfx::RectF bounds;

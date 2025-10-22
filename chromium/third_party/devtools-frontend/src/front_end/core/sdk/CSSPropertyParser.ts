@@ -106,7 +106,10 @@ export class SyntaxTree {
     return nodeText(node ?? this.tree, this.rule);
   }
 
-  textRange(from: CodeMirror.SyntaxNode, to: CodeMirror.SyntaxNode): string {
+  textRange(from: CodeMirror.SyntaxNode|undefined, to: CodeMirror.SyntaxNode|undefined): string {
+    if (!from || !to) {
+      return '';
+    }
     return nodeTextRange(from, to, this.rule);
   }
 
@@ -205,8 +208,8 @@ export function matcherBase<MatchT extends Match>(matchT: Platform.Constructor.C
 
 type MatchKey = Platform.Brand.Brand<string, 'MatchKey'>;
 export class BottomUpTreeMatching extends TreeWalker {
-  #matchers: Array<Matcher<Match>> = [];
-  #matchedNodes = new Map<MatchKey, Match>();
+  readonly #matchers: Array<Matcher<Match>> = [];
+  readonly #matchedNodes = new Map<MatchKey, Match>();
   readonly computedText: ComputedText;
 
   #key(node: CodeMirror.SyntaxNode): MatchKey {
@@ -254,8 +257,21 @@ export class BottomUpTreeMatching extends TreeWalker {
     return this.computedText.hasUnresolvedVars(from.from - this.ast.tree.from, to.to - this.ast.tree.from);
   }
 
-  getComputedText(node: CodeMirror.SyntaxNode, substitutions?: Map<Match, string>): string {
-    return this.getComputedTextRange(node, node, substitutions);
+  getComputedText(node: CodeMirror.SyntaxNode, substitutionHook?: (match: Match) => string | null): string {
+    return this.getComputedTextRange(node, node, substitutionHook);
+  }
+
+  getLonghandValuesCount(): number {
+    const [from, to] = ASTUtils.range(ASTUtils.siblings(ASTUtils.declValue(this.ast.tree)));
+    if (!from || !to) {
+      return 0;
+    }
+    return this.computedText.countTopLevelValues(from.from - this.ast.tree.from, to.to - this.ast.tree.from);
+  }
+
+  getComputedLonghandName(to: CodeMirror.SyntaxNode): number {
+    const from = ASTUtils.declValue(this.ast.tree) ?? this.ast.tree;
+    return this.computedText.countTopLevelValues(from.from - this.ast.tree.from, to.from - this.ast.tree.from);
   }
 
   getComputedPropertyValueText(): string {
@@ -263,15 +279,20 @@ export class BottomUpTreeMatching extends TreeWalker {
     return this.getComputedTextRange(from ?? this.ast.tree, to ?? this.ast.tree);
   }
 
-  getComputedTextRange(from: CodeMirror.SyntaxNode, to: CodeMirror.SyntaxNode, substitutions?: Map<Match, string>):
-      string {
-    return this.computedText.get(from.from - this.ast.tree.from, to.to - this.ast.tree.from, substitutions);
+  getComputedTextRange(
+      from: CodeMirror.SyntaxNode|undefined, to: CodeMirror.SyntaxNode|undefined,
+      substitutionHook?: (match: Match) => string | null): string {
+    if (!from || !to) {
+      return '';
+    }
+    return this.computedText.get(from.from - this.ast.tree.from, to.to - this.ast.tree.from, substitutionHook);
   }
 }
 
 type MatchWithComputedText = Match&{computedText: NonNullable<Match['computedText']>};
 class ComputedTextChunk {
   #cachedComputedText: string|null = null;
+  #topLevelValueCount: number|null = null;
   constructor(readonly match: MatchWithComputedText, readonly offset: number) {
   }
 
@@ -289,6 +310,28 @@ class ComputedTextChunk {
     }
     return this.#cachedComputedText;
   }
+
+  // If the match is top-level, i.e. is an outermost subexpression in the property value, count the number of outermost
+  // subexpressions after applying any potential substitutions.
+  get topLevelValueCount(): number {
+    if (this.match.node.parent?.name !== 'Declaration') {
+      // Not a top-level matchh.
+      return 0;
+    }
+    const computedText = this.computedText;
+    if (computedText === '') {
+      // Substitutions elided the match altogether.
+      return 0;
+    }
+    if (this.#topLevelValueCount === null) {
+      // computedText may be null, in which case the match text was not replaced.
+      this.#topLevelValueCount =
+          ASTUtils
+              .siblings(ASTUtils.declValue(tokenizeDeclaration('--p', computedText ?? this.match.text)?.tree ?? null))
+              .length;
+    }
+    return this.#topLevelValueCount;
+  }
 }
 
 // This class constructs the "computed" text from the input property text, i.e., it will strip comments and substitute
@@ -300,6 +343,8 @@ class ComputedTextChunk {
 export class ComputedText {
   readonly #chunks: ComputedTextChunk[] = [];
   readonly text: string;
+  readonly #topLevelValueCounts = new Map<string, number>();
+
   #sorted = true;
   constructor(text: string) {
     this.text = text;
@@ -307,6 +352,7 @@ export class ComputedText {
 
   clear(): void {
     this.#chunks.splice(0);
+    this.#topLevelValueCounts.clear();
   }
 
   get chunkCount(): number {
@@ -396,14 +442,14 @@ export class ComputedText {
   // Get a slice of the computed text corresponding to the property text in the range [begin, end). The slice may not
   // start within a substitution chunk, e.g., it's invalid to request the computed text for the property value text
   // slice "1px var(--".
-  get(begin: number, end: number, substitutions?: Map<Match, string>): string {
+  get(begin: number, end: number, substitutionHook?: (match: Match) => string | null): string {
     const pieces: string[] = [];
     const getText = (piece: string|ComputedTextChunk): string => {
       if (typeof piece === 'string') {
         return piece;
       }
-      const substitution = substitutions?.get(piece.match);
-      if (substitution) {
+      const substitution = substitutionHook?.(piece.match) ?? null;
+      if (substitution !== null) {
         return getText(substitution);
       }
       return piece.computedText ?? piece.match.text;
@@ -420,6 +466,25 @@ export class ComputedText {
       pieces.push(text);
     }
     return pieces.join('');
+  }
+
+  #countTopLevelValuesInStringPiece(piece: string): number {
+    let count = this.#topLevelValueCounts.get(piece);
+    if (count === undefined) {
+      count = ASTUtils.siblings(ASTUtils.declValue(tokenizeDeclaration('--p', piece)?.tree ?? null)).length;
+      this.#topLevelValueCounts.set(piece, count);
+    }
+    return count;
+  }
+
+  countTopLevelValues(begin: number, end: number): number {
+    const pieces = Array.from(this.#getPieces(begin, end));
+    const counts = pieces.map(
+        chunk =>
+            (chunk instanceof ComputedTextChunk ? chunk.topLevelValueCount :
+                                                  this.#countTopLevelValuesInStringPiece(chunk)));
+    const count = counts.reduce((sum, v) => sum + v, 0);
+    return count;
   }
 }
 
@@ -458,12 +523,12 @@ export namespace ASTUtils {
   }
 
   export function range(node: CodeMirror.SyntaxNode[]):
-      [CodeMirror.SyntaxNode, CodeMirror.SyntaxNode]|[undefined, undefined] {
+      [CodeMirror.SyntaxNode|undefined, CodeMirror.SyntaxNode|undefined] {
     return [node[0], node[node.length - 1]];
   }
 
-  export function declValue(node: CodeMirror.SyntaxNode): CodeMirror.SyntaxNode|null {
-    if (node.name !== 'Declaration') {
+  export function declValue(node: CodeMirror.SyntaxNode|null): CodeMirror.SyntaxNode|null {
+    if (node?.name !== 'Declaration') {
       return null;
     }
     return children(node).find(node => node.name === ':')?.nextSibling ?? null;
@@ -488,12 +553,14 @@ export namespace ASTUtils {
         current.push(node);
       }
     }
-    result.push(current);
+    if (nodes.length > 0) {
+      result.push(current);
+    }
     return result;
   }
 
-  export function callArgs(node: CodeMirror.SyntaxNode): CodeMirror.SyntaxNode[][] {
-    const args = children(node.getChild('ArgList'));
+  export function callArgs(node: CodeMirror.SyntaxNode|null): CodeMirror.SyntaxNode[][] {
+    const args = children(node?.getChild('ArgList') ?? null);
     const openParen = args.splice(0, 1)[0];
     const closingParen = args.pop();
 

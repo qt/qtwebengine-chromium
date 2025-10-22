@@ -9,7 +9,6 @@
 
 #include "base/feature_list.h"
 #include "base/functional/callback.h"
-#include "base/not_fatal_until.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/platform/bindings/source_location.h"
 #include "v8/include/v8-isolate.h"
@@ -29,16 +28,16 @@ FrameOrWorkerScheduler::SchedulingAffectingFeatureHandle::
     SchedulingAffectingFeatureHandle(
         SchedulingPolicy::Feature feature,
         SchedulingPolicy policy,
-        std::unique_ptr<SourceLocation> source_location,
+        SourceLocation* source_location,
         base::WeakPtr<FrameOrWorkerScheduler> scheduler)
     : feature_(feature),
       policy_(policy),
-      feature_and_js_location_(feature, source_location.get()),
+      feature_and_js_location_(feature, source_location),
       scheduler_(std::move(scheduler)) {
   if (!scheduler_)
     return;
-  scheduler_->OnStartedUsingNonStickyFeature(feature_, policy_,
-                                             std::move(source_location), this);
+  scheduler_->OnStartedUsingNonStickyFeature(feature_, policy_, source_location,
+                                             this);
 }
 
 FrameOrWorkerScheduler::SchedulingAffectingFeatureHandle::
@@ -103,9 +102,9 @@ void FrameOrWorkerScheduler::RegisterStickyFeature(
     SchedulingPolicy::Feature feature,
     SchedulingPolicy policy) {
   DCHECK(scheduler::IsFeatureSticky(feature));
-  auto source_location = CaptureSourceLocation();
+  auto* source_location = CaptureSourceLocation();
   if (source_location && !source_location->IsUnknown()) {
-    OnStartedUsingStickyFeature(feature, policy, std::move(source_location));
+    OnStartedUsingStickyFeature(feature, policy, source_location);
   } else {
     OnStartedUsingStickyFeature(feature, policy, nullptr);
   }
@@ -126,7 +125,7 @@ void FrameOrWorkerScheduler::RemoveLifecycleObserver(
     LifecycleObserverHandle* handle) {
   DCHECK(handle);
   const auto found = lifecycle_observers_.find(handle);
-  CHECK(lifecycle_observers_.end() != found, base::NotFatalUntil::M130);
+  CHECK(lifecycle_observers_.end() != found);
   lifecycle_observers_.erase(found);
 }
 

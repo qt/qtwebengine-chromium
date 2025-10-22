@@ -12,6 +12,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/no_destructor.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
 #include "base/values.h"
@@ -81,10 +82,6 @@ bool AccountId::operator==(const AccountId& other) const {
              (!gaia_id_.empty() && gaia_id_ == other.gaia_id_) ||
              (!user_email_.empty() && user_email_ == other.user_email_);
   }
-}
-
-bool AccountId::operator!=(const AccountId& other) const {
-  return !operator==(other);
 }
 
 bool AccountId::operator<(const AccountId& right) const {

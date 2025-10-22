@@ -12,6 +12,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/ptr_util.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/ash/login/startup_utils.h"
 #include "chrome/browser/ash/login/wizard_controller.h"
@@ -161,14 +162,14 @@ void VersionUpdaterCros::GetUpdateStatus(StatusCallback callback) {
   this->UpdateStatusChanged(update_engine_client->GetLastStatus());
 }
 
-void VersionUpdaterCros::ApplyDeferredUpdate() {
+void VersionUpdaterCros::ApplyDeferredUpdateAdvanced() {
   UpdateEngineClient* update_engine_client = UpdateEngineClient::Get();
 
   DCHECK(update_engine_client->GetLastStatus().current_operation() ==
          update_engine::Operation::UPDATED_BUT_DEFERRED);
 
-  update_engine_client->ApplyDeferredUpdate(/*shutdown_after_update=*/false,
-                                            base::DoNothing());
+  update_engine_client->ApplyDeferredUpdateAdvanced(
+      /*shutdown_after_update=*/false, base::DoNothing());
 }
 
 void VersionUpdaterCros::CheckForUpdate(StatusCallback callback,

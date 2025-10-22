@@ -34,6 +34,7 @@
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "third_party/blink/public/common/privacy_budget/identifiable_token.h"
 #include "third_party/blink/renderer/bindings/core/v8/active_script_wrappable.h"
+#include "third_party/blink/renderer/core/canvas_interventions/canvas_interventions_enums.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_context_creation_attributes_core.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_performance_monitor.h"
@@ -70,6 +71,7 @@ class VideoFrame;
 namespace blink {
 
 class CanvasResourceProvider;
+class CanvasElementHitTestRegion;
 class ComputedStyle;
 class Document;
 class Element;
@@ -78,10 +80,8 @@ class ExecutionContext;
 class ImageBitmap;
 class ScriptState;
 class StaticBitmapImage;
-class
-    V8UnionCanvasRenderingContext2DOrGPUCanvasContextOrImageBitmapRenderingContextOrWebGL2RenderingContextOrWebGLRenderingContext;
-class
-    V8UnionGPUCanvasContextOrImageBitmapRenderingContextOrOffscreenCanvasRenderingContext2DOrWebGL2RenderingContextOrWebGLRenderingContext;
+class V8RenderingContext;
+class V8OffscreenRenderingContext;
 class WebGraphicsContext3DVideoFramePool;
 
 class CORE_EXPORT CanvasRenderingContext
@@ -90,14 +90,37 @@ class CORE_EXPORT CanvasRenderingContext
   USING_PRE_FINALIZER(CanvasRenderingContext, Dispose);
 
  public:
+  class RestoreGuard {
+    STACK_ALLOCATED();
+
+   public:
+    explicit RestoreGuard(CanvasRenderingContext& this_ptr) : this_(this_ptr) {
+      this_.is_context_being_restored_ = true;
+    }
+    ~RestoreGuard() { this_.is_context_being_restored_ = false; }
+
+   private:
+    CanvasRenderingContext& this_;
+  };
+
+  class CORE_EXPORT ElementHitTestRegion
+      : public GarbageCollected<ElementHitTestRegion> {
+   public:
+    ElementHitTestRegion(Element* element, const gfx::RectF& rect);
+
+    void Trace(Visitor*) const;
+
+    Element* element() const { return element_.Get(); }
+    gfx::RectF rect() const { return rect_; }
+
+   private:
+    WeakMember<Element> element_;
+    gfx::RectF rect_;
+  };
+
   CanvasRenderingContext(const CanvasRenderingContext&) = delete;
   CanvasRenderingContext& operator=(const CanvasRenderingContext&) = delete;
   ~CanvasRenderingContext() override = default;
-
-  // TODO(crbug.com/40280152): Remove these methods once killswitch-guarded
-  // behavior has shipped.
-  static bool CheckProviderInCanCreateCanvas2dResourceProvider();
-  static bool CheckProviderInCanvas2DRenderingContextIsPaintable();
 
   // Correspond to CanvasRenderingAPI defined in
   // tools/metrics/histograms/enums.xml
@@ -124,25 +147,9 @@ class CORE_EXPORT CanvasRenderingContext
     return canvas_rendering_type_ == CanvasRenderingAPI::kWebgl ||
            canvas_rendering_type_ == CanvasRenderingAPI::kWebgl2;
   }
-  bool IsWebGL2() const {
-    return canvas_rendering_type_ == CanvasRenderingAPI::kWebgl2;
-  }
   bool IsWebGPU() const {
     return canvas_rendering_type_ == CanvasRenderingAPI::kWebgpu;
   }
-
-  // ---------------------------------------------------------------------- //
-  // ctx.placeElement() API. Used exclusively with CanvasRenderingContext2D.
-
-  // Elements placed with ctx.placeElement() hold CanvasDeferredPaintRecords,
-  // which are painted into with this function during
-  // HTMLCanvasElement::PaintInternal.
-  virtual void PaintPlacedElements() {}
-  // Returns true if any element has been drawn to the canvas.
-  virtual bool HasPlacedElements() const { return false; }
-  // Element needs to be redrawn
-  virtual void MarkPlacedElementDirty(Element* element) {}
-  // ---------------------------------------------------------------------- //
 
   // ActiveScriptWrappable
   // As this class inherits from ActiveScriptWrappable, as long as
@@ -168,19 +175,6 @@ class CORE_EXPORT CanvasRenderingContext
 
   CanvasRenderingContextHost* Host() const { return host_.Get(); }
 
-  const CanvasResourceProvider* ResourceProvider() const {
-    if (const CanvasRenderingContextHost* host = Host()) [[likely]] {
-      return host->ResourceProvider();
-    }
-    return nullptr;
-  }
-  CanvasResourceProvider* ResourceProvider() {
-    if (const CanvasRenderingContextHost* host = Host()) [[likely]] {
-      return host->ResourceProvider();
-    }
-    return nullptr;
-  }
-
   virtual SkAlphaType GetAlphaType() const = 0;
   virtual viz::SharedImageFormat GetSharedImageFormat() const = 0;
   virtual gfx::ColorSpace GetColorSpace() const = 0;
@@ -196,17 +190,16 @@ class CORE_EXPORT CanvasRenderingContext
   // which are being rendered to, just not being displayed in the
   // page.
   virtual void PageVisibilityChanged() = 0;
+  virtual void SizeChanged() {}
   virtual bool isContextLost() const { return true; }
+  bool IsContextBeingRestored() const { return is_context_being_restored_; }
   // TODO(fserb): remove AsV8RenderingContext and AsV8OffscreenRenderingContext.
-  virtual V8UnionCanvasRenderingContext2DOrGPUCanvasContextOrImageBitmapRenderingContextOrWebGL2RenderingContextOrWebGLRenderingContext*
-  AsV8RenderingContext() {
-    NOTREACHED();
-  }
-  virtual V8UnionGPUCanvasContextOrImageBitmapRenderingContextOrOffscreenCanvasRenderingContext2DOrWebGL2RenderingContextOrWebGLRenderingContext*
-  AsV8OffscreenRenderingContext() {
+  virtual V8RenderingContext* AsV8RenderingContext() { NOTREACHED(); }
+  virtual V8OffscreenRenderingContext* AsV8OffscreenRenderingContext() {
     NOTREACHED();
   }
   virtual bool IsPaintable() const = 0;
+  virtual bool IsHibernating() const { return false; }
   void DidDraw(CanvasPerformanceMonitor::DrawType draw_type) {
     const CanvasRenderingContextHost* const host = Host();
     return DidDraw(host ? SkIRect::MakeWH(host->width(), host->height())
@@ -215,9 +208,18 @@ class CORE_EXPORT CanvasRenderingContext
   }
   void DidDraw(const SkIRect& dirty_rect, CanvasPerformanceMonitor::DrawType);
 
-  // Return true if the content is updated.
-  virtual bool PaintRenderingResultsToCanvas(SourceDrawingBuffer) {
-    return false;
+  // Returns a StaticBitmapImage containing the current content, or nullptr if
+  // it was not possible to obtain that content.
+  virtual scoped_refptr<StaticBitmapImage> PaintRenderingResultsToSnapshot(
+      SourceDrawingBuffer source_buffer,
+      FlushReason reason) = 0;
+
+  // WebGL-specific methods
+  virtual void ClearMarkedCanvasDirty() {}
+  virtual scoped_refptr<CanvasResource> PaintRenderingResultsToResource(
+      SourceDrawingBuffer source_buffer,
+      FlushReason reason) {
+    NOTREACHED();
   }
 
   // Copy the contents of the rendering context to a media::VideoFrame created
@@ -248,13 +250,20 @@ class CORE_EXPORT CanvasRenderingContext
 
     // Lost context occurred due to internal implementation reasons.
     kSyntheticLostContext,
+
+    // Lost because an invalid canvas size was used.
+    kInvalidCanvasSize,
+
+    // Lost because the canvas is being disposed.
+    kCanvasDisposed,
   };
   virtual void LoseContext(LostContextMode) {}
   virtual void SendContextLostEventIfNeeded() {}
 
-  // This method gets called at the end of script tasks that modified
-  // the contents of the canvas (called didDraw). It marks the completion
+  // These methods get called at the end of script tasks that modified
+  // the contents of the canvas (called didDraw). They mark the completion
   // of a presentable frame.
+  virtual void PreFinalizeFrame() {}
   virtual void FinalizeFrame(FlushReason) {}
 
   // Thread::TaskObserver implementation
@@ -264,19 +273,35 @@ class CORE_EXPORT CanvasRenderingContext
   // Canvas2D-specific interface
   virtual void RestoreCanvasMatrixClipStack(cc::PaintCanvas*) const {}
   virtual void Reset() {}
-  virtual void RestoreProviderAndContextIfPossible() {}
+  virtual void RestoreFromInvalidSizeIfNeeded() {}
   virtual void StyleDidChange(const ComputedStyle* old_style,
                               const ComputedStyle& new_style) {}
   virtual void LangAttributeChanged() {}
   virtual String GetIdFromControl(const Element* element) { return String(); }
   virtual int LayerCount() const { return 0; }
+  virtual bool IsCanvas2DResourceProviderValid() { NOTREACHED(); }
+  virtual CanvasResourceProvider* GetOrCreateCanvas2DResourceProvider() {
+    NOTREACHED();
+  }
+  // If the ResourceProvider currently exists, replaces it with a newly-created
+  // CanvasResourceProvider.
+  virtual void DropAndRecreateExistingCanvas2DResourceProvider() {
+    NOTREACHED();
+  }
+  virtual CanvasResourceProvider* GetResourceProviderForCanvas2D() const {
+    NOTREACHED();
+  }
+  virtual const std::optional<cc::PaintRecord>& GetLastRecordingForCanvas2D() {
+    return empty_recording_;
+  }
+  virtual bool Is2DCanvasAccelerated() const { NOTREACHED(); }
 
   virtual void setFontForTesting(const String&) { NOTREACHED(); }
 
   // WebGL-specific interface
-  virtual bool UsingSwapChain() const { return false; }
   virtual void MarkLayerComposited() { NOTREACHED(); }
-  virtual sk_sp<SkData> PaintRenderingResultsToDataArray(SourceDrawingBuffer) {
+  virtual scoped_refptr<StaticBitmapImage>
+  GetRGBAUnacceleratedStaticBitmapImage(SourceDrawingBuffer source_buffer) {
     NOTREACHED();
   }
   virtual gfx::Size DrawingBufferSize() const { NOTREACHED(); }
@@ -284,7 +309,8 @@ class CORE_EXPORT CanvasRenderingContext
   // WebGL & WebGPU-specific interface
   virtual void SetHdrMetadata(const gfx::HDRMetadata& hdr_metadata) {}
   virtual void Reshape(int width, int height) {}
-  virtual int ExternallyAllocatedBufferCountPerPixel() { NOTREACHED(); }
+
+  virtual int AllocatedBufferCountPerPixel() { NOTREACHED(); }
 
   // OffscreenCanvas-specific methods.
   virtual bool PushFrame() { return false; }
@@ -324,6 +350,10 @@ class CORE_EXPORT CanvasRenderingContext
 
   virtual bool ShouldTriggerIntervention() const { return false; }
 
+  virtual CanvasOperationType GetCanvasTriggerOperations() const {
+    return CanvasOperationType::kNone;
+  }
+
   bool did_print_in_current_task() const { return did_print_in_current_task_; }
 
  protected:
@@ -332,6 +362,18 @@ class CORE_EXPORT CanvasRenderingContext
                          CanvasRenderingAPI);
 
   virtual void Dispose();
+
+  bool IsDrawElementEligible(Element* element,
+                             const String& func_name,
+                             ExceptionState& exception_state);
+
+  bool ConvertHitTestRegionsToHTMLCanvasRegions(
+      const HeapVector<Member<CanvasElementHitTestRegion>>& hit_test_regions,
+      VectorOf<ElementHitTestRegion>& result,
+      const String& func_name,
+      ExceptionState& exception_state);
+
+  std::optional<cc::PaintRecord> empty_recording_;
 
  private:
   Member<CanvasRenderingContextHost> host_;
@@ -342,6 +384,8 @@ class CORE_EXPORT CanvasRenderingContext
   bool did_print_in_current_task_ = false;
 
   const CanvasRenderingAPI canvas_rendering_type_;
+
+  bool is_context_being_restored_ = false;
 };
 
 }  // namespace blink

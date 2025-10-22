@@ -19,9 +19,13 @@
 #include "state_tracker/pipeline_state.h"
 #include "state_tracker/shader_module.h"
 
-VkPipelineLayoutCreateFlags PipelineSubState::PipelineLayoutCreateFlags() const {
-    const auto layout_state = parent.PipelineLayoutState();
-    return (layout_state) ? layout_state->CreateFlags() : static_cast<VkPipelineLayoutCreateFlags>(0);
+bool PipelineSubState::IsIndependentSets() const {
+    if (const auto layout_state = parent.PipelineLayoutState()) {
+        if (layout_state->CreateFlags() & VK_PIPELINE_LAYOUT_CREATE_INDEPENDENT_SETS_BIT_EXT) {
+            return true;
+        }
+    }
+    return false;
 }
 
 VertexInputState::VertexInputState(const vvl::Pipeline &p, const vku::safe_VkGraphicsPipelineCreateInfo &create_info)
@@ -61,7 +65,7 @@ VertexInputState::VertexInputState(const vvl::Pipeline &p, const vku::safe_VkGra
     }
 }
 
-PreRasterState::PreRasterState(const vvl::Pipeline &p, const vvl::Device &state_data,
+PreRasterState::PreRasterState(const vvl::Pipeline &p, const vvl::DeviceState &state_data,
                                const vku::safe_VkGraphicsPipelineCreateInfo &create_info, std::shared_ptr<const vvl::RenderPass> rp,
                                spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages])
     : PipelineSubState(p),
@@ -196,8 +200,8 @@ std::unique_ptr<const vku::safe_VkPipelineShaderStageCreateInfo> ToShaderStageCI
 }
 
 template <typename CreateInfo>
-void SetFragmentShaderInfoPrivate(const vvl::Pipeline &pipeline_state, FragmentShaderState &fs_state, const vvl::Device &state_data,
-                                  const CreateInfo &create_info,
+void SetFragmentShaderInfoPrivate(const vvl::Pipeline &pipeline_state, FragmentShaderState &fs_state,
+                                  const vvl::DeviceState &state_data, const CreateInfo &create_info,
                                   spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) {
     for (uint32_t i = 0; i < create_info.stageCount; ++i) {
         if (create_info.pStages[i].stage == VK_SHADER_STAGE_FRAGMENT_BIT) {
@@ -247,43 +251,22 @@ void SetFragmentShaderInfoPrivate(const vvl::Pipeline &pipeline_state, FragmentS
 
 // static
 void FragmentShaderState::SetFragmentShaderInfo(const vvl::Pipeline &pipeline_state, FragmentShaderState &fs_state,
-                                                const vvl::Device &state_data, const VkGraphicsPipelineCreateInfo &create_info,
+                                                const vvl::DeviceState &state_data, const VkGraphicsPipelineCreateInfo &create_info,
                                                 spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) {
     SetFragmentShaderInfoPrivate(pipeline_state, fs_state, state_data, create_info, stateless_data);
 }
 
 // static
 void FragmentShaderState::SetFragmentShaderInfo(const vvl::Pipeline &pipeline_state, FragmentShaderState &fs_state,
-                                                const vvl::Device &state_data,
+                                                const vvl::DeviceState &state_data,
                                                 const vku::safe_VkGraphicsPipelineCreateInfo &create_info,
                                                 spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]) {
     SetFragmentShaderInfoPrivate(pipeline_state, fs_state, state_data, create_info, stateless_data);
 }
 
-FragmentShaderState::FragmentShaderState(const vvl::Pipeline &p, const vvl::Device &dev_data,
+FragmentShaderState::FragmentShaderState(const vvl::Pipeline &p, const vvl::DeviceState &dev_data,
                                          std::shared_ptr<const vvl::RenderPass> rp, uint32_t subp, VkPipelineLayout layout)
     : PipelineSubState(p), rp_state(rp), subpass(subp), pipeline_layout(dev_data.Get<vvl::PipelineLayout>(layout)) {}
 
 FragmentOutputState::FragmentOutputState(const vvl::Pipeline &p, std::shared_ptr<const vvl::RenderPass> rp, uint32_t sp)
     : PipelineSubState(p), rp_state(rp), subpass(sp) {}
-
-// static
-bool FragmentOutputState::IsBlendConstantsEnabled(const AttachmentStateVector &attachment_states) {
-    bool result = false;
-    for (const auto &attachment : attachment_states) {
-        if (VK_TRUE == attachment.blendEnable) {
-            if (((attachment.dstAlphaBlendFactor >= VK_BLEND_FACTOR_CONSTANT_COLOR) &&
-                 (attachment.dstAlphaBlendFactor <= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA)) ||
-                ((attachment.dstColorBlendFactor >= VK_BLEND_FACTOR_CONSTANT_COLOR) &&
-                 (attachment.dstColorBlendFactor <= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA)) ||
-                ((attachment.srcAlphaBlendFactor >= VK_BLEND_FACTOR_CONSTANT_COLOR) &&
-                 (attachment.srcAlphaBlendFactor <= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA)) ||
-                ((attachment.srcColorBlendFactor >= VK_BLEND_FACTOR_CONSTANT_COLOR) &&
-                 (attachment.srcColorBlendFactor <= VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA))) {
-                result = true;
-                break;
-            }
-        }
-    }
-    return result;
-}

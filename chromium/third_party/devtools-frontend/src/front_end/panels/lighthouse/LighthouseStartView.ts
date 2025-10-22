@@ -1,6 +1,7 @@
 // Copyright 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -65,7 +66,7 @@ export class StartView extends UI.Widget.Widget {
   changeFormMode?: (mode: string) => void;
 
   constructor(controller: LighthouseController, panel: LighthousePanel) {
-    super(true /* useShadowDom */);
+    super({useShadowDom: true});
     this.registerRequiredCSS(lighthouseStartViewStyles);
 
     this.controller = controller;
@@ -136,8 +137,9 @@ export class StartView extends UI.Widget.Widget {
     if (runtimeSetting.learnMore) {
       const link = UI.XLink.XLink.create(
           runtimeSetting.learnMore, i18nString(UIStrings.learnMore), 'lighthouse-learn-more', undefined, 'learn-more');
-      link.style.margin = '5px';
-      control.element.appendChild(link);
+      link.style.paddingLeft = '5px';
+      link.style.display = 'inline-flex';
+      toolbar.appendToolbarItem(new UI.Toolbar.ToolbarItem(link));
     }
   }
 

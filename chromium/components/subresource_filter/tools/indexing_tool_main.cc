@@ -2,13 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "base/check_op.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/logging.h"
@@ -29,7 +25,7 @@ const char kSwitchVersionOutput[] = "version_output";
 const char kSwitchContentVersion[] = "content_version";
 
 void PrintHelp() {
-  printf("%s\n\n", kHelpMsg);
+  UNSAFE_TODO(printf("%s\n\n", kHelpMsg));
 }
 
 int main(int argc, char* argv[]) {
@@ -57,8 +53,9 @@ int main(int argc, char* argv[]) {
 
   CHECK_NE(0, checksum);
 
-  if (!command_line.HasSwitch(kSwitchVersionOutput))
+  if (!command_line.HasSwitch(kSwitchVersionOutput)) {
     return 0;
+  }
 
   LOG_IF(FATAL, !command_line.HasSwitch(kSwitchContentVersion))
       << "content_version must be present if version_output is";

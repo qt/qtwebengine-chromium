@@ -4,10 +4,10 @@
  * Copyright 2017 Google Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
-import type { ChildProcess } from 'child_process';
+import type { ChildProcess } from 'node:child_process';
 import type { Protocol } from 'devtools-protocol';
 import type { ProtocolType } from '../common/ConnectOptions.js';
-import type { Cookie } from '../common/Cookie.js';
+import type { Cookie, CookieData } from '../common/Cookie.js';
 import type { DownloadBehavior } from '../common/DownloadBehavior.js';
 import { EventEmitter, type EventType } from '../common/EventEmitter.js';
 import { asyncDisposeSymbol, disposeSymbol } from '../util/disposable.js';
@@ -54,7 +54,7 @@ export declare const WEB_PERMISSION_TO_PROTOCOL_PERMISSION: Map<Permission, Prot
 /**
  * @public
  */
-export type Permission = 'geolocation' | 'midi' | 'notifications' | 'camera' | 'microphone' | 'background-sync' | 'ambient-light-sensor' | 'accelerometer' | 'gyroscope' | 'magnetometer' | 'accessibility-events' | 'clipboard-read' | 'clipboard-write' | 'clipboard-sanitized-write' | 'payment-handler' | 'persistent-storage' | 'idle-detection' | 'midi-sysex';
+export type Permission = 'accelerometer' | 'ambient-light-sensor' | 'background-sync' | 'camera' | 'clipboard-read' | 'clipboard-sanitized-write' | 'clipboard-write' | 'geolocation' | 'gyroscope' | 'idle-detection' | 'keyboard-lock' | 'magnetometer' | 'microphone' | 'midi-sysex' | 'midi' | 'notifications' | 'payment-handler' | 'persistent-storage' | 'pointer-lock';
 /**
  * @public
  */
@@ -328,7 +328,7 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      * Shortcut for
      * {@link BrowserContext.setCookie | browser.defaultBrowserContext().setCookie()}.
      */
-    setCookie(...cookies: Cookie[]): Promise<void>;
+    setCookie(...cookies: CookieData[]): Promise<void>;
     /**
      * Removes cookies from the default {@link BrowserContext}.
      *
@@ -338,6 +338,18 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      * {@link BrowserContext.deleteCookie | browser.defaultBrowserContext().deleteCookie()}.
      */
     deleteCookie(...cookies: Cookie[]): Promise<void>;
+    /**
+     * Installs an extension and returns the ID. In Chrome, this is only
+     * available if the browser was created using `pipe: true` and the
+     * `--enable-unsafe-extension-debugging` flag is set.
+     */
+    abstract installExtension(path: string): Promise<string>;
+    /**
+     * Uninstalls an extension. In Chrome, this is only available if the browser
+     * was created using `pipe: true` and the
+     * `--enable-unsafe-extension-debugging` flag is set.
+     */
+    abstract uninstallExtension(id: string): Promise<void>;
     /**
      * Whether Puppeteer is connected to this {@link Browser | browser}.
      *
@@ -367,5 +379,9 @@ export declare abstract class Browser extends EventEmitter<BrowserEvents> {
      * @experimental
      */
     abstract get debugInfo(): DebugInfo;
+    /**
+     * @internal
+     */
+    abstract isNetworkEnabled(): boolean;
 }
 //# sourceMappingURL=Browser.d.ts.map

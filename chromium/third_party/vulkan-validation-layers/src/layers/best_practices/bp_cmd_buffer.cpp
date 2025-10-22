@@ -19,20 +19,10 @@
 
 #include "best_practices/best_practices_validation.h"
 #include "best_practices/bp_state.h"
+#include "state_tracker/device_state.h"
 
-bool BestPractices::PreCallValidateCreateCommandPool(VkDevice device, const VkCommandPoolCreateInfo* pCreateInfo,
-                                                     const VkAllocationCallbacks* pAllocator, VkCommandPool* pCommandPool,
-                                                     const ErrorObject& error_obj) const {
-    bool skip = false;
-
-    if (pCreateInfo->flags & VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT) {
-        skip |= LogPerformanceWarning("BestPractices-vkCreateCommandPool-command-buffer-reset", device,
-                                      error_obj.location.dot(Field::pCreateInfo).dot(Field::flags),
-                                      "has VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT set. Consider resetting entire "
-                                      "pool instead.");
-    }
-
-    return skip;
+void BestPractices::Created(vvl::CommandBuffer& cb_state) {
+    cb_state.SetSubState(container_type, std::make_unique<bp_state::CommandBufferSubState>(cb_state, *this));
 }
 
 bool BestPractices::PreCallValidateAllocateCommandBuffers(VkDevice device, const VkCommandBufferAllocateInfo* pAllocateInfo,
@@ -48,7 +38,7 @@ bool BestPractices::PreCallValidateAllocateCommandBuffers(VkDevice device, const
     if (pAllocateInfo->level == VK_COMMAND_BUFFER_LEVEL_SECONDARY && (queue_flags & sec_cmd_buf_queue_flags) == 0) {
         skip |= LogWarning("BestPractices-vkAllocateCommandBuffers-unusable-secondary", device, error_obj.location,
                            "Allocating secondary level command buffer from command pool "
-                           "created against queue family #%u (queue flags: %s), but vkCmdExecuteCommands() is only "
+                           "created against queue family %" PRIu32 " (queue flags: %s), but vkCmdExecuteCommands() is only "
                            "supported on queue families supporting VK_QUEUE_GRAPHICS_BIT, VK_QUEUE_COMPUTE_BIT, or "
                            "VK_QUEUE_TRANSFER_BIT. The allocated command buffer will not be submittable.",
                            cp_state->queueFamilyIndex, string_VkQueueFlags(queue_flags).c_str());
@@ -57,28 +47,9 @@ bool BestPractices::PreCallValidateAllocateCommandBuffers(VkDevice device, const
     return skip;
 }
 
-void BestPractices::PreCallRecordBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo,
-                                                    const RecordObject& record_obj) {
-    BaseClass::PreCallRecordBeginCommandBuffer(commandBuffer, pBeginInfo, record_obj);
-
-    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
-    auto& sub_state = bp_state::SubState(*cb_state);
-    // reset
-    sub_state.num_submits = 0;
-    sub_state.uses_vertex_buffer = false;
-    sub_state.small_indexed_draw_call_count = 0;
-}
-
 bool BestPractices::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBeginInfo* pBeginInfo,
                                                       const ErrorObject& error_obj) const {
     bool skip = false;
-
-    if (pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
-        skip |= LogPerformanceWarning("BestPractices-vkBeginCommandBuffer-simultaneous-use", device,
-                                      error_obj.location.dot(Field::pBeginInfo).dot(Field::flags),
-                                      "(%s) has VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT.",
-                                      string_VkCommandBufferUsageFlags(pBeginInfo->flags).c_str());
-    }
 
     const bool is_one_time_submit = (pBeginInfo->flags & VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT) != 0;
     if (VendorCheckEnabled(kBPVendorArm)) {
@@ -108,29 +79,10 @@ bool BestPractices::PreCallValidateBeginCommandBuffer(VkCommandBuffer commandBuf
     return skip;
 }
 
-bool BestPractices::PreCallValidateCmdWriteTimestamp(VkCommandBuffer commandBuffer, VkPipelineStageFlagBits pipelineStage,
-                                                     VkQueryPool queryPool, uint32_t query, const ErrorObject& error_obj) const {
-    bool skip = false;
-
-    skip |= CheckPipelineStageFlags(commandBuffer, error_obj.location.dot(Field::pipelineStage),
-                                    static_cast<VkPipelineStageFlags>(pipelineStage));
-
-    return skip;
-}
-
 bool BestPractices::PreCallValidateCmdWriteTimestamp2KHR(VkCommandBuffer commandBuffer, VkPipelineStageFlags2KHR pipelineStage,
                                                          VkQueryPool queryPool, uint32_t query,
                                                          const ErrorObject& error_obj) const {
     return PreCallValidateCmdWriteTimestamp2(commandBuffer, pipelineStage, queryPool, query, error_obj);
-}
-
-bool BestPractices::PreCallValidateCmdWriteTimestamp2(VkCommandBuffer commandBuffer, VkPipelineStageFlags2 pipelineStage,
-                                                      VkQueryPool queryPool, uint32_t query, const ErrorObject& error_obj) const {
-    bool skip = false;
-
-    skip |= CheckPipelineStageFlags(commandBuffer, error_obj.location.dot(Field::pipelineStage), pipelineStage);
-
-    return skip;
 }
 
 bool BestPractices::PreCallValidateGetQueryPoolResults(VkDevice device, VkQueryPool queryPool, uint32_t firstQuery,
@@ -161,45 +113,12 @@ bool BestPractices::PreCallValidateGetQueryPoolResults(VkDevice device, VkQueryP
     return skip;
 }
 
-void BestPractices::PostCallRecordCmdSetDepthCompareOp(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp,
-                                                       const RecordObject& record_obj) {
-    BaseClass::PostCallRecordCmdSetDepthCompareOp(commandBuffer, depthCompareOp, record_obj);
-
-    auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
-    auto& sub_state = bp_state::SubState(*cb_state);
-
-    if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        RecordSetDepthTestState(sub_state, depthCompareOp, sub_state.nv.depth_test_enable);
-    }
-}
-
-void BestPractices::PostCallRecordCmdSetDepthCompareOpEXT(VkCommandBuffer commandBuffer, VkCompareOp depthCompareOp,
-                                                          const RecordObject& record_obj) {
-    PostCallRecordCmdSetDepthCompareOp(commandBuffer, depthCompareOp, record_obj);
-}
-
-void BestPractices::PostCallRecordCmdSetDepthTestEnable(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable,
-                                                        const RecordObject& record_obj) {
-    BaseClass::PostCallRecordCmdSetDepthTestEnable(commandBuffer, depthTestEnable, record_obj);
-
-    if (VendorCheckEnabled(kBPVendorNVIDIA)) {
-        auto cb_state = GetWrite<vvl::CommandBuffer>(commandBuffer);
-        auto& sub_state = bp_state::SubState(*cb_state);
-        RecordSetDepthTestState(sub_state, sub_state.nv.depth_compare_op, depthTestEnable != VK_FALSE);
-    }
-}
-
-void BestPractices::PostCallRecordCmdSetDepthTestEnableEXT(VkCommandBuffer commandBuffer, VkBool32 depthTestEnable,
-                                                           const RecordObject& record_obj) {
-    PostCallRecordCmdSetDepthTestEnable(commandBuffer, depthTestEnable, record_obj);
-}
-
 namespace {
 struct EventValidator {
-    const vvl::Device& state_tracker;
+    const Logger& log;
     vvl::unordered_map<VkEvent, bool> signaling_state;
 
-    EventValidator(const vvl::Device& state_tracker) : state_tracker(state_tracker) {}
+    explicit EventValidator(const Logger& log_) : log(log_) {}
 
     bool ValidateSecondaryCbSignalingState(const bp_state::CommandBufferSubState& primary_cb,
                                            const bp_state::CommandBufferSubState& secondary_cb, const Location& secondary_cb_loc) {
@@ -218,12 +137,12 @@ struct EventValidator {
                     // the most recent state update was signal (signaled == true) and the secondary
                     // command buffer starts with a signal too (first_state_change_is_signal).
                     const LogObjectList objlist(primary_cb.VkHandle(), secondary_cb.VkHandle(), event);
-                    skip |= state_tracker.LogWarning(
+                    skip |= log.LogWarning(
                         "BestPractices-Event-SignalSignaledEvent", objlist, secondary_cb_loc,
                         "%s sets event %s which was already set (in the primary command buffer %s or in the executed secondary "
                         "command buffers). If this is not the desired behavior, the event must be reset before it is set again.",
-                        state_tracker.FormatHandle(secondary_cb.VkHandle()).c_str(), state_tracker.FormatHandle(event).c_str(),
-                        state_tracker.FormatHandle(primary_cb.VkHandle()).c_str());
+                        log.FormatHandle(secondary_cb.VkHandle()).c_str(), log.FormatHandle(event).c_str(),
+                        log.FormatHandle(primary_cb.VkHandle()).c_str());
                 }
             }
             signaling_state[event] = signaling_info.signaled;
@@ -254,8 +173,8 @@ bool BestPractices::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuf
             }
         }
 
-        if (!(secondary_cb->beginInfo.flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) {
-            if (primary->beginInfo.flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
+        if (!(secondary_cb->begin_info_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT)) {
+            if (primary->begin_info_flags & VK_COMMAND_BUFFER_USAGE_SIMULTANEOUS_USE_BIT) {
                 // Warn that non-simultaneous secondary cmd buffer renders primary non-simultaneous
                 const LogObjectList objlist(commandBuffer, pCommandBuffers[i]);
                 skip |= LogWarning("BestPractices-vkCmdExecuteCommands-CommandBufferSimultaneousUse", objlist, cb_loc,
@@ -277,48 +196,4 @@ bool BestPractices::PreCallValidateCmdExecuteCommands(VkCommandBuffer commandBuf
         }
     }
     return skip;
-}
-
-void BestPractices::PreCallRecordCmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCount,
-                                                    const VkCommandBuffer* pCommandBuffers, const RecordObject& record_obj) {
-    BaseClass::PreCallRecordCmdExecuteCommands(commandBuffer, commandBufferCount, pCommandBuffers, record_obj);
-
-    auto primary = GetWrite<vvl::CommandBuffer>(commandBuffer);
-    if (!primary) {
-        return;
-    }
-    auto& primary_sub_state = bp_state::SubState(*primary);
-
-    for (uint32_t i = 0; i < commandBufferCount; i++) {
-        auto secondary = GetWrite<vvl::CommandBuffer>(pCommandBuffers[i]);
-        if (!secondary) {
-            continue;
-        }
-        auto& secondary_sub_state = bp_state::SubState(*secondary);
-
-        for (auto& early_clear : secondary_sub_state.render_pass_state.earlyClearAttachments) {
-            if (ClearAttachmentsIsFullClear(primary_sub_state, uint32_t(early_clear.rects.size()), early_clear.rects.data())) {
-                RecordAttachmentClearAttachments(primary_sub_state, early_clear.framebufferAttachment, early_clear.colorAttachment,
-                                                 early_clear.aspects, uint32_t(early_clear.rects.size()), early_clear.rects.data());
-            } else {
-                RecordAttachmentAccess(primary_sub_state, early_clear.framebufferAttachment, early_clear.aspects);
-            }
-        }
-
-        for (auto& touch : secondary_sub_state.render_pass_state.touchesAttachments) {
-            RecordAttachmentAccess(primary_sub_state, touch.framebufferAttachment, touch.aspects);
-        }
-
-        primary_sub_state.render_pass_state.numDrawCallsDepthEqualCompare +=
-            secondary_sub_state.render_pass_state.numDrawCallsDepthEqualCompare;
-        primary_sub_state.render_pass_state.numDrawCallsDepthOnly += secondary_sub_state.render_pass_state.numDrawCallsDepthOnly;
-
-        for (const auto& [event, secondary_info] : secondary_sub_state.event_signaling_state) {
-            if (auto* primary_info = vvl::Find(primary_sub_state.event_signaling_state, event)) {
-                primary_info->signaled = secondary_info.signaled;
-            } else {
-                primary_sub_state.event_signaling_state.emplace(event, secondary_info);
-            }
-        }
-    }
 }

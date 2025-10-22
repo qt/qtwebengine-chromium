@@ -204,7 +204,8 @@ void AudioToolboxAudioDecoder::Decode(scoped_refptr<DecoderBuffer> buffer,
   limiter_queue_->Push(
       *output_bus_, num_frames, buffer->timestamp(),
       base::BindOnce(&AudioToolboxAudioDecoder::OnOutputReady,
-                     base::Unretained(this), buffer->time_info()));
+                     base::Unretained(this),
+                     AudioDiscardHelper::TimeInfo::FromBuffer(*buffer)));
 
   std::move(decode_cb_bound).Run(OkStatus());
 }
@@ -235,7 +236,7 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
       // Input is xHE-AAC / USAC.
       CHECK_EQ(config.profile(), AudioCodecProfile::kXHE_AAC);
       input_format.mFormatID = kAudioFormatMPEGD_USAC;
-      magic_cookie = mp4::ESDescriptor::CreateEsds(config.aac_extra_data());
+      magic_cookie = mp4::ESDescriptor::CreateEsds(config.extra_data());
 
       // Have macOS fill in the rest of the input_format for us.
       UInt32 format_size = sizeof(input_format);
@@ -305,7 +306,7 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
     // Get the decoder's output channel layout.
     UInt32 size;
     result = AudioConverterGetPropertyInfo(
-        decoder_.get(), kAudioConverterOutputChannelLayout, &size, NULL);
+        decoder_.get(), kAudioConverterOutputChannelLayout, &size, nullptr);
     if (result != noErr) {
       OSSTATUS_MEDIA_LOG(ERROR, result, media_log_)
           << "AudioConverterGetPropertyInfo() failed";
@@ -418,7 +419,7 @@ bool AudioToolboxAudioDecoder::CreateDecoder(const AudioDecoderConfig& config) {
 }
 
 void AudioToolboxAudioDecoder::OnOutputReady(
-    DecoderBuffer::TimeInfo time_info,
+    AudioDiscardHelper::TimeInfo time_info,
     scoped_refptr<AudioBuffer> output_buffer) {
   if (discard_helper_->ProcessBuffers(time_info, output_buffer.get())) {
     base::BindPostTaskToCurrentDefault(output_cb_)

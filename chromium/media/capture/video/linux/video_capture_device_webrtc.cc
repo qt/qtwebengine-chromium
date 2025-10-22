@@ -4,9 +4,9 @@
 
 #include "media/capture/video/linux/video_capture_device_webrtc.h"
 
+#include "base/notimplemented.h"
 #include "media/capture/mojom/image_capture_types.h"
 #include "media/capture/video/linux/video_capture_device_factory_webrtc.h"
-
 #include "third_party/webrtc/modules/video_capture/video_capture_factory.h"
 #include "third_party/webrtc/modules/video_capture/video_capture_impl.h"
 
@@ -18,7 +18,7 @@ namespace media {
 VideoCaptureErrorOrDevice VideoCaptureDeviceWebRtc::Create(
     webrtc::VideoCaptureOptions* options,
     const VideoCaptureDeviceDescriptor& device_descriptor) {
-  rtc::scoped_refptr<webrtc::VideoCaptureModule> capture_module =
+  webrtc::scoped_refptr<webrtc::VideoCaptureModule> capture_module =
       webrtc::VideoCaptureFactory::Create(options,
                                           device_descriptor.device_id.c_str());
 
@@ -32,7 +32,7 @@ VideoCaptureErrorOrDevice VideoCaptureDeviceWebRtc::Create(
 
 VideoCaptureDeviceWebRtc::VideoCaptureDeviceWebRtc(
     webrtc::VideoCaptureOptions* options,
-    rtc::scoped_refptr<webrtc::VideoCaptureModule> capture_module) {
+    webrtc::scoped_refptr<webrtc::VideoCaptureModule> capture_module) {
   options_ = options;
   capture_module_ = capture_module;
   capture_module_->RegisterCaptureDataCallback(this);

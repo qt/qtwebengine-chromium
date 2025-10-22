@@ -126,6 +126,9 @@ void FontCache::Trace(Visitor* visitor) const {
   visitor->Trace(fallback_list_shaper_cache_);
   visitor->Trace(font_data_cache_);
   visitor->Trace(font_fallback_map_);
+#if BUILDFLAG(IS_MAC)
+  visitor->Trace(character_fallback_cache_);
+#endif
 }
 
 #if !BUILDFLAG(IS_MAC)
@@ -345,7 +348,7 @@ void FontCache::DumpShapeResultCache(
   }
   dump->AddScalar("size", "bytes", shape_result_cache_size);
   memory_dump->AddSuballocation(dump->guid(),
-                                WTF::Partitions::kAllocatedObjectPoolName);
+                                Partitions::kAllocatedObjectPoolName);
 }
 
 sk_sp<SkTypeface> FontCache::CreateTypefaceFromUniqueName(

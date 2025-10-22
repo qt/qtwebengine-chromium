@@ -37,6 +37,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_rtc_data_channel_state.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_video_frame.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/loader/empty_clients.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_array_buffer.h"
 #include "third_party/blink/renderer/core/typed_arrays/dom_typed_array.h"
@@ -207,7 +208,7 @@ TEST(V8ScriptValueSerializerForModulesTest, RoundTripRTCCertificate) {
   V8TestingScope scope;
 
   // Make a certificate with the existing key above.
-  rtc::scoped_refptr<rtc::RTCCertificate> web_certificate =
+  webrtc::scoped_refptr<webrtc::RTCCertificate> web_certificate =
       certificate_generator->FromPEM(WebString::FromUTF8(kEcdsaPrivateKey),
                                      WebString::FromUTF8(kEcdsaCertificate));
   ASSERT_TRUE(web_certificate);
@@ -221,7 +222,7 @@ TEST(V8ScriptValueSerializerForModulesTest, RoundTripRTCCertificate) {
   RTCCertificate* new_certificate =
       V8RTCCertificate::ToWrappable(scope.GetIsolate(), result);
   ASSERT_NE(new_certificate, nullptr);
-  rtc::RTCCertificatePEM pem = new_certificate->Certificate()->ToPEM();
+  webrtc::RTCCertificatePEM pem = new_certificate->Certificate()->ToPEM();
   EXPECT_EQ(kEcdsaPrivateKey, pem.private_key());
   EXPECT_EQ(kEcdsaCertificate, pem.certificate());
 }
@@ -247,7 +248,7 @@ TEST(V8ScriptValueSerializerForModulesTest, DecodeRTCCertificate) {
   RTCCertificate* new_certificate =
       V8RTCCertificate::ToWrappable(scope.GetIsolate(), result);
   ASSERT_NE(new_certificate, nullptr);
-  rtc::RTCCertificatePEM pem = new_certificate->Certificate()->ToPEM();
+  webrtc::RTCCertificatePEM pem = new_certificate->Certificate()->ToPEM();
   EXPECT_EQ(kEcdsaPrivateKey, pem.private_key());
   EXPECT_EQ(kEcdsaCertificate, pem.certificate());
 }

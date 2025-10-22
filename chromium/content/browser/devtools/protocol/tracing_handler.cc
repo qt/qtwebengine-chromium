@@ -19,7 +19,9 @@
 #include "base/memory/ref_counted_memory.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
@@ -858,7 +860,6 @@ perfetto::TraceConfig TracingHandler::CreatePerfettoConfiguration(
       browser_config,
       /*privacy_filtering_enabled=*/false,
       /*convert_to_legacy_json=*/!proto_format,
-      perfetto::protos::gen::ChromeConfig::USER_INITIATED,
       /*json_agent_label_filter*/
       (proto_format || return_as_stream)
           ? ""

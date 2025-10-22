@@ -487,10 +487,21 @@ describe('CSSPropertyParser', () => {
       assert.strictEqual(matching.getComputedText(ast.tree), '--property: dark gray');
     });
 
+    it('computes longhand positions', () => {
+      const matchedResult = SDK.CSSPropertyParser.matchDeclaration(
+          '--prop', 'a b /* c */ var(--d) e',
+          [new SDK.CSSPropertyParserMatchers.BaseVariableMatcher(match => match.name === '--d' ? 'ddd' : null)]);
+      assert.exists(matchedResult);
+      const topLevelValues =
+          SDK.CSSPropertyParser.ASTUtils.siblings(SDK.CSSPropertyParser.ASTUtils.declValue(matchedResult.ast.tree));
+      assert.lengthOf(topLevelValues, 5);
+      assert.deepEqual(topLevelValues.map(node => matchedResult.getComputedLonghandName(node)), [0, 1, 2, 2, 3]);
+    });
+
     it('parses vars correctly', () => {
       for (const succeed
                of ['var(--a)', 'var(--a, 123)', 'var(--a, calc(1+1))', 'var(--a, var(--b))', 'var(--a, var(--b, 123))',
-                   'var(--a, a b c)']) {
+                   'var(--a, a b c)', 'var(--a,)']) {
         const {ast, match, text} =
             matchSingleValue('width', succeed, new SDK.CSSPropertyParserMatchers.BaseVariableMatcher(() => ''));
 
@@ -498,9 +509,10 @@ describe('CSSPropertyParser', () => {
         assert.exists(match, text);
         assert.strictEqual(match.text, succeed);
         assert.strictEqual(match.name, '--a');
-        const [name, ...fallback] = succeed.substring(4, succeed.length - 1).split(', ');
+        const [name, ...fallback] = succeed.substring(4, succeed.length - 1).split(/, */);
         assert.strictEqual(match.name, name);
-        assert.strictEqual(match.fallback.map(n => ast.text(n)).join(' '), fallback.join(', '));
+        assert.strictEqual(
+            match.fallback?.map(n => ast.text(n)).join(' '), fallback.length > 0 ? fallback.join(', ') : undefined);
       }
       for (const fail of ['var', 'var(--a, 123, 123)', 'var(a)', 'var(--a']) {
         const {match, text} =

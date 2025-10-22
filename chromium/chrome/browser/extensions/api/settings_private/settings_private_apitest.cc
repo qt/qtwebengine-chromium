@@ -8,6 +8,7 @@
 #include "base/memory/ptr_util.h"
 #include "base/run_loop.h"
 #include "base/task/current_thread.h"
+#include "base/test/test_future.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
@@ -34,7 +35,8 @@
 #include "testing/gtest/include/gtest/gtest.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
-#include "chrome/browser/ash/settings/scoped_testing_cros_settings.h"
+#include "chrome/browser/ash/ownership/owner_settings_service_ash.h"
+#include "chrome/browser/ash/ownership/owner_settings_service_ash_factory.h"
 #endif
 
 using testing::Mock;
@@ -63,6 +65,18 @@ class SettingsPrivateApiTest : public ExtensionApiTest,
     ExtensionApiTest::SetUpInProcessBrowserTestFixture();
   }
 
+#if BUILDFLAG(IS_CHROMEOS)
+  void SetUpOnMainThread() override {
+    ExtensionApiTest::SetUpOnMainThread();
+
+    auto* owner_settings_service =
+        ash::OwnerSettingsServiceAshFactory::GetForBrowserContext(profile());
+    base::test::TestFuture<bool> future;
+    owner_settings_service->IsOwnerAsync(future.GetCallback());
+    ASSERT_TRUE(future.Get());
+  }
+#endif
+
  protected:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     command_line->AppendSwitch(
@@ -87,10 +101,6 @@ class SettingsPrivateApiTest : public ExtensionApiTest,
 
  private:
   testing::NiceMock<policy::MockConfigurationPolicyProvider> provider_;
-
-#if BUILDFLAG(IS_CHROMEOS)
-  ash::ScopedTestingCrosSettings scoped_testing_cros_settings_;
-#endif
 };
 
 INSTANTIATE_TEST_SUITE_P(PersistentBackground,

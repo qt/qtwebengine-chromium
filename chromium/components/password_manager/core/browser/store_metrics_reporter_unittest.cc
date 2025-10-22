@@ -8,10 +8,10 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/mock_callback.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -24,10 +24,10 @@
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 #include "components/password_manager/core/browser/password_manager_util.h"
 #include "components/password_manager/core/browser/password_store/mock_password_store_interface.h"
+#include "components/password_manager/core/browser/password_store/password_store_consumer.h"
 #include "components/password_manager/core/browser/password_store/test_password_store.h"
 #include "components/password_manager/core/browser/stub_password_manager_client.h"
 #include "components/password_manager/core/browser/sync_username_test_base.h"
-#include "components/password_manager/core/common/password_manager_features.h"
 #include "components/password_manager/core/common/password_manager_pref_names.h"
 #include "components/prefs/pref_registry_simple.h"
 #include "components/prefs/testing_pref_service.h"
@@ -162,9 +162,6 @@ class StoreMetricsReporterTest : public SyncUsernameTestBase {
     // should be mocked.
     OSCryptMocker::SetUp();
 
-    feature_list_.InitWithFeatures({features::kPasswordReuseDetectionEnabled},
-                                   {});
-
     prefs_.registry()->RegisterBooleanPref(prefs::kCredentialsEnableService,
                                            false);
     prefs_.registry()->RegisterBooleanPref(
@@ -191,12 +188,6 @@ class StoreMetricsReporterTest : public SyncUsernameTestBase {
     prefs_.registry()->RegisterBooleanPref(
         prefs::kBiometricAuthenticationBeforeFilling, false);
 #endif
-#if BUILDFLAG(IS_ANDROID)
-    prefs_.registry()->RegisterIntegerPref(
-        prefs::kPasswordsUseUPMLocalAndSeparateStores,
-        static_cast<int>(
-            password_manager::prefs::UseUpmLocalAndSeparateStoresState::kOff));
-#endif
   }
 
   void TearDown() override { OSCryptMocker::TearDown(); }
@@ -208,7 +199,6 @@ class StoreMetricsReporterTest : public SyncUsernameTestBase {
   }
 
  protected:
-  base::test::ScopedFeatureList feature_list_;
   TestingPrefServiceSimple prefs_;
   testing::NiceMock<MockPasswordManagerSettingsService> settings_service_;
 };
@@ -464,6 +454,84 @@ TEST_F(StoreMetricsReporterTest, ReportPasswordLossMetricForProfile) {
 
   profile_store->ShutdownOnUIThread();
   account_store->ShutdownOnUIThread();
+  // Make sure the PasswordStore destruction parts on the background sequence
+  // finish, otherwise we get memory leak reports.
+  RunUntilIdle();
+}
+
+TEST_F(StoreMetricsReporterTest,
+       PasswordStoreErrorNotReportedToExcludingStoreErrorsForProfile) {
+  auto profile_store =
+      base::MakeRefCounted<TestPasswordStore>(IsAccountStore(false));
+  profile_store->Init(&prefs_, /*affiliated_match_helper=*/nullptr);
+  AddMetricsTestData(profile_store.get());
+  profile_store->ReturnErrorOnRequest(
+      PasswordStoreBackendError(PasswordStoreBackendErrorType::kUncategorized));
+
+  auto account_store =
+      base::MakeRefCounted<TestPasswordStore>(IsAccountStore(true));
+  account_store->Init(&prefs_, /*affiliated_match_helper=*/nullptr);
+  AddMetricsTestData(account_store.get());
+
+  base::HistogramTester histogram_tester;
+  StoreMetricsReporter reporter(
+      profile_store.get(), account_store.get(), sync_service(), &prefs_,
+      /*password_reuse_manager=*/nullptr, &settings_service(),
+      /*done_callback*/ base::DoNothing());
+  // Wait for the metrics to get reported, which involves queries to the
+  // stores, i.e. to background task runners.
+  RunUntilIdle();
+
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.ProfileStore.TotalAccountsHiRes3."
+      "ByType.Overall.ExcludingStoreErrors",
+      0);
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.AccountStore.TotalAccountsHiRes3."
+      "ByType.Overall.ExcludingStoreErrors",
+      1);
+
+  account_store->ShutdownOnUIThread();
+  profile_store->ShutdownOnUIThread();
+  // Make sure the PasswordStore destruction parts on the background sequence
+  // finish, otherwise we get memory leak reports.
+  RunUntilIdle();
+}
+
+TEST_F(StoreMetricsReporterTest,
+       PasswordStoreErrorNotReportedToExcludingStoreErrorsForAccount) {
+  auto profile_store =
+      base::MakeRefCounted<TestPasswordStore>(IsAccountStore(false));
+  profile_store->Init(&prefs_, /*affiliated_match_helper=*/nullptr);
+  AddMetricsTestData(profile_store.get());
+
+  auto account_store =
+      base::MakeRefCounted<TestPasswordStore>(IsAccountStore(true));
+  account_store->Init(&prefs_, /*affiliated_match_helper=*/nullptr);
+  AddMetricsTestData(account_store.get());
+  account_store->ReturnErrorOnRequest(
+      PasswordStoreBackendError(PasswordStoreBackendErrorType::kUncategorized));
+
+  base::HistogramTester histogram_tester;
+  StoreMetricsReporter reporter(
+      profile_store.get(), account_store.get(), sync_service(), &prefs_,
+      /*password_reuse_manager=*/nullptr, &settings_service(),
+      /*done_callback*/ base::DoNothing());
+  // Wait for the metrics to get reported, which involves queries to the
+  // stores, i.e. to background task runners.
+  RunUntilIdle();
+
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.ProfileStore.TotalAccountsHiRes3."
+      "ByType.Overall.ExcludingStoreErrors",
+      1);
+  histogram_tester.ExpectTotalCount(
+      "PasswordManager.AccountStore.TotalAccountsHiRes3."
+      "ByType.Overall.ExcludingStoreErrors",
+      0);
+
+  account_store->ShutdownOnUIThread();
+  profile_store->ShutdownOnUIThread();
   // Make sure the PasswordStore destruction parts on the background sequence
   // finish, otherwise we get memory leak reports.
   RunUntilIdle();
@@ -744,6 +812,11 @@ TEST_F(StoreMetricsReporterTest, ReportTotalAccountsHiResMetricsTest) {
       "PasswordManager.ProfileStore.TotalAccountsHiRes3."
       "ByType.Overall."
       "WithoutCustomPassphrase",
+      11, 1);
+
+  histogram_tester.ExpectUniqueSample(
+      "PasswordManager.ProfileStore.TotalAccountsHiRes3."
+      "ByType.Overall.ExcludingStoreErrors",
       11, 1);
 
   histogram_tester.ExpectUniqueSample(
@@ -1035,6 +1108,11 @@ TEST_F(StoreMetricsReporterTest,
       "PasswordManager.AccountStore.TotalAccountsHiRes3."
       "ByType.Overall."
       "WithoutCustomPassphrase",
+      11, 1);
+
+  histogram_tester.ExpectUniqueSample(
+      "PasswordManager.AccountStore.TotalAccountsHiRes3."
+      "ByType.Overall.ExcludingStoreErrors",
       11, 1);
 
   histogram_tester.ExpectUniqueSample(
@@ -1353,14 +1431,6 @@ TEST_F(StoreMetricsReporterTest, DuplicatesMetrics_MismatchedDuplicates) {
 // A test that covers multi-store metrics, which are recorded by the
 // StoreMetricsReporter directly.
 TEST_F(StoreMetricsReporterTest, MultiStoreMetrics) {
-  base::test::ScopedFeatureList feature_list;
-#if BUILDFLAG(IS_ANDROID)
-  prefs_.SetInteger(
-      prefs::kPasswordsUseUPMLocalAndSeparateStores,
-      static_cast<int>(
-          password_manager::prefs::UseUpmLocalAndSeparateStoresState::kOn));
-#endif  // BUILDFLAG(IS_ANDROID)
-
   auto profile_store =
       base::MakeRefCounted<TestPasswordStore>(IsAccountStore(false));
   auto account_store =
@@ -1427,9 +1497,8 @@ TEST_F(StoreMetricsReporterTest, MultiStoreMetrics) {
       test_sync_service()->GetUserSettings()->SetSelectedTypes(
           /*sync_everything=*/false, syncer::UserSelectableTypeSet());
     }
-    ASSERT_EQ(
-        features_util::IsAccountStorageEnabled(pref_service(), sync_service()),
-        account_storage_enabled);
+    ASSERT_EQ(features_util::IsAccountStorageEnabled(sync_service()),
+              account_storage_enabled);
 
     // In every pass in the loop, StoreMetricsReporter uses the same pref
     // service. Set the kLastTimePasswordStoreMetricsReported to make sure

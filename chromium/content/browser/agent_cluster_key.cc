@@ -23,8 +23,6 @@ AgentClusterKey::CrossOriginIsolationKey::~CrossOriginIsolationKey() = default;
 
 bool AgentClusterKey::CrossOriginIsolationKey::operator==(
     const CrossOriginIsolationKey& b) const = default;
-bool AgentClusterKey::CrossOriginIsolationKey::operator!=(
-    const CrossOriginIsolationKey& b) const = default;
 
 // static
 AgentClusterKey AgentClusterKey::CreateSiteKeyed(const GURL& site_url) {
@@ -42,6 +40,8 @@ AgentClusterKey AgentClusterKey::CreateWithCrossOriginIsolationKey(
     const CrossOriginIsolationKey& isolation_key) {
   return AgentClusterKey(origin, isolation_key);
 }
+
+AgentClusterKey::AgentClusterKey() : key_(GURL()) {}
 
 AgentClusterKey::AgentClusterKey(const AgentClusterKey& other) = default;
 
@@ -70,8 +70,15 @@ AgentClusterKey::GetCrossOriginIsolationKey() const {
   return isolation_key_;
 }
 
+bool AgentClusterKey::IsCrossOriginIsolated() const {
+  if (!isolation_key_.has_value()) {
+    return false;
+  }
+  return isolation_key_->cross_origin_isolation_mode ==
+         CrossOriginIsolationMode::kConcrete;
+}
+
 bool AgentClusterKey::operator==(const AgentClusterKey& b) const = default;
-bool AgentClusterKey::operator!=(const AgentClusterKey& b) const = default;
 
 bool AgentClusterKey::operator<(const AgentClusterKey& b) const {
   if (GetCrossOriginIsolationKey().has_value() !=

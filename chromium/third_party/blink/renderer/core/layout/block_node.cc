@@ -10,6 +10,7 @@
 #include "third_party/blink/renderer/core/dom/column_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/scroll_button_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/scroll_marker_group_pseudo_element.h"
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/forms/html_input_element.h"
@@ -37,11 +38,13 @@
 #include "third_party/blink/renderer/core/layout/inline/inline_cursor.h"
 #include "third_party/blink/renderer/core/layout/inline/inline_node.h"
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
+#include "third_party/blink/renderer/core/layout/layout_box_utils.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_input_node.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_set.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_spanner_placeholder.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/layout_utils.h"
 #include "third_party/blink/renderer/core/layout/layout_video.h"
@@ -84,9 +87,10 @@
 #include "third_party/blink/renderer/core/mathml/mathml_under_over_element.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/core/paint/transform_utils.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/writing_mode.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "ui/gfx/geometry/size_f.h"
 
 namespace blink {
@@ -105,10 +109,6 @@ inline LayoutMultiColumnFlowThread* GetFlowThread(
   if (!block_flow)
     return nullptr;
   return block_flow->MultiColumnFlowThread();
-}
-
-inline LayoutMultiColumnFlowThread* GetFlowThread(const LayoutBox& box) {
-  return GetFlowThread(DynamicTo<LayoutBlockFlow>(box));
 }
 
 // The entire purpose of this function is to avoid allocating space on the stack
@@ -192,12 +192,7 @@ NOINLINE void DetermineAlgorithmAndRun(const LayoutAlgorithmParams& params,
     CreateAlgorithmAndRun<FieldsetLayoutAlgorithm>(params, callback);
   } else if (box.IsFrameSet()) {
     CreateAlgorithmAndRun<FrameSetLayoutAlgorithm>(params, callback);
-  }
-  // If there's a legacy layout box, we can only do block fragmentation if
-  // we would have done block fragmentation with the legacy engine.
-  // Otherwise writing data back into the legacy tree will fail. Look for
-  // the flow thread.
-  else if (GetFlowThread(box) && params.node.Style().SpecifiesColumns()) {
+  } else if (box.IsMulticolContainer()) {
     CreateAlgorithmAndRun<ColumnLayoutAlgorithm>(params, callback);
   } else if (!box.Parent() && params.node.IsPaginatedRoot()) [[unlikely]] {
     CreateAlgorithmAndRun<PaginatedRootLayoutAlgorithm>(params, callback);
@@ -258,7 +253,7 @@ bool CanUseCachedIntrinsicInlineSizes(const ConstraintSpace& constraint_space,
   // "grid-template-columns: repeat(auto-fill, 50px); min-width: 50%;"
   // In this specific case our min/max sizes are now dependent on what
   // "min-width" resolves to - which is unique to grid.
-  if (node.IsGrid()) {
+  if (node.IsGrid() || node.IsMasonry()) {
     if (style.LogicalMinWidth().HasPercentOrStretch() ||
         style.LogicalMaxWidth().HasPercentOrStretch()) {
       return false;
@@ -393,7 +388,7 @@ void AttachScrollMarkers(LayoutObject& parent,
   }
 
   const LayoutBox* parent_box = DynamicTo<LayoutBox>(&parent);
-  // If this is a multicol container, look for ::column::scroll-marker pseudo
+  // If this is a multicol container, look for ::column::scroll-marker pseudo-
   // elements, and attach them.
   if (parent_box && parent_box->IsFragmentationContextRoot()) {
     if (const ColumnPseudoElementsVector* column_pseudos =
@@ -509,7 +504,7 @@ const LayoutResult* BlockNode::Layout(
       const LogicalSize available_size = CalculateChildAvailableSize(
           constraint_space, *this, fragment_geometry->border_box_size,
           fragment_geometry->border + scrollbar + fragment_geometry->padding);
-      GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForContainer(
+      GetDocument().GetStyleEngine().UpdateStyleAndLayoutTreeForSizeContainer(
           *element, available_size, ContainedAxes());
 
       // Try the cache again. Container query matching may have affected
@@ -907,8 +902,9 @@ void BlockNode::FinishLayout(
     }
 
     if (has_inline_children) {
-      if (items)
+      if (items && !RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
         CopyFragmentItemsToLayoutBox(physical_fragment, *items, break_token);
+      }
     } else {
       // We still need to clear |InlineNodeData| in case it had inline
       // children.
@@ -974,11 +970,12 @@ MinMaxSizesResult BlockNode::ComputeMinMaxSizes(
   };
 
   const bool is_in_perform_layout = box_->GetFrameView()->IsInPerformLayout();
-  // In some scenarios, GridNG and FlexNG will run layout on their items during
-  // MinMaxSizes computation. Instead of running (and possible caching incorrect
-  // results), when we're not performing layout, just use border + padding.
+  // In some scenarios, Grid, Masonry and Flex will run layout on their items
+  // during MinMaxSizes computation. Instead of running (and possible caching
+  // incorrect results), when we're not performing layout, just use border +
+  // padding.
   if (!is_in_perform_layout &&
-      (IsGrid() ||
+      (IsGrid() || IsMasonry() ||
        (IsFlexibleBox() && Style().ResolvedIsColumnFlexDirection()))) {
     const FragmentGeometry& fragment_geometry = IntrinsicFragmentGeometry();
     const BoxStrut border_padding =
@@ -1221,8 +1218,7 @@ LayoutUnit BlockNode::EmptyLineBlockSize(
 }
 
 String BlockNode::ToString() const {
-  return String::Format("BlockNode: %s",
-                        GetLayoutBox()->ToString().Ascii().c_str());
+  return StrCat({"BlockNode: ", GetLayoutBox()->ToString()});
 }
 
 void BlockNode::CopyFragmentDataToLayoutBox(
@@ -1237,6 +1233,21 @@ void BlockNode::CopyFragmentDataToLayoutBox(
   // we may have auto margins, which only the parent is able to resolve. Remove
   // the following line when all layout modes do this properly.
   UpdateMarginPaddingInfoIfNeeded(constraint_space, physical_fragment);
+
+  if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
+    // If this node doesn't participate in block fragmentation (either because
+    // there's no outer fragmentation context, or because we're in a monolithic
+    // subtree), update the box offset right away. Otherwise, we need to wait
+    // until layout of the outer fragmentation context is finished, in order to
+    // tell where the fragments are placed relatively to each other.
+    if (!InvolvedInBlockFragmentation(constraint_space, previous_break_token)) {
+      UpdateChildLayoutBoxLocations(physical_fragment);
+    }
+    if (is_last_fragment) {
+      box_->UpdateAfterLayout();
+    }
+    return;
+  }
 
   auto* block_flow = DynamicTo<LayoutBlockFlow>(box_.Get());
   LayoutMultiColumnFlowThread* flow_thread = GetFlowThread(block_flow);
@@ -1271,30 +1282,14 @@ void BlockNode::CopyFragmentDataToLayoutBox(
     return;
   }
 
-  box_->SetNeedsOverflowRecalc(
-      LayoutObject::OverflowRecalcType::kOnlyVisualOverflowRecalc);
-  box_->SetScrollableOverflowFromLayoutResults();
   box_->UpdateAfterLayout();
-
-  if (flow_thread && Style().HasColumnRule()) [[unlikely]] {
-    // Issue full invalidation, in case the number of column rules have changed.
-    box_->ClearNeedsLayoutWithFullPaintInvalidation();
-  } else {
-    box_->ClearNeedsLayout();
-  }
-
-  // We should notify the display lock that we've done layout on self, and if
-  // it's not blocked, on children.
-  if (auto* context = box_->GetDisplayLockContext()) {
-    if (!ChildLayoutBlockedByDisplayLock())
-      context->DidLayoutChildren();
-  }
 }
 
 void BlockNode::PlaceChildrenInLayoutBox(
     const PhysicalBoxFragment& physical_fragment,
     const BlockBreakToken* previous_break_token,
     bool needs_invalidation_check) const {
+  DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
   for (const auto& child_fragment : physical_fragment.Children()) {
     // Skip any line-boxes we have as children, this is handled within
     // InlineNode at the moment.
@@ -1324,6 +1319,7 @@ void BlockNode::PlaceChildrenInFlowThread(
     const ConstraintSpace& space,
     const PhysicalBoxFragment& physical_fragment,
     const BlockBreakToken* previous_container_break_token) const {
+  DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
   // Stitch the contents of the columns together in the legacy flow thread, and
   // update the position and size of column sets, spanners and spanner
   // placeholders. Create fragmentainer groups as needed. When in a nested
@@ -1404,6 +1400,7 @@ void BlockNode::CopyChildFragmentPosition(
     const PhysicalBoxFragment& container_fragment,
     const BlockBreakToken* previous_container_break_token,
     bool needs_invalidation_check) const {
+  DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
   auto* layout_box = To<LayoutBox>(child_fragment.GetMutableLayoutObject());
   if (!layout_box)
     return;
@@ -1428,6 +1425,9 @@ void BlockNode::CopyChildFragmentPosition(
 }
 
 void BlockNode::MakeRoomForExtraColumns(LayoutUnit block_size) const {
+  if (RuntimeEnabledFeatures::FlowThreadLessEnabled()) {
+    return;
+  }
   auto* block_flow = DynamicTo<LayoutBlockFlow>(GetLayoutBox());
   DCHECK(block_flow && block_flow->MultiColumnFlowThread());
   MultiColumnFragmentainerGroup& last_group =
@@ -1452,6 +1452,7 @@ void BlockNode::CopyFragmentItemsToLayoutBox(
     const PhysicalBoxFragment& container,
     const FragmentItems& items,
     const BlockBreakToken* previous_break_token) const {
+  DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
   LayoutUnit previously_consumed_block_size;
   if (previous_break_token) {
     previously_consumed_block_size =
@@ -1504,6 +1505,59 @@ void BlockNode::CopyFragmentItemsToLayoutBox(
   }
 }
 
+bool BlockNode::UseParentPercentageResolutionBlockSizeForChildren() const {
+  auto* block = DynamicTo<LayoutBlock>(box_.Get());
+  if (!block) {
+    return false;
+  }
+
+  const ComputedStyle& style = Style();
+  const bool in_quirks_mode = GetDocument().InQuirksMode();
+  // Anonymous blocks should not impede percentage resolution on a child.
+  // Examples of such anonymous blocks are blocks wrapped around inlines that
+  // have block siblings (from the CSS spec) and multicol flow threads (an
+  // implementation detail). Another implementation detail, ruby columns, create
+  // anonymous inline-blocks, so skip those too. All other types of anonymous
+  // objects, such as table-cells, will be treated just as if they were
+  // non-anonymous.
+  if (block->IsAnonymous()) {
+    if (!in_quirks_mode && block->Parent() && block->Parent()->IsFieldset()) {
+      return false;
+    }
+    EDisplay display = style.Display();
+    return display == EDisplay::kBlock || display == EDisplay::kInlineBlock ||
+           display == EDisplay::kFlowRoot;
+  }
+
+  // For quirks mode, we skip most auto-height containing blocks when computing
+  // percentages.
+  if (!in_quirks_mode || !style.LogicalHeight().IsAuto()) {
+    return false;
+  }
+
+  // A quirky <body> with "height:auto" will have a definite height.
+  if (IsQuirkyAndFillsViewport()) {
+    return false;
+  }
+
+  const Node* node = GetDOMNode();
+  if (node->IsInUserAgentShadowRoot()) [[unlikely]] {
+    const Element* host = node->OwnerShadowHost();
+    if (const auto* input = DynamicTo<HTMLInputElement>(host)) {
+      // In web_tests/fast/forms/range/range-thumb-height-percentage.html, a
+      // percent height for the slider thumb element should refer to the height
+      // of the INPUT box.
+      if (input->FormControlType() == FormControlType::kInputRange) {
+        return true;
+      }
+    }
+  }
+
+  return !block->IsLayoutReplaced() && !block->IsTableCell() &&
+         !block->IsOutOfFlowPositioned() && !block->IsLayoutGrid() &&
+         !block->IsFlexibleBox() && !block->IsLayoutCustom();
+}
+
 bool BlockNode::IsInlineFormattingContextRoot(
     InlineNode* first_child_out) const {
   if (const auto* block = DynamicTo<LayoutBlockFlow>(box_.Get())) {
@@ -1549,8 +1603,8 @@ LogicalSize BlockNode::GetReplacedAspectRatio() const {
     const PhysicalNaturalSizingInfo legacy_sizing_info =
         To<LayoutReplaced>(*box_).ComputeNaturalSizingInfo();
     if (!legacy_sizing_info.aspect_ratio.IsEmpty()) {
-      return legacy_sizing_info.aspect_ratio.ConvertToLogical(
-          Style().GetWritingMode());
+      return ToLogicalSize(legacy_sizing_info.aspect_ratio,
+                           Style().GetWritingMode());
     }
   }
 
@@ -1558,38 +1612,6 @@ LogicalSize BlockNode::GetReplacedAspectRatio() const {
     return Style().LogicalAspectRatio();
   }
   return LogicalSize();
-}
-
-std::optional<gfx::Transform> BlockNode::GetTransformForChildFragment(
-    const PhysicalBoxFragment& child_fragment,
-    PhysicalSize size) const {
-  const auto* child_layout_object = child_fragment.GetLayoutObject();
-  DCHECK(child_layout_object);
-
-  if (!child_layout_object->ShouldUseTransformFromContainer(box_))
-    return std::nullopt;
-
-  std::optional<gfx::Transform> fragment_transform;
-  if (!child_fragment.IsOnlyForNode()) {
-    // If we're fragmented, there's no correct transform stored for
-    // us. Calculate it now.
-    fragment_transform.emplace();
-    fragment_transform->MakeIdentity();
-    const PhysicalRect reference_box = ComputeReferenceBox(child_fragment);
-    child_fragment.Style().ApplyTransform(
-        *fragment_transform, box_, reference_box,
-        ComputedStyle::kIncludeTransformOperations,
-        ComputedStyle::kIncludeTransformOrigin,
-        ComputedStyle::kIncludeMotionPath,
-        ComputedStyle::kIncludeIndependentTransformProperties);
-  }
-
-  gfx::Transform transform;
-  child_layout_object->GetTransformFromContainer(
-      box_, PhysicalOffset(), transform, &size,
-      base::OptionalToPtr(fragment_transform));
-
-  return transform;
 }
 
 bool BlockNode::HasNonVisibleBlockOverflow() const {
@@ -1794,19 +1816,18 @@ void BlockNode::UpdateShapeOutsideInfoIfNeeded(
   BoxStrut margins = ComputePhysicalMargins(constraint_space, Style())
                          .ConvertToLogical({writing_mode, TextDirection::kLtr});
   shape_outside->SetReferenceBoxLogicalSize(
-      box_size.ConvertToLogical(writing_mode),
+      ToLogicalSize(box_size, writing_mode),
       LogicalSize(margins.InlineSum(), margins.BlockSum()));
   shape_outside->SetPercentageResolutionInlineSize(
       constraint_space.PercentageResolutionInlineSize());
 }
 
-void BlockNode::StoreColumnSizeAndCount(LayoutUnit inline_size, int count) {
+void BlockNode::StoreColumnCount(int count) {
+  if (RuntimeEnabledFeatures::FlowThreadLessEnabled()) {
+    return;
+  }
   LayoutMultiColumnFlowThread* flow_thread =
       To<LayoutBlockFlow>(box_.Get())->MultiColumnFlowThread();
-  // We have no chance to unregister the inline size for the
-  // LayoutMultiColumnFlowThread.
-  TextAutosizer::MaybeRegisterInlineSize(*flow_thread, inline_size);
-
   flow_thread->SetColumnCountFromNG(count);
 }
 

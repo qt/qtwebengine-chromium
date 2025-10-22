@@ -14,10 +14,13 @@ specify a priori).
 
 ### Directly Measure What You Want
 
-Measure exactly what you want, whether that's the time used for a function call,
-the number of bytes transmitted to fetch a page, the number of items in a list,
-etc. Do not assume you can calculate what you want from other histograms, as
-most ways of doing this are incorrect.
+Usually it's best to measure exactly what you want. The only exception is when
+you can derive what you want to measure from the data from a single histogram.
+(This is described in more detail below.) Values you should measure directly
+include: the time used for a function call, the number of bytes transmitted to
+fetch a page, the number of items in a list, etc. Do not assume you can
+calculate what you want from other histograms, as most ways of doing this are
+incorrect.
 
 For example, suppose you want to measure the runtime of a function that just
 calls two subfunctions, each of which is instrumented with histogram logging.
@@ -30,7 +33,20 @@ simply add up the two histograms to get a total duration histogram, you're
 implicitly assuming the two histograms' values are independent, which may not be
 the case.
 
-Directly measure what you care about; don't try to derive it from other data.
+Instead of logging in Chromium, custom queries or dashboard analysis over
+existing data can be used. Those should be used only if what you want can be
+trivially derived from a single histogram (plus their `client_id`). For example,
+suppose you have a "feature used" histogram. If you want to measure the number
+of clients who use a feature in a day, you can compute the number of clients who
+uploaded the "feature used = True" value. You don't need to write code to emit
+"did this Chrome client use this feature this day". (It's not even clear how to
+emit that histogram that correctly and reliably. Do you emit it when the browser
+closes? Periodically, every 24 hours? On startup, about the previous day(s)?) In
+some narrow circumstances, if you're careful, server-side analysis is an
+acceptable way to compute metrics.
+
+In short, directly measure what you care about; don't try to derive it from
+other data unless it can be derived trivially.
 
 ### Provide Context
 
@@ -99,12 +115,26 @@ name and you update one location and forget another.
 
 ### Efficiency
 
-Generally, don't be concerned about the processing cost of emitting to a
-histogram (unless you're using [sparse
+In most cases, you don't need to be concerned about the processing cost of
+emitting to a histogram (unless you're using [sparse
 histograms](#When-To-Use-Sparse-Histograms)). The normal histogram code is
-highly optimized. If you are recording to a histogram in particularly
-performance-sensitive or "hot" code, make sure you're using the histogram
-macros; see [reasons above](#Coding-Emitting-to-Histograms).
+highly optimized.
+
+If you are recording to a histogram in particularly
+performance-sensitive or "hot" code, follow one of these guidelines:
+- Use the histogram macros; see [reasons above](#Coding-Emitting-to-Histograms).
+- When total counts aren't important (for example, when measuring latency or
+  ratios) consider subsampling. For example:
+
+  ```c++
+  if (base::ShouldRecordSubsampledMetric(0.01)) {
+    base::UmaHistogramMicrosecondsTimes(
+      "Component.Feature.Duration.Subsampled", timer->Elapsed());
+  }
+  ```
+
+Examples where these optimizations are necessary include histograms that apply
+to every frame or every cookie.
 
 ## Picking Your Histogram Type
 
@@ -187,8 +217,8 @@ enum class NewTabPageAction {
 // LINT.ThenChange(//path/to/enums.xml:NewTabPageActionEnum)
 ```
 
-The `LINT.IfChange` / `LINT.ThenChange` comments point between the code and XML
-definitions of the enum, to encourage them to be kept in sync. See
+The `LINT.*` comments point between the code and XML definitions of the enum, to
+encourage them to be kept in sync. See
 [guide](https://www.chromium.org/chromium-os/developer-library/guides/development/keep-files-in-sync/)
 and [more details](http://go/gerrit-ifthisthenthat).
 
@@ -604,7 +634,7 @@ If you have <enum> or <variant> entries that need to be updated to match code,
 you can use
 [HistogramEnumReader](https://cs.chromium.org/chromium/src/base/test/metrics/histogram_enum_reader.h)
 or
-[HistogramVariantsReader](https://cs.chromium.org/chromium/src/base/test/metrics/histogram_enum_reader.h)
+[HistogramVariantsReader](https://cs.chromium.org/chromium/src/base/test/metrics/histogram_variants_reader.h)
 to read and verify the expected values in a unit test. This prevents a mismatch
 between code and histogram data from slipping through CQ.
 
@@ -625,11 +655,14 @@ not entirely so.
 ## Revising Histograms {#revising}
 
 When changing the semantics of a histogram (when it's emitted, what the buckets
-represent, the bucket range or number of buckets, etc.), create a new histogram
-with a new name. Otherwise analysis that mixes the data pre- and post- change
-may be misleading. If the histogram name is still the best name choice, the
-recommendation is to simply append a '2' to the name. See [Cleaning Up Histogram
-Entries](#obsolete) for details on how to handle the XML changes.
+represent, the bucket range or number of buckets for numeric histograms, etc.),
+create a new histogram with a new name. A new histogram name is not required
+when adding a new value to an enum if users will not move between buckets, and
+bucket proportion is not meaningful. Otherwise analysis that mixes the data pre-
+and post- change may be misleading. If the histogram name is still the best name
+choice, the recommendation is to simply append a '2' to the name. See
+[Cleaning Up Histogram Entries](#obsolete) for details on how to handle the XML
+changes.
 
 Changes to a histogram are allowed in some cases when the semantics have not
 changed at all. Here are some examples that would be allowed:

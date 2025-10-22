@@ -3,6 +3,7 @@
     trace_processor: {
       queries: [
         "loadline/benchmark_score",
+        "loadline/breakdown",
         "loadline/experimental/cpu",
         "loadline/experimental/dom",
         "loadline/experimental/interaction_latency",

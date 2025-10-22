@@ -10,6 +10,7 @@
 #include "base/memory/raw_ref.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
@@ -30,7 +31,6 @@
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
 #include "third_party/blink/public/common/features.h"
 
@@ -299,32 +299,8 @@ IN_PROC_BROWSER_TEST_F(ContentSecurityPolicyBrowserTest, CSPAttributeTooLong) {
   EXPECT_FALSE(main_frame_host()->child_at(0)->csp_attribute());
 }
 
-class TransparentPlaceholderImageContentSecurityPolicyBrowserTest
-    : public ContentSecurityPolicyBrowserTest,
-      public ::testing::WithParamInterface<bool> {
- public:
-  TransparentPlaceholderImageContentSecurityPolicyBrowserTest() {
-    if (GetParam()) {
-      feature_list_.InitAndEnableFeature(
-          blink::features::kSimplifyLoadingTransparentPlaceholderImage);
-    } else {
-      feature_list_.InitAndDisableFeature(
-          blink::features::kSimplifyLoadingTransparentPlaceholderImage);
-    }
-  }
-
- private:
-  base::test::ScopedFeatureList feature_list_;
-};
-
-INSTANTIATE_TEST_SUITE_P(
-    TransparentPlaceholderImageContentSecurityPolicyBrowserTest,
-    TransparentPlaceholderImageContentSecurityPolicyBrowserTest,
-    testing::Bool());
-
-IN_PROC_BROWSER_TEST_P(
-    TransparentPlaceholderImageContentSecurityPolicyBrowserTest,
-    ImgSrcPolicyEnforced) {
+IN_PROC_BROWSER_TEST_F(ContentSecurityPolicyBrowserTest,
+                       TransparentPlaceholderImage_ImgSrcPolicyEnforced) {
   const char* page = R"(
     data:text/html,
     <meta http-equiv="Content-Security-Policy" content="img-src 'none';">
@@ -342,9 +318,8 @@ IN_PROC_BROWSER_TEST_P(
   ASSERT_TRUE(console_observer.Wait());
 }
 
-IN_PROC_BROWSER_TEST_P(
-    TransparentPlaceholderImageContentSecurityPolicyBrowserTest,
-    ImgSrcPolicyReported) {
+IN_PROC_BROWSER_TEST_F(ContentSecurityPolicyBrowserTest,
+                       TransparentPlaceholderImage_ImgSrcPolicyReported) {
   GURL url = embedded_test_server()->GetURL("/csp_report_only_data_url.html");
 
   WebContentsConsoleObserver console_observer(web_contents());

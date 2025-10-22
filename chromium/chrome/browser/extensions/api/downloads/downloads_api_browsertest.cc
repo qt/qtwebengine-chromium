@@ -29,6 +29,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/run_loop.h"
 #include "base/scoped_observation.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversion_utils.h"
 #include "base/task/single_thread_task_runner.h"
@@ -80,6 +81,7 @@
 #include "content/public/test/test_utils.h"
 #include "extensions/browser/api_test_utils.h"
 #include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_function_dispatcher.h"
 #include "extensions/common/manifest_handlers/incognito_info.h"
 #include "net/base/data_url.h"
 #include "net/base/mime_util.h"
@@ -369,8 +371,7 @@ class DownloadExtensionTest : public ExtensionApiTest {
     ExtensionDownloadsEventRouter::SetDetermineFilenameTimeoutSecondsForTesting(
         2);
     content::WebContents* tab = chrome::AddSelectedTabWithURL(
-        current_browser(),
-        extension_->GetResourceURL("empty.html"),
+        current_browser(), extension_->GetResourceURL("empty.html"),
         ui::PAGE_TRANSITION_LINK);
     EventRouter::Get(current_browser()->profile())
         ->AddEventListener(downloads::OnDeterminingFilename::kEventName,

@@ -37,11 +37,11 @@ const CHIP_HEIGHT = css`32px`;
  */
 export class RadioChip extends LitElement {
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  selected: boolean;
+  declare selected: boolean;
   /** @export */
-  label: string;
+  declare label: string;
 
   /** @nocollapse */
   static override styles: CSSResultGroup = css`

@@ -69,9 +69,8 @@ class TestAutofillDriverTemplate : public T {
                         mojom::ActionPersistence action_persistence,
                         const FieldGlobalId& field,
                         const std::u16string& value) override {}
-  void SendTypePredictionsToRenderer(
-      base::span<const raw_ptr<FormStructure, VectorExperimental>> forms)
-      override {}
+  void SendTypePredictionsToRenderer(const FormStructure& form) override {}
+  void ExposeDomNodeIDs() override {}
   void RendererShouldAcceptDataListSuggestion(
       const FieldGlobalId& field,
       const std::u16string& value) override {}
@@ -119,7 +118,8 @@ class TestAutofillDriverTemplate : public T {
       mojom::ActionPersistence action_persistence,
       base::span<const FormFieldData> fields,
       const url::Origin& triggered_origin,
-      const base::flat_map<FieldGlobalId, FieldType>& field_type_map) override {
+      const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
+      const Section& section_for_clear_form_on_ios) override {
     if (action_type == mojom::FormActionType::kUndo) {
       return {};
     }

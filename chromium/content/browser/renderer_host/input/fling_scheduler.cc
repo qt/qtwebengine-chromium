@@ -59,8 +59,8 @@ void FlingScheduler::DidStopFlingingOnBrowser(
   host_->GetRenderInputRouter()->DidStopFlinging();
 }
 
-bool FlingScheduler::NeedsBeginFrameForFlingProgress() {
-  return !GetCompositor();
+bool FlingScheduler::ProgressFlingOnFlingStart() {
+  return GetCompositor();
 }
 
 bool FlingScheduler::ShouldUseMobileFlingCurve() {
@@ -77,7 +77,7 @@ bool FlingScheduler::ShouldUseMobileFlingCurve() {
 gfx::Vector2dF FlingScheduler::GetPixelsPerInch(
     const gfx::PointF& position_in_screen) {
 #if BUILDFLAG(IS_WIN)
-  return display::win::ScreenWin::GetPixelsPerInch(position_in_screen);
+  return display::win::GetScreenWin()->GetPixelsPerInch(position_in_screen);
 #else
   return gfx::Vector2dF(input::kDefaultPixelsPerInch,
                         input::kDefaultPixelsPerInch);

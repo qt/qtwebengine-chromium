@@ -56,7 +56,8 @@ function createSettingValue(
 
 export function stubNoopSettings() {
   sinon.stub(Common.Settings.Settings, 'instance').returns({
-    createSetting: () => ({
+    createSetting: (name: string) => ({
+      name,
       get: () => [],
       set: () => {},
       addChangeListener: () => {},
@@ -68,7 +69,8 @@ export function stubNoopSettings() {
       type: () => Common.Settings.SettingType.BOOLEAN,
       getAsArray: () => [],
     }),
-    moduleSetting: () => ({
+    moduleSetting: (name: string) => ({
+      name,
       get: () => [],
       set: () => {},
       addChangeListener: () => {},
@@ -80,7 +82,8 @@ export function stubNoopSettings() {
       type: () => Common.Settings.SettingType.BOOLEAN,
       getAsArray: () => [],
     }),
-    createLocalSetting: () => ({
+    createLocalSetting: (name: string) => ({
+      name,
       get: () => [],
       set: () => {},
       addChangeListener: () => {},
@@ -120,14 +123,12 @@ const REGISTERED_EXPERIMENTS = [
   Root.Runtime.ExperimentName.HIGHLIGHT_ERRORS_ELEMENTS_PANEL,
   Root.Runtime.ExperimentName.USE_SOURCE_MAP_SCOPES,
   'font-editor',
-  Root.Runtime.ExperimentName.NETWORK_PANEL_FILTER_BAR_REDESIGN,
   Root.Runtime.ExperimentName.TIMELINE_DEBUG_MODE,
   Root.Runtime.ExperimentName.FULL_ACCESSIBILITY_TREE,
   Root.Runtime.ExperimentName.TIMELINE_SHOW_POST_MESSAGE_EVENTS,
+  Root.Runtime.ExperimentName.TIMELINE_SAVE_AS_GZ,
   Root.Runtime.ExperimentName.TIMELINE_ENHANCED_TRACES,
-  Root.Runtime.ExperimentName.TIMELINE_EXPERIMENTAL_INSIGHTS,
-  Root.Runtime.ExperimentName.TIMELINE_DIM_UNRELATED_EVENTS,
-  Root.Runtime.ExperimentName.TIMELINE_ALTERNATIVE_NAVIGATION,
+  Root.Runtime.ExperimentName.VERTICAL_DRAWER,
 ];
 
 export async function initializeGlobalVars({reset = true} = {}) {
@@ -156,6 +157,7 @@ export async function initializeGlobalVars({reset = true} = {}) {
         Common.Settings.SettingCategory.DEBUGGER, 'skip-stack-frames-pattern',
         '/node_modules/|^node:', Common.Settings.SettingType.REGEX),
     createSettingValue(Common.Settings.SettingCategory.DEBUGGER, 'navigator-group-by-folder', true),
+    createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'dom-word-wrap', true),
     createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-detailed-inspect-tooltip', true),
     createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-html-comments', true),
     createSettingValue(Common.Settings.SettingCategory.ELEMENTS, 'show-ua-shadow-dom', false),
@@ -188,6 +190,8 @@ export async function initializeGlobalVars({reset = true} = {}) {
     createSettingValue(
         Common.Settings.SettingCategory.RENDERING, 'emulated-vision-deficiency', '', Common.Settings.SettingType.ENUM),
     createSettingValue(
+        Common.Settings.SettingCategory.RENDERING, 'emulated-os-text-scale', '', Common.Settings.SettingType.ENUM),
+    createSettingValue(
         Common.Settings.SettingCategory.RENDERING, 'emulate-auto-dark-mode', '', Common.Settings.SettingType.ENUM),
     createSettingValue(Common.Settings.SettingCategory.RENDERING, 'local-fonts-disabled', false),
     createSettingValue(Common.Settings.SettingCategory.RENDERING, 'show-paint-rects', false),
@@ -203,6 +207,7 @@ export async function initializeGlobalVars({reset = true} = {}) {
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'auto-pretty-print-minified', true),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'js-source-maps-enabled', true),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'show-whitespaces-in-editor', 'none'),
+    createSettingValue(Common.Settings.SettingCategory.SOURCES, 'sources.word-wrap', true),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'text-editor-autocompletion', true),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'text-editor-auto-detect-indent', false),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'text-editor-bracket-closing', true),
@@ -210,7 +215,6 @@ export async function initializeGlobalVars({reset = true} = {}) {
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'text-editor-code-folding', true),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'text-editor-indent', '    '),
     createSettingValue(Common.Settings.SettingCategory.SOURCES, 'text-editor-tab-moves-focus', false),
-    createSettingValue(Common.Settings.SettingCategory.SOURCES, 'dom-word-wrap', true),
     createSettingValue(
         Common.Settings.SettingCategory.EMULATION, 'emulation.touch', '', Common.Settings.SettingType.ENUM),
     createSettingValue(
@@ -294,10 +298,19 @@ export async function initializeGlobalVars({reset = true} = {}) {
     createSettingValue(
         Common.Settings.SettingCategory.AI, 'ai-assistance-history-entries', [], Common.Settings.SettingType.ARRAY),
     createSettingValue(
+        Common.Settings.SettingCategory.AI, 'ai-assistance-patching-fre-completed', false,
+        Common.Settings.SettingType.BOOLEAN),
+    createSettingValue(
+        Common.Settings.SettingCategory.AI, 'ai-code-completion-fre-completed', false,
+        Common.Settings.SettingType.BOOLEAN),
+    createSettingValue(
         Common.Settings.SettingCategory.MOBILE, 'emulation.show-device-outline', false,
         Common.Settings.SettingType.BOOLEAN),
     createSettingValue(
         Common.Settings.SettingCategory.APPEARANCE, 'chrome-theme-colors', true, Common.Settings.SettingType.BOOLEAN),
+    createSettingValue(
+        Common.Settings.SettingCategory.PERFORMANCE, 'timeline.user-had-shortcuts-dialog-opened-once', false,
+        Common.Settings.SettingType.BOOLEAN),
   ];
 
   Common.Settings.registerSettingsForTest(settings, reset);
@@ -343,7 +356,7 @@ export async function deinitializeGlobalVars() {
   Common.Revealer.RevealerRegistry.removeInstance();
   Common.Console.Console.removeInstance();
   Workspace.Workspace.WorkspaceImpl.removeInstance();
-  Bindings.IgnoreListManager.IgnoreListManager.removeInstance();
+  Workspace.IgnoreListManager.IgnoreListManager.removeInstance();
   Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.removeInstance();
   Bindings.CSSWorkspaceBinding.CSSWorkspaceBinding.removeInstance();
   IssuesManager.IssuesManager.IssuesManager.removeInstance();
@@ -383,6 +396,14 @@ describeWithEnvironment.only = function(title: string, fn: (this: Mocha.Suite) =
     before(async () => await initializeGlobalVars(opts));
     fn.call(this);
     after(async () => await deinitializeGlobalVars());
+  });
+};
+describeWithEnvironment.skip = function(title: string, fn: (this: Mocha.Suite) => void, _opts: {reset: boolean} = {
+  reset: true,
+}) {
+  // eslint-disable-next-line rulesdir/check-test-definitions
+  return describe.skip(title, function() {
+    fn.call(this);
   });
 };
 
@@ -440,8 +461,9 @@ export function createFakeSetting<T>(name: string, defaultValue: T): Common.Sett
   return new Common.Settings.Setting(name, defaultValue, new Common.ObjectWrapper.ObjectWrapper(), storage);
 }
 
-export function enableFeatureForTest(feature: string): void {
-  Root.Runtime.experiments.enableForTest(feature);
+export function createFakeRegExpSetting(name: string, defaultValue: string): Common.Settings.RegExpSetting {
+  const storage = new Common.Settings.SettingsStorage({}, Common.Settings.NOOP_STORAGE, 'test');
+  return new Common.Settings.RegExpSetting(name, defaultValue, new Common.ObjectWrapper.ObjectWrapper(), storage);
 }
 
 export function setupActionRegistry() {
@@ -460,6 +482,7 @@ export function setupActionRegistry() {
   });
 }
 
+// This needs to be invoked within a describe block, rather than within an it() block.
 export function expectConsoleLogs(expectedLogs: {warn?: string[], log?: string[], error?: string[]}) {
   const {error, warn, log} = console;
   before(() => {

@@ -7,8 +7,10 @@
 #include <string>
 
 #include "base/time/time.h"
+#include "base/trace_event/named_trigger.h"
 #include "components/page_load_metrics/browser/page_load_metrics_util.h"
 #include "components/page_load_metrics/google/browser/google_url_util.h"
+#include "content/public/browser/error_navigation_trigger.h"
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "services/metrics/public/cpp/metrics_utils.h"
@@ -40,6 +42,10 @@ FromGWSAbandonedPageLoadMetricsObserver::OnStart(
   if (!page_load_metrics::IsGoogleSearchResultUrl(currently_committed_url)) {
     return ObservePolicy::STOP_OBSERVING;
   }
+
+  // Emit a trigger to allow trace collection tied to from gws navigations.
+  base::trace_event::EmitNamedTrigger("from-gws-navigation-start");
+
   category_parameter_id_ =
       page_load_metrics::GetCategoryIdFromUrl(navigation_handle->GetURL());
   impression_ = navigation_handle->GetImpression();
@@ -51,6 +57,17 @@ FromGWSAbandonedPageLoadMetricsObserver::OnNavigationHandleTimingUpdated(
     content::NavigationHandle* navigation_handle) {
   auto navigation_handle_timing =
       navigation_handle->GetNavigationHandleTiming();
+
+  if (navigation_handle->GetNetErrorCode() < 0) {
+    CHECK(!net_error_.has_value());
+    net_error_ = navigation_handle->GetNetErrorCode();
+  }
+
+  if (navigation_handle->GetErrorNavigationTrigger().has_value()) {
+    CHECK(!error_navigation_trigger_.has_value());
+    error_navigation_trigger_ =
+        navigation_handle->GetErrorNavigationTrigger().value();
+  }
 
   // Set the request / response time of the second redirect by checking:
   // 1) We have not yet recorded second redirect
@@ -108,6 +125,18 @@ void FromGWSAbandonedPageLoadMetricsObserver::OnFailedProvisionalLoad(
     const page_load_metrics::FailedProvisionalLoadInfo&
         failed_provisional_load_info) {
   CHECK(!is_committed_);
+  // Record network error code in case we abort the navigation without going
+  // through `OnNavigationHandleTimingUpdated`.
+  if (!net_error_.has_value()) {
+    net_error_ = failed_provisional_load_info.error;
+  }
+
+  if (failed_provisional_load_info.error_navigation_trigger.has_value()) {
+    CHECK(!error_navigation_trigger_.has_value());
+    error_navigation_trigger_ =
+        failed_provisional_load_info.error_navigation_trigger.value();
+  }
+
   AbandonedPageLoadMetricsObserver::OnFailedProvisionalLoad(
       failed_provisional_load_info);
 }
@@ -195,6 +224,16 @@ void FromGWSAbandonedPageLoadMetricsObserver::LogUKMHistograms(
     } else if (!second_redirect_request_start_time_.is_null()) {
       milestone = NavigationMilestone::kSecondRedirectedRequestStart;
     }
+  }
+
+  if (net_error_.has_value()) {
+    builder.SetNet_ErrorCode(
+        std::abs(static_cast<int64_t>(net_error_.value())));
+  }
+
+  if (error_navigation_trigger_.has_value()) {
+    builder.SetNet_ExtendedErrorCode(
+        std::abs(static_cast<int64_t>(error_navigation_trigger_.value())));
   }
 
   LogUKMHistogramsForAbandonMetrics(builder, abandon_reason, milestone,

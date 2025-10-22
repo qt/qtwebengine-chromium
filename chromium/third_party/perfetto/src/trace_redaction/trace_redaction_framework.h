@@ -62,7 +62,7 @@ class SystemInfo {
   // Perfetto uses a 32 (signed) int for the pid. Even in this case, there is
   // room for 2^9 synthetic threads (2 ^ (31 - 22) = 2 ^ 9).
   //
-  // Futhermore, ther Android source code return 4194304 (2 ^ 22) on 64 bit
+  // Furthermore, ther Android source code return 4194304 (2 ^ 22) on 64 bit
   // devices.
   //
   //  /proc/sys/kernel/pid_max (since Linux 2.5.34)
@@ -87,7 +87,8 @@ class SystemInfo {
 
 class SyntheticProcess {
  public:
-  explicit SyntheticProcess(const std::vector<int32_t>& tids) : tids_(tids) {}
+  explicit SyntheticProcess(int32_t tgid, const std::vector<int32_t>& tids)
+      : tgid_(tgid), tids_(tids) {}
 
   // Use the SYSTEM_UID (i.e. 1000) because it best represents this "type" of
   // process.
@@ -96,17 +97,20 @@ class SyntheticProcess {
   // Use ppid == 1 which is normally considered to be init on Linux?
   int32_t ppid() const { return 1; }
 
-  int32_t tgid() const { return tids_.front(); }
+  int32_t tgid() const { return tgid_; }
 
   const std::vector<int32_t>& tids() const { return tids_; }
 
-  int32_t RunningOn(uint32_t cpu) const { return tids_.at(1 + cpu); }
+  int32_t RunningOn(uint32_t cpu) const { return tids_.at(cpu); }
 
   int32_t RunningOn(int32_t cpu) const {
-    return tids_.at(1 + static_cast<size_t>(cpu));
+    return RunningOn(static_cast<uint32_t>(cpu));
   }
 
  private:
+  int32_t tgid_;
+
+  // Threads in the process. This does not include the thread group.
   std::vector<int32_t> tids_;
 };
 
@@ -328,7 +332,7 @@ class Context {
   //  - ExpectedDisplayFrame
   //  - ExpectedSurfaceFrame
   //
-  // Connect a time, a pid, and a cookie value. Cookies are unqiue within a
+  // Connect a time, a pid, and a cookie value. Cookies are unique within a
   // trace, so if a cookie was connected to the target package, it can always be
   // used.
   //

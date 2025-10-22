@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 import shlex
 from typing import (TYPE_CHECKING, Any, Final, Iterable, Optional, Self,
-                    Sequence, Tuple, cast)
+                    Sequence, cast)
 
 from typing_extensions import override
 
@@ -27,7 +27,7 @@ from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.probes.profiling.context.base import ProfilingContext
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.run import Run
@@ -233,10 +233,10 @@ class ProfilingProbe(Probe):
     self._frequency: int | str | None = frequency
     self._clockid: str | None = clockid
     self._count: int | None = count
-    self._cpu: Tuple[int, ...] = tuple(cpu)
-    self._events: Tuple[str, ...] = tuple(events)
-    self._grouped_events: Tuple[str, ...] = tuple(grouped_events)
-    self._add_counters: Tuple[str, ...] = tuple(add_counters)
+    self._cpu: tuple[int, ...] = tuple(cpu)
+    self._events: tuple[str, ...] = tuple(events)
+    self._grouped_events: tuple[str, ...] = tuple(grouped_events)
+    self._add_counters: tuple[str, ...] = tuple(add_counters)
 
   @property
   @override
@@ -305,23 +305,23 @@ class ProfilingProbe(Probe):
     return self._count
 
   @property
-  def cpu(self) -> Tuple[int, ...]:
+  def cpu(self) -> tuple[int, ...]:
     return self._cpu
 
   @property
-  def events(self) -> Tuple[str, ...]:
+  def events(self) -> tuple[str, ...]:
     return self._events
 
   @property
-  def grouped_events(self) -> Tuple[str, ...]:
+  def grouped_events(self) -> tuple[str, ...]:
     return self._grouped_events
 
   @property
-  def add_counters(self) -> Tuple[str, ...]:
+  def add_counters(self) -> tuple[str, ...]:
     return self._add_counters
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     browser_platform = browser.platform
     if browser_platform.is_linux:
       self._validate_linux(env, browser)
@@ -366,7 +366,7 @@ class ProfilingProbe(Probe):
                                         "Android")
 
   def _validate_unsupported_settings(self, browser,
-                                     unsupported_settings: Iterable[Tuple[str,
+                                     unsupported_settings: Iterable[tuple[str,
                                                                           Any]],
                                      platforms) -> None:
     for name, value in unsupported_settings:
@@ -375,11 +375,11 @@ class ProfilingProbe(Probe):
             self, browser,
             f"{repr(name)} is currently only supported on {platforms}")
 
-  def _validate_linux(self, env: HostEnvironment, browser: Browser) -> None:
+  def _validate_linux(self, env: RunnerEnv, browser: Browser) -> None:
     env.check_installed(binaries=["pprof"])
     assert browser.platform.which("perf"), "Please install linux-perf"
 
-  def _validate_macos(self, env: HostEnvironment, browser: Browser) -> None:
+  def _validate_macos(self, env: RunnerEnv, browser: Browser) -> None:
     assert browser.platform.which(
         "xctrace"), "Please install Xcode to use xctrace"
     # Only Linux-perf and Android-simpleperf results can be merged
@@ -393,7 +393,7 @@ class ProfilingProbe(Probe):
         f"Unsupported profile target for Mac: {self._target}. "
         f"Should be one of {str(supported_mac_targets)}.")
 
-  def _validate_android(self, env: HostEnvironment, browser: Browser) -> None:
+  def _validate_android(self, env: RunnerEnv, browser: Browser) -> None:
     del env
     assert browser.platform.which("simpleperf"), "simpleperf is not available"
 
@@ -405,7 +405,7 @@ class ProfilingProbe(Probe):
             "For RENDERER_MAIN_ONLY/RENDERER_PROCESS_ONLY profiling, "
             "browser version >= M124 https://crrev.com/c/5374765 is required.")
 
-  def _validate_pprof(self, env: HostEnvironment, browser: Browser) -> None:
+  def _validate_pprof(self, env: RunnerEnv, browser: Browser) -> None:
     assert self._run_pprof
     host_platform = browser.host_platform
     self._run_pprof = host_platform.which("gcert") is not None
@@ -438,7 +438,7 @@ class ProfilingProbe(Probe):
     if not self._spare_renderer_process:
       browser.features.disable("SpareRendererForSitePerProcess")
     if self._start_profiling_after_setup:
-      browser.flags.enable_benchmarking_extension()
+      browser.flags.enable_benchmarking_api()
     if self._sample_js:
       if browser.platform.is_linux:
         browser.js_flags.set("--perf-prof")
@@ -515,7 +515,7 @@ class ProfilingProbe(Probe):
     if not perf_files:
       return
     largest_perf_file = perf_files[-1]
-    logging.critical("    %s : %s", largest_perf_file,
+    logging.critical("    %s [%s]", largest_perf_file,
                      fs_helper.get_file_size(largest_perf_file))
     if len(perf_files) <= 1:
       return

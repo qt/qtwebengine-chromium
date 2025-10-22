@@ -47,10 +47,12 @@
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/core/view_transition/view_transition_utils.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
 namespace blink {
@@ -205,8 +207,6 @@ Element* CSSComputedStyleDeclaration::StyledElement() const {
   }
 
   if (pseudo_element_specifier_ == kPseudoIdInvalid) {
-    CHECK(RuntimeEnabledFeatures::
-              CSSComputedStyleFullPseudoElementParserEnabled());
     return nullptr;
   }
 
@@ -339,6 +339,12 @@ const CSSValue* CSSComputedStyleDeclaration::GetPropertyCSSValue(
   if (!styled_element) {
     return nullptr;
   }
+
+  // TODO(crbug.com/417967839): Investigate if the performance of this scope
+  // (which invalidate view transition pseudos for specific pseudo id requests)
+  // is acceptable.
+  ViewTransitionUtils::GetPropertyCSSValueScope scope(
+      styled_element->GetDocument(), pseudo_element_specifier_);
 
   UpdateStyleAndLayoutTreeIfNeeded(&property_name,
                                    /*for_all_properties=*/false);
@@ -523,8 +529,8 @@ void CSSComputedStyleDeclaration::setProperty(const ExecutionContext*,
                                               ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
       DOMExceptionCode::kNoModificationAllowedError,
-      "These styles are computed, and therefore the '" + name +
-          "' property is read-only.");
+      StrCat({"These styles are computed, and therefore the '", name,
+              "' property is read-only."}));
 }
 
 String CSSComputedStyleDeclaration::removeProperty(
@@ -532,8 +538,8 @@ String CSSComputedStyleDeclaration::removeProperty(
     ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
       DOMExceptionCode::kNoModificationAllowedError,
-      "These styles are computed, and therefore the '" + name +
-          "' property is read-only.");
+      StrCat({"These styles are computed, and therefore the '", name,
+              "' property is read-only."}));
   return String();
 }
 
@@ -580,9 +586,9 @@ void CSSComputedStyleDeclaration::SetPropertyInternal(
     ExceptionState& exception_state) {
   exception_state.ThrowDOMException(
       DOMExceptionCode::kNoModificationAllowedError,
-      "These styles are computed, and therefore the '" +
-          CSSUnresolvedProperty::Get(id).GetPropertyNameString() +
-          "' property is read-only.");
+      StrCat({"These styles are computed, and therefore the '",
+              CSSUnresolvedProperty::Get(id).GetPropertyNameString(),
+              "' property is read-only."}));
 }
 
 void CSSComputedStyleDeclaration::Trace(Visitor* visitor) const {

@@ -126,6 +126,12 @@ void IpProtectionProxyConfigManagerImpl::OnGotProxyList(
   // If the request for fetching the proxy list is successful, utilize the new
   // proxy list, otherwise, continue using the existing list, if any.
   if (proxy_list.has_value()) {
+    // The provider of the proxy list should have already validated the proxy
+    // chains, but double-check that here.
+    for (const auto& proxy_chain : *proxy_list) {
+      CHECK(proxy_chain.IsValid());
+      CHECK(proxy_chain.is_for_ip_protection());
+    }
     proxy_list_ = std::move(*proxy_list);
     have_fetched_proxy_list_ = true;
 
@@ -158,7 +164,7 @@ void IpProtectionProxyConfigManagerImpl::OnGotProxyList(
 
 base::TimeDelta IpProtectionProxyConfigManagerImpl::FuzzProxyListFetchInterval(
     base::TimeDelta delay) {
-  if (!enable_proxy_list_fetch_interval_fuzzing_for_testing_) {
+  if (!enable_proxy_list_fetch_interval_fuzzing_) {
     return delay;
   }
 
@@ -185,7 +191,7 @@ void IpProtectionProxyConfigManagerImpl::SetProxyListForTesting(
 
 void IpProtectionProxyConfigManagerImpl::
     EnableProxyListFetchIntervalFuzzingForTesting(bool enable) {
-  enable_proxy_list_fetch_interval_fuzzing_for_testing_ = enable;
+  enable_proxy_list_fetch_interval_fuzzing_ = enable;
 }
 
 void IpProtectionProxyConfigManagerImpl::ScheduleRefreshProxyList(

@@ -263,7 +263,7 @@ void SyncConfirmationHandler::RecordConsent(
   consent_auditor::ConsentAuditor* consent_auditor =
       ConsentAuditorFactory::GetForProfile(profile_);
   consent_auditor->RecordSyncConsent(
-      identity_manager_->GetPrimaryAccountId(ConsentLevel::kSignin),
+      identity_manager_->GetPrimaryAccountInfo(ConsentLevel::kSignin).gaia,
       sync_consent);
 }
 
@@ -277,7 +277,7 @@ void SyncConfirmationHandler::OnAvatarChanged(const AccountInfo& info) {
 
   base::Value::Dict value;
   value.Set("src", picture_gurl_with_options.spec());
-  value.Set("showEnterpriseBadge", info.IsManaged());
+  value.Set("showEnterpriseBadge", info.IsManaged() == signin::Tribool::kTrue);
   FireWebUIListener("account-info-changed", value);
 }
 

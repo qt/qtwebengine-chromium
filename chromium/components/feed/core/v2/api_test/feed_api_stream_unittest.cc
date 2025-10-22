@@ -457,6 +457,9 @@ TEST_F(FeedStreamTestForAllStreamTypes,
 }
 
 TEST_P(FeedStreamTestForAllStreamTypes, LoadFromNetwork) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   {
     WaitForIdleTaskQueue();
     auto metadata = stream_->GetMetadata();
@@ -508,6 +511,9 @@ TEST_P(FeedStreamTestForAllStreamTypes, UseFeedQueryOverride) {
 }
 
 TEST_F(FeedApiTest, FetchAfterStartup) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   response_translator_.InjectResponse(MakeTypicalInitialModelState());
 
   TestForYouSurface surface(stream_.get());
@@ -780,6 +786,9 @@ TEST_F(FeedApiTest, ForceRefreshIfMissedScheduledRefresh) {
 }
 
 TEST_F(FeedApiTest, LoadFromNetworkBecauseStoreIsStale_NetworkStaleAge) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   base::TimeDelta default_staleness_threshold =
       GetFeedConfig().GetStalenessThreshold(StreamType(StreamKind::kForYou),
                                             /*is_web_feed_subscriber=*/true);
@@ -870,6 +879,9 @@ TEST_F(FeedApiTest, LoadFromNetworkBecauseStoreIsExpired_NetworkExpiredAge) {
 }
 
 TEST_P(FeedStreamTestForAllStreamTypes, LoadFromNetworkBecauseStoreIsStale) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   // Fill the store with stream data that is just barely stale, and verify we
   // fetch new data over the network.
   store_->OverwriteStream(
@@ -945,6 +957,9 @@ TEST_F(FeedApiTest, LoadStaleDataBecauseNetworkRequestFails) {
 }
 
 TEST_P(FeedStreamTestForAllStreamTypes, LoadFailsStoredDataIsExpired) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   // Fill the store with stream data that is just barely expired.
   store_->OverwriteStream(
       GetStreamType(),
@@ -1756,7 +1771,7 @@ TEST_F(FeedApiTest, ReadNetworkResponseWithNoContent) {
   TestForYouSurface surface(stream_.get());
   WaitForIdleTaskQueue();
 
-  ASSERT_EQ("loading -> loading -> no-cards", surface.DescribeUpdates());
+  ASSERT_EQ("loading -> no-cards", surface.DescribeUpdates());
 
   // This network response has no content.
   EXPECT_FALSE(stream_->HasUnreadContent(StreamType(StreamKind::kForYou)));
@@ -1808,6 +1823,9 @@ TEST_F(FeedApiTest, ClearAllWhileLoadingMoreDoesNotLoadMore) {
 }
 
 TEST_F(FeedApiTest, ClearAllWipesAllState) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   // Trigger saving a consistency token, so it can be cleared later.
   network_.consistency_token = "token-11";
   stream_->UploadAction(MakeFeedAction(42ul), CreateLoggingParameters(), true,
@@ -2761,6 +2779,38 @@ TEST_F(FeedApiTest, StreamDataOverwritesOldStream) {
   EXPECT_EQ("new-frame-data", stored_data->content[0].frame());
 }
 
+// Test that we do not overwrite stored stream data if no content is received.
+TEST_F(FeedApiTest, DoNotOverwriteExistingStreamOnEmptyContent) {
+  // Trigger stream load with valid content saved to the storage.
+  response_translator_.InjectResponse(MakeTypicalInitialModelState());
+  TestForYouSurface surface(stream_.get());
+  WaitForIdleTaskQueue();
+  surface.Detach();
+  UnloadModel(surface.GetStreamType());
+
+  // Trigger a background refresh with no card.
+  response_translator_.InjectResponse(MakeEmptyModelState());
+  stream_->ExecuteRefreshTask(RefreshTaskId::kRefreshForYouFeed);
+  WaitForIdleTaskQueue();
+
+  // Verify the refresh happened.
+  ASSERT_TRUE(refresh_scheduler_.completed_tasks.count(
+      RefreshTaskId::kRefreshForYouFeed));
+  EXPECT_TRUE(network_.query_request_sent);
+  EXPECT_EQ(feedwire::FeedQuery::SCHEDULED_REFRESH,
+            network_.query_request_sent->feed_request().feed_query().reason());
+  EXPECT_TRUE(response_translator_.InjectedResponseConsumed());
+
+  // The refresh request should fail with no card error.
+  EXPECT_EQ(LoadStreamStatus::kNoCardReceived,
+            metrics_reporter_->background_refresh_status);
+
+  // The stored cards should not be updated.
+  TestForYouSurface surface2(stream_.get());
+  WaitForIdleTaskQueue();
+  EXPECT_EQ("loading -> [user@foo] 2 slices", surface2.DescribeUpdates());
+}
+
 TEST_F(FeedApiTest, HasUnreadContentIsFalseAfterFeedViewed) {
   response_translator_.InjectResponse(MakeTypicalInitialModelState());
   TestForYouSurface surface(stream_.get());
@@ -2791,6 +2841,9 @@ TEST_F(FeedApiTest, HasUnreadContentRemainsFalseIfFeedViewedBeforeRefresh) {
 
 TEST_F(FeedApiTest,
        LoadingForYouStreamTriggersWebFeedRefreshIfNoUnreadContent) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   // WebFeed stream is only fetched when there's a subscription.
   network_.InjectListWebFeedsResponse({MakeWireWebFeed("cats")});
 
@@ -2820,7 +2873,7 @@ TEST_F(
   // With WebFeedOnboarding disabled, WebFeed should not fetch without
   // subscriptions.
   base::test::ScopedFeatureList features;
-  features.InitAndDisableFeature(kWebFeedOnboarding);
+  features.InitWithFeatures({}, {kWebFeedOnboarding, kWebFeedKillSwitch});
   // Only for-you feed is fetched on load.
   response_translator_.InjectResponse(MakeTypicalInitialModelState());
   TestForYouSurface surface(stream_.get());
@@ -2837,6 +2890,9 @@ TEST_F(
 TEST_F(
     FeedApiTest,
     LoadForYouStreamDoesNotTriggerWebFeedRefreshContentIfIsAlreadyAvailable) {
+  base::test::ScopedFeatureList features;
+  features.InitAndDisableFeature(kWebFeedKillSwitch);
+
   // WebFeed stream is only fetched when there's a subscription.
   network_.InjectListWebFeedsResponse({MakeWireWebFeed("cats")});
 
@@ -4122,6 +4178,16 @@ TEST_F(FeedApiTest, DoNotRefreshFeedOnStartWithoutFlag) {
   WaitForIdleTaskQueue();
   EXPECT_FALSE(network_.query_request_sent);
   EXPECT_FALSE(response_translator_.InjectedResponseConsumed());
+}
+
+TEST_F(FeedApiTest, GetFeedUrls) {
+  response_translator_.InjectResponse(MakeTypicalInitialModelState());
+  TestForYouSurface surface(stream_.get());
+  WaitForIdleTaskQueue();
+  std::vector<std::string> urls = stream_->GetFeedUrls(surface.GetSurfaceId());
+  ASSERT_EQ(2u, urls.size());
+  EXPECT_EQ("http://content0", urls.at(0));
+  EXPECT_EQ("http://content1", urls.at(1));
 }
 
 class SignedOutViewDemotionTest : public FeedApiTest {

@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+
 #ifdef UNSAFE_BUFFERS_BUILD
 // TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
 #pragma allow_unsafe_buffers
@@ -21,6 +22,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -28,6 +30,7 @@
 
 #include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
+#include "base/containers/span.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_file.h"
 #include "base/files/scoped_temp_dir.h"
@@ -610,9 +613,9 @@ SANDBOX_TEST_ALLOW_NOISE(BrokerProcess, MAYBE_RecvMsgDescriptorLeak) {
   LOG(INFO) << "Ensure Android LOG socket is allocated";
 
   // Find the four lowest available file descriptors.
-  int available_fds[4];
-  SANDBOX_ASSERT(0 == pipe(available_fds));
-  SANDBOX_ASSERT(0 == pipe(available_fds + 2));
+  std::array<int, 4> available_fds;
+  SANDBOX_ASSERT(0 == pipe(available_fds.data()));
+  SANDBOX_ASSERT(0 == pipe(base::span(available_fds).subspan(2u).data()));
 
   // Save one FD to send to the broker later, and close the others.
   base::ScopedFD message_fd(available_fds[0]);
@@ -625,8 +628,10 @@ SANDBOX_TEST_ALLOW_NOISE(BrokerProcess, MAYBE_RecvMsgDescriptorLeak) {
   // descriptors a process can have: it only limits the highest value that can
   // be assigned to newly-created descriptors allocated by the process.)
   const rlim_t fd_limit =
-      1 + *std::max_element(available_fds,
-                            available_fds + std::size(available_fds));
+      1 + *std::max_element(available_fds.data(),
+                            base::span<int>(available_fds)
+                                .subspan(std::size(available_fds))
+                                .data());
 
   struct rlimit rlim;
   SANDBOX_ASSERT(0 == getrlimit(RLIMIT_NOFILE, &rlim));
@@ -750,14 +755,15 @@ void TestRewriteProcSelfHelper(bool fast_check_in_client) {
 
     // Reading /proc/self/status should return the same PID as the current
     // process's PID, not the broker's.
-    char buf[4096];
+    std::array<char, 4096> buf;
 
-    ssize_t num_read = HANDLE_EINTR(read(fd, buf, sizeof(buf)));
+    ssize_t num_read = HANDLE_EINTR(
+        read(fd, buf.data(), (buf.size() * sizeof(decltype(buf)::value_type))));
     ASSERT_GE(IGNORE_EINTR(close(fd)), 0);
 
     ASSERT_GT(num_read, 0);
 
-    std::string_view status(buf, static_cast<size_t>(num_read));
+    std::string_view status(buf.data(), static_cast<size_t>(num_read));
     std::string_view tracer("Pid:\t");
 
     std::string_view::size_type pid_index = status.find(tracer);
@@ -766,7 +772,8 @@ void TestRewriteProcSelfHelper(bool fast_check_in_client) {
     std::string_view::size_type pid_end_index = status.find('\n', pid_index);
     ASSERT_NE(pid_end_index, std::string_view::npos);
 
-    std::string_view pid_str(buf + pid_index, pid_end_index - pid_index);
+    std::string_view pid_str(base::span<char>(buf).subspan(pid_index).data(),
+                             pid_end_index - pid_index);
     int pid = 0;
     ASSERT_TRUE(base::StringToInt(pid_str, &pid));
 

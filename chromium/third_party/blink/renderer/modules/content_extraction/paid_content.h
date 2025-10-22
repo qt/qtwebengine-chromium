@@ -18,7 +18,9 @@ class PaidContent final {
   STACK_ALLOCATED();
 
  public:
-  PaidContent();
+  // Returns true if the document has paid content (marked as
+  // isAccessibleForFree=false)
+  static bool HasPaidContent(Document& document);
 
   // Queries the document for elements marked as isAccessibleForFree=false.
   bool QueryPaidElements(Document& document);
@@ -27,11 +29,14 @@ class PaidContent final {
   bool IsPaidElement(const Element* element) const;
 
  private:
+  // Whether to check for microdata annotations while walking.
+  HeapHashMap<WeakMember<Document>, bool> check_microdata_;
+
   // Appends elements found by the cssSelector in the hasPart object.
-  void AppendHasPartElements(Document& document, JSONObject& hasPart_obj);
+  bool AppendHasPartElements(Document& document, JSONObject& hasPart_obj);
 
   // List of nodes marked as isAccessibleForFree=false.
-  Persistent<HeapVector<Member<Element>>> paid_elements_;
+  HeapVector<Member<Element>> paid_elements_;
 };
 
 }  // namespace blink

@@ -21,6 +21,7 @@
 #include "base/path_service.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/simple_test_clock.h"
@@ -69,7 +70,6 @@ std::string RemoveQuotes(std::string_view input) {
 
 AggregatableReportRequest CreateExampleRequestWithDelayType() {
   return aggregation_service::CreateExampleRequest(
-      blink::mojom::AggregationServiceMode::kDefault,
       /*failed_send_attempts=*/0,
       /*aggregation_coordinator_origin=*/std::nullopt,
       AggregatableReportRequest::DelayType::ScheduledWithFullDelay);
@@ -1470,8 +1470,9 @@ class AggregationServiceStorageSqlMigrationsTest
   static int VersionFromDatabase(sql::Database* db) {
     sql::Statement statement(
         db->GetUniqueStatement("SELECT value FROM meta WHERE key='version'"));
-    if (!statement.Step())
+    if (!statement.Step()) {
       return 0;
+    }
     return statement.ColumnInt(0);
   }
 
@@ -1484,8 +1485,9 @@ class AggregationServiceStorageSqlMigrationsTest
         base::StrCat({"aggregation_service/databases/version_",
                       base::NumberToString(version_id), ".sql"})));
 
-    if (!base::PathExists(source_path))
+    if (!base::PathExists(source_path)) {
       return std::string();
+    }
 
     std::string contents;
     base::ReadFileToString(source_path, &contents);

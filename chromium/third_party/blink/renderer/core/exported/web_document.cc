@@ -42,6 +42,7 @@
 #include "third_party/blink/public/web/web_element_collection.h"
 #include "third_party/blink/public/web/web_form_control_element.h"
 #include "third_party/blink/public/web/web_form_element.h"
+#include "third_party/blink/renderer/core/accessibility/ax_object_cache.h"
 #include "third_party/blink/renderer/core/css/css_selector_watch.h"
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/css/style_sheet_contents.h"
@@ -69,16 +70,19 @@
 #include "third_party/blink/renderer/core/html/plugin_document.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
 #include "third_party/blink/renderer/core/page/page.h"
+#include "third_party/blink/renderer/core/script_tools/automation_delegate_supplement.h"
 #include "third_party/blink/renderer/core/speculation_rules/document_speculation_rules.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/wtf/casting.h"
+#include "ui/accessibility/ax_mode.h"
 
 namespace {
 
 static const blink::WebStyleSheetKey GenerateStyleSheetKey() {
   static unsigned counter = 0;
-  return String::Number(++counter);
+  return blink::String::Number(++counter);
 }
 
 }  // namespace
@@ -147,6 +151,10 @@ bool WebDocument::IsXHTMLDocument() const {
 
 bool WebDocument::IsPluginDocument() const {
   return IsA<PluginDocument>(ConstUnwrap<Document>());
+}
+
+bool WebDocument::IsActive() const {
+  return ConstUnwrap<Document>()->IsActive();
 }
 
 WebURL WebDocument::BaseURL() const {
@@ -222,6 +230,10 @@ std::vector<WebFormElement> WebDocument::Forms() const {
     form_elements.emplace_back(blink::To<HTMLFormElement>(element));
   }
   return form_elements;
+}
+
+WebElement WebDocument::ScrollingElement() {
+  return WebElement(Unwrap<Document>()->scrollingElement());
 }
 
 std::vector<WebFormElement> WebDocument::GetTopLevelForms() const {
@@ -374,6 +386,33 @@ void WebDocument::InitiatePreview(const WebURL& url) {
 
   KURL kurl(url);
   DocumentSpeculationRules::From(*document).InitiatePreview(kurl);
+}
+
+void WebDocument::SnapshotAccessibilityTree(
+    size_t max_nodes,
+    base::TimeDelta timeout,
+    ui::AXTreeUpdate* response,
+    ui::AXMode mode,
+    std::set<ui::AXSerializationErrorFlag>* out_error) {
+  // This creates a different AXObjectCache from any owned by document for
+  // case where a11y stays on, because the AXMode may require a different set
+  // of nodes.
+  Member<blink::AXObjectCache> cache =
+      blink::AXObjectCache::CreateSnapshotter(*Unwrap<Document>(), mode);
+  cache->SerializeEntireTreeAndDispose(max_nodes, timeout, response, out_error);
+}
+
+size_t WebDocument::ActiveResourceRequestCount() const {
+  return ConstUnwrap<Document>()->Fetcher()->ActiveRequestCount();
+}
+
+void WebDocument::ExecuteScriptTool(
+    const WebString& name,
+    const WebString& input_arguments,
+    ScriptToolExecutedCallback tool_executed_cb) {
+  AutomationDelegateSupplement::automationDelegate(
+      *Unwrap<Document>()->domWindow())
+      ->ExecuteTool(name, input_arguments, std::move(tool_executed_cb));
 }
 
 }  // namespace blink

@@ -101,14 +101,6 @@ class CORE_EXPORT StyleRecalcContext {
   // not have a style.
   bool is_outside_flat_tree = false;
 
-  // True when we're computing style interleaved from OOF-layout. This can
-  // happen when e.g. position-try-fallbacks is used.
-  //
-  // Note however that declarations from @position-try styles may still be
-  // included when this flag is false (see OutOfFlowData, "speculative
-  // @position-try styling").
-  bool is_interleaved_oof = false;
-
   // True if the ancestor of this element had a content-visibility: auto
   // style and was locked, meaning that this is a forced update.
   bool has_content_visibility_auto_locked_ancestor = false;
@@ -120,6 +112,9 @@ class CORE_EXPORT StyleRecalcContext {
   // True if any scroller ancestor of this element had a scroll-marker-group
   // property set to "before" or "after".
   bool has_scroller_ancestor_with_scroll_marker_group_property = false;
+
+  // True if this element has a container-type:anchored ancestor.
+  bool has_anchored_container = false;
 };
 
 }  // namespace blink

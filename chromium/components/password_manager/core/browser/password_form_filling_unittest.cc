@@ -52,7 +52,7 @@ class MockPasswordManagerDriver : public StubPasswordManagerDriver {
  public:
   MOCK_METHOD(int, GetId, (), (const, override));
   MOCK_METHOD(void,
-              SetPasswordFillData,
+              PropagateFillDataOnParsingCompletion,
               (const PasswordFormFillData&),
               (override));
   MOCK_METHOD(void, InformNoSavedCredentials, (bool), (override));
@@ -89,15 +89,16 @@ class MockPasswordManagerClient : public StubPasswordManagerClient {
 
 class MockPasswordChangeService : public PasswordChangeServiceInterface {
  public:
-  MOCK_METHOD(bool, IsPasswordChangeAvailable, (), (override));
-  MOCK_METHOD(bool, IsPasswordChangeSupported, (const GURL& url), (override));
+  MOCK_METHOD(bool, IsPasswordChangeAvailable, (), (const override));
+  MOCK_METHOD(bool,
+              IsPasswordChangeSupported,
+              (const GURL&, const autofill::LanguageCode&),
+              (const override));
+  MOCK_METHOD(void,
+              RecordLoginAttemptQuality,
+              (password_manager::LogInWithChangedPasswordOutcome, const GURL&),
+              (const override));
 };
-
-// Matcher for PasswordAndMetadata.
-MATCHER_P3(IsLogin, username, password, uses_account_store, std::string()) {
-  return arg.username == username && arg.password == password &&
-         arg.uses_account_store == uses_account_store;
-}
 
 PasswordFormFillData::LoginCollection::const_iterator FindPasswordByUsername(
     const std::vector<autofill::PasswordAndMetadata>& logins,
@@ -133,6 +134,7 @@ class PasswordFormFillingTest : public testing::Test {
     saved_match_.action = GURL("https://accounts.google.com/a/ServiceLogin");
     saved_match_.username_value = u"test@gmail.com";
     saved_match_.password_value = u"test1";
+    saved_match_.SetPasswordBackupNote(u"backup_password");
     saved_match_.match_type = PasswordForm::MatchType::kExact;
 
     psl_saved_match_ = saved_match_;
@@ -170,7 +172,7 @@ TEST_F(PasswordFormFillingTest, NoSavedCredentials) {
   std::vector<PasswordForm> best_matches;
 
   EXPECT_CALL(driver_, InformNoSavedCredentials);
-  EXPECT_CALL(driver_, SetPasswordFillData).Times(0);
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion).Times(0);
 
   LikelyFormFilling likely_form_filling = SendFillInformationToRenderer(
       &client_, &driver_, observed_form_, best_matches, federated_matches_,
@@ -186,11 +188,14 @@ TEST_F(PasswordFormFillingTest, Autofill) {
   PasswordForm another_saved_match = saved_match_;
   another_saved_match.username_value += u"1";
   another_saved_match.password_value += u"1";
+  // Reset the backup password
+  another_saved_match.SetPasswordBackupNote(u"");
   best_matches.push_back(another_saved_match);
 
   EXPECT_CALL(driver_, InformNoSavedCredentials).Times(0);
   PasswordFormFillData fill_data;
-  EXPECT_CALL(driver_, SetPasswordFillData).WillOnce(SaveArg<0>(&fill_data));
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
   EXPECT_CALL(client_, PasswordWasAutofilled);
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
   EXPECT_CALL(feature_manager_, IsBiometricAuthenticationBeforeFillingEnabled)
@@ -221,6 +226,9 @@ TEST_F(PasswordFormFillingTest, Autofill) {
             fill_data.preferred_login.username_value);
   EXPECT_EQ(saved_match_.password_value,
             fill_data.preferred_login.password_value);
+  ASSERT_TRUE(fill_data.preferred_login.backup_password_value.has_value());
+  EXPECT_EQ(saved_match_.GetPasswordBackup(),
+            fill_data.preferred_login.backup_password_value);
 
   // Check that information about non-preferred best matches is filled.
   ASSERT_EQ(1u, fill_data.additional_logins.size());
@@ -228,6 +236,8 @@ TEST_F(PasswordFormFillingTest, Autofill) {
             fill_data.additional_logins.begin()->username_value);
   EXPECT_EQ(another_saved_match.password_value,
             fill_data.additional_logins.begin()->password_value);
+  EXPECT_FALSE(
+      fill_data.additional_logins.begin()->backup_password_value.has_value());
   // Realm is empty for non-psl match.
   EXPECT_TRUE(fill_data.additional_logins.begin()->realm.empty());
 }
@@ -270,7 +280,8 @@ TEST_F(PasswordFormFillingTest, TestFillOnLoadSuggestion) {
     }
 
     PasswordFormFillData fill_data;
-    EXPECT_CALL(driver_, SetPasswordFillData).WillOnce(SaveArg<0>(&fill_data));
+    EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+        .WillOnce(SaveArg<0>(&fill_data));
     EXPECT_CALL(client_, PasswordWasAutofilled);
 #if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
     EXPECT_CALL(feature_manager_, IsBiometricAuthenticationBeforeFillingEnabled)
@@ -316,66 +327,31 @@ TEST_F(PasswordFormFillingTest, FillWithOnlyWebAuthnCredentials) {
 }
 #endif
 
-// Test autofill when username and password are prefilled. Overwrite password
-// if server side classification thought the username was a placeholder or the
-// classification failed. Do not overwrite if username doesn't look like a
-// placeholder.
+// Test autofill when username and password are prefilled. Check that we not
+// overwrite values in the form if username doesn't look like a placeholder.
 // Skip for Android and iOS since it uses touch to fill, meaning placeholders
 // will never be overwritten.
 #if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 TEST_F(PasswordFormFillingTest, TestFillOnLoadSuggestionWithPrefill) {
-  const struct {
-    const char* description;
-    bool username_may_use_prefilled_placeholder;
-    bool server_side_classification_successful;
-    LikelyFormFilling likely_form_filling;
-  } kTestCases[] = {
-      {
-          .description = "Username not placeholder",
-          .username_may_use_prefilled_placeholder = false,
-          .server_side_classification_successful = true,
-          .likely_form_filling = LikelyFormFilling::kFillOnAccountSelect,
-      },
-      {
-          .description = "Username is placeholder",
-          .username_may_use_prefilled_placeholder = true,
-          .server_side_classification_successful = true,
-          .likely_form_filling = LikelyFormFilling::kFillOnPageLoad,
-      },
-      {
-          .description = "No server classification",
-          .username_may_use_prefilled_placeholder = false,
-          .server_side_classification_successful = false,
-          .likely_form_filling = LikelyFormFilling::kFillOnPageLoad,
-      },
-  };
-  for (const auto& test_case : kTestCases) {
-    SCOPED_TRACE(test_case.description);
-    PasswordForm preferred_match = saved_match_;
-    std::vector<PasswordForm> best_matches = {preferred_match};
+  PasswordForm preferred_match = saved_match_;
+  std::vector<PasswordForm> best_matches = {preferred_match};
 
-    PasswordForm observed_form = observed_form_;
-    // Set username to match preferred match
-    observed_form.username_value = preferred_match.username_value;
-    // Set a different password than saved
-    observed_form.password_value = u"New Passwd";
-    // Set classification results
-    observed_form.server_side_classification_successful =
-        test_case.server_side_classification_successful;
-    observed_form.username_may_use_prefilled_placeholder =
-        test_case.username_may_use_prefilled_placeholder;
+  PasswordForm observed_form = observed_form_;
+  // Set username to match preferred match
+  observed_form.username_value = preferred_match.username_value;
+  // Set a different password than saved
+  observed_form.password_value = u"New Passwd";
 
-    EXPECT_CALL(driver_, SetPasswordFillData);
-    EXPECT_CALL(client_, PasswordWasAutofilled);
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion);
+  EXPECT_CALL(client_, PasswordWasAutofilled);
 
-    LikelyFormFilling likely_form_filling = SendFillInformationToRenderer(
-        &client_, &driver_, observed_form, best_matches, federated_matches_,
-        &preferred_match, metrics_recorder_.get(),
-        /*webauthn_suggestions_available=*/false,
-        /*suggestion_banned_fields=*/{});
+  LikelyFormFilling likely_form_filling = SendFillInformationToRenderer(
+      &client_, &driver_, observed_form, best_matches, federated_matches_,
+      &preferred_match, metrics_recorder_.get(),
+      /*webauthn_suggestions_available=*/false,
+      /*suggestion_banned_fields=*/{});
 
-    EXPECT_EQ(test_case.likely_form_filling, likely_form_filling);
-  }
+  EXPECT_EQ(LikelyFormFilling::kFillOnAccountSelect, likely_form_filling);
 }
 #endif
 
@@ -384,7 +360,8 @@ TEST_F(PasswordFormFillingTest, AutofillPSLMatch) {
 
   EXPECT_CALL(driver_, InformNoSavedCredentials).Times(0);
   PasswordFormFillData fill_data;
-  EXPECT_CALL(driver_, SetPasswordFillData).WillOnce(SaveArg<0>(&fill_data));
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
   EXPECT_CALL(client_, PasswordWasAutofilled);
 
   LikelyFormFilling likely_form_filling = SendFillInformationToRenderer(
@@ -465,7 +442,8 @@ TEST_F(PasswordFormFillingTest, AutofillAffiliatedWebMatch) {
 
   EXPECT_CALL(driver_, InformNoSavedCredentials).Times(0);
   PasswordFormFillData fill_data;
-  EXPECT_CALL(driver_, SetPasswordFillData).WillOnce(SaveArg<0>(&fill_data));
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
   EXPECT_CALL(client_, PasswordWasAutofilled);
 
   LikelyFormFilling likely_form_filling = SendFillInformationToRenderer(
@@ -753,8 +731,6 @@ TEST(PasswordFormFillDataTest, RendererIDs) {
   form_on_page.action = GURL("https://foo.com/login");
   form_on_page.username_element = u"username";
   form_on_page.password_element = u"password";
-  form_on_page.username_may_use_prefilled_placeholder = true;
-  form_on_page.server_side_classification_successful = true;
 
   // Create an exact match in the database.
   PasswordForm preferred_match = form_on_page;
@@ -782,7 +758,6 @@ TEST(PasswordFormFillDataTest, RendererIDs) {
             result.username_element_renderer_id);
   EXPECT_EQ(form_on_page.password_element_renderer_id,
             result.password_element_renderer_id);
-  EXPECT_TRUE(result.username_may_use_prefilled_placeholder);
 }
 
 // Tests that nor username nor password fields are set when password element is
@@ -909,15 +884,20 @@ TEST(PasswordFormFillDataTest, TestGroupedAffiliation) {
   EXPECT_TRUE(result.preferred_login.is_grouped_affiliation);
 }
 
-TEST_F(PasswordFormFillingTest, PasswordChangeSupported) {
+TEST_F(PasswordFormFillingTest, PasswordChangeSupportedAndPasswordLeaked) {
   observed_form_.accepts_webauthn_credentials = true;
+  saved_match_.change_password_url =
+      GURL("https://example.com/.well-known/change-password/");
+  saved_match_.password_issues = {{password_manager::InsecureType::kLeaked,
+                                   password_manager::InsecurityMetadata()}};
   std::vector<PasswordForm> best_matches = {saved_match_};
 
   EXPECT_CALL(client_, PasswordWasAutofilled);
   EXPECT_CALL(password_change_service_, IsPasswordChangeAvailable)
       .WillOnce(testing::Return(true));
   PasswordFormFillData fill_data;
-  EXPECT_CALL(driver_, SetPasswordFillData).WillOnce(SaveArg<0>(&fill_data));
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
 
   SendFillInformationToRenderer(&client_, &driver_, observed_form_,
                                 best_matches, federated_matches_, &saved_match_,
@@ -927,15 +907,60 @@ TEST_F(PasswordFormFillingTest, PasswordChangeSupported) {
   EXPECT_TRUE(fill_data.notify_browser_of_successful_filling);
 }
 
+TEST_F(PasswordFormFillingTest, PasswordChangeUrlMissing) {
+  observed_form_.accepts_webauthn_credentials = true;
+  saved_match_.password_issues = {{password_manager::InsecureType::kLeaked,
+                                   password_manager::InsecurityMetadata()}};
+  std::vector<PasswordForm> best_matches = {saved_match_};
+
+  EXPECT_CALL(client_, PasswordWasAutofilled);
+  EXPECT_CALL(password_change_service_, IsPasswordChangeAvailable).Times(0);
+  PasswordFormFillData fill_data;
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
+
+  SendFillInformationToRenderer(&client_, &driver_, observed_form_,
+                                best_matches, federated_matches_, &saved_match_,
+                                metrics_recorder_.get(),
+                                /*webauthn_suggestions_available=*/false,
+                                /*suggestion_banned_fields=*/{});
+  EXPECT_FALSE(fill_data.notify_browser_of_successful_filling);
+}
+
 TEST_F(PasswordFormFillingTest, PasswordChangeNotSupported) {
   observed_form_.accepts_webauthn_credentials = true;
+  saved_match_.change_password_url =
+      GURL("https://example.com/.well-known/change-password/");
+  saved_match_.password_issues = {{password_manager::InsecureType::kLeaked,
+                                   password_manager::InsecurityMetadata()}};
   std::vector<PasswordForm> best_matches = {saved_match_};
 
   EXPECT_CALL(client_, PasswordWasAutofilled);
   EXPECT_CALL(password_change_service_, IsPasswordChangeAvailable)
       .WillOnce(testing::Return(false));
   PasswordFormFillData fill_data;
-  EXPECT_CALL(driver_, SetPasswordFillData).WillOnce(SaveArg<0>(&fill_data));
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
+
+  SendFillInformationToRenderer(&client_, &driver_, observed_form_,
+                                best_matches, federated_matches_, &saved_match_,
+                                metrics_recorder_.get(),
+                                /*webauthn_suggestions_available=*/false,
+                                /*suggestion_banned_fields=*/{});
+  EXPECT_FALSE(fill_data.notify_browser_of_successful_filling);
+}
+
+TEST_F(PasswordFormFillingTest, PasswordIsNotLeaked) {
+  observed_form_.accepts_webauthn_credentials = true;
+  saved_match_.change_password_url =
+      GURL("https://example.com/.well-known/change-password/");
+  std::vector<PasswordForm> best_matches = {saved_match_};
+
+  EXPECT_CALL(client_, PasswordWasAutofilled);
+  EXPECT_CALL(password_change_service_, IsPasswordChangeAvailable).Times(0);
+  PasswordFormFillData fill_data;
+  EXPECT_CALL(driver_, PropagateFillDataOnParsingCompletion)
+      .WillOnce(SaveArg<0>(&fill_data));
 
   SendFillInformationToRenderer(&client_, &driver_, observed_form_,
                                 best_matches, federated_matches_, &saved_match_,

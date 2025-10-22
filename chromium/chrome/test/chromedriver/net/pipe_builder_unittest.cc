@@ -12,6 +12,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "base/strings/string_number_conversions.h"
 
 #if BUILDFLAG(IS_WIN)
 #include <windows.h>
@@ -36,7 +37,7 @@
 #if BUILDFLAG(IS_POSIX)
 #include "base/posix/eintr_wrapper.h"
 #elif BUILDFLAG(IS_WIN)
-#include "base/win/win_util.h"
+#include "base/win/windows_handle_util.h"
 #endif
 
 namespace {

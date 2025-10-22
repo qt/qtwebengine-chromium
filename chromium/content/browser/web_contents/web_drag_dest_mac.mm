@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/341324165): Fix and remove.
-#pragma allow_unsafe_buffers
-#endif
 
 #import "content/browser/web_contents/web_drag_dest_mac.h"
 
@@ -274,6 +270,8 @@ void DropCompletionCallback(WebDragDest* drag_dest,
   if (_webContents->ShouldIgnoreInputEvents())
     return;
 
+  _webContents->PreHandleDragExit();
+
   if (!_dropDataFiltered || !_dropDataUnfiltered)
     return;
 
@@ -299,12 +297,18 @@ void DropCompletionCallback(WebDragDest* drag_dest,
   if (_webContents->ShouldIgnoreInputEvents())
     return NSDragOperationNone;
 
-  if (!_dropDataFiltered || !_dropDataUnfiltered)
-    return NSDragOperationNone;
-
   if (_canceled) {
     // TODO(ekaramad,paulmeyer): We probably shouldn't be checking for
     // |canceled_| twice in this method.
+    return NSDragOperationNone;
+  }
+
+  if (_dropDataUnfiltered) {
+    _webContents->PreHandleDragUpdate(*_dropDataUnfiltered,
+                                      info->location_in_view);
+  }
+
+  if (!_dropDataFiltered || !_dropDataUnfiltered) {
     return NSDragOperationNone;
   }
 
@@ -501,8 +505,8 @@ DropData PopulateDropDataFromPasteboard(NSPasteboard* pboard) {
   if ([types containsObject:NSPasteboardTypeHTML]) {
     NSString* html = [pboard stringForType:NSPasteboardTypeHTML];
     drop_data.html = base::SysNSStringToUTF16(html);
-  } else if ([types containsObject:ui::kUTTypeChromiumImageAndHTML]) {
-    NSString* html = [pboard stringForType:ui::kUTTypeChromiumImageAndHTML];
+  } else if ([types containsObject:ui::kUTTypeChromiumImageAndHtml]) {
+    NSString* html = [pboard stringForType:ui::kUTTypeChromiumImageAndHtml];
     drop_data.html = base::SysNSStringToUTF16(html);
   } else if ([types containsObject:NSPasteboardTypeRTF]) {
     NSString* html = ui::clipboard_util::GetHTMLFromRTFOnPasteboard(pboard);

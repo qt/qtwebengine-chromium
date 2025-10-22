@@ -1294,8 +1294,6 @@ TestPacketWriter::TestPacketWriter(ParsedQuicVersion version, MockClock* clock,
       framer_(SupportedVersions(version_),
               QuicUtils::InvertPerspective(perspective)),
       clock_(clock) {
-  QuicFramerPeer::SetLastSerializedServerConnectionId(framer_.framer(),
-                                                      TestConnectionId());
   framer_.framer()->SetInitialObfuscators(TestConnectionId());
 
   for (int i = 0; i < 128; ++i) {
@@ -1497,7 +1495,7 @@ bool ParseClientVersionNegotiationProbePacket(
   bool version_present, has_length_prefix;
   QuicVersionLabel version_label;
   ParsedQuicVersion parsed_version = ParsedQuicVersion::Unsupported();
-  QuicConnectionId destination_connection_id, source_connection_id;
+  absl::string_view destination_connection_id, source_connection_id;
   std::optional<absl::string_view> retry_token;
   std::string detailed_error;
   QuicErrorCode error = QuicFramer::ParsePublicHeaderDispatcher(

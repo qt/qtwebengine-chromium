@@ -8,7 +8,7 @@ import atexit
 import datetime as dt
 import enum
 import subprocess
-from typing import TYPE_CHECKING, Self, Sequence, Tuple, Type
+from typing import TYPE_CHECKING, Self, Sequence, Type
 
 from typing_extensions import override
 
@@ -20,7 +20,7 @@ from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
@@ -47,7 +47,7 @@ class PowerMetricsProbe(Probe):
 
   NAME = "powermetrics"
   RESULT_LOCATION = ResultLocation.BROWSER
-  SAMPLERS: Tuple[SamplerType,
+  SAMPLERS: tuple[SamplerType,
                   ...] = (SamplerType.BATTERY, SamplerType.CPU_POWER,
                           SamplerType.DISK, SamplerType.GPU_POWER,
                           SamplerType.INTERRUPTS, SamplerType.NETWORK,
@@ -87,11 +87,11 @@ class PowerMetricsProbe(Probe):
     return self._sampling_interval
 
   @property
-  def samplers(self) -> Tuple[SamplerType, ...]:
+  def samplers(self) -> tuple[SamplerType, ...]:
     return self._samplers
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     self.expect_macos(browser)
 

@@ -178,12 +178,16 @@ base::TimeDelta MediaFoundationRendererClient::GetMediaTime() {
   return mojo_renderer_->GetMediaTime();
 }
 
-void MediaFoundationRendererClient::OnSelectedVideoTracksChanged(
-    const std::vector<DemuxerStream*>& enabled_tracks,
+void MediaFoundationRendererClient::OnTracksChanged(
+    DemuxerStream::Type track_type,
+    DemuxerStream* enabled_track,
     base::OnceClosure change_completed_cb) {
-  bool video_track_selected = (enabled_tracks.size() > 0);
-  DVLOG_FUNC(1) << "video_track_selected=" << video_track_selected;
-  renderer_extension_->SetVideoStreamEnabled(video_track_selected);
+  if (track_type != DemuxerStream::VIDEO) {
+    DLOG(WARNING) << "Audio track changes are not supported.";
+    std::move(change_completed_cb).Run();
+    return;
+  }
+  renderer_extension_->SetVideoStreamEnabled(enabled_track != nullptr);
   std::move(change_completed_cb).Run();
 }
 

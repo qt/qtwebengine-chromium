@@ -40,27 +40,27 @@ const checkedIcon = html`
  */
 export class Chip extends LitElement {
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  label: string;
+  declare label: string;
   /** @export */
-  type: 'filter'|'input';
+  declare type: 'filter'|'input';
   /**
    * Input chips can have a trailing icon (to close chip) or not.
    * @export
    */
-  trailingIcon: boolean;
+  declare trailingIcon: boolean;
   /**
    * Input chips can have an avatar as leading icon which makes the icon
    * circular and changes border radius of component.
    * @export
    */
-  avatar: boolean;
+  declare avatar: boolean;
   /**
    * If true, the chip will show a tooltip when the label is truncated.
    * @export
    */
-  showTooltipWhenTruncated: boolean;
+  declare showTooltipWhenTruncated: boolean;
 
   /** @nocollapse */
   static override styles: CSSResultGroup = css`

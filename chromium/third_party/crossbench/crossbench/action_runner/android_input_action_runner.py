@@ -7,9 +7,8 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import re
-from typing import List, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
-from crossbench.action_runner.action import all as i_action
 from crossbench.action_runner.base import InputSourceNotImplementedError
 from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.action_runner.display_rectangle import DisplayRectangle
@@ -18,9 +17,14 @@ from crossbench.action_runner.element_not_found_error import \
 from crossbench.action_runner.screenshot_annotation import (
     ScreenshotPointAnnotation, ScreenshotRectAnnotation)
 from crossbench.benchmarks.loading.point import Point
-from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.runner.actions import Actions
-from crossbench.runner.run import Run
+
+if TYPE_CHECKING:
+  from crossbench.action_runner.action import all as i_action
+  from crossbench.action_runner.action.position import UiSelectorConfig
+  from crossbench.browsers.attributes import BrowserAttributes
+  from crossbench.plt.android_adb import AndroidAdbPlatform
+  from crossbench.runner.actions import Actions
+  from crossbench.runner.run import Run
 
 
 class ViewportInfo:
@@ -84,6 +88,7 @@ class ViewportInfo:
 
 
 class AndroidInputActionRunner(DefaultActionRunner):
+  """Custom ActionRunner for Android."""
 
   # Represents the position of the chrome main window relative to the entire
   # screen as reported by Android window manager.
@@ -175,7 +180,10 @@ return [
 
   def text_input_keyboard(self, run: Run,
                           action: i_action.TextInputAction) -> None:
-    self._rate_limit_keystrokes(run, action, self._type_characters)
+    if action.text:
+      self._rate_limit_keystrokes(run, action, self._type_characters)
+    elif keyevent := action.keyevent:
+      self._send_keyevent(run, keyevent)
 
   def _click_impl(self, run: Run, action: i_action.ClickAction,
                   use_mouse: bool) -> None:
@@ -187,6 +195,12 @@ return [
 
       if coordinates_config := action.position.coordinates:
         coordinates = coordinates_config.point()
+      elif ui_selector := action.position.ui_selector:
+        if use_mouse:
+          raise InputSourceNotImplementedError(
+            self, action, action.input_source,
+            "Mouse actions not implemented for UiSelectorConfig")
+        self._click_ui_selector(run, ui_selector, action.timeout)
       elif selector_config := action.position.selector:
         if selector_config.wait:
           self.wait_for_element_impl(
@@ -210,19 +224,23 @@ return [
           return
 
         self.add_failure_screenshot_annotation(
+            ScreenshotRectAnnotation(
+                label="Chrome viewport", rect=viewport_info.chrome_window))
+        self.add_failure_screenshot_annotation(
             ScreenshotRectAnnotation(label=selector_config.selector, rect=rect))
         coordinates = Point(rect.mid_x, rect.mid_y)
 
-      cmd: List[str] = ["input"]
+      if not action.position.ui_selector:
+        cmd: list[str] = ["input"]
 
-      if use_mouse:
-        cmd.append("mouse")
-      assert coordinates, "missing coordinates"
-      self.add_failure_screenshot_annotation(
-          ScreenshotPointAnnotation(label="click", point=coordinates))
-      cmd.extend(["tap", str(coordinates.x), str(coordinates.y)])
+        if use_mouse:
+          cmd.append("mouse")
+        assert coordinates, "missing coordinates"
+        self.add_failure_screenshot_annotation(
+            ScreenshotPointAnnotation(label="click", point=coordinates))
+        cmd.extend(["tap", str(coordinates.x), str(coordinates.y)])
 
-      run.browser_platform.sh(*cmd)
+        run.browser_platform.sh(*cmd)
 
       if action.verify:
         self.wait_for_element_impl(
@@ -318,3 +336,18 @@ return [
     # characters with the encoding '%s'.
     characters = characters.replace(" ", "%s")
     run.browser_platform.sh("input", "keyboard", "text", characters)
+
+  def _send_keyevent(self, run: Run, keyevent:str) -> None:
+    run.browser_platform.sh("input", "keyevent", keyevent)
+
+  def _click_ui_selector(self,
+                         run: Run,
+                         ui_selector: UiSelectorConfig,
+                         timeout: dt.timedelta) -> None:
+    ad = cast("AndroidAdbPlatform", run.browser_platform).uiautomator_device
+    selector_dict = ui_selector.to_json()
+    ui_object = ad.ui(**ui_selector.to_json())
+    # This verification step verifies if the element exists.
+    assert ui_object.wait.exists(timeout=timeout), (
+      f"Element with selector {selector_dict} not found")
+    ui_object.click()

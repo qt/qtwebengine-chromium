@@ -18,6 +18,8 @@ bool ServiceStatus::IsAllowedToJoin() {
     case CollaborationStatus::kAllowedToJoin:
     case CollaborationStatus::kEnabledJoinOnly:
     case CollaborationStatus::kEnabledCreateAndJoin:
+    case CollaborationStatus::kVersionOutOfDate:
+    case CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi:
       return true;
   }
 }
@@ -25,14 +27,21 @@ bool ServiceStatus::IsAllowedToJoin() {
 bool ServiceStatus::IsAllowedToCreate() {
   // Please keep logic consistent with
   // //components/collaboration/public/android/java/src/org/chromium/components/collaboration/ServiceStatus.java.
+
+  if (signin_status == SigninStatus::kSigninDisabled) {
+    return false;
+  }
+
   switch (collaboration_status) {
     case CollaborationStatus::kDisabled:
     case CollaborationStatus::kDisabledPending:
     case CollaborationStatus::kDisabledForPolicy:
     case CollaborationStatus::kAllowedToJoin:
     case CollaborationStatus::kEnabledJoinOnly:
+    case CollaborationStatus::kVersionOutOfDate:
       return false;
     case CollaborationStatus::kEnabledCreateAndJoin:
+    case CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi:
       return true;
   }
 }

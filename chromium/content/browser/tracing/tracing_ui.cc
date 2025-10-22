@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "content/browser/tracing/tracing_ui.h"
 
 #include <stddef.h>
@@ -29,6 +24,7 @@
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "content/browser/tracing/grit/tracing_resources.h"

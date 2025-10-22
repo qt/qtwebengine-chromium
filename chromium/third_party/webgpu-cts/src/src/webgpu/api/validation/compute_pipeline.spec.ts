@@ -4,8 +4,13 @@ createComputePipeline and createComputePipelineAsync validation tests.
 Note: entry point matching tests are in shader_module/entry_point.spec.ts
 `;
 
+import { AllFeaturesMaxLimitsGPUTest } from '../.././gpu_test.js';
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import { keysOf } from '../../../common/util/data_tables.js';
+import {
+  isTextureFormatUsableWithStorageAccessMode,
+  kPossibleStorageTextureFormats,
+} from '../../format_info.js';
 import { kValue } from '../../util/constants.js';
 import { TShaderStage, getShaderWithEntryPoint } from '../../util/shader.js';
 
@@ -15,9 +20,9 @@ import {
   getAPIBindGroupLayoutForResource,
   doResourcesMatch,
 } from './utils.js';
-import { AllFeaturesMaxLimitsValidationTest } from './validation_test.js';
+import * as vtu from './validation_test_utils.js';
 
-class F extends AllFeaturesMaxLimitsValidationTest {
+class F extends AllFeaturesMaxLimitsGPUTest {
   getShaderModule(
     shaderStage: TShaderStage = 'compute',
     entryPoint: string = 'main'
@@ -40,7 +45,7 @@ Call the API with valid compute shader and matching valid entryPoint, making sur
   .params(u => u.combine('isAsync', [true, false]))
   .fn(t => {
     const { isAsync } = t.params;
-    t.doCreateComputePipelineTest(isAsync, true, {
+    vtu.doCreateComputePipelineTest(t, isAsync, true, {
       layout: 'auto',
       compute: { module: t.getShaderModule('compute', 'main'), entryPoint: 'main' },
     });
@@ -55,10 +60,10 @@ Tests calling createComputePipeline(Async) with a invalid compute shader, and ch
   .params(u => u.combine('isAsync', [true, false]))
   .fn(t => {
     const { isAsync } = t.params;
-    t.doCreateComputePipelineTest(isAsync, false, {
+    vtu.doCreateComputePipelineTest(t, isAsync, false, {
       layout: 'auto',
       compute: {
-        module: t.createInvalidShaderModule(),
+        module: vtu.createInvalidShaderModule(t),
         entryPoint: 'main',
       },
     });
@@ -85,7 +90,7 @@ and check that the APIs only accept compute shader.
         entryPoint: 'main',
       },
     };
-    t.doCreateComputePipelineTest(isAsync, shaderModuleStage === 'compute', descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, shaderModuleStage === 'compute', descriptor);
   });
 
 g.test('shader_module,device_mismatch')
@@ -111,7 +116,7 @@ g.test('shader_module,device_mismatch')
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, !mismatched, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, !mismatched, descriptor);
   });
 
 g.test('pipeline_layout,device_mismatch')
@@ -134,7 +139,7 @@ g.test('pipeline_layout,device_mismatch')
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, !mismatched, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, !mismatched, descriptor);
   });
 
 g.test('limits,workgroup_storage_size')
@@ -172,7 +177,7 @@ Tests calling createComputePipeline(Async) validation for compute using <= devic
         entryPoint: 'main',
       },
     };
-    t.doCreateComputePipelineTest(isAsync, count <= countAtLimit, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, count <= countAtLimit, descriptor);
   });
 
 g.test('limits,invocations_per_workgroup')
@@ -210,7 +215,8 @@ Tests calling createComputePipeline(Async) validation for compute using <= devic
       },
     };
 
-    t.doCreateComputePipelineTest(
+    vtu.doCreateComputePipelineTest(
+      t,
       isAsync,
       size[0] * size[1] * size[2] <= t.device.limits.maxComputeInvocationsPerWorkgroup,
       descriptor
@@ -262,7 +268,7 @@ Tests calling createComputePipeline(Async) validation for compute workgroup_size
       workgroupX <= t.device.limits.maxComputeWorkgroupSizeX &&
       workgroupY <= t.device.limits.maxComputeWorkgroupSizeY &&
       workgroupZ <= t.device.limits.maxComputeWorkgroupSizeZ;
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
   });
 
 g.test('overrides,identifier')
@@ -317,7 +323,7 @@ Tests calling createComputePipeline(Async) validation for overridable constants 
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
   });
 
 g.test('overrides,uninitialized')
@@ -375,7 +381,7 @@ Tests calling createComputePipeline(Async) validation for uninitialized overrida
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
   });
 
 g.test('overrides,value,type_error')
@@ -412,7 +418,7 @@ Tests calling createComputePipeline(Async) validation for constant values like i
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor, 'TypeError');
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor, 'TypeError');
   });
 
 g.test('overrides,value,validation_error')
@@ -473,7 +479,7 @@ TODO(#2060): test with last_castable_pipeline_override.
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
   });
 
 g.test('overrides,entry_point,validation_error')
@@ -507,7 +513,7 @@ Tests that pipeline constant (override) errors only trigger on entry point usage
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, pipeEntryPoint === 'main_success', descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, pipeEntryPoint === 'main_success', descriptor);
   });
 
 g.test('overrides,value,validation_error,f16')
@@ -566,7 +572,7 @@ clarity on whether values like f16.positive.last_castable_pipeline_override woul
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
   });
 
 const kOverridesWorkgroupSizeShaders = {
@@ -620,7 +626,7 @@ Tests calling createComputePipeline(Async) validation for overridable constants 
       },
     };
 
-    t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+    vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
   });
 
 g.test('overrides,workgroup_size,limits')
@@ -655,7 +661,7 @@ Tests calling createComputePipeline(Async) validation for overridable constants 
         },
       };
 
-      t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+      vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
     };
 
     testFn(limits.maxComputeWorkgroupSizeX, 1, 1, true);
@@ -718,7 +724,7 @@ Tests calling createComputePipeline(Async) validation for overridable constants 
         },
       };
 
-      t.doCreateComputePipelineTest(isAsync, _success, descriptor);
+      vtu.doCreateComputePipelineTest(t, isAsync, _success, descriptor);
     };
 
     testFn(1, 1, true);
@@ -763,9 +769,45 @@ g.test('resource_compatibility')
         entryPoint: 'main',
       },
     };
-    t.doCreateComputePipelineTest(
+    vtu.doCreateComputePipelineTest(
+      t,
       t.params.isAsync,
       doResourcesMatch(apiResource, wgslResource),
       descriptor
     );
+  });
+
+g.test('storage_texture,format')
+  .desc(
+    `
+Test that a pipeline with auto layout and storage texture access combo that is not supported
+generates a validation error at createComputePipeline(Async)
+  `
+  )
+  .params(u =>
+    u //
+      .combine('format', kPossibleStorageTextureFormats)
+      .beginSubcases()
+      .combine('isAsync', [true, false] as const)
+      .combine('access', ['read', 'write', 'read_write'] as const)
+      .combine('dimension', ['1d', '2d', '3d'] as const)
+  )
+  .fn(t => {
+    const { format, isAsync, access, dimension } = t.params;
+    t.skipIfTextureFormatNotSupported(format);
+
+    const code = `
+      @group(0) @binding(0) var tex: texture_storage_${dimension}<${format}, ${access}>;
+      @compute @workgroup_size(1) fn main() {
+        _ = tex;
+      }
+    `;
+    const module = t.device.createShaderModule({ code });
+
+    const success = isTextureFormatUsableWithStorageAccessMode(t.device, format, access);
+    const descriptor: GPUComputePipelineDescriptor = {
+      layout: 'auto',
+      compute: { module },
+    };
+    vtu.doCreateComputePipelineTest(t, isAsync, success, descriptor);
   });

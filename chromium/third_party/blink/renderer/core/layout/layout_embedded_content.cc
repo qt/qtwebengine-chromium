@@ -35,13 +35,13 @@
 #include "third_party/blink/renderer/core/html/fenced_frame/html_fenced_frame_element.h"
 #include "third_party/blink/renderer/core/html/html_frame_element_base.h"
 #include "third_party/blink/renderer/core/html/html_plugin_element.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/embedded_content_painter.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/transforms/affine_transform.h"
 #include "ui/gfx/geometry/point_conversions.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -105,13 +105,7 @@ const std::optional<PhysicalSize> LayoutEmbeddedContent::FrozenFrameSize()
 
 PhysicalNaturalSizingInfo LayoutEmbeddedContent::GetNaturalDimensions() const {
   NOT_DESTROYED();
-  // 300x150, no aspect ratio. (Should probably be none.)
-  PhysicalSize natural_size{LayoutUnit(kDefaultWidth),
-                            LayoutUnit(kDefaultHeight)};
-  natural_size.Scale(StyleRef().EffectiveZoom());
-  PhysicalNaturalSizingInfo sizing_info;
-  sizing_info.size = natural_size;
-  return sizing_info;
+  return PhysicalNaturalSizingInfo::None();
 }
 
 AffineTransform LayoutEmbeddedContent::EmbeddedContentTransform() const {
@@ -129,6 +123,11 @@ AffineTransform LayoutEmbeddedContent::EmbeddedContentTransform() const {
   translate_and_scale.Scale(replaced_rect.Width() / frozen_size->width,
                             replaced_rect.Height() / frozen_size->height);
   return translate_and_scale;
+}
+
+bool LayoutEmbeddedContent::ShowsUnavailablePluginIndicator() const {
+  NOT_DESTROYED();
+  return false;
 }
 
 PhysicalOffset LayoutEmbeddedContent::EmbeddedContentFromBorderBox(

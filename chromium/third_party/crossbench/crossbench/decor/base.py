@@ -7,7 +7,7 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import enum
-from typing import TYPE_CHECKING, Dict, Generic, Set, Type, TypeVar
+from typing import TYPE_CHECKING, Generic, Set, Type, TypeVar
 
 from crossbench import plt
 from crossbench.config import ConfigParser
@@ -41,7 +41,7 @@ class Decorator(abc.ABC, Generic[DecoratorTargetT]):
     return DecoratorConfigParser(cls)
 
   @classmethod
-  def from_config(cls: Type[DecoratorT], config_data: Dict) -> DecoratorT:
+  def from_config(cls: Type[DecoratorT], config_data: dict) -> DecoratorT:
     return cls.config_parser().parse(config_data)
 
   @classmethod

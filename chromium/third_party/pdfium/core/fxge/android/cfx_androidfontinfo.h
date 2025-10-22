@@ -21,7 +21,7 @@ class CFX_AndroidFontInfo final : public SystemFontInfoIface {
   CFX_AndroidFontInfo();
   ~CFX_AndroidFontInfo() override;
 
-  bool Init(CFPF_SkiaFontMgr* pFontMgr, const char** user_paths);
+  bool Init(CFPF_SkiaFontMgr* font_mgr, const char** user_paths);
 
   // SystemFontInfoIface:
   void EnumFontList(CFX_FontMapper* pMapper) override;
@@ -39,7 +39,7 @@ class CFX_AndroidFontInfo final : public SystemFontInfoIface {
   void DeleteFont(void* hFont) override;
 
  private:
-  UnownedPtr<CFPF_SkiaFontMgr> m_pFontMgr;
+  UnownedPtr<CFPF_SkiaFontMgr> font_mgr_;
 };
 
 #endif  // CORE_FXGE_ANDROID_CFX_ANDROIDFONTINFO_H_

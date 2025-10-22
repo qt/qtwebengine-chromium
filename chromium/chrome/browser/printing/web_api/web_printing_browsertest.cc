@@ -140,6 +140,8 @@ auto ValidatePrintSettings() {
                                       Pointee(Eq("tray-1")))))),
       // printColorMode:
       Property(&PrintSettings::color, Eq(mojom::ColorModel::kColorModeColor)),
+      // printQuality:
+      Property(&PrintSettings::quality, Eq(mojom::Quality::kUnknownQuality)),
       Property(&PrintSettings::title, Eq(u"Title")),
       // multipleDocumentHandling:
       Property(&PrintSettings::collate, Eq(true)),
@@ -335,6 +337,8 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, FetchAttributes) {
     }],
     "printColorModeDefault": "monochrome",
     "printColorModeSupported": [ "monochrome", "color" ],
+    "printQualityDefault": "draft",
+    "printQualitySupported": [ "draft", "normal" ],
     "printerName": "name",
     "printerState": "idle",
     "printerStateMessage": "Ready to Print!",
@@ -353,7 +357,7 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, FetchAttributes) {
   auto eval_result = EvalJs(app_frame(), kFetchAttributesScript);
   ASSERT_THAT(eval_result, content::EvalJsResult::IsOk());
 
-  EXPECT_THAT(eval_result.value,
+  EXPECT_THAT(eval_result.ExtractDict(),
               base::test::DictionaryHasValues(
                   base::test::ParseJsonDict(kExpectedAttributes)));
 }
@@ -407,8 +411,9 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest,
     })();
   )";
 
-  ASSERT_THAT(EvalJs(app_frame(), kGetPrintersScript).error,
-              testing::HasSubstr("User denied access"));
+  ASSERT_THAT(
+      EvalJs(app_frame(), kGetPrintersScript),
+      content::EvalJsResult::ErrorIs(testing::HasSubstr("User denied access")));
 }
 
 // Validate that further calls to printer's methods fail when content setting
@@ -441,8 +446,9 @@ IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest,
       await printer.fetchAttributes();
     })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kFetchAttributesScript).error,
-              testing::HasSubstr("User denied access"));
+  ASSERT_THAT(
+      EvalJs(app_frame(), kFetchAttributesScript),
+      content::EvalJsResult::ErrorIs(testing::HasSubstr("User denied access")));
 
   // Ensure that `printer.printJob()` reports access denied.
   constexpr std::string_view kPrintJobScript = R"(
@@ -465,8 +471,9 @@ startxref
       const printJob = await printer.printJob("Fail", { data: pdfBlob }, {});
     })();
   )";
-  ASSERT_THAT(EvalJs(app_frame(), kPrintJobScript).error,
-              testing::HasSubstr("User denied access"));
+  ASSERT_THAT(
+      EvalJs(app_frame(), kPrintJobScript),
+      content::EvalJsResult::ErrorIs(testing::HasSubstr("User denied access")));
 }
 
 IN_PROC_BROWSER_TEST_F(WebPrintingBrowserTest, CancelImmediately) {

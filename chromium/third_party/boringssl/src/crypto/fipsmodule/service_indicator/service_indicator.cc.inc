@@ -17,7 +17,6 @@
 #include <openssl/ec_key.h>
 #include <openssl/err.h>
 #include <openssl/evp.h>
-#include <openssl/service_indicator.h>
 
 #include "../../evp/internal.h"
 #include "../../internal.h"
@@ -218,7 +217,8 @@ static void evp_md_ctx_verify_service_indicator(const EVP_MD_CTX *ctx,
       const EVP_MD *mgf1_md;
       if (!EVP_PKEY_CTX_get_rsa_pss_saltlen(pctx, &salt_len) ||
           !EVP_PKEY_CTX_get_rsa_mgf1_md(pctx, &mgf1_md) ||
-          (salt_len != -1 && salt_len != (int)EVP_MD_size(pctx_md)) ||
+          (salt_len != RSA_PSS_SALTLEN_DIGEST &&
+           salt_len != (int)EVP_MD_size(pctx_md)) ||
           EVP_MD_type(mgf1_md) != md_type) {
         // Only PSS where saltLen == hashLen is tested with ACVP. Cases with
         // non-standard padding functions are also excluded.
@@ -228,7 +228,7 @@ static void evp_md_ctx_verify_service_indicator(const EVP_MD_CTX *ctx,
 
     // The approved RSA key sizes for signing are 2048, 3072 and 4096 bits.
     // Note: |EVP_PKEY_size| returns the size in bytes.
-    size_t pkey_size = EVP_PKEY_size(ctx->pctx->pkey);
+    size_t pkey_size = EVP_PKEY_size(ctx->pctx->pkey.get());
 
     // Check if the MD type and the RSA key size are approved.
     if (md_ok(md_type) &&
@@ -239,7 +239,7 @@ static void evp_md_ctx_verify_service_indicator(const EVP_MD_CTX *ctx,
     // Check if the MD type and the elliptic curve are approved.
     if (md_ok(md_type) &&
         is_ec_fips_approved(EC_GROUP_get_curve_name(
-            EC_KEY_get0_group(EVP_PKEY_get0_EC_KEY(ctx->pctx->pkey))))) {
+            EC_KEY_get0_group(EVP_PKEY_get0_EC_KEY(ctx->pctx->pkey.get()))))) {
       FIPS_service_indicator_update_state();
     }
   }

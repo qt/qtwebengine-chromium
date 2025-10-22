@@ -3523,8 +3523,8 @@ IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
           isolation_info.site_for_cookies(), net::SchemefulSite(https_url),
           isolation_info.IsMainFrameRequest());
   EXPECT_TRUE(partition_key && partition_key->nonce());
-  net::CookiePartitionKeyCollection cookie_partition_key_collection =
-      net::CookiePartitionKeyCollection::FromOptional(partition_key);
+  net::CookiePartitionKeyCollection cookie_partition_key_collection(
+      partition_key);
 
   std::vector<net::CanonicalCookie> cookies =
       GetCanonicalCookies(shell()->web_contents()->GetBrowserContext(),
@@ -3634,8 +3634,8 @@ IN_PROC_BROWSER_TEST_F(
           isolation_info.site_for_cookies(), net::SchemefulSite(https_url),
           isolation_info.IsMainFrameRequest());
   EXPECT_TRUE(partition_key && partition_key->nonce());
-  net::CookiePartitionKeyCollection cookie_partition_key_collection =
-      net::CookiePartitionKeyCollection::FromOptional(partition_key);
+  net::CookiePartitionKeyCollection cookie_partition_key_collection(
+      partition_key);
 
   std::vector<net::CanonicalCookie> cookies =
       GetCanonicalCookies(shell()->web_contents()->GetBrowserContext(),
@@ -4276,10 +4276,10 @@ IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
     const peerConnection = new RTCPeerConnection(configuration);
   )");
 
-  EXPECT_THAT(
-      result.error,
-      testing::HasSubstr("Failed to construct 'RTCPeerConnection': "
-                         "RTCPeerConnection is not allowed in fenced frames."));
+  EXPECT_THAT(result,
+              EvalJsResult::ErrorIs(testing::HasSubstr(
+                  "Failed to construct 'RTCPeerConnection': "
+                  "RTCPeerConnection is not allowed in fenced frames.")));
 }
 
 namespace {
@@ -4699,8 +4699,8 @@ IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
   // back/forward cache is enabled. However, when back/forward cache is
   // disabled, it will navigate to `fenced_frame_url_1`. Fenced frames have
   // their own NavigationController which is not retained when the top-level
-  // page navigates. Therefore going back lands on the initial navigation in
-  // the Fenced Frame.
+  // page navigates. Therefore going back lands on the initial URL for the
+  // fenced frame.
   EXPECT_TRUE(WaitForLoadStop(shell()->web_contents()));
   EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
 
@@ -5404,8 +5404,8 @@ IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
                                         new_width, new_height)));
 
     // Force a style recomputation.
-    ASSERT_TRUE(EvalJs(nodeA, "getComputedStyle(nested_fenced_frame).width")
-                    .error.empty());
+    ASSERT_TRUE(
+        EvalJs(nodeA, "getComputedStyle(nested_fenced_frame).width").is_ok());
 
     // Check that the inner size hasn't changed.
     EXPECT_TRUE(
@@ -6207,11 +6207,11 @@ IN_PROC_BROWSER_TEST_F(
         // Shared storage get is denied.
         EvalJsResult get_result = EvalJs(ff1, "sharedStorage.get('test');");
         EXPECT_THAT(
-            get_result.error,
-            testing::HasSubstr(
+            get_result,
+            EvalJsResult::ErrorIs(testing::HasSubstr(
                 "sharedStorage.get() is not allowed in a fenced frame until "
                 "network access for it and all descendent frames has been "
-                "revoked with window.fence.disableUntrustedNetwork()"));
+                "revoked with window.fence.disableUntrustedNetwork()")));
       }));
 
   // Embedder initiates nested fenced frame navigation.
@@ -6840,6 +6840,179 @@ IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
                                       blink::NotifyEventOutcome::kSuccess, 1);
 }
 
+// Tests that a fenced frame root can navigate via NavigationController::
+// NavigateFrameToErrorPage.
+IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
+                       FencedFrameRootNavigateFrameToErrorPage) {
+  GURL main_url(https_server()->GetURL("a.test",
+                                       "/cross_site_iframe_factory.html?a.test("
+                                       "a.test{fenced})"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetPrimaryFrameTree()
+                            .root();
+
+  EXPECT_EQ(1, root->navigator().controller().GetEntryCount());
+  EXPECT_EQ(1U, root->child_count());
+
+  FrameTreeNode* fenced_frame = GetFencedFrameRootNode(root->child_at(0));
+  EXPECT_TRUE(fenced_frame->IsFencedFrameRoot());
+  EXPECT_TRUE(fenced_frame->IsInFencedFrameTree());
+  EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
+  int starting_fenced_frame_entry_id = fenced_frame->navigator()
+                                           .controller()
+                                           .GetLastCommittedEntry()
+                                           ->GetUniqueID();
+
+  // Navigate the fenced frame to an error page. Fenced frames have their own
+  // NavigationController and should always perform a "replace" navigation,
+  // meaning the controller's entry count stays at 1.
+  // Note: the custom error page HTML is loaded with this URL, but the URL
+  // actually points to a normal page, not an error page.
+  GURL fenced_frame_error_url(
+      https_server()->GetURL("c.test", "/fenced_frames/title1.html"));
+  TestFrameNavigationObserver error_observer(fenced_frame);
+  fenced_frame->navigator().controller().NavigateFrameToErrorPage(
+      fenced_frame->current_frame_host(), fenced_frame_error_url,
+      "<html><body><p>kaboom</p></body></html>");
+  error_observer.Wait();
+
+  EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
+  EXPECT_EQ(1, root->navigator().controller().GetEntryCount());
+  EXPECT_EQ(fenced_frame_error_url,
+            fenced_frame->current_frame_host()->GetLastCommittedURL());
+  EXPECT_TRUE(fenced_frame->current_frame_host()->IsErrorDocument());
+
+  // To be extra sure we're on the error page, grab the HTML content we expect.
+  EXPECT_EQ(
+      EvalJs(fenced_frame, "document.getElementsByTagName('p')[0].textContent"),
+      "kaboom");
+
+  // Now, let's grab the unique ID of the error page's NavigationEntry, so we
+  // can see if it changes later, and to confirm that the new NavigationEntry
+  // belongs to the error page.
+  int error_entry_id = fenced_frame->navigator()
+                           .controller()
+                           .GetLastCommittedEntry()
+                           ->GetUniqueID();
+  EXPECT_NE(error_entry_id, starting_fenced_frame_entry_id);
+
+  // The root NavigationController should still have the main frame URL in its
+  // last committed entry.
+  EXPECT_EQ(main_url,
+            root->navigator().controller().GetLastCommittedEntry()->GetURL());
+
+  // We can't go back or forward in the fenced frame.
+  EXPECT_FALSE(fenced_frame->navigator().controller().CanGoBack());
+  EXPECT_FALSE(fenced_frame->navigator().controller().CanGoForward());
+
+  // When we perform a reload, we should be reloading the error entry, because
+  // it's replaced the previous entry permanently.
+  TestFrameNavigationObserver reload_observer(fenced_frame);
+  EXPECT_TRUE(ExecJs(fenced_frame, "location.reload();"));
+  reload_observer.Wait();
+  EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
+  EXPECT_EQ(1, root->navigator().controller().GetEntryCount());
+  EXPECT_EQ(error_entry_id, fenced_frame->navigator()
+                                .controller()
+                                .GetLastCommittedEntry()
+                                ->GetUniqueID());
+
+  // We've reloaded the URL specified when loading the error page, but we're
+  // loading the real document at that URL instead of an error document.
+  EXPECT_EQ(fenced_frame_error_url,
+            fenced_frame->current_frame_host()->GetLastCommittedURL());
+  EXPECT_EQ(
+      fenced_frame_error_url,
+      fenced_frame->navigator().controller().GetLastCommittedEntry()->GetURL());
+  EXPECT_EQ(main_url,
+            root->navigator().controller().GetLastCommittedEntry()->GetURL());
+  EXPECT_FALSE(fenced_frame->current_frame_host()->IsErrorDocument());
+}
+
+// Tests that a fenced frame root can navigate via NavigationController::
+// NavigateFrameToErrorPage, and that it reloads the correct URL when the main
+// frame navigates back.
+IN_PROC_BROWSER_TEST_F(FencedFrameParameterizedBrowserTest,
+                       GoBackToPageWithFencedFrameBrowserInitiatedErrorPage) {
+  GURL main_url(https_server()->GetURL(
+      "a.test", "/fenced_frames/basic_fenced_frame_src.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), main_url));
+
+  // It is safe to obtain the root frame tree node here, as it doesn't change.
+  FrameTreeNode* root = static_cast<WebContentsImpl*>(shell()->web_contents())
+                            ->GetPrimaryFrameTree()
+                            .root();
+
+  EXPECT_EQ(1U, root->child_count());
+  auto* fenced_frame = GetFencedFrameRootNode(root->child_at(0));
+  EXPECT_TRUE(fenced_frame->IsFencedFrameRoot());
+  EXPECT_TRUE(fenced_frame->IsInFencedFrameTree());
+
+  GURL fenced_frame_url_1 =
+      https_server()->GetURL("a.test", "/fenced_frames/title1.html");
+
+  EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
+  EXPECT_EQ(fenced_frame_url_1,
+            fenced_frame->current_frame_host()->GetLastCommittedURL());
+
+  // Navigate the fenced frame to an error page. It should do a replace
+  // navigation and therefore the `controller().GetEntryCount()` stays at 1.
+  GURL fenced_frame_url_2(
+      https_server()->GetURL("c.test", "/fenced_frames/title1.html"));
+  TestFrameNavigationObserver error_observer(fenced_frame);
+  fenced_frame->navigator().controller().NavigateFrameToErrorPage(
+      fenced_frame->current_frame_host(), fenced_frame_url_2,
+      "<html><body><p>kaboom</p></body></html>");
+  error_observer.Wait();
+
+  EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
+  EXPECT_EQ(1, root->navigator().controller().GetEntryCount());
+  EXPECT_EQ(fenced_frame_url_2,
+            fenced_frame->current_frame_host()->GetLastCommittedURL());
+
+  // To be extra sure we're on the error page, grab the HTML content we expect.
+  EXPECT_EQ(
+      EvalJs(fenced_frame, "document.getElementsByTagName('p')[0].textContent"),
+      "kaboom");
+
+  // Navigate the top-level page to another document. This destroys the fenced
+  // frame entirely, unless it enters bfcache.
+  GURL new_main_url(https_server()->GetURL("b.test", "/hello.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), new_main_url));
+  EXPECT_EQ(2, root->navigator().controller().GetEntryCount());
+  EXPECT_EQ(new_main_url, root->current_frame_host()->GetLastCommittedURL());
+
+  // Go back.
+  TestNavigationObserver back_load_observer(shell()->web_contents());
+  root->navigator().controller().GoBack();
+  back_load_observer.Wait();
+  EXPECT_EQ(2, root->navigator().controller().GetEntryCount());
+
+  EXPECT_EQ(1U, root->child_count());
+  fenced_frame = GetFencedFrameRootNode(root->child_at(0));
+  EXPECT_TRUE(fenced_frame->IsFencedFrameRoot());
+  EXPECT_TRUE(fenced_frame->IsInFencedFrameTree());
+
+  // Note the last committed url is the latest one (`fenced_frame_url_2`) when
+  // back/forward cache is enabled. However, when back/forward cache is
+  // disabled, it will navigate to `fenced_frame_url_1`. Fenced frames have
+  // their own NavigationController which is not retained when the top-level
+  // page navigates. Therefore going back lands on the initial URL for the
+  // fenced frame.
+  EXPECT_EQ(1, fenced_frame->navigator().controller().GetEntryCount());
+
+  if (BackForwardCache::IsBackForwardCacheFeatureEnabled()) {
+    EXPECT_EQ(fenced_frame_url_2,
+              fenced_frame->current_frame_host()->GetLastCommittedURL());
+    EXPECT_TRUE(fenced_frame->current_frame_host()->IsErrorDocument());
+  } else {
+    EXPECT_EQ(fenced_frame_url_1,
+              fenced_frame->current_frame_host()->GetLastCommittedURL());
+  }
+}
+
 class FencedFrameReportEventBrowserTest
     : public FencedFrameParameterizedBrowserTest {
  public:
@@ -7247,14 +7420,12 @@ class FencedFrameReportEventBrowserTest
             Step::Result::kExceedMaxEventDataLength) {
           // When eventData exceeds the length limit, a security error is thrown
           // instead of a console error.
-          EXPECT_FALSE(result.error.empty());
-          EXPECT_THAT(
-              result.error,
-              testing::HasSubstr(GetErrorPattern(step.report_event_result)));
+          EXPECT_THAT(result, EvalJsResult::ErrorIs(testing::HasSubstr(
+                                  GetErrorPattern(step.report_event_result))));
           continue;
         }
 
-        EXPECT_TRUE(result.error.empty());
+        EXPECT_TRUE(result.is_ok());
       }
 
       // If relevant, check that the event report succeeded.
@@ -9195,18 +9366,18 @@ class FencedFrameAutomaticBeaconBrowserTest
         if (config.message->length() > blink::kFencedFrameMaxBeaconLength) {
           // When eventData exceeds the length limit, a security error is thrown
           // instead of a console error.
-          EXPECT_FALSE(result.error.empty());
-          EXPECT_THAT(
-              result.error,
-              testing::HasSubstr("The data provided to "
-                                 "setReportEventDataForAutomaticBeacons() "
-                                 "exceeds the maximum length, which is 64KB."));
+          EXPECT_FALSE(result.is_ok());
+          EXPECT_THAT(result,
+                      content::EvalJsResult::ErrorIs(testing::HasSubstr(
+                          "The data provided to "
+                          "setReportEventDataForAutomaticBeacons() "
+                          "exceeds the maximum length, which is 64KB.")));
 
           histogram_tester_.ExpectUniqueSample(
               blink::kAutomaticBeaconEventTypeHistogram,
               config.beacon_type.type, 0);
         } else {
-          EXPECT_TRUE(result.error.empty());
+          EXPECT_TRUE(result.is_ok());
           histogram_tester_.ExpectUniqueSample(
               blink::kAutomaticBeaconEventTypeHistogram,
               config.beacon_type.type, 1);

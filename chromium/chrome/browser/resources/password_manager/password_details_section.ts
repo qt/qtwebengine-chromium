@@ -49,7 +49,8 @@ export class PasswordDetailsSectionElement extends
     };
   }
 
-  private selectedGroup_: chrome.passwordsPrivate.CredentialGroup|undefined;
+  declare private selectedGroup_: chrome.passwordsPrivate.CredentialGroup|
+      undefined;
   private savedPasswordsListener_: (
       (entries: chrome.passwordsPrivate.PasswordUiEntry[]) => void)|null = null;
   private passwordManagerAuthTimeoutListener_: () => void;
@@ -217,10 +218,14 @@ export class PasswordDetailsSectionElement extends
     const currentStores =
         this.selectedGroup_.entries.map(entry => entry.storedIn);
     const newStores = matchingGroup.entries.map(entry => entry.storedIn);
+    const currentBackups =
+        this.selectedGroup_.entries.map(entry => entry.backupPassword);
+    const newBackups = matchingGroup.entries.map(entry => entry.backupPassword);
     // If ids match and stores used for entries haven't changed, don't do
     // anything.
     if (currentIds.sort().toString() === newIds.sort().toString() &&
-        currentStores.sort().toString() === newStores.sort().toString()) {
+        currentStores.sort().toString() === newStores.sort().toString() &&
+        currentBackups.sort().toString() === newBackups.sort().toString()) {
       return;
     }
     this.updateShownCredentials(matchingGroup)

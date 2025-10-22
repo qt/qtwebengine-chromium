@@ -100,31 +100,36 @@ RendererProvider::RendererProvider(const Caps* caps, StaticBufferManager* buffer
 
     initFromStep(&fAnalyticRRect,
                  std::make_unique<AnalyticRRectRenderStep>(bufferManager),
-                 static_cast<DrawTypeFlags>((int) DrawTypeFlags::kSimpleShape |
-                                            (int) InternalDrawTypeFlags::kAnalyticRRect));
+                 DrawTypeFlags::kAnalyticRRect);
     initFromStep(&fPerEdgeAAQuad,
                  std::make_unique<PerEdgeAAQuadRenderStep>(bufferManager),
-                 DrawTypeFlags::kSimpleShape);
+                 DrawTypeFlags::kPerEdgeAAQuad);
     initFromStep(&fNonAABoundsFill,
                  std::make_unique<CoverBoundsRenderStep>(
                         RenderStep::RenderStepID::kCoverBounds_NonAAFill,
                         kDirectDepthGreaterPass),
-                 DrawTypeFlags::kSimpleShape);
+                 DrawTypeFlags::kNonAAFillRect);
     initFromStep(&fCircularArc,
                  std::make_unique<CircularArcRenderStep>(bufferManager),
                  DrawTypeFlags::kCircularArc);
     initFromStep(&fAnalyticBlur,
                  std::make_unique<AnalyticBlurRenderStep>(),
-                 static_cast<DrawTypeFlags>(InternalDrawTypeFlags::kAnalyticBlur));
+                 DrawTypeFlags::kDropShadows);
 
     // vertices
     for (PrimitiveType primType : {PrimitiveType::kTriangles, PrimitiveType::kTriangleStrip}) {
         for (bool color : {false, true}) {
             for (bool texCoords : {false, true}) {
+                DrawTypeFlags dtFlags = DrawTypeFlags::kDrawVertices;
+                if (primType == PrimitiveType::kTriangles && color && !texCoords) {
+                    // Android uses this drawVertices combination for drop shadows
+                    dtFlags = static_cast<DrawTypeFlags>(dtFlags | DrawTypeFlags::kDropShadows);
+                }
+
                 int index = 4*(primType == PrimitiveType::kTriangleStrip) + 2*color + texCoords;
                 initFromStep(&fVertices[index],
                              std::make_unique<VerticesRenderStep>(primType, color, texCoords),
-                             DrawTypeFlags::kDrawVertices);
+                             dtFlags);
             }
         }
     }

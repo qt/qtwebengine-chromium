@@ -28,6 +28,7 @@ class SurfaceManager;
 class VIZ_SERVICE_EXPORT FrameIntervalDecider {
  public:
   using FrameIntervalClass = FrameIntervalMatcher::FrameIntervalClass;
+  using ResultInterval = FrameIntervalMatcher::ResultInterval;
   using Result = FrameIntervalMatcher::Result;
   using ResultCallback = FrameIntervalMatcher::ResultCallback;
   using FixedIntervalSettings = FrameIntervalMatcher::FixedIntervalSettings;
@@ -70,9 +71,8 @@ class VIZ_SERVICE_EXPORT FrameIntervalDecider {
   void UpdateSettings(
       Settings settings,
       std::vector<std::unique_ptr<FrameIntervalMatcher>> matchers);
-  std::unique_ptr<ScopedAggregate> WrapAggregate(
-      SurfaceManager& surface_manager,
-      base::TimeTicks frame_time);
+  ScopedAggregate WrapAggregate(SurfaceManager& surface_manager,
+                                base::TimeTicks frame_time);
 
  private:
   void Decide(base::TimeTicks frame_time,
@@ -88,6 +88,7 @@ class VIZ_SERVICE_EXPORT FrameIntervalDecider {
 
   base::TimeTicks current_result_frame_time_;
   std::optional<Result> current_result_;
+  uint64_t frame_id_ = 0u;
 };
 
 }  // namespace viz

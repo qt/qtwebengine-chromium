@@ -11,9 +11,11 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "base/containers/enum_set.h"
+#include "base/containers/flat_map.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
@@ -75,15 +77,15 @@ enum class RateLimitResult : int;
 class CONTENT_EXPORT AttributionStorageSql {
  public:
   // Version number of the database.
-  static constexpr int kCurrentVersionNumber = 69;
+  static constexpr int kCurrentVersionNumber = 70;
 
   // Earliest version which can use a `kCurrentVersionNumber` database
   // without failing.
-  static constexpr int kCompatibleVersionNumber = 69;
+  static constexpr int kCompatibleVersionNumber = 70;
 
   // Latest version of the database that cannot be upgraded to
   // `kCurrentVersionNumber` without razing the database.
-  static constexpr int kDeprecatedVersionNumber = 53;
+  static constexpr int kDeprecatedVersionNumber = 55;
 
   static_assert(kCompatibleVersionNumber <= kCurrentVersionNumber);
   static_assert(kDeprecatedVersionNumber < kCompatibleVersionNumber);
@@ -164,13 +166,13 @@ class CONTENT_EXPORT AttributionStorageSql {
     kSourceInvalidFilterData = 20,
     kSourceInvalidActiveState = 21,
     kSourceInvalidReadOnlySourceData = 22,
-    // Obsolete: kSourceInvalidEventReportWindows = 23,
+    kSourceInvalidEventReportWindows = 23,
     kSourceInvalidMaxEventLevelReports = 24,
     kSourceInvalidEventLevelEpsilon = 25,
     kSourceDestinationSitesQueryFailed = 26,
     kSourceInvalidDestinationSites = 27,
     kStoredSourceConstructionFailed = 28,
-    kSourceInvalidTriggerSpecs = 29,
+    kSourceInvalidTriggerData = 29,
     kSourceDedupKeyQueryFailed = 30,
     kSourceInvalidRandomizedResponseRate = 31,
     kSourceInvalidAttributionScopesData = 32,
@@ -222,6 +224,9 @@ class CONTENT_EXPORT AttributionStorageSql {
                                   base::Time new_report_time);
   bool AdjustOfflineReportTimes(base::TimeDelta min_delay,
                                 base::TimeDelta max_delay);
+  base::flat_map<AttributionReport::Type, int> AdjustNavigationRetryReportTimes(
+      base::TimeDelta min_delay,
+      base::TimeDelta max_delay);
   void ClearAllDataAllTime(bool delete_rate_limit_data);
   void ClearDataWithFilter(
       base::Time delete_begin,

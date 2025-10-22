@@ -127,7 +127,6 @@ void AXTreeFormatterAuraLinux::RecursiveBuildTree(
   DCHECK(platform_node);
 
   AXPlatformNodeDelegate* node = platform_node->GetDelegate();
-  DCHECK(node);
 
   if (!ShouldDumpNode(*node))
     return;
@@ -509,7 +508,6 @@ void AXTreeFormatterAuraLinux::AddProperties(AtkObject* atk_object,
   DCHECK(platform_node);
 
   AXPlatformNodeDelegate* node = platform_node->GetDelegate();
-  DCHECK(node);
 
   dict->Set("id", node->GetId());
 
@@ -629,7 +627,7 @@ const char* const ATK_OBJECT_ATTRIBUTES[] = {
     "explicit-name",
     "grabbed",
     "haspopup",
-    "has-interest-target",
+    "has-interest-for",
     "hidden",
     "html-input-name",
     "id",

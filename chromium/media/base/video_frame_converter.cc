@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "media/base/video_frame_converter.h"
 
@@ -38,9 +34,7 @@ scoped_refptr<VideoFrame> WrapTempFrameForABGRToARGB(
     scoped_refptr<VideoFrame> tmp_frame) {
   return VideoFrame::WrapExternalData(
       override_format, tmp_frame->coded_size(), tmp_frame->visible_rect(),
-      tmp_frame->natural_size(),
-      tmp_frame->writable_data(VideoFrame::Plane::kARGB),
-      VideoFrame::AllocationSize(override_format, tmp_frame->coded_size()),
+      tmp_frame->natural_size(), tmp_frame->data_span(VideoFrame::Plane::kARGB),
       tmp_frame->timestamp());
 }
 

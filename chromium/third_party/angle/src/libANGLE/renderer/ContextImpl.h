@@ -190,6 +190,7 @@ class ContextImpl : public GLImplFactory
                                          const std::string &message) = 0;
     virtual angle::Result popDebugGroup(const gl::Context *context)  = 0;
     virtual angle::Result handleNoopDrawEvent();
+    virtual angle::Result handleNoopMultiDrawEvent();
 
     // KHR_parallel_shader_compile
     virtual void setMaxShaderCompilerThreads(GLuint count) {}
@@ -225,13 +226,15 @@ class ContextImpl : public GLImplFactory
     virtual angle::Result onMakeCurrent(const gl::Context *context) = 0;
     virtual angle::Result onUnMakeCurrent(const gl::Context *context);
 
+    // EXT_fragment_shading_rate
+    virtual const angle::ShadingRateMap &getSupportedFragmentShadingRateEXTSampleCounts() const;
+
     // Native capabilities, unmodified by gl::Context.
     virtual gl::Caps getNativeCaps() const                                              = 0;
     virtual const gl::TextureCapsMap &getNativeTextureCaps() const                      = 0;
     virtual const gl::Extensions &getNativeExtensions() const                           = 0;
     virtual const gl::Limitations &getNativeLimitations() const                         = 0;
     virtual const ShPixelLocalStorageOptions &getNativePixelLocalStorageOptions() const = 0;
-
     virtual angle::Result dispatchCompute(const gl::Context *context,
                                           GLuint numGroupsX,
                                           GLuint numGroupsY,
@@ -244,8 +247,6 @@ class ContextImpl : public GLImplFactory
                                                 GLbitfield barriers)                     = 0;
 
     const gl::State &getState() const { return mState; }
-    int getClientMajorVersion() const { return mState.getClientMajorVersion(); }
-    int getClientMinorVersion() const { return mState.getClientMinorVersion(); }
     const gl::Caps &getCaps() const { return mState.getCaps(); }
     const gl::TextureCapsMap &getTextureCaps() const { return mState.getTextureCaps(); }
     const gl::Extensions &getExtensions() const { return mState.getExtensions(); }

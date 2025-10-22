@@ -65,23 +65,23 @@ const LARGE_CONTAINER_HEIGHT = css`56px`;
  */
 export class IconButton extends LitElement {
   /** @export */
-  buttonStyle: 'filled'|'floating'|'toggle';
+  declare buttonStyle: 'filled'|'floating'|'toggle';
   /** @export */
-  size: 'small'|'default'|'large';
+  declare size: 'small'|'default'|'large';
   /** @export */
-  shape: 'circle'|'square';
+  declare shape: 'circle'|'square';
   /**
    * @export
    * The background the icon button sits on. This will change the background and
    * icon color of the icon-button.
    */
-  surface: 'base'|'prominent'|'subtle'|'image';
+  declare surface: 'base'|'prominent'|'subtle'|'image';
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  selected: boolean;
+  declare selected: boolean;
   /** @export */
-  href = '';
+  declare href: string;
 
   /** @nocollapse */
   static override styles: CSSResultGroup = css`
@@ -339,6 +339,7 @@ export class IconButton extends LitElement {
     this.surface = 'base';
     this.disabled = false;
     this.selected = false;
+    this.href = '';
   }
 
   override connectedCallback() {

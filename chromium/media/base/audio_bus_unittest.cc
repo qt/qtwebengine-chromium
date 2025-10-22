@@ -12,9 +12,11 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <array>
 #include <limits>
 #include <memory>
 
+#include "base/containers/span.h"
 #include "base/memory/aligned_memory.h"
 #include "base/memory/raw_ptr.h"
 #include "base/strings/stringprintf.h"
@@ -304,9 +306,10 @@ TEST_F(AudioBusTest, WrapMemory) {
   VerifyReadWriteAndAlignment(bus.get());
 
   // Verify the channel vectors lie within the provided memory block.
-  const float* backing_memory_start = data.as_span().data();
-  const float* backing_memory_end = backing_memory_start + total_frame_count;
-  EXPECT_GE(bus->channel_span(0).data(), backing_memory_start);
+  base::span<const float> backing_memory_start = data.as_span();
+  const float* backing_memory_end =
+      backing_memory_start.subspan(total_frame_count).data();
+  EXPECT_GE(bus->channel_span(0).data(), backing_memory_start.data());
   EXPECT_LT(bus->channel_span(bus->channels() - 1).data() + bus->frames(),
             backing_memory_end);
 }
@@ -437,9 +440,9 @@ static const float kTestVectorFloat32Sanitized[kTestVectorSize] = {
 
 // Expected results.
 static constexpr size_t kTestVectorFrameCount = kTestVectorSize / 2;
-static const float kTestVectorResult[][kTestVectorFrameCount] = {
-    {-1.0f, 1.0f, 0.5f, 0.0f, 0.0f},
-    {0.0f, -1.0f, -0.5f, 1.0f, 0.0f}};
+static const auto kTestVectorResult =
+    std::to_array<std::array<const float, kTestVectorFrameCount>>(
+        {{-1.0f, 1.0f, 0.5f, 0.0f, 0.0f}, {0.0f, -1.0f, -0.5f, 1.0f, 0.0f}});
 static const int kTestVectorChannelCount = std::size(kTestVectorResult);
 
 // Verify FromInterleaved() deinterleaves audio in supported formats correctly.
@@ -577,15 +580,16 @@ TEST_F(AudioBusTest, ToInterleavedSanitized) {
                                                 bus->frames());
   // Verify FromInterleaved applied no sanity.
   ASSERT_EQ(bus->channel_span(0)[0], kTestVectorFloat32Invalid[0]);
-  float test_array[std::size(kTestVectorFloat32Sanitized)];
-  bus->ToInterleaved<Float32SampleTypeTraits>(bus->frames(), test_array);
+  std::array<float, std::size(kTestVectorFloat32Sanitized)> test_array;
+  bus->ToInterleaved<Float32SampleTypeTraits>(bus->frames(), test_array.data());
   for (size_t i = 0; i < std::size(kTestVectorFloat32Sanitized); ++i)
     ASSERT_EQ(kTestVectorFloat32Sanitized[i], test_array[i]);
 
   // Verify that Float32SampleTypeTraitsNoClip applied no sanity. Note: We don't
   // use memcmp() here since the NaN type may change on x86 platforms in certain
   // circumstances, see https://gcc.gnu.org/bugzilla/show_bug.cgi?id=57484
-  bus->ToInterleaved<Float32SampleTypeTraitsNoClip>(bus->frames(), test_array);
+  bus->ToInterleaved<Float32SampleTypeTraitsNoClip>(bus->frames(),
+                                                    test_array.data());
   for (int i = 0; i < kTestVectorSize; ++i) {
     if (std::isnan(test_array[i]))
       EXPECT_TRUE(std::isnan(kTestVectorFloat32Invalid[i]));

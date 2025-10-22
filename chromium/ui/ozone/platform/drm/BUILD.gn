@@ -9,6 +9,7 @@ import("//build/config/logging.gni")
 import("//build/config/ozone.gni")
 import("//gpu/vulkan/features.gni")
 import("//testing/test.gni")
+import("//ui/gl/features.gni")
 
 visibility = [ "//ui/ozone/*" ]
 
@@ -155,7 +156,7 @@ source_set("gbm") {
     "//ui/platform_window",
   ]
 
-  if (!is_castos) {
+  if (!is_castos && !use_static_angle) {
     data_deps = [
       "//third_party/angle:libEGL",
       "//third_party/angle:libGLESv2",
@@ -183,6 +184,10 @@ source_set("gbm") {
     # Enable VLOG(1) so that they are included in field feedbacks.
     "ENABLED_VLOG_LEVEL=1",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("gbm_unittests") {
@@ -230,6 +235,10 @@ source_set("gbm_unittests") {
     "//ui/ozone:platform",
     "//ui/ozone/common",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("drm_integration_tests") {
@@ -246,7 +255,7 @@ source_set("drm_integration_tests") {
     "//base/test:test_support",
     "//build/config/linux/libdrm",
     "//skia",
-    "//ui/display/types:types",
+    "//ui/display/types",
     "//ui/gfx/linux:gbm",
     "//ui/gfx/linux:test_support",
     "//ui/ozone:platform",

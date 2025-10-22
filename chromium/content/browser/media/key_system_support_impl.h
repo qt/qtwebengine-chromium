@@ -20,8 +20,8 @@
 #include "content/public/browser/render_frame_host.h"
 #include "media/mojo/mojom/key_system_support.mojom.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
-#include "mojo/public/cpp/bindings/receiver_set.h"
-#include "mojo/public/cpp/bindings/remote_set.h"
+#include "mojo/public/cpp/bindings/receiver.h"
+#include "mojo/public/cpp/bindings/remote.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
 #include "third_party/blink/public/mojom/renderer_preference_watcher.mojom.h"
 
@@ -51,7 +51,7 @@ class CONTENT_EXPORT KeySystemSupportImpl final
   void Bind(mojo::PendingReceiver<media::mojom::KeySystemSupport> receiver);
 
   // media::mojom::KeySystemSupport implementation.
-  void AddObserver(mojo::PendingRemote<media::mojom::KeySystemSupportObserver>
+  void SetObserver(mojo::PendingRemote<media::mojom::KeySystemSupportObserver>
                        observer) final;
 
  private:
@@ -67,10 +67,6 @@ class CONTENT_EXPORT KeySystemSupportImpl final
 
   // Sets up permission listeners for updates.
   void SetUpPermissionListeners();
-
-  // Initializes `is_protected_identifier_allowed_` with `status`.
-  void OnProtectedMediaIdentifierPermissionInitialized(
-      blink::mojom::PermissionStatus status);
 
   // Updates `is_protected_identifier_allowed_` with `status`.
   void OnProtectedMediaIdentifierPermissionUpdated(
@@ -88,9 +84,8 @@ class CONTENT_EXPORT KeySystemSupportImpl final
       KeySystemCapabilities key_system_capabilities);
 
   GetKeySystemCapabilitiesUpdateCB get_support_cb_for_testing_;
-  mojo::ReceiverSet<KeySystemSupport> key_system_support_receivers_;
-  // TODO(crbug.com/348128751): Drop the RemoteSet.
-  mojo::RemoteSet<media::mojom::KeySystemSupportObserver> observer_remotes_;
+  mojo::Receiver<KeySystemSupport> key_system_support_receiver_{this};
+  mojo::Remote<media::mojom::KeySystemSupportObserver> observer_remote_;
   std::optional<KeySystemCapabilities> key_system_capabilities_;
   // Callback subscription to keep the callback alive in the CdmRegistry.
   base::CallbackListSubscription cb_subscription_;

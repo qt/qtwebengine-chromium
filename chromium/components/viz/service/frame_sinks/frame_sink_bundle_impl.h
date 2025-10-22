@@ -62,11 +62,7 @@ class FrameSinkBundleImpl : public mojom::FrameSinkBundle {
   void RemoveFrameSink(CompositorFrameSinkSupport* support);
 
   // mojom::FrameSinkBundle implementation:
-  void InitializeCompositorFrameSinkType(
-      uint32_t sink_id,
-      mojom::CompositorFrameSinkType type) override;
   void SetNeedsBeginFrame(uint32_t sink_id, bool needs_begin_frame) override;
-  void SetWantsBeginFrameAcks(uint32_t sink_id) override;
   void Submit(
       std::vector<mojom::BundledFrameSubmissionPtr> submissions) override;
 
@@ -84,7 +80,6 @@ class FrameSinkBundleImpl : public mojom::FrameSinkBundle {
       uint32_t sink_id,
       const BeginFrameArgs& args,
       const base::flat_map<uint32_t, FrameTimingDetails>& details,
-      bool frame_ack,
       std::vector<ReturnedResource> resources);
   void EnqueueReclaimResources(uint32_t sink_id,
                                std::vector<ReturnedResource> resources);

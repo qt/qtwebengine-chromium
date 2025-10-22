@@ -477,114 +477,34 @@ void GradientShaderBlocks::AddBlock(const KeyContext& keyContext,
 
 //--------------------------------------------------------------------------------------------------
 
-namespace {
-
-void add_localmatrixshader_uniform_data(const ShaderCodeDictionary* dict,
-                                        const SkM44& localMatrix,
-                                        PipelineDataGatherer* gatherer) {
-    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kLocalMatrixShader)
-
-    gatherer->write(localMatrix);
-}
-
-} // anonymous namespace
-
 void LocalMatrixShaderBlock::BeginBlock(const KeyContext& keyContext,
                                         PaintParamsKeyBuilder* builder,
                                         PipelineDataGatherer* gatherer,
                                         const LMShaderData& lmShaderData) {
+    const ShaderCodeDictionary* dict = keyContext.dict();
+    const SkMatrix& m = lmShaderData.fLocalMatrix;
 
-    add_localmatrixshader_uniform_data(keyContext.dict(), lmShaderData.fLocalMatrix, gatherer);
+    if (lmShaderData.fLocalMatrix.hasPerspective()) {
+        // Perspective local matrices are rare enough and add enough extra instructions that it's
+        // worth specializing since it has to perform a per-pixel division.
+        builder->beginBlock(BuiltInCodeSnippetID::kLocalMatrixShaderPersp);
+        BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kLocalMatrixShaderPersp)
+        gatherer->write(m);
+    } else {
+        // For an affine 2D transform, we only need to upload the upper 2x2 and XY translation.
+        builder->beginBlock(BuiltInCodeSnippetID::kLocalMatrixShader);
 
-    builder->beginBlock(lmShaderData.fHasPerspective
-                                ? BuiltInCodeSnippetID::kLocalMatrixShaderPersp
-                                : BuiltInCodeSnippetID::kLocalMatrixShader);
+        BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kLocalMatrixShader)
+        // The upper 2x2 is expected to be in column major order, but SkMatrix is 3x3 row major.
+        gatherer->write(SkV4{m.getScaleX(), m.getSkewY(),
+                             m.getSkewX(),  m.getScaleY()});
+        gatherer->write(SkV2{m.getTranslateX(), m.getTranslateY()});
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
 
 namespace {
-
-void add_color_space_uniforms(const SkColorSpaceXformSteps& steps,
-                              ReadSwizzle readSwizzle,
-                              PipelineDataGatherer* gatherer) {
-    SkMatrix gamutTransform;
-    const float identity[] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
-    // TODO: it seems odd to copy this into an SkMatrix just to write it to the gatherer
-    // fSrcToDstMatrix is column-major, SkMatrix is row-major.
-    const float* m = steps.fFlags.gamut_transform ? steps.fSrcToDstMatrix : identity;
-    if (readSwizzle == ReadSwizzle::kRRR1) {
-        gamutTransform.setAll(m[0] + m[3] + m[6], 0, 0,
-                              m[1] + m[4] + m[7], 0, 0,
-                              m[2] + m[5] + m[8], 0, 0);
-    } else if (readSwizzle == ReadSwizzle::kBGRA) {
-        gamutTransform.setAll(m[6], m[3], m[0],
-                              m[7], m[4], m[1],
-                              m[8], m[5], m[2]);
-    } else if (readSwizzle == ReadSwizzle::k000R) {
-        gamutTransform.setAll(0, 0, 0,
-                              0, 0, 0,
-                              0, 0, 0);
-    } else if (steps.fFlags.gamut_transform) {
-        gamutTransform.setAll(m[0], m[3], m[6],
-                              m[1], m[4], m[7],
-                              m[2], m[5], m[8]);
-    }
-    gatherer->writeHalf(gamutTransform);
-
-    // To encode whether to do premul/unpremul or make the output opaque, we use
-    // srcDEF_args.w and dstDEF_args.w:
-    // - identity: {0, 1}
-    // - do unpremul: {-1, 1}
-    // - do premul: {0, 0}
-    // - do both: {-1, 0}
-    // - alpha swizzle 1: {1, 1}
-    // - alpha swizzle r: {1, 0}
-    const bool alphaSwizzleR = readSwizzle == ReadSwizzle::k000R;
-    const bool alphaSwizzle1 = readSwizzle == ReadSwizzle::kRGB1 ||
-                               readSwizzle == ReadSwizzle::kRRR1;
-
-    // It doesn't make sense to unpremul/premul in opaque cases, but we might get a request to
-    // anyways, which we can just ignore.
-    const bool unpremul = alphaSwizzle1 ? false : steps.fFlags.unpremul;
-    const bool premul = alphaSwizzle1 ? false : steps.fFlags.premul;
-
-    const float srcW = unpremul ? -1.f :
-                       (alphaSwizzleR || alphaSwizzle1) ? 1.f :
-                                                          0.f;
-    const float dstW = (premul || alphaSwizzleR) ? 0.f : 1.f;
-
-    // To encode which transfer function to apply, we use the src and dst gamma values:
-    // - identity: 0
-    // - sRGB: g > 0
-    // - PQ: -2
-    // - HLG: -1
-    if (steps.fFlags.linearize) {
-        const skcms_TFType type = skcms_TransferFunction_getType(&steps.fSrcTF);
-        const float srcG = type == skcms_TFType_sRGBish ? steps.fSrcTF.g :
-                           type == skcms_TFType_PQish ? -2.f :
-                           type == skcms_TFType_HLGish ? -1.f :
-                                                         0.f;
-        gatherer->writeHalf(SkV4{srcG, steps.fSrcTF.a, steps.fSrcTF.b, steps.fSrcTF.c});
-        gatherer->writeHalf(SkV4{steps.fSrcTF.d, steps.fSrcTF.e, steps.fSrcTF.f, srcW});
-    } else {
-        gatherer->writeHalf(SkV4{0.f, 0.f, 0.f, 0.f});
-        gatherer->writeHalf(SkV4{0.f, 0.f, 0.f, srcW});
-    }
-
-    if (steps.fFlags.encode) {
-        const skcms_TFType type = skcms_TransferFunction_getType(&steps.fDstTFInv);
-        const float dstG = type == skcms_TFType_sRGBish ? steps.fDstTFInv.g :
-                           type == skcms_TFType_PQish ? -2.f :
-                           type == skcms_TFType_HLGinvish ? -1.f :
-                                                            0.f;
-        gatherer->writeHalf(SkV4{dstG, steps.fDstTFInv.a, steps.fDstTFInv.b, steps.fDstTFInv.c});
-        gatherer->writeHalf(SkV4{steps.fDstTFInv.d, steps.fDstTFInv.e, steps.fDstTFInv.f, dstW});
-    } else {
-        gatherer->writeHalf(SkV4{0.f, 0.f, 0.f, 0.f});
-        gatherer->writeHalf(SkV4{0.f, 0.f, 0.f, dstW});
-    }
-}
 
 void add_image_uniform_data(const ShaderCodeDictionary* dict,
                             const ImageShaderBlock::ImageData& imgData,
@@ -635,30 +555,24 @@ void add_cubic_image_uniform_data(const ShaderCodeDictionary* dict,
     gatherer->writeHalf(SkImageShader::CubicResamplerMatrix(cubic.B, cubic.C));
 }
 
-void add_hw_image_uniform_data(const ShaderCodeDictionary* dict,
-                               const ImageShaderBlock::ImageData& imgData,
-                               PipelineDataGatherer* gatherer) {
-    SkASSERT(!imgData.fSampling.useCubic);
-    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kHWImageShader)
-
-    gatherer->write(SkSize::Make(1.f/imgData.fImgSize.width(), 1.f/imgData.fImgSize.height()));
+// If clampToBorderSupport is unavailable, kDecal will be substituted to clamp in most cases.
+bool should_substitute_decal(const std::pair<SkTileMode, SkTileMode>& tileMode, const Caps* caps) {
+    return !caps->clampToBorderSupport() && (tileMode.first == SkTileMode::kDecal ||
+                                             tileMode.second == SkTileMode::kDecal);
 }
 
-bool can_do_tiling_in_hw(const Caps* caps, const ImageShaderBlock::ImageData& imgData) {
-    if (!caps->clampToBorderSupport() && (imgData.fTileModes.first == SkTileMode::kDecal ||
-                                          imgData.fTileModes.second == SkTileMode::kDecal)) {
-        return false;
-    }
-    return imgData.fSubset.contains(SkRect::Make(imgData.fImgSize));
+bool can_do_tiling_in_hw(const ImageShaderBlock::ImageData& imgData, const Caps* caps) {
+    return !should_substitute_decal(imgData.fTileModes, caps) &&
+            imgData.fSubset.contains(SkRect::Make(imgData.fImgSize));
 }
 
 void add_sampler_data_to_key(PaintParamsKeyBuilder* builder, const SamplerDesc& samplerDesc) {
     if (samplerDesc.isImmutable()) {
-        builder->addData({samplerDesc.asSpan()});
+        builder->addData(samplerDesc.asSpan());
     } else {
         // Means we have a regular dynamic sampler. Append a default SamplerDesc to convey this,
         // allowing the key to maintain and convey sampler binding order.
-        builder->addData({{}});
+        builder->addData({});
     }
 }
 
@@ -668,11 +582,13 @@ ImageShaderBlock::ImageData::ImageData(const SkSamplingOptions& sampling,
                                        SkTileMode tileModeX,
                                        SkTileMode tileModeY,
                                        SkISize imgSize,
-                                       SkRect subset)
+                                       SkRect subset,
+                                       ImmutableSamplerInfo immutableSamplerInfo)
         : fSampling(sampling)
         , fTileModes{tileModeX, tileModeY}
         , fImgSize(imgSize)
-        , fSubset(subset) {
+        , fSubset(subset)
+        , fImmutableSamplerInfo(immutableSamplerInfo) {
 }
 
 void ImageShaderBlock::AddBlock(const KeyContext& keyContext,
@@ -686,10 +602,11 @@ void ImageShaderBlock::AddBlock(const KeyContext& keyContext,
     }
 
     const Caps* caps = keyContext.caps();
-    const bool doTilingInHw = !imgData.fSampling.useCubic && can_do_tiling_in_hw(caps, imgData);
+    const bool doTilingInHw = !imgData.fSampling.useCubic && can_do_tiling_in_hw(imgData, caps);
 
     if (doTilingInHw) {
-        add_hw_image_uniform_data(keyContext.dict(), imgData, gatherer);
+        CoordNormalizeShaderBlock::CoordNormalizeData data(SkSize::Make(imgData.fImgSize));
+        CoordNormalizeShaderBlock::BeginBlock(keyContext, builder, gatherer, data);
         builder->beginBlock(BuiltInCodeSnippetID::kHWImageShader);
     } else if (imgData.fSampling.useCubic) {
         add_cubic_image_uniform_data(keyContext.dict(), imgData, gatherer);
@@ -703,23 +620,25 @@ void ImageShaderBlock::AddBlock(const KeyContext& keyContext,
         builder->beginBlock(BuiltInCodeSnippetID::kImageShader);
     }
 
-    static constexpr std::pair<SkTileMode, SkTileMode> kDefaultTileModes =
-            {SkTileMode::kClamp, SkTileMode::kClamp};
-
     // Image shaders must append immutable sampler data (or '0' in the more common case where
     // regular samplers are used).
     // TODO(b/392623124): In precompile mode (fTextureProxy == null), we still have a need for
     // immutable samplers, which must be passed in somehow.
     ImmutableSamplerInfo info = imgData.fTextureProxy
             ? caps->getImmutableSamplerInfo(imgData.fTextureProxy->textureInfo())
-            : ImmutableSamplerInfo{};
-    SamplerDesc samplerDesc {imgData.fSampling,
-                             doTilingInHw ? imgData.fTileModes : kDefaultTileModes,
-                             info};
+            : imgData.fImmutableSamplerInfo;
+    auto tileModeWithSubstitution = doTilingInHw ? imgData.fTileModes :
+                                    std::make_pair(SkTileMode::kClamp, SkTileMode::kClamp);
+    SamplerDesc samplerDesc{imgData.fSampling, tileModeWithSubstitution, info};
     gatherer->add(imgData.fTextureProxy, samplerDesc);
     add_sampler_data_to_key(builder, samplerDesc);
 
     builder->endBlock();
+
+    if (doTilingInHw) {
+        // Additional block for coord normalization.
+        builder->endBlock();
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -775,6 +694,24 @@ void add_hw_yuv_image_uniform_data(const ShaderCodeDictionary* dict,
 
     gatherer->write(SkSize::Make(1.f/imgData.fImgSize.width(), 1.f/imgData.fImgSize.height()));
     gatherer->write(SkSize::Make(1.f/imgData.fImgSizeUV.width(), 1.f/imgData.fImgSizeUV.height()));
+    gatherer->write(imgData.fSubset);
+
+    SkPoint linearFilterUVInset = imgData.fLinearFilterUVInset;
+    // We sign-encode whether we need to adjust the UV coords by applying `fLinearFilterUVInset` for
+    // nearest neighbor filtering in `linearFilterUVInset.fX`.
+    if (imgData.fSampling.filter == SkFilterMode::kNearest) {
+        linearFilterUVInset.fX = -linearFilterUVInset.fX;
+    }
+    // We sign-encode whether we need clamping for subset or mismatched Y/UV plane size draws in
+    // `linearFilterUVInset.fY` - only clamp tiling modes are supported though.
+    if (!imgData.fSubset.contains(SkRect::Make(imgData.fImgSize)) ||
+        imgData.fImgSize != imgData.fImgSizeUV) {
+        SkASSERT(imgData.fTileModes.first == SkTileMode::kClamp &&
+                 imgData.fTileModes.second == SkTileMode::kClamp);
+        linearFilterUVInset.fY = -linearFilterUVInset.fY;
+    }
+    gatherer->write(linearFilterUVInset);
+
     for (int i = 0; i < 4; ++i) {
         gatherer->writeHalf(imgData.fChannelSelect[i]);
     }
@@ -789,6 +726,24 @@ void add_hw_yuv_no_swizzle_image_uniform_data(const ShaderCodeDictionary* dict,
 
     gatherer->write(SkSize::Make(1.f/imgData.fImgSize.width(), 1.f/imgData.fImgSize.height()));
     gatherer->write(SkSize::Make(1.f/imgData.fImgSizeUV.width(), 1.f/imgData.fImgSizeUV.height()));
+    gatherer->write(imgData.fSubset);
+
+    SkPoint linearFilterUVInset = imgData.fLinearFilterUVInset;
+    // We sign-encode whether we need to adjust the UV coords by applying `fLinearFilterUVInset` for
+    // nearest neighbor filtering in `linearFilterUVInset.fX`.
+    if (imgData.fSampling.filter == SkFilterMode::kNearest) {
+        linearFilterUVInset.fX = -linearFilterUVInset.fX;
+    }
+    // We sign-encode whether we need clamping for subset or mismatched Y/UV plane size draws in
+    // `linearFilterUVInset.fY` - only clamp tiling modes are supported though.
+    if (!imgData.fSubset.contains(SkRect::Make(imgData.fImgSize)) ||
+        imgData.fImgSize != imgData.fImgSizeUV) {
+        SkASSERT(imgData.fTileModes.first == SkTileMode::kClamp &&
+                 imgData.fTileModes.second == SkTileMode::kClamp);
+        linearFilterUVInset.fY = -linearFilterUVInset.fY;
+    }
+    gatherer->write(linearFilterUVInset);
+
     gatherer->writeHalf(imgData.fYUVtoRGBMatrix);
     SkV4 yuvToRGBXlateAlphaParam = {
         imgData.fYUVtoRGBTranslate.fX,
@@ -814,24 +769,17 @@ YUVImageShaderBlock::ImageData::ImageData(const SkSamplingOptions& sampling,
         , fSubset(subset) {
 }
 
-static bool can_do_yuv_tiling_in_hw(const Caps* caps,
-                                    const YUVImageShaderBlock::ImageData& imgData) {
-    if (!caps->clampToBorderSupport() && (imgData.fTileModes.first == SkTileMode::kDecal ||
-                                          imgData.fTileModes.second == SkTileMode::kDecal)) {
+static bool can_do_yuv_tiling_in_hw(const YUVImageShaderBlock::ImageData& imgData,
+                                    const Caps* caps) {
+    if (should_substitute_decal(imgData.fTileModes, caps)) {
         return false;
     }
-    // We depend on the subset code to handle cases where the UV dimensions times the
-    // subsample factors are not equal to the Y dimensions.
-    if (imgData.fImgSize != imgData.fImgSizeUV) {
-        return false;
-    }
-    // For nearest filtering when the Y texture size is larger than the UV texture size,
-    // we use linear filtering for the UV texture. In this case we also adjust pixel centers
-    // which may affect dependent texture reads.
-    if (imgData.fSampling.filter != imgData.fSamplingUV.filter) {
-        return false;
-    }
-    return imgData.fSubset.contains(SkRect::Make(imgData.fImgSize));
+    // Use the HW tiling shader variant if we're drawing the full rect with matched Y and UV plane
+    // sizes and any tiling mode, or if we're drawing a subset with clamp tiling mode.
+    return (imgData.fSubset.contains(SkRect::Make(imgData.fImgSize)) &&
+            imgData.fImgSize == imgData.fImgSizeUV) ||
+           (imgData.fTileModes.first == SkTileMode::kClamp &&
+            imgData.fTileModes.second == SkTileMode::kClamp);
 }
 
 static bool no_yuv_swizzle(const YUVImageShaderBlock::ImageData& imgData) {
@@ -858,17 +806,20 @@ void YUVImageShaderBlock::AddBlock(const KeyContext& keyContext,
     }
 
     const Caps* caps = keyContext.caps();
-    const bool doTilingInHw = !imgData.fSampling.useCubic && can_do_yuv_tiling_in_hw(caps, imgData);
+    const bool doTilingInHw = !imgData.fSampling.useCubic && can_do_yuv_tiling_in_hw(imgData, caps);
     const bool noYUVSwizzle = no_yuv_swizzle(imgData);
 
+    // uvs are never SkTileMode::kDecal
     auto uvTileModes = std::make_pair(imgData.fTileModes.first == SkTileMode::kDecal
                                             ? SkTileMode::kClamp : imgData.fTileModes.first,
                                       imgData.fTileModes.second == SkTileMode::kDecal
                                             ? SkTileMode::kClamp : imgData.fTileModes.second);
-    gatherer->add(imgData.fTextureProxies[0], {imgData.fSampling, imgData.fTileModes});
+    auto yAlphaTileModes = doTilingInHw ? imgData.fTileModes :
+                           std::make_pair(SkTileMode::kClamp, SkTileMode::kClamp);
+    gatherer->add(imgData.fTextureProxies[0], {imgData.fSampling, yAlphaTileModes});
     gatherer->add(imgData.fTextureProxies[1], {imgData.fSamplingUV, uvTileModes});
     gatherer->add(imgData.fTextureProxies[2], {imgData.fSamplingUV, uvTileModes});
-    gatherer->add(imgData.fTextureProxies[3], {imgData.fSampling, imgData.fTileModes});
+    gatherer->add(imgData.fTextureProxies[3], {imgData.fSampling, yAlphaTileModes});
 
     if (doTilingInHw && noYUVSwizzle) {
         add_hw_yuv_no_swizzle_image_uniform_data(keyContext.dict(), imgData, gatherer);
@@ -883,6 +834,29 @@ void YUVImageShaderBlock::AddBlock(const KeyContext& keyContext,
         add_yuv_image_uniform_data(keyContext.dict(), imgData, gatherer);
         builder->addBlock(BuiltInCodeSnippetID::kYUVImageShader);
     }
+}
+
+//--------------------------------------------------------------------------------------------------
+
+namespace {
+
+void add_coord_normalize_uniform_data(const ShaderCodeDictionary* dict,
+                                      const CoordNormalizeShaderBlock::CoordNormalizeData& data,
+                                      PipelineDataGatherer* gatherer) {
+    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kCoordNormalizeShader)
+
+    gatherer->write(data.fInvDimensions);
+}
+
+} // anonymous namespace
+
+void CoordNormalizeShaderBlock::BeginBlock(const KeyContext& keyContext,
+                                           PaintParamsKeyBuilder* builder,
+                                           PipelineDataGatherer* gatherer,
+                                           const CoordNormalizeData& data) {
+    add_coord_normalize_uniform_data(keyContext.dict(), data, gatherer);
+
+    builder->beginBlock(BuiltInCodeSnippetID::kCoordNormalizeShader);
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1018,10 +992,26 @@ void add_matrix_colorfilter_uniform_data(const ShaderCodeDictionary* dict,
                                          const MatrixColorFilterBlock::MatrixColorFilterData& data,
                                          PipelineDataGatherer* gatherer) {
     BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kMatrixColorFilter)
-    gatherer->write(data.fMatrix);
-    gatherer->write(data.fTranslate);
-    gatherer->write(static_cast<int>(data.fInHSLA));
-    gatherer->write(static_cast<int>(data.fClamp));
+    gatherer->writeHalf(data.fMatrix);
+    gatherer->writeHalf(data.fTranslate);
+    if (data.fClamp) {
+        gatherer->writeHalf(SkV2{0.f, 1.f});
+    } else {
+        // Alpha is always clamped to 1. RGB clamp to the max finite half value.
+        static constexpr float kUnclamped = 65504.f; // SK_HalfMax converted back to float
+        SkASSERT(SkHalfToFloat(SkFloatToHalf(kUnclamped)) == kUnclamped);
+        SkASSERT(SkHalfToFloat(SkFloatToHalf(-kUnclamped)) == -kUnclamped);
+        gatherer->writeHalf(SkV2{-kUnclamped, kUnclamped});
+    }
+}
+
+void add_hsl_matrix_colorfilter_uniform_data(
+        const ShaderCodeDictionary* dict,
+        const MatrixColorFilterBlock::MatrixColorFilterData& data,
+        PipelineDataGatherer* gatherer) {
+    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kHSLMatrixColorFilter)
+    gatherer->writeHalf(data.fMatrix);
+    gatherer->writeHalf(data.fTranslate);
 }
 
 } // anonymous namespace
@@ -1030,10 +1020,15 @@ void MatrixColorFilterBlock::AddBlock(const KeyContext& keyContext,
                                       PaintParamsKeyBuilder* builder,
                                       PipelineDataGatherer* gatherer,
                                       const MatrixColorFilterData& matrixCFData) {
+    if (matrixCFData.fInHSLA) {
+        add_hsl_matrix_colorfilter_uniform_data(keyContext.dict(), matrixCFData, gatherer);
 
-    add_matrix_colorfilter_uniform_data(keyContext.dict(), matrixCFData, gatherer);
+        builder->addBlock(BuiltInCodeSnippetID::kHSLMatrixColorFilter);
+    } else {
+        add_matrix_colorfilter_uniform_data(keyContext.dict(), matrixCFData, gatherer);
 
-    builder->addBlock(BuiltInCodeSnippetID::kMatrixColorFilter);
+        builder->addBlock(BuiltInCodeSnippetID::kMatrixColorFilter);
+    }
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -1064,46 +1059,155 @@ void TableColorFilterBlock::AddBlock(const KeyContext& keyContext,
 //--------------------------------------------------------------------------------------------------
 namespace {
 
-void add_color_space_xform_uniform_data(
-        const ShaderCodeDictionary* dict,
-        const ColorSpaceTransformBlock::ColorSpaceTransformData& data,
-        PipelineDataGatherer* gatherer) {
-    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kColorSpaceXformColorFilter)
-    add_color_space_uniforms(data.fSteps, data.fReadSwizzle, gatherer);
-}
+// There are three variations of color space transforms with increasing complexity, but they are
+// built on the same techniques for managing variations w/o adding branches in the shader.
+void add_color_space_uniforms(BuiltInCodeSnippetID id,
+                              const ShaderCodeDictionary* dict,
+                              const SkColorSpaceXformSteps& steps,
+                              ReadSwizzle readSwizzle,
+                              PipelineDataGatherer* gatherer) {
+    SkASSERT(id == BuiltInCodeSnippetID::kColorSpaceXformPremul ||     // premul/unpremul/opaque
+             id == BuiltInCodeSnippetID::kColorSpaceXformSRGB ||       // + sRGB [d]encode/gamut
+             id == BuiltInCodeSnippetID::kColorSpaceXformColorFilter); // + everything else
 
-void add_color_space_xform_premul_uniform_data(
-        const ShaderCodeDictionary* dict,
-        const ColorSpaceTransformBlock::ColorSpaceTransformData& data,
-        PipelineDataGatherer* gatherer) {
-    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kColorSpaceXformPremul)
+    BEGIN_WRITE_UNIFORMS(gatherer, dict, id)
 
-    // If either of these asserts would fail, we can't correctly use this specialized shader for
-    // the given transform.
-    SkASSERT(data.fReadSwizzle == ReadSwizzle::kRGBA || data.fReadSwizzle == ReadSwizzle::kRGB1);
-    // If these are both true, that implies there's a color space transfer or gamut transform.
-    SkASSERT(!(data.fSteps.fFlags.unpremul && data.fSteps.fFlags.premul));
-
-    // This shader can either do nothing, or perform one of three actions. These four possibilities
-    // are encoded in a half2 argument as:
+    // To encode whether to do premul/unpremul or make the output opaque, we use
+    // srcDEF_args.w and dstDEF_args.w:
     // - identity: {0, 1}
     // - do unpremul: {-1, 1}
     // - do premul: {0, 0}
-    // - make opaque: {1, 1}
-    const bool opaque = data.fReadSwizzle == ReadSwizzle::kRGB1;
-    const float x = data.fSteps.fFlags.unpremul ? -1.f :
-                    opaque ? 1.f
-                           : 0.f;
-    const float y = data.fSteps.fFlags.premul ? 0.f : 1.f;
-    gatherer->writeHalf(SkV2{x, y});
-}
+    // - do both: {-1, 0}
+    // - alpha swizzle 1: {1, 1}
+    // - alpha swizzle r: {1, 0}
+    const bool alphaSwizzleR = readSwizzle == ReadSwizzle::k000R;
+    const bool alphaSwizzle1 = readSwizzle == ReadSwizzle::kRGB1 ||
+                               readSwizzle == ReadSwizzle::kRRR1;
 
-void add_color_space_xform_srgb_uniform_data(
-        const ShaderCodeDictionary* dict,
-        const ColorSpaceTransformBlock::ColorSpaceTransformData& data,
-        PipelineDataGatherer* gatherer) {
-    BEGIN_WRITE_UNIFORMS(gatherer, dict, BuiltInCodeSnippetID::kColorSpaceXformSRGB)
-    add_color_space_uniforms(data.fSteps, data.fReadSwizzle, gatherer);
+    // It doesn't make sense to unpremul/premul in opaque cases, but we might get a request to
+    // anyways, which we can just ignore.
+    const bool unpremul = alphaSwizzle1 ? false : steps.fFlags.unpremul;
+    const bool premul = alphaSwizzle1 ? false : steps.fFlags.premul;
+
+    const float srcW = unpremul ? -1.f :
+                       (alphaSwizzleR || alphaSwizzle1) ? 1.f :
+                                                          0.f;
+    const float dstW = (premul || alphaSwizzleR) ? 0.f : 1.f;
+
+    if (id == BuiltInCodeSnippetID::kColorSpaceXformPremul) {
+        // If either of these asserts would fail, we can't correctly use this specialized shader for
+        // the given transform.
+        SkASSERT(readSwizzle == ReadSwizzle::kRGBA || readSwizzle == ReadSwizzle::kRGB1);
+        // If these are both true, that implies there's a color space transfer or gamut transform.
+        SkASSERT(!(steps.fFlags.unpremul && steps.fFlags.premul));
+        // And given these assertions, the 6 cases encoded in srcW and dstW are reduced to:
+        //    identity, do unpremul, do premul, and make opaque (alpha swizzle 1)
+        gatherer->writeHalf(SkV2{srcW, dstW});
+        return;
+    }
+
+    // srcW and dstW will be used later with the other transfer function values, but for the
+    // more complex shaders, we put the gamut matrix first for alignment.
+
+    SkMatrix gamutTransform;
+    const float identity[] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+    // TODO: it seems odd to copy this into an SkMatrix just to write it to the gatherer
+    // fSrcToDstMatrix is column-major, SkMatrix is row-major.
+    const float* m = steps.fFlags.gamut_transform ? steps.fSrcToDstMatrix : identity;
+    if (readSwizzle == ReadSwizzle::kRRR1) {
+        gamutTransform.setAll(m[0] + m[3] + m[6], 0, 0,
+                            m[1] + m[4] + m[7], 0, 0,
+                            m[2] + m[5] + m[8], 0, 0);
+    } else if (readSwizzle == ReadSwizzle::kBGRA) {
+        gamutTransform.setAll(m[6], m[3], m[0],
+                            m[7], m[4], m[1],
+                            m[8], m[5], m[2]);
+    } else if (readSwizzle == ReadSwizzle::k000R) {
+        gamutTransform.setAll(0, 0, 0,
+                            0, 0, 0,
+                            0, 0, 0);
+    } else if (steps.fFlags.gamut_transform) {
+        gamutTransform.setAll(m[0], m[3], m[6],
+                            m[1], m[4], m[7],
+                            m[2], m[5], m[8]);
+    }
+    gatherer->writeHalf(gamutTransform);
+
+    // To encode which transfer function to apply, we use the src and dst gamma values:
+    // - identity: 0
+    // - sRGB: g > 0
+    // - PQ: -2
+    // - HLG: -1
+    // For the sRGB shader, we allow linear sRGB but that shader has no branches on TF type, so
+    // we have to replace the values with an actual identity sRGB-ish function.
+    const bool treatLinearAsSRGB = id == BuiltInCodeSnippetID::kColorSpaceXformSRGB;
+    if (steps.fFlags.linearize) {
+        const skcms_TFType type = skcms_TransferFunction_getType(&steps.fSrcTF);
+        const float srcG = type == skcms_TFType_sRGBish ? steps.fSrcTF.g :
+                           type == skcms_TFType_PQish ? -2.f :
+                           type == skcms_TFType_HLGish ? -1.f :
+                                                         0.f;
+        gatherer->write(SkV4{srcG, steps.fSrcTF.a, steps.fSrcTF.b, steps.fSrcTF.c});
+        gatherer->write(SkV4{steps.fSrcTF.d, steps.fSrcTF.e, steps.fSrcTF.f, srcW});
+    } else if (treatLinearAsSRGB) {
+        // Branchless identity function with g=1 (sRGB-ish)
+        static constexpr skcms_TransferFunction kI = SkNamedTransferFn::kLinear;
+        gatherer->write(SkV4{kI.g, kI.a, kI.b, kI.c});
+        gatherer->write(SkV4{kI.d, kI.e, kI.f, srcW});
+    } else {
+        // Branched identity that actually skips all operations
+        gatherer->write(SkV4{0.f, 0.f, 0.f, 0.f});
+        gatherer->write(SkV4{0.f, 0.f, 0.f, srcW});
+    }
+
+    if (steps.fFlags.encode) {
+        const skcms_TFType type = skcms_TransferFunction_getType(&steps.fDstTFInv);
+        const float dstG = type == skcms_TFType_sRGBish ? steps.fDstTFInv.g :
+                           type == skcms_TFType_PQish ? -2.f :
+                           type == skcms_TFType_HLGinvish ? -1.f :
+                                                            0.f;
+        gatherer->write(SkV4{dstG, steps.fDstTFInv.a, steps.fDstTFInv.b, steps.fDstTFInv.c});
+        gatherer->write(SkV4{steps.fDstTFInv.d, steps.fDstTFInv.e, steps.fDstTFInv.f, dstW});
+    } else if (treatLinearAsSRGB) {
+        static constexpr skcms_TransferFunction kI = SkNamedTransferFn::kLinear;
+        gatherer->write(SkV4{kI.g, kI.a, kI.b, kI.c});
+        gatherer->write(SkV4{kI.d, kI.e, kI.f, dstW});
+    } else {
+        gatherer->write(SkV4{0.f, 0.f, 0.f, 0.f});
+        gatherer->write(SkV4{0.f, 0.f, 0.f, dstW});
+    }
+
+    const bool hasOOTFUniforms = id == BuiltInCodeSnippetID::kColorSpaceXformColorFilter;
+    if (hasOOTFUniforms) {
+        SkV4 src_ootf = {0.f, 0.f, 0.f, 0.f};
+        SkV4 dst_ootf = {0.f, 0.f, 0.f, 0.f};
+
+        if (steps.fFlags.src_ootf) {
+          if (readSwizzle == ReadSwizzle::kBGRA) {
+              src_ootf = SkV4{
+                  steps.fSrcOotf[2], steps.fSrcOotf[1], steps.fSrcOotf[0], steps.fSrcOotf[3]};
+          } else {
+              src_ootf = SkV4{
+                  steps.fSrcOotf[0], steps.fSrcOotf[1], steps.fSrcOotf[2], steps.fSrcOotf[3]};
+          }
+        }
+
+        if (steps.fFlags.dst_ootf) {
+          if (readSwizzle == ReadSwizzle::kBGRA) {
+              dst_ootf = SkV4{
+                  steps.fDstOotf[2], steps.fDstOotf[1], steps.fDstOotf[0], steps.fDstOotf[3]};
+          } else {
+              dst_ootf = SkV4{
+                  steps.fDstOotf[0], steps.fDstOotf[1], steps.fDstOotf[2], steps.fDstOotf[3]};
+          }
+        }
+
+        gatherer->write(src_ootf);
+        gatherer->write(dst_ootf);
+    } else {
+      SkASSERT(!steps.fFlags.src_ootf);
+      SkASSERT(!steps.fFlags.dst_ootf);
+    }
 }
 
 }  // anonymous namespace
@@ -1118,29 +1222,46 @@ void ColorSpaceTransformBlock::AddBlock(const KeyContext& keyContext,
                                         PaintParamsKeyBuilder* builder,
                                         PipelineDataGatherer* gatherer,
                                         const ColorSpaceTransformData& data) {
-    const bool xformNeedsGamutOrXferFn = data.fSteps.fFlags.linearize || data.fSteps.fFlags.encode ||
+    const bool xformNeedsGamutOrXferFn = data.fSteps.fFlags.linearize ||
+                                         data.fSteps.fFlags.encode    ||
+                                         data.fSteps.fFlags.src_ootf  ||
+                                         data.fSteps.fFlags.dst_ootf  ||
                                          data.fSteps.fFlags.gamut_transform;
     const bool swizzleNeedsGamutTransform = !(data.fReadSwizzle == ReadSwizzle::kRGBA ||
                                               data.fReadSwizzle == ReadSwizzle::kRGB1);
 
     // Use a specialized shader if we don't need transfer function or gamut transforms.
     if (!(xformNeedsGamutOrXferFn || swizzleNeedsGamutTransform)) {
-        add_color_space_xform_premul_uniform_data(keyContext.dict(), data, gatherer);
+        // When enabled, the most specialized is to do nothing at all. To simplify calling code,
+        // this adds a passthrough block vs. having callers know how to reconfigure their blocks.
+        if (SkToBool(keyContext.flags() & KeyGenFlags::kEnableIdentityColorSpaceXform) &&
+            data.fReadSwizzle == ReadSwizzle::kRGBA &&
+            !data.fSteps.fFlags.premul && !data.fSteps.fFlags.unpremul) {
+            builder->addBlock(BuiltInCodeSnippetID::kPriorOutput);
+            return;
+        }
+
+        add_color_space_uniforms(BuiltInCodeSnippetID::kColorSpaceXformPremul,
+                                 keyContext.dict(), data.fSteps, data.fReadSwizzle, gatherer);
         builder->addBlock(BuiltInCodeSnippetID::kColorSpaceXformPremul);
         return;
     }
 
     // Use a specialized shader if we're transferring to and from sRGB-ish color spaces.
-    if (data.fSteps.fFlags.linearize && data.fSteps.fFlags.encode &&
-        skcms_TransferFunction_isSRGBish(&data.fSteps.fSrcTF) &&
-        skcms_TransferFunction_isSRGBish(&data.fSteps.fDstTFInv)) {
-        add_color_space_xform_srgb_uniform_data(keyContext.dict(), data, gatherer);
+    // We take this path even if linearize/encode are false since we can set coefficients
+    // in the sRGB transfer functions to represent identity, and that is better than using the
+    // most general colorspace option.
+    if ((!data.fSteps.fFlags.linearize || skcms_TransferFunction_isSRGBish(&data.fSteps.fSrcTF)) &&
+        (!data.fSteps.fFlags.encode || skcms_TransferFunction_isSRGBish(&data.fSteps.fDstTFInv))) {
+        add_color_space_uniforms(BuiltInCodeSnippetID::kColorSpaceXformSRGB,
+                                 keyContext.dict(), data.fSteps, data.fReadSwizzle, gatherer);
         builder->addBlock(BuiltInCodeSnippetID::kColorSpaceXformSRGB);
         return;
     }
 
     // Use the most general color space transform shader if no specializations can be used.
-    add_color_space_xform_uniform_data(keyContext.dict(), data, gatherer);
+    add_color_space_uniforms(BuiltInCodeSnippetID::kColorSpaceXformColorFilter,
+                             keyContext.dict(), data.fSteps, data.fReadSwizzle, gatherer);
     builder->addBlock(BuiltInCodeSnippetID::kColorSpaceXformColorFilter);
 }
 
@@ -1205,11 +1326,24 @@ void NonMSAAClipBlock::AddBlock(const KeyContext& keyContext,
 void AddPrimitiveColor(const KeyContext& keyContext,
                        PaintParamsKeyBuilder* builder,
                        PipelineDataGatherer* gatherer,
-                       const SkColorSpace* primitiveColorSpace) {
-    ColorSpaceTransformBlock::ColorSpaceTransformData toDst(primitiveColorSpace,
-                                                            kPremul_SkAlphaType,
-                                                            keyContext.dstColorInfo().colorSpace(),
-                                                            keyContext.dstColorInfo().alphaType());
+                       bool skipColorXform) {
+    /**
+     * When skipColorXform is true, we assume the primitive color is already in the dst color space.
+    */
+    if (skipColorXform) {
+         builder->addBlock(BuiltInCodeSnippetID::kPrimitiveColor);
+         return;
+    }
+
+    /**
+     * If skipColorXform is false (most cases), the primitive color is assumed to be in sRGB.
+    */
+    ColorSpaceTransformBlock::ColorSpaceTransformData toDst(
+            sk_srgb_singleton(),
+            kPremul_SkAlphaType,
+            keyContext.dstColorInfo().colorSpace(),
+            keyContext.dstColorInfo().alphaType());
+
     Compose(keyContext, builder, gatherer,
             /* addInnerToKey= */ [&]() -> void {
                 builder->addBlock(BuiltInCodeSnippetID::kPrimitiveColor);
@@ -1334,6 +1468,39 @@ void RuntimeEffectBlock::AddNoOpEffect(const KeyContext& keyContext,
     }
 }
 
+void RuntimeEffectBlock::HandleIntrinsics(const KeyContext& keyContext,
+                                          PaintParamsKeyBuilder* builder,
+                                          PipelineDataGatherer* gatherer,
+                                          const SkRuntimeEffect* effect) {
+    // Runtime effects that reference color transform intrinsics have two extra children that
+    // are bound to the colorspace xform snippet with values to go to and from the linear srgb
+    // to the current working/dst color space.
+    if (SkRuntimeEffectPriv::UsesColorTransform(effect)) {
+        SkColorSpace* dstCS = keyContext.dstColorInfo().colorSpace();
+        if (!dstCS) {
+            dstCS = sk_srgb_linear_singleton(); // turn colorspace conversion into a noop
+        }
+
+        // TODO(b/332565302): If the runtime shader only uses one of these transforms, we could
+        // upload only one set of uniforms.
+
+        // NOTE: This must be kept in sync with the logic used to generate the toLinearSrgb() and
+        // fromLinearSrgb() expressions for each runtime effect. toLinearSrgb() is assumed to be
+        // the second to last child, and fromLinearSrgb() is assumed to be the last.
+        ColorSpaceTransformBlock::ColorSpaceTransformData dstToLinear(dstCS,
+                                                                      kUnpremul_SkAlphaType,
+                                                                      sk_srgb_linear_singleton(),
+                                                                      kUnpremul_SkAlphaType);
+        ColorSpaceTransformBlock::ColorSpaceTransformData linearToDst(sk_srgb_linear_singleton(),
+                                                                      kUnpremul_SkAlphaType,
+                                                                      dstCS,
+                                                                      kUnpremul_SkAlphaType);
+
+        ColorSpaceTransformBlock::AddBlock(keyContext, builder, gatherer, dstToLinear);
+        ColorSpaceTransformBlock::AddBlock(keyContext, builder, gatherer, linearToDst);
+    }
+}
+
 // ==================================================================
 
 namespace {
@@ -1358,9 +1525,10 @@ void add_children_to_key(const KeyContext& keyContext,
 
     using ChildType = SkRuntimeEffect::ChildType;
 
-    KeyContextWithScope childContext(keyContext, KeyContext::Scope::kRuntimeEffect);
     for (size_t index = 0; index < children.size(); ++index) {
         const SkRuntimeEffect::ChildPtr& child = children[index];
+        KeyContextForRuntimeEffect childContext(keyContext, effect, index);
+
         std::optional<ChildType> type = child.type();
         if (type == ChildType::kShader) {
             AddToKey(childContext, builder, gatherer, child.shader());
@@ -1390,33 +1558,7 @@ void add_children_to_key(const KeyContext& keyContext,
         }
     }
 
-    // Runtime effects that reference color transform intrinsics have two extra children that
-    // are bound to the colorspace xform snippet with values to go to and from the linear srgb
-    // to the current working/dst color space.
-    if (SkRuntimeEffectPriv::UsesColorTransform(effect)) {
-        SkColorSpace* dstCS = keyContext.dstColorInfo().colorSpace();
-        if (!dstCS) {
-            dstCS = sk_srgb_linear_singleton(); // turn colorspace conversion into a noop
-        }
-
-        // TODO(b/332565302): If the runtime shader only uses one of these transforms, we could
-        // upload only one set of uniforms.
-
-        // NOTE: This must be kept in sync with the logic used to generate the toLinearSrgb() and
-        // fromLinearSrgb() expressions for each runtime effect. toLinearSrgb() is assumed to be
-        // the second to last child, and fromLinearSrgb() is assumed to be the last.
-        ColorSpaceTransformBlock::ColorSpaceTransformData dstToLinear(dstCS,
-                                                                      kUnpremul_SkAlphaType,
-                                                                      sk_srgb_linear_singleton(),
-                                                                      kUnpremul_SkAlphaType);
-        ColorSpaceTransformBlock::ColorSpaceTransformData linearToDst(sk_srgb_linear_singleton(),
-                                                                      kUnpremul_SkAlphaType,
-                                                                      dstCS,
-                                                                      kUnpremul_SkAlphaType);
-
-        ColorSpaceTransformBlock::AddBlock(childContext, builder, gatherer, dstToLinear);
-        ColorSpaceTransformBlock::AddBlock(childContext, builder, gatherer, linearToDst);
-    }
+    RuntimeEffectBlock::HandleIntrinsics(keyContext, builder, gatherer, effect);
 }
 
 void add_to_key(const KeyContext& keyContext,
@@ -1843,6 +1985,7 @@ static void add_yuv_image_to_key(const KeyContext& keyContext,
     // We would want to add a translation to the local matrix to handle other sitings.
     SkASSERT(yuvaInfo.sitingX() == SkYUVAInfo::Siting::kCentered);
     SkASSERT(yuvaInfo.sitingY() == SkYUVAInfo::Siting::kCentered);
+
     YUVImageShaderBlock::ImageData imgData(sampling,
                                            origShader->tileModeX(),
                                            origShader->tileModeY(),
@@ -2036,8 +2179,7 @@ static void add_to_key(const KeyContext& keyContext,
     // hardware.
     bool samplingHasNoEffect = false;
     // Cubic sampling is will not filter the same as nearest even when pixel aligned.
-    if (keyContext.optimizeSampling() == KeyContext::OptimizeSampling::kYes &&
-        !newSampling.useCubic) {
+    if (!(keyContext.flags() & KeyGenFlags::kDisableSamplingOptimization || newSampling.useCubic)) {
         SkMatrix totalM = keyContext.local2Dev().asM33();
         if (keyContext.localMatrix()) {
             totalM.preConcat(*keyContext.localMatrix());
@@ -2064,7 +2206,11 @@ static void add_to_key(const KeyContext& keyContext,
                                                        keyContext.dstColorInfo().colorSpace(),
                                                        keyContext.dstColorInfo().alphaType());
 
-        if (imageToDraw->isAlphaOnly() && keyContext.scope() != KeyContext::Scope::kRuntimeEffect) {
+        if (imageToDraw->isAlphaOnly() &&
+            !(keyContext.flags() & KeyGenFlags::kDisableAlphaOnlyImageColorization)) {
+            // NOTE: Alpha is not affected by colorspace conversion to the dst, and the paint color
+            // is already xformed to the dst, but the ColorSpaceTransformBlock is necessary to apply
+            // any read swizzle, which is often necessary for alpha-only color types.
             Blend(keyContext, builder, gatherer,
                   /* addBlendToKey= */ [&] () -> void {
                       AddFixedBlendMode(keyContext, builder, gatherer, SkBlendMode::kDstIn);
@@ -2160,9 +2306,10 @@ static void add_to_key(const KeyContext& keyContext,
                 float scale = sk_ieee_float_divide(1, conicalShader->getDiffRadius());
                 conicalMatrix.postScale(scale, scale);
             } else {
-                SkAssertResult(SkConicalGradient::MapToUnitX(conicalShader->getStartCenter(),
-                                                             conicalShader->getEndCenter(),
-                                                             &conicalMatrix));
+                auto mx = (SkConicalGradient::MapToUnitX(conicalShader->getStartCenter(),
+                                                             conicalShader->getEndCenter()));
+                SkASSERT(mx);
+                conicalMatrix = mx.value_or(SkMatrix::I());
             }
             matrix = conicalMatrix;
         }

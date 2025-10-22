@@ -6,6 +6,7 @@ import type * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
+import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import * as RenderCoordinator from '../../ui/components/render_coordinator/render_coordinator.js';
@@ -26,10 +27,9 @@ describeWithMockConnection('MediaMainView', () => {
       inScope: boolean) => async () => {
     SDK.TargetManager.TargetManager.instance().setScopeTarget(inScope ? target : null);
     const downloadStore = new Media.MainView.PlayerDataDownloadManager();
-    const expectedCall = sinon.stub(downloadStore, expectedMethod).returns();
+    const expectedCall = sinon.stub(downloadStore, expectedMethod);
     const mainView = new Media.MainView.MainView(downloadStore);
-    mainView.markAsRoot();
-    mainView.show(document.body);
+    renderElementIntoDOM(mainView);
     const model = target.model(Media.MediaModel.MediaModel);
     assert.exists(model);
     model.dispatchEventToListeners(Media.MediaModel.Events.PLAYERS_CREATED, [PLAYER_ID]);
@@ -74,8 +74,7 @@ describeWithMockConnection('MediaMainView', () => {
 
     // Show main view, which will register event listeners on the model.
     const mainView = new Media.MainView.MainView();
-    mainView.markAsRoot();
-    mainView.show(document.body);
+    renderElementIntoDOM(mainView);
 
     model.dispatchEventToListeners(Media.MediaModel.Events.PLAYERS_CREATED, [PLAYER_ID]);
     assert.exists(mainView.contentElement.querySelector('.empty-state'));
@@ -93,8 +92,7 @@ describeWithMockConnection('MediaMainView', () => {
 
     // Show main view, which will register event listeners on the model.
     const mainView = new Media.MainView.MainView();
-    mainView.markAsRoot();
-    mainView.show(document.body);
+    renderElementIntoDOM(mainView);
 
     model.dispatchEventToListeners(Media.MediaModel.Events.PLAYERS_CREATED, [PLAYER_ID]);
     mainView.markPlayerForDeletion(PLAYER_ID);
@@ -113,8 +111,7 @@ describeWithMockConnection('MediaMainView', () => {
 
     // Show main view, which will register event listeners on the model.
     const mainView = new Media.MainView.MainView();
-    mainView.markAsRoot();
-    mainView.show(document.body);
+    renderElementIntoDOM(mainView);
 
     model.dispatchEventToListeners(Media.MediaModel.Events.PLAYERS_CREATED, [PLAYER_ID]);
     mainView.renderMainPanel(PLAYER_ID);

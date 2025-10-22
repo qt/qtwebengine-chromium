@@ -4,39 +4,43 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #ifndef skgpu_graphite_CommandBuffer_DEFINED
 #define skgpu_graphite_CommandBuffer_DEFINED
 
-#include "include/core/SkColor.h"
+#include "include/core/SkPoint.h"
 #include "include/core/SkRect.h"
 #include "include/core/SkRefCnt.h"
+#include "include/core/SkSpan.h"
+#include "include/core/SkTypes.h"
+#include "include/gpu/GpuTypes.h"
 #include "include/private/base/SkTArray.h"
 #include "src/gpu/GpuRefCnt.h"
-#include "src/gpu/graphite/CommandTypes.h"
-#include "src/gpu/graphite/DrawTypes.h"
-#include "src/gpu/graphite/DrawWriter.h"
-#include "src/gpu/graphite/Resource.h"
+#include "src/gpu/graphite/Resource.h"  // IWYU pragma: keep
 
+#include <cstddef>
+#include <memory>
 #include <optional>
+#include <utility>
+
+class SkSurface;
+struct SkISize;
 
 namespace skgpu {
-class RefCntedCallback;
 class MutableTextureState;
+class RefCntedCallback;
 }
 
 namespace skgpu::graphite {
 
+class BackendSemaphore;
 class Buffer;
 class DispatchGroup;
 class DrawPass;
-class SharedContext;
-class GraphicsPipeline;
-struct RenderPassDesc;
 class ResourceProvider;
 class Sampler;
 class Texture;
-class TextureProxy;
+struct BufferTextureCopyData;
+struct RenderPassDesc;
 
 class CommandBuffer {
 public:
@@ -87,12 +91,18 @@ public:
     // The logical viewport is always (0,0,viewportDims) and matches the "device" coordinate space
     // of the higher-level SkDevices that recorded the rendering operations. The actual viewport
     // is automatically adjusted by the replay translation.
+    //
+    // If the RenderPassTask allocates a smaller color texture than the resolve texture, it can pass
+    // a non-zero `resolveOffset` which is the the offset for resolving:
+    // - The color texture's (0, 0, w, h) region.
+    // - And store in the resolve texture's (resolveOffset.x, resolveOffset.y, w, h) region.
     bool addRenderPass(const RenderPassDesc&,
                        sk_sp<Texture> colorTexture,
                        sk_sp<Texture> resolveTexture,
                        sk_sp<Texture> depthStencilTexture,
                        const Texture* dstCopy,
                        SkIRect dstReadBounds,
+                       SkIPoint resolveOffset,
                        SkISize viewportDims,
                        const DrawPassList& drawPasses);
 
@@ -168,6 +178,7 @@ private:
                                  const Texture* colorTexture,
                                  const Texture* resolveTexture,
                                  const Texture* depthStencilTexture,
+                                 SkIPoint resolveOffset,
                                  SkIRect viewport,
                                  const DrawPassList& drawPasses) = 0;
 

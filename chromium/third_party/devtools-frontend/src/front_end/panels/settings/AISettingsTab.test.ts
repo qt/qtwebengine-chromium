@@ -4,6 +4,8 @@
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
+import type * as Platform from '../../core/platform/platform.js';
+import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
 import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {describeWithEnvironment, updateHostConfig} from '../../testing/EnvironmentHelpers.js';
 import * as Switch from '../../ui/components/switch/switch.js';
@@ -15,11 +17,18 @@ async function drainMicroTasks() {
 }
 
 describeWithEnvironment('AISettingsTab', () => {
+  let deleteAiAssistanceHistoryStub:
+      sinon.SinonStub<Parameters<typeof AiAssistanceModel.AiHistoryStorage.prototype.deleteAll>>;
   let view: Settings.AISettingsTab.AISettingsTab|undefined;
 
   beforeEach(async () => {
+    deleteAiAssistanceHistoryStub = sinon.stub(AiAssistanceModel.AiHistoryStorage.prototype, 'deleteAll');
+    AiAssistanceModel.AiHistoryStorage.instance({forceNew: true});
     updateHostConfig({
       devToolsAiGeneratedTimelineLabels: {
+        enabled: true,
+      },
+      devToolsAiCodeCompletion: {
         enabled: true,
       }
     });
@@ -53,6 +62,7 @@ describeWithEnvironment('AISettingsTab', () => {
     Common.Settings.moduleSetting('console-insights-enabled').set(false);
     Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
     Common.Settings.moduleSetting('ai-annotations-enabled').set(true);
+    Common.Settings.moduleSetting('ai-code-completion-fre-completed').set(false);
 
     view = new Settings.AISettingsTab.AISettingsTab();
     renderElementIntoDOM(view);
@@ -60,14 +70,14 @@ describeWithEnvironment('AISettingsTab', () => {
     assert.isNotNull(view.shadowRoot);
 
     const switches = Array.from(view.shadowRoot.querySelectorAll('devtools-switch'));
-    assert.lengthOf(switches, 3);
+    assert.lengthOf(switches, 4);
     const details = Array.from(view.shadowRoot.querySelectorAll('.whole-row'));
-    assert.lengthOf(details, 3);
+    assert.lengthOf(details, 4);
     const dropdownButtons = Array.from(view.shadowRoot.querySelectorAll('.dropdown devtools-button')) as HTMLElement[];
-    assert.lengthOf(dropdownButtons, 3);
+    assert.lengthOf(dropdownButtons, 4);
     const toggleContainers =
         Array.from(view.shadowRoot.querySelectorAll('.toggle-container')) as Switch.Switch.Switch[];
-    assert.lengthOf(toggleContainers, 3);
+    assert.lengthOf(toggleContainers, 4);
     return {switches, details, dropdownButtons, toggleContainers, view};
   }
 
@@ -75,6 +85,7 @@ describeWithEnvironment('AISettingsTab', () => {
     Common.Settings.moduleSetting('console-insights-enabled').set(true);
     Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
     Common.Settings.moduleSetting('ai-annotations-enabled').set(true);
+    Common.Settings.moduleSetting('ai-code-completion-fre-completed').set(true);
 
     view = new Settings.AISettingsTab.AISettingsTab();
     renderElementIntoDOM(view);
@@ -92,18 +103,20 @@ describeWithEnvironment('AISettingsTab', () => {
 
     const settingCards = view.shadowRoot.querySelectorAll('.setting-card h2');
     const settingNames = Array.from(settingCards).map(element => element.textContent);
-    assert.deepEqual(settingNames, ['Console Insights', 'AI assistance', 'Auto annotations']);
+    assert.deepEqual(settingNames, ['Console Insights', 'AI assistance', 'Auto annotations', 'Code suggestions']);
 
     const settingCardDesc = view.shadowRoot.querySelectorAll('.setting-description');
     assert.strictEqual(settingCardDesc[0].textContent, 'Helps you understand and fix console warnings and errors');
     assert.strictEqual(settingCardDesc[1].textContent, 'Get help with understanding CSS styles');
     assert.strictEqual(settingCardDesc[2].textContent, 'Get AI suggestions for performance panel annotations');
+    assert.strictEqual(settingCardDesc[3].textContent, 'Get help completing your code');
   });
 
   it('renders different dislaimers for managed users which have logging disabled', async () => {
     Common.Settings.moduleSetting('console-insights-enabled').set(true);
     Common.Settings.moduleSetting('ai-assistance-enabled').set(true);
     Common.Settings.moduleSetting('ai-annotations-enabled').set(true);
+    Common.Settings.moduleSetting('ai-code-completion-fre-completed').set(true);
     updateHostConfig({
       aidaAvailability: {
         enabled: true,
@@ -202,6 +215,8 @@ describeWithEnvironment('AISettingsTab', () => {
     assert.strictEqual(toggleContainers[1].title, underAgeExplainer);
     assert.isTrue(switches[2].disabled);
     assert.strictEqual(toggleContainers[2].title, underAgeExplainer);
+    assert.isTrue(switches[3].disabled);
+    assert.strictEqual(toggleContainers[3].title, underAgeExplainer);
 
     aidaAccessStub.restore();
   });
@@ -220,6 +235,8 @@ describeWithEnvironment('AISettingsTab', () => {
     assert.strictEqual(toggleContainers[1].title, notLoggedInExplainer);
     assert.isTrue(switches[2].disabled);
     assert.strictEqual(toggleContainers[2].title, notLoggedInExplainer);
+    assert.isTrue(switches[3].disabled);
+    assert.strictEqual(toggleContainers[3].title, notLoggedInExplainer);
 
     aidaAccessStub.returns(Promise.resolve(Host.AidaClient.AidaAccessPreconditions.AVAILABLE));
     Host.AidaClient.HostConfigTracker.instance().dispatchEventToListeners(
@@ -229,6 +246,7 @@ describeWithEnvironment('AISettingsTab', () => {
     assert.isFalse(switches[0].disabled);
     assert.isFalse(switches[1].disabled);
     assert.isFalse(switches[2].disabled);
+    assert.isFalse(switches[3].disabled);
     aidaAccessStub.restore();
   });
 
@@ -238,7 +256,7 @@ describeWithEnvironment('AISettingsTab', () => {
       settingType: Common.Settings.SettingType.BOOLEAN,
       defaultValue: false,
       disabledCondition: () => {
-        return {disabled: true, reasons: ['some reason']};
+        return {disabled: true, reasons: ['some reason' as Platform.UIString.LocalizedString]};
       },
     });
     Common.Settings.moduleSetting('ai-assistance-enabled').setRegistration({
@@ -246,7 +264,7 @@ describeWithEnvironment('AISettingsTab', () => {
       settingType: Common.Settings.SettingType.BOOLEAN,
       defaultValue: true,
       disabledCondition: () => {
-        return {disabled: true, reasons: ['some reason']};
+        return {disabled: true, reasons: ['some reason' as Platform.UIString.LocalizedString]};
       },
     });
     const stub = sinon.stub(Host.AidaClient.AidaClient, 'checkAccessPreconditions');
@@ -268,6 +286,7 @@ describeWithEnvironment('AISettingsTab', () => {
 
     (switches[1].parentElement as HTMLElement).click();
     assert.isFalse(Common.Settings.moduleSetting('ai-assistance-enabled').get());
-    assert.isEmpty(Common.Settings.moduleSetting('ai-assistance-history-entries').get());
+    assert.isTrue(
+        deleteAiAssistanceHistoryStub.called, 'Expected AiHistoryStorage deleteAll to be called but it is not called');
   });
 });

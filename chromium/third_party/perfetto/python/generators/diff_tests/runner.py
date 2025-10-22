@@ -140,7 +140,7 @@ class TestCaseRunner:
   trace_processor_path: str
   trace_descriptor_path: str
   colors: ColorFormatter
-  override_sql_module_paths: List[str]
+  override_sql_package_paths: List[str]
 
   def __output_to_text_proto(self, actual: str, out: BinaryProto) -> str:
     """Deserializes a binary proto and returns its text representation.
@@ -200,8 +200,8 @@ class TestCaseRunner:
       ]
       if self.test.register_files_dir:
         cmd += ['--register-files-dir', self.test.register_files_dir]
-      for sql_module_path in self.override_sql_module_paths:
-        cmd += ['--override-sql-module', sql_module_path]
+      for sql_package_path in self.override_sql_package_paths:
+        cmd += ['--override-sql-package', sql_package_path]
       tp = subprocess.Popen(
           cmd,
           stdout=subprocess.PIPE,
@@ -274,8 +274,8 @@ class TestCaseRunner:
           'binary',
           trace_path,
       ]
-      for sql_module_path in self.override_sql_module_paths:
-        cmd += ['--override-sql-module', sql_module_path]
+      for sql_package_path in self.override_sql_package_paths:
+        cmd += ['--override-sql-package', sql_package_path]
       tp = subprocess.Popen(
           cmd,
           stdout=subprocess.PIPE,
@@ -287,24 +287,28 @@ class TestCaseRunner:
       # Expected will be in text proto format and we'll need to parse it to
       # a real proto.
       expected_summary = summary_message_factory()
-      text_format.Merge(self.test.expected_str, expected_summary.metric.add())
+      text_format.Merge(self.test.expected_str,
+                        expected_summary.metric_bundles.add())
 
       # Actual will be the raw bytes of the proto and we'll need to parse it
       # into a message.
       actual_summary = summary_message_factory()
       actual_summary.ParseFromString(stdout)
 
+      actual = text_format.MessageToString(
+          actual_summary.metric_bundles[0]) if len(
+              actual_summary.metric_bundles) > 0 else ''
+
       os.remove(tmp_perf_file.name)
       if not keep_input:
         os.remove(tmp_spec_file.name)
-
 
       return TestResult(
           self.test,
           trace_path,
           cmd,
-          text_format.MessageToString(expected_summary.metric[0]),
-          text_format.MessageToString(actual_summary.metric[0]),
+          text_format.MessageToString(expected_summary.metric_bundles[0]),
+          actual,
           stderr.decode('utf8'),
           tp.returncode,
           [line.decode('utf8') for line in tmp_perf_file.readlines()],
@@ -329,8 +333,8 @@ class TestCaseRunner:
         cmd += ['-Q', self.test.blueprint.query]
       if self.test.register_files_dir:
         cmd += ['--register-files-dir', self.test.register_files_dir]
-      for sql_module_path in self.override_sql_module_paths:
-        cmd += ['--override-sql-module', sql_module_path]
+      for sql_package_path in self.override_sql_package_paths:
+        cmd += ['--override-sql-package', sql_package_path]
       tp = subprocess.Popen(
           cmd,
           stdout=subprocess.PIPE,
@@ -448,10 +452,13 @@ class TestCaseRunner:
                                    or self.test.trace_path.endswith('.py')):
         res += 'Command to generate trace:\n'
         res += 'tools/serialize_test_trace.py '
-        res += '--descriptor {} {} > {}\n'.format(
-            os.path.relpath(self.trace_descriptor_path, ROOT_DIR),
-            os.path.relpath(self.test.trace_path, ROOT_DIR),
-            os.path.relpath(trace_path, ROOT_DIR))
+        res += '--descriptor {} {} {} > {}\n'.format(
+            os.path.relpath(self.trace_descriptor_path, ROOT_DIR), " ".join([
+                "--extension-descriptor {}".format(
+                    os.path.relpath(p, ROOT_DIR))
+                for p in extension_descriptor_paths
+            ]), os.path.relpath(self.test.trace_path, ROOT_DIR),
+            os.path.relpath(trace_path, ROOT_DIR), extension_descriptor_paths)
       res += f"Command line:\n{' '.join(result.cmd)}\n"
       return res
 
@@ -524,7 +531,7 @@ class DiffTestsRunner:
       trace_processor_path: str,
       trace_descriptor: str,
       no_colors: bool,
-      override_sql_module_paths: List[str],
+      override_sql_package_paths: List[str],
       test_dir: str,
       quiet: bool,
   ):
@@ -546,7 +553,7 @@ class DiffTestsRunner:
               self.trace_processor_path,
               self.trace_descriptor_path,
               color_formatter,
-              override_sql_module_paths,
+              override_sql_package_paths,
           ))
 
   def run_all_tests(

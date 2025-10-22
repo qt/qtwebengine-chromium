@@ -36,11 +36,20 @@ include(gen/sources.cmake)
 enable_language(C)
 enable_language(CXX)
 
+# TODO(crbug,com/389897612): Register tests with CTest. For now, we include this
+# only to pick up the standard |BUILD_TESTING| option.
+include(CTest)
 include(GNUInstallDirs)
 
 set(INSTALL_ENABLED 1)
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING)
+if(CMAKE_VERSION VERSION_LESS 3.21 AND
+   CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  set(PROJECT_IS_TOP_LEVEL 1)
+endif()
+
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT CMAKE_CROSSCOMPILING AND
+   BUILD_TESTING)
   find_package(PkgConfig QUIET)
   if (PkgConfig_FOUND)
     pkg_check_modules(LIBUNWIND libunwind-generic>=1.3.0)
@@ -107,10 +116,6 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   set(CLANG 1)
 endif()
 
-if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
-  set(EMSCRIPTEN 1)
-endif()
-
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_C_STANDARD 11)
@@ -119,14 +124,14 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 if(CMAKE_COMPILER_IS_GNUCXX OR CLANG)
   # Note clang-cl is odd and sets both CLANG and MSVC. We base our configuration
   # primarily on our normal Clang one.
-  set(C_CXX_FLAGS "-Werror -Wformat=2 -Wsign-compare -Wwrite-strings -Wvla -Wshadow -Wtype-limits -Wmissing-field-initializers")
+  set(C_CXX_FLAGS "-fno-strict-aliasing -Werror -Wformat=2 -Wsign-compare -Wwrite-strings -Wvla -Wshadow -Wtype-limits -Wmissing-field-initializers")
   if(MSVC)
     # clang-cl sets different default warnings than clang. It also treats -Wall
     # as -Weverything, to match MSVC. Instead -W3 is the alias for -Wall.
     # See http://llvm.org/viewvc/llvm-project?view=revision&revision=319116
     set(C_CXX_FLAGS "${C_CXX_FLAGS} -W3 -Wno-unused-parameter -fmsc-version=1900")
   else()
-    if(EMSCRIPTEN)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Emscripten")
       # emscripten's emcc/clang does not accept the "-ggdb" flag.
       set(C_CXX_FLAGS "${C_CXX_FLAGS} -g")
     else()
@@ -208,12 +213,12 @@ elseif(MSVC)
       )
   string(REPLACE "C" " -wd" MSVC_DISABLED_WARNINGS_STR
                             ${MSVC_DISABLED_WARNINGS_LIST})
-  set(CMAKE_C_FLAGS   "-utf-8 -W4 -WX ${MSVC_DISABLED_WARNINGS_STR}")
+  set(CMAKE_C_FLAGS   "${CMAKE_C_FLAGS} -utf-8 -W4 -WX ${MSVC_DISABLED_WARNINGS_STR}")
   # Without /Zc:__cplusplus, MSVC does not define the right value for
   # __cplusplus. See https://devblogs.microsoft.com/cppblog/msvc-now-correctly-reports-__cplusplus/
   # If this becomes too problematic for downstream code, we can look at
   # _MSVC_LANG.
-  set(CMAKE_CXX_FLAGS "-utf-8 -W4 -WX ${MSVC_DISABLED_WARNINGS_STR} -Zc:__cplusplus")
+  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -utf-8 -W4 -WX ${MSVC_DISABLED_WARNINGS_STR} -Zc:__cplusplus")
 endif()
 
 if(WIN32)
@@ -476,33 +481,33 @@ if(USE_CUSTOM_LIBCXX)
   target_link_libraries(libcxx libcxxabi)
 endif()
 
-# Add minimal googletest targets. The provided one has many side-effects, and
-# googletest has a very straightforward build.
-add_library(
-  boringssl_gtest
-  third_party/googletest/googlemock/src/gmock-all.cc
-  third_party/googletest/googletest/src/gtest-all.cc
-)
-if(USE_CUSTOM_LIBCXX)
-  target_link_libraries(boringssl_gtest libcxx)
-endif()
-target_include_directories(
+if(BUILD_TESTING)
+  # Add minimal googletest targets. The provided one has many side-effects, and
+  # googletest has a very straightforward build.
+  add_library(
     boringssl_gtest
-    PUBLIC
-    third_party/googletest/googlemock/include
-    third_party/googletest/googletest/include
-    PRIVATE
-    third_party/googletest/googlemock
-    third_party/googletest/googletest
-)
+    third_party/googletest/googlemock/src/gmock-all.cc
+    third_party/googletest/googletest/src/gtest-all.cc
+  )
+  if(USE_CUSTOM_LIBCXX)
+    target_link_libraries(boringssl_gtest libcxx)
+  endif()
+  target_include_directories(
+      boringssl_gtest
+      PUBLIC
+      third_party/googletest/googlemock/include
+      third_party/googletest/googletest/include
+      PRIVATE
+      third_party/googletest/googlemock
+      third_party/googletest/googletest
+  )
 
-# Declare a dummy target to build all unit tests. Test targets should inject
-# themselves as dependencies next to the target definition.
-add_custom_target(all_tests)
+  # Declare a dummy target to build all unit tests. Test targets should inject
+  # themselves as dependencies next to the target definition.
+  add_custom_target(boringssl_all_tests)
 
-add_subdirectory(ssl/test)
-add_subdirectory(util/fipstools)
-add_subdirectory(util/fipstools/acvp/modulewrapper)
+  add_subdirectory(ssl/test)
+endif()
 
 if(OPENSSL_ASM)
   set(CRYPTO_SOURCES_ASM_USED ${CRYPTO_SOURCES_ASM})
@@ -537,6 +542,10 @@ if(FIPS_DELOCATE)
   if(CLANG)
     # Clang warns when passing both -c (from CMake) and -S.
     target_compile_options(bcm_c_generated_asm PRIVATE "-Wno-unused-command-line-argument")
+  endif()
+  if(CFI)
+    # Delocate needs real assembly code so we need to disable CFI and LTO in the FIPS module.
+    target_compile_options(bcm_c_generated_asm PRIVATE "-fno-lto" "-fno-sanitize=cfi")
   endif()
 
   set(TARGET_FLAG "")
@@ -658,63 +667,61 @@ target_link_libraries(ssl crypto)
 add_library(decrepit ${DECREPIT_SOURCES})
 target_link_libraries(decrepit ssl crypto)
 
-add_library(test_support_lib STATIC
-            ${TEST_SUPPORT_SOURCES} ${TEST_SUPPORT_SOURCES_ASM_USED})
-if(LIBUNWIND_FOUND)
-  target_compile_options(test_support_lib PRIVATE ${LIBUNWIND_CFLAGS_OTHER})
-  target_include_directories(test_support_lib PRIVATE ${LIBUNWIND_INCLUDE_DIRS})
-  target_link_libraries(test_support_lib ${LIBUNWIND_LDFLAGS})
-endif()
-if(WIN32)
-  target_link_libraries(test_support_lib dbghelp)
-endif()
-target_link_libraries(test_support_lib boringssl_gtest crypto)
-
-# urandom_test is a separate binary because it needs to be able to observe the
-# PRNG initialisation, which means that it can't have other tests running before
-# it does.
-add_executable(urandom_test ${URANDOM_TEST_SOURCES})
-target_link_libraries(urandom_test test_support_lib boringssl_gtest crypto)
-add_dependencies(all_tests urandom_test)
-
-add_executable(crypto_test ${CRYPTO_TEST_SOURCES})
-target_link_libraries(crypto_test test_support_lib boringssl_gtest crypto)
-add_dependencies(all_tests crypto_test)
-
-add_executable(ssl_test ${SSL_TEST_SOURCES})
-target_link_libraries(ssl_test test_support_lib boringssl_gtest ssl crypto)
-add_dependencies(all_tests ssl_test)
-add_executable(decrepit_test ${DECREPIT_TEST_SOURCES})
-target_link_libraries(decrepit_test test_support_lib boringssl_gtest
-                      decrepit ssl crypto)
-add_dependencies(all_tests decrepit_test)
-
 if(APPLE)
   set(PKI_CXX_FLAGS "-fno-aligned-new")
 endif()
-
 add_library(pki ${PKI_SOURCES})
 target_link_libraries(pki crypto)
+target_compile_options(pki PRIVATE ${PKI_CXX_FLAGS})
 
-add_executable(pki_test ${PKI_TEST_SOURCES})
-target_link_libraries(pki_test test_support_lib boringssl_gtest pki crypto)
-add_dependencies(all_tests pki_test)
+if(BUILD_TESTING)
+  add_library(test_support_lib STATIC
+              ${TEST_SUPPORT_SOURCES} ${TEST_SUPPORT_SOURCES_ASM_USED})
+  if(LIBUNWIND_FOUND)
+    target_compile_options(test_support_lib PRIVATE ${LIBUNWIND_CFLAGS_OTHER})
+    target_include_directories(test_support_lib PRIVATE ${LIBUNWIND_INCLUDE_DIRS})
+    target_link_libraries(test_support_lib ${LIBUNWIND_LDFLAGS})
+  endif()
+  if(WIN32)
+    target_link_libraries(test_support_lib dbghelp)
+  endif()
+  target_link_libraries(test_support_lib boringssl_gtest crypto)
 
-set_target_properties(
-  pki pki_test
-  PROPERTIES
-  COMPILE_FLAGS "${PKI_CXX_FLAGS}")
+  # urandom_test is a separate binary because it needs to be able to observe the
+  # PRNG initialisation, which means that it can't have other tests running before
+  # it does.
+  add_executable(urandom_test ${URANDOM_TEST_SOURCES})
+  target_link_libraries(urandom_test test_support_lib boringssl_gtest crypto)
+  add_dependencies(boringssl_all_tests urandom_test)
+
+  add_executable(crypto_test ${CRYPTO_TEST_SOURCES})
+  target_link_libraries(crypto_test test_support_lib boringssl_gtest crypto)
+  add_dependencies(boringssl_all_tests crypto_test)
+
+  add_executable(ssl_test ${SSL_TEST_SOURCES})
+  target_link_libraries(ssl_test test_support_lib boringssl_gtest ssl crypto)
+  add_dependencies(boringssl_all_tests ssl_test)
+  add_executable(decrepit_test ${DECREPIT_TEST_SOURCES})
+  target_link_libraries(decrepit_test test_support_lib boringssl_gtest
+                        decrepit ssl crypto)
+  add_dependencies(boringssl_all_tests decrepit_test)
+
+  add_executable(pki_test ${PKI_TEST_SOURCES})
+  target_link_libraries(pki_test test_support_lib boringssl_gtest pki crypto)
+  target_compile_options(pki_test PRIVATE ${PKI_CXX_FLAGS})
+  add_dependencies(boringssl_all_tests pki_test)
+
+  add_executable(test_fips util/fipstools/test_fips.cc)
+  target_link_libraries(test_fips crypto)
+endif()
+
+if(FIPS)
+  add_executable(modulewrapper ${MODULEWRAPPER_SOURCES})
+  target_link_libraries(modulewrapper crypto)
+endif()
 
 add_executable(bssl ${BSSL_SOURCES})
 target_link_libraries(bssl ssl crypto)
-
-# Historically, targets were built in subdirectories. For compatibility with
-# existing tools, we, for now, copy the targets into the subdirectories. This
-# will be removed sometime in 2024.
-copy_post_build(crypto crypto crypto_test urandom_test)
-copy_post_build(ssl ssl ssl_test)
-copy_post_build(decrepit decrepit decrepit_test)
-copy_post_build(tool bssl)
 
 if(FUZZ)
   if(LIBFUZZER_FROM_DEPS)
@@ -744,56 +751,63 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   set(HANDSHAKER_ARGS "-handshaker-path" $<TARGET_FILE:handshaker>)
 endif()
 
-if(FIPS)
-  add_custom_target(
-    acvp_tests
-    COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_CURRENT_BINARY_DIR}/acvptool
-            boringssl.googlesource.com/boringssl.git/util/fipstools/acvp/acvptool
-    COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_CURRENT_BINARY_DIR}/testmodulewrapper
-            boringssl.googlesource.com/boringssl.git/util/fipstools/acvp/acvptool/testmodulewrapper
-    COMMAND cd util/fipstools/acvp/acvptool/test &&
-            ${GO_EXECUTABLE} run check_expected.go
-            -tool ${CMAKE_CURRENT_BINARY_DIR}/acvptool
-            -module-wrappers modulewrapper:$<TARGET_FILE:modulewrapper>,testmodulewrapper:${CMAKE_CURRENT_BINARY_DIR}/testmodulewrapper
-            -tests tests.json
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-    DEPENDS modulewrapper
-    USES_TERMINAL)
-
-  add_custom_target(
-    fips_specific_tests_if_any
-    DEPENDS acvp_tests
-  )
-else()
-  add_custom_target(fips_specific_tests_if_any)
-endif()
-
-file(STRINGS util/go_tests.txt GO_TESTS)
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-             util/go_tests.txt)
-
-if(GO_EXECUTABLE)
-  add_custom_target(
-      run_tests
-      COMMAND ${CMAKE_COMMAND} -E echo "Running Go tests"
-      COMMAND ${GO_EXECUTABLE} test ${GO_TESTS}
-      COMMAND ${CMAKE_COMMAND} -E echo
-      COMMAND ${CMAKE_COMMAND} -E echo "Running unit tests"
-      COMMAND ${GO_EXECUTABLE} run util/all_tests.go -build-dir
-              ${CMAKE_CURRENT_BINARY_DIR}
-      COMMAND ${CMAKE_COMMAND} -E echo
-      COMMAND ${CMAKE_COMMAND} -E echo "Running SSL tests"
-      COMMAND cd ssl/test/runner &&
-              ${GO_EXECUTABLE} test -shim-path $<TARGET_FILE:bssl_shim>
-                ${HANDSHAKER_ARGS} ${RUNNER_ARGS}
+if(BUILD_TESTING)
+  if(FIPS)
+    add_custom_target(
+      acvp_tests
+      COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_CURRENT_BINARY_DIR}/acvptool
+              boringssl.googlesource.com/boringssl.git/util/fipstools/acvp/acvptool
+      COMMAND ${GO_EXECUTABLE} build -o ${CMAKE_CURRENT_BINARY_DIR}/testmodulewrapper
+              boringssl.googlesource.com/boringssl.git/util/fipstools/acvp/acvptool/testmodulewrapper
+      COMMAND cd util/fipstools/acvp/acvptool/test &&
+              ${GO_EXECUTABLE} run check_expected.go
+              -tool ${CMAKE_CURRENT_BINARY_DIR}/acvptool
+              -module-wrappers modulewrapper:$<TARGET_FILE:modulewrapper>,testmodulewrapper:${CMAKE_CURRENT_BINARY_DIR}/testmodulewrapper
+              -tests tests.json
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
-      DEPENDS all_tests bssl_shim handshaker fips_specific_tests_if_any
+      DEPENDS modulewrapper
       USES_TERMINAL)
-else()
-  add_custom_target(
-      run_tests
-      COMMAND ${CMAKE_COMMAND} -E echo "Running tests requires Go"
-      COMMAND ${CMAKE_COMMAND} -E false)
+
+    add_custom_target(
+      fips_specific_tests_if_any
+      DEPENDS acvp_tests
+    )
+  else()
+    add_custom_target(fips_specific_tests_if_any)
+  endif()
+
+  file(STRINGS util/go_tests.txt GO_TESTS)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+              util/go_tests.txt)
+
+  # CMake target names can clash when projects are imported with
+  # add_subdirectory. Only emit the run_tests target if we're the top-level
+  # target. See https://crbug.com/428112180.
+  if(PROJECT_IS_TOP_LEVEL)
+    if(GO_EXECUTABLE)
+      add_custom_target(
+          run_tests
+          COMMAND ${CMAKE_COMMAND} -E echo "Running Go tests"
+          COMMAND ${GO_EXECUTABLE} test ${GO_TESTS}
+          COMMAND ${CMAKE_COMMAND} -E echo
+          COMMAND ${CMAKE_COMMAND} -E echo "Running unit tests"
+          COMMAND ${GO_EXECUTABLE} run util/all_tests.go -build-dir
+                  ${CMAKE_CURRENT_BINARY_DIR}
+          COMMAND ${CMAKE_COMMAND} -E echo
+          COMMAND ${CMAKE_COMMAND} -E echo "Running SSL tests"
+          COMMAND cd ssl/test/runner &&
+                  ${GO_EXECUTABLE} test -shim-path $<TARGET_FILE:bssl_shim>
+                    ${HANDSHAKER_ARGS} ${RUNNER_ARGS}
+          WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+          DEPENDS boringssl_all_tests bssl_shim handshaker fips_specific_tests_if_any
+          USES_TERMINAL)
+    else()
+      add_custom_target(
+          run_tests
+          COMMAND ${CMAKE_COMMAND} -E echo "Running tests requires Go"
+          COMMAND ${CMAKE_COMMAND} -E false)
+    endif()
+  endif()
 endif()
 
 if(INSTALL_ENABLED)

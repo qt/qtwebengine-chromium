@@ -43,12 +43,14 @@ Tile::~Tile() {
   TRACE_EVENT_OBJECT_DELETED_WITH_ID(
       TRACE_DISABLED_BY_DEFAULT("cc.debug"),
       "cc::Tile", this);
+  deleted_ = true;
   tile_manager_->Release(this);
 }
 
 void Tile::AsValueInto(base::trace_event::TracedValue* value) const {
   viz::TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
-      TRACE_DISABLED_BY_DEFAULT("cc.debug"), value, "cc::Tile", this);
+      TRACE_DISABLED_BY_DEFAULT("cc.debug"), value, "cc::Tile",
+      viz::TracedValue::Id(this));
   value->SetDouble("contents_scale", contents_scale_key());
 
   value->BeginDictionary("raster_transform");

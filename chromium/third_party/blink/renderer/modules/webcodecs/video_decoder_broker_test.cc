@@ -61,14 +61,22 @@ class FakeGpuVideoDecoder : public media::FakeVideoDecoder {
 
   scoped_refptr<media::VideoFrame> MakeVideoFrame(
       const media::DecoderBuffer& buffer) override {
+    gpu::SharedImageMetadata metadata;
+    metadata.format = viz::SinglePlaneFormat::kRGBA_8888;
+    metadata.size = current_config_.coded_size();
+    metadata.color_space = gfx::ColorSpace::CreateSRGB();
+    metadata.surface_origin = kTopLeft_GrSurfaceOrigin;
+    metadata.alpha_type = kOpaque_SkAlphaType;
+    metadata.usage = gpu::SharedImageUsageSet();
     scoped_refptr<gpu::ClientSharedImage> shared_image =
-        gpu::ClientSharedImage::CreateForTesting();
+        gpu::ClientSharedImage::CreateForTesting(metadata);
     scoped_refptr<media::VideoFrame> frame = media::VideoFrame::WrapSharedImage(
         media::PIXEL_FORMAT_ARGB, shared_image, gpu::SyncToken(),
         media::VideoFrame::ReleaseMailboxCB(), current_config_.coded_size(),
         current_config_.visible_rect(), current_config_.natural_size(),
         buffer.timestamp());
     frame->metadata().power_efficient = true;
+    frame->set_color_space(shared_image->color_space());
     return frame;
   }
 
@@ -145,12 +153,6 @@ class FakeInterfaceFactory : public media::mojom::InterfaceFactory {
       mojo::PendingReceiver<media::mojom::Renderer> receiver) override {}
 #endif
 #if BUILDFLAG(IS_ANDROID)
-  void CreateMediaPlayerRenderer(
-      mojo::PendingRemote<media::mojom::MediaPlayerRendererClientExtension>
-          client_extension_remote,
-      mojo::PendingReceiver<media::mojom::Renderer> receiver,
-      mojo::PendingReceiver<media::mojom::MediaPlayerRendererExtension>
-          renderer_extension_receiver) override {}
   void CreateFlingingRenderer(
       const std::string& presentation_id,
       mojo::PendingRemote<media::mojom::FlingingRendererClientExtension>

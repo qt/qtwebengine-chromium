@@ -17,15 +17,16 @@ namespace {
 
 // Array of features exposed through the Java UiAndroidFeatureMap API.
 const base::Feature* const kFeaturesExposedToJava[] = {
-    &ui::kConvertTrackpadEventsToMouse,
+    &ui::kAndroidUseCorrectDisplayWorkArea,
+    &ui::kAndroidWindowManagementWebApi,
+    &ui::kAndroidWindowOcclusion,
+    &ui::kCheckIntentCallerPermission,
     &ui::kDeprecatedExternalPickerFunction,
+    &ui::kDisablePhotoPickerForVideoCapture,
+    &ui::kFormFactorUseMaxWindowMetrics,
     &ui::kMirrorBackForwardGesturesInRTL,
-    &ui::kReportAllAvailablePointerTypes,
     &ui::kRequireLeadingInTextViewWithLeading,
     &ui::kSelectFileOpenDocument,
-    &ui::kCheckIntentCallerPermission,
-    &ui::kDisablePhotoPickerForVideoCapture,
-    &ui::kUsingCorrectWorkArea,
 };
 
 // static

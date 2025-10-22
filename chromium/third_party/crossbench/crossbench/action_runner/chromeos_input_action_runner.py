@@ -9,10 +9,10 @@ import dataclasses
 import datetime as dt
 import shlex
 import subprocess
-from typing import TYPE_CHECKING, Self
+from math import ceil
+from typing import TYPE_CHECKING, Optional, Self
 
 import crossbench.path as pth
-from crossbench.action_runner.action import all as i_action
 from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.action_runner.display_rectangle import DisplayRectangle
 from crossbench.action_runner.element_not_found_error import \
@@ -23,8 +23,7 @@ from crossbench.benchmarks.loading.point import Point
 from crossbench.parse import NumberParser
 
 if TYPE_CHECKING:
-  from typing import Optional, Tuple, Type
-
+  from crossbench.action_runner.action import all as i_action
   from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
 
@@ -258,6 +257,7 @@ E: <time> 0000 0000 0
 
 
 class ChromeOSInputActionRunner(DefaultActionRunner):
+  """Custom ActionRunner for chromeOS devices."""
 
   def __init__(self) -> None:
     super().__init__()
@@ -355,27 +355,21 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
       (scrollable_top, scrollable_bottom,
        max_swipe_distance) = scroll_area.get_scrollable_area()
 
-      remaining_distance = abs(total_scroll_distance)
+      swipe_count = ceil(abs(total_scroll_distance) / max_swipe_distance)
+      swipe_distance = abs(total_scroll_distance) / swipe_count
+      swipe_duration = action.duration / swipe_count
 
-      while remaining_distance > 0:
-
-        current_distance = min(max_swipe_distance, remaining_distance)
-
-        # The duration for this swipe should be only a fraction of the total
-        # duration since the entire distance may not be covered in one swipe.
-        current_duration = (current_distance /
-                            abs(total_scroll_distance)) * action.duration
-
+      for _ in range(swipe_count):
         if total_scroll_distance > 0:
           # If scrolling down, the swipe should start at the bottom and end
           # above.
           y_start: int = scrollable_bottom
-          y_end: int = round(scrollable_bottom - current_distance)
+          y_end: int = round(scrollable_bottom - swipe_distance)
 
         else:
           # If scrolling up, the swipe should start at the top and end below.
           y_start = scrollable_top
-          y_end = round(scrollable_top + current_distance)
+          y_end = round(scrollable_top + swipe_distance)
 
         self._execute_touch_playback(
             run,
@@ -384,18 +378,19 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
                 viewport_info.native_screen,
                 Point(scroll_area.middle.x, y_start),
                 end_position=Point(scroll_area.middle.x, y_end),
-                duration=current_duration))
-
-        remaining_distance -= current_distance
+                duration=swipe_duration))
 
   def text_input_keyboard(self, run: Run,
                           action: i_action.TextInputAction) -> None:
+    if action.keyevent:
+      raise ValueError("Keyevents are currently not supported on ChromeOS")
+
     browser_platform = run.browser_platform
 
     script = (SCRIPTS_DIR / "text_input.py").read_text()
 
     with browser_platform.NamedTemporaryFile() as script_file:
-      browser_platform.set_file_contents(script_file, script)
+      browser_platform.write_text(script_file, script)
       typing_process: subprocess.Popen | None = None
       try:
         typing_process = browser_platform.popen(
@@ -414,7 +409,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
 
   def _get_click_location(
       self, actions: Actions, action: i_action.ClickAction
-  ) -> Tuple[Optional[Point], ChromeOSViewportInfo]:
+  ) -> tuple[Optional[Point], ChromeOSViewportInfo]:
     if selector_config := action.position.selector:
       if selector_config.wait:
         self.wait_for_element_impl(
@@ -503,7 +498,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
     script = (SCRIPTS_DIR / "mouse.py").read_text()
 
     with browser_platform.NamedTemporaryFile() as script_file:
-      browser_platform.set_file_contents(script_file, script)
+      browser_platform.write_text(script_file, script)
 
       mouse_process = browser_platform.popen(
           "python3",
@@ -542,7 +537,7 @@ class ChromeOSInputActionRunner(DefaultActionRunner):
     browser_platform = run.browser_platform
 
     with browser_platform.NamedTemporaryFile() as playback_file:
-      browser_platform.set_file_contents(playback_file, touch_event_cmds)
+      browser_platform.write_text(playback_file, touch_event_cmds)
       # Then run evemu-play with the input redirected from the temp file.
       run.browser_platform.sh(
           f"evemu-play --insert-slot0 "

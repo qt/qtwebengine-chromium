@@ -12,15 +12,14 @@
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/task/single_thread_task_runner.h"
+#include "base/trace_event/trace_event.h"
 #include "base/types/expected.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/features.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/public/host_resolver_source.h"
 #include "net/http/http_network_session.h"
@@ -54,13 +53,13 @@ SpdySessionPool::SpdySessionRequest::Delegate::~Delegate() = default;
 
 SpdySessionPool::SpdySessionRequest::SpdySessionRequest(
     const SpdySessionKey& key,
-    bool enable_ip_based_pooling,
+    bool enable_ip_based_pooling_for_h2,
     bool is_websocket,
     bool is_blocking_request_for_session,
     Delegate* delegate,
     SpdySessionPool* spdy_session_pool)
     : key_(key),
-      enable_ip_based_pooling_(enable_ip_based_pooling),
+      enable_ip_based_pooling_for_h2_(enable_ip_based_pooling_for_h2),
       is_websocket_(is_websocket),
       is_blocking_request_for_session_(is_blocking_request_for_session),
       delegate_(delegate),
@@ -154,12 +153,14 @@ int SpdySessionPool::CreateAvailableSessionFromSocketHandle(
     std::unique_ptr<StreamSocketHandle> stream_socket_handle,
     const NetLogWithSource& net_log,
     const MultiplexedSessionCreationInitiator session_creation_initiator,
-    base::WeakPtr<SpdySession>* session) {
+    base::WeakPtr<SpdySession>* session,
+    SpdySessionInitiator spdy_session_initiator) {
   TRACE_EVENT0(NetTracingCategory(),
                "SpdySessionPool::CreateAvailableSessionFromSocketHandle");
 
   std::unique_ptr<SpdySession> new_session =
-      CreateSession(key, net_log.net_log(), session_creation_initiator);
+      CreateSession(key, net_log.net_log(), session_creation_initiator,
+                    spdy_session_initiator);
   std::set<std::string> dns_aliases =
       stream_socket_handle->socket()->GetDnsAliases();
 
@@ -181,12 +182,14 @@ SpdySessionPool::CreateAvailableSessionFromSocket(
     const SpdySessionKey& key,
     std::unique_ptr<StreamSocket> socket_stream,
     const LoadTimingInfo::ConnectTiming& connect_timing,
-    const NetLogWithSource& net_log) {
+    const NetLogWithSource& net_log,
+    SpdySessionInitiator spdy_session_initiator) {
   TRACE_EVENT0(NetTracingCategory(),
                "SpdySessionPool::CreateAvailableSessionFromSocket");
 
   std::unique_ptr<SpdySession> new_session = CreateSession(
-      key, net_log.net_log(), MultiplexedSessionCreationInitiator::kUnknown);
+      key, net_log.net_log(), MultiplexedSessionCreationInitiator::kUnknown,
+      spdy_session_initiator);
   std::set<std::string> dns_aliases = socket_stream->GetDnsAliases();
 
   new_session->InitializeWithSocket(std::move(socket_stream), connect_timing,
@@ -200,7 +203,7 @@ SpdySessionPool::CreateAvailableSessionFromSocket(
 
 base::WeakPtr<SpdySession> SpdySessionPool::FindAvailableSession(
     const SpdySessionKey& key,
-    bool enable_ip_based_pooling,
+    bool enable_ip_based_pooling_for_h2,
     bool is_websocket,
     const NetLogWithSource& net_log) {
   auto it = LookupAvailableSessionByKey(key);
@@ -218,7 +221,7 @@ base::WeakPtr<SpdySession> SpdySessionPool::FindAvailableSession(
     return it->second;
   }
 
-  if (enable_ip_based_pooling) {
+  if (enable_ip_based_pooling_for_h2) {
     UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionGet", FOUND_EXISTING_FROM_IP_POOL,
                               SPDY_SESSION_GET_MAX);
     net_log.AddEventReferencingSource(
@@ -235,7 +238,7 @@ SpdySessionPool::FindMatchingIpSessionForServiceEndpoint(
     const SpdySessionKey& key,
     const ServiceEndpoint& service_endpoint,
     const std::set<std::string>& dns_aliases) {
-  CHECK(!HasAvailableSession(key, /*enable_ip_based_pooling=*/true,
+  CHECK(!HasAvailableSession(key, /*enable_ip_based_pooling_for_h2=*/true,
                              /*is_websocket=*/false));
   CHECK(key.socket_tag() == SocketTag());
 
@@ -249,7 +252,7 @@ SpdySessionPool::FindMatchingIpSessionForServiceEndpoint(
 }
 
 bool SpdySessionPool::HasAvailableSession(const SpdySessionKey& key,
-                                          bool enable_ip_based_pooling,
+                                          bool enable_ip_based_pooling_for_h2,
                                           bool is_websocket) const {
   auto it = available_sessions_.find(key);
   if (it == available_sessions_.end() ||
@@ -257,12 +260,13 @@ bool SpdySessionPool::HasAvailableSession(const SpdySessionKey& key,
     return false;
   }
 
-  return enable_ip_based_pooling ? true : key == it->second->spdy_session_key();
+  return enable_ip_based_pooling_for_h2 ? true
+                                        : key == it->second->spdy_session_key();
 }
 
 base::WeakPtr<SpdySession> SpdySessionPool::RequestSession(
     const SpdySessionKey& key,
-    bool enable_ip_based_pooling,
+    bool enable_ip_based_pooling_for_h2,
     bool is_websocket,
     const NetLogWithSource& net_log,
     base::RepeatingClosure on_blocking_request_destroyed_callback,
@@ -271,8 +275,8 @@ base::WeakPtr<SpdySession> SpdySessionPool::RequestSession(
     bool* is_blocking_request_for_session) {
   DCHECK(delegate);
 
-  base::WeakPtr<SpdySession> spdy_session =
-      FindAvailableSession(key, enable_ip_based_pooling, is_websocket, net_log);
+  base::WeakPtr<SpdySession> spdy_session = FindAvailableSession(
+      key, enable_ip_based_pooling_for_h2, is_websocket, net_log);
   if (spdy_session) {
     // This value doesn't really matter, but best to always populate it, for
     // consistency.
@@ -283,7 +287,7 @@ base::WeakPtr<SpdySession> SpdySessionPool::RequestSession(
   RequestInfoForKey* request_info = &spdy_session_request_map_[key];
   *is_blocking_request_for_session = !request_info->has_blocking_request;
   *spdy_session_request = std::make_unique<SpdySessionRequest>(
-      key, enable_ip_based_pooling, is_websocket,
+      key, enable_ip_based_pooling_for_h2, is_websocket,
       *is_blocking_request_for_session, delegate, this);
   request_info->request_set.insert(spdy_session_request->get());
 
@@ -334,8 +338,7 @@ OnHostResolutionCallbackResult SpdySessionPool::OnHostResolutionComplete(
 
         auto available_session_it = LookupAvailableSessionByKey(alias_key);
         // It shouldn't be in the aliases table if it doesn't exist!
-        CHECK(available_session_it != available_sessions_.end(),
-              base::NotFatalUntil::M130);
+        CHECK(available_session_it != available_sessions_.end());
 
         SpdySessionKey::CompareForAliasingResult compare_result =
             alias_key.CompareForAliasing(key);
@@ -515,7 +518,7 @@ void SpdySessionPool::MakeCurrentSessionsGoingAway(Error error) {
       continue;
     }
 
-    session->MakeUnavailable();
+    session->MakeUnavailable(error);
     session->StartGoingAway(kLastStreamId, error);
     session->MaybeFinishGoingAway();
     DCHECK(!IsSessionAvailable(session));
@@ -582,7 +585,7 @@ void SpdySessionPool::OnSSLConfigForServersChanged(
     }
 
     if (session_matches) {
-      session->MakeUnavailable();
+      session->MakeUnavailable(ERR_NETWORK_CHANGED);
       // Note this call preserves active streams but fails any streams that are
       // waiting on a stream ID.
       // TODO(crbug.com/40768859): This is not ideal, but SpdySession
@@ -607,7 +610,7 @@ void SpdySessionPool::RemoveRequestForSpdySession(SpdySessionRequest* request) {
   DCHECK_EQ(this, request->spdy_session_pool());
 
   auto iter = spdy_session_request_map_.find(request->key());
-  CHECK(iter != spdy_session_request_map_.end(), base::NotFatalUntil::M130);
+  CHECK(iter != spdy_session_request_map_.end());
 
   // Resume all pending requests if it is the blocking request, which is either
   // being canceled, or has completed.
@@ -706,7 +709,8 @@ void SpdySessionPool::CloseCurrentSessionsHelper(Error error,
 std::unique_ptr<SpdySession> SpdySessionPool::CreateSession(
     const SpdySessionKey& key,
     NetLog* net_log,
-    const MultiplexedSessionCreationInitiator session_creation_initiator) {
+    const MultiplexedSessionCreationInitiator session_creation_initiator,
+    SpdySessionInitiator spdy_session_initiator) {
   UMA_HISTOGRAM_ENUMERATION("Net.SpdySessionGet", IMPORTED_FROM_SOCKET,
                             SPDY_SESSION_GET_MAX);
 
@@ -733,7 +737,8 @@ std::unique_ptr<SpdySession> SpdySessionPool::CreateSession(
       session_max_queued_capped_frames_, initial_settings_,
       enable_http2_settings_grease_, greased_http2_frame_,
       http2_end_stream_with_data_frame_, enable_priority_update_, time_func_,
-      network_quality_estimator_, net_log, session_creation_initiator);
+      network_quality_estimator_, net_log, session_creation_initiator,
+      spdy_session_initiator);
 }
 
 base::expected<base::WeakPtr<SpdySession>, int> SpdySessionPool::InsertSession(
@@ -813,8 +818,9 @@ void SpdySessionPool::UpdatePendingRequests(const SpdySessionKey& key) {
         if ((*request)->is_websocket() && !new_session->support_websocket())
           continue;
         // Don't use IP pooled session if not allowed.
-        if (!(*request)->enable_ip_based_pooling() && is_pooled)
+        if (!(*request)->enable_ip_based_pooling_for_h2() && is_pooled) {
           continue;
+        }
         break;
       }
       if (request == request_set->end())

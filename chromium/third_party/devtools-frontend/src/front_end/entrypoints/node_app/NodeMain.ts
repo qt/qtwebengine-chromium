@@ -44,6 +44,7 @@ export class NodeMainImpl implements Common.Runnable.Runnable {
     Host.userMetrics.actionTaken(Host.UserMetrics.Action.ConnectToNodeJSFromFrontend);
     void SDK.Connections.initMainConnection(async () => {
       const target = SDK.TargetManager.TargetManager.instance().createTarget(
+          // TODO: Use SDK.Target.Type.NODE rather thatn BROWSER once DevTools is loaded appropriately in that case.
           'main', i18nString(UIStrings.main), SDK.Target.Type.BROWSER, null);
       target.setInspectedURL('Node.js' as Platform.DevToolsPath.UrlString);
     }, Components.TargetDetachedDialog.TargetDetachedDialog.connectionLost);
@@ -95,6 +96,8 @@ export class NodeChildTargetManager extends SDK.SDKModel.SDKModel<void> implemen
   targetCreated({targetInfo}: Protocol.Target.TargetCreatedEvent): void {
     if (targetInfo.type === 'node' && !targetInfo.attached) {
       void this.#targetAgent.invoke_attachToTarget({targetId: targetInfo.targetId, flatten: false});
+    } else if (targetInfo.type === 'node_worker') {
+      void this.#targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: false});
     }
   }
 
@@ -105,12 +108,19 @@ export class NodeChildTargetManager extends SDK.SDKModel.SDKModel<void> implemen
   }
 
   attachedToTarget({sessionId, targetInfo}: Protocol.Target.AttachedToTargetEvent): void {
-    const name = i18nString(UIStrings.nodejsS, {PH1: targetInfo.url});
-    document.title = i18nString(UIStrings.NodejsTitleS, {PH1: targetInfo.url});
-    const connection = new NodeConnection(this.#targetAgent, sessionId);
-    this.#childConnections.set(sessionId, connection);
-    const target = this.#targetManager.createTarget(
-        targetInfo.targetId, name, SDK.Target.Type.NODE, this.#parentTarget, undefined, undefined, connection);
+    let target: SDK.Target.Target;
+    if (targetInfo.type === 'node_worker') {
+      target = this.#targetManager.createTarget(
+          targetInfo.targetId, targetInfo.title, SDK.Target.Type.NODE_WORKER, this.#parentTarget, sessionId, true,
+          undefined, targetInfo);
+    } else {
+      const name = i18nString(UIStrings.nodejsS, {PH1: targetInfo.url});
+      document.title = i18nString(UIStrings.NodejsTitleS, {PH1: targetInfo.url});
+      const connection = new NodeConnection(this.#targetAgent, sessionId);
+      this.#childConnections.set(sessionId, connection);
+      target = this.#targetManager.createTarget(
+          targetInfo.targetId, name, SDK.Target.Type.NODE, this.#parentTarget, undefined, undefined, connection);
+    }
     this.#childTargets.set(sessionId, target);
     void target.runtimeAgent().invoke_runIfWaitingForDebugger();
   }
@@ -139,7 +149,7 @@ export class NodeChildTargetManager extends SDK.SDKModel.SDKModel<void> implemen
 export class NodeConnection implements ProtocolClient.InspectorBackend.Connection {
   readonly #targetAgent: ProtocolProxyApi.TargetApi;
   readonly #sessionId: Protocol.Target.SessionID;
-  onMessage: ((arg0: (Object|string)) => void)|null;
+  onMessage: ((arg0: Object|string) => void)|null;
   #onDisconnect: ((arg0: string) => void)|null;
   constructor(targetAgent: ProtocolProxyApi.TargetApi, sessionId: Protocol.Target.SessionID) {
     this.#targetAgent = targetAgent;
@@ -148,7 +158,7 @@ export class NodeConnection implements ProtocolClient.InspectorBackend.Connectio
     this.#onDisconnect = null;
   }
 
-  setOnMessage(onMessage: (arg0: (Object|string)) => void): void {
+  setOnMessage(onMessage: (arg0: Object|string) => void): void {
     this.onMessage = onMessage;
   }
 

@@ -40,18 +40,14 @@
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/webrtc/api/media_stream_interface.h"
 
-namespace WTF {
+namespace blink {
 
 template <typename T>
-struct CrossThreadCopier<rtc::scoped_refptr<T>> {
+struct CrossThreadCopier<webrtc::scoped_refptr<T>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = rtc::scoped_refptr<T>;
+  using Type = webrtc::scoped_refptr<T>;
   static Type Copy(Type pointer) { return pointer; }
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -708,7 +704,8 @@ void WebRtcAudioRenderer::UpdateSourceVolume(
         *signaling_thread_, FROM_HERE,
         CrossThreadBindOnce(
             &webrtc::AudioSourceInterface::SetVolume,
-            rtc::scoped_refptr<webrtc::AudioSourceInterface>(source), volume));
+            webrtc::scoped_refptr<webrtc::AudioSourceInterface>(source),
+            volume));
   } else {
     source->SetVolume(volume);
   }

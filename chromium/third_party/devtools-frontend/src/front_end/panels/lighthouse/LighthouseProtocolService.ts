@@ -9,41 +9,39 @@ import * as SDK from '../../core/sdk/sdk.js';
 
 import type * as ReportRenderer from './LighthouseReporterTypes.js';
 
-/* eslint-disable jsdoc/check-alignment */
 /**
  * @overview
-                                                   ┌────────────┐
-                                                   │CDP Backend │
-                                                   └────────────┘
-                                                        │ ▲
-                                                        │ │ parallelConnection
-                          ┌┐                            ▼ │                     ┌┐
-                          ││   dispatchProtocolMessage     sendProtocolMessage  ││
-                          ││                     │          ▲                   ││
-          ProtocolService ││                     |          │                   ││
-                          ││    sendWithResponse ▼          │                   ││
-                          ││              │    send          onWorkerMessage    ││
-                          └┘              │    │                 ▲              └┘
-          worker boundary - - - - - - - - ┼ - -│- - - - - - - - -│- - - - - - - - - - - -
-                          ┌┐              ▼    ▼                 │                    ┌┐
-                          ││   onFrontendMessage      notifyFrontendViaWorkerMessage  ││
-                          ││                   │       ▲                              ││
-                          ││                   ▼       │                              ││
-LighthouseWorkerService   ││          Either ConnectionProxy or LegacyPort            ││
-                          ││                           │ ▲                            ││
-                          ││     ┌─────────────────────┼─┼───────────────────────┐    ││
-                          ││     │  Lighthouse    ┌────▼──────┐                  │    ││
-                          ││     │                │connection │                  │    ││
-                          ││     │                └───────────┘                  │    ││
-                          └┘     └───────────────────────────────────────────────┘    └┘
-
- * All messages traversing the worker boundary are action-wrapped.
- * All messages over the parallelConnection speak pure CDP.
- * All messages within ConnectionProxy/LegacyPort speak pure CDP.
- * The foundational CDP connection is `parallelConnection`.
- * All connections within the worker are not actual ParallelConnection's.
+ *                                                   ┌────────────┐
+ *                                                   │CDP Backend │
+ *                                                   └────────────┘
+ *                                                        │ ▲
+ *                                                        │ │ parallelConnection
+ *                          ┌┐                            ▼ │                     ┌┐
+ *                          ││   dispatchProtocolMessage     sendProtocolMessage  ││
+ *                          ││                     │          ▲                   ││
+ *          ProtocolService ││                     |          │                   ││
+ *                          ││    sendWithResponse ▼          │                   ││
+ *                          ││              │    send          onWorkerMessage    ││
+ *                          └┘              │    │                 ▲              └┘
+ *          worker boundary - - - - - - - - ┼ - -│- - - - - - - - -│- - - - - - - - - - - -
+ *                          ┌┐              ▼    ▼                 │                    ┌┐
+ *                          ││   onFrontendMessage      notifyFrontendViaWorkerMessage  ││
+ *                          ││                   │       ▲                              ││
+ *                          ││                   ▼       │                              ││
+ *  LighthouseWorkerService ││          Either ConnectionProxy or LegacyPort            ││
+ *                          ││                           │ ▲                            ││
+ *                          ││     ┌─────────────────────┼─┼───────────────────────┐    ││
+ *                          ││     │  Lighthouse    ┌────▼──────┐                  │    ││
+ *                          ││     │                │connection │                  │    ││
+ *                          ││     │                └───────────┘                  │    ││
+ *                          └┘     └───────────────────────────────────────────────┘    └┘
+ *
+ * - All messages traversing the worker boundary are action-wrapped.
+ * - All messages over the parallelConnection speak pure CDP.
+ * - All messages within ConnectionProxy/LegacyPort speak pure CDP.
+ * - The foundational CDP connection is `parallelConnection`.
+ * - All connections within the worker are not actual ParallelConnection's.
  */
-/* eslint-enable jsdoc/check-alignment */
 
 let lastId = 1;
 
@@ -262,14 +260,14 @@ export class ProtocolService {
     }
   }
 
-  private async send(action: string, args: {[x: string]: string|string[]|object} = {}): Promise<void> {
+  private async send(action: string, args: Record<string, string|string[]|object> = {}): Promise<void> {
     const worker = await this.ensureWorkerExists();
     const messageId = lastId++;
     worker.postMessage({id: messageId, action, args: {...args, id: messageId}});
   }
 
   /** sendWithResponse currently only handles the original startLighthouse request and LHR-filled response. */
-  private async sendWithResponse(action: string, args: {[x: string]: string|string[]|object|undefined} = {}):
+  private async sendWithResponse(action: string, args: Record<string, string|string[]|object|undefined> = {}):
       Promise<ReportRenderer.RunnerResult> {
     const worker = await this.ensureWorkerExists();
     const messageId = lastId++;

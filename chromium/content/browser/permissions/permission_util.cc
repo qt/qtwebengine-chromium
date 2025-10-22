@@ -71,7 +71,7 @@ const url::Origin& PermissionUtil::ExtractDomainOverride(
 }
 
 bool PermissionUtil::ValidateDomainOverride(
-    const std::vector<blink::PermissionType>& types,
+    const std::vector<blink::mojom::PermissionDescriptorPtr>& types,
     RenderFrameHost* rfh,
     const blink::mojom::PermissionDescriptorPtr& descriptor) {
   if (types.size() > 1) {
@@ -95,6 +95,13 @@ bool PermissionUtil::ValidateDomainOverride(
   }
 
   return true;
+}
+
+bool PermissionUtil::IsDevicePermission(
+    const blink::mojom::PermissionDescriptorPtr& descriptor) {
+  return descriptor->name == blink::mojom::PermissionName::VIDEO_CAPTURE ||
+         descriptor->name == blink::mojom::PermissionName::AUDIO_CAPTURE ||
+         descriptor->name == blink::mojom::PermissionName::GEOLOCATION;
 }
 
 }  // namespace content

@@ -5,6 +5,7 @@
     trace_processor: {
       queries: [
         "loadline/benchmark_score",
+        "loadline/breakdown",
       ],
       batch: false,
     },

@@ -11,8 +11,9 @@ from typing_extensions import override
 
 if TYPE_CHECKING:
   from crossbench.path import AnyPathLike, LocalPath
-  from crossbench.plt.base import CmdArg, ListCmdArgs, Platform
+  from crossbench.plt.base import Platform
   from crossbench.plt.signals import Signals
+  from crossbench.plt.types import CmdArg, ListCmdArgs
 
 
 class RemotePlatformMixin:

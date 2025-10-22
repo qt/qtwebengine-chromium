@@ -13,22 +13,23 @@
 #include "base/memory/raw_ref.h"
 #include "components/safe_search_api/url_checker.h"
 #include "components/signin/public/identity_manager/account_info.h"
-#include "components/supervised_user/core/browser/family_link_user_log_record.h"
 #include "components/supervised_user/core/browser/proto/families_common.pb.h"
 #include "components/supervised_user/core/browser/proto/parent_access_callback.pb.h"
+#include "components/supervised_user/core/browser/supervised_user_log_record.h"
 #include "components/supervised_user/core/common/supervised_user_constants.h"
 #include "url/gurl.h"
 
 class GURL;
-class PrefService;
 
 namespace supervised_user {
+class SupervisedUserURLFilter;
 
 // Reason for applying the website filtering parental control.
 enum class FilteringBehaviorReason {
   DEFAULT = 0,
   ASYNC_CHECKER = 1,
   MANUAL = 2,
+  FILTER_DISABLED = 3,
 };
 
 // Details degarding how a particular filtering classification was arrived at.
@@ -48,6 +49,9 @@ enum class FilteringBehavior : int {
   kBlock = 2,
   kInvalid = 3,
 };
+
+// Declaration for gtest: defining in prod code is not required.
+void PrintTo(FilteringBehavior behavior, std::ostream* os);
 
 // Whether the migration of existing extensions to parent-approved needs to be
 // executed, when the feature
@@ -100,15 +104,11 @@ std::string FamilyRoleToString(kidsmanagement::FamilyRole role);
 // Strips user-specific tokens in a URL to generalize it.
 GURL NormalizeUrl(const GURL& url);
 
-// Check if web filtering prefs are set to default values.
-bool AreWebFilterPrefsDefault(const PrefService& pref_service);
-
 // Given a list of records that map to the supervision state of primary
-// accounts on the user's device, emits metrics that reflect the FamilyLink
-// settings of the user.
-// Returns true if one or more histograms were emitted.
+// accounts on the user's device, emits metrics that reflect the supervision
+// status of the user. Returns true if one or more histograms were emitted.
 bool EmitLogRecordHistograms(
-    const std::vector<FamilyLinkUserLogRecord>& records);
+    const std::vector<SupervisedUserLogRecord>& records);
 
 // Url formatter helper.
 // Decisions on how to format the url depend on the filtering reason,

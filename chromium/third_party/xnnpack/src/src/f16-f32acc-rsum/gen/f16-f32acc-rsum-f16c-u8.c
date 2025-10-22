@@ -9,11 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 #include "src/xnnpack/reduce.h"
 #include "src/xnnpack/unaligned.h"
 
@@ -22,7 +26,7 @@ void xnn_f16_f32acc_rsum_ukernel__f16c_u8(
     size_t batch,
     const xnn_float16* input,
     float* output,
-    const struct xnn_f16_f32acc_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_f32acc_scale_params* restrict params)
 {
   static const int32_t mask_table[14] = {-1, -1, -1, -1, -1, -1, -1, 0, 0, 0, 0, 0, 0, 0};
 
@@ -34,10 +38,10 @@ void xnn_f16_f32acc_rsum_ukernel__f16c_u8(
   const uint16_t* i = (const uint16_t*) input;
   __m256 vacc0 = _mm256_setzero_ps();
   for (; batch >= 8 * sizeof(uint16_t); batch -= 8 * sizeof(uint16_t)) {
-    const __m256 vt = _mm256_cvtph_ps(_mm_loadu_si128((const __m128i*) i));
+    const __m256 vt0 = _mm256_cvtph_ps(_mm_loadu_si128((const __m128i*) i));
     i += 8;
 
-    vacc0 = _mm256_add_ps(vacc0, vt);
+    vacc0 = _mm256_add_ps(vacc0, vt0);
   }
   if XNN_UNLIKELY(batch != 0) {
     assert(batch >= 1 * sizeof(uint16_t));

@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "media/renderers/video_frame_yuv_converter.h"
 
+#include <array>
+
+#include "base/memory/scoped_refptr.h"
 #include "components/viz/common/gpu/raster_context_provider.h"
 #include "components/viz/common/resources/shared_image_format.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/client/client_shared_image.h"
 #include "gpu/command_buffer/client/raster_interface.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
@@ -40,11 +39,8 @@ bool IsPixelFormatSupportedForYuvSharedImageConversion(
     case PIXEL_FORMAT_YV12:
     case PIXEL_FORMAT_I422:
     case PIXEL_FORMAT_I444:
-    case PIXEL_FORMAT_YUV420P9:
     case PIXEL_FORMAT_YUV420P10:
-    case PIXEL_FORMAT_YUV422P9:
     case PIXEL_FORMAT_YUV422P10:
-    case PIXEL_FORMAT_YUV444P9:
     case PIXEL_FORMAT_YUV444P10:
     case PIXEL_FORMAT_YUV420P12:
     case PIXEL_FORMAT_YUV422P12:
@@ -73,10 +69,10 @@ bool IsPixelFormatSupportedForYuvSharedImageConversion(
   }
 }
 
-void ConvertYuvVideoFrameToRgbSharedImage(
+gpu::SyncToken ConvertYuvVideoFrameToRgbSharedImage(
     const VideoFrame* video_frame,
     viz::RasterContextProvider* raster_context_provider,
-    const gpu::Mailbox& dest_mailbox,
+    scoped_refptr<gpu::ClientSharedImage> dest_shared_image,
     const gpu::SyncToken& dest_sync_token,
     bool use_visible_rect,
     VideoFrameSharedImageCache* shared_image_cache) {
@@ -99,7 +95,6 @@ void ConvertYuvVideoFrameToRgbSharedImage(
 
   auto* ri = raster_context_provider->RasterInterface();
   DCHECK(ri);
-  ri->WaitSyncTokenCHROMIUM(dest_sync_token.GetConstData());
 
   auto source_rect = use_visible_rect ? video_frame->visible_rect()
                                       : gfx::Rect(video_frame->coded_size());
@@ -136,13 +131,12 @@ void ConvertYuvVideoFrameToRgbSharedImage(
   if (status == VideoFrameSharedImageCache::Status::kMatchedVideoFrameId) {
     // Since the video frame id matches, no need to upload pixels or copy shared
     // image again.
-    return;
+    return dest_sync_token;
   }
 
-  ri->WaitSyncTokenCHROMIUM(si_sync_token.GetConstData());
   const viz::SharedImageFormat si_format = src_shared_image->format();
   constexpr SkAlphaType kPlaneAlphaType = kUnpremul_SkAlphaType;
-  SkPixmap pixmaps[SkYUVAInfo::kMaxPlanes] = {};
+  std::array<SkPixmap, SkYUVAInfo::kMaxPlanes> pixmaps = {};
 
   for (int plane = 0; plane < si_format.NumberOfPlanes(); ++plane) {
     SkColorType color_type = viz::ToClosestSkColorType(si_format, plane);
@@ -167,17 +161,28 @@ void ConvertYuvVideoFrameToRgbSharedImage(
       SkYUVAInfo(video_size, plane_config, subsampling, color_space);
 
   SkYUVAPixmaps yuv_pixmap =
-      SkYUVAPixmaps::FromExternalPixmaps(yuva_info, pixmaps);
+      SkYUVAPixmaps::FromExternalPixmaps(yuva_info, pixmaps.data());
+
+  std::unique_ptr<gpu::RasterScopedAccess> ri_access =
+      src_shared_image->BeginRasterAccess(ri, si_sync_token,
+                                          /*readonly=*/false);
   ri->WritePixelsYUV(src_shared_image->mailbox(), yuv_pixmap);
+  gpu::SyncToken ri_sync_token =
+      gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
 
-  ri->CopySharedImage(src_shared_image->mailbox(), dest_mailbox, 0, 0,
-                      source_rect.x(), source_rect.y(), source_rect.width(),
-                      source_rect.height());
-
-  gpu::SyncToken ri_sync_token;
-  ri->GenUnverifiedSyncTokenCHROMIUM(ri_sync_token.GetData());
+  std::unique_ptr<gpu::RasterScopedAccess> src_ri_access =
+      src_shared_image->BeginRasterAccess(ri, ri_sync_token, /*readonly=*/true);
+  std::unique_ptr<gpu::RasterScopedAccess> dst_ri_access =
+      dest_shared_image->BeginRasterAccess(ri, dest_sync_token,
+                                           /*readonly=*/false);
+  ri->CopySharedImage(src_shared_image->mailbox(), dest_shared_image->mailbox(),
+                      0, 0, source_rect.x(), source_rect.y(),
+                      source_rect.width(), source_rect.height());
+  gpu::RasterScopedAccess::EndAccess(std::move(dst_ri_access));
+  ri_sync_token = gpu::RasterScopedAccess::EndAccess(std::move(src_ri_access));
 
   shared_image_cache->UpdateSyncToken(ri_sync_token);
+  return ri_sync_token;
 }
 
 }  // namespace media::internals

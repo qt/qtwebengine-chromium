@@ -11,10 +11,11 @@
 #ifndef GOOGLE_APIS_GAIA_GOOGLE_SERVICE_AUTH_ERROR_H_
 #define GOOGLE_APIS_GAIA_GOOGLE_SERVICE_AUTH_ERROR_H_
 
+#include <optional>
 #include <string>
 
 #include "base/component_export.h"
-#include "url/gurl.h"
+#include "build/build_config.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/scoped_java_ref.h"
@@ -133,8 +134,8 @@ class COMPONENT_EXPORT(GOOGLE_APIS) GoogleServiceAuthError {
     kAccessDenied
   };
 
-  bool operator==(const GoogleServiceAuthError &b) const;
-  bool operator!=(const GoogleServiceAuthError &b) const;
+  friend bool operator==(const GoogleServiceAuthError&,
+                         const GoogleServiceAuthError&) = default;
 
   // Construct a GoogleServiceAuthError from a State with no additional data.
   explicit GoogleServiceAuthError(State s);

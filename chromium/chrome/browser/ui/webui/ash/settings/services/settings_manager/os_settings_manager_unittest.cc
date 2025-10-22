@@ -19,6 +19,7 @@
 #include "chrome/browser/ash/multidevice_setup/multidevice_setup_client_factory.h"
 #include "chrome/browser/ash/phonehub/phone_hub_manager_factory.h"
 #include "chrome/browser/ash/printing/cups_printers_manager_factory.h"
+#include "chrome/browser/global_features.h"
 #include "chrome/browser/nearby_sharing/nearby_sharing_service_factory.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/ui/ash/graduation/graduation_manager_impl.h"
@@ -37,6 +38,7 @@
 #include "chromeos/ash/experiences/arc/arc_features.h"
 #include "chromeos/ash/experiences/arc/test/arc_util_test_support.h"
 #include "components/account_id/account_id.h"
+#include "components/prefs/testing_pref_service.h"
 #include "components/user_manager/scoped_user_manager.h"
 #include "components/user_manager/user_manager.h"
 #include "components/user_manager/user_names.h"
@@ -64,9 +66,7 @@ class OsSettingsManagerTest : public testing::Test {
   // testing::Test:
   void SetUp() override {
     scoped_feature_list_.InitWithFeatures(
-        {ash::features::kInputDeviceSettingsSplit,
-         ash::features::kPeripheralCustomization, arc::kPerAppLanguage},
-        {});
+        {ash::features::kPeripheralCustomization, arc::kPerAppLanguage}, {});
     ASSERT_TRUE(profile_manager_.SetUp());
     Profile* profile = profile_manager_.CreateTestingProfile(
         TestingProfile::kDefaultProfileUserName);
@@ -91,7 +91,10 @@ class OsSettingsManagerTest : public testing::Test {
         new input_method::MockInputMethodManager);
     statistics_provider_.SetMachineStatistic(ash::system::kRegionKey, "us");
     graduation_manager_ =
-        std::make_unique<ash::graduation::GraduationManagerImpl>();
+        std::make_unique<ash::graduation::GraduationManagerImpl>(
+            TestingBrowserProcess::GetGlobal()
+                ->GetFeatures()
+                ->application_locale_storage());
 
     UserDataAuthClient::InitializeFake();
 

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 import * as Common from '../../core/common/common.js';
-import * as Protocol from '../../generated/protocol.js';
+import type * as Protocol from '../../generated/protocol.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 
 interface AggregationKeyTag {
@@ -49,8 +49,7 @@ export class AggregatedIssue extends IssuesManager.Issue.Issue {
   #quirksModeIssues = new Set<IssuesManager.QuirksModeIssue.QuirksModeIssue>();
   #attributionReportingIssues = new Set<IssuesManager.AttributionReportingIssue.AttributionReportingIssue>();
   #genericIssues = new Set<IssuesManager.GenericIssue.GenericIssue>();
-  #selectElementAccessibilityIssues =
-      new Set<IssuesManager.SelectElementAccessibilityIssue.SelectElementAccessibilityIssue>();
+  #elementAccessibilityIssues = new Set<IssuesManager.ElementAccessibilityIssue.ElementAccessibilityIssue>();
   #representative?: IssuesManager.Issue.Issue;
   #aggregatedIssuesCount = 0;
   #key: AggregationKey;
@@ -144,9 +143,8 @@ export class AggregatedIssue extends IssuesManager.Issue.Issue {
     return this.#genericIssues;
   }
 
-  getSelectElementAccessibilityIssues():
-      Iterable<IssuesManager.SelectElementAccessibilityIssue.SelectElementAccessibilityIssue> {
-    return this.#selectElementAccessibilityIssues;
+  getElementAccessibilityIssues(): Iterable<IssuesManager.ElementAccessibilityIssue.ElementAccessibilityIssue> {
+    return this.#elementAccessibilityIssues;
   }
 
   getDescription(): IssuesManager.MarkdownIssueDescription.MarkdownIssueDescription|null {
@@ -256,8 +254,8 @@ export class AggregatedIssue extends IssuesManager.Issue.Issue {
     if (issue instanceof IssuesManager.GenericIssue.GenericIssue) {
       this.#genericIssues.add(issue);
     }
-    if (issue instanceof IssuesManager.SelectElementAccessibilityIssue.SelectElementAccessibilityIssue) {
-      this.#selectElementAccessibilityIssues.add(issue);
+    if (issue instanceof IssuesManager.ElementAccessibilityIssue.ElementAccessibilityIssue) {
+      this.#elementAccessibilityIssues.add(issue);
     }
     if (issue instanceof IssuesManager.PartitioningBlobURLIssue.PartitioningBlobURLIssue) {
       this.#partitioningBlobURLIssues.add(issue);
@@ -304,12 +302,7 @@ export class IssueAggregator extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   #aggregateIssue(issue: IssuesManager.Issue.Issue): AggregatedIssue|undefined {
-    const excludeFromAggregate = [
-      Protocol.Audits.CookieWarningReason.WarnThirdPartyCookieHeuristic,
-      Protocol.Audits.CookieWarningReason.WarnDeprecationTrialMetadata,
-    ];
-
-    if (excludeFromAggregate.some(exclude => issue.code().includes(exclude))) {
+    if (IssuesManager.CookieIssue.CookieIssue.isThirdPartyCookiePhaseoutRelatedIssue(issue)) {
       return;
     }
 
@@ -333,10 +326,6 @@ export class IssueAggregator extends Common.ObjectWrapper.ObjectWrapper<EventTyp
 
   aggregatedIssues(): Iterable<AggregatedIssue> {
     return [...this.#aggregatedIssuesByKey.values(), ...this.#hiddenAggregatedIssuesByKey.values()];
-  }
-
-  hiddenAggregatedIssues(): Iterable<AggregatedIssue> {
-    return this.#hiddenAggregatedIssuesByKey.values();
   }
 
   aggregatedIssueCodes(): Set<AggregationKey> {

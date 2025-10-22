@@ -35,7 +35,7 @@
 #include "./centipede/util.h"
 #include "./common/defs.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // User must inherit from this class and override at least the
 // pure virtual functions.
@@ -161,6 +161,8 @@ class CentipedeCallbacks {
   // Returns a Command object with matching `binary` from commands_,
   // creates one if needed.
   Command &GetOrCreateCommandForBinary(std::string_view binary);
+  // Runs a batch with the command `binary` and returns the exit code.
+  int RunBatchForBinary(std::string_view binary);
 
   // Prints the execution log from the last executed binary.
   void PrintExecutionLog() const;
@@ -174,13 +176,16 @@ class CentipedeCallbacks {
       std::filesystem::path(temp_dir_).append("log");
   std::string failure_description_path_ =
       std::filesystem::path(temp_dir_).append("failure_description");
+  std::string failure_signature_path_ =
+      std::filesystem::path(temp_dir_).append("failure_signature");
   const std::string shmem_name1_ = ProcessAndThreadUniqueID("/ctpd-shm1-");
   const std::string shmem_name2_ = ProcessAndThreadUniqueID("/ctpd-shm2-");
 
   SharedMemoryBlobSequence inputs_blobseq_;
   SharedMemoryBlobSequence outputs_blobseq_;
 
-  std::vector<Command> commands_;
+  // Need unique_ptr indirection because Command is not movable/copyable.
+  std::vector<std::unique_ptr<Command>> commands_;
 };
 
 // Abstract class for creating/destroying CentipedeCallbacks objects.
@@ -212,13 +217,13 @@ class ScopedCentipedeCallbacks {
                            const Environment &env)
       : factory_(factory), callbacks_(factory_.create(env)) {}
   ~ScopedCentipedeCallbacks() { factory_.destroy(callbacks_); }
-  absl::Nonnull<CentipedeCallbacks *> callbacks() { return callbacks_; }
+  CentipedeCallbacks *absl_nonnull callbacks() { return callbacks_; }
 
  private:
   CentipedeCallbacksFactory &factory_;
   CentipedeCallbacks *callbacks_;
 };
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // THIRD_PARTY_CENTIPEDE_CENTIPEDE_CALLBACKS_H_

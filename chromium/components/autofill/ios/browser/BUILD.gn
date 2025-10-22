@@ -59,7 +59,7 @@ source_set("browser") {
     "//components/feature_engagement/public",
     "//components/plus_addresses",
     "//components/plus_addresses/resources/strings",
-    "//components/prefs:prefs",
+    "//components/prefs",
     "//components/prefs/ios",
     "//components/resources:components_resources_grit",
     "//components/ukm/ios:ukm_url_recorder",
@@ -102,7 +102,6 @@ optimize_js("autofill_js") {
   deps = [
     "//components/autofill/ios/form_util:fill_js_dependencies",
     "//components/autofill/ios/form_util:fill_js_namespace",
-    "//ios/web/public/js_messaging:frame_id",
     "//ios/web/public/js_messaging:gcrweb",
     "//ios/web/public/js_messaging:util_scripts",
   ]
@@ -144,7 +143,7 @@ source_set("test_support") {
     "//components/autofill/ios/form_util:form_handler_feature",
     "//components/autofill/ios/form_util:form_util_feature",
     "//components/autofill/ios/form_util:frame_registration_feature",
-    "//components/leveldb_proto:leveldb_proto",
+    "//components/leveldb_proto",
     "//ios/web/public",
     "//ios/web/public/js_messaging",
   ]

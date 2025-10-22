@@ -1,6 +1,7 @@
 // Copyright (c) 2016 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -485,14 +486,14 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
   constructor(
       emptyView: UI.EmptyWidget.EmptyWidget, reportView: UI.ReportView.ReportView,
       throttler: Common.Throttler.Throttler) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(appManifestViewStyles);
 
     this.contentElement.classList.add('manifest-container');
     this.contentElement.setAttribute('jslog', `${VisualLogging.pane('manifest')}`);
 
     this.emptyView = emptyView;
-    this.emptyView.appendLink('https://web.dev/add-manifest/' as Platform.DevToolsPath.UrlString);
+    this.emptyView.link = 'https://web.dev/add-manifest/' as Platform.DevToolsPath.UrlString;
 
     this.emptyView.show(this.contentElement);
     this.emptyView.hideWidget();
@@ -697,7 +698,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
         };
         copyButton.className = 'inline-button';
         copyButton.addEventListener('click', () => {
-          UI.ARIAUtils.alert(i18nString(UIStrings.copiedToClipboard, {PH1: recommendedId}));
+          UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.copiedToClipboard, {PH1: recommendedId}));
           Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(recommendedId);
         });
         suggestedIdNote.appendChild(
@@ -771,7 +772,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     setIconMaskedCheckbox.setAttribute(
         'jslog', `${VisualLogging.toggle('show-minimal-safe-area-for-maskable-icons').track({change: true})}`);
     setIconMaskedCheckbox.addEventListener('click', () => {
-      this.iconsSection.setIconMasked(setIconMaskedCheckbox.checkboxElement.checked);
+      this.iconsSection.setIconMasked(setIconMaskedCheckbox.checked);
     });
     this.iconsSection.appendRow().appendChild(setIconMaskedCheckbox);
     const documentationLink = UI.XLink.XLink.create(
@@ -816,19 +817,19 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
       urlField.appendChild(link);
 
       const shortcutIcons = shortcut.icons || [];
-      let hasShorcutIconLargeEnough = false;
+      let hasShortcutIconLargeEnough = false;
       for (const shortcutIcon of shortcutIcons) {
         const {imageResourceErrors: shortcutIconErrors} =
             await this.appendImageResourceToSection(url, shortcutIcon, shortcutSection, /** isScreenshot= */ false);
         imageErrors.push(...shortcutIconErrors);
-        if (!hasShorcutIconLargeEnough && shortcutIcon.sizes) {
+        if (!hasShortcutIconLargeEnough && shortcutIcon.sizes) {
           const shortcutIconSize = shortcutIcon.sizes.match(/^(\d+)x(\d+)$/);
           if (shortcutIconSize && shortcutIconSize[1] >= 96 && shortcutIconSize[2] >= 96) {
-            hasShorcutIconLargeEnough = true;
+            hasShortcutIconLargeEnough = true;
           }
         }
       }
-      if (!hasShorcutIconLargeEnough) {
+      if (!hasShortcutIconLargeEnough) {
         imageErrors.push(i18nString(UIStrings.shortcutSShouldIncludeAXPixel, {PH1: shortcutIndex}));
       }
       shortcutIndex++;
@@ -1062,6 +1063,20 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     image: HTMLImageElement,
     wrapper: Element,
   }|null> {
+    const frameId = this.resourceTreeModel?.mainFrame?.id;
+    if (!this.target) {
+      throw new Error('no target');
+    }
+    if (!frameId) {
+      throw new Error('no main frame found');
+    }
+    const {content} = await SDK.PageResourceLoader.PageResourceLoader.instance().loadResource(
+        url, {
+          target: this.target,
+          frameId,
+          initiatorUrl: this.target.inspectedURL(),
+        },
+        /* isBinary=*/ true);
     const wrapper = document.createElement('div');
     wrapper.classList.add('image-wrapper');
     const image = document.createElement('img');
@@ -1069,7 +1084,10 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
       image.onload = resolve;
       image.onerror = reject;
     });
-    image.src = url;
+    // Octet-stream seems to work for most cases. If it turns out it
+    // does not work, we can parse mimeType out of the response headers
+    // using front_end/core/platform/MimeType.ts.
+    image.src = 'data:application/octet-stream;base64,' + await Common.Base64.encode(content);
     image.alt = i18nString(UIStrings.imageFromS, {PH1: url});
     wrapper.appendChild(image);
     try {
@@ -1106,9 +1124,8 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
   }
 
   checkSizeProblem(
-      size: ParsedSize, type: string|undefined, image: HTMLImageElement,
-      resourceName: Platform.UIString.LocalizedString,
-      imageUrl: string): {error?: Platform.UIString.LocalizedString, hasSquareSize: boolean} {
+      size: ParsedSize, image: HTMLImageElement, resourceName: Platform.UIString.LocalizedString,
+      imageUrl: string): {hasSquareSize: boolean, error?: Platform.UIString.LocalizedString} {
     if ('any' in size) {
       return {hasSquareSize: image.naturalWidth === image.naturalHeight};
     }
@@ -1185,8 +1202,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
         imageResourceErrors.push(i18nString(UIStrings.screenshotPixelSize, {url: imageUrl}));
       }
       for (const size of sizes) {
-        const {error, hasSquareSize} =
-            this.checkSizeProblem(size, imageResource['type'], image, resourceName, imageUrl);
+        const {error, hasSquareSize} = this.checkSizeProblem(size, image, resourceName, imageUrl);
         squareSizedIconAvailable = squareSizedIconAvailable || hasSquareSize;
         if (error) {
           imageResourceErrors.push(error);
@@ -1234,8 +1250,8 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
     const wcoOsCheckbox =
         UI.UIUtils.CheckboxLabel.create(i18nString(UIStrings.selectWindowControlsOverlayEmulationOs), false);
 
-    wcoOsCheckbox.checkboxElement.addEventListener('click', async () => {
-      await this.overlayModel?.toggleWindowControlsToolbar(wcoOsCheckbox.checkboxElement.checked);
+    wcoOsCheckbox.addEventListener('click', async () => {
+      await this.overlayModel?.toggleWindowControlsToolbar(wcoOsCheckbox.checked);
     });
 
     const osSelectElement = wcoOsCheckbox.createChild('select');
@@ -1253,7 +1269,7 @@ export class AppManifestView extends Common.ObjectWrapper.eventMixin<EventTypes,
           osSelectElement.options[osSelectElement.selectedIndex].value as SDK.OverlayModel.EmulatedOSType;
       if (this.overlayModel) {
         this.overlayModel.setWindowControlsPlatform(selectedOS);
-        await this.overlayModel.toggleWindowControlsToolbar(wcoOsCheckbox.checkboxElement.checked);
+        await this.overlayModel.toggleWindowControlsToolbar(wcoOsCheckbox.checked);
       }
     });
 

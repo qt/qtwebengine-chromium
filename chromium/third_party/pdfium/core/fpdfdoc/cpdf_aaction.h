@@ -39,18 +39,18 @@ class CPDF_AAction {
     kNumberOfActions  // Must be last.
   };
 
-  explicit CPDF_AAction(RetainPtr<const CPDF_Dictionary> pDict);
+  explicit CPDF_AAction(RetainPtr<const CPDF_Dictionary> dict);
   CPDF_AAction(const CPDF_AAction& that);
   ~CPDF_AAction();
 
   bool ActionExist(AActionType eType) const;
   CPDF_Action GetAction(AActionType eType) const;
-  bool HasDict() const { return !!m_pDict; }
+  bool HasDict() const { return !!dict_; }
 
   static bool IsUserInput(AActionType type);
 
  private:
-  RetainPtr<const CPDF_Dictionary> const m_pDict;
+  RetainPtr<const CPDF_Dictionary> const dict_;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_AACTION_H_

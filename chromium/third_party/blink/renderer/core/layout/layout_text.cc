@@ -64,6 +64,7 @@
 #include "third_party/blink/renderer/core/paint/object_paint_invalidator.h"
 #include "third_party/blink/renderer/platform/fonts/character_range.h"
 #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/text/character.h"
@@ -400,7 +401,7 @@ Vector<LayoutText::TextBoxInfo> LayoutText::GetTextBoxInfo() const {
            mapping->GetMappingUnitsForTextContentOffsetRange(offset.start,
                                                              offset.end)) {
         DCHECK_EQ(unit.GetLayoutObject(), this);
-        if (unit.GetType() == OffsetMappingUnitType::kCollapsed) {
+        if (unit.IsCollapsed()) {
           continue;
         }
         // [clamped_start, clamped_end] of |fragment| matches a legacy text box.
@@ -488,13 +489,13 @@ String LayoutText::PlainText() const {
     const unsigned end_offset = text_box.dom_start_offset + text_box.dom_length;
     if (last_end_offset && text_box.dom_start_offset > last_end_offset &&
         !IsASCIISpace(text_[end_offset - 1])) {
-      plain_text_builder.Append(kSpaceCharacter);
+      plain_text_builder.Append(uchar::kSpace);
     }
     last_end_offset = end_offset;
 
     String text =
         text_.Substring(text_box.dom_start_offset, text_box.dom_length)
-            .SimplifyWhiteSpace(WTF::kDoNotStripWhiteSpace);
+            .SimplifyWhiteSpace(kDoNotStripWhiteSpace);
     plain_text_builder.Append(text);
   }
   return plain_text_builder.ToString();
@@ -618,7 +619,13 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
       PhysicalRect rect;
       if (!item.IsGeneratedText()) {
         const TextOffsetRange& offset = item.TextOffset();
-        if (start > offset.end || end < offset.start) {
+        // If `item` is a forced line break and `start` and `end` values
+        // ​​are equal, it signifies a collapsed range. In this case, we
+        // should skip processing `item`.
+        if (start > offset.end || end < offset.start ||
+            (RuntimeEnabledFeatures::
+                 SkipLineBreakItemWhenIsCollapsedEnabled() &&
+             item.IsLineBreak() && start == end)) {
           is_last_end_included = false;
           continue;
         }
@@ -648,7 +655,11 @@ void LayoutText::AbsoluteQuadsForRange(Vector<gfx::QuadF>& quads,
         quad.Scale(1 / scaling_factor, 1 / scaling_factor);
         quad = LocalToAbsoluteQuad(quad);
       } else {
-        rect.Move(cursor.CurrentOffsetInBlockFlow());
+        if (RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled()) {
+          rect.Move(cursor.CurrentOffsetInFirstContainerFragment());
+        } else {
+          rect.Move(cursor.CurrentOffsetInBlockFlow());
+        }
         quad = LocalRectToAbsoluteQuad(rect);
       }
       if (!is_collapsed) {
@@ -727,15 +738,19 @@ PositionWithAffinity LayoutText::PositionForPoint(
   return CreatePositionWithAffinity(0);
 }
 
-PhysicalRect LayoutText::LocalCaretRect(int caret_offset) const {
+PhysicalRect LayoutText::LocalCaretRect(int caret_offset, CaretShape) const {
   NOT_DESTROYED();
   return PhysicalRect();
 }
 
 bool LayoutText::IsAllCollapsibleWhitespace() const {
   NOT_DESTROYED();
+  if (text_.empty()) {
+    return true;
+  }
+
   const ComputedStyle& style = StyleRef();
-  return WTF::VisitCharacters(text_, [&style](auto chars) {
+  return VisitCharacters(text_, [&style](auto chars) {
     return std::ranges::all_of(
         chars, [&style](auto ch) { return style.IsCollapsibleWhiteSpace(ch); });
   });
@@ -802,8 +817,9 @@ void LayoutText::LogicalStartingPointAndHeight(
       return;
     }
     PhysicalSize outer_size = ContainingBlock()->Size();
-    logical_starting_point = physical_offset.ConvertToLogical(
-        StyleRef().GetWritingDirection(), outer_size, cursor.Current().Size());
+    logical_starting_point =
+        WritingModeConverter(StyleRef().GetWritingDirection(), outer_size)
+            .ToLogical(physical_offset, cursor.Current().Size());
     cursor.MoveToLastForSameLayoutObject();
     PhysicalRect last_physical_rect =
         cursor.Current().RectInContainerFragment();
@@ -866,10 +882,16 @@ UChar LayoutText::PreviousCharacter() const {
   // find previous text layoutObject if one exists
   const LayoutObject* previous_text = PreviousInPreOrder();
   for (; previous_text; previous_text = previous_text->PreviousInPreOrder()) {
-    if (!IsInlineFlowOrEmptyText(previous_text))
+    if (RuntimeEnabledFeatures::
+            IgnoreOutOfFlowPositionForPreviousTextEnabled() &&
+        previous_text->IsOutOfFlowPositioned()) {
+      continue;
+    }
+    if (!IsInlineFlowOrEmptyText(previous_text)) {
       break;
+    }
   }
-  UChar prev = kSpaceCharacter;
+  UChar prev = uchar::kSpace;
   if (previous_text && previous_text->IsText()) {
     if (const String& previous_string =
             To<LayoutText>(previous_text)->TransformedText()) {
@@ -885,7 +907,7 @@ void LayoutText::SetTextInternal(String text) {
   text_ = String(std::move(text));
   DCHECK(text_);
   DCHECK(!IsBR() ||
-         (TransformedTextLength() == 1 && text_[0] == kNewlineCharacter));
+         (TransformedTextLength() == 1 && text_[0] == uchar::kLineFeed));
 }
 
 String LayoutText::TransformAndSecureText(const String& original,
@@ -902,24 +924,20 @@ String LayoutText::TransformAndSecureText(const String& original,
       case ETextSecurity::kNone:
         return transformed;
       case ETextSecurity::kCircle:
-        mask = kWhiteBulletCharacter;
+        mask = uchar::kWhiteBullet;
         break;
       case ETextSecurity::kDisc:
-        mask = kBulletCharacter;
+        mask = uchar::kBullet;
         break;
       case ETextSecurity::kSquare:
-        mask = kBlackSquareCharacter;
+        mask = uchar::kBlackSquare;
         break;
     }
     auto [masked, secure_map] = SecureText(transformed, mask);
     if (!secure_map.IsEmpty()) {
-      if (RuntimeEnabledFeatures::TextOffsetMapCrashFixEnabled()) {
-        offset_map =
-            TextOffsetMap(original.length(), offset_map, transformed.length(),
-                          secure_map, masked.length());
-      } else {
-        offset_map = TextOffsetMap(offset_map, secure_map);
-      }
+      offset_map =
+          TextOffsetMap(original.length(), offset_map, transformed.length(),
+                        secure_map, masked.length());
     }
     return masked;
   }
@@ -1040,8 +1058,16 @@ void LayoutText::TextDidChange() {
 void LayoutText::TextDidChangeWithoutInvalidation() {
   NOT_DESTROYED();
   TextOffsetMap offset_map;
-  wtf_size_t original_length = text_.length();
-  text_ = TransformAndSecureText(text_, offset_map);
+  bool is_password_echo_enabled =
+      GetDocument().GetSettings() &&
+      GetDocument().GetSettings()->GetPasswordEchoEnabled();
+  String original_text =
+      (RuntimeEnabledFeatures::UseOriginalDomOffsetsForOffsetMapEnabled() &&
+       !OriginalText().empty() && is_password_echo_enabled)
+          ? OriginalText()
+          : text_;
+  wtf_size_t original_length = original_text.length();
+  text_ = TransformAndSecureText(original_text, offset_map);
   SetVariableLengthTransformResult(original_length, offset_map);
   if (auto* secure_text_timer = SecureTextTimer::ActiveInstanceFor(this)) {
     // text_ may be updated later before timer fires. We invalidate the
@@ -1305,7 +1331,7 @@ bool LayoutText::ContainsCaretOffset(int text_offset) const {
     // The previous character isn't collapsed. Return `false` if it's a newline,
     // otherwise `true`.
     if (std::optional<UChar> ch = mapping->GetCharacterBefore(position)) {
-      return *ch != kNewlineCharacter;
+      return *ch != uchar::kLineFeed;
     }
     // TODO(crbug.com/326745564): It's not clear when the code reaches here, and
     // thus it's not clear whether it should return `true` or `false`.

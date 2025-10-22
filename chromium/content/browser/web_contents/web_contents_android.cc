@@ -19,9 +19,10 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_writer.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/user_metrics.h"
+#include "base/no_destructor.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "cc/input/android/offset_tag_android.h"
 #include "content/browser/android/java/gin_java_bridge_dispatcher_host.h"
@@ -79,8 +80,11 @@ namespace {
 
 // Track all WebContentsAndroid objects here so that we don't deserialize a
 // destroyed WebContents object.
-base::LazyInstance<std::unordered_set<WebContentsAndroid*>>::Leaky
-    g_allocated_web_contents_androids = LAZY_INSTANCE_INITIALIZER;
+std::unordered_set<WebContentsAndroid*>& GetAllocatedWebContentsAndroids() {
+  static base::NoDestructor<std::unordered_set<WebContentsAndroid*>>
+      allocated_web_contents_androids;
+  return *allocated_web_contents_androids;
+}
 
 void JavaScriptResultCallback(const ScopedJavaGlobalRef<jobject>& callback,
                               base::Value result) {
@@ -228,8 +232,8 @@ ScopedJavaLocalRef<jobject> JNI_WebContentsImpl_FromNativePtr(
     return ScopedJavaLocalRef<jobject>();
 
   // Check to make sure this object hasn't been destroyed.
-  if (g_allocated_web_contents_androids.Get().find(web_contents_android) ==
-      g_allocated_web_contents_androids.Get().end()) {
+  if (GetAllocatedWebContentsAndroids().find(web_contents_android) ==
+      GetAllocatedWebContentsAndroids().end()) {
     return ScopedJavaLocalRef<jobject>();
   }
 
@@ -239,18 +243,17 @@ ScopedJavaLocalRef<jobject> JNI_WebContentsImpl_FromNativePtr(
 WebContentsAndroid::WebContentsAndroid(WebContentsImpl* web_contents)
     : web_contents_(web_contents),
       navigation_controller_(&(web_contents->GetController())) {
-  g_allocated_web_contents_androids.Get().insert(this);
+  GetAllocatedWebContentsAndroids().insert(this);
   JNIEnv* env = AttachCurrentThread();
-  obj_.Reset(env,
-             Java_WebContentsImpl_create(env, reinterpret_cast<intptr_t>(this),
-                                         navigation_controller_.GetJavaObject())
-                 .obj());
+  obj_.Reset(
+      env, Java_WebContentsImpl_create(env, reinterpret_cast<intptr_t>(this),
+                                       navigation_controller_.GetJavaObject()));
 }
 
 WebContentsAndroid::~WebContentsAndroid() {
-  DCHECK(g_allocated_web_contents_androids.Get().find(this) !=
-      g_allocated_web_contents_androids.Get().end());
-  g_allocated_web_contents_androids.Get().erase(this);
+  DCHECK(GetAllocatedWebContentsAndroids().find(this) !=
+         GetAllocatedWebContentsAndroids().end());
+  GetAllocatedWebContentsAndroids().erase(this);
   offset_tag_mediator_ = nullptr;
   for (auto& observer : destruction_observers_)
     observer.WebContentsAndroidDestroyed(this);
@@ -494,10 +497,12 @@ void WebContentsAndroid::ResumeLoadingCreatedWebContents(JNIEnv* env) {
   web_contents_->ResumeLoadingCreatedWebContents();
 }
 
-void WebContentsAndroid::SetImportance(JNIEnv* env,
-                                       jint primary_main_frame_importance) {
-  web_contents_->SetPrimaryMainFrameImportance(
-      static_cast<ChildProcessImportance>(primary_main_frame_importance));
+void WebContentsAndroid::SetPrimaryPageImportance(JNIEnv* env,
+                                                  jint main_frame_importance,
+                                                  jint subframe_importance) {
+  web_contents_->SetPrimaryPageImportance(
+      static_cast<ChildProcessImportance>(main_frame_importance),
+      static_cast<ChildProcessImportance>(subframe_importance));
 }
 
 void WebContentsAndroid::SuspendAllMediaPlayers(JNIEnv* env) {
@@ -911,13 +916,8 @@ void WebContentsAndroid::SetDisplayCutoutSafeArea(JNIEnv* env,
       gfx::Insets::TLBR(top, left, bottom, right));
 }
 
-void WebContentsAndroid::SetContextMenuInsets(JNIEnv* env,
-                                              int top,
-                                              int left,
-                                              int bottom,
-                                              int right) {
-  auto rect = gfx::Rect(left, top, right - left, bottom - top);
-  web_contents()->SetContextMenuInsets(rect);
+void WebContentsAndroid::ShowInterestInElement(JNIEnv* env, int nodeID) {
+  web_contents()->ShowInterestInElement(nodeID);
 }
 
 void WebContentsAndroid::NotifyRendererPreferenceUpdate(JNIEnv* env) {
@@ -957,6 +957,14 @@ void WebContentsAndroid::SetSupportsForwardTransitionAnimation(
     JNIEnv* env,
     jboolean supports) {
   web_contents_->SetSupportsForwardTransitionAnimation(supports);
+}
+
+jint WebContentsAndroid::GetOriginalWindowOpenDisposition(JNIEnv* env) {
+  return static_cast<jint>(web_contents_->GetOriginalWindowOpenDisposition());
+}
+
+jboolean WebContentsAndroid::HasOpener(JNIEnv* env) {
+  return static_cast<jboolean>(web_contents_->HasOpener());
 }
 
 void WebContentsAndroid::UpdateOffsetTagDefinitions(

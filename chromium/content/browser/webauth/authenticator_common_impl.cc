@@ -22,6 +22,7 @@
 #include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
 #include "base/containers/span.h"
+#include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -35,6 +36,9 @@
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
 #include "base/notreached.h"
+#include "base/stl_util.h"
+#include "base/strings/string_view_util.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "base/timer/timer.h"
 #include "build/build_config.h"
@@ -59,7 +63,7 @@
 #include "content/public/browser/web_authentication_request_proxy.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/content_client.h"
-#include "crypto/sha2.h"
+#include "crypto/hash.h"
 #include "device/bluetooth/bluetooth_adapter.h"
 #include "device/bluetooth/bluetooth_adapter_factory.h"
 #include "device/fido/attestation_object.h"
@@ -74,7 +78,6 @@
 #include "device/fido/features.h"
 #include "device/fido/fido_authenticator.h"
 #include "device/fido/fido_constants.h"
-#include "device/fido/fido_parsing_utils.h"
 #include "device/fido/fido_request_handler_base.h"
 #include "device/fido/fido_transport_protocol.h"
 #include "device/fido/fido_types.h"
@@ -146,6 +149,9 @@ using Mediation = blink::mojom::Mediation;
 
 namespace {
 
+const char kImmediateTimeoutWhileWaitingForUi[] =
+    "WebAuthentication.GetAssertion.Immediate.TimeoutWhileWaitingForUi";
+
 WebAuthenticationDelegate* GetWebAuthenticationDelegate() {
   return GetContentClient()->browser()->GetWebAuthenticationDelegate();
 }
@@ -153,12 +159,9 @@ WebAuthenticationDelegate* GetWebAuthenticationDelegate() {
 // The application parameter is the SHA-256 hash of the UTF-8 encoding of
 // the application identity (i.e. relying_party_id) of the application
 // requesting the registration.
-std::array<uint8_t, crypto::kSHA256Length> CreateApplicationParameter(
+std::array<uint8_t, crypto::hash::kSha256Size> CreateApplicationParameter(
     const std::string& relying_party_id) {
-  std::array<uint8_t, crypto::kSHA256Length> application_parameter;
-  crypto::SHA256HashString(relying_party_id, application_parameter.data(),
-                           application_parameter.size());
-  return application_parameter;
+  return crypto::hash::Sha256(relying_party_id);
 }
 
 device::CtapGetAssertionRequest CreateCtapGetAssertionRequest(
@@ -487,12 +490,10 @@ blink::mojom::PRFValuesPtr PRFResultsToValues(
     base::span<const uint8_t> results) {
   auto prf_values = blink::mojom::PRFValues::New();
   DCHECK(results.size() == 32 || results.size() == 64);
-  // Using `.split_at<32>()` would cause the subsequent `Materialize()` call to
-  // return a `std::array`, resulting in an extra copy.
-  const auto [first, second] = results.split_at(32u);
-  prf_values->first = device::fido_parsing_utils::Materialize(first);
+  const auto [first, second] = results.split_at<32>();
+  prf_values->first = base::ToVector(first);
   if (!second.empty()) {
-    prf_values->second = device::fido_parsing_utils::Materialize(second);
+    prf_values->second = base::ToVector(second);
   }
 
   return prf_values;
@@ -733,6 +734,33 @@ auto GetCallbackForAssertion(GetCredentialCallback callback) {
       std::move(callback));
 }
 
+base::flat_set<device::FidoTransportProtocol> GetTransportsAllowedByRP(
+    const device::CtapGetAssertionRequest& request) {
+  const base::flat_set<device::FidoTransportProtocol> kAllTransports = {
+      device::FidoTransportProtocol::kInternal,
+      device::FidoTransportProtocol::kNearFieldCommunication,
+      device::FidoTransportProtocol::kUsbHumanInterfaceDevice,
+      device::FidoTransportProtocol::kBluetoothLowEnergy,
+      device::FidoTransportProtocol::kHybrid,
+  };
+
+  const auto& allowed_list = request.allow_list;
+  if (allowed_list.empty()) {
+    return kAllTransports;
+  }
+
+  base::flat_set<device::FidoTransportProtocol> transports;
+  for (const auto& credential : allowed_list) {
+    if (credential.transports.empty()) {
+      return kAllTransports;
+    }
+    transports.insert(credential.transports.begin(),
+                      credential.transports.end());
+  }
+
+  return transports;
+}
+
 }  // namespace
 
 // RequestState contains all state that is specific to a single WebAuthn call.
@@ -763,6 +791,8 @@ struct AuthenticatorCommonImpl::RequestState {
   url::Origin caller_origin;
   std::string relying_party_id;
   std::unique_ptr<base::OneShotTimer> timer =
+      std::make_unique<base::OneShotTimer>();
+  std::unique_ptr<base::OneShotTimer> immediate_timer =
       std::make_unique<base::OneShotTimer>();
   std::optional<std::string> app_id;
   std::variant<std::monostate,
@@ -858,14 +888,17 @@ void AuthenticatorCommonImpl::StartMakeCredentialRequest(
       &std::get<device::CtapMakeCredentialRequest>(req_state_->ctap_request);
   auto* make_credential_options =
       &std::get<device::MakeCredentialOptions>(req_state_->request_options);
+  bool discover_enclave = browser_passkeys_available_ &&
+                          make_credential_options->authenticator_attachment !=
+                              device::AuthenticatorAttachment::kCrossPlatform;
   req_state_->request_delegate->ConfigureDiscoveries(
       req_state_->caller_origin, req_state_->relying_party_id, RequestSource(),
       device::FidoRequestType::kMakeCredential,
       make_credential_options->resident_key,
       make_credential_options->user_verification,
       ctap_make_credential_request->user.name,
-      base::span<const device::CableDiscoveryData>(),
-      browser_passkeys_available_, discovery_factory());
+      base::span<const device::CableDiscoveryData>(), discover_enclave,
+      discovery_factory());
   SetHints(req_state_->request_delegate.get(), req_state_->hints);
 
   make_credential_options->allow_skipping_pin_touch = allow_skipping_pin_touch;
@@ -899,6 +932,7 @@ void AuthenticatorCommonImpl::StartMakeCredentialRequest(
       base::BindRepeating(
           &device::FidoRequestHandlerBase::StartAuthenticatorRequest,
           req_state_->request_handler->GetWeakPtr()) /* request_callback */,
+      base::DoNothing() /* cancel_ui_timeout_callback */,
       base::BindRepeating(
           &device::FidoRequestHandlerBase::PowerOnBluetoothAdapter,
           req_state_->request_handler
@@ -907,6 +941,8 @@ void AuthenticatorCommonImpl::StartMakeCredentialRequest(
           &device::FidoRequestHandlerBase::RequestBluetoothPermission,
           req_state_->request_handler
               ->GetWeakPtr()) /* request_ble_permission_callback */);
+  // `set_observer` can destroy `this`. It is not safe to refer to local state
+  // after this call.
   req_state_->request_handler->set_observer(req_state_->request_delegate.get());
 }
 
@@ -923,12 +959,24 @@ void AuthenticatorCommonImpl::StartGetAssertionRequest(
   if (ctap_get_assertion_request->cable_extension && IsFocused()) {
     cable_pairings = *ctap_get_assertion_request->cable_extension;
   }
+  bool is_immediate_mediation =
+      req_state_->mediation_.value_or(Mediation::MODAL) == Mediation::IMMEDIATE;
+  base::flat_set<device::FidoTransportProtocol> transports =
+      base::STLSetIntersection<base::flat_set<device::FidoTransportProtocol>>(
+          GetWebAuthnTransports(
+              GetRenderFrameHost(), discovery_factory(),
+              UsesDiscoverableCreds(*ctap_get_assertion_request),
+              is_uvpaa_override_, is_immediate_mediation),
+          GetTransportsAllowedByRP(*ctap_get_assertion_request));
+  bool discover_enclave =
+      browser_passkeys_available_ &&
+      transports.contains(device::FidoTransportProtocol::kInternal);
   req_state_->request_delegate->ConfigureDiscoveries(
       req_state_->caller_origin, req_state_->relying_party_id, RequestSource(),
       device::FidoRequestType::kGetAssertion,
       /*resident_key_requirement=*/std::nullopt,
       ctap_get_assertion_request->user_verification,
-      /*user_name=*/std::nullopt, cable_pairings, browser_passkeys_available_,
+      /*user_name=*/std::nullopt, cable_pairings, discover_enclave,
       discovery_factory());
 #if BUILDFLAG(IS_CHROMEOS)
   discovery_factory()->set_get_assertion_request_for_legacy_credential_check(
@@ -936,32 +984,33 @@ void AuthenticatorCommonImpl::StartGetAssertionRequest(
 #endif
   SetHints(req_state_->request_delegate.get(), req_state_->hints);
 
-  bool is_immediate_mediation =
-      req_state_->mediation_.value_or(Mediation::MODAL) == Mediation::IMMEDIATE;
-  base::flat_set<device::FidoTransportProtocol> transports =
-      GetWebAuthnTransports(GetRenderFrameHost(), discovery_factory(),
-                            UsesDiscoverableCreds(*ctap_get_assertion_request),
-                            is_uvpaa_override_, is_immediate_mediation);
-
   auto platform_discoveries =
       discovery_factory()->IsTestOverride()
           ? std::vector<std::unique_ptr<device::FidoDiscoveryBase>>()
           : req_state_->request_delegate->CreatePlatformDiscoveries();
   auto request_handler = std::make_unique<device::GetAssertionRequestHandler>(
-      discovery_factory(), std::move(platform_discoveries), transports,
-      *ctap_get_assertion_request, *ctap_get_assertion_options,
-      allow_skipping_pin_touch,
+      discovery_factory(), std::move(platform_discoveries),
+      std::move(transports), *ctap_get_assertion_request,
+      *ctap_get_assertion_options, allow_skipping_pin_touch,
       base::BindOnce(&AuthenticatorCommonImpl::OnSignResponse,
                      weak_factory_.GetWeakPtr()));
+  request_handler->transport_availability_info()
+      .autoselect_in_immediate_mediation =
+      is_immediate_mediation &&
+      base::FeatureList::IsEnabled(device::kWebAuthnImmediateGetAutoselect) &&
+      req_state_->timer->GetCurrentDelay().InMilliseconds() % 1000 == 42;
 
+  auto cancel_ui_timeout_callback =
+      is_immediate_mediation
+          ? base::BindOnce(&AuthenticatorCommonImpl::CancelImmediateTimeout,
+                           weak_factory_.GetWeakPtr())
+          : base::DoNothing();
   req_state_->request_delegate->RegisterActionCallbacks(
       base::BindOnce(&AuthenticatorCommonImpl::OnCancelFromUI,
                      weak_factory_.GetWeakPtr()) /* cancel_callback */,
       base::BindOnce(
-          &AuthenticatorCommonImpl::CancelWithStatus,
-          weak_factory_.GetWeakPtr(),
-          blink::mojom::AuthenticatorStatus::
-              IMMEDIATE_NOT_FOUND) /* immediate_not_found_callback */,
+          &AuthenticatorCommonImpl::CancelRequestForImmediateMediation,
+          weak_factory_.GetWeakPtr()) /* immediate_not_found_callback */,
       base::BindRepeating(
           &AuthenticatorCommonImpl::StartGetAssertionRequest,
           weak_factory_.GetWeakPtr(),
@@ -975,6 +1024,7 @@ void AuthenticatorCommonImpl::StartGetAssertionRequest(
       base::BindRepeating(
           &device::GetAssertionRequestHandler::StartAuthenticatorRequest,
           request_handler->GetWeakPtr()) /* request_callback */,
+      std::move(cancel_ui_timeout_callback),
       base::BindRepeating(
           &device::FidoRequestHandlerBase::PowerOnBluetoothAdapter,
           request_handler
@@ -983,8 +1033,10 @@ void AuthenticatorCommonImpl::StartGetAssertionRequest(
           &device::FidoRequestHandlerBase::RequestBluetoothPermission,
           request_handler->GetWeakPtr()) /* request_ble_permission_callback */);
 
-  request_handler->set_observer(req_state_->request_delegate.get());
   req_state_->request_handler = std::move(request_handler);
+  // `set_observer` can destroy `this`. It is not safe to refer to local state
+  // after this call.
+  req_state_->request_handler->set_observer(req_state_->request_delegate.get());
 }
 
 bool AuthenticatorCommonImpl::IsFocused() const {
@@ -1384,6 +1436,8 @@ void AuthenticatorCommonImpl::GetCredential(
         base::UserMetricsAction("WebAuthn.GetAssertion.Conditional.Start"));
   } else if (options->mediation == Mediation::MODAL) {
     base::RecordAction(base::UserMetricsAction("WebAuthn.GetAssertion.Start"));
+  } else if (options->mediation == Mediation::IMMEDIATE) {
+    base::RecordAction(base::UserMetricsAction("WebAuthn.GetCredential.Start"));
   }
   callback = base::BindOnce(
       &AuthenticatorCommonImpl::GetMetricsWrappedGetCredentialCallback,
@@ -1404,6 +1458,9 @@ void AuthenticatorCommonImpl::GetCredential(
     req_state_->mode = AuthenticationRequestMode::kPayment;
   } else if (options->mediation == Mediation::CONDITIONAL) {
     req_state_->mode = AuthenticationRequestMode::kConditional;
+  } else if (options->mediation == Mediation::IMMEDIATE) {
+    req_state_->mode = AuthenticationRequestMode::kImmediate;
+    BeginImmediateRequestTimeout();
   } else {
     req_state_->mode = AuthenticationRequestMode::kModalWebAuthn;
   }
@@ -1770,11 +1827,13 @@ void AuthenticatorCommonImpl::GetClientCapabilities(
   auto completion_callback =
       base::BindOnce(&InsertIsPPAACapability).Then(std::move(callback));
 
+  bool immediate_get_enabled =
+      base::FeatureList::IsEnabled(device::kWebAuthnImmediateGet);
   // IMPORTANT: If you add or remove a capability check below (and expect to
   // collect the results of the check with the `BarrierCallback`), update this
   // constant to match the number of `barrier_callback.Run()` calls. Otherwise,
   // the `GetClientCapabilities()` call will crash or timeout.
-  constexpr size_t kNumberOfComputedCapabilities = 5;
+  const size_t kNumberOfComputedCapabilities = immediate_get_enabled ? 6 : 5;
   auto barrier_callback =
       base::BarrierCallback<blink::mojom::WebAuthnClientCapabilityPtr>(
           kNumberOfComputedCapabilities, std::move(completion_callback));
@@ -1799,6 +1858,10 @@ void AuthenticatorCommonImpl::GetClientCapabilities(
       caller_origin,
       base::BindOnce(&MakeCapability, client_capabilities::kConditionalGet)
           .Then(barrier_callback));
+  if (immediate_get_enabled) {
+    barrier_callback.Run(
+        MakeCapability(client_capabilities::kImmediateGet, true));
+  }
 }
 
 void AuthenticatorCommonImpl::IsHybridTransportSupported(
@@ -2049,8 +2112,13 @@ void AuthenticatorCommonImpl::GetMetricsWrappedMakeCredentialCallback(
 void AuthenticatorCommonImpl::GetMetricsWrappedGetCredentialCallback(
     blink::mojom::Authenticator::GetCredentialCallback callback,
     blink::mojom::GetCredentialResponsePtr response) {
-  if (response.is_null() || response->is_password_response()) {
-    // TODO(crbug.com/392549444): add metrics for passwords.
+  if (response.is_null()) {
+    std::move(callback).Run(std::move(response));
+    return;
+  }
+  if (response->is_password_response()) {
+    base::RecordAction(
+        base::UserMetricsAction("WebAuthn.GetCredential.SuccessWithPassword"));
     std::move(callback).Run(std::move(response));
     return;
   }
@@ -2519,6 +2587,53 @@ void AuthenticatorCommonImpl::OnTimeout() {
   SignalFailureToRequestDelegate(
       AuthenticatorRequestClientDelegate::InterestingFailureReason::kTimeout,
       blink::mojom::AuthenticatorStatus::NOT_ALLOWED_ERROR);
+}
+
+void AuthenticatorCommonImpl::BeginImmediateRequestTimeout() {
+  base::TimeDelta timeout_duration = base::Milliseconds(
+      device::kWebAuthnImmediateMediationTimeoutMilliseconds.Get());
+  if (timeout_duration.is_negative()) {
+    return;
+  }
+  req_state_->immediate_timer->Start(
+      FROM_HERE, timeout_duration,
+      base::BindOnce(&AuthenticatorCommonImpl::OnImmediateTimeout,
+                     weak_factory_.GetWeakPtr()));
+}
+
+void AuthenticatorCommonImpl::OnImmediateTimeout() {
+  base::UmaHistogramBoolean(kImmediateTimeoutWhileWaitingForUi, true);
+  base::UmaHistogramEnumeration(
+      "WebAuthentication.GetAssertion.Immediate.RejectionReason",
+      ImmediateMediationRejectionReason::kTimeout);
+  CancelRequestForImmediateMediation();
+}
+
+void AuthenticatorCommonImpl::CancelImmediateTimeout() {
+  if (!req_state_ || !req_state_->immediate_timer ||
+      !req_state_->immediate_timer->IsRunning()) {
+    return;
+  }
+  base::UmaHistogramBoolean(kImmediateTimeoutWhileWaitingForUi, false);
+  req_state_->immediate_timer->Stop();
+}
+
+void AuthenticatorCommonImpl::CancelRequestForImmediateMediation() {
+  // Post a task to defer the cancellation, otherwise a reentrancy may occur.
+  // For example all authenticators may report no credentials; but the
+  // discoveries may still be active. See crbug.com/424491613 for an example.
+  base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](base::WeakPtr<AuthenticatorCommonImpl> auth_ptr) {
+            if (!auth_ptr) {
+              return;
+            }
+
+            auth_ptr->CancelWithStatus(
+                blink::mojom::AuthenticatorStatus::IMMEDIATE_NOT_FOUND);
+          },
+          weak_factory_.GetWeakPtr()));
 }
 
 void AuthenticatorCommonImpl::CancelWithStatus(
@@ -3073,7 +3188,7 @@ void AuthenticatorCommonImpl::UpdateChallengeFromUrl(
     return;
   }
 
-  params.challenge = device::fido_parsing_utils::Materialize(*challenge);
+  params.challenge = base::ToVector(*challenge);
   req_state_->client_data_json = BuildClientDataJson(std::move(params));
   std::get<device::CtapGetAssertionRequest>(req_state_->ctap_request)
       .SetClientDataJson(req_state_->client_data_json);

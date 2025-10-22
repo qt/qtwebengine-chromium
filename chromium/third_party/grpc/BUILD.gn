@@ -30,10 +30,7 @@ config("grpc_config") {
     "source/src/core/ext/upb-gen",
     "source/third_party/xxhash",
     "source/src/core/ext/upbdefs-gen",
-    "source/src/core/ext/upb-generated",
-    "source/src/core/ext/upbdefs-generated",
     "source/third_party/cares",
-    "//third_party/cares/include",
     "source/third_party/upb",
     "//third_party/abseil-cpp",
     "//third_party/protobuf/third_party/utf8_range",
@@ -1539,9 +1536,8 @@ source_set("grpc++_h") {
     "//third_party/abseil-cpp:absl",
     "//third_party/boringssl",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//third_party/zlib",
-    "//third_party/zlib:zlib",
   ]
   allow_circular_includes_from = [ ":upb_reflection_internal_lib" ]
   public_configs = [ ":grpc_config" ]
@@ -2399,9 +2395,8 @@ source_set("grpc++_cc") {
     "//third_party/abseil-cpp:absl",
     "//third_party/boringssl",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//third_party/zlib",
-    "//third_party/zlib:zlib",
   ]
   public_configs = [ ":grpc_config" ]
   configs += [ ":grpc_config_private" ]
@@ -2507,9 +2502,8 @@ source_set("grpc++_repeated1") {
     "//third_party/abseil-cpp:absl",
     "//third_party/boringssl",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//third_party/zlib",
-    "//third_party/zlib:zlib",
   ]
   public_configs = [ ":grpc_config" ]
   configs += [ ":grpc_config_private" ]
@@ -2546,9 +2540,8 @@ source_set("grpc++_repeated2") {
     "//third_party/abseil-cpp:absl",
     "//third_party/boringssl",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//third_party/zlib",
-    "//third_party/zlib:zlib",
   ]
   public_configs = [ ":grpc_config" ]
   configs += [ ":grpc_config_private" ]
@@ -2570,9 +2563,8 @@ source_set("grpc++_repeated3") {
     "//third_party/abseil-cpp:absl",
     "//third_party/boringssl",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//third_party/zlib",
-    "//third_party/zlib:zlib",
   ]
   public_configs = [ ":grpc_config" ]
   configs += [ ":grpc_config_private" ]
@@ -2592,9 +2584,8 @@ source_set("grpc++_repeated4") {
     "//third_party/abseil-cpp:absl",
     "//third_party/boringssl",
     "//third_party/protobuf:protobuf_lite",
-    "//third_party/re2:re2",
+    "//third_party/re2",
     "//third_party/zlib",
-    "//third_party/zlib:zlib",
   ]
   public_configs = [ ":grpc_config" ]
   configs += [ ":grpc_config_private" ]

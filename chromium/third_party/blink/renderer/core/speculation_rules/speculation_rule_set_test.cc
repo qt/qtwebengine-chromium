@@ -19,6 +19,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_binding_for_core.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_urlpatterninit_usvstring.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
+#include "third_party/blink/renderer/core/display_lock/display_lock_utilities.h"
 #include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/execution_context/agent.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
@@ -236,7 +237,6 @@ class SpeculationRuleSetTest : public ::testing::Test {
   }
 
  private:
-  ScopedPrerender2ForTest enable_prerender2_{true};
   test::TaskEnvironment task_environment_;
   Persistent<ExecutionContext> execution_context_;
 };
@@ -345,6 +345,24 @@ void AssertParseError(const SpeculationRuleSet* rule_set) {
   EXPECT_THAT(rule_set->prerender_rules(), ElementsAre());
 }
 
+TEST_F(SpeculationRuleSetTest, PrerenderUntilScript) {
+  auto* rule_set = CreateRuleSet(
+      R"({
+        "prerender_until_script": [{
+        "source": "list",
+        "urls": ["https://example.com/index2.html"]
+      }]
+    })",
+      KURL("https://example.com/"), execution_context());
+
+  EXPECT_THAT(rule_set->prefetch_rules(), ElementsAre());
+  EXPECT_THAT(rule_set->prefetch_with_subresources_rules(), ElementsAre());
+  EXPECT_THAT(rule_set->prerender_rules(), ElementsAre());
+  EXPECT_THAT(
+      rule_set->prerender_until_script_rules(),
+      ElementsAre(MatchesListOfURLs("https://example.com/index2.html")));
+}
+
 TEST_F(SpeculationRuleSetTest, RejectsInvalidJSON) {
   auto* rule_set = CreateRuleSet("[invalid]", KURL("https://example.com"),
                                  execution_context());
@@ -374,12 +392,12 @@ TEST_F(SpeculationRuleSetTest, RejectsComments) {
 
 TEST_F(SpeculationRuleSetTest, SimplePrefetchRule) {
   auto* rule_set = CreateRuleSet(
-      R"({
-        "prefetch": [{
-          "source": "list",
-          "urls": ["https://example.com/index2.html"]
-        }]
-      })",
+    R"({
+      "prefetch": [{
+        "source": "list",
+        "urls": ["https://example.com/index2.html"]
+      }]
+    })",
       KURL("https://example.com/"), execution_context());
   ASSERT_TRUE(rule_set);
   EXPECT_EQ(rule_set->error_type(), SpeculationRuleSetErrorType::kNoError);
@@ -846,7 +864,7 @@ TEST_F(SpeculationRuleSetTest, PropagatesToDocument) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("SpEcUlAtIoNrUlEs"));
-  script->setText(
+  script->setTextWithoutTrustedTypes(
       R"({"prefetch": [
            {"source": "list", "urls": ["https://example.com/foo"]}
          ],
@@ -871,7 +889,7 @@ HTMLScriptElement* InsertSpeculationRules(Document& document,
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("SpEcUlAtIoNrUlEs"));
-  script->setText(speculation_script);
+  script->setTextWithoutTrustedTypes(speculation_script);
   document.head()->appendChild(script);
   return script;
 }
@@ -998,9 +1016,13 @@ TEST_F(SpeculationRuleSetTest, PropagatesAllRulesToBrowser) {
   }
 }
 
-// Tests that prefetch rules are ignored unless SpeculationRulesPrefetchProxy
-// is enabled.
-TEST_F(SpeculationRuleSetTest, PrerenderIgnorePrefetchRules) {
+// Tests that prefetch_with_subresources rules are ignored unless
+// SpeculationRulesPrefetchWithSubresources is enabled.
+TEST_F(SpeculationRuleSetTest, PrerenderIgnorePrefetchWithSubresourcesRules) {
+  // Overwrite the feature flag.
+  ScopedSpeculationRulesPrefetchWithSubresourcesForTest
+      enable_prefetch_with_subresources{false};
+
   DummyPageHolder page_holder;
   StubSpeculationHost speculation_host;
   const String speculation_script =
@@ -1021,33 +1043,6 @@ TEST_F(SpeculationRuleSetTest, PrerenderIgnorePrefetchRules) {
   EXPECT_FALSE(std::ranges::any_of(candidates, [](const auto& candidate) {
     return candidate->action ==
            mojom::blink::SpeculationAction::kPrefetchWithSubresources;
-  }));
-}
-
-// Tests that prerender rules are ignored unless Prerender2 is enabled.
-TEST_F(SpeculationRuleSetTest, PrefetchIgnorePrerenderRules) {
-  // Overwrite the kPrerender2 flag.
-  ScopedPrerender2ForTest enable_prerender{false};
-
-  DummyPageHolder page_holder;
-  StubSpeculationHost speculation_host;
-  const String speculation_script =
-      R"({"prefetch": [
-           {"source": "list",
-            "urls": ["https://example.com/foo", "https://example.com/bar"],
-            "requires": ["anonymous-client-ip-when-cross-origin"]}
-         ],
-          "prerender": [
-           {"source": "list", "urls": ["https://example.com/prerender"]}
-         ]
-         })";
-  PropagateRulesToStubSpeculationHost(page_holder, speculation_host,
-                                      speculation_script);
-
-  const auto& candidates = speculation_host.candidates();
-  EXPECT_EQ(candidates.size(), 2u);
-  EXPECT_FALSE(std::ranges::any_of(candidates, [](const auto& candidate) {
-    return candidate->action == mojom::blink::SpeculationAction::kPrerender;
   }));
 }
 
@@ -1116,7 +1111,7 @@ TEST_F(SpeculationRuleSetTest, ExcludesFragmentLinksWithBase) {
   DummyPageHolder page_holder;
   StubSpeculationHost speculation_host;
   page_holder.GetDocument().SetURL(KURL("https://example.com/"));
-  page_holder.GetDocument().head()->setInnerHTML(
+  page_holder.GetDocument().head()->SetInnerHTMLWithoutTrustedTypes(
       "<base href=\"https://not-example.com/\">");
 
   PropagateRulesToStubSpeculationHost(page_holder, speculation_host,
@@ -1283,7 +1278,7 @@ TEST_F(SpeculationRuleSetTest, ConsoleWarning) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText("[invalid]");
+  script->setTextWithoutTrustedTypes("[invalid]");
   document.head()->appendChild(script);
 
   EXPECT_TRUE(std::ranges::any_of(
@@ -1302,7 +1297,7 @@ TEST_F(SpeculationRuleSetTest, ConsoleWarningForInvalidRule) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText(
+  script->setTextWithoutTrustedTypes(
       R"({
         "prefetch": [{
           "source": "list",
@@ -1319,13 +1314,15 @@ TEST_F(SpeculationRuleSetTest, ConsoleWarningForInvalidRule) {
 
 // Tests that a warning is shown when speculation rules are added using the
 // innerHTML setter, which doesn't currently do what the author meant.
-TEST_F(SpeculationRuleSetTest, ConsoleWarningForSetInnerHTML) {
+TEST_F(SpeculationRuleSetTest,
+       ConsoleWarningForSetInnerHTMLWithoutTrustedTypes) {
   auto* chrome_client = MakeGarbageCollected<ConsoleCapturingChromeClient>();
   DummyPageHolder page_holder(/*initial_view_size=*/{}, chrome_client);
   page_holder.GetFrame().GetSettings()->SetScriptEnabled(true);
 
   Document& document = page_holder.GetDocument();
-  document.head()->setInnerHTML("<script type=speculationrules>{}</script>");
+  document.head()->SetInnerHTMLWithoutTrustedTypes(
+      "<script type=speculationrules>{}</script>");
 
   EXPECT_TRUE(std::ranges::any_of(
       chrome_client->ConsoleMessages(), [](const String& message) {
@@ -1345,10 +1342,10 @@ TEST_F(SpeculationRuleSetTest, ConsoleWarningForChildModification) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText("{}");
+  script->setTextWithoutTrustedTypes("{}");
   document.head()->appendChild(script);
 
-  script->setText(R"({"prefetch": [{"urls": "/2"}]})");
+  script->setTextWithoutTrustedTypes(R"({"prefetch": [{"urls": "/2"}]})");
 
   EXPECT_TRUE(std::ranges::any_of(
       chrome_client->ConsoleMessages(), [](const String& message) {
@@ -1367,7 +1364,7 @@ TEST_F(SpeculationRuleSetTest, ConsoleWarningForDuplicateKey) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText(
+  script->setTextWithoutTrustedTypes(
       R"({
         "prefetch": [{"urls": ["a.html"]}],
         "prefetch": [{"urls": ["b.html"]}]
@@ -1927,7 +1924,7 @@ TEST_F(DocumentRulesTest, ConsoleWarningForInvalidRule) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText(
+  script->setTextWithoutTrustedTypes(
       R"({
         "prefetch": [{
           "source": "document",
@@ -2927,7 +2924,7 @@ TEST_F(DocumentRulesTest, SelectorMatchesAddsCandidates) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -2959,7 +2956,7 @@ TEST_F(DocumentRulesTest, SelectorMatchesIsDynamic) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -3007,7 +3004,7 @@ TEST_F(DocumentRulesTest, AddingDocumentRulesInvalidatesStyle) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -3066,7 +3063,7 @@ TEST_F(DocumentRulesTest, BasicStyleInvalidation) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -3099,7 +3096,7 @@ TEST_F(DocumentRulesTest, IrrelevantDOMChangeShouldNotInvalidateCandidateList) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -3136,7 +3133,7 @@ TEST_F(DocumentRulesTest, SelectorMatchesInsideShadowTree) {
 
   ShadowRoot& shadow_root =
       document.body()->AttachShadowRootForTesting(ShadowRootMode::kOpen);
-  shadow_root.setInnerHTML(R"HTML(
+  shadow_root.SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -3166,7 +3163,7 @@ TEST_F(DocumentRulesTest, SelectorMatchesWithScopePseudoSelector) {
   Document& document = page_holder.GetDocument();
 
   document.body()->setAttribute(html_names::kClassAttr, AtomicString("foo"));
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <a href="https://foo.com/fizz"></a>
     <div class="foo">
       <a href="https://foo.com/buzz"></a>
@@ -3193,7 +3190,7 @@ TEST_F(DocumentRulesTest, UpdateQueueingWithSelectorMatches_1) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="unimportant-section"></div>
   )HTML");
@@ -3273,7 +3270,7 @@ TEST_F(DocumentRulesTest, UpdateQueueingWithSelectorMatches_2) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3316,7 +3313,7 @@ TEST_F(DocumentRulesTest, UpdateQueueingWithSelectorMatches_3) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3347,7 +3344,7 @@ TEST_F(DocumentRulesTest, UpdateQueueingWithSelectorMatches_4) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3384,7 +3381,7 @@ TEST_F(DocumentRulesTest, UpdateQueueingWithSelectorMatches_5) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3418,7 +3415,7 @@ TEST_F(DocumentRulesTest, LinksWithoutComputedStyle) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3464,7 +3461,7 @@ TEST_F(DocumentRulesTest, LinksWithoutComputedStyle_HrefMatches) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3494,7 +3491,7 @@ TEST_F(DocumentRulesTest, LinkInsideDisplayLockedElement) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3530,7 +3527,7 @@ TEST_F(DocumentRulesTest, LinkInsideNestedDisplayLockedElement) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section">
       <div id="links"></div>
     </div>
@@ -3658,7 +3655,7 @@ TEST_F(DocumentRulesTest, DisplayLockedLink) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
   )HTML");
   auto* important_section =
@@ -3694,7 +3691,7 @@ TEST_F(DocumentRulesTest, AddLinkToDisplayLockedContainer) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section">
     </div>
   )HTML");
@@ -3736,7 +3733,7 @@ TEST_F(DocumentRulesTest, DisplayLockedContainerTracking) {
   StubSpeculationHost speculation_host;
   Document& document = page_holder.GetDocument();
 
-  document.body()->setInnerHTML(R"HTML(
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
     <div id="important-section"></div>
     <div id="irrelevant-section"><span></span></div>
   )HTML");
@@ -4020,17 +4017,17 @@ TEST_F(SpeculationRuleSetTest, Eagerness) {
           AllOf(HasURL(kUrl4),
                 HasEagerness(blink::mojom::SpeculationEagerness::kEager)),
           AllOf(HasURL(kUrl5),
-                HasEagerness(blink::mojom::SpeculationEagerness::kEager)),
+                HasEagerness(blink::mojom::SpeculationEagerness::kImmediate)),
           AllOf(
               HasURL(kUrl6),
               HasEagerness(blink::mojom::SpeculationEagerness::kConservative)),
           AllOf(HasURL(kUrl7),
-                HasEagerness(blink::mojom::SpeculationEagerness::kEager)),
+                HasEagerness(blink::mojom::SpeculationEagerness::kImmediate)),
           AllOf(
               HasURL(kUrl8),
               HasEagerness(blink::mojom::SpeculationEagerness::kConservative)),
           AllOf(HasURL(kUrl9),
-                HasEagerness(blink::mojom::SpeculationEagerness::kEager))));
+                HasEagerness(blink::mojom::SpeculationEagerness::kImmediate))));
 }
 
 TEST_F(SpeculationRuleSetTest, InvalidUseOfEagerness1) {
@@ -4214,7 +4211,7 @@ TEST_F(SpeculationRuleSetTest, ConsoleWarningForNoVarySearchHintNotAString) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText(
+  script->setTextWithoutTrustedTypes(
       R"({
     "prefetch": [{
         "source": "list",
@@ -4384,7 +4381,7 @@ TEST_F(SpeculationRuleSetTest, DocumentReportsSuccessMetric) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText("{}");
+  script->setTextWithoutTrustedTypes("{}");
   document.head()->appendChild(script);
   histogram_tester.ExpectUniqueSample("Blink.SpeculationRules.LoadOutcome",
                                       SpeculationRulesLoadOutcome::kSuccess, 1);
@@ -4398,7 +4395,7 @@ TEST_F(SpeculationRuleSetTest, DocumentReportsParseErrorFromScript) {
   HTMLScriptElement* script =
       MakeGarbageCollected<HTMLScriptElement>(document, CreateElementFlags());
   script->setAttribute(html_names::kTypeAttr, AtomicString("speculationrules"));
-  script->setText("{---}");
+  script->setTextWithoutTrustedTypes("{---}");
   document.head()->appendChild(script);
   histogram_tester.ExpectUniqueSample(
       "Blink.SpeculationRules.LoadOutcome",
@@ -4497,7 +4494,7 @@ TEST_F(SpeculationRuleSetTest, InvalidTag) {
       })",
       KURL("https://example.com/"), execution_context());
   EXPECT_EQ(rule_set->error_type(),
-            SpeculationRuleSetErrorType::kInvalidRulesSkipped);
+            SpeculationRuleSetErrorType::kInvalidRulesetLevelTag);
   EXPECT_TRUE(rule_set->error_message().Contains("Tag value"))
       << rule_set->error_message();
 
@@ -4513,7 +4510,7 @@ TEST_F(SpeculationRuleSetTest, InvalidTag) {
                                           tag),
                            KURL("https://example.com/"), execution_context());
   EXPECT_EQ(rule_set->error_type(),
-            SpeculationRuleSetErrorType::kInvalidRulesSkipped);
+            SpeculationRuleSetErrorType::kInvalidRulesetLevelTag);
   EXPECT_TRUE(rule_set->error_message().Contains("Tag value"))
       << rule_set->error_message();
 }
@@ -4642,7 +4639,7 @@ TEST_F(SpeculationRuleSetTest, Crbug386547460) {
   Document& document = page_holder.GetDocument();
   page_holder.GetFrame().GetSettings()->SetScriptEnabled(true);
 
-  document.documentElement()->setInnerHTML(R"html(
+  document.documentElement()->SetInnerHTMLWithoutTrustedTypes(R"html(
     <head>
       <script></script>
     </head>
@@ -4653,7 +4650,49 @@ TEST_F(SpeculationRuleSetTest, Crbug386547460) {
   )html");
 
   document.scripts()->item(2);
-  document.body()->setOuterHTML("<body>42</body>");
+  document.body()->SetOuterHTMLWithoutTrustedTypes("<body>42</body>");
+}
+
+// Regression test for crbug.com/411367105.
+// This test will force update a display locked link. The link shall be
+// excluded from the speculation rule matches when the force update ends.
+TEST_F(DocumentRulesTest, DisplayLockedLinkForceUpdated) {
+  DummyPageHolder page_holder;
+  StubSpeculationHost speculation_host;
+  Document& document = page_holder.GetDocument();
+
+  document.body()->SetInnerHTMLWithoutTrustedTypes(R"HTML(
+    <details id="test-details">
+      <summary>Summary</summary>
+      <div id="important-section"></div>
+    </details>
+  )HTML");
+  auto* important_section =
+      document.getElementById(AtomicString("important-section"));
+  AddAnchor(*important_section, "https://foo.com/bar");
+
+  String speculation_script = R"(
+    {"prefetch": [{
+      "source": "document",
+      "where": {"selector_matches": "#important-section a"}
+    }]}
+  )";
+  PropagateRulesToStubSpeculationHost(page_holder, speculation_host,
+                                      speculation_script);
+  const auto& candidates = speculation_host.candidates();
+  EXPECT_THAT(candidates, HasURLs());
+
+  // Force a style update including display locked elements.
+  document.AddViewportUnitFlags(
+      static_cast<unsigned>(ViewportUnitFlag::kStatic));
+  document.AddViewportUnitFlags(
+      static_cast<unsigned>(ViewportUnitFlag::kDynamic));
+  document.MarkViewportUnitsDirty();
+  document.UpdateStyleAndLayoutTreeForElement(
+      important_section, DocumentUpdateReason::kComputedStyle);
+  PropagateRulesToStubSpeculationHost(page_holder, speculation_host,
+                                      speculation_script);
+  EXPECT_THAT(candidates, HasURLs());
 }
 
 }  // namespace

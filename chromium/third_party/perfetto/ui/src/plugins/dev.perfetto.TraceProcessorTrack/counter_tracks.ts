@@ -142,13 +142,6 @@ export const COUNTER_TRACK_SCHEMAS: ReadonlyArray<CounterTrackTypeSchema> = [
     group: 'Diskstat',
   },
   {
-    type: 'entity_state',
-    topLevelGroup: 'POWER',
-    group: 'Entity Residency',
-    shareYAxis: true,
-    mode: 'rate',
-  },
-  {
     type: 'f2fs_iostat_latency',
     topLevelGroup: 'IO',
     group: 'F2FS IOStat Latency',
@@ -289,13 +282,6 @@ export const COUNTER_TRACK_SCHEMAS: ReadonlyArray<CounterTrackTypeSchema> = [
     type: 'pixel_cpm_counters',
     topLevelGroup: 'HARDWARE',
     group: 'CPM Counters',
-  },
-  {
-    type: 'power_rails',
-    group: 'Power Rails',
-    topLevelGroup: 'POWER',
-    shareYAxis: true,
-    mode: 'rate',
   },
   {
     type: 'proc_stat_runtime',

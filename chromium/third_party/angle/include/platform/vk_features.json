@@ -193,6 +193,14 @@
             ]
         },
         {
+            "name": "prefer_global_pipeline_cache",
+            "category": "Features",
+            "description": [
+                "The renderer's pipeline cache will be used instead of the separate caches per program."
+            ],
+            "issue": "http://anglebug.com/411442610"
+        },
+        {
             "name": "supports_YUV_sampler_conversion",
             "category": "Features",
             "description": [
@@ -238,6 +246,15 @@
                 "VkDevice supports the VK_EXT_custom_border_color extension"
             ],
             "issue": "http://anglebug.com/42262239"
+        },
+        {
+            "name": "uses_second_component_for_stencil_border_color",
+            "category": "Features",
+            "description": [
+                "Implementation utilizes second component of the INT custom border color ",
+                "for undefined format when sampling from a stencil texture."
+            ],
+            "issue": "http://issuetracker.google.com/390710636"
         },
         {
             "name": "supports_multi_draw_indirect",
@@ -389,14 +406,6 @@
                 "Persistently map buffer memory to reduce map/unmap IOCTL overhead."
             ],
             "issue": "http://anglebug.com/40096464"
-        },
-        {
-            "name": "enable_pre_rotate_surfaces",
-            "category": "Features",
-            "description": [
-                "Enable Android pre-rotation for landscape applications"
-            ],
-            "issue": "http://anglebug.com/42262166"
         },
         {
             "name": "enable_precision_qualifiers",
@@ -658,14 +667,6 @@
                 "Emulate 270-degree prerotation."
             ],
             "issue": "http://anglebug.com/42263477"
-        },
-        {
-            "name": "prefer_driver_uniform_over_spec_const",
-            "category": "Features",
-            "description": [
-                "Prefer using driver uniforms instead of specialization constants."
-            ],
-            "issue": "http://anglebug.com/42265878"
         },
         {
             "name": "expose_non_conformant_extensions_and_versions",
@@ -1281,6 +1282,14 @@
             "issue": "http://anglebug.com/42263322"
         },
         {
+            "name": "enable_extra_submit_fence",
+            "category": "Workarounds",
+            "description": [
+                "Enable using a separate submit fence in the command batches."
+            ],
+            "issue": "https://issuetracker.google.com/384477641"
+        },
+        {
             "name": "supports_pipeline_protected_access",
             "category": "Features",
             "description": [
@@ -1461,6 +1470,14 @@
             ]
         },
         {
+            "name": "force_host_image_copy_for_luma",
+            "category": "Features",
+            "description": [
+                "When using VK_EXT_host_image_copy, use VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT for images created",
+                "for luminance/alpha textures"
+            ]
+        },
+        {
             "name": "enable_parallel_compile_and_link",
             "category": "Features",
             "description": [
@@ -1638,6 +1655,14 @@
                 "Uses VkEvent instead of VkCmdPipelineBarrier for buffer barriers"
             ],
             "issue": "https://issues.angleproject.org/360274928"
+        },
+        {
+            "name": "recycle_vkEvent",
+            "category": "Features",
+            "description": [
+                "Keep and recycle VkEvent instead of destroying when the last reference goes away"
+            ],
+            "issue": "https://issues.angleproject.org/409441956"
         },
         {
             "name": "supports_synchronization2",
@@ -1874,6 +1899,30 @@
             "issue": "https://anglebug.com/379186304"
         },
         {
+            "name": "supports_astc_decode_mode",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_astc_decode_mode extension"
+            ],
+            "issue": "https://anglebug.com/419403188"
+        },
+        {
+            "name": "supports_astc_decode_mode_rgb9e5",
+            "category": "Features",
+            "description": [
+                "VkDevice supports VK_EXT_astc_decode_mode extension"
+            ],
+            "issue": "https://anglebug.com/419403188"
+        },
+        {
+            "name": "supports_astc_hdr_3d_textures",
+            "category": "Features",
+            "description": [
+                "Whether the device supports 3D textures with ASTC HDR compression"
+            ],
+            "issue": "https://anglebug.com/416095435"
+        },
+        {
             "name": "supports_image_compression_control_swapchain",
             "category": "Features",
             "description": [
@@ -1918,6 +1967,22 @@
                 "VkDevice supports VK_KHR_swapchain_mutable_format extension"
             ],
             "issue": "http://anglebug.com/386688871"
+        },
+        {
+            "name": "supports_clip_cull_distance_in_GS_and_TS",
+            "category": "Features",
+            "description": [
+                "Supports using clip/cull distance features in geometry and tessellation shaders"
+            ],
+            "issue": "http://anglebug.com/42264006"
+        },
+        {
+            "name": "supports_maintenance9",
+            "category": "Features",
+            "description": [
+                "VkDevice supports the VK_KHR_maintenance9 extension"
+            ],
+            "issue": "https://anglebug.com/429339330"
         }
     ]
 }

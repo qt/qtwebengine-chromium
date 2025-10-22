@@ -8,19 +8,24 @@
 #include <optional>
 #include <string_view>
 
+#include "base/containers/to_vector.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
 #include "components/network_time/time_tracker/time_tracker.h"
 #include "net/base/features.h"
+#include "net/base/hash_value.h"
 #include "net/base/ip_address.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
@@ -36,6 +41,7 @@
 #include "net/cert/x509_util.h"
 #include "net/cert_net/cert_net_fetcher_url_request.h"
 #include "net/http/transport_security_state.h"
+#include "net/log/net_log_event_type.h"
 #include "net/log/net_log_with_source.h"
 #include "net/log/test_net_log.h"
 #include "net/test/cert_builder.h"
@@ -46,10 +52,12 @@
 #include "net/test/embedded_test_server/request_handler_util.h"
 #include "net/test/gtest_util.h"
 #include "net/test/revocation_builder.h"
+#include "net/test/two_qwac_cert_binding_builder.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/boringssl/src/pki/parse_certificate.h"
 #include "third_party/boringssl/src/pki/trust_store.h"
 #include "third_party/boringssl/src/pki/trust_store_collection.h"
 #include "third_party/boringssl/src/pki/trust_store_in_memory.h"
@@ -112,6 +120,33 @@ static std::string MakeRandomPath(std::string_view suffix) {
 }
 
 #if BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
+// Parses a single PEM certificate from `*pem_value`, or adds a gtest failure
+// and returns empty vector on error.
+//
+// Since the input from the test often comes from a base::Dict and thus may be
+// null if the expected element isn't found, this takes a pointer as a
+// convenience and will add a failure and an return empty vector if the input
+// is null, so that each test expectation doesn't need to null-check the input
+// before calling.
+std::vector<uint8_t> ParsePemCertificate(const std::string* pem_value) {
+  if (!pem_value) {
+    ADD_FAILURE() << "pem_value is null";
+    return {};
+  }
+  CertificateList certs = X509Certificate::CreateCertificateListFromBytes(
+      base::as_byte_span(*pem_value),
+      X509Certificate::Format::FORMAT_PEM_CERT_SEQUENCE);
+  if (certs.empty()) {
+    ADD_FAILURE() << "error decoding pem";
+    return {};
+  }
+  if (certs.size() > 1) {
+    ADD_FAILURE() << "multiple certs in pem";
+    return {};
+  }
+  return base::ToVector(certs[0]->cert_span());
+}
+
 std::vector<std::string> ParseNetLogCertificatesList(
     const base::Value::List& list) {
   std::vector<std::string> result;
@@ -134,6 +169,16 @@ std::vector<std::string> ParseNetLogCertificatesList(
     result.emplace_back(base::as_string_view(certs[0]->cert_span()));
   }
   return result;
+}
+
+std::vector<std::string> ParseNetLogCertificatesDict(
+    const base::Value::Dict& dict) {
+  auto* cert_list = dict.FindList("certificates");
+  if (!cert_list) {
+    ADD_FAILURE() << "no cerificates key in dict";
+    return {};
+  }
+  return ParseNetLogCertificatesList(*cert_list);
 }
 #endif  // BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
 
@@ -263,6 +308,18 @@ class MockCTPolicyEnforcer : public CTPolicyEnforcer {
   ~MockCTPolicyEnforcer() override = default;
 };
 
+class MockRequireCTDelegate : public RequireCTDelegate {
+ public:
+  MOCK_CONST_METHOD3(
+      IsCTRequiredForHost,
+      CTRequirementLevel(std::string_view host,
+                         const X509Certificate* chain,
+                         const std::vector<SHA256HashValue>& hashes));
+
+ protected:
+  ~MockRequireCTDelegate() override = default;
+};
+
 }  // namespace
 
 class CertVerifyProcBuiltinTest : public ::testing::Test {
@@ -357,6 +414,33 @@ class CertVerifyProcBuiltinTest : public ::testing::Test {
                        hostname, ocsp_response, sct_list, flags, verify_result,
                        out_source),
         std::move(callback));
+  }
+
+  scoped_refptr<X509Certificate> Verify2QwacBinding(
+      std::string_view binding,
+      const std::string& hostname,
+      base::span<const uint8_t> tls_cert,
+      NetLogSource* out_source) {
+    // 2-QWAC verification does not do any blocking calls, so the unittest does
+    // not need to run it on a worker thread.
+    NetLogWithSource net_log(NetLogWithSource::Make(
+        net::NetLog::Get(), net::NetLogSourceType::CERT_VERIFIER_TASK));
+    *out_source = net_log.source();
+    return verify_proc_->Verify2QwacBinding(binding, hostname, tls_cert,
+                                            net_log);
+  }
+
+  int Verify2Qwac(scoped_refptr<X509Certificate> cert,
+                  const std::string& hostname,
+                  CertVerifyResult* verify_result,
+                  NetLogSource* out_source) {
+    // 2-QWAC verification does not do any blocking calls, so the unittest does
+    // not need to run it on a worker thread.
+    NetLogWithSource net_log(NetLogWithSource::Make(
+        net::NetLog::Get(), net::NetLogSourceType::CERT_VERIFIER_TASK));
+    *out_source = net_log.source();
+    return verify_proc_->Verify2Qwac(cert.get(), hostname, verify_result,
+                                     net_log);
   }
 
   base::test::TaskEnvironment& task_environment() { return task_environment_; }
@@ -488,9 +572,12 @@ TEST_F(CertVerifyProcBuiltinTest, SimpleSuccess) {
 
 TEST_F(CertVerifyProcBuiltinTest, CallsCtVerifierAndReturnsSctStatus) {
   auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
-  InitializeVerifyProc(CreateParams(
-      /*additional_trust_anchors=*/{root->GetX509Certificate()}));
+  CertVerifyProc::InstanceParams instance_params = CreateParams(
+      /*additional_trust_anchors=*/{root->GetX509Certificate()});
+  InitializeVerifyProc(instance_params);
+  net::ScopedTestKnownRoot scoped_known_root(root->GetX509Certificate().get());
 
+  constexpr char kHostname[] = "www.example.com";
   const std::string kOcspResponse = "OCSP response";
   const std::string kSctList = "SCT list";
   const std::string kLogId = "CT log id";
@@ -503,7 +590,9 @@ TEST_F(CertVerifyProcBuiltinTest, CallsCtVerifierAndReturnsSctStatus) {
   SignedCertificateTimestampAndStatusList sct_and_status_list;
   sct_and_status_list.push_back(sct_and_status);
   EXPECT_CALL(*mock_ct_verifier(), Verify(_, kOcspResponse, kSctList, _, _, _))
-      .WillOnce(testing::SetArgPointee<4>(sct_and_status_list));
+      .WillRepeatedly(testing::SetArgPointee<4>(sct_and_status_list));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), IsCtEnabled())
+      .WillRepeatedly(testing::Return(true));
   EXPECT_CALL(*mock_ct_policy_enforcer(), CheckCompliance(_, _, _, _))
       .WillRepeatedly(
           testing::Return(ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS));
@@ -511,11 +600,100 @@ TEST_F(CertVerifyProcBuiltinTest, CallsCtVerifierAndReturnsSctStatus) {
   scoped_refptr<X509Certificate> chain = leaf->GetX509CertificateChain();
   ASSERT_TRUE(chain.get());
 
+  // If a RequireCTDelegate is not supplied, SCT verification is done, but the
+  // cert verification result is not affected.
+  {
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    TestCompletionCallback callback;
+    Verify(chain.get(), kHostname, kOcspResponse, kSctList, /*flags=*/0,
+           &verify_result, &verify_net_log_source, callback.callback());
+
+    int error = callback.WaitForResult();
+    EXPECT_THAT(error, IsOk());
+    ASSERT_EQ(verify_result.scts.size(), 1u);
+    EXPECT_EQ(verify_result.scts.front().status, kSctVerifyStatus);
+    EXPECT_EQ(verify_result.scts.front().sct->log_id, kLogId);
+    EXPECT_EQ(verify_result.policy_compliance,
+              ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS);
+    EXPECT_EQ(verify_result.ct_requirement_status,
+              ct::CTRequirementsStatus::CT_NOT_REQUIRED);
+  }
+
+  // If a RequireCTDelegate is supplied, it is consulted to check whether the
+  // CT result should affect the cert verification result.
+  auto mock_require_ct_delegate = base::MakeRefCounted<MockRequireCTDelegate>();
+  instance_params.require_ct_delegate = mock_require_ct_delegate;
+  EXPECT_CALL(*mock_require_ct_delegate, IsCTRequiredForHost(kHostname, _, _))
+      .WillRepeatedly(
+          testing::Return(RequireCTDelegate::CTRequirementLevel::REQUIRED));
+  InitializeVerifyProc(instance_params);
+  EXPECT_CALL(*mock_ct_verifier(), Verify(_, kOcspResponse, kSctList, _, _, _))
+      .WillRepeatedly(testing::SetArgPointee<4>(sct_and_status_list));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), IsCtEnabled())
+      .WillRepeatedly(testing::Return(true));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), CheckCompliance(_, _, _, _))
+      .WillRepeatedly(
+          testing::Return(ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS));
+  {
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    TestCompletionCallback callback;
+    Verify(chain.get(), kHostname, kOcspResponse, kSctList, /*flags=*/0,
+           &verify_result, &verify_net_log_source, callback.callback());
+
+    int error = callback.WaitForResult();
+    EXPECT_THAT(error, IsError(ERR_CERTIFICATE_TRANSPARENCY_REQUIRED));
+    ASSERT_EQ(verify_result.scts.size(), 1u);
+    EXPECT_EQ(verify_result.scts.front().status, kSctVerifyStatus);
+    EXPECT_EQ(verify_result.scts.front().sct->log_id, kLogId);
+    EXPECT_EQ(verify_result.policy_compliance,
+              ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS);
+    EXPECT_EQ(verify_result.ct_requirement_status,
+              ct::CTRequirementsStatus::CT_REQUIREMENTS_NOT_MET);
+  }
+}
+
+TEST_F(CertVerifyProcBuiltinTest, CtIsRequiredAndCtVerificationComplies) {
+  constexpr char kHostname[] = "www.example.com";
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+  CertVerifyProc::InstanceParams instance_params = CreateParams(
+      /*additional_trust_anchors=*/{root->GetX509Certificate()});
+  auto mock_require_ct_delegate = base::MakeRefCounted<MockRequireCTDelegate>();
+  instance_params.require_ct_delegate = mock_require_ct_delegate;
+  EXPECT_CALL(*mock_require_ct_delegate, IsCTRequiredForHost(kHostname, _, _))
+      .WillRepeatedly(
+          testing::Return(RequireCTDelegate::CTRequirementLevel::REQUIRED));
+  InitializeVerifyProc(instance_params);
+  net::ScopedTestKnownRoot scoped_known_root(root->GetX509Certificate().get());
+
+  const std::string kOcspResponse = "OCSP response";
+  const std::string kSctList = "SCT list";
+  const std::string kLogId = "CT log id";
+  const ct::SCTVerifyStatus kSctVerifyStatus = ct::SCT_STATUS_LOG_UNKNOWN;
+
+  SignedCertificateTimestampAndStatus sct_and_status;
+  sct_and_status.sct = base::MakeRefCounted<ct::SignedCertificateTimestamp>();
+  sct_and_status.sct->log_id = kLogId;
+  sct_and_status.status = kSctVerifyStatus;
+  SignedCertificateTimestampAndStatusList sct_and_status_list;
+  sct_and_status_list.push_back(sct_and_status);
+
+  InitializeVerifyProc(instance_params);
+  EXPECT_CALL(*mock_ct_verifier(), Verify(_, kOcspResponse, kSctList, _, _, _))
+      .WillRepeatedly(testing::SetArgPointee<4>(sct_and_status_list));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), IsCtEnabled())
+      .WillRepeatedly(testing::Return(true));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), CheckCompliance(_, _, _, _))
+      .WillRepeatedly(
+          testing::Return(ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS));
+
   CertVerifyResult verify_result;
   NetLogSource verify_net_log_source;
   TestCompletionCallback callback;
-  Verify(chain.get(), "www.example.com", kOcspResponse, kSctList, /*flags=*/0,
-         &verify_result, &verify_net_log_source, callback.callback());
+  Verify(leaf->GetX509CertificateChain().get(), kHostname, kOcspResponse,
+         kSctList, /*flags=*/0, &verify_result, &verify_net_log_source,
+         callback.callback());
 
   int error = callback.WaitForResult();
   EXPECT_THAT(error, IsOk());
@@ -523,7 +701,9 @@ TEST_F(CertVerifyProcBuiltinTest, CallsCtVerifierAndReturnsSctStatus) {
   EXPECT_EQ(verify_result.scts.front().status, kSctVerifyStatus);
   EXPECT_EQ(verify_result.scts.front().sct->log_id, kLogId);
   EXPECT_EQ(verify_result.policy_compliance,
-            ct::CTPolicyCompliance::CT_POLICY_NOT_DIVERSE_SCTS);
+            ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS);
+  EXPECT_EQ(verify_result.ct_requirement_status,
+            ct::CTRequirementsStatus::CT_REQUIREMENTS_MET);
 }
 
 TEST_F(CertVerifyProcBuiltinTest, DefaultCtComplianceIsNotAvailable) {
@@ -563,6 +743,50 @@ TEST_F(CertVerifyProcBuiltinTest, DefaultCtComplianceIsNotAvailable) {
             ct::CTPolicyCompliance::CT_POLICY_COMPLIANCE_DETAILS_NOT_AVAILABLE);
 }
 
+TEST_F(CertVerifyProcBuiltinTest,
+       DefaultCtComplianceIsNotAvailableWhenCtDisabled) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+  CertVerifyProc::InstanceParams instance_params = CreateParams(
+      /*additional_trust_anchors=*/{root->GetX509Certificate()});
+  InitializeVerifyProc(instance_params);
+  net::ScopedTestKnownRoot scoped_known_root(root->GetX509Certificate().get());
+
+  const std::string kOcspResponse = "OCSP response";
+  const std::string kSctList = "SCT list";
+  const std::string kLogId = "CT log id";
+  const ct::SCTVerifyStatus kSctVerifyStatus = ct::SCT_STATUS_OK;
+
+  SignedCertificateTimestampAndStatus sct_and_status;
+  sct_and_status.sct = base::MakeRefCounted<ct::SignedCertificateTimestamp>();
+  sct_and_status.sct->log_id = kLogId;
+  sct_and_status.status = kSctVerifyStatus;
+  SignedCertificateTimestampAndStatusList sct_and_status_list;
+  sct_and_status_list.push_back(sct_and_status);
+  EXPECT_CALL(*mock_ct_verifier(), Verify(_, kOcspResponse, kSctList, _, _, _))
+      .WillOnce(testing::SetArgPointee<4>(sct_and_status_list));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), IsCtEnabled())
+      .WillRepeatedly(testing::Return(false));
+
+  scoped_refptr<X509Certificate> chain = leaf->GetX509CertificateChain();
+  ASSERT_TRUE(chain.get());
+
+  CertVerifyResult verify_result;
+  NetLogSource verify_net_log_source;
+  TestCompletionCallback callback;
+  Verify(chain.get(), "www.example.com", kOcspResponse, kSctList, /*flags=*/0,
+         &verify_result, &verify_net_log_source, callback.callback());
+
+  int error = callback.WaitForResult();
+  EXPECT_THAT(error, IsOk());
+  ASSERT_EQ(verify_result.scts.size(), 1u);
+  EXPECT_EQ(verify_result.scts.front().status, kSctVerifyStatus);
+  EXPECT_EQ(verify_result.scts.front().sct->log_id, kLogId);
+  // Verification failed, so CT policy compliance isn't checked, and the default
+  // value should be COMPLIANCE_DETAILS_NOT_AVAILABLE.
+  EXPECT_EQ(verify_result.policy_compliance,
+            ct::CTPolicyCompliance::CT_POLICY_COMPLIANCE_DETAILS_NOT_AVAILABLE);
+}
+
 #if defined(PLATFORM_USES_CHROMIUM_EV_METADATA)
 TEST_F(CertVerifyProcBuiltinTest, EVCertStatusMaintainedForCompliantCert) {
   auto [leaf, root] = CertBuilder::CreateSimpleChain2();
@@ -577,6 +801,8 @@ TEST_F(CertVerifyProcBuiltinTest, EVCertStatusMaintainedForCompliantCert) {
       /*additional_trust_anchors=*/{root->GetX509Certificate()}));
 
   EXPECT_CALL(*mock_ct_verifier(), Verify(_, _, _, _, _, _));
+  EXPECT_CALL(*mock_ct_policy_enforcer(), IsCtEnabled())
+      .WillRepeatedly(testing::Return(true));
   EXPECT_CALL(*mock_ct_policy_enforcer(), CheckCompliance(_, _, _, _))
       .WillRepeatedly(
           testing::Return(ct::CTPolicyCompliance::CT_POLICY_COMPLIES_VIA_SCTS));
@@ -2335,6 +2561,512 @@ TEST_P(CertVerifyProcBuiltin1QwacTest, OneQwacCanBuildAlternatePath) {
 }
 
 INSTANTIATE_TEST_SUITE_P(, CertVerifyProcBuiltin1QwacTest, testing::Bool());
+
+class CertVerifyProcBuiltin2QwacTest : public CertVerifyProcBuiltinTest {
+ public:
+  void ExpectHistogramSample(const base::HistogramTester& histograms,
+                             Verify2QwacBindingResult result) {
+    histograms.ExpectUniqueSample("Net.CertVerifier.Qwac.2QwacBinding", result,
+                                  1u);
+  }
+  void ExpectNoHistogramSample(const base::HistogramTester& histograms) {
+    histograms.ExpectTotalCount("Net.CertVerifier.Qwac.2QwacBinding", 0);
+  }
+};
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, InvalidCertificate) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+  leaf->SetExtension(bssl::der::Input(bssl::kBasicConstraintsOid),
+                     "invalid extension value", /*critical=*/true);
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertLeafParsingError);
+  }
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, TwoQwacRequiresEutl) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+
+  InitializeVerifyProc(CreateParams(
+      /*additional_trust_anchors=*/{root->GetX509Certificate()}));
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    // If the root is not on the EUTL, a valid path cannot be found, even if
+    // it's a normal root.
+    EXPECT_THAT(error, IsError(ERR_CERT_AUTHORITY_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_AUTHORITY_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertAuthorityInvalid);
+
+    // The path builder should have found the intermediate, but no root.
+    EXPECT_EQ(leaf->GetCertBuffer(),
+              verify_result.verified_cert->cert_buffer());
+    ASSERT_EQ(1u, verify_result.verified_cert->intermediate_buffers().size());
+    EXPECT_EQ(intermediate->GetCertBuffer(),
+              verify_result.verified_cert->intermediate_buffers()[0].get());
+  }
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    // If the root is on the EUTL, the certificate verifies successfully with
+    // the QWAC status set.
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(IsCertStatusError(verify_result.cert_status));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectNoHistogramSample(histograms);
+
+    // The verified chain has the full cert chain.
+    EXPECT_EQ(leaf->GetCertBuffer(),
+              verify_result.verified_cert->cert_buffer());
+    ASSERT_EQ(2u, verify_result.verified_cert->intermediate_buffers().size());
+    EXPECT_EQ(intermediate->GetCertBuffer(),
+              verify_result.verified_cert->intermediate_buffers()[0].get());
+    EXPECT_EQ(root->GetCertBuffer(),
+              verify_result.verified_cert->intermediate_buffers()[1].get());
+  }
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, TwoQwacRequiresPolicies) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertInconsistentBits);
+  }
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(IsCertStatusError(verify_result.cert_status));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectNoHistogramSample(histograms);
+  }
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, TwoQwacRequiresQcStatements) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertInconsistentBits);
+  }
+
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(IsCertStatusError(verify_result.cert_status));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectNoHistogramSample(histograms);
+  }
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, TwoQwacRequiresEku) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsError(ERR_CERT_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertInconsistentBits);
+  }
+
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(IsCertStatusError(verify_result.cert_status));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectNoHistogramSample(histograms);
+  }
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, TwoQwacVerifiesName) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    TestCompletionCallback callback;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.wrong.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsError(ERR_CERT_COMMON_NAME_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_COMMON_NAME_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertNameInvalid);
+  }
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(IsCertStatusError(verify_result.cert_status));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectNoHistogramSample(histograms);
+  }
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacTest, TwoQwacVerifiesValidityDate) {
+  auto [leaf, intermediate, root] = CertBuilder::CreateSimpleChain3();
+
+  intermediate->SetCertificatePolicies({"2.5.29.32.0"});  // anyPolicy
+
+  leaf->SetCertificatePolicies({"0.4.0.194112.1.6"});  // QNCP-w-gen
+  leaf->SetQwacQcStatements({bssl::der::Input(kEtsiQctWebOid)});
+  leaf->SetExtendedKeyUsages({bssl::der::Input(kIdKpTlsBinding)});
+  leaf->SetValidity(base::Time::Now() - base::Days(2),
+                    base::Time::Now() - base::Days(1));
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(root->GetCertBuffer());
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsError(ERR_CERT_DATE_INVALID));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_DATE_INVALID);
+    EXPECT_FALSE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectHistogramSample(histograms,
+                          Verify2QwacBindingResult::kCertDateInvalid);
+  }
+
+  // 2-QWACs are not bound by BR lifetime limits, so we don't enforce any
+  // validity too long errors.
+  leaf->SetValidity(base::Time::Now() - base::Days(2),
+                    base::Time::Now() + base::Days(3650));
+
+  {
+    base::HistogramTester histograms;
+    CertVerifyResult verify_result;
+    NetLogSource verify_net_log_source;
+    int error = Verify2Qwac(leaf->GetX509CertificateChain(), "www.example.com",
+                            &verify_result, &verify_net_log_source);
+
+    EXPECT_THAT(error, IsOk());
+    EXPECT_FALSE(IsCertStatusError(verify_result.cert_status));
+    EXPECT_TRUE(verify_result.cert_status & CERT_STATUS_IS_QWAC);
+    ExpectNoHistogramSample(histograms);
+  }
+}
+
+class CertVerifyProcBuiltin2QwacBindingTest : public CertVerifyProcBuiltinTest {
+ public:
+  void ExpectHistogramSample(const base::HistogramTester& histograms,
+                             Verify2QwacBindingResult result) {
+    histograms.ExpectUniqueSample("Net.CertVerifier.Qwac.2QwacBinding", result,
+                                  1u);
+  }
+};
+
+TEST_F(CertVerifyProcBuiltin2QwacBindingTest, TestValidBinding) {
+  auto [tls_leaf, tls_root] = CertBuilder::CreateSimpleChain2();
+
+  TwoQwacCertBindingBuilder binding_builder;
+  binding_builder.SetBoundCerts({tls_leaf->GetDER()});
+  std::string jws = binding_builder.GetJWS();
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(binding_builder.GetRootBuilder()->GetCertBuffer());
+
+  base::HistogramTester histograms;
+  RecordingNetLogObserver net_log_observer(NetLogCaptureMode::kDefault);
+  NetLogSource verify_net_log_source;
+  scoped_refptr<X509Certificate> verified_2qwac = Verify2QwacBinding(
+      jws, "www.example.com", base::as_byte_span(tls_leaf->GetDER()),
+      &verify_net_log_source);
+  ASSERT_TRUE(verified_2qwac);
+  EXPECT_TRUE(verified_2qwac->EqualsIncludingChain(
+      binding_builder.GetLeafBuilder()->GetX509CertificateFullChain().get()));
+  ExpectHistogramSample(histograms,
+                        Verify2QwacBindingResult::kValid2QwacBinding);
+
+  auto events = net_log_observer.GetEntriesForSource(verify_net_log_source);
+  auto event =
+      std::ranges::find(events, NetLogEventType::CERT_VERIFY_PROC_2QWAC_BINDING,
+                        &NetLogEntry::type);
+  ASSERT_NE(event, events.end());
+  EXPECT_EQ(net::NetLogEventPhase::BEGIN, event->phase);
+  EXPECT_EQ(jws, base::optional_ref(event->params.FindString("binding")));
+  EXPECT_EQ("www.example.com",
+            base::optional_ref(event->params.FindString("host")));
+  EXPECT_EQ(base::as_byte_span(tls_leaf->GetDER()),
+            ParsePemCertificate(event->params.FindString("tls_certificate")));
+
+  event = std::ranges::find(++event, events.end(),
+                            NetLogEventType::CERT_VERIFY_PROC_2QWAC,
+                            &NetLogEntry::type);
+  ASSERT_NE(event, events.end());
+  EXPECT_EQ(net::NetLogEventPhase::BEGIN, event->phase);
+
+  event = std::ranges::find(++event, events.end(),
+                            NetLogEventType::CERT_VERIFY_PROC_2QWAC,
+                            &NetLogEntry::type);
+  ASSERT_NE(event, events.end());
+  EXPECT_EQ(net::NetLogEventPhase::END, event->phase);
+
+  EXPECT_FALSE(event->params.Find("net_error"));
+  EXPECT_EQ(net::CERT_STATUS_IS_QWAC, event->params.FindInt("cert_status"));
+  base::Value::Dict* pem_verified_certs =
+      event->params.FindDict("verified_cert");
+  ASSERT_TRUE(pem_verified_certs);
+  EXPECT_THAT(ParseNetLogCertificatesDict(*pem_verified_certs),
+              testing::ElementsAre(binding_builder.GetLeafBuilder()->GetDER(),
+                                   binding_builder.GetRootBuilder()->GetDER()));
+
+  event = std::ranges::find(++event, events.end(),
+                            NetLogEventType::CERT_VERIFY_PROC_2QWAC_BINDING,
+                            &NetLogEntry::type);
+  ASSERT_NE(event, events.end());
+  EXPECT_EQ(net::NetLogEventPhase::END, event->phase);
+  EXPECT_FALSE(event->params.Find("net_error"));
+  EXPECT_EQ(true, event->params.FindBool("is_valid_2qwac_binding"));
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacBindingTest, TestBindingFailsParsing) {
+  auto [tls_leaf, tls_root] = CertBuilder::CreateSimpleChain2();
+
+  TwoQwacCertBindingBuilder binding_builder;
+  binding_builder.SetBoundCerts({tls_leaf->GetDER()});
+  std::string jws = "invalid" + binding_builder.GetJWS();
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(binding_builder.GetRootBuilder()->GetCertBuffer());
+
+  RecordingNetLogObserver net_log_observer(NetLogCaptureMode::kDefault);
+  base::HistogramTester histograms;
+  NetLogSource verify_net_log_source;
+  EXPECT_FALSE(Verify2QwacBinding(jws, "www.example.com",
+                                  base::as_byte_span(tls_leaf->GetDER()),
+                                  &verify_net_log_source));
+  ExpectHistogramSample(histograms,
+                        Verify2QwacBindingResult::kBindingParsingError);
+
+  auto end_events = net_log_observer.GetEntriesForSourceWithType(
+      verify_net_log_source, NetLogEventType::CERT_VERIFY_PROC_2QWAC_BINDING,
+      net::NetLogEventPhase::END);
+  ASSERT_EQ(1U, end_events.size());
+  auto& event = end_events[0];
+  EXPECT_EQ(ERR_FAILED, event.params.FindInt("net_error"));
+  EXPECT_EQ("binding parsing error",
+            base::optional_ref(event.params.FindString("error_description")));
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacBindingTest, TestBindingInvalidSignature) {
+  auto [tls_leaf, tls_root] = CertBuilder::CreateSimpleChain2();
+
+  TwoQwacCertBindingBuilder binding_builder;
+  binding_builder.SetBoundCerts({tls_leaf->GetDER()});
+  std::string jws = binding_builder.GetJWSWithInvalidSignature();
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(binding_builder.GetRootBuilder()->GetCertBuffer());
+
+  RecordingNetLogObserver net_log_observer(NetLogCaptureMode::kDefault);
+  base::HistogramTester histograms;
+  NetLogSource verify_net_log_source;
+  EXPECT_FALSE(Verify2QwacBinding(jws, "www.example.com",
+                                  base::as_byte_span(tls_leaf->GetDER()),
+                                  &verify_net_log_source));
+  ExpectHistogramSample(histograms,
+                        Verify2QwacBindingResult::kBindingSignatureInvalid);
+
+  auto end_events = net_log_observer.GetEntriesForSourceWithType(
+      verify_net_log_source, NetLogEventType::CERT_VERIFY_PROC_2QWAC_BINDING,
+      net::NetLogEventPhase::END);
+  ASSERT_EQ(1U, end_events.size());
+  auto& event = end_events[0];
+  EXPECT_EQ(ERR_FAILED, event.params.FindInt("net_error"));
+  EXPECT_EQ("binding signature invalid",
+            base::optional_ref(event.params.FindString("error_description")));
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacBindingTest,
+       TestBinding2QwacFailsVerification) {
+  auto [tls_leaf, tls_root] = CertBuilder::CreateSimpleChain2();
+
+  TwoQwacCertBindingBuilder binding_builder;
+  binding_builder.SetBoundCerts({tls_leaf->GetDER()});
+  std::string jws = binding_builder.GetJWS();
+
+  // The qwac root is not added to the EUTL, so cert verification of the 2-QWAC
+  // certificate should fail.
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+
+  RecordingNetLogObserver net_log_observer(NetLogCaptureMode::kDefault);
+  base::HistogramTester histograms;
+  NetLogSource verify_net_log_source;
+  EXPECT_FALSE(Verify2QwacBinding(jws, "www.example.com",
+                                  base::as_byte_span(tls_leaf->GetDER()),
+                                  &verify_net_log_source));
+  ExpectHistogramSample(histograms,
+                        Verify2QwacBindingResult::kCertAuthorityInvalid);
+
+  auto end_events = net_log_observer.GetEntriesForSourceWithType(
+      verify_net_log_source, NetLogEventType::CERT_VERIFY_PROC_2QWAC_BINDING,
+      net::NetLogEventPhase::END);
+  ASSERT_EQ(1U, end_events.size());
+  auto& event = end_events[0];
+  EXPECT_EQ(ERR_FAILED, event.params.FindInt("net_error"));
+  EXPECT_EQ("2-QWAC cert verify failed",
+            base::optional_ref(event.params.FindString("error_description")));
+}
+
+TEST_F(CertVerifyProcBuiltin2QwacBindingTest, TestTlsCertIsNotBound) {
+  auto [bound_leaf, bound_root] = CertBuilder::CreateSimpleChain2();
+  auto [tls_leaf, tls_root] = CertBuilder::CreateSimpleChain2();
+
+  TwoQwacCertBindingBuilder binding_builder;
+  binding_builder.SetBoundCerts({bound_leaf->GetDER()});
+  std::string jws = binding_builder.GetJWS();
+
+  InitializeVerifyProc(CreateParams(/*additional_trust_anchors=*/{}));
+  AddMockEutlRoot(binding_builder.GetRootBuilder()->GetCertBuffer());
+
+  RecordingNetLogObserver net_log_observer(NetLogCaptureMode::kDefault);
+  base::HistogramTester histograms;
+  NetLogSource verify_net_log_source;
+  EXPECT_FALSE(Verify2QwacBinding(jws, "www.example.com",
+                                  base::as_byte_span(tls_leaf->GetDER()),
+                                  &verify_net_log_source));
+  ExpectHistogramSample(histograms, Verify2QwacBindingResult::kTlsCertNotBound);
+
+  auto end_events = net_log_observer.GetEntriesForSourceWithType(
+      verify_net_log_source, NetLogEventType::CERT_VERIFY_PROC_2QWAC_BINDING,
+      net::NetLogEventPhase::END);
+  ASSERT_EQ(1U, end_events.size());
+  auto& event = end_events[0];
+  EXPECT_EQ(ERR_FAILED, event.params.FindInt("net_error"));
+  EXPECT_EQ("TLS cert not bound",
+            base::optional_ref(event.params.FindString("error_description")));
+}
 
 #endif  // BUILDFLAG(CHROME_ROOT_STORE_SUPPORTED)
 

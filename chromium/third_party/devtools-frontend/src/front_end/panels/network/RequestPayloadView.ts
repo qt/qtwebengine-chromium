@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -111,10 +112,9 @@ export class RequestPayloadView extends UI.Widget.VBox {
   private requestPayloadCategory: Category;
 
   constructor(request: SDK.NetworkRequest.NetworkRequest) {
-    super();
+    super({jslog: `${VisualLogging.pane('payload').track({resize: true})}`});
     this.registerRequiredCSS(requestPayloadViewStyles);
     this.element.classList.add('request-payload-view');
-    this.element.setAttribute('jslog', `${VisualLogging.pane('payload').track({resize: true})}`);
 
     this.request = request;
     this.decodeRequestParameters = true;

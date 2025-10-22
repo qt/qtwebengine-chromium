@@ -6,9 +6,10 @@
 
 #include <map>
 
-#include "base/lazy_instance.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/no_destructor.h"
+#include "base/strings/escape.h"
 #include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_action_dispatcher.h"
@@ -23,6 +24,7 @@
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/extension_user_script_loader.h"
 #include "extensions/browser/extension_web_contents_observer.h"
+#include "extensions/browser/icon_util.h"
 #include "extensions/browser/script_injection_tracker.h"
 #include "extensions/browser/user_script_manager.h"
 #include "extensions/common/api/declarative/declarative_constants.h"
@@ -211,8 +213,10 @@ struct ContentActionFactory {
   }
 };
 
-base::LazyInstance<ContentActionFactory>::Leaky
-    g_content_action_factory = LAZY_INSTANCE_INITIALIZER;
+ContentActionFactory& GetContentActionFactory() {
+  static base::NoDestructor<ContentActionFactory> content_action_factory;
+  return *content_action_factory;
+}
 
 }  // namespace
 
@@ -330,13 +334,13 @@ void RequestContentScript::InitScript(const mojom::HostID& host_id,
                 kMatchForAboutSchemeAndClimbTree
           : mojom::MatchOriginAsFallbackBehavior::kNever);
   for (const auto& css_file_name : script_data.css_file_names) {
-    GURL url = extension->GetResourceURL(css_file_name);
+    GURL url = extension->GetResourceURL(base::EscapePath(css_file_name));
     ExtensionResource resource = extension->GetResource(css_file_name);
     script_.css_scripts().push_back(UserScript::Content::CreateFile(
         resource.extension_root(), resource.relative_path(), url));
   }
   for (const auto& js_file_name : script_data.js_file_names) {
-    GURL url = extension->GetResourceURL(js_file_name);
+    GURL url = extension->GetResourceURL(base::EscapePath(js_file_name));
     ExtensionResource resource = extension->GetResource(js_file_name);
     script_.js_scripts().push_back(UserScript::Content::CreateFile(
         resource.extension_root(), resource.relative_path(), url));
@@ -407,8 +411,8 @@ std::unique_ptr<ContentAction> SetIcon::Create(
   gfx::ImageSkia icon;
   const base::Value::Dict* canvas_set = dict->FindDict("imageData");
   if (canvas_set &&
-      ExtensionAction::ParseIconFromCanvasDictionary(*canvas_set, &icon) !=
-          ExtensionAction::IconParseResult::kSuccess) {
+      extensions::ParseIconFromCanvasDictionary(*canvas_set, &icon) !=
+          extensions::IconParseResult::kSuccess) {
     *error = kInvalidIconDictionary;
     return nullptr;
   }
@@ -447,7 +451,7 @@ std::unique_ptr<ContentAction> ContentAction::Create(
     return nullptr;
   }
 
-  ContentActionFactory& factory = g_content_action_factory.Get();
+  ContentActionFactory& factory = GetContentActionFactory();
   auto factory_method_iter = factory.factory_methods.find(*instance_type);
   if (factory_method_iter != factory.factory_methods.end())
     return (*factory_method_iter->second)(browser_context, extension,

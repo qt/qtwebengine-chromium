@@ -87,13 +87,14 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
   #contentPromise: Promise<TextUtils.ContentData.ContentDataOrError>|null;
   readonly #embedderNameInternal: Platform.DevToolsPath.UrlString|null;
   readonly isModule: boolean|null;
+  readonly buildId: string|null;
   constructor(
       debuggerModel: DebuggerModel, scriptId: Protocol.Runtime.ScriptId, sourceURL: Platform.DevToolsPath.UrlString,
       startLine: number, startColumn: number, endLine: number, endColumn: number, executionContextId: number,
       hash: string, isContentScript: boolean, isLiveEdit: boolean, sourceMapURL: string|undefined,
       hasSourceURL: boolean, length: number, isModule: boolean|null, originStackTrace: Protocol.Runtime.StackTrace|null,
       codeOffset: number|null, scriptLanguage: string|null, debugSymbols: Protocol.Debugger.DebugSymbols|null,
-      embedderName: Platform.DevToolsPath.UrlString|null) {
+      embedderName: Platform.DevToolsPath.UrlString|null, buildId: string|null) {
     this.debuggerModel = debuggerModel;
     this.scriptId = scriptId;
     this.sourceURL = sourceURL;
@@ -102,6 +103,7 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     this.endLine = endLine;
     this.endColumn = endColumn;
     this.isModule = isModule;
+    this.buildId = buildId;
 
     this.executionContextId = executionContextId;
     this.hash = hash;
@@ -291,11 +293,6 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
     return this.#contentPromise;
   }
 
-  async requestContent(): Promise<TextUtils.ContentProvider.DeferredContent> {
-    const contentData = await this.requestContentData();
-    return TextUtils.ContentData.ContentData.asDeferredContent(contentData);
-  }
-
   private async requestContentInternal(): Promise<TextUtils.ContentData.ContentDataOrError> {
     if (!this.scriptId) {
       return {error: i18nString(UIStrings.scriptRemovedOrDeleted)};
@@ -435,7 +432,7 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
    * content is subtracted to make the location within the script independent of the
    * location of the `<script>` tag within the surrounding document.
    *
-   * @param rawLocation the raw location in terms of what V8 understands.
+   * @param rawLocation - the raw location in terms of what V8 understands.
    * @returns the script relative line and column number for the {@link rawLocation}.
    */
   rawLocationToRelativeLocation(rawLocation: {lineNumber: number, columnNumber: number}):
@@ -461,7 +458,7 @@ export class Script implements TextUtils.ContentProvider.ContentProvider, FrameA
    * of the script content is added to make the location relative to the start of the
    * surrounding document.
    *
-   * @param relativeLocation the script relative location.
+   * @param relativeLocation - the script relative location.
    * @returns the raw location in terms of what V8 understands for the {@link relativeLocation}.
    */
   relativeLocationToRawLocation(relativeLocation: {lineNumber: number, columnNumber: number}):

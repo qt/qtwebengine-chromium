@@ -63,8 +63,6 @@ class PendingReceiver {
   explicit PendingReceiver(ScopedMessagePipeHandle pipe)
       : state_(std::move(pipe)) {}
 
-  // Disabled on NaCl since it crashes old version of clang.
-#if !BUILDFLAG(IS_NACL)
   // Move conversion operator for custom receiver types. Only participates in
   // overload resolution if a typesafe conversion is supported.
   template <typename T,
@@ -76,7 +74,6 @@ class PendingReceiver {
   PendingReceiver(T&& other)
       : PendingReceiver(PendingReceiverConverter<T>::template To<Interface>(
             std::forward<T>(other))) {}
-#endif  // !BUILDFLAG(IS_NACL)
 
   PendingReceiver(const PendingReceiver&) = delete;
   PendingReceiver& operator=(const PendingReceiver&) = delete;
@@ -107,7 +104,11 @@ class PendingReceiver {
     MojoResult result =
         WriteMessageNew(state_.pipe.get(), message.TakeMojoMessage(),
                         MOJO_WRITE_MESSAGE_FLAG_NONE);
-    DCHECK_EQ(MOJO_RESULT_OK, result);
+    // Either the message was sent successfully or the message pipe has already
+    // been closed on the other end.
+    DCHECK(result == MOJO_RESULT_OK ||
+           result == MOJO_RESULT_FAILED_PRECONDITION)
+        << "result: " << result;
 
     reset();
   }

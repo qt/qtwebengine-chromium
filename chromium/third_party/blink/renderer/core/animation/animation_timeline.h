@@ -19,6 +19,7 @@
 namespace blink {
 
 class Document;
+class AnimationTrigger;
 
 enum class TimelinePhase { kInactive, kActive };
 
@@ -141,7 +142,7 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
       const PaintArtifactCompositor*);
 
   using ReplaceableAnimationsMap =
-      HeapHashMap<Member<Element>, Member<HeapVector<Member<Animation>>>>;
+      HeapHashMap<Member<Element>, Member<GCedHeapVector<Member<Animation>>>>;
   void getReplaceableAnimations(
       ReplaceableAnimationsMap* replaceable_animation_set);
 
@@ -150,6 +151,10 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
   virtual std::optional<AnimationTimeDelta> GetDuration() const {
     return std::nullopt;
   }
+
+  virtual void AddAnimationTrigger(AnimationTrigger* trigger);
+  virtual void RemoveAnimationTrigger(AnimationTrigger* trigger);
+  void ServiceAnimationTriggers();
 
  protected:
   virtual PhaseAndTime CurrentPhaseAndTime() = 0;
@@ -169,10 +174,18 @@ class CORE_EXPORT AnimationTimeline : public ScriptWrappable {
   HeapHashSet<Member<Animation>> animations_needing_update_;
   // All animations attached to this timeline.
   HeapHashSet<WeakMember<Animation>> animations_;
+  // Triggers which depend on this timeline.
+  HeapHashSet<Member<AnimationTrigger>> triggers_;
 
   scoped_refptr<cc::AnimationTimeline> compositor_timeline_;
 
   std::optional<PhaseAndTime> last_current_phase_and_time_;
+
+  // Whether or not to update the trigger at the next opportunity to do so.
+  // This could because the |last_current_phase_and_time_| changed or because a
+  // new animation which triggers on this timeline has been added since the last
+  // opportunity for an update.
+  bool update_triggers_;
 };
 
 }  // namespace blink

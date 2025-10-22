@@ -4,11 +4,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Optional, Tuple
+from typing import TYPE_CHECKING, Optional
 
 from typing_extensions import override
 
-from crossbench import plt
 from crossbench.browsers.attributes import BrowserAttributes
 from crossbench.browsers.browser import Browser
 from crossbench.browsers.firefox.version import FirefoxVersion
@@ -16,7 +15,7 @@ from crossbench.browsers.viewport import Viewport
 from crossbench.browsers.webdriver import WebDriverBrowser
 
 if TYPE_CHECKING:
-  from crossbench.browsers.settings import Settings
+  from crossbench import plt
   from crossbench.flags.base import Flags
   from crossbench.path import AnyPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
@@ -70,7 +69,7 @@ class Firefox(Browser):
 
   @override
   def _get_browser_flags_for_session(
-      self, session: BrowserSessionRunGroup) -> Tuple[str, ...]:
+      self, session: BrowserSessionRunGroup) -> tuple[str, ...]:
     flags_copy = self.flags.copy()
     flags_copy.update(session.extra_flags)
     flags_copy.update(self.network.extra_flags(self.attributes()))

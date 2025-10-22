@@ -11,9 +11,12 @@ import("//ui/webui/webui_features.gni")
 tsc_folder = "$root_gen_dir/ui/webui/resources/tsc/mojo"
 
 mojo_ts_files = [
+  "components/omnibox/browser/omnibox.mojom-webui.ts",
   "mojo/public/mojom/base/absl_status.mojom-webui.ts",
   "mojo/public/mojom/base/big_string.mojom-webui.ts",
   "mojo/public/mojom/base/big_buffer.mojom-webui.ts",
+  "mojo/public/mojom/base/empty.mojom-webui.ts",
+  "mojo/public/mojom/base/error.mojom-webui.ts",
   "mojo/public/mojom/base/file.mojom-webui.ts",
   "mojo/public/mojom/base/file_path.mojom-webui.ts",
   "mojo/public/mojom/base/int128.mojom-webui.ts",
@@ -30,7 +33,9 @@ mojo_ts_files = [
   "mojo/public/mojom/base/time.mojom-webui.ts",
   "mojo/public/mojom/base/time_converters.ts",
   "mojo/public/mojom/base/token.mojom-webui.ts",
+  "mojo/public/mojom/base/unguessable_token.mojom-converters.ts",
   "mojo/public/mojom/base/unguessable_token.mojom-webui.ts",
+  "mojo/public/mojom/base/unguessable_token_converter.ts",
   "mojo/public/mojom/base/uuid.mojom-webui.ts",
   "mojo/public/mojom/base/values.mojom-webui.ts",
   "skia/public/mojom/skcolor.mojom-webui.ts",
@@ -47,6 +52,10 @@ mojo_ts_files = [
 
 if (is_ios) {
   mojo_ts_files += [ "ui/base/mojom/ui_base_types.mojom-webui.ts" ]
+}
+
+if (!is_android && !is_ios) {
+  mojo_ts_files += [ "components/omnibox/browser/searchbox.mojom-webui.ts" ]
 }
 
 if (is_chromeos) {
@@ -88,6 +97,7 @@ preprocess_if_expr("copy_mojo_ts") {
   out_folder = "$target_gen_dir/preprocessed"
   in_files = mojo_ts_files
   deps = [
+    "//components/omnibox/browser:mojo_bindings_ts__generator",
     "//mojo/public/mojom/base:base_ts__copy_converters",
     "//mojo/public/mojom/base:base_ts__generator",
     "//mojo/public/mojom/base:protobuf_support_ts__generator",

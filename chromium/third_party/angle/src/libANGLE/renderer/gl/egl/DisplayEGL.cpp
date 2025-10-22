@@ -46,7 +46,8 @@ std::vector<EGLint> RenderableTypesFromPlatformAttrib(const rx::FunctionsEGL *eg
             static_assert(EGL_OPENGL_ES3_BIT == EGL_OPENGL_ES3_BIT_KHR,
                           "Extension define must match core");
 
-            gl::Version eglVersion(egl->majorVersion, egl->minorVersion);
+            const gl::Version eglVersion(static_cast<uint8_t>(egl->majorVersion),
+                                         static_cast<uint8_t>(egl->minorVersion));
             if (eglVersion >= gl::Version(1, 5) || egl->hasExtension("EGL_KHR_create_context"))
             {
                 renderableTypes.push_back(EGL_OPENGL_ES3_BIT);
@@ -117,7 +118,8 @@ egl::Error DisplayEGL::initializeContext(EGLContext shareContext,
                                          const egl::AttributeMap &eglAttributes,
                                          EGLContext *outContext) const
 {
-    gl::Version eglVersion(mEGL->majorVersion, mEGL->minorVersion);
+    const gl::Version eglVersion(static_cast<uint8_t>(mEGL->majorVersion),
+                                 static_cast<uint8_t>(mEGL->minorVersion));
 
     EGLint requestedMajor =
         eglAttributes.getAsInt(EGL_PLATFORM_ANGLE_MAX_VERSION_MAJOR_ANGLE, EGL_DONT_CARE);
@@ -156,9 +158,9 @@ egl::Error DisplayEGL::initializeContext(EGLContext shareContext,
             {
                 egl::AttributeMap versionAttribs;
                 versionAttribs.insert(EGL_CONTEXT_MAJOR_VERSION,
-                                      static_cast<EGLint>(version.major));
+                                      static_cast<EGLint>(version.getMajor()));
                 versionAttribs.insert(EGL_CONTEXT_MINOR_VERSION,
-                                      static_cast<EGLint>(version.minor));
+                                      static_cast<EGLint>(version.getMinor()));
 
                 contextAttribLists.push_back(std::move(versionAttribs));
             }
@@ -315,7 +317,8 @@ egl::Error DisplayEGL::initialize(egl::Display *display)
     ANGLE_TRY(
         mEGL->initialize(platformType, display->getNativeDisplayId(), getEGLPath(), eglHandle));
 
-    gl::Version eglVersion(mEGL->majorVersion, mEGL->minorVersion);
+    const gl::Version eglVersion(static_cast<uint8_t>(mEGL->majorVersion),
+                                 static_cast<uint8_t>(mEGL->minorVersion));
     if (eglVersion < gl::Version(1, 4))
     {
         return egl::Error(EGL_NOT_INITIALIZED, "EGL >= 1.4 is required");
@@ -451,8 +454,19 @@ class ExternalSurfaceEGL : public SurfaceEGL
 
     egl::Error initialize(const egl::Display *display) override { return egl::NoError(); }
     EGLint getSwapBehavior() const override { return EGL_BUFFER_DESTROYED; }
-    EGLint getWidth() const override { return mWidth; }
-    EGLint getHeight() const override { return mHeight; }
+    gl::Extents getSize() const final { return gl::Extents(mWidth, mHeight, 1); }
+    egl::Error getUserSize(const egl::Display *display, EGLint *width, EGLint *height) const final
+    {
+        if (width != nullptr)
+        {
+            *width = mWidth;
+        }
+        if (height != nullptr)
+        {
+            *height = mHeight;
+        }
+        return egl::NoError();
+    }
     bool isExternal() const override { return true; }
 
   private:
@@ -822,7 +836,8 @@ void DisplayEGL::destroyNativeContext(EGLContext context)
 
 void DisplayEGL::generateExtensions(egl::DisplayExtensions *outExtensions) const
 {
-    gl::Version eglVersion(mEGL->majorVersion, mEGL->minorVersion);
+    const gl::Version eglVersion(static_cast<uint8_t>(mEGL->majorVersion),
+                                 static_cast<uint8_t>(mEGL->minorVersion));
 
     outExtensions->createContextRobustness =
         mEGL->hasExtension("EGL_EXT_create_context_robustness");
@@ -1044,7 +1059,7 @@ DeviceImpl *DisplayEGL::createDevice()
     return new DeviceEGL(this);
 }
 
-bool DisplayEGL::supportsDmaBufFormat(EGLint format) const
+bool DisplayEGL::supportsDmaBufFormat(EGLint format)
 {
     return std::find(std::begin(mDrmFormats), std::end(mDrmFormats), format) !=
            std::end(mDrmFormats);

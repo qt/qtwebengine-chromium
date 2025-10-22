@@ -9,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "base/base64.h"
 #include "base/command_line.h"
 #include "base/files/file_util.h"
 #include "base/json/json_reader.h"
@@ -25,6 +26,7 @@
 #include "services/tracing/public/cpp/perfetto/perfetto_config.h"
 #include "services/tracing/public/mojom/perfetto_service.mojom.h"
 #include "third_party/perfetto/protos/perfetto/config/track_event/track_event_config.gen.h"
+#include "third_party/snappy/src/snappy.h"
 
 #if BUILDFLAG(IS_ANDROID)
 #include "base/android/early_trace_event_binding.h"
@@ -86,6 +88,20 @@ TraceStartupConfig& TraceStartupConfig::GetInstance() {
 // static
 perfetto::TraceConfig TraceStartupConfig::GetDefaultBackgroundStartupConfig() {
   perfetto::TraceConfig config;
+
+  {
+    auto* buffer_config = config.add_buffers();
+    buffer_config->set_size_kb(tracing::GetDefaultTraceBufferSize().InKiB());
+    buffer_config->set_fill_policy(
+        perfetto::TraceConfig::BufferConfig::RING_BUFFER);
+  }
+  {
+    auto* buffer_config = config.add_buffers();
+    buffer_config->set_size_kb(kMetadataBufferSize.InKiB());
+    buffer_config->set_fill_policy(
+        perfetto::TraceConfig::BufferConfig::DISCARD);
+  }
+
   auto* track_event_data_source = config.add_data_sources()->mutable_config();
   perfetto::protos::gen::TrackEventConfig track_event_config;
   for (auto category : kDefaultStartupCategories) {
@@ -94,15 +110,17 @@ perfetto::TraceConfig TraceStartupConfig::GetDefaultBackgroundStartupConfig() {
   track_event_data_source->set_track_event_config_raw(
       track_event_config.SerializeAsString());
   track_event_data_source->set_name("track_event");
-  config.add_data_sources()->mutable_config()->set_name(
-      tracing::mojom::kMetaDataSourceName);
+  {
+    auto* source_config = config.add_data_sources()->mutable_config();
+    source_config->set_name(tracing::mojom::kMetaData2SourceName);
+    source_config->set_target_buffer(1);
+  }
 
 #if BUILDFLAG(IS_ANDROID)
   config.add_data_sources()->mutable_config()->set_name(
       tracing::mojom::kSamplerProfilerSourceName);
 #endif
-  tracing::AdaptPerfettoConfigForChrome(
-      &config, true, true, perfetto::protos::gen::ChromeConfig::BACKGROUND);
+  tracing::AdaptPerfettoConfigForChrome(&config, true, true);
   return config;
 }
 
@@ -120,7 +138,9 @@ TraceStartupConfig::TraceStartupConfig() {
     DCHECK(IsEnabled());
   } else if (EnableFromConfigHandle()) {
     DCHECK(IsEnabled());
-  } else if (EnableFromConfigFile()) {
+  } else if (EnableFromJsonConfigFile()) {
+    DCHECK(IsEnabled());
+  } else if (EnableFromPerfettoConfigFile()) {
     DCHECK(IsEnabled());
   } else if (EnableFromBackgroundTracing()) {
     DCHECK(IsEnabled());
@@ -241,8 +261,7 @@ bool TraceStartupConfig::EnableFromCommandLine() {
   }
 
   perfetto_config_ = tracing::GetDefaultPerfettoConfig(
-      chrome_config, false, output_format_ != OutputFormat::kProto,
-      perfetto::protos::gen::ChromeConfig::USER_INITIATED, "");
+      chrome_config, false, output_format_ != OutputFormat::kProto, "");
 
   if (startup_duration_in_seconds > 0) {
     perfetto_config_.set_duration_ms(startup_duration_in_seconds * 1000);
@@ -283,7 +302,7 @@ bool TraceStartupConfig::EnableFromConfigHandle() {
   return true;
 }
 
-bool TraceStartupConfig::EnableFromConfigFile() {
+bool TraceStartupConfig::EnableFromJsonConfigFile() {
 #if BUILDFLAG(IS_ANDROID)
   base::FilePath trace_config_file(kAndroidTraceConfigFile);
 #else
@@ -300,8 +319,7 @@ bool TraceStartupConfig::EnableFromConfigFile() {
     DLOG(WARNING) << "Use default trace config.";
     perfetto_config_ = tracing::GetDefaultPerfettoConfig(
         base::trace_event::TraceConfig(), false,
-        output_format_ != OutputFormat::kProto,
-        perfetto::protos::gen::ChromeConfig::USER_INITIATED, "");
+        output_format_ != OutputFormat::kProto, "");
     perfetto_config_.set_duration_ms(kDefaultStartupDurationInSeconds * 1000);
     return true;
   }
@@ -318,11 +336,57 @@ bool TraceStartupConfig::EnableFromConfigFile() {
     DLOG(WARNING) << "Cannot read the trace config file correctly.";
     return false;
   }
-  is_enabled_ = ParseTraceConfigFileContent(trace_config_file_content);
-  if (!is_enabled_) {
+  auto config = ParseTraceJsonConfigFileContent(trace_config_file_content);
+  if (!config) {
     DLOG(WARNING) << "Cannot parse the trace config file correctly.";
+    return false;
   }
-  return is_enabled_;
+  perfetto_config_ = *config;
+  is_enabled_ = true;
+  return true;
+}
+
+bool TraceStartupConfig::EnableFromPerfettoConfigFile() {
+  auto* command_line = base::CommandLine::ForCurrentProcess();
+  if (!command_line->HasSwitch(switches::kTracePerfettoConfigFile)) {
+    return false;
+  }
+  base::FilePath config_file =
+      command_line->GetSwitchValuePath(switches::kTracePerfettoConfigFile);
+
+  if (config_file.empty()) {
+    DLOG(WARNING) << "--perfetto-config-file needs a config file path.";
+    return false;
+  }
+
+  if (!base::PathExists(config_file)) {
+    DLOG(WARNING) << "The perfetto config file does not exist.";
+    return false;
+  }
+
+  std::string config_text;
+  if (!base::ReadFileToString(config_file, &config_text)) {
+    DLOG(WARNING) << "Cannot read the trace config file correctly.";
+    return false;
+  }
+
+  std::optional<perfetto::TraceConfig> config;
+  if (base::FilePath::CompareEqualIgnoreCase(config_file.Extension(),
+                                             FILE_PATH_LITERAL(".pb"))) {
+    config = ParseSerializedPerfettoConfig(base::as_byte_span(config_text));
+  } else {
+    config = ParseEncodedPerfettoConfig(config_text);
+  }
+  if (!config) {
+    DLOG(WARNING) << "Failed to parse perfetto config file.";
+    return false;
+  }
+  if (AdaptPerfettoConfigForChrome(&*config)) {
+    DLOG(WARNING) << "Failed to adapt perfetto config file.";
+  }
+  perfetto_config_ = *config;
+  is_enabled_ = true;
+  return true;
 }
 
 bool TraceStartupConfig::EnableFromBackgroundTracing() {
@@ -352,28 +416,28 @@ bool TraceStartupConfig::EnableFromBackgroundTracing() {
   return true;
 }
 
-bool TraceStartupConfig::ParseTraceConfigFileContent(
+std::optional<perfetto::TraceConfig>
+TraceStartupConfig::ParseTraceJsonConfigFileContent(
     const std::string& content) {
   std::optional<base::Value::Dict> value = base::JSONReader::ReadDict(content);
   if (!value) {
-    return false;
+    return std::nullopt;
   }
 
   auto* trace_config_dict = value->FindDict(kTraceConfigParam);
   if (!trace_config_dict) {
-    return false;
+    return std::nullopt;
   }
 
   auto chrome_config =
       base::trace_event::TraceConfig(std::move(*trace_config_dict));
-  perfetto_config_ = tracing::GetDefaultPerfettoConfig(
-      chrome_config, false, output_format_ != OutputFormat::kProto,
-      perfetto::protos::gen::ChromeConfig::USER_INITIATED, "");
+  perfetto::TraceConfig perfetto_config = tracing::GetDefaultPerfettoConfig(
+      chrome_config, false, output_format_ != OutputFormat::kProto, "");
 
   int startup_duration_in_seconds =
       value->FindInt(kStartupDurationParam).value_or(0);
   if (startup_duration_in_seconds > 0) {
-    perfetto_config_.set_duration_ms(startup_duration_in_seconds * 1000);
+    perfetto_config.set_duration_ms(startup_duration_in_seconds * 1000);
   }
 
   if (auto* result_file = value->FindString(kResultFileParam)) {
@@ -386,7 +450,39 @@ bool TraceStartupConfig::ParseTraceConfigFileContent(
         "_chrometrace.log");
   }
 
-  return true;
+  return perfetto_config;
+}
+
+std::optional<perfetto::TraceConfig>
+TraceStartupConfig::ParseSerializedPerfettoConfig(
+    const base::span<const uint8_t>& config_bytes) {
+  perfetto::TraceConfig config;
+  if (config_bytes.empty()) {
+    return std::nullopt;
+  }
+  if (config.ParseFromArray(config_bytes.data(), config_bytes.size())) {
+    return config;
+  }
+  return std::nullopt;
+}
+
+std::optional<perfetto::TraceConfig>
+TraceStartupConfig::ParseEncodedPerfettoConfig(
+    const std::string& config_string) {
+  std::string serialized_config;
+  if (!base::Base64Decode(config_string, &serialized_config,
+                          base::Base64DecodePolicy::kForgiving)) {
+    return std::nullopt;
+  }
+
+  // `serialized_config` may optionally be compressed.
+  std::string decompressed_config;
+  if (!snappy::Uncompress(serialized_config.data(), serialized_config.size(),
+                          &decompressed_config)) {
+    return ParseSerializedPerfettoConfig(base::as_byte_span(serialized_config));
+  }
+
+  return ParseSerializedPerfettoConfig(base::as_byte_span(decompressed_config));
 }
 
 }  // namespace tracing

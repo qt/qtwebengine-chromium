@@ -17,7 +17,8 @@
 #include "base/win/windows_types.h"
 #endif
 
-#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD))
+#if BUILDFLAG(IS_MAC) || \
+    (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD) && !BUILDFLAG(IS_IOS_TVOS))
 #include <mach/mach.h>
 #endif
 
@@ -35,7 +36,6 @@ class BASE_EXPORT IOWatcher {
   // Returns null otherwise.
   static IOWatcher* Get();
 
-#if !BUILDFLAG(IS_NACL)
 #if BUILDFLAG(IS_WIN)
   // Please see MessagePumpWin for definitions of these methods.
   [[nodiscard]] bool RegisterIOHandler(HANDLE file,
@@ -86,7 +86,8 @@ class BASE_EXPORT IOWatcher {
       const Location& location = Location::Current());
 #endif
 
-#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD))
+#if BUILDFLAG(IS_MAC) || \
+    (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD) && !BUILDFLAG(IS_IOS_TVOS))
   bool WatchMachReceivePort(
       mach_port_t port,
       MessagePumpForIO::MachPortWatchController* controller,
@@ -99,14 +100,12 @@ class BASE_EXPORT IOWatcher {
                      MessagePumpForIO::ZxHandleWatchController* controller,
                      MessagePumpForIO::ZxHandleWatcher* delegate);
 #endif  // BUILDFLAG(IS_FUCHSIA)
-#endif  // !BUILDFLAG(IS_NACL)
 
  protected:
   IOWatcher();
 
   // IOWatcher implementations must implement these methods for any applicable
   // platform(s).
-#if !BUILDFLAG(IS_NACL)
 #if BUILDFLAG(IS_WIN)
   virtual bool RegisterIOHandlerImpl(HANDLE file,
                                      MessagePumpForIO::IOHandler* handler) = 0;
@@ -120,7 +119,8 @@ class BASE_EXPORT IOWatcher {
       FdWatcher& fd_watcher,
       const Location& location) = 0;
 #endif
-#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD))
+#if BUILDFLAG(IS_MAC) || \
+    (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD) && !BUILDFLAG(IS_IOS_TVOS))
   virtual bool WatchMachReceivePortImpl(
       mach_port_t port,
       MessagePumpForIO::MachPortWatchController* controller,
@@ -133,7 +133,6 @@ class BASE_EXPORT IOWatcher {
       MessagePumpForIO::ZxHandleWatchController* controller,
       MessagePumpForIO::ZxHandleWatcher* delegate) = 0;
 #endif  // BUILDFLAG(IS_FUCHSIA)
-#endif  // !BUILDFLAG(IS_NACL)
 };
 
 }  // namespace base

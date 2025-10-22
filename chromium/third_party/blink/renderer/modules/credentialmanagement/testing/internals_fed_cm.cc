@@ -8,8 +8,8 @@
 #include <string>
 
 #include "third_party/blink/public/common/thread_safe_browser_interface_broker_proxy.h"
-#include "third_party/blink/public/mojom/webid/federated_auth_request_automation.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
+#include "third_party/blink/public/test/mojom/webid/federated_auth_request_automation.test-mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_dialog_button.h"
@@ -59,7 +59,7 @@ ScriptPromise<IDLString> InternalsFedCm::getFedCmDialogType(
         if (!type.empty()) {
           resolver->Resolve(type);
         } else {
-          resolver->Reject();
+          resolver->Reject("no such alert");
         }
       },
       WrapPersistent(resolver), std::move(federated_auth_request_automation)));

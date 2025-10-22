@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef BASE_ALLOCATOR_DISPATCHER_INTERNAL_DISPATCHER_INTERNAL_H_
 #define BASE_ALLOCATOR_DISPATCHER_INTERNAL_DISPATCHER_INTERNAL_H_
 
@@ -195,6 +200,30 @@ struct DispatcherImpl {
     MUSTTAIL return allocator_dispatch_.next->free_function(address, context);
   }
 
+  static void FreeWithSizeFn(void* address, size_t size, void* context) {
+    DoNotifyFreeForShim(address);
+    MUSTTAIL return allocator_dispatch_.next->free_with_size_function(
+        address, size, context);
+  }
+
+  static void FreeWithAlignmentFn(void* address,
+                                  size_t alignment,
+                                  void* context) {
+    DoNotifyFreeForShim(address);
+    MUSTTAIL return allocator_dispatch_.next->free_with_alignment_function(
+        address, alignment, context);
+  }
+
+  static void FreeWithSizeAndAlignmentFn(void* address,
+                                         size_t size,
+                                         size_t alignment,
+                                         void* context) {
+    DoNotifyFreeForShim(address);
+    MUSTTAIL return allocator_dispatch_.next
+        ->free_with_size_and_alignment_function(address, size, alignment,
+                                                context);
+  }
+
   static unsigned BatchMallocFn(size_t size,
                                 void** results,
                                 unsigned num_requested,
@@ -217,12 +246,6 @@ struct DispatcherImpl {
 
     MUSTTAIL return allocator_dispatch_.next->batch_free_function(
         to_be_freed, num_to_be_freed, context);
-  }
-
-  static void FreeDefiniteSizeFn(void* address, size_t size, void* context) {
-    DoNotifyFreeForShim(address);
-    MUSTTAIL return allocator_dispatch_.next->free_definite_size_function(
-        address, size, context);
   }
 
   static void TryFreeDefaultFn(void* address, void* context) {
@@ -324,26 +347,28 @@ std::tuple<ObserverTypes*...> DispatcherImpl<ObserverTypes...>::s_observers;
 #if PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
 template <typename... ObserverTypes>
 AllocatorDispatch DispatcherImpl<ObserverTypes...>::allocator_dispatch_ = {
-    AllocFn,                    // alloc_function
-    AllocUncheckedFn,           // alloc_unchecked_function
-    AllocZeroInitializedFn,     // alloc_zero_initialized_function
-    AllocAlignedFn,             // alloc_aligned_function
-    ReallocFn,                  // realloc_function
-    ReallocUncheckedFn,         // realloc_unchecked_function
-    FreeFn,                     // free_function
-    nullptr,                    // get_size_estimate_function
-    nullptr,                    // good_size_function
-    nullptr,                    // claimed_address_function
-    BatchMallocFn,              // batch_malloc_function
-    BatchFreeFn,                // batch_free_function
-    FreeDefiniteSizeFn,         // free_definite_size_function
-    TryFreeDefaultFn,           // try_free_default_function
-    AlignedMallocFn,            // aligned_malloc_function
-    AlignedMallocUncheckedFn,   // aligned_malloc_unchecked_function
-    AlignedReallocFn,           // aligned_realloc_function
-    AlignedReallocUncheckedFn,  // aligned_realloc_unchecked_function
-    AlignedFreeFn,              // aligned_free_function
-    nullptr                     // next
+    AllocFn,                     // alloc_function
+    AllocUncheckedFn,            // alloc_unchecked_function
+    AllocZeroInitializedFn,      // alloc_zero_initialized_function
+    AllocAlignedFn,              // alloc_aligned_function
+    ReallocFn,                   // realloc_function
+    ReallocUncheckedFn,          // realloc_unchecked_function
+    FreeFn,                      // free_function
+    FreeWithSizeFn,              // free_with_size_function
+    FreeWithAlignmentFn,         // free_with_alignment_function
+    FreeWithSizeAndAlignmentFn,  // free_with_size_and_alignment_function
+    nullptr,                     // get_size_estimate_function
+    nullptr,                     // good_size_function
+    nullptr,                     // claimed_address_function
+    BatchMallocFn,               // batch_malloc_function
+    BatchFreeFn,                 // batch_free_function
+    TryFreeDefaultFn,            // try_free_default_function
+    AlignedMallocFn,             // aligned_malloc_function
+    AlignedMallocUncheckedFn,    // aligned_malloc_unchecked_function
+    AlignedReallocFn,            // aligned_realloc_function
+    AlignedReallocUncheckedFn,   // aligned_realloc_unchecked_function
+    AlignedFreeFn,               // aligned_free_function
+    nullptr                      // next
 };
 #endif  // PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
 

@@ -2278,6 +2278,12 @@ static inline void DispatchGetImageSubresourceLayout2KHR(VkDevice device, VkImag
     dispatch->GetImageSubresourceLayout2KHR(device, image, pSubresource, pLayout);
 }
 
+static inline VkResult DispatchWaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain,
+                                                  const VkPresentWait2InfoKHR* pPresentWait2Info) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->WaitForPresent2KHR(device, swapchain, pPresentWait2Info);
+}
+
 static inline VkResult DispatchCreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
                                                          const VkAllocationCallbacks* pAllocator,
                                                          VkPipelineBinaryHandlesInfoKHR* pBinaries) {
@@ -2308,6 +2314,11 @@ static inline VkResult DispatchReleaseCapturedPipelineDataKHR(VkDevice device, c
                                                               const VkAllocationCallbacks* pAllocator) {
     auto dispatch = vvl::dispatch::GetData(device);
     return dispatch->ReleaseCapturedPipelineDataKHR(device, pInfo, pAllocator);
+}
+
+static inline VkResult DispatchReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->ReleaseSwapchainImagesKHR(device, pReleaseInfo);
 }
 
 static inline VkResult DispatchGetPhysicalDeviceCooperativeMatrixPropertiesKHR(VkPhysicalDevice physicalDevice,
@@ -3278,7 +3289,7 @@ static inline void DispatchGetImageSubresourceLayout2EXT(VkDevice device, VkImag
     dispatch->GetImageSubresourceLayout2EXT(device, image, pSubresource, pLayout);
 }
 
-static inline VkResult DispatchReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo) {
+static inline VkResult DispatchReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo) {
     auto dispatch = vvl::dispatch::GetData(device);
     return dispatch->ReleaseSwapchainImagesEXT(device, pReleaseInfo);
 }
@@ -3397,6 +3408,22 @@ static inline void DispatchCmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, 
     dispatch->CmdCudaLaunchKernelNV(commandBuffer, pLaunchInfo);
 }
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+
+static inline void DispatchCmdDispatchTileQCOM(VkCommandBuffer commandBuffer, const VkDispatchTileInfoQCOM* pDispatchTileInfo) {
+    auto dispatch = vvl::dispatch::GetData(commandBuffer);
+    dispatch->CmdDispatchTileQCOM(commandBuffer, pDispatchTileInfo);
+}
+
+static inline void DispatchCmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer,
+                                                        const VkPerTileBeginInfoQCOM* pPerTileBeginInfo) {
+    auto dispatch = vvl::dispatch::GetData(commandBuffer);
+    dispatch->CmdBeginPerTileExecutionQCOM(commandBuffer, pPerTileBeginInfo);
+}
+
+static inline void DispatchCmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileEndInfoQCOM* pPerTileEndInfo) {
+    auto dispatch = vvl::dispatch::GetData(commandBuffer);
+    dispatch->CmdEndPerTileExecutionQCOM(commandBuffer, pPerTileEndInfo);
+}
 #ifdef VK_USE_PLATFORM_METAL_EXT
 
 static inline void DispatchExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo) {
@@ -4006,6 +4033,73 @@ static inline void DispatchCmdSetCoverageReductionModeNV(VkCommandBuffer command
     dispatch->CmdSetCoverageReductionModeNV(commandBuffer, coverageReductionMode);
 }
 
+static inline VkResult DispatchCreateTensorARM(VkDevice device, const VkTensorCreateInfoARM* pCreateInfo,
+                                               const VkAllocationCallbacks* pAllocator, VkTensorARM* pTensor) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->CreateTensorARM(device, pCreateInfo, pAllocator, pTensor);
+}
+
+static inline void DispatchDestroyTensorARM(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks* pAllocator) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->DestroyTensorARM(device, tensor, pAllocator);
+}
+
+static inline VkResult DispatchCreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM* pCreateInfo,
+                                                   const VkAllocationCallbacks* pAllocator, VkTensorViewARM* pView) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->CreateTensorViewARM(device, pCreateInfo, pAllocator, pView);
+}
+
+static inline void DispatchDestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView,
+                                                const VkAllocationCallbacks* pAllocator) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->DestroyTensorViewARM(device, tensorView, pAllocator);
+}
+
+static inline void DispatchGetTensorMemoryRequirementsARM(VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo,
+                                                          VkMemoryRequirements2* pMemoryRequirements) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->GetTensorMemoryRequirementsARM(device, pInfo, pMemoryRequirements);
+}
+
+static inline VkResult DispatchBindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                                   const VkBindTensorMemoryInfoARM* pBindInfos) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->BindTensorMemoryARM(device, bindInfoCount, pBindInfos);
+}
+
+static inline void DispatchGetDeviceTensorMemoryRequirementsARM(VkDevice device, const VkDeviceTensorMemoryRequirementsARM* pInfo,
+                                                                VkMemoryRequirements2* pMemoryRequirements) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->GetDeviceTensorMemoryRequirementsARM(device, pInfo, pMemoryRequirements);
+}
+
+static inline void DispatchCmdCopyTensorARM(VkCommandBuffer commandBuffer, const VkCopyTensorInfoARM* pCopyTensorInfo) {
+    auto dispatch = vvl::dispatch::GetData(commandBuffer);
+    dispatch->CmdCopyTensorARM(commandBuffer, pCopyTensorInfo);
+}
+
+static inline void DispatchGetPhysicalDeviceExternalTensorPropertiesARM(
+    VkPhysicalDevice physicalDevice, const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+    VkExternalTensorPropertiesARM* pExternalTensorProperties) {
+    auto dispatch = vvl::dispatch::GetData(physicalDevice);
+    dispatch->GetPhysicalDeviceExternalTensorPropertiesARM(physicalDevice, pExternalTensorInfo, pExternalTensorProperties);
+}
+
+static inline VkResult DispatchGetTensorOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                       const VkTensorCaptureDescriptorDataInfoARM* pInfo,
+                                                                       void* pData) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->GetTensorOpaqueCaptureDescriptorDataARM(device, pInfo, pData);
+}
+
+static inline VkResult DispatchGetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device,
+                                                                           const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+                                                                           void* pData) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->GetTensorViewOpaqueCaptureDescriptorDataARM(device, pInfo, pData);
+}
+
 static inline void DispatchGetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule,
                                                         VkShaderModuleIdentifierEXT* pIdentifier) {
     auto dispatch = vvl::dispatch::GetData(device);
@@ -4145,6 +4239,87 @@ static inline void DispatchQueueNotifyOutOfBandNV(VkQueue queue, const VkOutOfBa
     dispatch->QueueNotifyOutOfBandNV(queue, pQueueTypeInfo);
 }
 
+static inline VkResult DispatchCreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation,
+                                                           VkPipelineCache pipelineCache, uint32_t createInfoCount,
+                                                           const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                                           const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->CreateDataGraphPipelinesARM(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
+                                                 pAllocator, pPipelines);
+}
+
+static inline VkResult DispatchCreateDataGraphPipelineSessionARM(VkDevice device,
+                                                                 const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                                                 const VkAllocationCallbacks* pAllocator,
+                                                                 VkDataGraphPipelineSessionARM* pSession) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->CreateDataGraphPipelineSessionARM(device, pCreateInfo, pAllocator, pSession);
+}
+
+static inline VkResult DispatchGetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->GetDataGraphPipelineSessionBindPointRequirementsARM(device, pInfo, pBindPointRequirementCount,
+                                                                         pBindPointRequirements);
+}
+
+static inline void DispatchGetDataGraphPipelineSessionMemoryRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo, VkMemoryRequirements2* pMemoryRequirements) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->GetDataGraphPipelineSessionMemoryRequirementsARM(device, pInfo, pMemoryRequirements);
+}
+
+static inline VkResult DispatchBindDataGraphPipelineSessionMemoryARM(
+    VkDevice device, uint32_t bindInfoCount, const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->BindDataGraphPipelineSessionMemoryARM(device, bindInfoCount, pBindInfos);
+}
+
+static inline void DispatchDestroyDataGraphPipelineSessionARM(VkDevice device, VkDataGraphPipelineSessionARM session,
+                                                              const VkAllocationCallbacks* pAllocator) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->DestroyDataGraphPipelineSessionARM(device, session, pAllocator);
+}
+
+static inline void DispatchCmdDispatchDataGraphARM(VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session,
+                                                   const VkDataGraphPipelineDispatchInfoARM* pInfo) {
+    auto dispatch = vvl::dispatch::GetData(commandBuffer);
+    dispatch->CmdDispatchDataGraphARM(commandBuffer, session, pInfo);
+}
+
+static inline VkResult DispatchGetDataGraphPipelineAvailablePropertiesARM(VkDevice device,
+                                                                          const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                                          uint32_t* pPropertiesCount,
+                                                                          VkDataGraphPipelinePropertyARM* pProperties) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->GetDataGraphPipelineAvailablePropertiesARM(device, pPipelineInfo, pPropertiesCount, pProperties);
+}
+
+static inline VkResult DispatchGetDataGraphPipelinePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                                 uint32_t propertiesCount,
+                                                                 VkDataGraphPipelinePropertyQueryResultARM* pProperties) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->GetDataGraphPipelinePropertiesARM(device, pPipelineInfo, propertiesCount, pProperties);
+}
+
+static inline VkResult DispatchGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties) {
+    auto dispatch = vvl::dispatch::GetData(physicalDevice);
+    return dispatch->GetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+        physicalDevice, queueFamilyIndex, pQueueFamilyDataGraphPropertyCount, pQueueFamilyDataGraphProperties);
+}
+
+static inline void DispatchGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties) {
+    auto dispatch = vvl::dispatch::GetData(physicalDevice);
+    dispatch->GetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+        physicalDevice, pQueueFamilyDataGraphProcessingEngineInfo, pQueueFamilyDataGraphProcessingEngineProperties);
+}
+
 static inline void DispatchCmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask) {
     auto dispatch = vvl::dispatch::GetData(commandBuffer);
     dispatch->CmdSetAttachmentFeedbackLoopEnableEXT(commandBuffer, aspectMask);
@@ -4157,6 +4332,31 @@ static inline VkResult DispatchGetScreenBufferPropertiesQNX(VkDevice device, con
     return dispatch->GetScreenBufferPropertiesQNX(device, buffer, pProperties);
 }
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+
+static inline void DispatchCmdBindTileMemoryQCOM(VkCommandBuffer commandBuffer,
+                                                 const VkTileMemoryBindInfoQCOM* pTileMemoryBindInfo) {
+    auto dispatch = vvl::dispatch::GetData(commandBuffer);
+    dispatch->CmdBindTileMemoryQCOM(commandBuffer, pTileMemoryBindInfo);
+}
+
+static inline VkResult DispatchCreateExternalComputeQueueNV(VkDevice device, const VkExternalComputeQueueCreateInfoNV* pCreateInfo,
+                                                            const VkAllocationCallbacks* pAllocator,
+                                                            VkExternalComputeQueueNV* pExternalQueue) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    return dispatch->CreateExternalComputeQueueNV(device, pCreateInfo, pAllocator, pExternalQueue);
+}
+
+static inline void DispatchDestroyExternalComputeQueueNV(VkDevice device, VkExternalComputeQueueNV externalQueue,
+                                                         const VkAllocationCallbacks* pAllocator) {
+    auto dispatch = vvl::dispatch::GetData(device);
+    dispatch->DestroyExternalComputeQueueNV(device, externalQueue, pAllocator);
+}
+
+static inline void DispatchGetExternalComputeQueueDataNV(VkExternalComputeQueueNV externalQueue,
+                                                         VkExternalComputeQueueDataParamsNV* params, void* pData) {
+    auto dispatch = vvl::dispatch::GetData(externalQueue);
+    dispatch->GetExternalComputeQueueDataNV(externalQueue, params, pData);
+}
 
 static inline void DispatchGetClusterAccelerationStructureBuildSizesNV(VkDevice device,
                                                                        const VkClusterAccelerationStructureInputInfoNV* pInfo,
@@ -4245,6 +4445,14 @@ static inline void DispatchUpdateIndirectExecutionSetShaderEXT(VkDevice device, 
     auto dispatch = vvl::dispatch::GetData(device);
     dispatch->UpdateIndirectExecutionSetShaderEXT(device, indirectExecutionSet, executionSetWriteCount, pExecutionSetWrites);
 }
+#ifdef VK_USE_PLATFORM_OHOS
+
+static inline VkResult DispatchCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
+                                                 const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface) {
+    auto dispatch = vvl::dispatch::GetData(instance);
+    return dispatch->CreateSurfaceOHOS(instance, pCreateInfo, pAllocator, pSurface);
+}
+#endif  // VK_USE_PLATFORM_OHOS
 
 static inline VkResult DispatchGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties) {

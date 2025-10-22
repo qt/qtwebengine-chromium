@@ -9,26 +9,36 @@ import logging
 import os
 import subprocess
 import tempfile
-from typing import TYPE_CHECKING, Dict, List, Self, TextIO, Tuple, Type
+from typing import TYPE_CHECKING, Self, TextIO, Type
 
-from typing_extensions import override
+from typing_extensions import Final, override
 
+from crossbench.config import ConfigEnum
 from crossbench.helper import collection_helper
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.probe_error import ProbeMissingDataError
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
-                                       ProbeResult)
+from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Viewport
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import LocalPath
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.runner.run import Run
   from crossbench.stories.story import Story
 
+
+class Orientation(ConfigEnum):
+  HORIZONTAL = ("horizontal", "Align horizontally.")
+  VERTICAL = ("vertical", "Align vertically.")
+
+
+FFMPEG_STACK_DIRECTION: Final[dict[Orientation, str]] = {
+    Orientation.HORIZONTAL: "hstack",
+    Orientation.VERTICAL: "vstack",
+}
 
 class VideoProbe(Probe):
   """
@@ -59,15 +69,28 @@ class VideoProbe(Probe):
         type=bool,
         default=True,
         help="Merge videos from multiple runs")
+    parser.add_argument(
+        "orientation",
+        aliases=(
+            "dir",
+            "direction",
+        ),
+        type=Orientation,
+        default=Orientation.HORIZONTAL,
+        help=("Primary merge orientation for repetitions. "
+              "Each further merge level will happen in the opposite direction "
+              "of the previous one."))
     return parser
 
   def __init__(self,
                generate_timestrip: bool = True,
-               merge_runs: bool = True) -> None:
+               merge_runs: bool = True,
+               orientation: Orientation = Orientation.HORIZONTAL) -> None:
     super().__init__()
     self._duration = None
     self._generate_timestrip = generate_timestrip
     self._merge_runs = merge_runs
+    self._orientation = orientation
 
   @property
   @override
@@ -79,11 +102,21 @@ class VideoProbe(Probe):
     return self._generate_timestrip
 
   @property
+  def primary_orientation(self):
+    return self._orientation
+
+  @property
+  def secondary_orientation(self):
+    if self._orientation == Orientation.VERTICAL:
+      return Orientation.HORIZONTAL
+    return Orientation.VERTICAL
+
+  @property
   def merge_runs(self) -> bool:
     return self._merge_runs
 
   @override
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     super().validate_env(env)
     if env.repetitions > 10:
       env.handle_warning(
@@ -100,7 +133,7 @@ class VideoProbe(Probe):
     env.check_sh_success("montage", "--version")
     self._pre_check_viewport_size(env)
 
-  def _pre_check_viewport_size(self, env: HostEnvironment) -> None:
+  def _pre_check_viewport_size(self, env: RunnerEnv) -> None:
     first_viewport: Viewport = env.browsers[0].viewport
     for browser in env.browsers:
       viewport: Viewport = browser.viewport
@@ -142,7 +175,7 @@ class VideoProbe(Probe):
     group_files = [video_file]
     logging.info("VIDEO merge page repetitions")
     browser = group.browser
-    video_file_inputs: List[str | LocalPath] = []
+    video_file_inputs: list[str | LocalPath] = []
     for run in runs:
       video_file_inputs += ["-i", run.results[self].file_list[0]]
     draw_text = ("fontfile='/Library/Fonts/Arial.ttf':"
@@ -150,11 +183,12 @@ class VideoProbe(Probe):
                  "fontsize=h/15:"
                  "y=h-line_h-10:x=10:"
                  "box=1:boxborderw=20:boxcolor=white")
+    stack_direction: str = FFMPEG_STACK_DIRECTION[self.primary_orientation]
     self.host_platform.sh(
         "ffmpeg", "-hide_banner", \
         *video_file_inputs, \
         "-filter_complex",
-        f"hstack=inputs={len(runs)},"
+        f"{stack_direction}=inputs={len(runs)},"
         f"drawtext={draw_text},"
         "scale=3000:-2", *self.VIDEO_QUALITY, video_file)
 
@@ -172,13 +206,11 @@ class VideoProbe(Probe):
   @override
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     """Merge story videos from multiple browser/configurations"""
-    if not self.merge_runs:
-      return LocalProbeResult()
     groups = list(group.repetitions_groups)
-    if len(groups) <= 1:
-      return EmptyProbeResult()
-    grouped: Dict[Story,
-                  List[RepetitionsRunGroup]] = collection_helper.group_by(
+    if not self.merge_runs or len(groups) <= 1:
+      return super().merge_browsers(group)
+    grouped: dict[Story,
+                  list[RepetitionsRunGroup]] = collection_helper.group_by(
                       groups,
                       key=lambda repetitions_group: repetitions_group.story)
 
@@ -192,7 +224,7 @@ class VideoProbe(Probe):
 
   def _merge_stories_for_browser(
       self, result_dir: LocalPath, story: Story,
-      repetitions_groups: List[RepetitionsRunGroup]) -> LocalPath:
+      repetitions_groups: list[RepetitionsRunGroup]) -> LocalPath:
     story = repetitions_groups[0].story
     result_path = result_dir / f"{story.name}_combined.mp4"
 
@@ -202,15 +234,16 @@ class VideoProbe(Probe):
       self.host_platform.copy(input_file, result_path)
       return result_path
 
-    input_files: List[str] = []
+    input_files: list[str] = []
     for repetitions_group in repetitions_groups:
       result_files = repetitions_group.results[self].file_list
       input_files += ["-i", os.fspath(result_files[0])]
+    stack_direction: str = FFMPEG_STACK_DIRECTION[self.secondary_orientation]
     try:
-      self.host_platform.sh("ffmpeg", "-hide_banner", *input_files,
-                            "-filter_complex",
-                            f"vstack=inputs={len(repetitions_groups)}",
-                            *self.VIDEO_QUALITY, result_path)
+      self.host_platform.sh(
+          "ffmpeg", "-hide_banner", *input_files, "-filter_complex",
+          f"{stack_direction}=inputs={len(repetitions_groups)}",
+          *self.VIDEO_QUALITY, result_path)
     except Exception as e:
       logging.error("Merging multiple browser video failed. "
                     "Different screen orientations are not supported yet.")
@@ -255,7 +288,7 @@ class VideoProbeContext(ProbeContext[VideoProbe]):
     # TODO: Add common start-story-delay on runner for these cases.
     self.host_platform.sleep(1)
 
-  def _record_cmd(self, viewport: Viewport) -> Tuple[str, ...]:
+  def _record_cmd(self, viewport: Viewport) -> tuple[str, ...]:
     if self.browser_platform.is_linux:
       env_display = os.environ.get("DISPLAY", ":0.0")
       return ("ffmpeg", "-hide_banner", "-video_size",

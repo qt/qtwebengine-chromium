@@ -4,8 +4,11 @@
 
 #include "content/browser/android/javascript_injector.h"
 
+#include <vector>
+
 #include "base/android/jni_string.h"
 #include "base/memory/ptr_util.h"
+#include "components/origin_matcher/origin_matcher.h"
 #include "content/browser/android/java/gin_java_bridge_dispatcher_host.h"
 #include "content/browser/preloading/prerender/prerender_final_status.h"
 #include "content/browser/preloading/prerender/prerender_host_registry.h"
@@ -42,7 +45,6 @@ JavascriptInjector::~JavascriptInjector() {
 }
 
 void JavascriptInjector::SetAllowInspection(JNIEnv* env,
-                                            const JavaParamRef<jobject>& obj,
                                             jboolean allow) {
   DCHECK(java_bridge_dispatcher_host_);
   java_bridge_dispatcher_host_->SetAllowObjectContentsInspection(allow);
@@ -50,10 +52,10 @@ void JavascriptInjector::SetAllowInspection(JNIEnv* env,
 
 void JavascriptInjector::AddInterface(
     JNIEnv* env,
-    const JavaParamRef<jobject>& /* obj */,
     const JavaParamRef<jobject>& object,
     const JavaParamRef<jstring>& name,
-    const JavaParamRef<jclass>& safe_annotation_clazz) {
+    const JavaParamRef<jclass>& safe_annotation_clazz,
+    origin_matcher::OriginMatcher matcher) {
   DCHECK(java_bridge_dispatcher_host_);
 
   // If a new js object is added or removed when a page is in BFCache or
@@ -69,11 +71,11 @@ void JavascriptInjector::AddInterface(
       PrerenderFinalStatus::kJavaScriptInterfaceAdded);
 
   java_bridge_dispatcher_host_->AddNamedObject(
-      ConvertJavaStringToUTF8(env, name), object, safe_annotation_clazz);
+      ConvertJavaStringToUTF8(env, name), object, safe_annotation_clazz,
+      std::move(matcher));
 }
 
 void JavascriptInjector::RemoveInterface(JNIEnv* env,
-                                         const JavaParamRef<jobject>& /* obj */,
                                          const JavaParamRef<jstring>& name) {
   DCHECK(java_bridge_dispatcher_host_);
 

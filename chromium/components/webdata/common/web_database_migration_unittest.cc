@@ -25,6 +25,7 @@
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
 #include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
+#include "components/autofill/core/browser/webdata/valuables/valuables_table.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/os_crypt/async/common/test_encryptor.h"
@@ -94,6 +95,7 @@ class WebDatabaseMigrationTest : public testing::Test {
     autofill::EntityTable entity_table;
     autofill::AutofillSyncMetadataTable autofill_sync_metadata_table;
     autofill::PaymentsAutofillTable payments_autofill_table;
+    autofill::ValuablesTable valuables_table;
     KeywordTable keyword_table;
     plus_addresses::PlusAddressTable plus_address_table;
     TokenServiceTable token_service_table;
@@ -107,6 +109,7 @@ class WebDatabaseMigrationTest : public testing::Test {
     db.AddTable(&keyword_table);
     db.AddTable(&plus_address_table);
     db.AddTable(&token_service_table);
+    db.AddTable(&valuables_table);
 
     // This causes the migration to occur.
     ASSERT_EQ(sql::INIT_OK, db.Init(GetDatabasePath(), &encryptor_));
@@ -1513,6 +1516,7 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion135ToCurrent) {
   }
 }
 
+#if BUILDFLAG(IS_WIN)
 class WebDatabaseMigrationTestEncryption
     : public WebDatabaseMigrationTest,
       public ::testing::WithParamInterface<bool> {
@@ -1522,11 +1526,6 @@ class WebDatabaseMigrationTestEncryption
 
 // Tests addition of the url_hash column to the keywords table.
 TEST_P(WebDatabaseMigrationTestEncryption, MigrateVersion136ToCurrent) {
-  // The feature is tested elsewhere, force enable to make sure expectations
-  // match.
-  base::test::ScopedFeatureList enable_verification(
-      features::kKeywordTableHashVerification);
-
   encryptor_.set_encryption_available_for_testing(IsEncryptionAvailable());
   encryptor_.set_decryption_available_for_testing(IsEncryptionAvailable());
 
@@ -1591,13 +1590,10 @@ INSTANTIATE_TEST_SUITE_P(/*empty*/,
 // Tests migration of a keywords table with an empty url, which is invalid. The
 // entry should not be migrated, and the test should not crash. The dropping of
 // the invalid entry takes place upon the first GetKeywords call, and this is
-// tested elsewhere in KeywordTableTest.KeywordBadUrl.
+// tested elsewhere in KeywordTableTest.KeywordBadUrl. This test is only valid
+// on Windows because the bad url detection only happens if encrypted hashing is
+// enabled.
 TEST_F(WebDatabaseMigrationTest, MigrateVersion136ToCurrentBadUrl) {
-  // The feature is tested elsewhere, force enable to make sure expectations
-  // match.
-  base::test::ScopedFeatureList enable_verification(
-      features::kKeywordTableHashVerification);
-
   ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_136.sql")));
   const TemplateURLID kTestId = 99;
   {
@@ -1619,6 +1615,27 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion136ToCurrentBadUrl) {
                                   false, 1);
   }
 }
+#else
+// On non-Windows the 136 to 137 migration does nothing except update add the
+// `url_hash` column and update the database version.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion136ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_136.sql")));
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(136, VersionFromConnection(&connection));
+    EXPECT_FALSE(connection.DoesColumnExist("keywords", "url_hash"));
+  }
+  DoMigration();
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(WebDatabase::kCurrentVersionNumber,
+              VersionFromConnection(&connection));
+    EXPECT_TRUE(connection.DoesColumnExist("keywords", "url_hash"));
+  }
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 TEST_F(WebDatabaseMigrationTest, MigrateVersion137ToCurrent) {
   ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_137.sql")));
@@ -1640,6 +1657,73 @@ TEST_F(WebDatabaseMigrationTest, MigrateVersion137ToCurrent) {
     EXPECT_TRUE(connection.DoesColumnExist("autofill_ai_attributes",
                                            "value_encrypted"));
     EXPECT_TRUE(connection.DoesTableExist("autofill_ai_entities"));
+  }
+}
+
+// Tests the renaming of the column in the loyalty_card table from
+// `unmasked_loyalty_card_suffix` to 'loyalty_card_number`.
+TEST_F(WebDatabaseMigrationTest, MigrateVersion138ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_138.sql")));
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(138, VersionFromConnection(&connection));
+  }
+  DoMigration();
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(WebDatabase::kCurrentVersionNumber,
+              VersionFromConnection(&connection));
+    EXPECT_TRUE(connection.DoesTableExist("loyalty_cards"));
+
+    EXPECT_TRUE(connection.DoesColumnExist("loyalty_cards", "loyalty_card_id"));
+    EXPECT_FALSE(connection.DoesColumnExist("loyalty_cards", "guid"));
+
+    EXPECT_TRUE(
+        connection.DoesColumnExist("loyalty_cards", "loyalty_card_number"));
+    EXPECT_FALSE(connection.DoesColumnExist("loyalty_cards",
+                                            "unmasked_loyalty_card_suffix"));
+  }
+}
+
+TEST_F(WebDatabaseMigrationTest, MigrateVersion139ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_139.sql")));
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(139, VersionFromConnection(&connection));
+  }
+  DoMigration();
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(WebDatabase::kCurrentVersionNumber,
+              VersionFromConnection(&connection));
+    EXPECT_TRUE(connection.DoesTableExist("autofill_ai_entities"));
+    EXPECT_TRUE(
+        connection.DoesColumnExist("autofill_ai_entities", "use_count"));
+    EXPECT_TRUE(connection.DoesColumnExist("autofill_ai_entities", "use_date"));
+  }
+}
+
+TEST_F(WebDatabaseMigrationTest, MigrateVersion140ToCurrent) {
+  ASSERT_NO_FATAL_FAILURE(LoadDatabase(FILE_PATH_LITERAL("version_140.sql")));
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(140, VersionFromConnection(&connection));
+    EXPECT_FALSE(connection.DoesColumnExist("masked_credit_cards",
+                                            "card_benefit_source"));
+  }
+  DoMigration();
+  {
+    sql::Database connection(sql::test::kTestTag);
+    ASSERT_TRUE(connection.Open(GetDatabasePath()));
+    EXPECT_EQ(WebDatabase::kCurrentVersionNumber,
+              VersionFromConnection(&connection));
+    EXPECT_TRUE(connection.DoesColumnExist("masked_credit_cards",
+                                           "card_benefit_source"));
   }
 }
 

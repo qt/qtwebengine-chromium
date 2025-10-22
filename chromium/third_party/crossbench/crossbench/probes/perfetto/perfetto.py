@@ -10,6 +10,7 @@ import logging
 import subprocess
 from typing import TYPE_CHECKING, Iterable, Self, cast
 
+import google.protobuf.text_format as proto_text_format
 from typing_extensions import override
 
 from crossbench import path as pth
@@ -23,10 +24,11 @@ from crossbench.probes.probe import (Probe, ProbeConfigParser, ProbeContext,
                                      ProbeKeyT)
 from crossbench.probes.result_location import ResultLocation
 from crossbench.probes.results import LocalProbeResult, ProbeResult
+from protoc import trace_config_pb2
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.plt.base import TupleCmdArgs
+  from crossbench.plt.types import TupleCmdArgs
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.run import Run
 
@@ -63,8 +65,9 @@ class PerfettoProbe(Probe):
   def config_parser(cls) -> ProbeConfigParser[Self]:
     parser = super().config_parser()
     parser.add_argument(
-        "textproto",
-        type=ObjectParser.str_or_file_contents,
+        "trace_config",
+        aliases=("config", "textproto"),
+        type=ObjectParser.proto_or_file(trace_config_pb2.TraceConfig),
         help=("Serialized perfetto configuration. "
               "See probe instructions for more details"))
     parser.add_argument(
@@ -86,14 +89,14 @@ class PerfettoProbe(Probe):
     return parser
 
   def __init__(self,
-               textproto: str,
+               trace_config: trace_config_pb2.TraceConfig,
                perfetto_bin: pth.AnyPath,
                tracebox_bin: pth.AnyPath,
                trace_browser_startup: bool = False) -> None:
     super().__init__()
-    if not textproto:
+    if not trace_config:
       raise ValueError("Please specify a tracing config")
-    self._textproto = textproto
+    self._trace_config: trace_config_pb2.TraceConfig = trace_config
     self._perfetto_bin = perfetto_bin
     self._tracebox_bin = tracebox_bin
     self._trace_browser_startup = trace_browser_startup
@@ -102,15 +105,15 @@ class PerfettoProbe(Probe):
   @override
   def key(self) -> ProbeKeyT:
     return super().key + (
-        ("textproto", self.textproto),
+        ("textproto", str(self.trace_config)),
         ("perfetto_bin", str(self.perfetto_bin)),
         ("tracebox_bin", str(self.tracebox_bin)),
         ("trace_browser_startup", str(self.trace_browser_startup)),
     )
 
   @property
-  def textproto(self) -> str:
-    return self._textproto
+  def trace_config(self) -> trace_config_pb2.TraceConfig:
+    return self._trace_config
 
   @property
   def perfetto_bin(self) -> pth.AnyPath:
@@ -185,8 +188,9 @@ class PerfettoProbeContext(ProbeContext[PerfettoProbe], metaclass=abc.ABCMeta):
           f"{repr(binary)} cannot be found on {self.browser_platform}")
 
   def _setup_push_perfetto_config(self) -> None:
-    self.host_platform.set_file_contents(self._host_config_file,
-                                         self.probe.textproto)
+    self.host_platform.write_text(
+        self._host_config_file,
+        proto_text_format.MessageToString(self.probe.trace_config))
     self.browser_platform.push(self._host_config_file,
                                self.get_browser_config_path())
 
@@ -208,10 +212,10 @@ class PerfettoProbeContext(ProbeContext[PerfettoProbe], metaclass=abc.ABCMeta):
         raise RuntimeError("Perfetto was not started")
       return
     self._start_perfetto()
-    self.browser.performance_mark("crossbench-probe-perfetto-start")
+    self.browser.performance_mark("probe-perfetto-start")
 
   def stop(self) -> None:
-    self.browser.performance_mark("crossbench-probe-perfetto-stop")
+    self.browser.performance_mark("probe-perfetto-stop")
     logging.info("PERFETTO: stopping")
     if not self._perfetto_pid:
       raise RuntimeError("Perfetto was not started")
@@ -244,7 +248,7 @@ class PerfettoProbeContext(ProbeContext[PerfettoProbe], metaclass=abc.ABCMeta):
     # TODO(cbruni): replace with terminate_gracefully
     self.browser_platform.terminate(self._perfetto_pid)
     try:
-      for _ in WaitRange(1, 30).wait_with_backoff():
+      for _ in WaitRange(1, timeout=30).wait_with_backoff():
         if not self.browser_platform.process_info(self._perfetto_pid):
           break
     except TimeoutError:

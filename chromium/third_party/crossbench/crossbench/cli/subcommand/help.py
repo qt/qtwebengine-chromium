@@ -25,15 +25,15 @@ class HelpSubcommand(CrossbenchSubcommand):
         help=("Print the top-level by default, same as --help. "
               "Use `help $PROBE`, or `help $BENCHMARK` to print more details."))
     help_parser.add_argument(
-        "probe_or_benchmark",
-        nargs="?",
-        help="Use a benchmark or probe name to display more details.")
+        "search_terms",
+        nargs="*",
+        help="Use a benchmark, probe or network name to display more details.")
     return help_parser
 
   @override
   def run(self, args: argparse.Namespace) -> None:
-    if search_str := args.probe_or_benchmark:
-      self.cli.describe_subcommand.describe(search_str)
+    if args.search_terms:
+      self.cli.describe_subcommand.run_from_help(args)
     else:
       self.cli.parser.print_help()
     sys.exit(0)

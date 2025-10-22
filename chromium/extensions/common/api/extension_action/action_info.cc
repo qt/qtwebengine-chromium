@@ -6,11 +6,12 @@
 
 #include <memory>
 
+#include "base/files/file_path.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "extensions/common/constants.h"
-#include "extensions/common/error_utils.h"
 #include "extensions/common/extension.h"
+#include "extensions/common/extension_resource.h"
 #include "extensions/common/icons/extension_icon_variants.h"
 #include "extensions/common/manifest_constants.h"
 #include "extensions/common/manifest_handler_helpers.h"
@@ -47,7 +48,8 @@ using extensions::diagnostics::icon_variants::Severity;
 
 // Returns the icon variants parsed from the `extension` manifest.
 // Populates `error` if there are no icon variants.
-ExtensionIconVariants GetIconVariants(const base::Value* value) {
+ExtensionIconVariants GetIconVariants(const Extension& extension,
+                                      const base::Value* value) {
   ExtensionIconVariants icon_variants;
 
   // Convert the input key into a list containing everything.
@@ -57,7 +59,7 @@ ExtensionIconVariants GetIconVariants(const base::Value* value) {
     return icon_variants;
   }
 
-  icon_variants.Parse(&value->GetList());
+  icon_variants.Parse(extension, &value->GetList());
 
   // Verify `icon_variants`, e.g. that at least one `icon_variant` is valid.
   if (icon_variants.IsEmpty()) {
@@ -101,23 +103,45 @@ std::unique_ptr<ActionInfo> ActionInfo::Load(
   // The `default_icon` value can be either dictionary {icon size -> icon path}
   // or non empty string value.
   if (const base::Value* default_icon = dict.Find(keys::kActionDefaultIcon)) {
-    std::string default_icon_str;
-    if (default_icon->is_string())
-      default_icon_str = default_icon->GetString();
-
     if (default_icon->is_dict()) {
+      std::vector<std::string> warnings;
       if (!manifest_handler_helpers::LoadIconsFromDictionary(
-              default_icon->GetDict(), &result->default_icon, error)) {
+              *extension, default_icon->GetDict(), &result->default_icon, error,
+              &warnings)) {
         return nullptr;
       }
-    } else if (default_icon->is_string() &&
-               manifest_handler_helpers::NormalizeAndValidatePath(
-                   &default_icon_str)) {
-      // Choose the most optimistic (highest) icon density regardless of the
-      // actual icon resolution, whatever that happens to be. Code elsewhere
-      // knows how to scale down to 19.
-      result->default_icon.Add(extension_misc::EXTENSION_ICON_GIGANTOR,
-                               default_icon_str);
+      if (!warnings.empty()) {
+        install_warnings->reserve(install_warnings->size() + warnings.size());
+        std::string manifest_key = GetManifestKeyForActionType(type);
+        for (const auto& warning : warnings) {
+          install_warnings->emplace_back(warning, manifest_key,
+                                         keys::kActionDefaultIcon);
+        }
+      }
+    } else if (default_icon->is_string()) {
+      ExtensionResource default_icon_resource =
+          extension->GetResource(default_icon->GetString());
+      if (default_icon_resource.empty()) {
+        *error = errors::kInvalidActionDefaultIcon;
+        return nullptr;
+      }
+
+      if (manifest_handler_helpers::IsIconMimeTypeValid(
+              default_icon_resource.relative_path())) {
+        // Choose the most optimistic (highest) icon density regardless of the
+        // actual icon resolution, whatever that happens to be. Code elsewhere
+        // knows how to scale down to 19.
+        result->default_icon.Add(
+            extension_misc::EXTENSION_ICON_GIGANTOR,
+            default_icon_resource.relative_path().AsUTF8Unsafe());
+      } else {
+        // Issue a warning and ignore this file. This is a warning and not a
+        // hard-error to preserve both backwards compatibility and potential
+        // future-compatibility if mime types change.
+        install_warnings->emplace_back(
+            errors::kInvalidActionDefaultIconMimeType,
+            GetManifestKeyForActionType(type), keys::kActionDefaultIcon);
+      }
     } else {
       *error = errors::kInvalidActionDefaultIcon;
       return nullptr;
@@ -142,23 +166,23 @@ std::unique_ptr<ActionInfo> ActionInfo::Load(
       return nullptr;
     }
 
-    if (!url_str->empty()) {
-      GURL popup_url = Extension::GetResourceURL(extension->url(), *url_str);
-
+    if (*url_str == "index.html/") {
+      // TODO(crbug.com/427225438): Warn and treat as having no popup. This
+      // special case is here for compatibility with existing extensions which
+      // use this invalid entry and then set another popup URL at runtime via
+      // the relevant API. Remove this special case in the future.
+      install_warnings->emplace_back(
+          errors::kActionDefaultPopupInvalidCompatValue,
+          GetManifestKeyForActionType(type), keys::kActionDefaultPopup);
+      DCHECK(result->default_popup_url.is_empty());
+    } else if (!url_str->empty()) {
+      GURL popup_url = extension->GetResourceURL(*url_str);
       if (!popup_url.is_valid()) {
         *error = errors::kInvalidActionDefaultPopup;
         return nullptr;
       }
 
-      // Check popup is only for this extension.
-      if (extension->origin().IsSameOriginWith(popup_url)) {
-        result->default_popup_url = popup_url;
-      } else {
-        install_warnings->emplace_back(
-            extensions::manifest_errors::kInvalidExtensionOriginPopup,
-            GetManifestKeyForActionType(type),
-            extensions::manifest_keys::kActionDefaultPopup);
-      }
+      result->default_popup_url = popup_url;
     } else {
       // An empty string is treated as having no popup.
       DCHECK(result->default_popup_url.is_empty());
@@ -194,7 +218,7 @@ std::unique_ptr<ActionInfo> ActionInfo::Load(
       install_warnings->emplace_back(diagnostic.message);
     } else {
       ExtensionIconVariants icon_variants =
-          GetIconVariants(icon_variants_value);
+          GetIconVariants(*extension, icon_variants_value);
 
       // Add any install warnings, handle errors, and then clear out
       // diagnostics.

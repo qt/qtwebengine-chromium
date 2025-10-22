@@ -33,9 +33,6 @@ declare_args() {
   # H.264, VP9 and HEVC are enabled if protected media is enabled; AV1 is
   # optional.
   use_chromeos_protected_av1 = false
-
-  # A platform that is capable of hardware av1 decoding.
-  use_av1_hw_decoder = is_chromeos || is_linux || is_win || is_apple
 }
 
 if (use_arc_protected_media) {
@@ -56,4 +53,14 @@ declare_args() {
   # VA-API also allows decoding of images, but we don't want to use this
   # outside of chromeos, even if video decoding is enabled.
   use_vaapi_image_codecs = use_vaapi && is_chromeos
+}
+
+declare_args() {
+  use_linux_video_acceleration = use_vaapi || use_v4l2_codec
+}
+
+declare_args() {
+  # A platform that is capable of hardware av1 decoding.
+  use_av1_hw_decoder =
+      is_chromeos || (is_linux && use_vaapi) || is_win || is_apple
 }

@@ -1,6 +1,7 @@
 // Copyright 2025 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Trace from '../../models/trace/trace.js';
@@ -8,6 +9,7 @@ import * as DataGrid from '../../ui/legacy/components/data_grid/data_grid.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
+import thirdPartyTreeViewStyles from './thirdPartyTreeView.css.js';
 import * as TimelineTreeView from './TimelineTreeView.js';
 import * as Utils from './utils/utils.js';
 
@@ -33,11 +35,6 @@ const str_ = i18n.i18n.registerUIStrings('panels/timeline/ThirdPartyTreeView.ts'
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView {
-  #thirdPartySummaries: {
-    summaries: Trace.Extras.ThirdParties.ThirdPartySummary,
-    entityByEvent: Map<Trace.Types.Events.Event, Trace.Extras.ThirdParties.Entity>,
-  }|null = null;
-
   // By default the TimelineTreeView will auto-select the first row
   // when the grid is refreshed but for the ThirdParty view we only
   // want to do this when the user hovers.
@@ -54,6 +51,20 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
      * For 3P table, we don't use this feature.
      */
     this.dataGrid.expandNodesWhenArrowing = false;
+  }
+
+  override wasShown(): void {
+    super.wasShown();
+    this.registerRequiredCSS(thirdPartyTreeViewStyles);
+  }
+
+  override setModelWithEvents(
+      selectedEvents: Trace.Types.Events.Event[]|null, parsedTrace?: Trace.Handlers.Types.ParsedTrace|null,
+      entityMappings?: Utils.EntityMapper.EntityMapper|null): void {
+    super.setModelWithEvents(selectedEvents, parsedTrace, entityMappings);
+
+    const hasEvents = Boolean(selectedEvents && selectedEvents.length > 0);
+    this.element.classList.toggle('empty-table', !hasEvents);
   }
 
   override buildTree(): Trace.Extras.TraceTree.Node {
@@ -221,22 +232,6 @@ export class ThirdPartyTreeViewWidget extends TimelineTreeView.TimelineTreeView 
     return {name: domainName || unattributed, color, icon: undefined};
   }
 
-  extractThirdPartySummary(node: Trace.Extras.TraceTree.Node): {transferSize: number} {
-    if (!this.#thirdPartySummaries) {
-      return {transferSize: 0};
-    }
-
-    const entity = this.#thirdPartySummaries.entityByEvent.get(node.event);
-    if (!entity) {
-      return {transferSize: 0};
-    }
-    const summary = this.#thirdPartySummaries.summaries.byEntity.get(entity);
-    if (!summary) {
-      return {transferSize: 0};
-    }
-    return {transferSize: summary.transferSize};
-  }
-
   nodeIsFirstParty(node: Trace.Extras.TraceTree.Node): boolean {
     const mapper = this.entityMapper();
     if (!mapper) {
@@ -269,7 +264,7 @@ export class ThirdPartyTreeElement extends UI.Widget.WidgetElement<UI.Widget.Wid
   }
 
   override createWidget(): UI.Widget.Widget {
-    const containerWidget = new UI.Widget.Widget(false, undefined, this);
+    const containerWidget = new UI.Widget.Widget(this);
     containerWidget.contentElement.style.display = 'contents';
     if (this.#treeView) {
       this.#treeView.show(containerWidget.contentElement);

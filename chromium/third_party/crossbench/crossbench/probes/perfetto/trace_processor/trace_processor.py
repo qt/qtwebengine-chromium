@@ -5,14 +5,13 @@
 from __future__ import annotations
 
 import collections
-import dataclasses
 import json
 import logging
 import zipfile
-from typing import (TYPE_CHECKING, Dict, Iterable, List, Optional, Self, Tuple,
-                    Type)
+from typing import TYPE_CHECKING, Iterable, Optional, Self, Type
 
 import pandas as pd
+from google.protobuf import text_format
 from google.protobuf.json_format import MessageToJson
 from perfetto.batch_trace_processor.api import (BatchTraceProcessor,
                                                 BatchTraceProcessorConfig)
@@ -27,11 +26,14 @@ from crossbench import plt
 from crossbench.config import ConfigObject, ConfigParser
 from crossbench.parse import ObjectParser, PathParser
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
-from crossbench.probes.results import LocalProbeResult, ProbeResult
+from crossbench.probes.probe import Probe, ProbeConfigParser
+from crossbench.probes.probe_context import ProbeContext
+from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
+                                       ProbeResult)
+from crossbench.replacements import Replacements
 
 if TYPE_CHECKING:
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
@@ -40,11 +42,7 @@ _QUERIES_DIR = pth.LocalPath(__file__).parent / "queries"
 _MODULES_DIR = pth.LocalPath(__file__).parent / "modules/ext"
 
 
-@dataclasses.dataclass(frozen=True)
 class TraceProcessorQueryConfig(ConfigObject):
-  name: str
-  sql: str
-
   @classmethod
   @override
   def parse_str(cls, value: str) -> Self:
@@ -56,12 +54,40 @@ class TraceProcessorQueryConfig(ConfigObject):
 
   @classmethod
   @override
+  def parse_any_path(cls, path: pth.LocalPath, **kwargs) -> Self:
+    return cls.parse_str(str(path))
+
+  @classmethod
+  @override
+  def resolve_path(cls, path: pth.LocalPath) -> pth.LocalPath:
+    return path
+
+  @classmethod
+  @override
   def config_parser(cls) -> ConfigParser[Self]:
     parser = ConfigParser(cls)
     parser.add_argument("name", type=ObjectParser.safe_filename, required=True)
     parser.add_argument(
         "sql", type=ObjectParser.str_or_file_contents, required=True)
+    parser.add_argument("replacements", aliases=("replace",), type=Replacements)
     return parser
+
+  @property
+  def name(self) -> str:
+    return self._name
+
+  @property
+  def sql(self) -> str:
+    return self._sql
+
+  def __init__(self,
+               name: str,
+               sql: str,
+               replacements: Optional[Replacements] = None) -> None:
+    self._name = name
+    self._sql = sql
+    if replacements:
+      self._sql = replacements.apply(self._sql)
 
 
 class CrossbenchTraceUriResolver(TraceUriResolver):
@@ -70,7 +96,7 @@ class CrossbenchTraceUriResolver(TraceUriResolver):
   def __init__(self,
                traces: Iterable[Run] | TraceProcessorProbeContext) -> None:
 
-    def metadata(run: Run) -> Dict[str, str]:
+    def metadata(run: Run) -> dict[str, str]:
       return {
           "cb_browser": run.browser.unique_name,
           "cb_story": run.story.name,
@@ -93,7 +119,7 @@ class CrossbenchTraceUriResolver(TraceUriResolver):
               metadata=metadata(run)) for run in traces
       ]
 
-  def resolve(self) -> List["TraceUriResolver.Result"]:
+  def resolve(self) -> list["TraceUriResolver.Result"]:
     return self._resolved
 
 
@@ -123,6 +149,21 @@ class TraceProcessorProbe(Probe):
         default=tuple(),
         help="Name of metric to be run (can be any metric from Perfetto)")
     parser.add_argument(
+        "metric_definitions",
+        type=ObjectParser.str_or_file_contents,
+        is_list=True,
+        default=tuple(),
+        help=("Textproto for perfetto metrics v2 definition files. "
+              "Can be inline textproto or a path to a .textproto file."))
+    parser.add_argument(
+        "summary_metrics",
+        type=str,
+        is_list=True,
+        default=tuple(),
+        help=("Additional metrics to only include in the trace summary. "
+              "Includes all of <metrics>. These can be v2 metrics if the "
+              "corresponding metric definition is supplied."))
+    parser.add_argument(
         "queries",
         type=TraceProcessorQueryConfig,
         is_list=True,
@@ -137,12 +178,14 @@ class TraceProcessorProbe(Probe):
         help="Additional paths to include as trace processor modules.")
     parser.add_argument(
         "trace_processor_bin",
-        type=PathParser.local_binary_path,
+        type=plt.PLATFORM.parse_local_binary_path,
         help="Path to the trace_processor binary")
     return parser
 
   def __init__(self,
                batch: bool,
+               metric_definitions: Iterable[str],
+               summary_metrics: Iterable[str],
                metrics: Iterable[str],
                queries: Iterable[TraceProcessorQueryConfig],
                module_paths: Iterable[pth.LocalPath],
@@ -150,6 +193,9 @@ class TraceProcessorProbe(Probe):
     super().__init__()
     self._batch = batch
     self._metrics = tuple(metrics)
+    self._metric_definitions: tuple[str, ...] = tuple(metric_definitions)
+    self._summary_metrics: tuple[str,
+                                 ...] = tuple(metrics) + tuple(summary_metrics)
     ObjectParser.unique_sequence([query.name for query in queries],
                                  name="query names")
     self._queries = tuple(queries)
@@ -164,20 +210,29 @@ class TraceProcessorProbe(Probe):
     return self._batch
 
   @property
-  def metrics(self) -> Tuple[str, ...]:
+  def metrics(self) -> tuple[str, ...]:
     return self._metrics
 
   @property
-  def queries(self) -> Tuple[TraceProcessorQueryConfig, ...]:
+  def queries(self) -> tuple[TraceProcessorQueryConfig, ...]:
     return self._queries
 
   @property
-  def module_paths(self) -> Tuple[pth.LocalPath, ...]:
+  def metric_definitions(self) -> tuple[str, ...]:
+    return self._metric_definitions
+
+  @property
+  def summary_metrics(self) -> tuple[str, ...]:
+    return self._summary_metrics
+
+  @property
+  def module_paths(self) -> tuple[pth.LocalPath, ...]:
     return self._module_paths
 
   @property
   def has_work(self) -> bool:
-    return len(self._queries) != 0 or len(self._metrics) != 0
+    return len(self._queries) != 0 or len(self._metrics) != 0 or len(
+        self._summary_metrics) != 0 or len(self._metric_definitions) != 0
 
   @property
   def needs_tp_run(self) -> bool:
@@ -201,6 +256,7 @@ class TraceProcessorProbe(Probe):
 
     return TraceProcessorConfig(
         bin_path=self.trace_processor_bin,
+        ingest_ftrace_in_raw=True,
         resolver_registry=ResolverRegistry(
             resolvers=[CrossbenchTraceUriResolver, PathUriResolver]),
         load_timeout=10,
@@ -211,7 +267,7 @@ class TraceProcessorProbe(Probe):
     return TraceProcessorProbeContext
 
   @override
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     super().validate_env(env)
     self._check_sql()
 
@@ -226,6 +282,13 @@ class TraceProcessorProbe(Probe):
       for query in self.queries:
         tp.query(query.sql)
 
+      metric_ids: Optional[list[str]] = None
+      if len(self.summary_metrics):
+        metric_ids = list(self.summary_metrics)
+
+      tp.trace_summary(
+          specs=list(self.metric_definitions), metric_ids=metric_ids)
+
   def _add_cb_columns(self, df: pd.DataFrame, run: Run) -> pd.DataFrame:
     df["cb_browser"] = run.browser.unique_name
     df["cb_story"] = run.story.name
@@ -234,8 +297,8 @@ class TraceProcessorProbe(Probe):
     return df
 
   def _aggregate_results_by_query(
-      self, runs: Iterable[Run]) -> Dict[str, pd.DataFrame]:
-    res: Dict[str, pd.DataFrame] = {}
+      self, runs: Iterable[Run]) -> dict[str, pd.DataFrame]:
+    res: dict[str, pd.DataFrame] = {}
     for run in runs:
       for file in run.results.get(self).csv_list:
         df = pd.read_csv(file)
@@ -247,8 +310,8 @@ class TraceProcessorProbe(Probe):
 
     return res
 
-  def _merge_json(self, runs: Iterable[Run]) -> Dict[str, JsonDict]:
-    merged_metrics: Dict[str,
+  def _merge_json(self, runs: Iterable[Run]) -> dict[str, JsonDict]:
+    merged_metrics: dict[str,
                          MetricsMerger] = collections.defaultdict(MetricsMerger)
     for run in runs:
       for file_path in run.results[self].json_list:
@@ -347,19 +410,25 @@ class TraceProcessorProbeContext(ProbeContext[TraceProcessorProbe]):
 
   def _merge_trace_files(self) -> LocalProbeResult:
     with self.run.actions("TRACE_PROCESSOR: Merging trace files", verbose=True):
-      with zipfile.ZipFile(self.merged_trace_path, "w") as zip_file:
-        for f in self.run.results.all_traces():
-          zip_file.write(f, arcname=f.relative_to(self.run.out_dir))
+      traces = list(self.run.results.all_traces())
+      if len(traces) == 1:
+        # Symlink the existing trace to save time and space
+        self.host_platform.symlink_or_copy(traces[0], self.merged_trace_path)
+      else:
+        with zipfile.ZipFile(self.merged_trace_path, "w") as zip_file:
+          for f in traces:
+            zip_file.write(f, arcname=f.relative_to(self.run.out_dir))
     return LocalProbeResult(trace=(self.merged_trace_path,))
 
   def _maybe_run_tp(self) -> ProbeResult:
     if not self.probe.needs_tp_run:
-      return LocalProbeResult()
+      return EmptyProbeResult()
 
     with TraceProcessor(
         trace=CrossbenchTraceUriResolver(self),
         config=self.probe.tp_config) as tp:
-      return self._run_queries(tp).merge(self._run_metrics(tp))
+      return self._run_queries(tp).merge(self._run_metrics(tp)).merge(
+          self._summarize_trace(tp))
 
   def _run_queries(self, tp: TraceProcessor) -> LocalProbeResult:
 
@@ -386,6 +455,32 @@ class TraceProcessorProbeContext(ProbeContext[TraceProcessorProbe]):
     with self.run.actions("TRACE_PROCESSOR: Running metrics", verbose=True):
       files = tuple(map(run_metric, self.probe.metrics))
       return LocalProbeResult(json=files)
+
+  def _summarize_trace(self, tp: TraceProcessor) -> ProbeResult:
+    if not self.probe.summary_metrics and not self.probe.metric_definitions:
+      return EmptyProbeResult()
+
+    with self.run.actions(
+        "TRACE_PROCESSOR: Running trace summary", verbose=True):
+
+      # Trace processor interprets an empty list as 'emit no metrics' and
+      # 'None' as emit all metrics specified in the metric definitions.
+      # When no metric IDs are explicitly given, default to the more
+      # sensible option of emitting every metric.
+      metric_ids: Optional[list[str]] = None
+      if len(self.probe.summary_metrics):
+        metric_ids = list(self.probe.summary_metrics)
+
+      proto_result = tp.trace_summary(
+          specs=list(self.probe.metric_definitions), metric_ids=metric_ids)
+
+      proto_file = self.local_result_path / "v2_metrics.pb"
+      proto_file.write_bytes(proto_result.SerializeToString())
+
+      textproto_file = self.local_result_path / "v2_metrics.textproto"
+      textproto_file.write_bytes(text_format.MessageToBytes(proto_result))
+
+      return LocalProbeResult(file=[proto_file, textproto_file])
 
   @property
   def merged_trace_path(self) -> pth.LocalPath:

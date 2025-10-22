@@ -10,7 +10,7 @@
 #include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/memory/ptr_util.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
 #include "ui/display/display.h"
@@ -33,10 +33,6 @@ Screen::~Screen() = default;
 
 // static
 Screen* Screen::GetScreen() {
-#if BUILDFLAG(IS_IOS)
-  if (!g_screen)
-    g_screen = CreateNativeScreen();
-#endif
   return g_screen;
 }
 
@@ -249,12 +245,8 @@ ScreenInfos Screen::GetScreenInfosNearestDisplay(int64_t nearest_id) const {
 
 ScopedNativeScreen::ScopedNativeScreen(const base::Location& location) {
   if (!Screen::HasScreen()) {
-#if BUILDFLAG(IS_IOS)
-    Screen::GetScreen();
-#else
     screen_ = base::WrapUnique(CreateNativeScreen());
     Screen::SetScreenInstance(screen_.get(), location);
-#endif
   }
 }
 

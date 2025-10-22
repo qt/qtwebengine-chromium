@@ -102,7 +102,9 @@ class SlotAccessorForHeapObject {
     Tagged<ExposedTrustedObject> object = Cast<ExposedTrustedObject>(value);
 
     InstanceType instance_type = value->map()->instance_type();
-    IndirectPointerTag tag = IndirectPointerTagFromInstanceType(instance_type);
+    bool shared = HeapLayout::InAnySharedSpace(value);
+    IndirectPointerTag tag =
+        IndirectPointerTagFromInstanceType(instance_type, shared);
     IndirectPointerSlot dest = object_->RawIndirectPointerField(offset_, tag);
     dest.store(object);
 
@@ -273,7 +275,11 @@ int Deserializer<IsolateT>::WriteExternalPointer(Tagged<HeapObject> host,
   }
 #endif  // V8_ENABLE_SANDBOX
 
-  dest.init(main_thread_isolate(), host, value, tag);
+  if (tag == kExternalPointerNullTag && value == kNullAddress) {
+    dest.init_lazily_initialized();
+  } else {
+    dest.init(main_thread_isolate(), host, value, tag);
+  }
 
 #ifdef V8_ENABLE_SANDBOX
   if (managed_resource) {
@@ -537,10 +543,18 @@ void Deserializer<Isolate>::PostProcessNewJSReceiver(
       uint32_t store_index =
           typed_array->GetExternalBackingStoreRefForDeserialization();
       auto backing_store = backing_stores_[store_index];
-      void* start = backing_store ? backing_store->buffer_start() : nullptr;
-      if (!start) start = EmptyBackingStoreBuffer();
-      typed_array->SetOffHeapDataPtr(main_thread_isolate(), start,
-                                     typed_array->byte_offset());
+      if (backing_store && backing_store->buffer_start()) {
+        typed_array->SetOffHeapDataPtr(main_thread_isolate(),
+                                       backing_store->buffer_start(),
+                                       typed_array->byte_offset());
+      } else {
+        // Directly set the data pointer to point to the
+        // EmptyBackingStoreBuffer. Otherwise, we might end up setting it to
+        // EmptyBackingStoreBuffer() + byte_offset() which would result in an
+        // invalid pointer.
+        typed_array->SetOffHeapDataPtr(main_thread_isolate(),
+                                       EmptyBackingStoreBuffer(), 0);
+      }
     }
   } else if (InstanceTypeChecker::IsJSArrayBuffer(instance_type)) {
     auto buffer = Cast<JSArrayBuffer>(*obj);
@@ -560,6 +574,8 @@ void Deserializer<Isolate>::PostProcessNewJSReceiver(
                                     : ResizableFlag::kNotResizable;
       buffer->Setup(shared, resizable, bs, main_thread_isolate());
     }
+  } else if (InstanceTypeChecker::IsJSDate(instance_type)) {
+    Cast<JSDate>(*obj)->UpdateFieldsAfterDeserialization(main_thread_isolate());
   }
 }
 
@@ -794,8 +810,12 @@ Handle<HeapObject> Deserializer<IsolateT>::ReadObject(SnapshotSpace space) {
   //     before fields with objects.
   //     - We ensure this is the case by DCHECKing on object allocation that the
   //       previously allocated object has a valid size (see `Allocate`).
+
+  const InSharedSpace in_shared_space =
+      IsSharedAllocationType(allocation) ? kInSharedSpace : kNotInSharedSpace;
   Tagged<HeapObject> raw_obj =
-      Allocate(allocation, size_in_bytes, HeapObject::RequiredAlignment(*map));
+      Allocate(allocation, size_in_bytes,
+               HeapObject::RequiredAlignment(in_shared_space, *map));
   raw_obj->set_map_after_allocation(isolate_, *map);
   MemsetTagged(raw_obj->RawField(kTaggedSize),
                Smi::uninitialized_deserialization_value(), size_in_tagged - 1);
@@ -1421,7 +1441,7 @@ int Deserializer<IsolateT>::ReadClearedWeakReference(
   if (v8_flags.trace_deserialization) {
     PrintF("%*sClearedWeakReference\n", depth_, "");
   }
-  return slot_accessor.Write(ClearedValue(isolate()), 0, SKIP_WRITE_BARRIER);
+  return slot_accessor.Write(ClearedValue(), 0, SKIP_WRITE_BARRIER);
 }
 
 template <typename IsolateT>

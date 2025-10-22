@@ -26,7 +26,7 @@
 
 // Version number for shader translation API.
 // It is incremented every time the API changes.
-#define ANGLE_SH_VERSION 372
+#define ANGLE_SH_VERSION 380
 
 enum ShShaderSpec
 {
@@ -241,10 +241,6 @@ struct ShCompileOptions
     // drivers that do not handle struct scopes correctly, including all Mac drivers and Linux AMD.
     uint64_t regenerateStructNames : 1;
 
-    // This flag works around bugs in Mac drivers related to do-while by transforming them into an
-    // other construct.
-    uint64_t rewriteDoWhileLoops : 1;
-
     // This flag works around a bug in the HLSL compiler optimizer that folds certain constant pow
     // expressions incorrectly. Only applies to the HLSL back-end. It works by expanding the integer
     // pow expressions into a series of multiplies.
@@ -282,10 +278,6 @@ struct ShCompileOptions
     // of a named uniform block declared with a shared or std140 layout qualifier to be considered
     // active. The uniform block itself is also considered active.
     uint64_t useUnusedStandardSharedBlocks : 1;
-
-    // This flag works around a bug in unary minus operator on float numbers on Intel Mac OSX 10.11
-    // drivers. It works by translating -float into 0.0 - float.
-    uint64_t rewriteFloatUnaryMinusOperator : 1;
 
     // This flag works around a bug in evaluating atan(y, x) on some NVIDIA OpenGL drivers.  It
     // works by using an expression to emulate this function.
@@ -396,9 +388,6 @@ struct ShCompileOptions
 
     uint64_t forceShaderPrecisionHighpToMediump : 1;
 
-    // Allow compiler to use specialization constant to do pre-rotation and y flip.
-    uint64_t useSpecializationConstant : 1;
-
     // Ask compiler to generate Vulkan transform feedback emulation support code.
     uint64_t addVulkanXfbEmulationSupportCode : 1;
 
@@ -413,9 +402,6 @@ struct ShCompileOptions
 
     // Always write explicit location layout qualifiers for fragment outputs.
     uint64_t explicitFragmentLocations : 1;
-
-    // Insert explicit casts for float/double/unsigned/signed int on macOS 10.15 with Intel driver
-    uint64_t addExplicitBoolCasts : 1;
 
     // Add round() after applying dither.  This works around a Qualcomm quirk where values can get
     // ceil()ed instead.
@@ -474,6 +460,19 @@ struct ShCompileOptions
     // Specify struct in one statement, declare instance in other.
     uint64_t separateCompoundStructDeclarations : 1;
 
+    // Whether to preserve denorm floats in the lexer or convert to zero
+    uint64_t preserveDenorms : 1;
+
+    // Whether inactive shader variables from the output.
+    uint64_t removeInactiveVariables : 1;
+
+    // Ensure all loops execute side-effects or terminate.
+    uint64_t ensureLoopForwardProgress : 1;
+
+    // Do not preform any shader validation or perform any shader transformations. Shader state can
+    // still be reflected.
+    uint64_t skipAllValidationAndTransforms : 1;
+
     ShCompileOptionsMetal metal;
     ShPixelLocalStorageOptions pls;
 };
@@ -524,6 +523,7 @@ struct ShBuiltInResources
     int OVR_multiview2;
     int EXT_multisampled_render_to_texture;
     int EXT_multisampled_render_to_texture2;
+    int EXT_fragment_shading_rate;
     int EXT_YUV_target;
     int EXT_geometry_shader;
     int OES_geometry_shader;
@@ -594,6 +594,11 @@ struct ShBuiltInResources
     // Set a 64 bit hash function to enable user-defined name hashing.
     // Default is NULL.
     ShHashFunction64 HashFunction;
+
+    // User defined variables are prefixed with '_' and UserVariableNamePrefix. If UserVariableName
+    // is the null character, no prefixing is done and collisions between user variables and
+    // variables introduced during translation is possible.
+    char UserVariableNamePrefix;
 
     // The maximum complexity an expression can be when limitExpressionComplexity is turned on.
     int MaxExpressionComplexity;
@@ -967,7 +972,7 @@ inline bool IsWebGLBasedSpec(ShShaderSpec spec)
 // Can't prefix with just _ because then we might introduce a double underscore, which is not safe
 // in GLSL (ESSL 3.00.6 section 3.8: All identifiers containing a double underscore are reserved for
 // use by the underlying implementation). u is short for user-defined.
-extern const char kUserDefinedNamePrefix[];
+extern const char kUserDefinedNamePrefix;
 
 enum class MetadataFlags
 {
@@ -1002,19 +1007,17 @@ namespace vk
 // Specialization constant ids
 enum class SpecializationConstantId : uint32_t
 {
-    SurfaceRotation = 0,
-    Dither          = 1,
+    Dither = 0,
 
-    InvalidEnum = 2,
+    InvalidEnum = 1,
     EnumCount   = InvalidEnum,
 };
 
 enum class SpecConstUsage : uint32_t
 {
-    Rotation = 0,
-    Dither   = 1,
+    Dither = 0,
 
-    InvalidEnum = 2,
+    InvalidEnum = 1,
     EnumCount   = InvalidEnum,
 };
 

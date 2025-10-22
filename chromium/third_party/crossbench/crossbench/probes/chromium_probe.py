@@ -13,13 +13,13 @@ from crossbench.probes.probe import Probe
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
 
 
 class ChromiumProbe(Probe):
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     self.expect_browser(browser, BrowserAttributes.CHROMIUM_BASED)
 

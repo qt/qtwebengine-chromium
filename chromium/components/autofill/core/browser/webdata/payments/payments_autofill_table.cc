@@ -18,10 +18,10 @@
 #include <vector>
 
 #include "base/check.h"
+#include "base/check_deref.h"
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/debug/crash_logging.h"
-#include "base/functional/overloaded.h"
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/notreached.h"
@@ -48,6 +48,7 @@
 #include "components/autofill/core/browser/payments/payments_customer_data.h"
 #include "components/autofill/core/browser/webdata/autofill_change.h"
 #include "components/autofill/core/browser/webdata/autofill_table_utils.h"
+#include "components/autofill/core/browser/webdata/payments/server_cvc.h"
 #include "components/autofill/core/common/autofill_clock.h"
 #include "components/autofill/core/common/autofill_constants.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -59,6 +60,7 @@
 #include "components/webdata/common/web_database.h"
 #include "sql/statement.h"
 #include "sql/transaction.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -102,6 +104,7 @@ constexpr std::string_view kProductDescription = "product_description";
 constexpr std::string_view kProductTermsUrl = "product_terms_url";
 constexpr std::string_view kCardInfoRetrievalEnrollmentState =
     "card_info_retrieval_enrollment_state";
+constexpr std::string_view kCardBenefitSource = "card_benefit_source";
 
 constexpr std::string_view kServerCardCloudTokenDataTable =
     "server_card_cloud_token_data";
@@ -251,13 +254,15 @@ constexpr std::initializer_list<std::pair<std::string_view, std::string_view>>
 constexpr std::string_view kPaymentInstrumentCreationOptionsTable =
     "payment_instrument_creation_options";
 
+constexpr std::string_view kCleanupForCrbug411681430Timestamp = "1747828800";
+
 void BindEncryptedStringToColumn(sql::Statement* s,
                                  int column_index,
                                  const std::string& value,
                                  const os_crypt_async::Encryptor& encryptor) {
   std::string encrypted_data;
   std::ignore = encryptor.EncryptString(value, &encrypted_data);
-  s->BindBlob(column_index, encrypted_data);
+  s->BindBlob(column_index, std::move(encrypted_data));
 }
 
 void BindEncryptedU16StringToColumn(
@@ -267,7 +272,7 @@ void BindEncryptedU16StringToColumn(
     const os_crypt_async::Encryptor& encryptor) {
   std::string encrypted_data;
   std::ignore = encryptor.EncryptString16(value, &encrypted_data);
-  s->BindBlob(column_index, encrypted_data);
+  s->BindBlob(column_index, std::move(encrypted_data));
 }
 
 void BindCreditCardToStatement(const CreditCard& credit_card,
@@ -479,6 +484,20 @@ WebDatabaseTable::TypeKey GetKey() {
   return reinterpret_cast<void*>(&table_key);
 }
 
+// TODO(crbug.com/417251716): Add logic to check `num` is a valid enum entry.
+template <typename T>
+  requires(std::is_enum_v<T>)
+bool IsValidValue(int num, T enum_type) {
+  return num >= 0 && num <= static_cast<int>(T::kMaxValue);
+}
+
+std::string_view ConvertToBenefitSource(int benefit_source_from_table) {
+  return IsValidValue(benefit_source_from_table, CreditCard::BenefitSource())
+             ? CreditCard::GetBenefitSourceStringFromEnum(
+                   static_cast<CreditCard::BenefitSource>(
+                       benefit_source_from_table))
+             : "";
+}
 }  // namespace
 
 PaymentsAutofillTable::PaymentsAutofillTable() = default;
@@ -486,7 +505,8 @@ PaymentsAutofillTable::~PaymentsAutofillTable() = default;
 
 // static
 PaymentsAutofillTable* PaymentsAutofillTable::FromWebDatabase(WebDatabase* db) {
-  return static_cast<PaymentsAutofillTable*>(db->GetTable(GetKey()));
+  return static_cast<PaymentsAutofillTable*>(
+      CHECK_DEREF(db).GetTable(GetKey()));
 }
 
 WebDatabaseTable::TypeKey PaymentsAutofillTable::GetTypeKey() const {
@@ -599,6 +619,9 @@ bool PaymentsAutofillTable::MigrateToVersion(int version,
     case 136:
       *update_compatible_version = false;
       return MigrateToVersion136AddPaymentInstrumentCreationOptionsTable();
+    case 141:
+      *update_compatible_version = false;
+      return MigrateToVersion141AddCardBenefitSourceColumn();
   }
   return true;
 }
@@ -927,7 +950,8 @@ bool PaymentsAutofillTable::GetServerCreditCards(
                  kCardArtUrl,
                  kProductDescription,
                  kProductTermsUrl,
-                 kCardInfoRetrievalEnrollmentState},
+                 kCardInfoRetrievalEnrollmentState,
+                 kCardBenefitSource},
                 "LEFT OUTER JOIN server_card_metadata AS metadata USING (id)");
   while (s.Step()) {
     int index = 0;
@@ -976,6 +1000,7 @@ bool PaymentsAutofillTable::GetServerCreditCards(
     } else {
       index++;
     }
+    card->set_benefit_source(ConvertToBenefitSource(s.ColumnInt(index++)));
     // Add CVC to the the `card` if the CVC storage flag is enabled.
     if (base::FeatureList::IsEnabled(
             features::kAutofillEnableCvcStorageAndFilling)) {
@@ -1076,43 +1101,19 @@ bool PaymentsAutofillTable::ClearLocalCvcs() {
   return db()->GetLastChangeCount() > 0;
 }
 
-bool PaymentsAutofillTable::AddServerCardMetadata(
-    const PaymentsMetadata& card_metadata) {
-  sql::Statement s;
-  InsertBuilder(db(), s, kServerCardMetadataTable,
-                {kUseCount, kUseDate, kBillingAddressId, kId});
-  s.BindInt64(0, card_metadata.use_count);
-  s.BindTime(1, card_metadata.use_date);
-  s.BindString(2, card_metadata.billing_address_id);
-  s.BindString(3, card_metadata.id);
-  s.Run();
-
+bool PaymentsAutofillTable::CleanupForCrbug411681430() {
+  Delete(db(), kLocalStoredCvcTable,
+         base::StrCat(
+             {kLastUpdatedTimestamp, "<", kCleanupForCrbug411681430Timestamp}));
   return db()->GetLastChangeCount() > 0;
 }
 
-bool PaymentsAutofillTable::UpdateServerCardMetadata(const CreditCard& credit_card) {
-  DCHECK_NE(CreditCard::RecordType::kLocalCard, credit_card.record_type());
-
-  DeleteWhereColumnEq(db(), kServerCardMetadataTable, kId,
-                      credit_card.server_id());
-
-  sql::Statement s;
-  InsertBuilder(db(), s, kServerCardMetadataTable,
-                {kUseCount, kUseDate, kBillingAddressId, kId});
-  s.BindInt64(0, credit_card.usage_history().use_count());
-  s.BindTime(1, credit_card.usage_history().use_date());
-  s.BindString(2, credit_card.billing_address_id());
-  s.BindString(3, credit_card.server_id());
-  s.Run();
-
-  return db()->GetLastChangeCount() > 0;
-}
-
-bool PaymentsAutofillTable::UpdateServerCardMetadata(
+bool PaymentsAutofillTable::AddOrUpdateServerCardMetadata(
     const PaymentsMetadata& card_metadata) {
   // Do not check if there was a record that got deleted. Inserting a new one is
   // also fine.
   RemoveServerCardMetadata(card_metadata.id);
+
   sql::Statement s;
   InsertBuilder(db(), s, kServerCardMetadataTable,
                 {kUseCount, kUseDate, kBillingAddressId, kId});
@@ -1205,12 +1206,13 @@ void PaymentsAutofillTable::SetServerCardsData(
 
   // Add all the masked cards.
   sql::Statement masked_insert;
-  InsertBuilder(db(), masked_insert, kMaskedCreditCardsTable,
-                {kId, kNetwork, kNameOnCard, kLastFour, kExpMonth, kExpYear,
-                 kBankName, kNickname, kCardIssuer, kCardIssuerId,
-                 kInstrumentId, kVirtualCardEnrollmentState,
-                 kVirtualCardEnrollmentType, kCardArtUrl, kProductDescription,
-                 kProductTermsUrl, kCardInfoRetrievalEnrollmentState});
+  InsertBuilder(
+      db(), masked_insert, kMaskedCreditCardsTable,
+      {kId, kNetwork, kNameOnCard, kLastFour, kExpMonth, kExpYear, kBankName,
+       kNickname, kCardIssuer, kCardIssuerId, kInstrumentId,
+       kVirtualCardEnrollmentState, kVirtualCardEnrollmentType, kCardArtUrl,
+       kProductDescription, kProductTermsUrl, kCardInfoRetrievalEnrollmentState,
+       kCardBenefitSource});
 
   int index;
   for (const CreditCard& card : credit_cards) {
@@ -1237,6 +1239,9 @@ void PaymentsAutofillTable::SetServerCardsData(
     masked_insert.BindString(index++, card.product_terms_url().spec());
     masked_insert.BindInt(
         index++, static_cast<int>(card.card_info_retrieval_enrollment_state()));
+    masked_insert.BindInt(
+        index++, static_cast<int>(CreditCard::GetEnumFromBenefitSourceString(
+                     card.benefit_source())));
     masked_insert.Run();
     masked_insert.Reset(/*clear_bound_vars=*/true);
   }
@@ -1639,7 +1644,7 @@ bool PaymentsAutofillTable::SetCreditCardBenefits(
         credit_card_benefit);
 
     int benefit_type =
-        std::visit(base::Overloaded{
+        std::visit(absl::Overload{
                        // WARNING: Do not renumber, since the identifiers are
                        // stored in the database.
                        [](const CreditCardFlatRateBenefit&) { return 0; },
@@ -1661,7 +1666,7 @@ bool PaymentsAutofillTable::SetCreditCardBenefits(
     insert_benefit.BindInt(index++, benefit_type);
     insert_benefit.BindInt(
         index++, base::to_underlying(std::visit(
-                     base::Overloaded{
+                     absl::Overload{
                          [](const CreditCardCategoryBenefit& a) {
                            return a.benefit_category();
                          },
@@ -2164,16 +2169,22 @@ bool PaymentsAutofillTable::
                       {kSerializedValueEncrypted, "VARCHAR NOT NULL"}});
 }
 
+bool PaymentsAutofillTable::MigrateToVersion141AddCardBenefitSourceColumn() {
+  return AddColumn(db(), "masked_credit_cards", "card_benefit_source",
+                   "INTEGER DEFAULT 0");
+}
+
 void PaymentsAutofillTable::AddMaskedCreditCards(
     const std::vector<CreditCard>& credit_cards) {
   DCHECK_GT(db()->transaction_nesting(), 0);
   sql::Statement masked_insert;
-  InsertBuilder(db(), masked_insert, kMaskedCreditCardsTable,
-                {kId, kNetwork, kNameOnCard, kLastFour, kExpMonth, kExpYear,
-                 kBankName, kNickname, kCardIssuer, kCardIssuerId,
-                 kInstrumentId, kVirtualCardEnrollmentState,
-                 kVirtualCardEnrollmentType, kCardArtUrl, kProductDescription,
-                 kProductTermsUrl, kCardInfoRetrievalEnrollmentState});
+  InsertBuilder(
+      db(), masked_insert, kMaskedCreditCardsTable,
+      {kId, kNetwork, kNameOnCard, kLastFour, kExpMonth, kExpYear, kBankName,
+       kNickname, kCardIssuer, kCardIssuerId, kInstrumentId,
+       kVirtualCardEnrollmentState, kVirtualCardEnrollmentType, kCardArtUrl,
+       kProductDescription, kProductTermsUrl, kCardInfoRetrievalEnrollmentState,
+       kCardBenefitSource});
 
   int index;
   for (const CreditCard& card : credit_cards) {
@@ -2200,11 +2211,14 @@ void PaymentsAutofillTable::AddMaskedCreditCards(
     masked_insert.BindString(index++, card.product_terms_url().spec());
     masked_insert.BindInt(
         index++, static_cast<int>(card.card_info_retrieval_enrollment_state()));
+    masked_insert.BindInt(
+        index++, static_cast<int>(CreditCard::GetEnumFromBenefitSourceString(
+                     card.benefit_source())));
     masked_insert.Run();
     masked_insert.Reset(/*clear_bound_vars=*/true);
 
     // Save the use count and use date of the card.
-    UpdateServerCardMetadata(card);
+    AddOrUpdateServerCardMetadata(card.GetMetadata());
   }
 }
 
@@ -2270,7 +2284,8 @@ bool PaymentsAutofillTable::InitMaskedCreditCardsTable() {
        {kCardIssuerId, "VARCHAR"},
        {kVirtualCardEnrollmentType, "INTEGER DEFAULT 0"},
        {kProductTermsUrl, "VARCHAR"},
-       {kCardInfoRetrievalEnrollmentState, "INTEGER DEFAULT 0"}});
+       {kCardInfoRetrievalEnrollmentState, "INTEGER DEFAULT 0"},
+       {kCardBenefitSource, "INTEGER DEFAULT 0"}});
 }
 
 bool PaymentsAutofillTable::InitMaskedIbansTable() {

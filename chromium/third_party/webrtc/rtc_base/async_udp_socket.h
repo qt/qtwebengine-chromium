@@ -48,11 +48,11 @@ class AsyncUDPSocket : public AsyncPacketSocket {
   SocketAddress GetRemoteAddress() const override;
   int Send(const void* pv,
            size_t cb,
-           const rtc::PacketOptions& options) override;
+           const AsyncSocketPacketOptions& options) override;
   int SendTo(const void* pv,
              size_t cb,
              const SocketAddress& addr,
-             const rtc::PacketOptions& options) override;
+             const AsyncSocketPacketOptions& options) override;
   int Close() override;
 
   State GetState() const override;
@@ -77,10 +77,5 @@ class AsyncUDPSocket : public AsyncPacketSocket {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::AsyncUDPSocket;
-}  // namespace rtc
 
 #endif  // RTC_BASE_ASYNC_UDP_SOCKET_H_

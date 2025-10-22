@@ -49,8 +49,8 @@
 #include "quiche/common/http/http_header_block.h"
 #include "quiche/common/platform/api/quiche_command_line_flags.h"
 #include "quiche/common/platform/api/quiche_logging.h"
-#include "quiche/common/platform/api/quiche_mem_slice.h"
 #include "quiche/common/platform/api/quiche_system_event_loop.h"
+#include "quiche/common/quiche_mem_slice.h"
 #include "quiche/common/quiche_text_utils.h"
 #include "quiche/common/simple_buffer_allocator.h"
 
@@ -476,7 +476,6 @@ class MasqueTlsTcpClientHandler : public ConnectingClientSocket::AsyncVisitor,
     headers[":scheme"] = url_.scheme();
     headers[":authority"] = url_.HostPort();
     headers[":path"] = url_.path();
-    headers["host"] = url_.HostPort();
     stream_id_ = h2_connection_->SendRequest(headers, std::string());
     h2_connection_->AttemptToSend();
     if (stream_id_ >= 0) {

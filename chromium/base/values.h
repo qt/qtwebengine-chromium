@@ -30,12 +30,17 @@
 #include "base/containers/flat_map.h"
 #include "base/containers/span.h"
 #include "base/trace_event/base_tracing_forward.h"
+#include "base/types/pass_key.h"
 #include "base/value_iterators.h"
 
 namespace base {
 
 class DictValue;
 class Value;
+
+namespace internal {
+class JSONParser;
+}  // namespace internal
 
 using BlobStorage = std::vector<uint8_t>;
 
@@ -209,18 +214,15 @@ class BASE_EXPORT GSL_OWNER ListValue {
     return std::erase_if(storage_, predicate);
   }
 
-  // Estimates dynamic memory usage. Requires tracing support
-  // (enable_base_tracing gn flag), otherwise always returns 0. See
+  // Estimates dynamic memory usage. See
   // base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
 
   // Serializes to a string for logging and debug purposes.
   std::string DebugString() const;
 
-#if BUILDFLAG(ENABLE_BASE_TRACING)
   // Write this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue) const;
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
  private:
   using ListStorage = std::vector<Value>;
@@ -246,6 +248,7 @@ class BASE_EXPORT GSL_OWNER DictValue {
  public:
   using iterator = detail::dict_iterator;
   using const_iterator = detail::const_dict_iterator;
+  using value_type = detail::const_dict_iterator::value_type;
 
   DictValue();
 
@@ -261,21 +264,11 @@ class BASE_EXPORT GSL_OWNER DictValue {
   // results in a faster initial sort operation. Takes move iterators to avoid
   // having to clone the input.
   template <class IteratorType>
-  explicit DictValue(std::move_iterator<IteratorType> first,
-                     std::move_iterator<IteratorType> last) {
-    // Need to move into a vector first, since `storage_` currently uses
-    // unique_ptrs.
-    std::vector<std::pair<std::string, std::unique_ptr<Value>>> values;
-    for (auto current = first; current != last; ++current) {
-      // With move iterators, no need to call Clone(), but do need to move
-      // to a temporary first, as accessing either field individually will
-      // directly from the iterator will delete the other field.
-      auto value = *current;
-      values.emplace_back(std::move(value.first),
-                          std::make_unique<Value>(std::move(value.second)));
-    }
-    storage_ = flat_map<std::string, std::unique_ptr<Value>>(std::move(values));
-  }
+  DictValue(std::move_iterator<IteratorType> first,
+            std::move_iterator<IteratorType> last);
+
+  DictValue(PassKey<internal::JSONParser>,
+            flat_map<std::string, std::unique_ptr<Value>>);
 
   ~DictValue();
 
@@ -547,24 +540,23 @@ class BASE_EXPORT GSL_OWNER DictValue {
 
   std::optional<Value> ExtractByDottedPath(std::string_view path);
 
-  // Estimates dynamic memory usage. Requires tracing support
-  // (enable_base_tracing gn flag), otherwise always returns 0. See
+  // Estimates dynamic memory usage. See
   // base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
 
   // Serializes to a string for logging and debug purposes.
   std::string DebugString() const;
 
-#if BUILDFLAG(ENABLE_BASE_TRACING)
   // Write this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue) const;
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
  private:
   BASE_EXPORT friend bool operator==(const DictValue& lhs,
                                      const DictValue& rhs);
   BASE_EXPORT friend std::partial_ordering operator<=>(const DictValue& lhs,
                                                        const DictValue& rhs);
+
+  explicit DictValue(flat_map<std::string, std::unique_ptr<Value>>);
 
   // TODO(dcheng): Replace with `flat_map<std::string, Value>` once no caller
   // relies on stability of pointers anymore.
@@ -860,18 +852,15 @@ class BASE_EXPORT GSL_OWNER Value {
   bool operator==(const DictValue& rhs) const;
   bool operator==(const ListValue& rhs) const;
 
-  // Estimates dynamic memory usage. Requires tracing support
-  // (enable_base_tracing gn flag), otherwise always returns 0. See
+  // Estimates dynamic memory usage. See
   // base/trace_event/memory_usage_estimator.h for more info.
   size_t EstimateMemoryUsage() const;
 
   // Serializes to a string for logging and debug purposes.
   std::string DebugString() const;
 
-#if BUILDFLAG(ENABLE_BASE_TRACING)
   // Write this object into a trace.
   void WriteIntoTrace(perfetto::TracedValue) const;
-#endif  // BUILDFLAG(ENABLE_BASE_TRACING)
 
   template <typename Visitor>
   auto Visit(Visitor&& visitor) const {
@@ -1090,6 +1079,24 @@ bool ListValue::contains(const T& val,
   return std::ranges::any_of(storage_, [&](const Value& value) {
     return (value.*test)() && (value.*get)() == val;
   });
+}
+
+template <class IteratorType>
+DictValue::DictValue(std::move_iterator<IteratorType> first,
+                     std::move_iterator<IteratorType> last) {
+  // Need to move into a vector first, since `storage_` currently uses
+  // unique_ptrs.
+  std::vector<std::pair<std::string, std::unique_ptr<Value>>> values;
+  values.reserve(static_cast<size_t>(std::distance(first, last)));
+  for (auto current = first; current != last; ++current) {
+    // With move iterators, no need to call Clone(), but do need to move
+    // to a temporary first, as accessing either field individually will
+    // directly from the iterator will delete the other field.
+    auto value = *current;
+    values.emplace_back(std::move(value.first),
+                        std::make_unique<Value>(std::move(value.second)));
+  }
+  storage_ = flat_map<std::string, std::unique_ptr<Value>>(std::move(values));
 }
 
 }  // namespace base

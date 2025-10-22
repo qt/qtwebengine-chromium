@@ -15,10 +15,6 @@
 
 namespace content {
 
-MockSodaInstaller::MockSodaInstaller() = default;
-
-MockSodaInstaller::~MockSodaInstaller() = default;
-
 MockOnDeviceWebSpeechRecognitionService::
     MockOnDeviceWebSpeechRecognitionService(
         content::BrowserContext* browser_context)
@@ -109,7 +105,8 @@ FakeSpeechRecognitionManagerDelegate::GetEventListener() {
 }
 
 void FakeSpeechRecognitionManagerDelegate::BindSpeechRecognitionContext(
-    mojo::PendingReceiver<media::mojom::SpeechRecognitionContext> receiver) {
+    mojo::PendingReceiver<media::mojom::SpeechRecognitionContext> receiver,
+    const std::string& language) {
   if (speech_service_) {
     speech_service_->BindSpeechRecognitionContext(std::move(receiver));
   }

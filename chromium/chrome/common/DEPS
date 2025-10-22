@@ -20,6 +20,8 @@ include_rules = [
   "+components/dom_distiller/core",
   "+components/embedder_support/android/common",
   "+components/embedder_support/origin_trials",
+  "+components/embedder_support/user_agent_utils.h",
+  "+components/enterprise/buildflags",
   "+components/favicon_base",
   "+components/gcm_driver",
   "+components/google/core/common",
@@ -29,7 +31,6 @@ include_rules = [
   "+components/metrics/metadata_recorder.h",
   "+components/metrics/metrics_pref_names.h",
   "+components/metrics/public",
-  "+components/nacl/common",
   "+components/lens",
   "+components/net_log",
   "+components/network_session_configurator/common",
@@ -62,10 +63,8 @@ include_rules = [
   "+extensions/common",
   "+gin/public",  # For profiling.cc
   "+google_apis/gaia",  # For gaia_switches.h
+  "+google_apis/google_api_keys.h",
   "+media",
-  "+ppapi/c",
-  "+ppapi/shared_impl",
-  "+ppapi/thunk",
   "+rlz/buildflags/buildflags.h",
   "+sandbox/linux/services/credentials.h",
   "+services/network/public/cpp",

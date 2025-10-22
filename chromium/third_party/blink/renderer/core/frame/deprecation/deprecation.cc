@@ -42,8 +42,7 @@ void SendToBrowser(ExecutionContext* context, const DeprecationInfo& info) {
 
   if (auto* window = DynamicTo<LocalDOMWindow>(context)) {
     if (LocalFrame* frame = window->GetFrame()) {
-      std::unique_ptr<SourceLocation> source_location =
-          CaptureSourceLocation(context);
+      SourceLocation* source_location = CaptureSourceLocation(context);
       frame->GetLocalFrameHostRemote().SendLegacyTechEvent(
           info.type_.ToString(),
           mojom::blink::LegacyTechEventCodeLocation::New(
@@ -101,11 +100,6 @@ void Deprecation::CountDeprecation(ExecutionContext* context,
     if (window->GetFrame())
       deprecation = &window->GetFrame()->GetPage()->GetDeprecation();
   } else if (auto* scope = DynamicTo<WorkerOrWorkletGlobalScope>(context)) {
-    // TODO(crbug.com/1146824): Remove this once PlzDedicatedWorker and
-    // PlzServiceWorker ship.
-    if (!scope->IsInitialized()) {
-      return;
-    }
     deprecation = &scope->GetDeprecation();
   }
 

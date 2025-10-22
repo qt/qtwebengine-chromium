@@ -16,6 +16,7 @@
 #include "base/i18n/rtl.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/url_formatter/url_formatter.h"
@@ -880,6 +881,7 @@ NavigationEntryImpl::ConstructCommonNavigationParams(
     const GURL& dest_url,
     blink::mojom::ReferrerPtr dest_referrer,
     blink::mojom::NavigationType navigation_type,
+    base::TimeTicks actual_navigation_start,
     base::TimeTicks navigation_start,
     base::TimeTicks input_start) {
   // `base_url_for_data_url` is saved in NavigationEntry but should only be used
@@ -905,10 +907,11 @@ NavigationEntryImpl::ConstructCommonNavigationParams(
       // navigation that may use replacement create their CommonNavigationParams
       // via NavigationRequest, for example, instead of via NavigationEntry.
       false /* should_replace_entry */,
-      is_for_main_frame ? GetBaseURLForDataURL() : GURL(), navigation_start,
-      frame_entry.method(), post_body ? post_body : post_data_,
-      network::mojom::SourceLocation::New(), has_started_from_context_menu(),
-      has_user_gesture(), false /* has_text_fragment_token */,
+      is_for_main_frame ? GetBaseURLForDataURL() : GURL(),
+      actual_navigation_start, navigation_start, frame_entry.method(),
+      post_body ? post_body : post_data_, network::mojom::SourceLocation::New(),
+      has_started_from_context_menu(), has_user_gesture(),
+      false /* has_text_fragment_token */,
       network::mojom::CSPDisposition::CHECK, std::vector<int>(), std::string(),
       false /* is_history_navigation_in_new_child_frame */, input_start,
       network::mojom::RequestDestination::kEmpty);
@@ -955,7 +958,7 @@ NavigationEntryImpl::ConstructCommitNavigationParams(
 
   blink::mojom::CommitNavigationParamsPtr commit_params =
       blink::mojom::CommitNavigationParams::New(
-          std::nullopt,
+          url::Origin(),
           // The correct storage key will be computed before committing the
           // navigation.
           blink::StorageKey(), GetIsOverridingUserAgent(), redirects,
@@ -1006,7 +1009,8 @@ NavigationEntryImpl::ConstructCommitNavigationParams(
           /*local_surface_id=*/std::nullopt,
           /*initial_permission_statuses=*/std::nullopt,
           /*should_skip_screenshot*/ false,
-          /*force_new_document_sequence_number=*/false);
+          /*force_new_document_sequence_number=*/false,
+          /*navigation_metrics_token=*/base::UnguessableToken::Create());
 #if BUILDFLAG(IS_ANDROID)
   // `data_url_as_string` is saved in NavigationEntry but should only be used by
   // main frames, because loadData* navigations can only happen on the main

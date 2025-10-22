@@ -1,24 +1,21 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
+import '../../../ui/components/icon_button/icon_button.js';
 import '../../../ui/components/menus/menus.js';
 
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as SDK from '../../../core/sdk/sdk.js';
-import * as Buttons from '../../../ui/components/buttons/buttons.js';
 import * as ComponentHelpers from '../../../ui/components/helpers/helpers.js';
 import type * as Menus from '../../../ui/components/menus/menus.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as MobileThrottling from '../../mobile_throttling/mobile_throttling.js';
 
-import cpuThrottlingSelectorStylesRaw from './cpuThrottlingSelector.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const cpuThrottlingSelectorStyles = new CSSStyleSheet();
-cpuThrottlingSelectorStyles.replaceSync(cpuThrottlingSelectorStylesRaw.cssText);
+import cpuThrottlingSelectorStyles from './cpuThrottlingSelector.css.js';
 
 const {html} = Lit;
 
@@ -89,7 +86,6 @@ export class CPUThrottlingSelector extends HTMLElement {
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [cpuThrottlingSelectorStyles];
     SDK.CPUThrottlingManager.CPUThrottlingManager.instance().addEventListener(
         SDK.CPUThrottlingManager.Events.RATE_CHANGED, this.#onOptionChange, this);
     this.#calibratedThrottlingSetting.addChangeListener(this.#onCalibratedSettingChanged, this);
@@ -154,11 +150,9 @@ export class CPUThrottlingSelector extends HTMLElement {
   #render = (): void => {
     let recommendedInfoEl;
     if (this.#recommendedOption && this.#currentOption === SDK.CPUThrottlingManager.NoThrottlingOption) {
-      recommendedInfoEl = html`<devtools-button
+      recommendedInfoEl = html`<devtools-icon
         title=${i18nString(UIStrings.recommendedThrottlingReason)}
-        .iconName=${'info'}
-        .variant=${Buttons.Button.Variant.ICON}
-      ></devtools-button>`;
+        name=info></devtools-icon>`;
     }
 
     const selectionTitle = this.#currentOption.title();
@@ -167,7 +161,9 @@ export class CPUThrottlingSelector extends HTMLElement {
     const calibrationLabel = hasCalibratedOnce ? i18nString(UIStrings.recalibrate) : i18nString(UIStrings.calibrate);
 
     // clang-format off
+    /* eslint-disable rulesdir/no-deprecated-component-usages */
     const output = html`
+      <style>${cpuThrottlingSelectorStyles}</style>
       <devtools-select-menu
             @selectmenuselected=${this.#onMenuItemSelected}
             .showDivider=${true}
@@ -209,6 +205,7 @@ export class CPUThrottlingSelector extends HTMLElement {
       </devtools-select-menu>
       ${recommendedInfoEl}
     `;
+    /* eslint-enable rulesdir/no-deprecated-component-usages */
     // clang-format on
     Lit.render(output, this.#shadow, {host: this});
   };

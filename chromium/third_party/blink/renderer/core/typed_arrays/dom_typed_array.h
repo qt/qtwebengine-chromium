@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_TYPED_ARRAYS_DOM_TYPED_ARRAY_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_TYPED_ARRAYS_DOM_TYPED_ARRAY_H_
 
@@ -28,7 +23,6 @@ class DOMTypedArray final : public DOMArrayBufferView {
   static ThisType* Create(DOMArrayBufferBase* buffer,
                           size_t byte_offset,
                           size_t length) {
-    CHECK(VerifySubRange(buffer, byte_offset, length));
     return MakeGarbageCollected<ThisType>(buffer, byte_offset, length);
   }
 
@@ -40,12 +34,11 @@ class DOMTypedArray final : public DOMArrayBufferView {
   static ThisType* Create(base::span<const ValueType> array)
     requires std::is_trivially_copyable_v<ValueType>
   {
-    // Intentionally avoids using `as_bytes`, since that requires
-    // `std::has_unique_object_representations_v<ValueType>`, which we neither
-    // need here nor can guarantee.
     DOMArrayBuffer* buffer =
-        DOMArrayBuffer::Create(array.data(), array.size_bytes());
-    return Create(buffer, 0, array.size());
+        DOMArrayBuffer::CreateUninitialized(array.size(), sizeof(ValueType));
+    ThisType* typed_array = Create(buffer, 0, array.size());
+    typed_array->AsSpan().copy_from(array);
+    return typed_array;
   }
 
   static ThisType* CreateOrNull(size_t length) {
@@ -57,12 +50,11 @@ class DOMTypedArray final : public DOMArrayBufferView {
   static ThisType* CreateOrNull(base::span<const ValueType> array)
     requires std::is_trivially_copyable_v<ValueType>
   {
-    // Intentionally avoids using `as_bytes`, since that requires
-    // `std::has_unique_object_representations_v<ValueType>`, which we neither
-    // need here nor can guarantee.
-    DOMArrayBuffer* buffer =
-        DOMArrayBuffer::CreateOrNull(array.data(), array.size_bytes());
-    return buffer ? Create(buffer, 0, array.size()) : nullptr;
+    ThisType* typed_array = CreateUninitializedOrNull(array.size());
+    if (typed_array) {
+      typed_array->AsSpan().copy_from(array);
+    }
+    return typed_array;
   }
 
   static ThisType* CreateUninitializedOrNull(size_t length) {
@@ -74,8 +66,9 @@ class DOMTypedArray final : public DOMArrayBufferView {
   DOMTypedArray(DOMArrayBufferBase* dom_array_buffer,
                 size_t byte_offset,
                 size_t length)
-      : DOMArrayBufferView(dom_array_buffer, byte_offset),
-        raw_length_(length) {}
+      : DOMArrayBufferView(dom_array_buffer, byte_offset), raw_length_(length) {
+    CHECK(VerifySubRange(dom_array_buffer, byte_offset, length));
+  }
 
   ValueType* Data() const { return static_cast<ValueType*>(BaseAddress()); }
 
@@ -105,10 +98,7 @@ class DOMTypedArray final : public DOMArrayBufferView {
 
   // Invoked by the indexed getter. Does not perform range checks; caller
   // is responsible for doing so and returning undefined as necessary.
-  ValueType Item(size_t index) const {
-    SECURITY_DCHECK(index < length());
-    return Data()[index];
-  }
+  ValueType Item(size_t index) const { return AsSpan()[index]; }
 
   v8::Local<v8::Value> Wrap(ScriptState*) override;
 
@@ -150,10 +140,10 @@ class DOMTypedArray final : public DOMArrayBufferView {
 
 #define DOMTYPEDARRAY_DECLARE_WRAPPERTYPEINFO(val_t, Type, clamped)            \
   template <>                                                                  \
-  const WrapperTypeInfo                                                        \
+  CORE_EXPORT const WrapperTypeInfo                                            \
       DOMTypedArray<val_t, v8::Type##Array, clamped>::wrapper_type_info_body_; \
   template <>                                                                  \
-  const WrapperTypeInfo&                                                       \
+  CORE_EXPORT const WrapperTypeInfo&                                           \
       DOMTypedArray<val_t, v8::Type##Array, clamped>::wrapper_type_info_;
 DOMTYPEDARRAY_FOREACH_VIEW_TYPE(DOMTYPEDARRAY_DECLARE_WRAPPERTYPEINFO)
 #undef DOMTYPEDARRAY_DECLARE_WRAPPERTYPEINFO

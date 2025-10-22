@@ -11,7 +11,6 @@
 
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "ui/ozone/platform/wayland/host/wayland_connection.h"
 #include "ui/ozone/platform/wayland/host/wayland_window.h"
 #include "ui/platform_window/platform_window_init_properties.h"
@@ -107,6 +106,11 @@ class XdgForeignWrapperImpl
   void ExportSurfaceInternal(wl_surface* surface, OnHandleExported cb);
 
   void OnWindowRemoved(WaylandWindow* window) override {
+    // The root surface may have been destroyed by another observer during DnD.
+    if (!window->root_surface()) {
+      return;
+    }
+
     auto it =
         std::ranges::find(exported_surfaces_, window->root_surface()->surface(),
                           &ExportedSurface<ExportedType>::surface_for_export);
@@ -132,8 +136,7 @@ class XdgForeignWrapperImpl
     auto exported_surface_it =
         std::ranges::find(self->exported_surfaces_, exported,
                           [](const auto& item) { return item.exported.get(); });
-    CHECK(exported_surface_it != self->exported_surfaces_.end(),
-          base::NotFatalUntil::M130);
+    CHECK(exported_surface_it != self->exported_surfaces_.end());
     exported_surface_it->exported_handle = handle;
 
     for (auto& cb : exported_surface_it->callbacks) {
@@ -203,17 +206,24 @@ void XdgForeignWrapper::Instantiate(WaylandConnection* connection,
 }
 
 XdgForeignWrapper::XdgForeignWrapper(WaylandConnection* connection,
-                                     wl::Object<zxdg_exporter_v1> exporter_v1) {
+                                     wl::Object<zxdg_exporter_v1> exporter_v1)
+    : XdgForeignWrapper(connection) {
   impl_ = std::make_unique<
       XdgForeignWrapperImpl<zxdg_exporter_v1, zxdg_exported_v1>>(
       connection, std::move(exporter_v1));
 }
 
 XdgForeignWrapper::XdgForeignWrapper(WaylandConnection* connection,
-                                     wl::Object<zxdg_exporter_v2> exporter_v2) {
+                                     wl::Object<zxdg_exporter_v2> exporter_v2)
+    : XdgForeignWrapper(connection) {
   impl_ = std::make_unique<
       XdgForeignWrapperImpl<zxdg_exporter_v2, zxdg_exported_v2>>(
       connection, std::move(exporter_v2));
+}
+
+XdgForeignWrapper::XdgForeignWrapper(WaylandConnection* connection) {
+  CHECK(connection);
+  window_removal_observer_.Observe(connection->window_manager());
 }
 
 XdgForeignWrapper::~XdgForeignWrapper() = default;

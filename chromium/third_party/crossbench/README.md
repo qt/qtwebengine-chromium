@@ -13,10 +13,15 @@ Supported OS: MacOS, Android, Linux and Windows.
 
 ## Basic usage:
 ### Chromium Devs (with a full chromium checkout)
-Use the `./cb.py` script directly to run benchmarks (requires chrome's
-[vpython3](https://chromium.googlesource.com/infra/infra/+/main/doc/users/vpython.md))
+
+- Use the [`tools/perf/cb`](https://source.chromium.org/chromium/chromium/src/+/main:tools/perf/cb) helper script.
+
+Alternative:
+- Make sure to run `gclient sync` to get the latest crossbench roll.
+- Use a standalone [crossbench checkout](#checking-out-code) and run `./cb.py`.
 
 ### Standalone installation
+Note: The pip package is only irregularly updated and thus likely out of date.
 - Use `pip install crossbench`,
 - or use the "poetry" package manager, see the [development section](#development).
 
@@ -60,7 +65,7 @@ android devices using the device ID or unique device names
 
 ## Main Components
 
-### Browsers
+### 🌐 Browsers
 Crossbench supports running benchmarks on one or multiple browser configurations.
 The main implementation uses selenium for maximum system independence.
 
@@ -82,7 +87,7 @@ Multi-browser example:
 ```
 
 #### `--browser` flag on desktop:
-| Flag | Description |
+| Example | Description |
 |------|-------------|
 |`--browser=chrome-stable`| Use the installed Chrome stable on the host. Also works with `beta`, `dev` and `canary` versions. |
 |`--browser=edge-stable`| Use the installed Edge stable on the host. Also works with `beta`, `dev` and `canary` versions. |
@@ -91,6 +96,8 @@ Multi-browser example:
 |`--browser=./out/Release/chrome`| Use a locally compiled chrome version. Any path to a chrome binary will work. |
 |`--browser=chrome-m123`| Download the latest M123 chrome stable release and install it locally |
 |`--browser=chrome-M123-canary`| Download the latest M123 chrome canary release and install it locally |
+|`--browser=chrome-latest`| Download the latest chrome stable release and install it locally |
+|`--browser=chrome-latest-canary`| Download the latest chrome canary release and install it locally |
 |`--browser=chrome-125.0.6422.112`| Download and install a specific stable chrome version. |
 |`--browser=chrome-125.0.6422.112-dev`| Download and install a specific dev chrome version. |
 |`--browser=chrome-M100...M123`| Download and install a range of 24 different chrome stable milestones. |
@@ -100,11 +107,12 @@ Multi-browser example:
 You can directly run on attached android devices using the device ID or unique device names.
 They need to have [developer mode and usb-debugging enabled](https://developer.android.com/studio/debug/dev-options#Enable-debugging).
 
-| Flag | Description |
+| Example | Description |
 |------|-------------|
 | `--browser=adb:chrome-stable` | Use Chrome stable on a single attached adb device. Note this will fail if there is more than one attached device. |
 |  `--browser=Pixel_7_pro:chrome-canary` | Use Chrome canary on an attached Pixel 7 Pro device. Note this will fail if there is more than one Pixel 7 pro attached.|
 | `--browser=2900FF00BB:chrome-dev` | Use Chrome dev on an attached adb device with the serial id `2900FF00BB`. Use `adb devices -l` to find the serial id.|
+| `--browser=adb:out/arm64.apk/bin/chrome_public_apk` | Use a locally built [chrome_public_apk helper](https://chromium.googlesource.com/chromium/src/+/main/docs/android_build_instructions.md#build-the-full-browser) with an automatically chosen locally build chromedriver from an adjacent build folder. This will also auto-install chrome on your device. |
 
 #### Browser Config File
 For more complex scenarios you can use a
@@ -148,7 +156,7 @@ Safari needs some extra steps to work:
   - "Developer" tab: Optional, if you plan to use the apple-script browser, also check "Allow JavaScript from Apple Events"
 
 
-### Probes
+### 🩺 Probes
 Probes define a way to extract arbitrary (performance) numbers from a
 host or running browser. This can reach from running simple JS-snippets to
 extract page-specific numbers to system-wide profiling.
@@ -183,8 +191,9 @@ For complex probe setups you can use `--probe-config=<file>`.
 The [example file](config/doc/probe.config.hjson) lists and explains all
 configuration details. For the specific probe configuration properties consult
 the `describe` command.
+You can find more examples in [config/doc/probe](config/doc/probe).
 
-### Benchmarks
+### 📏 Benchmarks
 Use the `describe` command to list all benchmark details:
 
 ```bash
@@ -198,7 +207,7 @@ Use the `describe` command to list all benchmark details:
 ./cb.py speedometer_3.0 --help
 ```
 
-### Stories
+### 📚 Stories
 Stories define sequences of browser interactions. This can be simply
 loading a URL and waiting for a given period of time, or in more complex
 scenarios, actively interact with a page and navigate multiple times.
@@ -213,11 +222,58 @@ Use `--stories` to list individual story names, or use regular expression
 as filter.
 
 ```bash
+# Only run Angular workloads:
 ./cb.py speedometer --browser=$BROWSER --stories='.*Angular.*'
+
+# Exclude bomb-workers and segmentation:
+./cb.py js --browser=chrome-m120-canary --stories='^(?!(segmentation|bomb-workers)).*'
+```
+
+### Loading Benchmark and Stories
+
+For non-press benchmarks you should use the `loading` benchmark and you have
+multiple ways to specify the stories:
+
+| Flag | Description |
+| ---- | -- |
+| `--stories` or `--url`  | Use a comma-separate list of predefined pages or URLs for simple loading. |
+| `--page-config`  |  Page configs (see [`config/docs/page.config.hjson`](config/doc/page.config.hjson)) for a detailed example |
+| `--config` | All-in-one config including browser, probes and pages |
+
+
+```bash
+# Load https://cnn.com for 5 seconds:
+./cb.py loading --url=cnn.com,5s
+```
+
+```bash
+# Load cnn and facebook separately:
+./cb.py loading --url=cnn.com,5s,facebook.com,10s --separate
+```
+
+```bash
+# Use page-config for complex page interactions:
+./cb.py loading --page-config=config/doc/page.config.hjson --browser=chrome-canary
 ```
 
 
-## Development
+### 🛜 Network
+
+Crossbench supports various network settings directly, see `./cb.py help network` for more detail.
+| Type | Description |
+| ------- | -- |
+| LIVE    | Live network.  |
+| WPR     | Replayed network from a [wpr.go](https://chromium.googlesource.com/webpagereplay/) archive. Note you can use the `--probe=wpr` probe to record fresh network archives |
+| LOCAL   | Serve content from a local http file server. This is useful for local debugging or running press benchmarks. |
+
+| Example | Description |
+| -- | -- |
+| `--network=/path/to/speedometer` | Use a local fileserver. |
+| `--network=3G-slow` | Use live network with slow 3G traffic shaping. |
+| `--network=path/to/archive.wprgo` | Use 'wpr' replay network with the given request archive. |
+| `--network='{type:"wpr", path:"./archive.wprgo", speed:"3G-regular"}'`| Use 'wpr' network with 3G traffic shaping. |
+
+## 🛠️ Development
 
 ### Checking Out Code
 Don't just `git clone` the crossbench repo! Use depot_tools to set everything
@@ -240,7 +296,7 @@ to setup the correct environment for testing and debugging.
 
 ```bash
 # a) On debian:
-sudo apt-get install python3.10 python3-poetry
+sudo apt-get install python3.11 python3.11-dev python3-poetry
 # b) With python 3.11 installed already:
 pip3 install poetry
 ```

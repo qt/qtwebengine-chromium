@@ -634,10 +634,10 @@ void PooledSingleThreadTaskRunnerManager::Start(
     WorkerThreadObserver* worker_thread_observer) {
   DCHECK(!worker_thread_observer_);
   worker_thread_observer_ = worker_thread_observer;
-#if (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   DCHECK(io_thread_task_runner);
   io_thread_task_runner_ = std::move(io_thread_task_runner);
-#endif  // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#endif  // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 
   g_use_utility_thread_group = CanUseUtilityThreadTypeForWorkerThread() &&
                                FeatureList::IsEnabled(kUseUtilityThreadGroup);
@@ -857,7 +857,7 @@ void PooledSingleThreadTaskRunnerManager::UnregisterWorkerThread(
     }
 
     auto worker_iter = std::ranges::find(workers_, worker);
-    CHECK(worker_iter != workers_.end(), base::NotFatalUntil::M125);
+    CHECK(worker_iter != workers_.end());
     worker_to_destroy = std::move(*worker_iter);
     workers_.erase(worker_iter);
   }

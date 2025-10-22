@@ -5,9 +5,8 @@
 from __future__ import annotations
 
 import abc
-import datetime as dt
 import functools
-from typing import TYPE_CHECKING, Tuple, Type
+from typing import TYPE_CHECKING, Type
 
 from typing_extensions import override
 
@@ -16,6 +15,8 @@ from crossbench.action_runner.action.base_duration import BaseDurationAction
 from crossbench.benchmarks.loading.input_source import InputSource
 
 if TYPE_CHECKING:
+  import datetime as dt
+
   from crossbench.config import ConfigParser
   from crossbench.types import JsonDict
 
@@ -54,7 +55,7 @@ class InputSourceAction(BaseDurationAction, metaclass=abc.ABCMeta):
           f"Unsupported input source for {self.__class__.__name__}")
 
   @abc.abstractmethod
-  def supported_input_sources(self) -> Tuple[InputSource, ...]:
+  def supported_input_sources(self) -> tuple[InputSource, ...]:
     pass
 
   @override

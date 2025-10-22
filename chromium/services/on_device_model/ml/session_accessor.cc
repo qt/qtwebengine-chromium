@@ -7,19 +7,22 @@
 #include "base/compiler_specific.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "services/on_device_model/ml/chrome_ml.h"
+#include "services/on_device_model/ml/chrome_ml_types.h"
 
 namespace ml {
 
 namespace {
 
+namespace odmm = ::on_device_model::mojom;
+
 float GetTemperature(std::optional<float> temperature) {
-  return std::max(0.0f, temperature.value_or(0.0f));
+  return std::max(kMinTemperature, temperature.value_or(kMinTemperature));
 }
 
 uint32_t GetTopK(std::optional<uint32_t> top_k) {
   return std::min(static_cast<uint32_t>(
                       optimization_guide::features::GetOnDeviceModelMaxTopK()),
-                  std::max(1u, top_k.value_or(1)));
+                  std::max(kMinTopK, top_k.value_or(kMinTopK)));
 }
 
 }  // namespace
@@ -94,6 +97,7 @@ SessionAccessor::Ptr SessionAccessor::Clone() {
 ChromeMLCancelFn SessionAccessor::Append(
     on_device_model::mojom::AppendOptionsPtr options,
     ChromeMLContextSavedFn context_saved_fn) {
+  DCHECK(context_saved_fn);
   auto canceler = base::MakeRefCounted<Canceler>(chrome_ml_.get());
   task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&SessionAccessor::AppendInternal,
@@ -104,12 +108,14 @@ ChromeMLCancelFn SessionAccessor::Append(
 
 ChromeMLCancelFn SessionAccessor::Generate(
     on_device_model::mojom::GenerateOptionsPtr options,
+    ChromeMLConstraint constraint,
     ChromeMLExecutionOutputFn output_fn) {
+  DCHECK(output_fn);
   auto canceler = base::MakeRefCounted<Canceler>(chrome_ml_.get());
   task_runner_->PostTask(
-      FROM_HERE,
-      base::BindOnce(&SessionAccessor::GenerateInternal, base::Unretained(this),
-                     std::move(options), std::move(output_fn), canceler));
+      FROM_HERE, base::BindOnce(&SessionAccessor::GenerateInternal,
+                                base::Unretained(this), std::move(options),
+                                constraint, std::move(output_fn), canceler));
   return [canceler] { canceler->Cancel(); };
 }
 
@@ -120,12 +126,37 @@ void SessionAccessor::Score(const std::string& text, ChromeMLScoreFn score_fn) {
                      text, std::move(score_fn)));
 }
 
+void SessionAccessor::GetProbabilitiesBlocking(
+    const std::string& input,
+    ChromeMLGetProbabilitiesBlockingFn get_prob_fn) {
+  task_runner_->PostTask(
+      FROM_HERE,
+      base::BindOnce(&SessionAccessor::GetProbabilitiesBlockingInternal,
+                     base::Unretained(this), input, std::move(get_prob_fn)));
+}
+
 void SessionAccessor::SizeInTokens(on_device_model::mojom::InputPtr input,
                                    ChromeMLSizeInTokensFn size_in_tokens_fn) {
   task_runner_->PostTask(
       FROM_HERE, base::BindOnce(&SessionAccessor::SizeInTokensInternal,
                                 base::Unretained(this), std::move(input),
                                 std::move(size_in_tokens_fn)));
+}
+
+void SessionAccessor::CreateAsrStream(
+    odmm::AsrStreamOptionsPtr options,
+    const ChromeMLASRStreamOutputFn output_fn) {
+  DCHECK(output_fn);
+  task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&SessionAccessor::CreateAsrStreamInternal,
+                                base::Unretained(this), std::move(options),
+                                std::move(output_fn)));
+}
+
+void SessionAccessor::AsrAddAudioChunk(odmm::AudioDataPtr data) {
+  task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&SessionAccessor::AsrAddAudioChunkInternal,
+                                base::Unretained(this), std::move(data)));
 }
 
 DISABLE_CFI_DLSYM
@@ -144,17 +175,6 @@ void SessionAccessor::CreateInternal(
   // this fallback path.
   if (!params) {
     params = on_device_model::mojom::SessionParams::New();
-    // If session params are not provided but adaptation params are, inherit
-    // values from adaptation.
-    if (adaptation_params) {
-      if (adaptation_params->enable_image_input) {
-        params->capabilities.Put(on_device_model::CapabilityFlags::kImageInput);
-      }
-      if (adaptation_params->enable_audio_input) {
-        params->capabilities.Put(on_device_model::CapabilityFlags::kAudioInput);
-      }
-      params->max_tokens = adaptation_params->max_tokens;
-    }
     params->top_k = GetTopK(std::nullopt);
     params->temperature = GetTemperature(std::nullopt);
   } else {
@@ -196,33 +216,28 @@ void SessionAccessor::AppendInternal(
     ChromeMLContextSavedFn context_saved_fn,
     scoped_refptr<Canceler> canceler) {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
-  ChromeMLExecuteOptions options{
+  ChromeMLAppendOptions options{
+      .input = append_options->input->pieces.data(),
+      .input_size = append_options->input->pieces.size(),
       .max_tokens = append_options->max_tokens,
-      .token_offset = append_options->token_offset,
+      .context_saved_fn = &context_saved_fn,
   };
-  options.input = append_options->input->pieces.data();
-  options.input_size = append_options->input->pieces.size();
-  if (context_saved_fn) {
-    options.context_saved_fn = &context_saved_fn;
-  }
-  chrome_ml_->api().SessionExecuteModel(session_, model_, &options,
-                                        canceler->get());
+  chrome_ml_->api().SessionAppend(session_, &options, canceler->get());
 }
 
 DISABLE_CFI_DLSYM
 void SessionAccessor::GenerateInternal(
     on_device_model::mojom::GenerateOptionsPtr generate_options,
+    ChromeMLConstraint constraint,
     ChromeMLExecutionOutputFn output_fn,
     scoped_refptr<Canceler> canceler) {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
-  ChromeMLExecuteOptions options{
+  ChromeMLGenerateOptions options{
       .max_output_tokens = generate_options->max_output_tokens,
+      .constraint = constraint,
+      .output_fn = &output_fn,
   };
-  if (output_fn) {
-    options.execution_output_fn = &output_fn;
-  }
-  chrome_ml_->api().SessionExecuteModel(session_, model_, &options,
-                                        canceler->get());
+  chrome_ml_->api().SessionGenerate(session_, &options, canceler->get());
 }
 
 DISABLE_CFI_DLSYM
@@ -233,6 +248,15 @@ void SessionAccessor::ScoreInternal(const std::string& text,
 }
 
 DISABLE_CFI_DLSYM
+void SessionAccessor::GetProbabilitiesBlockingInternal(
+    const std::string& input,
+    ChromeMLGetProbabilitiesBlockingFn get_prob_fn) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  chrome_ml_->api().SessionGetProbabilitiesBlocking(session_, input,
+                                                    get_prob_fn);
+}
+
+DISABLE_CFI_DLSYM
 void SessionAccessor::SizeInTokensInternal(
     on_device_model::mojom::InputPtr input,
     ChromeMLSizeInTokensFn size_in_tokens_fn) {
@@ -240,6 +264,31 @@ void SessionAccessor::SizeInTokensInternal(
   chrome_ml_->api().SessionSizeInTokensInputPiece(
       session_, model_, input->pieces.data(), input->pieces.size(),
       size_in_tokens_fn);
+}
+
+DISABLE_CFI_DLSYM
+void SessionAccessor::CreateAsrStreamInternal(
+    odmm::AsrStreamOptionsPtr asr_options,
+    const ChromeMLASRStreamOutputFn output_fn) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  CHECK_EQ(asr_stream_, 0u);  // Multiple streams on a session is not supported.
+  ChromeMLASRStreamOptions options{
+      .sample_rate_hz = asr_options->sample_rate_hz,
+      .output_fn = &output_fn,
+  };
+  asr_stream_ = chrome_ml_->api().asr_api.CreateStream(session_, &options);
+}
+
+DISABLE_CFI_DLSYM
+void SessionAccessor::AsrAddAudioChunkInternal(odmm::AudioDataPtr data) {
+  DCHECK(task_runner_->RunsTasksInCurrentSequence());
+  CHECK_NE(asr_stream_, 0u) << "ASR stream must be created first.";
+  ml::AudioBuffer audio;
+  audio.sample_rate_hz = data->sample_rate;
+  audio.num_channels = data->channel_count;
+  audio.num_frames = data->frame_count;
+  audio.data = std::move(data->data);
+  chrome_ml_->api().asr_api.AddAudioChunk(asr_stream_, &audio);
 }
 
 }  // namespace ml

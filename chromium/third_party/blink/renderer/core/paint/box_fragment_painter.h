@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/paint/box_painter_base.h"
 #include "third_party/blink/renderer/core/paint/inline_paint_context.h"
+#include "third_party/blink/renderer/platform/graphics/paint/display_item.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 
 namespace blink {
@@ -27,6 +28,7 @@ class InlineBackwardCursor;
 class InlineBoxFragmentPainter;
 class InlineCursor;
 class PhysicalFragment;
+class ScopedBoxContentsPaintState;
 class ScopedPaintState;
 struct PaintInfo;
 
@@ -42,6 +44,11 @@ class CORE_EXPORT BoxFragmentPainter : public BoxPainterBase {
                      const FragmentItem& item,
                      const PhysicalBoxFragment& fragment,
                      InlinePaintContext* inline_context);
+
+  // Paint a fragment. This normally just creates a BoxFragmentPainter and calls
+  // Paint(), but certain object types require custom painters (such as replaced
+  // content).
+  static void PaintFragment(const PhysicalBoxFragment&, const PaintInfo&);
 
   void Paint(const PaintInfo&);
   // Routes single PaintPhase to actual painters, and traverses children.
@@ -183,7 +190,11 @@ class CORE_EXPORT BoxFragmentPainter : public BoxPainterBase {
                            const PhysicalOffset& paint_offset);
   bool PaintOverflowControls(const PaintInfo&,
                              const PhysicalOffset& paint_offset);
-  void PaintGapDecorations(const PaintInfo&, const PhysicalRect& paint_rect);
+  void PaintGapDecorations(
+      const PaintInfo&,
+      const PhysicalOffset& paint_offset,
+      const DisplayItemClient* background_client,
+      const std::optional<ScopedBoxContentsPaintState>& contents_paint_state);
   void PaintGaps(GridTrackSizingDirection track_direction,
                  const PaintInfo& paint_info,
                  const PhysicalRect& paint_rect,

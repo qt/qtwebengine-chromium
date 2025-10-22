@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "ui/ozone/demo/surfaceless_gl_renderer.h"
 
@@ -190,9 +186,8 @@ bool SurfacelessGlRenderer::Initialize() {
 
   if (command_line->HasSwitch("enable-overlay")) {
     int requested_overlay_cnt;
-    base::StringToInt(
-        command_line->GetSwitchValueASCII("enable-overlay").c_str(),
-        &requested_overlay_cnt);
+    base::StringToInt(command_line->GetSwitchValueASCII("enable-overlay"),
+                      &requested_overlay_cnt);
     overlay_cnt_ = std::clamp(requested_overlay_cnt, 1, kMaxLayers);
 
     const gfx::Size overlay_size =

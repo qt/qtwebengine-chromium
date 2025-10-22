@@ -20,7 +20,7 @@
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/thread.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "components/embedder_support/android/util/features.h"
 #include "components/embedder_support/android/util/input_stream.h"
 #include "components/embedder_support/android/util/input_stream_reader.h"
@@ -384,10 +384,7 @@ void AndroidStreamReaderURLLoader::SetCookies() {
     while (
         std::optional<std::string_view> cookie_string =
             response_head_->headers->EnumerateHeader(&iter, kSetCookieHeader)) {
-      // TODO(crbug.com/378650092): This std::move() is incorrect. It's unclear
-      // what the intention of the code is, but this should be fixed.
-      std::move(set_cookie_header_)
-          ->Run(resource_request_, *cookie_string, server_time);
+      set_cookie_header_->Run(resource_request_, *cookie_string, server_time);
     }
   }
 }

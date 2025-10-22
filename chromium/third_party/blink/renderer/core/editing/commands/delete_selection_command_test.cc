@@ -34,9 +34,9 @@ TEST_F(DeleteSelectionCommandTest, deleteListFromTable) {
       "</ol></td></tr></table>"
       "</div>");
 
-  Element* div = GetDocument().QuerySelector(AtomicString("div"));
-  Element* table = GetDocument().QuerySelector(AtomicString("table"));
-  Element* br = GetDocument().QuerySelector(AtomicString("br"));
+  Element* div = QuerySelector("div");
+  Element* table = QuerySelector("table");
+  Element* br = QuerySelector("br");
 
   LocalFrame* frame = GetDocument().GetFrame();
   frame->Selection().SetSelection(
@@ -57,7 +57,7 @@ TEST_F(DeleteSelectionCommandTest, deleteListFromTable) {
 
   EXPECT_TRUE(command->Apply()) << "the delete command should have succeeded";
   EXPECT_EQ("<div contenteditable=\"true\"><br></div>",
-            GetDocument().body()->innerHTML());
+            GetDocument().body()->GetInnerHTMLString());
   EXPECT_TRUE(frame->Selection().GetSelectionInDOMTree().IsCaret());
   EXPECT_EQ(Position(div, 0), frame->Selection()
                                   .ComputeVisibleSelectionInDOMTree()

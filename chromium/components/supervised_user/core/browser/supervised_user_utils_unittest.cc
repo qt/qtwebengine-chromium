@@ -7,39 +7,37 @@
 #include <string>
 
 #include "base/base64.h"
-#include "components/prefs/testing_pref_service.h"
-#include "components/safe_search_api/fake_url_checker_client.h"
+#include "base/test/task_environment.h"
 #include "components/supervised_user/core/browser/proto/parent_access_callback.pb.h"
-#include "components/supervised_user/core/browser/supervised_user_url_filter.h"
-#include "components/supervised_user/test_support/supervised_user_url_filter_test_utils.h"
+#include "components/supervised_user/core/browser/supervised_user_test_environment.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "url/gurl.h"
 
 namespace supervised_user {
+namespace {
 
 class SupervisedUserUtilsTest : public ::testing::Test {
- public:
+ protected:
   SupervisedUserUtilsTest() {
-    filter_.SetURLCheckerClient(
-        std::make_unique<safe_search_api::FakeURLCheckerClient>());
+    EnableParentalControls(*supervised_user_test_environment_.pref_service());
+  }
+  ~SupervisedUserUtilsTest() override {
+    supervised_user_test_environment_.Shutdown();
   }
 
-  ~SupervisedUserUtilsTest() override = default;
-
-  supervised_user::SupervisedUserURLFilter& filter() { return filter_; }
+  SupervisedUserTestEnvironment& supervised_user_test_environment() {
+    return supervised_user_test_environment_;
+  }
 
  private:
-  TestingPrefServiceSimple pref_service_;
-  supervised_user::SupervisedUserURLFilter filter_ =
-      supervised_user::SupervisedUserURLFilter(
-          pref_service_,
-          std::make_unique<FakeURLFilterDelegate>());
+  base::test::TaskEnvironment task_environment_;
+  SupervisedUserTestEnvironment supervised_user_test_environment_;
 };
 
 TEST_F(SupervisedUserUtilsTest, StripOnDefaultFilteringBehaviour) {
-  supervised_user::FilteringBehaviorReason reason =
-      supervised_user::FilteringBehaviorReason::DEFAULT;
-  supervised_user::UrlFormatter url_formatter(filter(), reason);
+  FilteringBehaviorReason reason = FilteringBehaviorReason::DEFAULT;
+  UrlFormatter url_formatter(*supervised_user_test_environment().url_filter(),
+                             reason);
 
   GURL full_url("http://www.example.com");
   GURL stripped_url("http://example.com");
@@ -49,9 +47,9 @@ TEST_F(SupervisedUserUtilsTest, StripOnDefaultFilteringBehaviour) {
 
 TEST_F(SupervisedUserUtilsTest,
        StripOnManualFilteringBehaviourWithoutConflict) {
-  supervised_user::FilteringBehaviorReason reason =
-      supervised_user::FilteringBehaviorReason::MANUAL;
-  supervised_user::UrlFormatter url_formatter(filter(), reason);
+  FilteringBehaviorReason reason = FilteringBehaviorReason::MANUAL;
+  UrlFormatter url_formatter(*supervised_user_test_environment().url_filter(),
+                             reason);
 
   GURL full_url("http://www.example.com");
   GURL stripped_url("http://example.com");
@@ -61,15 +59,15 @@ TEST_F(SupervisedUserUtilsTest,
 
 TEST_F(SupervisedUserUtilsTest,
        SkipStripOnManualFilteringBehaviourWithConflict) {
-  supervised_user::FilteringBehaviorReason reason =
-      supervised_user::FilteringBehaviorReason::MANUAL;
+  FilteringBehaviorReason reason = FilteringBehaviorReason::MANUAL;
   GURL full_url("http://www.example.com");
 
   // Add an conflicting entry in the blocklist.
-  std::map<std::string, bool> url_map;
-  url_map.emplace(full_url.host(), false);
-  filter().SetManualHosts(url_map);
-  supervised_user::UrlFormatter url_formatter(filter(), reason);
+  supervised_user_test_environment().SetManualFilterForHost(full_url.host(),
+                                                            false);
+
+  UrlFormatter url_formatter(*supervised_user_test_environment().url_filter(),
+                             reason);
 
   EXPECT_EQ(full_url, url_formatter.FormatUrl(full_url));
 }
@@ -77,8 +75,8 @@ TEST_F(SupervisedUserUtilsTest,
 TEST_F(SupervisedUserUtilsTest, ParseParentAccessCallbackDecodingError) {
   std::string invalid_base64_message = "*INVALID*CHARS";
   ParentAccessCallbackParsedResult result =
-      supervised_user::ParentAccessCallbackParsedResult::
-          ParseParentAccessCallbackResult(invalid_base64_message);
+      ParentAccessCallbackParsedResult::ParseParentAccessCallbackResult(
+          invalid_base64_message);
   EXPECT_TRUE(result.GetError().has_value());
   EXPECT_EQ(ParentAccessWidgetError::kDecodingError, result.GetError().value());
 }
@@ -86,8 +84,8 @@ TEST_F(SupervisedUserUtilsTest, ParseParentAccessCallbackDecodingError) {
 TEST_F(SupervisedUserUtilsTest, ParseParentAccessCallbackParsingError) {
   std::string base64_non_pacp_message = base::Base64Encode("random_message");
   ParentAccessCallbackParsedResult result =
-      supervised_user::ParentAccessCallbackParsedResult::
-          ParseParentAccessCallbackResult(base64_non_pacp_message);
+      ParentAccessCallbackParsedResult::ParseParentAccessCallbackResult(
+          base64_non_pacp_message);
   EXPECT_TRUE(result.GetError().has_value());
   EXPECT_EQ(ParentAccessWidgetError::kParsingError, result.GetError().value());
 }
@@ -109,12 +107,13 @@ TEST_F(SupervisedUserUtilsTest, ParseParentAccessCallbackApproveButtonResult) {
       base::Base64Encode(parent_access_callback.SerializeAsString());
 
   ParentAccessCallbackParsedResult response =
-      supervised_user::ParentAccessCallbackParsedResult::
-          ParseParentAccessCallbackResult(base64_approve_pacp_message);
+      ParentAccessCallbackParsedResult::ParseParentAccessCallbackResult(
+          base64_approve_pacp_message);
   EXPECT_TRUE(response.GetCallback().has_value());
   EXPECT_EQ(kids::platform::parentaccess::client::proto::ParentAccessCallback::
                 CallbackCase::kOnParentVerified,
             response.GetCallback().value().callback_case());
 }
 
+}  // namespace
 }  // namespace supervised_user

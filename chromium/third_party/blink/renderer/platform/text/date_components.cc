@@ -28,18 +28,15 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/text/date_components.h"
 
 #include <limits.h>
+
 #include "base/notreached.h"
 #include "third_party/blink/renderer/platform/wtf/date_math.h"
 #include "third_party/blink/renderer/platform/wtf/math_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/ascii_ctype.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/wtf_string.h"
 
 namespace blink {
@@ -55,8 +52,8 @@ static const int kMaximumMonthInMaximumYear = 8;
 static const int kMaximumDayInMaximumMonth = 13;
 static const int kMaximumWeekInMaximumYear = 37;  // The week of 275760-09-13
 
-static const int kDaysInMonth[12] = {31, 28, 31, 30, 31, 30,
-                                     31, 31, 30, 31, 30, 31};
+static const std::array<int, 12> kDaysInMonth = {31, 28, 31, 30, 31, 30,
+                                                 31, 31, 30, 31, 30, 31};
 
 // 'month' is 0-based.
 static int MaxDayOfMonth(int year, int month) {
@@ -544,8 +541,9 @@ String DateComponents::ToString(SecondFormat format) const {
     case kDate:
       return String::Format("%04d-%02d-%02d", year_, month_ + 1, month_day_);
     case kDateTimeLocal:
-      return String::Format("%04d-%02d-%02dT", year_, month_ + 1, month_day_) +
-             ToStringForTime(format);
+      return StrCat(
+          {String::Format("%04d-%02d-%02dT", year_, month_ + 1, month_day_),
+           ToStringForTime(format)});
     case kMonth:
       return String::Format("%04d-%02d", year_, month_ + 1);
     case kTime:

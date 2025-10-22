@@ -16,13 +16,14 @@
 #include "components/autofill/core/browser/foundations/test_autofill_client.h"
 #include "components/autofill/core/browser/foundations/test_autofill_driver.h"
 #include "components/autofill/core/browser/foundations/test_browser_autofill_manager.h"
-#include "components/autofill/core/browser/integrators/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/integrators/password_form_classification.h"
+#include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/suggestions/suggestion_type.h"
 #include "components/autofill/core/browser/test_utils/autofill_form_test_utils.h"
 #include "components/autofill/core/common/autofill_test_utils.h"
 #include "components/autofill/core/common/form_data_test_api.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
+#include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/ukm/test_ukm_recorder.h"
@@ -239,6 +240,8 @@ TEST_P(PlusAddressSubmissionTestWithParam, SubmittingFormRecordsUkm) {
       kGaiaAccount, {signin::ConsentLevel::kSignin});
   if (input.is_managed_profile) {
     account_info.hosted_domain = kManagedDomain;
+    AccountCapabilitiesTestMutator(&account_info.capabilities)
+        .set_is_subject_to_enterprise_features(true);
     identity_env().UpdateAccountInfoForAccount(account_info);
   }
   autofill_client().set_last_committed_primary_main_frame_url(

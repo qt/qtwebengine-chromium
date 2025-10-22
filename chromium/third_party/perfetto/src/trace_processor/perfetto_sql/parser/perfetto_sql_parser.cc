@@ -17,7 +17,6 @@
 #include "src/trace_processor/perfetto_sql/parser/perfetto_sql_parser.h"
 
 #include <cctype>
-#include <cstdio>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -242,10 +241,19 @@ void OnPerfettoSqlCreateFunction(PerfettoSqlParserState* state,
 void OnPerfettoSqlCreateTable(PerfettoSqlParserState* state,
                               int replace,
                               PerfettoSqlToken* name,
+                              PerfettoSqlToken* table_impl,
                               PerfettoSqlArgumentList* args,
                               PerfettoSqlToken* body_start,
                               PerfettoSqlToken* body_end) {
   std::unique_ptr<PerfettoSqlArgumentList> args_deleter(args);
+  if (table_impl->n == 0 ||
+      base::CaseInsensitiveEqual(std::string(table_impl->ptr, table_impl->n),
+                                 "dataframe")) {
+    // Do nothing.
+  } else {
+    state->ErrorAtToken("Invalid table implementation", *table_impl);
+    return;
+  }
   state->current_statement = PerfettoSqlParser::CreateTable{
       replace != 0,
       std::string(name->ptr, name->n),

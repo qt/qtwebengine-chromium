@@ -274,9 +274,7 @@ class SubresourceFilteringRulesetServiceTest : public ::testing::Test {
                                       background_task_runner_));
   }
 
-  void ClearRulesetService() {
-    service_.reset();
-  }
+  void ClearRulesetService() { service_.reset(); }
 
   // Creates a new file with the given license |contents| at a unique temporary
   // path, which is returned in |path|.
@@ -331,16 +329,13 @@ class SubresourceFilteringRulesetServiceTest : public ::testing::Test {
         .Times(1)
         .WillOnce(Return(unindexed_ruleset));
 
-    // Suppress "uninteresting mock function call" warning output that would
-    // occur as part of resource bundle initialization.
-    EXPECT_CALL(resource_bundle_delegate, GetPathForLocalePack(_, _))
-        .WillRepeatedly(Return(base::FilePath()));
+    // A ResourceBundle that uses the test's mock delegate.
+    ui::ResourceBundle resource_bundle_with_mock_delegate{
+        &resource_bundle_delegate};
 
-    ui::ResourceBundle* orig_resource_bundle =
-        ui::ResourceBundle::SwapSharedInstanceForTesting(nullptr);
-    ui::ResourceBundle::InitSharedInstanceWithLocale(
-        "en-US", &resource_bundle_delegate,
-        ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
+    // Swap in the test ResourceBundle for the lifetime of the test.
+    ui::ResourceBundle::SharedInstanceSwapperForTesting resource_bundle_swapper{
+        &resource_bundle_with_mock_delegate};
 
     // Now that everything has been set up, do the actual indexing.
     service()->IndexAndStoreAndPublishRulesetIfNeeded(ruleset_info);
@@ -349,9 +344,6 @@ class SubresourceFilteringRulesetServiceTest : public ::testing::Test {
     RunBackgroundUntilIdle();
     // Wait for file to be opened on blocking task runner.
     RunBlockingUntilIdle();
-
-    ui::ResourceBundle::CleanupSharedInstance();
-    ui::ResourceBundle::SwapSharedInstanceForTesting(orig_resource_bundle);
   }
 
   // Mark the initialization complete and run task queues until all are empty.
@@ -421,8 +413,9 @@ class SubresourceFilteringRulesetServiceTest : public ::testing::Test {
   }
 
   void RunBackgroundPendingTasksNTimes(size_t n) {
-    while (n--)
+    while (n--) {
       background_task_runner_->RunPendingTasks();
+    }
   }
 
   void AssertValidRulesetFileWithContents(
@@ -512,27 +505,25 @@ class SubresourceFilteringRulesetServiceDeathTest
 
   void TearDown() override {
     SubresourceFilteringRulesetServiceTest::TearDown();
-    if (inherited_temp_dir_.empty())
+    if (inherited_temp_dir_.empty()) {
       environment_->UnSetVar(kInheritedTempDirKey);
+    }
   }
 
   base::FilePath effective_temp_dir() const override {
-    if (!inherited_temp_dir_.empty())
+    if (!inherited_temp_dir_.empty()) {
       return inherited_temp_dir_;
+    }
     return SubresourceFilteringRulesetServiceTest::effective_temp_dir();
   }
 
  private:
-  static const char kInheritedTempDirKey[];
+  static constexpr char kInheritedTempDirKey[] =
+      "SUBRESOURCE_FILTERING_RULESET_SERVICE_DEATH_TEST_TEMP_DIR";
 
   std::unique_ptr<base::Environment> environment_;
   base::FilePath inherited_temp_dir_;
 };
-
-// static
-const char SubresourceFilteringRulesetServiceDeathTest::kInheritedTempDirKey[] =
-    "SUBRESOURCE_FILTERING_RULESET_SERVICE_DEATH_TEST_TEMP_DIR";
-
 
 TEST_F(SubresourceFilteringRulesetServiceTest, PathsAreSane) {
   IndexedRulesetVersion indexed_version(

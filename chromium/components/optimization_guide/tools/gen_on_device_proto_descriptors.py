@@ -16,7 +16,7 @@ mypy gen_on_device_proto_descriptors.py
 """
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 import dataclasses
 import functools
 from io import StringIO
@@ -33,6 +33,32 @@ sys.path.insert(0, os.path.join(_SRC_PATH, 'third_party', 'protobuf',
                                 'python'))
 
 from google.protobuf import descriptor_pb2
+
+
+# Enum types to be supported by PARSER_KIND_FIELDWISE. Supporting all possible
+# enum types used in response fields by default adds 21k of binary size, in
+# large part from the string-encoded enums themselves. The allowlist avoids
+# those costs except for types where they are known to be used.
+PARSER_KIND_FIELDWISE_ENUM_ALLOWLIST = set((
+    'ExampleForTestingResponse.ExampleInsideMessageEnum',
+    'ExampleForTestingOutsideMessageEnum',
+))
+
+
+def IsEnumTypeNameSupported(type_name: str) -> bool:
+    return (type_name.replace('optimization_guide.proto.', '')
+            in PARSER_KIND_FIELDWISE_ENUM_ALLOWLIST)
+
+
+def EnsureEnumAllowlistIsValid(descriptors: DescriptorDb):
+    try:
+        for enum_name in PARSER_KIND_FIELDWISE_ENUM_ALLOWLIST:
+            descriptors.GetEnumDescriptors(
+                ['.optimization_guide.proto.' + enum_name])
+    except KeyError:
+        raise RuntimeError(
+            f'enum type {enum_name} was not found among the known enums'
+        ) from None
 
 
 class Error(Exception):
@@ -153,38 +179,114 @@ class Field:
         return self.desc.type_name.replace('.', '_')
 
 
+@dataclasses.dataclass(frozen=True)
+class EnumType:
+    desc: descriptor_pb2.EnumDescriptorProto
+    package: str
+    parent_names: tuple[str, ...] = ()
+
+    @property
+    def name(self):
+        return self.desc.name
+
+    @functools.cached_property
+    def type_name(self) -> str:
+        """Returns the value returned for MessageLite::GetTypeName()."""
+        return '.'.join((self.package, *self.parent_names, self.desc.name))
+
+    @functools.cached_property
+    def cpp_name(self) -> str:
+        """Returns the fully qualified c++ type name."""
+        namespace = self.package.replace('.', '::')
+        typename = '_'.join((*self.parent_names, self.desc.name))
+        return f'{namespace}::{typename}'
+
+    @functools.cached_property
+    def enclosing_cpp_type(self) -> str:
+        """Returns the fully qualified C++ type name enclosing the enum values.
+
+        For enums defined in messages this is the message type rather than the
+        enum type. e.g. for ExampleInsideMessageEnum defined within
+        optimization_guide::proto::ExampleForTestingResponse this will be
+        optimization_guide::proto::ExampleForTestingResponse.
+
+        Using the enclosing type is required because, for enums defined in
+        messages, the enum values are only aliased to their expected names
+        within the message class. In the enum itself they have names like
+        ExampleForTestingResponse_ExampleInsideMessageEnum_VALUE0.
+        """
+        if not self.parent_names: return self.cpp_name
+
+        namespace = self.package.replace('.', '::')
+        classname = '_'.join(self.parent_names)
+        return f'{namespace}::{classname}'
+
+    @functools.cached_property
+    def values(self):
+        return tuple(EnumValue(desc) for desc in self.desc.value)
+
+
+@dataclasses.dataclass(frozen=True)
+class EnumValue:
+    desc: descriptor_pb2.EnumValueDescriptorProto
+
+    @property
+    def name(self):
+        return self.desc.name
+
+    @property
+    def number(self):
+        return self.desc.number
+
+
 @dataclasses.dataclass()
-class KnownMessages:
+class DescriptorDb:
     _file_names: set[str] = dataclasses.field(default_factory=set)
-    _known: dict[str, Message] = dataclasses.field(default_factory=dict)
+    _known_messages: dict[str,
+                          Message] = dataclasses.field(default_factory=dict)
+    _known_enums: dict[str, Enum] = dataclasses.field(default_factory=dict)
+
+    def _AddEnumType(self, enum_type: EnumType):
+        self._known_enums['.' + enum_type.type_name] = enum_type
 
     def _AddMessage(self, msg: Message) -> None:
-        self._known['.' + msg.type_name] = msg
+        self._known_messages['.' + msg.type_name] = msg
         for nested_type in msg.desc.nested_type:
             self._AddMessage(
                 Message(desc=nested_type,
                         package=msg.package,
                         parent_names=(*msg.parent_names, msg.desc.name)))
+        for nested_enum in msg.desc.enum_type:
+            self._AddEnumType(
+                EnumType(desc=nested_enum,
+                         package=msg.package,
+                         parent_names=(*msg.parent_names, msg.desc.name)))
 
     def AddFileDescriptorSet(self,
                              fds: descriptor_pb2.FileDescriptorSet) -> None:
         for f in fds.file:
-            if (f.package != 'optimization_guide.proto.registry'):
+            if f.package != 'optimization_guide.proto.registry':
                 self._file_names.add(f.name)
             for m in f.message_type:
                 self._AddMessage(Message(desc=m, package=f.package))
+            for e in f.enum_type:
+                self._AddEnumType(EnumType(desc=e, package=f.package))
 
     def GetMessageForField(self, field: Field) -> Message:
-        return self._known[field.desc.type_name]
+        return self._known_messages[field.desc.type_name]
 
     def GetMessages(self, message_types: set[str]) -> list[Message]:
-        return [self._known[t] for t in sorted(message_types)]
+        return [self._known_messages[t] for t in sorted(message_types)]
+
+    def GetEnumDescriptors(self,
+                           enum_types: Iterable[str]) -> Iterable[EnumType]:
+        return [self._known_enums[t] for t in sorted(enum_types)]
 
     def GetAllTransitiveDeps(self, message_types: set[str]) -> list[Message]:
         seen = message_types
         stack = list(message_types)
         while stack:
-            msg = self._known[stack.pop()]
+            msg = self._known_messages[stack.pop()]
             field_types = {
                 field.desc.type_name
                 for field in msg.fields if field.type == Type.MESSAGE
@@ -194,12 +296,12 @@ class KnownMessages:
         return self.GetMessages(seen)
 
     def _GetRegistryMsg(self) -> Message:
-        return self._known[
+        return self._known_messages[
             '.optimization_guide.proto.registry.OnDeviceFeatureProtoRegistry']
 
     def YieldMessagesWithRole(self, role: str):
         for entry_field in self._GetRegistryMsg().fields:
-            logging_data_msg = self._known[entry_field.desc.type_name]
+            logging_data_msg = self._known_messages[entry_field.desc.type_name]
             for field in logging_data_msg.fields:
                 if field.name == role:
                     yield field.desc.type_name
@@ -213,13 +315,82 @@ class KnownMessages:
                 yield m.group(1) + '.pb.h'
 
 
-def GenerateProtoDescriptors(out: IO[str], messages: KnownMessages):
+def GetReferencedEnumTypeNames(
+        writable_messages: Iterable[Message]) -> Iterable[str]:
+    for message in writable_messages:
+        for field in message.fields:
+            if field.type == Type.ENUM:
+                yield field.desc.type_name
+
+
+def GenerateEnumDescriptors(out: IO[str],
+                            fds: descriptor_pb2.FileDescriptorSet,
+                            descriptors: DescriptorDb):
+    responses = set(descriptors.YieldMessagesWithRole('response'))
+    writable_messages = descriptors.GetAllTransitiveDeps(responses)
+
+    enum_type_names = GetReferencedEnumTypeNames(writable_messages)
+    enum_types = descriptors.GetEnumDescriptors(enum_type_names)
+
+    out.write(
+        '// DO NOT MODIFY. GENERATED BY gen_on_device_proto_descriptors.py\n')
+    out.write('\n')
+
+    out.write(f'#include <string_view>\n')
+    out.write('\n')
+
+    for include in sorted(descriptors.GetIncludes()):
+        out.write(f'#include "{include}"\n')
+    out.write('\n')
+
+    out.write('namespace optimization_guide {\n')
+    out.write('\n')
+
+    out.write('template <typename T>\n')
+    out.write('struct EnumTraits {\n')
+    out.write('  static_assert(false, "EnumTraits not defined for type T");\n')
+    out.write('};\n')
+    out.write('\n')
+
+    out.write('template <typename T>\n')
+    out.write('struct EnumNameAndValue {\n')
+    out.write('  std::string_view name;\n')
+    out.write('  T value;\n')
+    out.write('};\n')
+    out.write('\n')
+
+    for enum_type in enum_types:
+        if not IsEnumTypeNameSupported(enum_type.type_name):
+            continue
+
+        out.write('template <>\n')
+        out.write(f'struct EnumTraits<{enum_type.cpp_name}> {{\n')
+        out.write(f'  using Type = {enum_type.cpp_name};\n')
+        if enum_type.enclosing_cpp_type == enum_type.cpp_name:
+            enclosing_type = 'Type'
+        else:
+            enclosing_type = enum_type.enclosing_cpp_type
+        out.write(f'  using EnclosingType = {enclosing_type};\n')
+        out.write('  static constexpr std::array<EnumNameAndValue<Type>, '
+                  f'{len(enum_type.values)}> values = {{\n')
+        for value in enum_type.values:
+            out.write(f'    EnumNameAndValue<Type>{{"{value.name}", '
+                      f'EnclosingType::{value.name}}},\n')
+        out.write('  };\n')
+        out.write('};\n')
+        out.write('\n')
+
+    out.write('}  // namespace optimization_guide\n')
+    out.write('\n')
+
+
+def GenerateProtoDescriptors(out: IO[str], descriptors: DescriptorDb):
     """Generate the on_device_model_execution_proto_descriptors.cc content."""
 
-    requests = set(messages.YieldMessagesWithRole('request'))
-    responses = set(messages.YieldMessagesWithRole('response'))
-    readable_messages = messages.GetAllTransitiveDeps(requests | responses)
-    writable_messages = messages.GetAllTransitiveDeps(responses)
+    requests = set(descriptors.YieldMessagesWithRole('request'))
+    responses = set(descriptors.YieldMessagesWithRole('response'))
+    readable_messages = descriptors.GetAllTransitiveDeps(requests | responses)
+    writable_messages = descriptors.GetAllTransitiveDeps(responses)
 
     out.write(
         '// DO NOT MODIFY. GENERATED BY gen_on_device_proto_descriptors.py\n')
@@ -230,9 +401,10 @@ def GenerateProtoDescriptors(out: IO[str], messages: KnownMessages):
     )
     out.write('\n')
 
-    includes = set(messages.GetIncludes()).union({
+    includes = set(descriptors.GetIncludes()).union({
         'base/values.h',
         'components/optimization_guide/core/optimization_guide_util.h',
+        'components/optimization_guide/core/model_execution/value_converter.h',
     })
     for include in sorted(includes):
         out.write(f'#include "{include}"\n')
@@ -242,12 +414,13 @@ def GenerateProtoDescriptors(out: IO[str], messages: KnownMessages):
     out.write('\n')
     out.write('namespace {\n')
     _GetProtoValue.GenPrivate(out, readable_messages)
-    _SetProtoValue.GenPrivate(out, writable_messages)
+    _SetProtoValueFromString.GenPrivate(out, writable_messages)
     _ConvertValue.GenPrivate(out, writable_messages)
     out.write('}  // namespace\n\n')
     _GetProtoValue.GenPublic(out)
     _GetProtoFromAny.GenPublic(out, readable_messages)
-    _SetProtoValue.GenPublic(out)
+    _BuildMessage.GenPublic(out, writable_messages)
+    _SetProtoValueFromString.GenPublic(out)
     _SetProtoFieldString(readable_messages).GenPublic(out)
     _GetProtoMessage(readable_messages).GenPublic(out)
     _GetProtoMutableMessage(readable_messages).GenPublic(out)
@@ -602,65 +775,107 @@ class _SetProtoFieldString:
         out.write('}\n')  # End case
 
 
-class _SetProtoValue:
-    """Namespace class for SetProtoValue method builders."""
+class _BuildMessage:
+    """Namespace class for BuildMessage method builders."""
+
+    @classmethod
+    def GenPublic(cls, out: IO[str], messages: list[Message]):
+        out.write('std::unique_ptr<google::protobuf::MessageLite> ')
+        out.write('BuildMessage(\n')
+        out.write('    const std::string& proto_name) {\n')
+        for msg in messages:
+            cls._IfMsg(out, msg)
+        out.write('  return nullptr;\n')
+        out.write('}\n')
+
+    @classmethod
+    def _IfMsg(cls, out: IO[str], msg: Message):
+        out.write(f'if (proto_name == "{msg.type_name}") {{\n')
+        out.write(f'  return std::make_unique<{msg.cpp_name}>();\n')
+        out.write('}\n')
+
+
+class _SetProtoValueFromString:
+    """Namespace class for SetProtoValueFromString method builders."""
 
     @classmethod
     def GenPublic(cls, out: IO[str]):
         out.write("""
-      std::optional<proto::Any> SetProtoValue(
-          const std::string& proto_name,
+      ProtoStatus SetProtoValueFromString(
+          google::protobuf::MessageLite* msg,
           const proto::ProtoField& proto_field,
           const std::string& value) {
-        return SetProtoValue(proto_name, proto_field, value, /*index=*/0);
+        return SetProtoValueFromString(msg, proto_field, value, /*index=*/0);
       }
     """)
 
     @classmethod
     def GenPrivate(cls, out: IO[str], messages: list[Message]):
         out.write("""
-      std::optional<proto::Any> SetProtoValue(
-          const std::string& proto_name,
+      ProtoStatus SetProtoValueFromString(
+          google::protobuf::MessageLite* msg,
           const proto::ProtoField& proto_field,
           const std::string& value,
           int32_t index) {
         if (index >= proto_field.proto_descriptors_size()) {
-          return std::nullopt;
+          return ProtoStatus::kError;
         }
     """)
         for msg in messages:
             cls._IfMsg(out, msg)
         out.write("""
-        return std::nullopt;
+        return ProtoStatus::kError;
       }
     """)
 
     @classmethod
+    def _IsSupported(cls, field: Field):
+        if field.is_repeated or field.type == Type.MESSAGE:
+            return False
+
+        if field.type == Type.ENUM:
+            if not IsEnumTypeNameSupported(field.typename):
+                return False
+
+        return True
+
+    @classmethod
     def _IfMsg(cls, out: IO[str], msg: Message):
-        out.write(f'if (proto_name == "{msg.type_name}") {{\n')
+        if not any(cls._IsSupported(field) for field in msg.fields):
+            return
+
+        out.write(f'if (msg->GetTypeName() == "{msg.type_name}") {{\n')
+        out.write(f'  auto* typed_msg = static_cast<{msg.cpp_name}*>(msg);\n')
         out.write(
-            'switch(proto_field.proto_descriptors(index).tag_number()) {\n')
+            '  switch (proto_field.proto_descriptors(index).tag_number()) {\n')
         for field in msg.fields:
-            cls._FieldCase(out, msg, field)
-        out.write("""
-      default:
-        return std::nullopt;\n
-      """)
-        out.write('}')
+            if cls._IsSupported(field):
+                cls._FieldCase(out, msg, field)
+        out.write('    default:\n')
+        out.write('      return ProtoStatus::kError;\n')
+        out.write('  }\n')
+        out.write('  return ProtoStatus::kOk;\n')
         out.write('}\n')  # End if statement
 
     @classmethod
     def _FieldCase(cls, out: IO[str], msg: Message, field: Field):
-        if field.type == Type.STRING and not field.is_repeated:
-            out.write(f'case {field.tag_number}: {{\n')
-            out.write('proto::Any any;\n')
+        out.write(f'    case {field.tag_number}: {{\n')
+        if field.type == Type.STRING:
+            out.write(f'      typed_msg->set_{field.name}(value);\n')
+        else:
+            out.write('      using FieldType = '
+                      f'decltype(typed_msg->{field.name}());\n')
             out.write(
-                f'any.set_type_url("type.googleapis.com/{msg.type_name}");\n')
-            out.write(f'{msg.cpp_name} response_value;\n')
-            out.write(f'response_value.set_{field.name}(value);')
-            out.write('response_value.SerializeToString(any.mutable_value());')
-            out.write('return any;')
-            out.write('}\n')
+                '      base::expected<FieldType, ProtoStatus> result =\n'
+                '          ValueConverter<FieldType>::TryConvertFromString('
+                'value);\n')
+            out.write('      if (!result.has_value()) {\n')
+
+            out.write('        return ProtoStatus::kError;\n')
+            out.write('      }\n')
+            out.write(f'      typed_msg->set_{field.name}(result.value());\n')
+        out.write('      break;\n')
+        out.write('    }\n')
 
 
 class _ConvertValue:
@@ -774,29 +989,35 @@ class _ConvertValue:
 def main(argv):
     parser = optparse.OptionParser()
     parser.add_option('--input_file', action='append', default=[])
-    parser.add_option('--output_cc')
+    parser.add_option('--proto_descriptors_cc')
+    parser.add_option('--enum_templates_h')
     options, _ = parser.parse_args(argv)
 
     input_files = list(options.input_file)
 
-    # Write to standard output or file specified by --output_cc.
+    # Write to standard output or file specified by --proto_descriptors_cc.
     out_cc = getattr(sys.stdout, 'buffer', sys.stdout)
-    if options.output_cc:
-        out_cc = open(options.output_cc, 'wb')
+    if options.proto_descriptors_cc:
+        out_cc = open(options.proto_descriptors_cc, 'wb')
 
-    messages = KnownMessages()
+    descriptors = DescriptorDb()
     for input_file in input_files:
         fds = descriptor_pb2.FileDescriptorSet()
         with open(input_file, 'rb') as fp:
             fds.ParseFromString(fp.read())
-            messages.AddFileDescriptorSet(fds)
+            descriptors.AddFileDescriptorSet(fds)
 
     out_cc_str = StringIO()
-    GenerateProtoDescriptors(out_cc_str, messages)
+    GenerateProtoDescriptors(out_cc_str, descriptors)
     out_cc.write(out_cc_str.getvalue().encode('utf-8'))
 
-    if options.output_cc:
+    if options.proto_descriptors_cc:
         out_cc.close()
+
+    if options.enum_templates_h:
+        EnsureEnumAllowlistIsValid(descriptors)
+        with open(options.enum_templates_h, 'w') as out:
+            GenerateEnumDescriptors(out, fds, descriptors)
 
     return 0
 

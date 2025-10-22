@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../icon_button/icon_button.js';
 
@@ -61,6 +62,7 @@ interface ButtonState {
   toggleType?: ToggleType;
   jslogContext?: string;
   longClickable?: boolean;
+  inverseColorTheme?: boolean;
 }
 
 interface CommonButtonData {
@@ -81,6 +83,7 @@ interface CommonButtonData {
   title?: string;
   jslogContext?: string;
   longClickable?: boolean;
+  inverseColorTheme?: boolean;
 }
 
 export type ButtonData = CommonButtonData&(|{
@@ -155,6 +158,7 @@ export class Button extends HTMLElement {
     this.#props.title = data.title;
     this.#props.jslogContext = data.jslogContext;
     this.#props.longClickable = data.longClickable;
+    this.#props.inverseColorTheme = data.inverseColorTheme;
     this.#render();
   }
 
@@ -254,6 +258,11 @@ export class Button extends HTMLElement {
     this.#render();
   }
 
+  set inverseColorTheme(inverseColorTheme: boolean) {
+    this.#props.inverseColorTheme = inverseColorTheme;
+    this.#render();
+  }
+
   #setDisabledProperty(disabled: boolean): void {
     this.#props.disabled = disabled;
     this.#render();
@@ -282,28 +291,6 @@ export class Button extends HTMLElement {
     if (this.#props.toggleOnClick && this.#props.variant === Variant.ICON_TOGGLE && this.#props.iconName) {
       this.toggled = !this.#props.toggled;
     }
-  }
-
-  /**
-   * Handles "keydown" events on the internal `<button>` element.
-   *
-   * This callback stops propagation of "keydown" events for Enter and Space
-   * originating from the `<button>` element, to ensure that this custom element
-   * can safely be used within parent elements (such as the `TreeOutline`) that
-   * do have "keydown" handlers as well.
-   *
-   * Without this special logic, the Enter and Space events would be
-   * consumed by parent elements, and no "click" event would be generated from
-   * this button.
-   *
-   * @param event the "keydown" event.
-   * @see https://crbug.com/373168872
-   */
-  #onKeydown(event: KeyboardEvent): void {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-    event.stopPropagation();
   }
 
   #isToolbarVariant(): boolean {
@@ -352,6 +339,7 @@ export class Button extends HTMLElement {
       small: this.#props.size === Size.SMALL,
       'reduced-focus-ring': Boolean(this.#props.reducedFocusRing),
       active: this.#props.active,
+      inverse: Boolean(this.#props.inverseColorTheme),
     };
     const spinnerClasses = {
       primary: this.#props.variant === Variant.PRIMARY,
@@ -364,21 +352,20 @@ export class Button extends HTMLElement {
     // clang-format off
     Lit.render(
       html`
-        <style>${buttonStyles.cssText}</style>
+        <style>${buttonStyles}</style>
         <button title=${ifDefined(this.#props.title)}
                 .disabled=${this.#props.disabled}
                 class=${classMap(classes)}
                 aria-pressed=${ifDefined(this.#props.toggled)}
-                jslog=${ifDefined(jslog)}
-                @keydown=${this.#onKeydown}
-        >${hasIcon
-            ? html`
-                <devtools-icon name=${ifDefined(this.#props.toggled ? this.#props.toggledIconName : this.#props.iconName)}>
-                </devtools-icon>`
+                jslog=${ifDefined(jslog)}>
+          ${hasIcon ? html`
+            <devtools-icon name=${ifDefined(this.#props.toggled ? this.#props.toggledIconName : this.#props.iconName)}>
+            </devtools-icon>`
             : ''}
-          ${this.#props.longClickable ? html`<devtools-icon name=${'triangle-bottom-right'} class="long-click"
-            ></devtools-icon>`
-      : ''}
+          ${this.#props.longClickable ? html`
+              <devtools-icon name=${'triangle-bottom-right'} class="long-click">
+              </devtools-icon>`
+            : ''}
           ${this.#props.spinner ? html`<span class=${classMap(spinnerClasses)}></span>` : ''}
           <slot @slotchange=${this.#render} ${ref(this.#slotRef)}></slot>
         </button>

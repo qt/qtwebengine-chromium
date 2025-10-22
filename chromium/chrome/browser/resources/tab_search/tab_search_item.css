@@ -18,6 +18,10 @@
    --media-recording-icon-color:  var(--color-tab-search-media-recording-icon);
  }
 
+:host([size=large]) {
+  --mwb-item-height: 66px;
+}
+
 :host(:focus) {
   outline: none;
 }
@@ -27,6 +31,12 @@
   overflow: visible;
   visibility: visible;
   width: auto;
+}
+
+@media (forced-colors: active) {
+  :host(:is(.hovered, .selected)) {
+    border: 1px solid ActiveBorder;
+  }
 }
 
 .button-container {
@@ -83,7 +93,7 @@
   font-weight: var(--mwb-secondary-text-font-weight);
 }
 
-:host([compact]) #secondaryContainer {
+:host([size=compact]) #secondaryContainer {
   display: none;
 }
 
@@ -174,7 +184,12 @@ cr-icon-button {
   width: 40px;
 }
 
-:host([compact]) #iconContainer {
+:host([size=compact]) #iconContainer {
   height: 24px;
   width: 24px;
+}
+
+:host([size=large]) #iconContainer {
+  height: 56px;
+  width: 56px;
 }

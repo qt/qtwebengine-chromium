@@ -170,7 +170,7 @@ export namespace PrivateAPI {
   interface AddRequestHeadersRequest {
     command: Commands.AddRequestHeaders;
     extensionId: string;
-    headers: {[key: string]: string};
+    headers: Record<string, string>;
   }
   interface CreatePanelRequest {
     command: Commands.CreatePanel;
@@ -230,6 +230,7 @@ export namespace PrivateAPI {
   interface SetOpenResourceHandlerRequest {
     command: Commands.SetOpenResourceHandler;
     handlerPresent: boolean;
+    urlScheme?: string;
   }
   interface SetThemeChangeHandlerRequest {
     command: Commands.SetThemeChangeHandler;
@@ -435,8 +436,8 @@ namespace APIImpl {
   }
 
   export interface ExtensionServerClient {
-    _callbacks: {[key: string]: (response: unknown) => unknown};
-    _handlers: {[key: string]: (request: {arguments: unknown[]}) => unknown};
+    _callbacks: Record<string, (response: unknown) => unknown>;
+    _handlers: Record<string, (request: {arguments: unknown[]}) => unknown>;
     _lastRequestId: number;
     _lastObjectId: number;
     _port: MessagePort;
@@ -464,7 +465,7 @@ namespace APIImpl {
   }
 
   export interface Network extends PublicAPI.Chrome.DevTools.Network {
-    addRequestHeaders(headers: {[key: string]: string}): void;
+    addRequestHeaders(headers: Record<string, string>): void;
   }
 
   export interface Request extends PublicAPI.Chrome.DevTools.Request, HAR.Log.EntryDTO {
@@ -472,8 +473,9 @@ namespace APIImpl {
   }
 
   export interface Panels extends PublicAPI.Chrome.DevTools.Panels {
-    get SearchAction(): {[key: string]: string};
-    setOpenResourceHandler(callback?: (resource: PublicAPI.Chrome.DevTools.Resource, lineNumber: number) => unknown):
+    get SearchAction(): Record<string, string>;
+    setOpenResourceHandler(
+        callback?: (resource: PublicAPI.Chrome.DevTools.Resource, lineNumber: number, columnNumber: number) => unknown):
         void;
     setThemeChangeHandler(callback?: (themeName: string) => unknown): void;
   }
@@ -513,10 +515,12 @@ namespace APIImpl {
   export interface ResourceData {
     url: string;
     type: string;
+    buildId?: string;
   }
   export interface Resource extends PublicAPI.Chrome.DevTools.Resource {
     _type: string;
     _url: string;
+    _buildId?: string;
 
     get type(): string;
   }
@@ -643,7 +647,7 @@ self.injectedExtensionAPI = function(
       extensionServer.sendRequest({command: PrivateAPI.Commands.GetHAR}, callback && callbackWrapper);
     },
 
-    addRequestHeaders: function(headers: {[key: string]: string}): void {
+    addRequestHeaders: function(headers: Record<string, string>): void {
       extensionServer.sendRequest(
           {command: PrivateAPI.Commands.AddRequestHeaders, headers, extensionId: window.location.hostname});
     },
@@ -665,7 +669,7 @@ self.injectedExtensionAPI = function(
   };
 
   function Panels(this: APIImpl.Panels): void {
-    const panels: {[key: string]: ElementsPanel|SourcesPanel|PublicAPI.Chrome.DevTools.NetworkPanel} = {
+    const panels: Record<string, ElementsPanel|SourcesPanel|PublicAPI.Chrome.DevTools.NetworkPanel> = {
       elements: new ElementsPanel(),
       sources: new SourcesPanel(),
       network: new (Constructor(NetworkPanel))(),
@@ -682,7 +686,7 @@ self.injectedExtensionAPI = function(
   (Panels.prototype as
    Pick<APIImpl.Panels, 'create'|'setOpenResourceHandler'|'openResource'|'SearchAction'|'setThemeChangeHandler'>) = {
     create: function(
-        title: string, icon: string, page: string,
+        title: string, _icon: string, page: string,
         callback: (panel: PublicAPI.Chrome.DevTools.ExtensionPanel) => unknown): void {
       const id = 'extension-panel-' + extensionServer.nextObjectId();
       extensionServer.sendRequest(
@@ -691,15 +695,17 @@ self.injectedExtensionAPI = function(
     },
 
     setOpenResourceHandler: function(
-        callback: (resource: PublicAPI.Chrome.DevTools.Resource, lineNumber: number) => unknown): void {
+        callback: (resource: PublicAPI.Chrome.DevTools.Resource, lineNumber: number, columnNumber: number) => unknown,
+        urlScheme?: string): void {
       const hadHandler = extensionServer.hasHandler(PrivateAPI.Events.OpenResource);
 
       function callbackWrapper(message: unknown): void {
         // Allow the panel to show itself when handling the event.
         userAction = true;
         try {
-          const {resource, lineNumber} = message as {resource: APIImpl.ResourceData, lineNumber: number};
-          callback.call(null, new (Constructor(Resource))(resource), lineNumber);
+          const {resource, lineNumber, columnNumber} =
+              message as {resource: APIImpl.ResourceData, lineNumber: number, columnNumber: number};
+          callback.call(null, new (Constructor(Resource))(resource), lineNumber, columnNumber);
         } finally {
           userAction = false;
         }
@@ -714,7 +720,7 @@ self.injectedExtensionAPI = function(
       // Only send command if we either removed an existing handler or added handler and had none before.
       if (hadHandler === !callback) {
         extensionServer.sendRequest(
-            {command: PrivateAPI.Commands.SetOpenResourceHandler, handlerPresent: Boolean(callback)});
+            {command: PrivateAPI.Commands.SetOpenResourceHandler, handlerPresent: Boolean(callback), urlScheme});
       }
     },
 
@@ -750,7 +756,7 @@ self.injectedExtensionAPI = function(
           {command: PrivateAPI.Commands.OpenResource, url, lineNumber, columnNumber: columnNumberArg}, callbackArg);
     },
 
-    get SearchAction(): {[key: string]: string} {
+    get SearchAction(): Record<string, string> {
       return {
         CancelSearch: PrivateAPI.Panels.SearchAction.CancelSearch,
         PerformSearch: PrivateAPI.Panels.SearchAction.PerformSearch,
@@ -1065,7 +1071,7 @@ self.injectedExtensionAPI = function(
     return function(this: ThisParameterType<ImplT>, ...args: Parameters<ImplT>): void {
       const impl = {__proto__: implConstructor.prototype};
       implConstructor.apply(impl, args);
-      populateInterfaceClass(this as {[key: string]: unknown}, impl);
+      populateInterfaceClass(this as Record<string, unknown>, impl);
     };
   }
 
@@ -1275,8 +1281,9 @@ self.injectedExtensionAPI = function(
           const callback = extractCallbackArgument(arguments);
           function callbackWrapper(result: unknown): void {
             const {isError, isException, value} = result as {
+              value: unknown,
               isError?: boolean,
-              isException?: boolean, value: unknown,
+              isException?: boolean,
             };
             if (isError || isException) {
               callback?.(undefined, result);
@@ -1308,16 +1315,22 @@ self.injectedExtensionAPI = function(
   function ResourceImpl(this: APIImpl.Resource, resourceData: APIImpl.ResourceData): void {
     this._url = resourceData.url;
     this._type = resourceData.type;
+    this._buildId = resourceData.buildId;
   }
 
-  (ResourceImpl.prototype as
-   Pick<APIImpl.Resource, 'url'|'type'|'getContent'|'setContent'|'setFunctionRangesForScript'|'attachSourceMapURL'>) = {
+  (ResourceImpl.prototype as Pick<
+       APIImpl.Resource,
+       'url'|'type'|'buildId'|'getContent'|'setContent'|'setFunctionRangesForScript'|'attachSourceMapURL'>) = {
     get url(): string {
       return (this as APIImpl.Resource)._url;
     },
 
     get type(): string {
       return (this as APIImpl.Resource)._type;
+    },
+
+    get buildId(): (string | undefined) {
+      return (this as APIImpl.Resource)._buildId;
     },
 
     getContent: function(this: APIImpl.Resource, callback?: (content: string, encoding: string) => unknown): void {
@@ -1520,14 +1533,14 @@ self.injectedExtensionAPI = function(
     },
   };
 
-  function populateInterfaceClass(interfaze: {[key: string]: unknown}, implementation: {[key: string]: unknown}): void {
+  function populateInterfaceClass(interfaze: Record<string, unknown>, implementation: Record<string, unknown>): void {
     for (const member in implementation) {
       if (member.charAt(0) === '_') {
         continue;
       }
       let descriptor: (PropertyDescriptor|undefined)|null = null;
       // Traverse prototype chain until we find the owner.
-      for (let owner = implementation; owner && !descriptor; owner = owner.__proto__ as {[key: string]: unknown}) {
+      for (let owner = implementation; owner && !descriptor; owner = owner.__proto__ as Record<string, unknown>) {
         descriptor = Object.getOwnPropertyDescriptor(owner, member);
       }
       if (!descriptor) {

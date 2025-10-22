@@ -214,6 +214,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkRayTracingLssPrimitiveEndCapsM
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkDirectDriverLoadingModeLUNARG value) const;
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkTensorTilingARM value) const;
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkOpticalFlowPerformanceLevelNV value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkOpticalFlowSessionBindingPointNV value) const;
@@ -233,6 +235,16 @@ template <>
 ValidValue stateless::Context::IsValidEnumValue(VkLatencyMarkerNV value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkOutOfBandQueueTypeNV value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPointARM value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPointTypeARM value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelinePropertyARM value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkPhysicalDeviceDataGraphProcessingEngineTypeARM value) const;
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkPhysicalDeviceDataGraphOperationTypeARM value) const;
 template <>
 ValidValue stateless::Context::IsValidEnumValue(VkBlockMatchWindowCompareModeQCOM value) const;
 template <>

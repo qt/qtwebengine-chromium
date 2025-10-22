@@ -46,6 +46,7 @@ source_set("public") {
     "//components/strings",
     "//components/sync_device_info",
     "//components/url_deduplication",
+    "//services/metrics/public/cpp:metrics_cpp",
     "//ui/base",
     "//url",
   ]
@@ -61,7 +62,7 @@ source_set("unit_tests") {
     ":test_support",
     "//base",
     "//base/test:test_support",
-    "//components/bookmarks/browser:browser",
+    "//components/bookmarks/browser",
     "//components/history/core/browser",
     "//components/segmentation_platform/public",
     "//components/segmentation_platform/public:test_support",
@@ -96,6 +97,7 @@ if (is_android) {
     srcjar_deps = [ ":group_suggestions_generated_enums" ]
 
     sources = [
+      "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/CachedSuggestions.java",
       "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/GroupSuggestion.java",
       "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/GroupSuggestions.java",
       "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/GroupSuggestionsService.java",
@@ -107,11 +109,14 @@ if (is_android) {
       "//base:callback_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/jni_zero:jni_zero_java",
+      "//ui/android:ui_java",
+      "//url:url_java",
     ]
   }
 
   generate_jni("jni_headers") {
     sources = [
+      "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/CachedSuggestions.java",
       "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/GroupSuggestion.java",
       "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/GroupSuggestions.java",
       "url_grouping/android/java/src/org/chromium/components/visited_url_ranking/url_grouping/UserResponseMetadata.java",
@@ -119,6 +124,9 @@ if (is_android) {
   }
 
   java_cpp_enum("group_suggestions_generated_enums") {
-    sources = [ "url_grouping/group_suggestions_delegate.h" ]
+    sources = [
+      "url_grouping/group_suggestions.h",
+      "url_grouping/tab_event_tracker.h",
+    ]
   }
 }

@@ -23,6 +23,7 @@
 #include "mcomp.h"
 #include "firstpass.h"
 #include "vpx_dsp/psnr.h"
+#include "vpx_dsp/vpx_dsp_common.h"
 #include "vpx_scale/vpx_scale.h"
 #include "vp8/common/extend.h"
 #include "ratectrl.h"
@@ -1261,9 +1262,16 @@ int vp8_reverse_trans(int x) {
 
   return 63;
 }
-void vp8_new_framerate(VP8_COMP *cpi, double framerate) {
-  if (framerate < .1) framerate = 30;
 
+static double clamp_framerate(double framerate) {
+  if (framerate < .1)
+    return 30.0;
+  else
+    return framerate;
+}
+
+void vp8_new_framerate(VP8_COMP *cpi, double framerate) {
+  framerate = clamp_framerate(framerate);
   cpi->framerate = framerate;
   cpi->output_framerate = framerate;
   const double per_frame_bandwidth =
@@ -1874,8 +1882,7 @@ struct VP8_COMP *vp8_create_compressor(const VP8_CONFIG *oxcf) {
             ? (2 * (cpi->common.mb_rows * cpi->common.mb_cols) /
                cpi->cyclic_refresh_mode_max_mbs_perframe)
             : 10;
-    cpi->gf_interval_onepass_cbr =
-        VPXMIN(40, VPXMAX(6, cpi->gf_interval_onepass_cbr));
+    cpi->gf_interval_onepass_cbr = clamp(cpi->gf_interval_onepass_cbr, 6, 40);
     cpi->baseline_gf_interval = cpi->gf_interval_onepass_cbr;
   }
 
@@ -3942,7 +3949,7 @@ static void encode_frame_to_data_rate(VP8_COMP *cpi, size_t *size,
 
       if (cm->refresh_entropy_probs == 0) {
         /* save a copy for later refresh */
-        memcpy(&cm->lfc, &cm->fc, sizeof(cm->fc));
+        cm->lfc = cm->fc;
       }
 
       vp8_update_coef_context(cpi);
@@ -4834,7 +4841,6 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags,
                             unsigned char *dest_end, int64_t *time_stamp,
                             int64_t *time_end, int flush) {
   VP8_COMMON *cm;
-  struct vpx_usec_timer tsctimer;
   struct vpx_usec_timer ticktimer;
 #if CONFIG_INTERNAL_STATS
   struct vpx_usec_timer cmptimer;
@@ -4984,6 +4990,7 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags,
         }
       }
 #endif
+      cpi->ref_framerate = clamp_framerate(cpi->ref_framerate);
       if (cpi->oxcf.number_of_layers > 1) {
         unsigned int i;
 
@@ -5021,7 +5028,6 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags,
   }
 
   if (cpi->compressor_speed == 2) {
-    vpx_usec_timer_start(&tsctimer);
     vpx_usec_timer_start(&ticktimer);
   }
 
@@ -5096,7 +5102,6 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags,
 
   if (cpi->compressor_speed == 2) {
     unsigned int duration, duration2;
-    vpx_usec_timer_mark(&tsctimer);
     vpx_usec_timer_mark(&ticktimer);
 
     duration = (int)(vpx_usec_timer_elapsed(&ticktimer));
@@ -5123,16 +5128,16 @@ int vp8_get_compressed_data(VP8_COMP *cpi, unsigned int *frame_flags,
   }
 
   if (cm->refresh_entropy_probs == 0) {
-    memcpy(&cm->fc, &cm->lfc, sizeof(cm->fc));
+    cm->fc = cm->lfc;
   }
 
   /* Save the contexts separately for alt ref, gold and last. */
   /* (TODO jbb -> Optimize this with pointers to avoid extra copies. ) */
-  if (cm->refresh_alt_ref_frame) memcpy(&cpi->lfc_a, &cm->fc, sizeof(cm->fc));
+  if (cm->refresh_alt_ref_frame) cpi->lfc_a = cm->fc;
 
-  if (cm->refresh_golden_frame) memcpy(&cpi->lfc_g, &cm->fc, sizeof(cm->fc));
+  if (cm->refresh_golden_frame) cpi->lfc_g = cm->fc;
 
-  if (cm->refresh_last_frame) memcpy(&cpi->lfc_n, &cm->fc, sizeof(cm->fc));
+  if (cm->refresh_last_frame) cpi->lfc_n = cm->fc;
 
   /* if it's a dropped frame honor the requests on subsequent frames */
   if (*size > 0) {

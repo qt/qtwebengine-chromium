@@ -19,6 +19,7 @@
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/observer_list.h"
+#include "base/strings/string_util.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/supports_user_data.h"
 #include "base/synchronization/lock.h"
@@ -212,12 +213,13 @@ class DownloadItemFactoryImpl : public download::DownloadItemFactory {
       download::DownloadItemImplDelegate* delegate,
       uint32_t download_id,
       const base::FilePath& path,
+      const base::FilePath& display_name,
       const GURL& url,
       const std::string& mime_type,
       download::DownloadJob::CancelRequestCallback cancel_request_callback)
       override {
-    return new download::DownloadItemImpl(delegate, download_id, path, url,
-                                          mime_type,
+    return new download::DownloadItemImpl(delegate, download_id, path,
+                                          display_name, url, mime_type,
                                           std::move(cancel_request_callback));
   }
 };
@@ -627,10 +629,11 @@ bool DownloadManagerImpl::InterceptDownload(
     }
   }
 
-  if (delegate_ && delegate_->InterceptDownloadIfApplicable(
-                       info.url(), user_agent, info.content_disposition,
-                       info.mime_type, info.request_origin, info.total_bytes,
-                       info.transient, web_contents)) {
+  if (delegate_ &&
+      delegate_->InterceptDownloadIfApplicable(
+          info.url(), user_agent, info.content_disposition, info.mime_type,
+          info.request_origin, info.total_bytes, info.transient,
+          info.is_content_initiated, web_contents)) {
     DropDownload();
     return true;
   }
@@ -769,9 +772,28 @@ void DownloadManagerImpl::CreateNewDownloadItemToStart(
     info->save_info->total_bytes = info->total_bytes;
   }
   content::devtools_instrumentation::WillBeginDownload(info.get(), download);
+  // Check if the download is a duplicate. Only GET download URL that has
+  // existed are considered duplicate.
+  bool is_duplicate = duplicate_file_exists && (info->method == "GET");
+  if (is_duplicate) {
+    bool found_same_url = false;
+    // If there is another download with the same path, the download is
+    // not a duplicate.
+    for (auto it = downloads_.begin(); it != downloads_.end(); ++it) {
+      if (it->second->GetTargetFilePath() == duplicate_download_file_path) {
+        if (it->second->GetURL() != info->url()) {
+          is_duplicate = false;
+          break;
+        } else {
+          found_same_url = true;
+        }
+      }
+    }
+    is_duplicate = is_duplicate && found_same_url;
+  }
   std::move(callback).Run(
       std::move(info), download,
-      duplicate_file_exists ? duplicate_download_file_path : base::FilePath(),
+      is_duplicate ? duplicate_download_file_path : base::FilePath(),
       should_persist_new_download_);
   if (download) {
     // For new downloads, we notify here, rather than earlier, so that
@@ -883,6 +905,7 @@ BrowserContext* DownloadManagerImpl::GetBrowserContext() {
 
 void DownloadManagerImpl::CreateSavePackageDownloadItem(
     const base::FilePath& main_file_path,
+    const base::FilePath& main_file_display_name,
     const GURL& page_url,
     const std::string& mime_type,
     int render_process_id,
@@ -892,13 +915,14 @@ void DownloadManagerImpl::CreateSavePackageDownloadItem(
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
   GetNextId(base::BindOnce(
       &DownloadManagerImpl::CreateSavePackageDownloadItemWithId,
-      weak_factory_.GetWeakPtr(), main_file_path, page_url, mime_type,
-      render_process_id, render_frame_id, std::move(cancel_request_callback),
-      std::move(item_created)));
+      weak_factory_.GetWeakPtr(), main_file_path, main_file_display_name,
+      page_url, mime_type, render_process_id, render_frame_id,
+      std::move(cancel_request_callback), std::move(item_created)));
 }
 
 void DownloadManagerImpl::CreateSavePackageDownloadItemWithId(
     const base::FilePath& main_file_path,
+    const base::FilePath& main_file_display_name,
     const GURL& page_url,
     const std::string& mime_type,
     int render_process_id,
@@ -911,7 +935,7 @@ void DownloadManagerImpl::CreateSavePackageDownloadItemWithId(
   DCHECK(!base::Contains(downloads_, id));
 
   download::DownloadItemImpl* download_item = item_factory_->CreateSavePageItem(
-      this, id, main_file_path, page_url, mime_type,
+      this, id, main_file_path, main_file_display_name, page_url, mime_type,
       std::move(cancel_request_callback));
 
   GlobalRenderFrameHostId global_id(render_process_id, render_frame_id);

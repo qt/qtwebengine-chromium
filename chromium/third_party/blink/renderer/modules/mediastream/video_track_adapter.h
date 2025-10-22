@@ -40,7 +40,7 @@ class VideoTrackAdapterSettings;
 // Adaptations is done by wrapping the original media::VideoFrame in a new
 // media::VideoFrame with a new visible_rect and natural_size.
 class MODULES_EXPORT VideoTrackAdapter
-    : public WTF::ThreadSafeRefCounted<VideoTrackAdapter> {
+    : public ThreadSafeRefCounted<VideoTrackAdapter> {
  public:
   using OnMutedCallback = base::RepeatingCallback<void(bool mute_state)>;
 
@@ -57,15 +57,9 @@ class MODULES_EXPORT VideoTrackAdapter
   // the main render thread. |source_frame_rate| is used to calculate a prudent
   // interval to check for passing frames and inform of the result via
   // |on_muted_state_callback|.
-  void AddTrack(
-      const MediaStreamVideoTrack* track,
-      VideoCaptureDeliverFrameCB frame_callback,
-      VideoCaptureNotifyFrameDroppedCB notify_frame_dropped_callback,
-      EncodedVideoFrameCB encoded_frame_callback,
-      VideoCaptureSubCaptureTargetVersionCB sub_capture_target_version_callback,
-      VideoTrackSettingsCallback settings_callback,
-      VideoTrackFormatCallback track_callback,
-      const VideoTrackAdapterSettings& settings);
+  void AddTrack(const MediaStreamVideoTrack* track,
+                MediaStreamVideoSourceCallbacks video_stream_fallbacks,
+                const VideoTrackAdapterSettings& settings);
   void RemoveTrack(const MediaStreamVideoTrack* track);
   void ReconfigureTrack(const MediaStreamVideoTrack* track,
                         const VideoTrackAdapterSettings& settings);
@@ -125,7 +119,7 @@ class MODULES_EXPORT VideoTrackAdapter
 
  private:
   virtual ~VideoTrackAdapter();
-  friend class WTF::ThreadSafeRefCounted<VideoTrackAdapter>;
+  friend class ThreadSafeRefCounted<VideoTrackAdapter>;
 
   // These aliases mimic the definition of VideoCaptureDeliverFrameCB,
   // VideoTrackSettingsCallback and VideoTrackFormatCallback respectively.
@@ -157,7 +151,7 @@ class MODULES_EXPORT VideoTrackAdapter
       VideoCaptureSubCaptureTargetVersionInternalCallback
           sub_capture_target_version_callback,
       VideoTrackSettingsInternalCallback settings_callback,
-      VideoTrackFormatInternalCallback track_callback,
+      VideoTrackFormatInternalCallback format_callback,
       const VideoTrackAdapterSettings& settings);
 
   void RemoveTrackOnVideoTaskRunner(const MediaStreamVideoTrack* track);

@@ -98,7 +98,7 @@ export class TopDownNode extends Node {
   private buildChildren(): ChildrenCache {
     // Tracks the ancestor path of this node, includes the current node.
     const path: TopDownNode[] = [];
-    for (let node: TopDownNode = (this as TopDownNode); node.parent && !node.isGroupNode(); node = node.parent) {
+    for (let node: TopDownNode = this; node.parent && !node.isGroupNode(); node = node.parent) {
       path.push((node));
     }
     path.reverse();
@@ -242,10 +242,6 @@ export class TopDownNode extends Node {
 
     this.childrenInternal = children;
     return children;
-  }
-
-  getRoot(): TopDownRootNode|null {
-    return this.root;
   }
 }
 
@@ -394,7 +390,7 @@ export class BottomUpRootNode extends Node {
   // If no grouping is applied, the nodes returned here are what's initially shown in the bottom-up view.
   // "No grouping" == no grouping in UI dropdown == no groupingFunction…
   // … HOWEVER, nodes are still aggregated via `generateEventID`, which is ~= the event name.
-  private ungrouppedTopNodes(): ChildrenCache {
+  private ungroupedTopNodes(): ChildrenCache {
     const root = this;
     const startTime = this.startTime;
     const endTime = this.endTime;
@@ -501,7 +497,7 @@ export class BottomUpRootNode extends Node {
   }
 
   private grouppedTopNodes(): ChildrenCache {
-    const flatNodes = this.ungrouppedTopNodes();
+    const flatNodes = this.ungroupedTopNodes();
     if (!this.eventGroupIdCallback) {
       return flatNodes;
     }

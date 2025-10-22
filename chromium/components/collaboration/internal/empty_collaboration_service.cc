@@ -20,20 +20,26 @@ void EmptyCollaborationService::RemoveObserver(Observer* observer) {}
 
 void EmptyCollaborationService::StartJoinFlow(
     std::unique_ptr<CollaborationControllerDelegate> delegate,
-    const GURL& url,
-    CollaborationServiceJoinEntryPoint entry) {}
+    const GURL& url) {}
 
 void EmptyCollaborationService::StartShareOrManageFlow(
     std::unique_ptr<CollaborationControllerDelegate> delegate,
     const tab_groups::EitherGroupID& either_id,
     CollaborationServiceShareOrManageEntryPoint entry) {}
 
+void EmptyCollaborationService::StartLeaveOrDeleteFlow(
+    std::unique_ptr<CollaborationControllerDelegate> delegate,
+    const tab_groups::EitherGroupID& either_id,
+    CollaborationServiceLeaveOrDeleteEntryPoint entry) {}
+
 ServiceStatus EmptyCollaborationService::GetServiceStatus() {
   return ServiceStatus();
 }
 
-void EmptyCollaborationService::CancelAllFlows(
-    base::OnceCallback<void()> finish_callback) {}
+void EmptyCollaborationService::OnSyncServiceInitialized(
+    syncer::SyncService* sync_service) {}
+
+void EmptyCollaborationService::CancelAllFlows() {}
 
 data_sharing::MemberRole EmptyCollaborationService::GetCurrentUserRoleForGroup(
     const data_sharing::GroupId& group_id) {
@@ -56,5 +62,15 @@ void EmptyCollaborationService::LeaveGroup(
     base::OnceCallback<void(bool)> callback) {
   std::move(callback).Run(true);
 }
+
+bool EmptyCollaborationService::ShouldInterceptNavigationForShareURL(
+    const GURL& url) {
+  return false;
+}
+
+void EmptyCollaborationService::HandleShareURLNavigationIntercepted(
+    const GURL& url,
+    std::unique_ptr<data_sharing::ShareURLInterceptionContext> context,
+    CollaborationServiceJoinEntryPoint entry) {}
 
 }  // namespace collaboration

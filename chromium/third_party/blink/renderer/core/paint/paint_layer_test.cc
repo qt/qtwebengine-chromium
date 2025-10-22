@@ -218,6 +218,54 @@ TEST_P(PaintLayerTest, HasSelfPaintingDescendant) {
   EXPECT_FALSE(child->HasSelfPaintingLayerDescendant());
 }
 
+TEST_P(PaintLayerTest, HasBackdropFilterDescendantChild) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='position: relative'>
+      <div id='child' style='backdrop-filter: blur(1px)'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_TRUE(parent->HasBackdropFilterDescendant());
+  EXPECT_FALSE(child->HasBackdropFilterDescendant());
+}
+
+TEST_P(PaintLayerTest, HasBackdropFilterGrandchild) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='position: relative'>
+      <div id='child' style='position: relative'>
+        <div id='grandchild'
+          style='backdrop-filter: blur(1px)'></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+  PaintLayer* grandchild = GetPaintLayerByElementId("grandchild");
+
+  EXPECT_TRUE(parent->HasBackdropFilterDescendant());
+  EXPECT_TRUE(child->HasBackdropFilterDescendant());
+  EXPECT_FALSE(grandchild->HasBackdropFilterDescendant());
+}
+
+TEST_P(PaintLayerTest, HasBackdropFilterNone) {
+  SetBodyInnerHTML(R"HTML(
+    <div id='parent' style='position: relative'>
+      <div id='child' style='position: relative'>
+        <div></div>
+      </div>
+    </div>
+  )HTML");
+  PaintLayer* parent = GetPaintLayerByElementId("parent");
+  PaintLayer* child = GetPaintLayerByElementId("child");
+
+  EXPECT_FALSE(parent->HasBackdropFilterDescendant());
+  EXPECT_FALSE(child->HasBackdropFilterDescendant());
+}
+
 TEST_P(PaintLayerTest, HasSelfPaintingDescendantNotSelfPainting) {
   SetBodyInnerHTML(R"HTML(
     <div id='parent' style='position: relative'>
@@ -964,6 +1012,36 @@ TEST_P(ReorderOverlayOverflowControlsTest, AddRemoveScrollableArea) {
   EXPECT_FALSE(parent->NeedsReorderOverlayOverflowControls());
   EXPECT_FALSE(LayersPaintingOverlayOverflowControlsAfter(child));
   EXPECT_EQ(child->GetLayoutObject().GetNode(), HitTest(99, 99));
+}
+
+// If a visibility: hidden child has been omitted from z-index lists due to
+// visibility: hidden, the child should also be ignored for reordering overlay
+// overflow controls.
+TEST_P(ReorderOverlayOverflowControlsTest, VisibilityHiddenChild) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      body { margin: 0; }
+      #parent {
+        position: relative;
+        width: 100px;
+        height: 100px;
+      }
+      #child {
+        position: relative;
+        visibility: hidden;
+        height: 300px;
+      }
+    </style>
+    <div id='parent'>
+      <div id='child'></div>
+      content
+    </div>
+  )HTML");
+
+  InitOverflowStyle("parent");
+  auto* parent = GetPaintLayerByElementId("parent");
+  EXPECT_TRUE(parent->GetScrollableArea());
+  EXPECT_FALSE(parent->NeedsReorderOverlayOverflowControls());
 }
 
 TEST_P(ReorderOverlayOverflowControlsTest, AddRemoveStackedChild) {
@@ -2206,6 +2284,25 @@ TEST_P(PaintLayerTest, HitTestTinyLayerUnderLargeScale) {
   }
 }
 
+TEST_P(PaintLayerTest, HitTestInfiniteHitTestAreaSmallScaleTransform) {
+  SetBodyInnerHTML(R"HTML(
+    <svg width="100" height="100">
+      <foreignObject width="100" height="100">
+        <div id="target" style="transform: scale(0.25); transform-origin: 0 0;
+                                width: 400px; height: 400px"></div>
+      </foreignObject>
+    </svg>
+  )HTML");
+
+  auto* target = GetDocument().getElementById(AtomicString("target"));
+  for (const auto& point : {gfx::PointF(25, 50), gfx::PointF(75, 50)}) {
+    const HitTestLocation location(point);
+    HitTestResult result;
+    GetLayoutView().HitTest(location, result);
+    EXPECT_EQ(target, result.InnerNode()) << " point=" << point.ToString();
+  }
+}
+
 TEST_P(PaintLayerTest, AddLayerNeedsRepaintAndCullRectUpdate) {
   SetBodyInnerHTML(R"HTML(
     <div id="parent" style="opacity: 0.9">
@@ -2515,7 +2612,7 @@ TEST_P(PaintLayerTest, ScrollContainerLayerTransformScroller) {
 }
 
 TEST_P(PaintLayerTest, HitTestScrollMarkerPseudoElement) {
-  GetDocument().body()->setInnerHTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(
       "<style>"
       "#scroller { overflow: scroll; scroll-marker-group: before; width: "
       "100px; height: 100px; }"

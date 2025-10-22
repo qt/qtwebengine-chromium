@@ -12,9 +12,9 @@
 #include "base/functional/bind.h"
 #include "base/no_destructor.h"
 #include "base/trace_event/malloc_dump_provider.h"
+#include "components/gwp_asan/client/extreme_lightweight_detector_quarantine.h"
 #include "components/gwp_asan/client/sampling_state.h"
 #include "components/gwp_asan/common/extreme_lightweight_detector_util.h"
-#include "partition_alloc/lightweight_quarantine.h"
 #include "partition_alloc/partition_address_space.h"
 #include "partition_alloc/partition_root.h"
 #include "partition_alloc/shim/allocator_shim.h"
@@ -36,34 +36,34 @@ extern AllocatorDispatch allocator_dispatch;
 // easy to do there is no reason to pay the extra cost.
 SamplingState<EXTREMELIGHTWEIGHTDETECTOR> sampling_state;
 
-using partition_alloc::internal::LightweightQuarantineBranch;
-using partition_alloc::internal::LightweightQuarantineBranchConfig;
-using partition_alloc::internal::LightweightQuarantineRoot;
-
 ExtremeLightweightDetectorOptions init_options;
 
 std::atomic<bool> is_quarantine_initialized = false;
 
 // The PartitionRoot used by the PartitionAlloc-Everywhere (i.e. PartitionAlloc
 // as malloc), which is also the target partition root of the quarantine.
-// Since LightweightQuarantineRoot is designed to be used for a certain
-// PartitionRoot and LightweightQuarantineBranch::QuarantineWithAcquiringLock()
+// Since ExtremeLightweightDetectorQuarantineRoot is designed to be used for a
+// certain PartitionRoot and
+// ExtremeLightweightDetectorQuarantineBranch::QuarantineWithAcquiringLock()
 // cannot handle an object in an unknown root, the Extreme LUD performs only for
 // the objects in this PartitionRoot.
 partition_alloc::PartitionRoot* lightweight_quarantine_partition_root;
-// A raw pointer to the LightweightQuarantineBranch as the fast path to the
-// object. This bypasses the access check and indirect access due to the
-// following std::optional and base::NoDestructor.
-LightweightQuarantineBranch* lightweight_quarantine_branch_for_small_objects;
-LightweightQuarantineBranch* lightweight_quarantine_branch_for_large_objects;
+// A raw pointer to the ExtremeLightweightDetectorQuarantineBranch as the fast
+// path to the object. This bypasses the access check and indirect access due to
+// the following std::optional and base::NoDestructor.
+ExtremeLightweightDetectorQuarantineBranch*
+    lightweight_quarantine_branch_for_small_objects;
+ExtremeLightweightDetectorQuarantineBranch*
+    lightweight_quarantine_branch_for_large_objects;
 
 // The memory storage for the quarantine root and branch to make them alive for
 // the process lifetime. std::optional reserves the memory space without
 // constructing the objects and allows to construct them lazily.
-std::optional<LightweightQuarantineRoot> lightweight_quarantine_root_storage;
-std::optional<base::NoDestructor<LightweightQuarantineBranch>>
+std::optional<base::NoDestructor<ExtremeLightweightDetectorQuarantineRoot>>
+    lightweight_quarantine_root_storage;
+std::optional<base::NoDestructor<ExtremeLightweightDetectorQuarantineBranch>>
     lightweight_quarantine_branch_storage_for_small_objects;
-std::optional<base::NoDestructor<LightweightQuarantineBranch>>
+std::optional<base::NoDestructor<ExtremeLightweightDetectorQuarantineBranch>>
     lightweight_quarantine_branch_storage_for_large_objects;
 
 // Sets up all we need and returns true, or returns false.
@@ -96,15 +96,15 @@ bool TryInitSlow() {
   //
   // This code runs only on the codepaths of deallocations (`free`, `delete`,
   // etc.) and _never_ runs on the codepaths of allocations (`malloc`, `new`,
-  // etc.) because this allocator shim hooks only FreeFn, FreeDefiniteSizeFn,
+  // etc.) because this allocator shim hooks only FreeFn, FreeWithSizeFn,
   // etc. So, it's safe to allocate memory here as it doesn't recurse, however,
   // it's _NOT_ allowed to deallocate memory here as it _does_ recurse.
   //
   // The following code may allocate memory:
   // - `static` as a mutex may allocate memory.
-  // - `LightweightQuarantineBranch` may allocate memory.
-  //   `LightweightQuarantineBranch` has a data member of type `std::vector`,
-  //   which may allocate.
+  // - `ExtremeLightweightDetectorQuarantineBranch` may allocate memory.
+  //   `ExtremeLightweightDetectorQuarantineBranch` has a data member of type
+  //   `std::vector`, which may allocate.
   static bool init_once = [&]() -> bool {
     partition_alloc::PartitionRoot* partition_root =
         allocator_shim::internal::PartitionAllocMalloc::Allocator();
@@ -112,9 +112,8 @@ bool TryInitSlow() {
     lightweight_quarantine_root_storage.emplace(*partition_root);
 
     lightweight_quarantine_branch_storage_for_small_objects.emplace(
-        lightweight_quarantine_root_storage->CreateBranch(
-            LightweightQuarantineBranchConfig{
-                .lock_required = true,
+        lightweight_quarantine_root_storage->get()->CreateBranch(
+            ExtremeLightweightDetectorQuarantineBranchConfig{
                 .branch_capacity_in_bytes =
                     init_options.quarantine_capacity_for_small_objects_in_bytes,
             }));
@@ -122,9 +121,8 @@ bool TryInitSlow() {
         lightweight_quarantine_branch_storage_for_small_objects.value().get();
 
     lightweight_quarantine_branch_storage_for_large_objects.emplace(
-        lightweight_quarantine_root_storage->CreateBranch(
-            LightweightQuarantineBranchConfig{
-                .lock_required = true,
+        lightweight_quarantine_root_storage->get()->CreateBranch(
+            ExtremeLightweightDetectorQuarantineBranchConfig{
                 .branch_capacity_in_bytes =
                     init_options.quarantine_capacity_for_large_objects_in_bytes,
             }));
@@ -168,15 +166,12 @@ inline bool Quarantine(void* object) {
   // See also:
   // https://source.chromium.org/chromium/chromium/src/+/main:base/allocator/partition_allocator/src/partition_alloc/partition_root.h;l=1424-1434;drc=6b284da9be36f6edfdc0ddde4a031270c41096d8
   // Although in this case `slot_span` will be touched by `GetSlotUsableSize`.
-  partition_alloc::internal::SlotSpanMetadata<
-      partition_alloc::internal::MetadataKind::kReadOnly>* slot_span =
-      partition_alloc::internal::SlotSpanMetadata<
-          partition_alloc::internal::MetadataKind::kReadOnly>::
-          FromObject(object);
+  partition_alloc::internal::SlotSpanMetadata* slot_span =
+      partition_alloc::internal::SlotSpanMetadata::FromObject(object);
   partition_alloc::PartitionRoot* root =
       partition_alloc::PartitionRoot::FromSlotSpanMetadata(slot_span);
   if (root != lightweight_quarantine_partition_root) [[unlikely]] {
-    // The LightweightQuarantineRoot is configured for
+    // The ExtremeLightweightDetectorQuarantineRoot is configured for
     // lightweight_quarantine_partition_root. We cannot quarantine an object
     // in other partition roots.
     return false;
@@ -197,13 +192,11 @@ inline bool Quarantine(void* object) {
 
   uintptr_t slot_start = root->ObjectToSlotStart(object);
   if (usable_size <= init_options.object_size_threshold_in_bytes) [[likely]] {
-    lightweight_quarantine_branch_for_small_objects
-        ->QuarantineWithAcquiringLock(object, slot_span, slot_start,
-                                      usable_size);
+    lightweight_quarantine_branch_for_small_objects->Quarantine(
+        object, slot_span, slot_start, usable_size);
   } else {
-    lightweight_quarantine_branch_for_large_objects
-        ->QuarantineWithAcquiringLock(object, slot_span, slot_start,
-                                      usable_size);
+    lightweight_quarantine_branch_for_large_objects->Quarantine(
+        object, slot_span, slot_start, usable_size);
   }
 
   return true;
@@ -218,14 +211,38 @@ void FreeFn(void* address, void* context) {
   MUSTTAIL return allocator_dispatch.next->free_function(address, context);
 }
 
-void FreeDefiniteSizeFn(void* address, size_t size, void* context) {
+void FreeWithSizeFn(void* address, size_t size, void* context) {
   if (sampling_state.Sample()) [[unlikely]] {
     if (Quarantine(address)) [[likely]] {
       return;
     }
   }
-  MUSTTAIL return allocator_dispatch.next->free_definite_size_function(
+  MUSTTAIL return allocator_dispatch.next->free_with_size_function(
       address, size, context);
+}
+
+void FreeWithAlignmentFn(void* address, size_t alignment, void* context) {
+  if (sampling_state.Sample()) [[unlikely]] {
+    if (Quarantine(address)) [[likely]] {
+      return;
+    }
+  }
+  MUSTTAIL return allocator_dispatch.next->free_with_alignment_function(
+      address, alignment, context);
+}
+
+void FreeWithSizeAndAlignmentFn(void* address,
+                                size_t size,
+                                size_t alignment,
+                                void* context) {
+  if (sampling_state.Sample()) [[unlikely]] {
+    if (Quarantine(address)) [[likely]] {
+      return;
+    }
+  }
+  MUSTTAIL return allocator_dispatch.next
+      ->free_with_size_and_alignment_function(address, size, alignment,
+                                              context);
 }
 
 AllocatorDispatch allocator_dispatch = {
@@ -235,17 +252,19 @@ AllocatorDispatch allocator_dispatch = {
     nullptr,  // alloc_aligned_function
     // realloc doesn't always deallocate memory, so the Extreme LUD doesn't
     // support realloc.
-    nullptr,  // realloc_function
-    nullptr,  // realloc_unchecked_function
-    FreeFn,   // free_function
-    nullptr,  // get_size_estimate_function
-    nullptr,  // good_size_function
-    nullptr,  // claimed_address_function
-    nullptr,  // batch_malloc_function
+    nullptr,                     // realloc_function
+    nullptr,                     // realloc_unchecked_function
+    FreeFn,                      // free_function
+    FreeWithSizeFn,              // free_with_size_function
+    FreeWithAlignmentFn,         // free_with_alignment_function
+    FreeWithSizeAndAlignmentFn,  // free_with_size_and_alignment_function
+    nullptr,                     // get_size_estimate_function
+    nullptr,                     // good_size_function
+    nullptr,                     // claimed_address_function
+    nullptr,                     // batch_malloc_function
     // batch_free is rarely used, so the Extreme LUD doesn't support batch_free
     // (at least for now).
-    nullptr,             // batch_free_function
-    FreeDefiniteSizeFn,  // free_definite_size_function
+    nullptr,  // batch_free_function
     // try_free_default is rarely used, so the Extreme LUD doesn't support
     // try_free_default (at least for now).
     nullptr,  // try_free_default_function
@@ -272,12 +291,12 @@ GetStats() {
   elud_stats_set.for_small_objects.capacity_in_bytes =
       lightweight_quarantine_branch_for_small_objects->GetCapacityInBytes();
   lightweight_quarantine_branch_for_small_objects->GetRoot().AccumulateStats(
-      elud_stats_set.for_small_objects.lq_stats);
+      elud_stats_set.for_small_objects);
 
   elud_stats_set.for_large_objects.capacity_in_bytes =
       lightweight_quarantine_branch_for_large_objects->GetCapacityInBytes();
   lightweight_quarantine_branch_for_large_objects->GetRoot().AccumulateStats(
-      elud_stats_set.for_large_objects.lq_stats);
+      elud_stats_set.for_large_objects);
 
   return elud_stats_set;
 }
@@ -300,14 +319,14 @@ void InstallExtremeLightweightDetectorHooks(
 #endif  // PA_BUILDFLAG(USE_PARTITION_ALLOC_AS_MALLOC)
 }
 
-partition_alloc::internal::LightweightQuarantineBranch&
+ExtremeLightweightDetectorQuarantineBranch&
 GetEludQuarantineBranchForSmallObjectsForTesting() {
   CHECK(TryInit());
 
   return *lightweight_quarantine_branch_for_small_objects;
 }
 
-partition_alloc::internal::LightweightQuarantineBranch&
+ExtremeLightweightDetectorQuarantineBranch&
 GetEludQuarantineBranchForLargeObjectsForTesting() {
   CHECK(TryInit());
 

@@ -19,7 +19,11 @@
 
 #include "gpuav/core/gpuav.h"
 #include "generated/dispatch_functions.h"
+#include "utils/math_utils.h"
+#include <mutex>
 #include <vulkan/utility/vk_struct_helper.hpp>
+
+#include "profiling/profiling.h"
 
 namespace gpuav {
 namespace vko {
@@ -48,7 +52,7 @@ VkResult DescriptorSetManager::GetDescriptorSet(VkDescriptorPool *out_desc_pool,
 
 VkResult DescriptorSetManager::GetDescriptorSets(uint32_t count, VkDescriptorPool *out_pool, VkDescriptorSetLayout ds_layout,
                                                  std::vector<VkDescriptorSet> *out_desc_sets) {
-    auto guard = Lock();
+    std::lock_guard guard(lock_);
 
     VkResult result = VK_SUCCESS;
     VkDescriptorPool desc_pool_to_use = VK_NULL_HANDLE;
@@ -115,7 +119,7 @@ VkResult DescriptorSetManager::GetDescriptorSets(uint32_t count, VkDescriptorPoo
 }
 
 void DescriptorSetManager::PutBackDescriptorSet(VkDescriptorPool desc_pool, VkDescriptorSet desc_set) {
-    auto guard = Lock();
+    std::lock_guard guard(lock_);
 
     auto iter = desc_pool_map_.find(desc_pool);
     assert(iter != desc_pool_map_.end());
@@ -147,46 +151,61 @@ void SharedResourcesCache::Clear() {
 
 void *Buffer::GetMappedPtr() const { return mapped_ptr; }
 
-void Buffer::FlushAllocation(const Location &loc, VkDeviceSize offset, VkDeviceSize size) const {
+void Buffer::FlushAllocation(VkDeviceSize offset, VkDeviceSize size) const {
     VkResult result = vmaFlushAllocation(gpuav.vma_allocator_, allocation, offset, size);
     if (result != VK_SUCCESS) {
-        gpuav.InternalVmaError(gpuav.device, loc, "Unable to flush device memory.");
+        gpuav.InternalVmaError(gpuav.device, result, "Unable to flush device memory.");
     }
 }
 
-void Buffer::InvalidateAllocation(const Location &loc, VkDeviceSize offset, VkDeviceSize size) const {
+void Buffer::InvalidateAllocation(VkDeviceSize offset, VkDeviceSize size) const {
     VkResult result = vmaInvalidateAllocation(gpuav.vma_allocator_, allocation, offset, size);
     if (result != VK_SUCCESS) {
-        gpuav.InternalVmaError(gpuav.device, loc, "Unable to invalidate device memory.");
+        gpuav.InternalVmaError(gpuav.device, result, "Unable to invalidate device memory.");
     }
 }
 
-bool Buffer::Create(const Location &loc, const VkBufferCreateInfo *buffer_create_info,
-                    const VmaAllocationCreateInfo *allocation_create_info) {
+bool Buffer::Create(const VkBufferCreateInfo *buffer_create_info, const VmaAllocationCreateInfo *allocation_create_info) {
     VkResult result =
         vmaCreateBuffer(gpuav.vma_allocator_, buffer_create_info, allocation_create_info, &buffer, &allocation, nullptr);
     if (result != VK_SUCCESS) {
-        gpuav.InternalVmaError(gpuav.device, loc, "Unable to allocate device memory for internal buffer.");
+        gpuav.InternalVmaError(gpuav.device, result, "Unable to allocate device memory for internal buffer.");
         return false;
     }
     size = buffer_create_info->size;
 
     if (buffer_create_info->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) {
         // After creating the buffer, get the address right away
-        device_address = gpuav.GetBufferDeviceAddressHelper(buffer, &gpuav.modified_extensions);
+        device_address = gpuav.device_state->GetBufferDeviceAddressHelper(buffer, &gpuav.modified_extensions);
         if (device_address == 0) {
-            gpuav.InternalError(gpuav.device, loc, "Failed to get address with DispatchGetBufferDeviceAddress.");
+            gpuav.InternalVmaError(gpuav.device, VK_ERROR_UNKNOWN, "Failed to get address with DispatchGetBufferDeviceAddress.");
             return false;
         }
     }
-    if (allocation_create_info->requiredFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+
+    VkMemoryPropertyFlags mem_prop_flags = {};
+    vmaGetAllocationMemoryProperties(gpuav.vma_allocator_, allocation, &mem_prop_flags);
+    if (mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
         result = vmaMapMemory(gpuav.vma_allocator_, allocation, &mapped_ptr);
         if (result != VK_SUCCESS) {
             mapped_ptr = nullptr;
-            gpuav.InternalVmaError(gpuav.device, loc, "Unable to map device memory.");
+            gpuav.InternalVmaError(gpuav.device, result, "Unable to map device memory.");
             return false;
         }
     }
+#if defined(VVL_TRACY_GPU)
+    static_assert(VK_MAX_MEMORY_HEAPS <= 16u);
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS] = {};
+    vmaGetHeapBudgets(gpuav.vma_allocator_, budgets);
+    constexpr std::array<const char *, VK_MAX_MEMORY_HEAPS> heap_names = {
+        {"GPU Heap 0 (kB)", "GPU Heap 1 (kB)", "GPU Heap 2 (kB)", "GPU Heap 3 (kB)", "GPU Heap 4 (kB)", "GPU Heap 5 (kB)",
+         "GPU Heap 6 (kB)", "GPU Heap 7 (kB)", "GPU Heap 8 (kB)", "GPU Heap 9 (kB)", "GPU Heap 10 (kB)", "GPU Heap 11 (kB)",
+         "GPU Heap 12 (kB)", "GPU Heap 13 (kB)", "GPU Heap 14 (kB)", "GPU Heap 15 (kB)"}};
+    for (uint32_t heap_i = 0; heap_i < gpuav.phys_dev_mem_props.memoryHeapCount; ++heap_i) {
+        VVL_TracyPlot(heap_names[heap_i], int64_t(budgets[heap_i].statistics.blockBytes / 1024));
+    }
+#endif
+
     return true;
 }
 
@@ -194,18 +213,82 @@ void Buffer::Destroy() {
     if (buffer != VK_NULL_HANDLE) {
         if (mapped_ptr != nullptr) {
             vmaUnmapMemory(gpuav.vma_allocator_, allocation);
+            mapped_ptr = nullptr;
         }
         vmaDestroyBuffer(gpuav.vma_allocator_, buffer, allocation);
         buffer = VK_NULL_HANDLE;
         allocation = VK_NULL_HANDLE;
         device_address = 0;
     }
+#if defined(VVL_TRACY_GPU)
+    static_assert(VK_MAX_MEMORY_HEAPS <= 16u);
+    VmaBudget budgets[VK_MAX_MEMORY_HEAPS] = {};
+    vmaGetHeapBudgets(gpuav.vma_allocator_, budgets);
+    constexpr std::array<const char *, VK_MAX_MEMORY_HEAPS> heap_names = {
+        {"GPU Heap 0 (kB)", "GPU Heap 1 (kB)", "GPU Heap 2 (kB)", "GPU Heap 3 (kB)", "GPU Heap 4 (kB)", "GPU Heap 5 (kB)",
+         "GPU Heap 6 (kB)", "GPU Heap 7 (kB)", "GPU Heap 8 (kB)", "GPU Heap 9 (kB)", "GPU Heap 10 (kB)", "GPU Heap 11 (kB)",
+         "GPU Heap 12 (kB)", "GPU Heap 13 (kB)", "GPU Heap 14 (kB)", "GPU Heap 15 (kB)"}};
+    for (uint32_t heap_i = 0; heap_i < gpuav.phys_dev_mem_props.memoryHeapCount; ++heap_i) {
+        VVL_TracyPlot(heap_names[heap_i], int64_t(budgets[heap_i].statistics.blockBytes / 1024));
+    }
+#endif
 }
 
 void Buffer::Clear() const {
     // Caller is in charge of calling Flush/Invalidate as needed
     assert(mapped_ptr);
     memset((uint8_t *)mapped_ptr, 0, static_cast<size_t>(size));
+}
+
+void BufferRange::Clear() const {
+    // Caller is in charge of calling Flush/Invalidate as needed
+    assert(offset_mapped_ptr);
+    memset((uint8_t *)offset_mapped_ptr, 0, static_cast<size_t>(size));
+}
+
+GpuResourcesManager::GpuResourcesManager(Validator &gpuav) : gpuav_(gpuav) {
+    {
+        VmaAllocationCreateInfo alloc_ci = {};
+        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
+        alloc_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        host_visible_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                          alloc_ci);
+    }
+
+    {
+        VmaAllocationCreateInfo alloc_ci = {};
+        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
+        alloc_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        host_cached_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                             VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                         alloc_ci);
+    }
+
+    {
+        VmaAllocationCreateInfo alloc_ci = {};
+        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        device_local_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                              VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                          alloc_ci);
+    }
+
+    {
+        VmaAllocationCreateInfo alloc_ci = {};
+        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        device_local_indirect_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_INDIRECT_BUFFER_BIT,
+                                                   alloc_ci);
+    }
+
+    {
+        VmaAllocationCreateInfo alloc_ci = {};
+        alloc_ci.usage = VMA_MEMORY_USAGE_AUTO;
+        alloc_ci.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_RANDOM_BIT |
+                         VMA_ALLOCATION_CREATE_HOST_ACCESS_ALLOW_TRANSFER_INSTEAD_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+        staging_buffer_cache_.Create(VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT |
+                                         VK_BUFFER_USAGE_TRANSFER_SRC_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                     alloc_ci);
+    }
 }
 
 VkDescriptorSet GpuResourcesManager::GetManagedDescriptorSet(VkDescriptorSetLayout desc_set_layout) {
@@ -218,8 +301,8 @@ VkDescriptorSet GpuResourcesManager::GetManagedDescriptorSet(VkDescriptorSetLayo
 
         if (layout_to_sets.first_available_desc_set == layout_to_sets.cached_descriptors.size()) {
             CachedDescriptor cached_descriptor;
-            const VkResult result = descriptor_set_manager_.GetDescriptorSet(&cached_descriptor.desc_pool, desc_set_layout,
-                                                                             &cached_descriptor.desc_set);
+            const VkResult result = gpuav_.desc_set_manager_->GetDescriptorSet(&cached_descriptor.desc_pool, desc_set_layout,
+                                                                               &cached_descriptor.desc_set);
             if (result != VK_SUCCESS) {
                 return VK_NULL_HANDLE;
             }
@@ -238,43 +321,60 @@ VkDescriptorSet GpuResourcesManager::GetManagedDescriptorSet(VkDescriptorSetLayo
     return GetManagedDescriptorSet(desc_set_layout);
 }
 
-vko::Buffer GpuResourcesManager::GetManagedBuffer(Validator &gpuav, const Location &loc, const VkBufferCreateInfo &buffer_ci,
-                                                  const VmaAllocationCreateInfo &alloc_ci) {
-    assert(buffer_ci.pNext == nullptr);
-    assert(buffer_ci.sharingMode == VK_SHARING_MODE_EXCLUSIVE);
-    assert(alloc_ci.pUserData == nullptr);
+// Arbitrary, big enough
+constexpr VkDeviceSize buffer_address_alignment = 128;
 
-    // Try to find a cached and available buffer created with equivalent characteristics
-    for (CachedBuffer &cached_buffer : cached_buffers_) {
-        if (!(cached_buffer.status == CachedStatus::Available)) {
-            continue;
-        }
-        const bool same_buffer_ci = buffer_ci.flags == cached_buffer.buffer_ci.flags &&
-                                    buffer_ci.size <= cached_buffer.buffer_ci.size &&
-                                    buffer_ci.usage == cached_buffer.buffer_ci.usage;
+vko::BufferRange GpuResourcesManager::GetHostVisibleBufferRange(VkDeviceSize size) {
+    // Kind of arbitrary, considered "big enough"
+    constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
+    // Buffers are used as storage buffers, align to corresponding limit
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment, buffer_address_alignment);
+    return host_visible_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
+}
 
-        const bool same_alloc_ci =
-            alloc_ci.flags == cached_buffer.allocation_ci.flags && alloc_ci.usage == cached_buffer.allocation_ci.usage &&
-            alloc_ci.requiredFlags == cached_buffer.allocation_ci.requiredFlags &&
-            alloc_ci.preferredFlags == cached_buffer.allocation_ci.preferredFlags &&
-            alloc_ci.memoryTypeBits == cached_buffer.allocation_ci.memoryTypeBits &&
-            alloc_ci.pool == cached_buffer.allocation_ci.pool && alloc_ci.priority == cached_buffer.allocation_ci.priority;
+vko::BufferRange GpuResourcesManager::GetHostCachedBufferRange(VkDeviceSize size) {
+    // Kind of arbitrary, considered "big enough"
+    constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
+    // Buffers are used as storage buffers, align to corresponding limit
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment, buffer_address_alignment);
+    return host_cached_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
+}
 
-        if (same_buffer_ci && same_alloc_ci) {
-            cached_buffer.status = CachedStatus::InUse;
-            return cached_buffer.buffer;
-        }
-    }
+void GpuResourcesManager::FlushAllocation(const vko::BufferRange &buffer_range) {
+    vmaFlushAllocation(gpuav_.vma_allocator_, buffer_range.vma_alloc, 0, VK_WHOLE_SIZE);
+}
 
-    // Did not find a cached buffer, create one, cache it and return its handle
-    Buffer buffer(gpuav);
-    const bool success = buffer.Create(loc, &buffer_ci, &alloc_ci);
-    if (!success) {
-        return buffer;
-    }
-    CachedBuffer cached_buffer = {buffer_ci, alloc_ci, buffer, CachedStatus::InUse};
-    cached_buffers_.emplace_back(cached_buffer);
-    return buffer;
+void GpuResourcesManager::InvalidateAllocation(const vko::BufferRange &buffer_range) {
+    vmaInvalidateAllocation(gpuav_.vma_allocator_, buffer_range.vma_alloc, 0, VK_WHOLE_SIZE);
+}
+
+vko::BufferRange GpuResourcesManager::GetDeviceLocalBufferRange(VkDeviceSize size) {
+    // Kind of arbitrary, considered "big enough"
+    constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
+    // Buffers are used as storage buffers, align to corresponding limit
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment, buffer_address_alignment);
+    return device_local_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
+}
+
+vko::BufferRange GpuResourcesManager::GetDeviceLocalIndirectBufferRange(VkDeviceSize size) {
+    // Kind of arbitrary, considered "big enough"
+    constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
+    // Buffers are used as storage buffers, align to corresponding limit
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment, buffer_address_alignment);
+    return device_local_indirect_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
+}
+
+vko::BufferRange GpuResourcesManager::GetStagingBufferRange(VkDeviceSize size) {
+    // Kind of arbitrary, considered "big enough"
+    constexpr VkDeviceSize min_buffer_block_size = 4 * 1024;
+    // Buffers are used as storage buffers, align to corresponding limit
+    const VkDeviceSize alignment =
+        std::max<VkDeviceSize>(gpuav_.phys_dev_props.limits.minStorageBufferOffsetAlignment, buffer_address_alignment);
+    return staging_buffer_cache_.GetBufferRange(gpuav_, size, alignment, min_buffer_block_size);
 }
 
 void GpuResourcesManager::ReturnResources() {
@@ -282,24 +382,257 @@ void GpuResourcesManager::ReturnResources() {
         layout_to_set.first_available_desc_set = 0;
     }
 
-    for (CachedBuffer &cached_buffer : cached_buffers_) {
-        cached_buffer.status = CachedStatus::Available;
-    }
+    host_visible_buffer_cache_.ReturnBuffers();
+    host_cached_buffer_cache_.ReturnBuffers();
+    device_local_buffer_cache_.ReturnBuffers();
+    device_local_indirect_buffer_cache_.ReturnBuffers();
+    staging_buffer_cache_.ReturnBuffers();
 }
 
 void GpuResourcesManager::DestroyResources() {
     for (LayoutToSets &layout_to_set : cache_layouts_to_sets_) {
         for (CachedDescriptor &cached_descriptor : layout_to_set.cached_descriptors) {
-            descriptor_set_manager_.PutBackDescriptorSet(cached_descriptor.desc_pool, cached_descriptor.desc_set);
+            gpuav_.desc_set_manager_->PutBackDescriptorSet(cached_descriptor.desc_pool, cached_descriptor.desc_set);
         }
         layout_to_set.cached_descriptors.clear();
     }
     cache_layouts_to_sets_.clear();
 
-    for (CachedBuffer &cached_buffer : cached_buffers_) {
-        cached_buffer.buffer.Destroy();
-    }
-    cached_buffers_.clear();
+    host_visible_buffer_cache_.DestroyBuffers();
+    host_cached_buffer_cache_.DestroyBuffers();
+    device_local_buffer_cache_.DestroyBuffers();
+    device_local_indirect_buffer_cache_.DestroyBuffers();
+    staging_buffer_cache_.DestroyBuffers();
 }
+
+void GpuResourcesManager::BufferCache::Create(VkBufferUsageFlags buffer_usage_flags, const VmaAllocationCreateInfo allocation_ci) {
+    buffer_usage_flags_ = buffer_usage_flags;
+    allocation_ci_ = allocation_ci;
+}
+
+GpuResourcesManager::BufferCache::~BufferCache() { DestroyBuffers(); }
+
+vko::BufferRange GpuResourcesManager::BufferCache::GetBufferRange(Validator &gpuav, VkDeviceSize byte_size, VkDeviceSize alignment,
+                                                                  VkDeviceSize min_buffer_block_byte_size) {
+    // Try to find a cached buffer block big enough to sub-allocate from it
+    if (total_available_byte_size_ >= byte_size) {
+        for (size_t i = 0; i < cached_buffers_blocks_.size(); ++i) {
+            const size_t cached_buffer_i = (next_avail_buffer_pos_hint_ + i) % cached_buffers_blocks_.size();
+            CachedBufferBlock &cached_buffer = cached_buffers_blocks_[cached_buffer_i];
+
+            // Is there enough space in the current cached buffer to fit the aligned sub-allocation?
+            const VkDeviceSize aligned_free_range_begin = Align(cached_buffer.used_range.end, alignment);
+            const vvl::range<VkDeviceSize> aligned_free_range = {aligned_free_range_begin, cached_buffer.total_range.end};
+            if (aligned_free_range.non_empty() && aligned_free_range.size() >= byte_size) {
+                // There is enough space, sub-allocate
+                const vvl::range<VkDeviceSize> returned_range = {aligned_free_range_begin, aligned_free_range_begin + byte_size};
+                assert(returned_range.non_empty());
+                const vvl::range<VkDeviceSize> pad_range = {cached_buffer.used_range.end, aligned_free_range.begin};
+                assert(pad_range.valid());
+                total_available_byte_size_ -= returned_range.size() + pad_range.size();
+
+                cached_buffer.used_range.end = returned_range.end;
+
+                // Heuristic: next call to the cache will ask for the same size and alignment.
+                // => If current block is big enough, hint at it. Else, hint at next block.
+                const vvl::range<VkDeviceSize> available_aligned_byte_range = {Align(cached_buffer.used_range.end, alignment),
+                                                                               cached_buffer.total_range.end};
+                if (available_aligned_byte_range.non_empty() && available_aligned_byte_range.size() >= byte_size) {
+                    next_avail_buffer_pos_hint_ = cached_buffer_i;
+                } else {
+                    next_avail_buffer_pos_hint_ = (cached_buffer_i + 1) % cached_buffers_blocks_.size();
+                }
+                uint8_t *offset_mapped_ptr = nullptr;
+                if (cached_buffer.buffer.GetMappedPtr()) {
+                    offset_mapped_ptr = (uint8_t *)cached_buffer.buffer.GetMappedPtr() + returned_range.begin;
+                }
+                VkDeviceAddress offset_address = 0;
+                if (cached_buffer.buffer.Address()) {
+                    offset_address = cached_buffer.buffer.Address() + returned_range.begin;
+                }
+
+                return {cached_buffer.buffer.VkHandle(),
+                        returned_range.begin,
+                        returned_range.size(),
+                        offset_mapped_ptr,
+                        offset_address,
+                        cached_buffer.buffer.Allocation()};
+            }
+        }
+    }
+
+    // Did not find a cached buffer, create one, cache it and return its handle
+    Buffer buffer(gpuav);
+    VkBufferCreateInfo buffer_ci = vku::InitStructHelper();
+    buffer_ci.size = std::max(min_buffer_block_byte_size, byte_size);
+    buffer_ci.usage = buffer_usage_flags_;
+    const bool success = buffer.Create(&buffer_ci, &allocation_ci_);
+    if (!success) {
+        return {};
+    }
+    CachedBufferBlock cached_buffer_block{buffer, {0, buffer_ci.size}, {0, byte_size}};
+    cached_buffers_blocks_.emplace_back(cached_buffer_block);
+
+    total_available_byte_size_ += buffer_ci.size - byte_size;
+
+    return {buffer.VkHandle(),
+            cached_buffer_block.used_range.begin,
+            cached_buffer_block.used_range.size(),
+            cached_buffer_block.buffer.GetMappedPtr(),
+            cached_buffer_block.buffer.Address(),
+            cached_buffer_block.buffer.Allocation()};
+}
+
+void GpuResourcesManager::BufferCache::ReturnBuffers() {
+    total_available_byte_size_ = 0;
+    for (CachedBufferBlock &cached_buffer_block : cached_buffers_blocks_) {
+        cached_buffer_block.used_range = {0, 0};
+        total_available_byte_size_ += cached_buffer_block.total_range.size();
+    }
+}
+
+void GpuResourcesManager::BufferCache::DestroyBuffers() {
+    for (CachedBufferBlock &cached_buffer_block : cached_buffers_blocks_) {
+        cached_buffer_block.buffer.Destroy();
+    }
+    cached_buffers_blocks_.clear();
+}
+
+bool StagingBuffer::CanDeviceEverStage(Validator &gpuav) {
+    return gpuav.phys_dev_props.deviceType != VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU;
+}
+
+StagingBuffer::StagingBuffer(GpuResourcesManager &gpu_resources_manager, VkDeviceSize size, VkCommandBuffer cb)
+    : gpu_resources_manager(gpu_resources_manager) {
+    VVL_ZoneScoped;
+    // Never use staging buffer on integrated GPUs
+    if (gpu_resources_manager.gpuav_.phys_dev_props.deviceType == VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU) {
+        device_buffer_range = gpu_resources_manager.GetHostCachedBufferRange(size);
+        host_buffer_range = device_buffer_range;
+    }
+    // On other types of GPUs, let VMA decide whether to stage or not
+    else {
+        device_buffer_range = gpu_resources_manager.GetStagingBufferRange(size);
+    }
+    vmaGetAllocationMemoryProperties(gpu_resources_manager.gpuav_.vma_allocator_, device_buffer_range.vma_alloc,
+                                     &device_buffer_mem_prop_flags);
+
+    if (device_buffer_mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+        host_buffer_range = device_buffer_range;
+    } else {
+        VkBufferMemoryBarrier barrier_access_before_write = vku::InitStructHelper();
+        barrier_access_before_write.srcAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier_access_before_write.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier_access_before_write.buffer = device_buffer_range.buffer;
+        barrier_access_before_write.offset = device_buffer_range.offset;
+        barrier_access_before_write.size = device_buffer_range.size;
+
+        DispatchCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1,
+                                   &barrier_access_before_write, 0, nullptr);
+
+        DispatchCmdFillBuffer(cb, device_buffer_range.buffer, device_buffer_range.offset, device_buffer_range.size, 0);
+
+        VkBufferMemoryBarrier barrier_access_after_write = vku::InitStructHelper();
+        barrier_access_after_write.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier_access_after_write.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT | VK_ACCESS_MEMORY_WRITE_BIT;
+        barrier_access_after_write.buffer = device_buffer_range.buffer;
+        barrier_access_after_write.offset = device_buffer_range.offset;
+        barrier_access_after_write.size = device_buffer_range.size;
+
+        DispatchCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, 0, 0, nullptr, 1,
+                                   &barrier_access_after_write, 0, nullptr);
+
+        // #ARNO_TODO reconsider using host cached memory
+        host_buffer_range = gpu_resources_manager.GetHostCachedBufferRange(size);
+    }
+
+    std::memset(host_buffer_range.offset_mapped_ptr, 0, (size_t)host_buffer_range.size);
+    gpu_resources_manager.FlushAllocation(host_buffer_range);
+}
+
+void StagingBuffer::CmdCopyDeviceToHost(VkCommandBuffer cb) const {
+    if (device_buffer_mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) {
+        // nothing to do
+        return;
+    }
+
+    // Dispatch a copy command, copying staging buffer device local memory to host visible
+    VkBufferMemoryBarrier barrier_read_after_write = vku::InitStructHelper();
+    barrier_read_after_write.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT;
+    barrier_read_after_write.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+    barrier_read_after_write.buffer = device_buffer_range.buffer;
+    barrier_read_after_write.offset = device_buffer_range.offset;
+    barrier_read_after_write.size = device_buffer_range.size;
+
+    DispatchCmdPipelineBarrier(cb, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 1,
+                               &barrier_read_after_write, 0, nullptr);
+
+    VkBufferCopy copy = {};
+    copy.srcOffset = device_buffer_range.offset;
+    copy.dstOffset = host_buffer_range.offset;
+    copy.size = device_buffer_range.size;
+    DispatchCmdCopyBuffer(cb, device_buffer_range.buffer, host_buffer_range.buffer, 1, &copy);
+
+    // No additional barrier, host_visible_range will be read on the host
+    // => will wait for cb's fence before reading.
+}
+
+CommandPool::CommandPool(Validator &gpuav, uint32_t queue_family_i, const Location &loc) : gpuav_(gpuav) {
+    VkCommandPoolCreateInfo cmd_pool_ci = vku::InitStructHelper();
+    cmd_pool_ci.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+    cmd_pool_ci.queueFamilyIndex = queue_family_i;
+    VkResult result = DispatchCreateCommandPool(gpuav_.device, &cmd_pool_ci, nullptr, &cmd_pool_);
+    if (result != VK_SUCCESS) {
+        gpuav_.InternalError(LogObjectList(), loc, "Failed to create command buffer pool");
+    }
+
+    VkCommandBufferAllocateInfo cmd_buf_ai = vku::InitStructHelper();
+    cmd_buf_ai.commandPool = cmd_pool_;
+    cmd_buf_ai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    cmd_buf_ai.commandBufferCount = 512;  // #ARNO_TODO do not hardcode commandBufferCount
+
+    cmd_buffers_.resize(cmd_buf_ai.commandBufferCount);
+    result = DispatchAllocateCommandBuffers(gpuav_.device, &cmd_buf_ai, cmd_buffers_.data());
+    if (result != VK_SUCCESS) {
+        gpuav_.InternalError(LogObjectList(), loc, "Failed to create command buffers");
+    }
+
+    for (VkCommandBuffer cb : cmd_buffers_) {
+        gpuav.vk_set_device_loader_data_(gpuav.device, cb);
+    }
+
+    fences_.resize(cmd_buf_ai.commandBufferCount);
+    for (VkFence &fence : fences_) {
+        VkFenceCreateInfo fence_ci = vku::InitStructHelper();
+        fence_ci.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        result = DispatchCreateFence(gpuav_.device, &fence_ci, nullptr, &fence);
+        if (result != VK_SUCCESS) {
+            gpuav_.InternalError(LogObjectList(), loc, "Failed to create fences");
+        }
+    }
+}
+
+CommandPool::~CommandPool() {
+    DispatchDestroyCommandPool(gpuav_.device, cmd_pool_, nullptr);
+    for (VkFence fence : fences_) {
+        DispatchDestroyFence(gpuav_.device, fence, nullptr);
+    }
+}
+
+std::pair<VkCommandBuffer, VkFence> CommandPool::GetCommandBuffer() {
+    VVL_ZoneScoped;
+    const size_t cb_i = cmd_buffer_ring_head_++ % cmd_buffers_.size();
+
+    VkResult result = DispatchWaitForFences(gpuav_.device, 1, &fences_[cb_i], VK_TRUE, UINT64_MAX);
+    if (result != VK_SUCCESS) {
+        gpuav_.InternalError(fences_[cb_i], Location(vvl::Func::Empty), "Failed to wait for fence");
+        return {VK_NULL_HANDLE, VK_NULL_HANDLE};
+    }
+
+    DispatchResetFences(gpuav_.device, 1, &fences_[cb_i]);
+    DispatchResetCommandBuffer(cmd_buffers_[cb_i], 0);
+    return {cmd_buffers_[cb_i], fences_[cb_i]};
+}
+
 }  // namespace vko
 }  // namespace gpuav

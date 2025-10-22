@@ -8,19 +8,15 @@ import abc
 import re
 import shlex
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Iterable, List, Set
+from typing import TYPE_CHECKING, Iterable, Set
 
 import crossbench.path as pth
 from crossbench.parse import ObjectParser
-from crossbench.probes.probe import Probe, ProbeConfigParser
-from crossbench.probes.probe_context import ProbeContext
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import EmptyProbeResult, ProbeResult
 
 if TYPE_CHECKING:
-
-  from crossbench.runner.groups.browsers import BrowsersRunGroup
-  from crossbench.runner.groups.repetitions import RepetitionsRunGroup
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
 
@@ -69,18 +65,6 @@ class DownloadsProbe(Probe):
     raise NotImplementedError(
         f"Probe({self}): Unsupported browser: {run.browser}")
 
-  def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
-    del group
-    # No need to merge downloads, users can find them in the individual run
-    # results folders.
-    return EmptyProbeResult()
-
-  def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
-    del group
-    # No need to merge downloads, users can find them in the individual run
-    # results folders.
-    return EmptyProbeResult()
-
   @property
   def clear_downloads(self) -> bool:
     return self._clear_downloads
@@ -112,7 +96,7 @@ class FileWatchDownloadsProbeContext(DownloadsProbeContext):
     super().__init__(probe, run)
     self._downloads_dir: pth.AnyPath = downloads_dir
     self._existing_downloads: Set[pth.AnyPath] = set()
-    self._results: List[pth.AnyPath] = []
+    self._results: list[pth.AnyPath] = []
 
   def downloads(self, include_pending: bool = True) -> Iterable[pth.AnyPath]:
     downloads = self.browser_platform.iterdir(self._downloads_dir)
@@ -159,11 +143,11 @@ class AndroidWebDriverDownloadsProbeContext(DownloadsProbeContext):
     super().__init__(probe, run)
     self._existing_downloads: Set[AndroidDownload] = set()
     self._user_id: str = str(self.browser_platform.user_id())
-    self._results: List[pth.AnyPath] = []
+    self._results: list[pth.AnyPath] = []
 
   def downloads(self,
                 include_pending: bool = True) -> Iterable[AndroidDownload]:
-    result: List[AndroidDownload] = []
+    result: list[AndroidDownload] = []
     args = [
         "content", "query", "--user", self._user_id, "--uri",
         "content://media/external/downloads", "--where", "is_download=1",

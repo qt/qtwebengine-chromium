@@ -65,18 +65,14 @@
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
 #include "third_party/webrtc/api/priority.h"
 
-namespace WTF {
+namespace blink {
 
 template <>
-struct CrossThreadCopier<rtc::scoped_refptr<webrtc::DataChannelInterface>>
+struct CrossThreadCopier<webrtc::scoped_refptr<webrtc::DataChannelInterface>>
     : public CrossThreadCopierPassThrough<
-          rtc::scoped_refptr<webrtc::DataChannelInterface>> {
+          webrtc::scoped_refptr<webrtc::DataChannelInterface>> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 namespace {
 
@@ -211,7 +207,7 @@ static void ThrowSendBufferFullException(ExceptionState* exception_state) {
 RTCDataChannel::Observer::Observer(
     scoped_refptr<base::SingleThreadTaskRunner> main_thread,
     RTCDataChannel* blink_channel,
-    rtc::scoped_refptr<webrtc::DataChannelInterface> channel)
+    webrtc::scoped_refptr<webrtc::DataChannelInterface> channel)
     : main_thread_(main_thread),
       blink_channel_(blink_channel),
       webrtc_channel_(std::move(channel)) {
@@ -222,7 +218,7 @@ RTCDataChannel::Observer::~Observer() {
   CHECK(!is_registered()) << "Reference to blink channel hasn't been released.";
 }
 
-const rtc::scoped_refptr<webrtc::DataChannelInterface>&
+const webrtc::scoped_refptr<webrtc::DataChannelInterface>&
 RTCDataChannel::Observer::channel() const {
   return webrtc_channel_;
 }
@@ -293,7 +289,7 @@ void RTCDataChannel::EnsureThreadWrappersForWorkerThread() {
 
 RTCDataChannel::RTCDataChannel(
     ExecutionContext* context,
-    rtc::scoped_refptr<webrtc::DataChannelInterface> data_channel)
+    webrtc::scoped_refptr<webrtc::DataChannelInterface> data_channel)
     : ActiveScriptWrappable<RTCDataChannel>({}),
       ExecutionContextLifecycleObserver(context),
       observer_(base::MakeRefCounted<Observer>(
@@ -566,7 +562,7 @@ bool RTCDataChannel::IsTransferable() {
          is_transferable_;
 }
 
-rtc::scoped_refptr<webrtc::DataChannelInterface>
+webrtc::scoped_refptr<webrtc::DataChannelInterface>
 RTCDataChannel::TransferUnderlyingChannel() {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
@@ -766,7 +762,7 @@ void RTCDataChannel::Dispose() {
   }
 }
 
-const rtc::scoped_refptr<webrtc::DataChannelInterface>&
+const webrtc::scoped_refptr<webrtc::DataChannelInterface>&
 RTCDataChannel::channel() const {
   return observer_->channel();
 }
@@ -774,7 +770,7 @@ RTCDataChannel::channel() const {
 void RTCDataChannel::SendRawData(const char* data, size_t length) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(!was_transferred_);
-  rtc::CopyOnWriteBuffer buffer(data, length);
+  webrtc::CopyOnWriteBuffer buffer(data, length);
   webrtc::DataBuffer data_buffer(buffer, true);
   RecordMessageSent(*channel().get(), data_buffer.size());
 
@@ -868,7 +864,7 @@ void RTCDataChannel::PendingMessage::Trace(Visitor* visitor) const {
 void RTCDataChannel::BlobReader::DidFinishLoading(FileReaderData data) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DOMArrayBuffer* array_buffer = std::move(data).AsDOMArrayBuffer();
-  rtc::CopyOnWriteBuffer buffer(
+  webrtc::CopyOnWriteBuffer buffer(
       static_cast<const char*>((array_buffer->Data())),
       array_buffer->ByteLength());
   message_->buffer_ = webrtc::DataBuffer(buffer, true);

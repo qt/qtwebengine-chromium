@@ -17,6 +17,9 @@
   "core/common/ResourceType.ts | eventsource": {
     "message": "Ffynhonnell y Digwyddiad"
   },
+  "core/common/ResourceType.ts | fedcm": {
+    "message": "FedCM"
+  },
   "core/common/ResourceType.ts | fetch": {
     "message": "Nôl"
   },
@@ -495,7 +498,7 @@
     "message": "Ni ellir nôl ffynhonnell y sgript."
   },
   "core/sdk/ServerTiming.ts | deprecatedSyntaxFoundPleaseUse": {
-    "message": "Wedi canfod cystrawen nad yw'n cael ei chefnogi mwyach. Defnyddiwch: <name>;dur=<duration>;desc=<description>"
+    "message": "Canfuwyd cystrawen sydd wedi'i anghymeradwyo ar gyfer metrig \"{PH1}\". Defnyddiwch: <name>;dur=<duration>;desc=<description>"
   },
   "core/sdk/ServerTiming.ts | duplicateParameterSIgnored": {
     "message": "Anwybyddwyd y paramedr dyblyg \"{PH1}\"."
@@ -614,6 +617,9 @@
   "core/sdk/sdk-meta.ts | doNotEmulateCssMediaType": {
     "message": "Peidio ag efelychu math cyfrwng CSS"
   },
+  "core/sdk/sdk-meta.ts | doNotEmulateOsTextScale": {
+    "message": "Peidio â dynwared graddfa testun OS"
+  },
   "core/sdk/sdk-meta.ts | doNotExtendGridLines": {
     "message": "Peidio ag ymestyn llinellau grid"
   },
@@ -664,6 +670,9 @@
   },
   "core/sdk/sdk-meta.ts | emulateDeuteranopia": {
     "message": "Efelychu dewteranopia (dim gwyrdd)"
+  },
+  "core/sdk/sdk-meta.ts | emulateOsTextScale": {
+    "message": "Dynwared graddfa testun OS"
   },
   "core/sdk/sdk-meta.ts | emulateProtanopia": {
     "message": "Efelychu cochddallineb (dim coch)"
@@ -729,7 +738,31 @@
     "message": "Rhwystro ceisiadau rhwydwaith"
   },
   "core/sdk/sdk-meta.ts | noEmulation": {
-    "message": "Dim efelychu"
+    "message": "Dim dynwared"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation100": {
+    "message": "100% (diofyn)"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation115": {
+    "message": "115%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation130": {
+    "message": "130%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation150": {
+    "message": "150%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation180": {
+    "message": "180%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation200": {
+    "message": "200%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation85": {
+    "message": "85%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulationNone": {
+    "message": "Dim dynwared"
   },
   "core/sdk/sdk-meta.ts | pauseOnExceptions": {
     "message": "Seibio ar eithriadau"
@@ -860,6 +893,9 @@
   "entrypoints/inspector_main/RenderingOptions.ts | forcesMediaTypeForTestingPrint": {
     "message": "Mae'n gorfodi math cyfryngau ar gyfer profi argraffu ac arddulliau sgrîn"
   },
+  "entrypoints/inspector_main/RenderingOptions.ts | forcesOsTextScaleEmulation": {
+    "message": "Yn gorfodi dynwarediad graddfa testun OS"
+  },
   "entrypoints/inspector_main/RenderingOptions.ts | forcesVisionDeficiencyEmulation": {
     "message": "Mae'n gorfodi dynwared diffyg golwg"
   },
@@ -971,7 +1007,7 @@
   "entrypoints/main/MainImpl.ts | dockSide": {
     "message": "Ochr y doc"
   },
-  "entrypoints/main/MainImpl.ts | dockSideNaviation": {
+  "entrypoints/main/MainImpl.ts | dockSideNavigation": {
     "message": "Defnyddiwch y bysellau saeth chwith a de i lywio'r opsiynau"
   },
   "entrypoints/main/MainImpl.ts | dockToBottom": {
@@ -1130,6 +1166,9 @@
   "entrypoints/main/main-meta.ts | toggleDrawer": {
     "message": "Toglo drôr"
   },
+  "entrypoints/main/main-meta.ts | toggleDrawerOrientation": {
+    "message": "Toglo cyfeiriadedd drôr"
+  },
   "entrypoints/main/main-meta.ts | undockIntoSeparateWindow": {
     "message": "Datgloi i ffenestr ar wahân"
   },
@@ -1229,9 +1268,6 @@
   "generated/Deprecation.ts | CrossOriginWindowConfirm": {
     "message": "Mae sbarduno window.confirm o iframes traws-darddiad wedi'i anghymeradwyo a bydd yn cael ei dynnu yn y dyfodol."
   },
-  "generated/Deprecation.ts | DOMMutationEvents": {
-    "message": "Mae Digwyddiadau Trawsblygiad DOM, gan gynnwys DOMSubtreeModified, DOMNodeInserted, DOMNodeRemoved, DOMNodeRemovedFromDocument, DOMNodeInsertedIntoDocument, a DOMCharacterDataModified yn anghymeradwy ( https://w3c.github.io/uievents/#legacy-event-types ) a byddant yn cael eu dileu. Defnyddiwch MutationObserver yn lle hynny."
-  },
   "generated/Deprecation.ts | DataUrlInSvgUse": {
     "message": "Cefnogaeth i ddata: mae cyfeiriadau URL yn SVGUseElement yn anghymeradwy a bydd yn cael ei ddileu yn y dyfodol."
   },
@@ -1244,14 +1280,8 @@
   "generated/Deprecation.ts | GetUserMediaInsecureOrigin": {
     "message": "Nid yw getUserMedia() yn gweithio ar darddiadau anniogel bellach. I ddefnyddio'r nodwedd hon, dylech ystyried newid eich ap i darddiad diogel, megis HTTPS. Gweler https://goo.gle/chrome-insecure-origins am ragor o fanylion."
   },
-  "generated/Deprecation.ts | H1UserAgentFontSizeInSection": {
-    "message": "Wedi dod o hyd i dag <h1> o fewn <article>, <aside>, <nav>, neu <section> sydd heb faint ffont penodol. Bydd maint y testun pennawd hwn yn newid yn y porwr hwn yn y dyfodol agos. Gweler https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#specifying_a_uniform_font_size_for_h1 am ragor o wybodaeth."
-  },
   "generated/Deprecation.ts | HostCandidateAttributeGetter": {
     "message": "Mae RTCPeerConnectionIceErrorEvent.hostCandidate wedi'i anghymeradwyo. Defnyddiwch RTCPeerConnectionIceErrorEvent.address neu RTCPeerConnectionIceErrorEvent.port yn lle hynny."
-  },
-  "generated/Deprecation.ts | IdentityDigitalCredentials": {
-    "message": "Mae'r fformat hwn ar gyfer y cais navigator.credentials.get() am fanylion digidol yn anghymeradwy, diweddarwch eich galwad i ddefnyddio'r fformat newydd."
   },
   "generated/Deprecation.ts | IdentityInCanMakePaymentEvent": {
     "message": "Mae'r tarddiad masnachwr a data mympwyol o'r digwyddiad gweithiwr gwasanaeth canmakepayment yn anghymeradwy a byddant yn cael eu dileu: topOrigin, paymentRequestOrigin, methodData, modifiers."
@@ -1291,6 +1321,9 @@
   },
   "generated/Deprecation.ts | OverflowVisibleOnReplacedElement": {
     "message": "Gall nodi overflow: visible ar dagiau img, fideo a chynfas achosi iddynt gynhyrchu cynnwys gweledol y tu allan i ffiniau'r elfen. Gweler https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md."
+  },
+  "generated/Deprecation.ts | OverrideFlashEmbedwithHTML": {
+    "message": "Mae mewnblaniad fideo fflach etifeddol wedi'i ailysgrifennu i iframe HTML. Mae Flash wedi mynd ers tro byd, mae'r hac ailysgrifennu hwn wedi darfod ac efallai y caiff ei dynnu yn y dyfodol."
   },
   "generated/Deprecation.ts | PaymentInstruments": {
     "message": "Mae paymentManager.instruments wedi'i anghymeradwyo. Defnyddiwch osod mewn union bryd ar gyfer trinwyr taliadau yn lle hynny."
@@ -1367,6 +1400,18 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "Mae XMLHttpRequest cydamseredig ar y prif drywydd wedi'i anghymeradwyo oherwydd ei effaith niweidiol ar brofiad y defnyddiwr. Am ragor o help, gwiriwch https://xhr.spec.whatwg.org/."
   },
+  "models/ai_assistance/AiUtils.ts | ageRestricted": {
+    "message": "Mae'r nodwedd hon ar gael i ddefnyddwyr sy'n 18 oed neu'n hŷn yn unig."
+  },
+  "models/ai_assistance/AiUtils.ts | notAvailableInIncognitoMode": {
+    "message": "Nid yw cymorth AI ar gael yn y modd Anhysbys na'r modd Gwestai."
+  },
+  "models/ai_assistance/AiUtils.ts | notLoggedIn": {
+    "message": "Dim ond pan fyddwch yn mewngofnodi i Chrome gyda'ch cyfrif Google y mae'r nodwedd hon ar gael."
+  },
+  "models/ai_assistance/AiUtils.ts | offline": {
+    "message": "Mae'r nodwedd hon ar gael yn unig gyda chysylltiad rhyngrwyd gweithredol."
+  },
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "Gwall anhysbys wrth lwytho'r ffeil"
   },
@@ -1389,28 +1434,10 @@
     "message": "[{PH1}] Llwythwyd symbolau dadfygio ar gyfer {PH2}, canfuwyd {PH3} ffeil ffynhonnell"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadingDebugSymbolsFor": {
-    "message": "[{PH1}] Wrthi'n llwytho symbolau dadfygio ar gyfer {PH2}..."
+    "message": "[{PH1}] Wrthi'n llwytho symbolau dadfygio ar gyfer {PH2}…"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadingDebugSymbolsForVia": {
-    "message": "[{PH1}] Wrthi'n llwytho symbolau dadfygio ar gyfer {PH2} (drwy {PH3})..."
-  },
-  "models/bindings/IgnoreListManager.ts | addAllAnonymousScriptsToIgnoreList": {
-    "message": "Ychwanegu pob sgript ddienw at y rhestr anwybyddu"
-  },
-  "models/bindings/IgnoreListManager.ts | addAllContentScriptsToIgnoreList": {
-    "message": "Ychwanegu pob sgript estyniad at y rhestr anwybyddu"
-  },
-  "models/bindings/IgnoreListManager.ts | addAllThirdPartyScriptsToIgnoreList": {
-    "message": "Ychwanegu pob sgript trydydd parti at y rhestr anwybyddu"
-  },
-  "models/bindings/IgnoreListManager.ts | addDirectoryToIgnoreList": {
-    "message": "Ychwanegu cyfeiriadur at y rhestr anwybyddu"
-  },
-  "models/bindings/IgnoreListManager.ts | addScriptToIgnoreList": {
-    "message": "Ychwanegu sgript at y rhestr anwybyddu"
-  },
-  "models/bindings/IgnoreListManager.ts | removeFromIgnoreList": {
-    "message": "Tynnu o'r rhestr anwybyddu"
+    "message": "[{PH1}] Wrthi'n llwytho symbolau dadfygio ar gyfer {PH2} (drwy {PH3})…"
   },
   "models/bindings/ResourceScriptMapping.ts | liveEditCompileFailed": {
     "message": "Mae casglu LiveEdit wedi methu: {PH1}"
@@ -1419,7 +1446,7 @@
     "message": "Mae LiveEdit wedi methu: {PH1}"
   },
   "models/crux-manager/CrUXManager.ts | fieldOverrideWarning": {
-    "message": "Mae data maes wedi'u ffurfweddu ar gyfer URL gwahanol i'r dudalen gyfredol."
+    "message": "Mae metrigau maes wedi'u ffurfweddu ar gyfer URL gwahanol i'r dudalen gyfredol."
   },
   "models/emulation/DeviceModeModel.ts | devicePixelRatioMustBeANumberOr": {
     "message": "Rhaid i'r gymhareb picseli fod yn rhif neu'n wag."
@@ -1496,9 +1523,6 @@
   "models/issues_manager/CookieIssue.ts | consoleTpcdErrorMessage": {
     "message": "Mae cwci trydydd parti wedi'i rwystro yn Chrome naill ai oherwydd baneri Chrome neu gyfluniad porwr."
   },
-  "models/issues_manager/CookieIssue.ts | consoleTpcdWarningMessage": {
-    "message": "Mae Chrome yn symud tuag at brofiad newydd sy'n galluogi defnyddwyr i ddewis pori heb gwcis trydydd parti."
-  },
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "Ffeilio byg"
   },
@@ -1510,9 +1534,6 @@
   },
   "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
     "message": "Esbonio cwcis SameSite"
-  },
-  "models/issues_manager/CookieIssue.ts | thirdPartyPhaseoutExplained": {
-    "message": "Newidiadau i driniaeth Chrome o gwcis trydydd parti"
   },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Rhannu Adnoddau Traws-darddiad (CORS)"
@@ -1637,9 +1658,6 @@
   "models/logs/logs-meta.ts | reset": {
     "message": "ailosod"
   },
-  "models/persistence/EditFileSystemView.ts | add": {
-    "message": "Ychwanegu ffolder"
-  },
   "models/persistence/EditFileSystemView.ts | enterAPath": {
     "message": "Rhowch lwybr"
   },
@@ -1649,15 +1667,6 @@
   "models/persistence/EditFileSystemView.ts | excludedFolders": {
     "message": "Is-ffolderi sydd wedi'u heithrio"
   },
-  "models/persistence/EditFileSystemView.ts | folderPath": {
-    "message": "Llwybr ffolderi"
-  },
-  "models/persistence/EditFileSystemView.ts | none": {
-    "message": "Dim"
-  },
-  "models/persistence/EditFileSystemView.ts | sViaDevtools": {
-    "message": "{PH1} (drwy .devtools)"
-  },
   "models/persistence/EditFileSystemView.ts | url": {
     "message": "URL"
   },
@@ -1666,6 +1675,12 @@
   },
   "models/persistence/IsolatedFileSystem.ts | cantReadFileSS": {
     "message": "Methu â darllen ffeil: {PH1}: {PH2}"
+  },
+  "models/persistence/IsolatedFileSystem.ts | createDirFailed": {
+    "message": "Diystyriadau: Wedi methu creu cyfeiriadur {PH1}. A yw'r gweithle neu'r diystyriadau wedi'u ffurfweddu'n gywir?"
+  },
+  "models/persistence/IsolatedFileSystem.ts | createDirFailedBecausePathIsFile": {
+    "message": "Diystyriadau: Wedi methu â chreu cyfeiriadur {PH1} oherwydd bod y llwybr yn bodoli ac yn ffeil."
   },
   "models/persistence/IsolatedFileSystem.ts | fileSystemErrorS": {
     "message": "Gwall system ffeiliau: {PH1}"
@@ -1689,7 +1704,10 @@
     "message": "Diystyru ‘{PH1}’ yn lle?"
   },
   "models/persistence/PersistenceActions.ts | saveAs": {
-    "message": "Cadw fel..."
+    "message": "Cadw fel…"
+  },
+  "models/persistence/PersistenceActions.ts | saveFailed": {
+    "message": "Wedi methu cadw'r ffeil i ddisg."
   },
   "models/persistence/PersistenceActions.ts | saveImage": {
     "message": "Cadw llun"
@@ -1760,9 +1778,6 @@
   "models/trace/insights/CLSCulprits.ts | description": {
     "message": "Mae newidiadau cynllun yn digwydd pan fydd elfennau'n symud yn absennol o unrhyw ryngweithio defnyddiwr. [Ymchwiliwch i achosion o sifftiau cynllun](https://web.dev/articles/optimize-cls), megis elfennau'n cael eu hychwanegu, eu tynnu, neu eu ffontiau'n newid wrth i'r dudalen lwytho."
   },
-  "models/trace/insights/CLSCulprits.ts | fontRequest": {
-    "message": "Cais ffont"
-  },
   "models/trace/insights/CLSCulprits.ts | injectedIframe": {
     "message": "iframe wedi'i chwistrellu"
   },
@@ -1781,8 +1796,11 @@
   "models/trace/insights/CLSCulprits.ts | topCulprits": {
     "message": "Tramgwyddwyr sifft cynllun uchaf"
   },
-  "models/trace/insights/CLSCulprits.ts | unsizedImages": {
-    "message": "Lluniau heb faint"
+  "models/trace/insights/CLSCulprits.ts | unsizedImage": {
+    "message": "Elfen delwedd ddi-faint"
+  },
+  "models/trace/insights/CLSCulprits.ts | webFont": {
+    "message": "Ffont gwe"
   },
   "models/trace/insights/CLSCulprits.ts | worstCluster": {
     "message": "Clwstwr gwaethaf"
@@ -1811,8 +1829,17 @@
   "models/trace/insights/DOMSize.ts | description": {
     "message": "Gall DOM mawr gynyddu hyd cyfrifiadau arddull ac ail-lifiadau cynllun, gan effeithio ar ymatebolrwydd tudalennau. Bydd DOM mawr hefyd yn cynyddu'r defnydd o gof. [Dysgu sut i osgoi maint DOM gormodol](https://developer.chrome.com/docs/lighthouse/performance/dom-size/)."
   },
+  "models/trace/insights/DOMSize.ts | duration": {
+    "message": "Hyd"
+  },
   "models/trace/insights/DOMSize.ts | element": {
     "message": "Elfen"
+  },
+  "models/trace/insights/DOMSize.ts | largeLayout": {
+    "message": "Cynllun ({PH1} gwrthrych)"
+  },
+  "models/trace/insights/DOMSize.ts | largeStyleRecalc": {
+    "message": "Ailgyfrifo arddull ({PH1} elfen)"
   },
   "models/trace/insights/DOMSize.ts | maxChildren": {
     "message": "Y rhan fwyaf o blant"
@@ -1826,6 +1853,9 @@
   "models/trace/insights/DOMSize.ts | title": {
     "message": "Optimeiddio maint DOM"
   },
+  "models/trace/insights/DOMSize.ts | topUpdatesDescription": {
+    "message": "Dyma'r digwyddiadau ailgyfrifo cynllun ac arddull mwyaf. Gellir lleihau eu heffaith perfformiad drwy symleiddio'r DOM."
+  },
   "models/trace/insights/DOMSize.ts | totalElements": {
     "message": "Cyfanswm elfennau"
   },
@@ -1836,10 +1866,10 @@
     "message": "Eich cais rhwydwaith cyntaf yw'r pwysicaf.  Lleihewch ei guddni trwy osgoi ailgyfeiriadau, gan sicrhau ymateb gweinydd cyflym, a galluogi cywasgu testun."
   },
   "models/trace/insights/DocumentLatency.ts | failedRedirects": {
-    "message": "Wedi cael ailgyfeiriadau"
+    "message": "Wedi cael ailgyfeiriadau ({PH1} ailgyfeiriadau, +{PH2})"
   },
   "models/trace/insights/DocumentLatency.ts | failedServerResponseTime": {
-    "message": "Ymatebodd y gweinydd yn araf"
+    "message": "Ymatebodd y gweinydd yn araf (arsylwyd {PH1})"
   },
   "models/trace/insights/DocumentLatency.ts | failedTextCompression": {
     "message": "Dim cywasgu wedi'i gymhwyso"
@@ -1848,7 +1878,7 @@
     "message": "Yn osgoi ailgyfeiriadau"
   },
   "models/trace/insights/DocumentLatency.ts | passingServerResponseTime": {
-    "message": "Gweinydd yn ymateb yn gyflym"
+    "message": "Gweinydd yn ymateb yn gyflym (arsylwyd {PH1})"
   },
   "models/trace/insights/DocumentLatency.ts | passingTextCompression": {
     "message": "Yn cymhwyso cywasgu testun"
@@ -1889,8 +1919,11 @@
   "models/trace/insights/FontDisplay.ts | wastedTimeColumn": {
     "message": "Amser a wastraffwyd"
   },
+  "models/trace/insights/ForcedReflow.ts | anonymous": {
+    "message": "(anhysbys)"
+  },
   "models/trace/insights/ForcedReflow.ts | description": {
-    "message": "Mae llawer o APIs, sy'n darllen geometreg cynllun fel arfer, yn gorfodi'r injan rendro i oedi wrth weithredu'r sgript er mwyn cyfrifo'r arddull a'r cynllun. Dysgu rhagor am [orfodi ail-lifo](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) a'i fesurau lliniaru."
+    "message": "Mae ail-lifo gorfodol yn digwydd pan fydd JavaScript yn ymholi priodweddau geometrig (fel offsetWidth) ar ôl i arddulliau gael eu gwneud yn annilys gan newid i'r cyflwr DOM. Gall hyn arwain at berfformiad gwael. Dysgu rhagor am [orfodi ail-lifo](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) a'i fesurau lliniaru posibl."
   },
   "models/trace/insights/ForcedReflow.ts | relatedStackTrace": {
     "message": "Ôl pentwr"
@@ -1905,7 +1938,31 @@
     "message": "Cyfanswm amser ail-lifo"
   },
   "models/trace/insights/ForcedReflow.ts | unattributed": {
-    "message": "Heb eu priodoli"
+    "message": "[heb ei briodoli]"
+  },
+  "models/trace/insights/INPBreakdown.ts | description": {
+    "message": "Dechrau ymchwilio gyda'r is-ran hiraf. [Gellir lleihau oedi](https://web.dev/articles/optimize-inp#optimize_interactions). Er mwyn lleihau hyd prosesu, [optimeiddio costau'r prif drywydd](https://web.dev/articles/optimize-long-tasks), yn aml JS."
+  },
+  "models/trace/insights/INPBreakdown.ts | duration": {
+    "message": "Hyd"
+  },
+  "models/trace/insights/INPBreakdown.ts | inputDelay": {
+    "message": "Oedi mewnbwn"
+  },
+  "models/trace/insights/INPBreakdown.ts | noInteractions": {
+    "message": "Dim rhyngweithiadau wedi'u canfod"
+  },
+  "models/trace/insights/INPBreakdown.ts | presentationDelay": {
+    "message": "Oedi cyflwyniad"
+  },
+  "models/trace/insights/INPBreakdown.ts | processingDuration": {
+    "message": "Hyd prosesu"
+  },
+  "models/trace/insights/INPBreakdown.ts | subpart": {
+    "message": "Is-ran"
+  },
+  "models/trace/insights/INPBreakdown.ts | title": {
+    "message": "Dadansoddiad INP"
   },
   "models/trace/insights/ImageDelivery.ts | description": {
     "message": "Gall lleihau'r amser lawrlwytho lluniau wella amser llwyth canfyddedig y dudalen a'r LCP. [Dysgu rhagor am optimeiddio maint llun](https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images/)"
@@ -1937,29 +1994,35 @@
   "models/trace/insights/ImageDelivery.ts | useVideoFormat": {
     "message": "Gall defnyddio fformatau fideo yn lle GIFs wella maint lawrlwytho cynnwys animeiddiedig."
   },
-  "models/trace/insights/InteractionToNextPaint.ts | description": {
-    "message": "Dechrau ymchwilio gyda'r cyfnod hiraf. [Gellir lleihau oedi](https://web.dev/articles/optimize-inp#optimize_interactions). Er mwyn lleihau hyd prosesu, [optimeiddio costau'r prif drywydd](https://web.dev/articles/optimize-long-tasks), yn aml JS."
+  "models/trace/insights/LCPBreakdown.ts | description": {
+    "message": "Mae gan bob [ is-ran strategaethau gwella penodol](https://web.dev/articles/optimize-lcp#lcp-breakdown). Yn ddelfrydol, dylid treulio'r rhan fwyaf o'r amser LCP ar lwytho'r adnoddau, nid o fewn oedi."
   },
-  "models/trace/insights/InteractionToNextPaint.ts | duration": {
+  "models/trace/insights/LCPBreakdown.ts | duration": {
     "message": "Hyd"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | inputDelay": {
-    "message": "Oedi mewnbwn"
+  "models/trace/insights/LCPBreakdown.ts | elementRenderDelay": {
+    "message": "Oedi rendrad elfen"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | noInteractions": {
-    "message": "Dim rhyngweithiadau wedi'u canfod"
+  "models/trace/insights/LCPBreakdown.ts | fieldDuration": {
+    "message": "Maes 75can"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | phase": {
-    "message": "Cyfnod"
+  "models/trace/insights/LCPBreakdown.ts | noLcp": {
+    "message": "Ni chanfuwyd LCP"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | presentationDelay": {
-    "message": "Oedi cyflwyniad"
+  "models/trace/insights/LCPBreakdown.ts | resourceLoadDelay": {
+    "message": "Oedi llwytho adnodd"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | processingDuration": {
-    "message": "Hyd prosesu"
+  "models/trace/insights/LCPBreakdown.ts | resourceLoadDuration": {
+    "message": "Hyd llwyth adnoddau"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | title": {
-    "message": "INP fesul cam"
+  "models/trace/insights/LCPBreakdown.ts | subpart": {
+    "message": "Is-ran"
+  },
+  "models/trace/insights/LCPBreakdown.ts | timeToFirstByte": {
+    "message": "Amser i'r beit cyntaf"
+  },
+  "models/trace/insights/LCPBreakdown.ts | title": {
+    "message": "Dadansoddiad LCP"
   },
   "models/trace/insights/LCPDiscovery.ts | description": {
     "message": "Optimeiddio LCP trwy wneud y ddelwedd LCP [yn ddarganfyddadwy](https://web.dev/articles/optimize-lcp#1_eliminate_resource_load_delay) o'r HTML ar unwaith, ac [osgoi llwytho diog](https://web.dev/articles/lcp-lazy-loading)"
@@ -1988,36 +2051,6 @@
   "models/trace/insights/LCPDiscovery.ts | title": {
     "message": "Darganfod cais LCP"
   },
-  "models/trace/insights/LCPPhases.ts | description": {
-    "message": "Mae gan bob [cam strategaethau gwella penodol](https://web.dev/articles/optimize-lcp#lcp-breakdown). Yn ddelfrydol, dylid treulio'r rhan fwyaf o'r amser LCP ar lwytho'r adnoddau, nid o fewn oedi."
-  },
-  "models/trace/insights/LCPPhases.ts | duration": {
-    "message": "Hyd"
-  },
-  "models/trace/insights/LCPPhases.ts | elementRenderDelay": {
-    "message": "Oedi rendrad elfen"
-  },
-  "models/trace/insights/LCPPhases.ts | fieldDuration": {
-    "message": "75ain canradd y maes"
-  },
-  "models/trace/insights/LCPPhases.ts | noLcp": {
-    "message": "Ni chanfuwyd LCP"
-  },
-  "models/trace/insights/LCPPhases.ts | phase": {
-    "message": "Cyfnod"
-  },
-  "models/trace/insights/LCPPhases.ts | resourceLoadDelay": {
-    "message": "Oedi llwytho adnodd"
-  },
-  "models/trace/insights/LCPPhases.ts | resourceLoadDuration": {
-    "message": "Hyd llwyth adnoddau"
-  },
-  "models/trace/insights/LCPPhases.ts | timeToFirstByte": {
-    "message": "Amser i'r beit cyntaf"
-  },
-  "models/trace/insights/LCPPhases.ts | title": {
-    "message": "LCP fesul cam"
-  },
   "models/trace/insights/LegacyJavaScript.ts | columnScript": {
     "message": "Sgript"
   },
@@ -2025,7 +2058,7 @@
     "message": "Beitiau wedi'u gwastraffu"
   },
   "models/trace/insights/LegacyJavaScript.ts | description": {
-    "message": "Mae polyfills a thrawsnewidiadau yn galluogi porwyr etifeddiaeth i ddefnyddio nodweddion JavaScript newydd. Fodd bynnag, nid oes angen llawer ohonynt ar gyfer porwyr modern. Ystyriwch addasu eich proses adeiladu JavaScript i beidio â thraws-grynhoi nodweddion [Baseline](https://web.dev/articles/baseline-and-polyfills) oni bai eich bod yn gwybod bod yn rhaid i chi gefnogi hen borwyr. [Dysgu pam y gall y rhan fwyaf o wefannau ddefnyddio cod ES6+ heb draws-grynhoi](https://philipwalton.com/articles/the-state-of-es5-on-the-web/)"
+    "message": "Mae polyfills a thrawsnewidiadau yn galluogi porwyr hŷn i ddefnyddio nodweddion JavaScript newydd. Fodd bynnag, nid oes angen llawer ohonynt ar gyfer porwyr modern. Ystyriwch addasu eich proses adeiladu JavaScript i beidio â thraws-grynhoi nodweddion [Baseline](https://web.dev/articles/baseline-and-polyfills) oni bai eich bod yn gwybod bod yn rhaid i chi gefnogi porwyr hŷn. [Dysgu pam y gall y rhan fwyaf o wefannau ddefnyddio cod ES6+ heb draws-grynhoi](https://philipwalton.com/articles/the-state-of-es5-on-the-web/)"
   },
   "models/trace/insights/LegacyJavaScript.ts | title": {
     "message": "JavaScript Etifeddol"
@@ -2034,7 +2067,7 @@
     "message": "Mae HTTP/2 a HTTP/3 yn cynnig llawer o fanteision dros HTTP/1.1, megis amlblecsio. [Dysgu rhagor am ddefnyddio HTTP modern](https://developer.chrome.com/docs/lighthouse/best-practices/uses-http2/)."
   },
   "models/trace/insights/ModernHTTP.ts | noOldProtocolRequests": {
-    "message": "Ni ddefnyddiwyd unrhyw geisiadau HTTP/1.1"
+    "message": "Ni ddefnyddiodd unrhyw geisiadau HTTP/1.1, neu nid yw ei ddefnydd presennol o HTTP/1.1 yn cyflwyno cyfle optimeiddio sylweddol. Dim ond os yw chwech neu fwy o asedau statig yn tarddu o'r un tarddiad y caiff ceisiadau HTTP/1.1 eu nodi, ac nad ydynt yn cael eu gwasanaethu o amgylchedd datblygu lleol na ffynhonnell drydydd parti."
   },
   "models/trace/insights/ModernHTTP.ts | protocol": {
     "message": "Protocol"
@@ -2045,8 +2078,32 @@
   "models/trace/insights/ModernHTTP.ts | title": {
     "message": "HTTP Modern"
   },
+  "models/trace/insights/NetworkDependencyTree.ts | columnOrigin": {
+    "message": "Tarddiad"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnRequest": {
+    "message": "Cais"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnSource": {
+    "message": "Ffynhonnell"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnTime": {
+    "message": "Amser"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnWastedMs": {
+    "message": "Amcan arbedion LCP"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | crossoriginWarning": {
+    "message": "Cyn-gysylltu heb ei ddefnyddio. Gwiriwch fod y briodoledd crossorigin yn cael ei ddefnyddio'n gywir."
+  },
   "models/trace/insights/NetworkDependencyTree.ts | description": {
     "message": "[Osgowch gadwyno ceisiadau critigol](https://developer.chrome.com/docs/lighthouse/performance/critical-request-chains) drwy leihau hyd cadwyni, lleihau maint lawrlwytho adnoddau, neu ohirio lawrlwytho adnoddau diangen i wella llwyth y dudalen."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | estSavingTableDescription": {
+    "message": "Ychwanegwch awgrymiadau [cyn-gysylltu](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) at eich tarddiadau pwysicaf, ond ceisiwch beidio â defnyddio mwy na 4."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | estSavingTableTitle": {
+    "message": "Ymgeiswyr cyn-gysylltu"
   },
   "models/trace/insights/NetworkDependencyTree.ts | maxCriticalPathLatency": {
     "message": "Uchafswm hwyrni llwybr critigol:"
@@ -2054,14 +2111,32 @@
   "models/trace/insights/NetworkDependencyTree.ts | noNetworkDependencyTree": {
     "message": "Dim tasgau rendro yr effeithir arnynt gan ddibyniaethau rhwydwaith"
   },
+  "models/trace/insights/NetworkDependencyTree.ts | noPreconnectCandidates": {
+    "message": "Nid oes unrhyw darddiadau ychwanegol yn ymgeiswyr da ar gyfer cyn-gysylltu"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | noPreconnectOrigins": {
+    "message": "nid oedd unrhyw darddiadau wedi'u cyn-gysylltu"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | preconnectOriginsTableDescription": {
+    "message": "Mae awgrymiadau [cyn-gysylltu](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) yn helpu'r porwr i sefydlu cysylltiad yn gynharach yn llwyth y dudalen, gan arbed amser pan wneir y cais cyntaf am y tarddiad hwnnw. Dyma'r tarddiadau y mae'r dudalen wedi cyn-gysylltu â nhw."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | preconnectOriginsTableTitle": {
+    "message": "Tarddiadau cyn-gysylltiedig"
+  },
   "models/trace/insights/NetworkDependencyTree.ts | title": {
     "message": "Coeden dibyniaeth rhwydwaith"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | tooManyPreconnectLinksWarning": {
+    "message": "Cafwyd hyd i fwy na 4 cysylltiad preconnect. Dylai'r rhain gael eu defnyddio'n gynnil a dim ond i'r tarddiadau pwysicaf."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | unusedWarning": {
+    "message": "Cyn-gysylltu heb ei ddefnyddio. Defnyddio preconnect yn unig ar gyfer tarddiadau y mae'r dudalen yn debygol o ofyn amdanynt."
   },
   "models/trace/insights/NetworkDependencyTree.ts | warningDescription": {
     "message": "Osgowch gadwyno ceisiadau critigol drwy leihau hyd cadwyni, lleihau maint lawrlwytho adnoddau, neu ohirio lawrlwytho adnoddau diangen i wella llwyth y dudalen."
   },
   "models/trace/insights/RenderBlocking.ts | description": {
-    "message": "Mae ceisiadau'n rhwystro rendrad cychwynnol y dudalen, a allai achosi oedi i LCP. [Gall gohirio neu leinio](https://web.dev/learn/performance/understanding-the-critical-path#render-blocking_resources/) symud y ceisiadau rhwydwaith hyn allan o'r llwybr critigol."
+    "message": "Mae ceisiadau'n rhwystro rendrad cychwynnol y dudalen, a allai achosi oedi i LCP. [Gall gohirio neu leinio](https://web.dev/learn/performance/understanding-the-critical-path#render-blocking_resources) symud y ceisiadau rhwydwaith hyn allan o'r llwybr critigol."
   },
   "models/trace/insights/RenderBlocking.ts | duration": {
     "message": "Hyd"
@@ -2093,6 +2168,12 @@
   "models/trace/insights/SlowCSSSelector.ts | title": {
     "message": "Costau Dewisydd CSS"
   },
+  "models/trace/insights/SlowCSSSelector.ts | topSelectorElapsedTime": {
+    "message": "Amser sydd wedi mynd heibio dewisydd uchaf"
+  },
+  "models/trace/insights/SlowCSSSelector.ts | topSelectorMatchAttempt": {
+    "message": "Ymgais cyfateb dewisydd uchaf"
+  },
   "models/trace/insights/SlowCSSSelector.ts | topSelectors": {
     "message": "Dewiswyr uchaf"
   },
@@ -2109,7 +2190,7 @@
     "message": "Maint trosglwyddo"
   },
   "models/trace/insights/ThirdParties.ts | description": {
-    "message": "Gall cod 3ydd parti effeithio'n sylweddol ar berfformiad llwytho. [Lleihau a gohirio llwytho cod 3ydd parti](https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/loading-third-party-javascript/) i flaenoriaethu cynnwys eich tudalen."
+    "message": "Gall cod 3ydd parti effeithio'n sylweddol ar berfformiad llwytho. [Lleihau a gohirio llwytho cod 3ydd parti](https://web.dev/articles/optimizing-content-efficiency-loading-third-party-javascript/) i flaenoriaethu cynnwys eich tudalen."
   },
   "models/trace/insights/ThirdParties.ts | noThirdParties": {
     "message": "Ni chanfuwyd unrhyw drydydd parti"
@@ -2120,8 +2201,29 @@
   "models/trace/insights/Viewport.ts | description": {
     "message": "Gall rhyngweithiadau tapio gael ei [ohirio hyd at 300 ms](https://developer.chrome.com/blog/300ms-tap-delay-gone-away/) os nad yw'r porth gwylio wedi'i hoptimeiddio ar gyfer ffôn symudol."
   },
+  "models/trace/insights/Viewport.ts | mobileTapDelayLabel": {
+    "message": "Oedi tapio symudol"
+  },
   "models/trace/insights/Viewport.ts | title": {
     "message": "Optimeiddio porth gwylio ar gyfer ffôn symudol"
+  },
+  "models/workspace/IgnoreListManager.ts | addAllAnonymousScriptsToIgnoreList": {
+    "message": "Ychwanegu pob sgript ddienw at y rhestr anwybyddu"
+  },
+  "models/workspace/IgnoreListManager.ts | addAllContentScriptsToIgnoreList": {
+    "message": "Ychwanegu pob sgript estyniad at y rhestr anwybyddu"
+  },
+  "models/workspace/IgnoreListManager.ts | addAllThirdPartyScriptsToIgnoreList": {
+    "message": "Ychwanegu pob sgript trydydd parti at y rhestr anwybyddu"
+  },
+  "models/workspace/IgnoreListManager.ts | addDirectoryToIgnoreList": {
+    "message": "Ychwanegu cyfeiriadur at y rhestr anwybyddu"
+  },
+  "models/workspace/IgnoreListManager.ts | addScriptToIgnoreList": {
+    "message": "Ychwanegu sgript at y rhestr anwybyddu"
+  },
+  "models/workspace/IgnoreListManager.ts | removeFromIgnoreList": {
+    "message": "Tynnu o'r rhestr anwybyddu"
   },
   "models/workspace/UISourceCode.ts | index": {
     "message": "(mynegai)"
@@ -2588,6 +2690,9 @@
   "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
     "message": "Gofyn i AI"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
+    "message": "Dadfygio gydag AI"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "Galluogi cymorth AI"
   },
@@ -2603,6 +2708,9 @@
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "I ddefnyddio'r nodwedd hon, gosodwch eich dewis Iaith i'r Saesneg yng ngosodiadau DevTools."
   },
+  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+    "message": "Gallwch hefyd ddefnyddio un o'r awgrymiadau uchod i gychwyn eich sgwrs"
+  },
   "panels/ai_assistance/components/ChatView.ts | learnAbout": {
     "message": "Dysgu am AI yn DevTools"
   },
@@ -2614,6 +2722,9 @@
   },
   "panels/ai_assistance/components/ChatView.ts | offline": {
     "message": "Gwiriwch eich cysylltiad rhyngrwyd a rhowch gynnig arall arni"
+  },
+  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+    "message": "Datgelwch yr eitem cyd-destun a ddewiswyd yn DevTools"
   },
   "panels/ai_assistance/components/ChatView.ts | settingsLink": {
     "message": "Cymorth AI yn y Gosodiadau"
@@ -3144,7 +3255,7 @@
     "message": "Negeseuon gwthio"
   },
   "panels/application/BackgroundServiceView.ts | recordingSActivity": {
-    "message": "Wrthi'n recordio gweithgarwch {PH1}..."
+    "message": "Wrthi'n recordio gweithgarwch {PH1}…"
   },
   "panels/application/BackgroundServiceView.ts | saveEvents": {
     "message": "Cadw digwyddiadau"
@@ -3185,9 +3296,6 @@
   "panels/application/CookieItemsView.ts | clearFilteredCookies": {
     "message": "Clirio'r cwcis sydd wedi'u hidlo"
   },
-  "panels/application/CookieItemsView.ts | cookies": {
-    "message": "Cwcis"
-  },
   "panels/application/CookieItemsView.ts | noCookieSelected": {
     "message": "Heb ddewis cwci"
   },
@@ -3227,6 +3335,9 @@
   "panels/application/IndexedDBViews.ts | collapse": {
     "message": "Crebachu"
   },
+  "panels/application/IndexedDBViews.ts | confirmClearObjectStore": {
+    "message": "Clirio storfa gwrthrychau \"{PH1}\"?"
+  },
   "panels/application/IndexedDBViews.ts | confirmDeleteDatabase": {
     "message": "Dileu'r gronfa ddata \"{PH1}\"?"
   },
@@ -3262,6 +3373,9 @@
   },
   "panels/application/IndexedDBViews.ts | keyString": {
     "message": "Allwedd"
+  },
+  "panels/application/IndexedDBViews.ts | objectStoreWillBeCleared": {
+    "message": "Bydd y data sydd wedi'u cynnwys yn y storfa gwrthrychau a ddewiswyd yn cael ei dynnu."
   },
   "panels/application/IndexedDBViews.ts | objectStores": {
     "message": "Storfeydd gwrthrychau"
@@ -3485,9 +3599,6 @@
   "panels/application/ServiceWorkersView.ts | focus": {
     "message": "ffocws"
   },
-  "panels/application/ServiceWorkersView.ts | inspect": {
-    "message": "Archwilio"
-  },
   "panels/application/ServiceWorkersView.ts | networkRequests": {
     "message": "Ceisiadau rhwydwaith"
   },
@@ -3614,16 +3725,16 @@
   "panels/application/StorageBucketsTreeElement.ts | storageBucketsDescription": {
     "message": "Ar y dudalen hon gallwch weld a dileu bwcedi storio, a'u Storage APIs cysylltiedig."
   },
-  "panels/application/StorageItemsView.ts | clearAll": {
+  "panels/application/StorageItemsToolbar.ts | clearAll": {
     "message": "Clirio Popeth"
   },
-  "panels/application/StorageItemsView.ts | deleteSelected": {
+  "panels/application/StorageItemsToolbar.ts | deleteSelected": {
     "message": "Dileu'r Eitemau a Ddewisir"
   },
-  "panels/application/StorageItemsView.ts | refresh": {
+  "panels/application/StorageItemsToolbar.ts | refresh": {
     "message": "Ail-lwytho"
   },
-  "panels/application/StorageItemsView.ts | refreshedStatus": {
+  "panels/application/StorageItemsToolbar.ts | refreshedStatus": {
     "message": "Ail-lwythwyd y tabl"
   },
   "panels/application/StorageView.ts | SiteDataCleared": {
@@ -3639,7 +3750,7 @@
     "message": "Clirio data'r wefan"
   },
   "panels/application/StorageView.ts | clearing": {
-    "message": "Wrthi'n clirio..."
+    "message": "Wrthi'n clirio…"
   },
   "panels/application/StorageView.ts | cookies": {
     "message": "Cwcis"
@@ -3709,9 +3820,6 @@
   },
   "panels/application/StorageView.ts | usage": {
     "message": "Defnydd"
-  },
-  "panels/application/StorageView.ts | webSql": {
-    "message": "Web SQL"
   },
   "panels/application/TrustTokensTreeElement.ts | trustTokens": {
     "message": "Tocynnau cyflwr preifat"
@@ -4025,6 +4133,9 @@
   "panels/application/components/BackForwardCacheStrings.ts | sharedWorker": {
     "message": "Ar hyn o bryd nid yw tudalennau sy'n defnyddio SharedWorker yn gymwys ar gyfer storfa yn ôl/ymlaen."
   },
+  "panels/application/components/BackForwardCacheStrings.ts | sharedWorkerMessage": {
+    "message": "Cafodd y dudalen ei throi allan o'r storfa oherwydd iddi dderbyn neges gan SharedWorker"
+  },
   "panels/application/components/BackForwardCacheStrings.ts | speechRecognizer": {
     "message": "Ar hyn o bryd nid yw tudalennau sy'n defnyddio SpeechRecognizer yn gymwys ar gyfer storfa yn ôl/ymlaen."
   },
@@ -4176,10 +4287,7 @@
     "message": "Gwirio am wefannau olrhain bownsio posib."
   },
   "panels/application/components/BounceTrackingMitigationsView.ts | featureDisabled": {
-    "message": "Mae mesurau lliniaru olrhain dychwelyd wedi'u hanalluogi. Er mwyn eu galluogi, gosodwch y faner yn {PH1} i 'Galluogwyd Gyda Dileu'."
-  },
-  "panels/application/components/BounceTrackingMitigationsView.ts | featureFlag": {
-    "message": "Fflag Nodwedd Lliniariadau Olrhain Dychwelyd"
+    "message": "Mae mesurau lliniaru olrhain ailgyfeirio wedi'u hanalluogi."
   },
   "panels/application/components/BounceTrackingMitigationsView.ts | forceRun": {
     "message": "Gorfodi rhedeg"
@@ -4256,8 +4364,8 @@
   "panels/application/components/FrameDetailsView.ts | creationStackTraceExplanation": {
     "message": "Crëwyd y ffrâm hon yn rhaglennol. Mae stack trace yn dangos lle digwyddodd hyn."
   },
-  "panels/application/components/FrameDetailsView.ts | creatorAdScript": {
-    "message": "Sgript Hysbyseb Crëwr"
+  "panels/application/components/FrameDetailsView.ts | creatorAdScriptAncestry": {
+    "message": "Llinach y Sgript Hysbyseb Crëwr"
   },
   "panels/application/components/FrameDetailsView.ts | crossoriginIsolated": {
     "message": "Traws-Darddiad Ynysig"
@@ -4309,6 +4417,9 @@
   },
   "panels/application/components/FrameDetailsView.ts | rootDescription": {
     "message": "Mae'r ffrâm hon wedi'i nodi fel ffrâm wraidd hysbyseb"
+  },
+  "panels/application/components/FrameDetailsView.ts | rootScriptFilterlistRule": {
+    "message": "Rheol Hidlorhestr Sgript Gwraidd"
   },
   "panels/application/components/FrameDetailsView.ts | secureContext": {
     "message": "Cyd-destun Diogel"
@@ -4766,6 +4877,9 @@
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsStatus": {
     "message": "Statws"
   },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsTargetHint": {
+    "message": "Awgrym targed"
+  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | noElementSelected": {
     "message": "Dim elfen wedi'i dewis"
   },
@@ -4843,6 +4957,9 @@
   },
   "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
     "message": "(ar goll)"
+  },
+  "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
+    "message": "Cafodd y weithred cyn-nôl ei dileu oherwydd bod data pori wedi'u dileu."
   },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterCandidateRemoved": {
     "message": "Cafodd y weithred cyn-nôl ei gwaredu oherwydd nid oes unrhyw reol ddyfalu yn y dudalen gychwyn yn sbarduno gweithred cyn-nôl ar gyfer yr URL hwn bellach."
@@ -4943,6 +5060,9 @@
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusBlockedByClient": {
     "message": "Cafodd rhywfaint o lwyth adnoddau ei rwystro."
   },
+  "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusBrowsingDataRemoved": {
+    "message": "Uwchlwythwyd y dudalen a ragrendrwyd oherwydd bod data pori wedi'u dileu."
+  },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusClientCertRequested": {
     "message": "Roedd angen tystysgrif cleient HTTP ar gyfer y llywio rhagrendro."
   },
@@ -4984,9 +5104,6 @@
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusLowEndDevice": {
     "message": "Ni pherfformiwyd y rhagrendrwr oherwydd nad oes gan y ddyfais hon ddigon o gof system gyfan i gefnogi rhagrendro."
-  },
-  "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusMainFrameNavigation": {
-    "message": "Roedd y dudalen a ragrendrwyd yn llywio ei hun i URL arall, nad yw'n cael ei gefnogi ar hyn o bryd."
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusMaxNumOfRunningEagerPrerendersExceeded": {
     "message": "Ni pherfformiwyd y rhagrendwr y mae ei awydd yn 'awyddus' oherwydd bod gan y dudalen gychwyn eisoes ormod o ragrendwyr ar y gweill. Tynnu rheolau damcaniaethol eraill gydag 'awyddus' i alluogi rhagor o ragrendro."
@@ -5459,56 +5576,41 @@
   "panels/changes/ChangesSidebar.ts | sFromSourceMap": {
     "message": "{PH1} (o fap y ffynhonnell)"
   },
-  "panels/changes/ChangesView.ts | binaryDataDescription": {
-    "message": "Nid yw'r tab newidiadau yn dangos newidiadau data deuaidd"
-  },
   "panels/changes/ChangesView.ts | changesViewDescription": {
     "message": "Ar y dudalen hon gallwch olrhain newidiadau cod a wnaed o fewn DevTools."
-  },
-  "panels/changes/ChangesView.ts | copy": {
-    "message": "Copïo"
   },
   "panels/changes/ChangesView.ts | noChanges": {
     "message": "Dim newidiadau eto"
   },
-  "panels/changes/ChangesView.ts | noTextualDiff": {
-    "message": "Dim diff testun ar gael"
-  },
-  "panels/changes/ChangesView.ts | sDeletions": {
-    "message": "{n,plural, =1{# dilead (-)}zero{# dilead (-)}two{# ddilead (-)}few{# dilead (-)}many{# dilead (-)}other{# dilead (-)}}"
-  },
-  "panels/changes/ChangesView.ts | sInsertions": {
-    "message": "{n,plural, =1{# mewnosodiad (+)}zero{# mewnosodiad (+)}two{# fewnosodiad (+)}few{# mewnosodiad (+)}many{# mewnosodiad (+)}other{# mewnosodiad (+)}}"
-  },
   "panels/changes/CombinedDiffView.ts | copied": {
     "message": "Wedi'i gopïo i'r clipfwrdd"
+  },
+  "panels/changes/CombinedDiffView.ts | copyFile": {
+    "message": "Copïo'r ffeil {PH1} i'r clipfwrdd"
   },
   "panels/changes/changes-meta.ts | changes": {
     "message": "Newidiadau"
   },
-  "panels/changes/changes-meta.ts | copyAllChangesFromCurrentFile": {
-    "message": "Copïo'r holl newidiadau o'r ffeil bresennol"
-  },
-  "panels/changes/changes-meta.ts | revertAllChangesToCurrentFile": {
-    "message": "Dychwelwch yr holl newidiadau yn y ffeil bresennol"
-  },
   "panels/changes/changes-meta.ts | showChanges": {
     "message": "Dangos y Newidiadau"
+  },
+  "panels/common/FreDialog.ts | cancel": {
+    "message": "Canslo"
+  },
+  "panels/common/FreDialog.ts | gotIt": {
+    "message": "Iawn"
+  },
+  "panels/common/FreDialog.ts | learnMore": {
+    "message": "Dysgu rhagor"
+  },
+  "panels/common/FreDialog.ts | thingsToConsider": {
+    "message": "Pethau i'w hystyried"
   },
   "panels/common/common.ts | allow": {
     "message": "Caniatáu"
   },
   "panels/common/common.ts | cancel": {
     "message": "Canslo"
-  },
-  "panels/common/common.ts | gotIt": {
-    "message": "Iawn"
-  },
-  "panels/common/common.ts | learnMore": {
-    "message": "Dysgu rhagor"
-  },
-  "panels/common/common.ts | thingsToConsider": {
-    "message": "Pethau i'w hystyried"
   },
   "panels/console/ConsoleContextSelector.ts | extension": {
     "message": "Estyniad"
@@ -5664,7 +5766,7 @@
     "message": "Dim ond dangos negeseuon o'r cyd-destun presennol (top, iframe, worker, estyniad)"
   },
   "panels/console/ConsoleView.ts | overriddenByFilterSidebar": {
-    "message": "Wedi'i ddiystyru gan far ochr yr hidlydd"
+    "message": "Rheolir lefelau log gan far ochr y consol."
   },
   "panels/console/ConsoleView.ts | preserveLog": {
     "message": "Cadw log"
@@ -5679,7 +5781,7 @@
     "message": "{PH1} yn unig"
   },
   "panels/console/ConsoleView.ts | saveAs": {
-    "message": "Cadw fel..."
+    "message": "Cadw fel…"
   },
   "panels/console/ConsoleView.ts | searching": {
     "message": "Wrthi'n chwilio…"
@@ -6149,6 +6251,12 @@
   "panels/css_overview/CSSOverviewCompletedView.ts | typeSelectors": {
     "message": "Dewiswyr teip"
   },
+  "panels/css_overview/CSSOverviewCompletedView.ts | unableToLink": {
+    "message": "(methu â chysylltu)"
+  },
+  "panels/css_overview/CSSOverviewCompletedView.ts | unableToLinkToInlineStyle": {
+    "message": "(methu cysylltu ag arddull wedi'i alinio)"
+  },
   "panels/css_overview/CSSOverviewCompletedView.ts | universalSelectors": {
     "message": "Dewiswyr cyffredinol"
   },
@@ -6163,6 +6271,24 @@
   },
   "panels/css_overview/CSSOverviewSidebarPanel.ts | cssOverviewPanelSidebar": {
     "message": "Bar ochr panel trosolwg CSS"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | captureOverview": {
+    "message": "Tynnu'r trosolwg"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | capturePageCSSOverview": {
+    "message": "Cael trosolwg o CSS eich tudalen"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | identifyCSSImprovements": {
+    "message": "Nodi gwelliannau CSS posib"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | identifyCSSImprovementsWithExampleIssues": {
+    "message": "Nodi gwelliannau posib i CSS (e.e. problemau cyferbyniad isel, datganiadau heb eu defnyddio, camgymhariadau lliw neu ffont)"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | locateAffectedElements": {
+    "message": "Lleolwch yr elfennau yr effeithir arnynt yn y panel Elfennau"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | quickStartWithCSSOverview": {
+    "message": "Cychwyn cyflym: cychwynnwch arni gyda'r panel trosolwg CSS newydd"
   },
   "panels/css_overview/CSSOverviewUnusedDeclarations.ts | bottomAppliedToAStatically": {
     "message": "Bottom wedi'i gymhwyso i elfen sydd wedi'i lleoli'n statig"
@@ -6184,24 +6310,6 @@
   },
   "panels/css_overview/CSSOverviewUnusedDeclarations.ts | widthAppliedToAnInlineElement": {
     "message": "Mae Width wedi'i weithredu i elfen alinio"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | captureOverview": {
-    "message": "Tynnu'r trosolwg"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | capturePageCSSOverview": {
-    "message": "Cael trosolwg o CSS eich tudalen"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | identifyCSSImprovements": {
-    "message": "Nodi gwelliannau CSS posib"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | identifyCSSImprovementsWithExampleIssues": {
-    "message": "Nodi gwelliannau posib i CSS (e.e. problemau cyferbyniad isel, datganiadau heb eu defnyddio, camgymhariadau lliw neu ffont)"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | locateAffectedElements": {
-    "message": "Lleolwch yr elfennau yr effeithir arnynt yn y panel Elfennau"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | quickStartWithCSSOverview": {
-    "message": "Cychwyn cyflym: cychwynnwch arni gyda'r panel trosolwg CSS newydd"
   },
   "panels/css_overview/css_overview-meta.ts | cssOverview": {
     "message": "Trosolwg CSS"
@@ -6230,6 +6338,12 @@
   "panels/developer_resources/DeveloperResourcesListView.ts | initiator": {
     "message": "Cychwynnwr"
   },
+  "panels/developer_resources/DeveloperResourcesListView.ts | noResourceMatches": {
+    "message": "Dim adnoddau yn cyfateb"
+  },
+  "panels/developer_resources/DeveloperResourcesListView.ts | numberOfResourceMatch": {
+    "message": "{n,plural, =1{# adnodd yn cyfateb}zero{# adnodd yn cyfateb}two{# adnodd yn cyfateb}few{# adnodd yn cyfateb}many{# adnodd yn cyfateb}other{# adnodd yn cyfateb}}"
+  },
   "panels/developer_resources/DeveloperResourcesListView.ts | pending": {
     "message": "ar y gweill"
   },
@@ -6256,12 +6370,6 @@
   },
   "panels/developer_resources/DeveloperResourcesView.ts | loadHttpsDeveloperResources": {
     "message": "Llwythwch adnoddau datblygwr HTTP(S) trwy'r wefan rydych chi'n ei harolygu, nid trwy DevTools"
-  },
-  "panels/developer_resources/DeveloperResourcesView.ts | noResourceMatches": {
-    "message": "Dim adnoddau yn cyfateb"
-  },
-  "panels/developer_resources/DeveloperResourcesView.ts | numberOfResourceMatch": {
-    "message": "{n,plural, =1{# adnodd yn cyfateb}zero{# adnodd yn cyfateb}two{# adnodd yn cyfateb}few{# adnodd yn cyfateb}many{# adnodd yn cyfateb}other{# adnodd yn cyfateb}}"
   },
   "panels/developer_resources/DeveloperResourcesView.ts | resources": {
     "message": "{n,plural, =1{# adnodd}zero{# adnodd}two{# adnodd}few{# adnodd}many{# adnodd}other{# adnodd}}"
@@ -6383,6 +6491,9 @@
   "panels/elements/ElementIssueUtils.ts | interactiveContentOptionChild": {
     "message": "Elfen ryngweithiol y tu mewn i elfen <option>"
   },
+  "panels/elements/ElementIssueUtils.ts | interactiveContentSummaryDescendant": {
+    "message": "Elfen ryngweithiol y tu mewn i elfen <crynodeb>"
+  },
   "panels/elements/ElementIssueUtils.ts | nonPhrasingContentOptionChild": {
     "message": "Cynnwys nad yw'n ymadrodd a ddefnyddir o fewn elfen <option>"
   },
@@ -6461,8 +6572,23 @@
   "panels/elements/ElementsTreeElement.ts | addAttribute": {
     "message": "Ychwanegu priodwedd"
   },
+  "panels/elements/ElementsTreeElement.ts | addPadding": {
+    "message": "Ychwanegu padin"
+  },
+  "panels/elements/ElementsTreeElement.ts | alignItems": {
+    "message": "Alinio eitemau"
+  },
+  "panels/elements/ElementsTreeElement.ts | assessVisibility": {
+    "message": "Asesu gwelededd"
+  },
   "panels/elements/ElementsTreeElement.ts | captureNodeScreenshot": {
     "message": "Tynnu sgrinlun o nod"
+  },
+  "panels/elements/ElementsTreeElement.ts | centerElement": {
+    "message": "Canoli'r elfen"
+  },
+  "panels/elements/ElementsTreeElement.ts | changeParentProperties": {
+    "message": "Newid priodweddau rhiant"
   },
   "panels/elements/ElementsTreeElement.ts | children": {
     "message": "Plant:"
@@ -6509,6 +6635,9 @@
   "panels/elements/ElementsTreeElement.ts | disableScrollSnap": {
     "message": "Analluogi'r droshaen sgrolio snap"
   },
+  "panels/elements/ElementsTreeElement.ts | distributeItemsEvenly": {
+    "message": "Dosbarthu eitemau'n gyfartal"
+  },
   "panels/elements/ElementsTreeElement.ts | duplicateElement": {
     "message": "Dyblygu elfen"
   },
@@ -6536,8 +6665,35 @@
   "panels/elements/ElementsTreeElement.ts | expandRecursively": {
     "message": "Ehangu'n gylchol"
   },
+  "panels/elements/ElementsTreeElement.ts | explainContainerContext": {
+    "message": "Egluro cyd-destun cynhwysydd"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainContainerQueries": {
+    "message": "Egluro ymholiadau cynhwysydd"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainContainerTypes": {
+    "message": "Egluro'r mathau o gynwysyddion"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainFlexbox": {
+    "message": "Egluro blwch fflecs"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainGridLayout": {
+    "message": "Egluro cynllun y grid"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainScrollbars": {
+    "message": "Egluro'r bariau sgrolio"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainSubgrids": {
+    "message": "Esbonio is-gridiau"
+  },
+  "panels/elements/ElementsTreeElement.ts | findGridDefinition": {
+    "message": "Dod o hyd i ddiffiniad grid"
+  },
   "panels/elements/ElementsTreeElement.ts | focus": {
     "message": "Ffocysu"
+  },
+  "panels/elements/ElementsTreeElement.ts | forceOpenPopover": {
+    "message": "Cadw'r naidlen hwn ar agor"
   },
   "panels/elements/ElementsTreeElement.ts | forceState": {
     "message": "Gorfodi cyflwr"
@@ -6551,17 +6707,32 @@
   "panels/elements/ElementsTreeElement.ts | paste": {
     "message": "Gludo"
   },
+  "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
+    "message": "Tynnu'r bariau sgrolio"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "Sgrolio i'r golwg"
+  },
+  "panels/elements/ElementsTreeElement.ts | showCommandForTarget": {
+    "message": "Dangos elfen sy'n gysylltiedig â'r briodwedd commandfor"
   },
   "panels/elements/ElementsTreeElement.ts | showFrameDetails": {
     "message": "Dangos manylion iframe"
   },
   "panels/elements/ElementsTreeElement.ts | showInterestTarget": {
-    "message": "Dangos targed diddordeb"
+    "message": "Dangos elfen sy'n gysylltiedig â'r briodwedd interesttarget"
   },
   "panels/elements/ElementsTreeElement.ts | showPopoverTarget": {
-    "message": "Dangos targed naidlen"
+    "message": "Dangos elfen sy'n gysylltiedig â'r briodwedd popovertarget"
+  },
+  "panels/elements/ElementsTreeElement.ts | startAChat": {
+    "message": "Dechrau sgwrs"
+  },
+  "panels/elements/ElementsTreeElement.ts | stopForceOpenPopover": {
+    "message": "Stopio cadw'r naidlen hwn ar agor"
+  },
+  "panels/elements/ElementsTreeElement.ts | styleScrollbars": {
+    "message": "Arddullio'r bariau sgrolio"
   },
   "panels/elements/ElementsTreeElement.ts | thisFrameWasIdentifiedAsAnAd": {
     "message": "Cafodd y ffrâm hon ei nodi fel ffrâm hysbyseb"
@@ -6572,11 +6743,11 @@
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<mae'r gwerth yn rhy fawr i'w olygu>"
   },
+  "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
+    "message": "Lapio'r eitemau hyn"
+  },
   "panels/elements/ElementsTreeOutline.ts | pageDom": {
     "message": "DOM Tudalen"
-  },
-  "panels/elements/ElementsTreeOutline.ts | reveal": {
-    "message": "datgelu"
   },
   "panels/elements/ElementsTreeOutline.ts | showAllNodesDMore": {
     "message": "Dangos pob nod ({PH1} arall)"
@@ -6616,6 +6787,27 @@
   },
   "panels/elements/LayersWidget.ts | toggleCSSLayers": {
     "message": "Toglo'r wedd Haenau CSS"
+  },
+  "panels/elements/LayoutPane.ts | chooseElementOverlayColor": {
+    "message": "Dewiswch liw'r troslun ar gyfer yr elfen hon"
+  },
+  "panels/elements/LayoutPane.ts | colorPickerOpened": {
+    "message": "Agorwyd y dewisydd lliw."
+  },
+  "panels/elements/LayoutPane.ts | flexbox": {
+    "message": "Blwch fflecs"
+  },
+  "panels/elements/LayoutPane.ts | flexboxOverlays": {
+    "message": "Trosluniau blwch fflecs"
+  },
+  "panels/elements/LayoutPane.ts | noFlexboxLayoutsFoundOnThisPage": {
+    "message": "Heb ganfod unrhyw gynlluniau blwch fflecs ar y dudalen hon"
+  },
+  "panels/elements/LayoutPane.ts | overlayDisplaySettings": {
+    "message": "Gosodiadau arddangos troslun"
+  },
+  "panels/elements/LayoutPane.ts | showElementInTheElementsPanel": {
+    "message": "Dangos yr elfen yn y panel Elfennau"
   },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "Torbwynt DOM"
@@ -6662,11 +6854,11 @@
   "panels/elements/PropertyRenderer.ts | cssPropertyValue": {
     "message": "Gwerth y briodwedd CSS: {PH1}"
   },
+  "panels/elements/ShortcutTreeElement.ts | reveal": {
+    "message": "datgelu"
+  },
   "panels/elements/StylePropertiesSection.ts | constructedStylesheet": {
     "message": "taflen arddull adeiledig"
-  },
-  "panels/elements/StylePropertiesSection.ts | copyAllCSSChanges": {
-    "message": "Copïo'r holl newidiadau CSS"
   },
   "panels/elements/StylePropertiesSection.ts | copyAllDeclarations": {
     "message": "Copïo pob datganiad"
@@ -6704,9 +6896,6 @@
   "panels/elements/StylePropertiesSection.ts | viaInspector": {
     "message": "drwy gyfrwng yr archwilydd"
   },
-  "panels/elements/StylePropertyTreeElement.ts | copyAllCSSChanges": {
-    "message": "Copïo'r holl newidiadau CSS"
-  },
   "panels/elements/StylePropertyTreeElement.ts | copyAllCssDeclarationsAsJs": {
     "message": "Copïo pob datganiad fel JS"
   },
@@ -6739,6 +6928,9 @@
   },
   "panels/elements/StylePropertyTreeElement.ts | invalidString": {
     "message": "{PH1}, enw'r eiddo: {PH2}, gwerth yr eiddo: {PH3}"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | jumpToAnchorNode": {
+    "message": "Neidio i'r nod angor"
   },
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "Neidio i'r panel Animeiddiadau"
@@ -6803,20 +6995,32 @@
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Wedi anwybyddu"
   },
-  "panels/elements/components/AnchorFunctionLinkSwatch.ts | jumpToAnchorNode": {
-    "message": "Neidio i'r nod angor"
-  },
-  "panels/elements/components/AnchorFunctionLinkSwatch.ts | sIsNotDefined": {
-    "message": "Nid yw {PH1} wedi'i ddiffinio"
-  },
   "panels/elements/components/CSSHintDetailsView.ts | learnMore": {
     "message": "Dysgu Rhagor"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | browserOnPlatform": {
+    "message": "{PH1} ar {PH2}"
   },
   "panels/elements/components/CSSPropertyDocsView.ts | dontShow": {
     "message": "Peidio â dangos"
   },
   "panels/elements/components/CSSPropertyDocsView.ts | learnMore": {
     "message": "Dysgu rhagor"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | limitedAvailability": {
+    "message": "Argaeledd cyfyngedig ar draws porwyr mawr"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | limitedAvailabilityInBrowsers": {
+    "message": "Argaeledd cyfyngedig ar draws porwyr mawr (heb ei weithredu'n llawn yn {PH1})"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | newlyAvailableSince": {
+    "message": "Ar gael yn ddiweddar ar draws porwyr mawr (Baseline ers {PH1})"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | unknownDate": {
+    "message": "dyddiad anhysbys"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | widelyAvailableSince": {
+    "message": "Ar gael yn eang ar draws porwyr mawr (Baseline ers {PH1})"
   },
   "panels/elements/components/CSSVariableValueView.ts | invalidPropertyValue": {
     "message": "Gwerth eiddo annilys, math disgwyliedig {type}"
@@ -6842,36 +7046,6 @@
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "Ehangu"
   },
-  "panels/elements/components/LayoutPane.ts | chooseElementOverlayColor": {
-    "message": "Dewiswch liw'r troslun ar gyfer yr elfen hon"
-  },
-  "panels/elements/components/LayoutPane.ts | colorPickerOpened": {
-    "message": "Agorwyd y dewisydd lliw."
-  },
-  "panels/elements/components/LayoutPane.ts | flexbox": {
-    "message": "Blwch fflecs"
-  },
-  "panels/elements/components/LayoutPane.ts | flexboxOverlays": {
-    "message": "Trosluniau blwch fflecs"
-  },
-  "panels/elements/components/LayoutPane.ts | grid": {
-    "message": "Grid"
-  },
-  "panels/elements/components/LayoutPane.ts | gridOverlays": {
-    "message": "Trosluniau grid"
-  },
-  "panels/elements/components/LayoutPane.ts | noFlexboxLayoutsFoundOnThisPage": {
-    "message": "Heb ganfod unrhyw gynlluniau blwch fflecs ar y dudalen hon"
-  },
-  "panels/elements/components/LayoutPane.ts | noGridLayoutsFoundOnThisPage": {
-    "message": "Heb ganfod unrhyw gynlluniau grid ar y dudalen hon"
-  },
-  "panels/elements/components/LayoutPane.ts | overlayDisplaySettings": {
-    "message": "Gosodiadau arddangos troslun"
-  },
-  "panels/elements/components/LayoutPane.ts | showElementInTheElementsPanel": {
-    "message": "Dangos yr elfen yn y panel Elfennau"
-  },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "Tynnu {propertyName}: {propertyValue}"
   },
@@ -6884,9 +7058,6 @@
   "panels/elements/elements-meta.ts | copyStyles": {
     "message": "Copïo arddulliau"
   },
-  "panels/elements/elements-meta.ts | disableDomWordWrap": {
-    "message": "Diffodd amlapio geiriau DOM"
-  },
   "panels/elements/elements-meta.ts | duplicateElement": {
     "message": "Dyblygu elfen"
   },
@@ -6895,9 +7066,6 @@
   },
   "panels/elements/elements-meta.ts | elements": {
     "message": "Elfennau"
-  },
-  "panels/elements/elements-meta.ts | enableDomWordWrap": {
-    "message": "Galluogi amlapio geiriau DOM"
   },
   "panels/elements/elements-meta.ts | eventListeners": {
     "message": "Gwrandawyr y Digwyddiad"
@@ -6965,8 +7133,14 @@
   "panels/elements/elements-meta.ts | stackTrace": {
     "message": "Ôl Pentwr"
   },
+  "panels/elements/elements-meta.ts | toggleA11yTree": {
+    "message": "Toglo coeden hygyrchedd"
+  },
   "panels/elements/elements-meta.ts | toggleEyeDropper": {
     "message": "Toglo'r diferydd lliw"
+  },
+  "panels/elements/elements-meta.ts | toggleWordWrap": {
+    "message": "Toglo amlapio geiriau"
   },
   "panels/elements/elements-meta.ts | undo": {
     "message": "Dadwneud"
@@ -7003,12 +7177,6 @@
   },
   "panels/emulation/DeviceModeToolbar.ts | edit": {
     "message": "Golygu…"
-  },
-  "panels/emulation/DeviceModeToolbar.ts | experimentalWebPlatformFeature": {
-    "message": "Mae'r faner \"Experimental Web Platform Feature\" wedi'i galluogi. Cliciwch i'w diffodd."
-  },
-  "panels/emulation/DeviceModeToolbar.ts | experimentalWebPlatformFeatureFlag": {
-    "message": "Mae'r faner \"Experimental Web Platform Feature\" wedi'i diffodd. Cliciwch i'w galluogi."
   },
   "panels/emulation/DeviceModeToolbar.ts | fitToWindowF": {
     "message": "Llenwi'r ffenestr ({PH1}%)"
@@ -7724,7 +7892,7 @@
   "panels/layer_viewer/LayerDetailsView.ts | slowScrollRegions": {
     "message": "Rhanbarthau sgrolio araf"
   },
-  "panels/layer_viewer/LayerDetailsView.ts | stickyAncenstorLayersS": {
+  "panels/layer_viewer/LayerDetailsView.ts | stickyAncestorLayersS": {
     "message": "{PH1}: {PH2} ({PH3})"
   },
   "panels/layer_viewer/LayerDetailsView.ts | stickyBoxRectangleDimensions": {
@@ -7861,6 +8029,9 @@
   },
   "panels/lighthouse/LighthouseController.ts | accessibility": {
     "message": "Hygyrchedd"
+  },
+  "panels/lighthouse/LighthouseController.ts | applyDesktopEmulationDuring": {
+    "message": "Cymhwyso dynwarediad bwrdd gwaith yn ystod yr archwiliad"
   },
   "panels/lighthouse/LighthouseController.ts | applyMobileEmulation": {
     "message": "Cymhwyso efelychiad symudol"
@@ -8342,6 +8513,9 @@
   "panels/media/PlayerPropertiesView.ts | hardwareEncoder": {
     "message": "Amgodiwr caledwedd"
   },
+  "panels/media/PlayerPropertiesView.ts | hlsBufferedRanges": {
+    "message": "Ystodau cyfryngau wedi'u byffro"
+  },
   "panels/media/PlayerPropertiesView.ts | noDecoder": {
     "message": "Dim datgodiwr"
   },
@@ -8435,12 +8609,6 @@
   "panels/mobile_throttling/NetworkThrottlingSelector.ts | presets": {
     "message": "Rhagosodiadau"
   },
-  "panels/mobile_throttling/ThrottlingManager.ts | add": {
-    "message": "Ychwanegu…"
-  },
-  "panels/mobile_throttling/ThrottlingManager.ts | addS": {
-    "message": "Ychwanegu {PH1}"
-  },
   "panels/mobile_throttling/ThrottlingManager.ts | calibrate": {
     "message": "Calibradu…"
   },
@@ -8462,6 +8630,9 @@
   "panels/mobile_throttling/ThrottlingManager.ts | hardwareConcurrencySettingLabel": {
     "message": "Diystyru'r gwerth a adroddwyd gan navigator.hardwareConcurrency"
   },
+  "panels/mobile_throttling/ThrottlingManager.ts | noSaveDataOverride": {
+    "message": "'Cadw-Data': diofyn"
+  },
   "panels/mobile_throttling/ThrottlingManager.ts | offline": {
     "message": "All-lein"
   },
@@ -8474,8 +8645,14 @@
   "panels/mobile_throttling/ThrottlingManager.ts | resetConcurrency": {
     "message": "Ailosod i'r gwerth diofyn"
   },
-  "panels/mobile_throttling/ThrottlingManager.ts | sS": {
-    "message": "{PH1}: {PH2}"
+  "panels/mobile_throttling/ThrottlingManager.ts | saveDataOff": {
+    "message": "'Cadw-Data': mae'r gorfodi i ffwrdd"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | saveDataOn": {
+    "message": "'Cadw-Data': mae'r gorfodi ymlaen"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | saveDataSettingTooltip": {
+    "message": "Diystyru'r gwerth a adroddwyd gan navigator.connection.saveData ar y dudalen"
   },
   "panels/mobile_throttling/ThrottlingManager.ts | throttling": {
     "message": "Throtlo"
@@ -8596,9 +8773,6 @@
   },
   "panels/mobile_throttling/ThrottlingSettingsTab.ts | packetReordering": {
     "message": "Aildrefnu Pecynnau"
-  },
-  "panels/mobile_throttling/ThrottlingSettingsTab.ts | percent": {
-    "message": "y cant"
   },
   "panels/mobile_throttling/ThrottlingSettingsTab.ts | profileName": {
     "message": "Enw Proffil"
@@ -8733,22 +8907,22 @@
     "message": "Wedi diweddaru asiant defnyddiwr."
   },
   "panels/network/NetworkConfigView.ts | custom": {
-    "message": "Personol..."
+    "message": "Personol…"
   },
   "panels/network/NetworkConfigView.ts | customUserAgentFieldIsRequired": {
     "message": "Mae angen maes asiant defnyddiwr personol"
   },
   "panels/network/NetworkConfigView.ts | disableCache": {
-    "message": "Analluogi'r storfa"
+    "message": "Analluogi'r storfa dros dro"
   },
   "panels/network/NetworkConfigView.ts | enterACustomUserAgent": {
     "message": "Rhowch asiant defnyddiwr personol"
   },
   "panels/network/NetworkConfigView.ts | networkConditionsPanelShown": {
-    "message": "Dangosir amodau'r rhwydwaith"
+    "message": "Dangosir amodau'r rhwydwaith."
   },
   "panels/network/NetworkConfigView.ts | networkThrottling": {
-    "message": "Throtlo rhwydwaith"
+    "message": "Rhwydwaith"
   },
   "panels/network/NetworkConfigView.ts | selectAutomatically": {
     "message": "Defnyddio'r porwr diofyn"
@@ -8773,6 +8947,21 @@
   },
   "panels/network/NetworkDataGridNode.ts | canceled": {
     "message": "(canslwyd)"
+  },
+  "panels/network/NetworkDataGridNode.ts | coepFrameResourceNeedsCoepHeader": {
+    "message": "Mae angen pennawd COEP ar adnodd wedi'i fframio â COEP"
+  },
+  "panels/network/NetworkDataGridNode.ts | coopSandboxedIframeCannotNavigateToCoopPage": {
+    "message": "Ni all ffenestr naid iframe sandbox lywio i dudalen COOP"
+  },
+  "panels/network/NetworkDataGridNode.ts | corpNotSameOrigin": {
+    "message": "Nid yw CORP yn \"un tarddiad\""
+  },
+  "panels/network/NetworkDataGridNode.ts | corpNotSameOriginAfterDefaultedToSameOriginByCoep": {
+    "message": "Nid yw CORP yn \"un tarddiad\" ar ôl i COEP ei newid i \"un tarddiad\" yn ddiofyn"
+  },
+  "panels/network/NetworkDataGridNode.ts | corpNotSameSite": {
+    "message": "Nid yw CORP yn \"un wefan\""
   },
   "panels/network/NetworkDataGridNode.ts | corsError": {
     "message": "Gwall CORS"
@@ -8864,6 +9053,9 @@
   "panels/network/NetworkDataGridNode.ts | redirect": {
     "message": "Ailgyfeirio"
   },
+  "panels/network/NetworkDataGridNode.ts | responseIsIpProtectedToolTip": {
+    "message": "Anfonwyd y cais hwn drwy ddirprwyon gweinydd Diogelu IP."
+  },
   "panels/network/NetworkDataGridNode.ts | sPreflight": {
     "message": "{PH1} + Lansio ymlaen llaw"
   },
@@ -8881,6 +9073,12 @@
   },
   "panels/network/NetworkDataGridNode.ts | servedFromMemoryCacheResource": {
     "message": "Wedi'i gyflwyno gan storfa cof, maint adnodd: {PH1}"
+  },
+  "panels/network/NetworkDataGridNode.ts | servedFromNetwork": {
+    "message": "Trosglwyddwyd {PH1} dros y rhwydwaith, maint adnodd: {PH2}"
+  },
+  "panels/network/NetworkDataGridNode.ts | servedFromNetworkMissingServiceWorkerRoute": {
+    "message": "Trosglwyddwyd {PH1} dros rwydwaith, maint adnodd: {PH2}, dim llwybrau ServiceWorker cyfatebol"
   },
   "panels/network/NetworkDataGridNode.ts | servedFromPrefetchCacheResource": {
     "message": "Wedi'i gyflwyno o storfa cyn-nôl, maint yr adnodd: {PH1}"
@@ -8918,11 +9116,17 @@
   "panels/network/NetworkDataGridNode.ts | webBundleInnerRequest": {
     "message": "Gwasanaethwyd o Fwndel Gwe"
   },
+  "panels/network/NetworkItemView.ts | connectionInfo": {
+    "message": "Gwybodaeth Cysylltiad"
+  },
   "panels/network/NetworkItemView.ts | containsOverriddenHeaders": {
     "message": "Mae'r ymateb hwn yn cynnwys penynnau sy'n cael eu diystyru gan DevTools"
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "Cwcis"
+  },
+  "panels/network/NetworkItemView.ts | directsocketMessages": {
+    "message": "Negeseuon DirectSocket"
   },
   "panels/network/NetworkItemView.ts | eventstream": {
     "message": "EventStream"
@@ -8986,6 +9190,9 @@
   },
   "panels/network/NetworkLogView.ts | areYouSureYouWantToClearBrowserCookies": {
     "message": "Ydych chi'n siŵr eich bod chi am glirio cwcis porwr?"
+  },
+  "panels/network/NetworkLogView.ts | assessSecurityHeaders": {
+    "message": "Asesu penawdau diogelwch"
   },
   "panels/network/NetworkLogView.ts | blockRequestDomain": {
     "message": "Parth cais bloc"
@@ -9101,6 +9308,15 @@
   "panels/network/NetworkLogView.ts | dropHarFilesHere": {
     "message": "Gollyngwch ffeiliau HAR yma"
   },
+  "panels/network/NetworkLogView.ts | explainFailures": {
+    "message": "Egluro methiannau"
+  },
+  "panels/network/NetworkLogView.ts | explainPurpose": {
+    "message": "Egluro'r pwrpas"
+  },
+  "panels/network/NetworkLogView.ts | explainSlowness": {
+    "message": "Egluro'r arafwch"
+  },
   "panels/network/NetworkLogView.ts | finishS": {
     "message": "Gorffen: {PH1}"
   },
@@ -9122,6 +9338,9 @@
   "panels/network/NetworkLogView.ts | invertsFilter": {
     "message": "Yn gwrthdroi'r hidlydd chwilio"
   },
+  "panels/network/NetworkLogView.ts | ippRequests": {
+    "message": "Ceisiadau Diogelu IP"
+  },
   "panels/network/NetworkLogView.ts | loadS": {
     "message": "Llwytho: {PH1}"
   },
@@ -9136,6 +9355,9 @@
   },
   "panels/network/NetworkLogView.ts | onlyShowBlockedRequests": {
     "message": "Dangos ceisiadau sydd wedi'u rhwystro yn unig"
+  },
+  "panels/network/NetworkLogView.ts | onlyShowIPProtectedRequests": {
+    "message": "(Anhysbys yn Unig) Dangos ceisiadau a anfonwyd at ddirprwyon gweinydd Diogelu IP yn unig"
   },
   "panels/network/NetworkLogView.ts | onlyShowRequestsWithBlockedCookies": {
     "message": "Dangos ceisiadau sydd â chwcis ymateb sydd wedi'u rhwystro yn unig"
@@ -9196,6 +9418,9 @@
   },
   "panels/network/NetworkLogView.ts | showOnlyHideRequests": {
     "message": "Dangos yn unig/cuddio ceisiadau"
+  },
+  "panels/network/NetworkLogView.ts | startAChat": {
+    "message": "Dechrau sgwrs"
   },
   "panels/network/NetworkLogView.ts | startRecording": {
     "message": "Dechrau recordio"
@@ -9259,6 +9484,9 @@
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
     "message": "Blwch Cyfeiriad o Bell"
+  },
+  "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
+    "message": "Penawdau cais"
   },
   "panels/network/NetworkLogViewColumns.ts | responseHeaders": {
     "message": "Penynnau Ymateb"
@@ -9333,13 +9561,13 @@
     "message": "Allforio HAR (naill ai wedi'i lanweithio neu â data sensitif)"
   },
   "panels/network/NetworkPanel.ts | exportHarSanitized": {
-    "message": "Allforio HAR (wedi'i lanweithio)..."
+    "message": "Allforio HAR (wedi'i lanweithio)…"
   },
   "panels/network/NetworkPanel.ts | exportHarWithSensitiveData": {
-    "message": "Allforio HAR (gyda data sensitif)..."
+    "message": "Allforio HAR (gyda data sensitif)…"
   },
   "panels/network/NetworkPanel.ts | fetchingFrames": {
-    "message": "Wrthi'n nôl fframiau..."
+    "message": "Wrthi'n nôl fframiau…"
   },
   "panels/network/NetworkPanel.ts | groupByFrame": {
     "message": "Grwpio yn ôl ffrâm"
@@ -9348,7 +9576,7 @@
     "message": "Grwpio ceisiadau yn ôl ffrâm cais lefel uchaf"
   },
   "panels/network/NetworkPanel.ts | hitSToReloadAndCaptureFilmstrip": {
-    "message": "Pwyswch {PH1} i ail-lwytho a thynnu stribed ffilm."
+    "message": "Pwyswch {PH1} i ail-lwytho a dal y stribed ffilm."
   },
   "panels/network/NetworkPanel.ts | importHarFile": {
     "message": "Mewnforio ffeil HAR…"
@@ -9369,7 +9597,7 @@
     "message": "Cadw log"
   },
   "panels/network/NetworkPanel.ts | recordingFrames": {
-    "message": "Wrthi'n recordio fframiau..."
+    "message": "Wrthi'n recordio fframiau…"
   },
   "panels/network/NetworkPanel.ts | search": {
     "message": "Chwilio"
@@ -9638,17 +9866,68 @@
   "panels/network/RequestTimingView.ts | waterfall": {
     "message": "Rhaeadr"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | all": {
+  "panels/network/ResourceChunkView.ts | all": {
     "message": "Pob un"
+  },
+  "panels/network/ResourceChunkView.ts | clearAll": {
+    "message": "Clirio Popeth"
+  },
+  "panels/network/ResourceChunkView.ts | clearAllL": {
+    "message": "Clirio popeth"
+  },
+  "panels/network/ResourceChunkView.ts | copyMessage": {
+    "message": "Copïo'r neges"
+  },
+  "panels/network/ResourceChunkView.ts | copyMessageD": {
+    "message": "Copïo'r neges…"
+  },
+  "panels/network/ResourceChunkView.ts | data": {
+    "message": "Data"
+  },
+  "panels/network/ResourceChunkView.ts | filter": {
+    "message": "Hidlo"
+  },
+  "panels/network/ResourceChunkView.ts | length": {
+    "message": "Hyd"
+  },
+  "panels/network/ResourceChunkView.ts | noMessageSelected": {
+    "message": "Dim neges wedi'i dewis"
+  },
+  "panels/network/ResourceChunkView.ts | receive": {
+    "message": "Derbyn"
+  },
+  "panels/network/ResourceChunkView.ts | selectMessageToBrowseItsContent": {
+    "message": "Dewiswch neges i bori drwy ei chynnwys."
+  },
+  "panels/network/ResourceChunkView.ts | send": {
+    "message": "Anfon"
+  },
+  "panels/network/ResourceChunkView.ts | time": {
+    "message": "Amser"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | address": {
+    "message": "Cyfeiriad"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | data": {
+    "message": "Data"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | directSocketChunk": {
+    "message": "Direct Socket Chunk"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | filterUsingRegex": {
+    "message": "Hidlo gan ddefnyddio regex (enghraifft: (direct)?socket)"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | length": {
+    "message": "Hyd"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | port": {
+    "message": "Porth"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | time": {
+    "message": "Amser"
   },
   "panels/network/ResourceWebSocketFrameView.ts | binaryMessage": {
     "message": "Neges Ddeuaidd"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | clearAll": {
-    "message": "Clirio Popeth"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | clearAllL": {
-    "message": "Clirio popeth"
   },
   "panels/network/ResourceWebSocketFrameView.ts | connectionCloseMessage": {
     "message": "Neges Cau'r Cysylltiad"
@@ -9656,29 +9935,11 @@
   "panels/network/ResourceWebSocketFrameView.ts | continuationFrame": {
     "message": "Ffrâm Barhaus"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | copyMessage": {
-    "message": "Copïo'r neges"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | copyMessageD": {
-    "message": "Copïo'r neges..."
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | data": {
-    "message": "Data"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | filter": {
-    "message": "Hidlo"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | filterUsingRegex": {
     "message": "Hidlo gan ddefnyddio regex (enghraifft: (web)?socket)"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | length": {
-    "message": "Hyd"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | na": {
     "message": "Amherthnasol"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | noMessageSelected": {
-    "message": "Dim neges wedi'i dewis"
   },
   "panels/network/ResourceWebSocketFrameView.ts | pingMessage": {
     "message": "Neges Pingio"
@@ -9686,26 +9947,14 @@
   "panels/network/ResourceWebSocketFrameView.ts | pongMessage": {
     "message": "Neges Pongio"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | receive": {
-    "message": "Derbyn"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | sOpcodeS": {
     "message": "{PH1} (Cod gweithred {PH2})"
   },
   "panels/network/ResourceWebSocketFrameView.ts | sOpcodeSMask": {
     "message": "{PH1} (Cod gweithred {PH2}, cuddio)"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | selectMessageToBrowseItsContent": {
-    "message": "Dewiswch neges i bori drwy ei chynnwys."
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | send": {
-    "message": "Anfon"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | textMessage": {
     "message": "Neges Destun"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | time": {
-    "message": "Amser"
   },
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "Ffrâm Soced We"
@@ -9772,6 +10021,45 @@
   },
   "panels/network/SignedExchangeInfoView.ts | viewCertificate": {
     "message": "Gweld y dystysgrif"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusAborted": {
+    "message": "Terfynwyd"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusClosed": {
+    "message": "Wedi cau"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusOpen": {
+    "message": "Agor"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusOpening": {
+    "message": "Wrthi'n agor"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketTypeTcp": {
+    "message": "TCP"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketTypeUdpBound": {
+    "message": "UDP (rhwymedig)"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketTypeUdpConnected": {
+    "message": "UDP (cysylltiedig)"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | errorMessage": {
+    "message": "Neges Gwall"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | general": {
+    "message": "Cyffredinol"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | openInfo": {
+    "message": "Agor Gwybodaeth"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | options": {
+    "message": "Dewisiadau"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | status": {
+    "message": "Statws"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | type": {
+    "message": "Math o DirectSocket"
   },
   "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariation": {
     "message": "client experiment variation IDs gweithredol."
@@ -9849,7 +10137,7 @@
     "message": "Cyfeiriad o Bell"
   },
   "panels/network/components/RequestHeadersView.ts | requestHeaders": {
-    "message": "Penawdau cais"
+    "message": "Penynnau Cais"
   },
   "panels/network/components/RequestHeadersView.ts | requestMethod": {
     "message": "Dull Cais"
@@ -10842,7 +11130,7 @@
     "message": "Allforio"
   },
   "panels/recorder/RecorderController.ts | exportRecording": {
-    "message": "Allforio"
+    "message": "Allforio'r recordiad"
   },
   "panels/recorder/RecorderController.ts | exportViaExtensions": {
     "message": "Allforio trwy estyniadau"
@@ -11387,23 +11675,14 @@
   "panels/security/CookieReportView.ts | gitHubResource": {
     "message": "Adolygu {PH1} o wefan trydydd parti"
   },
-  "panels/security/CookieReportView.ts | gitHubResourceInsightTypeString": {
-    "message": "Github"
-  },
   "panels/security/CookieReportView.ts | gracePeriod": {
     "message": "Adolygiad {PH1}. Mae eithriad cyfnod gras yn weithredol."
-  },
-  "panels/security/CookieReportView.ts | gracePeriodInsightTypeString": {
-    "message": "Cyfnod Gras"
   },
   "panels/security/CookieReportView.ts | guidance": {
     "message": "arweiniad"
   },
   "panels/security/CookieReportView.ts | heuristics": {
     "message": "Angen gweithredu yn nes ymlaen. Mae eithriad sy'n seiliedig ar hewristeg yn weithredol."
-  },
-  "panels/security/CookieReportView.ts | heuristicsInisightTypeString": {
-    "message": "Hewristeg"
   },
   "panels/security/CookieReportView.ts | hostingCookieTypeString": {
     "message": "Gwesteio"
@@ -11421,9 +11700,6 @@
     "message": "Cysylltwch â gwefan trydydd parti am ragor o wybodaeth"
   },
   "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "Arall"
-  },
-  "panels/security/CookieReportView.ts | otherInsightTypeString": {
     "message": "Arall"
   },
   "panels/security/CookieReportView.ts | platform": {
@@ -11807,6 +12083,15 @@
   "panels/security/security-meta.ts | showSecurity": {
     "message": "Dangos Diogelwch"
   },
+  "panels/sensors/LocationsSettingsTab.ts | accuracy": {
+    "message": "Cywirdeb"
+  },
+  "panels/sensors/LocationsSettingsTab.ts | accuracyMustBeANumber": {
+    "message": "Rhaid i'r cywirdeb fod yn rhif"
+  },
+  "panels/sensors/LocationsSettingsTab.ts | accuracyMustBeGreaterThanOrEqual": {
+    "message": "Rhaid i'r cywirdeb fod yn fwy neu'n hafal i {PH1}"
+  },
   "panels/sensors/LocationsSettingsTab.ts | addLocation": {
     "message": "Ychwanegu lleoliad"
   },
@@ -11863,6 +12148,9 @@
   },
   "panels/sensors/LocationsSettingsTab.ts | timezoneIdMustContainAlphabetic": {
     "message": "Rhaid i gyfeirnod y parth amser gynnwys nodau'r wyddor"
+  },
+  "panels/sensors/SensorsView.ts | accuracy": {
+    "message": "Cywirdeb"
   },
   "panels/sensors/SensorsView.ts | adjustWithMousewheelOrUpdownKeys": {
     "message": "Addaswch gan ddefnyddio olwyn y llygoden neu'r bysellau i fyny/lawr. {PH1}: ±10, Shift: ±1, Alt: ±0.01"
@@ -12041,11 +12329,17 @@
   "panels/sensors/sensors-meta.ts | userIdleScreenUnlocked": {
     "message": "Defnyddiwr yn segur, sgrîn wedi'i datgloi"
   },
-  "panels/settings/AISettingsTab.ts | ageRestricted": {
-    "message": "Mae'r nodwedd hon ar gael i ddefnyddwyr sy'n 18 oed neu'n hŷn yn unig."
+  "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
+    "message": "Wrth i chi deipio yn y panel Console neu Ffynonellau, byddwch yn cael awgrymiadau cod. Pwyswch Tab i dderbyn un."
   },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "Rhowch hwb i'ch cynhyrchiant gydag AI"
+  },
+  "panels/settings/AISettingsTab.ts | codeSuggestionsSendData": {
+    "message": "I gynhyrchu awgrymiadau cod, mae eich mewnbwn consol, hanes eich sesiwn consol gyfredol, a chynnwys y ffeil sydd ar agor ar hyn o bryd yn cael eu rhannu â Google. Mae'n bosib y bydd adolygwyr dynol yn gweld y data hyn i wella'r nodwedd hon."
+  },
+  "panels/settings/AISettingsTab.ts | codeSuggestionsSendDataNoLogging": {
+    "message": "I gynhyrchu awgrymiadau cod, mae eich mewnbwn consol, hanes eich sesiwn consol gyfredol, a chynnwys y ffeil sydd ar agor ar hyn o bryd yn cael eu rhannu â Google. Ni fydd y data hyn yn cael eu defnyddio i wella modelau AI Google."
   },
   "panels/settings/AISettingsTab.ts | consoleInsightsSendsData": {
     "message": "Anfonir neges y consol, olrhain pentwr cysylltiedig, cod ffynhonnell cysylltiedig, a'r penawdau rhwydwaith cysylltiedig at Google i gynhyrchu esboniadau. Mae'n bosib y bydd adolygwyr dynol yn gweld y data hyn i wella'r nodwedd hon."
@@ -12101,6 +12395,9 @@
   "panels/settings/AISettingsTab.ts | getAIAnnotationsSuggestions": {
     "message": "Cael awgrymiadau AI ar gyfer anodiadau panel perfformiad"
   },
+  "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
+    "message": "Cael help i gwblhau eich cod"
+  },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "Yn eich helpu i ddeall a thrwsio rhybuddion a gwallau consol"
   },
@@ -12118,15 +12415,6 @@
   },
   "panels/settings/AISettingsTab.ts | learnMore": {
     "message": "Dysgu rhagor"
-  },
-  "panels/settings/AISettingsTab.ts | notAvailableInIncognitoMode": {
-    "message": "Nid yw cymorth AI ar gael yn y modd Anhysbys na'r modd Gwestai"
-  },
-  "panels/settings/AISettingsTab.ts | notLoggedIn": {
-    "message": "Dim ond pan fyddwch yn mewngofnodi i Chrome gyda'ch cyfrif Google y mae'r nodwedd hon ar gael."
-  },
-  "panels/settings/AISettingsTab.ts | offline": {
-    "message": "Mae'r nodwedd hon ar gael yn unig gyda chysylltiad rhyngrwyd gweithredol."
   },
   "panels/settings/AISettingsTab.ts | privacyNotice": {
     "message": "Polisi Preifatrwydd Google"
@@ -12248,7 +12536,7 @@
   "panels/settings/KeybindsSettingsTab.ts | shortcutChangesApplied": {
     "message": "Newidiadau i'r llwybr byr wedi'u cymhwyso"
   },
-  "panels/settings/KeybindsSettingsTab.ts | shortcutChangesDiscared": {
+  "panels/settings/KeybindsSettingsTab.ts | shortcutChangesDiscarded": {
     "message": "Newidiadau i'r llwybr byr wedi'u gwaredu"
   },
   "panels/settings/KeybindsSettingsTab.ts | shortcutChangesRestored": {
@@ -12398,8 +12686,35 @@
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | deviceProperties": {
     "message": "Priodweddau dyfais"
   },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorAutomotive": {
+    "message": "Modur"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorDesktop": {
+    "message": "Bwrdd gwaith"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorEInk": {
+    "message": "EInk"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorMobile": {
+    "message": "Symudol"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorTablet": {
+    "message": "Llechen"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorWatch": {
+    "message": "Gwylio"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorXR": {
+    "message": "XR"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorsGroupAriaLabel": {
+    "message": "Ffactorau Ffurf sydd ar gael"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorsTitle": {
+    "message": "Ffactorau Ffurf (Sec-CH-UA-Form-Factors)"
+  },
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | fullBrowserVersion": {
-    "message": "Fersiwn porwr llawn (Sec-CH-UA-Full-Browser-Version)"
+    "message": "Fersiwn porwr llawn (Sec-CH-UA-Full-Version)"
   },
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | fullBrowserVersionPlaceholder": {
     "message": "Fersiwn lawn y porwr (e.e. 87.0.4280.88)"
@@ -12544,6 +12859,63 @@
   },
   "panels/sources/BreakpointEditDialog.ts | pauseOnlyWhenTheConditionIsTrue": {
     "message": "Seibio dim ond pan fydd yr amod yn wir"
+  },
+  "panels/sources/BreakpointsView.ts | breakpointHit": {
+    "message": "Taro torbwynt {PH1}"
+  },
+  "panels/sources/BreakpointsView.ts | checked": {
+    "message": "ticiwyd"
+  },
+  "panels/sources/BreakpointsView.ts | conditionCode": {
+    "message": "Cyflwr: {PH1}"
+  },
+  "panels/sources/BreakpointsView.ts | disableAllBreakpoints": {
+    "message": "Diffodd pob torbwynt"
+  },
+  "panels/sources/BreakpointsView.ts | disableAllBreakpointsInFile": {
+    "message": "Analluogi'r holl dorbwyntiau yn y ffeil"
+  },
+  "panels/sources/BreakpointsView.ts | editCondition": {
+    "message": "Golygu cyflwr"
+  },
+  "panels/sources/BreakpointsView.ts | editLogpoint": {
+    "message": "Golygu pwynt log"
+  },
+  "panels/sources/BreakpointsView.ts | enableAllBreakpoints": {
+    "message": "Galluogi pob torbwynt"
+  },
+  "panels/sources/BreakpointsView.ts | enableAllBreakpointsInFile": {
+    "message": "Galluogi'r holl dorbwyntiau yn y ffeil"
+  },
+  "panels/sources/BreakpointsView.ts | indeterminate": {
+    "message": "cymysg"
+  },
+  "panels/sources/BreakpointsView.ts | logpointCode": {
+    "message": "Pwynt log: {PH1}"
+  },
+  "panels/sources/BreakpointsView.ts | pauseOnCaughtExceptions": {
+    "message": "Seibio ar eithriadau a ddaliwyd"
+  },
+  "panels/sources/BreakpointsView.ts | pauseOnUncaughtExceptions": {
+    "message": "Rhewi ar eithriadau heb eu dal"
+  },
+  "panels/sources/BreakpointsView.ts | removeAllBreakpoints": {
+    "message": "Tynnu'r holl dorbwyntiau"
+  },
+  "panels/sources/BreakpointsView.ts | removeAllBreakpointsInFile": {
+    "message": "Tynnu'r holl dorbwyntiau yn y ffeil"
+  },
+  "panels/sources/BreakpointsView.ts | removeBreakpoint": {
+    "message": "Tynnu'r torbwynt"
+  },
+  "panels/sources/BreakpointsView.ts | removeOtherBreakpoints": {
+    "message": "Tynnu torbwyntiau eraill"
+  },
+  "panels/sources/BreakpointsView.ts | revealLocation": {
+    "message": "Datgelu lleoliad"
+  },
+  "panels/sources/BreakpointsView.ts | unchecked": {
+    "message": "wedi'i ddad-dicio"
   },
   "panels/sources/CSSPlugin.ts | addSourceMap": {
     "message": "Ychwanegu map ffynhonnell…"
@@ -12842,6 +13214,12 @@
   "panels/sources/NavigatorView.ts | authoredTooltip": {
     "message": "Yn cynnwys ffynonellau gwreiddiol"
   },
+  "panels/sources/NavigatorView.ts | connect": {
+    "message": "Cysylltu"
+  },
+  "panels/sources/NavigatorView.ts | connectFolderToWorkspace": {
+    "message": "Cysylltu â man gwaith"
+  },
   "panels/sources/NavigatorView.ts | delete": {
     "message": "Dileu"
   },
@@ -12933,7 +13311,7 @@
     "message": "Cau ({PH1})"
   },
   "panels/sources/ScopeChainSidebarPane.ts | loading": {
-    "message": "Wrthi'n llwytho..."
+    "message": "Wrthi'n llwytho…"
   },
   "panels/sources/ScopeChainSidebarPane.ts | noVariables": {
     "message": "Dim amrywolion"
@@ -12946,6 +13324,9 @@
   },
   "panels/sources/SnippetsPlugin.ts | enter": {
     "message": "⌘+Enter"
+  },
+  "panels/sources/SourcesNavigator.ts | automaticWorkspaceNudge": {
+    "message": "Defnyddiwch {PH1} i gysylltu eich ffolder prosiect yn awtomatig"
   },
   "panels/sources/SourcesNavigator.ts | clearConfiguration": {
     "message": "Clirio'r ffurfweddiad"
@@ -12990,10 +13371,16 @@
     "message": "Rhedeg"
   },
   "panels/sources/SourcesNavigator.ts | saveAs": {
-    "message": "Cadw fel..."
+    "message": "Cadw fel…"
+  },
+  "panels/sources/SourcesNavigator.ts | saveAsFailed": {
+    "message": "Wedi methu â chadw'r ffeil i ddisg."
   },
   "panels/sources/SourcesNavigator.ts | selectFolderForOverrides": {
     "message": "Dewiswch ffolder ar gyfer diystyriadau"
+  },
+  "panels/sources/SourcesPanel.ts | assessPerformance": {
+    "message": "Asesu perfformiad"
   },
   "panels/sources/SourcesPanel.ts | continueToHere": {
     "message": "Parhau hyd yma"
@@ -13018,6 +13405,12 @@
   },
   "panels/sources/SourcesPanel.ts | dropWorkspaceFolderHere": {
     "message": "Gollyngwch y ffolder man gwaith yma"
+  },
+  "panels/sources/SourcesPanel.ts | explainInputHandling": {
+    "message": "Egluro trin mewnbwn"
+  },
+  "panels/sources/SourcesPanel.ts | explainThisScript": {
+    "message": "Egluro'r sgript hon"
   },
   "panels/sources/SourcesPanel.ts | groupByAuthored": {
     "message": "Grwpio yn ôl Awdurwyd/Gosodwyd"
@@ -13064,6 +13457,9 @@
   "panels/sources/SourcesPanel.ts | showNavigator": {
     "message": "Dangos llywiwr"
   },
+  "panels/sources/SourcesPanel.ts | startAChat": {
+    "message": "Dechrau sgwrs"
+  },
   "panels/sources/SourcesPanel.ts | storeAsGlobalVariable": {
     "message": "Storio fel newidyn cyffredinol"
   },
@@ -13088,8 +13484,11 @@
   "panels/sources/TabbedEditorContainer.ts | areYouSureYouWantToCloseUnsaved": {
     "message": "Ydych chi'n siŵr eich bod am gau'r ffeil nad yw wedi'i chadw: {PH1}?"
   },
-  "panels/sources/TabbedEditorContainer.ts | changesToThisFileWereNotSavedTo": {
-    "message": "Ni chafodd newidiadau yn y ffeil hon eu cadw i system y ffeil."
+  "panels/sources/TabbedEditorContainer.ts | changesWereNotSavedToFileSystemToSaveAddFolderToWorkspace": {
+    "message": "Ni chafodd newidiadau eu cadw i'r system ffeiliau. I gadw, Ychwanegwch {PH1} at eich Workspace."
+  },
+  "panels/sources/TabbedEditorContainer.ts | changesWereNotSavedToFileSystemToSaveSetUpYourWorkspace": {
+    "message": "Ni chafodd newidiadau eu cadw i'r system ffeiliau. I gadw, gosodwch eich {PH1}."
   },
   "panels/sources/TabbedEditorContainer.ts | unableToLoadThisContent": {
     "message": "Ni ellir llwytho'r cynnwys hwn."
@@ -13121,62 +13520,8 @@
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Ail-lwytho mynegiadau oriawr"
   },
-  "panels/sources/components/BreakpointsView.ts | breakpointHit": {
-    "message": "Taro torbwynt {PH1}"
-  },
-  "panels/sources/components/BreakpointsView.ts | checked": {
-    "message": "ticiwyd"
-  },
-  "panels/sources/components/BreakpointsView.ts | conditionCode": {
-    "message": "Cyflwr: {PH1}"
-  },
-  "panels/sources/components/BreakpointsView.ts | disableAllBreakpoints": {
-    "message": "Diffodd pob torbwynt"
-  },
-  "panels/sources/components/BreakpointsView.ts | disableAllBreakpointsInFile": {
-    "message": "Analluogi'r holl dorbwyntiau yn y ffeil"
-  },
-  "panels/sources/components/BreakpointsView.ts | editCondition": {
-    "message": "Golygu cyflwr"
-  },
-  "panels/sources/components/BreakpointsView.ts | editLogpoint": {
-    "message": "Golygu pwynt log"
-  },
-  "panels/sources/components/BreakpointsView.ts | enableAllBreakpoints": {
-    "message": "Galluogi pob torbwynt"
-  },
-  "panels/sources/components/BreakpointsView.ts | enableAllBreakpointsInFile": {
-    "message": "Galluogi'r holl dorbwyntiau yn y ffeil"
-  },
-  "panels/sources/components/BreakpointsView.ts | indeterminate": {
-    "message": "cymysg"
-  },
-  "panels/sources/components/BreakpointsView.ts | logpointCode": {
-    "message": "Pwynt log: {PH1}"
-  },
-  "panels/sources/components/BreakpointsView.ts | pauseOnCaughtExceptions": {
-    "message": "Seibio ar eithriadau a ddaliwyd"
-  },
-  "panels/sources/components/BreakpointsView.ts | pauseOnUncaughtExceptions": {
-    "message": "Rhewi ar eithriadau heb eu dal"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeAllBreakpoints": {
-    "message": "Tynnu'r holl dorbwyntiau"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeAllBreakpointsInFile": {
-    "message": "Tynnu'r holl dorbwyntiau yn y ffeil"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeBreakpoint": {
-    "message": "Tynnu'r torbwynt"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeOtherBreakpoints": {
-    "message": "Tynnu torbwyntiau eraill"
-  },
-  "panels/sources/components/BreakpointsView.ts | revealLocation": {
-    "message": "Datgelu lleoliad"
-  },
-  "panels/sources/components/BreakpointsView.ts | unchecked": {
-    "message": "wedi'i ddad-dicio"
+  "panels/sources/WatchExpressionsSidebarPane.ts | watchExpressionDeleted": {
+    "message": "Mynegiant gwylio wedi'i ddileu"
   },
   "panels/sources/components/HeadersView.ts | addHeader": {
     "message": "Ychwanegu pennyn"
@@ -13201,6 +13546,9 @@
   },
   "panels/sources/sources-meta.ts | activateBreakpoints": {
     "message": "Gweithredu torbwyntiau"
+  },
+  "panels/sources/sources-meta.ts | addFolderManually": {
+    "message": "Ychwanegu ffolder yn bwrpasol"
   },
   "panels/sources/sources-meta.ts | addFolderToWorkspace": {
     "message": "Ychwanegu ffolder i fan gwaith"
@@ -13502,6 +13850,9 @@
   "panels/sources/sources-meta.ts | toggleNavigatorSidebar": {
     "message": "Toglo bar ochr llywio"
   },
+  "panels/sources/sources-meta.ts | toggleWordWrap": {
+    "message": "Toglo amlapio geiriau"
+  },
   "panels/sources/sources-meta.ts | trailing": {
     "message": "Ôl nodau"
   },
@@ -13510,6 +13861,9 @@
   },
   "panels/sources/sources-meta.ts | watch": {
     "message": "Gwylio"
+  },
+  "panels/sources/sources-meta.ts | wordWrap": {
+    "message": "Amlapio testun"
   },
   "panels/sources/sources-meta.ts | workspace": {
     "message": "Man Gwaith"
@@ -13577,11 +13931,8 @@
   "panels/timeline/EventsTimelineTreeView.ts | startTime": {
     "message": "Amser dechrau"
   },
-  "panels/timeline/ExtensionTrackAppender.ts | customTrackDescription": {
-    "message": "Mae hwn yn drywydd personol a ychwanegwyd gan drydydd parti."
-  },
-  "panels/timeline/ExtensionTrackAppender.ts | customTrackName": {
-    "message": "{PH1} — Trywydd personol"
+  "panels/timeline/ExtensionTrackAppender.ts | customTrackSubtitle": {
+    "message": "— Personol"
   },
   "panels/timeline/GPUTrackAppender.ts | gpu": {
     "message": "GPU"
@@ -13606,6 +13957,21 @@
   },
   "panels/timeline/NetworkTrackAppender.ts | network": {
     "message": "Rhwydwaith"
+  },
+  "panels/timeline/StatusDialog.ts | description": {
+    "message": "Disgrifiad"
+  },
+  "panels/timeline/StatusDialog.ts | downloadAfterError": {
+    "message": "Lawrlwytho olrhain"
+  },
+  "panels/timeline/StatusDialog.ts | status": {
+    "message": "Statws"
+  },
+  "panels/timeline/StatusDialog.ts | stop": {
+    "message": "Stopio"
+  },
+  "panels/timeline/StatusDialog.ts | time": {
+    "message": "Amser"
   },
   "panels/timeline/ThirdPartyTreeView.ts | firstOrThirdPartyName": {
     "message": "Parti 1af / 3ydd parti"
@@ -13718,8 +14084,14 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | addScriptToIgnoreList": {
     "message": "Ychwanegu sgript at y rhestr anwybyddu"
   },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | assessThePurpose": {
+    "message": "Asesu'r pwrpas"
+  },
   "panels/timeline/TimelineFlameChartDataProvider.ts | droppedFrame": {
     "message": "Ffrâm wedi'i gollwng"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | findImprovements": {
+    "message": "Dod o hyd i welliannau"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | frame": {
     "message": "Ffrâm"
@@ -13736,8 +14108,14 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | hideRepeatingChildren": {
     "message": "Cuddio plant sy'n ailadrodd"
   },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | identifyTimeSpent": {
+    "message": "Nodi'r amser a dreuliwyd"
+  },
   "panels/timeline/TimelineFlameChartDataProvider.ts | idleFrame": {
     "message": "Ffrâm segur"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | labelEntry": {
+    "message": "Cofnod label"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | partiallyPresentedFrame": {
     "message": "Ffrâm a gyflwynwyd yn rhannol"
@@ -13751,8 +14129,14 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | resetTrace": {
     "message": "Ailosod olrhain"
   },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | startAChat": {
+    "message": "Dechrau sgwrs"
+  },
   "panels/timeline/TimelineFlameChartView.ts | sAtS": {
     "message": "{PH1} am {PH2}"
+  },
+  "panels/timeline/TimelineHistoryManager.ts | backButtonTooltip": {
+    "message": "Gweld tudalen metrigau byw"
   },
   "panels/timeline/TimelineHistoryManager.ts | currentSessionSS": {
     "message": "Sesiwn bresennol: {PH1}. {PH2}"
@@ -13777,9 +14161,6 @@
   },
   "panels/timeline/TimelinePanel.ts | CpuThrottlingIsEnabled": {
     "message": "- mae throtlo CPU wedi'i alluogi"
-  },
-  "panels/timeline/TimelinePanel.ts | JavascriptSamplingIsDisabled": {
-    "message": "- Mae samplu JavaScript wedi'i ddiffodd"
   },
   "panels/timeline/TimelinePanel.ts | NetworkThrottlingIsEnabled": {
     "message": "- Mae throtlo rhwydwaith wedi'i alluogi"
@@ -13817,23 +14198,11 @@
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "CPU:"
   },
-  "panels/timeline/TimelinePanel.ts | description": {
-    "message": "Disgrifiad"
-  },
   "panels/timeline/TimelinePanel.ts | dimThirdParties": {
     "message": "Dim 3ydd partïon"
   },
-  "panels/timeline/TimelinePanel.ts | disableJavascriptSamples": {
-    "message": "Diffodd samplau JavaScript"
-  },
-  "panels/timeline/TimelinePanel.ts | disablesJavascriptSampling": {
-    "message": "Mae'n diffodd samplu JavaScript, yn lleihau gorbenion wrth redeg yn erbyn dyfeisiau symudol"
-  },
-  "panels/timeline/TimelinePanel.ts | downloadAfterError": {
-    "message": "Lawrlwytho olrhain"
-  },
   "panels/timeline/TimelinePanel.ts | dropTimelineFileOrUrlHere": {
-    "message": "Gollyngwch ffeil neu URL y llinell amser yma"
+    "message": "Gollwng ffeil olrhain neu URL yma"
   },
   "panels/timeline/TimelinePanel.ts | enableAdvancedPaint": {
     "message": "Galluogi offerwaith peintio uwch (araf)"
@@ -13844,14 +14213,11 @@
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "Digwyddiad {PH1} wedi'i ddewis"
   },
-  "panels/timeline/TimelinePanel.ts | exportEnhancedTraces": {
-    "message": "Olion perfformiad gwell"
+  "panels/timeline/TimelinePanel.ts | exportingFailed": {
+    "message": "Mae allforio'r olrhain wedi methu"
   },
-  "panels/timeline/TimelinePanel.ts | exportNormalTraces": {
-    "message": "Olion perfformiad sylfaenol"
-  },
-  "panels/timeline/TimelinePanel.ts | failedToSaveTimelineSS": {
-    "message": "Wedi methu â chadw'r llinell amser: {PH1} ({PH2})"
+  "panels/timeline/TimelinePanel.ts | externalRequestReceived": {
+    "message": "Mae DevTools wedi derbyn cais allanol"
   },
   "panels/timeline/TimelinePanel.ts | fixMe": {
     "message": "Trwsio fi"
@@ -13862,17 +14228,17 @@
   "panels/timeline/TimelinePanel.ts | hideSidebar": {
     "message": "Cuddio'r bar ochr"
   },
-  "panels/timeline/TimelinePanel.ts | initializingProfiler": {
-    "message": "Wrthi'n cychwyn y proffiliwr…"
+  "panels/timeline/TimelinePanel.ts | initializingTracing": {
+    "message": "Wrthi'n cychwyn olrhain…"
   },
   "panels/timeline/TimelinePanel.ts | learnMore": {
     "message": "Dysgu rhagor"
   },
-  "panels/timeline/TimelinePanel.ts | loadProfile": {
-    "message": "Llwytho proffil…"
+  "panels/timeline/TimelinePanel.ts | loadTrace": {
+    "message": "Llwytho olrhain…"
   },
-  "panels/timeline/TimelinePanel.ts | loadingProfile": {
-    "message": "Wrthi'n llwytho proffil…"
+  "panels/timeline/TimelinePanel.ts | loadingTrace": {
+    "message": "Wrthi'n llwytho'r olrhain…"
   },
   "panels/timeline/TimelinePanel.ts | memory": {
     "message": "Cof"
@@ -13886,11 +14252,8 @@
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "Proseswyd"
   },
-  "panels/timeline/TimelinePanel.ts | processingProfile": {
-    "message": "Wrthi'n prosesu'r proffil…"
-  },
-  "panels/timeline/TimelinePanel.ts | profiling": {
-    "message": "Wrthi'n proffilio…"
+  "panels/timeline/TimelinePanel.ts | processingTrace": {
+    "message": "Wrthi'n prosesu'r olrhain…"
   },
   "panels/timeline/TimelinePanel.ts | received": {
     "message": "Derbyniwyd"
@@ -13898,20 +14261,14 @@
   "panels/timeline/TimelinePanel.ts | recordingFailed": {
     "message": "Wedi methu â recordio"
   },
-  "panels/timeline/TimelinePanel.ts | saveProfile": {
-    "message": "Cadw'r proffil…"
-  },
-  "panels/timeline/TimelinePanel.ts | saveTraceWithAnnotationsMenuOption": {
-    "message": "Cadw olrhain"
-  },
-  "panels/timeline/TimelinePanel.ts | saveTraceWithoutAnnotationsMenuOption": {
-    "message": "Cadw olion heb anodiadau"
-  },
   "panels/timeline/TimelinePanel.ts | screenshots": {
     "message": "Sgrinluniau"
   },
   "panels/timeline/TimelinePanel.ts | selectionCleared": {
     "message": "Dewis wedi'i glirio"
+  },
+  "panels/timeline/TimelinePanel.ts | shortcutsDialogTitle": {
+    "message": "Llwybrau byr bysellfwrdd ar gyfer siart fflam"
   },
   "panels/timeline/TimelinePanel.ts | showCustomtracks": {
     "message": "Dangos traciau personol"
@@ -13931,20 +14288,20 @@
   "panels/timeline/TimelinePanel.ts | sidebarShown": {
     "message": "Dangosir bar ochr perfformiad"
   },
-  "panels/timeline/TimelinePanel.ts | status": {
-    "message": "Statws"
-  },
-  "panels/timeline/TimelinePanel.ts | stop": {
-    "message": "Stopio"
-  },
   "panels/timeline/TimelinePanel.ts | stoppingTimeline": {
     "message": "Wrthi'n stopio'r llinell amser…"
   },
   "panels/timeline/TimelinePanel.ts | thirdPartiesByThirdPartyWeb": {
     "message": "3ydd partïon wedi'u dosbarthu yn ôl y we trydydd parti"
   },
-  "panels/timeline/TimelinePanel.ts | time": {
-    "message": "Amser"
+  "panels/timeline/TimelinePanel.ts | timelineScrollPan": {
+    "message": "Sgrolio a Phanio"
+  },
+  "panels/timeline/TimelinePanel.ts | timelineZoom": {
+    "message": "Chwyddo"
+  },
+  "panels/timeline/TimelinePanel.ts | tracing": {
+    "message": "Wrthi'n olrhain…"
   },
   "panels/timeline/TimelineSelectorStatsView.ts | copyTable": {
     "message": "Copïo tabl"
@@ -13952,29 +14309,50 @@
   "panels/timeline/TimelineSelectorStatsView.ts | elapsed": {
     "message": "Wedi mynd heibio (ms)"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | elapsedExplanation": {
+    "message": "Amser a dreuliwyd yn cyfateb dewiswr yn erbyn y DOM mewn milieiliadau."
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | invalidationCount": {
+    "message": "Cyfrif annilysrwydd"
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | invalidationCountExplanation": {
+    "message": "Cyfrif wedi'i gydgrynhoi o annilysiadau ar nodau ac wedi hynny cafodd yr arddull ei hailgyfrifo, y mae'r dewiswr hwn yn cyfateb i bob un ohonynt. Sylwch y gellir gwneud nod yn annilys sawl gwaith a chan sawl dewisydd."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | lineNumber": {
     "message": "Llinell {PH1}:{PH2}"
   },
   "panels/timeline/TimelineSelectorStatsView.ts | matchAttempts": {
     "message": "Ymdrechion cyfatebol"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | matchAttemptsExplanation": {
+    "message": "Cyfrif y nodau y ceisiodd yr injan eu cyfateb yn erbyn rheol arddull."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | matchCount": {
     "message": "Cyfrif cyfatebol"
   },
-  "panels/timeline/TimelineSelectorStatsView.ts | rejectPercentage": {
-    "message": "% o anghymhariaethau llwybr araf"
-  },
-  "panels/timeline/TimelineSelectorStatsView.ts | rejectPercentageExplanation": {
-    "message": "Canran y nodau nad ydynt yn cyfateb (Ceisiadau Paru - Cyfrif Cyfateb) na ellid eu diystyru'n gyflym gan yr hidlydd Bloom oherwydd cymhlethdod detholydd uchel. Mae is yn well."
+  "panels/timeline/TimelineSelectorStatsView.ts | matchCountExplanation": {
+    "message": "Cyfrif y nodau a oedd yn cyfateb i reol arddull."
   },
   "panels/timeline/TimelineSelectorStatsView.ts | selector": {
     "message": "Dewisydd"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | selectorExplanation": {
+    "message": "Testun dewisydd CSS rheol arddull."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | selectorStats": {
     "message": "Ystadegau dewisydd"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | slowPathNonMatches": {
+    "message": "% o anghymhariaethau llwybr araf"
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | slowPathNonMatchesExplanation": {
+    "message": "Canran y nodau nad ydynt yn cyfateb (Ceisiadau Paru - Cyfrif Cyfateb) na ellid eu diystyru'n gyflym gan yr hidlydd Bloom oherwydd cymhlethdod detholydd uchel. Mae is yn well."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | styleSheetId": {
     "message": "Dalen Arddull"
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | styleSheetIdExplanation": {
+    "message": "Dolenni i'r diffiniad rheol dewisydd yn y dalennau arddull. Sylwch y gellid diffinio rheol dewisydd mewn sawl lle mewn dalen arddull neu ei diffinio mewn sawl dalen arddull. Nid oes gan reolau dewisydd o ddalen arddull asiant-defnyddiwr porwr na dalennau arddull deinamig ddolen."
   },
   "panels/timeline/TimelineSelectorStatsView.ts | tableCopiedToClipboard": {
     "message": "Tabl wedi'i gopïo i'r clipfwrdd"
@@ -14189,9 +14567,6 @@
   "panels/timeline/TimelineUIUtils.ts | details": {
     "message": "Manylion"
   },
-  "panels/timeline/TimelineUIUtils.ts | dimensions": {
-    "message": "Dimensiynau"
-  },
   "panels/timeline/TimelineUIUtils.ts | duration": {
     "message": "Hyd"
   },
@@ -14264,9 +14639,6 @@
   "panels/timeline/TimelineUIUtils.ts | learnMore": {
     "message": "Dysgu rhagor"
   },
-  "panels/timeline/TimelineUIUtils.ts | location": {
-    "message": "Lleoliad"
-  },
   "panels/timeline/TimelineUIUtils.ts | message": {
     "message": "Neges"
   },
@@ -14330,32 +14702,17 @@
   "panels/timeline/TimelineUIUtils.ts | sChildren": {
     "message": "{PH1} (plant)"
   },
-  "panels/timeline/TimelineUIUtils.ts | sCollected": {
-    "message": "{PH1} wedi'i gasglu"
-  },
   "panels/timeline/TimelineUIUtils.ts | sOfS": {
     "message": "{PH1} o {PH2}"
   },
   "panels/timeline/TimelineUIUtils.ts | sS": {
     "message": "{PH1}: {PH2}"
   },
-  "panels/timeline/TimelineUIUtils.ts | sSCurlyBrackets": {
-    "message": "({PH1}, {PH2})"
-  },
-  "panels/timeline/TimelineUIUtils.ts | sSDimensions": {
-    "message": "{PH1} × {PH2}"
-  },
-  "panels/timeline/TimelineUIUtils.ts | sSSquareBrackets": {
-    "message": "{PH1} [{PH2}…]"
-  },
   "panels/timeline/TimelineUIUtils.ts | sSelectorStatsInfo": {
     "message": "Dewiswch \"{PH1}\" i gasglu ystadegau paru dewisydd CSS manwl."
   },
   "panels/timeline/TimelineUIUtils.ts | sSelf": {
     "message": "{PH1} (hunan)"
-  },
-  "panels/timeline/TimelineUIUtils.ts | sSs": {
-    "message": "{PH1} [{PH2}…{PH3}]"
   },
   "panels/timeline/TimelineUIUtils.ts | script": {
     "message": "Sgript"
@@ -14529,19 +14886,19 @@
     "message": "Ffurfweddu"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | configureFieldData": {
-    "message": "Ffurfweddu nôl data maes"
+    "message": "Ffurfweddu nôl metrigau maes"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | doesNotHaveSufficientData": {
     "message": "Nid oes gan Adroddiad Chrome UX ddigon o ddata cyflymder byd go iawn ar gyfer y dudalen hon."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | fetchAggregated": {
-    "message": "Nôl data maes cyfanredol o {PH1} i'ch helpu chi i roi mesuriadau lleol yn eu cyd-destun gyda'r hyn y mae defnyddwyr go iawn yn ei brofi ar y wefan."
+    "message": "Nôl metrigau maes cyfanredol o {PH1} i'ch helpu chi i roi mesuriadau lleol yn eu cyd-destun gyda'r hyn y mae defnyddwyr go iawn yn ei brofi ar y wefan."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | invalidOrigin": {
     "message": "Nid yw \"{PH1}\" yn darddiad dilys nac yn URL."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | mapDevelopmentOrigins": {
-    "message": "Gosod tarddiad datblygiad i gael data maes perthnasol yn awtomatig ar gyfer ei darddiad cynhyrchu."
+    "message": "Gosod tarddiad datblygiad i gael metrigau maes perthnasol yn awtomatig ar gyfer ei darddiad cynhyrchu."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | new": {
     "message": "Newydd"
@@ -14550,7 +14907,7 @@
     "message": "Iawn"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | onlyFetchFieldData": {
-    "message": "Dangoswch ddata maes ar gyfer yr URL isod bob amser"
+    "message": "Dangoswch fetrigau maes ar gyfer yr URL isod bob amser"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | optOut": {
     "message": "Optio allan"
@@ -14565,7 +14922,7 @@
     "message": "URL"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | whenPerformanceIsShown": {
-    "message": "Pan fydd DevTools ar agor, bydd yr URLau y byddwch yn ymweld â nhw yn cael eu hanfon at Google i ymholi data maes. Nid yw'r ceisiadau hyn yn gysylltiedig â'ch cyfrif Google."
+    "message": "Pan fydd DevTools ar agor, bydd y cyfeiriadau URL y byddwch yn ymweld â nhw yn cael eu hanfon at Google i ymholi metrigau maes. Nid yw'r ceisiadau hyn yn gysylltiedig â'ch cyfrif Google."
   },
   "panels/timeline/components/IgnoreListSetting.ts | addNewRegex": {
     "message": "Ychwanegu rheol mynegiant rheolaidd ar gyfer URL y sgript"
@@ -14672,8 +15029,8 @@
   "panels/timeline/components/LiveMetricsView.ts | eventLogs": {
     "message": "Adran logiau rhyngweithiadau a newidiadau cynllun"
   },
-  "panels/timeline/components/LiveMetricsView.ts | fieldData": {
-    "message": "Data maes"
+  "panels/timeline/components/LiveMetricsView.ts | fieldMetricsTitle": {
+    "message": "Metrigau maes"
   },
   "panels/timeline/components/LiveMetricsView.ts | inpInteraction": {
     "message": "Mae'r rhyngweithiad INP ar y 98fed canradd o oedi rhyngweithio."
@@ -14703,10 +15060,10 @@
     "message": "Metrigau lleol a maes"
   },
   "panels/timeline/components/LiveMetricsView.ts | localFieldLearnMoreLink": {
-    "message": "Dysgu rhagor am ddata lleol a maes"
+    "message": "Dysgu rhagor am fetrigau lleol a maes"
   },
   "panels/timeline/components/LiveMetricsView.ts | localFieldLearnMoreTooltip": {
-    "message": "Mae metrigau lleol yn cael eu dal o'r dudalen gyfredol gan ddefnyddio'ch cysylltiad rhwydwaith a dyfais. Mae data maes yn cael eu mesur gan ddefnyddwyr go iawn gan ddefnyddio llawer o wahanol gysylltiadau rhwydwaith a dyfeisiau."
+    "message": "Mae metrigau lleol yn cael eu dal o'r dudalen bresennol gan ddefnyddio'ch cysylltiad rhwydwaith a'ch dyfais. Mae metrigau maes yn cael eu mesur gan ddefnyddwyr go iawn gan ddefnyddio llawer o gysylltiadau rhwydwaith a dyfeisiau gwahanol."
   },
   "panels/timeline/components/LiveMetricsView.ts | localMetrics": {
     "message": "Metrigau lleol"
@@ -14769,10 +15126,10 @@
     "message": "Mynd i'r clwstwr newid cynllun gwaethaf."
   },
   "panels/timeline/components/LiveMetricsView.ts | showFieldDataForDevice": {
-    "message": "Dangos data maes ar gyfer math o ddyfais: {PH1}"
+    "message": "Dangos metrigau maes ar gyfer math o ddyfais: {PH1}"
   },
   "panels/timeline/components/LiveMetricsView.ts | showFieldDataForPage": {
-    "message": "Dangos data maes ar gyfer {PH1}"
+    "message": "Dangos metrigau maes ar gyfer {PH1}"
   },
   "panels/timeline/components/LiveMetricsView.ts | showInpInteraction": {
     "message": "Mynd i'r rhyngweithiad INP."
@@ -14880,13 +15237,13 @@
     "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda, ond yn sylweddol well na phrofiad eich defnyddwyr."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodGoodDetailedCompare": {
-    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Yn ogystal, mae'r data maes gwerth {PH1} 75ain canradd o {PH3} yn dda."
+    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Yn ogystal, mae'r metrigau maes gwerth {PH1} 75ain canradd o {PH3} yn dda."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodNeedsImprovementDetailedCompare": {
-    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae angen gwella data maes gwerth 75ain canradd {PH1} o {PH3}."
+    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae angen gwella metrigau maes gwerth 75ain canradd {PH1} o {PH3}."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodPoorDetailedCompare": {
-    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae'r data maes gwerth {PH1} 75ain canradd o {PH3} yn wael."
+    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn dda ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae'r metrigau maes gwerth {PH1} 75ain canradd o {PH3} yn wael."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodSimilarCompare": {
     "message": "Mae eich gwerth lleol {PH1} o {PH2} yn dda, ac yn debyg i brofiad eich defnyddwyr."
@@ -14901,13 +15258,13 @@
     "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2}, ond mae’n sylweddol well na phrofiad eich defnyddwyr."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementGoodDetailedCompare": {
-    "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2} ac mae wedi'i raddio yr un fath â {PH4} o brofiadau {PH1} defnyddwyr go iawn. Fodd bynnag, mae'r data maes gwerth {PH1} 75ain canradd o {PH3} yn dda."
+    "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2} ac mae wedi'i raddio yr un fath â {PH4} o brofiadau {PH1} defnyddwyr go iawn. Fodd bynnag, mae'r metrigau maes gwerth {PH1} 75ain canradd o {PH3} yn dda."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementNeedsImprovementDetailedCompare": {
-    "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2} ac mae wedi'i raddio yr un fath â {PH4} o brofiadau {PH1} defnyddwyr go iawn. Yn ogystal, mae angen gwella data maes gwerth 75ain canradd {PH1} o {PH3}."
+    "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2} ac mae wedi'i raddio yr un fath â {PH4} o brofiadau {PH1} defnyddwyr go iawn. Yn ogystal, mae angen gwella metrigau maes gwerth 75ain canradd {PH1} o {PH3}."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementPoorDetailedCompare": {
-    "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2} ac mae wedi'i raddio yr un fath â {PH4} o brofiadau {PH1} defnyddwyr go iawn. Fodd bynnag, mae'r data maes gwerth {PH1} 75ain canradd o {PH3} yn wael."
+    "message": "Mae angen gwella eich gwerth {PH1} lleol o {PH2} ac mae wedi'i raddio yr un fath â {PH4} o brofiadau {PH1} defnyddwyr go iawn. Fodd bynnag, mae'r metrigau maes gwerth {PH1} 75ain canradd o {PH3} yn wael."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementSimilarCompare": {
     "message": "Mae angen gwella eich {PH1} {PH2} lleol, ac mae'n debyg i brofiad eich defnyddwyr."
@@ -14922,13 +15279,13 @@
     "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael, ond yn sylweddol well na phrofiad eich defnyddwyr."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorGoodDetailedCompare": {
-    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae'r data maes gwerth {PH1} 75ain canradd o {PH3} yn dda."
+    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae'r metrigau maes gwerth {PH1} 75ain canradd o {PH3} yn dda."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorNeedsImprovementDetailedCompare": {
-    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae angen gwella data maes gwerth 75ain canradd {PH1} o {PH3}."
+    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Fodd bynnag, mae angen gwella metrigau maes gwerth 75ain canradd {PH1} o {PH3}."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorPoorDetailedCompare": {
-    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Yn ogystal, mae'r data maes gwerth {PH1} 75ain canradd o {PH3} yn wael."
+    "message": "Mae eich gwerth {PH1} lleol o {PH2} yn wael ac yn cael ei raddio yr un fath â {PH4} o brofiadau {PH1} defnyddiwr go iawn. Yn ogystal, mae'r metrigau maes gwerth {PH1} 75ain canradd o {PH3} yn wael."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorSimilarCompare": {
     "message": "Mae eich gwerth lleol {PH1} o {PH2} yn wael, ac yn debyg i brofiad eich defnyddwyr."
@@ -15017,6 +15374,9 @@
   "panels/timeline/components/NetworkRequestTooltip.ts | queuingAndConnecting": {
     "message": "Ciwio a chysylltu"
   },
+  "panels/timeline/components/NetworkRequestTooltip.ts | redirects": {
+    "message": "Ailgyfeiriadau"
+  },
   "panels/timeline/components/NetworkRequestTooltip.ts | renderBlocking": {
     "message": "Rhwystro rendrad"
   },
@@ -15087,7 +15447,7 @@
     "message": "Digwyddiad \"{PH1}\" wedi'i anodi gyda'r testun \"{PH2}\""
   },
   "panels/timeline/components/SidebarAnnotationsTab.ts | entryLabelTutorialDescription": {
-    "message": "Cliciwch ddwywaith ar eitem a theipiwch i greu label eitem."
+    "message": "Cliciwch ddwywaith neu pwyswch Enter ar eitem a theipiwch i greu label eitem."
   },
   "panels/timeline/components/SidebarAnnotationsTab.ts | entryLabelTutorialTitle": {
     "message": "Labelu eitem"
@@ -15109,12 +15469,6 @@
   },
   "panels/timeline/components/SidebarAnnotationsTab.ts | timeRangeTutorialTitle": {
     "message": "Diffinio ystod amser"
-  },
-  "panels/timeline/components/SidebarInsightsTab.ts | feedbackButton": {
-    "message": "Adborth"
-  },
-  "panels/timeline/components/SidebarInsightsTab.ts | feedbackTooltip": {
-    "message": "Mae Insights yn nodwedd arbrofol. Bydd eich adborth yn ein helpu i'w wella."
   },
   "panels/timeline/components/SidebarSingleInsightSet.ts | dismissTitle": {
     "message": "Diystyru"
@@ -15158,11 +15512,20 @@
   "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavings": {
     "message": "Arbedion amcangyfrifedig: {PH1}"
   },
+  "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsAriaBytes": {
+    "message": "Arbedion amcangyfrifedig ar gyfer y mewnwelediad hwn: {PH1} maint trosglwyddo"
+  },
+  "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsAriaTiming": {
+    "message": "Arbedion amcangyfrifedig ar gyfer y mewnwelediad hwn: {PH1}"
+  },
   "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsTimingAndBytes": {
     "message": "Arbedion amcangyfrifedig: {PH1} a {PH2}"
   },
+  "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsTimingAndBytesAria": {
+    "message": "Arbedion amcangyfrifedig ar gyfer y mewnwelediad hwn: {PH1} a {PH2} maint trosglwyddo"
+  },
   "panels/timeline/components/insights/BaseInsightComponent.ts | viewDetails": {
-    "message": "Gweld manylion ar gyfer {PH1}"
+    "message": "Gweld manylion ar gyfer mewnwelediad {PH1}."
   },
   "panels/timeline/components/insights/Checklist.ts | failedAriaLabel": {
     "message": "Methodd y gwiriad mewnwelediad: {PH1}"
@@ -15186,7 +15549,7 @@
     "message": "URL"
   },
   "panels/timeline/overlays/components/EntriesLinkOverlay.ts | diagram": {
-    "message": "Cysylltiadau rhwng cofnodion"
+    "message": "Dolenni rhwng cofnodion"
   },
   "panels/timeline/overlays/components/EntryLabelOverlay.ts | entryLabel": {
     "message": "Label mynediad"
@@ -15204,7 +15567,7 @@
     "message": "Dysgu rhagor am anodiadau awtomatig yn y gosodiadau"
   },
   "panels/timeline/overlays/components/EntryLabelOverlay.ts | moreInfoAriaLabel": {
-    "message": "Rhagor o wybodaeth"
+    "message": "Rhagor o wybodaeth am y nodwedd hon"
   },
   "panels/timeline/overlays/components/TimeRangeOverlay.ts | timeRange": {
     "message": "Ystod amser"
@@ -15647,33 +16010,6 @@
   "panels/utils/utils.ts | thirdPartyPhaseout": {
     "message": "Mae cwcis ar gyfer y cais hwn yn cael eu rhwystro naill ai oherwydd baneri Chrome neu ffurfweddiad porwr. Dysgu rhagor yn y panel materion."
   },
-  "panels/web_audio/AudioContextContentBuilder.ts | callbackBufferSize": {
-    "message": "Maint Clustog Galw yn ôl"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | callbackInterval": {
-    "message": "Ysbaid Galw yn ôl"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | currentTime": {
-    "message": "Amser Presennol"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | maxOutputChannels": {
-    "message": "Sianeli Allbwn Mwyaf"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | renderCapacity": {
-    "message": "Capasiti Rendro"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | sampleRate": {
-    "message": "Cyfradd y Sampl"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | state": {
-    "message": "Cyflwr"
-  },
-  "panels/web_audio/AudioContextSelector.ts | audioContextS": {
-    "message": "Cyd-destun sain: {PH1}"
-  },
-  "panels/web_audio/AudioContextSelector.ts | noRecordings": {
-    "message": "(dim recordiadau)"
-  },
   "panels/web_audio/WebAudioView.ts | noWebAudio": {
     "message": "Ni chanfuwyd unrhyw ddefnydd API Sain Gwe"
   },
@@ -15697,9 +16033,6 @@
   },
   "panels/webauthn/WebauthnPane.ts | add": {
     "message": "Ychwanegu"
-  },
-  "panels/webauthn/WebauthnPane.ts | addAuthenticator": {
-    "message": "Ychwanegu dilyswr"
   },
   "panels/webauthn/WebauthnPane.ts | authenticatorS": {
     "message": "Dilysydd {PH1}"
@@ -15833,6 +16166,9 @@
   "ui/components/diff_view/DiffView.ts | deletions": {
     "message": "Dilead:"
   },
+  "ui/components/diff_view/DiffView.ts | noDiff": {
+    "message": "Ffeil yn union yr un fath â'i gyflwr heb ei addasu"
+  },
   "ui/components/issue_counter/IssueCounter.ts | breakingChanges": {
     "message": "{issueCount,plural, =1{# newid sy'n achosi i gydrannau eraill fethu}zero{# newid sy'n achosi i gydrannau eraill fethu}two{# newid sy'n achosi i gydrannau eraill fethu}few{# newid sy'n achosi i gydrannau eraill fethu}many{# newid sy'n achosi i gydrannau eraill fethu}other{# newid sy'n achosi i gydrannau eraill fethu}}"
   },
@@ -15898,6 +16234,9 @@
   },
   "ui/components/settings/SettingCheckbox.ts | learnMore": {
     "message": "Dysgu rhagor"
+  },
+  "ui/components/snackbars/Snackbar.ts | dismiss": {
+    "message": "Diystyru"
   },
   "ui/components/survey_link/SurveyLink.ts | anErrorOccurredWithTheSurvey": {
     "message": "Cafwyd gwall gyda'r arolwg"
@@ -16054,6 +16393,9 @@
   },
   "ui/legacy/InspectorView.ts | setToSpecificLanguage": {
     "message": "Newid DevTools i {PH1}"
+  },
+  "ui/legacy/InspectorView.ts | toggleDrawerOrientation": {
+    "message": "Toglo cyfeiriadedd drôr"
   },
   "ui/legacy/ListWidget.ts | addString": {
     "message": "Ychwanegu"
@@ -16231,6 +16573,9 @@
   },
   "ui/legacy/UIUtils.ts | copyLinkAddress": {
     "message": "Copïo cyfeiriad y ddolen"
+  },
+  "ui/legacy/UIUtils.ts | new": {
+    "message": "NEWYDD"
   },
   "ui/legacy/UIUtils.ts | ok": {
     "message": "Iawn"
@@ -16622,9 +16967,6 @@
   "ui/legacy/components/perf_ui/FilmStripView.ts | screenshotForSSelectToView": {
     "message": "Sgrinlun ar gyfer {PH1} - dewiswch i weld ceisiadau blaenorol."
   },
-  "ui/legacy/components/perf_ui/FlameChart.ts | deleteAnnotations": {
-    "message": "Dileu anodiadau"
-  },
   "ui/legacy/components/perf_ui/FlameChart.ts | enterTrackConfigurationMode": {
     "message": "Ffurfweddu traciau"
   },
@@ -16773,7 +17115,7 @@
     "message": "Agor y llun mewn tab newydd"
   },
   "ui/legacy/components/source_frame/ImageView.ts | saveImageAs": {
-    "message": "Cadw'r llun fel..."
+    "message": "Cadw'r llun fel…"
   },
   "ui/legacy/components/source_frame/JSONView.ts | find": {
     "message": "Chwilio"

@@ -57,6 +57,8 @@ constexpr char kAccountEmailFormat[] = "%s@foo.com";
 constexpr char kAccountName[] = "The Liliputian";
 constexpr char kAccountGivenName[] = "Julius";
 constexpr char kAccountPicture[] = "https://image.com/yolo";
+constexpr char kAccountPhone[] = "(650) 243-3243";
+constexpr char kAccountUsername[] = "@julius";
 
 struct AccountConfig {
   std::string id;
@@ -74,7 +76,7 @@ struct Config {
 Config kValidConfig = {
     /*idp_signin_status=*/true,
     /*accounts=*/
-    {{"account1", /*login_state=*/std::nullopt,
+    {{"account1", /*idp_claimed_login_state=*/std::nullopt,
       /*was_granted_sharing_permission=*/true}},
     /*config_fetch_status=*/{ParseStatus::kSuccess, net::HTTP_OK},
     /*accounts_fetch_status=*/{ParseStatus::kSuccess, net::HTTP_OK}};
@@ -163,7 +165,8 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
                        endpoints, idp_metadata));
   }
 
-  void SendAccountsRequest(const GURL& accounts_url,
+  void SendAccountsRequest(const url::Origin& idp_origin,
+                           const GURL& accounts_url,
                            const std::string& client_id,
                            AccountsRequestCallback callback) override {
     has_fetched_accounts_endpoint_ = true;
@@ -173,7 +176,8 @@ class TestIdpNetworkRequestManager : public MockIdpNetworkRequestManager {
       accounts.emplace_back(base::MakeRefCounted<IdentityRequestAccount>(
           account_config.id, GenerateEmailForUserId(account_config.id),
           kAccountName, GenerateEmailForUserId(account_config.id), kAccountName,
-          kAccountGivenName, GURL(kAccountPicture),
+          kAccountGivenName, GURL(kAccountPicture), kAccountPhone,
+          kAccountUsername,
           /*login_hints=*/std::vector<std::string>(),
           /*domain_hints=*/std::vector<std::string>(),
           /*labels=*/std::vector<std::string>(), account_config.login_state));
@@ -374,9 +378,9 @@ TEST_F(FederatedAuthUserInfoRequestTest, PreviouslySignedIn) {
   const char kAccount2Id[] = "account2";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccount1Id, /*login_state=*/std::nullopt,
+  config.accounts = {{kAccount1Id, /*idp_claimed_login_state=*/std::nullopt,
                       /*was_granted_sharing_permission=*/true},
-                     {kAccount2Id, /*login_state=*/std::nullopt,
+                     {kAccount2Id, /*idp_claimed_login_state=*/std::nullopt,
                       /*was_granted_sharing_permission=*/false}};
   RunUserInfoTest(config, RequestUserInfoStatus::kSuccess,
                   {kAccount1Id, kAccount2Id});
@@ -395,9 +399,9 @@ TEST_F(FederatedAuthUserInfoRequestTest, NoSignedInAccount) {
   const char kAccount2Id[] = "account2";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccount1Id, /*login_state=*/std::nullopt,
+  config.accounts = {{kAccount1Id, /*idp_claimed_login_state=*/std::nullopt,
                       /*was_granted_sharing_permission=*/false},
-                     {kAccount2Id, /*login_state=*/std::nullopt,
+                     {kAccount2Id, /*idp_claimed_login_state=*/std::nullopt,
                       /*was_granted_sharing_permission=*/false}};
   RunUserInfoTest(config, RequestUserInfoStatus::kError, {});
   EXPECT_FALSE(DidFetchAnyEndpoint());
@@ -420,10 +424,11 @@ TEST_F(FederatedAuthUserInfoRequestTest, NotInApprovedClientsList) {
   const char kAccount2Id[] = "account2";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccount1Id, /*login_state=*/LoginState::kSignUp,
-                      /*was_granted_sharing_permission=*/true},
-                     {kAccount2Id, /*login_state=*/LoginState::kSignUp,
-                      /*was_granted_sharing_permission=*/true}};
+  config.accounts = {
+      {kAccount1Id, /*idp_claimed_login_state=*/LoginState::kSignUp,
+       /*was_granted_sharing_permission=*/true},
+      {kAccount2Id, /*idp_claimed_login_state=*/LoginState::kSignUp,
+       /*was_granted_sharing_permission=*/true}};
   RunUserInfoTest(config, RequestUserInfoStatus::kError, {});
 
   histogram_tester_.ExpectUniqueSample(
@@ -446,10 +451,11 @@ TEST_F(FederatedAuthUserInfoRequestTest, InApprovedClientsList) {
   const char kAccount2Id[] = "account2";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccount1Id, /*login_state=*/LoginState::kSignIn,
-                      /*was_granted_sharing_permission=*/true},
-                     {kAccount2Id, /*login_state=*/LoginState::kSignUp,
-                      /*was_granted_sharing_permission=*/true}};
+  config.accounts = {
+      {kAccount1Id, /*idp_claimed_login_state=*/LoginState::kSignIn,
+       /*was_granted_sharing_permission=*/true},
+      {kAccount2Id, /*idp_claimed_login_state=*/LoginState::kSignUp,
+       /*was_granted_sharing_permission=*/true}};
   RunUserInfoTest(config, RequestUserInfoStatus::kSuccess,
                   {kAccount1Id, kAccount2Id});
 }
@@ -459,7 +465,8 @@ TEST_F(FederatedAuthUserInfoRequestTest,
   const char kAccountId[] = "account";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccountId, /*login_state=*/LoginState::kSignIn,
+  config.accounts = {{kAccountId,
+                      /*idp_claimed_login_state=*/LoginState::kSignIn,
                       /*was_granted_sharing_permission=*/false}};
 
   // Pretend the IdP was given third-party cookies access.
@@ -480,7 +487,7 @@ TEST_F(FederatedAuthUserInfoRequestTest,
   const char kAccountId[] = "account";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccountId, /*login_state=*/std::nullopt,
+  config.accounts = {{kAccountId, /*idp_claimed_login_state=*/std::nullopt,
                       /*was_granted_sharing_permission=*/false}};
 
   // Pretend the IdP was given third-party cookies access.
@@ -542,14 +549,15 @@ TEST_F(FederatedAuthUserInfoRequestTest, ReturningAccountsFirst) {
   const char kAccount4Id[] = "account4";
 
   Config config = kValidConfig;
-  config.accounts = {{kAccount1Id, /*login_state=*/LoginState::kSignUp,
-                      /*was_granted_sharing_permission=*/false},
-                     {kAccount2Id, /*login_state=*/LoginState::kSignIn,
-                      /*was_granted_sharing_permission=*/true},
-                     {kAccount3Id, /*login_state=*/LoginState::kSignUp,
-                      /*was_granted_sharing_permission=*/false},
-                     {kAccount4Id, /*login_state=*/LoginState::kSignIn,
-                      /*was_granted_sharing_permission=*/true}};
+  config.accounts = {
+      {kAccount1Id, /*idp_claimed_login_state=*/LoginState::kSignUp,
+       /*was_granted_sharing_permission=*/false},
+      {kAccount2Id, /*idp_claimed_login_state=*/LoginState::kSignIn,
+       /*was_granted_sharing_permission=*/true},
+      {kAccount3Id, /*idp_claimed_login_state=*/LoginState::kSignUp,
+       /*was_granted_sharing_permission=*/false},
+      {kAccount4Id, /*idp_claimed_login_state=*/LoginState::kSignIn,
+       /*was_granted_sharing_permission=*/true}};
   RunUserInfoTest(config, RequestUserInfoStatus::kSuccess,
                   {kAccount2Id, kAccount4Id, kAccount1Id, kAccount3Id});
 }

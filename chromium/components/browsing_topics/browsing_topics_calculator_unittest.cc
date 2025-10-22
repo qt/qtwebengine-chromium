@@ -10,6 +10,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/bind.h"
 #include "base/test/gtest_util.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -21,7 +22,7 @@
 #include "components/history/core/browser/history_database_params.h"
 #include "components/history/core/browser/history_service.h"
 #include "components/history/core/test/test_history_database.h"
-#include "components/optimization_guide/core/test_model_info_builder.h"
+#include "components/optimization_guide/core/delivery/test_model_info_builder.h"
 #include "components/privacy_sandbox/privacy_sandbox_prefs.h"
 #include "components/privacy_sandbox/privacy_sandbox_settings_impl.h"
 #include "components/privacy_sandbox/privacy_sandbox_test_util.h"
@@ -115,6 +116,7 @@ class BrowsingTopicsCalculatorTest : public testing::Test {
     tracking_protection_settings_ =
         std::make_unique<privacy_sandbox::TrackingProtectionSettings>(
             &prefs_, host_content_settings_map_.get(),
+            /*management_service=*/nullptr,
             /*is_incognito=*/false);
     cookie_settings_ = base::MakeRefCounted<content_settings::CookieSettings>(
         host_content_settings_map_.get(), &prefs_,

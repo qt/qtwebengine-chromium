@@ -22,6 +22,7 @@
 #include "ash/webui/personalization_app/search/search.mojom.h"
 #include "ash/webui/personalization_app/search/search_handler.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/branding_buildflags.h"
 #include "chrome/browser/ash/drive/file_system_util.h"
 #include "chrome/browser/ash/login/quick_unlock/pin_backend.h"
@@ -36,6 +37,8 @@
 #include "chrome/browser/nearby_sharing/nearby_share_settings.h"
 #include "chrome/browser/nearby_sharing/nearby_sharing_service_factory.h"
 #include "chrome/browser/nearby_sharing/nearby_sharing_service_impl.h"
+#include "chrome/browser/ui/webui/app_management/app_management_page_handler_base.h"
+#include "chrome/browser/ui/webui/app_management/app_management_page_handler_factory.h"
 #include "chrome/browser/ui/webui/ash/settings/pages/apps/app_notification_handler.h"
 #include "chrome/browser/ui/webui/ash/settings/pages/apps/app_parental_controls_handler.h"
 #include "chrome/browser/ui/webui/ash/settings/pages/people/graduation_handler.h"
@@ -387,7 +390,6 @@ void OSSettingsUI::BindInterface(
 
 void OSSettingsUI::BindInterface(
     mojo::PendingReceiver<mojom::InputDeviceSettingsProvider> receiver) {
-  DCHECK(features::IsInputDeviceSettingsSplitEnabled());
   auto* provider =
       OsSettingsManagerFactory::GetForProfile(Profile::FromWebUI(web_ui()))
           ->input_device_settings_provider();

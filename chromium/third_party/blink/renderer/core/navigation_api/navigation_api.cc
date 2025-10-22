@@ -9,6 +9,7 @@
 
 #include "base/check_op.h"
 #include "base/feature_list.h"
+#include "base/time/time.h"
 #include "third_party/blink/public/mojom/frame/frame.mojom-blink.h"
 #include "third_party/blink/public/web/web_frame_load_type.h"
 #include "third_party/blink/renderer/bindings/core/v8/capture_source_location.h"
@@ -272,6 +273,9 @@ void NavigationApi::UpdateForNavigation(HistoryItem& item,
     ongoing_api_method_tracker_->NotifyAboutTheCommittedToEntry(
         entries_[current_entry_index_], type);
   }
+  if (transition_) {
+    transition_->ResolveCommittedPromise();
+  }
 
   NavigateEvent* ongoing_navigate_event = ongoing_navigate_event_;
 
@@ -318,7 +322,7 @@ NavigationHistoryEntry* NavigationApi::GetEntryForRestore(
 
 // static
 void FireDisposeEventsAsync(
-    HeapVector<Member<NavigationHistoryEntry>>* disposed_entries) {
+    GCedHeapVector<Member<NavigationHistoryEntry>>* disposed_entries) {
   for (const auto& entry : *disposed_entries) {
     entry->DispatchEvent(*Event::Create(event_type_names::kDispose));
   }
@@ -370,8 +374,8 @@ void NavigationApi::SetEntriesForRestore(
 
   // |new_entries| now contains the previous entries_. Find the ones that are no
   // longer in entries_ so they can be disposed.
-  HeapVector<Member<NavigationHistoryEntry>>* disposed_entries =
-      MakeGarbageCollected<HeapVector<Member<NavigationHistoryEntry>>>();
+  GCedHeapVector<Member<NavigationHistoryEntry>>* disposed_entries =
+      MakeGarbageCollected<GCedHeapVector<Member<NavigationHistoryEntry>>>();
   for (const auto& entry : new_entries) {
     const auto& it = keys_to_indices_.find(entry->key());
     if (it == keys_to_indices_.end() || entries_[it->value] != entry)
@@ -593,6 +597,7 @@ NavigationResult* NavigationApi::PerformNonTraverseNavigation(
 NavigationResult* NavigationApi::traverseTo(ScriptState* script_state,
                                             const String& key,
                                             NavigationOptions* options) {
+  base::TimeTicks actual_navigation_start = base::TimeTicks::Now();
   if (DOMException* maybe_ex =
           PerformSharedNavigationChecks("traverseTo()/back()/forward()")) {
     return EarlyErrorResult(script_state, maybe_ex);
@@ -618,17 +623,16 @@ NavigationResult* NavigationApi::traverseTo(ScriptState* script_state,
                                                        key);
   upcoming_traverse_api_method_trackers_.insert(key, api_method_tracker);
   LocalFrame* frame = window_->GetFrame();
-  std::optional<scheduler::TaskAttributionId> soft_navigation_task_id;
+  std::optional<scheduler::TaskAttributionId> task_state_id;
   if (script_state->World().IsMainWorld() && frame->IsOutermostMainFrame()) {
-    if (SoftNavigationHeuristics* heuristics =
-            SoftNavigationHeuristics::From(*window_)) {
-      soft_navigation_task_id =
-          heuristics->AsyncSameDocumentNavigationStarted();
+    if (auto* tracker = scheduler::TaskAttributionTracker::From(
+            script_state->GetIsolate())) {
+      task_state_id = tracker->AsyncSameDocumentNavigationStarted();
     }
   }
   frame->GetLocalFrameHostRemote().NavigateToNavigationApiKey(
       key, LocalFrame::HasTransientUserActivation(frame),
-      soft_navigation_task_id);
+      actual_navigation_start, task_state_id);
   return api_method_tracker->GetNavigationResult();
 }
 
@@ -808,16 +812,13 @@ NavigationApi::DispatchResult NavigationApi::DispatchNavigateEvent(
   init->setUserInitiated(params->involvement !=
                          UserNavigationInvolvement::kNone);
   if (params->source_element) {
+    auto* control =
+        DynamicTo<HTMLFormControlElement>(params->source_element.Get());
     HTMLFormElement* form =
-        DynamicTo<HTMLFormElement>(params->source_element.Get());
-    if (!form) {
-      if (auto* control =
-              DynamicTo<HTMLFormControlElement>(params->source_element.Get())) {
-        form = control->formOwner();
-      }
-    }
+        control ? control->formOwner()
+                : DynamicTo<HTMLFormElement>(params->source_element.Get());
     if (form && form->Method() == FormSubmission::kPostMethod) {
-      init->setFormData(FormData::Create(form, ASSERT_NO_EXCEPTION));
+      init->setFormData(FormData::Create(form, control, ASSERT_NO_EXCEPTION));
     }
   }
   if (ongoing_api_method_tracker_) {
@@ -840,7 +841,7 @@ NavigationApi::DispatchResult NavigationApi::DispatchNavigateEvent(
   if (params->frame_load_type != WebFrameLoadType::kReplaceCurrentItem &&
       init->userInitiated() && !init->downloadRequest() &&
       init->canIntercept()) {
-    if (auto* heuristics = SoftNavigationHeuristics::From(*window_)) {
+    if (auto* heuristics = window_->GetSoftNavigationHeuristics()) {
       // If these conditions are met, create a SoftNavigationEventScope to
       // consider this a "user initiated click", and the dispatched event
       // handlers as potential soft navigation tasks.
@@ -959,11 +960,11 @@ void NavigationApi::DidFailOngoingNavigation(ScriptValue value) {
   auto* isolate = window_->GetIsolate();
   v8::Local<v8::Message> message =
       v8::Exception::CreateMessage(isolate, value.V8Value());
-  std::unique_ptr<SourceLocation> location =
+  SourceLocation* location =
       blink::CaptureSourceLocation(isolate, message, window_);
-  ErrorEvent* event = ErrorEvent::Create(
-      ToCoreStringWithNullCheck(isolate, message->Get()), std::move(location),
-      value, &DOMWrapperWorld::MainWorld(isolate));
+  ErrorEvent* event =
+      ErrorEvent::Create(ToCoreStringWithNullCheck(isolate, message->Get()),
+                         location, value, &DOMWrapperWorld::MainWorld(isolate));
   event->SetType(event_type_names::kNavigateerror);
   DispatchEvent(*event);
 

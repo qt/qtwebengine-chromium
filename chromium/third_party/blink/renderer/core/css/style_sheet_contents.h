@@ -25,9 +25,8 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/parser/css_tokenizer.h"
-#include "third_party/blink/renderer/core/css/rule_set.h"
 #include "third_party/blink/renderer/core/css/rule_set_diff.h"
-#include "third_party/blink/renderer/core/loader/resource/css_style_sheet_resource.h"
+#include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/loader/fetch/render_blocking_behavior.h"
@@ -43,10 +42,13 @@
 namespace blink {
 
 class CSSStyleSheet;
+class CSSStyleSheetResource;
 class Document;
+class MediaQueryEvaluator;
 class Node;
 class StyleRuleBase;
 class StyleRuleFontFace;
+class RuleSet;
 class RuleSetDiff;
 class StyleRuleImport;
 class StyleRuleNamespace;
@@ -97,15 +99,13 @@ class CORE_EXPORT StyleSheetContents final
   bool HasSingleOwnerDocument() const { return has_single_owner_document_; }
 
   // Gets a client in the given TreeScope.
-  CSSStyleSheet* ClientInTreeScope(TreeScope& tree_scope) const;
+  CSSStyleSheet* ClientInTreeScope(const TreeScope& tree_scope) const;
 
   // Gets the first owner document in the list of registered clients, or nullptr
   // if there are none.
   Document* AnyOwnerDocument() const;
 
-  const WTF::TextEncoding& Charset() const {
-    return parser_context_->Charset();
-  }
+  const TextEncoding& Charset() const { return parser_context_->Charset(); }
 
   bool LoadCompleted() const;
   bool HasFailedOrCanceledSubresources() const;
@@ -217,9 +217,25 @@ class CORE_EXPORT StyleSheetContents final
   bool IsMutable() const { return is_mutable_; }
   void StartMutation();
 
+  // Set to true whenever this StyleSheetContents was returned as a cache hit
+  // from the text cache (StyleEngine::CreateSheet()). If this flag is true,
+  // is means that this StyleSheetContents may be shared between multiple
+  // CSSStyleSheets.
   bool IsUsedFromTextCache() const { return is_used_from_text_cache_; }
   void SetIsUsedFromTextCache() { is_used_from_text_cache_ = true; }
 
+  // Set to true whenever this StyleSheetContents was returned as a cache hit
+  // from the resource cache [1]. If this flag is true, is means that this
+  // StyleSheetContents may be shared between multiple CSSStyleSheets.
+  //
+  // [1] CSSStyleSheetResource::CreateParsedStyleSheetFromCache
+  bool IsUsedFromResourceCache() const { return is_used_from_resource_cache_; }
+  void SetIsUsedFromResourceCache() { is_used_from_resource_cache_ = true; }
+
+  // The CSSStyleSheetResource is set whenever this StyleSheetContents is
+  // the cached stylesheet of that CSSStyleSheetResource. We must not modify
+  // this StyleSheetContents while this is true, and any mutations must
+  // therefore perform a copy-on-write first.
   bool IsReferencedFromResource() const {
     return referenced_from_resource_ != nullptr;
   }
@@ -282,6 +298,7 @@ class CORE_EXPORT StyleSheetContents final
   bool has_media_queries_ : 1;
   bool has_single_owner_document_ : 1;
   bool is_used_from_text_cache_ : 1;
+  bool is_used_from_resource_cache_ : 1;
 
   Member<const CSSParserContext> parser_context_;
 

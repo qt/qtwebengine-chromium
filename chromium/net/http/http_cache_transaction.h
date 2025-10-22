@@ -13,6 +13,7 @@
 
 #include <array>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "base/functional/callback.h"
@@ -21,6 +22,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/completion_repeating_callback.h"
 #include "net/base/io_buffer.h"
@@ -29,8 +31,8 @@
 #include "net/base/net_error_details.h"
 #include "net/base/net_errors.h"
 #include "net/base/request_priority.h"
-#include "net/base/tracing.h"
 #include "net/http/http_cache.h"
+#include "net/http/http_cache_util.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_headers.h"
 #include "net/http/http_response_info.h"
@@ -150,7 +152,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   void DoneReading() override;
   const HttpResponseInfo* GetResponseInfo() const override;
   LoadState GetLoadState() const override;
-  void SetQuicServerInfo(QuicServerInfo* quic_server_info) override;
   bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const override;
   void PopulateLoadTimingInternalInfo(
       LoadTimingInternalInfo* load_timing_internal_info) const override;
@@ -159,8 +160,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   void SetPriority(RequestPriority priority) override;
   void SetWebSocketHandshakeStreamCreateHelper(
       WebSocketHandshakeStreamBase::CreateHelper* create_helper) override;
-  void SetBeforeNetworkStartCallback(
-      BeforeNetworkStartCallback callback) override;
   void SetConnectedCallback(const ConnectedCallback& callback) override;
   void SetRequestHeadersCallback(RequestHeadersCallback callback) override;
   void SetResponseHeadersCallback(ResponseHeadersCallback callback) override;
@@ -170,7 +169,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
       base::RepeatingCallback<void(HttpRequestHeaders*)> callback) override;
   void SetIsSharedDictionaryReadAllowedCallback(
       base::RepeatingCallback<bool()> callback) override;
-  int ResumeNetworkStart() override;
   ConnectionAttempts GetConnectionAttempts() const override;
   void CloseConnectionOnDestruction() override;
   bool IsMdlMatchForMetrics() const override;
@@ -199,27 +197,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   void AddDiskCacheWriteTime(base::TimeDelta elapsed);
 
  private:
-  static const size_t kNumValidationHeaders = 2;
-  // Helper struct to pair a header name with its value, for
-  // headers used to validate cache entries.
-  struct ValidationHeaders {
-    ValidationHeaders();
-
-    ValidationHeaders(const ValidationHeaders&) = delete;
-    ValidationHeaders& operator=(const ValidationHeaders&) = delete;
-
-    ~ValidationHeaders();
-
-    std::array<std::string, kNumValidationHeaders> values;
-    void Reset() {
-      initialized = false;
-      for (auto& value : values) {
-        value.clear();
-      }
-    }
-    bool initialized = false;
-  };
-
   struct NetworkTransactionInfo {
     NetworkTransactionInfo();
 
@@ -334,6 +311,53 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   };
   // LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:NoVarySearchUseResult)
 
+  // Reason why we ended up with status ENTRY_OTHER.
+  //
+  // These values are persisted to logs. Entries should not be renumbered and
+  // numeric values should never be reused.
+  //
+  // LINT.IfChange(OtherStatusReason)
+  enum class OtherStatusReason : uint8_t {
+    kNoReason = 0,             // Status was not set to ENTRY_OTHER.
+    kReadingAuthResponse = 1,  // Stopped caching to read auth response body.
+    kNetworkError = 2,         // A network error happened.
+    kResponseValidation = 3,   // Response validation failed.
+    kDeleteFullEntry = 4,      // Need to delete a full entry.
+    kPartialRequest = 5,       // Partial requests are hard to log.
+    kRangeHeaderFound = 6,     // Request had Range header.
+    kTruncatedEntry = 7,       // Cache entry was truncated.
+    kPartialValidation = 8,    // Validating a partial entry.
+    kPreConditionalized = 9,   // Externally conditionalized request.
+    kValidatePartial = 10,     // Validating partial response failed.
+    kIgnoreRangeRequest = 11,  // Very miscellaneous range failure.
+    kBlockedByIpSpace = 12,    // Blocked by Private Network Access.
+    kMaxValue = kBlockedByIpSpace,
+  };
+  // LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:HttpCacheNotCoveredReason)
+
+  // The status of the entry that we are considering to doom.
+  //
+  // LINT.IfChange(HttpCacheEntryRejectionStatus)
+  enum class HttpCacheEntryRejectionStatus {
+    // The cache entry was rejected.
+    kRejection = 0,
+    // The cache entry was not rejected because it is usable.
+    kNoRejectionUsable = 1,
+    // The cache entry was not rejected because the request is for a partial
+    // cache entry.
+    kNoRejectionPartial = 2,
+    // The cache entry was not rejected because the transaction is not in
+    // read-write mode.
+    kNoRejectionNonReadWriteMode = 3,
+    // The cache entry was not rejected because cache validation was skipped.
+    kNoRejectionSkipCacheValidation = 4,
+    // The cache entry was not rejected because the request was loaded only from
+    // cache.
+    kNoRejectionLoadOnlyFromCache = 5,
+    kMaxValue = kNoRejectionLoadOnlyFromCache,
+  };
+  // LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:HttpCacheEntryRejectionStatus)
+
   // Runs the state transition loop. Resets and calls |callback_| on exit,
   // unless the return value is ERR_IO_PENDING.
   int DoLoop(int result);
@@ -417,10 +441,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   // the validation of the rest of the entry.  Returns a network error code.
   int ValidateEntryHeadersAndContinue();
 
-  // Returns whether the current externally conditionalized request's validation
-  // headers match the current cache entry's headers.
-  bool ExternallyConditionalizedValidationHeadersMatchEntry() const;
-
   // Called to start requests which were given an "if-modified-since" or
   // "if-none-match" validation header by the caller (NOT when the request was
   // conditionalized internally in response to LOAD_VALIDATE_CACHE).
@@ -459,6 +479,9 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   // Returns true if |method_| indicates that we should only try to open an
   // entry and not attempt to create.
   bool ShouldOpenOnlyMethods() const;
+
+  HttpCacheEntryRejectionStatus GetHttpCacheEntryRejectionStatus(
+      uint8_t in_memory_info);
 
   // Returns true if the resource info MemoryEntryDataHints bit flags in
   // |in_memory_info| and the current request & load flags suggest that
@@ -573,6 +596,8 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   void UpdateCacheEntryStatus(
       HttpResponseInfo::CacheEntryStatus new_cache_entry_status);
 
+  void UpdateCacheEntryStatusToOther(OtherStatusReason reason);
+
   // Sets the response.cache_entry_status to the current cache_entry_status_.
   void SyncCacheEntryStatusToResponse();
 
@@ -682,8 +707,8 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   NetLogWithSource net_log_;
   HttpRequestHeaders request_headers_copy_;
   // If extra_headers specified a "if-modified-since" or "if-none-match",
-  // |external_validation_| contains the value of those headers.
-  ValidationHeaders external_validation_;
+  // `external_validation_` contains the value of those headers.
+  std::optional<http_cache_util::ValidationHeaders> external_validation_;
   base::WeakPtr<HttpCache> cache_;
   scoped_refptr<HttpCache::ActiveEntry> entry_;
   // This field is not a raw_ptr<> because it was filtered by the rewriter for:
@@ -757,10 +782,10 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   base::TimeTicks first_cache_access_since_;
   base::TimeTicks send_request_since_;
   base::TimeTicks read_headers_since_;
-  base::Time open_entry_last_used_;
   base::TimeTicks last_disk_cache_access_start_time_;
   base::TimeDelta total_disk_cache_read_time_;
   base::TimeDelta total_disk_cache_write_time_;
+  base::TimeTicks first_nvs_cache_lookup_end_time_;
   bool recorded_histograms_ = false;
   bool has_opened_or_created_entry_ = false;
   bool record_entry_open_or_creation_time_ = false;
@@ -787,6 +812,10 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   NoVarySearchUseResult no_vary_search_use_result_ =
       NoVarySearchUseResult::kNotApplied;
 
+  // The first reason why `cache_entry_status_` ended up set to ENTRY_OTHER.
+  // Logged to UMA on destruction when `cache_entry_status_` is ENTRY_OTHER.
+  OtherStatusReason other_status_reason_ = OtherStatusReason::kNoReason;
+
   // If an entry in the NoVarySearchCache was found to be unhelpful, this
   // handle can be used to erase it. Only set if an entry was found in the
   // NoVerySearchCache and hasn't been erased already. This is also used as a
@@ -801,7 +830,6 @@ class NET_EXPORT_PRIVATE HttpCache::Transaction : public HttpTransaction {
   raw_ptr<WebSocketHandshakeStreamBase::CreateHelper>
       websocket_handshake_stream_base_create_helper_ = nullptr;
 
-  BeforeNetworkStartCallback before_network_start_callback_;
   ConnectedCallback connected_callback_;
   RequestHeadersCallback request_headers_callback_;
   ResponseHeadersCallback early_response_headers_callback_;

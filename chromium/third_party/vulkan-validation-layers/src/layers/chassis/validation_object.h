@@ -23,6 +23,9 @@
 // This is just a "simple" way to make sure everyone has access to things like PRIu32
 #include <cinttypes>
 
+// simple util that is everywhere and accepting this as spot to allow global access to it
+#include "utils/assert_utils.h"
+
 #include <shared_mutex>
 #include <stdio.h>
 #include <stdlib.h>
@@ -38,10 +41,10 @@
 #include "error_message/logging.h"
 #include "error_message/error_location.h"
 #include "error_message/record_object.h"
-#include "utils/vk_layer_utils.h"
 #include "generated/vk_dispatch_table_helper.h"
 #include "chassis/dispatch_object.h"
 #include "generated/vk_extension_helper.h"
+#include "utils/lock_utils.h"
 
 namespace chassis {
 struct CreateGraphicsPipelines;
@@ -50,6 +53,7 @@ struct CreateRayTracingPipelinesNV;
 struct CreateRayTracingPipelinesKHR;
 struct CreateShaderModule;
 struct ShaderObject;
+struct ShaderBinaryData;
 struct CreatePipelineLayout;
 struct CreateBuffer;
 }  // namespace chassis
@@ -87,8 +91,8 @@ class Instance : public Logger {
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
 
-    const CHECK_DISABLED& disabled;
-    const CHECK_ENABLED& enabled;
+    const ValidationDisabled& disabled;
+    const ValidationEnabled& enabled;
 
     VkInstance instance = VK_NULL_HANDLE;
     const LayerObjectTypeId container_type;
@@ -116,6 +120,12 @@ class Instance : public Logger {
     void CopyDispatchState() { instance = dispatch_instance_->instance; }
     VkInstance VkHandle() const { return instance; }
 
+#if defined(DEBUG_CAPTURE_KEYBOARD)
+    // keep thing as void pointer to simplify including headers
+    void* xlib_display = nullptr;
+    void* xcb_connection = nullptr;
+#endif
+
 #include "generated/validation_object_instance_methods.h"
 };
 
@@ -138,8 +148,8 @@ class Device : public Logger {
     GpuAVSettings& gpuav_settings;
     const SyncValSettings& syncval_settings;
 
-    const CHECK_DISABLED& disabled;
-    const CHECK_ENABLED& enabled;
+    const ValidationDisabled& disabled;
+    const ValidationEnabled& enabled;
 
     const VkInstance instance;
     const VkPhysicalDevice physical_device;
@@ -372,6 +382,12 @@ class Device : public Logger {
                                                 VkShaderEXT* pShaders, const RecordObject& record_obj,
                                                 chassis::ShaderObject& chassis_state) {
         PostCallRecordCreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders, record_obj);
+    }
+
+    // Allow modification of a down-chain parameter for CreatePipelineLayout
+    virtual void PreCallRecordGetShaderBinaryDataEXT(VkDevice device, VkShaderEXT shader, size_t* pDataSize, void* pData,
+                                                     const RecordObject& record_obj, chassis::ShaderBinaryData& chassis_state) {
+        PreCallRecordGetShaderBinaryDataEXT(device, shader, pDataSize, pData, record_obj);
     }
 
     // Allow AllocateDescriptorSets to use some local stack storage for performance purposes

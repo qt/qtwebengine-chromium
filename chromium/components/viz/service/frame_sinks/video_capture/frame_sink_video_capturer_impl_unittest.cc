@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "components/viz/service/frame_sinks/video_capture/frame_sink_video_capturer_impl.h"
 
 #include <map>
@@ -17,6 +12,7 @@
 #include <variant>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -46,7 +42,6 @@
 #include "media/base/video_util.h"
 #include "media/capture/mojom/video_capture_buffer.mojom.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
-#include "media/video/fake_gpu_memory_buffer.h"
 #include "media/video/renderable_gpu_memory_buffer_video_frame_pool.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -115,6 +110,8 @@ media::VideoPixelFormat CopyOutputRequestFormatToVideoPixelFormat(
       return media::PIXEL_FORMAT_NV12;
     case CopyOutputRequest::ResultFormat::RGBA:
       return media::PIXEL_FORMAT_ARGB;
+    case CopyOutputRequest::ResultFormat::RGBAF16:
+      return media::PIXEL_FORMAT_RGBAF16;
     default:
       NOTREACHED();
   }
@@ -127,6 +124,8 @@ gfx::ColorSpace GetColorSpaceForPixelFormat(media::VideoPixelFormat format) {
       return gfx::ColorSpace::CreateREC709();
     case media::PIXEL_FORMAT_ARGB:
       return gfx::ColorSpace::CreateSRGB();
+    case media::PIXEL_FORMAT_RGBAF16:
+      return gfx::ColorSpace::CreateSRGBLinear();
     default:
       NOTREACHED();
   }
@@ -138,6 +137,7 @@ gfx::Size GetBufferSizeInPixelsForVideoPixelFormat(
   switch (format) {
     case media::PIXEL_FORMAT_ABGR:
     case media::PIXEL_FORMAT_ARGB:
+    case media::PIXEL_FORMAT_RGBAF16:
       return coded_size;
     case media::PIXEL_FORMAT_NV12:
       return {cc::MathUtil::CheckedRoundUp(coded_size.width(), 2),
@@ -274,8 +274,7 @@ class MockConsumer : public mojom::FrameSinkVideoConsumer {
       ASSERT_LE(required_bytes_to_hold_planes, mapping.size());
       frame = media::VideoFrame::WrapExternalData(
           info->pixel_format, info->coded_size, info->visible_rect,
-          info->visible_rect.size(), mapping.GetMemoryAs<const uint8_t>(),
-          mapping.size(), info->timestamp);
+          info->visible_rect.size(), mapping, info->timestamp);
       ASSERT_TRUE(frame);
       frame->AddDestructionObserver(
           base::BindOnce([](base::ReadOnlySharedMemoryMapping mapping) {},
@@ -328,24 +327,6 @@ class MockConsumer : public mojom::FrameSinkVideoConsumer {
   std::vector<scoped_refptr<VideoFrame>> frames_;
   std::vector<base::OnceClosure> done_callbacks_;
   scoped_refptr<gpu::TestSharedImageInterface> test_sii_;
-};
-
-class FakeGpuCopyResult : public CopyOutputResult {
- public:
-  FakeGpuCopyResult(Format format, const gfx::Rect rect)
-      : CopyOutputResult(format,
-                         CopyOutputResult::Destination::kNativeTextures,
-                         rect,
-                         false),
-        result_(TextureResult(
-            gpu::Mailbox{},
-            GetColorSpaceForPixelFormat(
-                CopyOutputRequestFormatToVideoPixelFormat(format)))) {}
-
-  const TextureResult* GetTextureResult() const final { return &result_; }
-
- private:
-  TextureResult result_;
 };
 
 class SolidColorRGBAResult : public CopyOutputResult {
@@ -514,10 +495,12 @@ class FakeCapturableFrameSink : public CapturableFrameSink {
         }
         break;
       }
-      case CopyOutputResult::Destination::kNativeTextures: {
+      case CopyOutputResult::Destination::kSharedImage: {
         // We don't need to provide a real GPU result.
-        result = std::make_unique<FakeGpuCopyResult>(
-            request->result_format(), request->result_selection());
+        result = std::make_unique<CopyOutputSharedImageResult>(
+            request->result_format(), request->result_selection(),
+            gpu::ClientSharedImage::CreateForTesting(),
+            CopyOutputResult::ReleaseCallbacks{});
         break;
       }
       default: {
@@ -645,24 +628,26 @@ bool IsLetterboxedI420Plane(int plane,
         content_rect_copy.width() / 2, content_rect_copy.height() / 2);
   }
   for (int row = 0; row < frame.rows(plane); ++row) {
-    const uint8_t* p = frame.visible_data(plane) + row * frame.stride(plane);
+    const uint8_t* p =
+        UNSAFE_TODO(frame.visible_data(plane) + row * frame.stride(plane));
     for (int col = 0; col < frame.row_bytes(plane); ++col) {
       if (content_rect_copy.Contains(gfx::Point(col, row))) {
-        if (p[col] != component) {
+        if (UNSAFE_TODO(p[col]) != component) {
           *result_listener << " where pixel at (" << col << ", " << row
                            << ") should be inside content rectangle and the "
                               "component should match 0x"
                            << std::hex << static_cast<unsigned int>(component)
                            << " but is 0x" << std::hex
-                           << static_cast<unsigned int>(p[col]);
+                           << static_cast<unsigned int>(UNSAFE_TODO(p[col]));
           return false;
         }
       } else {  // Letterbox border around content.
-        if (plane == VideoFrame::Plane::kY && p[col] != 0x00) {
+        if (plane == VideoFrame::Plane::kY && UNSAFE_TODO(p[col]) != 0x00) {
           *result_listener << " where pixel at (" << col << ", " << row
                            << ") should be outside content rectangle and the "
                               "component should match 0x00 but is 0x"
-                           << std::hex << static_cast<unsigned int>(p[col]);
+                           << std::hex
+                           << static_cast<unsigned int>(UNSAFE_TODO(p[col]));
           return false;
         }
       }
@@ -1767,7 +1752,8 @@ TEST_P(FrameSinkVideoCapturerTest, DeliversUpdateRectAndCaptureCounter) {
   expected_frame_update_rect.Offset(
       size_set().ExpectedContentRect(pixel_format_).OffsetFromOrigin());
   // Do not align when we are testing RGBA
-  if (pixel_format_ != media::PIXEL_FORMAT_ARGB) {
+  if (pixel_format_ != media::PIXEL_FORMAT_ARGB &&
+      pixel_format_ != media::PIXEL_FORMAT_RGBAF16) {
     EXPECT_FALSE(
         AlignsWithI420SubsamplingBoundaries(expected_frame_update_rect));
     expected_frame_update_rect =
@@ -2254,6 +2240,8 @@ INSTANTIATE_TEST_SUITE_P(
         std::tuple(mojom::BufferFormatPreference::kPreferGpuMemoryBuffer,
                    media::PIXEL_FORMAT_NV12),
         std::tuple(mojom::BufferFormatPreference::kPreferGpuMemoryBuffer,
-                   media::PIXEL_FORMAT_ARGB)));
+                   media::PIXEL_FORMAT_ARGB),
+        std::tuple(mojom::BufferFormatPreference::kPreferGpuMemoryBuffer,
+                   media::PIXEL_FORMAT_RGBAF16)));
 
 }  // namespace viz

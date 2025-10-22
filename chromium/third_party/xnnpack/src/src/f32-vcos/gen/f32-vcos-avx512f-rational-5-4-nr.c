@@ -12,11 +12,9 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "src/xnnpack/simd/f32-avx512f.h"
-
 #include "src/xnnpack/common.h"
-// #include "src/xnnpack/math.h"
 #include "src/xnnpack/microparams.h"
+#include "src/xnnpack/simd/f32-avx512f.h"
 #include "src/xnnpack/vunary.h"
 
 
@@ -24,7 +22,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u16(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -133,7 +131,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u32(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -167,7 +165,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u32(
   XNN_SIMD_CONST_F32(vtwo, 2.0f);
 
   for (; batch >= 32 * sizeof(float); batch -= 32 * sizeof(float)) {
-    xnn_simd_f32_t vx_0 = xnn_loadu_f32(input);
+    xnn_simd_f32_t vx_0 = xnn_loadu_f32(input + 0 * xnn_simd_size_f32);
     xnn_simd_f32_t vx_1 = xnn_loadu_f32(input + 1 * xnn_simd_size_f32);
     input += 32;
 
@@ -217,7 +215,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u32(
     const xnn_simd_f32_t vy_0 = xnn_mul_f32(vp_0, vrq_0);
     const xnn_simd_f32_t vy_1 = xnn_mul_f32(vp_1, vrq_1);
 
-    xnn_storeu_f32(output, vy_0);
+    xnn_storeu_f32(output + 0 * xnn_simd_size_f32, vy_0);
     xnn_storeu_f32(output + 1 * xnn_simd_size_f32, vy_1);
     output += 32;
   }
@@ -297,7 +295,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u48(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -331,7 +329,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u48(
   XNN_SIMD_CONST_F32(vtwo, 2.0f);
 
   for (; batch >= 48 * sizeof(float); batch -= 48 * sizeof(float)) {
-    xnn_simd_f32_t vx_0 = xnn_loadu_f32(input);
+    xnn_simd_f32_t vx_0 = xnn_loadu_f32(input + 0 * xnn_simd_size_f32);
     xnn_simd_f32_t vx_1 = xnn_loadu_f32(input + 1 * xnn_simd_size_f32);
     xnn_simd_f32_t vx_2 = xnn_loadu_f32(input + 2 * xnn_simd_size_f32);
     input += 48;
@@ -399,7 +397,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u48(
     const xnn_simd_f32_t vy_1 = xnn_mul_f32(vp_1, vrq_1);
     const xnn_simd_f32_t vy_2 = xnn_mul_f32(vp_2, vrq_2);
 
-    xnn_storeu_f32(output, vy_0);
+    xnn_storeu_f32(output + 0 * xnn_simd_size_f32, vy_0);
     xnn_storeu_f32(output + 1 * xnn_simd_size_f32, vy_1);
     xnn_storeu_f32(output + 2 * xnn_simd_size_f32, vy_2);
     output += 48;
@@ -480,7 +478,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u64(
     size_t batch,
     const float* input,
     float* output,
-    const struct xnn_f32_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f32_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(float) == 0);
@@ -514,7 +512,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u64(
   XNN_SIMD_CONST_F32(vtwo, 2.0f);
 
   for (; batch >= 64 * sizeof(float); batch -= 64 * sizeof(float)) {
-    xnn_simd_f32_t vx_0 = xnn_loadu_f32(input);
+    xnn_simd_f32_t vx_0 = xnn_loadu_f32(input + 0 * xnn_simd_size_f32);
     xnn_simd_f32_t vx_1 = xnn_loadu_f32(input + 1 * xnn_simd_size_f32);
     xnn_simd_f32_t vx_2 = xnn_loadu_f32(input + 2 * xnn_simd_size_f32);
     xnn_simd_f32_t vx_3 = xnn_loadu_f32(input + 3 * xnn_simd_size_f32);
@@ -600,7 +598,7 @@ void xnn_f32_vcos_ukernel__avx512f_rational_5_4_nr_u64(
     const xnn_simd_f32_t vy_2 = xnn_mul_f32(vp_2, vrq_2);
     const xnn_simd_f32_t vy_3 = xnn_mul_f32(vp_3, vrq_3);
 
-    xnn_storeu_f32(output, vy_0);
+    xnn_storeu_f32(output + 0 * xnn_simd_size_f32, vy_0);
     xnn_storeu_f32(output + 1 * xnn_simd_size_f32, vy_1);
     xnn_storeu_f32(output + 2 * xnn_simd_size_f32, vy_2);
     xnn_storeu_f32(output + 3 * xnn_simd_size_f32, vy_3);

@@ -97,6 +97,7 @@ GRAPHITE_FILES = [
     "RasterPathUtils.h",
     "ReadSwizzle.h",
     "Recorder.cpp",
+    "RecorderOptionsPriv.h",
     "RecorderPriv.h",
     "Recording.cpp",
     "RecordingPriv.h",
@@ -157,12 +158,8 @@ split_srcs_and_hdrs(
 )
 
 PRECOMPILE_FILES = [
-    "FactoryFunctions.cpp",
-    "FactoryFunctions.h",
     "PrecompileInternal.h",
     "PublicPrecompile.cpp",
-    "SerializationUtils.cpp",
-    "SerializationUtils.h",
 ]
 
 split_srcs_and_hdrs(

@@ -10,6 +10,7 @@
 #include "base/threading/thread_local_storage.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 
 #include "base/check_op.h"
@@ -182,7 +183,7 @@ base::Lock* GetTLSMetadataLock() {
   static auto* lock = new base::Lock();
   return lock;
 }
-TlsMetadata g_tls_metadata[kThreadLocalStorageSize];
+std::array<TlsMetadata, kThreadLocalStorageSize> g_tls_metadata;
 size_t g_last_assigned_slot = 0;
 uint32_t g_sequence_num = 0;
 
@@ -342,10 +343,12 @@ void OnThreadExitInternal(TlsVectorEntry* tls_data) {
     need_to_scan_destructors = false;
 
     // Snapshot the TLS Metadata so we don't have to lock on every access.
-    TlsMetadata tls_metadata[kThreadLocalStorageSize];
+    std::array<TlsMetadata, kThreadLocalStorageSize> tls_metadata;
     {
       base::AutoLock auto_lock(*GetTLSMetadataLock());
-      memcpy(tls_metadata, g_tls_metadata, sizeof(g_tls_metadata));
+      memcpy(tls_metadata.data(), g_tls_metadata.data(),
+             (g_tls_metadata.size() *
+              sizeof(decltype(g_tls_metadata)::value_type)));
     }
 
     // We destroy slots in reverse order (i.e. destroy the first-created slot
@@ -464,9 +467,7 @@ bool ThreadLocalStorage::HasBeenDestroyed() {
 void ThreadLocalStorage::Slot::Initialize(TLSDestructorFunc destructor) {
   // The heap sampler uses TLS internally. Disable allocation sampling before
   // allocating TLS-internal structures, to safeguard against reentrancy.
-#if BUILDFLAG(IS_NACL)
-  // Heap sampler isn't built under NACL.
-#elif BUILDFLAG(IS_IOS) && !PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
+#if BUILDFLAG(IS_IOS) && !PA_BUILDFLAG(USE_ALLOCATOR_SHIM)
   // Heap sampler is only built on IOS when the allocator shim is enabled.
 #else
   base::PoissonAllocationSampler::ScopedMuteThreadSamples mute_heap_sampler;

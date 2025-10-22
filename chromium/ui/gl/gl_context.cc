@@ -13,6 +13,7 @@
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -157,6 +158,14 @@ bool GLContext::MakeCurrent(GLSurface* surface) {
     }
     recorded_max_gles_version_if_feasible = true;
   }
+#elif (BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
+       BUILDFLAG(IS_WIN))
+  static bool recorded_emulated_gles_version = false;
+  if (!recorded_emulated_gles_version) {
+    base::UmaHistogramBoolean("GPU.ANGLECanEmulateGLES3",
+                              current_gl_->Version->IsAtLeastGLES(3, 0));
+    recorded_emulated_gles_version = true;
+  }
 #endif
 
   return true;
@@ -225,7 +234,7 @@ std::string GLContext::GetGLRenderer() {
 CurrentGL* GLContext::GetCurrentGL() {
   if (!static_bindings_initialized_) {
     driver_gl_ = std::make_unique<DriverGL>();
-    driver_gl_->InitializeStaticBindings();
+    driver_gl_->InitializeStaticBindings(GetGLProcAddress);
 
     auto gl_api = base::WrapUnique<GLApi>(CreateGLApi(driver_gl_.get()));
     gl_api_wrapper_ =
@@ -484,7 +493,8 @@ void GLContext::InitializeDynamicBindings() {
       real_gl_api_->set_version(GenerateGLVersionInfo());
     }
 
-    driver_gl_->InitializeDynamicBindings(GetVersionInfo(), GetExtensions());
+    driver_gl_->InitializeDynamicBindings(GetGLProcAddress, GetVersionInfo(),
+                                          GetExtensions());
     dynamic_bindings_initialized_ = true;
   }
 }

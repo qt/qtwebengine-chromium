@@ -12,14 +12,6 @@ import * as UI from '../../legacy.js';
 
 const {render, html} = Lit;
 
-function getAccessibleText(element: HTMLElement): string {
-  element.blur();
-  element.focus();
-  const alertElements = UI.ARIAUtils.getOrCreateAlertElements();
-  const alertElement = alertElements.alertToggle ? alertElements.one : alertElements.two;
-  return alertElement.textContent || '';
-}
-
 function getFocusedElement(): HTMLElement {
   let root: Document|ShadowRoot = document;
   while (root.activeElement?.shadowRoot?.activeElement) {
@@ -41,7 +33,18 @@ function sendKeydown(element: HTMLElement, key: string): void {
 
 describeWithEnvironment('DataGrid', () => {
   let container!: HTMLElement;
+  let liveAnnouncerAlertStub: sinon.SinonStub;
+
+  function getAlertAnnouncement(element: HTMLElement): string {
+    element.blur();
+    element.focus();
+    assert.isTrue(liveAnnouncerAlertStub.called, 'Expected UI.ARIAUtils.LiveAnnouncer.alert to be called');
+    return liveAnnouncerAlertStub.lastCall.args[0];
+  }
+
   beforeEach(() => {
+    liveAnnouncerAlertStub = sinon.stub(UI.ARIAUtils.LiveAnnouncer, 'alert').returns();
+
     container = document.createElement('div');
     container.style.display = 'flex';
     container.style.width = '640px';
@@ -52,7 +55,7 @@ describeWithEnvironment('DataGrid', () => {
   async function renderDataGrid(template: Lit.TemplateResult): Promise<HTMLElement> {
     render(template, container, {host: {}});
     await RenderCoordinator.done({waitForWork: true});
-    return container.querySelector('devtools-data-grid') as HTMLElement;
+    return container.querySelector('devtools-data-grid')!;
   }
 
   async function renderDataGridContent(template: Lit.TemplateResult): Promise<HTMLElement> {
@@ -67,7 +70,7 @@ describeWithEnvironment('DataGrid', () => {
     const element = await renderDataGrid(html`
         <devtools-data-grid .striped=${true} .displayName=${'Display Name'}>
         </devtools-data-grid>`);
-    assert.isTrue(getAccessibleText(element).startsWith('Display Name Rows: 0'));
+    assert.isTrue(getAlertAnnouncement(element).startsWith('Display Name Rows: 0'));
   });
 
   it('can initialize data from template', async () => {
@@ -85,7 +88,7 @@ describeWithEnvironment('DataGrid', () => {
           </table>
         </devtools-data-grid>`);
     sendKeydown(element, 'ArrowDown');
-    assert.strictEqual(getAccessibleText(element), 'Display Name Row  Column 1: Value 1, Column 2: Value 2');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 1, Column 2: Value 2');
   });
 
   it('can update data from template', async () => {
@@ -116,7 +119,7 @@ describeWithEnvironment('DataGrid', () => {
           </table>
         </devtools-data-grid>`);
     sendKeydown(element, 'ArrowDown');
-    assert.strictEqual(getAccessibleText(element), 'Display Name Row  Column 3: Value 3, Column 4: Value 4');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 3: Value 3, Column 4: Value 4');
   });
 
   it('can filter data', async () => {
@@ -158,9 +161,9 @@ describeWithEnvironment('DataGrid', () => {
           </table>
         </devtools-data-grid>`);
     // clang-format on
-    assert.isTrue(getAccessibleText(element).startsWith('Display Name Rows: 1'));
+    assert.isTrue(getAlertAnnouncement(element).startsWith('Display Name Rows: 1'));
     sendKeydown(element, 'ArrowDown');
-    assert.strictEqual(getAccessibleText(element), 'Display Name Row  Column 1: Value 3, Column 2: Value 4');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 3, Column 2: Value 4');
   });
 
   it('can set selection from template', async () => {
@@ -182,7 +185,7 @@ describeWithEnvironment('DataGrid', () => {
           </table>
         </devtools-data-grid>`);
     // clang-format off
-    assert.strictEqual(getAccessibleText(element), 'Display Name Row  Column 1: Value 3, Column 2: Value 4');
+    assert.strictEqual(getAlertAnnouncement(element), 'Display Name Row  Column 1: Value 3, Column 2: Value 4');
 
     element = await renderDataGrid(html`
         <devtools-data-grid striped name=${'Display Name'}>
@@ -202,7 +205,7 @@ describeWithEnvironment('DataGrid', () => {
           </table>
         </devtools-data-grid>`);
     // clang-format off
-    assert.isTrue(getAccessibleText(element).startsWith('Display Name Rows: 2'));
+    assert.isTrue(getAlertAnnouncement(element).startsWith('Display Name Rows: 2'));
   });
 
   it('supports editable columns', async () => {
@@ -224,7 +227,7 @@ describeWithEnvironment('DataGrid', () => {
     sendKeydown(element, 'Enter');
     getFocusedElement().textContent = 'New Value';
     sendKeydown(element, 'Enter');
-    assert.isTrue(editCallback.calledOnce);
+    sinon.assert.calledOnce(editCallback);
     assert.isTrue(editCallback.firstCall.args[0].detail.node.textContent.includes('Value 1'));
     assert.isTrue(editCallback.firstCall.args[0].detail.node.textContent.includes('Value 2'));
     assert.strictEqual(editCallback.firstCall.args[0].detail.columnId, 'column-1');
@@ -257,12 +260,12 @@ describeWithEnvironment('DataGrid', () => {
     sendKeydown(element, 'Enter');
     getFocusedElement().textContent = 'New Value 1';
     sendKeydown(element, 'Tab');
-    assert.isFalse(editCallback.called);
-    assert.isFalse(createCallback.called);
+    sinon.assert.notCalled(editCallback);
+    sinon.assert.notCalled(createCallback);
     getFocusedElement().textContent = 'New Value 2';
     sendKeydown(element, 'Tab');
-    assert.isFalse(editCallback.called);
-    assert.isTrue(createCallback.calledOnce);
+    sinon.assert.notCalled(editCallback);
+    sinon.assert.calledOnce(createCallback);
     assert.deepEqual(createCallback.firstCall.args[0].detail,
                            {'column-1': 'New Value 1', 'column-2': 'New Value 2'});
   });

@@ -10,7 +10,6 @@
 
 #include <string_view>
 #include <tuple>
-#include <unordered_set>
 #include <vector>
 
 #include "base/lazy_instance.h"
@@ -42,7 +41,9 @@ enum class GamepadId : uint32_t {
   // Fake IDs for devices which report as 0x0000 0x0000
   kPowerALicPro = 0x0000ff00,
   // ID values for supported devices.
+  k8BitDoProduct301b = 0x2dc8301b,
   k8BitDoProduct3106 = 0x2dc83106,
+  k8BitDoProduct6012 = 0x2dc86012,
   kAcerProduct1304 = 0x05021304,
   kAcerProduct1305 = 0x05021305,
   kAcerProduct1316 = 0x05021316,

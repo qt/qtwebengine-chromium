@@ -145,6 +145,7 @@ bool WebContentsDelegate::OnGoToEntryOffset(int offset) {
 }
 
 bool WebContentsDelegate::IsWebContentsCreationOverridden(
+    RenderFrameHost* opener,
     SiteInstance* source_site_instance,
     mojom::WindowContainerType window_container_type,
     const GURL& opener_url,
@@ -340,10 +341,6 @@ gfx::Size WebContentsDelegate::GetSizeForNewRenderView(
   return gfx::Size();
 }
 
-bool WebContentsDelegate::IsNeverComposited(WebContents* web_contents) {
-  return false;
-}
-
 bool WebContentsDelegate::GuestSaveFrame(WebContents* guest_web_contents) {
   return false;
 }
@@ -416,9 +413,7 @@ PreloadingEligibility WebContentsDelegate::IsPrerender2Supported(
 }
 
 int WebContentsDelegate::AllowedPrerenderingCount(WebContents& web_contents) {
-  return base::GetFieldTrialParamByFeatureAsInt(
-      features::kPrerender2NewLimitAndScheduler,
-      "max_num_of_running_embedder_prerenders", 2);
+  return 2;
 }
 
 NavigationController::UserAgentOverrideOption

@@ -6,8 +6,9 @@ from __future__ import annotations
 
 import dataclasses
 import datetime as dt
-from typing import (TYPE_CHECKING, Any, Dict, Iterator, Optional, Self,
-                    Sequence, Tuple, cast)
+import logging
+from typing import (TYPE_CHECKING, Any, ClassVar, Iterator, Optional, Self,
+                    Sequence, cast)
 
 from typing_extensions import override
 
@@ -30,12 +31,15 @@ if TYPE_CHECKING:
 
 @dataclasses.dataclass(frozen=True)
 class PageConfig(ConfigObject):
+  VALID_SCHEMES: ClassVar[tuple[str, ...]] = ObjectParser.COMMON_URL_SCHEMES
+
   label: str | None = None
   playback: PlaybackController | None = None
   secrets: Secrets = Secrets()
   login: LoginBlock | None = None
   setup: ActionBlock | None = None
-  blocks: Tuple[ActionBlock, ...] = tuple()
+  blocks: tuple[ActionBlock, ...] = tuple()
+  teardown: ActionBlock | None = None
 
   @classmethod
   def parse_other(cls, value: Any, **kwargs) -> Self:
@@ -81,7 +85,7 @@ class PageConfig(ConfigObject):
   @override
   def parse_dict(  # pylint: disable=arguments-differ
       cls,
-      config: Dict[str, Any],
+      config: dict[str, Any],
       label: Optional[str] = None,
       secrets: Optional[Secrets] = None,
       **kwargs) -> Self:
@@ -103,6 +107,7 @@ class PageConfig(ConfigObject):
         "blocks",
         aliases=("actions", "url", "urls"),
         type=ActionBlockListConfig)
+    parser.add_argument("teardown", type=ActionBlock)
     return parser
 
   @classmethod
@@ -110,8 +115,7 @@ class PageConfig(ConfigObject):
                label: Optional[str],
                url: str,
                duration: dt.timedelta = dt.timedelta()) -> Self:
-    actions = (GetAction(url, duration=duration),)
-    blocks = (ActionBlock(actions=actions),)
+    blocks = (ActionBlock.from_url(url, duration),)
     return cls(label=label, blocks=blocks)
 
   def actions(self) -> Iterator[Action]:
@@ -144,4 +148,5 @@ class PageConfig(ConfigObject):
     for action in self.actions():
       if action.TYPE == ActionType.GET:
         return cast(GetAction, action).url
-    raise RuntimeError("No GET action with an URL found.")
+    logging.debug("PageConfig: No GET action with an URL found.")
+    return ""

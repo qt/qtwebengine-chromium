@@ -21,6 +21,7 @@ namespace features {
 #if BUILDFLAG(IS_ANDROID)
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAndroidBcivBottomControls);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAndroidBrowserControlsInViz);
+VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAndroidDumpForBadCompositedUiState);
 #endif  // BUILDFLAG(IS_ANDROID)
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kBackdropFilterMirrorEdgeMode);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kDelegatedCompositing);
@@ -31,7 +32,12 @@ VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAvoidDuplicateDelayBeginFrame);
 VIZ_COMMON_EXPORT extern const char kDrawQuadSplit[];
 #endif  // BUILDFLAG(IS_CHROMEOS)
 
+VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kTransferableResourcePassAlphaTypeDirectly);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kDrawQuadSplitLimit);
+
+VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(
+    kEnableBackdropFiltersCullingOptimization);
 
 enum class DelegatedCompositingMode {
   // Enable delegated compositing.
@@ -51,13 +57,11 @@ extern const VIZ_COMMON_EXPORT base::FeatureParam<DelegatedCompositingMode>
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kDCompSurfacesForDelegatedInk);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kRemoveRedirectionBitmap);
 #endif
-VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kRenderPassDrawnRect);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kRecordSkPicture);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kUseDrmBlackFullscreenOptimization);
-VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kUseFrameIntervalDecider);
 #if BUILDFLAG(IS_ANDROID)
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(
-    kUseFrameIntervalDeciderNewAndroidFeatures);
+    kUseFrameIntervalDeciderAdaptiveFrameRate);
 #endif
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kTemporalSkipOverlaysWithRootCopyOutputRequests);
@@ -93,13 +97,15 @@ VIZ_COMMON_EXPORT extern const base::FeatureParam<int>
 
 #if BUILDFLAG(IS_MAC)
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kVSyncAlignedPresent);
+VIZ_COMMON_EXPORT extern const base::FeatureParam<std::string> kTargetForVSync;
+VIZ_COMMON_EXPORT extern const char kTargetForVSyncAllFrames[];
+VIZ_COMMON_EXPORT extern const char kTargetForVSyncAnimation[];
+VIZ_COMMON_EXPORT extern const char kTargetForVSyncInteraction[];
 #endif
 
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAllowUndamagedNonrootRenderPassToSkip);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(
     kAllowForceMergeRenderPassWithRequireOverlayQuads);
-VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kOcclusionCullingForTextureQuads);
-VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kOnBeginFrameAcks);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kOnBeginFrameThrottleVideo);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAdpf);
 VIZ_COMMON_EXPORT extern const base::FeatureParam<std::string>
@@ -111,7 +117,6 @@ VIZ_COMMON_EXPORT extern const base::FeatureParam<base::TimeDelta>
     kADPFBoostTimeout;
 VIZ_COMMON_EXPORT extern const base::FeatureParam<double>
     kADPFMidFrameBoostDurationMultiplier;
-VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kEnableADPFRendererMain);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kEnableInteractiveOnlyADPFRenderer);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kEnableADPFGpuCompositorThread);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kEnableADPFSeparateRendererMainSession);
@@ -121,8 +126,8 @@ VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kHideDelegatedFrameHostMac);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kEvictionUnlocksResources);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kSingleVideoFrameRateThrottling);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kBatchMainThreadReleaseCallbacks);
-VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kColorConversionInRenderer);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kLastVSyncArgsKillswitch);
+VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kVizDirectCompositorThreadIpcNonRoot);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kVizNullHypothesis);
 #if BUILDFLAG(IS_CHROMEOS)
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kCrosContentAdjustedRefreshRate);
@@ -143,14 +148,16 @@ VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kAckOnSurfaceActivationWhenInteractive);
 
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kShutdownForFailedChannelCreation);
 VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kBatchResourceRelease);
+VIZ_COMMON_EXPORT BASE_DECLARE_FEATURE(kNoLateBeginFrames);
 
 #if BUILDFLAG(IS_ANDROID)
 VIZ_COMMON_EXPORT bool IsDynamicColorGamutEnabled();
 #endif
 VIZ_COMMON_EXPORT int DrawQuadSplitLimit();
+VIZ_COMMON_EXPORT bool IsBackdropFiltersCullingOptimizationEnabled();
 VIZ_COMMON_EXPORT bool IsDelegatedCompositingEnabled();
+VIZ_COMMON_EXPORT bool IsVizDirectCompositorThreadIpcNonRootEnabled();
 #if BUILDFLAG(IS_WIN)
-VIZ_COMMON_EXPORT bool ShouldUseDCompSurfacesForDelegatedInk();
 VIZ_COMMON_EXPORT bool ShouldRemoveRedirectionBitmap();
 #endif
 VIZ_COMMON_EXPORT bool IsUsingVizFrameSubmissionForWebView();
@@ -160,12 +167,9 @@ VIZ_COMMON_EXPORT bool UseWebViewNewInvalidateHeuristic();
 VIZ_COMMON_EXPORT bool UseSurfaceLayerForVideo();
 VIZ_COMMON_EXPORT int MaxOverlaysConsidered();
 VIZ_COMMON_EXPORT bool ShouldOnBeginFrameThrottleVideo();
-VIZ_COMMON_EXPORT bool IsOnBeginFrameAcksEnabled();
-VIZ_COMMON_EXPORT bool IsOcclusionCullingForTextureQuadsEnabled();
 VIZ_COMMON_EXPORT bool ShouldDrawImmediatelyWhenInteractive();
 VIZ_COMMON_EXPORT bool IsVSyncAlignedPresentEnabled();
 VIZ_COMMON_EXPORT bool ShouldLogFrameQuadInfo();
-VIZ_COMMON_EXPORT bool IsUsingFrameIntervalDecider();
 VIZ_COMMON_EXPORT std::optional<uint64_t>
 NumCooldownFramesForAckOnSurfaceActivationDuringInteraction();
 VIZ_COMMON_EXPORT extern const base::FeatureParam<int>

@@ -4,6 +4,7 @@
 
 #include "pdf/pdfium/pdfium_on_demand_searchifier.h"
 
+#include <algorithm>
 #include <utility>
 
 #include "base/check.h"
@@ -15,8 +16,10 @@
 namespace {
 
 // A delay to wait between page searchify tasks to give more priority to other
-// PDF tasks.
+// PDF tasks. The longer delay is used when the next task seems to be not urgent
+// and its helpful to reduce CPU load.
 constexpr base::TimeDelta kSearchifyPageDelay = base::Milliseconds(100);
+constexpr base::TimeDelta kSearchifyPageLongDelay = base::Milliseconds(300);
 
 }  // namespace
 
@@ -40,16 +43,38 @@ PDFiumOnDemandSearchifier::PDFiumOnDemandSearchifier(PDFiumEngine* engine)
 
 PDFiumOnDemandSearchifier::~PDFiumOnDemandSearchifier() = default;
 
-void PDFiumOnDemandSearchifier::Start(PerformOcrCallbackAsync callback) {
-  CHECK(!callback.is_null());
+void PDFiumOnDemandSearchifier::Start(
+    GetOcrMaxImageDimensionCallbackAsync get_max_dimension_callback,
+    PerformOcrCallbackAsync perform_ocr_callback) {
+  CHECK(perform_ocr_callback);
+  CHECK(get_max_dimension_callback);
   CHECK_EQ(state_, State::kIdle);
 
   // Expected to be called only once.
+  CHECK(get_max_dimension_callback_.is_null());
   CHECK(perform_ocr_callback_.is_null());
 
   font_ = CreateFont(engine_->doc());
-  perform_ocr_callback_ = std::move(callback);
+  get_max_dimension_callback_ = std::move(get_max_dimension_callback);
+  perform_ocr_callback_ = std::move(perform_ocr_callback);
 
+  if (pages_queue_.size()) {
+    SearchifyNextPage();
+  }
+}
+
+void PDFiumOnDemandSearchifier::OnGotOcrMaxImageDimension(
+    uint32_t max_image_dimension) {
+  // A state changed while waiting for max image dimension indicates that OCR
+  // got disconnnected and cannot be used.
+  if (state_ != State::kWaitingForResults) {
+    return;
+  }
+
+  CHECK(max_image_dimension);
+  max_image_dimension_ = max_image_dimension;
+
+  state_ = State::kIdle;
   SearchifyNextPage();
 }
 
@@ -60,11 +85,17 @@ void PDFiumOnDemandSearchifier::OnOcrDisconnected() {
       // will try to connect to the service again.
       return;
 
+    case State::kWaitingForPageAvailability:
+      // If waiting for page availability takes long, OCR service may shutdown
+      // to release resources. Disconnection is expected in this case and the
+      // service will reconnect on next request.
+      return;
+
     case State::kWaitingForResults:
       // Assume OCR cannot be used anymore if it gets disconnected while
       // waiting for results. Therefore cancel all pending requests and move
       // to failed state.
-      current_page_ = nullptr;
+      ClearCurrentPage();
       pages_queue_.clear();
       state_ = State::kFailed;
       engine_->OnSearchifyStateChange(/*busy=*/false);
@@ -96,7 +127,9 @@ void PDFiumOnDemandSearchifier::SchedulePage(int page_index) {
     engine_->OnSearchifyStateChange(/*busy=*/true);
   }
   pages_queue_.push_back(page_index);
-  if (state_ == State::kWaitingForResults || !perform_ocr_callback_) {
+  if (state_ == State::kWaitingForResults ||
+      state_ == State::kWaitingForPageAvailability ||
+      perform_ocr_callback_.is_null()) {
     return;
   }
 
@@ -112,17 +145,19 @@ void PDFiumOnDemandSearchifier::SchedulePage(int page_index) {
   state_ = State::kWaitingForResults;
 }
 
-void PDFiumOnDemandSearchifier::CancelPage(int page_index) {
-  if (current_page_ && current_page_->index() == page_index) {
-    current_page_ = nullptr;
-    return;
-  }
-  base::Erase(pages_queue_, page_index);
-}
-
 void PDFiumOnDemandSearchifier::SearchifyNextPage() {
   // Do not proceed if OCR got disconnected.
   if (state_ == State::kFailed) {
+    return;
+  }
+
+  // If max image dimension is not asked yet, ask it before performing OCR.
+  if (get_max_dimension_callback_) {
+    std::move(get_max_dimension_callback_)
+        .Run(base::BindOnce(
+            &PDFiumOnDemandSearchifier::OnGotOcrMaxImageDimension,
+            weak_factory_.GetWeakPtr()));
+    state_ = State::kWaitingForResults;
     return;
   }
 
@@ -135,8 +170,11 @@ void PDFiumOnDemandSearchifier::SearchifyNextPage() {
   state_ = State::kWaitingForResults;
   current_page_ = engine_->GetPage(pages_queue_.front());
   CHECK(current_page_);
+  current_page_was_loaded_ = !!current_page_->page();
   pages_queue_.pop_front();
 
+  // Load the page if needed.
+  current_page_->GetPage();
   current_page_image_object_indices_ = current_page_->GetImageObjectIndices();
   current_page_ocr_results_.clear();
   current_page_ocr_results_.reserve(current_page_image_object_indices_.size());
@@ -144,6 +182,7 @@ void PDFiumOnDemandSearchifier::SearchifyNextPage() {
 }
 
 void PDFiumOnDemandSearchifier::SearchifyNextImage() {
+  CHECK(current_page_);
   std::optional<BitmapResult> bitmap_result = GetNextBitmap();
   if (bitmap_result.has_value()) {
     const auto& bitmap = bitmap_result.value().bitmap;
@@ -164,9 +203,20 @@ void PDFiumOnDemandSearchifier::SearchifyNextImage() {
 }
 
 void PDFiumOnDemandSearchifier::CommitResultsToPage() {
+  CHECK(state_ == State::kWaitingForResults ||
+        state_ == State::kWaitingForPageAvailability);
+  // Ignore the results if the page got unloaded before committing them.
+  if (!current_page_) {
+    current_page_ocr_results_.clear();
+  }
+
   if (!current_page_ocr_results_.empty()) {
-    // If the page is being painted, wait for paint to finish.
-    if (engine_->IsPageScheduledForPaint(current_page_->index())) {
+    // If the page is being painted or cannot be unloaded, wait.
+    if (!current_page_->PageCanBeUnloaded() ||
+        engine_->IsPageScheduledForPaint(current_page_->index())) {
+      if (state_ == State::kWaitingForResults) {
+        state_ = State::kWaitingForPageAvailability;
+      }
       base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
           FROM_HERE,
           base::BindOnce(&PDFiumOnDemandSearchifier::CommitResultsToPage,
@@ -175,9 +225,8 @@ void PDFiumOnDemandSearchifier::CommitResultsToPage() {
       return;
     }
 
-    // It is expected that the page would be still loaded.
-    FPDF_PAGE page = current_page_->page();
-    CHECK(page);
+    // Reload page if needed.
+    FPDF_PAGE page = current_page_->GetPage();
     bool added_text = false;
     for (auto& result : current_page_ocr_results_) {
       FPDF_PAGEOBJECT image = FPDFPage_GetObject(page, result.image_index);
@@ -193,14 +242,23 @@ void PDFiumOnDemandSearchifier::CommitResultsToPage() {
     }
   }
 
-  current_page_ = nullptr;
+  // `kWaitingForPageAvailability` is only set by this function, hence change
+  // the state back to `kWaitingForResults` in case it is changed.
+  state_ = State::kWaitingForResults;
+
+  ClearCurrentPage();
 
   // Searchify next page.
+  // If none of the scheduled pages are visible, post the task with more delay
+  // to reduce CPU load.
+  bool long_delay = std::ranges::none_of(pages_queue_, [this](int page_index) {
+    return this->engine_->IsPageVisible(page_index);
+  });
   base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
       FROM_HERE,
       base::BindOnce(&PDFiumOnDemandSearchifier::SearchifyNextPage,
                      weak_factory_.GetWeakPtr()),
-      kSearchifyPageDelay);
+      long_delay ? kSearchifyPageLongDelay : kSearchifyPageDelay);
 }
 
 std::optional<PDFiumOnDemandSearchifier::BitmapResult>
@@ -208,7 +266,8 @@ PDFiumOnDemandSearchifier::GetNextBitmap() {
   while (!current_page_image_object_indices_.empty()) {
     int image_index = current_page_image_object_indices_.back();
     current_page_image_object_indices_.pop_back();
-    SkBitmap bitmap = current_page_->GetImageForOcr(image_index);
+    SkBitmap bitmap =
+        current_page_->GetImageForOcr(image_index, max_image_dimension_);
     if (!bitmap.drawsNothing()) {
       return BitmapResult{bitmap, image_index};
     }
@@ -221,24 +280,22 @@ void PDFiumOnDemandSearchifier::OnGotOcrResult(
     const gfx::Size& image_size,
     screen_ai::mojom::VisualAnnotationPtr annotation) {
   CHECK_EQ(state_, State::kWaitingForResults);
+  CHECK(current_page_);
 
-  // If current request got canceled while OCR was running, ignore the result
-  // and move to the next page.
-  if (!current_page_) {
-    current_page_ocr_results_.clear();
-    base::SingleThreadTaskRunner::GetCurrentDefault()->PostDelayedTask(
-        FROM_HERE,
-        base::BindOnce(&PDFiumOnDemandSearchifier::SearchifyNextPage,
-                       weak_factory_.GetWeakPtr()),
-        kSearchifyPageDelay);
-    return;
-  }
+  performed_ocr_ = true;
 
   if (annotation) {
     current_page_ocr_results_.emplace_back(image_index, std::move(annotation),
                                            image_size);
   }
   SearchifyNextImage();
+}
+
+void PDFiumOnDemandSearchifier::ClearCurrentPage() {
+  if (current_page_ && !current_page_was_loaded_) {
+    engine_->MaybeUnloadPage(current_page_->index());
+  }
+  current_page_ = nullptr;
 }
 
 }  // namespace chrome_pdf

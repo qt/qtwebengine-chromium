@@ -791,8 +791,8 @@ TEST_F(SoftwareImageDecodeCacheTest,
   TileTask* raster_decode_task = raster_result.task.get();
 
   ImageDecodeCache::TaskResult stand_alone_result =
-      cache_.GetOutOfRasterDecodeTaskForImageAndRef(cache_client_id_,
-                                                    draw_image);
+      cache_.GetOutOfRasterDecodeTaskForImageAndRef(
+          cache_client_id_, draw_image, /*speculative*/ false);
   EXPECT_TRUE(stand_alone_result.need_unref);
   EXPECT_EQ(stand_alone_result.task->dependencies().size(), 1u);
   EXPECT_EQ(stand_alone_result.task->dependencies()[0].get(),
@@ -821,8 +821,8 @@ TEST_F(SoftwareImageDecodeCacheTest,
       PaintImage::kDefaultFrameIndex, DefaultTargetColorParams());
 
   ImageDecodeCache::TaskResult stand_alone_result =
-      cache_.GetOutOfRasterDecodeTaskForImageAndRef(cache_client_id_,
-                                                    draw_image);
+      cache_.GetOutOfRasterDecodeTaskForImageAndRef(
+          cache_client_id_, draw_image, /*speculative*/ false);
   EXPECT_TRUE(stand_alone_result.need_unref);
   EXPECT_TRUE(stand_alone_result.task);
 
@@ -860,8 +860,8 @@ TEST_F(SoftwareImageDecodeCacheTest,
       PaintImage::kDefaultFrameIndex, DefaultTargetColorParams());
 
   ImageDecodeCache::TaskResult stand_alone_result =
-      cache_.GetOutOfRasterDecodeTaskForImageAndRef(cache_client_id_,
-                                                    draw_image);
+      cache_.GetOutOfRasterDecodeTaskForImageAndRef(
+          cache_client_id_, draw_image, /*speculative*/ false);
   EXPECT_TRUE(stand_alone_result.need_unref);
   EXPECT_TRUE(stand_alone_result.task);
   TileTask* stand_alone_decode_task = stand_alone_result.task.get();
@@ -906,8 +906,8 @@ TEST_F(SoftwareImageDecodeCacheTest, ExternalDependentRasterTaskCanceled) {
       PaintImage::kDefaultFrameIndex, DefaultTargetColorParams());
 
   ImageDecodeCache::TaskResult stand_alone_result =
-      cache_.GetOutOfRasterDecodeTaskForImageAndRef(cache_client_id_,
-                                                    draw_image);
+      cache_.GetOutOfRasterDecodeTaskForImageAndRef(
+          cache_client_id_, draw_image, /*speculative*/ false);
   EXPECT_TRUE(stand_alone_result.need_unref);
   EXPECT_TRUE(stand_alone_result.task);
   TileTask* stand_alone_decode_task = stand_alone_result.task.get();
@@ -2258,7 +2258,9 @@ TEST_F(SoftwareImageDecodeCacheTest, HdrDecodeToSdr) {
       PaintImage::kDefaultFrameIndex, TargetColorParams(raster_color_space));
 
   DecodedDrawImage decoded_image = cache_.GetDecodedImageForDraw(draw_image);
-  EXPECT_NE(decoded_image.image()->colorType(), kRGBA_F16_SkColorType);
+  EXPECT_EQ(decoded_image.image()->colorType(), kRGBA_F16_SkColorType);
+  EXPECT_TRUE(SkColorSpace::Equals(decoded_image.image()->colorSpace(),
+                                   image_color_space.ToSkColorSpace().get()));
   cache_.DrawWithImageFinished(draw_image, decoded_image);
 }
 

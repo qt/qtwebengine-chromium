@@ -180,12 +180,12 @@ RtpTransceiverState::header_extensions_negotiated() const {
 }
 
 class RTCRtpTransceiverImpl::RTCRtpTransceiverInternal
-    : public WTF::ThreadSafeRefCounted<
+    : public ThreadSafeRefCounted<
           RTCRtpTransceiverImpl::RTCRtpTransceiverInternal,
           RTCRtpTransceiverImpl::RTCRtpTransceiverInternalTraits> {
  public:
   RTCRtpTransceiverInternal(
-      rtc::scoped_refptr<webrtc::PeerConnectionInterface>
+      webrtc::scoped_refptr<webrtc::PeerConnectionInterface>
           native_peer_connection,
       scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_map,
       RtpTransceiverState state,
@@ -290,8 +290,8 @@ class RTCRtpTransceiverImpl::RTCRtpTransceiverInternal
   }
 
  private:
-  friend class WTF::ThreadSafeRefCounted<RTCRtpTransceiverInternal,
-                                         RTCRtpTransceiverInternalTraits>;
+  friend class ThreadSafeRefCounted<RTCRtpTransceiverInternal,
+                                    RTCRtpTransceiverInternalTraits>;
   friend struct RTCRtpTransceiverImpl::RTCRtpTransceiverInternalTraits;
 
   ~RTCRtpTransceiverInternal() {
@@ -332,7 +332,8 @@ uintptr_t RTCRtpTransceiverImpl::GetId(
 }
 
 RTCRtpTransceiverImpl::RTCRtpTransceiverImpl(
-    rtc::scoped_refptr<webrtc::PeerConnectionInterface> native_peer_connection,
+    webrtc::scoped_refptr<webrtc::PeerConnectionInterface>
+        native_peer_connection,
     scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_map,
     RtpTransceiverState transceiver_state,
     bool encoded_insertable_streams,

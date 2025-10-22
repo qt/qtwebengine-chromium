@@ -33,59 +33,46 @@ struct CFX_FillRenderOptions {
   constexpr CFX_FillRenderOptions()
       : CFX_FillRenderOptions(FillType::kNoFill) {}
 
-  // TODO(thestig): Switch to default member initializer for bit-fields when
-  // C++20 is available.
   constexpr explicit CFX_FillRenderOptions(FillType fill_type)
-      : fill_type(fill_type),
-        adjust_stroke(false),
-        aliased_path(false),
-        full_cover(false),
-        rect_aa(false),
-        stroke(false),
-        stroke_text_mode(false),
-        text_mode(false),
-        zero_area(false) {}
+      : fill_type(fill_type) {}
 
-  bool operator==(const CFX_FillRenderOptions& other) const {
-    return fill_type == other.fill_type &&
-           adjust_stroke == other.adjust_stroke &&
-           aliased_path == other.aliased_path &&
-           full_cover == other.full_cover && rect_aa == other.rect_aa &&
-           stroke == other.stroke &&
-           stroke_text_mode == other.stroke_text_mode &&
-           text_mode == other.text_mode && zero_area == other.zero_area;
-  }
-
-  bool operator!=(const CFX_FillRenderOptions& other) const {
-    return !(*this == other);
+  friend inline bool operator==(const CFX_FillRenderOptions& lhs,
+                                const CFX_FillRenderOptions& rhs) {
+    return lhs.fill_type == rhs.fill_type &&
+           lhs.adjust_stroke == rhs.adjust_stroke &&
+           lhs.aliased_path == rhs.aliased_path &&
+           lhs.full_cover == rhs.full_cover && lhs.rect_aa == rhs.rect_aa &&
+           lhs.stroke == rhs.stroke &&
+           lhs.stroke_text_mode == rhs.stroke_text_mode &&
+           lhs.text_mode == rhs.text_mode && lhs.zero_area == rhs.zero_area;
   }
 
   // Fill type.
   FillType fill_type;
 
   // Adjusted stroke rendering is enabled.
-  bool adjust_stroke : 1;
+  bool adjust_stroke : 1 = false;
 
   // Whether anti aliasing is enabled for path rendering.
-  bool aliased_path : 1;
+  bool aliased_path : 1 = false;
 
   // Fills with the sum of colors from both cover and source.
-  bool full_cover : 1;
+  bool full_cover : 1 = false;
 
   // Rect paths use anti-aliasing.
-  bool rect_aa : 1;
+  bool rect_aa : 1 = false;
 
   // Path is stroke.
-  bool stroke : 1;
+  bool stroke : 1 = false;
 
   // Renders text by filling strokes.
-  bool stroke_text_mode : 1;
+  bool stroke_text_mode : 1 = false;
 
   // Path is text.
-  bool text_mode : 1;
+  bool text_mode : 1 = false;
 
   // Path encloses zero area.
-  bool zero_area : 1;
+  bool zero_area : 1 = false;
 };
 
 #endif  // CORE_FXGE_CFX_FILLRENDEROPTIONS_H_

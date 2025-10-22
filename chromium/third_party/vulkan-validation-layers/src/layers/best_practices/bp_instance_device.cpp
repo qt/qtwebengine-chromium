@@ -21,6 +21,7 @@
 #include "generated/dispatch_functions.h"
 #include "best_practices/bp_state.h"
 #include "state_tracker/queue_state.h"
+#include "state_tracker/device_state.h"
 
 bool bp_state::Instance::ValidateDeprecatedExtensions(const Location& loc, vvl::Extension extension, APIVersion version) const {
     bool skip = false;
@@ -167,22 +168,28 @@ bool bp_state::Instance::PreCallValidateCreateDevice(VkPhysicalDevice physicalDe
         skip |= ValidateSpecialUseExtensions(error_obj.location, extension);
     }
 
-    const auto bp_pd_state = Get<vvl::PhysicalDevice>(physicalDevice);
-    if (bp_pd_state && (bp_pd_state->GetCallState(error_obj.location.function) == vvl::UNCALLED) &&
-        (pCreateInfo->pEnabledFeatures != NULL)) {
-        skip |= LogWarning("BestPractices-vkCreateDevice-physical-device-features-not-retrieved", instance, error_obj.location,
-                           "called before getting physical device features from vkGetPhysicalDeviceFeatures().");
-    }
+    if (pCreateInfo->pEnabledFeatures) {
+        if (const auto bp_pd_state = Get<vvl::PhysicalDevice>(physicalDevice)) {
+            if (bp_pd_state->WasUncalled(vvl::Func::vkGetPhysicalDeviceFeatures) &&
+                bp_pd_state->WasUncalled(vvl::Func::vkGetPhysicalDeviceFeatures2) &&
+                bp_pd_state->WasUncalled(vvl::Func::vkGetPhysicalDeviceFeatures2KHR)) {
+                skip |=
+                    LogWarning("BestPractices-vkCreateDevice-physical-device-features-not-retrieved", instance, error_obj.location,
+                               "called before getting physical device features from vkGetPhysicalDeviceFeatures or "
+                               "vkGetPhysicalDeviceFeatures2.");
+            }
+        }
 
-    if ((VendorCheckEnabled(kBPVendorArm) || VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorIMG)) &&
-        (pCreateInfo->pEnabledFeatures != nullptr) && (pCreateInfo->pEnabledFeatures->robustBufferAccess == VK_TRUE)) {
-        skip |= LogPerformanceWarning(
-            "BestPractices-vkCreateDevice-RobustBufferAccess", instance, error_obj.location,
-            "%s %s %s: called with enabled robustBufferAccess. Use robustBufferAccess as a debugging tool during "
-            "development. Enabling it causes loss in performance for accesses to uniform buffers and shader storage "
-            "buffers. Disable robustBufferAccess in release builds. Only leave it enabled if the application use-case "
-            "requires the additional level of reliability due to the use of unverified user-supplied draw parameters.",
-            VendorSpecificTag(kBPVendorArm), VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorIMG));
+        if ((VendorCheckEnabled(kBPVendorArm) || VendorCheckEnabled(kBPVendorAMD) || VendorCheckEnabled(kBPVendorIMG)) &&
+            pCreateInfo->pEnabledFeatures->robustBufferAccess) {
+            skip |= LogPerformanceWarning(
+                "BestPractices-vkCreateDevice-RobustBufferAccess", instance, error_obj.location,
+                "%s %s %s: called with enabled robustBufferAccess. Use robustBufferAccess as a debugging tool during "
+                "development. Enabling it causes loss in performance for accesses to uniform buffers and shader storage "
+                "buffers. Disable robustBufferAccess in release builds. Only leave it enabled if the application use-case "
+                "requires the additional level of reliability due to the use of unverified user-supplied draw parameters.",
+                VendorSpecificTag(kBPVendorArm), VendorSpecificTag(kBPVendorAMD), VendorSpecificTag(kBPVendorIMG));
+        }
     }
 
     const bool enabled_pageable_device_local_memory = IsExtEnabled(extensions.vk_ext_pageable_device_local_memory);
@@ -247,10 +254,24 @@ bool bp_state::Instance::PreCallValidateGetPhysicalDeviceQueueFamilyProperties2K
                                                                   error_obj);
 }
 
+ReadLockGuard BestPractices::ReadLock() const {
+    if (global_settings.fine_grained_locking) {
+        return ReadLockGuard(validation_object_mutex, std::defer_lock);
+    } else {
+        return ReadLockGuard(validation_object_mutex);
+    }
+}
+
+WriteLockGuard BestPractices::WriteLock() {
+    if (global_settings.fine_grained_locking) {
+        return WriteLockGuard(validation_object_mutex, std::defer_lock);
+    } else {
+        return WriteLockGuard(validation_object_mutex);
+    }
+}
+
 void BestPractices::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits, VkFence fence,
                                              const RecordObject& record_obj) {
-    BaseClass::PreCallRecordQueueSubmit(queue, submitCount, pSubmits, fence, record_obj);
-
     auto queue_state = Get<vvl::Queue>(queue);
     for (uint32_t submit = 0; submit < submitCount; submit++) {
         const auto& submit_info = pSubmits[submit];
@@ -264,11 +285,11 @@ void BestPractices::PreCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount
 
 namespace {
 struct EventValidator {
-    const vvl::Device& state_tracker;
+    const BestPractices& bp;
 
     vvl::unordered_map<VkEvent, bool> signaling_state;
 
-    EventValidator(const vvl::Device& state_tracker) : state_tracker(state_tracker) {}
+    EventValidator(const BestPractices& bp_) : bp(bp_) {}
 
     bool ValidateSubmittedCbSignalingState(const bp_state::CommandBufferSubState& cb, const Location& cb_loc) {
         bool skip = false;
@@ -280,18 +301,18 @@ struct EventValidator {
                     signaled = *p_signaled;
                 } else {
                     // check global event state
-                    auto event_state = state_tracker.Get<vvl::Event>(event);
+                    auto event_state = bp.Get<vvl::Event>(event);
                     if (event_state) {
                         signaled = event_state->signaled;
                     }
                 }
                 if (signaled) {
                     const LogObjectList objlist(cb.VkHandle(), event);
-                    skip |= state_tracker.LogWarning(
+                    skip |= bp.LogWarning(
                         "BestPractices-Event-SignalSignaledEvent", objlist, cb_loc,
                         "%s sets event %s which is already in the signaled state (set by previously submitted command buffers or "
                         "from the host). If this is not the desired behavior, the event must be reset before it is set again.",
-                        state_tracker.FormatHandle(cb.VkHandle()).c_str(), state_tracker.FormatHandle(event).c_str());
+                        bp.FormatHandle(cb.VkHandle()).c_str(), bp.FormatHandle(event).c_str());
                 }
             }
             signaling_state[event] = info.signaled;
@@ -308,18 +329,6 @@ bool BestPractices::PreCallValidateQueueSubmit(VkQueue queue, uint32_t submitCou
 
     for (uint32_t submit = 0; submit < submitCount; submit++) {
         const Location submit_loc = error_obj.location.dot(Field::pSubmits, submit);
-        for (uint32_t semaphore = 0; semaphore < pSubmits[submit].waitSemaphoreCount; semaphore++) {
-            skip |= CheckPipelineStageFlags(queue, submit_loc.dot(Field::pWaitDstStageMask, semaphore),
-                                            pSubmits[submit].pWaitDstStageMask[semaphore]);
-        }
-        if (pSubmits[submit].signalSemaphoreCount == 0 && pSubmits[submit].pSignalSemaphores != nullptr) {
-            LogInfo("BestPractices-SignalSemaphores-SemaphoreCount", queue, submit_loc.dot(Field::pSignalSemaphores),
-                    "is set, but pSubmits[%" PRIu32 "].signalSemaphoreCount is 0.", submit);
-        }
-        if (pSubmits[submit].waitSemaphoreCount == 0 && pSubmits[submit].pWaitSemaphores != nullptr) {
-            LogInfo("BestPractices-WaitSemaphores-SemaphoreCount", queue, submit_loc.dot(Field::pWaitSemaphores),
-                    "is set, but pSubmits[%" PRIu32 "].waitSemaphoreCount is 0.", submit);
-        }
         for (uint32_t cb_index = 0; cb_index < pSubmits[submit].commandBufferCount; cb_index++) {
             if (auto cb_state = GetRead<vvl::CommandBuffer>(pSubmits[submit].pCommandBuffers[cb_index])) {
                 const Location cb_loc = submit_loc.dot(vvl::Field::pCommandBuffers, cb_index);
@@ -344,11 +353,6 @@ bool BestPractices::PreCallValidateQueueSubmit2(VkQueue queue, uint32_t submitCo
 
     for (uint32_t submit = 0; submit < submitCount; submit++) {
         const Location submit_loc = error_obj.location.dot(Field::pSubmits, submit);
-        for (uint32_t semaphore = 0; semaphore < pSubmits[submit].waitSemaphoreInfoCount; semaphore++) {
-            const Location semaphore_loc = submit_loc.dot(Field::pWaitSemaphoreInfos, semaphore);
-            skip |= CheckPipelineStageFlags(queue, semaphore_loc.dot(Field::stageMask),
-                                            pSubmits[submit].pWaitSemaphoreInfos[semaphore].stageMask);
-        }
         for (uint32_t cb_index = 0; cb_index < pSubmits[submit].commandBufferInfoCount; cb_index++) {
             if (auto cb_state = GetRead<vvl::CommandBuffer>(pSubmits[submit].pCommandBufferInfos[cb_index].commandBuffer)) {
                 const Location infos_loc = submit_loc.dot(vvl::Field::pCommandBufferInfos, cb_index);
@@ -370,10 +374,10 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
         const Location bind_info_loc = error_obj.location.dot(Field::pBindInfo, bind_idx);
         const VkBindSparseInfo& bind_info = pBindInfo[bind_idx];
         // Store sparse binding image_state and after binding is complete make sure that any requiring metadata have it bound
-        vvl::unordered_set<const vvl::Image*> sparse_images;
+        vvl::unordered_set<const bp_state::ImageSubState*> sparse_images;
         // Track images getting metadata bound by this call in a set, it'll be recorded into the image_state
         // in RecordQueueBindSparse.
-        vvl::unordered_set<const vvl::Image*> sparse_images_with_metadata;
+        vvl::unordered_set<const bp_state::ImageSubState*> sparse_images_with_metadata;
         // If we're binding sparse image memory make sure reqs were queried and note if metadata is required and bound
         for (uint32_t i = 0; i < bind_info.imageBindCount; ++i) {
             const auto& image_bind = bind_info.pImageBinds[i];
@@ -381,9 +385,10 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             if (!image_state) {
                 continue;  // Param/Object validation should report image_bind.image handles being invalid, so just skip here.
             }
-            sparse_images.insert(image_state.get());
+            const auto& image_sub_state = bp_state::SubState(*image_state);
+            sparse_images.insert(&image_sub_state);
             if (image_state->sparse_residency) {
-                if (!image_state->get_sparse_reqs_called || image_state->sparse_requirements.empty()) {
+                if (!image_sub_state.get_sparse_reqs_called || image_state->sparse_requirements.empty()) {
                     // For now just warning if sparse image binding occurs without calling to get reqs first
                     skip |= LogWarning("BestPractices-vkQueueBindSparse-image-requirements2", image_state->Handle(),
                                        bind_info_loc.dot(Field::pImageBinds, i),
@@ -392,7 +397,7 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
                                        FormatHandle(image_state->Handle()).c_str());
                 }
             }
-            if (!image_state->memory_requirements_checked[0]) {
+            if (!image_sub_state.memory_requirements_checked[0]) {
                 // For now just warning if sparse image binding occurs without calling to get reqs first
                 skip |= LogWarning("BestPractices-vkQueueBindSparse-image-requirements", image_state->Handle(),
                                    bind_info_loc.dot(Field::pImageBinds, i),
@@ -407,9 +412,10 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             if (!image_state) {
                 continue;  // Param/Object validation should report image_bind.image handles being invalid, so just skip here.
             }
-            sparse_images.insert(image_state.get());
+            const auto& image_sub_state = bp_state::SubState(*image_state);
+            sparse_images.insert(&image_sub_state);
             if (image_state->sparse_residency) {
-                if (!image_state->get_sparse_reqs_called || image_state->sparse_requirements.empty()) {
+                if (!image_sub_state.get_sparse_reqs_called || image_state->sparse_requirements.empty()) {
                     // For now just warning if sparse image binding occurs without calling to get reqs first
                     skip |= LogWarning("BestPractices-vkQueueBindSparse-image-opaque-requirements2", image_state->Handle(),
                                        bind_info_loc.dot(Field::pImageOpaqueBinds, i),
@@ -418,7 +424,7 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
                                        FormatHandle(image_state->Handle()).c_str());
                 }
             }
-            if (!image_state->memory_requirements_checked[0]) {
+            if (!image_sub_state.memory_requirements_checked[0]) {
                 // For now just warning if sparse image binding occurs without calling to get reqs first
                 skip |= LogWarning("BestPractices-vkQueueBindSparse-image-opaque-requirements", image_state->Handle(),
                                    bind_info_loc.dot(Field::pImageOpaqueBinds, i),
@@ -428,7 +434,7 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             }
             for (uint32_t j = 0; j < image_opaque_bind.bindCount; ++j) {
                 if (image_opaque_bind.pBinds[j].flags & VK_SPARSE_MEMORY_BIND_METADATA_BIT) {
-                    sparse_images_with_metadata.insert(image_state.get());
+                    sparse_images_with_metadata.insert(&image_sub_state);
                 }
             }
         }
@@ -436,11 +442,11 @@ bool BestPractices::PreCallValidateQueueBindSparse(VkQueue queue, uint32_t bindI
             if (sparse_image_state->sparse_metadata_required && !sparse_image_state->sparse_metadata_bound &&
                 sparse_images_with_metadata.find(sparse_image_state) == sparse_images_with_metadata.end()) {
                 // Warn if sparse image binding metadata required for image with sparse binding, but metadata not bound
-                skip |= LogWarning("BestPractices-vkQueueBindSparse-image-metadata-requirements", sparse_image_state->Handle(),
+                skip |= LogWarning("BestPractices-vkQueueBindSparse-image-metadata-requirements", sparse_image_state->base.Handle(),
                                    bind_info_loc,
                                    "Binding sparse memory to %s which requires a metadata aspect but no "
                                    "binding with VK_SPARSE_MEMORY_BIND_METADATA_BIT set was made.",
-                                   FormatHandle(sparse_image_state->Handle()).c_str());
+                                   FormatHandle(sparse_image_state->base.Handle()).c_str());
             }
         }
     }
@@ -473,9 +479,10 @@ void BestPractices::ManualPostCallRecordQueueBindSparse(VkQueue queue, uint32_t 
             if (!image_state) {
                 continue;  // Param/Object validation should report image_bind.image handles being invalid, so just skip here.
             }
+            auto& image_sub_state = bp_state::SubState(*image_state);
             for (uint32_t j = 0; j < image_opaque_bind.bindCount; ++j) {
                 if (image_opaque_bind.pBinds[j].flags & VK_SPARSE_MEMORY_BIND_METADATA_BIT) {
-                    image_state->sparse_metadata_bound = true;
+                    image_sub_state.sparse_metadata_bound = true;
                 }
             }
         }
@@ -484,6 +491,7 @@ void BestPractices::ManualPostCallRecordQueueBindSparse(VkQueue queue, uint32_t 
 
 void BestPractices::ManualPostCallRecordQueueSubmit(VkQueue queue, uint32_t submitCount, const VkSubmitInfo* pSubmits,
                                                     VkFence fence, const RecordObject& record_obj) {
+    // We ignore the VkResult because we want to call the total attempted queue submit calls
     // AMD best practice
     num_queue_submissions_ += submitCount;
 }

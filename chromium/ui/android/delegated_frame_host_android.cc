@@ -8,12 +8,14 @@
 
 #include "base/android/build_info.h"
 #include "base/check_op.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "cc/slim/layer.h"
 #include "cc/slim/layer_tree.h"
 #include "cc/slim/surface_layer.h"
@@ -183,7 +185,7 @@ void DelegatedFrameHostAndroid::CopyFromCompositingSurface(
     const gfx::Size& output_size,
     base::OnceCallback<void(const SkBitmap&)> callback,
     bool capture_exact_surface_id,
-    viz::CopyOutputRequest::IpcPriority ipc_priority) {
+    base::TimeDelta ipc_delay) {
   DCHECK(CanCopyFromCompositingSurface());
 
   const viz::SurfaceId surface_id(frame_sink_id_, local_surface_id_);
@@ -212,7 +214,7 @@ void DelegatedFrameHostAndroid::CopyFromCompositingSurface(
                 std::move(copy_result).Run(scoped_bitmap.GetOutScopedBitmap());
               },
               std::move(callback), std::move(keep_surface_alive)));
-  request->set_ipc_priority(ipc_priority);
+  request->set_send_result_delay(ipc_delay);
 
   // `CopyOutputRequestCallback` holds a `ReadbackRefCallback` which must only
   // be executed on the UI thread. Since the result callback can be dispatched
@@ -221,7 +223,7 @@ void DelegatedFrameHostAndroid::CopyFromCompositingSurface(
   request->set_result_task_runner(
       base::SequencedTaskRunner::GetCurrentDefault());
 
-  viz::SetCopyOutoutRequestResultSize(request.get(), src_subrect, output_size,
+  viz::SetCopyOutputRequestResultSize(request.get(), src_subrect, output_size,
                                       surface_size_in_pixels_);
 
   host_frame_sink_manager_->RequestCopyOfOutput(surface_id, std::move(request),
@@ -246,8 +248,6 @@ void DelegatedFrameHostAndroid::EvictDelegatedFrame(
     return;
   }
 
-  UMA_HISTOGRAM_COUNTS_100("MemoryAndroid.EvictedTreeSize2",
-                           surface_ids.size());
   if (surface_ids.empty())
     return;
   host_frame_sink_manager_->EvictSurfaces(surface_ids);

@@ -13,6 +13,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/trace_event/trace_event.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -24,9 +26,9 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/color/chrome_color_id.h"
 #include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
-#include "chrome/browser/ui/tabs/tab_group.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_group_theme.h"
 #include "chrome/browser/ui/tabs/tab_menu_model.h"
@@ -45,6 +47,7 @@
 #include "components/tab_groups/tab_group_color.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tab_groups/tab_group_visual_data.h"
+#include "components/tabs/public/tab_group.h"
 #include "content/public/common/drop_data.h"
 #include "third_party/blink/public/common/input/web_gesture_event.h"
 #include "ui/aura/window_delegate.h"
@@ -62,6 +65,7 @@
 #include "ui/menus/simple_menu_model.h"
 #include "url/gurl.h"
 
+// Must be last.
 #include "base/win/windows_h_disallowed.h"
 
 namespace {
@@ -93,6 +97,10 @@ class WebUIBackgroundContextMenu : public ui::SimpleMenuModel::Delegate,
         accelerator_provider_(accelerator_provider) {}
   ~WebUIBackgroundContextMenu() override = default;
 
+  bool IsCommandIdEnabled(int command_id) const override {
+    return chrome::IsCommandEnabled(browser_, command_id);
+  }
+
   void ExecuteCommand(int command_id, int event_flags) override {
     chrome::ExecuteCommand(browser_, command_id);
   }
@@ -115,7 +123,7 @@ class WebUITabContextMenu : public ui::SimpleMenuModel::Delegate,
                       const ui::AcceleratorProvider* accelerator_provider,
                       int tab_index)
       : TabMenuModel(this,
-                     browser->tab_menu_model_delegate(),
+                     browser->GetFeatures().tab_menu_model_delegate(),
                      browser->tab_strip_model(),
                      tab_index),
         browser_(browser),
@@ -299,7 +307,8 @@ void TabStripPageHandler::OnTabStripModelChanged(
   switch (change.type()) {
     case TabStripModelChange::kInserted: {
       for (const auto& contents : change.GetInsert()->contents) {
-        page_->TabCreated(GetTabData(contents.contents, contents.index));
+        page_->TabCreated(
+            GetTabData(contents.contents, contents.tab, contents.index));
       }
       break;
     }
@@ -342,18 +351,23 @@ void TabStripPageHandler::TabChangedAt(content::WebContents* contents,
                                        int index,
                                        TabChangeType change_type) {
   TRACE_EVENT0("browser", "TabStripPageHandler:TabChangedAt");
-  page_->TabUpdated(GetTabData(contents, index));
+  TabStripModel* tab_strip_model = browser_->tab_strip_model();
+  page_->TabUpdated(
+      GetTabData(contents, tab_strip_model->GetTabAtIndex(index), index));
 }
 
 void TabStripPageHandler::TabPinnedStateChanged(TabStripModel* tab_strip_model,
                                                 content::WebContents* contents,
                                                 int index) {
-  page_->TabUpdated(GetTabData(contents, index));
+  page_->TabUpdated(
+      GetTabData(contents, tab_strip_model->GetTabAtIndex(index), index));
 }
 
 void TabStripPageHandler::TabBlockedStateChanged(content::WebContents* contents,
                                                  int index) {
-  page_->TabUpdated(GetTabData(contents, index));
+  TabStripModel* tab_strip_model = browser_->tab_strip_model();
+  page_->TabUpdated(
+      GetTabData(contents, tab_strip_model->GetTabAtIndex(index), index));
 }
 
 bool TabStripPageHandler::PreHandleGestureEvent(
@@ -482,6 +496,7 @@ void TabStripPageHandler::OnLongPressTimer() {
 
 tab_strip::mojom::TabPtr TabStripPageHandler::GetTabData(
     content::WebContents* contents,
+    const tabs::TabInterface* tab,
     int index) {
   DCHECK(index >= 0);
   auto tab_data = tab_strip::mojom::Tab::New();
@@ -536,7 +551,7 @@ tab_strip::mojom::TabPtr TabStripPageHandler::GetTabData(
   tab_data->crashed = tab_renderer_data.IsCrashed();
   // TODO(johntlee): Add the rest of TabRendererData
 
-  for (const auto alert_state : GetTabAlertStatesForContents(contents)) {
+  for (const auto alert_state : GetTabAlertStatesForTab(tab)) {
     tab_data->alert_states.push_back(alert_state);
   }
 
@@ -568,7 +583,8 @@ void TabStripPageHandler::GetTabs(GetTabsCallback callback) {
   std::vector<tab_strip::mojom::TabPtr> tabs;
   TabStripModel* tab_strip_model = browser_->tab_strip_model();
   for (int i = 0; i < tab_strip_model->count(); ++i) {
-    tabs.push_back(GetTabData(tab_strip_model->GetWebContentsAt(i), i));
+    tabs.push_back(GetTabData(tab_strip_model->GetWebContentsAt(i),
+                              tab_strip_model->GetTabAtIndex(i), i));
   }
   std::move(callback).Run(std::move(tabs));
 }

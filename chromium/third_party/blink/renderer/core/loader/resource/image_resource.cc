@@ -64,6 +64,7 @@
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/shared_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 #include "v8/include/v8.h"
 
@@ -209,9 +210,6 @@ class ImageResource::ImageResourceInfoImpl final
     return resource_->IsAccessAllowed(
         does_current_frame_has_single_security_origin);
   }
-  bool HasCacheControlNoStoreHeader() const override {
-    return resource_->HasCacheControlNoStoreHeader();
-  }
   std::optional<ResourceError> GetResourceError() const override {
     if (resource_->LoadFailedOrCanceled())
       return resource_->GetResourceError();
@@ -270,24 +268,17 @@ class ImageResource::ImageResourceFactory : public NonTextResourceFactory {
   STACK_ALLOCATED();
 
  public:
-  explicit ImageResourceFactory(bool transparent_image_optimization_enabled)
-      : NonTextResourceFactory(ResourceType::kImage),
-        transparent_image_optimization_enabled_(
-            transparent_image_optimization_enabled) {}
+  ImageResourceFactory() : NonTextResourceFactory(ResourceType::kImage) {}
 
   Resource* Create(const ResourceRequest& request,
                    const ResourceLoaderOptions& options) const override {
-    if (transparent_image_optimization_enabled_ &&
-        (request.GetKnownTransparentPlaceholderImageIndex() != kNotFound)) {
+    if (request.GetKnownTransparentPlaceholderImageIndex() != kNotFound) {
       return CreateResourceForTransparentPlaceholderImage(request, options);
     }
 
     return MakeGarbageCollected<ImageResource>(
         request, options, ImageResourceContent::CreateNotStarted());
   }
-
- private:
-  const bool transparent_image_optimization_enabled_;
 };
 
 ImageResource* ImageResource::Fetch(FetchParameters& params,
@@ -309,11 +300,8 @@ ImageResource* ImageResource::Fetch(FetchParameters& params,
         network::mojom::CSPDisposition::DO_NOT_CHECK);
   }
 
-  auto* resource = To<ImageResource>(fetcher->RequestResource(
-      params,
-      ImageResourceFactory(
-          fetcher->IsSimplifyLoadingTransparentPlaceholderImageEnabled()),
-      nullptr));
+  auto* resource = To<ImageResource>(
+      fetcher->RequestResource(params, ImageResourceFactory(), nullptr));
 
   // If the fetch originated from user agent CSS we should mark it as a user
   // agent resource.
@@ -354,8 +342,7 @@ ImageResource* ImageResource::CreateForTest(const KURL& url) {
   request.SetPriority(WebURLRequest::Priority::kLow);
   MarkKnownTransparentPlaceholderResourceRequestIfNeeded(request);
 
-  ImageResourceFactory factory(base::FeatureList::IsEnabled(
-      features::kSimplifyLoadingTransparentPlaceholderImage));
+  ImageResourceFactory factory;
   return To<ImageResource>(
       factory.Create(request, ResourceLoaderOptions(/* world=*/nullptr)));
 }
@@ -385,7 +372,7 @@ ImageResource::~ImageResource() {
 void ImageResource::OnMemoryDump(WebMemoryDumpLevelOfDetail level_of_detail,
                                  WebProcessMemoryDump* memory_dump) const {
   Resource::OnMemoryDump(level_of_detail, memory_dump);
-  const String name = GetMemoryDumpName() + "/image_content";
+  const String name = StrCat({GetMemoryDumpName(), "/image_content"});
   auto* dump = memory_dump->CreateMemoryAllocatorDump(name);
   if (content_->HasImage() && content_->GetImage()->HasData())
     dump->AddScalar("size", "bytes", content_->GetImage()->DataSize());
@@ -610,8 +597,10 @@ ImageResource::PriorityFromObservers() const {
   return GetContent()->PriorityFromObservers();
 }
 
-bool ImageResource::HasNonDegenerateSizeForDecode() const {
-  return GetContent()->HasNonDegenerateSizeForDecode();
+bool ImageResource::IsAboveSpeculativeDecodeSizeThreshold() const {
+  // Images with too few pixels will not be speculatively decoded.
+  return GetContent()->MaxSize().GetCheckedArea().ValueOrDefault(0) >=
+         kSpeculativeDecodeMinImageSize;
 }
 
 void ImageResource::OnePartInMultipartReceived(

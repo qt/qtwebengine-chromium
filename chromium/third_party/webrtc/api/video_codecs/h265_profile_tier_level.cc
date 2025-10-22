@@ -15,7 +15,6 @@
 
 #include "api/rtp_parameters.h"
 #include "api/video/resolution.h"
-#include "rtc_base/arraysize.h"
 #include "rtc_base/string_to_number.h"
 
 namespace webrtc {
@@ -29,7 +28,7 @@ const char kH265FmtpLevel[] = "level-id";
 // Used to align frame width and height for luma picture size calculation.
 // Use the maximum value allowed by spec to get upper bound of luma picture
 // size for given resolution.
-static constexpr int kMinCbSizeYMax = 64;
+constexpr int kMinCbSizeYMax = 64;
 
 struct LevelConstraint {
   const int max_luma_picture_size;
@@ -46,7 +45,7 @@ struct LevelConstraint {
 // max_luma_picture_size is 36864, so pic_width_in_luma_samples <= sqrt(36864 *
 // 8) = 543.06. The largest integer that is multiple of 8 and less than 543.06
 // is 536.
-static constexpr LevelConstraint kLevelConstraints[] = {
+constexpr LevelConstraint kLevelConstraints[] = {
     {36864, 552960, 536, H265Level::kLevel1},
     {122880, 3686400, 984, H265Level::kLevel2},
     {245760, 7372800, 1400, H265Level::kLevel2_1},
@@ -310,7 +309,7 @@ std::optional<H265Level> GetSupportedH265Level(const Resolution& resolution,
   int aligned_height =
       (resolution.height + kMinCbSizeYMax - 1) & ~(kMinCbSizeYMax - 1);
 
-  for (int i = arraysize(kLevelConstraints) - 1; i >= 0; --i) {
+  for (int i = std::ssize(kLevelConstraints) - 1; i >= 0; --i) {
     const LevelConstraint& level_constraint = kLevelConstraints[i];
     if (level_constraint.max_luma_picture_size <=
             aligned_width * aligned_height &&

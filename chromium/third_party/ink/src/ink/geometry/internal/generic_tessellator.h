@@ -15,8 +15,10 @@
 #ifndef INK_GEOMETRY_INTERNAL_GENERIC_TESSELLATOR_H_
 #define INK_GEOMETRY_INTERNAL_GENERIC_TESSELLATOR_H_
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "absl/base/attributes.h"
@@ -188,7 +190,17 @@ bool TessellateConnectedPolygons(
       std::is_same_v<decltype(VertexTessellationHelper::GetY(edges[0][0])),
                      TESSreal>);
 
+  float this_x, this_y, min_x, max_x, min_y, max_y;
+  min_x = max_x = min_y = max_y = 0;
   for (const auto& edge : edges) {
+    for (const auto& vertex : edge) {
+      this_x = VertexTessellationHelper::GetX(vertex);
+      this_y = VertexTessellationHelper::GetY(vertex);
+      min_x = std::min(min_x, this_x);
+      max_x = std::max(max_x, this_x);
+      min_y = std::min(min_y, this_y);
+      max_y = std::max(max_y, this_y);
+    }
     tessAddContour(tess, kVertexSize, edge.data(),
                    sizeof(typename VertexTessellationHelper::VertexType),
                    edge.size());

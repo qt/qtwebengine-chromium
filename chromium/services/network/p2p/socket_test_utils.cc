@@ -2,23 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "services/network/p2p/socket_test_utils.h"
 
 #include <stddef.h>
 
 #include <algorithm>
+#include <string_view>
 
 #include "base/check.h"
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/numerics/byte_conversions.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_view_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/test/bind.h"
 #include "net/base/io_buffer.h"
@@ -75,15 +73,18 @@ FakeSocket::FakeSocket(std::string* written_data)
 
 FakeSocket::~FakeSocket() {}
 
-void FakeSocket::AppendInputData(const char* data, int data_size) {
-  input_data_.insert(input_data_.end(), data, data + data_size);
+void FakeSocket::AppendInputData(std::string_view data) {
+  input_data_.append(data);
   // Complete pending read if any.
   if (read_pending_) {
     read_pending_ = false;
     int result = std::min(read_buffer_size_,
                           static_cast<int>(input_data_.size() - input_pos_));
     CHECK(result > 0);
-    memcpy(read_buffer_->data(), &input_data_[0] + input_pos_, result);
+    read_buffer_->span().copy_prefix_from(
+        base::as_byte_span(input_data_)
+            .subspan(base::checked_cast<size_t>(input_pos_),
+                     base::checked_cast<size_t>(result)));
     input_pos_ += result;
     read_buffer_ = nullptr;
     std::move(read_callback_).Run(result);
@@ -105,7 +106,10 @@ int FakeSocket::Read(net::IOBuffer* buf,
   if (input_pos_ < static_cast<int>(input_data_.size())) {
     int result =
         std::min(buf_len, static_cast<int>(input_data_.size()) - input_pos_);
-    memcpy(buf->data(), &(*input_data_.begin()) + input_pos_, result);
+    buf->span().copy_prefix_from(
+        base::as_byte_span(input_data_)
+            .subspan(base::checked_cast<size_t>(input_pos_),
+                     base::checked_cast<size_t>(result)));
     input_pos_ += result;
     return result;
   } else {
@@ -125,6 +129,9 @@ int FakeSocket::Write(
   DCHECK(buf);
   DCHECK(!write_pending_);
 
+  if (error_on_next_write_ != 0) {
+    return error_on_next_write_;
+  }
   if (async_write_) {
     base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
         FROM_HERE,
@@ -136,8 +143,8 @@ int FakeSocket::Write(
   }
 
   if (written_data_) {
-    written_data_->insert(written_data_->end(), buf->data(),
-                          buf->data() + buf_len);
+    written_data_->append(
+        base::as_string_view(buf->first(base::checked_cast<size_t>(buf_len))));
   }
   return buf_len;
 }
@@ -148,8 +155,8 @@ void FakeSocket::DoAsyncWrite(scoped_refptr<net::IOBuffer> buf,
   write_pending_ = false;
 
   if (written_data_) {
-    written_data_->insert(written_data_->end(), buf->data(),
-                          buf->data() + buf_len);
+    written_data_->append(
+        base::as_string_view(buf->first(base::checked_cast<size_t>(buf_len))));
   }
   std::move(callback).Run(buf_len);
 }

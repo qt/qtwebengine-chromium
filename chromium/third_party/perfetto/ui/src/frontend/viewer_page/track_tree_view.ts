@@ -59,11 +59,12 @@ import {
   wheelNavigationInteraction,
 } from './timeline_interactions';
 import {TrackView} from './track_view';
-import {drawVerticalLineAtTime} from './vertical_line_helper';
+import {drawVerticalLineAtTime} from '../../base/vertical_line_helper';
 import {featureFlags} from '../../core/feature_flags';
 import {EmptyState} from '../../widgets/empty_state';
-import {Button} from '../../widgets/button';
+import {Button, ButtonVariant} from '../../widgets/button';
 import {Intent} from '../../widgets/common';
+import {CursorTooltip} from '../../widgets/cursor_tooltip';
 
 const VIRTUAL_TRACK_SCROLLING = featureFlags.register({
   id: 'virtualTrackScrolling',
@@ -124,6 +125,8 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
   constructor({attrs}: m.Vnode<TrackTreeViewAttrs>) {
     this.trace = attrs.trace;
   }
+
+  private hoveredTrackNode?: TrackNode;
 
   view({attrs}: m.Vnode<TrackTreeViewAttrs>): m.Children {
     const {
@@ -201,6 +204,12 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
             stickyTop,
             depth,
             collapsible: !filtersApplied,
+            onTrackMouseOver: () => {
+              this.hoveredTrackNode = node;
+            },
+            onTrackMouseOut: () => {
+              this.hoveredTrackNode = undefined;
+            },
           },
           children,
         );
@@ -222,6 +231,7 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
           },
           m(Button, {
             intent: Intent.Primary,
+            variant: ButtonVariant.Filled,
             label: 'Clear track filter',
             onclick: () => trace.tracks.filters.clearAll(),
           }),
@@ -272,7 +282,19 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
         },
       },
       m('', {ref: TRACK_CONTAINER_REF}, trackVnodes),
+      this.hoveredTrackNode && this.renderPopup(this.hoveredTrackNode),
     );
+  }
+
+  private renderPopup(trackNode: TrackNode) {
+    const track = trackNode.uri
+      ? this.trace.tracks.getTrack(trackNode.uri)
+      : undefined;
+    const tooltipNodes = track?.renderer.renderTooltip?.();
+    if (!Boolean(tooltipNodes)) {
+      return;
+    }
+    return m(CursorTooltip, {className: 'pf-track__tooltip'}, tooltipNodes);
   }
 
   oncreate(vnode: m.VnodeDOM<TrackTreeViewAttrs>) {
@@ -360,10 +382,13 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
     renderFlows(this.trace, ctx, size, renderedTracks, rootNode, timescale);
     this.drawHoveredNoteVertical(ctx, timescale, size);
     this.drawHoveredCursorVertical(ctx, timescale, size);
-    this.drawWakeupVertical(ctx, timescale, size);
     this.drawNoteVerticals(ctx, timescale, size);
     this.drawAreaSelection(ctx, timescale, size);
     this.updateInteractions(timelineRect, timescale, size, renderedTracks);
+
+    this.trace.tracks.overlays.forEach((overlay) => {
+      overlay.render(ctx, timescale, size, renderedTracks);
+    });
 
     const renderTime = performance.now() - start;
     this.updatePerfStats(renderTime, renderedTracks.length, tracksOnCanvas);
@@ -379,7 +404,7 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
 
     if (size.width > 0 && timescale.timeSpan.duration > 0n) {
       const maxMajorTicks = getMaxMajorTicks(size.width);
-      const offset = this.trace.timeline.timestampOffset();
+      const offset = this.trace.timeline.getTimeAxisOrigin();
       for (const {type, time} of generateTicks(
         timescale.timeSpan.toTimeSpan(),
         maxMajorTicks,
@@ -517,7 +542,7 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
         onClick: () => {
           // If a track hasn't intercepted the click, treat this as a
           // deselection event.
-          trace.selection.clear();
+          trace.selection.clearSelection();
         },
         drag: {
           minDistance: 1,
@@ -530,6 +555,7 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
               );
             }
             this.areaDrag.update(e, timescale);
+            this.trace.raf.scheduleCanvasRedraw();
             trace.timeline.selectedSpan = this.areaDrag.timeSpan().toTimeSpan();
           },
           onDragEnd: (e) => {
@@ -658,23 +684,6 @@ export class TrackTreeView implements m.ClassComponent<TrackTreeViewAttrs> {
         this.trace.timeline.hoveredNoteTimestamp,
         size.height,
         `#aaa`,
-      );
-    }
-  }
-
-  private drawWakeupVertical(
-    ctx: CanvasRenderingContext2D,
-    timescale: TimeScale,
-    size: Size2D,
-  ) {
-    const selection = this.trace.selection.selection;
-    if (selection.kind === 'track_event' && selection.wakeupTs) {
-      drawVerticalLineAtTime(
-        ctx,
-        timescale,
-        selection.wakeupTs,
-        size.height,
-        `black`,
       );
     }
   }

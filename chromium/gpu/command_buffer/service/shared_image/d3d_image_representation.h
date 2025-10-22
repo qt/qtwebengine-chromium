@@ -8,8 +8,6 @@
 #include "base/memory/raw_ptr.h"
 #include "gpu/command_buffer/service/memory_tracking.h"
 #include "gpu/command_buffer/service/shared_image/d3d_image_backing.h"
-#include "gpu/command_buffer/service/shared_image/shared_image_backing_factory.h"
-#include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_representation.h"
 #include "gpu/command_buffer/service/shared_image/skia_graphite_dawn_image_representation.h"
 #include "gpu/command_buffer/service/texture_manager.h"
@@ -86,6 +84,18 @@ class DawnD3DBufferRepresentation : public DawnBufferRepresentation {
   const wgpu::Device device_;
   const wgpu::BackendType backend_type_;
   wgpu::Buffer buffer_;
+};
+
+// Representation of a D3DImageBacking as a tensor.
+class WebNND3DTensorRepresentation : public WebNNTensorRepresentation {
+ public:
+  WebNND3DTensorRepresentation(SharedImageManager* manager,
+                               SharedImageBacking* backing,
+                               MemoryTypeTracker* tracker);
+  ~WebNND3DTensorRepresentation() override;
+
+ private:
+  Microsoft::WRL::ComPtr<ID3D12Resource> GetD3D12Buffer() const override;
 };
 
 // Representation of a D3DImageBacking as an overlay.

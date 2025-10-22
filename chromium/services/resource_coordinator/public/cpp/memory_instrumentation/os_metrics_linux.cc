@@ -307,7 +307,7 @@ uint32_t CountMappings(base::ProcessId pid) {
 }
 
 // Get values from smaps_rollup for the current process.
-void GetSmapsRollup(uint32_t* pss, uint32_t* swap_pss) {
+void GetSmapsRollup(size_t* pss, size_t* swap_pss) {
   auto value = base::debug::ReadAndParseSmapsRollup();
   if (!value) {
     *pss = 0;
@@ -329,6 +329,7 @@ void OSMetrics::SetProcSmapsForTesting(FILE* f) {
 
 // static
 bool OSMetrics::FillOSMemoryDump(base::ProcessHandle handle,
+                                 const MemDumpFlagSet& flags,
                                  mojom::RawOSMemDump* dump) {
   auto info = GetMemoryInfo(handle);
   if (!info.has_value()) {
@@ -341,32 +342,42 @@ bool OSMetrics::FillOSMemoryDump(base::ProcessHandle handle,
       base::saturated_cast<uint32_t>(info->resident_set_bytes / 1024);
   dump->peak_resident_set_kb = GetPeakResidentSetSize(handle);
   dump->is_peak_rss_resettable = ResetPeakRSSIfPossible(handle);
-  dump->mappings_count = CountMappings(handle);
-  GetSmapsRollup(&dump->pss_kb, &dump->swap_pss_kb);
+  if (flags.Has(mojom::MemDumpFlags::MEM_DUMP_COUNT_MAPPINGS)) {
+    dump->mappings_count = CountMappings(handle);
+  }
+  if (flags.Has(mojom::MemDumpFlags::MEM_DUMP_PSS)) {
+    size_t pss, swap_pss;
+    GetSmapsRollup(&pss, &swap_pss);
+    dump->pss_kb = pss / 1024;
+    dump->swap_pss_kb = swap_pss / 1024;
+  }
 
 #if BUILDFLAG(IS_ANDROID)
 #if BUILDFLAG(SUPPORTS_CODE_ORDERING)
-  if (!base::android::AreAnchorsSane()) {
-    DLOG(WARNING) << "Incorrect code ordering";
-    return false;
+  if (flags.Has(mojom::MemDumpFlags::MEM_DUMP_PAGES_BITMAP)) {
+    if (!base::android::AreAnchorsSane()) {
+      DLOG(WARNING) << "Incorrect code ordering";
+      return false;
+    }
+
+    std::vector<uint8_t> accessed_pages_bitmap;
+    OSMetrics::MappedAndResidentPagesDumpState state =
+        OSMetrics::GetMappedAndResidentPages(base::android::kStartOfText,
+                                             base::android::kEndOfText,
+                                             &accessed_pages_bitmap);
+    UMA_HISTOGRAM_ENUMERATION(
+        "Memory.NativeLibrary.MappedAndResidentMemoryFootprintCollectionStatus",
+        state);
+
+    // MappedAndResidentPagesDumpState |state| can be |kAccessPagemapDenied|
+    // for Android devices running a kernel version < 4.4 or because the process
+    // is not "dumpable", as described in proc(5).
+    if (state != OSMetrics::MappedAndResidentPagesDumpState::kSuccess) {
+      return state != OSMetrics::MappedAndResidentPagesDumpState::kFailure;
+    }
+
+    dump->native_library_pages_bitmap = std::move(accessed_pages_bitmap);
   }
-
-  std::vector<uint8_t> accessed_pages_bitmap;
-  OSMetrics::MappedAndResidentPagesDumpState state =
-      OSMetrics::GetMappedAndResidentPages(base::android::kStartOfText,
-                                           base::android::kEndOfText,
-                                           &accessed_pages_bitmap);
-  UMA_HISTOGRAM_ENUMERATION(
-      "Memory.NativeLibrary.MappedAndResidentMemoryFootprintCollectionStatus",
-      state);
-
-  // MappedAndResidentPagesDumpState |state| can be |kAccessPagemapDenied|
-  // for Android devices running a kernel version < 4.4 or because the process
-  // is not "dumpable", as described in proc(5).
-  if (state != OSMetrics::MappedAndResidentPagesDumpState::kSuccess)
-    return state != OSMetrics::MappedAndResidentPagesDumpState::kFailure;
-
-  dump->native_library_pages_bitmap = std::move(accessed_pages_bitmap);
 #endif  // BUILDFLAG(SUPPORTS_CODE_ORDERING)
 #endif  //  BUILDFLAG(IS_ANDROID)
 

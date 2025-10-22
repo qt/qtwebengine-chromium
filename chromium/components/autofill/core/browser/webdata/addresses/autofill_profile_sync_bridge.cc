@@ -10,6 +10,7 @@
 
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/proto/autofill_sync.pb.h"
@@ -109,18 +110,11 @@ std::optional<syncer::ModelError> AutofillProfileSyncBridge::MergeFullSyncData(
       GetAutofillTable());
 
   for (const auto& change : entity_data) {
-    DCHECK(change->data().specifics.has_autofill_profile());
-    std::optional<AutofillProfile> remote = CreateAutofillProfileFromSpecifics(
+    CHECK(IsEntityDataValid(change->data()));
+    AutofillProfile remote = CreateAutofillProfileFromValidSpecifics(
         change->data().specifics.autofill_profile());
-    if (!remote) {
-      DVLOG(2)
-          << "[AUTOFILL SYNC] Invalid remote specifics "
-          << change->data().specifics.autofill_profile().SerializeAsString()
-          << " received from the server in an initial sync.";
-      continue;
-    }
     RETURN_IF_ERROR(
-        initial_sync_tracker.IncorporateRemoteProfile(std::move(*remote)));
+        initial_sync_tracker.IncorporateRemoteProfile(std::move(remote)));
   }
 
   RETURN_IF_ERROR(
@@ -152,18 +146,10 @@ AutofillProfileSyncBridge::ApplyIncrementalSyncChanges(
     if (change->type() == syncer::EntityChange::ACTION_DELETE) {
       RETURN_IF_ERROR(tracker.IncorporateRemoteDelete(change->storage_key()));
     } else {
-      DCHECK(change->data().specifics.has_autofill_profile());
-      std::optional<AutofillProfile> remote =
-          CreateAutofillProfileFromSpecifics(
-              change->data().specifics.autofill_profile());
-      if (!remote) {
-        DVLOG(2)
-            << "[AUTOFILL SYNC] Invalid remote specifics "
-            << change->data().specifics.autofill_profile().SerializeAsString()
-            << " received from the server in an initial sync.";
-        continue;
-      }
-      RETURN_IF_ERROR(tracker.IncorporateRemoteProfile(std::move(*remote)));
+      CHECK(IsEntityDataValid(change->data()));
+      AutofillProfile remote = CreateAutofillProfileFromValidSpecifics(
+          change->data().specifics.autofill_profile());
+      RETURN_IF_ERROR(tracker.IncorporateRemoteProfile(std::move(remote)));
     }
   }
 
@@ -187,7 +173,8 @@ std::unique_ptr<syncer::DataBatch> AutofillProfileSyncBridge::GetDataForCommit(
   if (!GetAutofillTable()->GetAutofillProfiles(
           {AutofillProfile::RecordType::kLocalOrSyncable}, entries)) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load entries from table."});
+        {FROM_HERE,
+         ModelError::Type::kAutofillProfileFailedToLoadEntriesForCommit});
     return nullptr;
   }
 
@@ -211,7 +198,8 @@ AutofillProfileSyncBridge::GetAllDataForDebugging() {
   if (!GetAutofillTable()->GetAutofillProfiles(
           {AutofillProfile::RecordType::kLocalOrSyncable}, entries)) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load entries from table."});
+        {FROM_HERE,
+         ModelError::Type::kAutofillProfileFailedToLoadEntriesForDebugging});
     return nullptr;
   }
 
@@ -288,7 +276,7 @@ void AutofillProfileSyncBridge::LoadMetadata() {
   if (!web_data_backend_ || !web_data_backend_->GetDatabase() ||
       !GetAutofillTable() || !GetSyncMetadataStore()) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load AutofillWebDatabase."});
+        {FROM_HERE, ModelError::Type::kAutofillProfileFailedToLoadDatabase});
     return;
   }
 
@@ -296,14 +284,14 @@ void AutofillProfileSyncBridge::LoadMetadata() {
   if (!GetSyncMetadataStore()->GetAllSyncMetadata(syncer::AUTOFILL_PROFILE,
                                                   batch.get())) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed reading autofill metadata from WebDatabase."});
+        {FROM_HERE, ModelError::Type::kAutofillProfileFailedToLoadMetadata});
     return;
   }
   change_processor()->ModelReadyToSync(std::move(batch));
 }
 
 std::string AutofillProfileSyncBridge::GetClientTag(
-    const EntityData& entity_data) {
+    const EntityData& entity_data) const {
   DCHECK(entity_data.specifics.has_autofill_profile());
   // Must equal to guid of the entry. This is to maintain compatibility with the
   // previous sync integration (Directory and SyncableService).
@@ -311,9 +299,16 @@ std::string AutofillProfileSyncBridge::GetClientTag(
 }
 
 std::string AutofillProfileSyncBridge::GetStorageKey(
-    const EntityData& entity_data) {
+    const EntityData& entity_data) const {
   DCHECK(entity_data.specifics.has_autofill_profile());
   return GetStorageKeyFromAutofillProfileSpecifics(
+      entity_data.specifics.autofill_profile());
+}
+
+bool AutofillProfileSyncBridge::IsEntityDataValid(
+    const EntityData& entity_data) const {
+  CHECK(entity_data.specifics.has_autofill_profile());
+  return IsAutofillProfileSpecificsValid(
       entity_data.specifics.autofill_profile());
 }
 

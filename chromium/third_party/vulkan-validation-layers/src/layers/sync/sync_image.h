@@ -18,6 +18,7 @@
 
 #include "sync/sync_submit.h"
 #include "state_tracker/image_state.h"
+#include "state_tracker/wsi_state.h"
 
 namespace syncval_state {
 
@@ -29,7 +30,7 @@ class ImageSubState : public vvl::ImageSubState {
     bool IsTiled() const { return !IsLinear(); }
     bool IsSimplyBound() const;
 
-    void SetOpaqueBaseAddress(vvl::Device &dev_data);
+    void SetOpaqueBaseAddress(vvl::DeviceState &dev_data);
 
     VkDeviceSize GetOpaqueBaseAddress() const { return opaque_base_address_; }
     bool HasOpaqueMapping() const { return 0U != opaque_base_address_; }

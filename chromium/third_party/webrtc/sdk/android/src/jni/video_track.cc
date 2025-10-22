@@ -11,6 +11,9 @@
 #include <jni.h>
 
 #include "api/media_stream_interface.h"
+#include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
 #include "sdk/android/generated_video_jni/VideoTrack_jni.h"
 #include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/video_sink.h"
@@ -24,16 +27,16 @@ static void JNI_VideoTrack_AddSink(JNIEnv* jni,
                                    jlong j_native_sink) {
   reinterpret_cast<VideoTrackInterface*>(j_native_track)
       ->AddOrUpdateSink(
-          reinterpret_cast<rtc::VideoSinkInterface<VideoFrame>*>(j_native_sink),
-          rtc::VideoSinkWants());
+          reinterpret_cast<VideoSinkInterface<VideoFrame>*>(j_native_sink),
+          VideoSinkWants());
 }
 
 static void JNI_VideoTrack_RemoveSink(JNIEnv* jni,
                                       jlong j_native_track,
                                       jlong j_native_sink) {
   reinterpret_cast<VideoTrackInterface*>(j_native_track)
-      ->RemoveSink(reinterpret_cast<rtc::VideoSinkInterface<VideoFrame>*>(
-          j_native_sink));
+      ->RemoveSink(
+          reinterpret_cast<VideoSinkInterface<VideoFrame>*>(j_native_sink));
 }
 
 static jlong JNI_VideoTrack_WrapSink(
@@ -43,7 +46,7 @@ static jlong JNI_VideoTrack_WrapSink(
 }
 
 static void JNI_VideoTrack_FreeSink(JNIEnv* jni, jlong j_native_sink) {
-  delete reinterpret_cast<rtc::VideoSinkInterface<VideoFrame>*>(j_native_sink);
+  delete reinterpret_cast<VideoSinkInterface<VideoFrame>*>(j_native_sink);
 }
 
 }  // namespace jni

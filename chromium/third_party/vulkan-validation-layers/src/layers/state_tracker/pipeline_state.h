@@ -23,10 +23,8 @@
 
 #include "state_tracker/pipeline_sub_state.h"
 #include "generated/dynamic_state_helper.h"
-#include "utils/shader_utils.h"
 #include "state_tracker/state_tracker.h"
 #include "state_tracker/shader_stage_state.h"
-#include "utils/vk_layer_utils.h"
 
 // Fwd declarations -- including descriptor_set.h creates an ugly include loop
 namespace vvl {
@@ -34,7 +32,7 @@ class DescriptorSetLayoutDef;
 class DescriptorSetLayout;
 class DescriptorSet;
 class Descriptor;
-class Device;
+class DeviceState;
 class RenderPass;
 class CommandBuffer;
 class Pipeline;
@@ -90,7 +88,7 @@ class Pipeline : public StateObject {
     const VkPipelineLibraryCreateInfoKHR *library_create_info = nullptr;
     VkGraphicsPipelineLibraryFlagsEXT graphics_lib_type = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
     VkPipelineBindPoint pipeline_type;
-    VkPipelineCreateFlags2KHR create_flags;
+    VkPipelineCreateFlags2 create_flags;
     vvl::span<const vku::safe_VkPipelineShaderStageCreateInfo> shader_stages_ci;
     const vku::safe_VkPipelineLibraryCreateInfoKHR *ray_tracing_library_ci = nullptr;
     // If using a shader module identifier, the module itself is not validated, but the shader stage is still known
@@ -136,7 +134,7 @@ class Pipeline : public StateObject {
 
     // TODO - Because we have hack to create a pipeline at PreCallValidate time (for GPL) we have no proper way to create inherited
     // state objects of the pipeline This is to make it clear that while currently everyone has to allocate this memory, it is only
-    // ment for GPU-AV
+    // meant for GPU-AV
     struct InstrumentationData {
         // < unique_shader_id, instrumented_shader_module_handle >
         // We create a VkShaderModule that is instrumented and need to delete before leaving the pipeline call
@@ -148,20 +146,20 @@ class Pipeline : public StateObject {
         VkPipeline frag_out_lib = VK_NULL_HANDLE;
     } instrumentation_data;
 
-    Pipeline(const Device &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
+    Pipeline(const DeviceState &state_data, const VkGraphicsPipelineCreateInfo *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> pipe_cache, std::shared_ptr<const vvl::RenderPass> &&rpstate,
              std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]);
 
-    Pipeline(const Device &state_data, const VkComputePipelineCreateInfo *pCreateInfo,
+    Pipeline(const DeviceState &state_data, const VkComputePipelineCreateInfo *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData *stateless_data);
 
-    Pipeline(const Device &state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
+    Pipeline(const DeviceState &state_data, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData *stateless_data);
 
-    Pipeline(const Device &state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
+    Pipeline(const DeviceState &state_data, const VkRayTracingPipelineCreateInfoNV *pCreateInfo,
              std::shared_ptr<const vvl::PipelineCache> &&pipe_cache, std::shared_ptr<const vvl::PipelineLayout> &&layout,
              spirv::StatelessData *stateless_data);
 
@@ -213,10 +211,10 @@ class Pipeline : public StateObject {
     std::shared_ptr<const vvl::ShaderModule> GetSubStateShader(VkShaderStageFlagBits state) const;
 
     template <VkGraphicsPipelineLibraryFlagBitsEXT type_flag>
-    static inline typename SubStateTraits<type_flag>::type GetLibSubState(const Device &state,
+    static inline typename SubStateTraits<type_flag>::type GetLibSubState(const DeviceState &device_state,
                                                                           const VkPipelineLibraryCreateInfoKHR &link_info) {
         for (uint32_t i = 0; i < link_info.libraryCount; ++i) {
-            const auto lib_state = state.Get<vvl::Pipeline>(link_info.pLibraries[i]);
+            const auto lib_state = device_state.Get<vvl::Pipeline>(link_info.pLibraries[i]);
             if (lib_state && ((lib_state->graphics_lib_type & type_flag) != 0)) {
                 return GetSubState<type_flag>(*lib_state);
             }
@@ -419,11 +417,9 @@ class Pipeline : public StateObject {
         return rt->pNext;
     }
 
-    bool BlendConstantsEnabled() const { return fragment_output_state && fragment_output_state->blend_constants_enabled; }
+    const Location GetCreateFlagsLoc(const Location &create_info_loc) const;
 
-    bool SampleLocationEnabled() const { return fragment_output_state && fragment_output_state->sample_location_enabled; }
-
-    static std::vector<ShaderStageState> GetStageStates(const Device &state_data, const Pipeline &pipe_state,
+    static std::vector<ShaderStageState> GetStageStates(const DeviceState &state_data, const Pipeline &pipe_state,
                                                         spirv::StatelessData *stateless_data);
 
     // Return true if for a given PSO, the given state enum is dynamic, else return false
@@ -446,14 +442,14 @@ class Pipeline : public StateObject {
     }
 
     template <typename CreateInfo>
-    static bool EnablesRasterizationStates(const vvl::Device &vo, const CreateInfo &create_info) {
+    static bool EnablesRasterizationStates(const vvl::DeviceState &device_state, const CreateInfo &create_info) {
         // If this is an executable pipeline created from linking graphics libraries, we need to find the pre-raster library to
         // check if rasterization is enabled
         auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
         if (link_info) {
             const auto libs = vvl::make_span(link_info->pLibraries, link_info->libraryCount);
             for (const auto handle : libs) {
-                auto lib = vo.template Get<vvl::Pipeline>(handle);
+                auto lib = device_state.template Get<vvl::Pipeline>(handle);
                 if (lib && lib->pre_raster_state) {
                     return EnablesRasterizationStates(lib->pre_raster_state);
                 }
@@ -479,7 +475,7 @@ class Pipeline : public StateObject {
     }
 
     template <typename CreateInfo>
-    static bool ContainsSubState(const vvl::Device *vo, const CreateInfo &create_info,
+    static bool ContainsSubState(const vvl::DeviceState &device_state, const CreateInfo &create_info,
                                  VkGraphicsPipelineLibraryFlagsEXT sub_state) {
         constexpr VkGraphicsPipelineLibraryFlagsEXT null_lib = static_cast<VkGraphicsPipelineLibraryFlagsEXT>(0);
         VkGraphicsPipelineLibraryFlagsEXT current_state = null_lib;
@@ -487,13 +483,10 @@ class Pipeline : public StateObject {
         // Check linked libraries
         auto link_info = vku::FindStructInPNextChain<VkPipelineLibraryCreateInfoKHR>(create_info.pNext);
         if (link_info) {
-            auto state_tracker = dynamic_cast<const Device *>(vo);
-            if (state_tracker) {
-                const auto libs = vvl::make_span(link_info->pLibraries, link_info->libraryCount);
-                for (const auto handle : libs) {
-                    auto lib = state_tracker->Get<vvl::Pipeline>(handle);
-                    current_state |= lib->graphics_lib_type;
-                }
+            const auto libs = vvl::make_span(link_info->pLibraries, link_info->libraryCount);
+            for (const auto handle : libs) {
+                auto lib = device_state.Get<vvl::Pipeline>(handle);
+                current_state |= lib->graphics_lib_type;
             }
         }
 
@@ -536,13 +529,12 @@ class Pipeline : public StateObject {
 
     // This is a helper that is meant to be used during safe_VkPipelineRenderingCreateInfo construction to determine whether or not
     // certain fields should be ignored based on graphics pipeline state
-    // TODO - This is only a pointer to Device  because we are trying to do state tracking outside the state tracker
-    static bool PnextRenderingInfoCustomCopy(const Device *state_data, const VkGraphicsPipelineCreateInfo &graphics_info,
+    static bool PnextRenderingInfoCustomCopy(const DeviceState &device_state, const VkGraphicsPipelineCreateInfo &graphics_info,
                                              VkBaseOutStructure *safe_struct, const VkBaseOutStructure *in_struct) {
         // "safe_struct" is assumed to be non-null as it should be the "this" member of calling class instance
         assert(safe_struct);
         if (safe_struct->sType == VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO) {
-            const bool has_fo_state = Pipeline::ContainsSubState(state_data, graphics_info,
+            const bool has_fo_state = Pipeline::ContainsSubState(device_state, graphics_info,
                                                                  VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT_EXT);
             if (!has_fo_state) {
                 // Clear out all pointers except for viewMask. Since viewMask is a scalar, it has already been copied at this point
@@ -561,17 +553,17 @@ class Pipeline : public StateObject {
     }
 
   protected:
-    static std::shared_ptr<VertexInputState> CreateVertexInputState(const Pipeline &p, const Device &state,
+    static std::shared_ptr<VertexInputState> CreateVertexInputState(const Pipeline &p, const DeviceState &state,
                                                                     const vku::safe_VkGraphicsPipelineCreateInfo &create_info);
     static std::shared_ptr<PreRasterState> CreatePreRasterState(
-        const Pipeline &p, const Device &state, const vku::safe_VkGraphicsPipelineCreateInfo &create_info,
+        const Pipeline &p, const DeviceState &state, const vku::safe_VkGraphicsPipelineCreateInfo &create_info,
         const std::shared_ptr<const vvl::RenderPass> &rp, spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]);
     static std::shared_ptr<FragmentShaderState> CreateFragmentShaderState(
-        const Pipeline &p, const Device &state, const VkGraphicsPipelineCreateInfo &create_info,
+        const Pipeline &p, const DeviceState &state, const VkGraphicsPipelineCreateInfo &create_info,
         const vku::safe_VkGraphicsPipelineCreateInfo &safe_create_info, const std::shared_ptr<const vvl::RenderPass> &rp,
         spirv::StatelessData stateless_data[kCommonMaxGraphicsShaderStages]);
     static std::shared_ptr<FragmentOutputState> CreateFragmentOutputState(
-        const Pipeline &p, const Device &state, const VkGraphicsPipelineCreateInfo &create_info,
+        const Pipeline &p, const DeviceState &state, const VkGraphicsPipelineCreateInfo &create_info,
         const vku::safe_VkGraphicsPipelineCreateInfo &safe_create_info, const std::shared_ptr<const vvl::RenderPass> &rp);
 
     template <typename CreateInfo>
@@ -659,211 +651,6 @@ Pipeline::GetSubState<VK_GRAPHICS_PIPELINE_LIBRARY_FRAGMENT_OUTPUT_INTERFACE_BIT
 
 }  // namespace vvl
 
-// Track last states that are bound per pipeline bind point (Gfx & Compute)
-struct LastBound {
-    LastBound(vvl::CommandBuffer &cb) : cb_state(cb) {}
-
-    vvl::CommandBuffer &cb_state;
-    vvl::Pipeline *pipeline_state = nullptr;
-    // All shader stages for a used pipeline bind point must be bound to with a valid shader or VK_NULL_HANDLE
-    // We have to track shader_object_bound, because shader_object_states will be nullptr when VK_NULL_HANDLE is used
-    bool shader_object_bound[kShaderObjectStageCount]{false};
-    vvl::ShaderObject *shader_object_states[kShaderObjectStageCount]{nullptr};
-    // The compatible layout used binding descriptor sets (track location to provide better error message)
-    VkPipelineLayout desc_set_pipeline_layout = VK_NULL_HANDLE;
-    vvl::Func desc_set_bound_command = vvl::Func::Empty;  // will be something like vkCmdBindDescriptorSets
-    std::shared_ptr<vvl::DescriptorSet> push_descriptor_set;
-
-    struct DescriptorBufferBinding {
-        uint32_t index = 0;
-        VkDeviceSize offset = 0;
-    };
-
-    // Each command buffer has a "slot" to hold a descriptor set binding. This "slot" also might be empty
-    struct DescriptorSetSlot {
-        std::shared_ptr<vvl::DescriptorSet> ds_state;
-        std::optional<DescriptorBufferBinding> descriptor_buffer_binding;
-
-        // one dynamic offset per dynamic descriptor bound to this CB
-        std::vector<uint32_t> dynamic_offsets;
-        PipelineLayoutCompatId compat_id_for_set{0};
-
-        // Cache most recently validated descriptor state for ValidateActionState/UpdateImageLayoutDrawState
-        const vvl::DescriptorSet *validated_set{nullptr};
-        uint64_t validated_set_change_count{~0ULL};
-        uint64_t validated_set_image_layout_change_count{~0ULL};
-
-        void Reset() {
-            ds_state.reset();
-            descriptor_buffer_binding.reset();
-            dynamic_offsets.clear();
-        }
-    };
-
-    // Ordered bound set tracking where index is set# that given set is bound to
-    std::vector<DescriptorSetSlot> ds_slots;
-
-    void Reset();
-
-    void UnbindAndResetPushDescriptorSet(std::shared_ptr<vvl::DescriptorSet> &&ds);
-
-    // Dynamic State helpers that require both the Pipeline and CommandBuffer state are here
-    bool IsDepthTestEnable() const;
-    bool IsDepthBoundTestEnable() const;
-    bool IsDepthWriteEnable() const;
-    bool IsDepthBiasEnable() const;
-    bool IsDepthClampEnable() const;
-    bool IsStencilTestEnable() const;
-    VkStencilOpState GetStencilOpStateFront() const;
-    VkStencilOpState GetStencilOpStateBack() const;
-    VkSampleCountFlagBits GetRasterizationSamples() const;
-    bool IsRasterizationDisabled() const;
-    bool IsLogicOpEnabled() const;
-    VkColorComponentFlags GetColorWriteMask(uint32_t i) const;
-    bool IsColorWriteEnabled(uint32_t i) const;
-    VkPrimitiveTopology GetPrimitiveTopology() const;
-    VkCullModeFlags GetCullMode() const;
-    VkConservativeRasterizationModeEXT GetConservativeRasterizationMode() const;
-    bool IsSampleLocationsEnable() const;
-    bool IsExclusiveScissorEnabled() const;
-    bool IsCoverageToColorEnabled() const;
-    bool IsCoverageModulationTableEnable() const;
-    bool IsDiscardRectangleEnable() const;
-    bool IsStippledLineEnable() const;
-    bool IsShadingRateImageEnable() const;
-    bool IsViewportWScalingEnable() const;
-    bool IsPrimitiveRestartEnable() const;
-    bool IsAlphaToCoverageEnable() const;
-    bool IsAlphaToOneEnable() const;
-    VkCoverageModulationModeNV GetCoverageModulationMode() const;
-
-    bool ValidShaderObjectCombination(const VkPipelineBindPoint bind_point, const DeviceFeatures &device_features) const;
-    VkShaderEXT GetShader(ShaderObjectStage stage) const;
-    vvl::ShaderObject *GetShaderState(ShaderObjectStage stage) const;
-    const vvl::ShaderObject *GetShaderStateIfValid(ShaderObjectStage stage) const;
-    // Return compute shader for compute pipeline, vertex or mesh shader for graphics
-    const vvl::ShaderObject *GetFirstShader(VkPipelineBindPoint bind_point) const;
-    bool HasShaderObjects() const;
-    bool IsValidShaderBound(ShaderObjectStage stage) const;
-    bool IsValidShaderOrNullBound(ShaderObjectStage stage) const;
-    std::vector<vvl::ShaderObject *> GetAllBoundGraphicsShaders();
-    bool IsAnyGraphicsShaderBound() const;
-    VkShaderStageFlags GetAllActiveBoundStages() const;
-
-    bool IsBoundSetCompatible(uint32_t set, const vvl::PipelineLayout &pipeline_layout) const;
-    bool IsBoundSetCompatible(uint32_t set, const vvl::ShaderObject &shader_object_state) const;
-    std::string DescribeNonCompatibleSet(uint32_t set, const vvl::PipelineLayout &pipeline_layout) const;
-    std::string DescribeNonCompatibleSet(uint32_t set, const vvl::ShaderObject &shader_object_state) const;
-
-    const spirv::EntryPoint *GetVertexEntryPoint() const;
-    const spirv::EntryPoint *GetFragmentEntryPoint() const;
-
-    // For GPU-AV
-    bool WasInstrumented() const;
-};
-
 // Used to compare 2 layouts independently when not tied to the last bound object
 bool IsPipelineLayoutSetCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b);
 std::string DescribePipelineLayoutSetNonCompatible(uint32_t set, const vvl::PipelineLayout *a, const vvl::PipelineLayout *b);
-
-enum LvlBindPoint {
-    BindPoint_Graphics = VK_PIPELINE_BIND_POINT_GRAPHICS,
-    BindPoint_Compute = VK_PIPELINE_BIND_POINT_COMPUTE,
-    BindPoint_Ray_Tracing = 2,
-    BindPoint_Count = 3,
-};
-
-static VkPipelineBindPoint inline ConvertToPipelineBindPoint(LvlBindPoint bind_point) {
-    switch (bind_point) {
-        case BindPoint_Graphics:
-            return VK_PIPELINE_BIND_POINT_GRAPHICS;
-        case BindPoint_Compute:
-            return VK_PIPELINE_BIND_POINT_COMPUTE;
-        case BindPoint_Ray_Tracing:
-            return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
-        default:
-            break;
-    }
-    assert(false);
-    return VK_PIPELINE_BIND_POINT_GRAPHICS;
-}
-
-static LvlBindPoint inline ConvertToLvlBindPoint(VkPipelineBindPoint bind_point) {
-    switch (bind_point) {
-        case VK_PIPELINE_BIND_POINT_GRAPHICS:
-            return BindPoint_Graphics;
-        case VK_PIPELINE_BIND_POINT_COMPUTE:
-            return BindPoint_Compute;
-        case VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR:
-            return BindPoint_Ray_Tracing;
-        default:
-            break;
-    }
-    assert(false);
-    return BindPoint_Graphics;
-}
-
-static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlagBits stage) {
-    switch (stage) {
-        case VK_SHADER_STAGE_VERTEX_BIT:
-        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
-        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
-        case VK_SHADER_STAGE_GEOMETRY_BIT:
-        case VK_SHADER_STAGE_FRAGMENT_BIT:
-        case VK_SHADER_STAGE_TASK_BIT_EXT:
-        case VK_SHADER_STAGE_MESH_BIT_EXT:
-            return VK_PIPELINE_BIND_POINT_GRAPHICS;
-        case VK_SHADER_STAGE_COMPUTE_BIT:
-            return VK_PIPELINE_BIND_POINT_COMPUTE;
-        case VK_SHADER_STAGE_RAYGEN_BIT_KHR:
-        case VK_SHADER_STAGE_ANY_HIT_BIT_KHR:
-        case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR:
-        case VK_SHADER_STAGE_MISS_BIT_KHR:
-        case VK_SHADER_STAGE_INTERSECTION_BIT_KHR:
-        case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
-            return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
-        default:
-            break;
-    }
-    assert(false);
-    return VK_PIPELINE_BIND_POINT_GRAPHICS;
-}
-
-static VkPipelineBindPoint inline ConvertToPipelineBindPoint(VkShaderStageFlags stage) {
-    // Assumes the call has checked stages have not been mixed
-    if (stage & kShaderStageAllGraphics) {
-        return VK_PIPELINE_BIND_POINT_GRAPHICS;
-    } else if (stage & VK_SHADER_STAGE_COMPUTE_BIT) {
-        return VK_PIPELINE_BIND_POINT_COMPUTE;
-    } else if (stage & kShaderStageAllRayTracing) {
-        return VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR;
-    } else {
-        assert(false);
-        return VK_PIPELINE_BIND_POINT_GRAPHICS;
-    }
-}
-static LvlBindPoint inline ConvertToLvlBindPoint(VkShaderStageFlagBits stage) {
-    switch (stage) {
-        case VK_SHADER_STAGE_VERTEX_BIT:
-        case VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT:
-        case VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT:
-        case VK_SHADER_STAGE_GEOMETRY_BIT:
-        case VK_SHADER_STAGE_FRAGMENT_BIT:
-        case VK_SHADER_STAGE_TASK_BIT_EXT:
-        case VK_SHADER_STAGE_MESH_BIT_EXT:
-            return BindPoint_Graphics;
-        case VK_SHADER_STAGE_COMPUTE_BIT:
-            return BindPoint_Compute;
-        case VK_SHADER_STAGE_RAYGEN_BIT_KHR:
-        case VK_SHADER_STAGE_ANY_HIT_BIT_KHR:
-        case VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR:
-        case VK_SHADER_STAGE_MISS_BIT_KHR:
-        case VK_SHADER_STAGE_INTERSECTION_BIT_KHR:
-        case VK_SHADER_STAGE_CALLABLE_BIT_KHR:
-            return BindPoint_Ray_Tracing;
-        default:
-            break;
-    }
-    assert(false);
-    return BindPoint_Graphics;
-}

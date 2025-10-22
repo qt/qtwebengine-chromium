@@ -12,6 +12,7 @@
 #include "base/native_library.h"
 #include "base/path_service.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/trace_event/trace_event.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_display.h"
@@ -22,21 +23,17 @@
 #include "ui/gl/gl_utils.h"
 #include "ui/gl/gpu_switching_manager.h"
 #include "ui/gl/init/gl_display_initializer.h"
-#include "ui/gl/startup_trace.h"
 
 namespace gl {
 namespace init {
 
 namespace {
 
+#if !BUILDFLAG(USE_STATIC_ANGLE)
 const char kGLESv2ANGLELibraryName[] = "libGLESv2.dylib";
 const char kEGLANGLELibraryName[] = "libEGL.dylib";
 
-bool InitializeStaticEGLInternalFromLibrary(GLImplementation implementation) {
-#if BUILDFLAG(USE_STATIC_ANGLE)
-  NOTREACHED();
-#else
-
+bool InitializeStaticEGLInternalFromLibrary() {
   // Some unit test targets depend on Angle/SwiftShader but aren't built
   // as app bundles. In that case, the .dylib is next to the executable.
   base::FilePath base_dir;
@@ -53,7 +50,7 @@ bool InitializeStaticEGLInternalFromLibrary(GLImplementation implementation) {
   base::FilePath glesv2_path = base_dir.Append(kGLESv2ANGLELibraryName);
   base::NativeLibrary gles_library;
   {
-    GPU_STARTUP_TRACE_EVENT("Load gles_library");
+    TRACE_EVENT("gpu,startup", "Load gles_library");
     gles_library = LoadLibraryAndPrintError(glesv2_path);
   }
   if (!gles_library) {
@@ -63,7 +60,7 @@ bool InitializeStaticEGLInternalFromLibrary(GLImplementation implementation) {
   base::FilePath egl_path = base_dir.Append(kEGLANGLELibraryName);
   base::NativeLibrary egl_library;
   {
-    GPU_STARTUP_TRACE_EVENT("Load egl_library");
+    TRACE_EVENT("gpu,startup", "Load egl_library");
     egl_library = LoadLibraryAndPrintError(egl_path);
   }
   if (!egl_library) {
@@ -89,20 +86,18 @@ bool InitializeStaticEGLInternalFromLibrary(GLImplementation implementation) {
   AddGLNativeLibrary(egl_library);
 
   return true;
-#endif
 }
+#endif  // !BUILDFLAG(USE_STATIC_ANGLE)
 
 bool InitializeStaticEGLInternal(GLImplementationParts implementation) {
+  DCHECK(implementation.gl == kGLImplementationEGLANGLE);
+
 #if BUILDFLAG(USE_STATIC_ANGLE)
-  if (implementation.gl == kGLImplementationEGLANGLE) {
-    // Use ANGLE if it is requested and it is statically linked
-    if (!InitializeStaticANGLEEGL())
-      return false;
-  } else if (!InitializeStaticEGLInternalFromLibrary(implementation.gl)) {
+  if (!InitializeStaticANGLEEGL()) {
     return false;
   }
 #else
-  if (!InitializeStaticEGLInternalFromLibrary(implementation.gl)) {
+  if (!InitializeStaticEGLInternalFromLibrary()) {
     return false;
   }
 #endif  // !BUILDFLAG(USE_STATIC_ANGLE)

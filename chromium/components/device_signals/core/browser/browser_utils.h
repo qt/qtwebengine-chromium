@@ -9,11 +9,34 @@
 
 #include "build/build_config.h"
 #include "components/device_signals/core/common/common_types.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
+
+class PolicyBlocklistService;
+class PrefService;
+
+namespace policy {
+class CloudPolicyManager;
+}  // namespace policy
 
 namespace device_signals {
 
+bool GetChromeRemoteDesktopAppBlocked(PolicyBlocklistService* service);
+
+std::optional<safe_browsing::PasswordProtectionTrigger>
+GetPasswordProtectionWarningTrigger(PrefService* profile_prefs);
+
+safe_browsing::SafeBrowsingState GetSafeBrowsingProtectionLevel(
+    PrefService* profile_prefs);
+
+std::optional<std::string> TryGetEnrollmentDomain(
+    policy::CloudPolicyManager* manager);
+
+bool GetSiteIsolationEnabled();
+
+#if !BUILDFLAG(IS_ANDROID)
 // Returns the hostname of the current machine.
 std::string GetHostName();
+#endif  // !BUILDFLAG(IS_ANDROID)
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
 // Returns the hostname of the current machine.

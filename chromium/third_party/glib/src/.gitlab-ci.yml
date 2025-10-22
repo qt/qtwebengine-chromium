@@ -11,11 +11,11 @@ cache:
     - _ccache/
 
 variables:
-  FEDORA_IMAGE: "registry.gitlab.gnome.org/gnome/glib/fedora:v27"
+  FEDORA_IMAGE: "registry.gitlab.gnome.org/gnome/glib/fedora:v39.1"
   COVERITY_IMAGE: "registry.gitlab.gnome.org/gnome/glib/coverity:v7"
   DEBIAN_IMAGE: "registry.gitlab.gnome.org/gnome/glib/debian-stable:v19"
   ALPINE_IMAGE: "registry.gitlab.gnome.org/gnome/glib/alpine:v3"
-  MINGW_IMAGE: "registry.gitlab.gnome.org/gnome/glib/mingw:v16"
+  MINGW_IMAGE: "registry.gitlab.gnome.org/gnome/glib/mingw:v39.1"
   MESON_TEST_TIMEOUT_MULTIPLIER: 4
   G_MESSAGES_DEBUG: all
   MESON_COMMON_OPTIONS: "--buildtype debug --wrap-mode=nodownload --fatal-meson-warnings"
@@ -174,7 +174,8 @@ fedora-x86_64:
   stage: build
   needs: []
   variables:
-    CFLAGS: "-coverage -ftest-coverage -fprofile-arcs"
+    CFLAGS: "--coverage -ftest-coverage -fprofile-arcs -fprofile-update=atomic"
+    CXXFLAGS: "--coverage -ftest-coverage -fprofile-arcs -fprofile-update=atomic"
   before_script:
     - !reference [".build-linux", "before_script"]
     - !reference [".with-git", "before_script"]
@@ -194,9 +195,11 @@ fedora-x86_64:
             _build
     - meson compile -C _build
     - mkdir -p _coverage
-    - lcov --config-file .lcovrc --directory _build --capture --initial --output-file "_coverage/${CI_JOB_NAME}-baseline.lcov"
+    - lcov --config-file .lcovrc --directory _build --capture --initial
+      --output-file "_coverage/${CI_JOB_NAME}-baseline.lcov"
     - .gitlab-ci/run-tests.sh
-    - lcov --config-file .lcovrc --directory _build --capture --output-file "_coverage/${CI_JOB_NAME}.lcov"
+    - lcov --config-file .lcovrc --directory _build --capture
+      --output-file "_coverage/${CI_JOB_NAME}.lcov"
     # Copy the built documentation to an artifact directory. The build for docs.gtk.org
     # can then pull it from there — see https://gitlab.gnome.org/GNOME/gtk/-/blob/docs-gtk-org/README.md
     - mkdir -p _reference/
@@ -518,6 +521,7 @@ msys2-mingw32:
     CHERE_INVOKING: "yes"
     CFLAGS: -coverage -ftest-coverage -fprofile-arcs
     PYTHONUTF8: "1"
+    G_DEBUGGER: 'gdb.exe -batch -ex "set logging enabled on" -ex "attach %p" -ex "signal-event %e" -ex "c" -ex "thread apply all bt full" -ex "k"'
   script:
     - C:\msys64\usr\bin\pacman --noconfirm -Syyuu --ask 20
     - C:\msys64\usr\bin\bash .gitlab-ci/show-execution-environment.sh
@@ -532,6 +536,7 @@ msys2-mingw32:
     expire_in: 1 week
     paths:
       - _build/meson-logs
+      - _build/gdb.txt
       - _coverage/
       - _reference/
 
@@ -566,6 +571,8 @@ vs2017-x64:
     - win32-ps
   needs: []
   variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_DEPTH: 1
     PYTHONUTF8: "1"
   script:
     # FIXME: These should use --wrap-mode=nodownload but the Windows CI machines
@@ -597,6 +604,8 @@ vs2017-x64-static:
     - win32-ps
   needs: []
   variables:
+    GIT_SUBMODULE_STRATEGY: recursive
+    GIT_SUBMODULE_DEPTH: 1
     PYTHONUTF8: "1"
   script:
     # FIXME: These should use --wrap-mode=nodownload but the Windows CI machines
@@ -659,12 +668,16 @@ freebsd-13-x86_64:
       - "_build/glib/glibconfig.h"
       - "_build/meson-logs"
 
-macos-x86_64:
-  # The macOS runner is not allowed in forks. This is about trust, not capacity.
-  extends: .only-origin
+macos-arm64:
+  only:
+    - branches@GNOME/glib
+    # runner's maintainer
+    - branches@dehesselle/glib
+  except:
+    - tags
   stage: build
   tags:
-    - macosintel
+    - macosarm
   needs: []
   cache: []
   variables:
@@ -673,29 +686,26 @@ macos-x86_64:
     # libpcre2 gets built as a subproject, but the default Clang options on
     # macOS limit string lengths to 4095B — pcre2_error.c has a string of length
     # 4380B
-    CFLAGS: "-Wno-overlength-strings"
+    CFLAGS: -Wno-overlength-strings
     # redirect to the runner's volatile temporary directory
     TMPDIR: /Users/Shared/work/tmp
     # keep the user profile clean
-    PIP_CACHE_DIR: /Users/Shared/build/cache
+    PIP_CACHE_DIR: /Users/Shared/work/cache
     PIPENV_CACHE_DIR: $PIP_CACHE_DIR
     PYTHONPYCACHEPREFIX: $PIP_CACHE_DIR
-    # target OS X 10.9 Mavericks for backward compatibility
-    SDKROOT: /opt/sdks/MacOSX10.9.sdk
+    # target macOS 11 Big Sur
+    SDKROOT: /opt/sdks/MacOSX11.3.sdk
     # use the runner's ccache directory
     CCACHE_DIR: /Users/Shared/work/ccache
   before_script:
     - bash .gitlab-ci/show-execution-environment.sh
     - python3 -m venv .venv
-    - ln -s /opt/cmake/CMake.app/Contents/bin/cmake .venv/bin
-    - ln -s /opt/ccache/ccache .venv/bin
+    - curl -L https://github.com/ccache/ccache/releases/download/v4.9.1/ccache-4.9.1-darwin.tar.gz | tar -C .venv/bin -xz --strip-components=1 ccache-4.9.1-darwin/ccache
     - source .venv/bin/activate
-    - pip3 install meson==1.2.3
-    - pip3 install ninja==1.11.1
+    - pip3 install meson==1.2.3 ninja==1.11.1.1 packaging==23.2
   script:
-    # FIXME: Use --wrap-mode=default so we download dependencies each time,
-    # until the macOS runner is a VM where we can use a pre-made image which
-    # already contains the dependencies. See:
+    # FIXME: These should use --wrap-mode=nodownload but the macOS CI machine
+    # isn't currently set up for that. See:
     #  - https://gitlab.gnome.org/GNOME/glib/merge_requests/388
     #  - https://gitlab.gnome.org/Infrastructure/Infrastructure/issues/225
     - meson setup ${MESON_COMMON_OPTIONS}

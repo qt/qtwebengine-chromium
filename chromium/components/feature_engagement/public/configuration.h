@@ -36,6 +36,15 @@ enum ComparatorType {
   NOT_EQUAL = 6,
 };
 
+// A StorageType describes which type of storage the feature engagement events
+// should be stored in.
+enum StorageType {
+  // Profile storage is used to store feature engagement events per profile.
+  PROFILE = 0,
+  // Device storage is used to store feature engagement events on the device.
+  DEVICE = 1,
+};
+
 // A Comparator provides a way of comparing a uint32_t another uint32_t and
 // verifying their relationship.
 struct Comparator {
@@ -43,6 +52,9 @@ struct Comparator {
   Comparator();
   Comparator(ComparatorType type, uint32_t value);
   ~Comparator();
+
+  friend bool operator==(const Comparator&, const Comparator&) = default;
+  friend auto operator<=>(const Comparator&, const Comparator&) = default;
 
   // Returns true if the |v| meets the this criteria based on the current
   // |type| and |value|.
@@ -52,8 +64,6 @@ struct Comparator {
   uint32_t value;
 };
 
-bool operator==(const Comparator& lhs, const Comparator& rhs);
-bool operator<(const Comparator& lhs, const Comparator& rhs);
 std::ostream& operator<<(std::ostream& os, const Comparator& comparator);
 
 // A EventConfig contains all the information about how many times
@@ -67,6 +77,9 @@ struct EventConfig {
               uint32_t window,
               uint32_t storage);
   ~EventConfig();
+
+  friend bool operator==(const EventConfig&, const EventConfig&) = default;
+  friend auto operator<=>(const EventConfig&, const EventConfig&) = default;
 
   // The identifier of the event.
   std::string name;
@@ -82,9 +95,6 @@ struct EventConfig {
   uint32_t storage;
 };
 
-bool operator==(const EventConfig& lhs, const EventConfig& rhs);
-bool operator!=(const EventConfig& lhs, const EventConfig& rhs);
-bool operator<(const EventConfig& lhs, const EventConfig& rhs);
 std::ostream& operator<<(std::ostream& os, const EventConfig& event_config);
 
 // A SessionRateImpact describes which features the |session_rate| of a given
@@ -103,6 +113,9 @@ struct SessionRateImpact {
   SessionRateImpact(const SessionRateImpact& other);
   ~SessionRateImpact();
 
+  friend bool operator==(const SessionRateImpact&,
+                         const SessionRateImpact&) = default;
+
   // Describes which features are impacted.
   Type type;
 
@@ -111,7 +124,6 @@ struct SessionRateImpact {
   std::optional<std::vector<std::string>> affected_features;
 };
 
-bool operator==(const SessionRateImpact& lhs, const SessionRateImpact& rhs);
 std::ostream& operator<<(std::ostream& os, const SessionRateImpact& impact);
 
 // BlockedBy describes which features the |blocked_by| of a given
@@ -130,6 +142,8 @@ struct BlockedBy {
   BlockedBy(const BlockedBy& other);
   ~BlockedBy();
 
+  friend bool operator==(const BlockedBy&, const BlockedBy&) = default;
+
   // Describes which features are impacted.
   Type type{Type::ALL};
 
@@ -138,7 +152,6 @@ struct BlockedBy {
   std::optional<std::vector<std::string>> affected_features;
 };
 
-bool operator==(const BlockedBy& lhs, const BlockedBy& rhs);
 std::ostream& operator<<(std::ostream& os, const BlockedBy& impact);
 
 // Blocking describes which features the |blocking| of a given FeatureConfig
@@ -154,11 +167,12 @@ struct Blocking {
   Blocking(const Blocking& other);
   ~Blocking();
 
+  friend bool operator==(const Blocking&, const Blocking&) = default;
+
   // Describes which features are impacted.
   Type type{Type::ALL};
 };
 
-bool operator==(const Blocking& lhs, const Blocking& rhs);
 std::ostream& operator<<(std::ostream& os, const Blocking& impact);
 
 // A SnoozeParams describes the parameters for snoozable options of in-product
@@ -173,9 +187,10 @@ struct SnoozeParams {
   SnoozeParams();
   SnoozeParams(const SnoozeParams& other);
   ~SnoozeParams();
+
+  friend bool operator==(const SnoozeParams&, const SnoozeParams&) = default;
 };
 
-bool operator==(const SnoozeParams& lhs, const SnoozeParams& rhs);
 std::ostream& operator<<(std::ostream& os, const SnoozeParams& impact);
 
 // A FeatureConfig contains all the configuration for a given feature.
@@ -229,6 +244,9 @@ struct FeatureConfig {
 
   // Groups this feature is part of.
   std::vector<std::string> groups;
+
+  // Whether to use on-device storage or profile storage.
+  StorageType storage_type = StorageType::PROFILE;
 };
 
 bool operator==(const FeatureConfig& lhs, const FeatureConfig& rhs);
@@ -240,6 +258,8 @@ struct GroupConfig {
   GroupConfig();
   GroupConfig(const GroupConfig& other);
   ~GroupConfig();
+
+  friend bool operator==(const GroupConfig&, const GroupConfig&) = default;
 
   // Whether the group configuration has been successfully parsed.
   bool valid{false};
@@ -258,7 +278,6 @@ struct GroupConfig {
   std::set<EventConfig> event_configs;
 };
 
-bool operator==(const GroupConfig& lhs, const GroupConfig& rhs);
 std::ostream& operator<<(std::ostream& os, const GroupConfig& feature_config);
 
 // A Configuration contains the current set of runtime configurations.

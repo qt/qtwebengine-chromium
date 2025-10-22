@@ -8,7 +8,6 @@
 #include "content/common/content_export.h"
 #include "content/public/browser/cookie_access_details.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
-#include "services/network/public/mojom/cookie_access_observer.mojom-forward.h"
 #include "services/network/public/mojom/cookie_access_observer.mojom.h"
 
 namespace content {
@@ -36,9 +35,10 @@ class CONTENT_EXPORT CookieAccessObservers
       mojo::PendingReceiver<network::mojom::CookieAccessObserver> receiver,
       CookieAccessDetails::Source source);
 
-  virtual std::vector<
-      mojo::PendingReceiver<network::mojom::CookieAccessObserver>>
-  TakeReceivers();
+  using PendingObserversWithContext = std::vector<
+      std::pair<mojo::PendingReceiver<network::mojom::CookieAccessObserver>,
+                CookieAccessDetails::Source>>;
+  virtual PendingObserversWithContext TakeReceiversWithContext();
 
   // network::mojom::CookieAccessObserver
   void OnCookiesAccessed(std::vector<network::mojom::CookieAccessDetailsPtr>

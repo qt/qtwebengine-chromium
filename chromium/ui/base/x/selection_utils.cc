@@ -19,6 +19,7 @@
 #include "base/notreached.h"
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "ui/base/clipboard/clipboard_constants.h"
 #include "ui/gfx/x/atom_cache.h"
@@ -28,15 +29,16 @@ namespace ui {
 std::vector<x11::Atom> GetTextAtomsFrom() {
   return {x11::GetAtom(kMimeTypeLinuxUtf8String),
           x11::GetAtom(kMimeTypeLinuxString), x11::GetAtom(kMimeTypeLinuxText),
-          x11::GetAtom(kMimeTypeText), x11::GetAtom(kMimeTypeTextUtf8)};
+          x11::GetAtom(kMimeTypePlainText),
+          x11::GetAtom(kMimeTypeUtf8PlainText)};
 }
 
 std::vector<x11::Atom> GetURLAtomsFrom() {
-  return {x11::GetAtom(kMimeTypeURIList), x11::GetAtom(kMimeTypeMozillaURL)};
+  return {x11::GetAtom(kMimeTypeUriList), x11::GetAtom(kMimeTypeMozillaUrl)};
 }
 
 std::vector<x11::Atom> GetURIListAtomsFrom() {
-  return {x11::GetAtom(kMimeTypeURIList)};
+  return {x11::GetAtom(kMimeTypeUriList)};
 }
 
 void GetAtomIntersection(const std::vector<x11::Atom>& desired,
@@ -161,13 +163,13 @@ base::span<const unsigned char> SelectionData::GetSpan() const {
 std::string SelectionData::GetText() const {
   if (type_ == x11::GetAtom(kMimeTypeLinuxUtf8String) ||
       type_ == x11::GetAtom(kMimeTypeLinuxText) ||
-      type_ == x11::GetAtom(kMimeTypeTextUtf8)) {
+      type_ == x11::GetAtom(kMimeTypeUtf8PlainText)) {
     return RefCountedMemoryToString(memory_);
   } else {
     // BTW, I looked at COMPOUND_TEXT, and there's no way we're going to
     // support that. Yuck.
     CHECK(type_ == x11::GetAtom(kMimeTypeLinuxString) ||
-          type_ == x11::GetAtom(kMimeTypeText));
+          type_ == x11::GetAtom(kMimeTypePlainText));
     std::string result;
     base::ConvertToUtf8AndNormalize(RefCountedMemoryToString(memory_),
                                     base::kCodepageLatin1, &result);
@@ -178,7 +180,7 @@ std::string SelectionData::GetText() const {
 std::u16string SelectionData::GetHtml() const {
   std::u16string markup;
 
-  CHECK_EQ(type_, x11::GetAtom(kMimeTypeHTML));
+  CHECK_EQ(type_, x11::GetAtom(kMimeTypeHtml));
   base::span<const unsigned char> span = GetSpan();
 
   // If the data starts with U+FEFF, i.e., Byte Order Mark, assume it is

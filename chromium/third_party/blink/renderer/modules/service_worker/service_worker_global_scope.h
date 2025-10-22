@@ -34,7 +34,6 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
-#include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -147,8 +146,7 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       std::unique_ptr<PolicyContainer> policy_container,
       const FetchClientSettingsObjectSnapshot& outside_settings_object,
       WorkerResourceTimingNotifier& outside_resource_timing_notifier,
-      network::mojom::CredentialsMode,
-      RejectCoepUnsafeNone reject_coep_unsafe_none) override;
+      network::mojom::CredentialsMode) override;
   void Dispose() override;
   InstalledScriptsManager* GetInstalledScriptsManager() override;
 
@@ -190,6 +188,12 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
   // Resumes the toplevel script evaluation. Must be called only after
   // PauseEvaluation() is called.
   void ResumeEvaluation();
+
+  // Defers `PrepareForEvaluation()` until `RunDeferredPrepareForEvaluation` is
+  // called.
+  void DeferPrepareForEvaluation();
+  // Run deferred preparing for worker script evaluation.
+  void RunDeferredPrepareForEvaluation();
 
   // Creates a ServiceWorkerEventQueue::StayAwakeToken to ensure that the idle
   // timer won't be triggered while any of these are alive.
@@ -382,7 +386,9 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
       const override;
 
  private:
-  void importScripts(const Vector<String>& urls) override;
+  void importScripts(
+      const HeapVector<Member<V8UnionTrustedScriptURLOrUSVString>>& urls,
+      ExceptionState&) override;
   CachedMetadataHandler* CreateWorkerScriptCachedMetadataHandler(
       const KURL& script_url,
       std::unique_ptr<Vector<uint8_t>> meta_data) override;
@@ -751,6 +757,9 @@ class MODULES_EXPORT ServiceWorkerGlobalScope final
   bool pause_evaluation_ = false;
   // ResumeEvaluation() evaluates the top level script when this flag is true.
   bool global_scope_initialized_ = false;
+
+  // Whether `PrepareForEvaluation` should be deferred.
+  bool defer_prepare_for_evaluation_ = false;
 
   // Connected by the ServiceWorkerHost in the browser process and by the
   // controllees. |controller_bindings_| should be destroyed before

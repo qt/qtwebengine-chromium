@@ -22,16 +22,18 @@
 namespace base::tracing {
 
 PerfettoTaskRunner::PerfettoTaskRunner(
-    scoped_refptr<base::SequencedTaskRunner> task_runner)
-    : task_runner_(std::move(task_runner)) {
+    scoped_refptr<base::SequencedTaskRunner> task_runner,
+    bool defer_delayed_tasks)
+    : task_runner_(std::move(task_runner)),
+      defer_delayed_tasks_(defer_delayed_tasks) {
   CHECK(task_runner_);
 }
 
 PerfettoTaskRunner::~PerfettoTaskRunner() {
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
-#if (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   fd_controllers_.clear();
-#endif  // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#endif  // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 }
 
 void PerfettoTaskRunner::PostTask(std::function<void()> task) {
@@ -40,6 +42,10 @@ void PerfettoTaskRunner::PostTask(std::function<void()> task) {
 
 void PerfettoTaskRunner::PostDelayedTask(std::function<void()> task,
                                          uint32_t delay_ms) {
+  if (defer_delayed_tasks_ && delay_ms) {
+    deferred_delayed_tasks_.emplace_back(task, delay_ms);
+    return;
+  }
   base::ScopedDeferTaskPosting::PostOrDefer(
       task_runner_, FROM_HERE,
       base::BindOnce(
@@ -71,7 +77,7 @@ bool PerfettoTaskRunner::RunsTasksOnCurrentThread() const {
 void PerfettoTaskRunner::AddFileDescriptorWatch(
     perfetto::base::PlatformHandle fd,
     std::function<void()> callback) {
-#if (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
   DCHECK(!base::Contains(fd_controllers_, fd));
   // Set up the |fd| in the map to signal intent to add a watch. We need to
@@ -96,35 +102,48 @@ void PerfettoTaskRunner::AddFileDescriptorWatch(
       },
       base::Unretained(this), fd, std::move(callback)));
   task_runner_->PostTask(FROM_HERE, fd_controllers_[fd].callback.callback());
-#else   // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#else   // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   NOTREACHED();
-#endif  // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#endif  // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 }
 
 void PerfettoTaskRunner::RemoveFileDescriptorWatch(
     perfetto::base::PlatformHandle fd) {
-#if (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   DCHECK(task_runner_->RunsTasksInCurrentSequence());
   DCHECK(base::Contains(fd_controllers_, fd));
   // This also cancels the base::FileDescriptorWatcher::WatchReadable() task if
   // it's pending.
   fd_controllers_.erase(fd);
-#else   // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#else   // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
   NOTREACHED();
-#endif  // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#endif  // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 }
 
 void PerfettoTaskRunner::ResetTaskRunner(
     scoped_refptr<base::SequencedTaskRunner> task_runner) {
   task_runner_ = std::move(task_runner);
+  defer_delayed_tasks_ = false;
+  for (auto& task : deferred_delayed_tasks_) {
+    PostDelayedTask(task.task, task.delay);
+  }
+  deferred_delayed_tasks_.clear();
 }
 
-#if (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
 PerfettoTaskRunner::FDControllerAndCallback::FDControllerAndCallback() =
     default;
 
 PerfettoTaskRunner::FDControllerAndCallback::~FDControllerAndCallback() =
     default;
-#endif  // (BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)) || BUILDFLAG(IS_FUCHSIA)
+#endif  // BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
+
+PerfettoTaskRunner::DeferredTask::DeferredTask(std::function<void()> task,
+                                               uint32_t delay)
+    : task(std::move(task)), delay(delay) {}
+
+PerfettoTaskRunner::DeferredTask::DeferredTask(DeferredTask&& task) = default;
+
+PerfettoTaskRunner::DeferredTask::~DeferredTask() = default;
 
 }  // namespace base::tracing

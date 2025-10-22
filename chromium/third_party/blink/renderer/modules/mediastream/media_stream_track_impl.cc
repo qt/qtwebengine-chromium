@@ -31,11 +31,14 @@
 #include "base/functional/callback_helpers.h"
 #include "base/strings/to_string.h"
 #include "build/build_config.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/mediastream/media_stream_request.h"
 #include "third_party/blink/public/platform/modules/mediastream/web_media_stream_track.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/web/modules/mediastream/media_stream_video_source.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_promise_resolver.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_union_boolean_string.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_double_range.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_long_range.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_media_stream_track_state.h"
@@ -65,12 +68,14 @@
 #include "third_party/blink/renderer/modules/mediastream/webaudio_media_stream_audio_sink.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_vector.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/mediastream/media_stream_audio_processor_options.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_source.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_component.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_web_audio_source.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread.h"
+#include "third_party/blink/renderer/platform/webrtc/peer_connection_remote_audio_source.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
 namespace blink {
@@ -346,6 +351,11 @@ void MediaStreamTrackImpl::setEnabled(bool enabled) {
 
   component_->SetEnabled(enabled);
 
+  if (base::FeatureList::IsEnabled(kPropagateEnabledEventForWebRtcAudioTrack)) {
+    // Propagate the enabled state to the underlying platform track.
+    PropagateTrackEnabled(enabled);
+  }
+
   SendLogMessage(String::Format("%s({enabled=%s})", __func__,
                                 base::ToString(enabled).c_str()));
 }
@@ -479,12 +489,13 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
   }
 
   if (component_->GetSourceType() == MediaStreamSource::kTypeAudio) {
-    Vector<bool> echo_cancellation, auto_gain_control, noise_suppression,
-        voice_isolation;
-    for (bool value : platform_capabilities.echo_cancellation) {
-      echo_cancellation.push_back(value);
+    HeapVector<Member<V8UnionBooleanOrString>> echo_cancellation;
+    for (EchoCancellationMode value : platform_capabilities.echo_cancellation) {
+      echo_cancellation.push_back(EchoCancellationModeToBooleanOrString(value));
     }
     capabilities->setEchoCancellation(echo_cancellation);
+    Vector<bool> auto_gain_control, noise_suppression, voice_isolation,
+        restrict_own_audio;
     for (bool value : platform_capabilities.auto_gain_control) {
       auto_gain_control.push_back(value);
     }
@@ -497,6 +508,15 @@ MediaTrackCapabilities* MediaStreamTrackImpl::getCapabilities() const {
       voice_isolation.push_back(value);
     }
     capabilities->setVoiceIsolation(voice_isolation);
+    if (RuntimeEnabledFeatures::RestrictOwnAudioEnabled()) {
+      if (platform_capabilities.restrict_own_audio) {
+        for (bool value : *(platform_capabilities.restrict_own_audio)) {
+          restrict_own_audio.push_back(value);
+        }
+        capabilities->setRestrictOwnAudio(restrict_own_audio);
+      }
+    }
+
     // Sample size.
     if (platform_capabilities.sample_size.size() == 2) {
       LongRange* sample_size = LongRange::Create();
@@ -640,7 +660,9 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
   }
 
   if (platform_settings.echo_cancellation) {
-    settings->setEchoCancellation(*platform_settings.echo_cancellation);
+    auto* echo_cancellation = EchoCancellationModeToBooleanOrString(
+        *platform_settings.echo_cancellation);
+    settings->setEchoCancellation(echo_cancellation);
   }
   if (platform_settings.auto_gain_control) {
     settings->setAutoGainControl(*platform_settings.auto_gain_control);
@@ -700,6 +722,10 @@ MediaTrackSettings* MediaStreamTrackImpl::getSettings() const {
   if (suppress_local_audio_playback_setting_.has_value()) {
     settings->setSuppressLocalAudioPlayback(
         *suppress_local_audio_playback_setting_);
+  }
+
+  if (restrict_own_audio_setting_.has_value()) {
+    settings->setRestrictOwnAudio(*restrict_own_audio_setting_);
   }
 
   return settings;
@@ -772,6 +798,19 @@ CaptureHandle* MediaStreamTrackImpl::getCaptureHandle() const {
   return capture_handle;
 }
 
+void MediaStreamTrackImpl::Dispose() {
+  // `MediaStreamTrackImpl` and the `SpeechRecognitionMediaStreamAudioSink`
+  // which it owns may be destroyed before the `MediaStreamAudioTrack`. Remove
+  // the sinks before destroying them to prevent `MediaStreamAudioTrack` from
+  // using them after destruction.
+  if (MediaStreamAudioTrack* audio_track =
+          MediaStreamAudioTrack::From(Component())) {
+    for (SpeechRecognitionMediaStreamAudioSink* sink : registered_sinks_) {
+      audio_track->RemoveSink(sink);
+    }
+  }
+}
+
 ScriptPromise<IDLUndefined> MediaStreamTrackImpl::applyConstraints(
     ScriptState* script_state,
     const MediaTrackConstraints* constraints) {
@@ -810,6 +849,18 @@ void MediaStreamTrackImpl::SetConstraintsInternal(
       constraints_.Basic().suppress_local_audio_playback.HasIdeal()) {
     suppress_local_audio_playback_setting_ =
         constraints_.Basic().suppress_local_audio_playback.Ideal();
+  }
+
+  if (RuntimeEnabledFeatures::RestrictOwnAudioEnabled() &&
+      device().has_value() &&
+      device()->type == mojom::blink::MediaStreamType::DISPLAY_AUDIO_CAPTURE) {
+    restrict_own_audio_setting_ = false;
+    if (!constraints_.IsNull() &&
+        constraints_.Basic().restrict_own_audio.HasIdeal()) {
+      restrict_own_audio_setting_ =
+          constraints_.Basic().restrict_own_audio.Ideal() &&
+          media::IsRestrictOwnAudioSupported();
+    }
   }
 }
 
@@ -972,6 +1023,34 @@ void MediaStreamTrackImpl::PropagateTrackEnded() {
            registered_media_streams_.begin();
        iter != registered_media_streams_.end(); ++iter) {
     (*iter)->TrackEnded();
+  }
+  is_iterating_registered_media_streams_ = false;
+}
+
+void MediaStreamTrackImpl::PropagateTrackEnabled(bool enabled) {
+  CHECK(
+      base::FeatureList::IsEnabled(kPropagateEnabledEventForWebRtcAudioTrack));
+  // The enabled state is propagated only when the track belongs to a WebRTC
+  // stream, because in that case, the Audio Media Element receives the stream
+  // directly from the source, bypassing WebMediaStreamAudioSink. Therefore,
+  // volume control must be applied at the source level. Since the volume update
+  // occurs after the source has already sent data to WebMediaStreamAudioSink,
+  // any clients using WebMediaStreamAudioSink will remain unaffected by the
+  // NotifyEnabledStateChangeForWebRtcAudio call below.
+  if (!component_->Source() ||
+      component_->GetSourceType() != MediaStreamSource::kTypeAudio) {
+    return;
+  }
+
+  if (!PeerConnectionRemoteAudioTrack::From(
+          MediaStreamAudioTrack::From(Component()))) {
+    return;
+  }
+
+  CHECK(!is_iterating_registered_media_streams_);
+  is_iterating_registered_media_streams_ = true;
+  for (const auto& stream : registered_media_streams_) {
+    stream->NotifyEnabledStateChangeForWebRtcAudio(enabled);
   }
   is_iterating_registered_media_streams_ = false;
 }
@@ -1167,7 +1246,7 @@ void MediaStreamTrackImpl::SendLogMessage(const WTF::String& message) {
 
 bool MediaStreamTrackImpl::IsCapturedSurfaceResolutionActive(
     const MediaStreamTrackPlatform::Settings& platform_settings) const {
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_CHROMEOS)
   if (platform_settings.physical_frame_size) {
     return true;
   }

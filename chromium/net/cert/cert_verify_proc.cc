@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "net/cert/cert_verify_proc.h"
 
 #include <stdint.h>
@@ -249,7 +244,7 @@ void BestEffortCheckOCSP(const std::string& raw_response,
 // |spki_hashes| - that is, situations in which the OS methods of detecting
 // a known root flag a certificate as known, but its hash is not known as part
 // of the built-in list.
-void RecordTrustAnchorHistogram(const HashValueVector& spki_hashes,
+void RecordTrustAnchorHistogram(const std::vector<SHA256HashValue>& spki_hashes,
                                 bool is_issued_by_known_root) {
   int32_t id = 0;
   for (const auto& hash : spki_hashes) {
@@ -485,6 +480,10 @@ int CertVerifyProc::Verify(X509Certificate* cert,
                           verify_result, net_log);
 
   CHECK(verify_result->verified_cert);
+  if (rv == OK) {
+    CHECK_EQ(verify_result->verified_cert->intermediate_buffers().size() + 1,
+             verify_result->public_key_hashes.size());
+  }
 
   // Check for mismatched signature algorithms and unknown signature algorithms
   // in the chain. Also fills in the has_* booleans for the digest algorithms
@@ -509,11 +508,7 @@ int CertVerifyProc::Verify(X509Certificate* cert,
 
   // Check to see if the connection is being intercepted.
   for (const auto& hash : verify_result->public_key_hashes) {
-    if (hash.tag() != HASH_VALUE_SHA256) {
-      continue;
-    }
-    if (!crl_set()->IsKnownInterceptionKey(std::string_view(
-            reinterpret_cast<const char*>(hash.data()), hash.size()))) {
+    if (!crl_set()->IsKnownInterceptionKey(hash)) {
       continue;
     }
 
@@ -602,6 +597,25 @@ int CertVerifyProc::Verify(X509Certificate* cert,
   net_log.EndEvent(NetLogEventType::CERT_VERIFY_PROC,
                    [&] { return verify_result->NetLogParams(rv); });
   return rv;
+}
+
+scoped_refptr<X509Certificate> CertVerifyProc::Verify2QwacBinding(
+    std::string_view binding,
+    const std::string& hostname,
+    base::span<const uint8_t> tls_cert,
+    const NetLogWithSource& net_log) {
+  return nullptr;
+}
+
+int CertVerifyProc::Verify2Qwac(X509Certificate* cert,
+                                const std::string& hostname,
+                                CertVerifyResult* verify_result,
+                                const NetLogWithSource& net_log) {
+  // Default implementation of Verify2QwacInternal that always fails.
+  // Subclasses that actually implement 2-QWAC verification should override
+  // this.
+  verify_result->cert_status |= CERT_STATUS_INVALID;
+  return ERR_CERT_INVALID;
 }
 
 // static
@@ -712,7 +726,7 @@ static bool CheckNameConstraints(const std::vector<std::string>& dns_names,
 
 // static
 bool CertVerifyProc::HasNameConstraintsViolation(
-    const HashValueVector& public_key_hashes,
+    const std::vector<SHA256HashValue>& public_key_hashes,
     const std::string& common_name,
     const std::vector<std::string>& dns_names,
     const std::vector<std::string>& ip_addrs) {
@@ -770,9 +784,7 @@ bool CertVerifyProc::HasNameConstraintsViolation(
 
   for (const auto& limit : kLimits) {
     for (const auto& hash : public_key_hashes) {
-      if (hash.tag() != HASH_VALUE_SHA256)
-        continue;
-      if (hash.span() != limit.public_key_hash) {
+      if (hash != limit.public_key_hash) {
         continue;
       }
       if (dns_names.empty() && ip_addrs.empty()) {
@@ -792,8 +804,8 @@ bool CertVerifyProc::HasNameConstraintsViolation(
 
 // static
 bool CertVerifyProc::HasTooLongValidity(const X509Certificate& cert) {
-  const base::Time& start = cert.valid_start();
-  const base::Time& expiry = cert.valid_expiry();
+  base::Time start = cert.valid_start();
+  base::Time expiry = cert.valid_expiry();
   if (start.is_max() || start.is_null() || expiry.is_max() ||
       expiry.is_null() || start > expiry) {
     return true;

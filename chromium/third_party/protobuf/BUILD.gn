@@ -1,6 +1,9 @@
 # Copyright 2014 The Chromium Authors
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+if (is_android) {
+  import("//build/config/android/rules.gni")
+}
 
 # Includes default args like 'enable_js_protobuf'.
 import("proto_library.gni")
@@ -70,7 +73,7 @@ component("protobuf_lite") {
 
   deps = [ ":utf8_range" ]
 
-  public_deps = [ "//third_party/abseil-cpp:absl" ]
+  public_deps = [ "${protobuf_abseil_dir}:absl" ]
 
   # Required for component builds. See http://crbug.com/172800.
   if (is_component_build) {
@@ -139,6 +142,14 @@ static_library("protobuf_full") {
 
       # The Cast Core gRPC generator tool.
       "//third_party/cast_core/public/src/build/chromium:cast_core_grpc_generator",
+
+      # The proto_extras plugin generates code that some of the above fuzzers
+      # use, and thus needs to know the full types.
+      "//components/proto_extras:protobuf_full_support",
+
+      # Sync requires descriptors for testing.
+      "//components/sync:sync_full_proto_unittests",
+      "//components/sync/protocol:full_proto",
     ]
   }
 
@@ -158,7 +169,7 @@ static_library("protobuf_full") {
 
   public = protobuf_headers
 
-  public_deps = [ "//third_party/abseil-cpp:absl" ]
+  public_deps = [ "${protobuf_abseil_dir}:absl" ]
 
   configs -= [ "//build/config/compiler:chromium_code" ]
   configs += [ "//build/config/compiler:no_chromium_code" ]
@@ -310,7 +321,6 @@ source_set("utf8_range") {
   sources = [
     "third_party/utf8_range/utf8_range.c",
     "third_party/utf8_range/utf8_range.h",
-    "third_party/utf8_range/utf8_validity.cc",
     "third_party/utf8_range/utf8_validity.h",
   ]
 
@@ -318,22 +328,21 @@ source_set("utf8_range") {
   configs += [ "//build/config/compiler:no_chromium_code" ]
   configs += [ ":protobuf_config_internal" ]
 
-  deps = [ "//third_party/abseil-cpp:absl" ]
+  deps = [ "${protobuf_abseil_dir}:absl" ]
 }
-
-google_python_dir = "$root_out_dir/pyproto/google"
 
 copy("copy_google_protobuf") {
   # See README.chromium for how this file is generated.
   sources = pyproto_sources + [ "python/google/protobuf/descriptor_pb2.py" ]
-  outputs = [ "$google_python_dir/protobuf/{{source_file_part}}" ]
+  outputs = [ "$proto_python_root/google/protobuf/{{source_file_part}}" ]
 }
 
 copy("copy_google_protobuf_internal") {
   # See README.chromium for how this file is generated.
   sources = pyproto_internal_sources +
             [ "python/google/protobuf/internal/python_edition_defaults.py" ]
-  outputs = [ "$google_python_dir/protobuf/internal/{{source_file_part}}" ]
+  outputs =
+      [ "$proto_python_root/google/protobuf/internal/{{source_file_part}}" ]
 }
 
 # Build time dependency for action rules.
@@ -342,6 +351,14 @@ group("py_proto") {
     ":copy_google_protobuf",
     ":copy_google_protobuf_internal",
   ]
+}
+
+# Note: This exists for Cronet in AOSP where we can't import prebuilts. We import
+# the raw sources and compile them using a specialized pipeline. See crbug.com/419480317.
+if (is_android && is_cronet_for_aosp_build) {
+  android_library("proto_runtime_lite_java") {
+    sources = javaproto_sources
+  }
 }
 
 # Runtime dependency if the target needs the python scripts.
@@ -359,6 +376,8 @@ if (enable_js_protobuf) {
     sources = [
       "//third_party/google-closure-library/closure/goog/array/array.js",
       "//third_party/google-closure-library/closure/goog/asserts/asserts.js",
+      "//third_party/google-closure-library/closure/goog/asserts/dom.js",
+      "//third_party/google-closure-library/closure/goog/async/throwexception.js",
       "//third_party/google-closure-library/closure/goog/base.js",
       "//third_party/google-closure-library/closure/goog/crypt/base64.js",
       "//third_party/google-closure-library/closure/goog/crypt/crypt.js",
@@ -366,11 +385,13 @@ if (enable_js_protobuf) {
       "//third_party/google-closure-library/closure/goog/dom/asserts.js",
       "//third_party/google-closure-library/closure/goog/dom/browserfeature.js",
       "//third_party/google-closure-library/closure/goog/dom/dom.js",
+      "//third_party/google-closure-library/closure/goog/dom/element.js",
       "//third_party/google-closure-library/closure/goog/dom/htmlelement.js",
       "//third_party/google-closure-library/closure/goog/dom/nodetype.js",
       "//third_party/google-closure-library/closure/goog/dom/safe.js",
       "//third_party/google-closure-library/closure/goog/dom/tagname.js",
       "//third_party/google-closure-library/closure/goog/dom/tags.js",
+      "//third_party/google-closure-library/closure/goog/flags/flags.js",
       "//third_party/google-closure-library/closure/goog/fs/blob.js",
       "//third_party/google-closure-library/closure/goog/fs/url.js",
       "//third_party/google-closure-library/closure/goog/functions/functions.js",
@@ -386,6 +407,8 @@ if (enable_js_protobuf) {
       "//third_party/google-closure-library/closure/goog/i18n/bidi.js",
       "//third_party/google-closure-library/closure/goog/labs/useragent/browser.js",
       "//third_party/google-closure-library/closure/goog/labs/useragent/engine.js",
+      "//third_party/google-closure-library/closure/goog/labs/useragent/highentropy/highentropydata.js",
+      "//third_party/google-closure-library/closure/goog/labs/useragent/highentropy/highentropyvalue.js",
       "//third_party/google-closure-library/closure/goog/labs/useragent/platform.js",
       "//third_party/google-closure-library/closure/goog/labs/useragent/useragent.js",
       "//third_party/google-closure-library/closure/goog/labs/useragent/util.js",

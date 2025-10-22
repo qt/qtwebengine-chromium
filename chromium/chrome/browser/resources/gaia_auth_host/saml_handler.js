@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// <if expr="chromeos_ash">
+// <if expr="is_chromeos">
 import {NativeEventTarget as EventTarget} from 'chrome://resources/ash/common/event_target.js';
 
 // </if>
@@ -822,12 +822,18 @@ import {WebviewEventManager} from './webview_event_manager.js';
 
         if (headerName === SAML_HEADER) {
           const action = header.value.toLowerCase();
+          const previousIsSamlPage = this.pendingIsSamlPage_;
           if (action === 'start') {
             console.info('SamlHandler.onHeadersReceived_: SAML flow start');
             this.pendingIsSamlPage_ = true;
           } else if (action === 'end') {
             console.info('SamlHandler.onHeadersReceived_: SAML flow end');
             this.pendingIsSamlPage_ = false;
+          }
+          if (this.pendingIsSamlPage_ !== previousIsSamlPage) {
+            this.dispatchEvent(new CustomEvent(
+                'isSamlFlowChange',
+                {detail: {isSamlFlow: this.pendingIsSamlPage_}}));
           }
         }
 

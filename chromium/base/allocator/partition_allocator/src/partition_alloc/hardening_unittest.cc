@@ -2,12 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include <cstdint>
 #include <string>
 #include <vector>
 
+#include "partition_alloc/allocator_config.h"
 #include "partition_alloc/build_config.h"
 #include "partition_alloc/partition_alloc_config.h"
+#include "partition_alloc/partition_alloc_for_testing.h"
 #include "partition_alloc/partition_freelist_entry.h"
 #include "partition_alloc/partition_page.h"
 #include "partition_alloc/partition_root.h"
@@ -23,9 +30,6 @@ namespace {
 #if PA_USE_DEATH_TESTS() && PA_CONFIG(HAS_FREELIST_SHADOW_ENTRY)
 
 TEST(HardeningTest, PartialCorruption) {
-  std::string important_data("very important");
-  char* to_corrupt = const_cast<char*>(important_data.c_str());
-
   PartitionOptions opts;
   PartitionRoot root(opts);
   root.UncapEmptySlotSpanMemoryForTesting();
@@ -41,16 +45,13 @@ TEST(HardeningTest, PartialCorruption) {
   // Even if it looks reasonable (valid encoded pointer), freelist corruption
   // detection will make the code crash, because shadow_ doesn't match
   // encoded_next_.
-  root.get_freelist_dispatcher()->EmplaceAndInitForTest(
-      root.ObjectToSlotStart(data), to_corrupt, false);
+  FreelistEntry::EmplaceAndInitForTest(root.ObjectToSlotStart(data), data,
+                                       false);
 
   EXPECT_DEATH(root.Alloc(kAllocSize), "");
 }
 
 TEST(HardeningTest, OffHeapPointerCrashing) {
-  std::string important_data("very important");
-  char* to_corrupt = const_cast<char*>(important_data.c_str());
-
   PartitionOptions opts;
   PartitionRoot root(opts);
   root.UncapEmptySlotSpanMemoryForTesting();
@@ -61,10 +62,12 @@ TEST(HardeningTest, OffHeapPointerCrashing) {
   root.Free(data2);
   root.Free(data);
 
+  void* different_superpage = root.Alloc(1 << 20);
+
   // See "PartialCorruption" above for details. This time, make shadow_
   // consistent.
-  root.get_freelist_dispatcher()->EmplaceAndInitForTest(
-      root.ObjectToSlotStart(data), to_corrupt, true);
+  FreelistEntry::EmplaceAndInitForTest(root.ObjectToSlotStart(data),
+                                       different_superpage, true);
 
   // Crashes, because |to_corrupt| is not on the same superpage as data.
   EXPECT_DEATH(root.Alloc(kAllocSize), "");
@@ -82,14 +85,31 @@ TEST(HardeningTest, MetadataPointerCrashing) {
   root.Free(data);
 
   uintptr_t slot_start = root.ObjectToSlotStart(data);
-  auto* metadata =
-      SlotSpanMetadata<MetadataKind::kReadOnly>::FromSlotStart(slot_start);
+  auto* metadata = SlotSpanMetadata::FromSlotStart(slot_start, &root);
 
-  root.get_freelist_dispatcher()->EmplaceAndInitForTest(slot_start, metadata,
-                                                        true);
+#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) && \
+    !PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
+  EXPECT_DEATH(FreelistEntry::EmplaceAndInitForTest(slot_start, metadata, true),
+               "");
+#endif
 
-  // Crashes, because |metadata| points inside the metadata area.
-  EXPECT_DEATH(root.Alloc(kAllocSize), "");
+#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) && \
+    PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
+  if (ExternalMetadataTrialGroup::kEnabled == GetExternalMetadataTrialGroup()) {
+    EXPECT_DEATH(
+        FreelistEntry::EmplaceAndInitForTest(slot_start, metadata, true), "");
+  } else
+#endif
+#if !PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) || \
+    PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
+  {
+    FreelistEntry::EmplaceAndInitForTest(slot_start, metadata, true);
+
+    // Crashes, because |metadata| points inside the metadata area.
+    EXPECT_DEATH(root.Alloc(kAllocSize), "");
+  }
+#endif  // !PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) ||
+        // PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
 }
 #endif  // PA_USE_DEATH_TESTS() && PA_CONFIG(HAS_FREELIST_SHADOW_ENTRY)
 
@@ -115,14 +135,9 @@ TEST(HardeningTest, SuccessfulCorruption) {
   root.Free(data2);
   root.Free(data);
 
-  root.get_freelist_dispatcher()->EmplaceAndInitForTest(
-      root.ObjectToSlotStartUnchecked(data), to_corrupt, true);
+  FreelistEntry::EmplaceAndInitForTest(root.ObjectToSlotStartUnchecked(data),
+                                       to_corrupt, true);
 
-#if PA_BUILDFLAG(USE_FREESLOT_BITMAP)
-  // This part crashes with freeslot bitmap because it detects freelist
-  // corruptions, which is rather desirable behavior.
-  EXPECT_DEATH_IF_SUPPORTED(root.Alloc(kAllocSize), "");
-#else
   // Next allocation is what was in
   // root->bucket->active_slot_span_head->freelist_head, so not the corrupted
   // pointer.
@@ -139,33 +154,28 @@ TEST(HardeningTest, SuccessfulCorruption) {
   // call `SlotStartToObject()` and `CHECK()` that it's a slot start.
   EXPECT_DEATH_IF_SUPPORTED(root.Alloc(kAllocSize), "");
 #endif  // !PA_CONFIG(ENFORCE_SLOT_STARTS)
-#endif  // PA_BUILDFLAG(USE_FREESLOT_BITMAP)
 }
 #endif  // !PA_BUILDFLAG(IS_ANDROID)
 
-#if PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
+#if PA_BUILDFLAG(HAS_64_BIT_POINTERS)
 #if PA_USE_DEATH_TESTS() && PA_CONFIG(HAS_FREELIST_SHADOW_ENTRY)
 TEST(HardeningTest, ConstructPoolOffsetFromStackPointerCrashing) {
   int num_to_corrupt = 12345;
   int* to_corrupt = &num_to_corrupt;
 
-  PartitionOptions opts;
-  opts.use_pool_offset_freelists = PartitionOptions::kEnabled;
-  PartitionRoot root(opts);
+  PartitionRoot root(PartitionOptions{});
   root.UncapEmptySlotSpanMemoryForTesting();
 
   const size_t kAllocSize = 100;
   void* data = root.Alloc(kAllocSize);
 
-  EXPECT_DEATH(root.get_freelist_dispatcher()->EmplaceAndInitForTest(
+  EXPECT_DEATH(FreelistEntry::EmplaceAndInitForTest(
                    root.ObjectToSlotStart(data), to_corrupt, true),
                "");
 }
 
 TEST(HardeningTest, PoolOffsetMetadataPointerCrashing) {
-  PartitionOptions opts;
-  opts.use_pool_offset_freelists = PartitionOptions::kEnabled;
-  PartitionRoot root(opts);
+  PartitionRoot root(PartitionOptions{});
   root.UncapEmptySlotSpanMemoryForTesting();
 
   const size_t kAllocSize = 100;
@@ -175,23 +185,37 @@ TEST(HardeningTest, PoolOffsetMetadataPointerCrashing) {
   root.Free(data);
 
   uintptr_t slot_start = root.ObjectToSlotStart(data);
-  auto* metadata =
-      SlotSpanMetadata<MetadataKind::kReadOnly>::FromSlotStart(slot_start);
+  auto* metadata = SlotSpanMetadata::FromSlotStart(slot_start, &root);
 
-  root.get_freelist_dispatcher()->EmplaceAndInitForTest(slot_start, metadata,
-                                                        true);
+#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) && \
+    !PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
+  EXPECT_DEATH(FreelistEntry::EmplaceAndInitForTest(slot_start, metadata, true),
+               "");
+#endif
+#if PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) && \
+    PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
+  if (ExternalMetadataTrialGroup::kEnabled == GetExternalMetadataTrialGroup()) {
+    EXPECT_DEATH(
+        FreelistEntry::EmplaceAndInitForTest(slot_start, metadata, true), "");
+  } else
+#endif
+#if !PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) || \
+    PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
+  {
+    FreelistEntry::EmplaceAndInitForTest(slot_start, metadata, true);
 
-  // Crashes, because |metadata| points inside the metadata area.
-  EXPECT_DEATH(root.Alloc(kAllocSize), "");
+    // Crashes, because |metadata| points inside the metadata area.
+    EXPECT_DEATH(root.Alloc(kAllocSize), "");
+  }
+#endif  // !PA_CONFIG(MOVE_METADATA_OUT_OF_GIGACAGE) ||
+        // PA_BUILDFLAG(ENABLE_MOVE_METADATA_OUT_OF_GIGACAGE_TRIAL)
 }
 #endif  // PA_USE_DEATH_TESTS() && PA_CONFIG(HAS_FREELIST_SHADOW_ENTRY)
 
 #if !PA_BUILDFLAG(IS_ANDROID)
 
 TEST(HardeningTest, PoolOffsetSuccessfulCorruption) {
-  PartitionOptions opts;
-  opts.use_pool_offset_freelists = PartitionOptions::kEnabled;
-  PartitionRoot root(opts);
+  PartitionRoot root(PartitionOptions{});
   root.UncapEmptySlotSpanMemoryForTesting();
 
   uintptr_t* zero_vector = reinterpret_cast<uintptr_t*>(
@@ -206,14 +230,9 @@ TEST(HardeningTest, PoolOffsetSuccessfulCorruption) {
   root.Free(data2);
   root.Free(data);
 
-  root.get_freelist_dispatcher()->EmplaceAndInitForTest(
-      root.ObjectToSlotStart(data), to_corrupt, true);
+  FreelistEntry::EmplaceAndInitForTest(root.ObjectToSlotStart(data), to_corrupt,
+                                       true);
 
-#if PA_BUILDFLAG(USE_FREESLOT_BITMAP)
-  // This part crashes with freeslot bitmap because it detects freelist
-  // corruptions, which is rather desirable behavior.
-  EXPECT_DEATH_IF_SUPPORTED(root.Alloc(kAllocSize), "");
-#else
   // Next allocation is what was in
   // root->bucket->active_slot_span_head->freelist_head, so not the corrupted
   // pointer.
@@ -234,11 +253,9 @@ TEST(HardeningTest, PoolOffsetSuccessfulCorruption) {
   EXPECT_DEATH_IF_SUPPORTED(root.Alloc(kAllocSize), "");
 
 #endif  // !PA_CONFIG(ENFORCE_SLOT_STARTS)
-
-#endif  // PA_BUILDFLAG(USE_FREESLOT_BITMAP)
 }
 #endif  // !PA_BUILDFLAG(IS_ANDROID)
-#endif  // PA_BUILDFLAG(USE_FREELIST_DISPATCHER)
+#endif  // PA_BUILDFLAG(HAS_64_BIT_POINTERS)
 }  // namespace
 }  // namespace partition_alloc::internal
 

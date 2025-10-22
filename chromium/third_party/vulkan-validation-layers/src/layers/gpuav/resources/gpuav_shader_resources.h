@@ -1,6 +1,7 @@
 /* Copyright (c) 2018-2025 The Khronos Group Inc.
  * Copyright (c) 2018-2025 Valve Corporation
  * Copyright (c) 2018-2025 LunarG, Inc.
+ * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,37 +20,19 @@
 
 #pragma once
 
-#include <vector>
-
-#include "gpuav/descriptor_validation/gpuav_descriptor_set.h"
+#include "state_tracker/descriptor_sets.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
-#include "gpuav/resources/gpuav_vulkan_objects.h"
 
 namespace gpuav {
-
-// "binding" here refers to "binding in the command buffer" and not the "binding in a descriptor set"
-struct DescriptorCommandBinding {
-    // This is where we hold the list of BDA address for a given bound descriptor snapshot.
-    // The size of the SSBO doesn't change on an UpdateAfterBind so we can allocate it once and update its internals later
-    vko::Buffer descritpor_state_ssbo_buffer;  // type DescriptorStateSSBO
-    vko::Buffer post_process_ssbo_buffer;      // type PostProcessSSBO
-
-    // Note: The index here is from vkCmdBindDescriptorSets::firstSet
-    // for each "set" in vkCmdBindDescriptorSets::descriptorSetCount
-    std::vector<std::shared_ptr<vvl::DescriptorSet>> bound_descriptor_sets;
-
-    DescriptorCommandBinding(Validator &gpuav) : descritpor_state_ssbo_buffer(gpuav), post_process_ssbo_buffer(gpuav) {}
-};
 
 // These match the Structures found in the instrumentation GLSL logic
 namespace glsl {
 
 // Every descriptor set has various BDA pointers to data from the CPU
 // Shared among all Descriptor Indexing GPU-AV checks (so we only have to create a single buffer)
-struct DescriptorStateSSBO {
+struct BoundDescriptorSetsStateSSBO {
     // Used to know if descriptors are initialized or not
-    VkDeviceAddress initialized_status;
-    // The type information will change with UpdateAfterBind so will need to update this before submitting the to the queue
+    VkDeviceAddress descriptor_init_status;
     VkDeviceAddress descriptor_set_types[kDebugInputBindlessMaxDescSets];
 };
 
@@ -100,6 +83,8 @@ struct DescriptorState {
                 return (kInlineUniformDesc << kDescBitShift);
             case vvl::DescriptorClass::AccelerationStructure:
                 return (kAccelDesc << kDescBitShift);
+            case vvl::DescriptorClass::Tensor:
+                return (kTensorDesc << kDescBitShift);
             case vvl::DescriptorClass::Mutable:
             case vvl::DescriptorClass::Invalid:
                 assert(false);

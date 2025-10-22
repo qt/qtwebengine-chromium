@@ -30,8 +30,8 @@
 #include <string>
 #include <utility>
 
-#include "src/tint/lang/core/builtin_fn.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/enums.h"
 #include "src/tint/lang/core/ir/access.h"
 #include "src/tint/lang/core/ir/bitcast.h"
 #include "src/tint/lang/core/ir/break_if.h"
@@ -64,8 +64,8 @@
 #include "src/tint/lang/core/ir/user_call.h"
 #include "src/tint/lang/core/ir/validator.h"
 #include "src/tint/lang/core/ir/var.h"
-#include "src/tint/lang/core/texel_format.h"
 #include "src/tint/lang/core/type/array.h"
+#include "src/tint/lang/core/type/binding_array.h"
 #include "src/tint/lang/core/type/bool.h"
 #include "src/tint/lang/core/type/depth_multisampled_texture.h"
 #include "src/tint/lang/core/type/depth_texture.h"
@@ -101,17 +101,12 @@ constexpr const char* kAMDGpuShaderHalfFloat = "GL_AMD_gpu_shader_half_float";
 constexpr const char* kOESSampleVariables = "GL_OES_sample_variables";
 constexpr const char* kEXTBlendFuncExtended = "GL_EXT_blend_func_extended";
 constexpr const char* kEXTTextureShadowLod = "GL_EXT_texture_shadow_lod";
+constexpr const char* kEXTGeometryShader = "GL_EXT_geometry_shader";
 
 enum class LayoutFormat : uint8_t {
     kStd140,
     kStd430,
 };
-
-/// Retrieve the gl_ string corresponding to a builtin.
-/// @param builtin the builtin
-/// @param address_space the address space (input or output)
-/// @returns the gl_ string corresponding to that builtin
-const char* GLSLBuiltinToString(core::BuiltinValue builtin, core::AddressSpace address_space);
 
 /// @returns true if @p ident is a GLSL keyword that needs to be avoided
 bool IsKeyword(std::string_view ident);
@@ -126,9 +121,7 @@ class Printer : public tint::TextGenerator {
 
     /// @returns the generated GLSL shader
     tint::Result<Output> Generate() {
-        auto valid = core::ir::ValidateAndDumpIfNeeded(
-            ir_, "glsl.Printer",
-            core::ir::Capabilities{core::ir::Capability::kAllowHandleVarsWithoutBindings});
+        auto valid = core::ir::ValidateAndDumpIfNeeded(ir_, "glsl.Printer", kPrinterCapabilities);
         if (valid != Success) {
             return std::move(valid.Failure());
         }
@@ -290,7 +283,7 @@ class Printer : public tint::TextGenerator {
     /// that we know to pad the properly when we emit them.
     void FindHostShareableStructs() {
         for (auto inst : *ir_.root_block) {
-            auto* ptr = inst->Result(0)->Type()->As<core::type::Pointer>();
+            auto* ptr = inst->Result()->Type()->As<core::type::Pointer>();
             if (!ptr || !core::IsHostShareable(ptr->AddressSpace())) {
                 continue;
             }
@@ -633,22 +626,22 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitLet(const core::ir::Let* l) {
-        TINT_ASSERT(!l->Result(0)->Type()->Is<core::type::Pointer>());
+        TINT_ASSERT(!l->Result()->Type()->Is<core::type::Pointer>());
 
         auto out = Line();
 
         // TODO(dsinclair): Investigate using `const` here as well, the AST printer doesn't emit
         //                  const with a let, but we should be able to.
-        EmitTypeAndName(out, l->Result(0)->Type(), NameOf(l->Result(0)));
+        EmitTypeAndName(out, l->Result()->Type(), NameOf(l->Result()));
         out << " = ";
         EmitValue(out, l->Value());
         out << ";";
     }
 
     void EmitCallStmt(const core::ir::Call* c) {
-        if (!c->Result(0)->IsUsed()) {
+        if (!c->Result()->IsUsed()) {
             auto out = Line();
-            EmitValue(out, c->Result(0));
+            EmitValue(out, c->Result());
             out << ";";
         }
     }
@@ -695,7 +688,7 @@ class Printer : public tint::TextGenerator {
                     break;
                 }
                 case core::AddressSpace::kUniform:
-                case core::AddressSpace::kPushConstant:
+                case core::AddressSpace::kImmediate:
                 case core::AddressSpace::kHandle: {
                     out << "uniform ";
                     break;
@@ -709,6 +702,9 @@ class Printer : public tint::TextGenerator {
             type,  //
             [&](const core::type::Array* ary) { EmitArrayType(out, ary, name, name_printed); },
             [&](const core::type::Atomic* a) { EmitType(out, a->Type(), name, name_printed); },
+            [&](const core::type::BindingArray* ary) {
+                EmitBindingArrayType(out, ary, name, name_printed);
+            },
             [&](const core::type::Bool*) { out << "bool"; },
             [&](const core::type::I32*) { out << "int"; },
             [&](const core::type::U32*) { out << "uint"; },
@@ -876,6 +872,24 @@ class Printer : public tint::TextGenerator {
         out << args.str();
     }
 
+    void EmitBindingArrayType(StringStream& out,
+                              const core::type::BindingArray* ary,
+                              const std::string& name,
+                              bool* name_printed) {
+        EmitType(out, ary->ElemType());
+
+        if (!name.empty()) {
+            out << " " << name;
+            if (name_printed) {
+                *name_printed = true;
+            }
+        }
+
+        auto* constant_count = ary->Count()->As<core::type::ConstantArrayCount>();
+        TINT_ASSERT(constant_count != nullptr);
+        out << "[" << constant_count->value << "]";
+    }
+
     void EmitTextureType(StringStream& out, const core::type::Texture* t) {
         TINT_ASSERT(!t->Is<core::type::ExternalTexture>());
 
@@ -982,10 +996,10 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitVar(StringStream& out, const core::ir::Var* var, bool add_stage_prefix = false) {
-        auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
         auto space = ptr->AddressSpace();
 
-        EmitTypeAndName(out, var->Result(0)->Type(), NameOf(var->Result(0), add_stage_prefix));
+        EmitTypeAndName(out, var->Result()->Type(), NameOf(var->Result(), add_stage_prefix));
         if (var->Initializer()) {
             out << " = ";
             EmitValue(out, var->Initializer());
@@ -999,7 +1013,7 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitGlobalVar(core::ir::Var* var) {
-        auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
         auto space = ptr->AddressSpace();
 
         switch (space) {
@@ -1025,8 +1039,8 @@ class Printer : public tint::TextGenerator {
             case core::AddressSpace::kHandle:
                 EmitHandleVar(var);
                 break;
-            case core::AddressSpace::kPushConstant:
-                EmitPushConstantVar(var);
+            case core::AddressSpace::kImmediate:
+                EmitImmediateVar(var);
                 break;
             case core::AddressSpace::kIn:
             case core::AddressSpace::kOut:
@@ -1048,8 +1062,8 @@ class Printer : public tint::TextGenerator {
 
         EmitLayoutBinding(Line(), bp.value(), std::nullopt, {LayoutFormat::kStd430});
 
-        auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
-        EmitVarStruct("buffer", NameOf(var->Result(0)), "ssbo",
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+        EmitVarStruct("buffer", NameOf(var->Result()), "ssbo",
                       ptr->UnwrapPtr()->As<core::type::Struct>());
     }
 
@@ -1059,8 +1073,8 @@ class Printer : public tint::TextGenerator {
 
         EmitLayoutBinding(Line(), bp.value(), std::nullopt, {LayoutFormat::kStd140});
 
-        auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
-        EmitVarStruct("uniform", NameOf(var->Result(0)), "ubo",
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
+        EmitVarStruct("uniform", NameOf(var->Result()), "ubo",
                       ptr->UnwrapPtr()->As<core::type::Struct>());
     }
 
@@ -1071,7 +1085,7 @@ class Printer : public tint::TextGenerator {
     }
 
     void EmitHandleVar(core::ir::Var* var) {
-        auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
 
         // GLSL ignores sampler variables.
         if (ptr->UnwrapPtr()->Is<core::type::Sampler>()) {
@@ -1095,36 +1109,36 @@ class Printer : public tint::TextGenerator {
                 combined_texture_sampler->SamplerBindingPoint()};
             auto itr = options_.bindings.sampler_texture_to_name.find(key);
             if (itr != options_.bindings.sampler_texture_to_name.end()) {
-                names_.Add(var->Result(0), itr->second);
+                names_.Add(var->Result(), itr->second);
             }
         }
 
         EmitVar(out, var, true);
     }
 
-    void EmitPushConstantVar(core::ir::Var* var) {
-        // We need to use the same name for the push constant structure and variable between
+    void EmitImmediateVar(core::ir::Var* var) {
+        // We need to use the same name for the immediate data structure and variable between
         // different pipeline stages.
-        constexpr const char* kPushConstantStructName = "tint_push_constant_struct";
-        constexpr const char* kPushConstantVarName = "tint_push_constants";
+        constexpr const char* kImmediateStructName = "tint_immediate_struct";
+        constexpr const char* kImmediateVarName = "tint_immediates";
 
         auto out = Line();
         EmitLayoutLocation(out, {0}, std::nullopt);
 
-        auto* ptr = var->Result(0)->Type()->As<core::type::Pointer>();
+        auto* ptr = var->Result()->Type()->As<core::type::Pointer>();
         auto* str = ptr->StoreType()->As<core::type::Struct>();
         TINT_ASSERT(str);
-        names_.Add(str, kPushConstantStructName);
+        names_.Add(str, kImmediateStructName);
         EmitStructType(str);
 
-        names_.Add(var->Result(0), kPushConstantVarName);
-        EmitTypeAndName(out, var->Result(0)->Type(), kPushConstantVarName);
+        names_.Add(var->Result(), kImmediateVarName);
+        EmitTypeAndName(out, var->Result()->Type(), kImmediateVarName);
         out << ";";
     }
 
     void EmitIOVar(core::ir::Var* var) {
         auto& attrs = var->Attributes();
-        auto addrspace = var->Result(0)->Type()->As<core::type::Pointer>()->AddressSpace();
+        auto addrspace = var->Result()->Type()->As<core::type::Pointer>()->AddressSpace();
 
         if (attrs.builtin.has_value()) {
             if (options_.version.IsES() &&
@@ -1135,7 +1149,7 @@ class Printer : public tint::TextGenerator {
 
             // Do not emit builtin (gl_) variables, but register the GLSL builtin names so that they
             // are correct at the point of use.
-            names_.Add(var->Result(0), GLSLBuiltinToString(*attrs.builtin, addrspace));
+            names_.Add(var->Result(), GLSLBuiltinToString(*attrs.builtin, addrspace));
             return;
         } else if (attrs.location) {
             // Use a fixed naming scheme for interstage variables so that they match between vertex
@@ -1144,7 +1158,7 @@ class Printer : public tint::TextGenerator {
                  addrspace == core::AddressSpace::kOut) ||
                 (stage_ == core::ir::Function::PipelineStage::kFragment &&
                  addrspace == core::AddressSpace::kIn)) {
-                names_.Add(var->Result(0),
+                names_.Add(var->Result(),
                            "tint_interstage_location" + std::to_string(attrs.location.value()));
             }
         }
@@ -1273,6 +1287,72 @@ class Printer : public tint::TextGenerator {
                 case core::TexelFormat::kR8Unorm:
                     out << "r8";
                     break;
+                case core::TexelFormat::kR8Uint:
+                    out << "r8ui";
+                    break;
+                case core::TexelFormat::kRg8Uint:
+                    out << "rg8ui";
+                    break;
+                case core::TexelFormat::kR16Uint:
+                    out << "r16ui";
+                    break;
+                case core::TexelFormat::kRg16Uint:
+                    out << "rg16ui";
+                    break;
+                case core::TexelFormat::kR8Sint:
+                    out << "r8i";
+                    break;
+                case core::TexelFormat::kRg8Sint:
+                    out << "rg8i";
+                    break;
+                case core::TexelFormat::kR16Sint:
+                    out << "r16i";
+                    break;
+                case core::TexelFormat::kRg16Sint:
+                    out << "rg16i";
+                    break;
+                case core::TexelFormat::kR8Snorm:
+                    out << "r8_snorm";
+                    break;
+                case core::TexelFormat::kRg8Unorm:
+                    out << "rg8";
+                    break;
+                case core::TexelFormat::kRg8Snorm:
+                    out << "rg8_snorm";
+                    break;
+                case core::TexelFormat::kR16Float:
+                    out << "r16f";
+                    break;
+                case core::TexelFormat::kRg16Float:
+                    out << "rg16f";
+                    break;
+                case core::TexelFormat::kRgb10A2Uint:
+                    out << "rgb10_a2ui";
+                    break;
+                case core::TexelFormat::kRgb10A2Unorm:
+                    out << "rgb10_a2";
+                    break;
+                case core::TexelFormat::kRg11B10Ufloat:
+                    out << "r11f_g11f_b10f";
+                    break;
+                case core::TexelFormat::kR16Unorm:
+                    out << "r16";
+                    break;
+                case core::TexelFormat::kR16Snorm:
+                    out << "r16_snorm";
+                    break;
+                case core::TexelFormat::kRg16Unorm:
+                    out << "rg16";
+                    break;
+                case core::TexelFormat::kRg16Snorm:
+                    out << "rg16_snorm";
+                    break;
+                case core::TexelFormat::kRgba16Unorm:
+                    out << "rgba16";
+                    break;
+                case core::TexelFormat::kRgba16Snorm:
+                    out << "rgba16_snorm";
+                    break;
                 case core::TexelFormat::kUndefined:
                     TINT_UNREACHABLE() << "invalid texel format";
             }
@@ -1324,13 +1404,13 @@ class Printer : public tint::TextGenerator {
                     [&](const core::ir::CoreBinary* b) { EmitBinary(out, b); },
                     [&](const core::ir::CoreBuiltinCall* c) { EmitCoreBuiltinCall(out, c); },
                     [&](const core::ir::CoreUnary* u) { EmitUnary(out, u); },
-                    [&](const core::ir::Let* l) { out << NameOf(l->Result(0)); },
+                    [&](const core::ir::Let* l) { out << NameOf(l->Result()); },
                     [&](const core::ir::Load* l) { EmitLoad(out, l); },
                     [&](const core::ir::LoadVectorElement* l) { EmitLoadVectorElement(out, l); },
                     [&](const core::ir::Store* s) { EmitStore(s); },
                     [&](const core::ir::Swizzle* s) { EmitSwizzle(out, s); },  //
                     [&](const core::ir::UserCall* c) { EmitUserCall(out, c); },
-                    [&](const core::ir::Var* var) { out << NameOf(var->Result(0)); },
+                    [&](const core::ir::Var* var) { out << NameOf(var->Result()); },
 
                     [&](const glsl::ir::BuiltinCall* c) { EmitGlslBuiltinCall(out, c); },  //
                     [&](const glsl::ir::MemberBuiltinCall* mbc) {
@@ -1413,7 +1493,7 @@ class Printer : public tint::TextGenerator {
 
     /// Emit a convert instruction
     void EmitConvert(StringStream& out, const core::ir::Convert* c) {
-        EmitType(out, c->Result(0)->Type());
+        EmitType(out, c->Result()->Type());
         out << "(";
         EmitValue(out, c->Operand(0));
         out << ")";
@@ -1422,7 +1502,7 @@ class Printer : public tint::TextGenerator {
     /// Emit a constructor
     void EmitConstruct(StringStream& out, const core::ir::Construct* c) {
         if (c->Args().IsEmpty()) {
-            EmitZeroValue(out, c->Result(0)->Type());
+            EmitZeroValue(out, c->Result()->Type());
             return;
         }
 
@@ -1441,7 +1521,7 @@ class Printer : public tint::TextGenerator {
         };
 
         Switch(
-            c->Result(0)->Type(),
+            c->Result()->Type(),
             [&](const core::type::Struct* struct_ty) {
                 EmitStructType(struct_ty);
                 out << StructName(struct_ty);
@@ -1468,7 +1548,7 @@ class Printer : public tint::TextGenerator {
                 }
             },
             [&](Default) {
-                EmitType(out, c->Result(0)->Type());
+                EmitType(out, c->Result()->Type());
                 emit_args();
             });
     }
@@ -1859,53 +1939,64 @@ class Printer : public tint::TextGenerator {
             out << ";";
         }
     }
-};
 
-const char* GLSLBuiltinToString(core::BuiltinValue builtin, core::AddressSpace address_space) {
-    switch (builtin) {
-        case core::BuiltinValue::kPosition: {
-            if (address_space == core::AddressSpace::kOut) {
-                return "gl_Position";
+    /// Retrieve the gl_ string corresponding to a builtin.
+    /// @param builtin the builtin
+    /// @param address_space the address space (input or output)
+    /// @returns the gl_ string corresponding to that builtin
+    const char* GLSLBuiltinToString(core::BuiltinValue builtin, core::AddressSpace address_space) {
+        switch (builtin) {
+            case core::BuiltinValue::kPosition: {
+                if (address_space == core::AddressSpace::kOut) {
+                    return "gl_Position";
+                }
+                if (address_space == core::AddressSpace::kIn) {
+                    return "gl_FragCoord";
+                }
+                TINT_UNREACHABLE();
             }
-            if (address_space == core::AddressSpace::kIn) {
-                return "gl_FragCoord";
+            case core::BuiltinValue::kVertexIndex:
+                return "gl_VertexID";
+            case core::BuiltinValue::kInstanceIndex:
+                return "gl_InstanceID";
+            case core::BuiltinValue::kFrontFacing:
+                return "gl_FrontFacing";
+            case core::BuiltinValue::kFragDepth:
+                return "gl_FragDepth";
+            case core::BuiltinValue::kLocalInvocationId:
+                return "gl_LocalInvocationID";
+            case core::BuiltinValue::kLocalInvocationIndex:
+                return "gl_LocalInvocationIndex";
+            case core::BuiltinValue::kGlobalInvocationId:
+                return "gl_GlobalInvocationID";
+            case core::BuiltinValue::kNumWorkgroups:
+                return "gl_NumWorkGroups";
+            case core::BuiltinValue::kWorkgroupId:
+                return "gl_WorkGroupID";
+            case core::BuiltinValue::kSampleIndex:
+                return "gl_SampleID";
+            case core::BuiltinValue::kSampleMask: {
+                if (address_space == core::AddressSpace::kIn) {
+                    return "gl_SampleMaskIn";
+                } else {
+                    return "gl_SampleMask";
+                }
+                TINT_UNREACHABLE();
             }
-            TINT_UNREACHABLE();
+            case core::BuiltinValue::kPointSize:
+                return "gl_PointSize";
+            case core::BuiltinValue::kPrimitiveId:
+                if (options_.version.IsES() && options_.version.major_version == 3 &&
+                    options_.version.minor_version == 1) {
+                    EmitExtension(kEXTGeometryShader);
+                }
+
+                return "gl_PrimitiveID";
+            default:
+                TINT_UNREACHABLE();
         }
-        case core::BuiltinValue::kVertexIndex:
-            return "gl_VertexID";
-        case core::BuiltinValue::kInstanceIndex:
-            return "gl_InstanceID";
-        case core::BuiltinValue::kFrontFacing:
-            return "gl_FrontFacing";
-        case core::BuiltinValue::kFragDepth:
-            return "gl_FragDepth";
-        case core::BuiltinValue::kLocalInvocationId:
-            return "gl_LocalInvocationID";
-        case core::BuiltinValue::kLocalInvocationIndex:
-            return "gl_LocalInvocationIndex";
-        case core::BuiltinValue::kGlobalInvocationId:
-            return "gl_GlobalInvocationID";
-        case core::BuiltinValue::kNumWorkgroups:
-            return "gl_NumWorkGroups";
-        case core::BuiltinValue::kWorkgroupId:
-            return "gl_WorkGroupID";
-        case core::BuiltinValue::kSampleIndex:
-            return "gl_SampleID";
-        case core::BuiltinValue::kSampleMask: {
-            if (address_space == core::AddressSpace::kIn) {
-                return "gl_SampleMaskIn";
-            } else {
-                return "gl_SampleMask";
-            }
-            TINT_UNREACHABLE();
-        }
-        case core::BuiltinValue::kPointSize:
-            return "gl_PointSize";
-        default:
-            TINT_UNREACHABLE();
     }
-}
+};
 
 // This list is used for a binary search and must be kept in sorted order.
 const char* const kReservedKeywordsGLSL[] = {

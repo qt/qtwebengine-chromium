@@ -14,6 +14,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/task/bind_post_task.h"
 #include "build/build_config.h"
+#include "content/browser/bad_message.h"
 #include "content/browser/media/media_devices_util.h"
 #include "content/browser/renderer_host/media/media_stream_manager.h"
 #include "content/browser/renderer_host/media/video_capture_manager.h"
@@ -28,6 +29,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/content_switches.h"
+#include "media/base/media_switches.h"
 #include "media/capture/mojom/video_capture_types.mojom.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -717,13 +719,11 @@ void MediaStreamDispatcherHost::ApplySubCaptureTarget(
 
 void MediaStreamDispatcherHost::SendWheel(
     const base::UnguessableToken& device_id,
-    blink::mojom::CapturedWheelActionPtr action,
-    SendWheelCallback callback) {
+    blink::mojom::CapturedWheelActionPtr action) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (!base::FeatureList::IsEnabled(
           features::kCapturedSurfaceControlKillswitch)) {
-    std::move(callback).Run(CapturedSurfaceControlResult::kUnknownError);
     return;
   }
 
@@ -731,12 +731,11 @@ void MediaStreamDispatcherHost::SendWheel(
       action->relative_y < 0.0 || action->relative_y >= 1.0) {
     ReceivedBadMessage(render_frame_host_id_.child_id,
                        bad_message::MSDH_SEND_WHEEL_INVALID_ACTION);
-    std::move(callback).Run(CapturedSurfaceControlResult::kUnknownError);
     return;
   }
 
   media_stream_manager_->SendWheel(render_frame_host_id_, device_id,
-                                   std::move(action), std::move(callback));
+                                   std::move(action), base::DoNothing());
 }
 
 void MediaStreamDispatcherHost::UpdateZoomLevel(
@@ -887,6 +886,10 @@ MediaStreamDispatcherHost::ValidateControlsForGenerateStreams(
             blink::mojom::PreferredDisplaySurface::MONITOR) {
       return bad_message::MSDH_EXCLUDE_MONITORS_BUT_PREFERRED_MONITOR_REQUESTED;
     }
+  }
+
+  if (controls.restrict_own_audio && !media::IsRestrictOwnAudioSupported()) {
+    return bad_message::MSDH_RESTRICT_OWN_AUDIO_IS_SET_WHEN_UNSUPPORTED;
   }
 
   return std::nullopt;

@@ -1,6 +1,7 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -41,7 +42,7 @@ export class SearchResultsPane extends UI.Widget.VBox {
   private matchesExpandedCount: number;
 
   constructor(searchConfig: Workspace.SearchConfig.SearchConfig) {
-    super(true);
+    super({useShadowDom: true});
     this.searchConfig = searchConfig;
 
     this.searchResults = [];

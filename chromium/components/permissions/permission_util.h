@@ -10,7 +10,9 @@
 #include "build/build_config.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
+#include "components/permissions/permission_decision.h"
 #include "components/permissions/permission_prompt.h"
+#include "components/permissions/permission_uma_util.h"
 #include "content/public/browser/permission_result.h"
 #include "services/network/public/mojom/permissions_policy/permissions_policy_feature.mojom-forward.h"
 #include "third_party/blink/public/mojom/permissions/permission_status.mojom.h"
@@ -28,6 +30,7 @@ class GURL;
 
 namespace permissions {
 class PermissionRequest;
+struct PermissionRequestData;
 
 // This enum backs a UMA histogram, so it must be treated as append-only.
 enum class PermissionAction {
@@ -57,6 +60,16 @@ class PermissionUtil {
 
   // Returns the permission string for the given permission.
   static std::string GetPermissionString(ContentSettingsType);
+
+  // Returns the request type uma value for the given permissions.
+  static RequestTypeForUma GetUmaValueForRequests(
+      const std::vector<std::unique_ptr<PermissionRequest>>& requests);
+
+  static RequestTypeForUma GetUmaValueForRequests(
+      const std::vector<base::WeakPtr<PermissionRequest>>& requests);
+
+  // Returns the request type uma value for the given request type.
+  static RequestTypeForUma GetUmaValueForRequestType(RequestType request_type);
 
   // Returns the gesture type corresponding to whether a permission request is
   // made with or without a user gesture.
@@ -136,6 +149,14 @@ class PermissionUtil {
   static ContentSetting PermissionStatusToContentSetting(
       blink::mojom::PermissionStatus status);
 
+  // Helper method to convert PermissionDecision to PermissionStatus.
+  static content::PermissionStatus PermissionDecisionToPermissionStatus(
+      PermissionDecision decision);
+
+  // Helper method to convert PermissionDecision to ContentSetting.
+  static ContentSetting PermissionDecisionToContentSetting(
+      PermissionDecision decision);
+
   // Helper methods to convert ContentSetting to PermissionStatus and vice
   // versa.
   static blink::mojom::PermissionStatus ContentSettingToPermissionStatus(
@@ -172,7 +193,7 @@ class PermissionUtil {
   static bool HasUserGesture(PermissionPrompt::Delegate* delegate);
 
   static bool CanPermissionRequestIgnoreStatus(
-      const PermissionRequestData& request,
+      const std::unique_ptr<PermissionRequestData>& request,
       content::PermissionStatusSource source);
 
   // Returns `true` if the current platform support permission chips.

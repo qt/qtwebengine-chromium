@@ -43,6 +43,7 @@
 #include "content/browser/renderer_host/agent_scheduling_group_host.h"
 #include "content/browser/renderer_host/frame_token_message_queue.h"
 #include "content/browser/renderer_host/input/touch_emulator_impl.h"
+#include "content/browser/renderer_host/mojo_render_input_router_delegate_impl.h"
 #include "content/browser/renderer_host/render_frame_metadata_provider_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
 #include "content/browser/renderer_host/render_widget_host_view_base.h"
@@ -142,7 +143,6 @@ class VisibleTimeRequestTrigger;
 //   * Main frame for webpage (root is `blink::WebView`)
 //   * Child frame for webpage (root is RenderFrame)
 //   * Popups (root is RenderWidget)
-//   * Pepper Fullscreen (root is RenderWidget)
 //
 // Destruction of the RenderWidgetHost will trigger destruction of the
 // RenderWidget iff RenderWidget is the root of the renderer object graph.
@@ -388,9 +388,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void OnInvalidInputEventSource() override;
   void OnInputIgnored(const blink::WebInputEvent& event) override;
   input::StylusInterface* GetStylusInterface() override;
-  bool IsRendererProcessBlocked() override;
-  void OnInputEventAckTimeout() override;
+  void OnInputEventAckTimeout(base::TimeTicks ack_timeout_ts) override;
   void RendererIsResponsive() override;
+  void DidOverscroll(blink::mojom::DidOverscrollParamsPtr params) override;
 
   // Update the stored set of visual properties for the renderer. If 'propagate'
   // is true, the new properties will be sent to the renderer process.
@@ -420,6 +420,9 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void SetView(RenderWidgetHostViewBase* view);
 
   RenderWidgetHostDelegate* delegate() const { return delegate_; }
+  MojoRenderInputRouterDelegateImpl* mojo_rir_delegate() {
+    return &mojo_rir_delegate_impl_;
+  }
 
   // Bind the provided widget interfaces.
   void BindWidgetInterfaces(
@@ -456,6 +459,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   void SetFrameDepth(unsigned int depth);
   void SetIntersectsViewport(bool intersects);
   void UpdatePriority();
+  void SetShouldContributePriorityToProcess(
+      bool should_contribute_priority_to_process);
 
   // Tells the renderer to die and optionally delete |this|.
   void ShutdownAndDestroyWidget(bool also_delete);
@@ -547,10 +552,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
     return visual_properties_ack_pending_;
   }
 
-  // Requests the generation of a new CompositorFrame from the renderer.
+  // Requests the generation of a new CompositorFrame from the renderer
+  // by forcing a new surface id.
   // It will return false if the renderer is not ready (e.g. there's an
   // in flight change).
-  bool RequestRepaintForTesting();
+  bool RequestRepaintOnNewSurface();
 
   // Called after every cross-document navigation. Note that for prerender
   // navigations, this is called before the renderer is shown.
@@ -1016,8 +1022,12 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Requests a commit and forced redraw in the renderer compositor.
   void ForceRedrawForTesting();
 
+  // Indicates the page is discarding. The renderer process will get
+  // cpu-priority boosted to run discard logic.
+  void SetIsDiscarding(bool is_discarding);
+
  protected:
-  // |routing_id| must not be MSG_ROUTING_NONE.
+  // |routing_id| must not be IPC::mojom::kRoutingIdNone.
   // If this object outlives |delegate|, DetachDelegate() must be called when
   // |delegate| goes away. |site_instance_group| will outlive this
   // widget but we store it via a `base::SafeRef` instead of a scoped_refptr to
@@ -1179,6 +1189,8 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // changed its state of being blocked.
   void RenderProcessBlockedStateChanged(bool blocked);
 
+  void NotifyVizOfPageVisibilityUpdates();
+
   // 1. Grants permissions to URL (if any)
   // 2. Grants permissions to filenames
   // 3. Grants permissions to file system files.
@@ -1188,7 +1200,7 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // Implementation of |hang_monitor_restarter| callback passed to
   // RenderWidgetHostDelegate::RendererUnresponsive if the unresponsiveness
   // was noticed because of input event ack timeout.
-  void RestartInputEventAckTimeoutIfNecessary();
+  void RestartRenderInputRouterInputEventAckTimeout();
 
   void SetupRenderInputRouter();
   void SetupInputRouter();
@@ -1243,6 +1255,11 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // True if |Destroy()| has been called.
   bool destroyed_ = false;
 
+  // Handles mojo connections for RenderInputRouterDelegate[Client] interface to
+  // allow sycing information between the Browser and the GPU process for input
+  // handling with InputVizard.
+  MojoRenderInputRouterDelegateImpl mojo_rir_delegate_impl_{this};
+
   // Our delegate, which wants to know mainly about keyboard events.
   // It will remain non-null until DetachDelegate() is called.
   raw_ptr<RenderWidgetHostDelegate, FlakyDanglingUntriaged> delegate_;
@@ -1279,6 +1296,10 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // time.
   base::TimeTicks first_shown_time_;
 
+  // Records the latest time when |this| widget's visibility state changes from
+  // hidden to shown.
+  base::TimeTicks latest_shown_time_;
+
   // Indicates whether the renderer host has received the first metadata signal
   // implying the renderer has pushed content to cc.
   bool first_content_metadata_received_ = false;
@@ -1300,6 +1321,14 @@ class CONTENT_EXPORT RenderWidgetHostImpl
   // this is independent of |is_hidden_|. For widgets not associated with
   // RenderFrame/View, assume false.
   bool intersects_viewport_ = false;
+
+  // While the main frame is being discarded, the renderer process need to be
+  // foreground.
+  // This is only effective when WebContentsDiscard feature is enabled.
+  bool is_discarding_ = false;
+
+  // Indicates whether this widget contributes to the priority of the process.
+  bool should_contribute_priority_to_process_ = true;
 
   // Determines whether the page is mobile optimized or not.
   bool is_mobile_optimized_ = false;

@@ -5,10 +5,6 @@
 # Toolchain-related configuration that may be needed outside the context of the
 # toolchain() rules themselves.
 
-import("//build/config/cast.gni")
-import("//build/config/chrome_build.gni")
-import("//build_overrides/build.gni")
-
 declare_args() {
   # If this is set to true, we use the revision in the llvm repo to determine
   # the CLANG_REVISION to use, instead of the version hard-coded into
@@ -36,21 +32,13 @@ declare_args() {
   toolchain_allows_use_partition_alloc_as_malloc = true
 }
 
-if (generate_linker_map) {
-  assert(is_official_build || is_castos || is_cast_android,
-         "Linker map files should only be generated when is_official_build = " +
-             "true or is_castos = true or is_cast_android = true")
-  assert(current_os == "android" || current_os == "linux" ||
-             target_os == "android" || target_os == "linux" ||
-             target_os == "chromeos",
-         "Linker map files should only be generated for Android, Linux, " +
-             "or ChromeOS.")
-}
-
 declare_args() {
   if (llvm_android_mainline) {  # https://crbug.com/1481060
     clang_version = "17"
+  } else if (llvm_force_head_revision) {
+    clang_version = "22"
   } else {
+    # TODO(crbug.com/432036065): Remove in the next Clang roll.
     clang_version = "21"
   }
 }

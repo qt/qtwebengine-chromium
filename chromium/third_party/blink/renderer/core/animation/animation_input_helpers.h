@@ -9,18 +9,12 @@
 #include "third_party/blink/renderer/core/css/css_property_names.h"
 #include "third_party/blink/renderer/platform/wtf/allocator/allocator.h"
 
-namespace WTF {
-class String;
-}  // namespace WTF
-
 namespace blink {
 
 class Document;
-class Element;
 class ExceptionState;
 class PropertyHandle;
 class TimingFunction;
-class QualifiedName;
 
 class CORE_EXPORT AnimationInputHelpers {
   STATIC_ONLY(AnimationInputHelpers);
@@ -28,12 +22,6 @@ class CORE_EXPORT AnimationInputHelpers {
  public:
   static CSSPropertyID KeyframeAttributeToCSSProperty(const WTF::String&,
                                                       const Document&);
-  static CSSPropertyID KeyframeAttributeToPresentationAttribute(
-      const WTF::String&,
-      const Element*);
-  static const QualifiedName* KeyframeAttributeToSVGAttribute(
-      const WTF::String&,
-      Element*);
   static scoped_refptr<TimingFunction> ParseTimingFunction(const WTF::String&,
                                                            Document*,
                                                            ExceptionState&);

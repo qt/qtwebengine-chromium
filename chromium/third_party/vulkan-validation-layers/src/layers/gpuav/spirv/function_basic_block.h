@@ -62,6 +62,13 @@ struct BasicBlock {
     // For blocks that are a Loop hader, points to the Merge Target
     uint32_t loop_header_merge_target_ = 0;
     bool IsLoopHeader() const { return loop_header_merge_target_ != 0; }
+
+    // If block terminates with OpBranchConditional/OpSwtich, mark the ID they point to
+    uint32_t selection_merge_target_ = 0;
+    uint32_t branch_conditional_true_ = 0;
+    uint32_t branch_conditional_false_ = 0;
+    uint32_t switch_default_ = 0;
+    std::vector<uint32_t> switch_cases_;
 };
 
 // Control Flow can be tricky, so having this as a List allows use to easily add/remove/edit blocks around without worrying about
@@ -71,9 +78,9 @@ using BasicBlockIt = BasicBlockList::iterator;
 
 struct Function {
     // Used to add functions building up SPIR-V the first time
-    Function(Module& module, std::unique_ptr<Instruction> function_inst);
+    Function(Module& module, std::unique_ptr<Instruction> function_inst, bool is_entry_point);
     // Used to link in new functions
-    Function(Module& module) : module_(module), instrumentation_added_(true) {}
+    Function(Module& module) : module_(module), is_entry_point_(false), instrumentation_added_(true) {}
 
     void ToBinary(std::vector<uint32_t>& out);
 
@@ -109,6 +116,9 @@ struct Function {
     uint32_t stage_info_y_id_ = 0;
     uint32_t stage_info_z_id_ = 0;
     uint32_t stage_info_w_id_ = 0;
+
+    // Lets us know if the function on OpReturn will exit the shader or nor
+    const bool is_entry_point_;
 
     // The main usage of this is for things like DebugPrintf that might want to actually run over previously instrumented functions
     const bool instrumentation_added_;

@@ -17,8 +17,7 @@
 #include "src/protozero/filtering/filter_bytecode_parser.h"
 
 #include "perfetto/base/logging.h"
-#include "perfetto/ext/base/hash.h"
-#include "perfetto/protozero/packed_repeated_fields.h"
+#include "perfetto/ext/base/fnv_hash.h"
 #include "perfetto/protozero/proto_decoder.h"
 #include "perfetto/protozero/proto_utils.h"
 #include "src/protozero/filtering/filter_bytecode_common.h"
@@ -56,7 +55,7 @@ bool FilterBytecodeParser::LoadInternal(const uint8_t* bytecode_data,
   if (packed_parse_err || words.empty())
     return false;
 
-  perfetto::base::Hasher hasher;
+  perfetto::base::FnvHasher hasher;
   for (size_t i = 0; i < words.size() - 1; ++i)
     hasher.Update(words[i]);
 
@@ -71,7 +70,7 @@ bool FilterBytecodeParser::LoadInternal(const uint8_t* bytecode_data,
 
   words.pop_back();  // Pop the checksum.
 
-  // Temporay storage for each message. Cleared on every END_OF_MESSAGE.
+  // Temporary storage for each message. Cleared on every END_OF_MESSAGE.
   std::vector<uint32_t> direct_indexed_fields;
   std::vector<uint32_t> ranges;
   uint32_t max_msg_index = 0;
@@ -232,7 +231,7 @@ FilterBytecodeParser::QueryResult FilterBytecodeParser::Query(
         break;
       }
     }  // for (word in ranges)
-  }    // if (field_id >= num_directly_indexed)
+  }  // if (field_id >= num_directly_indexed)
 
   res.allowed = (field_state & kAllowed) != 0;
   res.nested_msg_index = field_state & ~kAllowed;

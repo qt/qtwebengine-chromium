@@ -2,20 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/containers/contains.h"
 #include "base/containers/heap_array.h"
-#include "base/not_fatal_until.h"
+#include "base/containers/span.h"
 #include "base/notreached.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/framebuffer_completeness_cache.h"
@@ -730,7 +726,7 @@ GLenum Framebuffer::IsPossiblyComplete(const FeatureInfo* feature_info) const {
       // even though ES3 allows it, it is still forbidden to ensure consistent
       // behaviors across platforms.
       // Note: Framebuffer::GetFramebufferValidSize relies on this behavior.
-      return GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS_EXT;
+      return GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS;
     }
 
     if (samples < 0) {
@@ -868,20 +864,26 @@ bool Framebuffer::IsCleared() const {
 }
 
 GLenum Framebuffer::GetDrawBuffer(GLenum draw_buffer) const {
-  GLsizei index = static_cast<GLsizei>(
-      draw_buffer - GL_DRAW_BUFFER0_ARB);
+  GLsizei index = static_cast<GLsizei>(draw_buffer - GL_DRAW_BUFFER0);
   CHECK(index >= 0 &&
         index < static_cast<GLsizei>(manager_->max_draw_buffers_));
   return draw_buffers_[index];
 }
 
-void Framebuffer::SetDrawBuffers(GLsizei n, const GLenum* bufs) {
-  DCHECK(n <= static_cast<GLsizei>(manager_->max_draw_buffers_));
-  for (GLsizei ii = 0; ii < n; ++ii) {
+void Framebuffer::SetDrawBuffers(GLsizei spanification_suspected_redundant_n,
+                                 base::span<const GLenum> bufs) {
+  // TODO(crbug.com/431824301): Remove unneeded parameter once validated to be
+  // redundant in M143.
+  CHECK(static_cast<size_t>(spanification_suspected_redundant_n) == bufs.size(),
+        base::NotFatalUntil::M143);
+  DCHECK(spanification_suspected_redundant_n <=
+         static_cast<GLsizei>(manager_->max_draw_buffers_));
+  for (GLsizei ii = 0; ii < spanification_suspected_redundant_n; ++ii) {
     draw_buffers_[ii] = bufs[ii];
     adjusted_draw_buffers_[ii] = bufs[ii];
   }
-  for (uint32_t ii = n; ii < manager_->max_draw_buffers_; ++ii) {
+  for (uint32_t ii = spanification_suspected_redundant_n;
+       ii < manager_->max_draw_buffers_; ++ii) {
     draw_buffers_[ii] = GL_NONE;
     adjusted_draw_buffers_[ii] = GL_NONE;
   }
@@ -1114,7 +1116,7 @@ gfx::Size Framebuffer::GetFramebufferValidSize() const {
   // all of the attachments have the same dimensions. So it's okay to just pick
   // any arbitrary attachment and return it as the min size.
   auto it = attachments_.begin();
-  CHECK(it != attachments_.end(), base::NotFatalUntil::M130);
+  CHECK(it != attachments_.end());
   const auto& attachment = it->second;
   return gfx::Size(attachment->width(), attachment->height());
 }

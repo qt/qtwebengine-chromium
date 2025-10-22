@@ -18,7 +18,7 @@
 # ~~~
 cmake_minimum_required(VERSION 3.22.1)
 
-project(VULKAN_LOADER VERSION 1.4.311 LANGUAGES C)
+project(VULKAN_LOADER VERSION 1.4.323 LANGUAGES C)
 
 option(CODE_COVERAGE "Enable Code Coverage" OFF)
 if (CODE_COVERAGE)
@@ -108,7 +108,7 @@ elseif(APPLE)
     if (CMAKE_SYSTEM_NAME STREQUAL "Darwin")
         target_compile_definitions(platform_wsi INTERFACE VK_USE_PLATFORM_MACOS_MVK)
     endif()
-elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU")
+elseif(CMAKE_SYSTEM_NAME MATCHES "Linux|BSD|DragonFly|GNU|CYGWIN")
     option(BUILD_WSI_XCB_SUPPORT "Build XCB WSI support" ON)
     option(BUILD_WSI_XLIB_SUPPORT "Build Xlib WSI support" ON)
     option(BUILD_WSI_XLIB_XRANDR_SUPPORT "Build X11 Xrandr WSI support" ON)
@@ -255,6 +255,19 @@ if (NOT (WIN32 OR APPLE))
     endif()
     if (NOT (HAVE_SECURE_GETENV OR HAVE___SECURE_GETENV))
         message(WARNING "Using non-secure environmental lookups. This loader will not properly disable environent variables when run with elevated permissions.")
+    endif()
+endif()
+
+if (NOT (WIN32))
+    # Check for the existance of the realpath() command
+    include(CheckFunctionExists)
+
+    check_function_exists(realpath HAVE_REALPATH)
+
+    if (HAVE_REALPATH)
+        target_compile_definitions(loader_common_options INTERFACE HAVE_REALPATH)
+    else()
+        message(INFO "Platform support for realpath() is missing. Using fallback path normalization implementation.")
     endif()
 endif()
 

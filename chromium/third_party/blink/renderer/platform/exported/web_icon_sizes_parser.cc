@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "third_party/blink/public/platform/web_icon_sizes_parser.h"
 
@@ -47,9 +43,9 @@ static inline wtf_size_t FindEndOfWord(const String& string, wtf_size_t start) {
 static inline int PartialStringToInt(const String& string,
                                      wtf_size_t start,
                                      wtf_size_t end) {
-  return WTF::VisitCharacters(
+  return VisitCharacters(
       StringView(string, start, end - start), [](auto chars) {
-        return CharactersToInt(chars, WTF::NumberParsingOptions(), nullptr);
+        return CharactersToInt(chars, NumberParsingOptions(), nullptr);
       });
 }
 

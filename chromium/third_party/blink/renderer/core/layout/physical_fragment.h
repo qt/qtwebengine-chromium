@@ -17,14 +17,14 @@
 #include "third_party/blink/renderer/core/editing/forward.h"
 #include "third_party/blink/renderer/core/layout/anchor_evaluator_impl.h"
 #include "third_party/blink/renderer/core/layout/break_token.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_size.h"
 #include "third_party/blink/renderer/core/layout/ink_overflow.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/physical_fragment_link.h"
 #include "third_party/blink/renderer/core/layout/style_variant.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
+#include "third_party/blink/renderer/platform/geometry/physical_size.h"
 #include "third_party/blink/renderer/platform/graphics/touch_action.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
 
@@ -111,8 +111,8 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
   struct PropagatedData : public GarbageCollected<PropagatedData> {
    public:
     PropagatedData(
-        const HeapVector<Member<LayoutBoxModelObject>>* sticky_descendants,
-        const HeapVector<Member<Element>>* snap_areas,
+        const GCedHeapVector<Member<LayoutBoxModelObject>>* sticky_descendants,
+        const GCedHeapVector<Member<Element>>* snap_areas,
         const Member<const LayoutObject> scroll_initial_target)
         : sticky_descendants(sticky_descendants),
           snap_areas(snap_areas),
@@ -122,8 +122,9 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
       visitor->Trace(snap_areas);
       visitor->Trace(scroll_initial_target);
     }
-    Member<const HeapVector<Member<LayoutBoxModelObject>>> sticky_descendants;
-    Member<const HeapVector<Member<Element>>> snap_areas;
+    Member<const GCedHeapVector<Member<LayoutBoxModelObject>>>
+        sticky_descendants;
+    Member<const GCedHeapVector<Member<Element>>> snap_areas;
     Member<const LayoutObject> scroll_initial_target;
   };
 
@@ -237,8 +238,8 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
   bool IsCSSBox() const { return !IsLineBox() && !IsFragmentainerBox(); }
 
   bool IsBlockFlow() const;
-  bool IsAnonymousBlock() const {
-    return IsCSSBox() && layout_object_->IsAnonymousBlock();
+  bool IsAnonymousBlockFlow() const {
+    return IsCSSBox() && layout_object_->IsAnonymousBlockFlow();
   }
   bool IsFrameSet() const { return IsCSSBox() && layout_object_->IsFrameSet(); }
   bool IsListMarker() const {
@@ -511,6 +512,7 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
     DumpNodeName = 0x100,
     DumpItems = 0x200,
     DumpLegacyDescendants = 0x400,
+    DumpBreakInfo = 0x800,
     DumpAll = -1
   };
   typedef int DumpFlags;
@@ -545,12 +547,13 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
     STACK_ALLOCATED();
 
    public:
-    PostLayoutChildLinkList(wtf_size_t count,
-                            const PhysicalFragmentLink* buffer)
-        : count_(count), buffer_(buffer) {}
+    PostLayoutChildLinkList(base::span<const PhysicalFragmentLink> buffer)
+        : buffer_(buffer) {}
 
     class ConstIterator {
       STACK_ALLOCATED();
+      using BaseIterator =
+          base::span<const PhysicalFragmentLink>::const_iterator;
 
      public:
       using iterator_category = std::bidirectional_iterator_tag;
@@ -561,9 +564,8 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
 
       ConstIterator() = default;
 
-      ConstIterator(const PhysicalFragmentLink* current, wtf_size_t size)
-          // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-          : current_(current), end_(UNSAFE_TODO(current + size)) {
+      ConstIterator(BaseIterator current, BaseIterator end)
+          : current_(current), end_(end) {
         SkipInvalidAndSetPostLayout();
       }
 
@@ -571,8 +573,7 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
       const PhysicalFragmentLink* operator->() const { return &post_layout_; }
 
       ConstIterator& operator++() {
-        // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-        UNSAFE_TODO(++current_);
+        ++current_;
         SkipInvalidAndSetPostLayout();
         return *this;
       }
@@ -590,8 +591,7 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
 
      private:
       void SkipInvalidAndSetPostLayout() {
-        // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-        for (; current_ != end_; UNSAFE_TODO(++current_)) {
+        for (; current_ != end_; ++current_) {
           const PhysicalFragment* fragment = current_->fragment.Get();
           if (fragment->IsLayoutObjectDestroyedOrMoved()) [[unlikely]] {
             continue;
@@ -604,24 +604,24 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
         }
       }
 
-      const PhysicalFragmentLink* current_ = nullptr;
-      const PhysicalFragmentLink* end_ = nullptr;
+      BaseIterator current_;
+      BaseIterator end_;
       PhysicalFragmentLink post_layout_;
     };
     using const_iterator = ConstIterator;
 
-    const_iterator begin() const { return const_iterator(buffer_, count_); }
+    const_iterator begin() const {
+      return const_iterator(buffer_.begin(), buffer_.end());
+    }
     const_iterator end() const {
-      // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-      return const_iterator(UNSAFE_TODO(buffer_ + count_), 0);
+      return const_iterator(buffer_.end(), buffer_.end());
     }
 
-    wtf_size_t size() const { return count_; }
-    bool empty() const { return count_ == 0; }
+    wtf_size_t size() const { return buffer_.size(); }
+    bool empty() const { return buffer_.empty(); }
 
    private:
-    wtf_size_t count_;
-    const PhysicalFragmentLink* buffer_;
+    base::span<const PhysicalFragmentLink> buffer_;
   };
 
   const BreakToken* GetBreakToken() const { return break_token_.Get(); }
@@ -651,12 +651,13 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
   void SetChildrenInvalid() const;
   bool ChildrenValid() const { return children_valid_; }
 
-  const HeapVector<Member<LayoutBoxModelObject>>* StickyDescendants() const {
+  const GCedHeapVector<Member<LayoutBoxModelObject>>* StickyDescendants()
+      const {
     return propagated_data_ ? propagated_data_->sticky_descendants.Get()
                             : nullptr;
   }
-  const HeapVector<Member<LayoutBoxModelObject>>* PropagatedStickyDescendants()
-      const {
+  const GCedHeapVector<Member<LayoutBoxModelObject>>*
+  PropagatedStickyDescendants() const {
     return IsScrollContainer() ? nullptr : StickyDescendants();
   }
 
@@ -667,10 +668,10 @@ class CORE_EXPORT PhysicalFragment : public GarbageCollected<PhysicalFragment> {
     return IsScrollContainer() ? nullptr : ScrollInitialTarget();
   }
 
-  const HeapVector<Member<Element>>* SnapAreas() const {
+  const GCedHeapVector<Member<Element>>* SnapAreas() const {
     return propagated_data_ ? propagated_data_->snap_areas.Get() : nullptr;
   }
-  const HeapVector<Member<Element>>* PropagatedSnapAreas() const {
+  const GCedHeapVector<Member<Element>>* PropagatedSnapAreas() const {
     return IsScrollContainer() ? nullptr : SnapAreas();
   }
 

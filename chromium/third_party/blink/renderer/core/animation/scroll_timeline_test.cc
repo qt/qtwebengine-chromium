@@ -61,8 +61,7 @@ Animation* CreateCompositableTestAnimation(Element* target,
       *target, target->GetDocument().GetStyleResolver().InitialStyle(),
       /* parent_style */ nullptr);
   return MakeGarbageCollected<Animation>(
-      timeline->GetDocument()->GetExecutionContext(), timeline, effect,
-      /*trigger=*/nullptr);
+      timeline->GetDocument()->GetExecutionContext(), timeline, effect);
 }
 
 }  // namespace
@@ -994,6 +993,7 @@ TEST_F(ScrollTimelineTest, ScrollTimelineGetTimelineRange) {
 
   timeline->UpdateSnapshotForTesting();
   EXPECT_EQ(TimelineRange(TimelineRange::ScrollOffsets(0, 300),
+                          TimelineRange::ScrollOffsets(0, 300),
                           TimelineRange::ViewOffsets(0, 0)),
             timeline->GetTimelineRange());
 }
@@ -1029,7 +1029,8 @@ TEST_F(ScrollTimelineTest, ViewTimelineGetTimelineRange) {
   EXPECT_TRUE(timeline->GetTimelineRange().IsEmpty());
 
   timeline->UpdateSnapshotForTesting();
-  EXPECT_EQ(TimelineRange(TimelineRange::ScrollOffsets(100, 300),
+  EXPECT_EQ(TimelineRange(TimelineRange::ScrollOffsets(0, 400),
+                          TimelineRange::ScrollOffsets(100, 300),
                           TimelineRange::ViewOffsets(100, 100)),
             timeline->GetTimelineRange());
 }

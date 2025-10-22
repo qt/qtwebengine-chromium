@@ -29,7 +29,6 @@ class LiveNetwork(Network):
            session: BrowserSessionRunGroup) -> Iterator[LiveNetworkT]:
     with super().open(session):
       with self._traffic_shaper.open(self, session):
-        # TODO: implement
         yield self
 
   def __str__(self) -> str:

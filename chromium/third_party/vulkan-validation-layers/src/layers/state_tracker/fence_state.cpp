@@ -85,13 +85,20 @@ void vvl::Fence::NotifyAndWait(const Location &loc) {
             present_submission_ref = std::move(present_submission_ref_);
             present_submission_ref_.reset();
         }
+        // Cleanup wait semaphores.
+        // NOTE: Functions like QueueWaitIdle put fence in the retired state, still it can have
+        // the list of present semaphores, which are not cleared by QueueWaitIdle when swapchain
+        // maintenance extension is enabled. That's the reason this code is not under kInflight condition.
+        for (auto &semaphore : present_wait_semaphores_) {
+            semaphore->ClearSwapchainWaitInfo();
+        }
+        present_wait_semaphores_.clear();
     }
     if (waiter.valid()) {
         auto result = waiter.wait_until(GetCondWaitTimeout());
         if (result != std::future_status::ready) {
-            logger_.LogError(
-                "INTERNAL-ERROR-VkFence-state-timeout", Handle(), loc,
-                "The Validation Layers hit a timeout waiting for fence state to update (this is most likely a validation bug).");
+            logger_.LogError("INTERNAL-ERROR-VkFence-state-timeout", Handle(), loc,
+                             "The Validation Layers hit a timeout waiting for fence state to update.");
         }
     }
     if (present_submission_ref.has_value()) {
@@ -125,6 +132,10 @@ void vvl::Fence::Reset() {
     completed_ = std::promise<void>();
     waiter_ = std::shared_future<void>(completed_.get_future());
     present_submission_ref_.reset();
+
+    // Do not reset swapchain-in-use state of each semaphore here, only stop the tracking.
+    // In order to reset swapchain-in-use state we need to wait on the fence.
+    present_wait_semaphores_.clear();
 }
 
 void vvl::Fence::Import(VkExternalFenceHandleTypeFlagBits handle_type, VkFenceImportFlags flags) {
@@ -182,4 +193,11 @@ void vvl::Fence::SetPresentSubmissionRef(const SubmissionReference &present_subm
 
     assert(present_submission_ref.queue != nullptr);
     present_submission_ref_ = present_submission_ref;
+}
+
+void vvl::Fence::SetPresentWaitSemaphores(vvl::span<std::shared_ptr<vvl::Semaphore>> present_wait_semaphores) {
+    present_wait_semaphores_.clear();
+    for (const auto &semaphore : present_wait_semaphores) {
+        present_wait_semaphores_.emplace_back(semaphore);
+    }
 }

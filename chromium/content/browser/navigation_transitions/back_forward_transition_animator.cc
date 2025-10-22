@@ -4,10 +4,12 @@
 
 #include "content/browser/navigation_transitions/back_forward_transition_animator.h"
 
+#include "base/debug/crash_logging.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/numerics/ranges.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "cc/slim/layer.h"
 #include "cc/slim/solid_color_layer.h"

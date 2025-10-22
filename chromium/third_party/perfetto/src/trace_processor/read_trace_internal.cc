@@ -24,12 +24,12 @@
 #include "perfetto/protozero/proto_utils.h"
 #include "perfetto/trace_processor/trace_processor.h"
 
+#include "perfetto/ext/base/status_macros.h"
 #include "perfetto/trace_processor/trace_blob.h"
 #include "perfetto/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/forwarding_trace_parser.h"
 #include "src/trace_processor/importers/proto/proto_trace_tokenizer.h"
 #include "src/trace_processor/util/gzip_utils.h"
-#include "src/trace_processor/util/status_macros.h"
 
 #include "protos/perfetto/trace/trace.pbzero.h"
 #include "protos/perfetto/trace/trace_packet.pbzero.h"
@@ -94,8 +94,8 @@ base::Status ReadTraceUnfinalized(
         RETURN_IF_ERROR(tp->Parse(std::move(slice)));
         bytes_read += slice_size;
       }  // while (slices)
-    }    // if (mapped.IsValid())
-  }      // if (use_mmap)
+    }  // if (mapped.IsValid())
+  }  // if (use_mmap)
   if (bytes_read == 0)
     PERFETTO_LOG("Cannot use mmap on this system. Falling back on read()");
 #endif  // PERFETTO_HAS_MMAP()

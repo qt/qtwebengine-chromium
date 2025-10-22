@@ -18,7 +18,7 @@ mojom("mojo_bindings") {
 
 build_webui("build") {
   grd_prefix = "cr_components_history_embeddings"
-  non_web_component_files = [
+  ts_files = [
     "browser_proxy.ts",
     "filter_chips.html.ts",
     "filter_chips.ts",
@@ -33,7 +33,6 @@ build_webui("build") {
     "result_image.css",
   ]
   icons_html_files = [ "icons.html" ]
-  html_to_wrapper_template = "detect"
 
   mojo_files_deps = [ ":mojo_bindings_ts__generator" ]
   mojo_files = [ "$target_gen_dir/history_embeddings.mojom-webui.ts" ]
@@ -41,7 +40,6 @@ build_webui("build") {
   ts_out_dir =
       "$root_gen_dir/ui/webui/resources/tsc/cr_components/history_embeddings"
   ts_composite = true
-  ts_tsconfig_base = "//tools/typescript/tsconfig_base_lit_389737066.json"
   ts_deps = [
     "../page_image_service:build_ts",
     "//third_party/lit/v3_0:build_ts",

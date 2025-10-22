@@ -361,6 +361,10 @@ bool PreCallValidateGetPhysicalDeviceScreenPresentationSupportQNX(VkPhysicalDevi
                                                                   struct _screen_window* window,
                                                                   const ErrorObject& error_obj) const override;
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+bool PreCallValidateGetPhysicalDeviceExternalTensorPropertiesARM(VkPhysicalDevice physicalDevice,
+                                                                 const VkPhysicalDeviceExternalTensorInfoARM* pExternalTensorInfo,
+                                                                 VkExternalTensorPropertiesARM* pExternalTensorProperties,
+                                                                 const ErrorObject& error_obj) const override;
 bool PreCallValidateGetPhysicalDeviceOpticalFlowImageFormatsNV(VkPhysicalDevice physicalDevice,
                                                                const VkOpticalFlowImageFormatInfoNV* pOpticalFlowImageFormatInfo,
                                                                uint32_t* pFormatCount,
@@ -369,6 +373,19 @@ bool PreCallValidateGetPhysicalDeviceOpticalFlowImageFormatsNV(VkPhysicalDevice 
 bool PreCallValidateGetPhysicalDeviceCooperativeVectorPropertiesNV(VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount,
                                                                    VkCooperativeVectorPropertiesNV* pProperties,
                                                                    const ErrorObject& error_obj) const override;
+bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM(
+    VkPhysicalDevice physicalDevice, uint32_t queueFamilyIndex, uint32_t* pQueueFamilyDataGraphPropertyCount,
+    VkQueueFamilyDataGraphPropertiesARM* pQueueFamilyDataGraphProperties, const ErrorObject& error_obj) const override;
+bool PreCallValidateGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM(
+    VkPhysicalDevice physicalDevice,
+    const VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM* pQueueFamilyDataGraphProcessingEngineInfo,
+    VkQueueFamilyDataGraphProcessingEnginePropertiesARM* pQueueFamilyDataGraphProcessingEngineProperties,
+    const ErrorObject& error_obj) const override;
+#ifdef VK_USE_PLATFORM_OHOS
+bool PreCallValidateCreateSurfaceOHOS(VkInstance instance, const VkSurfaceCreateInfoOHOS* pCreateInfo,
+                                      const VkAllocationCallbacks* pAllocator, VkSurfaceKHR* pSurface,
+                                      const ErrorObject& error_obj) const override;
+#endif  // VK_USE_PLATFORM_OHOS
 bool PreCallValidateGetPhysicalDeviceCooperativeMatrixFlexibleDimensionsPropertiesNV(
     VkPhysicalDevice physicalDevice, uint32_t* pPropertyCount, VkCooperativeMatrixFlexibleDimensionsPropertiesNV* pProperties,
     const ErrorObject& error_obj) const override;

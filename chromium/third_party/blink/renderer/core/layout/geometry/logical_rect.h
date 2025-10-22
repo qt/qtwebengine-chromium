@@ -10,10 +10,6 @@
 #include "third_party/blink/renderer/core/layout/geometry/logical_size.h"
 #include "ui/gfx/geometry/rect_f.h"
 
-namespace WTF {
-class String;
-}  // namespace WTF
-
 namespace blink {
 
 // LogicalRect is the position and size of a rect (typically a fragment)
@@ -62,9 +58,7 @@ struct CORE_EXPORT LogicalRect {
   }
   LogicalOffset EndOffset() const { return offset + size; }
 
-  constexpr bool operator==(const LogicalRect& other) const {
-    return other.offset == offset && other.size == size;
-  }
+  constexpr bool operator==(const LogicalRect& other) const = default;
 
   LogicalRect operator+(const LogicalOffset& additional_offset) const {
     return {offset + additional_offset, size};

@@ -12,7 +12,7 @@ import re
 import shlex
 import subprocess
 import time
-from typing import Iterable, Optional, TextIO, Tuple
+from typing import TYPE_CHECKING, Iterable, Optional, TextIO
 
 from typing_extensions import override
 
@@ -21,7 +21,11 @@ from crossbench.helper.cwd import ChangeCWD
 from crossbench.helper.path_finder import WprGoToolFinder
 from crossbench.parse import NumberParser, PathParser
 from crossbench.path import AnyPath, LocalPath
-from crossbench.plt import PLATFORM, Platform, TupleCmdArgs
+from crossbench.plt import PLATFORM, Platform
+
+if TYPE_CHECKING:
+  from crossbench.plt.types import TupleCmdArgs
+
 
 _WPR_PORT_RE: re.Pattern[str] = re.compile(r".*Starting server on "
                                            r"(?P<protocol>http|https)://"
@@ -74,8 +78,8 @@ class WprBase(abc.ABC):
       # Assuming the binary path is precompiled and executable.
       self._go_cmd = (self._bin_path,)
       if self._platform.is_local:
-        if local_wpr_go := WprGoToolFinder(self._platform).path:
-          wpr_root = self._platform.local_path(local_wpr_go.parents[1])
+        if local_wpr_go := WprGoToolFinder(self._platform).local_path:
+          wpr_root = local_wpr_go.parents[1]
         else:
           raise ValueError(
               f"Could not find web_page_replay_go on {self._platform}")
@@ -113,9 +117,9 @@ class WprBase(abc.ABC):
         raise ValueError(f"Injected script path cannot contain ',': {script}")
       if not self._platform.is_file(script):
         raise ValueError(f"Injected script does not exist: {script}")
-    self._inject_scripts: Tuple[AnyPath, ...] = tuple(inject_scripts)
+    self._inject_scripts: tuple[AnyPath, ...] = tuple(inject_scripts)
 
-  def _validate_ports(self, http_port: int, https_port: int) -> Tuple[int, int]:
+  def _validate_ports(self, http_port: int, https_port: int) -> tuple[int, int]:
     if http_port == 0:
       logging.debug("WPR: using auto-port for http")
     else:
@@ -170,8 +174,8 @@ class WprBase(abc.ABC):
 
   def start(self) -> None:
     try:
+      atexit.register(self.stop, force_shutdown=True)
       self._start_wpr()
-      atexit.register(self.stop)
       logging.info("WPR: waiting for startup...")
       self._wait_for_startup()
       logging.info(("WPR: Started wpr.go %s: "
@@ -198,7 +202,10 @@ class WprBase(abc.ABC):
     with ChangeCWD(work_dir):
       logging.debug("Logging to %s", self._log_path)
       self._process = self._platform.popen(
-          *go_cmd, stdout=self._log_file, stderr=self._log_file)
+          *go_cmd,
+          stdout=self._log_file,
+          stderr=self._log_file,
+          stdin=subprocess.DEVNULL)
     if not self._process:
       raise WprStartupError(f"Could not start {type(self).__name__}")
 
@@ -215,21 +222,14 @@ class WprBase(abc.ABC):
       logging.debug("Got exception while reading wpr log file: %s", e)
 
   def _forward_ports(self) -> None:
+    assert self._process, "Should not forward ports if WPR is not running"
     if self._platform.is_remote:
-      self._host_http_port = self._platform.port_forward(
-          0, self._device_http_port)
-      self._host_https_port = self._platform.port_forward(
-          0, self._device_https_port)
+      ports = self._platform.ports
+      self._host_http_port = ports.forward(0, self._device_http_port)
+      self._host_https_port = ports.forward(0, self._device_https_port)
     else:
       self._host_http_port = self._device_http_port
       self._host_https_port = self._device_https_port
-
-  def _stop_forward_ports(self) -> None:
-    if self._platform.is_remote:
-      if self._host_http_port:
-        self._platform.stop_port_forward(self._host_http_port)
-      if self._host_https_port:
-        self._platform.stop_port_forward(self._host_https_port)
 
   def _wait_for_startup(self) -> None:
     assert self._process, "process not started"
@@ -245,7 +245,7 @@ class WprBase(abc.ABC):
         if self._parse_wpr_log_line(line):
           break
     if self._process.poll():
-      self._raise_startup_failure()
+      raise self._startup_failure()
 
     self._forward_ports()
     time.sleep(0.1)
@@ -254,11 +254,11 @@ class WprBase(abc.ABC):
       return
     except url_helper.HTTPError as e:
       logging.debug("Could not query wpr server: %s", e)
-    self._raise_startup_failure()
+    raise self._startup_failure()
 
-  def _raise_startup_failure(self) -> None:
-    raise WprStartupError("Could not start wpr.go.\n"
-                          f"See log for more details: {self._log_path}")
+  def _startup_failure(self) -> WprStartupError:
+    return WprStartupError("Could not start wpr.go.\n"
+                           f"See log for more details: {self._log_path}")
 
   def _parse_wpr_log_line(self, line: str) -> bool:
     if "Failed to start server on" in line:
@@ -297,21 +297,24 @@ class WprBase(abc.ABC):
 
   def stop(self, force_shutdown: bool = False) -> None:
     atexit.unregister(self.stop)
-    if self._process and not force_shutdown:
-      self._shut_down()
-    if self._log_file:
-      self._log_file.close()
-      self._log_file = None
-    if self._process:
-      self._platform.terminate_gracefully(self._process, timeout=1)
-    self._process = None
-    self._stop_forward_ports()
+    if not self._process:
+      return
+    try:
+      if not force_shutdown:
+        self._shut_down()
+      if self._log_file:
+        self._log_file.close()
+        self._log_file = None
+      if force_shutdown:
+        self._platform.terminate_gracefully(self._process, timeout=1)
+    finally:
+      self._process = None
 
   def _shut_down(self) -> None:
-    logging.info("WPR: shutting down recorder.")
+    logging.info("WPR: shutting down %s.", self.NAME)
     try:
       self._open_wpr_cmd_url("command-exit", verbose=False)
-    except url_helper.ConnectionError:
+    except url_helper.RequestException:
       # The above request always fails because WPR closes the connection
       # without response.
       pass

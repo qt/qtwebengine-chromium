@@ -11,7 +11,6 @@
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "base/test/test_simple_task_runner.h"
 #include "components/metrics/log_decoder.h"
@@ -20,7 +19,6 @@
 #include "components/metrics/structured/reporting/structured_metrics_reporting_service.h"
 #include "components/metrics/structured/structured_events.h"
 #include "components/metrics/structured/structured_metrics_client.h"
-#include "components/metrics/structured/structured_metrics_features.h"
 #include "components/metrics/structured/structured_metrics_prefs.h"
 #include "components/metrics/structured/structured_metrics_recorder.h"
 #include "components/metrics/structured/test/test_event_storage.h"
@@ -37,6 +35,8 @@ namespace {
 
 using events::v2::test_project_one::TestEventOne;
 using events::v2::test_project_six::TestEventSeven;
+using ::testing::ElementsAre;
+using ::testing::SizeIs;
 
 // The name hash of "TestProjectOne".
 constexpr uint64_t kProjectOneHash = UINT64_C(16881314472396226433);
@@ -57,6 +57,21 @@ class TestRecorder : public StructuredMetricsClient::RecordingDelegate {
   bool IsReadyToRecord() const override { return true; }
 };
 
+class TestMetricsProvider : public metrics::MetricsProvider {
+ public:
+  TestMetricsProvider() = default;
+  ~TestMetricsProvider() override = default;
+
+  void ProvideSystemProfileMetrics(
+      SystemProfileProto* system_profile) override {}
+
+  void ProvideSystemProfileMetricsWithLogCreationTime(
+      base::TimeTicks log_creation_time,
+      SystemProfileProto* system_profile) override {
+    system_profile->add_field_trial()->set_name_id(1);
+    system_profile->add_field_trial()->set_name_id(2);
+  }
+};
 }  // namespace
 
 class StructuredMetricsServiceTest : public testing::Test {
@@ -69,8 +84,6 @@ class StructuredMetricsServiceTest : public testing::Test {
   ~StructuredMetricsServiceTest() override = default;
 
   void SetUp() override {
-    feature_list_.InitWithFeatures({kEnabledStructuredMetricsService}, {});
-
     Recorder::GetInstance()->SetUiTaskRunner(
         task_environment_.GetMainThreadTaskRunner());
     StructuredMetricsClient::Get()->SetDelegate(&test_recorder_);
@@ -191,7 +204,6 @@ class StructuredMetricsServiceTest : public testing::Test {
   metrics::TestMetricsServiceClient client_;
 
  private:
-  base::test::ScopedFeatureList feature_list_;
   TestingPrefServiceSimple prefs_;
 
   TestRecorder test_recorder_;
@@ -285,6 +297,27 @@ TEST_F(StructuredMetricsServiceTest, SystemProfileFilled) {
   const SystemProfileProto& system_profile = uma_proto.system_profile();
   EXPECT_EQ(system_profile.channel(), client_.GetChannel());
   EXPECT_EQ(system_profile.app_version(), client_.GetVersionString());
+}
+
+TEST_F(StructuredMetricsServiceTest, MetricsProviderDataInSystemProfile) {
+  Init();
+
+  service().RegisterMetricsProvider(std::make_unique<TestMetricsProvider>());
+
+  EnableRecording();
+  EnableReporting();
+
+  StructuredMetricsClient::Record(
+      std::move(TestEventOne().SetTestMetricTwo(1)));
+  Wait();
+
+  service_->Flush(metrics::MetricsLogsEventManager::CreateReason::kUnknown);
+
+  const auto uma_proto = GetPersistedLog();
+  EXPECT_TRUE(uma_proto.has_system_profile());
+  EXPECT_THAT(uma_proto.system_profile().field_trial(), SizeIs(2));
+  EXPECT_EQ(uma_proto.system_profile().field_trial(0).name_id(), 1u);
+  EXPECT_EQ(uma_proto.system_profile().field_trial(1).name_id(), 2u);
 }
 
 TEST_F(StructuredMetricsServiceTest, DoesNotRecordWhenRecordingDisabled) {

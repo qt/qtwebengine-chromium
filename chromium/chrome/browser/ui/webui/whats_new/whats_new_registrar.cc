@@ -12,13 +12,8 @@
 #include "components/lens/lens_features.h"
 #include "components/performance_manager/public/features.h"
 #include "components/user_education/webui/whats_new_registry.h"
-#include "pdf/buildflags.h"
 #include "ui/accessibility/accessibility_features.h"
 #include "ui/webui/resources/js/browser_command/browser_command.mojom.h"
-
-#if BUILDFLAG(ENABLE_PDF)
-#include "pdf/pdf_features.h"
-#endif
 
 namespace whats_new {
 using BrowserCommand = browser_command::mojom::Command;
@@ -34,26 +29,22 @@ void RegisterWhatsNewModules(whats_new::WhatsNewRegistry* registry) {
       WhatsNewModule("Googlepayreauth", "vinnypersky@google.com",
                      BrowserCommand::kOpenPaymentsSettings));
 
-  // 131
-  registry->RegisterModule(WhatsNewModule(
-      lens::features::kLensOverlayTranslateButton, "juanmojica@google.com"));
-
-#if BUILDFLAG(ENABLE_PDF)
-  // 132
-  registry->RegisterModule(WhatsNewModule(chrome_pdf::features::kPdfSearchify,
-                                          "rhalavati@chromium.org"));
-#endif
-
   registry->RegisterModule(
       WhatsNewModule(::features::kReadAnythingReadAloud, "trewin@google.com"));
+
+  // M138
+  registry->RegisterModule(
+      WhatsNewModule("TabGroupsSync", "dpenning@google.com"));
 }
 
 void RegisterWhatsNewEditions(whats_new::WhatsNewRegistry* registry) {
   // Register editions here.
 #if BUILDFLAG(ENABLE_GLIC)
   registry->RegisterEdition(WhatsNewEdition(
-      ::features::kGlic, "tommasin@chromium.org",
-      std::vector<BrowserCommand>{BrowserCommand::kOpenGlic}));
+      ::features::kGlicRollout, "tommasin@chromium.org",
+      std::vector<BrowserCommand>{BrowserCommand::kOpenGlic,
+                                  BrowserCommand::kOpenGlicSettings,
+                                  BrowserCommand::kPrewarmGlicFre}));
 #endif  // BUILDFLAG(ENABLE_GLIC)
 }
 

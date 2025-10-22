@@ -1195,12 +1195,12 @@ class small_range_map {
     }
     value_type *get_value(SmallIndex index) {
         RANGE_ASSERT(index < limit_);  // Must be inbounds
-        return reinterpret_cast<value_type *>(&(backing_store_[index]));
+        return reinterpret_cast<value_type *>(&(key_values_[index]));
     }
     const value_type *get_value(SmallIndex index) const {
         RANGE_ASSERT(index < limit_);                 // Must be inbounds
         RANGE_ASSERT(index == ranges_[index].begin);  // Must be the record at begin
-        return reinterpret_cast<const value_type *>(&(backing_store_[index]));
+        return reinterpret_cast<const value_type *>(&(key_values_[index]));
     }
 
     template <typename Value>
@@ -1303,15 +1303,10 @@ class small_range_map {
     // Stores range boundaries only
     //     open ranges, stored as inverted, invalid range (begining of next, end of prev]
     //     inuse(begin, end) for all entries  on (begin, end]
-    // Used for placement new of T for each range begin.
-    struct alignas(alignof(value_type)) BackingStore {
-        uint8_t data[sizeof(value_type)];
-    };
-
     SmallIndex size_;
     SmallIndex limit_;
     std::array<SmallRange, N> ranges_;
-    std::array<BackingStore, N> backing_store_;
+    std::array<std::pair<key_type, mapped_type>, N> key_values_;
     std::array<bool, N> in_use_;
 };
 
@@ -1746,15 +1741,14 @@ class parallel_iterator {
 
 template <typename DstRangeMap, typename SrcRangeMap, typename Updater,
           typename SourceIterator = typename SrcRangeMap::const_iterator>
-bool splice(DstRangeMap &to, const SrcRangeMap &from, SourceIterator begin, SourceIterator end, const Updater &updater) {
-    if (from.empty() || (begin == end) || (begin == from.cend())) return false;  // nothing to merge.
+void splice(DstRangeMap &to, const SrcRangeMap &from, SourceIterator begin, SourceIterator end, const Updater &updater) {
+    if (from.empty() || (begin == end) || (begin == from.cend())) return;  // nothing to merge.
 
     using ParallelIterator = parallel_iterator<DstRangeMap, const SrcRangeMap>;
     using Key = typename SrcRangeMap::key_type;
     using CachedLowerBound = cached_lower_bound_impl<DstRangeMap>;
     using ConstCachedLowerBound = cached_lower_bound_impl<const SrcRangeMap>;
     ParallelIterator par_it(to, from, begin->first.begin);
-    bool updated = false;
     while (par_it->range.non_empty() && par_it->pos_B->lower_bound != end) {
         const Key &range = par_it->range;
         const CachedLowerBound &to_lb = par_it->pos_A;
@@ -1767,11 +1761,11 @@ bool splice(DstRangeMap &to, const SrcRangeMap &from, SourceIterator begin, Sour
             if (to_lb->valid) {
                 if (write_it->first == range) {
                     // if the source and destination ranges match we can overwrite everything
-                    updated |= updater.update(write_it->second, read_it->second);
+                    updater.update(write_it->second, read_it->second);
                 } else {
                     // otherwise we need to split the destination range.
                     auto value_to_update = write_it->second; // intentional copy
-                    updated |= updater.update(value_to_update, read_it->second);
+                    updater.update(value_to_update, read_it->second);
                     auto intersected_range = write_it->first & range;
                     to.overwrite_range(to_lb->lower_bound, std::make_pair(intersected_range, value_to_update));
                     par_it.invalidate_A();  // we've changed map 'to' behind to_lb's back... let it know.
@@ -1781,19 +1775,17 @@ bool splice(DstRangeMap &to, const SrcRangeMap &from, SourceIterator begin, Sour
                 auto opt = updater.insert(read_it->second);
                 if (opt) {
                     to.insert(write_it, std::make_pair(range, std::move(*opt)));
-                    updated = true;
                     par_it.invalidate_A();  // we've changed map 'to' behind to_lb's back... let it know.
                 }
             }
         }
         ++par_it;  // next range over which both 'to' and 'from' stay constant
     }
-    return updated;
 }
 // And short hand for "from begin to end"
 template <typename DstRangeMap, typename SrcRangeMap, typename Updater>
-bool splice(DstRangeMap &to, const SrcRangeMap &from, const Updater &updater) {
-    return splice(to, from, from.cbegin(), from.cend(), updater);
+void splice(DstRangeMap &to, const SrcRangeMap &from, const Updater &updater) {
+    splice(to, from, from.cbegin(), from.cend(), updater);
 }
 
 template <typename T>

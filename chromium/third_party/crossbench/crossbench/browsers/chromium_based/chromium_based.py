@@ -5,9 +5,8 @@
 from __future__ import annotations
 
 import abc
-import argparse
 import logging
-from typing import TYPE_CHECKING, Optional, TextIO, Tuple, Type, cast
+from typing import TYPE_CHECKING, Final, Optional, Type, cast
 
 from typing_extensions import override
 
@@ -32,19 +31,23 @@ if TYPE_CHECKING:
 
 class ChromiumBased(Browser):
   MIN_HEADLESS_NEW_VERSION: int = 112
-  DEFAULT_FLAGS: Tuple[str, ...] = (
+  MIN_BENCHMARKING_EXTENSION_FLAG_MILESTONE: Final[int] = 139
+  DEFAULT_FLAGS: tuple[str, ...] = (
       "--no-default-browser-check",
       "--disable-component-update",
       "--disable-sync",
-      "--disable-extensions",
       "--no-first-run",
       # This could be enabled via feature-flags as well.
       "--disable-search-engine-choice-screen",
   )
-  FLAGS_FOR_DISABLING_BACKGROUND_INTERVENTIONS: Tuple[str, ...] = (
+  FLAGS_FOR_DISABLING_BACKGROUND_INTERVENTIONS: tuple[str, ...] = (
       "--disable-background-timer-throttling",
       "--disable-renderer-backgrounding",
   )
+  # Versions [M98, M100] don't respect the --no-first-run flag and always
+  # display a "What's New" tab on startup.
+  WHATS_NEW_UI_VERSION_RANGE: Final[range] = range(98, 100 + 1)
+
 
   @classmethod
   @abc.abstractmethod
@@ -53,15 +56,18 @@ class ChromiumBased(Browser):
 
   @classmethod
   @override
-  def default_flags(cls, initial_data: FlagsData = None) -> ChromeFlags:
-    return ChromeFlags(initial_data)
+  def default_flags(cls,
+                    initial_data: FlagsData = None,
+                    milestone: int = 0) -> ChromeFlags:
+    return ChromeFlags.for_milestone(initial_data, milestone)
 
   def __init__(self,
                label: str,
                path: pth.AnyPath,
                settings: Optional[Settings] = None) -> None:
     super().__init__(label, path, settings=settings)
-    self._stdout_log_file: TextIO | None = None
+    self._local_extension_tmp_dir: Optional[pth.LocalPath] = None
+    self._remote_extension_tmp_dir: Optional[pth.AnyPath] = None
     assert isinstance(self._flags, ChromeFlags)
 
   @override
@@ -78,23 +84,40 @@ class ChromiumBased(Browser):
   def _init_flags(self, settings: Settings) -> ChromeFlags:
     flags: Flags = settings.flags
     js_flags: Flags = settings.js_flags
-    self._flags = self.default_flags(self.DEFAULT_FLAGS)
+    self._flags = self.default_flags(self.DEFAULT_FLAGS, self.version.major)
     self._flags.update(flags)
+
+    if not settings.extensions:
+      self._flags.set("--disable-extensions")
 
     if "--allow-background-interventions" in self._flags.data:
       # The --allow-background-interventions flag should have no value.
       assert self._flags.get("--allow-background-interventions") is None
     else:
+      logging.warning(
+          "Disabling background interventions for chromium based browser. "
+          "Tests that rely on correct tab discarding or prioritization "
+          "behavior may not work as expected. Add "
+          "--allow-background-interventions to bypass this.")
       self._flags.update(self.FLAGS_FOR_DISABLING_BACKGROUND_INTERVENTIONS)
+
+    if self.version.major in self.WHATS_NEW_UI_VERSION_RANGE:
+      whatsnew_ui_feature = "ChromeWhatsNewUI"
+      if not self._flags.features:
+        logging.warning("Disabling %s", whatsnew_ui_feature)
+        self._flags.features.disable(whatsnew_ui_feature)
+      elif whatsnew_ui_feature not in self._flags.features:
+        logging.warning("Browser might show %s, hiding the main tab",
+                        whatsnew_ui_feature)
 
     # Explicitly disable field-trials by default on all chrome flavours:
     # By default field-trials are disabled on non-Chrome branded builds, but
     # are auto-enabled on everything else. This gives very confusing results
     # when comparing local builds to official binaries.
-    field_trial_flags: ChromeFlags = self._flags.field_trial_flags
+    field_trial_flags: ChromeFlags = self._flags.field_trial_enable_flags
     if not field_trial_flags:
       logging.info("Disabling experiments/finch/field-trials for %s", self)
-      for flag in ChromeFlags.NO_EXPERIMENTS_FLAGS:
+      for flag in ChromeFlags.FIELD_TRIAL_DISABLE_FLAGS:
         self._flags.set(flag)
     else:
       logging.warning("Running with field-trials or finch experiments.")
@@ -117,13 +140,7 @@ class ChromiumBased(Browser):
   @override
   def validate_flags(self) -> None:
     super().validate_flags()
-    field_trial_flags: ChromeFlags = self.flags.field_trial_flags
-    no_finch_flags = self.flags.no_experiments_flags
-    if field_trial_flags and no_finch_flags:
-      raise argparse.ArgumentTypeError(
-          f"Conflicting {self.type_name()} flags detected: "
-          f"{field_trial_flags} vs {no_finch_flags}.\n"
-          "Cannot enable and disable finch / field-trials at the same time.")
+    self.flags.validate()
 
   @override
   def _setup_cache_dir(self) -> Optional[pth.AnyPath]:
@@ -141,16 +158,20 @@ class ChromiumBased(Browser):
     if user_data_dir:
       return user_data_dir
 
-    temp_dir = None
     if self.platform.is_android:
-      # On Android, not all apps have permission to write to /data/local/tmp.
-      # We use a folder on external storage instead.
-      # This does not affect the user-cache-dir which needs to be cleared
-      # separately.
-      temp_dir = "/storage/emulated/0/Documents"
+      # On Android, not all apps have permission to write to /data/local/tmp,
+      # so we can't just use a temp dir for user data as on other platforms.
+      # We can create a subdir in Chromium's default data dir, but that will
+      # be erased by chromedriver on session start.
+      # Another option is a folder on external storage, but access to external
+      # storage can be slow and this affects Chromium performance.
+      # So the only reliable thing for now is to keep Chromium using default
+      # user data dir. Note that unless --keep-browser-cache is specified,
+      # all user data is cleared by chromedriver before each browser session.
+      return None
+
     # Using a temp-dir on macos also forces the user-cache-dir to be there.
-    user_data_dir = self.platform.mkdtemp(
-        prefix=f"{self.type_name()}_", dir=temp_dir)
+    user_data_dir = self.platform.mkdtemp(prefix=f"{self.type_name()}_")
     return user_data_dir
 
   @property
@@ -194,9 +215,45 @@ class ChromiumBased(Browser):
     details["js_flags"] = tuple(self.js_flags)
     return details
 
+  def _process_extensions(self) -> dict[str, str]:
+    assert not self._local_extension_tmp_dir
+    self._local_extension_tmp_dir = pth.LocalPath(self.host_platform.mkdtemp())
+
+    load_extension: list[str] = []
+    extension_paths: list[pth.LocalPath] = []
+    for extension in self.settings.extensions:
+      unpacked = extension.get_unpacked(self.version.version_str,
+                                        self._local_extension_tmp_dir,
+                                        self.host_platform)
+      extension_paths.append(unpacked)
+      load_extension.append(str(unpacked))
+
+    if self.platform.is_remote:
+      # Create a folder to load the extensions from on the remote device.
+      assert not self._remote_extension_tmp_dir
+      self._remote_extension_tmp_dir = self.platform.mkdtemp()
+      # Android needs executable permission on the temp folder.
+      self.platform.chmod(self._remote_extension_tmp_dir, 0o755)
+
+      # Push all the extensions to the device and update the paths we will pass
+      # to Chrome.
+      load_extension.clear()
+      for extension_path in extension_paths:
+        remote_path = self._remote_extension_tmp_dir / extension_path.name
+        logging.info("Pushing extension to device: %s", extension_path)
+        self.platform.push(extension_path, remote_path)
+        load_extension.append(str(remote_path))
+    assert not any("," in e for e in load_extension), "comma in extension path"
+    load_extension_str = ",".join(load_extension)
+
+    return {
+        "--load-extension": load_extension_str,
+        "--disable-features": "DisableLoadExtensionCommandLineSwitch",
+    }
+
   @override
   def _get_browser_flags_for_session(
-      self, session: BrowserSessionRunGroup) -> Tuple[str, ...]:
+      self, session: BrowserSessionRunGroup) -> tuple[str, ...]:
     js_flags_copy = self.js_flags.copy()
     js_flags_copy.update(session.extra_js_flags)
 
@@ -216,6 +273,9 @@ class ChromiumBased(Browser):
     if self.log_file:
       flags_copy.set("--enable-logging")
       flags_copy["--log-file"] = str(self.chrome_log_file)
+
+    if self.settings.extensions:
+      flags_copy.update(self._process_extensions())
 
     flags_copy = self._filter_flags_for_run(flags_copy)
 
@@ -265,6 +325,9 @@ class ChromiumBased(Browser):
     try:
       super().quit()
     finally:
-      if self._stdout_log_file:
-        self._stdout_log_file.close()
-        self._stdout_log_file = None
+      if self._local_extension_tmp_dir:
+        self.host_platform.rm(self._local_extension_tmp_dir, dir=True)
+        self._local_extension_tmp_dir = None
+      if self._remote_extension_tmp_dir:
+        self.platform.rm(self._remote_extension_tmp_dir, dir=True)
+        self._remote_extension_tmp_dir = None

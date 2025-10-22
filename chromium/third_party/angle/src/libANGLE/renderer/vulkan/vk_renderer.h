@@ -54,13 +54,9 @@ using ExtensionNameList                    = angle::FixedVector<const char *, kM
 
 static constexpr size_t kMaxSyncValExtraProperties = 9;
 // Information used to accurately skip known synchronization issues in ANGLE.
-// TODO: remove messageContents1 and messageContents2 fields after all
-// supressions have transitioned to using extraProperties.
 struct SkippedSyncvalMessage
 {
     const char *messageId;
-    const char *messageContents1;
-    const char *messageContents2                            = "";
     bool isDueToNonConformantCoherentColorFramebufferFetch  = false;
     const char *extraProperties[kMaxSyncValExtraProperties] = {};
 };
@@ -274,6 +270,8 @@ class Renderer : angle::NonCopyable
         const VkFormatFeatureFlags featureBits) const;
     VkFormatFeatureFlags getImageFormatFeatureBits(angle::FormatID format,
                                                    const VkFormatFeatureFlags featureBits) const;
+    VkFormatFeatureFlags getBufferFormatFeatureBits(angle::FormatID format,
+                                                    const VkFormatFeatureFlags featureBits) const;
     bool hasImageFormatFeatureBits(angle::FormatID format,
                                    const VkFormatFeatureFlags featureBits) const;
     bool hasBufferFormatFeatureBits(angle::FormatID format,
@@ -473,12 +471,10 @@ class Renderer : angle::NonCopyable
     angle::Result getOutsideRenderPassCommandBufferHelper(
         vk::ErrorContext *context,
         vk::SecondaryCommandPool *commandPool,
-        vk::SecondaryCommandMemoryAllocator *commandsAllocator,
         vk::OutsideRenderPassCommandBufferHelper **commandBufferHelperOut);
     angle::Result getRenderPassCommandBufferHelper(
         vk::ErrorContext *context,
         vk::SecondaryCommandPool *commandPool,
-        vk::SecondaryCommandMemoryAllocator *commandsAllocator,
         vk::RenderPassCommandBufferHelper **commandBufferHelperOut);
 
     void recycleOutsideRenderPassCommandBufferHelper(
@@ -569,7 +565,13 @@ class Renderer : angle::NonCopyable
 
     bool isShadingRateSupported(gl::ShadingRate shadingRate) const
     {
-        return mSupportedFragmentShadingRates.test(shadingRate);
+        return mSupportedFragmentShadingRatesEXT.test(shadingRate);
+    }
+
+    const angle::ShadingRateMap &getSupportedFragmentShadingRateEXTSampleCounts() const
+    {
+        ASSERT(mFeatures.supportsFragmentShadingRate.enabled);
+        return mSupportedFragmentShadingRateEXTSampleCounts;
     }
 
     VkExtent2D getMaxFragmentShadingRateAttachmentTexelSize() const
@@ -696,6 +698,8 @@ class Renderer : angle::NonCopyable
     // VK_EXT_device_fault allows gathering more info if the device is lost.
     VkResult retrieveDeviceLostDetails() const;
 
+    bool supportsAstcHdr() const;
+
   private:
     angle::Result setupDevice(vk::ErrorContext *context,
                               const angle::FeatureOverrides &featureOverrides,
@@ -780,7 +784,6 @@ class Renderer : angle::NonCopyable
     template <typename CommandBufferHelperT, typename RecyclerT>
     angle::Result getCommandBufferImpl(vk::ErrorContext *context,
                                        vk::SecondaryCommandPool *commandPool,
-                                       vk::SecondaryCommandMemoryAllocator *commandsAllocator,
                                        RecyclerT *recycler,
                                        CommandBufferHelperT **commandBufferHelperOut);
 
@@ -895,12 +898,14 @@ class Renderer : angle::NonCopyable
     VkPhysicalDeviceUniformBufferStandardLayoutFeaturesKHR mUniformBufferStandardLayoutFeatures;
     VkPhysicalDeviceMaintenance3Properties mMaintenance3Properties;
     VkPhysicalDeviceFaultFeaturesEXT mFaultFeatures;
+    VkPhysicalDeviceASTCDecodeFeaturesEXT mPhysicalDeviceAstcDecodeFeatures;
 
     uint32_t mLegacyDitheringVersion = 0;
 
-    angle::PackedEnumBitSet<gl::ShadingRate, uint8_t> mSupportedFragmentShadingRates;
-    angle::PackedEnumMap<gl::ShadingRate, VkSampleCountFlags>
-        mSupportedFragmentShadingRateSampleCounts;
+    // EXT_fragment_shading_rate
+    angle::ShadingRateSet mSupportedFragmentShadingRatesEXT;
+    angle::ShadingRateMap mSupportedFragmentShadingRateEXTSampleCounts;
+
     std::vector<VkQueueFamilyProperties> mQueueFamilyProperties;
     uint32_t mCurrentQueueFamilyIndex;
     uint32_t mMaxVertexAttribDivisor;
@@ -947,7 +952,7 @@ class Renderer : angle::NonCopyable
 
     // The mutex protects -
     // 1. initialization of the cache
-    // 2. Vulkan driver guarantess synchronization for read and write operations but the spec
+    // 2. Vulkan driver guarantees synchronization for read and write operations but the spec
     //    requires external synchronization when mPipelineCache is the dstCache of
     //    vkMergePipelineCaches. Lock the mutex if mergeProgramPipelineCachesToGlobalCache is
     //    enabled
@@ -1072,6 +1077,9 @@ class Renderer : angle::NonCopyable
 
     // Cached value for the buffer memory size limit.
     VkDeviceSize mMaxBufferMemorySizeLimit;
+
+    // Record submitted queue serials not belongs to any context.
+    vk::ResourceUse mSubmittedResourceUse;
 };
 
 ANGLE_INLINE Serial Renderer::generateQueueSerial(SerialIndex index)

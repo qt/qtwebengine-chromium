@@ -4,31 +4,63 @@
 
 from __future__ import annotations
 
-import argparse
-from typing import Any
+import dataclasses
+from typing import TYPE_CHECKING, Self
 
 from crossbench.action_runner.android_input_action_runner import \
     AndroidInputActionRunner
-from crossbench.action_runner.base import ActionRunner
 from crossbench.action_runner.chromeos_input_action_runner import \
     ChromeOSInputActionRunner
 from crossbench.action_runner.default_action_runner import DefaultActionRunner
+from crossbench.config import ConfigEnum, ConfigObject, ConfigParser
+
+if TYPE_CHECKING:
+  from crossbench.action_runner.base import ActionRunner
+  from crossbench.plt.base import Platform
 
 
-# TODO: migrate to full config.ConfigObject
-class ActionRunnerConfig:
+class ActionRunnerType(ConfigEnum):
+  AUTO = (
+      "auto",
+      "Uses the best-fit default action runner based on the browser platform.")
+  BASIC = ("basic", str(DefaultActionRunner.__doc__))
+  ANDROID = ("android", str(AndroidInputActionRunner.__doc__))
+  CHROMEOS = ("chromeos", str(ChromeOSInputActionRunner.__doc__))
+
+
+@dataclasses.dataclass(frozen=True)
+class ActionRunnerConfig(ConfigObject):
+  type: ActionRunnerType = ActionRunnerType.AUTO
 
   @classmethod
-  def parse(cls, value: Any) -> ActionRunner:
-    if isinstance(value, ActionRunner):
-      return value
-    if value == "basic":
-      return DefaultActionRunner()
-    if value == "android":
+  def parse_str(cls, value: str) -> Self:
+    runner_type: ActionRunnerType = ActionRunnerType.parse(value)
+    return cls(type=runner_type)
+
+  @classmethod
+  def config_parser(cls) -> ConfigParser[Self]:
+    parser = super().config_parser()
+    parser.add_argument(
+        "type", type=ActionRunnerType, default=ActionRunnerType.AUTO)
+    return parser
+
+  def instantiate(self, platform: Platform) -> ActionRunner:
+    match self.type:
+      case ActionRunnerType.ANDROID:
+        return AndroidInputActionRunner()
+      case ActionRunnerType.CHROMEOS:
+        return ChromeOSInputActionRunner()
+      case ActionRunnerType.BASIC:
+        # TODO: rename
+        return DefaultActionRunner()
+      case ActionRunnerType.AUTO:
+        return self.instantiate_default(platform)
+      case _:
+        raise ValueError(f"Unsupported action runner type: {self.type}")
+
+  def instantiate_default(self, platform: Platform) -> ActionRunner:
+    if platform.is_android:
       return AndroidInputActionRunner()
-    if value == "chromeos":
+    if platform.is_chromeos:
       return ChromeOSInputActionRunner()
-    raise argparse.ArgumentTypeError(
-      f"Invalid choice '{value}', allowed values are 'basic', 'android', "
-      "'chromeos'"
-    )
+    return DefaultActionRunner()

@@ -31,23 +31,23 @@
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import type * as Platform from '../../core/platform/platform.js';
+import type * as TextUtils from '../text_utils/text_utils.js';
 
 let fileManagerInstance: FileManager|null;
 
-interface SaveCallbackParam {
+export interface SaveCallbackParam {
   fileSystemPath?: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString;
 }
 
 export class FileManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
-  private readonly saveCallbacks:
-      Map<Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, (arg0: SaveCallbackParam|null) => void>;
+  readonly #saveCallbacks = new Map<
+      Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, (arg0: SaveCallbackParam|null) => void>();
   private constructor() {
     super();
-    this.saveCallbacks = new Map();
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
         Host.InspectorFrontendHostAPI.Events.SavedURL, this.savedURL, this);
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
-        Host.InspectorFrontendHostAPI.Events.CanceledSaveURL, this.canceledSavedURL, this);
+        Host.InspectorFrontendHostAPI.Events.CanceledSaveURL, this.#canceledSavedURL, this);
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.events.addEventListener(
         Host.InspectorFrontendHostAPI.Events.AppendedToURL, this.appendedToURL, this);
   }
@@ -61,28 +61,37 @@ export class FileManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     return fileManagerInstance;
   }
 
-  // close() *must* be called, for the InspectorFrontendHostStub case, to complete the saving.
+  /**
+   * {@link FileManager.close | close} *must* be called, for the InspectorFrontendHostStub case, to complete the saving.
+   */
   save(
-      url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString, content: string, forceSaveAs: boolean,
-      isBase64: boolean): Promise<SaveCallbackParam|null> {
+      url: Platform.DevToolsPath.RawPathString|Platform.DevToolsPath.UrlString,
+      contentData: TextUtils.ContentData.ContentData,
+      forceSaveAs: boolean,
+      ): Promise<SaveCallbackParam|null> {
     // Remove this url from the saved URLs while it is being saved.
-    const result = new Promise<SaveCallbackParam|null>(resolve => this.saveCallbacks.set(url, resolve));
-    Host.InspectorFrontendHost.InspectorFrontendHostInstance.save(url, content, forceSaveAs, isBase64);
+    const result = new Promise<SaveCallbackParam|null>(resolve => this.#saveCallbacks.set(url, resolve));
+    const {isTextContent} = contentData;
+    const content = isTextContent ? contentData.text : contentData.base64;
+    Host.InspectorFrontendHost.InspectorFrontendHostInstance.save(url, content, forceSaveAs, !isTextContent);
     return result;
   }
 
+  /**
+   * Used in web tests
+   */
   private savedURL(event: Common.EventTarget.EventTargetEvent<Host.InspectorFrontendHostAPI.SavedURLEvent>): void {
     const {url, fileSystemPath} = event.data;
-    const callback = this.saveCallbacks.get(url);
-    this.saveCallbacks.delete(url);
+    const callback = this.#saveCallbacks.get(url);
+    this.#saveCallbacks.delete(url);
     if (callback) {
       callback({fileSystemPath});
     }
   }
 
-  private canceledSavedURL({data: url}: Common.EventTarget.EventTargetEvent<Platform.DevToolsPath.UrlString>): void {
-    const callback = this.saveCallbacks.get(url);
-    this.saveCallbacks.delete(url);
+  #canceledSavedURL({data: url}: Common.EventTarget.EventTargetEvent<Platform.DevToolsPath.UrlString>): void {
+    const callback = this.#saveCallbacks.get(url);
+    this.#saveCallbacks.delete(url);
     if (callback) {
       callback(null);
     }
@@ -96,6 +105,9 @@ export class FileManager extends Common.ObjectWrapper.ObjectWrapper<EventTypes> 
     Host.InspectorFrontendHost.InspectorFrontendHostInstance.close(url);
   }
 
+  /**
+   * Used in web tests
+   */
   private appendedToURL({data: url}: Common.EventTarget.EventTargetEvent<string>): void {
     this.dispatchEventToListeners(Events.APPENDED_TO_URL, url);
   }

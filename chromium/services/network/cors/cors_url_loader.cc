@@ -58,6 +58,7 @@
 #include "services/network/trust_tokens/trust_token_operation_metrics_recorder.h"
 #include "services/network/url_loader.h"
 #include "services/network/url_loader_factory.h"
+#include "services/network/url_loader_util.h"
 #include "url/scheme_host_port.h"
 #include "url/url_util.h"
 
@@ -304,7 +305,6 @@ CorsURLLoader::CorsURLLoader(
     URLLoaderFactory* sync_network_loader_factory,
     const OriginAccessList* origin_access_list,
     bool allow_any_cors_exempt_header,
-    HasFactoryOverride has_factory_override,
     const net::IsolationInfo& isolation_info,
     mojo::PendingRemote<mojom::DevToolsObserver> devtools_observer,
     const mojom::ClientSecurityState* factory_client_security_state,
@@ -329,7 +329,6 @@ CorsURLLoader::CorsURLLoader(
       origin_access_list_(origin_access_list),
       skip_cors_enabled_scheme_check_(skip_cors_enabled_scheme_check),
       allow_any_cors_exempt_header_(allow_any_cors_exempt_header),
-      has_factory_override_(has_factory_override),
       isolation_info_(isolation_info),
       factory_client_security_state_(factory_client_security_state),
       url_loader_network_service_observer_(url_loader_network_service_observer),
@@ -346,8 +345,9 @@ CorsURLLoader::CorsURLLoader(
       factory_cookie_setting_overrides_(factory_cookie_setting_overrides),
       devtools_cookie_setting_overrides_(devtools_cookie_setting_overrides) {
   TRACE_EVENT("loading", "CorsURLLoader::CorsURLLoader",
-              net::NetLogWithSourceToFlow(net_log_), "url",
-              request_.url.spec());
+              net::NetLogWithSourceToFlow(net_log_), "url", request_.url.spec(),
+              "process_id", process_id_, "request_id", request_id_,
+              "traffic_annotation_id", traffic_annotation_.unique_id_hash_code);
   CHECK(url_loader_network_service_observer_ != nullptr);
   if (ignore_isolated_world_origin)
     request_.isolated_world_origin = std::nullopt;
@@ -764,7 +764,7 @@ void CorsURLLoader::OnReceiveRedirect(const net::RedirectInfo& redirect_info,
   // See 4.4. HTTP-redirect fetch
   // (https://fetch.spec.whatwg.org/#http-redirect-fetch), step 11.
   if (redirect_info.status_code != net::HTTP_SEE_OTHER &&
-      network::URLLoader::HasFetchStreamingUploadBody(&request_)) {
+      url_loader_util::HasFetchStreamingUploadBody(request_)) {
     HandleComplete(URLLoaderCompletionStatus(net::ERR_INVALID_ARGUMENT));
     return;
   }
@@ -866,6 +866,22 @@ void CorsURLLoader::CancelRequestIfNonceMatchesAndUrlNotExempted(
   }
 }
 
+std::optional<net::cookie_util::StorageAccessStatus>
+CorsURLLoader::GetStorageAccessStatus() {
+  if (isolation_info_.network_isolation_key().GetNonce()) {
+    return net::cookie_util::StorageAccessStatus::kNone;
+  }
+
+  return context_->cookie_manager()->cookie_settings().GetStorageAccessStatus(
+      request_.url, request_.site_for_cookies,
+      isolation_info_.top_frame_origin(),
+      url_loader_util::CalculateCookieSettingOverrides(
+          factory_cookie_setting_overrides_, devtools_cookie_setting_overrides_,
+          request_,
+          /*emit_metrics=*/false),
+      /*cookie_partition_key=*/std::nullopt, request_.permissions_policy);
+}
+
 void CorsURLLoader::StartRequest() {
   TRACE_EVENT("loading", "CorsURLLoader::StartRequest",
               net::NetLogWithSourceToFlow(net_log_));
@@ -887,17 +903,7 @@ void CorsURLLoader::StartRequest() {
     }
 
     if (request_.credentials_mode == mojom::CredentialsMode::kInclude &&
-        context_->cookie_manager()
-            ->cookie_settings()
-            .IsStorageAccessHeadersEnabled(
-                request_.url, isolation_info_.top_frame_origin()) &&
-        context_->cookie_manager()->cookie_settings().GetStorageAccessStatus(
-            request_.url, request_.site_for_cookies,
-            isolation_info_.top_frame_origin(),
-            network::URLLoader::CalculateCookieSettingOverrides(
-                factory_cookie_setting_overrides_,
-                devtools_cookie_setting_overrides_, request_,
-                /*emit_metrics=*/false)) ==
+        GetStorageAccessStatus() ==
             net::cookie_util::StorageAccessStatus::kInactive) {
       // Lower layers will add the Sec-Fetch-Storage-Access header, and the
       // server may respond with a "retry" header. The server needs to know the
@@ -985,29 +991,6 @@ void CorsURLLoader::StartRequest() {
 
   mojo::PendingRemote<mojom::URLLoaderNetworkServiceObserver> remote_observer;
 
-  if (needs_preflight.has_value() &&
-      *needs_preflight == PreflightRequiredReason::kPrivateNetworkAccess) {
-    // TODO(crbug.com/40229602): Create a base function and clean up all
-    // need_pna_permission check in the code base.
-    const mojom::ClientSecurityState* state = GetClientSecurityState();
-    const bool needs_pna_permission =
-        state && PrivateNetworkAccessChecker::NeedPermission(
-                     request_.url, state->is_web_secure_context,
-                     request_.required_ip_address_space);
-    if (needs_pna_permission &&
-        url_loader_network_service_observer_->is_bound()) {
-      // Fail the request if `targetAddressSpace` on fetch option is not the
-      // same as the real target address space.
-      if (request_.required_ip_address_space !=
-          request_.target_ip_address_space) {
-        HandleComplete(URLLoaderCompletionStatus(
-            CorsErrorStatus(mojom::CorsError::kInvalidPrivateNetworkAccess)));
-        return;
-      }
-      (*url_loader_network_service_observer_)
-          ->Clone(remote_observer.InitWithNewPipeAndPassReceiver());
-    }
-  }
   context_->cors_preflight_controller()->PerformPreflightCheck(
       base::BindOnce(&CorsURLLoader::OnPreflightRequestComplete,
                      weak_factory_.GetWeakPtr()),
@@ -1073,12 +1056,8 @@ std::optional<URLLoaderCompletionStatus> CorsURLLoader::ConvertPreflightResult(
     });
   }
 
-  // `kInvalidResponse` is never returned by the preflight controller, so we use
-  // it to record the case where there was a net error and no CORS error.
-  auto histogram_error = mojom::CorsError::kInvalidResponse;
   if (status) {
     DCHECK(status->cors_error != mojom::CorsError::kInvalidResponse);
-    histogram_error = status->cors_error;
 
     // Report the target IP address space unconditionally as part of the error
     // if there was one. This allows higher layers to understand that a PNA
@@ -1096,10 +1075,6 @@ std::optional<URLLoaderCompletionStatus> CorsURLLoader::ConvertPreflightResult(
     // `forwarding_client_` in the next `URLResponseHead` we construct.
     pna_preflight_result_ =
         mojom::PrivateNetworkAccessPreflightResult::kWarning;
-
-    // Even if we ignore the error, record the warning in metrics and DevTools.
-    base::UmaHistogramEnumeration(kPreflightWarningHistogramName,
-                                  histogram_error);
 
     if (devtools_observer_) {
       if (!status) {
@@ -1125,7 +1100,6 @@ std::optional<URLLoaderCompletionStatus> CorsURLLoader::ConvertPreflightResult(
   // Failure.
   CHECK(net_error != net::OK);
 
-  base::UmaHistogramEnumeration(kPreflightErrorHistogramName, histogram_error);
   auto result = status ? URLLoaderCompletionStatus(*std::move(status))
                        : URLLoaderCompletionStatus(net_error);
 
@@ -1381,23 +1355,13 @@ bool CorsURLLoader::PassesTimingAllowOriginCheck(
   return false;
 }
 
-// Computes the client security state to use, given the factory and
-// request-specific values.
-//
-// WARNING: This should be kept in sync with similar logic in
-// `network::URLLoader::GetClientSecurityState()`.
 const mojom::ClientSecurityState* CorsURLLoader::GetClientSecurityState()
     const {
-  if (factory_client_security_state_) {
-    return factory_client_security_state_;
-  }
-
-  if (request_.trusted_params) {
-    // NOTE: This could return nullptr.
-    return request_.trusted_params->client_security_state.get();
-  }
-
-  return nullptr;
+  return url_loader_util::SelectClientSecurityState(
+      factory_client_security_state_,
+      request_.trusted_params
+          ? request_.trusted_params->client_security_state.get()
+          : nullptr);
 }
 
 mojom::ClientSecurityStatePtr CorsURLLoader::CloneClientSecurityState() const {
@@ -1413,12 +1377,6 @@ bool CorsURLLoader::ShouldIgnorePrivateNetworkAccessErrors(
     mojom::IPAddressSpace target_address_space) const {
   const mojom::ClientSecurityState* state = GetClientSecurityState();
   if (!state) {
-    return false;
-  }
-  // When the PNA permission prompt shown, we should always respect the
-  // preflight results, otherwise it would be a bypass of mixed content checker.
-  if (PrivateNetworkAccessChecker::NeedPermission(
-          request_.url, state->is_web_secure_context, target_address_space)) {
     return false;
   }
   return state->private_network_request_policy ==

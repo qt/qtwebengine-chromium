@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Buttons from '../../ui/components/buttons/buttons.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -35,7 +36,7 @@ export class StyleEditorWidget extends UI.Widget.VBox {
   #triggerKey: string|undefined;
 
   constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.contentElement.tabIndex = 0;
     this.setDefaultFocusedElement(this.contentElement);
     this.editorContainer = document.createElement('div');
@@ -130,6 +131,7 @@ export class StyleEditorWidget extends UI.Widget.VBox {
       widget.bindContext(pane, section);
       widget.setTriggerKey(triggerKey);
       await widget.render();
+      widget.focus();
       const scrollerElement = triggerButton.enclosingNodeOrSelfWithClass('style-panes-wrapper');
       const onScroll = (): void => {
         popoverHelper.hide(true);

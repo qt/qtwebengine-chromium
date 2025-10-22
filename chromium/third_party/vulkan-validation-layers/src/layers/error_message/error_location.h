@@ -91,6 +91,8 @@ struct Location {
     const char* StringField() const { return vvl::String(field); }
 };
 
+std::string PrintPNextChain(vvl::Struct in_struct, const void* in_pNext);
+
 // Contains the base information needed for errors to be logged out
 // Created for each function as a starting point to build off of
 struct ErrorObject {
@@ -126,8 +128,12 @@ struct LocationVuidAdapter {
 
 struct LocationCapture {
     LocationCapture(const Location& loc);
-    LocationCapture(const LocationCapture &other);
-    LocationCapture(LocationCapture &&other);
+    LocationCapture(const LocationCapture& other);
+    LocationCapture(LocationCapture&& other);
+    LocationCapture& operator=(LocationCapture&& other);
+
+    // Currently not needed, implement if required (compiler generated default is not valid)
+    LocationCapture& operator=(const LocationCapture& other) = delete;
 
     const Location& Get() const { return capture.back(); }
 

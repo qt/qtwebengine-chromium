@@ -34,9 +34,12 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kGPayAppDynamicUpdate,
     &features::kWebPaymentsExperimentalFeatures,
     &features::kWebPaymentsSingleAppUiSkip,
+    &features::kSecurePaymentConfirmationFallback,
     &kAndroidPaymentIntentsOmitDeprecatedParameters,
     &kGooglePayViaAndroidIntents,
     &kOmitParametersInReadyToPay,
+    &kAllowShowWithoutReadyToPay,
+    &kReconnectOnLostConnectionToUpdatePaymentDetailsService,
     &kShowReadyToPayDebugInfo,
     &kUpdatePaymentDetailsIntentFilterInPaymentApp,
 };
@@ -64,11 +67,17 @@ BASE_FEATURE(kGooglePayViaAndroidIntents,
 BASE_FEATURE(kOmitParametersInReadyToPay,
              "OmitParametersInReadyToPay",
              base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kAllowShowWithoutReadyToPay,
+             "AllowShowWithoutReadyToPay",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kReconnectOnLostConnectionToUpdatePaymentDetailsService,
+             "ReconnectOnLostConnectionToUpdatePaymentDetailsService",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 BASE_FEATURE(kShowReadyToPayDebugInfo,
              "ShowReadyToPayDebugInfo",
              base::FEATURE_DISABLED_BY_DEFAULT);
 BASE_FEATURE(kUpdatePaymentDetailsIntentFilterInPaymentApp,
              "UpdatePaymentDetailsIntentFilterInPaymentApp",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace payments::android

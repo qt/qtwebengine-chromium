@@ -30,39 +30,45 @@ BASE_FEATURE(kAdSamplerTriggerFeature,
              "SafeBrowsingAdSamplerTrigger",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-#if BUILDFLAG(IS_ANDROID)
-BASE_FEATURE(kAddReferringAppInfoToProtegoPings,
-             "AddReferringAppInfoToProtegoPings",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kAddReferringWebApkToProtegoPings,
-             "AddReferringWebApkToProtegoPings",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
-
 BASE_FEATURE(kAddWarningShownTSToClientSafeBrowsingReport,
              "AddWarningShownTSToClientSafeBrowsingReport",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kClientSideDetectionAcceptHCAllowlist,
-             "ClientSideDetectionAcceptHCAllowlist",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE(kBundledSecuritySettings,
+             "BundledSecuritySettings",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kClientSideDetectionBrandAndIntentForScamDetection,
              "ClientSideDetectionBrandAndIntentForScamDetection",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kClientSideDetectionClipboardCopyApi,
+             "ClientSideDetectionClipboardCopyApi",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+const base::FeatureParam<double> kCSDClipboardCopyApiHCAcceptanceRate{
+    &kClientSideDetectionClipboardCopyApi, "HCAcceptanceRate",
+    /*default_value=*/0.0};
 
 BASE_FEATURE(kClientSideDetectionDebuggingMetadataCache,
              "ClientSideDetectionDebuggingMetadataCache",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kClientSideDetectionForcedLlamaRedirectChainKillswitch,
+             "ClientSideDetectionForcedLlamaRedirectChainKillswitch",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kClientSideDetectionKillswitch,
              "ClientSideDetectionKillswitch",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kClientSideDetectionOnlyExtractVisualFeatures,
+             "ClientSideDetectionOnlyExtractVisualFeatures",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kClientSideDetectionSendLlamaForcedTriggerInfo,
              "ClientSideDetectionSendLlamaForcedTriggerInfo",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kClientSideDetectionLlamaForcedTriggerInfoForScamDetection,
              "ClientSideDetectionLlamaForcedTriggerInfoForScamDetection",
@@ -76,6 +82,10 @@ BASE_FEATURE(kClientSideDetectionNotificationPrompt,
              "ClientSideDetectionNotificationPrompt",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+BASE_FEATURE(kClientSideDetectionRedirectChainKillswitch,
+             "ClientSideDetectionRedirectChainKillswitch",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 BASE_FEATURE(kClientSideDetectionSamplePing,
              "ClientSideDetectionSamplePing",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -86,7 +96,15 @@ BASE_FEATURE(kClientSideDetectionShowLlamaScamVerdictWarning,
 
 BASE_FEATURE(kClientSideDetectionShowScamVerdictWarning,
              "ClientSideDetectionShowScamVerdictWarning",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kClientSideDetectionRetryLimit,
+             "ClientSideDetectionRetryLimit",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+constexpr base::FeatureParam<int> kClientSideDetectionRetryLimitTime{
+    &kClientSideDetectionRetryLimit, /*name=*/"RetryTimeMax",
+    /*default_value=*/15};
 
 BASE_FEATURE(kClientSideDetectionVibrationApi,
              "ClientSideDetectionVibrationApi",
@@ -119,10 +137,6 @@ BASE_FEATURE(kDlpRegionalizedEndpoints,
              "DlpRegionalizedEndpoints",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kDownloadsPageReferrerUrl,
-             "DownloadsPageReferrerUrl",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kDownloadWarningSurvey,
              "DownloadWarningSurvey",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -136,7 +150,11 @@ constexpr base::FeatureParam<int> kDownloadWarningSurveyIgnoreDelaySeconds{
 
 BASE_FEATURE(kEnhancedFieldsForSecOps,
              "EnhancedFieldsForSecOps",
+#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
              base::FEATURE_DISABLED_BY_DEFAULT);
+#else
+             base::FEATURE_ENABLED_BY_DEFAULT);
+#endif
 
 BASE_FEATURE(kEnhancedSafeBrowsingPromo,
              "EnhancedSafeBrowsingPromo",
@@ -149,18 +167,10 @@ BASE_FEATURE(kEnhancedSafeBrowsingPromo,
 
 BASE_FEATURE(kEnterpriseFileSystemAccessDeepScan,
              "EnterpriseFileSystemAccessDeepScan",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEnterprisePasswordReuseUiRefresh,
              "EnterprisePasswordReuseUiRefresh",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kEnterpriseRealTimeUrlCheckOnAndroid,
-             "EnterpriseRealTimeUrlCheckOnAndroid",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kEsbAiStringUpdate,
-             "EsbAiStringUpdate",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kEsbAsASyncedSetting,
@@ -183,17 +193,12 @@ BASE_FEATURE(kExtensionTelemetryFileDataForCommandLineExtensions,
              "SafeBrowsingExtensionTelemetryFileDataForCommandLineExtensions",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kExtensionTelemetryForEnterprise,
-             "SafeBrowsingExtensionTelemetryForEnterprise",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-constexpr base::FeatureParam<int>
-    kExtensionTelemetryEnterpriseReportingIntervalSeconds{
-        &kExtensionTelemetryForEnterprise, "EnterpriseReportingIntervalSeconds",
-        /*default_value=*/300};
-
 BASE_FEATURE(kExternalAppRedirectTelemetry,
              "SafeBrowsingExternalAppRedirectTelemetry",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kGlobalCacheListForGatingNotificationProtections,
+             "GlobalCacheListForGatingNotificationProtections",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kGoogleStandardDeviceBoundSessionCredentials,
@@ -228,7 +233,7 @@ constexpr base::FeatureParam<int> kHashPrefixRealTimeLookupsSampleRate{
 
 BASE_FEATURE(kLocalIpAddressInEvents,
              "LocalIpAddressInEvents",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kLocalListsUseSBv5,
              "SafeBrowsingLocalListsUseSBv5",
@@ -257,18 +262,8 @@ constexpr base::FeatureParam<std::string>
                                                  /*default_value=*/""};
 #endif
 
-BASE_FEATURE(kOnDeviceNotificationContentDetectionModel,
-             "OnDeviceNotificationContentDetectionModel",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-constexpr base::FeatureParam<int>
-    kOnDeviceNotificationContentDetectionModelAllowlistSamplingRate{
-        &kOnDeviceNotificationContentDetectionModel,
-        "OnDeviceNotificationContentDetectionModelAllowlistSamplingRate",
-        /*default_value=*/0};
-
-BASE_FEATURE(kPasswordLeakToggleMove,
-             "PasswordLeakToggleMove",
+BASE_FEATURE(kNotificationTelemetry,
+             "NotificationTelemetry",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kRedWarningSurvey,
@@ -285,6 +280,15 @@ constexpr base::FeatureParam<std::string> kRedWarningSurveyDidProceedFilter{
     &kRedWarningSurvey, "RedWarningSurveyDidProceedFilter",
     /*default_value=*/"TRUE,FALSE"};
 
+BASE_FEATURE(kReportNotificationContentDetectionData,
+             "ReportNotificationContentDetectionData",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+constexpr base::FeatureParam<int> kReportNotificationContentDetectionDataRate{
+    &kReportNotificationContentDetectionData,
+    "ReportNotificationContentDetectionDataRate",
+    /*default_value=*/100};
+
 BASE_FEATURE(kSafeBrowsingDailyPhishingReportsLimit,
              "SafeBrowsingDailyPhishingReportsLimit",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -293,38 +297,11 @@ constexpr base::FeatureParam<int> kSafeBrowsingDailyPhishingReportsLimitESB{
     &kSafeBrowsingDailyPhishingReportsLimit,
     /*name=*/"kMaxReportsPerIntervalESB", /*default_value=*/10};
 
-BASE_FEATURE(kSafeBrowsingRemoveCookiesInAuthRequests,
-             "SafeBrowsingRemoveCookiesInAuthRequests",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kSafeBrowsingSyncCheckerCheckAllowlist,
              "SafeBrowsingSyncCheckerCheckAllowlist",
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
-
-BASE_FEATURE(kSafetyHubAbusiveNotificationRevocation,
-             "SafetyHubAbusiveNotificationRevocation",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-BASE_FEATURE(kSafetyHubDisruptiveNotificationRevocation,
-             "SafetyHubDisruptiveNotificationRevocation",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-constexpr base::FeatureParam<bool>
-    kSafetyHubDisruptiveNotificationRevocationShadowRun{
-        &kSafetyHubDisruptiveNotificationRevocation,
-        /*name=*/"shadow_run", /*default_value=*/true};
-
-constexpr base::FeatureParam<int>
-    kSafetyHubDisruptiveNotificationRevocationMinNotificationCount{
-        &kSafetyHubDisruptiveNotificationRevocation,
-        /*name=*/"min_notification_count", /*default_value=*/3};
-
-constexpr base::FeatureParam<double>
-    kSafetyHubDisruptiveNotificationRevocationMaxEngagementScore{
-        &kSafetyHubDisruptiveNotificationRevocation,
-        /*name=*/"max_engagement_score", /*default_value=*/0.0};
 
 BASE_FEATURE(kSavePasswordHashFromProfilePicker,
              "SavePasswordHashFromProfilePicker",
@@ -332,13 +309,18 @@ BASE_FEATURE(kSavePasswordHashFromProfilePicker,
 
 BASE_FEATURE(kShowWarningsForSuspiciousNotifications,
              "ShowWarningsForSuspiciousNotifications",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+#if BUILDFLAG(IS_ANDROID)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 constexpr base::FeatureParam<int>
     kShowWarningsForSuspiciousNotificationsScoreThreshold{
         &kShowWarningsForSuspiciousNotifications,
         "ShowWarningsForSuspiciousNotificationsScoreThreshold",
-        /*default_value=*/100};
+        /*default_value=*/70};
 
 constexpr base::FeatureParam<bool>
     kShowWarningsForSuspiciousNotificationsShouldSwapButtons{
@@ -371,25 +353,23 @@ base::Value::List GetFeatureStatusList() {
   // chrome://safe-browsing. Features should be listed in alphabetical order.
   const base::Feature* kExperimentalFeatures[] = {
       // keep-sorted start
+      &kClientSideDetectionForcedLlamaRedirectChainKillswitch,
       &kClientSideDetectionKeyboardPointerLockRequest,
       &kClientSideDetectionKillswitch,
       &kClientSideDetectionNotificationPrompt,
+      &kClientSideDetectionRedirectChainKillswitch,
       &kCreateNotificationsAcceptedClientSafeBrowsingReports,
       &kDelayedWarnings,
       &kDlpRegionalizedEndpoints,
       &kEnhancedFieldsForSecOps,
       &kEnhancedSafeBrowsingPromo,
       &kEnterprisePasswordReuseUiRefresh,
-      &kEnterpriseRealTimeUrlCheckOnAndroid,
       &kExtensionTelemetryDeclarativeNetRequestActionSignal,
-      &kExtensionTelemetryForEnterprise,
       &kExternalAppRedirectTelemetry,
       &kHashPrefixRealTimeLookups,
       &kLocalIpAddressInEvents,
       &kLocalListsUseSBv5,
-      &kOnDeviceNotificationContentDetectionModel,
-      &kSafeBrowsingRemoveCookiesInAuthRequests,
-      &kSafetyHubAbusiveNotificationRevocation,
+      &kReportNotificationContentDetectionData,
       &kShowWarningsForSuspiciousNotifications,
       &kSuspiciousSiteTriggerQuotaFeature,
       &kTailoredSecurityIntegration,

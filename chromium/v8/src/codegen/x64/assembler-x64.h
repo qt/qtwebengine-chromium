@@ -45,8 +45,8 @@
 #include "src/base/export-template.h"
 #include "src/codegen/assembler.h"
 #include "src/codegen/cpu-features.h"
+#include "src/codegen/jump-table-info.h"
 #include "src/codegen/label.h"
-#include "src/codegen/x64/builtin-jump-table-info-x64.h"
 #include "src/codegen/x64/constants-x64.h"
 #include "src/codegen/x64/fma-instr.h"
 #include "src/codegen/x64/register-x64.h"
@@ -205,12 +205,12 @@ class V8_EXPORT_PRIVATE Operand {
 
   // Assert that the shared {is_label_operand} and {rex} fields have the same
   // type and offset in both union variants.
-  static_assert(std::is_same<decltype(LabelOperand::is_label_operand),
-                             decltype(MemoryOperand::is_label_operand)>::value);
+  static_assert(std::is_same_v<decltype(LabelOperand::is_label_operand),
+                               decltype(MemoryOperand::is_label_operand)>);
   static_assert(offsetof(LabelOperand, is_label_operand) ==
                 offsetof(MemoryOperand, is_label_operand));
-  static_assert(std::is_same<decltype(LabelOperand::rex),
-                             decltype(MemoryOperand::rex)>::value);
+  static_assert(std::is_same_v<decltype(LabelOperand::rex),
+                               decltype(MemoryOperand::rex)>);
   static_assert(offsetof(LabelOperand, rex) == offsetof(MemoryOperand, rex));
 
   static_assert(sizeof(MemoryOperand::len) == kSystemPointerSize,
@@ -1106,7 +1106,6 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   // {pc_offset() + kIntraSegmentJmpInstrSize}).
   static constexpr int kIntraSegmentJmpInstrSize = 5;
   void near_call(intptr_t disp, RelocInfo::Mode rmode);
-  void near_call(Builtin buitin, RelocInfo::Mode rmode);
   void near_jmp(intptr_t disp, RelocInfo::Mode rmode);
   void near_j(Condition cc, intptr_t disp, RelocInfo::Mode rmode);
 
@@ -2448,6 +2447,11 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
   void lfence();
   void pause();
 
+  // Pkey support.
+  // Registers rcx and rdx must be zero, rax is the input/output value.
+  void rdpkru();
+  void wrpkru();
+
   // Check the code size generated from label to here.
   int SizeOfCodeGeneratedSince(Label* label) {
     return pc_offset() - label->pos();
@@ -3056,7 +3060,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
 
   bool is_optimizable_farjmp(int idx);
 
-  void AllocateAndInstallRequestedHeapNumbers(LocalIsolate* isolate);
+  void PatchInHeapNumberRequest(Address pc, Handle<HeapNumber> object) override;
 
   int WriteCodeComments();
   int WriteBuiltinJumpTableInfos();
@@ -3079,7 +3083,7 @@ class V8_EXPORT_PRIVATE Assembler : public AssemblerBase {
 
   friend class ConstPool;
 
-  BuiltinJumpTableInfoWriter builtin_jump_table_info_writer_;
+  JumpTableInfoWriter builtin_jump_table_info_writer_;
 
 #if defined(V8_OS_WIN_X64)
   std::unique_ptr<win64_unwindinfo::XdataEncoder> xdata_encoder_;

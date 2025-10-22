@@ -31,6 +31,7 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
+#include "base/hash/md5.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
@@ -47,6 +48,8 @@
 #include "cc/paint/skia_paint_canvas.h"
 #include "components/custom_handlers/protocol_handler_registry.h"
 #include "components/custom_handlers/simple_protocol_handler_registry_factory.h"
+#include "components/subresource_filter/core/common/test_ruleset_creator.h"
+#include "components/subresource_filter/core/common/test_ruleset_utils.h"
 #include "content/browser/aggregation_service/aggregation_service.h"
 #include "content/browser/attribution_reporting/attribution_manager.h"
 #include "content/browser/in_memory_federated_permission_context.h"
@@ -95,7 +98,6 @@
 #include "content/web_test/common/web_test_constants.h"
 #include "content/web_test/common/web_test_string_util.h"
 #include "content/web_test/common/web_test_switches.h"
-#include "ipc/ipc_channel_proxy.h"
 #include "mojo/public/cpp/bindings/sync_call_restrictions.h"
 #include "net/cookies/cookie_util.h"
 #include "services/device/public/cpp/compute_pressure/buildflags.h"
@@ -103,9 +105,7 @@
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/network_service.mojom.h"
-#include "storage/browser/database/database_tracker.h"
 #include "storage/browser/file_system/isolated_context.h"
-#include "storage/browser/quota/quota_manager.h"
 #include "third_party/blink/public/common/associated_interfaces/associated_interface_provider.h"
 #include "third_party/blink/public/common/page_state/page_state.h"
 #include "third_party/blink/public/common/page_state/page_state_serialization.h"
@@ -754,7 +754,6 @@ void WebTestControlHost::ResetBrowserAfterWebTest() {
   BlockThirdPartyCookies(
       net::cookie_util::IsForceThirdPartyCookieBlockingEnabled());
   SetBluetoothManualChooser(false);
-  SetDatabaseQuota(content::kDefaultDatabaseQuota);
 
   ShellBrowserContext* browser_context =
       ShellContentBrowserClient::Get()->browser_context();
@@ -1085,17 +1084,6 @@ void WebTestControlHost::RequestPointerLock(WebContents* web_contents) {
           : blink::mojom::PointerLockResult::kPermissionDenied);
 
   next_pointer_lock_action_ = NextPointerLockAction::kWillSucceed;
-}
-
-void WebTestControlHost::PluginCrashed(const base::FilePath& plugin_path,
-                                       base::ProcessId plugin_pid) {
-  DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
-  printer_->AddErrorMessage(
-      base::StringPrintf("#CRASHED - plugin (pid %" CrPRIdPid ")", plugin_pid));
-  base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE,
-      base::BindOnce(base::IgnoreResult(&WebTestControlHost::DiscardMainWindow),
-                     weak_factory_.GetWeakPtr()));
 }
 
 void WebTestControlHost::TitleWasSet(NavigationEntry* entry) {
@@ -1646,6 +1634,23 @@ void WebTestControlHost::SetFilePathForMockFileDialog(
       std::make_unique<FakeSelectFileDialogFactory>(path));
 }
 
+void WebTestControlHost::CreateSubresourceFilterRulesetFile(
+    const std::vector<std::string>& disallowed_suffixes,
+    CreateSubresourceFilterRulesetFileCallback callback) {
+  std::vector<url_pattern_index::proto::UrlRule> rules;
+  for (const std::string& disallowed_suffix : disallowed_suffixes) {
+    rules.push_back(
+        subresource_filter::testing::CreateSuffixRule(disallowed_suffix));
+  }
+
+  subresource_filter::testing::TestRulesetPair test_ruleset_pair;
+  subresource_filter::testing::TestRulesetCreator ruleset_creator;
+  ruleset_creator.CreateRulesetWithRules(rules, &test_ruleset_pair);
+
+  std::move(callback).Run(subresource_filter::testing::TestRuleset::Open(
+      test_ruleset_pair.indexed));
+}
+
 void WebTestControlHost::FocusDevtoolsSecondaryWindow() {
   CHECK(secondary_window_);
   // We don't go down the normal system path of focusing RenderWidgetHostView
@@ -1671,55 +1676,6 @@ void WebTestControlHost::ClearTrustTokenState(base::OnceClosure callback) {
   storage_partition->GetNetworkContext()->ClearTrustTokenData(
       nullptr,  // A wildcard filter.
       std::move(callback));
-}
-
-void WebTestControlHost::SetDatabaseQuota(int32_t quota) {
-  auto run_on_io_thread = [](scoped_refptr<storage::QuotaManager> quota_manager,
-                             int32_t quota) {
-    DCHECK_CURRENTLY_ON(BrowserThread::IO);
-    if (quota == kDefaultDatabaseQuota) {
-      // Reset quota to settings with a zero refresh interval to force
-      // QuotaManager to refresh settings immediately.
-      storage::QuotaSettings default_settings;
-      default_settings.refresh_interval = base::TimeDelta();
-      quota_manager->SetQuotaSettings(default_settings);
-    } else {
-      DCHECK_GE(quota, 0);
-      quota_manager->SetQuotaSettings(storage::GetHardCodedSettings(quota));
-    }
-  };
-
-  BrowserContext* browser_context =
-      ShellContentBrowserClient::Get()->browser_context();
-  StoragePartition* storage_partition =
-      browser_context->GetDefaultStoragePartition();
-  scoped_refptr<storage::QuotaManager> quota_manager =
-      base::WrapRefCounted(storage_partition->GetQuotaManager());
-
-  content::GetIOThreadTaskRunner({})->PostTask(
-      FROM_HERE,
-      base::BindOnce(run_on_io_thread, std::move(quota_manager), quota));
-}
-
-void WebTestControlHost::ClearAllDatabases() {
-  auto run_on_database_sequence =
-      [](scoped_refptr<storage::DatabaseTracker> db_tracker) {
-        DCHECK(db_tracker->task_runner()->RunsTasksInCurrentSequence());
-        db_tracker->DeleteDataModifiedSince(base::Time(), base::DoNothing());
-      };
-
-  BrowserContext* browser_context =
-      ShellContentBrowserClient::Get()->browser_context();
-  StoragePartition* storage_partition =
-      browser_context->GetDefaultStoragePartition();
-  scoped_refptr<storage::DatabaseTracker> db_tracker =
-      base::WrapRefCounted(storage_partition->GetDatabaseTracker());
-
-  if (db_tracker) {
-    base::SequencedTaskRunner* task_runner = db_tracker->task_runner();
-    task_runner->PostTask(FROM_HERE, base::BindOnce(run_on_database_sequence,
-                                                    std::move(db_tracker)));
-  }
 }
 
 void WebTestControlHost::SimulateWebNotificationClick(

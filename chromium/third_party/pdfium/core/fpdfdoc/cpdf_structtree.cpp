@@ -18,9 +18,9 @@
 
 namespace {
 
-bool IsTagged(const CPDF_Document* pDoc) {
+bool IsTagged(const CPDF_Document* doc) {
   RetainPtr<const CPDF_Dictionary> pMarkInfo =
-      pDoc->GetRoot()->GetDictFor("MarkInfo");
+      doc->GetRoot()->GetDictFor("MarkInfo");
   return pMarkInfo && pMarkInfo->GetIntegerFor("Marked");
 }
 
@@ -28,102 +28,115 @@ bool IsTagged(const CPDF_Document* pDoc) {
 
 // static
 std::unique_ptr<CPDF_StructTree> CPDF_StructTree::LoadPage(
-    const CPDF_Document* pDoc,
+    const CPDF_Document* doc,
     RetainPtr<const CPDF_Dictionary> pPageDict) {
-  if (!IsTagged(pDoc))
+  if (!IsTagged(doc)) {
     return nullptr;
+  }
 
-  auto pTree = std::make_unique<CPDF_StructTree>(pDoc);
+  auto pTree = std::make_unique<CPDF_StructTree>(doc);
   pTree->LoadPageTree(std::move(pPageDict));
   return pTree;
 }
 
-CPDF_StructTree::CPDF_StructTree(const CPDF_Document* pDoc)
-    : m_pTreeRoot(pDoc->GetRoot()->GetDictFor("StructTreeRoot")),
-      m_pRoleMap(m_pTreeRoot ? m_pTreeRoot->GetDictFor("RoleMap") : nullptr) {}
+CPDF_StructTree::CPDF_StructTree(const CPDF_Document* doc)
+    : tree_root_(doc->GetRoot()->GetDictFor("StructTreeRoot")),
+      role_map_(tree_root_ ? tree_root_->GetDictFor("RoleMap") : nullptr) {}
 
 CPDF_StructTree::~CPDF_StructTree() = default;
 
-ByteString CPDF_StructTree::GetRoleMapNameFor(const ByteString& type) const {
-  if (m_pRoleMap) {
-    ByteString mapped = m_pRoleMap->GetNameFor(type);
-    if (!mapped.IsEmpty())
+ByteString CPDF_StructTree::GetRoleMapNameFor(ByteStringView type) const {
+  if (role_map_) {
+    ByteString mapped = role_map_->GetNameFor(type);
+    if (!mapped.IsEmpty()) {
       return mapped;
+    }
   }
-  return type;
+  return ByteString(type);
 }
 
 void CPDF_StructTree::LoadPageTree(RetainPtr<const CPDF_Dictionary> pPageDict) {
-  m_pPage = std::move(pPageDict);
-  if (!m_pTreeRoot)
+  page_ = std::move(pPageDict);
+  if (!tree_root_) {
     return;
+  }
 
-  RetainPtr<const CPDF_Object> pKids = m_pTreeRoot->GetDirectObjectFor("K");
-  if (!pKids)
+  RetainPtr<const CPDF_Object> pKids = tree_root_->GetDirectObjectFor("K");
+  if (!pKids) {
     return;
+  }
 
   size_t kids_count;
-  if (pKids->IsDictionary())
+  if (pKids->IsDictionary()) {
     kids_count = 1;
-  else if (const CPDF_Array* pArray = pKids->AsArray())
+  } else if (const CPDF_Array* pArray = pKids->AsArray()) {
     kids_count = pArray->size();
-  else
+  } else {
     return;
+  }
 
-  m_Kids.clear();
-  m_Kids.resize(kids_count);
+  kids_.clear();
+  kids_.resize(kids_count);
 
   RetainPtr<const CPDF_Dictionary> pParentTree =
-      m_pTreeRoot->GetDictFor("ParentTree");
-  if (!pParentTree)
+      tree_root_->GetDictFor("ParentTree");
+  if (!pParentTree) {
     return;
+  }
 
   CPDF_NumberTree parent_tree(std::move(pParentTree));
-  int parents_id = m_pPage->GetIntegerFor("StructParents", -1);
-  if (parents_id < 0)
+  int parents_id = page_->GetIntegerFor("StructParents", -1);
+  if (parents_id < 0) {
     return;
+  }
 
   RetainPtr<const CPDF_Array> pParentArray =
       ToArray(parent_tree.LookupValue(parents_id));
-  if (!pParentArray)
+  if (!pParentArray) {
     return;
+  }
 
   StructElementMap element_map;
   for (size_t i = 0; i < pParentArray->size(); i++) {
     RetainPtr<const CPDF_Dictionary> pParent = pParentArray->GetDictAt(i);
-    if (pParent)
+    if (pParent) {
       AddPageNode(std::move(pParent), &element_map, 0);
+    }
   }
 }
 
 RetainPtr<CPDF_StructElement> CPDF_StructTree::AddPageNode(
-    RetainPtr<const CPDF_Dictionary> pDict,
+    RetainPtr<const CPDF_Dictionary> dict,
     StructElementMap* map,
     int nLevel) {
   static constexpr int kStructTreeMaxRecursion = 32;
-  if (nLevel > kStructTreeMaxRecursion)
+  if (nLevel > kStructTreeMaxRecursion) {
     return nullptr;
+  }
 
-  auto it = map->find(pDict);
-  if (it != map->end())
+  auto it = map->find(dict);
+  if (it != map->end()) {
     return it->second;
+  }
 
-  RetainPtr<const CPDF_Dictionary> key(pDict);
-  auto pElement = pdfium::MakeRetain<CPDF_StructElement>(this, pDict);
+  RetainPtr<const CPDF_Dictionary> key(dict);
+  auto pElement = pdfium::MakeRetain<CPDF_StructElement>(this, dict);
   (*map)[key] = pElement;
-  RetainPtr<const CPDF_Dictionary> pParent = pDict->GetDictFor("P");
+  RetainPtr<const CPDF_Dictionary> pParent = dict->GetDictFor("P");
   if (!pParent || pParent->GetNameFor("Type") == "StructTreeRoot") {
-    if (!AddTopLevelNode(pDict, pElement))
+    if (!AddTopLevelNode(dict, pElement)) {
       map->erase(key);
+    }
     return pElement;
   }
 
   RetainPtr<CPDF_StructElement> pParentElement =
       AddPageNode(std::move(pParent), map, nLevel + 1);
-  if (!pParentElement)
+  if (!pParentElement) {
     return pElement;
+  }
 
-  if (!pParentElement->UpdateKidIfElement(pDict, pElement.Get())) {
+  if (!pParentElement->UpdateKidIfElement(dict, pElement.Get())) {
     map->erase(key);
     return pElement;
   }
@@ -133,28 +146,31 @@ RetainPtr<CPDF_StructElement> CPDF_StructTree::AddPageNode(
 }
 
 bool CPDF_StructTree::AddTopLevelNode(
-    const CPDF_Dictionary* pDict,
+    const CPDF_Dictionary* dict,
     const RetainPtr<CPDF_StructElement>& pElement) {
-  RetainPtr<const CPDF_Object> pObj = m_pTreeRoot->GetDirectObjectFor("K");
-  if (!pObj)
+  RetainPtr<const CPDF_Object> pObj = tree_root_->GetDirectObjectFor("K");
+  if (!pObj) {
     return false;
+  }
 
   if (pObj->IsDictionary()) {
-    if (pObj->GetObjNum() != pDict->GetObjNum())
+    if (pObj->GetObjNum() != dict->GetObjNum()) {
       return false;
-    m_Kids[0] = pElement;
+    }
+    kids_[0] = pElement;
   }
 
   const CPDF_Array* pTopKids = pObj->AsArray();
-  if (!pTopKids)
+  if (!pTopKids) {
     return true;
+  }
 
   bool bSave = false;
   for (size_t i = 0; i < pTopKids->size(); i++) {
     RetainPtr<const CPDF_Reference> pKidRef =
         ToReference(pTopKids->GetObjectAt(i));
-    if (pKidRef && pKidRef->GetRefObjNum() == pDict->GetObjNum()) {
-      m_Kids[i] = pElement;
+    if (pKidRef && pKidRef->GetRefObjNum() == dict->GetObjNum()) {
+      kids_[i] = pElement;
       bSave = true;
     }
   }

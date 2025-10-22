@@ -14,6 +14,7 @@
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/types/zip.h"
 #include "base/unguessable_token.h"
 #include "components/autofill/core/common/autocomplete_parsing_util.h"
 #include "components/autofill/core/common/autofill_features.h"
@@ -155,12 +156,20 @@ FormFieldData CreateTestFormField(std::string_view label,
                                   std::string_view name,
                                   std::string_view value,
                                   FormControlType type) {
+  return CreateTestFormField(base::UTF8ToUTF16(label), base::UTF8ToUTF16(name),
+                             base::UTF8ToUTF16(value), type);
+}
+
+FormFieldData CreateTestFormField(std::u16string_view label,
+                                  std::u16string_view name,
+                                  std::u16string_view value,
+                                  FormControlType type) {
   FormFieldData field;
   field.set_host_frame(MakeLocalFrameToken());
   field.set_renderer_id(MakeFieldRendererId());
-  field.set_label(base::UTF8ToUTF16(label));
-  field.set_name(base::UTF8ToUTF16(name));
-  field.set_value(base::UTF8ToUTF16(value));
+  field.set_label(std::u16string(label));
+  field.set_name(std::u16string(name));
+  field.set_value(std::u16string(value));
   field.set_form_control_type(type);
   field.set_is_focusable(true);
   return field;
@@ -230,13 +239,13 @@ FormFieldData CreateTestSelectField(std::string_view label,
   field.set_autocomplete_attribute(std::string(autocomplete));
   field.set_parsed_autocomplete(ParseAutocompleteAttribute(autocomplete));
 
-  CHECK_EQ(values.size(), contents.size());
   std::vector<SelectOption> options;
   options.reserve(values.size());
-  for (size_t i = 0; i < values.size(); ++i) {
+  for (const auto [option_value, option_content] :
+       base::zip(values, contents)) {
     options.push_back({
-        .value = base::UTF8ToUTF16(values[i]),
-        .text = base::UTF8ToUTF16(contents[i]),
+        .value = base::UTF8ToUTF16(option_value),
+        .text = base::UTF8ToUTF16(option_content),
     });
   }
   field.set_options(std::move(options));
@@ -252,10 +261,10 @@ FormFieldData CreateTestDatalistField(std::string_view label,
   FormFieldData field =
       CreateTestFormField(label, name, value, FormControlType::kInputText);
   std::vector<SelectOption> datalist_options;
-  datalist_options.reserve(std::min(values.size(), labels.size()));
-  for (size_t i = 0; i < std::min(values.size(), labels.size()); ++i) {
-    datalist_options.push_back({.value = base::UTF8ToUTF16(values[i]),
-                                .text = base::UTF8ToUTF16(labels[i])});
+  datalist_options.reserve(values.size());
+  for (auto [entry_value, entry_label] : base::zip(values, labels)) {
+    datalist_options.push_back({.value = base::UTF8ToUTF16(entry_value),
+                                .text = base::UTF8ToUTF16(entry_label)});
   }
   field.set_datalist_options(std::move(datalist_options));
   return field;
@@ -309,6 +318,29 @@ FormData CreateTestCreditCardFormData(bool is_https,
 FormData CreateTestIbanFormData(std::string_view value, bool is_https) {
   FormData form = ConstructFormWithNameRenderIdAndProtocol(is_https);
   form.set_fields({CreateTestFormField("IBAN Value:", "iban_value", value,
+                                       FormControlType::kInputText)});
+  return form;
+}
+
+FormData CreateTestLoyaltyCardFormData() {
+  FormData form = ConstructFormWithNameRenderIdAndProtocol(/*is_https=*/true);
+  form.set_fields(
+      {CreateTestFormField("Your loyalty card:", "loyalty_card", /*value=*/"",
+                           FormControlType::kInputText)});
+  return form;
+}
+
+FormData CreateTestEmailOrLoyaltyCardFormData() {
+  FormData form = ConstructFormWithNameRenderIdAndProtocol(/*is_https=*/true);
+  form.set_fields(
+      {CreateTestFormField("Email or member number:", "email_or_member_number",
+                           /*value=*/"", FormControlType::kInputText)});
+  return form;
+}
+
+FormData CreateTestMerchantPromoCodeFormData() {
+  FormData form = ConstructFormWithNameRenderIdAndProtocol(/*is_https=*/true);
+  form.set_fields({CreateTestFormField("Promo code", "promocode", /*value=*/"",
                                        FormControlType::kInputText)});
   return form;
 }

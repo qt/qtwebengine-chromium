@@ -29,7 +29,6 @@
 #include <string_view>
 
 #include "base/trace_event/trace_event.h"
-#include "third_party/blink/renderer/core/clipboard/clipboard_mime_types.h"
 #include "third_party/blink/renderer/core/clipboard/data_object.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer.h"
 #include "third_party/blink/renderer/core/clipboard/data_transfer_access_policy.h"
@@ -99,6 +98,7 @@
 #include "third_party/blink/renderer/platform/wtf/std_lib_extras.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "third_party/blink/renderer/platform/wtf/text/unicode.h"
+#include "ui/base/clipboard/clipboard_constants.h"
 
 namespace blink {
 
@@ -125,19 +125,20 @@ UChar WhitespaceRebalancingCharToAppend(const String& string,
     return string[index];
 
   if (!index && start_is_start_of_paragraph)
-    return kNoBreakSpaceCharacter;
+    return uchar::kNoBreakSpace;
   if (index + 1 == string.length() && should_emit_nbsp_before_end)
-    return kNoBreakSpaceCharacter;
+    return uchar::kNoBreakSpace;
 
   // Generally, alternate between space and no-break space.
   if (previous == ' ')
-    return kNoBreakSpaceCharacter;
-  if (previous == kNoBreakSpaceCharacter)
+    return uchar::kNoBreakSpace;
+  if (previous == uchar::kNoBreakSpace) {
     return ' ';
+  }
 
   // Run of two or more spaces starts with a no-break space (crbug.com/453042).
   if (index + 1 < string.length() && IsWhitespace(string[index + 1]))
-    return kNoBreakSpaceCharacter;
+    return uchar::kNoBreakSpace;
 
   return ' ';
 }
@@ -189,6 +190,21 @@ bool IsNodeFullyContained(const EphemeralRange& range, const Node& node) {
 
   return range.StartPosition() <= Position::BeforeNode(node) &&
          Position::AfterNode(node) <= range.EndPosition();
+}
+
+bool EnsureNodeVisibility(HTMLElement* container) {
+  bool style_changed = false;
+  if (container->GetComputedStyle()->Visibility() == EVisibility::kHidden) {
+    container->SetInlineStyleProperty(CSSPropertyID::kVisibility,
+                                      CSSValueID::kVisible, true);
+    style_changed = true;
+  }
+  if (container->GetComputedStyle()->Display() == EDisplay::kNone) {
+    container->SetInlineStyleProperty(CSSPropertyID::kDisplay,
+                                      CSSValueID::kInline, true);
+    style_changed = true;
+  }
+  return style_changed;
 }
 
 // TODO(editing-dev): We should implement real version which refers
@@ -1671,7 +1687,7 @@ DispatchEventResult DispatchBeforeInputDataTransfer(
         input_type, data_transfer, InputEvent::EventIsComposing::kNotComposing,
         TargetRangesForInputEvent(*target));
   } else {
-    const String& data = data_transfer->getData(kMimeTypeTextPlain);
+    const String& data = data_transfer->getData(ui::kMimeTypePlainText);
     // TODO(editing-dev): Pass appropriate |ranges| after it's defined on spec.
     // http://w3c.github.io/editing/input-events.html#dom-inputevent-inputtype
     before_input_event = InputEvent::CreateBeforeInput(

@@ -39,7 +39,6 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
     case PrerenderFinalStatus::kInvalidSchemeRedirect:
     case PrerenderFinalStatus::kInvalidSchemeNavigation:
     case PrerenderFinalStatus::kNavigationRequestBlockedByCsp:
-    case PrerenderFinalStatus::kMainFrameNavigation:
     case PrerenderFinalStatus::kMojoBinderPolicy:
     case PrerenderFinalStatus::kRendererProcessCrashed:
     case PrerenderFinalStatus::kRendererProcessKilled:
@@ -112,8 +111,8 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
       return true;
 
     // These are used for speculation rules, not for embedder triggers.
-    case PrerenderFinalStatus::kMaxNumOfRunningEagerPrerendersExceeded:
-    case PrerenderFinalStatus::kMaxNumOfRunningNonEagerPrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningImmediatePrerendersExceeded:
+    case PrerenderFinalStatus::kMaxNumOfRunningNonImmediatePrerendersExceeded:
       NOTREACHED();
 
     case PrerenderFinalStatus::kMaxNumOfRunningEmbedderPrerendersExceeded:
@@ -142,6 +141,9 @@ bool ShouldFireErrorCallback(PrerenderFinalStatus status) {
     // option or with Clear-Site-Data response headers.
     case PrerenderFinalStatus::kBrowsingDataRemoved:
       return false;
+    // The PrerenderHost is reused by another prerender request.
+    case PrerenderFinalStatus::kPrerenderHostReused:
+      return false;
   }
 }
 
@@ -167,6 +169,10 @@ PrerenderHandleImpl::PrerenderHandleImpl(
 }
 
 PrerenderHandleImpl::~PrerenderHandleImpl() {
+  // GetPrerenderHost() fetches the PrerenderHost by the frame_tree_node_id_.
+  // If the underlying PrerenderHost is reused, frame_tree_node_id_ will
+  // be reset and prerender_host will be nullptr. The reused host will
+  // not be cancelled.
   PrerenderHost* prerender_host = GetPrerenderHost();
   if (!prerender_host) {
     return;
@@ -263,6 +269,14 @@ void PrerenderHandleImpl::OnFailed(PrerenderFinalStatus status) {
   for (auto& callback : callbacks) {
     std::move(callback).Run();
   }
+}
+
+void PrerenderHandleImpl::OnHostReused() {
+  // Since the frame_tree_node_id_ is reused by the new PrerenderHost, we will
+  // stop tracking the FrameTree and reset frame_tree_node_id_.
+  // TODO(crbug.com/434826191): Add a new unique identifier for the
+  // PrerenderHost.
+  frame_tree_node_id_ = FrameTreeNodeId();
 }
 
 PrerenderHost* PrerenderHandleImpl::GetPrerenderHost() {

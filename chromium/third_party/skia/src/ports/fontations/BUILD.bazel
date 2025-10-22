@@ -38,10 +38,10 @@ rust_static_library(
     ],
     crate_root = "src/ffi.rs",
     deps = [
-        "@cxx",
-        "@fontations//:font-types",
-        "@fontations//:read-fonts",
-        "@fontations//:skrifa",
+        "@crates//:cxx",
+        "@crates//:font-types",
+        "@crates//:read-fonts",
+        "@crates//:skrifa",
     ],
 )
 
@@ -59,8 +59,6 @@ skia_cc_library(
         ":bridge_rust_side",
         ":fontations_ffi",
         ":path_bridge_include",
-        # For color bitmap fonts.
-        "//src/codec:png_decode",
     ],
 )
 

@@ -17,35 +17,108 @@
 
 from hashlib import md5 as md5_hash
 
+from ..common.by import By
 from .command import Command
 
 
-class ShadowRoot():
-
+class ShadowRoot:
     # TODO: We should look and see  how we can create a search context like Java/.NET
 
-    def __init__(self, session, id_):
+    def __init__(self, session, id_) -> None:
         self.session = session
         self._id = id_
 
-    def __eq__(self, other_shadowroot):
+    def __eq__(self, other_shadowroot) -> bool:
         return self._id == other_shadowroot._id
 
-    def __hash__(self):
-        return int(md5_hash(self._id.encode('utf-8')).hexdigest(), 16)
+    def __hash__(self) -> int:
+        return int(md5_hash(self._id.encode("utf-8")).hexdigest(), 16)
 
-    def __ne__(self, other_shadowroot):
-        return not self.__eq__(other_shadowroot)
-
-    def __repr__(self):
+    def __repr__(self) -> str:
         return '<{0.__module__}.{0.__name__} (session="{1}", element="{2}")>'.format(
-            type(self), self.session.session_id, self._id)
+            type(self), self.session.session_id, self._id
+        )
 
-    def find_element(self, using, value):
-        return self._execute(Command.FIND_ELEMENT_FROM_SHADOW_ROOT, {"using": using, "value": value})['value']
+    @property
+    def id(self) -> str:
+        return self._id
 
-    def find_elements(self, using, value):
-        return self._execute(Command.FIND_ELEMENTS_FROM_SHADOW_ROOT, {"using": using, "value": value})['value']
+    def find_element(self, by: str = By.ID, value: str = None):
+        """Find an element inside a shadow root given a By strategy and
+        locator.
+
+        Parameters:
+        -----------
+        by : selenium.webdriver.common.by.By
+            The locating strategy to use. Default is `By.ID`. Supported values include:
+            - By.ID: Locate by element ID.
+            - By.NAME: Locate by the `name` attribute.
+            - By.XPATH: Locate by an XPath expression.
+            - By.CSS_SELECTOR: Locate by a CSS selector.
+            - By.CLASS_NAME: Locate by the `class` attribute.
+            - By.TAG_NAME: Locate by the tag name (e.g., "input", "button").
+            - By.LINK_TEXT: Locate a link element by its exact text.
+            - By.PARTIAL_LINK_TEXT: Locate a link element by partial text match.
+            - RelativeBy: Locate elements relative to a specified root element.
+
+        Example:
+        --------
+        element = driver.find_element(By.ID, 'foo')
+
+        Returns:
+        -------
+        WebElement
+            The first matching `WebElement` found on the page.
+        """
+        if by == By.ID:
+            by = By.CSS_SELECTOR
+            value = f'[id="{value}"]'
+        elif by == By.CLASS_NAME:
+            by = By.CSS_SELECTOR
+            value = f".{value}"
+        elif by == By.NAME:
+            by = By.CSS_SELECTOR
+            value = f'[name="{value}"]'
+
+        return self._execute(Command.FIND_ELEMENT_FROM_SHADOW_ROOT, {"using": by, "value": value})["value"]
+
+    def find_elements(self, by: str = By.ID, value: str = None):
+        """Find elements inside a shadow root given a By strategy and locator.
+
+        Parameters:
+        -----------
+        by : selenium.webdriver.common.by.By
+            The locating strategy to use. Default is `By.ID`. Supported values include:
+            - By.ID: Locate by element ID.
+            - By.NAME: Locate by the `name` attribute.
+            - By.XPATH: Locate by an XPath expression.
+            - By.CSS_SELECTOR: Locate by a CSS selector.
+            - By.CLASS_NAME: Locate by the `class` attribute.
+            - By.TAG_NAME: Locate by the tag name (e.g., "input", "button").
+            - By.LINK_TEXT: Locate a link element by its exact text.
+            - By.PARTIAL_LINK_TEXT: Locate a link element by partial text match.
+            - RelativeBy: Locate elements relative to a specified root element.
+
+        Example:
+        --------
+        element = driver.find_elements(By.ID, 'foo')
+
+        Returns:
+        -------
+        List[WebElement]
+            list of `WebElements` matching locator strategy found on the page.
+        """
+        if by == By.ID:
+            by = By.CSS_SELECTOR
+            value = f'[id="{value}"]'
+        elif by == By.CLASS_NAME:
+            by = By.CSS_SELECTOR
+            value = f".{value}"
+        elif by == By.NAME:
+            by = By.CSS_SELECTOR
+            value = f'[name="{value}"]'
+
+        return self._execute(Command.FIND_ELEMENTS_FROM_SHADOW_ROOT, {"using": by, "value": value})["value"]
 
     # Private Methods
     def _execute(self, command, params=None):
@@ -60,5 +133,5 @@ class ShadowRoot():
         """
         if not params:
             params = {}
-        params['shadowId'] = self._id
+        params["shadowId"] = self._id
         return self.session.execute(command, params)

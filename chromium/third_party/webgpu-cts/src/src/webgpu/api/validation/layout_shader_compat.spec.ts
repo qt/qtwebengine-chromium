@@ -5,6 +5,7 @@ TODO:
     - x= {superset, subset}
 `;
 
+import { AllFeaturesMaxLimitsGPUTest } from '../.././gpu_test.js';
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import {
   kShaderStageCombinations,
@@ -13,7 +14,7 @@ import {
 } from '../../capability_info.js';
 import { GPUConst } from '../../constants.js';
 
-import { AllFeaturesMaxLimitsValidationTest } from './validation_test.js';
+import * as vtu from './validation_test_utils.js';
 
 type BindableResourceType = ValidBindableResource | 'readonlyStorageBuf';
 const kBindableResources = [
@@ -92,7 +93,7 @@ const bindGroupLayoutEntryContents = {
   },
 } as const;
 
-class F extends AllFeaturesMaxLimitsValidationTest {
+class F extends AllFeaturesMaxLimitsGPUTest {
   createPipelineLayout(
     bindingInPipelineLayout: BindableResourceType,
     visibility: number
@@ -112,7 +113,7 @@ class F extends AllFeaturesMaxLimitsValidationTest {
     });
   }
 
-  GetBindableResourceShaderDeclaration(bindableResource: BindableResourceType): string {
+  getBindableResourceShaderDeclaration(bindableResource: BindableResourceType): string {
     switch (bindableResource) {
       case 'compareSamp':
         return 'var tmp : sampler_comparison';
@@ -139,7 +140,7 @@ class F extends AllFeaturesMaxLimitsValidationTest {
   }
 }
 
-const BindingResourceCompatibleWithShaderStages = function (
+const bindingResourceCompatibleWithShaderStages = function (
   bindingResource: BindableResourceType,
   shaderStages: number
 ): boolean {
@@ -179,11 +180,11 @@ g.test('pipeline_layout_shader_exact_match')
           // We don't test using non-filtering sampler in shader because it has the same declaration
           // as filtering sampler.
           p.bindingInShader === 'nonFiltSamp' ||
-          !BindingResourceCompatibleWithShaderStages(
+          !bindingResourceCompatibleWithShaderStages(
             p.bindingInPipelineLayout,
             p.pipelineLayoutVisibility
           ) ||
-          !BindingResourceCompatibleWithShaderStages(p.bindingInShader, p.shaderStageWithBinding)
+          !bindingResourceCompatibleWithShaderStages(p.bindingInShader, p.shaderStageWithBinding)
       )
   )
   .fn(t => {
@@ -236,7 +237,7 @@ g.test('pipeline_layout_shader_exact_match')
     }
 
     const layout = t.createPipelineLayout(bindingInPipelineLayout, pipelineLayoutVisibility);
-    const bindResourceDeclaration = `@group(0) @binding(0) ${t.GetBindableResourceShaderDeclaration(
+    const bindResourceDeclaration = `@group(0) @binding(0) ${t.getBindableResourceShaderDeclaration(
       bindingInShader
     )}`;
     const staticallyUseBinding = isBindingStaticallyUsed ? '_ = tmp; ' : '';
@@ -267,7 +268,7 @@ g.test('pipeline_layout_shader_exact_match')
           ${staticallyUseBinding}
         }
         `;
-        t.doCreateComputePipelineTest(isAsync, success, {
+        vtu.doCreateComputePipelineTest(t, isAsync, success, {
           layout,
           compute: {
             module: t.device.createShaderModule({
@@ -286,7 +287,7 @@ g.test('pipeline_layout_shader_exact_match')
           return vec4f();
         }
         `;
-        t.doCreateRenderPipelineTest(isAsync, success, {
+        vtu.doCreateRenderPipelineTest(t, isAsync, success, {
           layout,
           vertex: {
             module: t.device.createShaderModule({
@@ -306,7 +307,7 @@ g.test('pipeline_layout_shader_exact_match')
           return vec4f();
         }
         `;
-        t.doCreateRenderPipelineTest(isAsync, success, {
+        vtu.doCreateRenderPipelineTest(t, isAsync, success, {
           layout,
           vertex: {
             module: t.device.createShaderModule({

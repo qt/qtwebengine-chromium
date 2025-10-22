@@ -5,7 +5,9 @@
 #include "third_party/blink/renderer/platform/animation/timing_function.h"
 
 #include <algorithm>
+
 #include "base/notreached.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "ui/gfx/animation/keyframe/timing_function.h"
 
@@ -15,7 +17,7 @@ String LinearTimingFunction::ToString() const {
   if (linear_->IsTrivial()) {
     return "linear";
   }
-  WTF::StringBuilder builder;
+  StringBuilder builder;
   builder.Append("linear(");
   for (wtf_size_t i = 0; i < linear_->Points().size(); ++i) {
     if (i != 0) {
@@ -118,10 +120,10 @@ String CubicBezierTimingFunction::ToString() const {
     case CubicBezierTimingFunction::EaseType::EASE_IN_OUT:
       return "ease-in-out";
     case CubicBezierTimingFunction::EaseType::CUSTOM:
-      return "cubic-bezier(" + String::NumberToStringECMAScript(X1()) + ", " +
-             String::NumberToStringECMAScript(Y1()) + ", " +
-             String::NumberToStringECMAScript(X2()) + ", " +
-             String::NumberToStringECMAScript(Y2()) + ")";
+      return StrCat({"cubic-bezier(", String::NumberToStringECMAScript(X1()),
+                     ", ", String::NumberToStringECMAScript(Y1()), ", ",
+                     String::NumberToStringECMAScript(X2()), ", ",
+                     String::NumberToStringECMAScript(Y2()), ")"});
     default:
       NOTREACHED();
   }

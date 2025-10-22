@@ -1,6 +1,7 @@
 // Copyright 2019 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -58,7 +59,7 @@ const UIStrings = {
    */
   showEventsFromOtherDomains: 'Show events from other domains',
   /**
-   *@description Text of a checkbox to show events for other dtorage keys
+   *@description Text of a checkbox to show events for other storage keys
    */
   showEventsForOtherStorageKeys: 'Show events from other storage partitions',
   /**
@@ -110,7 +111,7 @@ const UIStrings = {
    *@description Text in Background Service View of the Application panel
    *@example {Background Fetch} PH1
    */
-  recordingSActivity: 'Recording {PH1} activity...',
+  recordingSActivity: 'Recording {PH1} activity…',
   /**
    *@description Text in Background Service View of the Application panel
    */
@@ -127,7 +128,7 @@ const UIStrings = {
    *@example {Start recording events} PH1
    *@example {Ctrl + E} PH2
    */
-  startRecordingToDebug: 'Start to debug background services by using the "{PH1}" button or by hitting {PH2}.',
+  startRecordingToDebug: 'Start to debug background services by using the "{PH1}" button or by pressing {PH2}.',
   /**
    *@description Text to show an item is empty
    */
@@ -177,12 +178,13 @@ export class BackgroundServiceView extends UI.Widget.VBox {
   }
 
   constructor(serviceName: Protocol.BackgroundService.ServiceName, model: BackgroundServiceModel) {
-    super(true);
+    super({
+      jslog: `${VisualLogging.pane().context(Platform.StringUtilities.toKebabCase(serviceName))}`,
+      useShadowDom: true,
+    });
     this.registerRequiredCSS(emptyWidgetStyles, backgroundServiceViewStyles);
 
     this.serviceName = serviceName;
-    const kebabName = Platform.StringUtilities.toKebabCase(serviceName);
-    this.element.setAttribute('jslog', `${VisualLogging.pane().context(kebabName)}`);
 
     this.model = model;
     this.model.addEventListener(Events.RecordingStateChanged, this.onRecordingStateChanged, this);
@@ -443,7 +445,7 @@ export class BackgroundServiceView extends UI.Widget.VBox {
   }
 
   private createLearnMoreLink(): Platform.DevToolsPath.UrlString {
-    let url = 'https://developer.chrome.com/docs/devtools/javascript/background-services/?utm_source=devtools';
+    let url = 'https://developer.chrome.com/docs/devtools/javascript/background-services/';
 
     switch (this.serviceName) {
       case Protocol.BackgroundService.ServiceName.BackgroundFetch:
@@ -498,7 +500,7 @@ export class BackgroundServiceView extends UI.Widget.VBox {
       emptyWidget.text = i18nString(
           UIStrings.startRecordingToDebug,
           {PH1: i18nString(UIStrings.startRecordingEvents), PH2: recordShortcuts.title()});
-      emptyWidget.appendLink(this.createLearnMoreLink());
+      emptyWidget.link = this.createLearnMoreLink();
 
       const button = UI.UIUtils.createTextButton(
           i18nString(UIStrings.startRecordingEvents), () => this.toggleRecording(),

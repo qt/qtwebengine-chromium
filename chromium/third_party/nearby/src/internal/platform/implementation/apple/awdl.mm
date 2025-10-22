@@ -19,11 +19,12 @@
 #include <string>
 #include <utility>
 
+#import "internal/platform/implementation/apple/Log/GNCLogger.h"
 #import "internal/platform/implementation/apple/Mediums/WiFiCommon/GNCIPv4Address.h"
 #import "internal/platform/implementation/apple/Mediums/WiFiCommon/GNCNWFramework.h"
 #import "internal/platform/implementation/apple/Mediums/WiFiCommon/GNCNWFrameworkServerSocket.h"
 #import "internal/platform/implementation/apple/Mediums/WiFiCommon/GNCNWFrameworkSocket.h"
-#import "GoogleToolboxForMac/GTMLogger.h"
+#import "internal/platform/implementation/apple/network_utils.h"
 
 namespace nearby {
 namespace apple {
@@ -36,7 +37,7 @@ ExceptionOr<ByteArray> AwdlInputStream::Read(std::int64_t size) {
   NSError* error = nil;
   NSData* data = [socket_ readMaxLength:size error:&error];
   if (data == nil) {
-    GTMLoggerError(@"Error reading socket: %@", error);
+    GNCLoggerError(@"Error reading socket: %@", error);
     return {Exception::kIo};
   }
   return ExceptionOr<ByteArray>{ByteArray((const char*)data.bytes, data.length)};
@@ -56,7 +57,7 @@ Exception AwdlOutputStream::Write(const ByteArray& data) {
   NSError* error = nil;
   BOOL result = [socket_ write:[NSData dataWithBytes:data.data() length:data.size()] error:&error];
   if (!result) {
-    GTMLoggerError(@"Error writing socket: %@", error);
+    GNCLoggerError(@"Error writing socket: %@", error);
     return {Exception::kIo};
   }
   return {Exception::kSuccess};
@@ -109,7 +110,7 @@ std::unique_ptr<api::AwdlSocket> AwdlServerSocket::Accept() {
     return std::make_unique<AwdlSocket>(socket);
   }
   if (error != nil) {
-    GTMLoggerError(@"Error accepting socket: %@", error);
+    GNCLoggerError(@"Error accepting socket: %@", error);
   }
   return nil;
 }
@@ -121,130 +122,72 @@ Exception AwdlServerSocket::Close() {
 
 #pragma mark - AwdlMedium
 
-AwdlMedium::AwdlMedium(bool include_peer_to_peer)
-    : medium_([GNCNWFramework sharedInstance]) {}
+AwdlMedium::AwdlMedium(bool include_peer_to_peer) : medium_([GNCNWFramework sharedInstance]) {}
 
 bool AwdlMedium::StartAdvertising(const NsdServiceInfo& nsd_service_info) {
-  NSInteger port = nsd_service_info.GetPort();
-  NSString* serviceName = @(nsd_service_info.GetServiceName().c_str());
-  NSString* serviceType = @(nsd_service_info.GetServiceType().c_str());
-  NSMutableDictionary<NSString*, NSString*>* txtRecords = [[NSMutableDictionary alloc] init];
-  for (const auto& record : nsd_service_info.GetTxtRecords()) {
-    [txtRecords setObject:@(record.second.c_str()) forKey:@(record.first.c_str())];
-  }
-  [medium_ startAdvertisingPort:port
-                    serviceName:serviceName
-                    serviceType:serviceType
-                     txtRecords:txtRecords];
-  return true;
+  return network_utils::StartAdvertising(medium_, nsd_service_info);
 }
 
 bool AwdlMedium::StopAdvertising(const NsdServiceInfo& nsd_service_info) {
-  NSInteger port = nsd_service_info.GetPort();
-  [medium_ stopAdvertisingPort:port];
-  return true;
+  return network_utils::StopAdvertising(medium_, nsd_service_info);
 }
 
 bool AwdlMedium::StartDiscovery(const std::string& service_type,
-                                   DiscoveredServiceCallback callback) {
-  if (medium_.isDiscoveringAnyService) {
-    GTMLoggerError(@"Error already discovered service");
-    return false;
-  }
-
-  __block NSString* serviceType = @(service_type.c_str());
-  __block DiscoveredServiceCallback client_callback = std::move(callback);
-
-  medium_.includePeerToPeer = YES;
-  NSError* error = nil;
-  BOOL result = [medium_ startDiscoveryForServiceType:serviceType
-      serviceFoundHandler:^(NSString* name, NSDictionary<NSString*, NSString*>* txtRecords) {
-        NsdServiceInfo nsd_service_info;
-        nsd_service_info.SetServiceType([serviceType UTF8String]);
-        nsd_service_info.SetServiceName([name UTF8String]);
-        [txtRecords
-            enumerateKeysAndObjectsUsingBlock:[nsd_service_info = &nsd_service_info](
-                                                  NSString* key, NSString* val, BOOL* stop) {
-              nsd_service_info->SetTxtRecord([key UTF8String], [val UTF8String]);
-            }];
-        client_callback.service_discovered_cb(nsd_service_info);
-      }
-      serviceLostHandler:^(NSString* name, NSDictionary<NSString*, NSString*>* txtRecords) {
-        NsdServiceInfo nsd_service_info;
-        nsd_service_info.SetServiceType([serviceType UTF8String]);
-        nsd_service_info.SetServiceName([name UTF8String]);
-        [txtRecords
-            enumerateKeysAndObjectsUsingBlock:[nsd_service_info = &nsd_service_info](
-                                                  NSString* key, NSString* val, BOOL* stop) {
-              nsd_service_info->SetTxtRecord([key UTF8String], [val UTF8String]);
-            }];
-        client_callback.service_lost_cb(nsd_service_info);
-      }
-      error:&error];
-  if (error != nil) {
-    GTMLoggerError(@"Error starting discovery for service type<%@>: %@", serviceType, error);
-  }
-  return result;
+                                DiscoveredServiceCallback callback) {
+  service_callback_ = std::move(callback);
+  network_utils::NetworkDiscoveredServiceCallback network_callback = {
+      .network_service_discovered_cb =
+          [this](const NsdServiceInfo& service_info) {
+            service_callback_.service_discovered_cb(service_info);
+          },
+      .network_service_lost_cb =
+          [this](const NsdServiceInfo& service_info) {
+            service_callback_.service_lost_cb(service_info);
+          }};
+  return network_utils::StartDiscovery(medium_, service_type, std::move(network_callback),
+                                       /*include_peer_to_peer=*/true);
 }
 
 bool AwdlMedium::StopDiscovery(const std::string& service_type) {
-  NSString* serviceType = @(service_type.c_str());
-  [medium_ stopDiscoveryForServiceType:serviceType];
-  return true;
+  return network_utils::StopDiscovery(medium_, service_type);
 }
 
 std::unique_ptr<api::AwdlSocket> AwdlMedium::ConnectToService(
     const NsdServiceInfo& remote_service_info, CancellationFlag* cancellation_flag) {
-  medium_.includePeerToPeer = YES;
-  NSError* error = nil;
-  NSString* serviceName = @(remote_service_info.GetServiceName().c_str());
-  NSString* serviceType = @(remote_service_info.GetServiceType().c_str());
-  GNCNWFrameworkSocket* socket = [medium_ connectToServiceName:serviceName
-                                                   serviceType:serviceType
-                                                         error:&error];
+  GNCNWFrameworkSocket* socket =
+      network_utils::ConnectToService(medium_, remote_service_info, cancellation_flag);
   if (socket != nil) {
     return std::make_unique<AwdlSocket>(socket);
-  }
-  if (error != nil) {
-    GTMLoggerError(@"Error connecting to service name<%@> type<%@>: %@", serviceName, serviceType,
-                   error);
   }
   return nil;
 }
 
 std::unique_ptr<api::AwdlSocket> AwdlMedium::ConnectToService(
-    const std::string& ip_address, int port, CancellationFlag* cancellation_flag) {
-  medium_.includePeerToPeer = YES;
-  NSError* error = nil;
-  if (ip_address.size() != 4) {
-    GTMLoggerError(@"Error IP address must be 4 bytes, but is %lu bytes", ip_address.size());
-    return nil;
-  }
-  NSData* hostData = [NSData dataWithBytes:ip_address.data() length:ip_address.size()];
-  GNCIPv4Address* host = [GNCIPv4Address addressFromData:hostData];
-  GNCNWFrameworkSocket* socket = [medium_ connectToHost:host port:port error:&error];
+    const NsdServiceInfo& remote_service_info, const api::PskInfo& psk_info,
+    CancellationFlag* cancellation_flag) {
+  GNCNWFrameworkSocket* socket =
+      network_utils::ConnectToService(medium_, remote_service_info, psk_info, cancellation_flag);
   if (socket != nil) {
     return std::make_unique<AwdlSocket>(socket);
-  }
-  if (error != nil) {
-    GTMLoggerError(@"Error connecting to %@:%d: %@", host, port, error);
   }
   return nil;
 }
 
 std::unique_ptr<api::AwdlServerSocket> AwdlMedium::ListenForService(int port) {
-  if (medium_.isListeningForAnyService) {
-    GTMLoggerError(@"Error already listening for service");
-    return nil;
-  }
-  medium_.includePeerToPeer = YES;
-  NSError* error = nil;
-  GNCNWFrameworkServerSocket* serverSocket = [medium_ listenForServiceOnPort:port error:&error];
+  GNCNWFrameworkServerSocket* serverSocket =
+      network_utils::ListenForService(medium_, port, /*include_peer_to_peer=*/true);
   if (serverSocket != nil) {
     return std::make_unique<AwdlServerSocket>(serverSocket);
   }
-  if (error != nil) {
-    GTMLoggerError(@"Error listening for service: %@", error);
+  return nil;
+}
+
+std::unique_ptr<api::AwdlServerSocket> AwdlMedium::ListenForService(const api::PskInfo& psk_info,
+                                                                    int port) {
+  GNCNWFrameworkServerSocket* serverSocket =
+      network_utils::ListenForService(medium_, psk_info, port, /*include_peer_to_peer=*/true);
+  if (serverSocket != nil) {
+    return std::make_unique<AwdlServerSocket>(serverSocket);
   }
   return nil;
 }

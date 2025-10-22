@@ -14,12 +14,12 @@
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/cookie_blocking_3pcd_status.h"
+#include "components/content_settings/core/common/cookie_controls_state.h"
 #include "components/page_info/page_info.h"
 #include "components/permissions/object_permission_context_base.h"
 #include "components/privacy_sandbox/canonical_topic.h"
 #include "components/safe_browsing/buildflags.h"
 #include "ui/base/models/image_model.h"
-#include "ui/gfx/native_widget_types.h"
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "ui/gfx/image/image_skia.h"
@@ -83,29 +83,15 @@ class PageInfoUI {
     bool is_managed = false;
   };
 
-  // `CookiesNewInfo` contains information about the sites that are allowed
+  // `CookiesInfo` contains information about the sites that are allowed
   // to access cookies and rws cookies info for new UI.
-  // TODO(crbug.com/40854087):  Change the name to "CookieInfo" after finishing
-  // cookies subpage implementation
-  struct CookiesNewInfo {
-    CookiesNewInfo();
-    CookiesNewInfo(CookiesNewInfo&&);
-    ~CookiesNewInfo();
-
-    // The number of third-party sites blocked.
-    int blocked_third_party_sites_count = -1;
-
-    // The number of third-party sites allowed.
-    int allowed_third_party_sites_count = -1;
+  struct CookiesInfo {
+    CookiesInfo();
+    CookiesInfo(CookiesInfo&&);
+    ~CookiesInfo();
 
     // The number of sites allowed to access cookies.
     int allowed_sites_count = -1;
-
-    // Whether protections are enabled for the given site.
-    bool protections_on = true;
-
-    // Whether tracking protection controls should be shown.
-    bool controls_visible = true;
 
     // The type of third-party cookie blocking in 3PCD.
     CookieBlocking3pcdStatus blocking_status =
@@ -114,8 +100,8 @@ class PageInfoUI {
     // The status of enforcement of blocking third-party cookies.
     CookieControlsEnforcement enforcement;
 
-    // List of ACT features.
-    std::vector<content_settings::TrackingProtectionFeature> features;
+    // The state of cookie controls to display.
+    CookieControlsState controls_state;
 
     std::optional<CookiesRwsInfo> rws_info;
 
@@ -169,6 +155,8 @@ class PageInfoUI {
 
     // The server certificate if a secure connection.
     scoped_refptr<net::X509Certificate> certificate;
+    // The 2-QWAC certificate if the site has a valid 2-QWAC.
+    scoped_refptr<net::X509Certificate> two_qwac;
     // Status of the site's connection.
     PageInfo::SiteConnectionStatus connection_status;
     // Textual description of the site's connection status that is displayed to
@@ -273,9 +261,6 @@ class PageInfoUI {
   // Returns the identity icon ID for the given identity |status|.
   static int GetIdentityIconID(PageInfo::SiteIdentityStatus status);
 
-  // Returns the connection icon ID for the given connection |status|.
-  static int GetConnectionIconID(PageInfo::SiteConnectionStatus status);
-
   // Returns the identity icon color ID for the given identity |status|.
   static int GetIdentityIconColorID(PageInfo::SiteIdentityStatus status);
 
@@ -290,7 +275,7 @@ class PageInfoUI {
   CreateSafetyTipSecurityDescription(const security_state::SafetyTipInfo& info);
 
   // Sets cookie information.
-  virtual void SetCookieInfo(const CookiesNewInfo& cookie_info) {}
+  virtual void SetCookieInfo(const CookiesInfo& cookie_info) {}
 
   // Sets permission information.
   virtual void SetPermissionInfo(const PermissionInfoList& permission_info_list,

@@ -347,7 +347,7 @@ int main(int argc, char *argv[]) {
         "add readable timestamps to log",
         "enable-chrome-logs",
         "show logs from the browser (overrides other logging options)",
-        "bidi-mapper-path",
+        "bidi-mapper-path=PATH",
         "custom bidi mapper path",
 #if BUILDFLAG(IS_LINUX)
         "disable-dev-shm-usage",

@@ -16,6 +16,7 @@
 #include "api/video/video_frame.h"
 #include "api/video_codecs/video_decoder.h"
 #include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/include/video_error_codes.h"
 #include "modules/video_coding/utility/vp8_header_parser.h"
 #include "modules/video_coding/utility/vp9_uncompressed_header_parser.h"
 #include "rtc_base/logging.h"
@@ -24,7 +25,9 @@
 #include "sdk/android/generated_video_jni/VideoDecoderWrapper_jni.h"
 #include "sdk/android/generated_video_jni/VideoDecoder_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
+#include "sdk/android/native_api/jni/jvm.h"
 #include "sdk/android/src/jni/encoded_image.h"
+#include "sdk/android/src/jni/jni_helpers.h"
 #include "sdk/android/src/jni/video_codec_status.h"
 #include "sdk/android/src/jni/video_frame.h"
 
@@ -37,7 +40,7 @@ const int64_t kNumRtpTicksPerMillisec = 90000 / kNumMillisecsPerSec;
 
 template <typename Dst, typename Src>
 inline std::optional<Dst> cast_optional(const std::optional<Src>& value) {
-  return value ? std::optional<Dst>(rtc::dchecked_cast<Dst, Src>(*value))
+  return value ? std::optional<Dst>(dchecked_cast<Dst, Src>(*value))
                : std::nullopt;
 }
 }  // namespace

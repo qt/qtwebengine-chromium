@@ -7,9 +7,12 @@
 #include "base/command_line.h"
 #include "base/feature_list.h"
 #include "base/strings/string_split.h"
-#include "base/win/windows_version.h"
 #include "build/build_config.h"
 #include "ui/gl/gl_switches.h"
+
+#if BUILDFLAG(IS_WIN)
+#include "base/win/windows_version.h"
+#endif
 
 #if BUILDFLAG(IS_MAC)
 #include "base/mac/mac_util.h"
@@ -21,7 +24,6 @@
 #include "base/strings/pattern.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
-#include "third_party/angle/src/gpu_info_util/SystemInfo.h"  // nogncheck
 #include "ui/gfx/android/achoreographer_compat.h"
 #include "ui/gfx/android/android_surface_control_compat.h"
 #endif
@@ -58,33 +60,12 @@ const base::FeatureParam<std::string>
     kPassthroughCommandDecoderBlockListByAndroidBuildFP{
         &kDefaultPassthroughCommandDecoder, "BlockListByAndroidBuildFP", ""};
 
-const base::FeatureParam<std::string>
-    kPassthroughCommandDecoderBlockListByGPUVendorId{
-        &kDefaultPassthroughCommandDecoder, "BlockListByGPUVendorId", ""};
-
-bool IsDeviceBlocked(const char* field, const std::string& block_list) {
+bool IsDeviceBlocked(const std::string& field, const std::string& block_list) {
   auto disable_patterns = base::SplitString(
       block_list, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
   for (const auto& disable_pattern : disable_patterns) {
     if (base::MatchPattern(field, disable_pattern))
       return true;
-  }
-  return false;
-}
-bool IsDeviceBlocked(angle::VendorID vendor_id, const std::string& block_list) {
-  auto disable_vendors = base::SplitString(
-      block_list, "|", base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);
-  for (const auto& disable_vendor_str : disable_vendors) {
-    angle::VendorID disable_vendor = 0;
-    if (!base::StringToUint(disable_vendor_str, &disable_vendor)) {
-      DCHECK(false) << "BlockListByGPUVendorId vendor \"" << disable_vendor_str
-                    << "\" failed to parse as a VendorID.";
-      return false;
-    }
-
-    if (vendor_id == disable_vendor) {
-      return true;
-    }
   }
   return false;
 }
@@ -137,32 +118,7 @@ constexpr base::FeatureParam<base::TimeDelta> kGLCompileShaderDelay = {
     /*default_value=*/base::Microseconds(1300)};
 #endif  // !defined(PASSTHROUGH_COMMAND_DECODER_LAUNCHED)
 
-#if BUILDFLAG(IS_MAC)
-// If true, metal shader programs are written to disk.
-//
-// As the gpu process writes to disk when this is set, you must also disable
-// the sandbox.
-//
-// The path the shaders are written to is controlled via the command line switch
-// --shader-cache-path (default is /tmp/shaders).
-BASE_FEATURE(kWriteMetalShaderCacheToDisk,
-             "WriteMetalShaderCacheToDisk",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// If true, the metal shader cache is read from a file and put into BlobCache
-// during startup.
-BASE_FEATURE(kUseBuiltInMetalShaderCache,
-             "UseBuiltInMetalShaderCache",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-#endif
-
 #if BUILDFLAG(IS_WIN)
-// If true, VSyncThreadWin will use the primary monitor's
-// refresh rate as the vsync interval.
-BASE_FEATURE(kUsePrimaryMonitorVSyncIntervalOnSV3,
-             "UsePrimaryMonitorVSyncIntervalOnSV3",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // If true, VsyncThreadWin will use the compositor clock
 // to determine the vsync interval.
 BASE_FEATURE(kUseCompositorClockVSyncInterval,
@@ -184,11 +140,11 @@ bool UseGpuVsync() {
 
 bool IsAndroidFrameDeadlineEnabled() {
 #if BUILDFLAG(IS_ANDROID)
-  static bool enabled =
-      base::android::BuildInfo::GetInstance()->is_at_least_t() &&
-      gfx::AChoreographerCompat33::Get().supported &&
-      gfx::SurfaceControl::SupportsSetFrameTimeline() &&
-      gfx::SurfaceControl::SupportsSetEnableBackPressure();
+  static bool enabled = base::android::BuildInfo::GetInstance()->sdk_int() >=
+                            base::android::SDK_VERSION_T &&
+                        gfx::AChoreographerCompat33::Get().supported &&
+                        gfx::SurfaceControl::SupportsSetFrameTimeline() &&
+                        gfx::SurfaceControl::SupportsSetEnableBackPressure();
   return enabled;
 #else
   return false;
@@ -229,30 +185,6 @@ bool UsePassthroughCommandDecoder() {
           build_info->android_build_fp(),
           kPassthroughCommandDecoderBlockListByAndroidBuildFP.Get()))
     return false;
-
-  // Only check system info once and cache if the vendor is blocked.
-  static std::optional<bool> gpu_vendor_blocked;
-  if (!gpu_vendor_blocked.has_value()) {
-    angle::SystemInfo angle_system_info;
-    if (angle::GetSystemInfo(&angle_system_info) &&
-        !angle_system_info.gpus.empty()) {
-      angle::VendorID gpu_vendor_id =
-          angle_system_info.gpus[angle_system_info.activeGPUIndex].vendorId;
-      gpu_vendor_blocked = IsDeviceBlocked(
-          gpu_vendor_id,
-          kPassthroughCommandDecoderBlockListByGPUVendorId.Get());
-    } else {
-      // If system info collection fails, do not blocklist this device by GPU
-      // vendor ID. Instead rely on individual device model or device ID
-      // blocking.
-      gpu_vendor_blocked = false;
-    }
-  }
-
-  DCHECK(gpu_vendor_blocked.has_value());
-  if (gpu_vendor_blocked.value()) {
-    return false;
-  }
 #endif  // BUILDFLAG(IS_ANDROID)
 
   return true;
@@ -302,17 +234,6 @@ void GetANGLEFeaturesFromCommandLineAndFinch(
     SplitAndAppendANGLEFeatureList(kForcedANGLEDisabledFeaturesFP.Get(),
                                    disabled_angle_features);
   }
-
-#if BUILDFLAG(IS_MAC)
-  if (base::FeatureList::IsEnabled(features::kWriteMetalShaderCacheToDisk)) {
-    disabled_angle_features.push_back("enableParallelMtlLibraryCompilation");
-    enabled_angle_features.push_back("compileMetalShaders");
-    enabled_angle_features.push_back("disableProgramCaching");
-  }
-  if (base::FeatureList::IsEnabled(features::kUseBuiltInMetalShaderCache)) {
-    enabled_angle_features.push_back("loadMetalShadersFromBlobCache");
-  }
-#endif
 }
 
 #if BUILDFLAG(ENABLE_SWIFTSHADER)

@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "mojo/core/ipcz_driver/mojo_trap.h"
 
 #include <cstdint>
@@ -15,9 +10,9 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/feature_list.h"
 #include "base/memory/ref_counted.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread_restrictions.h"
@@ -332,7 +327,7 @@ MojoResult MojoTrap::Arm(MojoTrapEvent* blocking_events,
   };
 
   TriggerMap::iterator next_trigger = next_trigger_;
-  CHECK(next_trigger != triggers_.end(), base::NotFatalUntil::M130);
+  CHECK(next_trigger != triggers_.end());
 
   // We iterate over all triggers, starting just beyond wherever we started last
   // time we were armed. This guards against any single trigger being starved.
@@ -358,7 +353,7 @@ MojoResult MojoTrap::Arm(MojoTrapEvent* blocking_events,
       return MOJO_RESULT_FAILED_PRECONDITION;
     }
 
-    blocking_events[num_events_returned++] = event;
+    UNSAFE_TODO(blocking_events[num_events_returned++]) = event;
   } while (next_trigger != end_trigger &&
            (num_events_returned == 0 || num_events_returned < event_capacity));
 

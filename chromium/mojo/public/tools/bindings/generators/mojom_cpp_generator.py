@@ -334,6 +334,62 @@ class Generator(generator.Generator):
         for param in method.parameters + (method.response_parameters or []):
           yield param.kind
 
+  def _GetSendValidationModules(self):
+    """
+    Returns a dict with the sets of modules this module needs for send
+    validation.
+    """
+    base_enums = set()
+    base_structs = set()
+    base_unions = set()
+    modules = set()
+
+    # Collect all enums, structs, and unions that need send validation from
+    # methods with the SendValidation attribute.
+    for interface in self.module.interfaces:
+      for method in interface.methods:
+        if method.send_validation:
+          base_enums, base_structs, base_unions = (
+              mojom.CollectSendValidationTypesFromMethod(method))
+
+    # Collect all enums, structs, and unions that need send validation from
+    # the module itself if it includes send validation.
+    if self.module.include_send_validation:
+      base_enums.update(self.module.enums)
+      base_structs.update(self.module.structs)
+      base_unions.update(self.module.unions)
+
+    # Collect nested enums, structs, and unions
+    enums = set(base_enums)
+    structs = set(base_structs)
+    unions = set(base_unions)
+    for union in base_unions:
+      union_enums, union_structs, union_unions = (
+          mojom.CollectSendValidationTypesFromKind(union))
+      enums.update(union_enums)
+      structs.update(union_structs)
+      unions.update(union_unions)
+
+    for struct in base_structs:
+      struct_enums, struct_structs, struct_unions = (
+          mojom.CollectSendValidationTypesFromKind(struct))
+      enums.update(struct_enums)
+      structs.update(struct_structs)
+      unions.update(struct_unions)
+
+    # Collect modules from all referenced types
+    for e in enums:
+      if hasattr(e, "module") and e.module:
+        modules.add(e.module)
+    for s in structs:
+      if hasattr(s, "module") and s.module:
+        modules.add(s.module)
+    for u in unions:
+      if hasattr(u, "module") and u.module:
+        modules.add(u.module)
+
+    return modules
+
   def _GetJinjaExports(self):
     all_enums = list(self.module.enums)
     for struct in self.module.structs:
@@ -372,6 +428,7 @@ class Generator(generator.Generator):
         "uses_interfaces": self._ReferencesAnyHandleOrInterfaceType(),
         "uses_native_types": self._ReferencesAnyNativeType(),
         "variant": self.variant,
+        "send_validation_modules": self._GetSendValidationModules(),
     }
 
   @staticmethod
@@ -421,6 +478,7 @@ class Generator(generator.Generator):
         "ipc_hash": _IpcHash,
         "is_array_kind": mojom.IsArrayKind,
         "is_bool_kind": mojom.IsBoolKind,
+        "is_double_kind": mojom.IsDoubleKind,
         "is_default_constructible": self._IsDefaultConstructible,
         "is_enum_kind": mojom.IsEnumKind,
         "is_feature_on_by_default": self._IsFeatureOnByDefault,
@@ -503,10 +561,17 @@ class Generator(generator.Generator):
   def _GenerateModuleFeaturesHeader(self):
     return self._GetJinjaExports()
 
+  @UseJinja("module-send-validation.h.tmpl")
+  def _GenerateModuleSendValidationHeader(self):
+    return self._GetJinjaExports()
+
+  @UseJinja("module-data-view.h.tmpl")
+  def _GenerateModuleDataViewHeader(self):
+    return self._GetJinjaExports()
+
   @UseJinjaForImportedTemplate
   def _GenerateModuleFromImportedTemplate(self, path_to_template, filename):
     return self._GetJinjaExports()
-
 
   def GenerateFiles(self, args):
     self.module.Stylize(generator.Stylizer())
@@ -528,6 +593,11 @@ class Generator(generator.Generator):
                               "%s-shared.cc" % self.module.path)
         self.WriteWithComment(self._GenerateModuleParamsDataHeader(),
                               "%s-params-data.h" % self.module.path)
+        self.WriteWithComment(self._GenerateModuleDataViewHeader(),
+                              "%s-data-view.h" % self.module.path)
+        self.WriteWithComment(self._GenerateModuleSendValidationHeader(),
+                              "%s-send-validation.h" % self.module.path)
+
     else:
       suffix = "-%s" % self.variant if self.variant else ""
       self.WriteWithComment(self._GenerateModuleHeader(),
@@ -677,11 +747,10 @@ class Generator(generator.Generator):
   def _FormatConstantDeclaration(self, constant, nested=False):
     if mojom.IsStringKind(constant.kind):
       if nested:
-        return "const char %s[%s]" % (constant.name,
-                                      self._ConstantLength(constant))
-      return "%sextern const char %s[%s]" % \
-          ((self.export_attribute + " ") if self.export_attribute else "",
-           constant.name, self._ConstantLength(constant))
+        return "constexpr char %s[] = %s" % (constant.name,
+                                             self._ConstantValue(constant))
+      return "inline constexpr char %s[] = %s" % \
+          (constant.name, self._ConstantValue(constant))
     return "constexpr %s %s = %s" % (GetCppPodType(
         constant.kind), constant.name, self._ConstantValue(constant))
 
@@ -711,14 +780,14 @@ class Generator(generator.Generator):
       return "%sPtr" % self._GetNameForKind(
           kind, add_same_module_namespaces=add_same_module_namespaces)
     if mojom.IsArrayKind(kind):
-      pattern = "WTF::Vector<%s>" if self.for_blink else "std::vector<%s>"
+      pattern = "::blink::Vector<%s>" if self.for_blink else "std::vector<%s>"
       if mojom.IsNullableKind(kind):
         pattern = _AddOptional(pattern)
       return pattern % self._GetCppWrapperType(
           kind.kind, add_same_module_namespaces=add_same_module_namespaces)
     if mojom.IsMapKind(kind):
-      pattern = ("WTF::HashMap<%s, %s>" if self.for_blink else
-                 "base::flat_map<%s, %s>")
+      pattern = ("::blink::HashMap<%s, %s>"
+                 if self.for_blink else "base::flat_map<%s, %s>")
       if mojom.IsNullableKind(kind):
         pattern = _AddOptional(pattern)
       return pattern % (
@@ -745,7 +814,7 @@ class Generator(generator.Generator):
           kind.kind, add_same_module_namespaces=add_same_module_namespaces)
     if mojom.IsStringKind(kind):
       if self.for_blink:
-        return "WTF::String"
+        return "::blink::String"
       type_name = "std::string"
       return (_AddOptional(type_name) if mojom.IsNullableKind(kind)
                                       else type_name)

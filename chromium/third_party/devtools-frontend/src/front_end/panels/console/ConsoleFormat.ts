@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import type * as Platform from '../../core/platform/platform.js';
@@ -26,8 +27,8 @@ export type FormatToken = {
  * are only concerned with performing the actual substitutions and dealing
  * with generic and optimal object formatting as well as styling.
  *
- * @param fmt the format string.
- * @param args the substitution arguments for `fmt`.
+ * @param fmt - the format string.
+ * @param args - the substitution arguments for `fmt`.
  * @returns a list of `FormatToken`s as well as the unused arguments.
  */
 export const format = (fmt: string, args: SDK.RemoteObject.RemoteObject[]): {

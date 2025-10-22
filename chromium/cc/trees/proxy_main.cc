@@ -12,7 +12,8 @@
 
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
+#include "base/profiler/sample_metadata.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/trace_event/trace_event.h"
 #include "base/trace_event/trace_id_helper.h"
@@ -21,8 +22,6 @@
 #include "cc/base/completion_event.h"
 #include "cc/base/devtools_instrumentation.h"
 #include "cc/base/features.h"
-#include "cc/benchmarks/benchmark_instrumentation.h"
-#include "cc/debug/rendering_stats_instrumentation.h"
 #include "cc/input/browser_controls_offset_tag_modifications.h"
 #include "cc/paint/paint_worklet_layer_painter.h"
 #include "cc/resources/ui_resource_manager.h"
@@ -64,16 +63,14 @@ ProxyMain::~ProxyMain() {
   DCHECK(!started_);
 }
 
-void ProxyMain::InitializeOnImplThread(
-    CompletionEvent* completion_event,
-    int id,
-    const LayerTreeSettings* settings,
-    RenderingStatsInstrumentation* rendering_stats_instrumentation) {
+void ProxyMain::InitializeOnImplThread(CompletionEvent* completion_event,
+                                       int id,
+                                       const LayerTreeSettings* settings) {
   DCHECK(task_runner_provider_->IsImplThread());
   DCHECK(!proxy_impl_);
-  proxy_impl_ = std::make_unique<ProxyImpl>(
-      weak_factory_.GetWeakPtr(), layer_tree_host_, id, settings,
-      rendering_stats_instrumentation, task_runner_provider_);
+  proxy_impl_ =
+      std::make_unique<ProxyImpl>(weak_factory_.GetWeakPtr(), layer_tree_host_,
+                                  id, settings, task_runner_provider_);
   completion_event->Signal();
 }
 
@@ -147,6 +144,8 @@ void ProxyMain::BeginMainFrame(
                     perfetto::protos::pbzero::MainFramePipeline::Step::
                         BEGIN_MAIN_FRAME);
               });
+  base::ScopedSampleMetadata metadata("ProxyMain::BeginMainFrame", 1,
+                                      base::SampleMetadataScope::kProcess);
 
   // This needs to run unconditionally, so do it before any early-returns.
   if (layer_tree_host_->scheduling_client())
@@ -470,13 +469,13 @@ void ProxyMain::BeginMainFrame(
       main_thread_blocked.emplace(task_runner_provider_);
 
     ImplThreadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::BindOnce(
-            &ProxyImpl::NotifyReadyToCommitOnImpl,
-            base::Unretained(proxy_impl_.get()), completion_event,
-            std::move(commit_state), &unsafe_state, begin_main_frame_start_time,
-            frame_args, scroll_and_viewport_changes_synced,
-            blocking ? &commit_timestamps : nullptr, commit_timeout));
+        FROM_HERE, base::BindOnce(&ProxyImpl::NotifyReadyToCommitOnImpl,
+                                  base::Unretained(proxy_impl_.get()),
+                                  completion_event, std::move(commit_state),
+                                  &unsafe_state, begin_main_frame_start_time,
+                                  scroll_and_viewport_changes_synced,
+                                  (blocking ? &commit_timestamps : nullptr),
+                                  commit_timeout));
     if (blocking)
       layer_tree_host_->WaitForProtectedSequenceCompletion();
   }
@@ -529,6 +528,16 @@ void ProxyMain::NotifyImageDecodeRequestFinished(int request_id,
   DCHECK(base::FeatureList::IsEnabled(
       features::kSendExplicitDecodeRequestsImmediately));
   layer_tree_host_->NotifyImageDecodeFinished(request_id, decode_succeeded);
+}
+
+bool ProxyMain::SpeculativeDecodeRequestInFlight() const {
+  CHECK(proxy_impl_);
+  return proxy_impl_->SpeculativeDecodeRequestInFlight();
+}
+
+void ProxyMain::SetSpeculativeDecodeRequestInFlight(bool value) {
+  CHECK(proxy_impl_);
+  proxy_impl_->SetSpeculativeDecodeRequestInFlight(value);
 }
 
 void ProxyMain::NotifyTransitionRequestFinished(
@@ -753,12 +762,10 @@ void ProxyMain::Start() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(task_runner_provider_);
     CompletionEvent completion;
     ImplThreadTaskRunner()->PostTask(
-        FROM_HERE,
-        base::BindOnce(&ProxyMain::InitializeOnImplThread,
-                       base::Unretained(this), &completion,
-                       layer_tree_host_->GetId(),
-                       &layer_tree_host_->GetSettings(),
-                       layer_tree_host_->rendering_stats_instrumentation()));
+        FROM_HERE, base::BindOnce(&ProxyMain::InitializeOnImplThread,
+                                  base::Unretained(this), &completion,
+                                  layer_tree_host_->GetId(),
+                                  &layer_tree_host_->GetSettings()));
     completion.Wait();
   }
 
@@ -797,12 +804,19 @@ void ProxyMain::Stop() {
   started_ = false;
 }
 
-void ProxyMain::QueueImageDecode(int request_id, const DrawImage& image) {
+void ProxyMain::QueueImageDecode(int request_id,
+                                 const DrawImage& image,
+                                 bool speculative) {
+  CHECK(!speculative || !SpeculativeDecodeRequestInFlight());
+  if (speculative) {
+    SetSpeculativeDecodeRequestInFlight(true);
+  }
   TRACE_EVENT1("cc", "ProxyMain::QueueImageDecode", "request_id", request_id);
   ImplThreadTaskRunner()->PostTask(
-      FROM_HERE, base::BindOnce(&ProxyImpl::QueueImageDecodeOnImpl,
-                                base::Unretained(proxy_impl_.get()), request_id,
-                                std::make_unique<DrawImage>(image)));
+      FROM_HERE,
+      base::BindOnce(&ProxyImpl::QueueImageDecodeOnImpl,
+                     base::Unretained(proxy_impl_.get()), request_id,
+                     std::make_unique<DrawImage>(image), speculative));
 }
 
 void ProxyMain::SetMutator(std::unique_ptr<LayerTreeMutator> mutator) {
@@ -913,15 +927,6 @@ void ProxyMain::SetSourceURL(ukm::SourceId source_id, const GURL& url) {
                                 source_id, url));
 }
 
-void ProxyMain::SetUkmSmoothnessDestination(
-    base::WritableSharedMemoryMapping ukm_smoothness_data) {
-  DCHECK(IsMainThread());
-  ImplThreadTaskRunner()->PostTask(
-      FROM_HERE, base::BindOnce(&ProxyImpl::SetUkmSmoothnessDestination,
-                                base::Unretained(proxy_impl_.get()),
-                                std::move(ukm_smoothness_data)));
-}
-
 void ProxyMain::SetUkmDroppedFramesDestination(
     base::WritableSharedMemoryMapping ukm_dropped_frames_data) {
   DCHECK(IsMainThread());
@@ -946,9 +951,20 @@ void ProxyMain::CompositeImmediatelyForTest(base::TimeTicks frame_begin_time,
   SetNeedsCommit();
 }
 
-double ProxyMain::GetPercentDroppedFrames() const {
+double ProxyMain::GetAverageThroughput() const {
   NOTIMPLEMENTED();
   return 0.0;
+}
+
+bool ProxyMain::IsRenderingPaused() const {
+  return pause_rendering_;
+}
+
+void ProxyMain::NotifyNewLocalSurfaceIdExpectedWhilePaused() {
+  ImplThreadTaskRunner()->PostTask(
+      FROM_HERE,
+      base::BindOnce(&ProxyImpl::NotifyNewLocalSurfaceIdExpectedWhilePaused,
+                     base::Unretained(proxy_impl_.get())));
 }
 
 }  // namespace cc

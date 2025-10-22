@@ -67,7 +67,7 @@ if (VULKAN_HEADERS_ENABLE_MODULE)
         endif()
         
         # set up Vulkan-HppModule
-        add_library(Vulkan-HppModule)
+        add_library(Vulkan-HppModule OBJECT)
         add_library(Vulkan::HppModule ALIAS Vulkan-HppModule)
         target_sources(Vulkan-HppModule
             PUBLIC
@@ -109,15 +109,37 @@ if (VULKAN_HEADERS_ENABLE_INSTALL)
     include(GNUInstallDirs)
     include(CMakePackageConfigHelpers)
 
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vk_video" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-    # Preserve source permissions https://github.com/KhronosGroup/Vulkan-Headers/issues/336
-    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/registry" DESTINATION "${CMAKE_INSTALL_DATADIR}/vulkan" USE_SOURCE_PERMISSIONS)
+    if(VULKAN_HEADERS_ENABLE_MODULE)
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vk_video" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+	install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+        # Preserve source permissions https://github.com/KhronosGroup/Vulkan-Headers/issues/336
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/registry" DESTINATION "${CMAKE_INSTALL_DATADIR}/vulkan" USE_SOURCE_PERMISSIONS)
+    else()
+	# Don't install C++ module files if modules aren't enabled
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vk_video" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN "*.cppm" EXCLUDE)
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/include/vulkan" DESTINATION ${CMAKE_INSTALL_INCLUDEDIR} PATTERN "*.cppm" EXCLUDE)
+        # Preserve source permissions https://github.com/KhronosGroup/Vulkan-Headers/issues/336
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/registry" DESTINATION "${CMAKE_INSTALL_DATADIR}/vulkan" USE_SOURCE_PERMISSIONS PATTERN "*.cppm" EXCLUDE)
+    endif()
 
     set_target_properties(Vulkan-Headers PROPERTIES EXPORT_NAME "Headers")
-    install(TARGETS Vulkan-Headers EXPORT VulkanHeadersConfig INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
-
-    install(EXPORT VulkanHeadersConfig NAMESPACE "Vulkan::" DESTINATION "share/cmake/VulkanHeaders")
+    install(TARGETS Vulkan-Headers
+        EXPORT VulkanHeadersConfig
+        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+    if (VULKAN_HEADERS_ENABLE_MODULE)
+        set_target_properties(Vulkan-HppModule PROPERTIES EXPORT_NAME "HppModule")
+        install(TARGETS Vulkan-HppModule
+            EXPORT VulkanHeadersConfig
+            FILE_SET module DESTINATION ".")
+        install(EXPORT VulkanHeadersConfig
+            NAMESPACE "Vulkan::"
+            DESTINATION "share/cmake/VulkanHeaders"
+            CXX_MODULES_DIRECTORY ".")
+    else()
+        install(EXPORT VulkanHeadersConfig
+            NAMESPACE "Vulkan::"
+            DESTINATION "share/cmake/VulkanHeaders")
+    endif()
 
     set(version_config "${CMAKE_CURRENT_BINARY_DIR}/generated/VulkanHeadersConfigVersion.cmake")
     write_basic_package_version_file("${version_config}" COMPATIBILITY SameMajorVersion ARCH_INDEPENDENT)

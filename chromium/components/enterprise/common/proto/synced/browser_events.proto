@@ -179,7 +179,7 @@ message Snippet {
 }
 
 // Information about the triggered rule.
-// Next ID: 14
+// Next ID: 15
 message TriggeredRuleInfo {
   // The unique identifier for this rule.
   int64 rule_id = 1;
@@ -233,6 +233,9 @@ message TriggeredRuleInfo {
 
   // Whether the rule has screenshot protection enabled.
   bool has_screenshot_protection = 13;
+
+  // URL categories in the iframes.
+  repeated string iframe_url_categories = 14;
 }
 
 // Risk level for a url/ip/file
@@ -423,8 +426,8 @@ message SafeBrowsingPasswordChangedEvent {
   repeated SecurityAgent security_agents = 4;
 }
 
-// A message for reporting dangerous download events.
-// Next ID: 40.
+// A message for reporting dangerous download events (malware transfer events).
+// Next ID: 41.
 message SafeBrowsingDangerousDownloadEvent {
   reserved 5, 11, 12, 13, 14, 15, 16;
 
@@ -444,7 +447,7 @@ message SafeBrowsingDangerousDownloadEvent {
   // The file name.
   string file_name = 2;
 
-  // SHA256 digest of this download.
+  // The file hashes, not limited to downloaded files.
   string download_digest_sha256 = 3;
 
   // Username of the profile. This will be an email address.
@@ -459,6 +462,7 @@ message SafeBrowsingDangerousDownloadEvent {
     UNKNOWN = 5;
     DANGEROUS_FILE_TYPE = 6;
     DANGEROUS_URL = 7;
+    DANGEROUS_ACCOUNT_COMPROMISE = 8;
   }
 
   // Category of dangerous download.
@@ -479,7 +483,8 @@ message SafeBrowsingDangerousDownloadEvent {
   // Size of downloaded content (in bytes).
   uint64 content_size = 9;
 
-  // Which direction the dangerous file was transferred.
+  // Which direction the dangerous file was transferred, can be upload,
+  // download, file transfer (CrOS only).
   DataTransferEventTrigger trigger = 10;
 
   // The address of the webpages that sent the user to this url.
@@ -558,6 +563,15 @@ message SafeBrowsingDangerousDownloadEvent {
 
   // Whether the content is encrypted.
   bool is_encrypted = 39;
+
+  // URLs in the iframes.
+  repeated string iframe_urls = 40
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_USER_CONTENT
+      // ]
+      // copybara:datapol_end
+      ;
 }
 
 // Types of data transferring operations that may have triggered the event to
@@ -653,7 +667,7 @@ message SafeBrowsingInterstitialEvent {
 }
 
 // A DLP (Data Loss Prevention) event where sensitive data may have leaked.
-// Next ID: 34.
+// Next ID: 37.
 message DlpSensitiveDataEvent {
   reserved 6, 9, 10, 11, 12, 13, 15, 25;
 
@@ -753,6 +767,34 @@ message DlpSensitiveDataEvent {
   // The referrers of the webpage that sent the user to the url that triggered
   // the event.
   repeated UrlInfo referrers = 33;
+
+  // URLs in the iframes.
+  repeated string iframe_urls = 34
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_USER_CONTENT
+      // ]
+      // copybara:datapol_end
+      ;
+
+  // The web app signed-in account email. Only populated for Workspace sites.
+  string web_app_signed_in_account = 35
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_IDENTIFYING_ID
+      // ]
+      // copybara:datapol_end
+      ;
+
+  // Copy origin webp app signed-in account for paste event only. Only populated
+  // for Workspace sites.
+  string source_web_app_signed_in_account = 36
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_IDENTIFYING_ID
+      // ]
+      // copybara:datapol_end
+      ;
 }
 
 // Event where a large file could not be scanned for analysis e.g. malware or
@@ -846,7 +888,7 @@ message UnscannedFileEvent {
 
 // Event that indicates that content was transferred.
 //
-// Next ID: 22.
+// Next ID: 26.
 message ContentTransferEvent {
   // The id of the scan. This will be shared by all events that are triggered
   // from a single scan.
@@ -944,6 +986,37 @@ message ContentTransferEvent {
 
   // Whether the content is encrypted.
   bool is_encrypted = 21;
+
+  // Evidence locker filepath in Google Cloud Storage.
+  string evidence_locker_filepath = 22;
+
+  // URLs in the iframes.
+  repeated string iframe_urls = 23
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_USER_CONTENT
+      // ]
+      // copybara:datapol_end
+      ;
+
+  // The web app signed-in account email. Only populated for Workspace sites.
+  string web_app_signed_in_account = 24
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_IDENTIFYING_ID
+      // ]
+      // copybara:datapol_end
+      ;
+
+  // Copy origin webp app signed-in account for paste event only. Only populated
+  // for Workspace sites.
+  string source_web_app_signed_in_account = 25
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_IDENTIFYING_ID
+      // ]
+      // copybara:datapol_end
+      ;
 }
 
 // Event sent when a user successfully logs in to a website, as determined by
@@ -1101,6 +1174,9 @@ message BrowserExtensionInstallEvent {
 
     // Installed from outside the Chrome Web Store.
     EXTERNAL = 2;
+
+    // Component extension built into Chrome.
+    COMPONENT = 3;
   }
 
   ExtensionSource extension_source = 10;
@@ -1143,7 +1219,7 @@ message BrowserCrashEvent {
   repeated SecurityAgent security_agents = 7;
 }
 
-// Next ID: 13
+// Next ID: 14
 message UrlFilteringInterstitialEvent {
   // Top level URL that triggers this interstitial.
   string url = 1;
@@ -1201,6 +1277,15 @@ message UrlFilteringInterstitialEvent {
   // The referrers of the webpage that sent the user to the url that triggered
   // the event.
   repeated UrlInfo referrers = 12;
+
+  // The account email of the content area. Only populated for Workspace sites.
+  string web_app_signed_in_account = 13
+      // copybara:datapol_begin
+      // [
+      //   (datapol.semantic_type) = ST_IDENTIFYING_ID
+      // ]
+      // copybara:datapol_end
+      ;
 }
 
 // Next ID: 5
@@ -1292,4 +1377,21 @@ message SuspiciousURLEvent {
 
   // Security agent installed on the device
   repeated SecurityAgent security_agents = 5;
+}
+
+message TelomereEvent {
+  message TelomereLog {
+    // The event log_type if it needs to be specified.
+    string log_type = 1;
+
+    // The event log_message that will be forwarded to partners as is.
+    string log_data = 2
+        // copybara:datapol_begin
+        // [(datapol.semantic_type) = ST_USER_CONTENT]
+        // copybara:datapol_end
+        ;
+  }
+
+  // List of telomere events.
+  repeated TelomereLog logs = 1;
 }

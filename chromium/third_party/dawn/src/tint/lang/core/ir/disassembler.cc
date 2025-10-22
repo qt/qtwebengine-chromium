@@ -36,6 +36,7 @@
 #include "src/tint/lang/core/constant/composite.h"
 #include "src/tint/lang/core/constant/scalar.h"
 #include "src/tint/lang/core/constant/splat.h"
+#include "src/tint/lang/core/constant/string.h"
 #include "src/tint/lang/core/ir/binary.h"
 #include "src/tint/lang/core/ir/block.h"
 #include "src/tint/lang/core/ir/block_param.h"
@@ -393,8 +394,17 @@ void Disassembler::EmitFunction(const Function* func) {
 
 void Disassembler::EmitValueWithType(const Instruction* val) {
     SourceMarker sm(this);
+    // Always emit the first value, so that 'undef' is printed if there is no value
     EmitValueWithType(val->Result(0));
     sm.StoreResult(IndexedValue{val, 0});
+
+    if (auto results = val->Results(); !results.IsEmpty()) {
+        for (size_t i = 1; i < results.Length(); ++i) {
+            out_ << ", ";
+            EmitValueWithType(results[i]);
+            sm.StoreResult(IndexedValue{val, i});
+        }
+    }
 }
 
 void Disassembler::EmitValueWithType(const Value* val) {
@@ -458,6 +468,9 @@ StyledText Disassembler::ValueToStyledText(const Value* val) {
                                 need_comma = true;
                             }
                             text << ")";
+                        },
+                        [&](const core::constant::String* str) {
+                            text << "\"" << str->Value() << "\"";
                         },
                         TINT_ICE_ON_NO_MATCH);
                 };
@@ -947,8 +960,8 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
             case core::type::kBlock:
                 out_ << ", " << StyleAttribute("@block");
                 break;
-            case core::type::kSpirvExplicitLayout:
-                out_ << ", " << StyleAttribute("@spirv.explicit_layout");
+            case core::type::kExplicitLayout:
+                out_ << ", " << StyleAttribute("@core.explicit_layout");
                 break;
         }
     }
@@ -957,6 +970,9 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
     for (auto* member : str->Members()) {
         out_ << "  " << StyleVariable(member->Name().Name()) << ":" << NameOf(member->Type());
         out_ << " " << StyleAttribute("@offset") << "(" << StyleLiteral(member->Offset()) << ")";
+        if (member->Size() != member->Type()->Size()) {
+            out_ << " " << StyleAttribute("@size") << "(" << StyleLiteral(member->Size()) << ")";
+        }
         if (member->Attributes().invariant) {
             out_ << ", " << StyleAttribute("@invariant");
         }
@@ -983,6 +999,17 @@ void Disassembler::EmitStructDecl(const core::type::Struct* str) {
         if (member->Attributes().builtin.has_value()) {
             out_ << ", " << StyleAttribute("@builtin") << "("
                  << StyleLiteral(member->Attributes().builtin.value()) << ")";
+        }
+        if (member->Attributes().binding_point.has_value()) {
+            out_ << ", ";
+            EmitBindingPoint(member->Attributes().binding_point.value());
+        }
+        if (member->RowMajor()) {
+            out_ << ", " << StyleAttribute("@row_major");
+        }
+        if (member->HasMatrixStride()) {
+            out_ << ", " << StyleAttribute("@matrix_stride") << "("
+                 << StyleLiteral(member->MatrixStride()) << ")";
         }
         EmitLine();
     }

@@ -66,8 +66,6 @@ class COMPONENT_EXPORT(GEOMETRY_SKIA) Matrix44 {
     return AllTrue(Col(0) == other.Col(0)) && AllTrue(Col(1) == other.Col(1)) &&
            AllTrue(Col(2) == other.Col(2)) && AllTrue(Col(3) == other.Col(3));
   }
-  bool operator!=(const Matrix44& other) const { return !(other == *this); }
-
   // Returns true if the matrix is identity.
   bool IsIdentity() const { return *this == Matrix44(); }
 
@@ -189,7 +187,7 @@ class COMPONENT_EXPORT(GEOMETRY_SKIA) Matrix44 {
 
   // Same as above, but assumes the vec[2] is 0 and vec[3] is 1, discards
   // vec[2], and returns vec[3].
-  double MapVector2(double vec[2]) const;
+  double MapVector2(base::span<double, 2> vec) const;
 
   void Flatten();
 

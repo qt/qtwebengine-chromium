@@ -6,23 +6,17 @@ from __future__ import annotations
 
 import abc
 import datetime as dt
-from typing import TYPE_CHECKING, List, Optional, Tuple, cast
+from typing import TYPE_CHECKING, Optional
 
 from typing_extensions import override
 
-from crossbench.action_runner.android_input_action_runner import \
-    AndroidInputActionRunner
-from crossbench.action_runner.base import ActionRunner
-from crossbench.action_runner.chromeos_input_action_runner import \
-    ChromeOSInputActionRunner
-from crossbench.action_runner.default_action_runner import DefaultActionRunner
 from crossbench.benchmarks.loading.playback_controller import \
     PlaybackController
 from crossbench.benchmarks.loading.tab_controller import TabController
 from crossbench.stories.story import Story
 
 if TYPE_CHECKING:
-  from crossbench.benchmarks.loading.loading_benchmark import LoadingBenchmark
+  from crossbench.action_runner.base import ActionRunner
   from crossbench.cli.config.secrets import Secrets
   from crossbench.runner.run import Run
 
@@ -30,13 +24,13 @@ DEFAULT_DURATION_SECONDS = 15
 DEFAULT_DURATION = dt.timedelta(seconds=DEFAULT_DURATION_SECONDS)
 
 # This is initialized in interactive.py to avoid circular dependencies
-PAGE_LIST: List[Page] = []
+PAGE_LIST: list[Page] = []
 
 class Page(Story, metaclass=abc.ABCMeta):
 
   @classmethod
   @override
-  def all_story_names(cls) -> Tuple[str, ...]:
+  def all_story_names(cls) -> tuple[str, ...]:
     assert PAGE_LIST, "Missing predefined page list"
     # TODO: move all story names magic to the dedicated StoryFilter.
     # Use module instead of direct import to avoid import cycle
@@ -69,6 +63,17 @@ class Page(Story, metaclass=abc.ABCMeta):
                multiple_tabs: bool) -> None:
     pass
 
+  @abc.abstractmethod
+  def run_once(self, run: Run) -> None:
+    pass
+
+  def run(self, run: Run) -> None:
+    for i in self._playback:
+      run.browser.performance_mark("iteration-start", detail=i)
+      with run.action_runner.playback_iteration(i):
+        self.run_once(run)
+      run.browser.performance_mark("iteration-end", detail=i)
+
   @property
   @abc.abstractmethod
   def first_url(self) -> str:
@@ -77,20 +82,3 @@ class Page(Story, metaclass=abc.ABCMeta):
   @property
   def tabs(self) -> TabController:
     return self._tabs
-
-
-def get_action_runner(run: Run) -> ActionRunner:
-  # TODO: make sure we have a single instance per Run
-  benchmark = cast("LoadingBenchmark", run.benchmark)
-
-  if not benchmark.action_runner:
-    platform = run.browser.platform
-
-    if platform.is_android:
-      benchmark.action_runner = AndroidInputActionRunner()
-    elif platform.is_chromeos:
-      benchmark.action_runner = ChromeOSInputActionRunner()
-    else:
-      benchmark.action_runner = DefaultActionRunner()
-
-  return benchmark.action_runner

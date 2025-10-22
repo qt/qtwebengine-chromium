@@ -6,7 +6,6 @@
 
 #include <algorithm>
 
-#include "base/not_fatal_until.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/to_string.h"
 #include "components/ui_devtools/protocol.h"
@@ -27,7 +26,7 @@ namespace {
 int GetIndexOfChildInParent(aura::Window* window) {
   const aura::Window::Windows& siblings = window->parent()->children();
   auto it = std::ranges::find(siblings, window);
-  CHECK(it != siblings.end(), base::NotFatalUntil::M130);
+  CHECK(it != siblings.end());
   return std::distance(siblings.begin(), it);
 }
 
@@ -111,6 +110,15 @@ std::pair<gfx::NativeWindow, gfx::Rect>
 WindowElement::GetNodeWindowAndScreenBounds() const {
   return std::make_pair(static_cast<aura::Window*>(window_),
                         window_->GetBoundsInScreen());
+}
+
+gfx::Rect WindowElement::GetNodeBoundsInScreen() const {
+  return window_->GetBoundsInScreen();
+}
+
+double WindowElement::GetDeviceScaleFactor() const {
+  ui::Layer* layer = window_->layer();
+  return layer ? layer->device_scale_factor() : 1.0;
 }
 
 // static

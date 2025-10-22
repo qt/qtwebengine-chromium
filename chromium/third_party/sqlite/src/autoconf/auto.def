@@ -3,27 +3,23 @@
 #
 # This is the main autosetup-compatible configure script for the
 # "autoconf" bundle of the SQLite project.
-#
-# This script must be kept compatible with JimTCL, a copy of which is
-# included in this source tree as ./autosetup/jimsh0.c.
-#
 use sqlite-config
-sqlite-config-bootstrap autoconf
-sqlite-check-common-bins
-sqlite-check-common-system-deps
-proj-check-rpath
-sqlite-handle-soname
-sqlite-setup-default-cflags
-sqlite-handle-debug
-sqlite-handle-threadsafe
-sqlite-handle-tempstore
-sqlite-handle-line-editing
-sqlite-handle-load-extension
-sqlite-handle-math
-sqlite-handle-icu
-
-define ENABLE_STATIC_SHELL [opt-bool static-shell]
-define ENABLE_LIB_SHARED [opt-bool shared]
-define ENABLE_LIB_STATIC [opt-bool static]
-
-sqlite-config-finalize
+sqlite-configure autoconf {
+  sqlite-handle-debug
+  sqlite-check-common-bins ;# must come before [sqlite-handle-wasi-sdk]
+  sqlite-handle-wasi-sdk   ;# must run relatively early, as it changes the environment
+  sqlite-check-common-system-deps
+  proj-define-for-opt static-shell ENABLE_STATIC_SHELL \
+    "Link library statically into the CLI shell?"
+  proj-define-for-opt static-cli-shell STATIC_CLI_SHELL "Statically link CLI shell?"
+  if {![opt-bool static-shell] && [opt-bool static-cli-shell]} {
+    proj-fatal "--disable-static-shell and --static-cli-shell are mutualy exclusive"
+  }
+  if {![opt-bool shared] && ![opt-bool static-shell]} {
+    proj-opt-set shared 1
+    proj-indented-notice {
+      NOTICE: ignoring --disable-shared because --disable-static-shell
+      was specified.
+    }
+  }
+}

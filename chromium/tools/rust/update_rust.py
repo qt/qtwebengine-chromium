@@ -7,6 +7,10 @@
 When run without arguments, it fetches and unzips the Rust toolchain package
 specieid by the `RUST_REVISION` and `RUST_SUB_REVISION` along with the clang
 version specified in //tools/clang/scripts/update.py.
+
+Specify --output-dir to override the location for the Rust toolchain package,
+which otherwise defaults to //third_party/rust-toolchain.
+(Note that the output dir may be deleted and re-created if it exists.)
 '''
 
 import argparse
@@ -31,8 +35,9 @@ sys.path.append(
 
 # These fields are written by //tools/clang/scripts/upload_revision.py, and
 # should not be changed manually.
-RUST_REVISION = 'f7b43542838f0a4a6cfdb17fbeadf45002042a77'
-RUST_SUB_REVISION = 1
+# They are also read by build/config/compiler/BUILD.gn.
+RUST_REVISION = '22be76b7e259f27bf3e55eb931f354cd8b69d55f'
+RUST_SUB_REVISION = 3
 
 # The revision of Crubit to use from https://github.com/google/crubit
 #
@@ -46,14 +51,15 @@ ABSL_REVISION = 'ba5fd0979b4e74bd4d1b8da1d84347173bd9f17f'
 # Hash of src/stage0.json, which itself contains the stage0 toolchain hashes.
 # We trust the Rust build system checks, but to ensure it is not tampered with
 # itself check the hash.
-STAGE0_JSON_SHA256 = 'ad3095f23fe55ef1d86bc8ee8b5d31eb4e98eb3d8a6d163c295625ffa18ca35a'
+STAGE0_JSON_SHA256 = 'f16e14ffdc41c439ce3d802c25add79cdb20d624e83a555e3835bd6eba71c833'
 
 THIS_DIR = os.path.abspath(os.path.dirname(__file__))
 CHROMIUM_DIR = os.path.abspath(os.path.join(THIS_DIR, '..', '..'))
 THIRD_PARTY_DIR = os.path.join(CHROMIUM_DIR, 'third_party')
 RUST_TOOLCHAIN_OUT_DIR = os.path.join(THIRD_PARTY_DIR, 'rust-toolchain')
-# Path to the VERSION file stored in the archive.
-VERSION_SRC_PATH = os.path.join(RUST_TOOLCHAIN_OUT_DIR, 'VERSION')
+# Filename and path to the VERSION file stored in the archive.
+VERSION_SRC_FILENAME = 'VERSION'
+VERSION_SRC_PATH = os.path.join(RUST_TOOLCHAIN_OUT_DIR, VERSION_SRC_FILENAME)
 
 
 def GetRustClangRevision():
@@ -86,6 +92,7 @@ def main():
                         action='store_true',
                         help='Print Rust package version (including both the '
                         'Rust and Clang revisions) and quit.')
+    parser.add_argument('--output-dir', help='Where to extract the package.')
     args = parser.parse_args()
 
     if args.print_rust_revision:
@@ -101,6 +108,12 @@ def main():
             return 1
         print(stamp_version)
         return 0
+
+    output_dir = RUST_TOOLCHAIN_OUT_DIR
+    if args.output_dir:
+        global VERSION_SRC_PATH
+        output_dir = os.path.abspath(args.output_dir)
+        VERSION_SRC_PATH = os.path.join(output_dir, VERSION_SRC_FILENAME)
 
     from update import (DownloadAndUnpack, GetDefaultHostOs,
                         GetPlatformUrlPrefix)
@@ -118,17 +131,17 @@ def main():
     # hooks are migrated to be first class deps. In case we need to go back to
     # using a hook, this file will indicate that the previous download was
     # from the first class dep and the dir needs to be cleared.
-    if os.path.exists(RUST_TOOLCHAIN_OUT_DIR):
+    if os.path.exists(output_dir):
         if version == GetStampVersion() and not glob.glob(
-                os.path.join(RUST_TOOLCHAIN_OUT_DIR, '.*_is_first_class_gcs')):
+                os.path.join(output_dir, '.*_is_first_class_gcs')):
             return 0
 
-    if os.path.exists(RUST_TOOLCHAIN_OUT_DIR):
-        shutil.rmtree(RUST_TOOLCHAIN_OUT_DIR)
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
 
     try:
         url = f'{platform_prefix}rust-toolchain-{version}.tar.xz'
-        DownloadAndUnpack(url, RUST_TOOLCHAIN_OUT_DIR)
+        DownloadAndUnpack(url, output_dir)
     except urllib.error.HTTPError as e:
         print(f'error: Failed to download Rust package')
         return 1

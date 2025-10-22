@@ -77,8 +77,6 @@ used when committed.
     Chromium for ARM on Linux.
 *   [Chrome Component Build](component_build.md) - Faster builds using more
     libraries
-*   [Using the BuildRunner](using_build_runner.md) - Scripts that extract build
-    stops from builders and runs them locally on a slave
 *   [Cr User Manual](cr_user_manual.md) - Manual for `cr`, a tool that tries to
     hide some of the tools used for working on Chromium behind an abstraction
     layer
@@ -176,7 +174,8 @@ used when committed.
     build, fork, integration of stock Chromium, or are building ChromiumOS (for
     login).
 *   [User Education](../components/user_education/README.md) - Create
-    in-product help (IPH) and tutorials to call out Chromium features
+    in-product help (IPH) and tutorials to call out Chromium features.
+*   [User-Agent](./user_agent/README.md) - User-Agent and User-Agent Client Hints.
 
 ### Testing
 *   [Running and Debugging Web Tests](testing/web_tests.md)
@@ -200,7 +199,6 @@ used when committed.
 *   [Test Descriptions](testing/test_descriptions.md) - Unit test targets that can be
     built, with associated descriptions.
 *   [Fuzz Testing](../testing/libfuzzer/README.md) - Fuzz testing in Chromium.
-*   [IPC Fuzzer](testing/ipc_fuzzer.md) - Fuzz testing of Chromium IPC interfaces.
 *   [Running Chrome tests with AddressSanitizer (asan) and LeakSanitizer (lsan)](testing/linux_running_asan_tests.md) -
     Run Chrome tests with ASAN and LSAN builds to detect addressability issues and memory leaks.
 *   [Code Coverage](testing/code_coverage.md) - Code coverage for Chromium.
@@ -259,7 +257,7 @@ used when committed.
     related tools.
 *   [Chroot Notes](linux/using_a_chroot.md) - Setting up a chroot to work around
     libfreetype differences in some versions of Linux.
-*   [Linux Sandboxing](linux/sandboxing.md) - The Linux multi-process model to
+*   [Linux Sandboxing](../sandbox/linux/README.md) - The Linux multi-process model to
     isolate browser components with different privileges.
 *   [Zygote Process](linux/zygote.md) - How the Linux Zygote process, used to
     spawn new processes, works.
@@ -276,7 +274,6 @@ used when committed.
     with clang/ninja
 *   [Cocoa tips and tricks](cocoa_tips_and_tricks.md) - A collection of idioms
     used when writing Cocoa views and controllers
-*   [MacViews Release Plan](ui/views/macviews_release.md)
 
 ### Misc Windows-Specific Docs
 *   [Handling cygwin rebaseall failures](cygwin_dll_remapping_failure.md)
@@ -310,7 +307,7 @@ used when committed.
     coverage data with the EMMA tool.
 *   [Dynamic Feature Modules (DFMs)](android_dynamic_feature_modules.md) - What
     are they and how to create new ones.
-*   [Other build-related Android docs](../build/android/docs/index.md)
+*   [Other build-related Android docs](../build/android/docs/README.md)
 *   [Chrome for Android UI](ui/android/overview.md) - Resources and best practices for
     developing UI
 
@@ -354,7 +351,7 @@ used when committed.
 *   [Piranha Plant](piranha_plant.md) - Future architecture of MediaStreams
 *   [Media Capture](media/capture/README.md) - Features and APIs that enable the
     browser to capture pixels and audio from itself or the underlying OS.
-*   [Video Encode Accelerator Tests](media/gpu/veatest_usage.md) - How to
+*   [Video Encode Accelerator Tests](media/gpu/video_encoder_test_usage.md) - How to
     use the accelerated video encoder test program.
 *   [Video Decoder Tests](media/gpu/video_decoder_test_usage.md) - Running the
     video decoder tests.

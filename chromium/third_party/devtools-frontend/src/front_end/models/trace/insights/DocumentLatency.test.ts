@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import {describeWithEnvironment} from '../../../testing/EnvironmentHelpers.js';
+import {describeWithEnvironment, expectConsoleLogs} from '../../../testing/EnvironmentHelpers.js';
 import {
   createContextForNavigation,
   getFirstOrError,
@@ -14,6 +14,10 @@ import * as Trace from '../trace.js';
 import * as Types from '../types/types.js';
 
 describeWithEnvironment('DocumentLatency', function() {
+  expectConsoleLogs({
+    error: ['Error: missing metric scores for specified navigation'],
+  });
+
   it('reports savings for main document with redirects', async () => {
     const {data, insights} = await processTrace(this, 'lantern/redirect/trace.json.gz');
     const insight =
@@ -27,7 +31,7 @@ describeWithEnvironment('DocumentLatency', function() {
     const insight =
         getInsightOrError('DocumentLatency', insights, getFirstOrError(data.Meta.navigationsByNavigationId.values()));
     assert.strictEqual(insight.data?.serverResponseTime, 43);
-    assert(insight.data?.checklist.serverResponseIsFast.value === true);
+    assert.isTrue(insight.data?.checklist.serverResponseIsFast.value);
     assert.deepEqual(insight.metricSavings, {FCP: 0, LCP: 0} as Trace.Insights.Types.MetricSavings);
   });
 
@@ -56,7 +60,7 @@ describeWithEnvironment('DocumentLatency', function() {
     const context = createContextForNavigation(data, navigation, data.Meta.mainFrameId);
     const insight = Trace.Insights.Models.DocumentLatency.generateInsight(data, context);
     assert.strictEqual(insight.data?.serverResponseTime, 1043);
-    assert(insight.data?.checklist.serverResponseIsFast.value === false);
+    assert.isFalse(insight.data?.checklist.serverResponseIsFast.value);
     assert.deepEqual(insight.metricSavings, {FCP: 943, LCP: 943} as Trace.Insights.Types.MetricSavings);
   });
 
@@ -93,15 +97,14 @@ describeWithEnvironment('DocumentLatency', function() {
     assert.deepEqual(insight.metricSavings, {FCP: 0, LCP: 0} as Trace.Insights.Types.MetricSavings);
   });
 
-  // Flaky
-  it.skip('[crbug.com/404184366] reports savings for main document with many issues, many redirects', async () => {
+  it('reports savings for main document with many issues, many redirects', async () => {
     const {data, insights} = await processTrace(this, 'many-redirects.json.gz');
     const insight =
         getInsightOrError('DocumentLatency', insights, getFirstOrError(data.Meta.navigationsByNavigationId.values()));
     assert.strictEqual(insight.data?.redirectDuration, 6059);
     assert.strictEqual(insight.data?.uncompressedResponseBytes, 111506);
     assert.strictEqual(insight.data?.serverResponseTime, 2008);
-    assert(insight.data?.checklist.serverResponseIsFast.value === false);
+    assert.isFalse(insight.data?.checklist.serverResponseIsFast.value);
     assert.deepEqual(insight.metricSavings, {FCP: 7967, LCP: 7967} as Trace.Insights.Types.MetricSavings);
   });
 });

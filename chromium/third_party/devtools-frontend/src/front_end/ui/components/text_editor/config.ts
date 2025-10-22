@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../../core/common/common.js';
 import * as i18n from '../../../core/i18n/i18n.js';
@@ -130,6 +131,7 @@ function moveCompletionSelectionIfNotConservative(
     if (CM.completionStatus(view.state) !== 'active') {
       return false;
     }
+    view.dispatch({effects: setAiAutoCompleteSuggestion.of(null)});
     if (view.state.field(conservativeCompletion, false)) {
       view.dispatch({effects: disableConservativeCompletion.of(null)});
       announceSelectedCompletionInfo(view);
@@ -146,6 +148,7 @@ function moveCompletionSelectionBackwardWrapper(): ((view: CM.EditorView) => boo
     if (CM.completionStatus(view.state) !== 'active') {
       return false;
     }
+    view.dispatch({effects: setAiAutoCompleteSuggestion.of(null)});
     CM.moveCompletionSelection(false)(view);
     announceSelectedCompletionInfo(view);
     return true;
@@ -159,7 +162,7 @@ function announceSelectedCompletionInfo(view: CM.EditorView): void {
     PH3: CM.currentCompletions(view.state).length,
   });
 
-  UI.ARIAUtils.alert(ariaMessage);
+  UI.ARIAUtils.LiveAnnouncer.alert(ariaMessage);
 }
 
 export const autocompletion = new DynamicSetting<boolean>(
@@ -221,7 +224,7 @@ const AutoDetectIndent = CM.StateField.define<string>({
 
 function preservedLength(ch: CM.ChangeDesc): number {
   let len = 0;
-  ch.iterGaps((from, to, l) => {
+  ch.iterGaps((_from, _to, l) => {
     len += l;
   });
   return len;
@@ -289,7 +292,7 @@ export const showWhitespace = new DynamicSetting<string>('show-whitespaces-in-ed
 
 export const allowScrollPastEof = DynamicSetting.bool('allow-scroll-past-eof', CM.scrollPastEnd());
 
-const cachedIndentUnit: {[indent: string]: CM.Extension} = Object.create(null);
+const cachedIndentUnit: Record<string, CM.Extension> = Object.create(null);
 
 function getIndentUnit(indent: string): CM.Extension {
   let value = cachedIndentUnit[indent];
@@ -302,6 +305,8 @@ function getIndentUnit(indent: string): CM.Extension {
 export const indentUnit = new DynamicSetting<string>('text-editor-indent', getIndentUnit);
 
 export const domWordWrap = DynamicSetting.bool('dom-word-wrap', CM.EditorView.lineWrapping);
+
+export const sourcesWordWrap = DynamicSetting.bool('sources.word-wrap', CM.EditorView.lineWrapping);
 
 function detectLineSeparator(text: string): CM.Extension {
   if (/\r\n/.test(text) && !/(^|[^\r])\n/.test(text)) {
@@ -427,10 +432,8 @@ class CompletionHint extends CM.WidgetType {
 }
 
 export const showCompletionHint = CM.ViewPlugin.fromClass(class {
-decorations:
-  CM.DecorationSet = CM.Decoration.none;
-currentHint:
-  string|null = null;
+  decorations: CM.DecorationSet = CM.Decoration.none;
+  currentHint: string|null = null;
 
   update(update: CM.ViewUpdate): void {
     const top = this.currentHint = this.topCompletion(update.state);
@@ -480,3 +483,109 @@ export function contentIncludingHint(view: CM.EditorView): string {
   }
   return content;
 }
+
+export const setAiAutoCompleteSuggestion = CM.StateEffect.define<ActiveSuggestion|null>();
+
+interface ActiveSuggestion {
+  text: string;
+  from: number;
+}
+
+export const aiAutoCompleteSuggestionState = CM.StateField.define<ActiveSuggestion|null>({
+  create: () => null,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setAiAutoCompleteSuggestion)) {
+        if (effect.value) {
+          return effect.value;
+        }
+        return null;
+      }
+    }
+
+    if (!value) {
+      return value;
+    }
+
+    // A suggestion from an effect can be stale if the document was changed
+    // between when the request was sent and the response was received.
+    // We check if the position is still valid before trying to map it.
+    if (value.from > tr.startState.doc.length) {
+      return null;
+    }
+
+    // If deletion occurs, set to null. Otherwise, the mapping might fail if
+    // the position is inside the deleted range.
+    if (tr.docChanged && tr.state.doc.length < tr.startState.doc.length) {
+      return null;
+    }
+
+    const from = tr.changes.mapPos(value.from);
+    const {head} = tr.state.selection.main;
+
+    // If a change happened before the position from which suggestion was generated, set to null.
+    if (tr.changes.touchesRange(0, from - 1) || head < from) {
+      return null;
+    }
+
+    // Check if what's typed is a prefix of the suggestion.
+    const typedText = tr.state.doc.sliceString(from, head);
+    return value.text.startsWith(typedText) ? value : null;
+  },
+});
+
+export function hasActiveAiSuggestion(state: CM.EditorState): boolean {
+  return state.field(aiAutoCompleteSuggestionState) !== null;
+}
+
+export function acceptAiAutoCompleteSuggestion(view: CM.EditorView): boolean {
+  const suggestion = view.state.field(aiAutoCompleteSuggestionState);
+  if (!suggestion) {
+    return false;
+  }
+
+  const {text, from} = suggestion;
+  const {head} = view.state.selection.main;
+  const typedText = view.state.doc.sliceString(from, head);
+  if (!text.startsWith(typedText)) {
+    return false;
+  }
+
+  const remainingText = text.slice(typedText.length);
+  view.dispatch({
+    changes: {from: head, insert: remainingText},
+    selection: {anchor: head + remainingText.length},
+    effects: setAiAutoCompleteSuggestion.of(null),
+    userEvent: 'input.complete',
+  });
+  return true;
+}
+
+export const aiAutoCompleteSuggestion: CM.Extension = [
+  aiAutoCompleteSuggestionState,
+  CM.ViewPlugin.fromClass(
+      class {
+        decorations: CM.DecorationSet = CM.Decoration.none;
+
+        update(update: CM.ViewUpdate): void {
+          const activeSuggestion = update.state.field(aiAutoCompleteSuggestionState);
+          const {head, empty} = update.state.selection.main;
+          let hint = '';
+          if (activeSuggestion && empty && head >= activeSuggestion.from) {
+            const {text, from} = activeSuggestion;
+            const typedText = update.state.doc.sliceString(from, head);
+            if (text.startsWith(typedText)) {
+              hint = text.slice(typedText.length);
+            }
+          }
+
+          if (!hint) {
+            this.decorations = CM.Decoration.none;
+          } else {
+            this.decorations =
+                CM.Decoration.set([CM.Decoration.widget({widget: new CompletionHint(hint), side: 1}).range(head)]);
+          }
+        }
+      },
+      {decorations: p => p.decorations}),
+];

@@ -9,20 +9,23 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 #include "src/xnnpack/reduce.h"
-#include "src/xnnpack/unaligned.h"
 
 
 void xnn_f16_f32acc_rsum_ukernel__avx512skx_u64_acc2(
     size_t batch,
     const xnn_float16* input,
     float* output,
-    const struct xnn_f16_f32acc_scale_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_f32acc_scale_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -44,13 +47,25 @@ void xnn_f16_f32acc_rsum_ukernel__avx512skx_u64_acc2(
     vacc0 = _mm512_add_ps(vacc0, vt2);
     vacc1 = _mm512_add_ps(vacc1, vt3);
   }
-  vacc0 = _mm512_add_ps(vacc0, vacc1);
-  for (; batch >= 16 * sizeof(uint16_t); batch -= 16 * sizeof(uint16_t)) {
+  if (batch >= 16 * sizeof(uint16_t)) {
     const __m512 vt = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i*) i));
     i += 16;
-
+    batch -= 16 * sizeof(uint16_t);
     vacc0 = _mm512_add_ps(vacc0, vt);
   }
+  if (batch >= 16 * sizeof(uint16_t)) {
+    const __m512 vt = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i*) i));
+    i += 16;
+    batch -= 16 * sizeof(uint16_t);
+    vacc1 = _mm512_add_ps(vacc1, vt);
+  }
+  if (batch >= 16 * sizeof(uint16_t)) {
+    const __m512 vt = _mm512_cvtph_ps(_mm256_loadu_si256((const __m256i*) i));
+    i += 16;
+    batch -= 16 * sizeof(uint16_t);
+    vacc0 = _mm512_add_ps(vacc0, vt);
+  }
+  vacc0 = _mm512_add_ps(vacc0, vacc1);
   if XNN_UNLIKELY(batch != 0) {
     assert(batch >= 1 * sizeof(uint16_t));
     assert(batch <= 15 * sizeof(uint16_t));

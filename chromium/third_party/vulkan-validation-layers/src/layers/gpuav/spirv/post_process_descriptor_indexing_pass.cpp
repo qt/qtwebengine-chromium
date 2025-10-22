@@ -14,24 +14,29 @@
  */
 
 #include "post_process_descriptor_indexing_pass.h"
-#include "module.h"
-#include <iostream>
 
-#include "generated/instrumentation_post_process_descriptor_index_comp.h"
+#include "module.h"
+#include "generated/gpuav_offline_spirv.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 #include "utils/hash_util.h"
+
+#include <iostream>
 
 namespace gpuav {
 namespace spirv {
 
-const static OfflineLinkInfo link_info = {instrumentation_post_process_descriptor_index_comp,
-                                          instrumentation_post_process_descriptor_index_comp_size,
-                                          "inst_post_process_descriptor_index"};
+const static OfflineModule kOfflineModule = {instrumentation_post_process_descriptor_index_comp,
+                                             instrumentation_post_process_descriptor_index_comp_size};
 
-PostProcessDescriptorIndexingPass::PostProcessDescriptorIndexingPass(Module& module) : Pass(module) { module.use_bda_ = true; }
+const static OfflineFunction kOfflineFunction = {"inst_post_process_descriptor_index",
+                                                 instrumentation_post_process_descriptor_index_comp_function_0_offset};
+
+PostProcessDescriptorIndexingPass::PostProcessDescriptorIndexingPass(Module& module) : Pass(module, kOfflineModule) {
+    module.use_bda_ = true;
+}
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
-uint32_t PostProcessDescriptorIndexingPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+uint32_t PostProcessDescriptorIndexingPass::GetLinkFunctionId() { return GetLinkFunction(link_function_id_, kOfflineFunction); }
 
 void PostProcessDescriptorIndexingPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     const Constant& set_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_set);
@@ -53,8 +58,7 @@ void PostProcessDescriptorIndexingPass::CreateFunctionCall(BasicBlock& block, In
 }
 
 bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& function, const Instruction& inst,
-                                                                InstructionMeta& meta,
-                                                                vvl::unordered_set<uint32_t>& found_in_block_set) {
+                                                                InstructionMeta& meta) {
     const uint32_t opcode = inst.Opcode();
 
     const Instruction* var_inst = nullptr;
@@ -62,7 +66,7 @@ bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& 
         const Variable* variable = nullptr;
         const Instruction* access_chain_inst = function.FindInstruction(inst.Operand(0));
         // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
-        while (access_chain_inst && access_chain_inst->Opcode() == spv::OpAccessChain) {
+        while (access_chain_inst && access_chain_inst->IsNonPtrAccessChain()) {
             const uint32_t access_chain_base_id = access_chain_inst->Operand(0);
             variable = module_.type_manager_.FindVariableById(access_chain_base_id);
             if (variable) {
@@ -113,11 +117,11 @@ bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& 
             const Variable* global_var = module_.type_manager_.FindVariableById(load_inst->Operand(0));
             var_inst = global_var ? &global_var->inst_ : nullptr;
         }
-        if (!var_inst || (var_inst->Opcode() != spv::OpAccessChain && var_inst->Opcode() != spv::OpVariable)) {
+        if (!var_inst || (!var_inst->IsNonPtrAccessChain() && var_inst->Opcode() != spv::OpVariable)) {
             return false;
         }
 
-        if (var_inst->Opcode() == spv::OpAccessChain) {
+        if (var_inst->IsNonPtrAccessChain()) {
             meta.descriptor_index_id = var_inst->Operand(1);
 
             if (var_inst->Length() > 5) {
@@ -153,13 +157,6 @@ bool PostProcessDescriptorIndexingPass::RequiresInstrumentation(const Function& 
         return false;
     }
 
-    uint32_t hash_content[4] = {meta.descriptor_set, meta.descriptor_binding, meta.descriptor_index_id, meta.variable_id};
-    const uint32_t hash = hash_util::Hash32(hash_content, sizeof(uint32_t) * 4);
-    if (found_in_block_set.find(hash) != found_in_block_set.end()) {
-        return false;  // duplicate detected
-    }
-    found_in_block_set.insert(hash);
-
     meta.target_instruction = &inst;
 
     return true;
@@ -172,6 +169,9 @@ bool PostProcessDescriptorIndexingPass::Instrument() {
 
     for (const auto& function : module_.functions_) {
         if (function->instrumentation_added_) continue;
+
+        FunctionDuplicateTracker function_duplicate_tracker;
+
         for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
@@ -180,11 +180,26 @@ bool PostProcessDescriptorIndexingPass::Instrument() {
 
             auto& block_instructions = current_block.instructions_;
 
-            // We only need to instrument the set/binding/inde/variable combo once per block
-            vvl::unordered_set<uint32_t> found_in_block_set;
+            // We only need to instrument the set/binding/index/variable combo once per block
+            BlockDuplicateTracker& block_duplicate_tracker = function_duplicate_tracker.GetAndUpdate(current_block);
+            DescriptroIndexPushConstantAccess pc_access;
+
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
+                pc_access.Update(module_, inst_it);
+
                 InstructionMeta meta;
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta, found_in_block_set)) continue;
+                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) {
+                    continue;
+                }
+
+                const uint32_t hash_descriptor_index_id =
+                    pc_access.next_alias_id == meta.descriptor_index_id ? pc_access.descriptor_index_id : meta.descriptor_index_id;
+                uint32_t hash_content[4] = {meta.descriptor_set, meta.descriptor_binding, hash_descriptor_index_id,
+                                            meta.variable_id};
+                const uint32_t hash = hash_util::Hash32(hash_content, sizeof(uint32_t) * 4);
+                if (function_duplicate_tracker.FindAndUpdate(block_duplicate_tracker, hash)) {
+                    continue;  // duplicate detected
+                }
 
                 if (IsMaxInstrumentationsCount()) continue;
                 instrumentations_count_++;

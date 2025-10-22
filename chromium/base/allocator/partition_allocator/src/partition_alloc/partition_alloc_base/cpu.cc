@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/partition_alloc_base/cpu.h"
 
-#include <algorithm>
 #include <cinttypes>
 #include <climits>
 #include <cstddef>
@@ -14,6 +18,7 @@
 #include <utility>
 
 #include "partition_alloc/build_config.h"
+#include "partition_alloc/partition_alloc_base/cxx_wrapper/algorithm.h"
 
 #if PA_BUILDFLAG(PA_ARCH_CPU_ARM_FAMILY) &&                \
     (PA_BUILDFLAG(IS_ANDROID) || PA_BUILDFLAG(IS_LINUX) || \

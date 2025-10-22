@@ -62,13 +62,10 @@ jobs:
         custom_hash_map: [ "ON", "OFF" ]
     steps:
       - uses: actions/checkout@v4
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.config }}-address-${{matrix.custom_hash_map}}
-      - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev
+      - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev xvfb
       - run: python scripts/tests.py --build --config ${{ matrix.config }} --cmake='-DUSE_CUSTOM_HASH_MAP=${{matrix.custom_hash_map}}'
         env:
           CFLAGS: -fsanitize=address
@@ -88,6 +85,10 @@ jobs:
         run: python scripts/tests.py --test
         env:
           VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/min_core.json
+      - name: Test WSI
+        run: python scripts/tests.py --test --wsi
+        env:
+          VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/max_profile.json
 
   linux-tsan:
     needs: check_vvl
@@ -102,13 +103,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: ${{ matrix.config }}-thread-${{matrix.custom_hash_map}}
-      - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev
+      - run: sudo apt-get -qq update && sudo apt-get install -y libwayland-dev xorg-dev xvfb
       - run: python scripts/tests.py --build --config ${{ matrix.config }} --cmake='-DUSE_CUSTOM_HASH_MAP=${{matrix.custom_hash_map}}'
         env:
           CFLAGS: -fsanitize=thread
@@ -123,6 +121,10 @@ jobs:
         run: python scripts/tests.py --test --tsan
         env:
           VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/max_profile.json
+      - name: Test WSI
+        run: python scripts/tests.py --test --tsan --wsi
+        env:
+          VK_KHRONOS_PROFILES_PROFILE_FILE: ${{ github.workspace }}/tests/device_profiles/max_profile.json
 
   linux-ubsan:
     needs: check_vvl
@@ -132,9 +134,6 @@ jobs:
       fail-fast: false
     steps:
       - uses: actions/checkout@v4
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: linux-ubsan
@@ -179,9 +178,6 @@ jobs:
     name: "linux Upload"
     steps:
       - uses: actions/checkout@v4
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: linux-upload-ccache
@@ -203,9 +199,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
@@ -318,9 +311,6 @@ jobs:
 
       steps:
         - uses: actions/checkout@v4
-        - uses: lukka/get-cmake@latest
-          with:
-            cmakeVersion: '3.31.6' # until we fix jsoncpp bug
         - name: Setup ccache
           uses: hendrikmuhs/ccache-action@v1.2
           with:
@@ -349,9 +339,6 @@ jobs:
       runs-on: ubuntu-24.04
       steps:
         - uses: actions/checkout@v4
-        - uses: lukka/get-cmake@latest
-          with:
-            cmakeVersion: '3.31.6' # until we fix jsoncpp bug
         - name: Setup ccache
           uses: hendrikmuhs/ccache-action@v1.2
           with:
@@ -394,9 +381,6 @@ jobs:
         uses: hendrikmuhs/ccache-action@v1.2
         with:
           key: iOS-cache
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - name: Configure for iOS
         run: |
           cmake -S . -B build/ \
@@ -431,9 +415,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - uses: lukka/get-cmake@latest
-        with:
-          cmakeVersion: '3.31.6' # until we fix jsoncpp bug
       - run: |
           cmake -S. -B build \
           -D BUILD_WERROR=ON \

@@ -234,7 +234,7 @@ void TransformFeedback::onVerticesDrawn(const Context *context, GLsizei count, G
     {
         if (buffer.get() != nullptr)
         {
-            buffer->onDataChanged();
+            buffer->onDataChanged(context);
         }
     }
 }
@@ -317,6 +317,18 @@ bool TransformFeedback::buffersBoundForOtherUseInWebGL() const
     for (auto &buffer : mState.mIndexedBuffers)
     {
         if (buffer.get() && buffer->hasWebGLXFBBindingConflict(true))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool TransformFeedback::isBufferBound(BufferID bufferID) const
+{
+    for (const auto &buffer : mState.mIndexedBuffers)
+    {
+        if (buffer.id() == bufferID)
         {
             return true;
         }

@@ -83,6 +83,8 @@ blink_modules_sources("webgpu") {
     "gpu_shader_module.cc",
     "gpu_shader_module.h",
     "gpu_shader_stage.h",
+    "gpu_subgroup_matrix_config.cc",
+    "gpu_subgroup_matrix_config.h",
     "gpu_supported_features.cc",
     "gpu_supported_features.h",
     "gpu_supported_limits.cc",
@@ -108,7 +110,7 @@ blink_modules_sources("webgpu") {
     "//services/metrics/public/cpp:ukm_builders",
     "//skia",
     "//skia:skcms",
-    "//third_party/blink/renderer/modules/webcodecs:webcodecs",
+    "//third_party/blink/renderer/modules/webcodecs",
   ]
 
   if (use_dawn) {

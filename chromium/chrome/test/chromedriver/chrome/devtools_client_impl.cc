@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "chrome/test/chromedriver/chrome/devtools_client_impl.h"
 
 #include <cstring>
@@ -828,7 +823,7 @@ Status DevToolsClientImpl::PostBidiCommandInternal(std::string channel,
   if (tunnel_session_id_.empty()) {
     return Status{
         kUnknownError,
-        "uanble to send BiDi commands without BiDi server session id"};
+        "unable to send BiDi commands without BiDi server session id"};
   }
   if (!channel.empty()) {
     command.Set("goog:channel", std::move(channel));

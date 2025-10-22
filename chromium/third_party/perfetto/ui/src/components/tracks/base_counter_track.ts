@@ -17,7 +17,6 @@ import {searchSegment} from '../../base/binary_search';
 import {assertTrue, assertUnreachable} from '../../base/logging';
 import {Time, time} from '../../base/time';
 import {uuidv4Sql} from '../../base/uuid';
-import {drawTrackHoverTooltip} from '../../base/canvas_utils';
 import {raf} from '../../core/raf_scheduler';
 import {CacheKey} from './timeline_cache';
 import {
@@ -181,6 +180,11 @@ export interface CounterOptions {
   // unit for the counter. This is displayed in the tooltip and
   // legend.
   unit?: string;
+
+  // unit to use when yMode is set to 'rate'. This rateUnit should be
+  // equivalent to unit/s. For example, if the 'unit' is Joules, the 'rateUnit'
+  // may be set to Watts. If not specified, unit/s will be used.
+  rateUnit?: string;
 }
 
 export abstract class BaseCounterTrack implements TrackRenderer {
@@ -199,7 +203,6 @@ export abstract class BaseCounterTrack implements TrackRenderer {
 
   private limits?: CounterLimits;
 
-  private mousePos = {x: 0, y: 0};
   private hover?: CounterTooltipState;
   private options?: CounterOptions;
 
@@ -217,6 +220,34 @@ export abstract class BaseCounterTrack implements TrackRenderer {
       this.options = options;
     }
     return this.options;
+  }
+
+  renderTooltip(): m.Children {
+    if (this.hover) {
+      const value =
+        this.options?.yDisplay === 'log'
+          ? Math.exp(this.hover.lastDisplayValue)
+          : this.hover.lastDisplayValue;
+
+      return m('.pf-track__tooltip', this.formatValue(value));
+    } else {
+      return undefined;
+    }
+  }
+
+  private formatValue(value: number) {
+    const options = this.getCounterOptions();
+    const unit = this.unit;
+    switch (options.yMode) {
+      case 'value':
+        return `${value.toLocaleString()} ${unit}`;
+      case 'delta':
+        return `${value.toLocaleString()} \u0394${unit}`;
+      case 'rate':
+        return `${value.toLocaleString()} ${this.rateUnit}`;
+      default:
+        assertUnreachable(options.yMode);
+    }
   }
 
   // Extension points.
@@ -474,8 +505,6 @@ export abstract class BaseCounterTrack implements TrackRenderer {
     assertTrue(data.timestamps.length === data.maxDisplayValues.length);
     assertTrue(data.timestamps.length === data.lastDisplayValues.length);
 
-    const options = this.getCounterOptions();
-
     const timestamps = data.timestamps;
     const minValues = data.minDisplayValues;
     const maxValues = data.maxDisplayValues;
@@ -560,28 +589,6 @@ export abstract class BaseCounterTrack implements TrackRenderer {
 
     const hover = this.hover;
     if (hover !== undefined) {
-      const value =
-        this.options?.yDisplay === 'log'
-          ? Math.exp(hover.lastDisplayValue)
-          : hover.lastDisplayValue;
-      let text = `${value.toLocaleString()}`;
-
-      const unit = this.unit;
-      switch (options.yMode) {
-        case 'value':
-          text = `${text} ${unit}`;
-          break;
-        case 'delta':
-          text = `${text} \u0394${unit}`;
-          break;
-        case 'rate':
-          text = `${text} \u0394${unit}/s`;
-          break;
-        default:
-          assertUnreachable(options.yMode);
-          break;
-      }
-
       ctx.fillStyle = `hsl(${hue}, 45%, 75%)`;
       ctx.strokeStyle = `hsl(${hue}, 45%, 45%)`;
 
@@ -619,9 +626,6 @@ export abstract class BaseCounterTrack implements TrackRenderer {
         ctx.fill();
         ctx.stroke();
       }
-
-      // Draw the tooltip.
-      drawTrackHoverTooltip(ctx, this.mousePos, size, text);
     }
 
     // Write the Y scale on the top left corner.
@@ -654,10 +658,9 @@ export abstract class BaseCounterTrack implements TrackRenderer {
     );
   }
 
-  onMouseMove({x, y, timescale}: TrackMouseEvent) {
+  onMouseMove({x, timescale}: TrackMouseEvent) {
     const data = this.counters;
     if (data === undefined) return;
-    this.mousePos = {x, y};
     const time = timescale.pxToHpTime(x);
 
     const [left, right] = searchSegment(data.timestamps, time.toTime());
@@ -676,6 +679,9 @@ export abstract class BaseCounterTrack implements TrackRenderer {
       tsEnd,
       lastDisplayValue,
     };
+
+    // Full redraw to update the tooltip
+    raf.scheduleFullRedraw();
   }
 
   onMouseOut() {
@@ -758,7 +764,7 @@ export abstract class BaseCounterTrack implements TrackRenderer {
         yLabel += `\u0394${unit}`;
         break;
       case 'rate':
-        yLabel += `\u0394${unit}/s`;
+        yLabel += ` ${this.rateUnit}`;
         break;
       default:
         assertUnreachable(options.yMode);
@@ -888,7 +894,7 @@ export abstract class BaseCounterTrack implements TrackRenderer {
         min_value as minDisplayValue,
         max_value as maxDisplayValue
       from ${this.getTableName()}(
-        trace_start(), trace_end(), trace_dur()
+        trace_start(), trace_end() + 1, trace_dur() + 1
       );
     `);
 
@@ -909,6 +915,10 @@ export abstract class BaseCounterTrack implements TrackRenderer {
 
   get unit(): string {
     return this.getCounterOptions().unit ?? '';
+  }
+
+  get rateUnit(): string {
+    return this.getCounterOptions().rateUnit ?? `\u0394${this.unit}/s`;
   }
 
   protected get engine() {

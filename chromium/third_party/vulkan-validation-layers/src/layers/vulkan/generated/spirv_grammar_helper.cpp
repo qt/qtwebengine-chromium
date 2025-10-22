@@ -593,6 +593,28 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpDepthAttachmentReadEXT";
         case spv::OpStencilAttachmentReadEXT:
             return "OpStencilAttachmentReadEXT";
+        case spv::OpTypeTensorARM:
+            return "OpTypeTensorARM";
+        case spv::OpTensorReadARM:
+            return "OpTensorReadARM";
+        case spv::OpTensorWriteARM:
+            return "OpTensorWriteARM";
+        case spv::OpTensorQuerySizeARM:
+            return "OpTensorQuerySizeARM";
+        case spv::OpGraphConstantARM:
+            return "OpGraphConstantARM";
+        case spv::OpGraphEntryPointARM:
+            return "OpGraphEntryPointARM";
+        case spv::OpGraphARM:
+            return "OpGraphARM";
+        case spv::OpGraphInputARM:
+            return "OpGraphInputARM";
+        case spv::OpGraphSetOutputARM:
+            return "OpGraphSetOutputARM";
+        case spv::OpGraphEndARM:
+            return "OpGraphEndARM";
+        case spv::OpTypeGraphARM:
+            return "OpTypeGraphARM";
         case spv::OpTerminateInvocation:
             return "OpTerminateInvocation";
         case spv::OpSubgroupBallotKHR:
@@ -671,6 +693,8 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpImageBlockMatchSSDQCOM";
         case spv::OpImageBlockMatchSADQCOM:
             return "OpImageBlockMatchSADQCOM";
+        case spv::OpBitCastArrayQCOM:
+            return "OpBitCastArrayQCOM";
         case spv::OpImageBlockMatchWindowSSDQCOM:
             return "OpImageBlockMatchWindowSSDQCOM";
         case spv::OpImageBlockMatchWindowSADQCOM:
@@ -679,6 +703,12 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpImageBlockMatchGatherSSDQCOM";
         case spv::OpImageBlockMatchGatherSADQCOM:
             return "OpImageBlockMatchGatherSADQCOM";
+        case spv::OpCompositeConstructCoopMatQCOM:
+            return "OpCompositeConstructCoopMatQCOM";
+        case spv::OpCompositeExtractCoopMatQCOM:
+            return "OpCompositeExtractCoopMatQCOM";
+        case spv::OpExtractSubArrayQCOM:
+            return "OpExtractSubArrayQCOM";
         case spv::OpGroupIAddNonUniformAMD:
             return "OpGroupIAddNonUniformAMD";
         case spv::OpGroupFAddNonUniformAMD:
@@ -1077,6 +1107,26 @@ const char* string_SpvOpcode(uint32_t opcode) {
             return "OpConstantStringAMDX";
         case spv::OpSpecConstantStringAMDX:
             return "OpSpecConstantStringAMDX";
+        case spv::OpConditionalExtensionINTEL:
+            return "OpConditionalExtensionINTEL";
+        case spv::OpConditionalEntryPointINTEL:
+            return "OpConditionalEntryPointINTEL";
+        case spv::OpConditionalCapabilityINTEL:
+            return "OpConditionalCapabilityINTEL";
+        case spv::OpSpecConstantTargetINTEL:
+            return "OpSpecConstantTargetINTEL";
+        case spv::OpSpecConstantArchitectureINTEL:
+            return "OpSpecConstantArchitectureINTEL";
+        case spv::OpSpecConstantCapabilitiesINTEL:
+            return "OpSpecConstantCapabilitiesINTEL";
+        case spv::OpConditionalCopyObjectINTEL:
+            return "OpConditionalCopyObjectINTEL";
+        case spv::OpConvertHandleToImageINTEL:
+            return "OpConvertHandleToImageINTEL";
+        case spv::OpConvertHandleToSamplerINTEL:
+            return "OpConvertHandleToSamplerINTEL";
+        case spv::OpConvertHandleToSampledImageINTEL:
+            return "OpConvertHandleToSampledImageINTEL";
 #endif
         default:
             return "Unknown Opcode";
@@ -1113,6 +1163,8 @@ const char* string_SpvStorageClass(uint32_t storage_class) {
             return "StorageBuffer";
         case spv::StorageClassTileImageEXT:
             return "TileImageEXT";
+        case spv::StorageClassTileAttachmentQCOM:
+            return "TileAttachmentQCOM";
         case spv::StorageClassCallableDataKHR:
             return "CallableDataKHR";
         case spv::StorageClassIncomingCallableDataKHR:
@@ -1289,6 +1341,10 @@ const char* string_SpvExecutionMode(uint32_t execution_mode) {
             return "RoundingModeRTE";
         case spv::ExecutionModeRoundingModeRTZ:
             return "RoundingModeRTZ";
+        case spv::ExecutionModeNonCoherentTileAttachmentReadQCOM:
+            return "NonCoherentTileAttachmentReadQCOM";
+        case spv::ExecutionModeTileShadingRateQCOM:
+            return "TileShadingRateQCOM";
         case spv::ExecutionModeEarlyAndLateFragmentTestsAMD:
             return "EarlyAndLateFragmentTestsAMD";
         case spv::ExecutionModeStencilRefReplacingEXT:
@@ -1485,6 +1541,8 @@ const char* string_SpvDecoration(uint32_t decoration) {
             return "AlignmentId";
         case spv::DecorationMaxByteOffsetId:
             return "MaxByteOffsetId";
+        case spv::DecorationSaturatedToLargestFloat8NormalConversionEXT:
+            return "SaturatedToLargestFloat8NormalConversionEXT";
         case spv::DecorationNoSignedWrap:
             return "NoSignedWrap";
         case spv::DecorationNoUnsignedWrap:
@@ -1677,6 +1735,8 @@ const char* string_SpvDecoration(uint32_t decoration) {
             return "PayloadNodeArraySizeAMDX";
         case spv::DecorationPayloadDispatchIndirectAMDX:
             return "PayloadDispatchIndirectAMDX";
+        case spv::DecorationConditionalINTEL:
+            return "ConditionalINTEL";
 #endif
         default:
             return "Unknown Decoration";
@@ -1801,6 +1861,12 @@ const char* string_SpvBuiltIn(uint32_t built_in) {
             return "ViewIndex";
         case spv::BuiltInShadingRateKHR:
             return "ShadingRateKHR";
+        case spv::BuiltInTileOffsetQCOM:
+            return "TileOffsetQCOM";
+        case spv::BuiltInTileDimensionQCOM:
+            return "TileDimensionQCOM";
+        case spv::BuiltInTileApronSizeQCOM:
+            return "TileApronSizeQCOM";
         case spv::BuiltInBaryCoordNoPerspAMD:
             return "BaryCoordNoPerspAMD";
         case spv::BuiltInBaryCoordNoPerspCentroidAMD:
@@ -2281,6 +2347,17 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpColorAttachmentReadEXT, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpDepthAttachmentReadEXT, {{OperandKind::Id}}},
         {spv::OpStencilAttachmentReadEXT, {{OperandKind::Id}}},
+        {spv::OpTypeTensorARM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpTensorReadARM, {{OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpTensorWriteARM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::BitEnum}}},
+        {spv::OpTensorQuerySizeARM, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpGraphConstantARM, {{OperandKind::Literal}}},
+        {spv::OpGraphEntryPointARM, {{OperandKind::Id, OperandKind::LiteralString, OperandKind::Id}}},
+        {spv::OpGraphARM, {{}}},
+        {spv::OpGraphInputARM, {{OperandKind::Id, OperandKind::Id}}},
+        {spv::OpGraphSetOutputARM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpGraphEndARM, {{}}},
+        {spv::OpTypeGraphARM, {{OperandKind::Literal, OperandKind::Id}}},
         {spv::OpTerminateInvocation, {{}}},
         {spv::OpSubgroupBallotKHR, {{OperandKind::Id}}},
         {spv::OpSubgroupFirstInvocationKHR, {{OperandKind::Id}}},
@@ -2320,10 +2397,14 @@ const OperandInfo& GetOperandInfo(uint32_t opcode) {
         {spv::OpImageBoxFilterQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpImageBlockMatchSSDQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpImageBlockMatchSADQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpBitCastArrayQCOM, {{OperandKind::Id}}},
         {spv::OpImageBlockMatchWindowSSDQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpImageBlockMatchWindowSADQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpImageBlockMatchGatherSSDQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
         {spv::OpImageBlockMatchGatherSADQCOM, {{OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id, OperandKind::Id}}},
+        {spv::OpCompositeConstructCoopMatQCOM, {{OperandKind::Id}}},
+        {spv::OpCompositeExtractCoopMatQCOM, {{OperandKind::Id}}},
+        {spv::OpExtractSubArrayQCOM, {{OperandKind::Id, OperandKind::Id}}},
         {spv::OpGroupIAddNonUniformAMD, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupFAddNonUniformAMD, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},
         {spv::OpGroupFMinNonUniformAMD, {{OperandKind::Id, OperandKind::ValueEnum, OperandKind::Id}}},

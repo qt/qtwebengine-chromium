@@ -11,16 +11,22 @@ namespace views::features {
 
 // Please keep alphabetized.
 
+// Used to enable additional a11y attributes when announcing text.
+BASE_FEATURE(kAnnounceTextAdditionalAttributes,
+             "AnnounceTextAdditionalAttributes",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Use a high-contrast style for ink drops when in platform high-contrast mode,
 // including full opacity and a high-contrast color
 BASE_FEATURE(kEnablePlatformHighContrastInkDrop,
              "EnablePlatformHighContrastInkDrop",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Handle mouse cursor being out sync with a touch drag operation. If mouse
-// cursor is over different window, drag will not start, and cursor will be
-// moved to the window where the touch drag started. This is a kill switch
-// for this new logic,  crbug.com/370856871.
+// If mouse cursor is over different window Windows will not start a Drag
+// and drop. This feature moves the cursor to the location of a touch on
+// press-down so that by the time a Drag and drop is started, the cursor will
+// already be inside the window. This is a kill switch for this new logic, see
+// crbug.com/370856871.
 BASE_FEATURE(kEnableTouchDragCursorSync,
              "EnableTouchDragCursorSync",
              base::FEATURE_ENABLED_BY_DEFAULT);
@@ -29,18 +35,6 @@ BASE_FEATURE(kEnableTouchDragCursorSync,
 // to kKeyboardAccessibleTooltip in //ui/base/ui_base_features.cc.
 BASE_FEATURE(kKeyboardAccessibleTooltipInViews,
              "KeyboardAccessibleTooltipInViews",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Used to enable additional a11y attributes when announcing text.
-BASE_FEATURE(kAnnounceTextAdditionalAttributes,
-             "AnnounceTextAdditionalAttributes",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Whether the window appearance follows the color provider's color mode.
-// This is only effective for mac. Some plumbing is not restricted to mac,
-// therefore this flag is included in all platforms.
-BASE_FEATURE(kMacWindowFollowsColorProviderColorMode,
-             "MacWindowFollowsColorProviderColorMode",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 }  // namespace views::features

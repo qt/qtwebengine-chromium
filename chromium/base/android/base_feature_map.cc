@@ -19,6 +19,8 @@ const base::Feature* const kFeaturesExposedToJava[] = {
     &features::kBackgroundNotPerceptibleBinding,
     &features::kPostPowerMonitorBroadcastReceiverInitToBackground,
     &features::kPostGetMyMemoryStateToBackground,
+    &features::kUpdateStateBeforeUnbinding,
+    &features::kUseSharedRebindServiceConnection,
 };
 
 // static

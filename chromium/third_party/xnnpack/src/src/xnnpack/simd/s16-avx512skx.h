@@ -4,8 +4,8 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#ifndef __XNNPACK_SRC_XNNPACK_SIMD_S16_AVX512SKX_H_
-#define __XNNPACK_SRC_XNNPACK_SIMD_S16_AVX512SKX_H_
+#ifndef XNNPACK_SRC_XNNPACK_SIMD_S16_AVX512SKX_H_
+#define XNNPACK_SRC_XNNPACK_SIMD_S16_AVX512SKX_H_
 
 #include <assert.h>
 #include <immintrin.h>
@@ -41,7 +41,6 @@ static XNN_INLINE xnn_simd_s16_t xnn_signcomplement_s16(xnn_simd_s16_t x) {
                           _mm512_srai_epi16(x, 15));
 }
 
-
 // Load/store operations.
 
 static XNN_INLINE xnn_simd_s16_t xnn_loadu_s16(const int16_t* ptr) {
@@ -64,14 +63,10 @@ static XNN_INLINE xnn_simd_s16_t xnn_set1_s16_t(int16_t v) {
   return _mm512_set1_epi16(v);
 }
 
-static XNN_INLINE xnn_simd_s16_t xnn_set1_or_load_s16_t(const int16_t* v) {
-  return _mm512_set1_epi16(*v);
-}
-
 // Tail load/store operations.
 
-static XNN_INLINE xnn_simd_s16_t
-xnn_load_tail_s16(const int16_t* input, size_t num_elements) {
+static XNN_INLINE xnn_simd_s16_t xnn_load_tail_s16(const int16_t* input,
+                                                   size_t num_elements) {
   assert(num_elements > 0);
   assert(num_elements < xnn_simd_size_s16);
   const __mmask32 vmask =
@@ -94,4 +89,4 @@ static XNN_INLINE void xnn_store_tail_s16(int16_t* output, xnn_simd_s16_t v,
   _mm512_mask_storeu_epi16(output, vmask, v);
 }
 
-#endif  // __XNNPACK_SRC_XNNPACK_SIMD_S16_AVX512SKX_H_
+#endif  // XNNPACK_SRC_XNNPACK_SIMD_S16_AVX512SKX_H_

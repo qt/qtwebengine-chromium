@@ -7,13 +7,15 @@ from __future__ import annotations
 import abc
 import datetime as dt
 import logging
-from typing import List, Optional, Self, Sequence, Tuple
+from typing import TYPE_CHECKING, Optional, Self, Sequence
 
 from typing_extensions import override
 
 from crossbench.parse import ObjectParser
-from crossbench.runner.run import Run
 from crossbench.stories.story import Story
+
+if TYPE_CHECKING:
+  from crossbench.runner.run import Run
 
 
 class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
@@ -21,16 +23,16 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
   URL: str = ""
   URL_OFFICIAL: str = ""
   URL_LOCAL: str = ""
-  SUBSTORIES: Tuple[str, ...] = ()
+  SUBSTORIES: tuple[str, ...] = ()
 
   @classmethod
   @override
-  def all_story_names(cls) -> Tuple[str, ...]:
+  def all_story_names(cls) -> tuple[str, ...]:
     assert cls.SUBSTORIES
     return cls.SUBSTORIES
 
   @classmethod
-  def default_story_names(cls) -> Tuple[str, ...]:
+  def default_story_names(cls) -> tuple[str, ...]:
     """Override this method to use a subset of all_story_names as default
     selection if no story names are provided."""
     return cls.all_story_names()
@@ -39,14 +41,14 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
   def all(cls,
           separate: bool = False,
           url: Optional[str] = None,
-          **kwargs) -> List[Self]:
+          **kwargs) -> list[Self]:
     return cls.from_names(cls.all_story_names(), separate, url, **kwargs)
 
   @classmethod
   def default(cls,
               separate: bool = False,
               url: Optional[str] = None,
-              **kwargs) -> List[Self]:
+              **kwargs) -> list[Self]:
     return cls.from_names(cls.default_story_names(), separate, url, **kwargs)
 
   @classmethod
@@ -54,7 +56,7 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
                  substories: Sequence[str],
                  separate: bool = False,
                  url: Optional[str] = None,
-                 **kwargs) -> List[Self]:
+                 **kwargs) -> list[Self]:
     if not substories:
       raise ValueError("No substories provided")
     if separate:
@@ -84,7 +86,7 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
     self._verify_url(self.URL_OFFICIAL, "URL_OFFICIAL")
     self._verify_url(self.URL_LOCAL, "URL_LOCAL")
     assert substories, f"No substories provided for {cls}"
-    self._substories: Sequence[str] = substories
+    self._substories: tuple[str, ...] = tuple(substories)
     self._verify_substories()
     kwargs["name"] = self._get_unique_name()
     kwargs["duration"] = duration or self._get_initial_duration()
@@ -126,7 +128,7 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
 
   @property
   @override
-  def substories(self) -> Tuple[str, ...]:
+  def substories(self) -> tuple[str, ...]:
     return tuple(self._substories)
 
   @property
@@ -182,4 +184,6 @@ class PressBenchmarkStory(Story, metaclass=abc.ABCMeta):
 
   def log_run_test_url(self, run: Run) -> None:
     del run
+    if self.url != self.test_url:
+      logging.info("🔗 STORY URL:                %s", self.url)
     logging.info("🔗 STORY PUBLIC TEST URL:    %s", self.test_url)

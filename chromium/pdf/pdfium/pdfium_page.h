@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/span.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
@@ -115,7 +116,7 @@ class PDFiumPage {
   // For all the links on the page, get their urls, underlying text ranges and
   // bounding boxes.
   std::vector<AccessibilityLinkInfo> GetLinkInfo(
-      const std::vector<AccessibilityTextRunInfo>& text_runs);
+      base::span<const AccessibilityTextRunInfo> text_runs);
 
   // For all the images on the page, get their alt texts and bounding boxes. If
   // the alt text is empty or unavailable, and if the user has requested that
@@ -128,8 +129,12 @@ class PDFiumPage {
   std::vector<int> GetImageObjectIndices();
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-  // Returns the image as a 32-bit bitmap format for OCR.
-  SkBitmap GetImageForOcr(int page_object_index);
+  // Returns if the page has images.
+  bool HasImages();
+
+  // Returns the image as a 32-bit bitmap format for OCR. The image dimensions
+  // will be at most `max_image_dimension`.
+  SkBitmap GetImageForOcr(int page_object_index, int max_image_dimension);
 
   // Called to inform PDFiumPage that OCR operations performed on this page
   // added text into the page or not.
@@ -139,12 +144,15 @@ class PDFiumPage {
   // Returns if Searchify has run on the page, regardless of whether it added
   // any text to the page or not.
   bool IsPageSearchified() const;
+
+  // Returns if the page can be unloaded.
+  bool PageCanBeUnloaded() const;
 #endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 
   // For all the highlights on the page, get their underlying text ranges and
   // bounding boxes.
   std::vector<AccessibilityHighlightInfo> GetHighlightInfo(
-      const std::vector<AccessibilityTextRunInfo>& text_runs);
+      base::span<const AccessibilityTextRunInfo> text_runs);
 
   // For all the text fields on the page, get their properties like name,
   // value, bounding boxes, etc.

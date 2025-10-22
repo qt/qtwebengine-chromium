@@ -413,7 +413,7 @@ class RefCountedThreadSafe : public subtle::RefCountedThreadSafeBase {
  public:
   using RefCountPreferenceTag = subtle::StartRefCountFromZeroTag;
 
-  explicit RefCountedThreadSafe()
+  RefCountedThreadSafe()
       : subtle::RefCountedThreadSafeBase(subtle::GetRefCountPreference<T>()) {}
 
   RefCountedThreadSafe(const RefCountedThreadSafe&) = delete;
@@ -472,11 +472,6 @@ class RefCountedData
 template <typename T>
 bool operator==(const RefCountedData<T>& lhs, const RefCountedData<T>& rhs) {
   return lhs.data == rhs.data;
-}
-
-template <typename T>
-bool operator!=(const RefCountedData<T>& lhs, const RefCountedData<T>& rhs) {
-  return !(lhs == rhs);
 }
 
 }  // namespace base

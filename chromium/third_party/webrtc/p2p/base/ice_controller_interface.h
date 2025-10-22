@@ -24,9 +24,9 @@
 #include "rtc_base/checks.h"
 #include "rtc_base/system/rtc_export.h"
 
-namespace cricket {
+namespace webrtc {
 
-struct IceFieldTrials;  // Forward declaration to avoid circular dependency.
+// Forward declaration to avoid circular dependency.
 
 struct RTC_EXPORT IceRecheckEvent {
   IceRecheckEvent(IceSwitchReason _reason, int _recheck_delay_ms)
@@ -98,19 +98,19 @@ class IceControllerInterface {
   virtual ~IceControllerInterface() = default;
 
   // These setters are called when the state of P2PTransportChannel is mutated.
-  virtual void SetIceConfig(const webrtc::IceConfig& config) = 0;
+  virtual void SetIceConfig(const IceConfig& config) = 0;
   virtual void SetSelectedConnection(const Connection* selected_connection) = 0;
   virtual void AddConnection(const Connection* connection) = 0;
   virtual void OnConnectionDestroyed(const Connection* connection) = 0;
 
   // These are all connections that has been added and not destroyed.
-  virtual rtc::ArrayView<const Connection* const> GetConnections() const {
+  virtual ArrayView<const Connection* const> GetConnections() const {
     // Stub implementation to simplify downstream roll.
     RTC_CHECK_NOTREACHED();
     return {};
   }
   // TODO(bugs.webrtc.org/15702): Remove this after downstream is cleaned up.
-  virtual rtc::ArrayView<const Connection*> connections() const {
+  virtual ArrayView<const Connection*> connections() const {
     // Stub implementation to simplify downstream removal.
     RTC_CHECK_NOTREACHED();
     return {};
@@ -126,7 +126,7 @@ class IceControllerInterface {
 
   // Compute the "STUN_ATTR_USE_CANDIDATE" for `conn`.
   virtual bool GetUseCandidateAttr(const Connection* conn,
-                                   webrtc::NominationMode mode,
+                                   NominationMode mode,
                                    IceMode remote_ice_mode) const = 0;
 
   // These methods is only added to not have to change all unit tests
@@ -147,6 +147,7 @@ class IceControllerInterface {
   virtual std::vector<const Connection*> PruneConnections() = 0;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_BASE_ICE_CONTROLLER_INTERFACE_H_

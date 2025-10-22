@@ -23,9 +23,7 @@ message LocalTabGroupData {
   // Timestamp of last explicit user interaction with the tab group.
   optional int64 last_user_interaction_time_windows_epoch_micros = 4;
 
-  // Indicates whether a tab is pending sanitization. This field is only
-  // applicable to tabs, instead of tab groups.
-  optional bool is_tab_pending_sanitization = 5;
+  reserved 5;
 
   // Shared tab group GUID from which this saved tab group was created.
   optional string originating_tab_group_guid = 6;
@@ -34,4 +32,9 @@ message LocalTabGroupData {
   // For example, the originating saved tab groups will be hidden after
   // transitioning to shared groups.
   optional bool is_group_hidden = 7;
+
+  // Timestamp of when the tab group was locally archived. This field is only
+  // set if the tab group is currently archived. Restoring the group from
+  // archive will reset this field.
+  optional int64 archival_time_windows_epoch_micros = 8;
 }

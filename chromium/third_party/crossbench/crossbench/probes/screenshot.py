@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import datetime as dt
-from typing import TYPE_CHECKING, List, Optional, Self, Sequence, Type
+from typing import TYPE_CHECKING, Optional, Self, Sequence, Type
 
 from typing_extensions import override
 
@@ -14,12 +14,12 @@ from crossbench.action_runner.screenshot_annotation import (
 from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.probe_error import ProbeMissingDataError
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Viewport
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
 
@@ -38,7 +38,7 @@ class ScreenshotProbe(Probe):
     # TODO: support interval-based screenshots
     return parser
 
-  def _pre_check_viewport_size(self, env: HostEnvironment) -> None:
+  def _pre_check_viewport_size(self, env: RunnerEnv) -> None:
     for browser in env.browsers:
       viewport: Viewport = browser.viewport
       if viewport.is_headless:
@@ -60,7 +60,7 @@ class ScreenshotProbeContext(ProbeContext[ScreenshotProbe]):
 
   def __init__(self, probe: ScreenshotProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._results: List[AnyPath] = []
+    self._results: list[AnyPath] = []
 
   @override
   def get_default_result_path(self) -> AnyPath:
@@ -88,7 +88,7 @@ class ScreenshotProbeContext(ProbeContext[ScreenshotProbe]):
     svg = annotate_screenshot_svg(screen_width, screen_height,
                                   screenshot_file_name, annotations)
     svg_path = self.result_path / f"{label}.svg"
-    self.browser_platform.set_file_contents(svg_path, svg)
+    self.browser_platform.write_text(svg_path, svg)
     self._results.append(svg_path)
 
   def screenshot(

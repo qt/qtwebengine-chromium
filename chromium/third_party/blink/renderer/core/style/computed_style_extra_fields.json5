@@ -366,6 +366,13 @@
       field_group: "visual",
     },
     {
+      name: "MaybeHasGapDecorations",
+      field_template: "monotonic_flag",
+      type_name: "bool",
+      default_value: "false",
+      field_group: "visual",
+    },
+    {
       name: "HasAutoClip",
       field_template: "primitive",
       type_name: "bool",
@@ -383,15 +390,6 @@
       computed_style_custom_functions: ["setter"],
     },
     {
-      name: "HasAutoStandardLineClamp",
-      field_template: "primitive",
-      type_name: "bool",
-      field_group: "box",
-      default_value: "false",
-      computed_style_custom_functions: ["setter"],
-      invalidate: ["layout", "paint"],
-    },
-    {
       name: "font",
       field_template: "pointer",
       field_group: "inherited",
@@ -399,6 +397,17 @@
       type_name: "Font",
       inherited: true,
       default_value: "MakeGarbageCollected<Font>()",
+      wrapper_pointer_name: "Member",
+      invalidate: ["reshape"],
+    },
+    {
+      name: "ContainerFont",
+      field_template: "pointer",
+      field_group: "inherited",
+      include_paths: ["third_party/blink/renderer/platform/fonts/font.h"],
+      type_name: "Font",
+      inherited: true,
+      default_value: "nullptr",
       wrapper_pointer_name: "Member",
       invalidate: ["reshape"],
     },
@@ -505,13 +514,12 @@
     },
     {
       name: "BaseTextDecorationData",
-      field_template: "external",
-      type_name: "base::RefCountedData<Vector<AppliedTextDecoration, 1>>",
+      field_template: "pointer",
+      type_name: "AppliedTextDecorationVector",
       include_paths: ["third_party/blink/renderer/core/style/applied_text_decoration.h"],
       default_value: "nullptr",
-      wrapper_pointer_name: "scoped_refptr",
+      wrapper_pointer_name: "Member",
       field_group: "visual",
-      computed_style_custom_functions: ["getter"],
       invalidate: ["text-decoration"],
     },
     {
@@ -571,9 +579,9 @@
       type_name: "CSSAnimationData",
       field_group: "*",
       default_value: "nullptr",
-      wrapper_pointer_name: "std::unique_ptr",
+      wrapper_pointer_name: "Member",
       include_paths: ["third_party/blink/renderer/core/animation/css/css_animation_data.h"],
-      computed_style_custom_functions: ["getter", "setter"],
+      computed_style_custom_functions: ["setter"],
     },
     {
       name: "Transitions",
@@ -581,9 +589,9 @@
       type_name: "CSSTransitionData",
       field_group: "*",
       default_value: "nullptr",
-      wrapper_pointer_name: "std::unique_ptr",
+      wrapper_pointer_name: "Member",
       include_paths: ["third_party/blink/renderer/core/animation/css/css_transition_data.h"],
-      computed_style_custom_functions: ["getter", "setter"],
+      computed_style_custom_functions: ["setter"],
     },
     {
       name: "MaskBoxImage",
@@ -1018,6 +1026,7 @@
       custom_compare: true,
     },
     {
+      // crbug.com/41241289 Remove with the "ListStylePositionQuirk" flag.
       name: "IsInsideListElement",
       field_template: "monotonic_flag",
       default_value: "false",
@@ -1173,6 +1182,13 @@
       default_value: "false",
     },
     {
+      name: "DependsOnAnchoredContainerQueries",
+      field_template: "primitive",
+      type_name: "bool",
+      field_group: "*",
+      default_value: "false",
+    },
+    {
       // Set to true if this ComputedStyle is for an element whose ::first-line
       // style depends on size container queries.
       name: "FirstLineDependsOnSizeContainerQueries",
@@ -1214,6 +1230,17 @@
     {
       // https://html.spec.whatwg.org/multipage/interaction.html#inert
       name: "IsHTMLInert",
+      inherited: true,
+      independent: true,
+      field_template: "primitive",
+      type_name: "bool",
+      default_value: "false",
+    },
+    {
+      // https://drafts.csswg.org/css-ui-4/#inertness
+      // Bit that is set for interactivity:inert and is never reset in the
+      // subtree even if the interactivity is set back to auto.
+      name: "IsCSSInert",
       inherited: true,
       independent: true,
       field_template: "primitive",
@@ -1307,6 +1334,7 @@
       field_template: "monotonic_flag",
       field_group: "surround",
       default_value: "false",
+      custom_compare: true,
     },
     {
       name: "HasSiblingFunctions",
@@ -1328,7 +1356,7 @@
       name: "AnchorCenterOffset",
       field_template: "external",
       field_group: "*",
-      include_paths: ["third_party/blink/renderer/core/layout/geometry/physical_offset.h"],
+      include_paths: ["third_party/blink/renderer/platform/geometry/physical_offset.h"],
       default_value: "std::nullopt",
       type_name: "std::optional<PhysicalOffset>",
       custom_compare: true,

@@ -5,11 +5,9 @@
 from __future__ import annotations
 
 import abc
-import argparse
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
-                    Type)
+from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Sequence, Type
 
 from typing_extensions import override
 
@@ -17,12 +15,14 @@ from crossbench.action_runner.action.enums import ReadyState
 from crossbench.benchmarks.base import PressBenchmarkStoryFilter
 from crossbench.benchmarks.jetstream.jetstream import (JetStreamBenchmark,
                                                        JetStreamProbe,
-                                                       JetStreamProbeContext)
+                                                       JetStreamProbeContext,
+                                                       JetStreamStory)
 from crossbench.helper import url_helper
 from crossbench.parse import NumberParser
-from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
+  import argparse
+
   from crossbench.runner.run import Run
 
 
@@ -37,9 +37,8 @@ class JetStream2ProbeContext(JetStreamProbeContext):
   pass
 
 
-class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
-  URL_LOCAL: str = "http://localhost:8000/"
-  SUBSTORIES: Tuple[str, ...] = (
+class JetStream2Story(JetStreamStory, metaclass=abc.ABCMeta):
+  SUBSTORIES: tuple[str, ...] = (
       "WSL",
       "UniPoker",
       "uglify-js-wtb",
@@ -117,19 +116,14 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
     super().__init__(url=url, substories=substories)
 
   @property
-  @override
-  def substory_duration(self) -> dt.timedelta:
-    return dt.timedelta(seconds=2)
-
-  @property
   def iterations(self) -> Optional[int]:
     return self._iterations
 
   @property
-  def url_params(self) -> Dict[str, str]:
-    params: Dict[str, str] = {}
-    if self.iterations:
-      params["iterationCount"] = str(self.iterations)
+  def url_params(self) -> MutableMapping[str, str]:
+    params: MutableMapping[str, str] = {}
+    if iterations := self.iterations:
+      params["iterationCount"] = str(iterations)
     return params
 
   @override
@@ -148,9 +142,10 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
           ready_state=ReadyState.COMPLETE,
           timeout=dt.timedelta(seconds=10))
       if self._substories != self.SUBSTORIES:
-        actions.wait_js_condition(("return JetStream && JetStream.benchmarks "
-                                   "&& JetStream.benchmarks.length > 0;"), 0.1,
-                                  10)
+        actions.wait_js_condition(
+            "return globalThis?.JetStream?.benchmarks?.length > 0;",
+            0.1,
+            timeout=10)
         actions.js(
             """
         let benchmarks = arguments[0];
@@ -161,24 +156,12 @@ class JetStream2Story(PressBenchmarkStory, metaclass=abc.ABCMeta):
       actions.wait_js_condition(
           """
         return document.querySelectorAll("#results>.benchmark").length > 0;
-      """, 1, self.duration + dt.timedelta(seconds=30))
-
-  def run(self, run: Run) -> None:
-    with run.actions("Running") as actions:
-      actions.js("JetStream.start()")
-      actions.wait(self.fast_duration)
-    with run.actions("Waiting for completion") as actions:
-      actions.wait_js_condition(
-          """
-        let summaryElement = document.getElementById("result-summary");
-        return (summaryElement.classList.contains("done"));
-        """,
-          0.5,
-          self.slow_duration,
-          delay=self.substory_duration)
+      """,
+          1,
+          timeout=self.duration + dt.timedelta(seconds=30))
 
 
-ProbeClsTupleT = Tuple[Type[JetStream2Probe], ...]
+ProbeClsTupleT = tuple[Type[JetStream2Probe], ...]
 
 
 class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
@@ -186,9 +169,9 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
 
   @classmethod
   @override
-  def add_cli_parser(
+  def add_cli_arguments(
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser = super().add_cli_parser(parser)
+    parser = super().add_cli_arguments(parser)
     parser.add_argument(
         "--iterations",
         "--iteration-count",
@@ -205,7 +188,7 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
 
   @classmethod
   @override
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["iterations"] = args.iterations
     return kwargs
@@ -213,15 +196,16 @@ class JetStream2BenchmarkStoryFilter(PressBenchmarkStoryFilter):
   def __init__(self,
                story_cls: Type[JetStream2Story],
                patterns: Sequence[str],
+               args: Optional[argparse.Namespace] = None,
                separate: bool = False,
                url: Optional[str] = None,
                iterations: Optional[int] = None) -> None:
     self.iterations = iterations
     assert issubclass(story_cls, JetStream2Story)
-    super().__init__(story_cls, patterns, separate, url)
+    super().__init__(story_cls, patterns, args, separate, url)
 
   @override
-  def create_stories_from_names(self, names: List[str],
+  def create_stories_from_names(self, names: list[str],
                                 separate: bool) -> Sequence[JetStream2Story]:
     return self.story_cls.from_names(
         names, separate=separate, url=self.url, iterations=self.iterations)

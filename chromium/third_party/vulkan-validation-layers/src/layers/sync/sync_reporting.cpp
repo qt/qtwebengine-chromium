@@ -19,6 +19,9 @@
 #include "sync/sync_image.h"
 #include "sync/sync_validation.h"
 #include "error_message/error_strings.h"
+#include "utils/math_utils.h"
+
+constexpr VkAccessFlags2 kAllAccesses = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
 
 static const char *string_SyncHazard(SyncHazard hazard) {
     switch (hazard) {
@@ -113,11 +116,11 @@ static std::string FormatAccessProperty(const SyncAccessInfo &access) {
     return ss.str();
 }
 
-static void GetAccessProperties(const HazardResult &hazard_result, const vvl::Device &device, VkQueueFlags allowed_queue_flags,
+static void GetAccessProperties(const HazardResult &hazard_result, const SyncValidator &device, VkQueueFlags allowed_queue_flags,
                                 ReportProperties &properties) {
     const HazardResult::HazardState &hazard = hazard_result.State();
-    const SyncAccessInfo &access_info = GetSyncAccessInfos()[hazard.access_index];
-    const SyncAccessInfo &prior_access_info = GetSyncAccessInfos()[hazard.prior_access_index];
+    const SyncAccessInfo &access_info = GetAccessInfo(hazard.access_index);
+    const SyncAccessInfo &prior_access_info = GetAccessInfo(hazard.prior_access_index);
 
     if (!hazard.recorded_access.get()) {
         properties.Add(kPropertyAccess, FormatAccessProperty(access_info));
@@ -167,13 +170,15 @@ static VkPipelineStageFlags2 GetAllowedStages(VkQueueFlags queue_flags, VkPipeli
     return allowed_stages;
 }
 
-static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags &accesses, VkPipelineStageFlags2 allowed_stages) {
+static SyncAccessFlags FilterSyncAccessesByAllowedVkStages(const SyncAccessFlags &accesses, VkPipelineStageFlags2 allowed_stages,
+                                                           VkAccessFlags2 disabled_accesses) {
     SyncAccessFlags filtered_accesses = accesses;
     const auto &access_infos = GetSyncAccessInfos();
     for (size_t i = 0; i < access_infos.size(); i++) {
         const SyncAccessInfo &access_info = access_infos[i];
         const bool is_stage_allowed = (access_info.stage_mask & allowed_stages) != 0;
-        if (!is_stage_allowed) {
+        const bool is_access_allowed = (access_info.access_mask & disabled_accesses) == 0;
+        if (!is_stage_allowed || !is_access_allowed) {
             filtered_accesses.reset(i);
         }
     }
@@ -195,8 +200,16 @@ static SyncAccessFlags FilterSyncAccessesByAllowedVkAccesses(const SyncAccessFla
     return filtered_accesses;
 }
 
+// If mask contains ALL of expand_bits, then clear these bits and add a meta_mask
+static void ReplaceExpandBitsWithMetaMask(VkFlags64 &mask, VkFlags64 expand_bits, VkFlags64 meta_mask) {
+    if (expand_bits && (mask & expand_bits) == expand_bits) {
+        mask &= ~expand_bits;
+        mask |= meta_mask;
+    }
+}
+
 static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSyncAccessesToCompactVkForm(
-    const SyncAccessFlags &sync_accesses, const vvl::Device &device, VkQueueFlags allowed_queue_flags) {
+    const SyncAccessFlags &sync_accesses, const SyncValidator &device, VkQueueFlags allowed_queue_flags) {
     if (sync_accesses.none()) {
         return {};
     }
@@ -204,17 +217,23 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
     const VkPipelineStageFlags2 disabled_stages = sync_utils::DisabledPipelineStages(device.enabled_features, device.extensions);
     const VkPipelineStageFlags2 all_transfer_expand_bits = kAllTransferExpandBits & ~disabled_stages;
 
+    const VkAccessFlags2 disabled_accesses = sync_utils::DisabledAccesses(device.extensions);
+    const VkAccessFlags2 all_shader_read_bits = kShaderReadExpandBits & ~disabled_accesses;
+
     // Build stage -> accesses mapping. OR-merge accesses that happen on the same stage.
     // Also handle ALL_COMMANDS accesses.
     vvl::unordered_map<VkPipelineStageFlagBits2, VkAccessFlags2> stage_to_accesses;
     {
         const VkPipelineStageFlags2 allowed_stages = GetAllowedStages(allowed_queue_flags, disabled_stages);
-        const SyncAccessFlags filtered_accesses = FilterSyncAccessesByAllowedVkStages(sync_accesses, allowed_stages);
+        const SyncAccessFlags filtered_accesses =
+            FilterSyncAccessesByAllowedVkStages(sync_accesses, allowed_stages, disabled_accesses);
 
-        const SyncAccessFlags all_reads = FilterSyncAccessesByAllowedVkStages(syncAccessReadMask, allowed_stages);
+        const SyncAccessFlags all_reads =
+            FilterSyncAccessesByAllowedVkStages(syncAccessReadMask, allowed_stages, disabled_accesses);
         const SyncAccessFlags all_shader_reads = FilterSyncAccessesByAllowedVkAccesses(all_reads, kShaderReadExpandBits);
 
-        const SyncAccessFlags all_writes = FilterSyncAccessesByAllowedVkStages(syncAccessWriteMask, allowed_stages);
+        const SyncAccessFlags all_writes =
+            FilterSyncAccessesByAllowedVkStages(syncAccessWriteMask, allowed_stages, disabled_accesses);
         const SyncAccessFlags all_shader_writes = FilterSyncAccessesByAllowedVkAccesses(all_writes, kShaderWriteExpandBits);
 
         if (filtered_accesses == all_reads) {
@@ -248,29 +267,32 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
         VkAccessFlags2 accesses = entry.first;
         VkPipelineStageFlags2 stages = entry.second;
 
-        // Detect if ALL allowed accesses for the given stage are used.
-        // This is an opportunity to use a compact message form.
+        VkAccessFlags2 all_accesses_supported_by_stages = sync_utils::CompatibleAccessMask(stages);
         {
-            VkAccessFlags2 all_supported_accesses = sync_utils::CompatibleAccessMask(stages);
             // Remove meta stages.
             // TODO: revisit CompatibleAccessMask helper. SyncVal works with expanded representation.
             // Meta stages are needed for core checks in this case, update function so serve both purposes well.
-            all_supported_accesses &= ~VK_ACCESS_2_SHADER_READ_BIT;
-            all_supported_accesses &= ~VK_ACCESS_2_SHADER_WRITE_BIT;
+            all_accesses_supported_by_stages &= ~VK_ACCESS_2_SHADER_READ_BIT;
+            all_accesses_supported_by_stages &= ~VK_ACCESS_2_SHADER_WRITE_BIT;
             // Remove unsupported accesses, otherwise the access mask won't be detected as the one that covers ALL accesses
             // TODO: ideally this should be integrated into utilities logic (need to revisit all use cases)
             if (!IsExtEnabled(device.extensions.vk_ext_blend_operation_advanced)) {
-                all_supported_accesses &= ~VK_ACCESS_2_COLOR_ATTACHMENT_READ_NONCOHERENT_BIT_EXT;
-            }
-            if (accesses == all_supported_accesses) {
-                stages_with_all_supported_accesses |= stages;
-                all_accesses |= all_supported_accesses;
-                continue;
+                all_accesses_supported_by_stages &= ~VK_ACCESS_2_COLOR_ATTACHMENT_READ_NONCOHERENT_BIT_EXT;
             }
         }
 
-        sync_utils::ReplaceExpandBitsWithMetaMask(stages, all_transfer_expand_bits, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
-        sync_utils::ReplaceExpandBitsWithMetaMask(accesses, kShaderReadExpandBits, VK_ACCESS_2_SHADER_READ_BIT);
+        // Check if ALL supported accesses for the given stage are used.
+        // This is an opportunity to use a compact message form.
+        if (accesses == all_accesses_supported_by_stages) {
+            stages_with_all_supported_accesses |= stages;
+            all_accesses |= all_accesses_supported_by_stages;
+            continue;
+        }
+
+        ReplaceExpandBitsWithMetaMask(stages, all_transfer_expand_bits, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
+
+        const VkAccessFlags2 all_shader_reads_supported_by_stages = all_shader_read_bits & all_accesses_supported_by_stages;
+        ReplaceExpandBitsWithMetaMask(accesses, all_shader_reads_supported_by_stages, VK_ACCESS_2_SHADER_READ_BIT);
         result.emplace_back(stages, accesses);
     }
     if (stages_with_all_supported_accesses) {
@@ -278,9 +300,9 @@ static std::vector<std::pair<VkPipelineStageFlags2, VkAccessFlags2>> ConvertSync
             // For simple configurations (1 stage and at most 2 accesses) don't use ALL accesses shortcut
             result.emplace_back(stages_with_all_supported_accesses, all_accesses);
         } else {
-            sync_utils::ReplaceExpandBitsWithMetaMask(stages_with_all_supported_accesses, all_transfer_expand_bits,
-                                                      VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
-            result.emplace_back(stages_with_all_supported_accesses, sync_utils::kAllAccesses);
+            ReplaceExpandBitsWithMetaMask(stages_with_all_supported_accesses, all_transfer_expand_bits,
+                                          VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT);
+            result.emplace_back(stages_with_all_supported_accesses, kAllAccesses);
         }
     }
     return result;
@@ -306,6 +328,25 @@ static std::pair<bool, bool> GetPartialProtectedInfo(const SyncAccessInfo &acces
     return std::make_pair(is_stage_protected, is_access_protected);
 }
 
+static void ReportLayoutTransitionSynchronizationInsight(std::stringstream &ss, bool needs_execution_dependency,
+                                                         VkPipelineStageFlags2 read_barriers = 0) {
+    // TODO: analyse exact form of API is used (render pass layout transition, image barrier layout transition) and
+    // print instructions for specific situation. Now we describe all possibilities.
+    const std::string barrier_src_stage = string_VkPipelineStageFlags2(read_barriers);
+    if (needs_execution_dependency) {
+        ss << "\nVulkan insight: If the layout transition is done via an image barrier, consider including " << barrier_src_stage
+           << " in srcStageMask. If the transition occurs as part of the render pass begin operation, consider specifying an "
+              "external subpass dependency (VK_SUBPASS_EXTERNAL) with srcStageMask that includes "
+           << barrier_src_stage << ", or perform the transition in a separate image barrier before the render pass begins.";
+    } else {
+        ss << "\nVulkan insight: If the layout transition is done via an image barrier, ensure srcStageMask and srcAccessMask "
+              "synchronize with the accesses mentioned above. If the transition occurs as part of the render pass begin operation, "
+              "consider specifying an external subpass dependency (VK_SUBPASS_EXTERNAL) with srcStageMask and srcAccessMask that "
+              "synchronize with those accesses, or perform the transition in a separate image barrier before the render pass "
+              "begins.";
+    }
+}
+
 void ReportProperties::Add(std::string_view property_name, std::string_view value) {
     name_values.emplace_back(NameValue{std::string(property_name), std::string(value)});
 }
@@ -314,11 +355,10 @@ void ReportProperties::Add(std::string_view property_name, uint64_t value) {
     name_values.emplace_back(NameValue{std::string(property_name), std::to_string(value)});
 }
 
-std::string ReportProperties::FormatExtraPropertiesSection(bool pretty_print) const {
+std::string ReportProperties::FormatExtraPropertiesSection() const {
     if (name_values.empty()) {
         return {};
     }
-    const uint32_t pretty_print_alignment = 18;
     const auto sorted = SortKeyValues(name_values);
     std::stringstream ss;
     ss << "[Extra properties]\n";
@@ -328,11 +368,7 @@ std::string ReportProperties::FormatExtraPropertiesSection(bool pretty_print) co
             ss << "\n";
         }
         first = false;
-        uint32_t extra_space_count = 0;
-        if (pretty_print && property.name.length() < pretty_print_alignment) {
-            extra_space_count = pretty_print_alignment - (uint32_t)property.name.length();
-        }
-        ss << property.name << std::string(extra_space_count, ' ') << " = " << property.value;
+        ss << property.name << " = " << property.value;
     }
     return ss.str();
 }
@@ -361,16 +397,20 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
     const SyncHazard hazard_type = hazard.Hazard();
     const SyncHazardInfo hazard_info = GetSyncHazardInfo(hazard_type);
 
-    const SyncAccessInfo &access = GetSyncAccessInfos()[hazard.State().access_index];
-    const SyncAccessInfo &prior_access = GetSyncAccessInfos()[hazard.State().prior_access_index];
+    const SyncAccessInfo &access = GetAccessInfo(hazard.State().access_index);
+    const SyncAccessInfo &prior_access = GetAccessInfo(hazard.State().prior_access_index);
 
     const SyncAccessFlags write_barriers = hazard.State().access_state->GetWriteBarriers();
-    const VkPipelineStageFlags2 read_barriers = hazard.State().access_state->GetReadBarriers(hazard.State().prior_access_index);
+    VkPipelineStageFlags2 read_barriers = hazard.State().access_state->GetReadBarriers(hazard.State().prior_access_index);
 
-    // TODO: BOTTOM_OF_PIPE part will go away when syncval switches internally to use NONE/ALL for everything
+    // TODO: BOTTOM_OF_PIPE part will go away when syncval switches internally to use NONE/ALL for everything.
+    // Remove this block then.
+    if (read_barriers & VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT) {
+        read_barriers &= ~VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT;
+    }
+
     const bool missing_synchronization = (hazard_info.IsPriorWrite() && write_barriers.none()) ||
-                                         (hazard_info.IsPriorRead() && (read_barriers == VK_PIPELINE_STAGE_2_NONE ||
-                                                                        read_barriers == VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT));
+                                         (hazard_info.IsPriorRead() && read_barriers == VK_PIPELINE_STAGE_2_NONE);
 
     std::stringstream ss;
 
@@ -475,24 +515,28 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
     } else if (hazard_info.IsPriorWrite()) {  // RAW/WAW hazards
         ss << "The current synchronization allows ";
         ss << FormatSyncAccesses(write_barriers, context.GetSyncState(), context.GetQueueFlags(), false);
-        ss << ", but to prevent this hazard, ";
         auto [is_stage_protected, is_access_protected] = GetPartialProtectedInfo(access, write_barriers, context);
         if (is_access_protected) {
-            ss << "it must allow these accesses at ";
+            ss << ", but to prevent this hazard, it must allow these accesses at ";
             ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
         } else if (access.access_mask != VK_ACCESS_2_NONE) {
-            ss << "it must allow ";
+            ss << ", but to prevent this hazard, it must allow ";
             ss << string_VkAccessFlagBits2(access.access_mask) << " accesses at ";
             ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
         } else {
-            // TODO: analyse exact form of synchronization is needed or specific options to use
-            ss << "it must protect layout transition accesses.";
+            ss << ", but layout transition does synchronize with these accesses.";
+            ReportLayoutTransitionSynchronizationInsight(ss, false);
         }
     } else {  // WAR hazard
         ss << "The current synchronization defines the destination stage mask as ";
         ss << string_VkPipelineStageFlags2(read_barriers);
-        ss << ", but to prevent this hazard, it must include ";
-        ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
+        if (access.access_mask != VK_ACCESS_2_NONE) {
+            ss << ", but to prevent this hazard, it must include ";
+            ss << string_VkPipelineStageFlagBits2(access.stage_mask) << ".";
+        } else {
+            ss << ", but layout transition does not synchronize with these stages.";
+            ReportLayoutTransitionSynchronizationInsight(ss, true, read_barriers);
+        }
     }
 
     // Give a hint for WAR hazard
@@ -506,7 +550,7 @@ std::string FormatErrorMessage(const HazardResult &hazard, const CommandExecutio
     return ss.str();
 }
 
-std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const vvl::Device &device, VkQueueFlags allowed_queue_flags,
+std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const SyncValidator &device, VkQueueFlags allowed_queue_flags,
                                bool format_as_extra_property) {
     const auto report_accesses = ConvertSyncAccessesToCompactVkForm(sync_accesses, device, allowed_queue_flags);
     if (report_accesses.empty()) {
@@ -519,13 +563,13 @@ std::string FormatSyncAccesses(const SyncAccessFlags &sync_accesses, const vvl::
             out << (format_as_extra_property ? ":" : ", ");
         }
         if (format_as_extra_property) {
-            if (accesses == sync_utils::kAllAccesses) {
+            if (accesses == kAllAccesses) {
                 out << string_VkPipelineStageFlags2(stages) << "(ALL_ACCESSES)";
             } else {
                 out << string_VkPipelineStageFlags2(stages) << "(" << string_VkAccessFlags2(accesses) << ")";
             }
         } else {
-            if (accesses == sync_utils::kAllAccesses) {
+            if (accesses == kAllAccesses) {
                 out << "all accesses at " << string_VkPipelineStageFlags2(stages);
             } else {
                 out << string_VkAccessFlags2(accesses) << " accesses at " << string_VkPipelineStageFlags2(stages);

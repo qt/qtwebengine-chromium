@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INVALIDATION_SET_TO_SELECTOR_MAP_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INVALIDATION_SET_TO_SELECTOR_MAP_H_
 
+#include "third_party/blink/renderer/core/css/active_style_sheets.h"
 #include "third_party/blink/renderer/core/css/style_rule.h"
 #include "third_party/blink/renderer/core/inspector/style_rule_to_style_sheet_contents_map.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_map.h"
@@ -17,6 +18,7 @@
 namespace blink {
 
 class InvalidationSet;
+class RuleFeatureSet;
 class StyleEngine;
 class StyleRule;
 
@@ -39,8 +41,7 @@ class CORE_EXPORT InvalidationSetToSelectorMap final
     const StyleSheetContents* GetStyleSheetContents() const;
 
    private:
-    friend struct WTF::HashTraits<
-        blink::InvalidationSetToSelectorMap::IndexedSelector>;
+    friend struct HashTraits<InvalidationSetToSelectorMap::IndexedSelector>;
     Member<StyleRule> style_rule_;
     unsigned selector_index_;
   };
@@ -52,6 +53,7 @@ class CORE_EXPORT InvalidationSetToSelectorMap final
     kId,
     kTagName,
     kAttribute,
+    kPart,
     kWholeSubtree
   };
 
@@ -59,7 +61,13 @@ class CORE_EXPORT InvalidationSetToSelectorMap final
   // appropriate configuration has started, or deletes an existing mapping if
   // tracing is no longer enabled.
   static void StartOrStopTrackingIfNeeded(const TreeScope& tree_scope,
-                                          StyleEngine& style_engine);
+                                          const StyleEngine& style_engine);
+
+  // Returns true if a mapping is active and tracking invalidations.
+  // This is primarily intended for tests. Product code generally should not
+  // need to call this; the other static entry points will check this state and
+  // immediately return if tracking is not active.
+  static bool IsTracking();
 
   // Call at the start and end of indexing rules within a StyleSheetContents.
   static void BeginStyleSheetContents(const StyleSheetContents* contents);
@@ -114,12 +122,23 @@ class CORE_EXPORT InvalidationSetToSelectorMap final
       SelectorFeatureType type,
       const AtomicString& value);
 
+  // Given a StyleRule, attempt to look up the containing StyleSheetContents.
+  static const StyleSheetContents* LookupStyleSheetContentsForRule(
+      const StyleRule* style_rule);
+
   InvalidationSetToSelectorMap();
   void Trace(Visitor*) const;
 
  protected:
   friend class InvalidationSetToSelectorMapTest;
   static Persistent<InvalidationSetToSelectorMap>& GetInstanceReference();
+
+  void RevisitActiveStyleSheets(
+      const ActiveStyleSheetVector& active_style_sheets,
+      const StyleEngine& style_engine);
+  void RevisitStylesheetOnce(const StyleEngine* style_engine,
+                             StyleSheetContents* contents,
+                             const RuleFeatureSet* features);
 
  private:
   // The back-map is stored in two levels: first from an invalidation set
@@ -158,37 +177,31 @@ class CORE_EXPORT InvalidationSetToSelectorMap final
   Member<StyleRuleToStyleSheetContentsMap> style_rule_to_sheet_map_;
 };
 
-}  // namespace blink
-
-namespace WTF {
-
 // These two HashTraits specializations are needed so that
 // HeapHashSet<Member<IndexedSelector>> will do value-wise comparisons instead
 // of pointer-wise comparisons.
 template <>
-struct HashTraits<blink::InvalidationSetToSelectorMap::IndexedSelector>
+struct HashTraits<InvalidationSetToSelectorMap::IndexedSelector>
     : TwoFieldsHashTraits<
-          blink::InvalidationSetToSelectorMap::IndexedSelector,
-          &blink::InvalidationSetToSelectorMap::IndexedSelector::style_rule_,
-          &blink::InvalidationSetToSelectorMap::IndexedSelector::
-              selector_index_> {};
+          InvalidationSetToSelectorMap::IndexedSelector,
+          &InvalidationSetToSelectorMap::IndexedSelector::style_rule_,
+          &InvalidationSetToSelectorMap::IndexedSelector::selector_index_> {};
 
 template <>
-struct HashTraits<
-    blink::Member<blink::InvalidationSetToSelectorMap::IndexedSelector>>
-    : MemberHashTraits<blink::InvalidationSetToSelectorMap::IndexedSelector> {
-  using IndexedSelector = blink::InvalidationSetToSelectorMap::IndexedSelector;
-  static unsigned GetHash(const blink::Member<IndexedSelector>& key) {
-    return WTF::GetHash(*key);
+struct HashTraits<Member<InvalidationSetToSelectorMap::IndexedSelector>>
+    : MemberHashTraits<InvalidationSetToSelectorMap::IndexedSelector> {
+  using IndexedSelector = InvalidationSetToSelectorMap::IndexedSelector;
+  static unsigned GetHash(const Member<IndexedSelector>& key) {
+    return blink::GetHash(*key);
   }
-  static bool Equal(const blink::Member<IndexedSelector>& a,
-                    const blink::Member<IndexedSelector>& b) {
+  static bool Equal(const Member<IndexedSelector>& a,
+                    const Member<IndexedSelector>& b) {
     return HashTraits<IndexedSelector>::Equal(*a, *b);
   }
 
   static constexpr bool kSafeToCompareToEmptyOrDeleted = false;
 };
 
-}  // namespace WTF
+}  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_CORE_INSPECTOR_INVALIDATION_SET_TO_SELECTOR_MAP_H_

@@ -16,6 +16,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/json/json_string_value_serializer.h"
 #include "base/memory/raw_ptr.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/bind.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/values_test_util.h"
@@ -215,7 +216,7 @@ class CupsPrintersHandlerTest : public testing::Test {
     printers_handler_->SetWebUIForTest(&web_ui_);
     printers_handler_->RegisterMessages();
     printers_handler_->AllowJavascriptForTesting();
-    printing::PrintBackend::SetPrintBackendForTesting(print_backend_.get());
+    ::printing::PrintBackend::SetPrintBackendForTesting(print_backend_.get());
     PrintscanmgrClient::InitializeFake();
 
     DownloadCoreServiceFactory::GetForBrowserContext(profile_.get())
@@ -231,7 +232,7 @@ class CupsPrintersHandlerTest : public testing::Test {
 
   void TearDown() override {
     PrintscanmgrClient::Shutdown();
-    printing::PrintBackend::SetPrintBackendForTesting(nullptr);
+    ::printing::PrintBackend::SetPrintBackendForTesting(nullptr);
   }
 
   void CallRetrieveCupsPpd(const std::string& printer_id,
@@ -273,8 +274,8 @@ class CupsPrintersHandlerTest : public testing::Test {
   FakeCupsPrintersManager printers_manager_;
   std::unique_ptr<CupsPrintersHandler> printers_handler_;
   base::RunLoop run_loop_;
-  scoped_refptr<printing::TestPrintBackend> print_backend_ =
-      base::MakeRefCounted<printing::TestPrintBackend>();
+  scoped_refptr<::printing::TestPrintBackend> print_backend_ =
+      base::MakeRefCounted<::printing::TestPrintBackend>();
   base::ScopedTempDir download_dir_;
   base::HistogramTester histogram_tester_;
 
@@ -337,7 +338,7 @@ TEST_F(CupsPrintersHandlerTest, ViewPPD) {
 
   print_backend_->AddValidPrinter(
       printer.id(),
-      std::make_unique<printing::PrinterSemanticCapsAndDefaults>(), nullptr);
+      std::make_unique<::printing::PrinterSemanticCapsAndDefaults>(), nullptr);
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(testing::Property(&GURL::ExtractFileName,
@@ -365,7 +366,7 @@ TEST_F(CupsPrintersHandlerTest, ViewPPDWithLicense) {
 
   print_backend_->AddValidPrinter(
       printer.id(),
-      std::make_unique<printing::PrinterSemanticCapsAndDefaults>(), nullptr);
+      std::make_unique<::printing::PrinterSemanticCapsAndDefaults>(), nullptr);
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(testing::Property(&GURL::ExtractFileName,
@@ -396,7 +397,7 @@ TEST_F(CupsPrintersHandlerTest, ViewPPDUnsanitizedFilename) {
 
   print_backend_->AddValidPrinter(
       printer.id(),
-      std::make_unique<printing::PrinterSemanticCapsAndDefaults>(), nullptr);
+      std::make_unique<::printing::PrinterSemanticCapsAndDefaults>(), nullptr);
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(testing::Property(&GURL::ExtractFileName,
@@ -425,7 +426,7 @@ TEST_F(CupsPrintersHandlerTest, ViewPPDWithLicenseBadPpd) {
 
   print_backend_->AddValidPrinter(
       printer.id(),
-      std::make_unique<printing::PrinterSemanticCapsAndDefaults>(), nullptr);
+      std::make_unique<::printing::PrinterSemanticCapsAndDefaults>(), nullptr);
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(testing::Property(&GURL::ExtractFileName,
@@ -472,7 +473,7 @@ TEST_F(CupsPrintersHandlerTest, ViewPPDPrinterNotSetup) {
 
   print_backend_->AddValidPrinter(
       printer.id(),
-      std::make_unique<printing::PrinterSemanticCapsAndDefaults>(), nullptr);
+      std::make_unique<::printing::PrinterSemanticCapsAndDefaults>(), nullptr);
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(testing::Property(&GURL::ExtractFileName,
@@ -499,7 +500,7 @@ TEST_F(CupsPrintersHandlerTest, ViewPPDEmptyPPD) {
 
   print_backend_->AddValidPrinter(
       printer.id(),
-      std::make_unique<printing::PrinterSemanticCapsAndDefaults>(), nullptr);
+      std::make_unique<::printing::PrinterSemanticCapsAndDefaults>(), nullptr);
 
   EXPECT_CALL(new_window_delegate(),
               OpenUrl(testing::Property(&GURL::ExtractFileName,

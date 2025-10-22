@@ -7,6 +7,7 @@
 
 #include "base/functional/callback_helpers.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/buildflag.h"
 #include "components/feed/core/proto/v2/wire/reliability_logging_enums.pb.h"
 #include "components/feed/core/shared_prefs/pref_names.h"
@@ -269,7 +270,6 @@ TEST_F(FeedApiReliabilityLoggingTest, LoadStreamComplete_ZeroCards) {
       "LogResponseReceived id=1 receive_timestamp=123456000 send_timestamp=0\n"
       "LogRequestFinished result=200 id=1\n"
 
-      "LogLoadingIndicatorShown\n"
       "LogLaunchFinishedAfterStreamUpdate "
       "result=NO_CARDS_RESPONSE_ERROR_ZERO_CARDS\n"
 

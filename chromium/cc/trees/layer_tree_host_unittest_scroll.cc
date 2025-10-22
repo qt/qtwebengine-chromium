@@ -2,10 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
+#include <array>
 
 #include "base/functional/bind.h"
 #include "base/location.h"
@@ -40,6 +37,7 @@
 #include "cc/trees/transform_node.h"
 #include "components/viz/common/features.h"
 #include "components/viz/common/frame_sinks/begin_frame_source.h"
+#include "components/viz/common/quads/compositor_frame.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "ui/events/types/scroll_input_type.h"
 #include "ui/gfx/geometry/point_conversions.h"
@@ -621,11 +619,6 @@ class LayerTreeHostScrollTestCaseWithChild : public LayerTreeHostScrollTest {
 
   void BeginTest() override { PostSetNeedsCommitToMainThread(); }
 
-  void CleanupBeforeDestroy() override {
-    expected_scroll_layer_ = nullptr;
-    expected_no_scroll_layer_ = nullptr;
-  }
-
   void WillCommit(const CommitState& commit_state) override {
     // Keep the test committing (otherwise the early out for no update
     // will stall the test).
@@ -756,6 +749,10 @@ class LayerTreeHostScrollTestCaseWithChild : public LayerTreeHostScrollTest {
   void AfterTest() override {
     EXPECT_EQ(scroll_child_layer_ ? 0 : 2, num_outer_viewport_scrolls_);
     EXPECT_POINTF_EQ(javascript_scroll_ + scroll_amount_, final_scroll_offset_);
+
+    expected_scroll_layer_ = nullptr;
+    expected_no_scroll_layer_ = nullptr;
+    LayerTreeHostScrollTest::AfterTest();
   }
 
  protected:
@@ -907,13 +904,17 @@ class LayerTreeHostScrollTestSimple : public LayerTreeHostScrollTest {
   void CommitCompleteOnThread(LayerTreeHostImpl* impl) override {
     // We force a second draw here of the first commit before activating
     // the second commit.
-    if (impl->active_tree()->source_frame_number() == 0)
-      impl->SetNeedsRedraw();
+    if (impl->active_tree()->source_frame_number() == 0) {
+      impl->SetNeedsRedraw(/*animation_only=*/false,
+                           /*skip_if_inside_draw=*/false);
+    }
   }
 
   void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    if (impl->pending_tree())
-      impl->SetNeedsRedraw();
+    if (impl->pending_tree()) {
+      impl->SetNeedsRedraw(/*animation_only=*/false,
+                           /*skip_if_inside_draw=*/false);
+    }
 
     LayerImpl* root = impl->active_tree()->root_layer();
     LayerImpl* scroll_layer =
@@ -1087,8 +1088,10 @@ class LayerTreeHostScrollTestImplOnlyScroll : public LayerTreeHostScrollTest {
   }
 
   void DrawLayersOnThread(LayerTreeHostImpl* impl) override {
-    if (impl->pending_tree())
-      impl->SetNeedsRedraw();
+    if (impl->pending_tree()) {
+      impl->SetNeedsRedraw(/*animation_only=*/false,
+                           /*skip_if_inside_draw=*/false);
+    }
 
     LayerImpl* scroll_layer =
         impl->active_tree()->OuterViewportScrollLayerForTesting();
@@ -2165,7 +2168,8 @@ class LayerTreeHostScrollTestScrollAbortedCommitMFBA
     switch (num_impl_commits_) {
       case 1:
         // Redraw so that we keep scrolling.
-        impl->SetNeedsRedraw();
+        impl->SetNeedsRedraw(/*animation_only=*/false,
+                             /*skip_if_inside_draw=*/false);
         // Block activation until third commit is aborted.
         impl->BlockNotifyReadyToActivateForTesting(true);
         break;
@@ -2186,7 +2190,8 @@ class LayerTreeHostScrollTestScrollAbortedCommitMFBA
       case 1:
         EXPECT_EQ(2, num_impl_commits_);
         // Redraw to end the test.
-        impl->SetNeedsRedraw();
+        impl->SetNeedsRedraw(/*animation_only=*/false,
+                             /*skip_if_inside_draw=*/false);
         break;
     }
     num_aborted_commits_++;
@@ -2455,20 +2460,24 @@ class LayerTreeHostScrollTestElasticOverscroll
     gfx::Vector2dF expected_elastic_overscroll =
         elastic_overscroll_test_cases_[4];
     EXPECT_EQ(expected_elastic_overscroll, current_elastic_overscroll_);
+
+    // Reset before LayerTreeHost destruction to avoid dangling pointer, since
+    // InputHandler (which owns the helper) is destroyed first.
+    scroll_elasticity_helper_ = nullptr;
+    LayerTreeHostScrollTest::AfterTest();
   }
 
  private:
   // These values should be used on the impl thread only.
   int num_begin_main_frames_impl_thread_;
   MockInputHandlerClient input_handler_client_;
-  raw_ptr<ScrollElasticityHelper, AcrossTasksDanglingUntriaged>
-      scroll_elasticity_helper_;
+  raw_ptr<ScrollElasticityHelper> scroll_elasticity_helper_;
 
   // These values should be used on the main thread only.
   int num_begin_main_frames_main_thread_;
   gfx::Vector2dF current_elastic_overscroll_;
 
-  const gfx::Vector2dF elastic_overscroll_test_cases_[5] = {
+  const std::array<gfx::Vector2dF, 5> elastic_overscroll_test_cases_ = {
       gfx::Vector2dF(0, 0), gfx::Vector2dF(5, 10), gfx::Vector2dF(5, 5),
       gfx::Vector2dF(-4, -5), gfx::Vector2dF(0, 0)};
 };
@@ -3152,7 +3161,8 @@ class PreventRecreatingTilingDuringScroll : public LayerTreeHostScrollTest {
         host_impl->GetInputHandler().ScrollEnd();
         // make sure redraw happen
         host_impl->active_tree()->set_needs_update_draw_properties();
-        host_impl->SetNeedsRedraw();
+        host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                  /*skip_if_inside_draw=*/false);
       }
     }
   }
@@ -3181,7 +3191,8 @@ class PreventRecreatingTilingDuringScroll : public LayerTreeHostScrollTest {
           // In pending tree, recreating tiling should delayed during scroll
           ASSERT_TRUE(scroll_check_pending_);
           ASSERT_EQ(tiling_transform.scale(), initial_scale_);
-          host_impl->SetNeedsRedraw();
+          host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                    /*skip_if_inside_draw=*/false);
         } else {
           // recreating tiling should happen after scroll finish
           ASSERT_FALSE(scroll_check_pending_);
@@ -3262,6 +3273,61 @@ class CommitWithoutSynchronizingScrollOffsets : public LayerTreeHostScrollTest {
 };
 
 MULTI_THREAD_TEST_F(CommitWithoutSynchronizingScrollOffsets);
+
+class LayerTreeHostScrollTestScrollFrameIntervalInputs
+    : public LayerTreeHostScrollTest {
+ public:
+  void BeginTest() override { PostSetNeedsCommitToMainThread(); }
+
+  void WillBeginImplFrameOnThread(LayerTreeHostImpl* host_impl,
+                                  const viz::BeginFrameArgs& args,
+                                  bool has_damage) override {
+    frame_time_delta_ = args.frame_time - last_frame_time_;
+    last_frame_time_ = args.frame_time;
+    if (has_activated_ && !has_scrolled_) {
+      // Scroll second frame.
+      ScrollStateData scroll_state_data;
+      scroll_state_data.is_beginning = true;
+      scroll_state_data.delta_y_hint = kScrollDelta;
+      ScrollState scroll_state(scroll_state_data);
+      host_impl->GetInputHandler().ScrollBegin(
+          &scroll_state, ui::ScrollInputType::kAutoscroll);
+      host_impl->GetInputHandler().ScrollUpdate(
+          UpdateState(gfx::Point(), gfx::Vector2d(0, kScrollDelta)));
+      has_scrolled_ = true;
+    }
+  }
+
+  void DidActivateTreeOnThread(LayerTreeHostImpl* host_impl) override {
+    has_activated_ = true;
+  }
+
+  void WillSubmitCompositorFrame(LayerTreeHostImpl* host_impl,
+                                 const viz::CompositorFrame& frame) override {
+    if (!has_scrolled_) {
+      host_impl->SetNeedsRedraw(/*animation_only=*/false,
+                                /*skip_if_inside_draw=*/false);
+      host_impl->SetFullViewportDamage();
+    } else {
+      int scroll_delta = kScrollDelta;
+      float pixels_per_second = scroll_delta / frame_time_delta_.InSecondsF();
+
+      EXPECT_EQ(pixels_per_second,
+                frame.metadata.frame_interval_inputs
+                    .major_scroll_speed_in_pixels_per_second);
+      EndTest();
+    }
+  }
+
+ private:
+  constexpr static int kScrollDelta = 10;
+  bool has_activated_ = false;
+  bool has_scrolled_ = false;
+  base::TimeTicks last_frame_time_;
+  base::TimeDelta frame_time_delta_;
+};
+
+MULTI_THREAD_TEST_F(LayerTreeHostScrollTestScrollFrameIntervalInputs);
 
 }  // namespace
 }  // namespace cc

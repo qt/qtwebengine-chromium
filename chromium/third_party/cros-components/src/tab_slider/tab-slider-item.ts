@@ -108,13 +108,13 @@ export class TabSliderItem extends LitElement {
   `;
 
   /** @export */
-  label = 'Item';
+  declare label: string;
 
   /** @export */
-  selected = false;
+  declare selected: boolean;
 
   /** @export */
-  disabled = false;
+  declare disabled: boolean;
 
   /** @nocollapse */
   static override shadowRootOptions = {
@@ -137,6 +137,13 @@ export class TabSliderItem extends LitElement {
     /** Triggers when an item is clicked or equivalent. */
     TAB_SLIDER_ITEM_TRIGGERED: 'cros-tab-slider-item-triggered',
   } as const;
+
+  constructor() {
+    super();
+    this.label = 'Item';
+    this.selected = false;
+    this.disabled = false;
+  }
 
   override render() {
     return html`

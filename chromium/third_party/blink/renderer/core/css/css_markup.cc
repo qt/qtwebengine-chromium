@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/platform/font_family_names.h"
 #include "third_party/blink/renderer/platform/fonts/font_family.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
@@ -46,7 +47,7 @@ static bool IsCSSTokenizerIdentifier(const StringView& string) {
     return false;
   }
 
-  return WTF::VisitCharacters(string, [](auto chars) {
+  return VisitCharacters(string, [](auto chars) {
     size_t index{0};
 
     // -?
@@ -148,7 +149,7 @@ String SerializeString(const String& string) {
 }
 
 String SerializeURI(const String& string) {
-  return "url(" + SerializeString(string) + ")";
+  return StrCat({"url(", SerializeString(string), ")"});
 }
 
 String SerializeFontFamily(const AtomicString& string) {

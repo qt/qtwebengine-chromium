@@ -73,11 +73,13 @@ default_targets = [
     '//src/traced/probes:traced_probes',
     '//src/traced/service:traced',
     '//src/traced_relay:traced_relay',
+    '//src/trace_processor:trace_processor',
     '//src/trace_processor:trace_processor_shell',
     '//src/trace_redaction:trace_redactor',
     '//src/java_sdk/main:perfetto_java_sdk_app',
     '//src/java_sdk/test:perfetto_java_sdk_instrumentation_test',
     '//src/android_sdk/java/main:perfetto_trace_lib',
+    '//src/android_sdk/jni:libperfetto_framework_jni',
     '//src/android_sdk/java/test:perfetto_trace_instrumentation_test',
     '//test/cts:perfetto_cts_deps',
     '//test/cts:perfetto_cts_jni_deps',
@@ -114,6 +116,7 @@ target_host_supported = [
     '//protos/perfetto/trace/android:perfetto_winscope_extensions_zero',
     '//src/shared_lib:libperfetto_c',
     '//src/trace_processor:demangle',
+    '//src/trace_processor:trace_processor',
     '//src/trace_processor:trace_processor_shell',
     '//src/traced/probes:traced_probes',
     '//src/traced/service:traced',
@@ -122,6 +125,7 @@ target_host_supported = [
 target_vendor_available = [
     '//:libperfetto_client_experimental',
     '//src/shared_lib:libperfetto_c',
+    '//protos/perfetto/trace:perfetto_trace_protos',
 ]
 
 # Library targets that should be exported as "cc_library" instead of
@@ -154,20 +158,20 @@ proto_groups = {
     },
     'config': {
         'types': ['lite', 'filegroup'],
-        'targets': [
-            '//protos/perfetto/config:source_set',
-        ]
+        'targets': ['//protos/perfetto/config:source_set',]
     },
     'metrics': {
         'types': ['python'],
-        'targets': [
-            '//protos/perfetto/metrics:source_set',
-        ]
+        'targets': ['//protos/perfetto/metrics:source_set',]
     },
     'trace_summary': {
         'types': ['filegroup'],
+        'targets': ['//protos/perfetto/trace_summary:source_set',]
+    },
+    'trace_android_track_event_extension': {
+        'types': ['lite'],
         'targets': [
-            '//protos/perfetto/trace_summary:source_set',
+            '//protos/perfetto/trace/android:android_track_event_source_set',
         ]
     }
 }
@@ -201,6 +205,7 @@ shared_library_allowlist = [
     'log',
     'services',
     'statssocket',
+    'timeinstate',
     'tracingproxy',
     'utils',
     'statspull',
@@ -208,7 +213,14 @@ shared_library_allowlist = [
 
 # Static libraries which are directly translated to Android system equivalents.
 static_library_allowlist = [
+    'perfetto_flags_c_lib',
     'statslog_perfetto',
+]
+
+# Static libraries which are in `static_library_allowlist` and should simply
+# be skipped on host only targets without causing an error.
+static_library_skip_host_error_allowlist = [
+    'perfetto_flags_c_lib',
 ]
 
 # Name of the module which settings such as compiler flags for all other
@@ -232,6 +244,7 @@ define_allowlist = r'^(GOOGLE_PROTO.*)|(ZLIB_.*)|(USE_MMAP)$'
 
 # The directory where the generated perfetto_build_flags.h will be copied into.
 buildflags_dir = 'include/perfetto/base/build_configs/android_tree'
+
 
 def enumerate_data_deps():
   with open(os.path.join(ROOT_DIR, 'tools', 'test_data.txt')) as f:
@@ -290,6 +303,10 @@ additional_args = {
         ('test_config', 'PerfettoIntegrationTests.xml'),
     ],
     'libperfetto_android_internal': [('static_libs', {'libhealthhalutils'}),],
+    'trace_processor': [
+        ('whole_static_libs',
+         {'perfetto_src_trace_processor_demangle', 'sqlite_ext_percentile'}),
+    ],
     'trace_processor_shell': [
         ('strip', {
             'all': True
@@ -302,9 +319,8 @@ additional_args = {
         }),
     ],
     'libperfetto_client_experimental': [
-        ('apex_available', {
-            '//apex_available:platform', '//apex_available:anyapex'
-        }),
+        ('apex_available',
+         {'//apex_available:platform', '//apex_available:anyapex'}),
         ('min_sdk_version', '30'),
         ('shared_libs', {'liblog'}),
         ('export_include_dirs', {'include', buildflags_dir}),
@@ -325,14 +341,20 @@ additional_args = {
     'perfetto': [('required', {'perfetto_persistent_cfg.pbtxt'}),],
     'trace_redactor': [
         ('min_sdk_version', '35'),
-        ('apex_available', {
-            '//apex_available:platform',
-            'com.android.profiling'
-        }),
+        ('apex_available',
+         {'//apex_available:platform', 'com.android.profiling'}),
     ],
     # TODO(ktimofeev): rename android.bp target
     'perfetto_src_android_sdk_java_test_perfetto_trace_test_lib': [
-        ('static_libs', {'perfetto_trace_java_protos'})],
+        ('static_libs', {'perfetto_trace_java_protos'})
+    ],
+    'perfetto_trace_lib_java': [
+        ('sdk_version', 'module_current'),
+        # Framework should use 'perfetto_trace_lib_framework_java' instead.
+        ('visibility', {':__subpackages__'}),
+    ],
+    # Framework should use 'libperfetto_framework_jni' instead.
+    'libperfetto_jni': [('visibility', {':__subpackages__'}),],
 }
 
 
@@ -380,7 +402,7 @@ def enable_libunwindstack(module):
     module.static_libs.add('liblzma')
     module.static_libs.add('libdexfile_support')
     module.runtime_libs.add('libdexfile')  # libdexfile_support dependency
-    module.shared_libs.add('libz') # libunwindstack dependency
+    module.shared_libs.add('libz')  # libunwindstack dependency
 
 
 def enable_libunwind(module):
@@ -443,6 +465,7 @@ def enable_android_test_common(module):
   module.static_libs.add('androidx.test.runner')
   module.static_libs.add('androidx.test.ext.junit')
 
+
 # Android equivalents for third-party libraries that the upstream project
 # depends on.
 builtin_deps = {
@@ -477,7 +500,7 @@ builtin_deps = {
     '//src/profiling/memory:bionic_libc_platform_headers_on_android':
         enable_bionic_libc_platform_headers_on_android,
     '//gn:android_test_common':
-      enable_android_test_common,
+        enable_android_test_common,
 }
 
 # ----------------------------------------------------------------------------
@@ -626,6 +649,8 @@ class Module(object):
     self.resource_dirs: Optional[List[str]] = None
     self.jni_libs: Optional[List[str]] = None
     self.jni_uses_platform_apis: Optional[bool] = None
+    self.jarjar_rules: Optional[str] = None
+    self.visibility = set()
 
   def to_string(self, output):
     if self.comment:
@@ -674,6 +699,8 @@ class Module(object):
     self._output_field(output, 'output_extension')
     self._output_field(output, 'jni_libs')
     self._output_field(output, 'jni_uses_platform_apis')
+    self._output_field(output, 'jarjar_rules')
+    self._output_field(output, 'visibility')
 
     target_out = []
     self._output_field(target_out, 'android')
@@ -706,6 +733,8 @@ class Module(object):
 
   def add_android_static_lib(self, lib):
     if self.type == 'cc_binary_host':
+      if lib in static_library_skip_host_error_allowlist:
+        return
       raise Exception('Adding Android static lib for host tool is unsupported')
     elif self.host_supported:
       self.android.static_libs.add(lib)
@@ -827,8 +856,7 @@ def create_proto_modules(blueprint: Blueprint, gn: GnParser,
     # sandboxed in Soong.
     # Add to `srcs` instead of `tool_files` (the latter will require a
     # --proto_path that depends on Soong's sandbox implementation.)
-    descriptor_module.srcs.update(
-        src for src in tool_files)
+    descriptor_module.srcs.update(src for src in tool_files)
     for dep in target.transitive_proto_deps():
       current_target = gn.get_target(dep.name)
       descriptor_module.srcs.update(
@@ -862,8 +890,7 @@ def create_proto_modules(blueprint: Blueprint, gn: GnParser,
   # sandboxed in Soong.
   # Add to `srcs` instead of `tool_files` (the latter will require a
   # --proto_path that depends on Soong's sandbox implementation.)
-  source_module.srcs.update(
-      src for src in tool_files)
+  source_module.srcs.update(src for src in tool_files)
   blueprint.add_module(source_module)
 
   header_module = Module('genrule', source_module_name + '_headers',
@@ -914,7 +941,6 @@ def create_proto_modules(blueprint: Blueprint, gn: GnParser,
   header_module.cmd = source_module.cmd
   source_module.tools = tools
   header_module.tools = tools
-
 
   for sfx in suffixes:
     source_module.out.update('%s/%s' %
@@ -990,7 +1016,7 @@ def create_amalgamated_sql_module(blueprint: Blueprint, gn: GnParser,
     # Use globs for the chrome stdlib so the file does not need to be
     # regenerated in autoroll CLs.
     if dep.name.startswith(
-          '//src/trace_processor/perfetto_sql/stdlib/chrome:chrome_sql'):
+        '//src/trace_processor/perfetto_sql/stdlib/chrome:chrome_sql'):
       module.srcs.add('src/trace_processor/perfetto_sql/stdlib/chrome/**/*.sql')
       continue
     module.srcs.update(
@@ -1103,7 +1129,7 @@ class AndroidJavaSDKModulesGenerator:
   _SDK_VERSION = 35
 
   def create_android_app_module(self, target: GnParser.Target,
-      bp_module_name: str):
+                                bp_module_name: str):
     module = Module('android_app', bp_module_name, target.name)
     module.srcs = [gn_utils.label_to_path(src) for src in target.sources]
 
@@ -1113,16 +1139,40 @@ class AndroidJavaSDKModulesGenerator:
 
     module.manifest = gn_utils.label_to_path(target.manifest)
     module.resource_dirs = [
-        gn_utils.label_to_path(target.resource_files.rstrip('/**/*'))]
+        gn_utils.label_to_path(target.resource_files.rstrip('/**/*'))
+    ]
     module.jni_uses_platform_apis = True
     module.sdk_version = self._SDK_VERSION
     self.blueprint.add_module(module)
     return module
 
   def create_android_library_module(self, target: GnParser.Target,
-      bp_module_name: str):
+                                    bp_module_name: str):
     module = Module('android_library', bp_module_name, target.name)
-    module.srcs = [gn_utils.label_to_path(src) for src in target.sources]
+
+    if target.android_bp_java_target_name_suffix:
+      java_library_module_name = bp_module_name + target.android_bp_java_target_name_suffix
+      java_module = Module('java_library', java_library_module_name,
+                           target.name)
+      java_module.srcs = [gn_utils.label_to_path(src) for src in target.sources]
+
+      _add_additional_args(java_module)
+
+      self.blueprint.add_module(java_module)
+
+      if target.android_bp_copy_java_target_name_suffix:
+        _extract_defaults(java_module, self.blueprint)
+        java_copy_module_name = bp_module_name + target.android_bp_copy_java_target_name_suffix
+        java_copy_module = Module('java_library', java_copy_module_name,
+                                  target.name)
+        java_copy_module.defaults = java_module.defaults
+        java_copy_module.jarjar_rules = gn_utils.label_to_path(
+            target.android_bp_copy_java_target_jarjar)
+        self.blueprint.add_module(java_copy_module)
+
+      module.static_libs.add(java_library_module_name)
+    else:
+      module.srcs = [gn_utils.label_to_path(src) for src in target.sources]
 
     # All JNI libs will be added to the 'jni_libs' argument of the 'android_app'
     # or 'android_test' rule that depends on this 'android_library' rule.
@@ -1138,13 +1188,13 @@ class AndroidJavaSDKModulesGenerator:
     return module
 
   def create_android_test_module(self, target: GnParser.Target,
-      bp_module_name: str):
+                                 bp_module_name: str):
     module = Module('android_test', bp_module_name, target.name)
 
     android_libs = self.gn.get_target(
-      target.a_i_t_app).non_proto_or_source_set_deps()
+        target.a_i_t_app).non_proto_or_source_set_deps()
     test_android_libs = self.gn.get_target(
-      target.a_i_t_test_app).non_proto_or_source_set_deps()
+        target.a_i_t_test_app).non_proto_or_source_set_deps()
     android_test_deps = android_libs.union(test_android_libs)
     for dep in android_test_deps:
       assert (dep.custom_action_type == 'perfetto_android_library')
@@ -1155,9 +1205,9 @@ class AndroidJavaSDKModulesGenerator:
 
     module.test_suites = {"general-tests"}
     module.test_config = gn_utils.label_to_path(
-      target.a_i_t_android_bp_test_config)
+        target.a_i_t_android_bp_test_config)
     module.manifest = gn_utils.label_to_path(
-      target.a_i_t_android_bp_test_manifest)
+        target.a_i_t_android_bp_test_manifest)
 
     module.jni_uses_platform_apis = True
     module.sdk_version = self._SDK_VERSION
@@ -1165,7 +1215,7 @@ class AndroidJavaSDKModulesGenerator:
     return module
 
   def _generate_deps_modules_and_add_non_jni_lib_deps(self, module: Module,
-      target: GnParser.Target):
+                                                      target: GnParser.Target):
     for dep in target.non_proto_or_source_set_deps():
       if gn_utils.label_without_toolchain(dep.name) in builtin_deps:
         builtin_deps[gn_utils.label_without_toolchain(dep.name)](module)
@@ -1183,9 +1233,11 @@ class AndroidJavaSDKModulesGenerator:
     for target in root_targets:
       self._collect_all_transitive_deps(target, maybe_jni_lib_targets)
 
-    jni_libs = [android_jni_lib_custom_target_name(target) for target in
-               maybe_jni_lib_targets
-               if is_target_android_jni_lib(target)]
+    jni_libs = [
+        android_jni_lib_custom_target_name(target)
+        for target in maybe_jni_lib_targets
+        if is_target_android_jni_lib(target)
+    ]
     return jni_libs
 
   def _collect_all_transitive_deps(self, target: GnParser.Target, visited):
@@ -1194,6 +1246,26 @@ class AndroidJavaSDKModulesGenerator:
     visited.add(target)
     for d in target.non_proto_or_source_set_deps():
       self._collect_all_transitive_deps(d, visited)
+
+
+def _extract_defaults(module: Module, blueprint: Blueprint):
+  if module.type.startswith('cc_library') or module.type.startswith(
+      'cc_binary'):
+    defaults_type = 'cc_defaults'
+  elif module.type == 'java_library':
+    defaults_type = 'java_defaults'
+  else:
+    raise Error('Unsupported module type: {}'.format(module.type))
+  defaults_module = Module(defaults_type, module.name + '_defaults',
+                           module.gn_target)
+  items_copy = dict(module.__dict__)
+  for k, v in items_copy.items():
+    if k not in ('type', 'name', 'comment', 'gn_target', 'visibility'):
+      defaults_module.__dict__[k] = v
+      module.__dict__[k] = None
+  blueprint.add_module(defaults_module)
+  module.defaults = {defaults_module.name}
+
 
 def _get_cflags(target: GnParser.Target):
   cflags = {flag for flag in target.cflags if re.match(cflag_allowlist, flag)}
@@ -1220,6 +1292,7 @@ def _add_additional_args(module: Module):
     else:
       raise Error('Unimplemented type %r of additional_args: %r' %
                   (type(add_val), key))
+
 
 def create_modules_from_target(blueprint: Blueprint, gn: GnParser,
                                gn_target_name: str) -> Optional[Module]:
@@ -1277,15 +1350,15 @@ def create_modules_from_target(blueprint: Blueprint, gn: GnParser,
     if target.custom_action_type == 'perfetto_android_library':
       return AndroidJavaSDKModulesGenerator(blueprint,
                                             gn).create_android_library_module(
-        target, bp_module_name)
+                                                target, bp_module_name)
     if target.custom_action_type == 'perfetto_android_app':
       return AndroidJavaSDKModulesGenerator(blueprint,
                                             gn).create_android_app_module(
-        target, bp_module_name)
+                                                target, bp_module_name)
     if target.custom_action_type == 'perfetto_android_instrumentation_test':
       return AndroidJavaSDKModulesGenerator(blueprint,
                                             gn).create_android_test_module(
-        target, bp_module_name)
+                                                target, bp_module_name)
 
     if target.custom_action_type == 'cc_proto_descriptor':
       module = create_cc_proto_descriptor_module(blueprint, target)
@@ -1299,15 +1372,16 @@ def create_modules_from_target(blueprint: Blueprint, gn: GnParser,
   blueprint.add_module(module)
   module.host_supported = (name_without_toolchain in target_host_supported)
   module.vendor_available = (name_without_toolchain in target_vendor_available)
-  module.product_available = (name_without_toolchain in target_product_available)
+  module.product_available = (
+      name_without_toolchain in target_product_available)
   module.init_rc.update(target_initrc.get(target.name, []))
   if target.type != 'proto_library':
     # proto_library embeds a "root" filegroup in its srcs.
     # Skip to prevent adding dups
     module.srcs.update(
-      gn_utils.label_to_path(src)
-      for src in target.sources
-      if is_supported_source_file(src))
+        gn_utils.label_to_path(src)
+        for src in target.sources
+        if is_supported_source_file(src))
 
   if name_without_toolchain in needs_libfts:
     module.musl.static_libs.add('libfts')
@@ -1323,9 +1397,9 @@ def create_modules_from_target(blueprint: Blueprint, gn: GnParser,
     for lib in target.libs:
       # Generally library names should be mangled as 'libXXX', unless they
       # are HAL libraries (e.g., android.hardware.health@2.0) or AIDL c++ / NDK
-      # libraries (e.g. "android.hardware.power.stats-V1-cpp")
+      # libraries (e.g. "android.hardware.power.stats-V1-cpp") or flag targets.
       android_lib = lib if '@' in lib or "-cpp" in lib or "-ndk" in lib \
-        else 'lib' + lib
+        or "_flags_c_lib" in lib else 'lib' + lib
       if lib in shared_library_allowlist:
         module.add_android_shared_lib(android_lib)
       if lib in static_library_allowlist:

@@ -6,7 +6,7 @@ import * as Common from '../../core/common/common.js';
 import * as Platform from '../../core/platform/platform.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
-import {getCleanTextContentFromElements} from '../../testing/DOMHelpers.js';
+import {getCleanTextContentFromElements, renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import * as UI from '../../ui/legacy/legacy.js';
@@ -52,8 +52,7 @@ describeWithMockConnection('AppManifestView', () => {
     sinon.stub(resourceTreeModel, 'getAppId').resolves({} as Protocol.Page.GetAppIdResponse);
 
     view = new Application.AppManifestView.AppManifestView(emptyView, reportView, throttler);
-    view.markAsRoot();
-    view.show(document.body);
+    renderElementIntoDOM(view);
 
     await new Promise(resolve => {
       view.addEventListener(Application.AppManifestView.Events.MANIFEST_DETECTED, resolve, {once: true});
@@ -88,8 +87,7 @@ describeWithMockConnection('AppManifestView', () => {
     sinon.stub(resourceTreeModel, 'getAppId').resolves({} as Protocol.Page.GetAppIdResponse);
 
     view = new Application.AppManifestView.AppManifestView(emptyView, reportView, throttler);
-    view.markAsRoot();
-    view.show(document.body);
+    renderElementIntoDOM(view);
 
     resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.DOMContentLoaded, 42);
     await new Promise(resolve => {
@@ -131,9 +129,29 @@ describeWithMockConnection('AppManifestView', () => {
     sinon.stub(resourceTreeModel, 'getInstallabilityErrors').resolves([]);
     sinon.stub(resourceTreeModel, 'getAppId').resolves({} as Protocol.Page.GetAppIdResponse);
 
+    function loadResource(
+        url: Platform.DevToolsPath.UrlString, initiator: SDK.PageResourceLoader.PageResourceLoadInitiator,
+        isBinary: true): Promise<{
+      content: Uint8Array,
+    }>;
+    function loadResource(
+        url: Platform.DevToolsPath.UrlString, initiator: SDK.PageResourceLoader.PageResourceLoadInitiator,
+        isBinary?: false): Promise<{
+      content: string,
+    }>;
+    async function loadResource(
+        url: Platform.DevToolsPath.UrlString, initiator: SDK.PageResourceLoader.PageResourceLoadInitiator,
+        isBinary = false): Promise<{
+      content: string | Uint8Array,
+    }> {
+      assert(isBinary);
+      const res = await fetch(url);
+      return {content: await res.bytes()};
+    }
+    sinon.stub(SDK.PageResourceLoader.PageResourceLoader.instance(), 'loadResource').callsFake(loadResource);
+
     view = new Application.AppManifestView.AppManifestView(emptyView, reportView, throttler);
-    view.markAsRoot();
-    view.show(document.body);
+    renderElementIntoDOM(view);
 
     await new Promise(resolve => {
       view.addEventListener(Application.AppManifestView.Events.MANIFEST_RENDERED, resolve, {once: true});

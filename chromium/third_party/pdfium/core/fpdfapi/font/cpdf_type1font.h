@@ -29,11 +29,10 @@ class CPDF_Type1Font final : public CPDF_SimpleFont {
   int GlyphFromCharCodeExt(uint32_t charcode) override;
 #endif
 
-  bool IsBase14Font() const { return m_Base14Font.has_value(); }
+  bool IsBase14Font() const { return base14_font_.has_value(); }
 
  private:
-  CPDF_Type1Font(CPDF_Document* pDocument,
-                 RetainPtr<CPDF_Dictionary> pFontDict);
+  CPDF_Type1Font(CPDF_Document* document, RetainPtr<CPDF_Dictionary> font_dict);
 
   // CPDF_Font:
   bool Load() override;
@@ -48,10 +47,10 @@ class CPDF_Type1Font final : public CPDF_SimpleFont {
   void SetExtGID(const char* name, uint32_t charcode);
   void CalcExtGID(uint32_t charcode);
 
-  std::array<uint16_t, kInternalTableSize> m_ExtGID;
+  std::array<uint16_t, kInternalTableSize> ext_gid_;
 #endif
 
-  std::optional<CFX_FontMapper::StandardFont> m_Base14Font;
+  std::optional<CFX_FontMapper::StandardFont> base14_font_;
 };
 
 #endif  // CORE_FPDFAPI_FONT_CPDF_TYPE1FONT_H_

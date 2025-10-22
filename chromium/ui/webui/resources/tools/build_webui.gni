@@ -35,7 +35,6 @@ if (is_chromeos) {
     "//chrome/browser/resources/ash",
     "//chrome/browser/resources/chromeos",
     "//chrome/browser/resources/dlp_internals",
-    "//chromeos/ash/components/kiosk/vision/webui",
     "//ui/file_manager",
 
     # Test folders
@@ -65,8 +64,8 @@ template("build_webui") {
   minify = optimize
   bundle = optimize && defined(invoker.optimize_webui_in_files)
 
-  has_ts_in_files = defined(invoker.web_component_files) ||
-                    defined(invoker.non_web_component_files)
+  has_ts_in_files =
+      defined(invoker.web_component_files) || defined(invoker.ts_files)
   enable_source_maps = enable_webui_inline_sourcemaps && has_ts_in_files
   if (defined(invoker.enable_source_maps) && has_ts_in_files) {
     assert(!invoker.enable_source_maps || !optimize)
@@ -89,17 +88,18 @@ template("build_webui") {
   ### Compute the lists of files that are used across multiple targets.
 
   # At least one of `web_component_files`, `css_files`, `mojo_files`, or
-  # 'non_web_component_files` must be defined. Otherwise, the build rule
-  # does not actually generate any input for TS compiler.
+  # 'ts_files` must be defined. Otherwise, the build rule does not actually
+  # generate any input for TS compiler.
   assert(has_ts_in_files || defined(invoker.css_files) ||
          defined(invoker.mojo_files))
 
-  ts_files = []
+  all_ts_files = []
   if (defined(invoker.web_component_files)) {
-    ts_files += invoker.web_component_files
+    all_ts_files += invoker.web_component_files
   }
-  if (defined(invoker.non_web_component_files)) {
-    ts_files += invoker.non_web_component_files
+
+  if (defined(invoker.ts_files)) {
+    all_ts_files += invoker.ts_files
   }
 
   if (defined(invoker.web_component_files) ||
@@ -220,7 +220,7 @@ template("build_webui") {
         out_folder = "${preprocess_dir}/_tmp"
         enable_removal_comments = enable_source_maps
       }
-      in_files = ts_files
+      in_files = all_ts_files
     }
   }
 
@@ -274,6 +274,34 @@ template("build_webui") {
     }
   }
 
+  # Determine if there is a Lit and/or Polymer dependency, and whether this
+  # corresponds to an Ash WebUI. This information is used for determining
+  # the default template for html_to_wrapper() as well as the default tsconfig
+  # file for ts_library().
+  if ((defined(html_files) && !defined(invoker.html_to_wrapper_template)) ||
+      (defined(invoker.ts_deps) && !defined(invoker.ts_tsconfig_base))) {
+    has_polymer = false
+    has_lit = false
+    if (defined(invoker.ts_deps)) {
+      has_polymer =
+          filter_include(invoker.ts_deps,
+                         [ "//third_party/polymer/v3_0:library" ]) != []
+      has_lit = filter_include(invoker.ts_deps,
+                               [ "//third_party/lit/v3_0:build_ts" ]) != []
+    }
+
+    if (is_chromeos) {
+      is_ash_webui = false
+      target_dir = get_label_info(":build_ts", "dir")
+
+      foreach(prefix, ash_folders) {
+        if (!is_ash_webui) {
+          is_ash_webui = string_replace(target_dir, prefix, "") != target_dir
+        }
+      }
+    }
+  }
+
   if (defined(html_files)) {
     html_to_wrapper("html_wrapper_files") {
       visibility = [ ":build_ts" ]
@@ -289,12 +317,29 @@ template("build_webui") {
 
       if (defined(invoker.html_to_wrapper_template)) {
         template = invoker.html_to_wrapper_template
-        if (invoker.html_to_wrapper_template == "detect") {
-          if (enable_source_maps) {
-            deps += [ ":create_source_maps" ]
-          } else {
-            deps += [ ":preprocess_ts_files" ]
+      } else {
+        template = "native"
+        if (has_lit) {
+          template = "lit"
+          if (has_polymer) {
+            template = "detect"
           }
+        } else if (has_polymer) {
+          template = "polymer"
+          if (defined(invoker.icons_html_files) &&
+              (!is_chromeos || !is_ash_webui)) {
+            # Need to use detect for non-Ash Polymer UIs using icons files,
+            # because only cr-iconset is supported for non-Ash WebUIs.
+            template = "detect"
+          }
+        }
+      }
+
+      if (template == "detect") {
+        if (enable_source_maps) {
+          deps += [ ":create_source_maps" ]
+        } else {
+          deps += [ ":preprocess_ts_files" ]
         }
       }
     }
@@ -367,39 +412,25 @@ template("build_webui") {
       # targets with a Lit dependency and no Polymer dependency, and left
       # unset (defaults to //tools/typescript/tsconfig_base.json) for other
       # non-Polymer, non-Lit targets.
-      has_polymer =
-          filter_include(invoker.ts_deps,
-                         [ "//third_party/polymer/v3_0:library" ]) != []
       if (has_polymer) {
-        tsconfig_base = "//tools/typescript/tsconfig_base_polymer.json"
+        if (has_lit) {
+          # Config with Lit parameters also for migrating UIs.
+          tsconfig_base = "//tools/typescript/tsconfig_base_mixed.json"
+        } else {
+          tsconfig_base = "//tools/typescript/tsconfig_base_polymer.json"
+        }
 
         # Detect whether the target corresponds to an Ash-only WebUI and use
         # tsconfig_base_polymer_cros.json instead in such cases.
-        if (is_chromeos) {
-          is_ash_webui = false
-          target_dir = get_label_info(":build_ts", "dir")
-
-          foreach(prefix, ash_folders) {
-            if (!is_ash_webui) {
-              is_ash_webui =
-                  string_replace(target_dir, prefix, "") != target_dir
-            }
-          }
-
-          if (is_ash_webui) {
-            tsconfig_base = "//tools/typescript/tsconfig_base_polymer_cros.json"
-          }
+        if (is_chromeos && is_ash_webui) {
+          tsconfig_base = "//tools/typescript/tsconfig_base_polymer_cros.json"
         }
-      } else {
-        has_lit = filter_include(invoker.ts_deps,
-                                 [ "//third_party/lit/v3_0:build_ts" ]) != []
-        if (has_lit) {
-          tsconfig_base = "//tools/typescript/tsconfig_base_lit.json"
-        }
+      } else if (has_lit) {
+        tsconfig_base = "//tools/typescript/tsconfig_base_lit.json"
       }
     }
 
-    in_files = ts_files
+    in_files = all_ts_files
     if (defined(invoker.ts_deps)) {
       path_mappings_file = "$target_gen_dir/path_mappings_build_path_map.json"
       extra_deps = [ ":build_path_map" ]
@@ -462,7 +493,7 @@ template("build_webui") {
   if (enable_type_aware_eslint_checks) {
     eslint_ts("lint") {
       in_folder = preprocess_dir
-      in_files = filter_exclude(ts_files, [ "*.js" ])
+      in_files = filter_exclude(all_ts_files, [ "*.js" ])
       tsconfig = "$target_gen_dir/tsconfig_build_ts.json"
       deps = [ ":build_ts" ]
       if (enable_source_maps) {

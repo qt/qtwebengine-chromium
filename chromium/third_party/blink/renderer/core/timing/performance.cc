@@ -36,12 +36,14 @@
 
 #include "base/check_op.h"
 #include "base/containers/contains.h"
+#include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/default_clock.h"
 #include "base/time/default_tick_clock.h"
 #include "base/time/time.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/permissions_policy/document_policy_feature.mojom-blink.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/renderer/bindings/core/v8/script_function.h"
@@ -69,6 +71,7 @@
 #include "third_party/blink/renderer/core/timing/back_forward_cache_restoration.h"
 #include "third_party/blink/renderer/core/timing/background_tracing_helper.h"
 #include "third_party/blink/renderer/core/timing/dom_window_performance.h"
+#include "third_party/blink/renderer/core/timing/interaction_contentful_paint.h"
 #include "third_party/blink/renderer/core/timing/largest_contentful_paint.h"
 #include "third_party/blink/renderer/core/timing/layout_shift.h"
 #include "third_party/blink/renderer/core/timing/measure_memory/measure_memory_controller.h"
@@ -79,6 +82,7 @@
 #include "third_party/blink/renderer/core/timing/performance_long_task_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_mark.h"
 #include "third_party/blink/renderer/core/timing/performance_measure.h"
+#include "third_party/blink/renderer/core/timing/performance_navigation_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_observer.h"
 #include "third_party/blink/renderer/core/timing/performance_paint_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_resource_timing.h"
@@ -110,6 +114,15 @@ constexpr size_t kLongTaskUkmSampleInterval = 100;
 
 const char kSwapsPerInsertionHistogram[] =
     "Renderer.Core.Timing.Performance.SwapsPerPerformanceEntryInsertion";
+
+const char kParserPausingCalledAfterResumimg[] =
+    "Blink.HTMLParsing.IsParserPausingCalledAfterResuming";
+
+const char kParserResumeByUserTiming[] =
+    "Blink.HTMLParsing.ResumedByUserTiming";
+
+const char kParserResumingCalledBeforePausing[] =
+    "Blink.HTMLParsing.IsParserResumingCalledBeforePausing";
 
 bool IsMeasureOptionsEmpty(const PerformanceMeasureOptions& options) {
   return !options.hasDetail() && !options.hasEnd() && !options.hasStart() &&
@@ -154,6 +167,7 @@ PerformanceEntry::EntryType kDroppableEntryTypes[] = {
     PerformanceEntry::kPaint,
     PerformanceEntry::kBackForwardCacheRestoration,
     PerformanceEntry::kSoftNavigation,
+    PerformanceEntry::kInteractionContentfulPaint,
 };
 
 void SwapEntries(PerformanceEntryVector& entries,
@@ -173,22 +187,10 @@ inline bool CheckName(const PerformanceEntry* entry,
   return entry->name() == maybe_name;
 }
 
-// |output_entries| either gets reassigned to or is appended to.
-// Therefore, it must point to a valid PerformanceEntryVector.
-void FilterEntriesTriggeredBySoftNavigationIfNeeded(
-    PerformanceEntryVector& input_entries,
-    PerformanceEntryVector** output_entries,
-    bool include_soft_navigation_observations) {
-  if (include_soft_navigation_observations) {
-    *output_entries = &input_entries;
-  } else {
-    DCHECK(output_entries && *output_entries);
-    std::copy_if(input_entries.begin(), input_entries.end(),
-                 std::back_inserter(**output_entries),
-                 [&](const PerformanceEntry* entry) {
-                   return !entry->IsTriggeredBySoftNavigation();
-                 });
-  }
+void NotifyParserResume(Document* document, bool is_resumed_by_user_timing) {
+  document->NotifyParserResumeByUserTiming();
+  base::UmaHistogramBoolean(kParserResumeByUserTiming,
+                            is_resumed_by_user_timing);
 }
 
 }  // namespace
@@ -256,9 +258,11 @@ using PerformanceObserverVector = HeapVector<Member<PerformanceObserver>>;
 
 constexpr size_t kDefaultResourceTimingBufferSize = 250;
 constexpr size_t kDefaultEventTimingBufferSize = 150;
+constexpr size_t kDefaultContainerTimingBufferSize = 150;
 constexpr size_t kDefaultElementTimingBufferSize = 150;
 constexpr size_t kDefaultLayoutShiftBufferSize = 150;
 constexpr size_t kDefaultLargestContenfulPaintSize = 150;
+constexpr size_t kDefaultInteractionContenfulPaintSize = 150;
 constexpr size_t kDefaultLongTaskBufferSize = 200;
 constexpr size_t kDefaultLongAnimationFrameBufferSize = 200;
 constexpr size_t kDefaultBackForwardCacheRestorationBufferSize = 200;
@@ -278,6 +282,7 @@ Performance::Performance(
       back_forward_cache_restoration_buffer_size_limit_(
           kDefaultBackForwardCacheRestorationBufferSize),
       event_timing_buffer_max_size_(kDefaultEventTimingBufferSize),
+      container_timing_buffer_max_size_(kDefaultContainerTimingBufferSize),
       element_timing_buffer_max_size_(kDefaultElementTimingBufferSize),
       user_timing_(nullptr),
       time_origin_(time_origin),
@@ -466,8 +471,7 @@ PerformanceEntryVector Performance::getEntriesByTypeInternal(
       break;
 
     case PerformanceEntry::kContainer:
-      // TODO(jdapena): implementation of container timing entries storage and
-      // retrieval.
+      entries = &container_timing_buffer_;
       break;
 
     case PerformanceEntry::kElement:
@@ -520,10 +524,7 @@ PerformanceEntryVector Performance::getEntriesByTypeInternal(
     case PerformanceEntry::kPaint: {
       UseCounter::Count(GetExecutionContext(),
                         WebFeature::kPaintTimingRequested);
-
-      FilterEntriesTriggeredBySoftNavigationIfNeeded(
-          paint_entries_timing_, &entries,
-          include_soft_navigation_observations);
+      entries = &paint_entries_timing_;
       break;
     }
 
@@ -541,9 +542,15 @@ PerformanceEntryVector Performance::getEntriesByTypeInternal(
       break;
 
     case PerformanceEntry::kLargestContentfulPaint:
-      FilterEntriesTriggeredBySoftNavigationIfNeeded(
-          largest_contentful_paint_buffer_, &entries,
-          include_soft_navigation_observations);
+      entries = &largest_contentful_paint_buffer_;
+      break;
+
+    case PerformanceEntry::kInteractionContentfulPaint:
+      // TODO(crbug.com/424433918): Change to expose this without
+      // soft-navigation requirement.
+      if (include_soft_navigation_observations) {
+        entries = &interaction_contentful_paint_buffer_;
+      }
       break;
 
     case PerformanceEntry::kVisibilityState:
@@ -625,7 +632,7 @@ void Performance::AddResourceTiming(mojom::blink::ResourceTimingInfoPtr info,
   ExecutionContext* context = GetExecutionContext();
   auto* entry = MakeGarbageCollected<PerformanceResourceTiming>(
       std::move(info), initiator_type, time_origin_,
-      cross_origin_isolated_capability_, context);
+      cross_origin_isolated_capability_, context, NavigationId());
   NotifyObserversOfEntry(*entry);
   // https://w3c.github.io/resource-timing/#dfn-add-a-performanceresourcetiming-entry
   if (CanAddResourceTimingEntry() &&
@@ -652,6 +659,10 @@ void Performance::AddResourceTiming(mojom::blink::ResourceTimingInfoPtr info,
 void Performance::NotifyNavigationTimingToObservers() {
   if (navigation_timing_)
     NotifyObserversOfEntry(*navigation_timing_);
+}
+
+bool Performance::IsContainerTimingBufferFull() const {
+  return container_timing_buffer_.size() >= container_timing_buffer_max_size_;
 }
 
 bool Performance::IsElementTimingBufferFull() const {
@@ -696,6 +707,15 @@ void Performance::FireResourceTimingBufferFull(TimerBase*) {
   resource_timing_buffer_full_event_pending_ = false;
 }
 
+void Performance::AddToContainerTimingBuffer(
+    PerformanceContainerTiming& entry) {
+  if (!IsContainerTimingBufferFull()) {
+    InsertEntryIntoSortedBuffer(container_timing_buffer_, entry, kRecordSwaps);
+  } else {
+    ++(dropped_entries_count_map_.find(PerformanceEntry::kContainer)->value);
+  }
+}
+
 void Performance::AddToElementTimingBuffer(PerformanceElementTiming& entry) {
   if (!IsElementTimingBufferFull()) {
     InsertEntryIntoSortedBuffer(element_timing_buffer_, entry, kRecordSwaps);
@@ -734,6 +754,20 @@ void Performance::AddLargestContentfulPaint(LargestContentfulPaint* entry) {
   }
 }
 
+void Performance::AddInteractionContentfulPaint(
+    InteractionContentfulPaint* entry) {
+  probe::PerformanceEntryAdded(GetExecutionContext(), entry);
+  if (interaction_contentful_paint_buffer_.size() <
+      kDefaultInteractionContenfulPaintSize) {
+    InsertEntryIntoSortedBuffer(interaction_contentful_paint_buffer_, *entry,
+                                kRecordSwaps);
+  } else {
+    ++(dropped_entries_count_map_
+           .find(PerformanceEntry::kInteractionContentfulPaint)
+           ->value);
+  }
+}
+
 void Performance::AddSoftNavigationToPerformanceTimeline(
     SoftNavigationEntry* entry) {
   probe::PerformanceEntryAdded(GetExecutionContext(), entry);
@@ -768,7 +802,7 @@ void Performance::AddLongTaskTiming(base::TimeTicks start_time,
       static_cast<int>(MonotonicTimeToDOMHighResTimeStamp(end_time) -
                        dom_high_res_start_time),
       name, container_type, container_src, container_id, container_name,
-      DynamicTo<LocalDOMWindow>(execution_context));
+      DynamicTo<LocalDOMWindow>(execution_context), NavigationId());
   if (longtask_buffer_.size() < kDefaultLongTaskBufferSize) {
     InsertEntryIntoSortedBuffer(longtask_buffer_, *entry, kRecordSwaps);
   } else {
@@ -791,7 +825,7 @@ void Performance::AddBackForwardCacheRestoration(
       MonotonicTimeToDOMHighResTimeStamp(start_time),
       MonotonicTimeToDOMHighResTimeStamp(pageshow_start_time),
       MonotonicTimeToDOMHighResTimeStamp(pageshow_end_time),
-      DynamicTo<LocalDOMWindow>(GetExecutionContext()));
+      DynamicTo<LocalDOMWindow>(GetExecutionContext()), NavigationId());
   if (back_forward_cache_restoration_buffer_.size() <
       back_forward_cache_restoration_buffer_size_limit_) {
     InsertEntryIntoSortedBuffer(back_forward_cache_restoration_buffer_, *entry,
@@ -822,6 +856,12 @@ PerformanceMark* Performance::mark(ScriptState* script_state,
                                   ("mark_interactive"));
   DEFINE_THREAD_SAFE_STATIC_LOCAL(const AtomicString, mark_feature_usage,
                                   ("mark_feature_usage"));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      const AtomicString, mark_parser_blocking,
+      (blink::features::kHTMLParserYieldEventNameForPause.Get().c_str()));
+  DEFINE_THREAD_SAFE_STATIC_LOCAL(
+      const AtomicString, mark_parser_restart,
+      (features::kHTMLParserYieldEventNameForResume.Get().c_str()));
   bool has_start_time = mark_options && mark_options->hasStartTime();
   if (has_start_time || (mark_options && mark_options->hasDetail())) {
     UseCounter::Count(GetExecutionContext(), WebFeature::kUserTimingL3);
@@ -876,6 +916,54 @@ PerformanceMark* Performance::mark(ScriptState* script_state,
         }
       }
     }
+
+    if (RuntimeEnabledFeatures::HTMLParserYieldByUserTimingEnabled() &&
+        !mark_parser_blocking.empty() && !mark_parser_restart.empty()) {
+      DCHECK_NE(mark_parser_blocking, "");
+      DCHECK_NE(mark_parser_restart, "");
+      static const size_t timeout =
+          blink::features::kHTMLParserYieldTimeoutInMs.Get();
+      LocalDOMWindow* window = LocalDOMWindow::From(script_state);
+      if (window && window->GetFrame() &&
+          window->GetFrame()->IsOutermostMainFrame()) {
+        Document* document = window->GetFrame()->GetDocument();
+        if (mark_name == mark_parser_blocking) {
+          base::UmaHistogramBoolean(
+              kParserPausingCalledAfterResumimg,
+              parser_yield_state_ == ParserYieldState::kResumed);
+          if (parser_yield_state_ == ParserYieldState::kInitial) {
+            parser_yield_state_ = ParserYieldState::kPaused;
+            document->NotifyParserPauseByUserTiming();
+            // Schedule a timeout based resume event here since pausing the
+            // parser can be a potential footgun. It's not guaranteed that the
+            // parser resume mark is called after the parser pause mark.
+            //
+            // If the resuming task is already scheduled, cancels and reschedule
+            // it.
+            CHECK(!parser_yield_task_handle_.IsActive());
+            parser_yield_task_handle_ = PostDelayedCancellableTask(
+                *document->GetTaskRunner(TaskType::kInternalLoading), FROM_HERE,
+                WTF::BindOnce(&NotifyParserResume, WrapPersistent(document),
+                              false),
+                base::Milliseconds(timeout));
+          }
+        } else if (mark_name == mark_parser_restart) {
+          base::UmaHistogramBoolean(
+              kParserResumingCalledBeforePausing,
+              parser_yield_state_ != ParserYieldState::kPaused);
+          parser_yield_state_ = ParserYieldState::kResumed;
+          // If the parser is paused, resume it. This has to be called as a
+          // new task to ensure that the script is not running to resume the
+          // parser.
+          document->GetTaskRunner(TaskType::kInternalLoading)
+              ->PostTask(FROM_HERE,
+                         WTF::BindOnce(&NotifyParserResume,
+                                       WrapPersistent(document), true));
+          parser_yield_task_handle_.Cancel();
+        }
+      }
+    }
+
     NotifyObserversOfEntry(*performance_mark);
   }
   return performance_mark;
@@ -1051,7 +1139,7 @@ PerformanceMeasure* Performance::MeasureWithDetail(
     ExceptionState& exception_state) {
   PerformanceMeasure* performance_measure = GetUserTiming().Measure(
       script_state, measure_name, start, duration, end, detail, exception_state,
-      LocalDOMWindow::From(script_state));
+      LocalDOMWindow::From(script_state), NavigationId());
   if (performance_measure)
     NotifyObserversOfEntry(*performance_measure);
   return performance_measure;
@@ -1212,11 +1300,10 @@ bool Performance::CanExposeNode(Node* node) {
 }
 
 void Performance::AddPaintTiming(PerformancePaintTiming::PaintType type,
-                                 const DOMPaintTimingInfo& paint_timing_info,
-                                 bool is_triggered_by_soft_navigation) {
+                                 const DOMPaintTimingInfo& paint_timing_info) {
   PerformancePaintTiming* entry = MakeGarbageCollected<PerformancePaintTiming>(
       type, paint_timing_info, DynamicTo<LocalDOMWindow>(GetExecutionContext()),
-      is_triggered_by_soft_navigation);
+      NavigationId());
   DCHECK((type == PerformancePaintTiming::PaintType::kFirstPaint) ||
          (type == PerformancePaintTiming::PaintType::kFirstContentfulPaint));
 
@@ -1272,10 +1359,12 @@ void Performance::InsertEntryIntoSortedBuffer(PerformanceEntryVector& entries,
 void Performance::Trace(Visitor* visitor) const {
   visitor->Trace(resource_timing_buffer_);
   visitor->Trace(resource_timing_secondary_buffer_);
+  visitor->Trace(container_timing_buffer_);
   visitor->Trace(element_timing_buffer_);
   visitor->Trace(event_timing_buffer_);
   visitor->Trace(layout_shift_buffer_);
   visitor->Trace(largest_contentful_paint_buffer_);
+  visitor->Trace(interaction_contentful_paint_buffer_);
   visitor->Trace(longtask_buffer_);
   visitor->Trace(visibility_state_buffer_);
   visitor->Trace(back_forward_cache_restoration_buffer_);
@@ -1358,14 +1447,6 @@ void Performance::SetClocksForTesting(const base::Clock* clock,
 
 void Performance::ResetTimeOriginForTesting(base::TimeTicks time_origin) {
   time_origin_ = time_origin;
-}
-
-// TODO(https://crbug.com/1457049): remove this once visited links are
-// partitioned.
-bool Performance::softNavPaintMetricsSupported() const {
-  CHECK(
-      RuntimeEnabledFeatures::SoftNavigationHeuristicsExposeFPAndFCPEnabled());
-  return true;
 }
 
 }  // namespace blink

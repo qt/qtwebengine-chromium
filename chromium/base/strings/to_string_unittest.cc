@@ -117,14 +117,9 @@ TEST(ToStringTest, Pointer) {
   int i = 42;
   std::string result_string = ToString(&i);
 
-  // The result of ToString() on a pointer is a string that begins with "0x" on
-  // all platforms except for Windows...
+  // The result of ToString() on a pointer is a string that begins with "0x".
   ASSERT_GT(result_string.size(), 2);
-#if BUILDFLAG(IS_WIN)
-  EXPECT_NE(result_string.substr(0, 2), "0x");
-#else
   EXPECT_EQ(result_string.substr(0, 2), "0x");
-#endif
 
   // ... and whose contents is the hex representation of the value of the actual
   // pointer value.
@@ -148,6 +143,25 @@ TEST(ToStringTest, NonStringifiable) {
   // address.
   EXPECT_NE(ToString(OverloadsAddressOp()),
             ToString(static_cast<OverloadsAddressOp*>(nullptr)));
+}
+
+TEST(ToStringTest, Span) {
+  struct S {
+    std::string ToString() const { return "S()"; }
+  };
+
+  EXPECT_EQ(ToString(span<const int>({1, 2, 3})), "[1, 2, 3]");
+  EXPECT_EQ(ToString(span<const S>({S(), S()})), "[S(), S()]");
+  EXPECT_EQ(ToString(span<const char>({'a', 'b', 'c'})), "[\"abc\"]");
+  EXPECT_EQ(ToString(span<const char>({'a', 'b', 'c', '\0'})),
+            std::string_view("[\"abc\0\"]", 8u));
+  EXPECT_EQ(ToString(span<const char>({'a', 'b', '\0', 'c', '\0'})),
+            std::string_view("[\"ab\0c\0\"]", 9u));
+  EXPECT_EQ(ToString(span<int>()), "[]");
+  EXPECT_EQ(ToString(span<char>()), "[\"\"]");
+
+  EXPECT_EQ(ToString(span<const char16_t>({u'a', u'b', u'c'})), "[u\"abc\"]");
+  EXPECT_EQ(ToString(span<const wchar_t>({L'a', L'b', L'c'})), "[L\"abc\"]");
 }
 
 }  // namespace

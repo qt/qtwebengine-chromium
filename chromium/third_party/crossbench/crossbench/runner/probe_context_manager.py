@@ -8,8 +8,7 @@ import abc
 import contextlib
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Dict, Generic, Iterable, List, Optional,
-                    Tuple, Type, TypeVar)
+from typing import TYPE_CHECKING, Generic, Iterable, Optional, Type, TypeVar
 
 from crossbench.helper.state import State, StateMachine
 from crossbench.probes.probe_context import BaseProbeContext, ProbeContext
@@ -31,10 +30,10 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
     self._state = StateMachine(State.INITIAL)
     self._origin = result_origin
     self._probe_results = probe_results
-    self._probe_contexts: Dict[Type[Probe], ProbeContextT] = {}
+    self._probe_contexts: dict[Type[Probe], ProbeContextT] = {}
     # Contains all probe context where the setup succeeded.
-    self._setup_probe_contexts: List[ProbeContextT] = []
-    self._failed_probe_contexts: List[ProbeContextT] = []
+    self._setup_probe_contexts: list[ProbeContextT] = []
+    self._failed_probe_contexts: list[ProbeContextT] = []
     # TODO: either prefix timers or use custom duration
     self._durations = result_origin.durations
     self._exceptions = result_origin.exceptions
@@ -69,7 +68,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       self._setup_probes(tuple(probes))
     self._state.transition(State.SETUP, to=State.READY)
 
-  def _setup_probes(self, probes: Tuple[Probe, ...]) -> bool:
+  def _setup_probes(self, probes: tuple[Probe, ...]) -> bool:
     # We always have internal probes
     assert probes, "No probes provided"
     with self._capture("probes-setup", measure=True):
@@ -78,7 +77,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       self._setup_contexts()
     return self.is_success
 
-  def _validate_probes(self, probes: Tuple[Probe, ...]) -> None:
+  def _validate_probes(self, probes: tuple[Probe, ...]) -> None:
     assert not self._probe_contexts, "Wrong probe context initialization order"
     probe_set = set()
     for probe in probes:
@@ -87,7 +86,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       assert probe.is_attached, (
           f"Probe {probe.name} is not properly attached to a browser")
 
-  def _create_contexts(self, probes: Tuple[Probe, ...]) -> None:
+  def _create_contexts(self, probes: tuple[Probe, ...]) -> None:
     unique_contexts = set()
     for probe in probes:
       if probe.PRODUCES_DATA:
@@ -134,7 +133,7 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
       self._failed_probe_contexts = []
 
   def _teardown(self,
-                probe_contexts: List[ProbeContextT],
+                probe_contexts: list[ProbeContextT],
                 is_dry_run: bool,
                 setup_error: bool = False) -> None:
     if setup_error:
@@ -149,9 +148,16 @@ class ProbeContextManager(Generic[ResultOriginT, ProbeContextT], abc.ABC):
         probe_results: ProbeResult = probe_context.teardown()
         probe = probe_context.probe
         if probe_results.is_empty:
-          logging.warning("Probe did not extract any data. probe=%s in %s",
-                          probe, self._origin)
+          self._warn_empty_probe_result(probe)
         self._probe_results[probe] = probe_results
+
+  def _warn_empty_probe_result(self, probe: Probe) -> None:
+    if not probe.PRODUCES_DATA:
+      return
+    if probe.is_internal:
+      return
+    logging.warning("Probe did not extract any data. probe=%s in %s", probe,
+                    self._origin)
 
   @abc.abstractmethod
   def get_probe_context(self, probe: Probe) -> Optional[ProbeContextT]:

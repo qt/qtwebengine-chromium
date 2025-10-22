@@ -7,11 +7,17 @@
 
 #include "base/functional/callback.h"
 #include "content/common/content_export.h"
-#include "mojo/public/cpp/bindings/binder_map.h"
+#include "mojo/public/cpp/bindings/receiver.h"
 #include "services/device/public/mojom/battery_monitor.mojom-forward.h"
 #include "services/device/public/mojom/vibration_manager.mojom-forward.h"
 #include "third_party/blink/public/mojom/webauthn/authenticator.mojom-forward.h"
 #include "url/origin.h"
+
+namespace mojo {
+class BinderMap;
+template <typename>
+class BinderMapWithContext;
+}  // namespace mojo
 
 namespace content {
 
@@ -84,12 +90,6 @@ using VibrationManagerBinder = base::RepeatingCallback<void(
     mojo::PendingRemote<device::mojom::VibrationManagerListener>)>;
 CONTENT_EXPORT void OverrideVibrationManagerBinderForTesting(
     VibrationManagerBinder binder);
-
-// Allows tests to override how frame hosts bind Authenticator receivers.
-using AuthenticatorBinder = base::RepeatingCallback<void(
-    mojo::PendingReceiver<blink::mojom::Authenticator>)>;
-CONTENT_EXPORT void OverrideAuthenticatorBinderForTesting(
-    AuthenticatorBinder binder);
 
 }  // namespace content
 

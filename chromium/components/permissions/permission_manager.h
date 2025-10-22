@@ -15,7 +15,7 @@
 #include "components/content_settings/core/browser/content_settings_observer.h"
 #include "components/content_settings/core/common/content_settings.h"
 #include "components/keyed_service/core/keyed_service.h"
-#include "components/permissions/permission_context_base.h"
+#include "components/permissions/content_setting_permission_context_base.h"
 #include "components/permissions/permission_decision_auto_blocker.h"
 #include "components/permissions/permission_request_id.h"
 #include "components/permissions/permission_util.h"
@@ -37,7 +37,7 @@ class RenderProcessHost;
 class WebContents;
 struct PermissionRequestDescription;
 struct PermissionResult;
-}
+}  // namespace content
 
 class GeolocationPermissionContextDelegateTests;
 class SubscriptionInterceptingPermissionManager;
@@ -115,32 +115,34 @@ class PermissionManager : public KeyedService,
       const content::PermissionRequestDescription& request_description,
       base::OnceCallback<void(const std::vector<PermissionStatus>&)> callback)
       override;
-  PermissionStatus GetPermissionStatus(blink::PermissionType permission,
-                                       const GURL& requesting_origin,
-                                       const GURL& embedding_origin) override;
+  PermissionStatus GetPermissionStatus(
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
+      const GURL& requesting_origin,
+      const GURL& embedding_origin) override;
   content::PermissionResult GetPermissionResultForOriginWithoutContext(
-      blink::PermissionType permission,
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
       const url::Origin& requesting_origin,
       const url::Origin& embedding_origin) override;
   PermissionStatus GetPermissionStatusForCurrentDocument(
-      blink::PermissionType permission,
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
       content::RenderFrameHost* render_frame_host,
       bool should_include_device_status) override;
   content::PermissionResult GetPermissionResultForCurrentDocument(
-      blink::PermissionType permission,
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
       content::RenderFrameHost* render_frame_host,
       bool should_include_device_status) override;
   PermissionStatus GetPermissionStatusForWorker(
-      blink::PermissionType permission,
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
       content::RenderProcessHost* render_process_host,
       const GURL& worker_origin) override;
   PermissionStatus GetPermissionStatusForEmbeddedRequester(
-      blink::PermissionType permission,
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
       content::RenderFrameHost* render_frame_host,
       const url::Origin& requesting_origin) override;
   bool IsPermissionOverridable(
       blink::PermissionType permission,
-      const std::optional<url::Origin>& origin) override;
+      base::optional_ref<const url::Origin> requesting_origin,
+      base::optional_ref<const url::Origin> embedding_origin) override;
   void OnPermissionStatusChangeSubscriptionAdded(
       content::PermissionController::SubscriptionId subscription_id) override;
   void UnsubscribeFromPermissionStatusChange(
@@ -157,7 +159,7 @@ class PermissionManager : public KeyedService,
   void OnPermissionsRequestResponseStatus(
       PendingRequestLocalId request_local_id,
       int permission_id,
-      ContentSetting status);
+      PermissionStatus status);
 
   // permissions::Observer:
   void OnPermissionChanged(const ContentSettingsPattern& primary_pattern,
@@ -167,7 +169,7 @@ class PermissionManager : public KeyedService,
   // Only one of |render_process_host| and |render_frame_host| should be set,
   // or neither. RenderProcessHost will be inferred from |render_frame_host|.
   content::PermissionResult GetPermissionStatusInternal(
-      ContentSettingsType permission,
+      const blink::mojom::PermissionDescriptorPtr& permission_descriptor,
       content::RenderProcessHost* render_process_host,
       content::RenderFrameHost* render_frame_host,
       const GURL& requesting_origin,

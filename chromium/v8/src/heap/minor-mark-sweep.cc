@@ -48,6 +48,7 @@
 #include "src/heap/traced-handles-marking-visitor.h"
 #include "src/heap/weak-object-worklists.h"
 #include "src/init/v8.h"
+#include "src/objects/cpp-heap-object-wrapper-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/objects.h"
 #include "src/objects/string-forwarding-table-inl.h"
@@ -294,7 +295,8 @@ void MinorMarkSweepCollector::PerformWrapperTracing() {
 
   TRACE_GC(heap_->tracer(), GCTracer::Scope::MINOR_MS_MARK_EMBEDDER_TRACING);
   local_marking_worklists()->PublishCppHeapObjects();
-  cpp_heap->AdvanceMarking(v8::base::TimeDelta::Max(), SIZE_MAX);
+  cpp_heap->AdvanceMarking(v8::base::TimeDelta::Max(), SIZE_MAX,
+                           StackState::kMayContainHeapPointers);
 }
 
 MinorMarkSweepCollector::~MinorMarkSweepCollector() = default;
@@ -403,11 +405,6 @@ void MinorMarkSweepCollector::Finish() {
   {
     TRACE_GC(heap_->tracer(), GCTracer::Scope::MINOR_MS_FINISH_ENSURE_CAPACITY);
     heap_->ResizeNewSpace();
-
-    if (!v8_flags.sticky_mark_bits &&
-        !heap_->new_space()->EnsureCurrentCapacity()) {
-      heap_->FatalProcessOutOfMemory("NewSpace::EnsureCurrentCapacity");
-    }
   }
 
   if (!v8_flags.sticky_mark_bits) {
@@ -608,18 +605,15 @@ void MinorMarkSweepCollector::ClearNonLiveReferences() {
 }
 
 namespace {
-void VisitObjectWithEmbedderFields(Isolate* isolate, Tagged<JSObject> js_object,
-                                   MarkingWorklists::Local& worklist) {
-  DCHECK(js_object->MayHaveEmbedderFields());
-  DCHECK(!HeapLayout::InYoungGeneration(js_object));
-  // Not every object that can have embedder fields is actually a JSApiWrapper.
-  if (!IsJSApiWrapperObject(js_object)) {
-    return;
-  }
+void VisitObjectWithCppHeapPointerField(
+    Isolate* isolate, Tagged<CppHeapPointerWrapperObjectT> object,
+    MarkingWorklists::Local& worklist) {
+  DCHECK(IsCppHeapPointerWrapperObject(object));
+  DCHECK(!HeapLayout::InYoungGeneration(object));
 
   // Wrapper using cpp_heap_wrappable field.
-  void* wrappable =
-      JSApiWrapper(js_object).GetCppHeapWrappable(isolate, kAnyCppHeapPointer);
+  void* wrappable = CppHeapObjectWrapper::From(object).GetCppHeapWrappable(
+      isolate, kAnyCppHeapPointer);
   if (wrappable) {
     worklist.cpp_marking_state()->MarkAndPush(wrappable);
   }
@@ -635,10 +629,11 @@ void MinorMarkSweepCollector::MarkRootsFromTracedHandles(
     heap_->isolate()->traced_handles()->IterateAndMarkYoungRootsWithOldHosts(
         &root_visitor);
     // Visit the V8-to-Oilpan remembered set.
-    cpp_heap->VisitCrossHeapRememberedSetIfNeeded([this](Tagged<JSObject> obj) {
-      VisitObjectWithEmbedderFields(heap_->isolate(), obj,
-                                    *local_marking_worklists());
-    });
+    cpp_heap->VisitCrossHeapRememberedSetIfNeeded(
+        [this](Tagged<CppHeapPointerWrapperObjectT> obj) {
+          VisitObjectWithCppHeapPointerField(heap_->isolate(), obj,
+                                             *local_marking_worklists());
+        });
   } else {
     // Otherwise, visit all young roots.
     heap_->isolate()->traced_handles()->IterateYoungRoots(&root_visitor);
@@ -702,7 +697,8 @@ void MinorMarkSweepCollector::MarkRootsFromConservativeStack(
 
   MinorMSConservativeStackVisitor stack_visitor(heap_->isolate(), root_visitor);
 
-  heap_->IterateConservativeStackRoots(&stack_visitor);
+  heap_->IterateConservativeStackRoots(&stack_visitor,
+                                       Heap::StackScanMode::kFull);
 }
 
 void MinorMarkSweepCollector::MarkLiveObjects() {
@@ -838,8 +834,8 @@ void MinorMarkSweepCollector::TraceFragmentation() {
           free_bytes_index++;
         }
       }
-      live_bytes += size;
-      free_start = free_end + size;
+      live_bytes += size.value();
+      free_start = free_end + size.value();
     }
     const Address top = heap_->NewSpaceTop();
     size_t area_end = p->Contains(top) ? top : p->area_end();
@@ -880,7 +876,7 @@ bool ShouldMovePage(PageMetadata* p, intptr_t live_bytes,
   DCHECK(v8_flags.page_promotion);
   DCHECK(!v8_flags.sticky_mark_bits);
   Heap* heap = p->heap();
-  DCHECK(!p->Chunk()->NeverEvacuate());
+  DCHECK(!p->never_evacuate());
   const bool should_move_page =
       ((live_bytes + wasted_bytes) > NewSpacePageEvacuationThreshold() ||
        (p->AllocatedLabSize() == 0)) &&
@@ -900,7 +896,7 @@ bool ShouldMovePage(PageMetadata* p, intptr_t live_bytes,
     // Don't allocate on old pages so that recently allocated objects on the
     // page get a chance to die young. The page will be force promoted on the
     // next GC because `AllocatedLabSize` will be 0.
-    p->Chunk()->SetFlagNonExecutable(MemoryChunk::NEVER_ALLOCATE_ON_PAGE);
+    p->set_never_allocate_on_chunk(true);
   }
   return should_move_page;
 }
@@ -950,7 +946,8 @@ bool MinorMarkSweepCollector::StartSweepNewSpace() {
     intptr_t live_bytes_on_page = p->live_bytes();
     if (live_bytes_on_page == 0) {
       if (paged_space->ShouldReleaseEmptyPage()) {
-        paged_space->ReleasePage(p);
+        paged_space->RemovePageFromSpace(p);
+        heap_->memory_allocator()->Free(MemoryAllocator::FreeMode::kPool, p);
       } else {
         sweeper()->SweepEmptyNewSpacePage(p);
       }
@@ -959,7 +956,11 @@ bool MinorMarkSweepCollector::StartSweepNewSpace() {
 
     if (ShouldMovePage(p, live_bytes_on_page, p->wasted_memory())) {
       EvacuateExternalPointerReferences(p);
-      heap_->new_space()->PromotePageToOldSpace(p);
+      // free list categories will be relinked by the sweeper after sweeping is
+      // done.
+      p->set_will_be_promoted(true);
+      heap_->new_space()->PromotePageToOldSpace(p,
+                                                FreeMode::kDoNotLinkCategory);
       has_promoted_pages = true;
       sweeper()->AddPromotedPage(p);
     } else {
@@ -1038,7 +1039,6 @@ bool MinorMarkSweepCollector::SweepNewLargeSpace() {
 
   for (auto it = new_lo_space->begin(); it != new_lo_space->end();) {
     LargePageMetadata* current = *it;
-    MemoryChunk* chunk = current->Chunk();
     it++;
 
     Tagged<HeapObject> object = current->GetObject();
@@ -1049,8 +1049,8 @@ bool MinorMarkSweepCollector::SweepNewLargeSpace() {
                                       current);
       continue;
     }
-    chunk->ClearFlagNonExecutable(MemoryChunk::TO_PAGE);
-    chunk->SetFlagNonExecutable(MemoryChunk::FROM_PAGE);
+    current->ClearFlagNonExecutable(MemoryChunk::TO_PAGE);
+    current->SetFlagNonExecutable(MemoryChunk::FROM_PAGE);
     current->marking_progress_tracker().ResetIfEnabled();
     EvacuateExternalPointerReferences(current);
     old_lo_space->PromoteNewLargeObject(current);

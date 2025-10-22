@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/platform/scheduler/main_thread/memory_purge_manager.h"
 
 #include "base/memory/memory_pressure_listener.h"
+#include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -207,7 +208,7 @@ TEST_F(MemoryPurgeManagerTest, PurgeRendererMemoryWhenBackgroundedDisabled) {
 
 TEST_F(MemoryPurgeManagerTest,
        PurgeRendererMemoryWhenBackgroundedEnabledForegroundedBeforePurge) {
-  if (!MemoryPurgeManager::kPurgeEnabled) {
+  if (!MemoryPurgeManager::kPurgeOnBackgroundingEnabled) {
     GTEST_SKIP();
   }
 
@@ -251,6 +252,74 @@ TEST_F(MemoryPurgeManagerTest, NoMemoryPurgeIfNoPage) {
 
   FastForwardBy(base::Minutes(0));
   EXPECT_EQ(0U, MemoryPressureCount());
+}
+
+TEST_F(MemoryPurgeManagerTest, MemoryPurgeOnFreezeLimitEnabled) {
+  base::test::ScopedFeatureList feature_list{
+      features::kMemoryPurgeOnFreezeLimit};
+
+  memory_purge_manager_.SetPurgeDisabledForTesting(true);
+  memory_purge_manager_.SetRendererBackgrounded(true);
+
+  // The initial freeze should trigger a memory purge.
+  memory_purge_manager_.OnPageCreated();
+  memory_purge_manager_.OnPageFrozen();
+  FastForwardBy(base::Seconds(1));
+  EXPECT_EQ(1U, MemoryPressureCount());
+
+  // The second freeze should not trigger a memory purge.
+  memory_purge_manager_.OnPageResumed();
+  memory_purge_manager_.OnPageFrozen();
+  FastForwardBy(base::Seconds(1));
+  EXPECT_EQ(1U, MemoryPressureCount());
+
+  // Another freeze after foregrounding the renderer triggers a memory purge.
+  memory_purge_manager_.SetRendererBackgrounded(false);
+  memory_purge_manager_.OnPageResumed();
+  memory_purge_manager_.SetRendererBackgrounded(true);
+  memory_purge_manager_.OnPageFrozen();
+  FastForwardBy(base::Seconds(1));
+  EXPECT_EQ(2U, MemoryPressureCount());
+}
+
+TEST_F(MemoryPurgeManagerTest, MemoryPurgeOnFreezeDisabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndDisableFeature(features::kMemoryPurgeOnFreeze);
+
+  // Background the renderer without triggering a purge.
+  memory_purge_manager_.SetPurgeDisabledForTesting(true);
+  memory_purge_manager_.SetRendererBackgrounded(true);
+  memory_purge_manager_.SetPurgeDisabledForTesting(false);
+
+  // Freezing a page should not trigger a memory purge.
+  memory_purge_manager_.OnPageCreated();
+  memory_purge_manager_.OnPageFrozen();
+  FastForwardBy(base::Seconds(1));
+  EXPECT_EQ(0U, MemoryPressureCount());
+
+  if (MemoryPurgeManager::kPurgeOnBackgroundingEnabled) {
+    // A backgrounded purge should still proceed.
+    memory_purge_manager_.OnPageResumed();
+    memory_purge_manager_.OnRendererForegrounded();
+    memory_purge_manager_.OnRendererBackgrounded();
+    FastForwardBy(MemoryPurgeManager::kDefaultMaxTimeToPurgeAfterBackgrounded);
+    EXPECT_EQ(1U, MemoryPressureCount());
+  }
+}
+
+TEST_F(MemoryPurgeManagerTest, MemoryPurgeOnFreezeEnabled) {
+  base::test::ScopedFeatureList feature_list{features::kMemoryPurgeOnFreeze};
+
+  // Background the renderer without triggering a purge.
+  memory_purge_manager_.SetPurgeDisabledForTesting(true);
+  memory_purge_manager_.SetRendererBackgrounded(true);
+  memory_purge_manager_.SetPurgeDisabledForTesting(false);
+
+  // Freezing a page should trigger a memory purge.
+  memory_purge_manager_.OnPageCreated();
+  memory_purge_manager_.OnPageFrozen();
+  FastForwardBy(base::Seconds(1));
+  EXPECT_EQ(1U, MemoryPressureCount());
 }
 
 }  // namespace

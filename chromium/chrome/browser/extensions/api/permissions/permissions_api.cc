@@ -10,10 +10,9 @@
 #include "base/auto_reset.h"
 #include "base/check_is_test.h"
 #include "base/functional/bind.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api_helpers.h"
-#include "chrome/browser/extensions/chrome_extension_function_details.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "chrome/browser/extensions/extension_management.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -34,6 +33,10 @@
 #include "extensions/common/permissions/permissions_info.h"
 #include "extensions/common/url_pattern.h"
 #include "extensions/common/url_pattern_set.h"
+
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#include "chrome/browser/extensions/chrome_extension_function_details.h"
+#endif
 
 namespace extensions {
 
@@ -269,7 +272,6 @@ ExtensionFunction::ResponseAction PermissionsRemoveFunction::Run() {
 base::AutoReset<PermissionsRequestFunction::DialogAction>
 PermissionsRequestFunction::SetDialogActionForTests(
     DialogAction dialog_action) {
-  CHECK_IS_TEST();
   return base::AutoReset<PermissionsRequestFunction::DialogAction>(
       &g_dialog_action, dialog_action);
 }
@@ -278,7 +280,6 @@ PermissionsRequestFunction::SetDialogActionForTests(
 base::AutoReset<PermissionsRequestFunction::ShowDialogCallback*>
 PermissionsRequestFunction::SetShowDialogCallbackForTests(
     ShowDialogCallback* callback) {
-  CHECK_IS_TEST();
   return base::AutoReset<ShowDialogCallback*>(&g_show_dialog_callback,
                                               callback);
 }
@@ -286,7 +287,6 @@ PermissionsRequestFunction::SetShowDialogCallbackForTests(
 // static
 void PermissionsRequestFunction::ResolvePendingDialogForTests(
     bool accept_dialog) {
-  CHECK_IS_TEST();
   CHECK(g_pending_request_function);
   PermissionsRequestFunction* pending_function = g_pending_request_function;
   // Clear out the pending function now. After Release() below, it's unsafe to
@@ -303,7 +303,6 @@ void PermissionsRequestFunction::ResolvePendingDialogForTests(
 // static
 void PermissionsRequestFunction::SetIgnoreUserGestureForTests(
     bool ignore) {
-  CHECK_IS_TEST();
   ignore_user_gesture_for_tests = ignore;
 }
 
@@ -320,11 +319,18 @@ ExtensionFunction::ResponseAction PermissionsRequestFunction::Run() {
     return RespondNow(Error(kUserGestureRequiredError));
   }
 
+#if BUILDFLAG(ENABLE_EXTENSIONS)
   gfx::NativeWindow native_window =
       ChromeExtensionFunctionDetails(this).GetNativeWindowForUI();
   if (!native_window && g_dialog_action == DialogAction::kDefault) {
     return RespondNow(Error("Could not find an active window."));
   }
+#else
+  // TODO(crbug.com/419057482): Once we have a cross-platform interface for
+  // browser windows that works on desktop Android, check for an active window.
+  NOTIMPLEMENTED() << "Skipping active window check";
+  gfx::NativeWindow native_window = nullptr;
+#endif
 
   std::optional<api::permissions::Request::Params> params =
       api::permissions::Request::Params::Create(args());

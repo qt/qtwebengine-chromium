@@ -9,7 +9,7 @@ import datetime as dt
 import logging
 import os
 import shlex
-from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence
 
 from ordered_set import OrderedSet
 
@@ -25,10 +25,11 @@ if TYPE_CHECKING:
   from crossbench.browsers.attributes import BrowserAttributes
   from crossbench.browsers.viewport import Viewport
   from crossbench.cli.config.secrets import Secrets, UsernamePassword
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.flags.chrome import ChromeFeatures
   from crossbench.flags.js_flags import JSFlags
   from crossbench.network.base import Network
+  from crossbench.plt.process_meminfo import ProcessMeminfo
   from crossbench.probes.probe import Probe
   from crossbench.runner.groups.session import BrowserSessionRunGroup
   from crossbench.types import JsonDict
@@ -37,7 +38,10 @@ if TYPE_CHECKING:
 class Browser(abc.ABC):
 
   @classmethod
-  def default_flags(cls, initial_data: FlagsData = None) -> Flags:
+  def default_flags(cls,
+                    initial_data: FlagsData = None,
+                    milestone: int = 0) -> Flags:
+    del milestone
     return Flags(initial_data)
 
   @classmethod
@@ -80,19 +84,19 @@ class Browser(abc.ABC):
       # TODO: separate class for remote browser (selenium) without an explicit
       # binary path.
       self._version = self._extract_version()
-      self._unique_name = f"{self.type_name()}_{self.label}".lower()
+      self.unique_name = f"{self.type_name()}_{self.label}".lower()
       return
     self._path = self._init_resolve_binary(path)
     # TODO clean up
     if not self.platform.is_android:
       assert self.path.is_absolute()
     self._version = self._extract_version()
-    self._unique_name = f"{self.type_name()}_v{self.version.major}_{self.label}"
+    self.unique_name = f"{self.type_name()}_v{self.version.major}_{self.label}"
 
   def _init_flags(self, settings: Settings) -> Flags:
     assert not self._settings.js_flags, (
         f"{self} doesn't support custom js_flags")
-    return self.default_flags(settings.flags)
+    return self.default_flags(settings.flags, self.version.major)
 
   @property
   def platform(self) -> plt.Platform:
@@ -133,7 +137,7 @@ class Browser(abc.ABC):
     return self._settings.secrets
 
   @property
-  def settings(self):
+  def settings(self) -> Settings:
     return self._settings
 
   @property
@@ -201,11 +205,14 @@ class Browser(abc.ABC):
     # we don't get the status back.
     return False
 
+  def meminfo(self, timeout: dt.timedelta) -> list[ProcessMeminfo]:
+    return self.platform.process_meminfo(str(self.path), timeout)
+
   @property
   def is_running(self) -> bool:
     return self._is_running
 
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     """Called before starting a browser / browser session to perform
     a pre-run checklist."""
 
@@ -339,19 +346,19 @@ class Browser(abc.ABC):
         "Previously used browser was not correctly stopped.")
 
   def _log_browser_start(self,
-                         args: Tuple[str, ...],
+                         args: tuple[str, ...],
                          driver_path: Optional[pth.AnyPath] = None) -> None:
     logging.info("🌐 STARTING BROWSER Binary:  %s", self.path)
     logging.info("🏷️  STARTING BROWSER Version: %s", self.version)
     if driver_path:
       logging.info("🐎 STARTING BROWSER Driver:  %s", driver_path)
-    logging.info("🕸  STARTING BROWSER Network: %s", self.network)
+    logging.info("🛜  STARTING BROWSER Network: %s", self.network)
     logging.info("🩺 STARTING BROWSER Probes:  %s",
                  ", ".join(p.NAME for p in self.probes))
     logging.info("🚩 STARTING BROWSER Flags:   %s", shlex.join(args))
 
   def _get_browser_flags_for_session(
-      self, session: BrowserSessionRunGroup) -> Tuple[str, ...]:
+      self, session: BrowserSessionRunGroup) -> tuple[str, ...]:
     flags_copy: Flags = self.flags.copy()
     flags_copy.update(session.extra_flags)
     flags_copy.update(self.network.extra_flags(self.attributes()))
@@ -409,11 +416,13 @@ class Browser(abc.ABC):
       title: Optional[re.Pattern] = None,
       url: Optional[re.Pattern] = None,
       tab_index: Optional[int] = None,
+      relative_tab_index: Optional[int] = None,
       timeout: dt.timedelta = dt.timedelta(seconds=0)
   ) -> str:
     del title
     del url
     del tab_index
+    del relative_tab_index
     del timeout
     raise NotImplementedError(f"Switching tabs is not supported by {self}")
 
@@ -422,13 +431,18 @@ class Browser(abc.ABC):
       title: Optional[re.Pattern] = None,
       url: Optional[re.Pattern] = None,
       tab_index: Optional[int] = None,
+      relative_tab_index: Optional[int] = None,
       timeout: dt.timedelta = dt.timedelta(seconds=0)
   ) -> None:
     del title
     del url
     del tab_index
+    del relative_tab_index
     del timeout
     raise NotImplementedError(f"Closing tabs is not supported by {self}")
+
+  def close_all_tabs(self) -> None:
+    raise NotImplementedError(f"Closing all tabs is not supported by {self}")
 
   @property
   def current_url(self) -> str:
@@ -467,5 +481,14 @@ class Browser(abc.ABC):
     # Poor-man's hash, browsers should be unique.
     return hash(id(self))
 
-  def performance_mark(self, name: str) -> None:
-    self.js("performance.mark(arguments[0]);", arguments=[name])
+  def performance_mark(self,
+                       name: str,
+                       detail: Any = None,
+                       prefix: str = "crossbench-") -> None:
+    full_name = prefix + name
+    if detail is None:
+      self.js("performance.mark(arguments[0]);", arguments=[full_name])
+    else:
+      self.js(
+          "performance.mark(arguments[0],{detail: arguments[1]});",
+          arguments=[full_name, detail])

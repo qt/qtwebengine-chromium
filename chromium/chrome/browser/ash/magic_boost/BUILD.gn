@@ -23,6 +23,9 @@ static_library("magic_boost") {
     "//ash/constants",
     "//base",
     "//chrome/browser/ash/mahi:mahi_availability",
+    "//chrome/browser/profiles",
+    "//chrome/browser/signin",
+    "//chromeos/ash/components/browser_context_helper",
     "//chromeos/ash/components/editor_menu/public/cpp",
     "//chromeos/components/magic_boost/public/cpp",
     "//chromeos/components/mahi/public/cpp",
@@ -76,6 +79,8 @@ source_set("unit_tests") {
     "//ash:test_support",
     "//ash/constants",
     "//base",
+    "//chrome/browser/profiles:profile",
+    "//chrome/test:test_support_unit",
     "//chromeos/components/magic_boost/public/cpp",
     "//components/sync_preferences:test_support",
     "//testing/gmock",
@@ -83,6 +88,10 @@ source_set("unit_tests") {
     "//ui/display",
     "//ui/lottie",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("browser_tests") {

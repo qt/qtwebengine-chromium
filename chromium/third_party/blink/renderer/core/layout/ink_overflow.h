@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_INK_OVERFLOW_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_INK_OVERFLOW_H_
 
+#include <array>
 #include <optional>
 
 #include "base/check_op.h"
@@ -14,6 +15,7 @@
 #include "third_party/blink/renderer/core/editing/markers/document_marker.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/layout/inline/text_offset_range.h"
+#include "third_party/blink/renderer/platform/text/writing_mode.h"
 
 namespace blink {
 

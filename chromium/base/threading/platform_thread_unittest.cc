@@ -259,9 +259,9 @@ TEST(PlatformThreadTest, FunctionTimesTen) {
 namespace {
 
 constexpr ThreadType kAllThreadTypes[] = {
-    ThreadType::kRealtimeAudio, ThreadType::kDisplayCritical,
-    ThreadType::kDefault,       ThreadType::kResourceEfficient,
-    ThreadType::kUtility,       ThreadType::kBackground};
+    ThreadType::kRealtimeAudio,   ThreadType::kInteractive,
+    ThreadType::kDisplayCritical, ThreadType::kDefault,
+    ThreadType::kUtility,         ThreadType::kBackground};
 
 class ThreadTypeTestThread : public FunctionTestThread {
  public:
@@ -388,8 +388,6 @@ TEST(PlatformThreadTest, CanChangeThreadType) {
 #if BUILDFLAG(IS_FUCHSIA)
   EXPECT_FALSE(PlatformThread::CanChangeThreadType(ThreadType::kBackground,
                                                    ThreadType::kUtility));
-  EXPECT_FALSE(PlatformThread::CanChangeThreadType(
-      ThreadType::kBackground, ThreadType::kResourceEfficient));
   EXPECT_FALSE(PlatformThread::CanChangeThreadType(ThreadType::kBackground,
                                                    ThreadType::kDefault));
   EXPECT_FALSE(PlatformThread::CanChangeThreadType(ThreadType::kDefault,
@@ -397,9 +395,6 @@ TEST(PlatformThreadTest, CanChangeThreadType) {
 #else
   EXPECT_EQ(PlatformThread::CanChangeThreadType(ThreadType::kBackground,
                                                 ThreadType::kUtility),
-            kCanIncreasePriority);
-  EXPECT_EQ(PlatformThread::CanChangeThreadType(ThreadType::kBackground,
-                                                ThreadType::kResourceEfficient),
             kCanIncreasePriority);
   EXPECT_EQ(PlatformThread::CanChangeThreadType(ThreadType::kBackground,
                                                 ThreadType::kDefault),
@@ -432,24 +427,23 @@ TEST(PlatformThreadTest, SetCurrentThreadTypeTest) {
   TestPriorityResultingFromThreadType(ThreadType::kUtility,
                                       ThreadPriorityForTest::kUtility);
 
-#if BUILDFLAG(IS_APPLE)
-  TestPriorityResultingFromThreadType(ThreadType::kResourceEfficient,
-                                      ThreadPriorityForTest::kUtility);
-#elif BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_LINUX)
-  TestPriorityResultingFromThreadType(
-      ThreadType::kResourceEfficient,
-      ThreadPriorityForTest::kResourceEfficient);
-#else
-  TestPriorityResultingFromThreadType(ThreadType::kResourceEfficient,
-                                      ThreadPriorityForTest::kNormal);
-#endif  // BUILDFLAG(IS_APPLE)
-
   TestPriorityResultingFromThreadType(ThreadType::kDefault,
                                       ThreadPriorityForTest::kNormal);
   TestPriorityResultingFromThreadType(ThreadType::kDisplayCritical,
                                       ThreadPriorityForTest::kDisplay);
   TestPriorityResultingFromThreadType(ThreadType::kRealtimeAudio,
                                       ThreadPriorityForTest::kRealtimeAudio);
+#if BUILDFLAG(IS_WIN)
+  // Currently only on Windows, kInteractive maps to a higher priority than
+  // kDisplayCritical.
+  TestPriorityResultingFromThreadType(ThreadType::kInteractive,
+                                      ThreadPriorityForTest::kInteractive);
+#else
+  // On other platforms, kInteractive maps to the same priority as
+  // kDisplayCritical.
+  TestPriorityResultingFromThreadType(ThreadType::kInteractive,
+                                      ThreadPriorityForTest::kDisplay);
+#endif
 }
 
 TEST(PlatformThreadTest, SetHugeThreadName) {

@@ -38,7 +38,9 @@ Since a setting can be set via multiple methods here is the priority order:
 2. vk_layer_settings.txt
 3. `VK_EXT_layer_settings`
 
-**Guideline: Settings which are unknown by the layer will be ignored independently of the method. It's the responsibility of the layer developer to ensure backward compatibility with previous versions of the layer. This is to ensure the list of layer settings remain stable across versions and that the responsibility of handling layer backward compatibility doesn't fall on Vulkan application developers as this could quickly become untrackable.**.
+For more information, read the [Vulkan Layers whitepaper](https://github.com/KhronosGroup/Vulkan-Profiles/tree/main/doc/Configuring-Vulkan-Layers-Whitepaper.pdf).
+
+Guideline: Settings which are unknown by the layer will be ignored independently of the method. It's the responsibility of the layer developer to ensure backward compatibility with previous versions of the layer. This is to ensure the list of layer settings remain stable across versions and that the responsibility of handling layer backward compatibility doesn't fall on Vulkan application developers as this could quickly become untrackable..
 
 ## Configuring Vulkan Layers using the *Vulkan API*
 
@@ -92,7 +94,7 @@ Layer settings may be configured using the `VK_EXT_layer_settings` extension by 
         {layer_name, "validate_sync", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_validate_sync},
         {layer_name, "thread_safety", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_thread_safety},
         {layer_name, "debug_action", VK_LAYER_SETTING_TYPE_STRING_EXT, 1, setting_debug_action},
-        {layer_name, "report_flags", VK_LAYER_SETTING_TYPE_STRING_EXT, static_cast<uint32_t>(std::size(setting_report_flags)), setting_report_flags}
+        {layer_name, "report_flags", VK_LAYER_SETTING_TYPE_STRING_EXT, static_cast<uint32_t>(std::size(setting_report_flags)), setting_report_flags},
         {layer_name, "enable_message_limit", VK_LAYER_SETTING_TYPE_BOOL32_EXT, 1, &setting_enable_message_limit},
         {layer_name, "duplicate_message_limit", VK_LAYER_SETTING_TYPE_INT32_EXT, 1, &setting_duplicate_message_limit}};
 
@@ -368,4 +370,14 @@ $ export VK_VALIDATION_DEBUG_ACTION=VK_DBG_LAYER_ACTION_LOG_MSG
 $ export VK_VALIDATION_REPORT_FLAGS=debug:error:perf:info:warn
 $ export VK_VALIDATION_ENABLE_MESSAGE_LIMIT=true
 $ export VK_VALIDATION_DUPLICATE_MESSAGE_LIMIT=3
+```
+
+#### Example Usage on Android:
+
+```
+$ adb setprop debug.vvl.validation_core true
+$ adb setprop debug.vulkan.validation.validation_sync true
+$ adb setprop debug.vulkan.validation.thread_safety true
+$ adb setprop debug.vulkan.validation.enable_message_limit true
+$ adb setprop debug.vulkan.validation.duplicate_message_limit 3
 ```

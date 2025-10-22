@@ -94,7 +94,7 @@ chromium-metrics-reviews@google.com.
 </variants>
 
 <histogram name="Notifications.Actions" enum="NotificationActionType"
-    expires_after="2025-08-31">
+    expires_after="2026-01-04">
   <owner>dewittj@chromium.org</owner>
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
@@ -129,7 +129,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.Android.ImageMemorySizeInKB" units="KB"
-    expires_after="2025-09-21">
+    expires_after="2026-01-25">
   <owner>peilinwang@google.com</owner>
   <owner>clank-performance-team@google.com</owner>
   <summary>
@@ -197,7 +197,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.Android.JobNativeStartupDuration{IntentAction}"
-    units="ms" expires_after="2025-08-24">
+    units="ms" expires_after="2025-12-28">
   <owner>peter@chromium.org</owner>
   <owner>engedy@chromium.org</owner>
   <summary>
@@ -246,7 +246,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.Android.JobStage{IntentAction}"
-    enum="NotificationJobStage" expires_after="2025-06-22">
+    enum="NotificationJobStage" expires_after="2026-01-04">
   <owner>peter@chromium.org</owner>
   <owner>engedy@chromium.org</owner>
   <summary>
@@ -449,7 +449,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.Cros.Actions.{NotificationAction}"
-    enum="NotificationTypeDetailed" expires_after="2025-08-24">
+    enum="NotificationTypeDetailed" expires_after="2025-12-28">
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
   <summary>
@@ -461,12 +461,13 @@ chromium-metrics-reviews@google.com.
 
 <histogram
     name="Notifications.Cros.Actions.{NotificationAction}.GroupedByCatalog"
-    enum="NotificationCatalogName" expires_after="2025-03-10">
+    enum="NotificationCatalogName" expires_after="2026-07-14">
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
   <summary>
     Records the notification catalog name when a notification interaction
-    occurs: {NotificationAction}. ChromeOS only.
+    occurs: {NotificationAction}. ChromeOS only. Note that this histogram is
+    expired from March 10 to mid-July 2025.
   </summary>
   <token key="NotificationAction" variants="NotificationAction"/>
 </histogram>
@@ -594,6 +595,30 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="Notifications.Database.WriteNotificationMetadataReadResult"
+    enum="NotificationDatabaseStatus" expires_after="2026-04-22">
+  <owner>skrakowi@chromium.org</owner>
+  <owner>peter@chromium.org</owner>
+  <summary>
+    Records the response status after trying to find the existing
+    NotificationDatabase entry that corresponds to the one we should update with
+    notification content detection metadata. Logged each time a notification is
+    shown, when we request to persist the metadata.
+  </summary>
+</histogram>
+
+<histogram name="Notifications.Database.WriteNotificationMetadataUpdateResult"
+    enum="NotificationDatabaseStatus" expires_after="2026-04-22">
+  <owner>skrakowi@chromium.org</owner>
+  <owner>peter@chromium.org</owner>
+  <summary>
+    Records the response status after trying to update an existing
+    NotificationDatabase entry with notification content detection metadata.
+    Logged each time a notification is shown and the database entry is
+    successfully found.
+  </summary>
+</histogram>
+
 <histogram name="Notifications.Database.WriteResult"
     enum="NotificationDatabaseStatus" expires_after="2023-04-16">
   <owner>knollr@chromium.org</owner>
@@ -605,7 +630,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.Engagement.{Type}.Volume{Volume}"
-    units="site-engagement-score*2" expires_after="2025-07-27">
+    units="site-engagement-score*2" expires_after="2025-11-30">
   <owner>antoniosartori@chromium.org</owner>
   <owner>feuunk@chromium.org</owner>
   <summary>
@@ -695,7 +720,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.NonPersistentNotificationThirdPartyCount"
-    enum="Boolean" expires_after="2025-08-24">
+    enum="Boolean" expires_after="2025-12-28">
   <owner>awillia@chromium.org</owner>
   <owner>peter@chromium.org</owner>
   <summary>
@@ -720,7 +745,7 @@ chromium-metrics-reviews@google.com.
 <histogram
     name="Notifications.NotificationHelper.NotificationActivatorPrimaryStatus"
     enum="NotificationHelperNotificationActivatorPrimaryStatus"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>finnur@chromium.org</owner>
   <owner>peter@chromium.org</owner>
   <summary>
@@ -824,7 +849,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.PerNotificationActions"
-    enum="NotificationActionType" expires_after="2025-09-07">
+    enum="NotificationActionType" expires_after="2026-01-11">
   <owner>dewittj@chromium.org</owner>
   <owner>leandre@chromium.org</owner>
   <owner>cros-status-area-eng@google.com</owner>
@@ -837,7 +862,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.PersistentNotificationActionCount"
-    units="buttons" expires_after="2025-09-14">
+    units="buttons" expires_after="2026-01-18">
   <owner>peter@chromium.org</owner>
   <summary>
     The number of action buttons the developer provided for a persistent Web
@@ -860,7 +885,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.PersistentNotificationThirdPartyCount"
-    enum="Boolean" expires_after="2025-08-24">
+    enum="Boolean" expires_after="2025-12-28">
   <owner>awillia@chromium.org</owner>
   <owner>peter@chromium.org</owner>
   <summary>
@@ -967,7 +992,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="Notifications.Windows.ActivationStatus"
-    enum="WindowsNotificationActivationStatus" expires_after="2025-07-27">
+    enum="WindowsNotificationActivationStatus" expires_after="2025-11-30">
   <owner>finnur@chromium.org</owner>
   <owner>peter@chromium.org</owner>
   <summary>

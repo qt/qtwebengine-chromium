@@ -8,12 +8,10 @@ import abc
 import contextlib
 import dataclasses
 import logging
-from typing import (TYPE_CHECKING, Final, Iterator, List, Mapping, Optional,
-                    Tuple, TypeVar)
+from typing import TYPE_CHECKING, Final, Iterator, Mapping, Optional, TypeVar
 
 from typing_extensions import override
 
-from crossbench.flags.base import Flags
 from crossbench.helper.path_finder import WprGoToolFinder
 from crossbench.network.replay.base import GS_PREFIX, ReplayNetwork
 from crossbench.network.replay.web_page_replay import WprReplayServer
@@ -22,6 +20,7 @@ from crossbench.plt import PLATFORM, Platform
 
 if TYPE_CHECKING:
   from crossbench.browsers.attributes import BrowserAttributes
+  from crossbench.flags.base import Flags
   from crossbench.network.base import TrafficShaper
   from crossbench.path import AnyPath, LocalPath
   from crossbench.runner.groups.session import BrowserSessionRunGroup
@@ -43,27 +42,27 @@ class WPRCloudBinary:
 
 
 # See third_party/catapult/telemetry/telemetry/binary_dependencies.json
-WPR_PREBUILT_LOOKUP: Final[Mapping[Tuple[str, str], WPRCloudBinary]] = {
+WPR_PREBUILT_LOOKUP: Final[Mapping[tuple[str, str], WPRCloudBinary]] = {
     ("android", "arm64"):
-        WPRCloudBinary("129a66a1378dfcbb815596f66ca680728f77da36"),
+        WPRCloudBinary("8f422f75ae74113ccc12234bf2d1368074754fcb"),
     ("android", "arm32"):
-        WPRCloudBinary("92ff5bdb9370b36d2844c2f018e2b7d9c3b8ed39"),
+        WPRCloudBinary("f0aa37ad758ec972816ee65f446b99bdbd74746b"),
     ("android", "x64"):
-        WPRCloudBinary("6caa467dc6bef92e1c34256f539f8ed8f26a2fe1"),
+        WPRCloudBinary("864c50726a8cb5637339ccf2a074ec4b5f413753"),
     # On arm64 ChromeOS, use the same binary as arm64 Linux.
     ("chromeos_ssh", "arm64"):
-        WPRCloudBinary("129a66a1378dfcbb815596f66ca680728f77da36"),
+        WPRCloudBinary("8f422f75ae74113ccc12234bf2d1368074754fcb"),
     # On x64 ChromeOS, use the same binary as x64 Linux.
     ("chromeos_ssh", "x64"):
-        WPRCloudBinary("6caa467dc6bef92e1c34256f539f8ed8f26a2fe1"),
+        WPRCloudBinary("864c50726a8cb5637339ccf2a074ec4b5f413753"),
     ("linux", "x64"):
-        WPRCloudBinary("6caa467dc6bef92e1c34256f539f8ed8f26a2fe1"),
+        WPRCloudBinary("864c50726a8cb5637339ccf2a074ec4b5f413753"),
     ("macos", "arm64"):
-        WPRCloudBinary("c68bd02b247e38a68a8e8ca154164fab75638e2e"),
+        WPRCloudBinary("a245938846180631dbc9806e90147e3cfbc927fc"),
     ("macos", "x64"):
-        WPRCloudBinary("57443617185913f5e9af20e69a105419eb4cbea5"),
+        WPRCloudBinary("613419bc52b357419e7bd7a1158fe257a1b73e97"),
     ("win", "x64"):
-        WPRCloudBinary("8b5310e99091991b949103b1edf39db45c7818f5"),
+        WPRCloudBinary("6f67a1c2284bfe2c36824ceecb5b0f456cdd191c"),
 }
 
 
@@ -175,8 +174,8 @@ class LocalWprReplayNetwork(WprReplayNetwork):
   @override
   def _ensure_wpr_go(self, wpr_go_bin: Optional[LocalPath] = None) -> None:
     if not wpr_go_bin:
-      if local_wpr_go := WprGoToolFinder(self.host_platform).path:
-        wpr_go_bin = self.host_platform.local_path(local_wpr_go)
+      if local_wpr_go := WprGoToolFinder(self.host_platform).local_path:
+        wpr_go_bin = local_wpr_go
     if not wpr_go_bin:
       raise RuntimeError(
           f"Could not find wpr.go binary on {self.host_platform}")
@@ -203,17 +202,16 @@ class LocalWprReplayNetwork(WprReplayNetwork):
     https_port = self.https_port
     logging.info("REMOTE PORT FORWARDING: %s <= %s", self.host_platform,
                  browser_platform)
-    # TODO: create port-forwarder service that is shut down properly.
     # TODO: make ports configurable
-    browser_platform.reverse_port_forward(http_port, http_port)
-    browser_platform.reverse_port_forward(https_port, https_port)
-    yield
-    browser_platform.stop_reverse_port_forward(http_port)
-    browser_platform.stop_reverse_port_forward(https_port)
+    with browser_platform.ports.nested() as ports:
+      ports.reverse_forward(http_port, http_port)
+      ports.reverse_forward(https_port, https_port)
+      yield
+      # port cleanup happens automatically
 
   @override
   def _create_server(self, log_dir: LocalPath) -> WprReplayServer:
-    inject_scripts: List[AnyPath] | None = (
+    inject_scripts: list[AnyPath] | None = (
         None if self.inject_deterministic_script else [])
     return WprReplayServer(
         self.archive_path,
@@ -246,8 +244,8 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
         self.host_platform.local_cache_dir("wpr") /
         str(self.browser_platform.machine) / "wpr_go")
     if not check_hash(local_wpr_go_bin, wpr_cloud_binary.file_hash):
-      self.host_platform.sh("gsutil", "cp", wpr_cloud_binary.url,
-                            local_wpr_go_bin)
+      self.host_platform.download_gcs_file(wpr_cloud_binary.url,
+                                           local_wpr_go_bin)
     assert check_hash(local_wpr_go_bin, wpr_cloud_binary.file_hash)
 
     return local_wpr_go_bin
@@ -273,14 +271,14 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
     self.browser_platform.push(path, remote_path)
     return remote_path
 
-  def _push_required_files(self) -> List[AnyPath]:
+  def _push_required_files(self) -> list[AnyPath]:
     host_platform = self.host_platform
-    if local_wpr_go := WprGoToolFinder(host_platform).path:
-      wpr_root = self.host_platform.local_path(local_wpr_go.parents[1])
+    if local_wpr_go := WprGoToolFinder(host_platform).local_path:
+      wpr_root = local_wpr_go.parents[1]
     else:
       raise RuntimeError(f"Could not fine local wpr.go on {host_platform}")
 
-    all_files: List[LocalPath] = [
+    all_files: list[LocalPath] = [
         self._archive_path, wpr_root / "ecdsa_key.pem",
         wpr_root / "ecdsa_cert.pem", wpr_root / "deterministic.js"
     ]
@@ -293,9 +291,9 @@ class RemoteWprReplayNetwork(WprReplayNetwork):
 
   @override
   def _create_server(self, log_dir: LocalPath) -> WprReplayServer:
-    wpr_go_bin, archive, key_file, cert_file, inject_script =\
-        self._push_required_files()
-    inject_scripts: List[AnyPath] = ([inject_script] if
+    wpr_go_bin, archive, key_file, cert_file, inject_script = (
+        self._push_required_files())
+    inject_scripts: list[AnyPath] = ([inject_script] if
                                      self.inject_deterministic_script else [])
     return WprReplayServer(
         archive_path=archive,

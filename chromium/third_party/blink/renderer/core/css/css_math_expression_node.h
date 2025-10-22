@@ -30,7 +30,9 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_MATH_EXPRESSION_NODE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_CSS_CSS_MATH_EXPRESSION_NODE_H_
 
+#include <array>
 #include <optional>
+#include <unordered_map>
 
 #include "base/check_op.h"
 #include "base/containers/enum_set.h"
@@ -60,6 +62,7 @@ class CSSNumericLiteralValue;
 class CSSParserContext;
 class TryTacticTransform;
 class WritingDirectionMode;
+class CSSMathExpressionNode;
 
 // The order of this enum should not change since its elements are used as
 // indices in the addSubtractResult matrix.
@@ -76,9 +79,10 @@ enum CalculationResultCategory {
   // (e.g. sign(1vw - 1px) returns a numerical value, but depends on
   // a length that cannot be resolved until layout).
   kCalcLengthFunction,
-  // kCalcIntrinsicSize is a special case of kCalcLengthFunction that is
-  // forbidden within most expression contexts.
-  kCalcIntrinsicSize,
+  // Represents intermediate result of typed arithmetic operation, e.g.
+  // 10px * 10em. It's not kCalcOther, since, once it becomes 10px * 10em /
+  // 10em, it's a valid kCalcLength.
+  kCalcIntermediate,
   kCalcAngle,
   kCalcTime,
   kCalcFrequency,
@@ -90,6 +94,75 @@ using CalculationResultCategorySet =
     base::EnumSet<CalculationResultCategory,
                   CalculationResultCategory::kCalcNumber,
                   CalculationResultCategory::kCalcOther>;
+
+class CSSMathType final {
+  DISALLOW_NEW();
+
+  // https://drafts.css-houdini.org/css-typed-om-1/#cssnumericvalue-base-type
+  enum BaseType : uint8_t {
+    kPercent,
+    kLength,
+    kAngle,
+    kTime,
+    kFrequency,
+    kResolution,
+    kFlex,
+    kNumTypes
+  };
+
+ public:
+  CSSMathType() = default;
+  // https://drafts.css-houdini.org/css-typed-om-1/#cssnumericvalue-create-a-type
+  CORE_EXPORT explicit CSSMathType(CalculationResultCategory category);
+
+  CORE_EXPORT explicit CSSMathType(const CSSMathExpressionNode&);
+
+  CSSMathType(const CSSMathType&) = default;
+  CSSMathType(CSSMathType&&) = default;
+  CSSMathType& operator=(const CSSMathType&) = default;
+  CSSMathType& operator=(CSSMathType&&) = default;
+
+  static CSSMathType InvalidType();
+
+  CORE_EXPORT bool IsValid() const;
+  CORE_EXPORT CalculationResultCategory Category() const;
+  bool IsIntermediateResult() const;
+
+  friend bool operator==(const CSSMathType& lhs,
+                         const CSSMathType& rhs) = default;
+  // https://drafts.css-houdini.org/css-typed-om-1/#cssnumericvalue-add-two-types
+  CORE_EXPORT friend CSSMathType operator+(CSSMathType type1,
+                                           CSSMathType type2);
+  // https://drafts.css-houdini.org/css-typed-om-1/#cssnumericvalue-multiply-two-types
+  CORE_EXPORT friend CSSMathType operator*(CSSMathType type1,
+                                           CSSMathType type2);
+  CORE_EXPORT friend CSSMathType operator/(CSSMathType type1,
+                                           CSSMathType type2);
+  CORE_EXPORT CSSMathType operator-() const;
+
+ private:
+  using BaseTypePowers =
+      std::array<int8_t, static_cast<size_t>(BaseType::kNumTypes)>;
+  using PercentageHint = std::optional<BaseType>;
+
+  explicit CSSMathType(bool);
+  CSSMathType(BaseTypePowers types_map, PercentageHint percentage_hint);
+
+  static CalculationResultCategory BaseTypeToCalculationCategory(
+      BaseType base_type);
+  static BaseType CalculationCategoryToBaseType(
+      CalculationResultCategory catergory);
+
+  // https://drafts.css-houdini.org/css-typed-om-1/#apply-the-percent-hint
+  void ApplyHint(BaseType hint);
+
+  // To represent "failure" in terms of the spec.
+  bool is_valid_ = true;
+  // https://drafts.css-houdini.org/css-typed-om-1/#cssnumericvalue-create-a-type
+  BaseTypePowers base_type_powers_{};
+  // https://drafts.css-houdini.org/css-typed-om-1/#cssnumericvalue-percent-hint
+  PercentageHint percentage_hint_;
+};
 
 class CORE_EXPORT CSSMathExpressionNode
     : public GarbageCollected<CSSMathExpressionNode> {
@@ -129,6 +202,7 @@ class CORE_EXPORT CSSMathExpressionNode
   virtual bool IsKeywordLiteral() const { return false; }
   virtual bool IsContainerFeature() const { return false; }
   virtual bool IsSiblingFunction() const { return false; }
+  virtual bool IsCalcSize() const { return false; }
 
   virtual bool IsMathFunction() const { return false; }
 
@@ -149,12 +223,12 @@ class CORE_EXPORT CSSMathExpressionNode
                                      double multiplier) const = 0;
   virtual void AccumulateLengthUnitTypes(
       CSSPrimitiveValue::LengthTypeFlags& types) const = 0;
-  virtual scoped_refptr<const CalculationExpressionNode>
-  ToCalculationExpression(const CSSLengthResolver&) const = 0;
+  virtual const CalculationExpressionNode* ToCalculationExpression(
+      const CSSLengthResolver&) const = 0;
   virtual std::optional<PixelsAndPercent> ToPixelsAndPercent(
       const CSSLengthResolver&) const = 0;
 
-  scoped_refptr<const CalculationValue> ToCalcValue(
+  const CalculationValue* ToCalcValue(
       const CSSLengthResolver& length_resolver,
       Length::ValueRange range,
       bool allows_negative_percentage_reference) const;
@@ -182,6 +256,7 @@ class CORE_EXPORT CSSMathExpressionNode
 
   virtual bool IsComputationallyIndependent() const = 0;
   virtual bool IsElementDependent() const { return false; }
+  virtual bool MayHaveRelativeUnit() const = 0;
 
   CalculationResultCategory Category() const { return category_; }
 
@@ -198,14 +273,22 @@ class CORE_EXPORT CSSMathExpressionNode
   // (such as the progress() function) that convert the result type of their
   // arguments into a number.
   virtual bool InvolvesLayout() const {
-    return Category() == kCalcPercent || Category() == kCalcLengthFunction ||
-           Category() == kCalcIntrinsicSize;
+    return Category() == kCalcPercent || Category() == kCalcLengthFunction;
   }
 
   // Returns the unit type of the math expression *without doing any type
   // conversion* (e.g., 1px + 1em needs type conversion to resolve).
   // Returns |UnitType::kUnknown| if type conversion is required.
   virtual CSSPrimitiveValue::UnitType ResolvedUnitType() const = 0;
+
+  CSSPrimitiveValue::UnitType ResolvedUnitTypeForSimplification() const {
+    CSSPrimitiveValue::UnitType unit_type = ResolvedUnitType();
+    if (unit_type == CSSPrimitiveValue::UnitType::kInteger) {
+      return CSSPrimitiveValue::UnitType::kNumber;
+    } else {
+      return unit_type;
+    }
+  }
 
   bool IsNestedCalc() const { return is_nested_calc_; }
   void SetIsNestedCalc() { is_nested_calc_ = true; }
@@ -307,7 +390,7 @@ class CORE_EXPORT CSSMathExpressionNumericLiteral final
   const CSSMathExpressionNode* ConvertLiteralsFromPercentageToNumber()
       const final;
   String CustomCSSText() const final;
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   std::optional<PixelsAndPercent> ToPixelsAndPercent(
       const CSSLengthResolver&) const final;
@@ -321,6 +404,7 @@ class CORE_EXPORT CSSMathExpressionNumericLiteral final
   void AccumulateLengthUnitTypes(
       CSSPrimitiveValue::LengthTypeFlags& types) const final;
   bool IsComputationallyIndependent() const final;
+  bool MayHaveRelativeUnit() const final;
   bool operator==(const CSSMathExpressionNode& other) const final;
   CSSPrimitiveValue::UnitType ResolvedUnitType() const final;
   void Trace(Visitor* visitor) const final;
@@ -384,7 +468,7 @@ class CORE_EXPORT CSSMathExpressionIdentifierLiteral final
     return this;
   }
   String CustomCSSText() const final { return identifier_; }
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   std::optional<PixelsAndPercent> ToPixelsAndPercent(
       const CSSLengthResolver&) const final {
@@ -408,6 +492,7 @@ class CORE_EXPORT CSSMathExpressionIdentifierLiteral final
   void AccumulateLengthUnitTypes(
       CSSPrimitiveValue::LengthTypeFlags& types) const final {}
   bool IsComputationallyIndependent() const final { return true; }
+  bool MayHaveRelativeUnit() const final { return false; }
   bool operator==(const CSSMathExpressionNode& other) const final {
     return other.IsIdentifierLiteral() &&
            DynamicTo<CSSMathExpressionIdentifierLiteral>(other)->GetValue() ==
@@ -488,7 +573,7 @@ class CORE_EXPORT CSSMathExpressionKeywordLiteral final
   String CustomCSSText() const final {
     return GetCSSValueNameAs<AtomicString>(keyword_);
   }
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   std::optional<PixelsAndPercent> ToPixelsAndPercent(
       const CSSLengthResolver&) const final;
@@ -510,6 +595,7 @@ class CORE_EXPORT CSSMathExpressionKeywordLiteral final
   void AccumulateLengthUnitTypes(
       CSSPrimitiveValue::LengthTypeFlags& types) const final {}
   bool IsComputationallyIndependent() const final { return true; }
+  bool MayHaveRelativeUnit() const final { return false; }
   bool operator==(const CSSMathExpressionNode& other) const final {
     auto* other_keyword = DynamicTo<CSSMathExpressionKeywordLiteral>(other);
     return other_keyword && other_keyword->GetValue() == GetValue() &&
@@ -554,9 +640,6 @@ class CORE_EXPORT CSSMathExpressionOperation final
 
   static CSSMathExpressionNode* CreateComparisonFunction(Operands&& operands,
                                                          CSSMathOperator op);
-  static CSSMathExpressionNode* CreateComparisonFunctionSimplified(
-      Operands&& operands,
-      CSSMathOperator op);
 
   static CSSMathExpressionNode* CreateTrigonometricFunction(
       Operands&& operands,
@@ -582,7 +665,8 @@ class CORE_EXPORT CSSMathExpressionOperation final
   // calc(0.5 * calc-size(auto, size)) is not valid syntax, but this lets the
   // animation code pass that multiplication to this function and have it turn
   // into calc-size(auto, 0.5 * size).
-  static CSSMathExpressionNode* CreateArithmeticOperationAndSimplifyCalcSize(
+  static const CSSMathExpressionNode*
+  CreateArithmeticOperationAndSimplifyCalcSize(
       const CSSMathExpressionNode* left_side,
       const CSSMathExpressionNode* right_side,
       CSSMathOperator op);
@@ -591,26 +675,35 @@ class CORE_EXPORT CSSMathExpressionOperation final
       Operands&& operands,
       CSSValueID function_id);
 
+  static CSSMathExpressionNode* CreateInvertFunction(
+      const CSSMathExpressionNode* operand);
+
   static CSSMathExpressionNode* CreateCalcSizeOperation(
       const CSSMathExpressionNode* left_side,
       const CSSMathExpressionNode* right_side);
 
+  // Note: `CSSMathType type` is default for all non-arithemtic operations.
   CSSMathExpressionOperation(const CSSMathExpressionNode* left_side,
                              const CSSMathExpressionNode* right_side,
                              CSSMathOperator op,
-                             CalculationResultCategory category);
+                             CalculationResultCategory category,
+                             CSSMathType type);
 
+  // Note: `CSSMathType type` is default for all non-arithemtic operations.
   CSSMathExpressionOperation(CalculationResultCategory category,
                              Operands&& operands,
-                             CSSMathOperator op);
+                             CSSMathOperator op,
+                             CSSMathType type);
 
+  // Note: `CSSMathType type` is default for all non-arithemtic operations.
   CSSMathExpressionOperation(CalculationResultCategory category,
-                             CSSMathOperator op);
+                             CSSMathOperator op,
+                             CSSMathType type);
 
   CSSMathExpressionNode* Copy() const final {
     Operands operands(operands_);
     return MakeGarbageCollected<CSSMathExpressionOperation>(
-        category_, std::move(operands), operator_);
+        category_, std::move(operands), operator_, type_);
   }
 
   const Operands& GetOperands() const { return operands_; }
@@ -624,6 +717,9 @@ class CORE_EXPORT CSSMathExpressionOperation final
   bool IsMultiplyOrDivide() const {
     return operator_ == CSSMathOperator::kMultiply ||
            operator_ == CSSMathOperator::kDivide;
+  }
+  bool IsArithmeticOperation() const {
+    return IsAddOrSubtract() || IsMultiplyOrDivide() || IsInvert();
   }
   bool AllOperandsAreNumeric() const;
   bool IsMinOrMax() const {
@@ -646,12 +742,15 @@ class CORE_EXPORT CSSMathExpressionOperation final
     return operator_ == CSSMathOperator::kAbs ||
            operator_ == CSSMathOperator::kSign;
   }
-  bool IsCalcSize() const { return operator_ == CSSMathOperator::kCalcSize; }
+  bool IsCalcSize() const override {
+    return operator_ == CSSMathOperator::kCalcSize;
+  }
   bool IsProgressNotation() const {
     return operator_ == CSSMathOperator::kProgress ||
            operator_ == CSSMathOperator::kMediaProgress ||
            operator_ == CSSMathOperator::kContainerProgress;
   }
+  bool IsInvert() const { return operator_ == CSSMathOperator::kInvert; }
 
   // TODO(crbug.com/1284199): Check other math functions too.
   bool IsMathFunction() const final {
@@ -663,11 +762,17 @@ class CORE_EXPORT CSSMathExpressionOperation final
   bool HasPercentage() const final;
   bool InvolvesLayout() const final;
 
+  bool HasNestedIntermediateResult() const {
+    return has_nested_intermediate_result_;
+  }
+
   String CSSTextAsClamp() const;
+
+  const CSSMathType& Type() const { return type_; }
 
   const CSSMathExpressionNode* ConvertLiteralsFromPercentageToNumber()
       const final;
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   std::optional<PixelsAndPercent> ToPixelsAndPercent(
       const CSSLengthResolver&) const final;
@@ -682,6 +787,7 @@ class CORE_EXPORT CSSMathExpressionOperation final
       CSSPrimitiveValue::LengthTypeFlags& types) const final;
   bool IsComputationallyIndependent() const final;
   bool IsElementDependent() const final;
+  bool MayHaveRelativeUnit() const final;
   String CustomCSSText() const final;
   bool operator==(const CSSMathExpressionNode& exp) const final;
   CSSPrimitiveValue::UnitType ResolvedUnitType() const final;
@@ -722,8 +828,13 @@ class CORE_EXPORT CSSMathExpressionOperation final
     return base::span(operands_).subspan<1>();
   }
 
+  // If operation has some nested operand which is of an intermediate type,
+  // e.g. 10px * 20px or 1px / 1px. Used to ban simplifications on such
+  // operations.
+  bool has_nested_intermediate_result_ = false;
   Operands operands_;
   const CSSMathOperator operator_;
+  const CSSMathType type_;
 };
 
 template <>
@@ -772,7 +883,7 @@ class CORE_EXPORT CSSMathExpressionContainerFeature final
     return this;
   }
   String CustomCSSText() const final;
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   std::optional<PixelsAndPercent> ToPixelsAndPercent(
       const CSSLengthResolver&) const final;
@@ -794,6 +905,7 @@ class CORE_EXPORT CSSMathExpressionContainerFeature final
   void AccumulateLengthUnitTypes(
       CSSPrimitiveValue::LengthTypeFlags& types) const final {}
   bool IsComputationallyIndependent() const final { return true; }
+  bool MayHaveRelativeUnit() const final { return false; }
   bool operator==(const CSSMathExpressionNode& other) const final {
     auto* other_progress = DynamicTo<CSSMathExpressionContainerFeature>(other);
     return other_progress &&
@@ -878,6 +990,7 @@ class CORE_EXPORT CSSMathExpressionAnchorQuery final
     return false;
   }
   bool IsComputationallyIndependent() const final { return false; }
+  bool MayHaveRelativeUnit() const final { return false; }
   double DoubleValue() const final;
   double ComputeLengthPx(const CSSLengthResolver& length_resolver) const final;
   void AccumulateLengthUnitTypes(
@@ -888,7 +1001,7 @@ class CORE_EXPORT CSSMathExpressionAnchorQuery final
   }
 
   String CustomCSSText() const final;
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   bool operator==(const CSSMathExpressionNode& other) const final;
   const CSSMathExpressionNode& PopulateWithTreeScope(
@@ -973,6 +1086,7 @@ class CORE_EXPORT CSSMathExpressionSiblingFunction final
   }
   bool IsComputationallyIndependent() const final { return false; }
   bool IsElementDependent() const final { return true; }
+  bool MayHaveRelativeUnit() const final { return false; }
   double DoubleValue() const final { NOTREACHED(); }
   double ComputeLengthPx(const CSSLengthResolver& length_resolver) const final {
     NOTREACHED();
@@ -981,7 +1095,7 @@ class CORE_EXPORT CSSMathExpressionSiblingFunction final
       CSSPrimitiveValue::LengthTypeFlags& types) const final {}
 
   String CustomCSSText() const final;
-  scoped_refptr<const CalculationExpressionNode> ToCalculationExpression(
+  const CalculationExpressionNode* ToCalculationExpression(
       const CSSLengthResolver&) const final;
   bool operator==(const CSSMathExpressionNode& other) const final;
   const CSSMathExpressionNode& PopulateWithTreeScope(

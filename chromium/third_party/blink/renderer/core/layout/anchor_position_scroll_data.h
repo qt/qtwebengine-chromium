@@ -6,8 +6,8 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_ANCHOR_POSITION_SCROLL_DATA_H_
 
 #include "third_party/blink/renderer/core/dom/element_rare_data_field.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/core/scroll/scroll_snapshot_client.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/graphics/compositor_element_id.h"
 #include "third_party/blink/renderer/platform/heap/member.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
@@ -73,9 +73,9 @@ class AnchorPositionScrollData
   //    snapshot, the result will be from the last snapshotted result.
   // 2. Otherwise the result will be calculated on the fly, which may use stale
   //    layout data if this is called during layout.
-  // ValidateSnapshot() (called after the first layout during a lifecycle
-  // update) will reschedule layout, or ShouldScheduleNextService() (called at
-  // the end of a lifecycle update) will schedule another lifecycle update,
+  // UpdateSnapshot() (called after the first layout during a lifecycle update)
+  // will reschedule layout, or ShouldScheduleNextService() (called at the end
+  // of a lifecycle update) will schedule another lifecycle update,
   // if the final layout data may cause layout changes.
   PhysicalOffset TotalOffset(const LayoutObject* anchor_object = nullptr) const;
 
@@ -109,8 +109,7 @@ class AnchorPositionScrollData
   bool IsActive() const;
 
   // ScrollSnapshotClient:
-  void UpdateSnapshot() override;
-  bool ValidateSnapshot() override;
+  bool UpdateSnapshot() override;
   bool ShouldScheduleNextService() override;
   bool IsAnchorPositionScrollData() const override { return true; }
 

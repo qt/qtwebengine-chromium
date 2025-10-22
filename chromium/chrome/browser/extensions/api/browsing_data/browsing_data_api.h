@@ -20,6 +20,9 @@
 #include "content/public/browser/browsing_data_filter_builder.h"
 #include "content/public/browser/browsing_data_remover.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/buildflags/buildflags.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 class PrefService;
 
@@ -43,7 +46,6 @@ inline constexpr char kPasswordsKey[] = "passwords";
 inline constexpr char kPluginDataKeyDeprecated[] = "pluginData";
 inline constexpr char kServiceWorkersKey[] = "serviceWorkers";
 inline constexpr char kCacheStorageKey[] = "cacheStorage";
-inline constexpr char kWebSQLKey[] = "webSQL";
 
 // Option keys.
 inline constexpr char kExtensionsKey[] = "extension";
@@ -81,16 +83,16 @@ class BrowsingDataSettingsFunction : public ExtensionFunction {
   ~BrowsingDataSettingsFunction() override = default;
 
  private:
-  // Sets a boolean value in the |selected_dict| with the |data_type| as a key,
+  // Sets a boolean value in the `selected_dict` with the `data_type` as a key,
   // indicating whether the data type is both selected and permitted to be
-  // removed; and a value in the |permitted_dict| with the |data_type| as a
+  // removed; and a value in the `permitted_dict` with the `data_type` as a
   // key, indicating only whether the data type is permitted to be removed.
   void SetDetails(base::Value::Dict* selected_dict,
                   base::Value::Dict* permitted_dict,
                   const char* data_type,
                   bool is_selected);
 
-  // Returns whether |data_type| is currently selected for deletion on |tab|.
+  // Returns whether `data_type` is currently selected for deletion on `tab`.
   bool isDataTypeSelected(browsing_data::BrowsingDataType data_type,
                           browsing_data::ClearBrowsingDataTab tab);
 
@@ -123,7 +125,7 @@ class BrowsingDataRemoverFunction
   // Children should override this method to provide the proper removal mask
   // based on the API call they represent.
   // Returns whether or not removal mask retrieval was successful.
-  // |removal_mask| is populated with the result, if successful.
+  // `removal_mask` is populated with the result, if successful.
   virtual bool GetRemovalMask(uint64_t* removal_mask) = 0;
 
   // Returns true if the data removal is allowed to pause Sync. Returns true by
@@ -132,16 +134,16 @@ class BrowsingDataRemoverFunction
   // pausing Sync would prevent the data from being deleted on the server.
   virtual bool IsPauseSyncAllowed();
 
-  // Parse the developer-provided |origin_types| object into |origin_type_mask|
+  // Parse the developer-provided `origin_types` object into `origin_type_mask`
   // that can be used with the BrowsingDataRemover.
   // Returns true if parsing was successful.
   // Pre-condition: `options` is a dictionary.
   bool ParseOriginTypeMask(const base::Value::Dict& options,
                            uint64_t* origin_type_mask);
 
-  // Parses the developer-provided list of origins into |result|.
+  // Parses the developer-provided list of origins into `result`.
   // Returns whether or not parsing was successful. In case of parse failure,
-  // |error_response| will contain the error response.
+  // `error_response` will contain the error response.
   using OriginParsingResult =
       base::expected<std::vector<url::Origin>, ResponseValue>;
   OriginParsingResult ParseOrigins(const base::Value::List& list_value);
@@ -150,7 +152,7 @@ class BrowsingDataRemoverFunction
   void StartRemoving();
 
   // Called when a task is finished. Will finish the extension call when
-  // |pending_tasks_| reaches zero.
+  // `pending_tasks_` reaches zero.
   void OnTaskFinished();
 
   base::Time remove_since_;

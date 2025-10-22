@@ -13,7 +13,7 @@ import sys
 sys.path.append("/usr/local/autotest/bin")
 
 # pylint: disable=wrong-import-position
-import common  # pylint: disable=unused-import
+import common  # pylint: disable=unused-import # noqa: F401
 from autotest_lib.client.bin.input import input_device
 from autotest_lib.client.cros.input_playback import input_playback
 

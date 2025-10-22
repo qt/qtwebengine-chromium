@@ -200,13 +200,20 @@ static PositionType CanonicalPosition(const PositionType& position) {
 
   if (!next_is_in_same_editable_element && !prev_is_in_same_editable_element) {
     // `prev/next_editing_root` is a child node of `editing_root`.
-    if (RuntimeEnabledFeatures::
-            PrevOrNextCandidateIsEditingRootChildEnabled() &&
-        editing_root) {
+    if (editing_root) {
       if (editing_root->contains(next_editing_root)) {
         return next;
       } else if (editing_root->contains(prev_editing_root)) {
         return prev;
+      }
+      // If `prev/next_editing_root` is not in the same block as `editing_root`,
+      // but the `position` is editable and visually equivalent position,
+      // directly return the `position`.
+      // See https://issues.chromium.org/issues/40890187 for more details.
+      if (RuntimeEnabledFeatures::
+              UsePositionIfIsVisuallyEquivalentCandidateEnabled() &&
+          IsVisuallyEquivalentCandidate(position)) {
+        return position;
       }
     }
     return PositionType();
@@ -292,23 +299,17 @@ AdjustForwardPositionToAvoidCrossingEditingBoundariesTemplate(
   ContainerNode* highest_root = HighestEditableRoot(anchor);
 
   if (highest_root && !pos.AnchorNode()->IsDescendantOf(highest_root)) {
-    if (RuntimeEnabledFeatures::EditableBoundaryAdjustmentEnabled()) {
-      // Return last position in node if |pos| is not somewhere inside the
-      // editable region containing this position
-      const Node* last_editable = anchor.ComputeContainerNode();
-      if (last_editable->IsTextNode()) {
-        PositionTemplate<Strategy> last_position =
-            PositionTemplate<Strategy>::LastPositionInNode(*last_editable);
-        if (anchor != last_position) {
-          return PositionWithAffinityTemplate<Strategy>(last_position);
-        }
+    // Return last position in node if |pos| is not somewhere inside the
+    // editable region containing this position
+    const Node* last_editable = anchor.ComputeContainerNode();
+    if (last_editable->IsTextNode()) {
+      PositionTemplate<Strategy> last_position =
+          PositionTemplate<Strategy>::LastPositionInNode(*last_editable);
+      if (anchor != last_position) {
+        return PositionWithAffinityTemplate<Strategy>(last_position);
       }
-      return PositionWithAffinityTemplate<Strategy>();
-    } else {
-      // Return empty position if |pos| is not somewhere inside the editable
-      // region containing this position
-      return PositionWithAffinityTemplate<Strategy>();
     }
+    return PositionWithAffinityTemplate<Strategy>();
   }
 
   // Return |pos| itself if the two are from the very same editable region, or
@@ -494,6 +495,10 @@ bool HasRenderedNonAnonymousDescendantsWithHeight(
     // [2] editing/inserting/return-with-object-element.html
     if (const InlineNodeData* inline_data = block_flow->GetInlineNodeData()) {
       if (inline_data->ItemsData(false).text_content.empty() &&
+          // Out-of-flow objects (floating and out-of-flow positioned) used to
+          // represent a U+FFFC Object Replacement Character. Keep the
+          // historical behavior.
+          !inline_data->HasFloatingOrOutOfFlowPositioned() &&
           block_flow->HasLineIfEmpty()) {
         return false;
       }
@@ -1419,8 +1424,10 @@ static PositionTemplate<Strategy> SkipWhitespaceAlgorithm(
   // it as trailing white space.
   for (; char_it.length(); char_it.Advance(1)) {
     UChar c = char_it.CharacterAt(0);
-    if ((!IsSpaceOrNewline(c) && c != kNoBreakSpaceCharacter) || c == '\n')
+    if ((!unicode::IsSpaceOrNewline(c) && c != uchar::kNoBreakSpace) ||
+        c == '\n') {
       return runner;
+    }
     runner = char_it.EndPosition();
   }
   return runner;
@@ -1435,7 +1442,7 @@ PositionInFlatTree SkipWhitespace(const PositionInFlatTree& position) {
 }
 
 template <typename Strategy>
-static Vector<gfx::QuadF> ComputeTextBounds(
+Vector<gfx::QuadF> ComputeTextBounds(
     const EphemeralRangeTemplate<Strategy>& range) {
   const PositionTemplate<Strategy>& start_position = range.StartPosition();
   const PositionTemplate<Strategy>& end_position = range.EndPosition();

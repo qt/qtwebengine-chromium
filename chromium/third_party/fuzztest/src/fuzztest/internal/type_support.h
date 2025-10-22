@@ -41,6 +41,13 @@
 #include "./fuzztest/internal/meta.h"
 #include "./fuzztest/internal/printer.h"
 
+namespace google::protobuf {
+class EnumDescriptor;
+
+template <typename E>
+const EnumDescriptor* GetEnumDescriptor();
+}  // namespace google::protobuf
+
 namespace fuzztest::internal {
 
 // Return a best effort printer for type `T`.
@@ -170,21 +177,28 @@ struct FloatingPrinter {
 };
 
 struct StringPrinter {
+  static constexpr int kMaxStringSize = 1000;
   template <typename T>
   void PrintUserValue(const T& v, domain_implementor::RawSink out,
                       domain_implementor::PrintMode mode) const {
     switch (mode) {
-      case domain_implementor::PrintMode::kHumanReadable:
+      case domain_implementor::PrintMode::kHumanReadable: {
         absl::Format(out, "\"");
+        int i = 0;
         for (char c : v) {
           if (std::isprint(c)) {
             absl::Format(out, "%c", c);
           } else {
             absl::Format(out, "\\%03o", c);
           }
+          if (++i >= kMaxStringSize) {
+            absl::Format(out, " ...");
+            break;
+          }
         }
         absl::Format(out, "\"");
         break;
+      }
       case domain_implementor::PrintMode::kSourceCode: {
         // Make sure to properly C-escape strings when printing source code, and
         // explicitly construct a std::string of the right length if there is an
@@ -575,7 +589,11 @@ struct UnknownPrinter {
 
 template <typename T>
 decltype(auto) AutodetectTypePrinter() {
-  if constexpr (std::numeric_limits<T>::is_integer || std::is_enum_v<T>) {
+  if constexpr (is_protocol_buffer_enum_v<T>) {
+    return ProtobufEnumPrinter<const google::protobuf::EnumDescriptor*>{
+        google::protobuf::GetEnumDescriptor<T>()};
+  } else if constexpr (std::numeric_limits<T>::is_integer ||
+                       std::is_enum_v<T>) {
     return IntegralPrinter{};
   } else if constexpr (std::is_floating_point_v<T>) {
     return FloatingPrinter{};

@@ -186,8 +186,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
   #synchronizeBreakpointsCallback: ((script: Script) => Promise<void>)|null = null;
   // We need to be able to register listeners for individual breakpoints. As such, we dispatch
   // on breakpoint ids, which are not statically known. The event #payload will always be a `Location`.
-  readonly #breakpointResolvedEventTarget =
-      new Common.ObjectWrapper.ObjectWrapper<{[breakpointId: string]: Location}>();
+  readonly #breakpointResolvedEventTarget = new Common.ObjectWrapper.ObjectWrapper<Record<string, Location>>();
   // When stepping over with autostepping enabled, the context denotes the function to which autostepping is restricted
   // to by way of its functionLocation (as per Debugger.CallFrame).
   #autoSteppingContext: Location|null = null;
@@ -729,7 +728,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       sourceMapURL: string|undefined, hasSourceURLComment: boolean, hasSyntaxError: boolean, length: number,
       isModule: boolean|null, originStackTrace: Protocol.Runtime.StackTrace|null, codeOffset: number|null,
       scriptLanguage: string|null, debugSymbols: Protocol.Debugger.DebugSymbols[]|null,
-      embedderName: Platform.DevToolsPath.UrlString|null): Script {
+      embedderName: Platform.DevToolsPath.UrlString|null, buildId: string|null): Script {
     const knownScript = this.#scriptsInternal.get(scriptId);
     if (knownScript) {
       return knownScript;
@@ -743,7 +742,7 @@ export class DebuggerModel extends SDKModel<EventTypes> {
     const script = new Script(
         this, scriptId, sourceURL, startLine, startColumn, endLine, endColumn, executionContextId, hash,
         isContentScript, isLiveEdit, sourceMapURL, hasSourceURLComment, length, isModule, originStackTrace, codeOffset,
-        scriptLanguage, selectedDebugSymbol, embedderName);
+        scriptLanguage, selectedDebugSymbol, embedderName, buildId);
     this.registerScript(script);
     this.dispatchEventToListeners(Events.ParsedScriptSource, script);
 
@@ -973,6 +972,45 @@ export class DebuggerModel extends SDKModel<EventTypes> {
       ((arg0: CallFrame, arg1: EvaluationOptions) => Promise<EvaluationResult|null>)|null {
     return this.evaluateOnCallFrameCallback;
   }
+
+  /**
+   * Iterates the async stack trace parents.
+   *
+   * Retrieving cross-target async stack fragments requires CDP interaction, so this is an async generator.
+   *
+   * Important: This iterator will not yield the "synchronous" part of the stack trace, only the async parent chain.
+   */
+  async *
+      iterateAsyncParents(stackTraceOrPausedDetails: Protocol.Runtime.StackTrace|DebuggerPausedDetails):
+          AsyncGenerator<Protocol.Runtime.StackTrace> {
+    // We make `DebuggerPausedDetails` look like a stack trace. We are only interested in `parent` and `parentId` in any case.
+    let stackTrace: Protocol.Runtime.StackTrace = stackTraceOrPausedDetails instanceof DebuggerPausedDetails ?
+        {
+          callFrames: [],
+          parent: stackTraceOrPausedDetails.asyncStackTrace,
+          parentId: stackTraceOrPausedDetails.asyncStackTraceId
+        } :
+        stackTraceOrPausedDetails;
+
+    while (true) {
+      if (stackTrace.parent) {
+        stackTrace = stackTrace.parent;
+      } else if (stackTrace.parentId) {
+        const model: DebuggerModel|null = stackTrace.parentId.debuggerId ?
+            await DebuggerModel.modelForDebuggerId(stackTrace.parentId.debuggerId) :
+            this;
+        const maybeStackTrace = await model?.fetchAsyncStackTrace(stackTrace.parentId);
+        if (!maybeStackTrace) {
+          return;
+        }
+        stackTrace = maybeStackTrace;
+      } else {
+        return;
+      }
+
+      yield stackTrace;
+    }
+  }
 }
 
 const debuggerIdToModel = new Map<string, DebuggerModel>();
@@ -1065,6 +1103,7 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
     scriptLanguage,
     debugSymbols,
     embedderName,
+    buildId,
   }: Protocol.Debugger.ScriptParsedEvent): void {
     if (!this.#debuggerModel.debuggerEnabled()) {
       return;
@@ -1073,7 +1112,7 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
         scriptId, url as Platform.DevToolsPath.UrlString, startLine, startColumn, endLine, endColumn,
         executionContextId, hash, executionContextAuxData, Boolean(isLiveEdit), sourceMapURL, Boolean(hasSourceURL),
         false, length || 0, isModule || null, stackTrace || null, codeOffset || null, scriptLanguage || null,
-        debugSymbols || null, embedderName as Platform.DevToolsPath.UrlString || null);
+        debugSymbols || null, embedderName as Platform.DevToolsPath.UrlString || null, buildId || null);
   }
 
   scriptFailedToParse({
@@ -1094,6 +1133,7 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
     codeOffset,
     scriptLanguage,
     embedderName,
+    buildId,
   }: Protocol.Debugger.ScriptFailedToParseEvent): void {
     if (!this.#debuggerModel.debuggerEnabled()) {
       return;
@@ -1102,7 +1142,7 @@ class DebuggerDispatcher implements ProtocolProxyApi.DebuggerDispatcher {
         scriptId, url as Platform.DevToolsPath.UrlString, startLine, startColumn, endLine, endColumn,
         executionContextId, hash, executionContextAuxData, false, sourceMapURL, Boolean(hasSourceURL), true,
         length || 0, isModule || null, stackTrace || null, codeOffset || null, scriptLanguage || null, null,
-        embedderName as Platform.DevToolsPath.UrlString || null);
+        embedderName as Platform.DevToolsPath.UrlString || null, buildId || null);
   }
 
   breakpointResolved({breakpointId, location}: Protocol.Debugger.BreakpointResolvedEvent): void {
@@ -1500,23 +1540,21 @@ export class DebuggerPausedDetails {
   debuggerModel: DebuggerModel;
   callFrames: CallFrame[];
   reason: Protocol.Debugger.PausedEventReason;
-  auxData: {
-    // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    [x: string]: any,
-  }|undefined;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  auxData: Record<string, any>|undefined;
   breakpointIds: string[];
   asyncStackTrace: Protocol.Runtime.StackTrace|undefined;
   asyncStackTraceId: Protocol.Runtime.StackTraceId|undefined;
   constructor(
-      debuggerModel: DebuggerModel, callFrames: Protocol.Debugger.CallFrame[],
-      reason: Protocol.Debugger.PausedEventReason, auxData: {
-        // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        [x: string]: any,
-      }|undefined,
-      breakpointIds: string[], asyncStackTrace?: Protocol.Runtime.StackTrace,
-      asyncStackTraceId?: Protocol.Runtime.StackTraceId) {
+      debuggerModel: DebuggerModel,
+      callFrames: Protocol.Debugger.CallFrame[],
+      reason: Protocol.Debugger.PausedEventReason,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      auxData: Record<string, any>|undefined,
+      breakpointIds: string[],
+      asyncStackTrace?: Protocol.Runtime.StackTrace,
+      asyncStackTraceId?: Protocol.Runtime.StackTraceId,
+  ) {
     this.debuggerModel = debuggerModel;
     this.reason = reason;
     this.auxData = auxData;

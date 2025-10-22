@@ -10,7 +10,6 @@
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
-#include "base/not_fatal_until.h"
 #include "base/strings/strcat.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
@@ -134,12 +133,23 @@ bool GetExtensionInfo(content::WebContents* wc,
 
   auto view_type = extensions::GetViewType(wc);
   if (view_type == extensions::mojom::ViewType::kExtensionPopup ||
-      view_type == extensions::mojom::ViewType::kExtensionSidePanel ||
-      view_type == extensions::mojom::ViewType::kOffscreenDocument) {
+      view_type == extensions::mojom::ViewType::kExtensionSidePanel) {
     // Note that we are intentionally not setting name here, so that we can
     // construct a name based on the URL or page title in
     // RenderFrameDevToolsAgentHost::GetTitle()
     *type = ChromeDevToolsManagerDelegate::kTypePage;
+    return true;
+  }
+
+  if (view_type == extensions::mojom::ViewType::kOffscreenDocument) {
+    // Note that we are intentionally not setting name here, so that we can
+    // construct a name based on the URL or page title in
+    // RenderFrameDevToolsAgentHost::GetTitle()
+    //
+    // Use `kTypeBackgroundPage` for offscreen doc until devtools frontend is
+    // updated to support a new `offscreen_document` target type. Otherwise,
+    // DOM is not inspectable.
+    *type = ChromeDevToolsManagerDelegate::kTypeBackgroundPage;
     return true;
   }
 
@@ -202,6 +212,23 @@ void ChromeDevToolsManagerDelegate::Inspect(
     content::DevToolsAgentHost* agent_host) {
   DevToolsWindow::OpenDevToolsWindow(agent_host, nullptr,
                                      DevToolsOpenedByAction::kInspectLink);
+}
+
+scoped_refptr<content::DevToolsAgentHost>
+ChromeDevToolsManagerDelegate::OpenDevTools(
+    content::DevToolsAgentHost* agent_host) {
+  scoped_refptr<content::DevToolsAgentHost> tab_agent_host(
+      content::DevToolsAgentHost::GetOrCreateForTab(
+          agent_host->GetWebContents()));
+  DevToolsWindow::OpenDevToolsWindow(tab_agent_host, nullptr,
+                                     DevToolsOpenedByAction::kUnknown);
+  DevToolsWindow* window =
+      DevToolsWindow::FindDevToolsWindow(tab_agent_host.get());
+  if (!window) {
+    return nullptr;
+  }
+
+  return DevToolsAgentHost::GetOrCreateFor(window->GetDevToolsWebContents());
 }
 
 void ChromeDevToolsManagerDelegate::Activate(
@@ -381,22 +408,9 @@ void ChromeDevToolsManagerDelegate::UpdateDeviceDiscovery() {
     remote_locations.insert(locations.begin(), locations.end());
   }
 
-  bool equals = remote_locations.size() == remote_locations_.size();
-  if (equals) {
-    auto it1 = remote_locations.begin();
-    auto it2 = remote_locations_.begin();
-    while (it1 != remote_locations.end()) {
-      CHECK(it2 != remote_locations_.end(), base::NotFatalUntil::M130);
-      if (!(*it1).Equals(*it2))
-        equals = false;
-      ++it1;
-      ++it2;
-    }
-    DCHECK(it2 == remote_locations_.end());
-  }
-
-  if (equals)
+  if (remote_locations == remote_locations_) {
     return;
+  }
 
   if (remote_locations.empty()) {
     device_discovery_.reset();

@@ -1,4 +1,5 @@
 ﻿/* Copyright (c) 2021-2025 The Khronos Group Inc.
+ * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,6 +20,7 @@
 #include <string>
 #include <queue>
 
+#include <vulkan/utility/vk_format_utils.h>
 #include "utils/hash_util.h"
 #include "generated/spirv_grammar_helper.h"
 #include "generated/spirv_validation_helper.h"
@@ -26,8 +28,8 @@
 #include <spirv/unified1/spirv.hpp>
 #include <spirv/1.2/GLSL.std.450.h>
 #include <spirv/unified1/NonSemanticShaderDebugInfo100.h>
+#include <vulkan/vulkan_core.h>
 #include "error_message/spirv_logging.h"
-#include "utils/vk_layer_utils.h"
 
 namespace spirv {
 
@@ -137,65 +139,72 @@ void ExecutionModeSet::Add(const Instruction& insn) {
     const uint32_t execution_mode = insn.Word(2);
     const uint32_t value = insn.Length() > 3u ? insn.Word(3) : 0u;
     switch (execution_mode) {
-        case spv::ExecutionModeOutputPoints:  // for geometry shaders
+        case spv::ExecutionModeOutputPoints:  // Geometry / Mesh
             flags |= output_points_bit;
-            primitive_topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
             break;
-        case spv::ExecutionModePointMode:  // for tessellation shaders
+        case spv::ExecutionModeOutputLineStrip:  // Geometry
+        case spv::ExecutionModeOutputLinesEXT:   // Mesh (alias ExecutionModeOutputLinesNV)
+            flags |= output_lines_bit;
+            break;
+        case spv::ExecutionModeOutputTriangleStrip:  // Geometry
+        case spv::ExecutionModeOutputTrianglesEXT:   // Mesh (alias ExecutionModeOutputTrianglesNV)
+            flags |= output_triangle_bit;
+            break;
+        case spv::ExecutionModeInputPoints:  // Geometry
+            flags |= geometry_input_points_bit;
+            break;
+        case spv::ExecutionModeInputLines:  // Geometry
+            flags |= geometry_input_line_bit;
+            break;
+        case spv::ExecutionModeInputLinesAdjacency:  // Geometry
+            flags |= geometry_input_line_adjacency_bit;
+            break;
+        case spv::ExecutionModeInputTrianglesAdjacency:  // Geometry
+            flags |= geometry_input_triangle_adjacency_bit;
+            break;
+        case spv::ExecutionModePointMode:  // Tessellation
             flags |= point_mode_bit;
+            break;
+        case spv::ExecutionModeIsolines:  // Tessellation
+            flags |= subdivision_iso_lines_bit;
+            break;
+        case spv::ExecutionModeTriangles:  // Tessellation and Geometry
+            flags |= subdivision_triangle_bit;
+            flags |= geometry_input_triangle_bit;
+            break;
+        case spv::ExecutionModeQuads:  // Tessellation
+            flags |= subdivision_quad_bit;
+            break;
+        case spv::ExecutionModeSpacingEqual:  // Tessellation
+            flags |= spacing_equal_bit;
+            break;
+        case spv::ExecutionModeSpacingFractionalEven:  // Tessellation
+            flags |= spacing_fractional_even_bit;
+            break;
+        case spv::ExecutionModeSpacingFractionalOdd:  // Tessellation
+            flags |= spacing_fractional_odd_bit;
+            break;
+        case spv::ExecutionModeVertexOrderCw:  // Tessellation
+            flags |= vertex_order_cw_bit;
+            break;
+        case spv::ExecutionModeVertexOrderCcw:  // Tessellation
+            flags |= vertex_order_ccw_bit;
             break;
         case spv::ExecutionModePostDepthCoverage:  // VK_EXT_post_depth_coverage
             flags |= post_depth_coverage_bit;
             break;
-        case spv::ExecutionModeIsolines:  // Tessellation
-            flags |= iso_lines_bit;
-            tessellation_subdivision = spv::ExecutionModeIsolines;
-            primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-            break;
-        case spv::ExecutionModeOutputLineStrip:
-        case spv::ExecutionModeOutputLinesEXT:  // alias ExecutionModeOutputLinesNV
-            primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_STRIP;
-            break;
-        case spv::ExecutionModeTriangles:
-            // ExecutionModeTriangles is input if shader is geometry and output if shader is tessellation evaluation
-            // Because we don't know which shader stage is used here we set both, but only set input for geometry shader if it
-            // hasn't been set yet
-            if (input_primitive_topology == VK_PRIMITIVE_TOPOLOGY_MAX_ENUM) {
-                input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-            }
-            primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-            tessellation_subdivision = spv::ExecutionModeTriangles;
-            break;
-        case spv::ExecutionModeQuads:
-            primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-            tessellation_subdivision = spv::ExecutionModeQuads;
-            break;
-        case spv::ExecutionModeOutputTriangleStrip:
-        case spv::ExecutionModeOutputTrianglesEXT:  // alias ExecutionModeOutputTrianglesNV
-            primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
-            break;
-        case spv::ExecutionModeInputPoints:
-            input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
-            break;
-        case spv::ExecutionModeInputLines:
-        case spv::ExecutionModeInputLinesAdjacency:
-            input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
-            break;
-        case spv::ExecutionModeInputTrianglesAdjacency:
-            input_primitive_topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
-            break;
         case spv::ExecutionModeLocalSizeId:
             flags |= local_size_id_bit;
             // Store ID here, will use flag to know to pull then out
-            local_size_x = insn.Word(3);
-            local_size_y = insn.Word(4);
-            local_size_z = insn.Word(5);
+            local_size.x = insn.Word(3);
+            local_size.y = insn.Word(4);
+            local_size.z = insn.Word(5);
             break;
         case spv::ExecutionModeLocalSize:
             flags |= local_size_bit;
-            local_size_x = insn.Word(3);
-            local_size_y = insn.Word(4);
-            local_size_z = insn.Word(5);
+            local_size.x = insn.Word(3);
+            local_size.y = insn.Word(4);
+            local_size.z = insn.Word(5);
             break;
         case spv::ExecutionModeOutputVertices:
             output_vertices = value;
@@ -265,21 +274,6 @@ void ExecutionModeSet::Add(const Instruction& insn) {
         case spv::ExecutionModeSubgroupUniformControlFlowKHR:  // VK_KHR_shader_subgroup_uniform_control_flow
             flags |= subgroup_uniform_control_flow_bit;
             break;
-        case spv::ExecutionModeSpacingEqual:
-            tessellation_spacing = spv::ExecutionModeSpacingEqual;
-            break;
-        case spv::ExecutionModeSpacingFractionalEven:
-            tessellation_spacing = spv::ExecutionModeSpacingFractionalEven;
-            break;
-        case spv::ExecutionModeSpacingFractionalOdd:
-            tessellation_spacing = spv::ExecutionModeSpacingFractionalOdd;
-            break;
-        case spv::ExecutionModeVertexOrderCw:
-            tessellation_orientation = spv::ExecutionModeVertexOrderCw;
-            break;
-        case spv::ExecutionModeVertexOrderCcw:
-            tessellation_orientation = spv::ExecutionModeVertexOrderCcw;
-            break;
         case spv::ExecutionModeDepthReplacing:
             flags |= depth_replacing_bit;
             break;
@@ -295,6 +289,80 @@ void ExecutionModeSet::Add(const Instruction& insn) {
         default:
             break;
     }
+}
+
+uint32_t ExecutionModeSet::GetTessellationSubdivision() const {
+    uint32_t tessellation_subdivision = 0;
+    if (Has(subdivision_iso_lines_bit)) {
+        tessellation_subdivision = spv::ExecutionModeIsolines;
+    } else if (Has(subdivision_triangle_bit)) {
+        tessellation_subdivision = spv::ExecutionModeTriangles;
+    } else if (Has(subdivision_quad_bit)) {
+        tessellation_subdivision = spv::ExecutionModeQuads;
+    }
+    return tessellation_subdivision;
+}
+
+uint32_t ExecutionModeSet::GetTessellationOrientation() const {
+    uint32_t tessellation_orientation = 0;
+    if (Has(vertex_order_cw_bit)) {
+        tessellation_orientation = spv::ExecutionModeVertexOrderCw;
+    } else if (Has(vertex_order_ccw_bit)) {
+        tessellation_orientation = spv::ExecutionModeVertexOrderCcw;
+    }
+    return tessellation_orientation;
+}
+
+uint32_t ExecutionModeSet::GetTessellationSpacing() const {
+    uint32_t tessellation_spacing = 0;
+    if (Has(spacing_equal_bit)) {
+        tessellation_spacing = spv::ExecutionModeSpacingEqual;
+    } else if (Has(spacing_fractional_even_bit)) {
+        tessellation_spacing = spv::ExecutionModeSpacingFractionalEven;
+    } else if (Has(spacing_fractional_odd_bit)) {
+        tessellation_spacing = spv::ExecutionModeSpacingFractionalOdd;
+    }
+    return tessellation_spacing;
+}
+
+VkPrimitiveTopology ExecutionModeSet::GetTessellationEvalOutputTopology() const {
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+    if (Has(subdivision_iso_lines_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    } else if (Has(subdivision_quad_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    } else if (Has(subdivision_triangle_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    }
+    return topology;
+}
+
+VkPrimitiveTopology ExecutionModeSet::GetGeometryInputTopology() const {
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+    if (Has(geometry_input_points_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    } else if (Has(geometry_input_line_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    } else if (Has(geometry_input_line_adjacency_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY;
+    } else if (Has(geometry_input_triangle_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    } else if (Has(geometry_input_triangle_adjacency_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY;
+    }
+    return topology;
+}
+
+VkPrimitiveTopology ExecutionModeSet::GetGeometryMeshOutputTopology() const {
+    VkPrimitiveTopology topology = VK_PRIMITIVE_TOPOLOGY_MAX_ENUM;
+    if (Has(output_points_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_POINT_LIST;
+    } else if (Has(output_lines_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
+    } else if (Has(output_triangle_bit)) {
+        topology = VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
+    }
+    return topology;
 }
 
 static uint32_t ExecutionModelToShaderStageFlagBits(uint32_t mode) {
@@ -348,6 +416,8 @@ static void FindPointersAndObjects(const Instruction& insn, vvl::unordered_set<u
             break;
         case spv::OpAccessChain:
         case spv::OpInBoundsAccessChain:
+        case spv::OpPtrAccessChain:
+        case spv::OpInBoundsPtrAccessChain:
             result.insert(insn.Word(3));  // base ptr
             break;
         case spv::OpArrayLength:
@@ -410,11 +480,7 @@ static void FindPointersAndObjects(const Instruction& insn, vvl::unordered_set<u
 
         default: {
             if (AtomicOperation(insn.Opcode())) {
-                if (insn.Opcode() == spv::OpAtomicStore) {
-                    result.insert(insn.Word(1));  // ptr
-                } else {
-                    result.insert(insn.Word(3));  // ptr
-                }
+                result.insert(insn.Operand(0));  // ptr
             }
             break;
         }
@@ -519,7 +585,7 @@ vvl::unordered_set<uint32_t> EntryPoint::GetAccessibleIds(const Module& module_s
     return result_ids;
 }
 
-std::vector<StageInterfaceVariable> EntryPoint::GetStageInterfaceVariables(const Module& module_state, const EntryPoint& entrypoint,
+std::vector<StageInterfaceVariable> EntryPoint::GetStageInterfaceVariables(const Module& module_state, EntryPoint& entrypoint,
                                                                            const VariableAccessMap& variable_access_map,
                                                                            const DebugNameMap& debug_name_map) {
     std::vector<StageInterfaceVariable> variables;
@@ -542,11 +608,15 @@ std::vector<StageInterfaceVariable> EntryPoint::GetStageInterfaceVariables(const
         };
         // guaranteed by spirv-val to be a OpVariable
         const Instruction& insn = *module_state.FindDef(interface_id);
+        const spv::StorageClass storage_class = (spv::StorageClass)insn.Word(3);
 
-        if (insn.Word(3) != spv::StorageClassInput && insn.Word(3) != spv::StorageClassOutput) {
-            continue;  // Only checking for input/output here
+        if (storage_class == spv::StorageClassInput || storage_class == spv::StorageClassOutput) {
+            variables.emplace_back(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map);
+        } else if (storage_class == spv::StorageClassTaskPayloadWorkgroupEXT) {
+            // Payload are not quite "stage interface" as they have enough different rules how they work
+            entrypoint.task_payload_variable =
+                std::make_shared<TaskPayloadVariable>(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map);
         }
-        variables.emplace_back(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map);
     }
     return variables;
 }
@@ -654,8 +724,6 @@ ImageAccess::ImageAccess(const Module& module_state, const Instruction& image_in
     // There is only one way to write to images, everything else is considered a read access
     access_mask |= (image_opcode == spv::OpImageWrite) ? AccessBit::image_write : AccessBit::image_read;
 
-    is_not_sampler_sampled = !is_sampler_sampled;
-
     // Find any optional Image Operands
     const uint32_t image_operand_position = OpcodeImageOperandsPosition(image_opcode);
     if (image_insn.Length() > image_operand_position) {
@@ -735,7 +803,11 @@ ImageAccess::ImageAccess(const Module& module_state, const Instruction& image_in
                     // If Image is an array (but not descriptor indexing), then need to get the index.
                     const Instruction* const_def = module_state.GetConstantDef(insn->Word(4));
                     if (const_def) {
-                        image_access_chain_index = const_def->GetConstantValue();
+                        if (sampler) {
+                            sampler_access_chain_index = const_def->GetConstantValue();
+                        } else {
+                            image_access_chain_index = const_def->GetConstantValue();
+                        }
                     }
                     insn = module_state.FindDef(insn->Word(3));
                     break;
@@ -865,19 +937,6 @@ EntryPoint::EntryPoint(const Module& module_state, const Instruction& entrypoint
     }
 }
 
-std::optional<VkPrimitiveTopology> Module::GetTopology(const EntryPoint& entrypoint) const {
-    std::optional<VkPrimitiveTopology> result;
-
-    // In tessellation shaders, PointMode is separate and trumps the tessellation topology.
-    if (entrypoint.execution_mode.Has(ExecutionModeSet::point_mode_bit)) {
-        result.emplace(VK_PRIMITIVE_TOPOLOGY_POINT_LIST);
-    } else if (entrypoint.execution_mode.primitive_topology != VK_PRIMITIVE_TOPOLOGY_MAX_ENUM) {
-        result.emplace(entrypoint.execution_mode.primitive_topology);
-    }
-
-    return result;
-}
-
 Module::StaticData::StaticData(const Module& module_state, StatelessData* stateless_data) {
     if (!module_state.valid_spirv) return;
 
@@ -1005,6 +1064,12 @@ Module::StaticData::StaticData(const Module& module_state, StatelessData* statel
                 }
                 break;
 
+            case spv::OpExtInstWithForwardRefsKHR:
+                if (stateless_data) {
+                    stateless_data->has_ext_inst_with_forward_refs = true;
+                }
+                break;
+
             // Entry points
             case spv::OpEntryPoint: {
                 entry_point_instructions.push_back(&insn);
@@ -1097,6 +1162,9 @@ Module::StaticData::StaticData(const Module& module_state, StatelessData* statel
             case spv::OpTypeCooperativeMatrixNV:
             case spv::OpCooperativeMatrixMulAddNV:
             case spv::OpTypeCooperativeMatrixKHR:
+            case spv::OpCooperativeMatrixLoadKHR:
+            case spv::OpCooperativeMatrixStoreKHR:
+            case spv::OpCooperativeMatrixLengthKHR:
             case spv::OpCooperativeMatrixMulAddKHR: {
                 cooperative_matrix_inst.push_back(&insn);
                 break;
@@ -1110,6 +1178,10 @@ Module::StaticData::StaticData(const Module& module_state, StatelessData* statel
             case spv::OpCooperativeVectorReduceSumAccumulateNV:
             case spv::OpCooperativeVectorOuterProductAccumulateNV: {
                 cooperative_vector_inst.push_back(&insn);
+                break;
+            }
+            case spv::OpEmitMeshTasksEXT: {
+                emit_mesh_tasks_inst.push_back(&insn);
                 break;
             }
 
@@ -1155,9 +1227,9 @@ Module::StaticData::StaticData(const Module& module_state, StatelessData* statel
                         stateless_data->atomic_inst.push_back(&insn);
                     }
                     if (opcode == spv::OpAtomicStore) {
-                        atomic_store_pointer_ids.emplace_back(insn.Word(1));
+                        atomic_store_pointer_ids.emplace_back(insn.Operand(0));
                     } else {
-                        atomic_load_pointer_ids.emplace_back(insn.Word(3));
+                        atomic_load_pointer_ids.emplace_back(insn.Operand(0));
                     }
                 }
                 if (GroupOperation(opcode)) {
@@ -1263,22 +1335,18 @@ Module::StaticData::StaticData(const Module& module_state, StatelessData* statel
     }
 }
 
-std::shared_ptr<const TypeStructInfo> Module::GetTypeStructInfo(uint32_t struct_id) const {
-    // return the actual execution modes for this id, or a default empty set.
-    const auto it = static_data_.type_struct_map.find(struct_id);
-    return (it != static_data_.type_struct_map.end()) ? it->second : nullptr;
-}
-
 std::shared_ptr<const TypeStructInfo> Module::GetTypeStructInfo(const Instruction* insn) const {
     while (true) {
         if (insn->Opcode() == spv::OpVariable) {
-            insn = FindDef(insn->Word(1));
+            insn = FindDef(insn->TypeId());
         } else if (insn->Opcode() == spv::OpTypePointer) {
             insn = FindDef(insn->Word(3));
         } else if (insn->IsArray()) {
             insn = FindDef(insn->Word(2));
         } else if (insn->Opcode() == spv::OpTypeStruct) {
-            return GetTypeStructInfo(insn->Word(1));
+            // return the actual execution modes for this id, or a default empty set.
+            const auto it = static_data_.type_struct_map.find(insn->ResultId());
+            return (it != static_data_.type_struct_map.end()) ? it->second : nullptr;
         } else {
             return nullptr;
         }
@@ -1468,35 +1536,31 @@ std::shared_ptr<const EntryPoint> Module::FindEntrypoint(char const* name, VkSha
 //    OpEntryPoint GLCompute %main "name_a"
 //    OpEntryPoint GLCompute %main "name_b"
 // Assumes shader module contains no spec constants used to set the local size values
-bool Module::FindLocalSize(const EntryPoint& entrypoint, uint32_t& local_size_x, uint32_t& local_size_y,
-                           uint32_t& local_size_z) const {
+LocalSize Module::FindLocalSize(const EntryPoint& entrypoint) const {
+    LocalSize local_size;
     // "If an object is decorated with the WorkgroupSize decoration, this takes precedence over any LocalSize or LocalSizeId
     // execution mode."
     if (static_data_.has_builtin_workgroup_size) {
         const Instruction* composite_def = FindDef(static_data_.builtin_workgroup_size_id);
         if (composite_def->Opcode() == spv::OpConstantComposite) {
             // VUID-WorkgroupSize-WorkgroupSize-04427 makes sure this is a OpTypeVector of int32
-            local_size_x = GetConstantValueById(composite_def->Word(3));
-            local_size_y = GetConstantValueById(composite_def->Word(4));
-            local_size_z = GetConstantValueById(composite_def->Word(5));
-            return true;
+            local_size.x = GetConstantValueById(composite_def->Word(3));
+            local_size.y = GetConstantValueById(composite_def->Word(4));
+            local_size.z = GetConstantValueById(composite_def->Word(5));
+            return local_size;
         }
     }
 
     if (entrypoint.execution_mode.Has(ExecutionModeSet::local_size_bit)) {
-        local_size_x = entrypoint.execution_mode.local_size_x;
-        local_size_y = entrypoint.execution_mode.local_size_y;
-        local_size_z = entrypoint.execution_mode.local_size_z;
-        return true;
+        local_size = entrypoint.execution_mode.local_size;
     } else if (entrypoint.execution_mode.Has(ExecutionModeSet::local_size_id_bit)) {
         // Uses ExecutionModeLocalSizeId so need to resolve ID value
-        local_size_x = GetConstantValueById(entrypoint.execution_mode.local_size_x);
-        local_size_y = GetConstantValueById(entrypoint.execution_mode.local_size_y);
-        local_size_z = GetConstantValueById(entrypoint.execution_mode.local_size_z);
-        return true;
+        local_size.x = GetConstantValueById(entrypoint.execution_mode.local_size.x);
+        local_size.y = GetConstantValueById(entrypoint.execution_mode.local_size.y);
+        local_size.z = GetConstantValueById(entrypoint.execution_mode.local_size.z);
     }
 
-    return false;  // not found
+    return local_size;
 }
 
 uint32_t Module::CalculateWorkgroupSharedMemory() const {
@@ -1517,29 +1581,14 @@ uint32_t Module::CalculateWorkgroupSharedMemory() const {
             const Instruction* type = GetVariablePointerType(*insn);
 
             // structs might have an offset padding
-            const uint32_t variable_shared_size = (type->Opcode() == spv::OpTypeStruct)
-                                                      ? GetTypeStructInfo(type->Word(1))->GetSize(*this).size
-                                                      : GetTypeBytesSize(type);
+            const uint32_t variable_shared_size =
+                (type->Opcode() == spv::OpTypeStruct) ? GetTypeStructInfo(type)->GetSize(*this).size : GetTypeBytesSize(type);
 
             if (find_max_block) {
                 total_size = std::max(total_size, variable_shared_size);
             } else {
                 total_size += variable_shared_size;
             }
-        }
-    }
-    return total_size;
-}
-
-uint32_t Module::CalculateTaskPayloadMemory() const {
-    uint32_t total_size = 0;
-
-    for (const Instruction* insn : static_data_.variable_inst) {
-        if (insn->StorageClass() == spv::StorageClassTaskPayloadWorkgroupEXT) {
-            const Instruction* type = GetVariablePointerType(*insn);
-            const uint32_t variable_shared_size = GetTypeBytesSize(type);
-
-            total_size += variable_shared_size;
         }
     }
     return total_size;
@@ -1746,8 +1795,8 @@ const char* VariableBase::FindDebugName(const VariableBase& variable, const Debu
 
 VariableBase::VariableBase(const Module& module_state, const Instruction& insn, VkShaderStageFlagBits stage,
                            const VariableAccessMap& variable_access_map, const DebugNameMap& debug_name_map)
-    : id(insn.Word(2)),
-      type_id(insn.Word(1)),
+    : id(insn.ResultId()),
+      type_id(insn.TypeId()),
       storage_class(static_cast<spv::StorageClass>(insn.Word(3))),
       decorations(module_state.GetDecorationSet(id)),
       type_struct_info(module_state.GetTypeStructInfo(&insn)),
@@ -2026,7 +2075,7 @@ const Instruction& ResourceInterfaceVariable::FindBaseType(ResourceInterfaceVari
             }
 
             if (type->Opcode() == spv::OpTypeSampledImage) {
-                variable.is_sampled_image = true;
+                variable.is_type_sampled_image = true;
             }
 
             type = module_state.FindDef(type->Word(2));  // Element type
@@ -2056,7 +2105,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                                                      const DebugNameMap& debug_name_map)
     : VariableBase(module_state, insn, entrypoint.stage, variable_access_map, debug_name_map),
       array_length(0),  // updated in FindBaseType (if array is found)
-      is_sampled_image(false),
+      is_type_sampled_image(false),
       base_type(FindBaseType(*this, module_state)),
       is_runtime_descriptor_array(module_state.HasRuntimeArray(type_id)),
       is_storage_buffer(IsStorageBuffer(*this)) {
@@ -2095,7 +2144,6 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                 info.is_dref |= image_access.is_dref;
                 info.is_sampler_implicitLod_dref_proj |= image_access.is_sampler_implicitLod_dref_proj;
                 info.is_sampler_sampled |= image_access.is_sampler_sampled;
-                info.is_not_sampler_sampled |= image_access.is_not_sampler_sampled;
                 info.is_sampler_bias_offset |= image_access.is_sampler_bias_offset;
                 info.is_sampler_offset |= image_access.is_sampler_offset;
                 info.is_sign_extended |= image_access.is_sign_extended;
@@ -2131,7 +2179,7 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                 }
 
                 // if not CombinedImageSampler, need to find all Samplers that were accessed with the image
-                if (!image_access.variable_sampler_insn.empty() && !is_sampled_image) {
+                if (!image_access.variable_sampler_insn.empty() && !is_type_sampled_image) {
                     // if no AccessChain, it is same conceptually as being zero
                     const uint32_t image_index =
                         image_access.image_access_chain_index != kInvalidValue ? image_access.image_access_chain_index : 0;
@@ -2143,13 +2191,19 @@ ResourceInterfaceVariable::ResourceInterfaceVariable(const Module& module_state,
                     }
 
                     for (const Instruction* sampler_insn : image_access.variable_sampler_insn) {
-                        const auto& decoration_set = module_state.GetDecorationSet(sampler_insn->ResultId());
+                        const uint32_t sampler_variable_id = sampler_insn->ResultId();
+
+                        sampled_image_sampler_variable_ids.insert(sampler_variable_id);
+                        const auto& decoration_set = module_state.GetDecorationSet(sampler_variable_id);
                         samplers_used_by_image[image_index].emplace(
                             SamplerUsedByImage{DescriptorSlot{decoration_set.set, decoration_set.binding}, sampler_index});
                     }
                 }
             }
         }
+    }
+    if (base_type.Opcode() == spv::OpTypeTensorARM) {
+        is_storage_tensor = true;
     }
 
     info.access_mask = access_mask;
@@ -2164,6 +2218,17 @@ PushConstantVariable::PushConstantVariable(const Module& module_state, const Ins
     auto struct_size = type_struct_info->GetSize(module_state);
     offset = struct_size.offset;
     size = struct_size.size;
+}
+
+TaskPayloadVariable::TaskPayloadVariable(const Module& module_state, const Instruction& insn, VkShaderStageFlagBits stage,
+                                         const VariableAccessMap& variable_access_map, const DebugNameMap& debug_name_map)
+    : VariableBase(module_state, insn, stage, variable_access_map, debug_name_map), size(0) {
+    if (module_state.static_data_.has_specialization_constants) {
+        size = kInvalidValue;
+    } else {
+        const Instruction* type = module_state.GetVariablePointerType(insn);
+        size = module_state.GetTypeBytesSize(type);
+    }
 }
 
 TypeStructInfo::TypeStructInfo(const Module& module_state, const Instruction& struct_insn)
@@ -2274,10 +2339,24 @@ uint32_t Module::GetTypeBitsSize(const Instruction* insn) const {
         bit_size = vector_width * column_count;
     } else if (opcode == spv::OpTypeArray) {
         const Instruction* element_type = FindDef(insn->Word(2));
-        uint32_t element_width = GetTypeBitsSize(element_type);
+        const uint32_t element_width = GetTypeBitsSize(element_type);
         const Instruction* length_type = FindDef(insn->Word(3));
-        uint32_t length = length_type->GetConstantValue();
-        bit_size = element_width * length;
+        const uint32_t length = length_type->GetConstantValue();
+
+        // ArrayStride is only between element, not applied on the end of last element
+        // Things like Private variable don't have explicit layout and can use element size
+        uint32_t array_stride = element_width;
+        for (const spirv::Instruction* decoration_inst : static_data_.decoration_inst) {
+            if (decoration_inst->Word(1) == insn->ResultId()) {
+                if (decoration_inst->Word(2) == spv::DecorationArrayStride) {
+                    // Need to represent as bits here
+                    array_stride = decoration_inst->Word(3) * 8;
+                    break;
+                }
+            }
+        }
+
+        bit_size = ((length - 1) * array_stride) + element_width;
     } else if (opcode == spv::OpTypeStruct) {
         // Will not consider any possible Offset, gets size of a packed struct
         for (uint32_t i = 2; i < insn->Length(); ++i) {
@@ -2293,7 +2372,7 @@ uint32_t Module::GetTypeBitsSize(const Instruction* insn) const {
             bit_size = GetTypeBitsSize(type);
         }
     } else if (opcode == spv::OpVariable) {
-        const Instruction* type = FindDef(insn->Word(1));
+        const Instruction* type = FindDef(insn->TypeId());
         bit_size = GetTypeBitsSize(type);
     } else if (opcode == spv::OpTypeImage) {
         const Instruction* type = FindDef(insn->Word(2));
@@ -2408,7 +2487,7 @@ AtomicInstructionInfo Module::GetAtomicInfo(const Instruction& insn) const {
 
     // spirv-val will catch if not OpTypePointer
     const Instruction* pointer = FindDef(access->Word(1));
-    info.storage_class = pointer->Word(2);
+    info.storage_class = pointer->StorageClass();
 
     const Instruction* data_type = FindDef(pointer->Word(3));
 

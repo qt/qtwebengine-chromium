@@ -34,7 +34,7 @@ import * as i18n from '../../core/i18n/i18n.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
 
 import type {ActionDelegate} from './ActionRegistration.js';
-import {alert} from './ARIAUtils.js';
+import {LiveAnnouncer} from './ARIAUtils.js';
 import type {Context} from './Context.js';
 import {type Provider, ToolbarButton, type ToolbarItem} from './Toolbar.js';
 
@@ -43,22 +43,6 @@ const UIStrings = {
    *@description Text to close something
    */
   close: 'Close',
-  /**
-   *@description Text to dock the DevTools to the right of the browser tab
-   */
-  dockToRight: 'Dock to right',
-  /**
-   *@description Text to dock the DevTools to the bottom of the browser tab
-   */
-  dockToBottom: 'Dock to bottom',
-  /**
-   *@description Text to dock the DevTools to the left of the browser tab
-   */
-  dockToLeft: 'Dock to left',
-  /**
-   *@description Text to undock the DevTools
-   */
-  undockIntoSeparateWindow: 'Undock into separate window',
   /**
    *@description Text announced when the DevTools are undocked
    */
@@ -79,7 +63,6 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper<EventType
   private readonly currentDockStateSetting: Common.Settings.Setting<DockState>;
   private readonly lastDockStateSetting: Common.Settings.Setting<DockState>;
   private dockSideInternal: DockState|undefined = undefined;
-  private titles?: Common.UIString.LocalizedString[];
 
   constructor(canDock: boolean) {
     super();
@@ -128,12 +111,6 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper<EventType
       return;
     }
 
-    this.titles = [
-      i18nString(UIStrings.dockToRight),
-      i18nString(UIStrings.dockToBottom),
-      i18nString(UIStrings.dockToLeft),
-      i18nString(UIStrings.undockIntoSeparateWindow),
-    ];
     this.dockSideChanged();
   }
 
@@ -146,6 +123,11 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper<EventType
     return this.dockSideInternal;
   }
 
+  /** Whether the DevTools can be docked, used to determine if we show docking UI.
+   * Set via `Root.Runtime.Runtime.queryParam('can_dock')`. See https://cs.chromium.org/can_dock+f:window
+   *
+   * Shouldn't be used as a heuristic for target connection state.
+   */
   canDock(): boolean {
     return this.canDockInternal;
   }
@@ -198,9 +180,9 @@ export class DockController extends Common.ObjectWrapper.ObjectWrapper<EventType
 
   announceDockLocation(): void {
     if (this.dockSideInternal === DockState.UNDOCKED) {
-      alert(i18nString(UIStrings.devtoolsUndocked));
+      LiveAnnouncer.alert(i18nString(UIStrings.devtoolsUndocked));
     } else {
-      alert(i18nString(UIStrings.devToolsDockedTo, {PH1: this.dockSideInternal || ''}));
+      LiveAnnouncer.alert(i18nString(UIStrings.devToolsDockedTo, {PH1: this.dockSideInternal || ''}));
     }
   }
 }

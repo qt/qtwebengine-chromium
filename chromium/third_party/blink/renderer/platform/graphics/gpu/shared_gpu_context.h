@@ -39,6 +39,10 @@ class PLATFORM_EXPORT SharedGpuContext {
   // May re-create context if context was lost
   static base::WeakPtr<WebGraphicsContext3DProviderWrapper>
   ContextProviderWrapper();
+  // Returns an existing context and doesn't create one if none exists.
+  static base::WeakPtr<WebGraphicsContext3DProviderWrapper>
+  GetExistingContextProviderWrapper();
+
   static bool AllowSoftwareToAcceleratedCanvasUpgrade();
   static bool IsValidWithoutRestoring();
 
@@ -68,7 +72,7 @@ class PLATFORM_EXPORT SharedGpuContext {
   static void Reset();
 
  private:
-  friend class WTF::ThreadSpecific<SharedGpuContext>;
+  friend class ThreadSpecific<SharedGpuContext>;
 
   static SharedGpuContext* GetInstanceForCurrentThread();
 

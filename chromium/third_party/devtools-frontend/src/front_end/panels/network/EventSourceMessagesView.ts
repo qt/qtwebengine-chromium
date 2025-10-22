@@ -1,6 +1,7 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -62,11 +63,10 @@ export class EventSourceMessagesView extends UI.Widget.VBox {
       Common.Settings.Settings.instance().createSetting('network-event-source-message-filter', '');
 
   constructor(request: SDK.NetworkRequest.NetworkRequest) {
-    super();
+    super({jslog: `${VisualLogging.pane('event-stream').track({resize: true})}`});
     this.registerRequiredCSS(eventSourceMessagesViewStyles);
 
     this.element.classList.add('event-source-messages-view');
-    this.element.setAttribute('jslog', `${VisualLogging.pane('event-stream').track({resize: true})}`);
     this.request = request;
 
     this.mainToolbar = this.element.createChild('devtools-toolbar');
@@ -218,9 +218,7 @@ function eventSourceMessageNodeComparator(
   return aValue < bValue ? -1 : aValue > bValue ? 1 : 0;
 }
 
-export const Comparators: {
-  [x: string]: (arg0: EventSourceMessageNode, arg1: EventSourceMessageNode) => number,
-} = {
+export const Comparators: Record<string, (arg0: EventSourceMessageNode, arg1: EventSourceMessageNode) => number> = {
   id: eventSourceMessageNodeComparator.bind(null, message => message.eventId),
   type: eventSourceMessageNodeComparator.bind(null, message => message.eventName),
   time: eventSourceMessageNodeComparator.bind(null, message => message.time),

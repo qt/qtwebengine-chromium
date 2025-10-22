@@ -25,7 +25,7 @@
 #include "base/location.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/not_fatal_until.h"
+#include "base/strings/string_util.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/threading/scoped_blocking_call.h"
@@ -395,7 +395,7 @@ void UsbDeviceHandleWin::ClearHalt(mojom::UsbTransferDirection direction,
 
   auto interface_it =
       interfaces_.find(endpoint_it->second.interface->interface_number);
-  CHECK(interface_it != interfaces_.end(), base::NotFatalUntil::M130);
+  CHECK(interface_it != interfaces_.end());
   Interface& interface = interface_it->second;
   if (!interface.claimed) {
     task_runner_->PostTask(FROM_HERE,
@@ -551,7 +551,7 @@ void UsbDeviceHandleWin::GenericTransfer(
 
   auto interface_it =
       interfaces_.find(endpoint_it->second.interface->interface_number);
-  CHECK(interface_it != interfaces_.end(), base::NotFatalUntil::M130);
+  CHECK(interface_it != interfaces_.end());
   Interface* interface = &interface_it->second;
   if (!interface->claimed) {
     task_runner_->PostTask(
@@ -725,7 +725,7 @@ UsbDeviceHandleWin::Interface* UsbDeviceHandleWin::GetFirstInterfaceForFunction(
         return interface;
 
       auto it = interfaces_.find(interface->first_interface);
-      CHECK(it != interfaces_.end(), base::NotFatalUntil::M130);
+      CHECK(it != interfaces_.end());
       return &it->second;
     }
   }
@@ -776,7 +776,7 @@ void UsbDeviceHandleWin::OnFirstInterfaceOpened(int interface_number,
                                                 OpenInterfaceCallback callback,
                                                 Interface* first_interface) {
   auto interface_it = interfaces_.find(interface_number);
-  CHECK(interface_it != interfaces_.end(), base::NotFatalUntil::M130);
+  CHECK(interface_it != interfaces_.end());
   Interface* interface = &interface_it->second;
   if (device_->driver_type() == UsbDeviceWin::DriverType::kComposite) {
     DCHECK_NE(interface->first_interface, interface->interface_number);
@@ -821,7 +821,7 @@ void UsbDeviceHandleWin::OnSetAlternateInterfaceSetting(int interface_number,
                                                         ResultCallback callback,
                                                         bool result) {
   auto it = interfaces_.find(interface_number);
-  CHECK(it != interfaces_.end(), base::NotFatalUntil::M130);
+  CHECK(it != interfaces_.end());
   Interface& interface = it->second;
 
   if (!result) {
@@ -874,7 +874,7 @@ void UsbDeviceHandleWin::OnClearHalt(int interface_number,
                                      ResultCallback callback,
                                      bool result) {
   auto it = interfaces_.find(interface_number);
-  CHECK(it != interfaces_.end(), base::NotFatalUntil::M130);
+  CHECK(it != interfaces_.end());
   ReleaseInterfaceReference(&it->second);
 
   std::move(callback).Run(result);
@@ -1012,7 +1012,7 @@ std::unique_ptr<UsbDeviceHandleWin::Request> UsbDeviceHandleWin::UnlinkRequest(
     UsbDeviceHandleWin::Request* request_ptr) {
   auto it =
       std::ranges::find(requests_, request_ptr, &std::unique_ptr<Request>::get);
-  CHECK(it != requests_.end(), base::NotFatalUntil::M130);
+  CHECK(it != requests_.end());
   std::unique_ptr<Request> request = std::move(*it);
   requests_.erase(it);
   return request;
@@ -1106,7 +1106,7 @@ void UsbDeviceHandleWin::TransferComplete(
 
   DCHECK_NE(request->interface_number(), -1);
   auto it = interfaces_.find(request->interface_number());
-  CHECK(it != interfaces_.end(), base::NotFatalUntil::M130);
+  CHECK(it != interfaces_.end());
   ReleaseInterfaceReference(&it->second);
 
   std::move(callback).Run(status, std::move(buffer), bytes_transferred);

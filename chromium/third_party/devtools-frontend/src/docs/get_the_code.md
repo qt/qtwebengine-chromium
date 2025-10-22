@@ -46,19 +46,19 @@ it'll automatically create and initialize it.
 You can disable type checking (via TypeScript) by using the `devtools_skip_typecheck`
 argument in your GN configuration. This uses [esbuild](https://esbuild.github.io/)
 instead of `tsc` to compile the TypeScript files and generally results in much
-shorter build times. To switch the `Default` target to esbuild, use
+shorter build times.
+
+Additionally, we now bundle files together by default in all builds, which has
+a build time cost. If you want an even fast fast build, you might want to opt
+out of bundling by setting `devtools_bundle` to `false`
 
 ```bash
-gn gen out/Default --args="devtools_skip_typecheck=true"
+gn gen out/fast-build --args="devtools_skip_typecheck=true devtools_bundle=false"
 ```
 
-or if you don't want to change the default target, use something like
+and use `npm run build -- -t fast-build` to build this target (you can of course
+also just change the `Default` target to skip bundling and type checking).
 
-```bash
-gn gen out/fast-build --args="devtools_skip_typecheck=true"
-```
-
-and use `npm run build -- -t fast-build` to build this target.
 
 ### Rebuilding automatically
 
@@ -167,7 +167,14 @@ to run in Chrome Canary instead of Chrome for Testing; this requires you to inst
 npm start -- http://www.example.com
 ```
 
-to automatically open `http://www.example.com` in the newly spawned Chrome tab.
+to automatically open `http://www.example.com` in the newly spawned Chrome tab. Use
+
+```bash
+npm start -- --verbose
+```
+
+to enable verbose logging, which among other things, also prints all output from Chrome to the terminal, which is
+otherwise suppressed.
 
 
 ##### Controlling the feature set
@@ -186,11 +193,29 @@ npm start -- -u
 Just like with Chrome itself, you can also control the set of enabled and disabled features using
 
 ```bash
-npm start -- --enable-features=DevToolsAutomaticFileSystems
+npm start -- --enable-features=DevToolsWellKnown
 npm start -- --disable-features=DevToolsWellKnown --enable-features=DevToolsFreestyler:multimodal/true
 ```
 
 which you can use to override the default feature set.
+
+##### Remote debugging
+
+The `npm start` command also supports launching Chrome for remote debugging via
+
+```bash
+npm start -- --remote-debugging-port=9222
+```
+
+or
+
+```bash
+npm start -- --browser=canary --remote-debugging-port=9222 --user-data-dir=\`mktemp -d`
+```
+
+Note that you have to also pass the `--user-data-dir` and point it to a non-standard profile directory (a freshly created
+temporary directory in this example) for security reason when using any Chrome version except for Chrome for Testing.
+[This article](https://developer.chrome.com/blog/remote-debugging-port) explains the reasons behind it.
 
 #### Running from file system
 

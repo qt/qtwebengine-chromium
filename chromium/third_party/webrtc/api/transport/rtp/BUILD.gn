@@ -16,10 +16,11 @@ rtc_source_set("rtp_source") {
     "../../../api/units:time_delta",
     "../../../api/units:timestamp",
     "../../../rtc_base:checks",
+    "//third_party/abseil-cpp/absl/strings:str_format",
   ]
 }
 
-rtc_source_set("dependency_descriptor") {
+rtc_library("dependency_descriptor") {
   visibility = [ "*" ]
   sources = [
     "dependency_descriptor.cc",

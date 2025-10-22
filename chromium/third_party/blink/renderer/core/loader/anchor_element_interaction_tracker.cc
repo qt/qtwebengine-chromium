@@ -4,13 +4,16 @@
 
 #include "third_party/blink/renderer/core/loader/anchor_element_interaction_tracker.h"
 
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notreached.h"
 #include "base/strings/strcat.h"
 #include "base/time/time.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/input/web_mouse_wheel_event.h"
 #include "third_party/blink/public/common/input/web_pointer_properties.h"
 #include "third_party/blink/public/mojom/preloading/anchor_element_interaction_host.mojom-blink.h"
+#include "third_party/blink/public/mojom/speculation_rules/speculation_rules.mojom-blink.h"
 #include "third_party/blink/public/platform/browser_interface_broker_proxy.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/event_type_names.h"
@@ -27,7 +30,12 @@
 
 namespace blink {
 
+BASE_FEATURE(kPreloadingNoSamePageFragmentAnchorTracking,
+             "PreloadingNoSamePageFragmentAnchorTracking",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 namespace {
+
 constexpr double eps = 1e-9;
 const base::TimeDelta kMousePosQueueTimeDelta{base::Milliseconds(500)};
 const base::TimeDelta kMouseAccelerationAndVelocityInterval{
@@ -286,11 +294,8 @@ void AnchorElementInteractionTracker::Trace(Visitor* visitor) const {
 }
 
 // static
-base::TimeDelta AnchorElementInteractionTracker::GetHoverDwellTime() {
-  static base::FeatureParam<base::TimeDelta> hover_dwell_time{
-      &blink::features::kSpeculationRulesPointerHoverHeuristics,
-      "HoverDwellTime", base::Milliseconds(200)};
-  return hover_dwell_time.Get();
+base::TimeDelta AnchorElementInteractionTracker::EagerHoverDwellTime() {
+  return blink::features::kPreloadingEagerHeuristicsHoverDwellTime.Get();
 }
 
 void AnchorElementInteractionTracker::OnMouseMoveEvent(
@@ -348,12 +353,7 @@ void AnchorElementInteractionTracker::OnPointerEvent(
   }
 
   if (event_type == event_type_names::kPointerdown) {
-    // TODO(crbug.com/1297312): Check if user changed the default mouse
-    // settings
-    if (pointer_event.button() !=
-            static_cast<int>(WebPointerProperties::Button::kLeft) &&
-        pointer_event.button() !=
-            static_cast<int>(WebPointerProperties::Button::kMiddle)) {
+    if (!pointer_event.IsLinkClickButton()) {
       return;
     }
     interaction_host_->OnPointerDown(url);
@@ -361,19 +361,43 @@ void AnchorElementInteractionTracker::OnPointerEvent(
   }
 
   if (event_type == event_type_names::kPointerover) {
+    if (base::FeatureList::IsEnabled(
+            blink::features::kPreloadingEagerHeuristics)) {
+      // TODO(https://crbug.com/40287486): guard this to only be on desktop, and
+      // implement the liberal viewport behavior on mobile. Ideally in a way
+      // that works with DevTools emulation.
+      hover_event_candidates_.insert(
+          std::make_pair(url, blink::mojom::SpeculationEagerness::kEager),
+          HoverEventCandidate{
+              .is_mouse =
+                  pointer_event.pointerType() == pointer_type_names::kMouse,
+              .anchor_id = AnchorElementId(*anchor),
+              .timestamp = clock_->NowTicks() + EagerHoverDwellTime()});
+    }
     hover_event_candidates_.insert(
-        url, HoverEventCandidate{
-                 .is_mouse =
-                     pointer_event.pointerType() == pointer_type_names::kMouse,
-                 .anchor_id = AnchorElementId(*anchor),
-                 .timestamp = clock_->NowTicks() + GetHoverDwellTime()});
+        std::make_pair(url, blink::mojom::SpeculationEagerness::kModerate),
+        HoverEventCandidate{
+            .is_mouse =
+                pointer_event.pointerType() == pointer_type_names::kMouse,
+            .anchor_id = AnchorElementId(*anchor),
+            .timestamp = clock_->NowTicks() + kModerateHoverDwellTime});
     if (!hover_timer_.IsActive()) {
-      hover_timer_.StartOneShot(GetHoverDwellTime(), FROM_HERE);
+      if (base::FeatureList::IsEnabled(
+              blink::features::kPreloadingEagerHeuristics)) {
+        // Start the timer only for the eager timeout, which will be sooner. It
+        // will re-schedule itself for the moderate deadline if necessary.
+        hover_timer_.StartOneShot(EagerHoverDwellTime(), FROM_HERE);
+      } else {
+        hover_timer_.StartOneShot(kModerateHoverDwellTime, FROM_HERE);
+      }
     }
   } else if (event_type == event_type_names::kPointerout) {
     // Since the pointer is no longer hovering on the link, there is no need to
     // check the timer. We should just remove it here.
-    hover_event_candidates_.erase(url);
+    hover_event_candidates_.erase(
+        std::make_pair(url, blink::mojom::SpeculationEagerness::kEager));
+    hover_event_candidates_.erase(
+        std::make_pair(url, blink::mojom::SpeculationEagerness::kModerate));
   }
 }
 
@@ -427,7 +451,7 @@ void AnchorElementInteractionTracker::HoverTimerFired(TimerBase*) {
   }
   const base::TimeTicks now = clock_->NowTicks();
   auto next_fire_time = base::TimeTicks::Max();
-  Vector<KURL> to_be_erased;
+  Vector<std::pair<KURL, blink::mojom::SpeculationEagerness>> to_be_erased;
   for (const auto& hover_event_candidate : hover_event_candidates_) {
     // Check whether pointer hovered long enough on the link to send the
     // PointerHover event to interaction host.
@@ -447,8 +471,21 @@ void AnchorElementInteractionTracker::HoverTimerFired(TimerBase*) {
         }
       }
 
-      interaction_host_->OnPointerHover(
-          /*target=*/hover_event_candidate.key, std::move(pointer_data));
+      if (hover_event_candidate.key.second ==
+          blink::mojom::SpeculationEagerness::kEager) {
+        CHECK(base::FeatureList::IsEnabled(
+            blink::features::kPreloadingEagerHeuristics));
+        interaction_host_->OnPointerHoverEager(hover_event_candidate.key.first,
+                                               std::move(pointer_data));
+      } else if (hover_event_candidate.key.second ==
+                 blink::mojom::SpeculationEagerness::kModerate) {
+        interaction_host_->OnPointerHoverModerate(
+            hover_event_candidate.key.first, std::move(pointer_data));
+      } else {
+        // `hover_event_candidates_` must be registered only for `eager` or
+        // `moderate` eagerness.
+        NOTREACHED();
+      }
       to_be_erased.push_back(hover_event_candidate.key);
 
       continue;
@@ -457,7 +494,7 @@ void AnchorElementInteractionTracker::HoverTimerFired(TimerBase*) {
     next_fire_time =
         std::min(next_fire_time, hover_event_candidate.value.timestamp);
   }
-  WTF::RemoveAll(hover_event_candidates_, to_be_erased);
+  RemoveAll(hover_event_candidates_, to_be_erased);
   if (!next_fire_time.is_max()) {
     hover_timer_.StartOneShot(next_fire_time - now, FROM_HERE);
   }
@@ -484,10 +521,18 @@ AnchorElementInteractionTracker::FirstAnchorElementIncludingSelf(Node* node) {
 KURL AnchorElementInteractionTracker::GetHrefEligibleForPreloading(
     const HTMLAnchorElementBase& anchor) {
   KURL url = anchor.Href();
-  if (url.ProtocolIsInHTTPFamily()) {
-    return url;
+  if (!url.ProtocolIsInHTTPFamily()) {
+    return KURL();
   }
-  return KURL();
+  if (base::FeatureList::IsEnabled(
+          kPreloadingNoSamePageFragmentAnchorTracking) &&
+      url.HasFragmentIdentifier()) {
+    const KURL& document_url = anchor.GetDocument().Url();
+    if (EqualIgnoringFragmentIdentifier(url, document_url)) {
+      return KURL();
+    }
+  }
+  return url;
 }
 
 void AnchorElementInteractionTracker::AnchorPositionsUpdated(

@@ -6,8 +6,6 @@
 
 #include "base/feature_list.h"
 #include "base/metrics/field_trial_params.h"
-#include "build/branding_buildflags.h"
-#include "build/build_config.h"
 
 namespace features {
 
@@ -55,11 +53,13 @@ const base::FeatureParam<DevToolsFreestylerExecutionMode>
         /*default_value=*/DevToolsFreestylerExecutionMode::kAllScripts,
         &devtools_freestyler_execution_mode_options};
 const base::FeatureParam<bool> kDevToolsFreestylerPatching{
-    &kDevToolsFreestyler, "patching", /*default_value=*/false};
+    &kDevToolsFreestyler, "patching", /*default_value=*/true};
 const base::FeatureParam<bool> kDevToolsFreestylerMultimodal{
-    &kDevToolsFreestyler, "multimodal", /*default_value=*/false};
+    &kDevToolsFreestyler, "multimodal", /*default_value=*/true};
+const base::FeatureParam<bool> kDevToolsFreestylerMultimodalUploadInput{
+    &kDevToolsFreestyler, "multimodal_upload_input", /*default_value=*/true};
 const base::FeatureParam<bool> kDevToolsFreestylerFunctionCalling{
-    &kDevToolsFreestyler, "function_calling", /*default_value=*/false};
+    &kDevToolsFreestyler, "function_calling", /*default_value=*/true};
 
 // Whether the DevTools AI Assistance Network Agent is enabled.
 BASE_FEATURE(kDevToolsAiAssistanceNetworkAgent,
@@ -97,7 +97,7 @@ const base::FeatureParam<DevToolsFreestylerUserTier>
 const base::FeatureParam<bool>
     kDevToolsAiAssistancePerformanceAgentInsightsEnabled{
         &kDevToolsAiAssistancePerformanceAgent, "insights_enabled",
-        /*default_value=*/false};
+        /*default_value=*/true};
 
 // Whether the DevTools AI Assistance File Agent is enabled.
 BASE_FEATURE(kDevToolsAiAssistanceFileAgent,
@@ -115,30 +115,31 @@ const base::FeatureParam<DevToolsFreestylerUserTier>
         /*default_value=*/DevToolsFreestylerUserTier::kPublic,
         &devtools_freestyler_user_tier_options};
 
+// Whether the DevTools AI Code Completion is enabled.
+BASE_FEATURE(kDevToolsAiCodeCompletion,
+             "DevToolsAiCodeCompletion",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+const base::FeatureParam<std::string> kDevToolsAiCodeCompletionModelId{
+    &kDevToolsAiCodeCompletion, "aida_model_id",
+    /*default_value=*/""};
+const base::FeatureParam<double> kDevToolsAiCodeCompletionTemperature{
+    &kDevToolsAiCodeCompletion, "aida_temperature",
+    /*default_value=*/-1};
+const base::FeatureParam<DevToolsFreestylerUserTier>
+    kDevToolsAiCodeCompletionUserTier{
+        &kDevToolsAiCodeCompletion, "user_tier",
+        /*default_value=*/DevToolsFreestylerUserTier::kPublic,
+        &devtools_freestyler_user_tier_options};
+
 // Whether an infobar is shown when the process is shared.
 BASE_FEATURE(kDevToolsSharedProcessInfobar,
              "DevToolsSharedProcessInfobar",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Let DevTools front-end log extensive VisualElements-style UMA metrics for
-// impressions and interactions.
-BASE_FEATURE(kDevToolsVeLogging,
-             "DevToolsVeLogging",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-// Run VE logging in a test mode
-const base::FeatureParam<bool> kDevToolsVeLoggingTesting{
-    &kDevToolsVeLogging, "testing", /*default_value=*/false};
-
 // Whether showing animation styles in the styles tab is enabled.
 BASE_FEATURE(kDevToolsAnimationStylesInStylesTab,
              "DevToolsAnimationStylesInStylesTab",
              base::FEATURE_ENABLED_BY_DEFAULT);
-
-// Whether DevTools will attempt to automatically connect Workspace folders.
-// See http://go/chrome-devtools:automatic-workspace-folders-design for details.
-BASE_FEATURE(kDevToolsAutomaticFileSystems,
-             "DevToolsAutomaticFileSystems",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Whether DevTools will attempt to load project settings from a well-known
 // URI. See https://goo.gle/devtools-json-design for additional details.
@@ -147,27 +148,37 @@ BASE_FEATURE(kDevToolsWellKnown,
              "DevToolsWellKnown",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Whether DevTools will offer the new CSS value tracing UI.
-BASE_FEATURE(kDevToolsCssValueTracing,
-             "DevToolsCssValueTracing",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // Whether the DevTools AI generated annotation labels in timeline are enabled.
 BASE_FEATURE(kDevToolsAiGeneratedTimelineLabels,
              "DevToolsAiGeneratedTimelineLabels",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Whether the DevTools AI generated annotation labels in timeline are enabled.
+BASE_FEATURE(kDevToolsNewPermissionDialog,
+             "DevToolsNewPermissionDialog",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Whether DevTools drawer can be toggled to vertical orientation.
+BASE_FEATURE(kDevToolsVerticalDrawer,
+             "DevToolsVerticalDrawer",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
-// If enabled, DevTools does not accept remote debugging connections unless
-// using a non-default user data dir via the --user-data-dir switch.
-BASE_FEATURE(kDevToolsDebuggingRestrictions,
-             "DevToolsDebuggingRestrictions",
-#if BUILDFLAG(GOOGLE_CHROME_BRANDING)
-             base::FEATURE_ENABLED_BY_DEFAULT
-#else
-             base::FEATURE_DISABLED_BY_DEFAULT
-#endif  // BUILDFLAG(GOOGLE_CHROME_BRANDING)
-);
-#endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+#if BUILDFLAG(ENABLE_PWA_INSTALL_ON_CROS_TEST)
+// Enables creating PWA handler for DevTools.
+BASE_FEATURE(kDevToolsPwaHandler,
+             "DevToolsPwaHandler",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+#endif  // BUILDFLAG(ENABLE_PWA_INSTALL_ON_CROS_TEST)
+
+// Whether DevTools shows submenu example prompts for the AI Assistance panel
+// in context menus.
+BASE_FEATURE(kDevToolsAiSubmenuPrompts,
+             "DevToolsAiSubmenuPrompts",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Whether DevTools shows 'Debug with AI' and new badges.
+BASE_FEATURE(kDevToolsAiDebugWithAi,
+             "DevToolsAiDebugWithAi",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 }  // namespace features

@@ -38,39 +38,43 @@ constexpr char kChecksumKey[] = "CheckSum";
 
 FPDF_EXPORT int FPDF_CALLCONV
 FPDFDoc_GetAttachmentCount(FPDF_DOCUMENT document) {
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc)
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc) {
     return 0;
+  }
 
-  auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
+  auto name_tree = CPDF_NameTree::Create(doc, "EmbeddedFiles");
   return name_tree ? pdfium::checked_cast<int>(name_tree->GetCount()) : 0;
 }
 
 FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
 FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc)
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc) {
     return nullptr;
+  }
 
   // SAFETY: required from caller.
   WideString wsName = UNSAFE_BUFFERS(WideStringFromFPDFWideString(name));
-  if (wsName.IsEmpty())
+  if (wsName.IsEmpty()) {
     return nullptr;
+  }
 
-  auto name_tree =
-      CPDF_NameTree::CreateWithRootNameArray(pDoc, "EmbeddedFiles");
-  if (!name_tree)
+  auto name_tree = CPDF_NameTree::CreateWithRootNameArray(doc, "EmbeddedFiles");
+  if (!name_tree) {
     return nullptr;
+  }
 
   // Set up the basic entries in the filespec dictionary.
-  auto pFile = pDoc->NewIndirect<CPDF_Dictionary>();
+  auto pFile = doc->NewIndirect<CPDF_Dictionary>();
   pFile->SetNewFor<CPDF_Name>("Type", "Filespec");
   pFile->SetNewFor<CPDF_String>("UF", wsName.AsStringView());
   pFile->SetNewFor<CPDF_String>(pdfium::stream::kF, wsName.AsStringView());
 
   // Add the new attachment name and filespec into the document's EmbeddedFiles.
-  if (!name_tree->AddValueAndName(pFile->MakeReference(pDoc), wsName))
+  if (!name_tree->AddValueAndName(pFile->MakeReference(doc), wsName)) {
     return nullptr;
+  }
 
   // Unretained reference in public API. NOLINTNEXTLINE
   return FPDFAttachmentFromCPDFObject(pFile);
@@ -78,13 +82,15 @@ FPDFDoc_AddAttachment(FPDF_DOCUMENT document, FPDF_WIDESTRING name) {
 
 FPDF_EXPORT FPDF_ATTACHMENT FPDF_CALLCONV
 FPDFDoc_GetAttachment(FPDF_DOCUMENT document, int index) {
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc || index < 0)
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc || index < 0) {
     return nullptr;
+  }
 
-  auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
-  if (!name_tree || static_cast<size_t>(index) >= name_tree->GetCount())
+  auto name_tree = CPDF_NameTree::Create(doc, "EmbeddedFiles");
+  if (!name_tree || static_cast<size_t>(index) >= name_tree->GetCount()) {
     return nullptr;
+  }
 
   WideString csName;
 
@@ -95,13 +101,15 @@ FPDFDoc_GetAttachment(FPDF_DOCUMENT document, int index) {
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFDoc_DeleteAttachment(FPDF_DOCUMENT document, int index) {
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc || index < 0)
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc || index < 0) {
     return false;
+  }
 
-  auto name_tree = CPDF_NameTree::Create(pDoc, "EmbeddedFiles");
-  if (!name_tree || static_cast<size_t>(index) >= name_tree->GetCount())
+  auto name_tree = CPDF_NameTree::Create(doc, "EmbeddedFiles");
+  if (!name_tree || static_cast<size_t>(index) >= name_tree->GetCount()) {
     return false;
+  }
 
   return name_tree->DeleteValueAndName(index);
 }
@@ -111,8 +119,9 @@ FPDFAttachment_GetName(FPDF_ATTACHMENT attachment,
                        FPDF_WCHAR* buffer,
                        unsigned long buflen) {
   CPDF_Object* pFile = CPDFObjectFromFPDFAttachment(attachment);
-  if (!pFile)
+  if (!pFile) {
     return 0;
+  }
 
   CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
   // SAFETY: required from caller.
@@ -123,8 +132,9 @@ FPDFAttachment_GetName(FPDF_ATTACHMENT attachment,
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFAttachment_HasKey(FPDF_ATTACHMENT attachment, FPDF_BYTESTRING key) {
   CPDF_Object* pFile = CPDFObjectFromFPDFAttachment(attachment);
-  if (!pFile)
+  if (!pFile) {
     return 0;
+  }
 
   CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
   RetainPtr<const CPDF_Dictionary> pParamsDict = spec.GetParamsDict();
@@ -133,8 +143,9 @@ FPDFAttachment_HasKey(FPDF_ATTACHMENT attachment, FPDF_BYTESTRING key) {
 
 FPDF_EXPORT FPDF_OBJECT_TYPE FPDF_CALLCONV
 FPDFAttachment_GetValueType(FPDF_ATTACHMENT attachment, FPDF_BYTESTRING key) {
-  if (!FPDFAttachment_HasKey(attachment, key))
+  if (!FPDFAttachment_HasKey(attachment, key)) {
     return FPDF_OBJECT_UNKNOWN;
+  }
 
   CPDF_FileSpec spec(
       pdfium::WrapRetain(CPDFObjectFromFPDFAttachment(attachment)));
@@ -147,13 +158,15 @@ FPDFAttachment_SetStringValue(FPDF_ATTACHMENT attachment,
                               FPDF_BYTESTRING key,
                               FPDF_WIDESTRING value) {
   CPDF_Object* pFile = CPDFObjectFromFPDFAttachment(attachment);
-  if (!pFile)
+  if (!pFile) {
     return false;
+  }
 
   CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
   RetainPtr<CPDF_Dictionary> pParamsDict = spec.GetMutableParamsDict();
-  if (!pParamsDict)
+  if (!pParamsDict) {
     return false;
+  }
 
   // SAFETY: required from caller.
   ByteString bsValue = UNSAFE_BUFFERS(ByteStringFromFPDFWideString(value));
@@ -187,14 +200,14 @@ FPDFAttachment_GetStringValue(FPDF_ATTACHMENT attachment,
   // SAFETY: required from caller.
   auto buffer_span = UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen));
 
-  ByteString key_str = key;
-  RetainPtr<const CPDF_Object> object = params->GetObjectFor(key_str);
+  ByteStringView key_view(key);
+  RetainPtr<const CPDF_Object> object = params->GetObjectFor(key_view);
   if (!object || (!object->IsString() && !object->IsName())) {
     // Per API description, return an empty string in these cases.
     return Utf16EncodeMaybeCopyAndReturnLength(WideString(), buffer_span);
   }
 
-  if (key_str == kChecksumKey) {
+  if (key_view == kChecksumKey) {
     RetainPtr<const CPDF_String> string_object = ToString(object);
     if (string_object && string_object->IsHex()) {
       ByteString encoded =
@@ -219,8 +232,8 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
   }
 
   CPDF_Object* pFile = CPDFObjectFromFPDFAttachment(attachment);
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pFile || !pFile->IsDictionary() || !pDoc || len > INT_MAX) {
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!pFile || !pFile->IsDictionary() || !doc || len > INT_MAX) {
     return false;
   }
 
@@ -243,8 +256,8 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
                          dateTime.GetSecond()));
 
   // SAFETY: required from caller.
-  pdfium::span<const uint8_t> contents_span = UNSAFE_BUFFERS(
-      pdfium::make_span(static_cast<const uint8_t*>(contents), len));
+  pdfium::span<const uint8_t> contents_span =
+      UNSAFE_BUFFERS(pdfium::span(static_cast<const uint8_t*>(contents), len));
 
   std::array<uint8_t, 16> digest;
   CRYPT_MD5Generate(contents_span, digest);
@@ -254,12 +267,12 @@ FPDFAttachment_SetFile(FPDF_ATTACHMENT attachment,
                                       CPDF_String::DataType::kIsHex);
 
   // Create the file stream and have the filespec dictionary link to it.
-  auto pFileStream = pDoc->NewIndirect<CPDF_Stream>(
+  auto pFileStream = doc->NewIndirect<CPDF_Stream>(
       DataVector<uint8_t>(contents_span.begin(), contents_span.end()),
       std::move(pFileStreamDict));
 
   auto pEFDict = pFile->AsMutableDictionary()->SetNewFor<CPDF_Dictionary>("EF");
-  pEFDict->SetNewFor<CPDF_Reference>("F", pDoc, pFileStream->GetObjNum());
+  pEFDict->SetNewFor<CPDF_Reference>("F", doc, pFileStream->GetObjNum());
   return true;
 }
 
@@ -268,22 +281,52 @@ FPDFAttachment_GetFile(FPDF_ATTACHMENT attachment,
                        void* buffer,
                        unsigned long buflen,
                        unsigned long* out_buflen) {
-  if (!out_buflen)
+  if (!out_buflen) {
     return false;
+  }
 
   CPDF_Object* pFile = CPDFObjectFromFPDFAttachment(attachment);
-  if (!pFile)
+  if (!pFile) {
     return false;
+  }
 
   CPDF_FileSpec spec(pdfium::WrapRetain(pFile));
   RetainPtr<const CPDF_Stream> pFileStream = spec.GetFileStream();
-  if (!pFileStream)
+  if (!pFileStream) {
     return false;
+  }
 
   // SAFETY: required from caller.
   *out_buflen = DecodeStreamMaybeCopyAndReturnLength(
       std::move(pFileStream),
-      UNSAFE_BUFFERS(pdfium::make_span(static_cast<uint8_t*>(buffer),
-                                       static_cast<size_t>(buflen))));
+      UNSAFE_BUFFERS(pdfium::span(static_cast<uint8_t*>(buffer),
+                                  static_cast<size_t>(buflen))));
   return true;
+}
+
+FPDF_EXPORT unsigned long FPDF_CALLCONV
+FPDFAttachment_GetSubtype(FPDF_ATTACHMENT attachment,
+                          FPDF_WCHAR* buffer,
+                          unsigned long buflen) {
+  CPDF_Object* file = CPDFObjectFromFPDFAttachment(attachment);
+  if (!file) {
+    return 0;
+  }
+
+  // SAFETY: required from caller.
+  auto buffer_span = UNSAFE_BUFFERS(SpanFromFPDFApiArgs(buffer, buflen));
+  CPDF_FileSpec spec(pdfium::WrapRetain(file));
+  RetainPtr<const CPDF_Stream> file_stream = spec.GetFileStream();
+  if (!file_stream) {
+    return Utf16EncodeMaybeCopyAndReturnLength(WideString(), buffer_span);
+  }
+
+  ByteString subtype = file_stream->GetDict()->GetNameFor("Subtype");
+  if (subtype.IsEmpty()) {
+    // Per API description, return an empty string in these cases.
+    return Utf16EncodeMaybeCopyAndReturnLength(WideString(), buffer_span);
+  }
+
+  return Utf16EncodeMaybeCopyAndReturnLength(
+      PDF_DecodeText(subtype.unsigned_span()), buffer_span);
 }

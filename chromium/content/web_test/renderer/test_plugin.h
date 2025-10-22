@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
 
 #ifndef CONTENT_WEB_TEST_RENDERER_TEST_PLUGIN_H_
 #define CONTENT_WEB_TEST_RENDERER_TEST_PLUGIN_H_
@@ -13,6 +9,7 @@
 #include <memory>
 #include <string>
 
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "cc/layers/texture_layer.h"
@@ -146,7 +143,7 @@ class TestPlugin : public blink::WebPlugin, public cc::TextureLayerClient {
 
   // Functions for parsing plugin parameters.
   Primitive ParsePrimitive(const blink::WebString& string);
-  void ParseColor(const blink::WebString& string, uint8_t color[3]);
+  void ParseColor(const blink::WebString& string, base::span<uint8_t, 3> color);
   float ParseOpacity(const blink::WebString& string);
   bool ParseBoolean(const blink::WebString& string);
 

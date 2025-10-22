@@ -12,6 +12,7 @@
 #include "build/build_config.h"
 #include "components/miracle_parameter/common/public/miracle_parameter.h"
 #include "third_party/blink/public/common/features.h"
+#include "third_party/blink/public/common/loader/code_cache_util.h"
 #include "third_party/blink/public/mojom/v8_cache_options.mojom-blink.h"
 #include "third_party/blink/public/web/web_settings.h"
 #include "third_party/blink/renderer/bindings/core/v8/module_record.h"
@@ -63,7 +64,7 @@ uint32_t CacheTag(CacheTagKind kind, const String& encoding) {
   // later load the script from the cache and interpret it with a different
   // encoding, the cached data is not valid for that encoding.
   return (v8_cache_data_version | kind) +
-         (encoding.IsNull() ? 0 : WTF::GetHash(encoding));
+         (encoding.IsNull() ? 0 : GetHash(encoding));
 }
 
 bool TimestampIsRecent(const CachedMetadata* cached_metadata) {
@@ -268,8 +269,8 @@ bool CanAddCompileHintsMagicToCompileOption(
     v8::ScriptCompiler::CompileOptions compile_options) {
   // Adding compile hints to kConsumeCodeCache or kEagerCompile doesn't make
   // sense. kProduceCompileHints and kConsumeCompileHints can be combined with
-  // kFollowCompileHintsMagicComment, since they still affect scripts which
-  // don't have the magic comment.
+  // kFollowCompileHintsMagicComment / kFollowCompileHintsPerFunctionMagic,
+  // since they still affect scripts which don't have the magic comment.
 
   // This fails if new compile options are added.
   DCHECK((compile_options &
@@ -292,17 +293,23 @@ MaybeAddCompileHintsMagic(
                v8::ScriptCompiler::NoCacheReason> input,
     v8_compile_hints::MagicCommentMode magic_comment_mode) {
   auto [compile_options, produce_cache_options, no_cache_reason] = input;
-  if (CanAddCompileHintsMagicToCompileOption(compile_options) &&
-      (magic_comment_mode == v8_compile_hints::MagicCommentMode::kAlways ||
-       (magic_comment_mode ==
-            v8_compile_hints::MagicCommentMode::kWhenProducingCodeCache &&
-        produce_cache_options ==
-            V8CodeCache::ProduceCacheOptions::kProduceCodeCache))) {
-    return std::make_tuple(
-        v8::ScriptCompiler::CompileOptions(
-            compile_options |
-            v8::ScriptCompiler::kFollowCompileHintsMagicComment),
-        produce_cache_options, no_cache_reason);
+  if (CanAddCompileHintsMagicToCompileOption(compile_options)) {
+    if (magic_comment_mode ==
+        v8_compile_hints::MagicCommentMode::kOnlyTopLevel) {
+      return std::make_tuple(
+          v8::ScriptCompiler::CompileOptions(
+              compile_options |
+              v8::ScriptCompiler::kFollowCompileHintsMagicComment),
+          produce_cache_options, no_cache_reason);
+    } else if (magic_comment_mode ==
+               v8_compile_hints::MagicCommentMode::kTopLevelAndFunctions) {
+      return std::make_tuple(
+          v8::ScriptCompiler::CompileOptions(
+              compile_options |
+              v8::ScriptCompiler::kFollowCompileHintsMagicComment |
+              v8::ScriptCompiler::kFollowCompileHintsPerFunctionMagicComment),
+          produce_cache_options, no_cache_reason);
+    }
   }
   return input;
 }
@@ -365,8 +372,6 @@ V8CodeCache::GetCompileOptionsInternal(
   auto no_code_cache_compile_options = v8::ScriptCompiler::kNoCompileOptions;
 
   if (might_generate_crowdsourced_compile_hints) {
-    DCHECK(base::FeatureList::IsEnabled(features::kProduceCompileHints2));
-
     // If we end up compiling the script without forced eager compilation, we'll
     // also produce compile hints. This is orthogonal to producing the code
     // cache: if we don't want to create a code cache for some reason
@@ -611,7 +616,7 @@ void V8CodeCache::ProduceCache(v8::Isolate* isolate,
 
 uint32_t V8CodeCache::TagForBundledCodeCache() {
   // The bundled code cache will operate only on utf-8 formatted scripts.
-  return CacheTag(kCacheTagCode, WTF::UTF8Encoding().GetName());
+  return CacheTag(kCacheTagCode, Utf8Encoding().GetName());
 }
 
 uint32_t V8CodeCache::TagForCodeCache(
@@ -636,6 +641,10 @@ void V8CodeCache::SetCacheTimeStamp(CodeCacheHost* code_cache_host,
   uint64_t now_ms = GetTimestamp();
   cache_handler->ClearCachedMetadata(code_cache_host,
                                      CachedMetadataHandler::kClearLocally);
+  // Ensure that the type used for storing the timestamp (uint64_t)
+  // matches the defined constant for the timestamp size. This helps
+  // maintain consistency if the underlying type or constant ever changes.
+  static_assert(sizeof(now_ms) == kCodeCacheTimestampSize);
   cache_handler->SetCachedMetadata(code_cache_host,
                                    TagForTimeStamp(cache_handler),
                                    base::byte_span_from_ref(now_ms));
@@ -650,7 +659,7 @@ scoped_refptr<CachedMetadata> V8CodeCache::GenerateFullCodeCache(
     ScriptState* script_state,
     const String& script_string,
     const KURL& source_url,
-    const WTF::TextEncoding& encoding,
+    const TextEncoding& encoding,
     OpaqueMode opaque_mode) {
   const String file_name = source_url.GetString();
 

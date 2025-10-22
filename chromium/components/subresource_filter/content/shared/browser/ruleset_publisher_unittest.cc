@@ -33,14 +33,12 @@
 #include "content/public/test/browser_task_environment.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
-#include "ipc/ipc_platform_file.h"
-#include "ipc/ipc_test_sink.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 class RenderProcessHost;
-} // namespace content
+}  // namespace content
 
 namespace subresource_filter {
 
@@ -55,8 +53,9 @@ class NotifyingMockRenderProcessHost : public content::MockRenderProcessHost {
       content::BrowserContext* browser_context,
       content::RenderProcessHostCreationObserver* observer)
       : content::MockRenderProcessHost(browser_context) {
-    if (observer)
+    if (observer) {
       observer->OnRenderProcessHostCreated(this);
+    }
   }
 };
 
@@ -200,8 +199,7 @@ TEST_F(SubresourceFilterRulesetPublisherTest,
       service.RulesetFileForProcess(&second_renderer), kTestFileContents));
 }
 
-TEST_F(SubresourceFilterRulesetPublisherTest,
-       PublishesRulesetInOnePostTask) {
+TEST_F(SubresourceFilterRulesetPublisherTest, PublishesRulesetInOnePostTask) {
   // Regression test for crbug.com/817308. Test verifies that ruleset is
   // published on browser startup via exactly one PostTask.
 

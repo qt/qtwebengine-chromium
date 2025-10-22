@@ -9,11 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
+// Architecture-specific headers.
+#include "src/xnnpack/simd/s8-sse41.h"
+
+// XNNPACK headers.
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/reduce.h"
-
-#include "src/xnnpack/simd/s8-sse41.h"
 
 void xnn_s8_rmin_ukernel__sse41_u16(
     size_t batch,
@@ -37,7 +41,7 @@ void xnn_s8_rmin_ukernel__sse41_u16(
     vmin0 = xnn_min_s8(vmin0, vt);
   }
 
-  int8_t min0 = xnn_horizontal_min_s8(vmin0);
+  int8_t min0 = xnn_reduce_min_s8(vmin0);
 
   if XNN_UNLIKELY(batch != 0) {
     do {

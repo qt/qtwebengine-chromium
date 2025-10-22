@@ -52,29 +52,33 @@ class PlaybackController(abc.ABC):
     return TimeoutPlaybackController(duration)
 
   @abc.abstractmethod
-  def __iter__(self) -> Iterator[None]:
+  def __iter__(self) -> Iterator[int]:
     pass
 
 
 @dataclasses.dataclass(frozen=True)
 class ForeverPlaybackController(PlaybackController):
 
-  def __iter__(self) -> Iterator[None]:
+  def __iter__(self) -> Iterator[int]:
+    i = 0
     while True:
-      yield None
+      yield i
+      i += 1
 
 
 @dataclasses.dataclass(frozen=True)
 class TimeoutPlaybackController(PlaybackController):
   duration : dt.timedelta
 
-  def __iter__(self) -> Iterator[None]:
+  def __iter__(self) -> Iterator[int]:
     end = dt.datetime.now() + self.duration
-    yield None
+    yield 0
     if not self.duration:
       return
+    i = 1
     while dt.datetime.now() <= end:
-      yield None
+      yield i
+      i += 1
 
 
 @dataclasses.dataclass(frozen=True)
@@ -84,6 +88,5 @@ class RepeatPlaybackController(PlaybackController):
   def __post_init__(self) -> None:
     NumberParser.positive_int(self.count, " page playback count")
 
-  def __iter__(self) -> Iterator[None]:
-    for _ in range(self.count):
-      yield None
+  def __iter__(self) -> Iterator[int]:
+    yield from range(self.count)

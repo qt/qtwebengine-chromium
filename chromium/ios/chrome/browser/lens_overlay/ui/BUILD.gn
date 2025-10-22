@@ -22,10 +22,13 @@ source_set("protocols") {
     "lens_overlay_bottom_sheet_presentation_delegate.h",
     "lens_overlay_error_handler.h",
     "lens_overlay_result_consumer.h",
+    "lens_overlay_results_page_presenting.h",
     "lens_result_page_mutator.h",
     "lens_toolbar_consumer.h",
     "lens_toolbar_mutator.h",
   ]
+  public_deps =
+      [ "//ios/chrome/browser/lens_overlay/model:detent_state_header" ]
   frameworks = [ "UIKit.framework" ]
 }
 
@@ -41,6 +44,7 @@ source_set("results_page_presenter") {
     "//base",
     "//ios/chrome/browser/lens_overlay/model",
     "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
+    "//ios/chrome/common/ui/colors",
     "//ui/base",
   ]
   frameworks = [ "UIKit.framework" ]
@@ -62,6 +66,7 @@ source_set("container_presenter") {
     "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
     "//ios/chrome/browser/shared/model/profile",
     "//ios/chrome/browser/shared/public/features",
+    "//ios/chrome/common/ui/util",
     "//ui/base",
   ]
   frameworks = [ "UIKit.framework" ]
@@ -69,6 +74,10 @@ source_set("container_presenter") {
 
 source_set("view_controller") {
   sources = [
+    "info_message/lens_translate_error_view_controller.h",
+    "info_message/lens_translate_error_view_controller.mm",
+    "info_message/lens_translate_indication_view_controller.h",
+    "info_message/lens_translate_indication_view_controller.mm",
     "lens_overlay_consent_view_controller.h",
     "lens_overlay_consent_view_controller.mm",
     "lens_overlay_container_view_controller.h",
@@ -88,8 +97,8 @@ source_set("view_controller") {
     "//ios/chrome/browser/lens_overlay/coordinator:lens_overlay_availability",
     "//ios/chrome/browser/lens_overlay/ui/resources",
     "//ios/chrome/browser/lens_overlay/ui/resources:animation_files",
-    "//ios/chrome/browser/omnibox/ui_bundled:omnibox_internal",
-    "//ios/chrome/browser/omnibox/ui_bundled/popup",
+    "//ios/chrome/browser/omnibox/ui:omnibox_internal",
+    "//ios/chrome/browser/omnibox/ui/popup",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/shared/ui/elements",
@@ -101,6 +110,7 @@ source_set("view_controller") {
     "//ios/chrome/common/ui/promo_style:utils",
     "//ios/chrome/common/ui/util",
     "//ios/components/ui_util",
+    "//ios/public/provider/chrome/browser/font:font_api",
     "//ios/public/provider/chrome/browser/lens:lens_overlay_api",
     "//ios/public/provider/chrome/browser/lottie:lottie_animation_api",
     "//url",
@@ -156,6 +166,7 @@ source_set("network_issue_alert_presenter") {
     ":protocols",
     "//base",
     "//ios/chrome/app/strings:ios_strings_grit",
+    "//ios/chrome/browser/lens_overlay/model",
     "//ui/base",
     "//url",
   ]

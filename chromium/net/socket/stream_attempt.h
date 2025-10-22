@@ -9,6 +9,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/trace_event/trace_event.h"
 #include "base/values.h"
 #include "net/base/completion_once_callback.h"
 #include "net/base/ip_endpoint.h"
@@ -55,6 +56,7 @@ class NET_EXPORT_PRIVATE StreamAttempt {
   // `params` must outlive `this`.
   StreamAttempt(const StreamAttemptParams* params,
                 IPEndPoint ip_endpoint,
+                perfetto::Track track,
                 NetLogSourceType net_log_source_type,
                 NetLogEventType net_log_attempt_event_type,
                 const NetLogWithSource* net_log = nullptr);
@@ -113,11 +115,14 @@ class NET_EXPORT_PRIVATE StreamAttempt {
     return connect_timing_;
   }
 
+  perfetto::Track track() const { return track_; }
+
  private:
   void LogCompletion(int rv);
 
   const raw_ptr<const StreamAttemptParams> params_;
   const IPEndPoint ip_endpoint_;
+  perfetto::Track track_;
 
   NetLogWithSource net_log_;
   NetLogEventType net_log_attempt_event_type_;

@@ -23,45 +23,32 @@
 #include "state_tracker/descriptor_sets.h"
 #include "gpuav/resources/gpuav_vulkan_objects.h"
 #include "gpuav/spirv/interface.h"
-#include "containers/custom_containers.h"
+#include "containers/limits.h"
 
 namespace gpuav {
-class DescriptorHeap;
 class Validator;
 
 // Information about how each descriptor was accessed
 struct DescriptorAccess {
-    uint32_t binding;      // binding number in the descriptor set
-    uint32_t index;        // index into descriptor array
-    uint32_t variable_id;  // OpVariableID
-    uint32_t action_index;  // Index of action command access occured
+    uint32_t binding = vvl::kU32Max;       // binding number in the descriptor set
+    uint32_t index = vvl::kU32Max;         // index into descriptor array
+    uint32_t variable_id = vvl::kU32Max;   // OpVariableID
+    uint32_t error_logger_i = vvl::kU32Max;  // Index of error logger stored in command buffer state
 };
-
-// We create a map with the |unique_shader_id| as the key so we can only do the state object lookup once per
-// pipeline/shaderModule/shaderObject
-typedef vvl::unordered_map<uint32_t, std::vector<DescriptorAccess>> DescriptorAccessMap;
 
 class DescriptorSetSubState : public vvl::DescriptorSetSubState {
   public:
     DescriptorSetSubState(const vvl::DescriptorSet &set, Validator &state_data);
     virtual ~DescriptorSetSubState();
 
-    void NotifyInvalidate(const vvl::StateObject::NodeList &invalid_nodes, bool unlink) override;
     void NotifyUpdate() override;
 
-    VkDeviceAddress GetTypeAddress(Validator &gpuav, const Location &loc);
-    VkDeviceAddress GetPostProcessBuffer(Validator &gpuav, const Location &loc);
-    bool HasPostProcessBuffer() const { return !post_process_buffer_.IsDestroyed(); }
-    bool CanPostProcess() const;
-    void ClearPostProcess(const Location &loc) const;
+    VkDeviceAddress GetTypeAddress(Validator &gpuav);
 
-    DescriptorAccessMap GetDescriptorAccesses(const Location &loc) const;
+    const std::vector<gpuav::spirv::BindingLayout> &GetBindingLayouts() const { return binding_layouts_; }
 
   private:
     void BuildBindingLayouts();
-    std::lock_guard<std::mutex> Lock() const { return std::lock_guard<std::mutex>(state_lock_); }
-
-    vko::Buffer post_process_buffer_;
 
     std::vector<gpuav::spirv::BindingLayout> binding_layouts_;
 
@@ -73,38 +60,10 @@ class DescriptorSetSubState : public vvl::DescriptorSetSubState {
     vko::Buffer input_buffer_;
 
     mutable std::mutex state_lock_;
-    DescriptorHeap *heap_{};
 };
 
 static inline DescriptorSetSubState &SubState(vvl::DescriptorSet &set) {
     return static_cast<DescriptorSetSubState &>(*set.SubState(LayerObjectTypeGpuAssisted));
 }
-
-typedef uint32_t DescriptorId;
-class DescriptorHeap {
-  public:
-    DescriptorHeap(Validator &gpuav, uint32_t max_descriptors, const Location &loc);
-    ~DescriptorHeap();
-
-    DescriptorId GetId(const VulkanTypedHandle &handle);
-    const VulkanTypedHandle GetHandle(DescriptorId id) const;
-
-    void Delete(const VulkanTypedHandle &handle);
-
-    VkDeviceAddress GetDeviceAddress() const { return buffer_.Address(); }
-
-  private:
-    std::lock_guard<std::mutex> Lock() const { return std::lock_guard<std::mutex>(lock_); }
-
-    mutable std::mutex lock_;
-
-    const uint32_t max_descriptors_;
-    DescriptorId next_id_{1};
-    vvl::unordered_map<DescriptorId, VulkanTypedHandle> alloc_map_;
-    vvl::unordered_map<VulkanTypedHandle, DescriptorId> handle_map_;
-
-    vko::Buffer buffer_;
-    uint32_t *gpu_heap_state_{nullptr};
-};
 
 }  // namespace gpuav

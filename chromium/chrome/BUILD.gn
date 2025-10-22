@@ -21,11 +21,10 @@ import("//chrome/browser/buildflags.gni")
 import("//chrome/chrome_paks.gni")
 import("//chrome/common/features.gni")
 import("//chrome/process_version_rc_template.gni")
-import("//components/nacl/features.gni")
 import("//components/optimization_guide/features.gni")
 import("//extensions/buildflags/buildflags.gni")
 import("//media/media_options.gni")
-import("//ppapi/buildflags/buildflags.gni")
+import("//services/shape_detection/features.gni")
 import("//third_party/angle/gni/angle.gni")
 import("//third_party/blink/public/public_features.gni")
 import("//third_party/widevine/cdm/widevine.gni")
@@ -176,16 +175,12 @@ if (!is_android && !is_mac) {
 
     if (is_chromeos) {
       data_deps += [
-        "//components/variations/cros_evaluate_seed:evaluate_seed",
         "//sandbox/linux:chrome_sandbox",
       ]
       if (build_mojo_proxy) {
         data_deps += [ "//mojo/proxy:mojo_proxy" ]
       }
-      deps += [
-        "//components/exo/wayland:test_controller_stub",
-        "//components/exo/wayland:ui_controls_protocol_stub",
-      ]
+      deps += [ "//components/exo/wayland:ui_controls_protocol_stub" ]
     }
 
     if (is_win) {
@@ -373,8 +368,8 @@ if (!is_android && !is_mac) {
 
     data_deps += [
       "//chrome/browser/resources/media/mei_preload:component",
-      "//chrome/browser/web_applications/isolated_web_apps/key_distribution/preload:component",
       "//components/privacy_sandbox/privacy_sandbox_attestations/preload:component",
+      "//components/webapps/isolated_web_apps/preload:component",
       "//third_party/widevine/cdm",
     ]
 
@@ -435,7 +430,6 @@ if (is_win) {
       "//headless:headless_non_renderer",
       "//headless:headless_shell_browser_lib",
       "//net:net_resources",
-      "//ppapi/buildflags",
       "//sandbox/win:sandbox",
       "//third_party/cld_3/src/src:cld_3",
       "//third_party/wtl",
@@ -637,16 +631,21 @@ if (is_win) {
     outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
   }
 
+  bundle_data("chrome_asset_catalog") {
+    sources = [ "app/theme/$branding_path_component/mac/Assets.car" ]
+    outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
+  }
+
   bundle_data("chrome_resources") {
     sources = [
       "$root_out_dir/$chrome_mac_bundle_id.manifest",
-      "app/theme/$branding_path_component/mac/document.icns",
       "browser/ui/cocoa/applescript/scripting.sdef",
     ]
     outputs = [ "{{bundle_resources_dir}}/{{source_file_part}}" ]
     public_deps = [
       ":chrome_app_icon",
       ":chrome_app_strings",
+      ":chrome_asset_catalog",
       "//components/policy:chrome_manifest_bundle",
     ]
   }
@@ -777,11 +776,15 @@ if (is_win) {
 
         ldflags += [
           # The helper is in Chromium.app/Contents/Frameworks/Chromium Framework.framework/Versions/X/Helpers/Chromium Helper.app/Contents/MacOS
-          # so set rpath up to the base.
-          "-Wl,-rpath,@loader_path/../../../../../../../../../..",
 
-          # ... and up to Contents/Frameworks.
+          # Set up an rpath to the Contents/Frameworks directory so that
+          # Chromium.framework will be found there. This matches the path that
+          # chrome_exe_main_mac.cc uses with `dlopen` and avoids loading the
+          # framework into memory twice.
           "-Wl,-rpath,@executable_path/../../../../../../..",
+
+          # Add an rpath up to the base for all other libraries.
+          "-Wl,-rpath,@loader_path/../../../../../../../../../..",
         ]
       }
 
@@ -857,6 +860,7 @@ if (is_win) {
     info_plist_target = ":chrome_helper_app_alerts_plist"
     deps = [
       ":chrome_app_icon",
+      ":chrome_asset_catalog",
       ":chrome_helper_app_alerts_resources",
     ]
   }
@@ -971,35 +975,16 @@ if (is_win) {
     }
   }
 
-  if (enable_nacl) {
-    bundle_data("chrome_framework_plugins") {
-      sources = []
-      outputs =
-          [ "{{bundle_contents_dir}}/Internet Plug-Ins/{{source_file_part}}" ]
-      public_deps = []
-
-      if (enable_nacl) {
-        if (current_cpu == "x86") {
-          sources += [ "$root_out_dir/nacl_irt_x86_32.nexe" ]
-        } else if (current_cpu == "x64") {
-          sources += [ "$root_out_dir/nacl_irt_x86_64.nexe" ]
-        }
-        public_deps += [ "//ppapi/native_client:irt" ]
-      }
-    }
-  } else {
-    group("chrome_framework_plugins") {
-    }
-  }
-
   # Add the ANGLE .dylibs in the MODULE_DIR of Chromium.app
-  bundle_data("angle_binaries") {
-    sources = [
-      "$root_out_dir/egl_intermediates/libEGL.dylib",
-      "$root_out_dir/egl_intermediates/libGLESv2.dylib",
-    ]
-    outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
-    public_deps = [ "//ui/gl:angle_library_copy" ]
+  if (!use_static_angle) {
+    bundle_data("angle_binaries") {
+      sources = [
+        "$root_out_dir/egl_intermediates/libEGL.dylib",
+        "$root_out_dir/egl_intermediates/libGLESv2.dylib",
+      ]
+      outputs = [ "{{bundle_contents_dir}}/Libraries/{{source_file_part}}" ]
+      public_deps = [ "//ui/gl:angle_library_copy" ]
+    }
   }
 
   # Add the SwiftShader .dylibs in the MODULE_DIR of Chromium.app
@@ -1181,10 +1166,6 @@ if (is_win) {
       framework_contents += [ "Default Apps" ]
     }
 
-    if (enable_nacl) {
-      framework_contents += [ "Internet Plug-Ins" ]
-    }
-
     configs += [ "//build/config/compiler:wexit_time_destructors" ]
     configs -= [ "//build/config/compiler:thinlto_optimize_default" ]
     configs += [ "//build/config/compiler:thinlto_optimize_max" ]
@@ -1198,20 +1179,22 @@ if (is_win) {
     public_deps = [ ":chrome_dll" ]
 
     bundle_deps = [
-      ":angle_binaries",
       ":chrome_framework_helpers",
-      ":chrome_framework_plugins",
       ":chrome_framework_resources",
       ":optimization_guide_library",
       ":swiftshader_binaries",
       ":widevine_cdm_library",
       "//chrome/browser/resources/media/mei_preload:component_bundle",
-      "//chrome/browser/web_applications/isolated_web_apps/key_distribution/preload:component_bundle",
       "//components/privacy_sandbox/privacy_sandbox_attestations/preload:component_bundle",
+      "//components/webapps/isolated_web_apps/preload:component_bundle",
     ]
 
     if (is_chrome_branded) {
       bundle_deps += [ ":preinstalled_apps" ]
+    }
+
+    if (!use_static_angle) {
+      bundle_deps += [ ":angle_binaries" ]
     }
 
     configs += [ ":chrome_dll_symbol_order" ]
@@ -1295,14 +1278,18 @@ if (is_win) {
     _chrome_symbols_sources = [
       "$root_out_dir/$chrome_product_full_name.app/Contents/MacOS/$chrome_product_full_name",
       "$root_out_dir/chrome_crashpad_handler",
-      "$root_out_dir/libEGL.dylib",
-      "$root_out_dir/libGLESv2.dylib",
       "$root_out_dir/libvk_swiftshader.dylib",
       _framework_binary_path,
     ]
     if (build_with_internal_optimization_guide) {
       _chrome_symbols_sources +=
           [ "$root_out_dir/liboptimization_guide_internal.dylib" ]
+    }
+    if (!use_static_angle) {
+      _chrome_symbols_sources += [
+        "$root_out_dir/libEGL.dylib",
+        "$root_out_dir/libGLESv2.dylib",
+      ]
     }
 
     foreach(helper_params, chrome_mac_helpers) {
@@ -1336,13 +1323,17 @@ if (is_win) {
         ":chrome_app",
         ":chrome_framework",
         "//components/crash/core/app:chrome_crashpad_handler",
-        "//third_party/angle:libEGL",
-        "//third_party/angle:libGLESv2",
         "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan",
         dump_syms,
       ]
       if (build_with_internal_optimization_guide) {
         deps += [ "//components/optimization_guide/internal:optimization_guide_internal" ]
+      }
+      if (!use_static_angle) {
+        deps += [
+          "//third_party/angle:libEGL",
+          "//third_party/angle:libGLESv2",
+        ]
       }
 
       foreach(helper_params, chrome_mac_helpers) {
@@ -1361,24 +1352,32 @@ if (is_win) {
         "$root_out_dir/$chrome_framework_name.dSYM",
         "$root_out_dir/$chrome_product_full_name.dSYM",
         "$root_out_dir/chrome_crashpad_handler.dSYM",
-        "$root_out_dir/libEGL.dylib.dSYM",
-        "$root_out_dir/libGLESv2.dylib.dSYM",
         "$root_out_dir/libvk_swiftshader.dylib.dSYM",
       ]
       if (build_with_internal_optimization_guide) {
         _dsyms += [ "$root_out_dir/liboptimization_guide_internal.dylib.dSYM" ]
+      }
+      if (!use_static_angle) {
+        _dsyms += [
+          "$root_out_dir/libEGL.dylib.dSYM",
+          "$root_out_dir/libGLESv2.dylib.dSYM",
+        ]
       }
 
       deps = [
         ":chrome_app",
         ":chrome_framework",
         "//components/crash/core/app:chrome_crashpad_handler",
-        "//third_party/angle:libEGL",
-        "//third_party/angle:libGLESv2",
         "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan",
       ]
       if (build_with_internal_optimization_guide) {
         deps += [ "//components/optimization_guide/internal:optimization_guide_internal" ]
+      }
+      if (!use_static_angle) {
+        deps += [
+          "//third_party/angle:libEGL",
+          "//third_party/angle:libGLESv2",
+        ]
       }
 
       foreach(helper_params, chrome_mac_helpers) {
@@ -1422,7 +1421,7 @@ group("dependencies") {
     "//components/memory_system",
     "//components/startup_metric_utils",
     "//components/sync",
-    "//components/upload_list:upload_list",
+    "//components/upload_list",
     "//components/webui/about",
     "//content/public/child",
     "//pdf",
@@ -1432,19 +1431,8 @@ group("dependencies") {
     "//v8:v8_headers",
   ]
 
-  if (enable_ppapi) {
-    public_deps += [ "//ppapi/host" ]
-  }
-
   if (enable_printing) {
     public_deps += [ "//printing" ]
-  }
-
-  if (enable_nacl) {
-    public_deps += [
-      "//components/nacl/browser",
-      "//components/nacl/renderer/plugin:nacl_trusted_plugin",
-    ]
   }
 
   if (is_chromeos) {
@@ -1516,7 +1504,7 @@ group("resources") {
 group("extra_resources") {
   # Deps should be same as those in chrome_extra_paks() within chrome_paks.gni.
   public_deps = [
-    "//chrome/browser/resources:resources",
+    "//chrome/browser/resources",
     "//components/autofill/core/browser:autofill_address_rewriter_resources",
   ]
 }
@@ -1689,8 +1677,6 @@ if (is_linux || is_chromeos) {
   if (!(is_debug && use_debug_fission)) {
     group("linux_symbols") {
       deps = [
-        ":angle_egl_symbols",
-        ":angle_gles_symbols",
         ":chrome_crashpad_symbols",
         ":chrome_symbols",
       ]
@@ -1702,6 +1688,15 @@ if (is_linux || is_chromeos) {
       }
       if (build_with_internal_optimization_guide) {
         deps += [ ":optimization_guide_symbols" ]
+      }
+      if (build_with_internal_shape_detection) {
+        deps += [ ":shape_detection_symbols" ]
+      }
+      if (!use_static_angle) {
+        deps += [
+          ":angle_egl_symbols",
+          ":angle_gles_symbols",
+        ]
       }
     }
     extract_symbols("chrome_symbols") {
@@ -1740,29 +1735,31 @@ if (is_linux || is_chromeos) {
 
       deps = [ "//third_party/swiftshader/src/Vulkan:swiftshader_libvulkan" ]
     }
-    extract_symbols("angle_egl_symbols") {
-      binary = "$root_out_dir/libEGL.so"
+    if (!use_static_angle) {
+      extract_symbols("angle_egl_symbols") {
+        binary = "$root_out_dir/libEGL.so"
 
-      if (current_cpu == "x86") {
-        # GYP used "ia32" so keep that naming for back-compat.
-        symbol_file = "$root_out_dir/angle_libegl.breakpad.ia32"
-      } else {
-        symbol_file = "$root_out_dir/angle_libegl.breakpad.$current_cpu"
+        if (current_cpu == "x86") {
+          # GYP used "ia32" so keep that naming for back-compat.
+          symbol_file = "$root_out_dir/angle_libegl.breakpad.ia32"
+        } else {
+          symbol_file = "$root_out_dir/angle_libegl.breakpad.$current_cpu"
+        }
+
+        deps = [ "//third_party/angle:libEGL" ]
       }
+      extract_symbols("angle_gles_symbols") {
+        binary = "$root_out_dir/libGLESv2.so"
 
-      deps = [ "//third_party/angle:libEGL" ]
-    }
-    extract_symbols("angle_gles_symbols") {
-      binary = "$root_out_dir/libGLESv2.so"
+        if (current_cpu == "x86") {
+          # GYP used "ia32" so keep that naming for back-compat.
+          symbol_file = "$root_out_dir/angle_libgles.breakpad.ia32"
+        } else {
+          symbol_file = "$root_out_dir/angle_libgles.breakpad.$current_cpu"
+        }
 
-      if (current_cpu == "x86") {
-        # GYP used "ia32" so keep that naming for back-compat.
-        symbol_file = "$root_out_dir/angle_libgles.breakpad.ia32"
-      } else {
-        symbol_file = "$root_out_dir/angle_libgles.breakpad.$current_cpu"
+        deps = [ "//third_party/angle:libGLESv2" ]
       }
-
-      deps = [ "//third_party/angle:libGLESv2" ]
     }
     if (!is_chromeos && angle_shared_libvulkan) {
       extract_symbols("angle_libvulkan_symbols") {
@@ -1791,6 +1788,21 @@ if (is_linux || is_chromeos) {
         }
 
         deps = [ "//components/optimization_guide/internal:optimization_guide_internal" ]
+      }
+    }
+    if (build_with_internal_shape_detection) {
+      extract_symbols("shape_detection_symbols") {
+        binary = "$root_out_dir/libshape_detection_internal.so"
+        if (current_cpu == "x86") {
+          # GYP used "ia32" so keep that naming for back-compat.
+          symbol_file = "$root_out_dir/shape_detection_internal.breakpad.ia32"
+        } else {
+          symbol_file =
+              "$root_out_dir/shape_detection_internal.breakpad.$current_cpu"
+        }
+
+        deps =
+            [ "//services/shape_detection/internal:shape_detection_internal" ]
       }
     }
   }

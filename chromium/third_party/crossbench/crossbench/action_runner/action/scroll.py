@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import functools
-from typing import TYPE_CHECKING, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Optional, Type
 
 from typing_extensions import override
 
@@ -82,7 +82,7 @@ class ScrollAction(InputSourceAction):
           "'required' can only be used when a selector is specified")
 
   @override
-  def supported_input_sources(self) -> Tuple[InputSource, ...]:
+  def supported_input_sources(self) -> tuple[InputSource, ...]:
     return (InputSource.JS, InputSource.TOUCH)
 
   @override

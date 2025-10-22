@@ -76,6 +76,7 @@ aggregate_vector_icons("omnibox_vector_icons") {
     "offline_pin.icon",
     "page.icon",
     "page_chrome_refresh.icon",
+    "page_spark.icon",
     "pedal.icon",
     "price_tracking_disabled.icon",
     "price_tracking_disabled_refresh.icon",
@@ -93,6 +94,7 @@ aggregate_vector_icons("omnibox_vector_icons") {
     "star_active.icon",
     "star_active_chrome_refresh.icon",
     "star_chrome_refresh.icon",
+    "subdirectory_arrow_right.icon",
     "summarize_auto.icon",
     "switch.icon",
     "switch_cr2023.icon",
@@ -150,6 +152,9 @@ static_library("browser") {
     "actions/omnibox_pedal_provider.h",
     "actions/tab_switch_action.cc",
     "actions/tab_switch_action.h",
+    "aim_eligibility_service.cc",
+    "aim_eligibility_service.h",
+    "aim_eligibility_service_observer.h",
     "answers_cache.cc",
     "answers_cache.h",
     "autocomplete_classifier.cc",
@@ -160,6 +165,7 @@ static_library("browser") {
     "autocomplete_controller_emitter.h",
     "autocomplete_controller_metrics.cc",
     "autocomplete_controller_metrics.h",
+    "autocomplete_enums.h",
     "autocomplete_grouper_groups.cc",
     "autocomplete_grouper_groups.h",
     "autocomplete_grouper_sections.cc",
@@ -203,6 +209,8 @@ static_library("browser") {
     "enterprise_search_aggregator_provider.h",
     "enterprise_search_aggregator_suggestions_service.cc",
     "enterprise_search_aggregator_suggestions_service.h",
+    "extension_suggestion.cc",
+    "extension_suggestion.h",
     "favicon_cache.cc",
     "favicon_cache.h",
     "featured_search_provider.cc",
@@ -233,6 +241,7 @@ static_library("browser") {
     "keyword_extensions_delegate.h",
     "keyword_provider.cc",
     "keyword_provider.h",
+    "lens_suggest_inputs_utils.h",
     "local_history_zero_suggest_provider.cc",
     "local_history_zero_suggest_provider.h",
     "match_compare.h",
@@ -250,6 +259,8 @@ static_library("browser") {
     "omnibox_field_trial.h",
     "omnibox_log.cc",
     "omnibox_log.h",
+    "omnibox_logging_utils.cc",
+    "omnibox_logging_utils.h",
     "omnibox_metrics_provider.cc",
     "omnibox_metrics_provider.h",
     "omnibox_navigation_observer.h",
@@ -259,6 +270,8 @@ static_library("browser") {
     "omnibox_popup_view.h",
     "omnibox_prefs.cc",
     "omnibox_prefs.h",
+    "omnibox_text_util.cc",
+    "omnibox_text_util.h",
     "omnibox_triggered_feature_service.cc",
     "omnibox_triggered_feature_service.h",
     "omnibox_view.cc",
@@ -303,6 +316,8 @@ static_library("browser") {
     "suggestion_answer.h",
     "suggestion_group_util.cc",
     "suggestion_group_util.h",
+    "tab_group_provider.cc",
+    "tab_group_provider.h",
     "tab_matcher.cc",
     "tab_matcher.h",
     "tailored_word_break_iterator.cc",
@@ -342,6 +357,7 @@ static_library("browser") {
     "//components/lens/proto/server:proto",
     "//components/omnibox/common",
     "//components/omnibox/resources:omnibox_pedal_synonyms",
+    "//components/saved_tab_groups/public",
     "//components/security_state/core",
     "//services/data_decoder/public/cpp",
     "//third_party/metrics_proto",
@@ -353,7 +369,7 @@ static_library("browser") {
     "//build:branding_buildflags",
     "//components/bookmarks/browser",
     "//components/component_updater",
-    "//components/dom_distiller/core:core",
+    "//components/dom_distiller/core",
     "//components/favicon/core",
     "//components/favicon_base",
     "//components/history_clusters/core",
@@ -378,6 +394,7 @@ static_library("browser") {
     "//components/url_formatter",
     "//components/variations",
     "//components/variations/net",
+    "//components/vector_icons",
     "//extensions/buildflags",
     "//net",
     "//services/metrics/public/cpp:metrics_cpp",
@@ -404,6 +421,7 @@ static_library("browser") {
     deps += [
       ":jni_headers",
       "//components/browser_ui/util/android",
+      "//components/saved_tab_groups/public:conversion_utils",
       "//url",
     ]
   } else {
@@ -432,11 +450,12 @@ static_library("browser") {
     deps += [ "//content/public/common" ]
   }
 
-  if (enable_extensions) {
+  if (enable_extensions_core) {
     deps += [
       "//extensions/common:common_constants",
       "//extensions/common:extension_features",
     ]
+
     sources += [
       "omnibox_input_watcher.cc",
       "omnibox_input_watcher.h",
@@ -493,10 +512,11 @@ static_library("location_bar") {
   ]
   deps = [
     ":buildflags",
-    "//components/dom_distiller/core:core",
+    "//components/dom_distiller/core",
     "//components/lens/proto/server:proto",
-    "//components/safe_browsing/core/common:common",
+    "//components/safe_browsing/core/common",
     "//components/search_engines",
+    "//components/security_interstitials/core",
     "//components/strings",
     "//components/url_formatter",
     "//net",
@@ -610,6 +630,7 @@ if (is_android) {
       "//components/cached_flags:java",
       "//components/embedder_support/android:util_java",
       "//components/omnibox/common:features_java",
+      "//components/saved_tab_groups/public:java",
       "//components/security_state/core:security_state_enums_java",
       "//third_party/android_deps:protobuf_lite_runtime_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
@@ -652,7 +673,7 @@ if (is_android) {
       "//components/embedder_support/android:util_java",
       "//components/omnibox/common:features_java",
       "//third_party/android_deps:protobuf_lite_runtime_java",
-      "//third_party/junit:junit",
+      "//third_party/junit",
       "//third_party/metrics_proto:metrics_proto_java",
       "//third_party/mockito:mockito_java",
     ]
@@ -710,6 +731,8 @@ static_library("test_support") {
     "fake_tab_matcher.h",
     "history_test_util.cc",
     "history_test_util.h",
+    "mock_aim_eligibility_service.cc",
+    "mock_aim_eligibility_service.h",
     "mock_autocomplete_provider_client.cc",
     "mock_autocomplete_provider_client.h",
     "mock_tab_matcher.cc",
@@ -748,6 +771,7 @@ static_library("test_support") {
     "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/prefs:test_support",
     "//components/resources",
+    "//components/saved_tab_groups/test_support",
     "//components/search_engines",
     "//components/search_engines:test_support",
     "//components/sessions",
@@ -800,6 +824,7 @@ bundle_data("unit_tests_bundle_data") {
 source_set("unit_tests") {
   testonly = true
   sources = [
+    "actions/contextual_search_action_unittest.cc",
     "actions/omnibox_action_in_suggest_unittest.cc",
     "actions/omnibox_answer_action_unittest.cc",
     "actions/omnibox_extension_action_unittest.cc",
@@ -821,6 +846,7 @@ source_set("unit_tests") {
     "builtin_provider_unittest.cc",
     "calculator_provider_unittest.cc",
     "clipboard_provider_unittest.cc",
+    "contextual_search_provider_unittest.cc",
     "document_provider_unittest.cc",
     "document_suggestions_service_unittest.cc",
     "enterprise_search_aggregator_provider_unittest.cc",
@@ -847,7 +873,7 @@ source_set("unit_tests") {
     "omnibox_field_trial_unittest.cc",
     "omnibox_metrics_provider_unittest.cc",
     "omnibox_popup_selection_unittest.cc",
-    "omnibox_prefs_unittest.cc",
+    "omnibox_text_util_unittest.cc",
     "omnibox_triggered_feature_service_unittest.cc",
     "omnibox_view_unittest.cc",
     "on_device_head_model_unittest.cc",
@@ -863,6 +889,7 @@ source_set("unit_tests") {
     "shortcuts_provider_unittest.cc",
     "suggestion_answer_unittest.cc",
     "suggestion_group_unittest.cc",
+    "tab_group_provider_unittest.cc",
     "tailored_word_break_iterator_unittest.cc",
     "titled_url_match_utils_unittest.cc",
     "unscoped_extension_provider_unittest.cc",
@@ -895,27 +922,29 @@ source_set("unit_tests") {
     "//build:blink_buildflags",
     "//components/bookmarks/browser",
     "//components/bookmarks/test",
-    "//components/dom_distiller/core:core",
+    "//components/dom_distiller/core",
     "//components/favicon/core/test:test_support",
     "//components/history/core/test",
     "//components/history_embeddings",
     "//components/history_embeddings:test_support",
     "//components/memory_pressure:test_support",
-    "//components/ntp_tiles:ntp_tiles",
+    "//components/ntp_tiles",
     "//components/omnibox/common",
     "//components/open_from_clipboard:test_support",
     "//components/optimization_guide/core",
     "//components/optimization_guide/core:test_support",
     "//components/optimization_guide/proto:optimization_guide_proto",
     "//components/os_crypt/async/browser",
-    "//components/passage_embeddings:passage_embeddings",
+    "//components/passage_embeddings",
     "//components/passage_embeddings:test_support",
     "//components/prefs:test_support",
-    "//components/query_parser:query_parser",
-    "//components/safe_browsing/core/common:common",
+    "//components/query_parser",
+    "//components/safe_browsing/core/common",
+    "//components/saved_tab_groups/test_support",
     "//components/search",
     "//components/search_engines",
     "//components/search_engines:test_support",
+    "//components/security_interstitials/core",
     "//components/sessions",
     "//components/signin/public/identity_manager:test_support",
     "//components/strings",
@@ -924,7 +953,7 @@ source_set("unit_tests") {
     "//components/url_formatter",
     "//components/variations",
     "//components/variations:test_support",
-    "//components/variations/net:net",
+    "//components/variations/net",
     "//extensions/buildflags",
     "//services/metrics/public/cpp:ukm_builders",
     "//services/network:test_support",
@@ -954,7 +983,7 @@ source_set("unit_tests") {
   }
 
   if (is_chromeos) {
-    deps += [ "//chromeos/constants:constants" ]
+    deps += [ "//chromeos/constants" ]
   }
 
   if (enable_extensions) {
@@ -964,6 +993,10 @@ source_set("unit_tests") {
   if (use_blink) {
     deps += [ "//components/history_clusters/core:test_support" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 fuzzer_test("autocomplete_input_fuzzer") {
@@ -973,7 +1006,7 @@ fuzzer_test("autocomplete_input_fuzzer") {
     ":test_support",
     "//base",
     "//base:i18n",
-    "//third_party/metrics_proto:metrics_proto",
+    "//third_party/metrics_proto",
   ]
 }
 
@@ -993,14 +1026,23 @@ fuzzer_test("search_suggestion_parser_fuzzer") {
     "//base",
     "//base:i18n",
     "//third_party/icu:icui18n",
-    "//third_party/metrics_proto:metrics_proto",
+    "//third_party/metrics_proto",
   ]
   seed_corpus = "fuzz_corpus_suggest"
 }
 
 mojom("mojo_bindings") {
   sources = [ "omnibox.mojom" ]
-  webui_module_path = "/"
 
-  public_deps = [ "//mojo/public/mojom/base" ]
+  if (!is_android && !is_ios) {
+    sources += [ "searchbox.mojom" ]
+  }
+
+  webui_module_path = "chrome://resources/mojo/components/omnibox/browser"
+
+  public_deps = [
+    "//mojo/public/mojom/base",
+    "//ui/gfx/mojom",
+    "//url/mojom:url_mojom_gurl",
+  ]
 }

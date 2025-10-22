@@ -6,15 +6,11 @@ source_set("elements") {
   sources = [
     "crossfade_label.h",
     "crossfade_label.mm",
-    "custom_highlight_button.h",
-    "custom_highlight_button.mm",
     "extended_touch_target_button.h",
     "extended_touch_target_button.mm",
     "fade_truncating_label+Testing.h",
     "fade_truncating_label.h",
     "fade_truncating_label.mm",
-    "gray_highlight_button.h",
-    "gray_highlight_button.mm",
     "home_waiting_view.h",
     "home_waiting_view.mm",
     "new_feature_badge_view.h",
@@ -87,6 +83,7 @@ source_set("unit_tests") {
     "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/test:test_support",
+    "//ios/web/public/test",
     "//testing/gtest",
     "//third_party/ocmock",
   ]
@@ -106,7 +103,7 @@ source_set("elements_internal") {
   deps = [
     ":constants",
     "//base",
-    "//ios/chrome/browser/scoped_ui_blocker/ui_bundled:ui_bundled",
+    "//ios/chrome/browser/scoped_ui_blocker/ui_bundled",
     "//ios/chrome/browser/shared/coordinator/chrome_coordinator",
     "//ios/chrome/browser/shared/coordinator/scene:scene_state_header",
     "//ios/chrome/browser/shared/ui/util",

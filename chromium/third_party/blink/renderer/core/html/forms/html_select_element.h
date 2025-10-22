@@ -33,6 +33,7 @@
 #include "third_party/blink/renderer/core/dom/events/simulated_click_options.h"
 #include "third_party/blink/renderer/core/dom/tree_ordered_list.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element_with_state.h"
+#include "third_party/blink/renderer/core/html/forms/html_input_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_selected_content_element.h"
 #include "third_party/blink/renderer/core/html/forms/option_list.h"
 #include "third_party/blink/renderer/core/html/forms/type_ahead.h"
@@ -53,7 +54,7 @@ class SelectType;
 class V8UnionHTMLElementOrLong;
 class V8UnionHTMLOptGroupElementOrHTMLOptionElement;
 class HTMLSelectedContentElement;
-class SelectDescendantsObserver;
+class SelectMutationObserver;
 
 enum class SelectPopupHideBehavior {
   kNormal,
@@ -168,14 +169,8 @@ class CORE_EXPORT HTMLSelectElement final
   // they are associated with. An ancestor <select> will not be returned in some
   // cases, such as nested <option>s, in order to match the logic in
   // RecalcListItems and OptionList.
-  // `insertion_point` and `passed_insertion_point` are optional parameters used
-  // by HTMLOptionElement::InsertedInto. If `insertion_point` is encountered
-  // during the ancestor traversal, then `passed_insertion_point` will be set to
-  // true.
   static HTMLSelectElement* NearestAncestorSelectNoNesting(
-      const Element& element,
-      ContainerNode* insertion_point = nullptr,
-      bool* passed_insertion_point = nullptr);
+      const Element& element);
 
   void AccessKeyAction(SimulatedClickCreationScope creation_scope) override;
   void SelectOptionByAccessKey(HTMLOptionElement*);
@@ -218,6 +213,15 @@ class CORE_EXPORT HTMLSelectElement final
   void SelectOptionByPopup(int list_index);
   void SelectOptionByPopup(HTMLOptionElement* option);
   void SelectMultipleOptionsByPopup(const Vector<int>& list_indices);
+  // SelectOptionFromPopoverPickerOrBaseListbox is called when an option element
+  // is clicked in the following modes:
+  // - When UsesPopoverPickerElement() returns true
+  // - When ListBoxSelectType is being used and appearance:base-select is
+  // applied
+  // TODO(crbug.com/357649033): This method has a lot of duplicated logic with
+  // HTMLSelectElement::SelectOption. These two methods should probably be
+  // merged.
+  void SelectOptionFromPopoverPickerOrBaseListbox(HTMLOptionElement* option);
   // A popup is canceled when the popup was hidden without selecting an item.
   void PopupDidCancel();
   // Provisional selection is a selection made using arrow keys or type ahead.
@@ -274,34 +278,50 @@ class CORE_EXPORT HTMLSelectElement final
   // Returns true if the provided node is some select element's SlottedButton.
   static bool IsSlottedButton(const Node*);
 
-  // This method returns the UA popover element which is used for
-  // appearance:base-select. If this select is rendering in a mode which doesn't
-  // use the UA popover, such as appearance:auto/none or size=2/multiple, then
-  // this will return null.
-  HTMLElement* PopoverForAppearanceBase() const;
+  // This method returns the UA popover element which is used to render the
+  // picker of options when PickerIsPopover() returns true. If
+  // PickerIsPopover() returns false, then this method will return null.
+  HTMLElement* PopoverPickerElement() const;
 
   // Returns true if the provided element is some select element's
-  // PopoverForAppearanceBase.
-  static bool IsPopoverForAppearanceBase(const Node*);
-  static bool IsPopoverForAppearanceBase(const Element*);
+  // PopoverPickerElement. There are overrides for Node and Element because some
+  // callers already have an Element instead of a Node, and if we only had the
+  // Node version then there would be an extra call to DynamicTo<Element> every
+  // time.
+  static bool IsPopoverPickerElement(const Node*);
+  static bool IsPopoverPickerElement(const Element*);
 
   // <select> supports appearance:base-select on both the main element and
-  // ::picker(select). When the main element has appearance:base-select,
-  // IsAppearanceBaseButton will return true and the in-page button part of the
-  // <select> will have base appearance and support rendering of the
-  // author-provided <button>. When both the element and its ::picker(select)
-  // has appearance:base-select, IsAppearanceBasePicker will return true and the
-  // popup will be a popover element. The SelectType must also support base
-  // appearance, which is currently only MenuListSelectType.
-  // IsAppearanceBaseButton should be used for code which is concerned with the
-  // in-page rendering of the button, and IsAppearanceBasePicker should be used
-  // for code which is concerned with the popup/popover and the other elements
-  // which are rendered in it.
+  // ::picker(select). IsAppearanceBase returns true if the main element has
+  // base appearance, and IsAppearanceBasePicker returns true if
+  // ::picker(select) has base appearance.
+  //
+  // If this select is rendered as an in-page list of options, where
+  // ListBoxSelectType is used and UsesMenuList() returns false,
+  // IsAppearanceBasePicker will always return false because there is no picker.
+  // IsAppearanceBase is used to control all base appearance behavior in this
+  // case.
+  //
+  // If this select is rendered as a button with a popup, where
+  // MenuListSelectType is used and UsesMenuList() returns true,
+  // IsAppearanceBasePicker will only return true if both the select element and
+  // its ::picker(select) have appearance:base-select. IsAppearanceBase should
+  // be used for code which is concerned with the in-page button part, and
+  // IsAppearanceBasePicker should be used for code which is concerned with the
+  // popup that shows options.
+  bool IsAppearanceBase() const;
+  bool IsAppearanceBasePicker() const;
+
+  // Depending on the HTML and CSS set on this element, as well as the
+  // platform, a popover in the UA shadowroot of this element will be used to
+  // render the picker. If a popover is going to be used, then this method
+  // returns true, otherwise false.
+  bool PickerIsPopover() const;
+
   // SetIsAppearanceBasePickerForDisplayNone is called during style recalc for
   // the case where the picker is closed and is therefore display:none and
   // doesn't have a computed style to look at inside IsAppearanceBasePicker.
-  bool IsAppearanceBaseButton() const;
-  bool IsAppearanceBasePicker() const;
+  // This should only be called when UsesMenuList() returns true.
   void SetIsAppearanceBasePickerForDisplayNone(bool);
 
   void SelectedContentElementInserted(
@@ -309,9 +329,16 @@ class CORE_EXPORT HTMLSelectElement final
   void SelectedContentElementRemoved(
       HTMLSelectedContentElement* selectedcontent);
 
-  // This will only return an element if IsAppearanceBaseButton(). The element
+  // These methods are used to track all descendant <input>s elements of this
+  // <select>. This is only used for customizable select and is populated by
+  // this select's MutationObserver.
+  void AddDescendantTextInput(HTMLInputElement* input);
+  void RemoveDescendantTextInput(HTMLInputElement* input);
+  HTMLInputElement* FirstDescendantTextInput() const;
+
+  // This will only return an element if IsAppearanceBase(). The element
   // is a popover inside the UA shadowroot which is used to show the user a
-  // preview of what is going to be autofilled.
+  // preview of what is going to be autofilled. This should only be called if
   SelectAutofillPreviewElement* GetAutofillPreviewElement() const;
 
   // Getter and setter for the selectedcontentelement attribute
@@ -321,6 +348,10 @@ class CORE_EXPORT HTMLSelectElement final
   void DefaultEventHandler(Event&) override;
 
   void UpdateAllSelectedcontents(HTMLOptionElement* selected_option);
+
+  // Returns the localized "X selected" text used for MenuList multiple select
+  // elements.
+  String MultipleOptionsSelectedText(unsigned selected_count) const;
 
  private:
   mojom::blink::FormControlType FormControlType() const override;
@@ -337,6 +368,7 @@ class CORE_EXPORT HTMLSelectElement final
   void DispatchBlurEvent(Element* new_focused_element,
                          mojom::blink::FocusType,
                          InputDeviceCapabilities* source_capabilities) override;
+  FocusableState SupportsFocus(UpdateBehavior update_behavior) const override;
 
   bool CanStartSelection() const override { return false; }
 
@@ -425,6 +457,7 @@ class CORE_EXPORT HTMLSelectElement final
   Member<HTMLOptionElement> last_on_change_option_;
   Member<HTMLOptionElement> suggested_option_;
   TreeOrderedList<HTMLSelectedContentElement> descendant_selectedcontents_;
+  TreeOrderedList<HTMLInputElement> descendant_text_inputs_;
   bool uses_menu_list_ = true;
   bool is_multiple_;
   mutable bool should_recalc_list_items_;
@@ -432,7 +465,7 @@ class CORE_EXPORT HTMLSelectElement final
   Member<SelectType> select_type_;
   int index_to_select_on_cancel_;
 
-  Member<SelectDescendantsObserver> descendants_observer_;
+  Member<SelectMutationObserver> descendants_observer_;
   unsigned content_model_violations_count_ = 0U;
 
   friend class ListBoxSelectType;

@@ -3,6 +3,10 @@
   // features are defined here.
   // For more details on adding a new permissions policy, see:
   // https://chromium.googlesource.com/chromium/src/+/main/services/network/public/cpp/permissions_policy/README.md
+  //
+  // Any updates here should be paired with updates to PermissionPolicyFeature
+  // in third_party/blink/public/devtools_protocol/browser_protocol.pdl
+  //
   // TODO(yashard): Add all permissions policy features here.
 
   parameters: {
@@ -80,6 +84,7 @@
     }
   },
 
+  // LINT.IfChange(PermissionsPolicy)
   data: [
     {
       name: "Accelerometer",
@@ -95,6 +100,12 @@
       name: "AmbientLightSensor",
       permissions_policy_name: "ambient-light-sensor",
       depends_on: ["SensorExtraClasses"],
+    },
+    {
+      name: "AriaNotify",
+      permissions_policy_name: "aria-notify",
+      feature_default: "EnableForAll",
+      depends_on: ["AriaNotify"],
     },
     {
       name: "AttributionReporting",
@@ -275,6 +286,11 @@
       depends_on: ["FetchLaterAPI"],
     },
     {
+      name: "DeviceAttributes",
+      permissions_policy_name: "device-attributes",
+      depends_on: ["DeviceAttributes"],
+    },
+    {
       name: "DigitalCredentialsGet",
       permissions_policy_name: "digital-credentials-get",
       depends_on: ["WebIdentityDigitalCredentials"],
@@ -376,12 +392,22 @@
     {
       name: "LanguageDetector",
       permissions_policy_name: "language-detector",
-      depends_on: ["LanguageDetectionAPI", "BuiltInAIAPI"],
+      depends_on: ["LanguageDetectionAPI"],
+    },
+    {
+      name: "LanguageModel",
+      permissions_policy_name: "language-model",
+      depends_on: ["AIPromptAPI"],
     },
     {
       name: "LocalFonts",
       permissions_policy_name: "local-fonts",
       depends_on: ["FontAccess"],
+    },
+    {
+      name: "LocalNetworkAccess",
+      permissions_policy_name: "local-network-access",
+      depends_on: [ "LocalNetworkAccessPermissionPolicy" ],
     },
     {
       name: "Magnetometer",
@@ -401,6 +427,11 @@
     {
       name: "MidiFeature",
       permissions_policy_name: "midi",
+    },
+    {
+      name: "OnDeviceSpeechRecognition",
+      permissions_policy_name: "on-device-speech-recognition",
+      depends_on: ["OnDeviceWebSpeechAvailable"],
     },
     {
       name: "OTPCredentials",
@@ -444,9 +475,15 @@
       permissions_policy_name: "publickey-credentials-get",
     },
     {
+      name: "RecordAdAuctionEvents",
+      permissions_policy_name: "record-ad-auction-events",
+      feature_default: "EnableForAll",
+      depends_on: ["FledgeClickiness"],
+    },
+    {
       name: "Rewriter",
       permissions_policy_name: "rewriter",
-      depends_on: ["AIRewriterAPI", "BuiltInAIAPI"],
+      depends_on: ["AIRewriterAPI"],
     },
     {
       name: "RunAdAuction",
@@ -510,7 +547,7 @@
     {
       name: "Summarizer",
       permissions_policy_name: "summarizer",
-      depends_on: ["AISummarizationAPI", "BuiltInAIAPI"],
+      depends_on: ["AISummarizationAPI"],
     },
     {
       name: "SyncXHR",
@@ -520,7 +557,7 @@
     {
       name: "Translator",
       permissions_policy_name: "translator",
-      depends_on: ["TranslationAPI", "BuiltInAIAPI"],
+      depends_on: ["TranslationAPI"],
     },
     {
       name: "TrustTokenRedemption",
@@ -581,7 +618,8 @@
     {
       name: "Writer",
       permissions_policy_name: "writer",
-      depends_on: ["AIWriterAPI", "BuiltInAIAPI"],
+      depends_on: ["AIWriterAPI"],
     },
   ],
+  // LINT.ThenChange(//third_party/blink/public/devtools_protocol/browser_protocol.pdl:PermissionsPolicyFeature)
 }

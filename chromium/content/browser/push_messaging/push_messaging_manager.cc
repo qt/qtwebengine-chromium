@@ -16,6 +16,7 @@
 #include "base/metrics/histogram_macros.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/time/time.h"
 #include "content/browser/bad_message.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -27,6 +28,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/child_process_host.h"
 #include "content/public/browser/permission_controller.h"
+#include "content/public/browser/permission_descriptor_util.h"
 #include "content/public/browser/permission_request_description.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/common/content_switches.h"
@@ -38,13 +40,6 @@
 #include "url/origin.h"
 
 namespace content {
-
-// Service Worker database keys. If a registration ID is stored, the stored
-// sender ID must be the one used to register. Unfortunately, this isn't always
-// true of pre-InstanceID registrations previously stored in the database, but
-// fortunately it's less important for their sender ID to be accurate.
-const char kPushSenderIdServiceWorkerKey[] = "push_sender_id";
-const char kPushRegistrationIdServiceWorkerKey[] = "push_registration_id";
 
 namespace {
 
@@ -346,7 +341,10 @@ void PushMessagingManager::Register(PushMessagingManager::RegisterData data) {
               ->RequestPermissionFromCurrentDocument(
                   render_frame_host_impl,
                   PermissionRequestDescription(
-                      blink::PermissionType::NOTIFICATIONS, user_gesture),
+                      PermissionDescriptorUtil::
+                          CreatePermissionDescriptorForPermissionType(
+                              blink::PermissionType::NOTIFICATIONS),
+                      user_gesture),
                   base::BindOnce(
                       &PushMessagingManager::DidRequestPermissionInIncognito,
                       AsWeakPtr(), std::move(data)));

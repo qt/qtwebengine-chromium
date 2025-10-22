@@ -18,20 +18,22 @@
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
 
-#include "generated/instrumentation_ray_query_comp.h"
+#include "generated/gpuav_offline_spirv.h"
 
 namespace gpuav {
 namespace spirv {
 
-const static OfflineLinkInfo link_info = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size, "inst_ray_query"};
+const static OfflineModule kOfflineModule = {instrumentation_ray_query_comp, instrumentation_ray_query_comp_size,
+                                             UseErrorPayloadVariable};
 
-RayQueryPass::RayQueryPass(Module& module) : Pass(module) { module.use_bda_ = true; }
+const static OfflineFunction kOfflineFunction = {"inst_ray_query", instrumentation_ray_query_comp_function_0_offset};
+
+RayQueryPass::RayQueryPass(Module& module) : Pass(module, kOfflineModule) { module.use_bda_ = true; }
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
-uint32_t RayQueryPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+uint32_t RayQueryPass::GetLinkFunctionId() { return GetLinkFunction(link_function_id_, kOfflineFunction); }
 
-uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InjectionData& injection_data,
-                                          const InstructionMeta& meta) {
+uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
     const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
@@ -42,11 +44,14 @@ uint32_t RayQueryPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst
     const uint32_t ray_direction_id = meta.target_instruction->Operand(6);
     const uint32_t ray_tmax_id = meta.target_instruction->Operand(7);
 
-    block.CreateInstruction(spv::OpFunctionCall,
-                            {bool_type, function_result, function_def, injection_data.inst_position_id,
-                             injection_data.stage_info_id, ray_flags_id, ray_origin_id, ray_tmin_id, ray_direction_id, ray_tmax_id},
-                            inst_it);
+    const uint32_t inst_position = meta.target_instruction->GetPositionIndex();
+    const uint32_t inst_position_id = module_.type_manager_.CreateConstantUInt32(inst_position).Id();
 
+    block.CreateInstruction(spv::OpFunctionCall,
+                            {bool_type, function_result, function_def, inst_position_id, ray_flags_id, ray_origin_id, ray_tmin_id,
+                             ray_direction_id, ray_tmax_id},
+                            inst_it);
+    module_.need_log_error_ = true;
     return function_result;
 }
 
@@ -83,13 +88,11 @@ bool RayQueryPass::Instrument() {
                 if (IsMaxInstrumentationsCount()) continue;
                 instrumentations_count_++;
 
-                InjectionData injection_data = GetInjectionData(*function, current_block, inst_it, *meta.target_instruction);
-
-                if (module_.settings_.unsafe_mode) {
-                    CreateFunctionCall(current_block, &inst_it, injection_data, meta);
+                if (!module_.settings_.safe_mode) {
+                    CreateFunctionCall(current_block, &inst_it, meta);
                 } else {
                     InjectConditionalData ic_data = InjectFunctionPre(*function.get(), block_it, inst_it);
-                    ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, injection_data, meta);
+                    ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, meta);
                     InjectFunctionPost(current_block, ic_data);
                     // Skip the newly added valid and invalid block. Start searching again from newly split merge block
                     block_it++;

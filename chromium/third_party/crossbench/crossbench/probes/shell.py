@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, List, Optional, Self, Type
+from typing import TYPE_CHECKING, Iterable, Optional, Self, Type
 
 from typing_extensions import override
 
@@ -16,8 +16,8 @@ from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
   from crossbench import path as pth
-  from crossbench.env import HostEnvironment
-  from crossbench.plt.base import CmdArg, TupleCmdArgs
+  from crossbench.env.runner_env import RunnerEnv
+  from crossbench.plt.types import CmdArg, TupleCmdArgs
   from crossbench.runner.run import Run
 
 
@@ -126,7 +126,7 @@ class ShellProbe(Probe):
     return self._teardown_cmd
 
   @override
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     super().validate_env(env)
     if env.repetitions != 1:
       env.handle_warning(f"Probe={self.NAME} cannot merge data over multiple "
@@ -141,7 +141,7 @@ class ShellProbeContext(ProbeContext[ShellProbe]):
 
   def __init__(self, probe: ShellProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._result_files: List[pth.LocalPath] = []
+    self._result_files: list[pth.LocalPath] = []
 
   def _maybe_run_cmd(self, name: str, cmd: TupleCmdArgs) -> None:
     if not cmd:

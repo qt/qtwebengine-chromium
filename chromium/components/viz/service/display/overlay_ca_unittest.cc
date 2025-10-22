@@ -35,6 +35,7 @@
 #include "components/viz/test/fake_skia_output_surface.h"
 #include "components/viz/test/test_context_provider.h"
 #include "components/viz/test/test_gles2_interface.h"
+#include "gpu/command_buffer/client/client_shared_image.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -75,9 +76,16 @@ static ResourceId CreateResourceInLayerTree(
     ClientResourceProvider* child_resource_provider,
     const gfx::Size& size,
     bool is_overlay_candidate) {
-  auto resource = TransferableResource::MakeGpu(
-      gpu::Mailbox::Generate(), GL_TEXTURE_2D, gpu::SyncToken(), size,
-      SinglePlaneFormat::kRGBA_8888, is_overlay_candidate);
+  gpu::SharedImageUsageSet usage = gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
+  if (is_overlay_candidate) {
+    usage |= gpu::SHARED_IMAGE_USAGE_SCANOUT;
+  }
+  auto resource = TransferableResource::Make(
+      gpu::ClientSharedImage::CreateForTesting(
+          {SinglePlaneFormat::kRGBA_8888, size, gfx::ColorSpace(),
+           kTopLeft_GrSurfaceOrigin, kPremul_SkAlphaType, usage},
+          GL_TEXTURE_2D),
+      TransferableResource::ResourceSource::kTest, gpu::SyncToken());
 
   ResourceId resource_id =
       child_resource_provider->ImportResource(resource, base::DoNothing());
@@ -123,7 +131,6 @@ TextureDrawQuad* CreateCandidateQuadAt(
     const gfx::Rect& rect,
     gfx::ProtectedVideoType protected_video_type) {
   bool needs_blending = false;
-  bool premultiplied_alpha = false;
   bool nearest_neighbor = false;
   gfx::Size resource_size_in_pixels = rect.size();
   bool is_overlay_candidate = true;
@@ -133,10 +140,9 @@ TextureDrawQuad* CreateCandidateQuadAt(
 
   auto* overlay_quad = render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
   overlay_quad->SetNew(shared_quad_state, rect, rect, needs_blending,
-                       resource_id, premultiplied_alpha, kUVTopLeft,
-                       kUVBottomRight, SkColors::kTransparent, nearest_neighbor,
+                       resource_id, kUVTopLeft, kUVBottomRight,
+                       SkColors::kTransparent, nearest_neighbor,
                        /*secure_output_only=*/false, protected_video_type);
-  overlay_quad->set_resource_size_in_pixels(resource_size_in_pixels);
 
   return overlay_quad;
 }
@@ -357,14 +363,13 @@ TEST_F(CALayerOverlayTest, TextureDrawQuadVideoOverlay) {
   {
     auto pass = CreateRenderPass();
     auto* texture_video_quad = pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-    texture_video_quad->SetNew(pass->shared_quad_state_list.back(),
-                               gfx::Rect(size), gfx::Rect(size),
-                               /*needs_blending=*/false, resource_id,
-                               /*premultiplied_alpha=*/false, kUVTopLeft,
-                               kUVBottomRight, SkColors::kTransparent,
-                               /*nearest_neighbor=*/false,
-                               /*secure_output_only=*/false,
-                               /*video_type=*/gfx::ProtectedVideoType::kClear);
+    texture_video_quad->SetNew(
+        pass->shared_quad_state_list.back(), gfx::Rect(size), gfx::Rect(size),
+        /*needs_blending=*/false, resource_id, kUVTopLeft, kUVBottomRight,
+        SkColors::kTransparent,
+        /*nearest_neighbor=*/false,
+        /*secure_output_only=*/false,
+        /*video_type=*/gfx::ProtectedVideoType::kClear);
     texture_video_quad->is_video_frame = true;
 
     OverlayCandidateList ca_layer_list;

@@ -58,9 +58,7 @@ class UI_ANDROID_EXPORT WindowAndroid : public ViewAndroid {
   struct AdaptiveRefreshRateInfo {
     bool supports_adaptive_refresh_rate = false;
     // Fields below are valid only if `supports_adaptive_refresh_rate` is true.
-    float suggested_frame_rate_normal = 0.f;
     float suggested_frame_rate_high = 0.f;
-    std::vector<float> supported_frame_rates;
 
     AdaptiveRefreshRateInfo();
     AdaptiveRefreshRateInfo(const AdaptiveRefreshRateInfo& other);
@@ -72,7 +70,7 @@ class UI_ANDROID_EXPORT WindowAndroid : public ViewAndroid {
       const base::android::JavaParamRef<jobject>& jwindow_android);
 
   WindowAndroid(JNIEnv* env,
-                jobject obj,
+                const base::android::JavaRef<jobject>& obj,
                 int display_id,
                 float scroll_factor,
                 bool window_is_wide_color_gamut);
@@ -82,7 +80,7 @@ class UI_ANDROID_EXPORT WindowAndroid : public ViewAndroid {
 
   ~WindowAndroid() override;
 
-  void Destroy(JNIEnv* env, const base::android::JavaParamRef<jobject>& obj);
+  void Destroy(JNIEnv* env);
 
   base::android::ScopedJavaLocalRef<jobject> GetJavaObject();
 
@@ -104,31 +102,18 @@ class UI_ANDROID_EXPORT WindowAndroid : public ViewAndroid {
   void SetNeedsAnimate();
   void Animate(base::TimeTicks begin_frame_time);
   void OnVisibilityChanged(JNIEnv* env,
-                           const base::android::JavaParamRef<jobject>& obj,
                            bool visible);
-  void OnActivityStopped(JNIEnv* env,
-                         const base::android::JavaParamRef<jobject>& obj);
-  void OnActivityStarted(JNIEnv* env,
-                         const base::android::JavaParamRef<jobject>& obj);
-  void SetVSyncPaused(JNIEnv* env,
-                      const base::android::JavaParamRef<jobject>& obj,
-                      bool paused);
+  void OnActivityStopped(JNIEnv* env);
+  void OnActivityStarted(JNIEnv* env);
   void OnUpdateRefreshRate(JNIEnv* env,
-                           const base::android::JavaParamRef<jobject>& obj,
                            float refresh_rate);
   void OnSupportedRefreshRatesUpdated(
       JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
       const base::android::JavaParamRef<jfloatArray>& supported_refresh_rates);
-  void OnAdaptiveRefreshRateInfoChanged(
-      JNIEnv* env,
-      jboolean supports_adaptive_refresh_rate,
-      jfloat suggested_frame_rate_normal,
-      jfloat suggested_frame_rate_high,
-      const base::android::JavaParamRef<jfloatArray>& supported_frame_rates);
-  void OnOverlayTransformUpdated(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj);
+  void OnAdaptiveRefreshRateInfoChanged(JNIEnv* env,
+                                        jboolean supports_adaptive_refresh_rate,
+                                        jfloat suggested_frame_rate_high);
+  void OnOverlayTransformUpdated(JNIEnv* env);
   void SendUnfoldLatencyBeginTimestamp(JNIEnv* env, jlong begin_time);
 
   void OnWindowPointerLockRelease(JNIEnv* env);
@@ -168,6 +153,8 @@ class UI_ANDROID_EXPORT WindowAndroid : public ViewAndroid {
   bool HasPointerLock(ViewAndroid& view_android);
 
   void ReleasePointerLock(ViewAndroid& view_android);
+
+  bool SetHasKeyboardCapture(bool keyboard_capture);
 
   class TestHooks {
    public:
@@ -211,7 +198,6 @@ class UI_ANDROID_EXPORT WindowAndroid : public ViewAndroid {
   blink::ContentToVisibleTimeReporter content_to_visible_time_recorder_;
 
   float mouse_wheel_scroll_factor_;
-  bool vsync_paused_ = false;
 
   raw_ptr<TestHooks> test_hooks_ = nullptr;
 

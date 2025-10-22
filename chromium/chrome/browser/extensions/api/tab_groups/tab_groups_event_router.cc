@@ -11,13 +11,13 @@
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_finder.h"
-#include "chrome/browser/ui/tabs/tab_group.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_interface.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "components/tab_groups/tab_group_color.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tab_groups/tab_group_visual_data.h"
+#include "components/tabs/public/tab_group.h"
 
 namespace extensions {
 
@@ -62,9 +62,10 @@ void TabGroupsEventRouter::OnTabGroupChanged(const TabGroupChange& change) {
   return;
 }
 
-bool TabGroupsEventRouter::ShouldTrackBrowser(Browser* browser) {
-  return profile_ == browser->profile() &&
-         ExtensionTabUtil::BrowserSupportsTabs(browser);
+bool TabGroupsEventRouter::ShouldTrackBrowser(BrowserWindowInterface* browser) {
+  return profile_ == browser->GetProfile() &&
+         ExtensionTabUtil::BrowserSupportsTabs(
+             browser->GetBrowserForMigrationOnly());
 }
 
 void TabGroupsEventRouter::DispatchGroupCreated(tab_groups::TabGroupId group) {

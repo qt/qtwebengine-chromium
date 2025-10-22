@@ -67,6 +67,10 @@ export const markdownLinks = new Map<string, string>([
   ],
   ['storagePartitioningExplainer', 'https://developers.google.com/privacy-sandbox/cookies/storage-partitioning'],
   ['storageAccessAPI', 'https://developer.mozilla.org/en-US/docs/Web/API/StorageAccessHandle/createObjectURL'],
+  [
+    'userReidentificationBugReports',
+    'https://issues.chromium.org/issues?q=status:open%20componentid:1456351&s=created_time:desc)'
+  ],
 ]);
 
 export const getMarkdownLink = (key: string): string => {
@@ -80,6 +84,9 @@ export const getMarkdownLink = (key: string): string => {
     return key;
   }
   if (/^https:\/\/web\.dev\//.test(key)) {
+    return key;
+  }
+  if (/^https:\/\/developer\.mozilla\.org\//.test(key)) {
     return key;
   }
   if (key === 'https://philipwalton.com/articles/the-state-of-es5-on-the-web/') {

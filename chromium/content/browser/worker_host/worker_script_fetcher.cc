@@ -39,6 +39,7 @@
 #include "content/public/common/content_features.h"
 #include "content/public/common/referrer.h"
 #include "content/public/common/url_constants.h"
+#include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/self_owned_receiver.h"
 #include "net/base/isolation_info.h"
@@ -455,7 +456,8 @@ void WorkerScriptFetcher::CreateScriptLoader(
             std::move(url_loader_network_observer),
             std::move(devtools_observer), client_security_state.Clone(),
             /*debug_tag=*/"CreateScriptLoader",
-            require_cross_site_request_for_cookies);
+            require_cross_site_request_for_cookies,
+            /*is_for_service_worker=*/false);
     // We are sure the URLLoaderFactory made with the param is only used within
     // `WorkerScriptFetcher` in the browser process. We can mark this trusted
     // safely.
@@ -589,7 +591,7 @@ WorkerScriptFetcher::CreateFactoryBundle(
       GetContentClient()
           ->browser()
           ->RegisterNonNetworkSubresourceURLLoaderFactories(
-              worker_process_id, MSG_ROUTING_NONE,
+              worker_process_id, IPC::mojom::kRoutingIdNone,
               request_initiator_storage_key.origin(), &non_network_factories);
       break;
   }

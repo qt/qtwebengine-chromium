@@ -24,7 +24,6 @@
 #include <openssl/pem.h>
 #include <openssl/span.h>
 #include <openssl/ssl3.h>
-#include <openssl/thread.h>
 #include <openssl/tls1.h>
 #include <openssl/x509.h>
 
@@ -2523,7 +2522,6 @@ OPENSSL_EXPORT size_t SSL_CTX_get_num_tickets(const SSL_CTX *ctx);
 // |SSL_SIGN_*|.
 
 // SSL_GROUP_* define TLS group IDs.
-#define SSL_GROUP_SECP224R1 21
 #define SSL_GROUP_SECP256R1 23
 #define SSL_GROUP_SECP384R1 24
 #define SSL_GROUP_SECP521R1 25
@@ -4938,7 +4936,7 @@ enum ssl_select_cert_result_t BORINGSSL_ENUM_INT {
   // ClientHelloOuter instead. From there, the handshake will proceed
   // without retry_configs, to signal to the client to disable ECH.
   //
-  // This value may only be returned when |SSL_ech_accepted| returnes one. It
+  // This value may only be returned when |SSL_ech_accepted| returns one. It
   // may be useful if the ClientHelloInner indicated a service which does not
   // support ECH, e.g. if it is a TLS-1.2 only service.
   ssl_select_cert_disable_ech = -2,
@@ -5837,7 +5835,6 @@ OPENSSL_EXPORT int SSL_CTX_set_tlsext_status_arg(SSL_CTX *ctx, void *arg);
 #define SSL_R_TLSV1_CERTIFICATE_REQUIRED SSL_R_TLSV1_ALERT_CERTIFICATE_REQUIRED
 
 // The following symbols are compatibility aliases for |SSL_GROUP_*|.
-#define SSL_CURVE_SECP224R1 SSL_GROUP_SECP224R1
 #define SSL_CURVE_SECP256R1 SSL_GROUP_SECP256R1
 #define SSL_CURVE_SECP384R1 SSL_GROUP_SECP384R1
 #define SSL_CURVE_SECP521R1 SSL_GROUP_SECP521R1
@@ -5890,6 +5887,16 @@ OPENSSL_EXPORT int SSL_CTX_check_private_key(const SSL_CTX *ctx);
 //
 // See discussion in |SSL_CTX_check_private_key|.
 OPENSSL_EXPORT int SSL_check_private_key(const SSL *ssl);
+
+// SSL_CTX_get_security_level returns zero.
+//
+// This function is not meaningful in BoringSSL. OpenSSL has an arbitrary
+// mapping from algorithms to "security levels" and offers an API to filter TLS
+// configuration by those levels. In OpenSSL, this function does not return how
+// secure |ctx| is, just what security level the caller previously configured.
+// As BoringSSL does not implement this API, we return zero to report that the
+// security levels mechanism is not used.
+OPENSSL_EXPORT int SSL_CTX_get_security_level(const SSL_CTX *ctx);
 
 
 // Compliance policy configurations

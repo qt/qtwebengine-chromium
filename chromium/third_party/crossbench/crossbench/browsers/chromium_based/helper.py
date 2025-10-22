@@ -16,6 +16,15 @@ def build_chromedriver_instructions(build_dir: pth.AnyPath) -> str:
           f"    autoninja -C {build_dir} chromedriver")
 
 
+def find_build_dir(path: pth.AnyPath,
+                   platform: Platform,
+                   limit: int = 3) -> pth.AnyPath | None:
+  for parent in path.parents[:limit]:
+    if platform.exists(parent / "args.gn"):
+      return parent
+  return None
+
+
 def is_build_dir(path: pth.AnyPath, platform: Platform) -> bool:
   return platform.is_file(path / "args.gn")
 

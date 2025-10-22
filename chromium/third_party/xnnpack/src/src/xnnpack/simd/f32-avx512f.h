@@ -4,17 +4,15 @@
 // LICENSE file in the root directory of this source tree.
 //
 
-#ifndef __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX512F_H_
-#define __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX512F_H_
+#ifndef XNNPACK_SRC_XNNPACK_SIMD_F32_AVX512F_H_
+#define XNNPACK_SRC_XNNPACK_SIMD_F32_AVX512F_H_
 
 #include <assert.h>
+#include <immintrin.h>
 #include <stddef.h>
 #include <stdint.h>
 
-#include <immintrin.h>
-
 #include "src/xnnpack/common.h"
-
 
 // SIMD vector type for f32 using AVX512F.
 typedef __m512 xnn_simd_f32_t;
@@ -30,11 +28,6 @@ typedef __m512 xnn_simd_f32_t;
 
 // Whether or not this architecture has native fused multiply-add support.
 #define XNN_SIMD_HAS_NATIVE_FMA 1
-
-// Include the header for generic functions _after_ declaring the arch-specific
-// types and sizes.
-#include "src/xnnpack/simd/f32-generic-functions.h"
-
 // Arithmetic operations.
 static XNN_INLINE xnn_simd_f32_t xnn_zero_f32() { return _mm512_setzero_ps(); }
 
@@ -100,6 +93,27 @@ static XNN_INLINE xnn_simd_f32_t xnn_round_f32(xnn_simd_f32_t a) {
   return _mm512_roundscale_ps(a, _MM_FROUND_TO_NEAREST_INT | _MM_FROUND_NO_EXC);
 }
 
+static XNN_INLINE float xnn_reduce_add_f32(xnn_simd_f32_t a) {
+  // Not using _mm512_reduce_add_ps because we're trying to produce numerically
+  // consistent results with AVX.
+  __m256 a256 = _mm256_add_ps(
+      _mm512_castps512_ps256(a),
+      _mm256_castpd_ps(_mm512_extractf64x4_pd(_mm512_castps_pd(a), 1)));
+  __m128 a128 =
+      _mm_add_ps(_mm256_castps256_ps128(a256), _mm256_extractf128_ps(a256, 1));
+  a128 = _mm_add_ps(a128, _mm_movehl_ps(a128, a128));
+  a128 = _mm_add_ss(a128, _mm_movehdup_ps(a128));
+  return _mm_cvtss_f32(a128);
+}
+
+static XNN_INLINE float xnn_reduce_min_f32(xnn_simd_f32_t a) {
+  return _mm512_reduce_min_ps(a);
+}
+
+static XNN_INLINE float xnn_reduce_max_f32(xnn_simd_f32_t a) {
+  return _mm512_reduce_max_ps(a);
+}
+
 // Logical operations.
 static XNN_INLINE xnn_simd_f32_t xnn_and_f32(xnn_simd_f32_t a,
                                              xnn_simd_f32_t b) {
@@ -117,6 +131,12 @@ static XNN_INLINE xnn_simd_f32_t xnn_xor_f32(xnn_simd_f32_t a,
                                              xnn_simd_f32_t b) {
   return _mm512_castsi512_ps(
       _mm512_xor_epi32(_mm512_castps_si512(a), _mm512_castps_si512(b)));
+}
+
+static XNN_INLINE xnn_simd_f32_t xnn_andnot_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  return _mm512_castsi512_ps(
+      _mm512_andnot_epi32(_mm512_castps_si512(a), _mm512_castps_si512(b)));
 }
 
 static XNN_INLINE xnn_simd_f32_t xnn_sll_f32(xnn_simd_f32_t a, uint8_t bits) {
@@ -137,6 +157,12 @@ static XNN_INLINE xnn_simd_f32_t xnn_cmpeq_f32(xnn_simd_f32_t a,
       _mm512_cmp_ps_mask(a, b, _CMP_EQ_OQ), 0xFFFFFFFF));
 }
 
+static XNN_INLINE xnn_simd_f32_t xnn_cmpneq_f32(xnn_simd_f32_t a,
+                                                xnn_simd_f32_t b) {
+  return _mm512_castsi512_ps(_mm512_maskz_set1_epi32(
+      _mm512_cmp_ps_mask(a, b, _CMP_NEQ_OQ), 0xFFFFFFFF));
+}
+
 // Special functions.
 #define XNN_SIMD_HAVE_RCP_F32 1
 #define XNN_SIMD_NUM_RCP_ITER_F32 1
@@ -150,8 +176,8 @@ static XNN_INLINE xnn_simd_f32_t xnn_rsqrt_f32(xnn_simd_f32_t a) {
   return _mm512_rsqrt14_ps(a);
 }
 
-static XNN_INLINE xnn_simd_f32_t xnn_getexp_f32(xnn_simd_f32_t a) {
-  return _mm512_getexp_ps(a);
+static XNN_INLINE xnn_simd_f32_t xnn_sqrt_f32(xnn_simd_f32_t a) {
+  return _mm512_sqrt_ps(a);
 }
 
 // Load/store operations.
@@ -173,10 +199,6 @@ static XNN_INLINE void xnn_store_f32(float* ptr, xnn_simd_f32_t v) {
 
 static XNN_INLINE xnn_simd_f32_t xnn_set1_f32(float v) {
   return _mm512_set1_ps(v);
-}
-
-static XNN_INLINE xnn_simd_f32_t xnn_set1_or_load_f32(const float* v) {
-  return _mm512_set1_ps(*v);
 }
 
 // Tail load/store operations.
@@ -205,4 +227,4 @@ static XNN_INLINE void xnn_store_tail_f32(float* output, xnn_simd_f32_t v,
   _mm512_mask_storeu_ps(output, vmask, v);
 }
 
-#endif  // __XNNPACK_SRC_XNNPACK_SIMD_F32_AVX512F_H_
+#endif  // XNNPACK_SRC_XNNPACK_SIMD_F32_AVX512F_H_

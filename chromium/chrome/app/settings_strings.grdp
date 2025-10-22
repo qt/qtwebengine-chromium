@@ -13,6 +13,9 @@
   <message name="IDS_SETTINGS_MORE_ACTIONS" desc="Tooltip text (shows on hover or for screenreaders) for a button that shows a menu with more actions when clicked or tapped">
     More actions
   </message>
+  <message name="IDS_SETTINGS_MORE_ACTIONS_BUTTON_ARIA_LABEL" desc="Aria (accessibility) label for a button that shows a menu with more actions when clicked or tapped">
+    More actions for <ph name="BUTTON_TITLE">$1</ph>
+  </message>
   <message name="IDS_SETTINGS_OPENS_IN_NEW_TAB" desc="ARIA (accessibility) label describing a link which opens in a new tab.">
     Opens in new tab
   </message>
@@ -113,6 +116,12 @@
   <message name="IDS_SETTINGS_MAIN_NODE_ANNOTATIONS_SUBTITLE" desc="Subtitle for screen reader main node annotation feature.">
     Identify the main landmark in web pages for assistive technology
   </message>
+  <message name="IDS_SETTINGS_AX_TREE_FIXING_TITLE" desc="Description for screen reader tree fixing feature." translateable = "false">
+    AXTree Fixing
+  </message>
+  <message name="IDS_SETTINGS_AX_TREE_FIXING_SUBTITLE" desc="Subtitle for screen reader tree fixing feature." translateable = "false">
+    Fix the AXTree
+  </message>
   <message name="IDS_SETTINGS_CAPTIONS_ENABLE_LIVE_CAPTION_TITLE" desc="Name of the setting to enable Live Caption feature.">
     Live Caption
   </message>
@@ -176,7 +185,7 @@
       Select the More Gestures tab, then turn on Swipe between pages to navigate back and forward
     </message>
   </if>
-  <if expr="not chromeos_ash">
+  <if expr="not is_chromeos">
     <message name="IDS_SETTINGS_ACCESSIBILITY_TOAST_FREQUENCY_TITLE" desc="Title for a setting that allows you to change what type of feedback messages you receive.">
       Copied to clipboard confirmations
     </message>
@@ -231,8 +240,16 @@
   <message name="IDS_SETTINGS_RESET_TO_DEFAULT" desc="Name of the control which resets a browser setting back to the default value">
     Reset to default
   </message>
+  <if expr="not is_linux">
+    <message name="IDS_SETTINGS_RESET_TO_DEFAULT_THEME" desc="Accessibility label of the button which resets the browser theme back to the default value">
+      Reset to default theme
+    </message>
+  </if>
   <message name="IDS_SETTINGS_CUSTOMIZE_TOOLBAR" desc="Text of the button which allows you to customize your toolbar.">
     Customize your toolbar
+  </message>
+  <message name="IDS_SETTINGS_RESET_TOOLBAR_TO_DEFAULT" desc="Accessibility label of the button which resets toolbar customizations to default settings">
+    Reset toolbar to default settings
   </message>
   <message name="IDS_SETTINGS_CHROME_COLORS" desc="Text of the label describing 'Chrome Colors' theme.">
     Chrome Colors
@@ -433,6 +450,12 @@
   <message name="IDS_SETTINGS_AUTOFILL_MORE_ACTIONS_FOR_CREDIT_CARD_WITH_CVC" desc="The (accessibility) title of a button, which brings up a menu of actions that can be taken on a stored credit card. The credit card is described by the credit card nickname or the credit card network and last 4 digits of the card number along with appending the CVC saved tag.">
     More actions for <ph name="CARD_DESCRIPTION">$1<ex>My main card</ex></ph>, CVC saved
   </message>
+  <message name="IDS_SETTINGS_AUTOFILL_MORE_ACTIONS_FOR_HOME_ADDRESS" desc="The (accessibility) title of a button, which brings up a menu of options that can be taken on a stored autofill home address. The home address is described by the name of the recipient and usually the beginning of the address (i.e. street name and building number). The name and the address are separated by comma.">
+    More options for <ph name="ADDRESS_SUMMARY">$1<ex>John Doe, 123 Main Street</ex></ph> home address
+  </message>
+  <message name="IDS_SETTINGS_AUTOFILL_MORE_ACTIONS_FOR_WORK_ADDRESS" desc="The (accessibility) title of a button, which brings up a menu of options that can be taken on a stored autofill work address. The work address is described by the name of the recipient and usually the beginning of the address (i.e. street name and building number). The name and the address are separated by comma.">
+    More options for <ph name="ADDRESS_SUMMARY">$1<ex>John Doe, 123 Main Street</ex></ph> work address
+  </message>
   <message name="IDS_AUTOFILL_ADD_VIRTUAL_CARD" desc="The text shown in the secondary action menu button to enroll a card in the virtual card feature. Virtual cards are credit cards generated from the actual cards and provide extra security.">
     Turn on virtual card
   </message>
@@ -475,7 +498,10 @@
   <message name="IDS_SETTINGS_PAYMENTS_MANAGE_CREDIT_CARDS" desc="Shown in the payments section of settings. Descriptive text to inform the user that credit cards can be accessed online. Has a link.">
    To add or manage Google Pay payment methods, visit your <ph name="BEGIN_LINK">&lt;a href="$1" target="_blank"&gt;</ph>Google Account<ph name="END_LINK">&lt;/a&gt;</ph>
   </message>
-    <message name="IDS_SETTINGS_PAYMENTS_SAVED_TO_THIS_DEVICE_ONLY" desc="Shown in the payments section of settings. Descriptive text to inform the user that this credit card will be saved to local device only.">
+  <message name="IDS_SETTINGS_PAYMENTS_MANAGE_LOYALTY_CARDS_AND_PAYMENT_METHODS" desc="Shown in the payments section of settings. Descriptive text to inform the user that payment methods and loyalty cards can be accessed via link. Google Wallet should not be translated because it is the product name. Has two links that opens different pages on Google Wallet.">
+   Visit Google Wallet to add or manage <ph name="BEGIN_LINK_LOYALTY_CARDS">&lt;a href="$1" target="_blank"&gt;</ph>loyalty cards<ph name="END_LINK_LOYALTY_CARDS">&lt;/a&gt;</ph> or Google Pay <ph name="BEGIN_LINK_PAYMENT_METHODS">&lt;a href="$2" target="_blank"&gt;</ph>payment methods<ph name="END_LINK_PAYMENT_METHODS">&lt;/a&gt;</ph>
+  </message>
+  <message name="IDS_SETTINGS_PAYMENTS_SAVED_TO_THIS_DEVICE_ONLY" desc="Shown in the payments section of settings. Descriptive text to inform the user that this credit card will be saved to local device only.">
    This card will be saved to this device only
   </message>
   <message name="IDS_SETTINGS_ADD_CREDIT_CARD_TITLE" desc="The title for the dialog that's shown when entering the information for a new card. This can be either credit, debit, or prepaid card.">
@@ -613,32 +639,31 @@
       =1 {1 reused password}
       other {{NUM_REUSED} reused passwords}}
   </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_PAGE_TITLE" desc="The title of the page in Settings that allows managing the Autofill AI settings.">
-    Autofill with AI
+  <message name="IDS_SETTINGS_AUTOFILL_AI_PAGE_TITLE" desc="The title of the page in Settings that allows managing the enhanced autofill settings.">
+    Enhanced autofill
   </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_SAVED_INFO" desc="Bullet 1 of 2 that appears beneath the 'When on' title. 'Autofill': the user is on the 'Autofill with AI' feature page, but we want to frame this new type of autofill as just 'Autofill'. 'Can offer to save info when you submit forms': we want to convey that the user has the choice, each time a form is submitted, whether they want their info saved to Chrome for the purposes of Autofill. 'Like your driver's license or passport number': Today, supported data types for 'Autofill with AI' include 1) driver's licenses, 2) passports, and 3) vehicles. Eventually we'll support more, but this example needs to mention these types of data and not others.">
+  <message name="IDS_SETTINGS_AUTOFILL_AI_WHEN_ON_SAVED_INFO" desc="Bullet 1 of 2 that appears beneath the 'When on' title. 'Autofill': the user is on the 'enhanced autofill' feature page, but we want to frame this new type of autofill as just 'Autofill'. 'Can offer to save info when you submit forms': we want to convey that the user has the choice, each time a form is submitted, whether they want their info saved to Chrome for the purposes of Autofill. 'Like your driver's license or passport number': Today, supported data types for 'enhanced autofill' include 1) driver's licenses, 2) passports, and 3) vehicles. Eventually we'll support more, but this example needs to mention these types of data and not others.">
     Autofill can offer to save info when you submit forms, like your driver's license or passport number
   </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_TO_CONSIDER_DATA_USAGE" desc="Bullet 1 of 2 that appears beneath the 'Things to consider' title. The point of this bullet is to convey to the user the types of data that get shared with Google to support this feature. There are 2 data types: 1) 'sites you visit' can mean browsing history and the URL of the page the user is visiting, and 2) 'page content', by which we mean the words, visuals, and layout of the pages the user visits. This notion that Google is considering 'page content' is new. We want to lead with 'To offer suggestions' even though it might be a bit grammatically awkward, because we want to express the need / value before explaining the data that gets shared.">
-    To offer suggestions, sites you visit and page content are shared with Google
+  <message name="IDS_SETTINGS_AUTOFILL_AI_TO_CONSIDER_DATA_USAGE" desc="Bullet 1 of 2 that appears beneath the 'Things to consider' title. The point of this bullet is to convey to the user the types of data that get shared with Google to support this feature. There are 2 data types: 1) 'the page’s URL' and 2) 'content', by which we mean the words, visuals, and layout of the pages the user visits. This notion that Google is considering 'page content' is new. We want to lead with 'To offer suggestions' even though it might be a bit grammatically awkward, because we want to express the need / value before explaining the data that gets shared.">
+    To offer suggestions and improve this feature, the page’s URL and content are shared with Google
   </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_TO_CONSIDER_STORAGE" desc="Bullet 2 of 2 that appears beneath the 'Things to consider' title. This statement isn't immediately relevant to how Autofill with AI works, but it's intended as a reassuring statement.">
+  <message name="IDS_SETTINGS_AUTOFILL_AI_TO_CONSIDER_STORAGE" desc="Bullet 2 of 2 that appears beneath the 'Things to consider' title. This statement isn't immediately relevant to how enhanced autofill works, but it's intended as a reassuring statement.">
     Your saved information is stored on your device
   </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_ENTITY_INSTANCES_HEADER" desc="Header of the entity instance list on the Autofill with AI settings page.">
+  <message name="IDS_SETTINGS_AUTOFILL_AI_ENTERPRISE_LOGGING_MANAGED_DISABLED" desc="Text only seen by enterprise users (Google services provided for a company). Users should understand that their content saved with autofill won't be used to improve AI, neither AI features specifically or AI models generally.">
+    Your content will not be used to improve AI. Your organization may change these settings at any time.
+  </message>
+  <message name="IDS_SETTINGS_AUTOFILL_AI_ENTITY_INSTANCES_HEADER" desc="Header of the entity instance list on the enhanced autofill settings page.">
     Saved information
   </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_ENTITY_INSTANCES_NONE" desc="Placeholder for empty entity instance list on the Autofill with AI settings page.">
+  <message name="IDS_SETTINGS_AUTOFILL_AI_ENTITY_INSTANCES_NONE" desc="Placeholder for empty entity instance list on the enhanced autofill settings page.">
     Saved information will appear here
   </message>
   <message name="IDS_SETTINGS_AUTOFILL_AI_MORE_ACTIONS_FOR_ENTITY_INSTANCE" desc="The accessibility label of the More options menu. Options in the menu include 'Edit' and 'Delete'. If including specific verbs in your language adds undo complexity, it's also acceptable to use something like: 'More options for 'label', 'sublabel''. Examples of 'label' and 'sublabel' include 'Toyota Corolla, Vehicle'.">
     More options to edit or delete <ph name="ENTITY_INSTANCE_LABEL">$1<ex>Toyota</ex></ph>, <ph name="ENTITY_INSTANCE_SUBLABEL">$2<ex>Car</ex></ph>
   </message>
-  <!-- TODO(crbug.com/393318914): Change this string in favor of entity specific strings. -->
-  <message name="IDS_SETTINGS_AUTOFILL_AI_DELETE_ENTITY_INSTANCE_DIALOG_TITLE" desc="A title of a dialog within settings that allows a user to delete an entry. The user opened this dialog by choosing 'Delete' from the more options menu.">
-    Delete info?
-  </message>
-  <message name="IDS_SETTINGS_AUTOFILL_AI_DELETE_ENTITY_INSTANCE_DIALOG_TEXT" desc="The body text of the delete entity instance confirmation dialog, on the Autofill AI settings page.">
+  <message name="IDS_SETTINGS_AUTOFILL_AI_DELETE_ENTITY_INSTANCE_DIALOG_TEXT" desc="The text that appears beneath a 'Delete object' title. We want the 'Autofill' keyword to be as prominent as possible because that word captures the value of saved information. 'On this device': helps the user understand that information is saved locally, not in the Cloud.">
     Autofill won't have this info on this device to help fill out forms
   </message>
   <message name="IDS_SETTINGS_AUTOFILL_AI_ACCESSIBILITY_LABEL_MONTH_DROPDOWN" desc="The accessibility label on the month dropdown of a date field, to let users know the dropdown corresponds to the month.">
@@ -713,6 +738,31 @@
     Hide password for <ph name="USERNAME">$1<ex>example@gmail.com</ex></ph> on <ph name="DOMAIN">$2<ex>www.google.com</ex></ph>
   </message>
 
+  <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_EDIT" desc="Label for a context menu item that provides the edit option for the selected home and work address.">
+    Edit in Google Account
+  </message>
+  <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_REMOVE" desc="Label for a context menu item that removes the selected home and work address from Chrome.">
+    Remove from Chrome
+  </message>
+  <message name="IDS_SETTINGS_HOME_ADDRESS_REMOVE_CONFIRMATION_DIALOG_TITLE" desc="Title for the dialog that asks for confirmation to remove the selected home address from Chrome.">
+    Remove your home address from Chrome autofill?
+  </message>
+  <message name="IDS_SETTINGS_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_TITLE" desc="Title for the dialog that asks for confirmation to remove the selected work address from Chrome.">
+    Remove your work address from Chrome autofill?
+  </message>
+  <message name="IDS_SETTINGS_HOME_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected home address from Chrome.">
+    Your home address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
+  </message>
+  <message name="IDS_SETTINGS_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_NOTICE" desc="Body for the dialog that asks for confirmation to remove the selected work address from Chrome.">
+    Your work address can help you get things done across Google services, like more relevant Search results and directions in Google Maps. You can edit or delete your address in your <ph name="BEGIN_LINK">&lt;a href="$1" target=&quot;_blank&quot;&gt;</ph>Google Account <ph name="USERNAME">$2<ex>example@gmail.com</ex></ph><ph name="END_LINK">&lt;/a&gt;</ph>.
+  </message>
+  <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_REMOVE_CONFIRMATION_DIALOG_ACTION_OK" desc="Okay action for the dialog that asks for confirmation to remove the selected home and work address from Chrome.">
+    Remove
+  </message>
+  <message name="IDS_SETTINGS_HOME_AND_WORK_ADDRESS_REMOVED_MESSAGE" desc="Hidden text that is read to screen readers to confirm that a home and work address was removed.">
+    Address removed
+  </message>
+
   <!-- Default Browser Page -->
   <if expr="not is_chromeos">
     <message name="IDS_SETTINGS_DEFAULT_BROWSER" desc="Name of the Default Browser page, which allows users to set which browser will open .html files within the OS.">
@@ -721,260 +771,6 @@
     <message name="IDS_SETTINGS_DEFAULT_BROWSER_MAKE_DEFAULT_BUTTON" desc="Text of the button used to make Chrome the default browser on the user's system.">
       Make default
     </message>
-  </if>
-
-  <if expr="use_nss_certs">
-    <!-- Certificate Manager Page -->
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_YOUR_CERTIFICATES" desc="Label for the your certificates tab in certificate manager.">
-      Your certificates
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_EXPAND_ACCESSIBILITY_LABEL" desc="Label for the button that toggles showing the certificates that are installed for a particular organization. Only visible by screen reader software.">
-      Show certificates for organization
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_YOUR_CERTIFICATES_DESCRIPTION" desc="Label for your certificates subtitle tab in certificate manager.">
-      You have certificates from these organizations that identify you
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_SERVERS" desc="Label for the servers tab in certificate manager.">
-      Servers
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_SERVERS_DESCRIPTION" desc="Label for servers subtitle tab in certificate manager.">
-      You have certificates on file that identify these servers
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_NO_CERTIFICATES" desc="Message displayed by the certificate manager, indicating that there are no certificates for a given certificate category.">
-      You have no certificates in this category
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_AUTHORITIES" desc="Label for the authorities tab in certificate manager.">
-      Authorities
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_AUTHORITIES_DESCRIPTION" desc="Label for authorities subtitle tab in certificate manager.">
-      You have certificates on file that identify these certificate authorities
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_VIEW" desc="Label for view button in certificate manager.">
-      View
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT" desc="Label for import button in certificate manager.">
-      Import
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_AND_BIND" desc="Label for import and bind button in certificate manager.">
-      Import and Bind
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_EXPORT" desc="Label for export button in certificate manager.">
-      Export
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_OTHERS" desc="Label for the others tab in certificate manager.">
-      Others
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_OTHERS_DESCRIPTION" desc="Label for others subtitle tab in certificate manager.">
-      You have certificates on file that do not fit in any of the other categories
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_USAGE_SSL_CLIENT" desc="The description of a certificate that is verified for use as an SSL client">
-      SSL Client Certificate
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_UNTRUSTED" desc="This text is displayed next to untrusted certificates in a red box.">
-      Untrusted
-    </message>
-
-    <!-- Certificate Manager Page, edit certificate authority trust dialog-->
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_TRUST_EDIT_DIALOG_TITLE" desc="Title of the certificate manager edit trust dialog">
-      Certificate authority
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_TRUST_EDIT_DIALOG_DESCRIPTION" desc="Line displayed in certificate manager edit trust dialog before the checkboxes for editing certificate trust flags">
-      Trust settings
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_TRUST_EDIT_DIALOG_EXPLANATION" desc="Description in dialog for editing Certification Authority trust flags">
-      The certificate "<ph name="CERTIFICATE_NAME">$1<ex>Verisign Class 1 Public Primary Certification Authority</ex></ph>" represents a Certification Authority
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_TRUST_EDIT_DIALOG_SSL" desc="Description in Certification Authority trust dialog for the SSL trust checkbox.">
-      Trust this certificate for identifying websites
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_TRUST_EDIT_DIALOG_EMAIL" desc="Description in Certification Authority trust dialog for the Email trust checkbox.">
-      Trust this certificate for identifying email users
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_TRUST_EDIT_DIALOG_OBJ_SIGN" desc="Description in Certification Authority trust dialog for the Code Signing trust checkbox.">
-      Trust this certificate for identifying software makers
-    </message>
-
-    <!-- Certificate Manager Page, delete certificate confirmation dialog -->
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_USER_TITLE" desc="Title of a certificate manager dialog for confirming deletion of a user certificate">
-      Delete "<ph name="CERTIFICATE_NAME">$1<ex>VeriSign Browser Certificate</ex></ph>"?
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_USER_DESCRIPTION" desc="Description of impact of deleting a user certificate">
-      If you delete one of your own certificates, you can no longer use it to identify yourself.
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_SERVER_TITLE" desc="Title of a certificate manager dialog for confirming deletion of a server certificate">
-      Delete server certificate "<ph name="CERTIFICATE_NAME">$1<ex>www.example.com</ex></ph>"?
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_SERVER_DESCRIPTION" desc="Description of impact of deleting a user certificate">
-      If you delete a server certificate, you restore the usual security checks for that server and require it uses a valid certificate.
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_CA_TITLE" desc="Title of a certificate manager dialog for confirming deletion of a certification authority certificate">
-      Delete CA certificate "<ph name="CERTIFICATE_NAME">$1<ex>Verisign Class 1 Public Primary Certification Authority</ex></ph>"?
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_CA_DESCRIPTION" desc="Description of impact of deleting a user certificate">
-      If you delete a Certification Authority (CA) certificate, your browser will no longer trust any certificates issued by that CA.
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_OTHER_TITLE" desc="Title of a certificate manager dialog for confirming deletion of a certificate of other type">
-      Delete certificate "<ph name="CERTIFICATE_NAME">$1<ex>Example Certificate</ex></ph>"?
-    </message>
-
-    <!-- Certificate Manager Page, encrypt/decrypt password dialogs -->
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_ENCRYPT_PASSWORD_TITLE" desc="Description of password prompt in certificate manager for exporting a personal certificate">
-      Please enter a password to encrypt this certificate
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DECRYPT_PASSWORD_TITLE" desc="Description of password prompt in certificate manager for restoring a personal certificate">
-      Enter your certificate password
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_ENCRYPT_PASSWORD_DESCRIPTION" desc="Text in password prompt of certificate manager for exporting a personal certificate, reminding user that if they forget the password they're screwed.">
-      The password you choose will be required to restore this certificate later. Please record it in a safe location.
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PASSWORD" desc="The label of the password field in the certificate manager for restoring or exporting a personal certificate">
-      Password
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CONFIRM_PASSWORD" desc="The label of the field in the certificate manager for re-entering the password when exporting a certificate">
-      Confirm password
-    </message>
-
-    <!-- Certificate Manager Page, error dialog -->
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_BAD_PASSWORD" desc="The text in the error dialog for entering an incorrect password when importing an encrypted certificate file.">
-      Incorrect password
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CA_IMPORT_ERROR_TITLE" desc="The title in the error dialog for Certification Authority file import errors.">
-      Certification Authority Import Error
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_CERT_PARSE_ERROR" desc="The message in the certificate manager error dialog for importing invalid certificate files.">
-      Unable to parse file
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_DELETE_CERT_ERROR_TITLE" desc="The title in the error dialog for certificate delete errors.">
-      Certificate Deletion Error
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_ERROR_CERT_ALREADY_EXISTS" desc="The error message when trying to import certificate which already exists.">
-      Certificate already exists
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_ERROR_NOT_CA" desc="The error message when trying to import certificate authorities and a certificate is not a certification authority">
-      Not a Certification Authority
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_ALL_NOT_IMPORTED" desc="The header in certificate manager error dialog for list of certificates that could not be imported, when none were successfully imported.">
-      The file contained multiple certificates, none of which were imported:
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_ERROR_TITLE" desc="The title in the error dialog for certificate file import errors.">
-      Certificate Import Error
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_INVALID_FILE" desc="The message in the error dialog for corrupt certificate files.">
-      Invalid or corrupt file
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_INVALID_MAC" desc="The message in the error dialog for certificate files with invalid MAC.">
-      Incorrect password or corrupt file
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_MISSING_KEY" desc="The message in the error dialog for certificates without a local private key.">
-      The Private Key for this Client Certificate is missing or invalid
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_SINGLE_NOT_IMPORTED" desc="The header in certificate manager error dialog for single certificates that could not be imported.">
-      The file contained one certificate, which was not imported:
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_SOME_NOT_IMPORTED" desc="The header in certificate manager error dialog for list of certificates that could not be imported, even though others were.">
-      The file contained multiple certificates, some of which were not imported:
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_UNSUPPORTED" desc="The message in the error dialog for unsupported certificate files.">
-      File uses unsupported features
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PKCS12_EXPORT_ERROR_TITLE" desc="The title in the error dialog for PKCS #12 file export errors.">
-      PKCS #12 Export Error
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PKCS12_FILES" desc="The label in the file selector dialog for PKCS #12 file type.">
-      PKCS #12 Files
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_READ_ERROR_FORMAT" desc="The text in the error dialog for certificate file read errors.">
-      There was an error while trying to read the file: <ph name="ERROR_TEXT">$1<ex>File not found.</ex></ph>.
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_IMPORT_ERROR_FORMAT" desc="The format of per-certificate error messages in import failure dialog">
-      <ph name="CERTIFICATE_NAME">$1<ex>www.example.com</ex></ph>: <ph name="ERROR">$2<ex>Not a Certification Authority</ex></ph>
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_SERVER_IMPORT_ERROR_TITLE" desc="The title in the error dialog for Certification Authority file import errors.">
-      Server Certificate Import Error
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_SET_TRUST_ERROR_TITLE" desc="The title in the error dialog for certificate trust editing errors.">
-      Error Setting Certificate Trust
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_ERROR_NOT_ALLOWED" desc="The text in the error dialog for policy restriction errors.">
-      Action is disabled by your administrator
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_UNKNOWN_ERROR" desc="The text in the error dialog when an unknown error occurs during an operation on the certificate database.">
-      Unknown error
-    </message>
-    <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_WRITE_ERROR_FORMAT" desc="The text in the error dialog for PKCS #12 file write errors.">
-      There was an error while trying to write the file: <ph name="ERROR_TEXT">$1<ex>Permission denied.</ex></ph>.
-    </message>
-    <if expr="is_chromeos">
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_LIST_HEADER" desc="Header that lists the certificate provisioning processes.">
-        Certificates are being provisioned for these certificate profiles
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_REFRESH" desc="Text on the button to refresh the status of a certificate provisioning process.">
-        Refresh
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_RESET" desc="Text on the button to reset a certificate provisioning process.">
-        Reset
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_DETAILS" desc="Text on the button to show debug details about a certificate provisioning process and title of the dialog that shows the details.">
-        Details
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_ADVANCED" desc="Text on the button to show advanced entries on the certificate provisioning details dialog.">
-        Advanced
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_PREPARING_CSR" desc="Status description of a certificate provisioning process when the client is preparing the Certificate signing request (CSR) ">
-        Preparing certificate signing request
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_PREPARING_CSR_WAITING" desc="Status description of a certificate provisioning process when the client is waiting for the server to aid in preparation of the Certificate signing request (CSR)">
-        Preparing certificate signing request (waiting on server)
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_WAITING_FOR_CA" desc="Status description of a certificate provisioning process when the client is waiting for a certificate to be issued">
-        Waiting for the CA to issue a certificate
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_SUCCESS" desc="Status description of a certificate provisioning process that has succeeded">
-        Success
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_FAILURE" desc="Status description of a certificate provisioning process that has failed">
-        Failure
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_CANCELED" desc="Status description of a certificate provisioning process that has been canceled">
-        Canceled
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_READY_FOR_NEXT_OPERATION" desc="Status description of a certificate provisioning process that is waiting for the next operation">
-        Waiting for the next operation
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_AUTHORIZE_INSTRUCTION_RECEIVED" desc="Status description of a certificate provisioning process that has received a Authorize instruction">
-        <ph name="AUTHORIZE_INSTRUCTION_NAME">"Authorize"</ph> instruction received
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_PROOF_OF_POSSESSION_INSTRUCTION_RECEIVED" desc="Status description of a certificate provisioning process that has received a Sign Data instruction">
-        <ph name="PROOF_OF_POSSESSION_INSTRUCTION_NAME">"Proof of Possession"</ph> instruction received
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_IMPORT_CERTIFICATE_INSTRUCTION_RECEIVED" desc="Status description of a certificate provisioning process that has received a Import Certificate instruction">
-        <ph name="IMPORT_CERTIFICATE__INSTRUCTION_NAME">"Import Certificate"</ph> instruction received
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_PROCESS_ID" desc="Label of the field that displays the id of a certificate provisioning process">
-        Process ID
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_CERTIFICATE_PROFILE_NAME" desc="Label of the field that displays the human-readable client certificate profile name of a certificate provisioning process">
-        Certificate Profile Name
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_CERTIFICATE_PROFILE_ID" desc="Label of the field that displays the internal ID of the client certificate profile of a certificate provisioning process">
-        Certificate Profile ID
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS" desc="Label of the field that displays certificate provisioning status">
-        Status
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_STATUS_ID" desc="Label of the field that displays certificate provisioning status id, which is a number (e.g. 6)">
-        Status Id
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_LAST_UPDATE" desc="Label of the field that displays when a certificate provisioning process had the last update">
-        Last Update
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_LAST_UNSUCCESSFUL_STATUS" desc="Label of the field that is displayed when a certificate provisioning process last update was unsuccessful">
-        Last Unsuccessful Update
-      </message>
-      <message name="IDS_SETTINGS_CERTIFICATE_MANAGER_PROVISIONING_DMSERVER_ERROR_MESSAGE" desc="Status description of a certificate provisioning process that has failed while contacting the DMServer">
-        Connection to Device Management Server failed with status '<ph name="STATUS_TEXT">$1<ex>Temporary server error</ex></ph>' at <ph name="FAILURE_TIME">$2<ex>Mon, 14 Mar 2022 17:35:00 GMT</ex></ph>
-      </message>
-    </if>
   </if>
 
   <!-- Delete Browsing Data -->
@@ -1044,6 +840,12 @@
   <message name="IDS_SETTINGS_CLEAR_HOSTED_APP_DATA" desc="Checkbox for deleting data of hosted apps">
     Hosted app data
   </message>
+  <message name="IDS_SETTINGS_CLEAR_PERIOD_15_MIN" desc="The option in the 'Delete browsing data' settings page time picker to delete browsing data from the last 15 minutes. The 'minutes' is shortened to 'min' to allow the time options in the time picker to fit in the screen.">
+    Last 15 min
+  </message>
+  <message name="IDS_SETTINGS_CLEAR_PERIOD_15_MINUTES" desc="The option to delete browsing data from the last 15 minutes.">
+    Last 15 minutes
+  </message>
   <message name="IDS_SETTINGS_CLEAR_PERIOD_HOUR" desc="The option to delete browsing data from the last hour.">
     Last hour
   </message>
@@ -1062,15 +864,60 @@
   <message name="IDS_SETTINGS_NOTIFICATION_WARNING" desc="A warning that notifications will be disabled by deleting cookies for this site.">
     Notifications will be disabled
   </message>
-  <!-- TODO(crbug.com/397187800): Make DBDv2 strings translatable. -->
-  <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_SHOW_MORE" translateable="false">
+  <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_SHOW_MORE" desc="Label of the 'Show more' button below the checkbox container in the 'Delete browsing data' dialog. Clicking on this button expands the checkbox container to show more checkbox data options.">
     Show more
   </message>
-  <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_MORE" translateable="false">
+  <message name="IDS_SETTINGS_CLEAR_BROWSING_DATA_MORE" desc="Label of the 'More' chip in the time picker in the 'Delete browsing data' dialog. Clicking on this chip will show a menu with more time period options for deleting browsing data.">
     More
   </message>
-  <message name="IDS_SETTINGS_CLEAR_PERIOD_15_MINUTES" desc="The option to delete browsing data from the last 15 minutes." translateable="false">
-    Last 15 min
+  <message name="IDS_SETTINGS_MANAGE_IN_GOOGLE_PASSWORD_MANAGER" desc="Description for the 'Passwords and Passkeys' linkout in the 'Other Google Data' subpage inside the 'Delete browsing data' dialog. This lets users know that passwords and passkeys can be managed and deleted in Google password manager.">
+    Manage in Google Password Manager
+  </message>
+  <message name="IDS_SETTINGS_MANAGE_IN_YOUR_GOOGLE_ACCOUNT" desc="Description for the MyActivity and Search History linkouts in the 'Other Google Data' subpage inside the 'Delete browsing data' dialog. This lets users know that this data can be managed and deleted in their Google account.">
+    Manage in your Google Account
+  </message>
+  <message name="IDS_SETTINGS_MANAGE_IN_YOUR_GEMINI_APPS_ACTIVITY" desc="Description for the Gemini Apps Activity linkout.">
+    Manage your Gemini Apps activity
+</message>
+<message name="IDS_SETTINGS_GEMINI_APPS_ACTIVITY" desc="Title for the Gemini Apps Activity section in Other Data.">
+    Gemini Apps activity
+</message>
+
+  <message name="IDS_SETTINGS_PASSWORDS_AND_PASSKEYS" desc="Label for the 'Passwords and Passkeys' linkout in the 'Other Google Data' subpage inside the 'Delete browsing data' dialog, where the user can see and manage data that is stored outside of Chrome. This linkout is specifically for passwords and passkeys stored in Google password manager.">
+    Passwords and passkeys
+  </message>
+  <message name="IDS_SETTINGS_SEARCH_HISTORY" desc="Label for the 'Search history' linkout in the 'Other Google Data' subpage inside the 'Delete browsing data' dialog, where the user can see and manage data that is stored outside of Chrome. This linkout is specifically for search history stored in the user's default search engine account.">
+    Search history
+  </message>
+  <message name="IDS_SETTINGS_MY_ACTIVITY" desc="Label for the 'My Activity' linkout in the 'Other Google Data' subpage inside the 'Delete browsing data' dialog, where the user can see and manage data that is stored outside of Chrome. This linkout is specifically for activity data stored in the user's Google account.">
+    My Activity
+  </message>
+  <message name="IDS_SETTINGS_OTHER_DATA_TITLE" desc="Title for the 'Other Data' subpage inside the 'Delete browsing data' dialog, where the user can see and manage data that is stored outside of Chrome. This is the title shown when the user did not set Google as their default search engine, indicating that they may have data stored outside of Google.">
+    Other data
+  </message>
+  <message name="IDS_SETTINGS_OTHER_GOOGLE_DATA_TITLE" desc="Title for the 'Other Google Data' subpage inside the 'Delete browsing data' dialog, where the user can see and manage data that is stored outside of Chrome. This is the title shown when the user set Google as their default search engine, indicating that all data linked in this subpage is stored within Google.">
+    Other Google data
+  </message>
+  <message name="IDS_SETTINGS_DELETE_DATA_FROM_DEVICE" desc="This is the label for the primary button on the 'Delete browsing data' dialog. Clicking on this will trigger the deletion. This is the label shown when account data cannot be cleared, for example: the user is signed out. It indicates that the deletion will only affect data stored on this device and will not affect synced data.">
+    Delete from this device
+  </message>
+  <message name="IDS_SETTINGS_DELETION_CONFIRMATION_TOAST_LABEL" desc="This is the label for the confirmation toast shown on the 'Privacy and security' page after the deletion is completed in the 'Delete browsing data' dialog and the dialog was closed. It takes in another string for the the user-selected time period that the data was deleted within.">
+    <ph name="TIME_PERIOD">$1<ex>Last 15 minutes</ex></ph> deleted
+  </message>
+  <message name="IDS_SETTINGS_DELETION_CONFIRMATION_ALL_TIME_TOAST_LABEL" desc="This is the label for the confirmation toast shown on the 'Privacy and security' page after the deletion is completed in the 'Delete browsing data' dialog and the dialog was closed. This is the label shown when the user selected the data to be deleted for all time.">
+    Deleted
+  </message>
+  <message name="IDS_SETTINGS_MANAGE_OTHER_GOOGLE_DATA_LABEL" desc="Label for the 'Manage other Google data' subpage entry-point in the 'Delete Browsing Data' dialog where the user can find link-outs to manage their data outside of Chrome. This is the label shown when the user has Google as their default search engine.">
+    Manage other Google data
+  </message>
+  <message name="IDS_SETTINGS_MANAGE_OTHER_DATA_LABEL" desc="Label for the 'Manage other data' subpage entry-point in the 'Delete Browsing Data' dialog where the user can find link-outs to manage their data outside of Chrome. This is the label shown when the user does not have Google as their default search engine.">
+    Manage other data
+  </message>
+  <message name="IDS_SETTINGS_MANAGE_OTHER_DATA_SUB_LABEL" desc="Sub-label for the 'Manage other Google Data' option in the 'Delete Browsing Data' dialog, explaining to the user that search history and passwords can be deleted outside of Chrome in their respective management settings.">
+    Search history and passwords can be deleted in their management settings
+  </message>
+  <message name="IDS_SETTINGS_OTHER_DATA_DESCRIPTION" desc="Description text at the top of the 'Other Google data' subpage in the 'Delete browsing data' settings dialog. It informs users that data linked in this page are not managed or deleted in Chrome.">
+    To delete this data, go to its management settings
   </message>
 
   <!-- Downloads Page -->
@@ -1476,9 +1323,6 @@
   <message name="IDS_SETTINGS_OFFER_WRITING_HELP_DISABLED_SUB_LABEL" desc="Sub-label for the site settings writing help page link, used when the offer writing help preference is disabled.">
     Don't allow "Help me write" to automatically open
   </message>
-  <message name="IDS_SETTINGS_OFFER_WRITING_HELP_DISABLED_SITES_LABEL" desc="Label of the list of sites on which the writing help suggestion feature is disabled.">
-    Never offer writing help on these sites
-  </message>
   <message name="IDS_SETTINGS_OFFER_WRITING_HELP_DISABLED_SITES_LABEL_V2" desc="Label of the list of sites on which the writing help suggestion feature is disabled.">
     Not allowed to offer writing help
   </message>
@@ -1745,7 +1589,7 @@
     Web &#38; App Activity
   </message>
   <message name="IDS_SETTINGS_PRIVACY_GUIDE_COMPLETION_CARD_AI_SETTINGS_LABEL" desc="Text of the AI Innovations sublabel in the completion card of the 'Privacy Guide'.">
-    Explore how AI shapes your experience and make informed choices about your privacy
+    Learn more about how AI shapes your experience and the controls provided by Chrome
   </message>
   <message name="IDS_SETTINGS_PRIVACY_GUIDE_MSBB_CARD_HEADER" desc="Header of the 'make searches and browsing better' card in the 'Privacy Guide'.">
     Choose your search and browsing quality
@@ -1843,18 +1687,6 @@
   </message>
   <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_ALLOW_AGAIN_LABEL" desc="'Unused Site Permissions' shows unused websites for which permissions have been revoked. This label is for the action to undo the revokation and allow the site permissions again.">
     Allow again
-  </message>
-  <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_REMOVED_ONE_PERMISSION_LABEL" desc="'Unused Site Permissions' shows the revoked permissions of unused websites. This text describes which permission was removed and is shown if there is exactly one permission.">
-    Removed <ph name="PERMISSION">$1<ex>location</ex></ph>
-  </message>
-  <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_REMOVED_TWO_PERMISSIONS_LABEL" desc="'Unused Site Permissions' shows the revoked permissions of unused websites. This text describes which permissions were removed and is shown if there are exactly two permissions.">
-    Removed <ph name="PERMISSION_1">$1<ex>location</ex></ph>, <ph name="PERMISSION_2">$2<ex>notifications</ex></ph>
-  </message>
-  <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_REMOVED_THREE_PERMISSIONS_LABEL" desc="'Unused Site Permissions' shows the revoked permissions of unused websites. This text describes which permissions were removed and is shown if there are exactly three permissions.">
-    Removed <ph name="PERMISSION_1">$1<ex>location</ex></ph>, <ph name="PERMISSION_2">$2<ex>notifications</ex></ph>, <ph name="PERMISSION_3">$3<ex>camera</ex></ph>
-  </message>
-  <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_REMOVED_FOUR_OR_MORE_PERMISSIONS_LABEL" desc="'Unused Site Permissions' shows the revoked permissions of unused websites. This text describes which permissions were removed and is shown if there are four or more permissions. The number indicates the count of permisions that are not shown explicitly. The number is always two or larger.">
-    Removed <ph name="PERMISSION_1">$1<ex>location</ex></ph>, <ph name="PERMISSION_2">$2<ex>notifications</ex></ph>, and <ph name="COUNT">$3<ex>2</ex></ph> more
   </message>
   <message name="IDS_SETTINGS_SAFETY_CHECK_UNUSED_SITE_PERMISSIONS_PRIMARY_LABEL" desc="'Unused Site Permissions' shows unused websites for which permissions have been revoked. This label is the header of the module in the site settings page. The number represents the number of unused sites.">
     {NUM_SITES, plural,
@@ -1990,9 +1822,6 @@
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED" desc="Label for safe browsing enhanced protection mode">
     Enhanced protection
   </message>
-  <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_DESC" desc="Description of safe browsing enhanced protection mode">
-    Real-time, proactive protection against dangerous sites, downloads, and extensions that's based on your browsing data getting sent to Google
-  </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_DESC_UPDATED" desc="Description of safe browsing enhanced protection mode">
     Real-time, AI-powered protection against dangerous sites, downloads, and extensions that's based on your browsing data getting sent to Google
   </message>
@@ -2019,9 +1848,6 @@
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_FOUR" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
     Improves security for you and everyone on the web.
-  </message>
-  <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_WHEN_ON_BULLET_FIVE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'When on'">
-    Warns you if you use a password that has been compromised in a data breach.
   </message>
   <message name="IDS_SETTINGS_SAFEBROWSING_ENHANCED_THINGS_TO_CONSIDER_BULLET_ONE" desc="Bullet point under the Safe Browsing enhanced protection mode section titled 'Things to consider'">
     Sends the URLs of sites you visit and a small sample of page content, downloads, extension activity, and system information to Google Safe Browsing to check if they're harmful.
@@ -2204,8 +2030,8 @@
   <message name="IDS_SETTINGS_SECURE_DNS_CUSTOM_CONNECTION_ERROR" desc="Error text for a custom secure DNS provider entry to which a probe connection fails">
     Please verify that this is a valid provider or try again later
   </message>
-  <message name="IDS_SETTINGS_SECURITY_V8_LINK_TITLE" desc="Title for the link row to the V8 security settings.">
-    Manage V8 security
+  <message name="IDS_SETTINGS_SECURITY_JAVASCRIPT_OPTIMIZATION_LINK_TITLE" desc="Title for the link row to the V8 security settings.">
+    Manage JavaScript optimization &amp; security
   </message>
   <message name="IDS_SETTINGS_CONTENT_SETTINGS" desc="Text of the button that takes a user to settings page thats allows users to modify site settings. Also the title of that settings page.">
     Content settings
@@ -2236,6 +2062,9 @@
   </message>
   <message name="IDS_SETTINGS_SYNC_AND_GOOGLE_SERVICES_PRIVACY_DESC_UNIFIED_CONSENT" desc="The description of the 'Sync and Google services' row in the privacy section">
     More settings that relate to privacy, security, and data collection
+  </message>
+  <message name="IDS_SETTINGS_SEARCH_AGGREGATOR_PREF" desc="The label of the checkbox to enable/disable sending omnibox input to the user's organization's search aggregator to get additional suggestions. Note that this setting is controlled by enterprise policy and, while a checkbox is shown, it is always enabled and cannot be disabled.">
+    Show suggestions and results from your organization
   </message>
   <message name="IDS_SETTINGS_RECENT_PERMISSIONS_NO_CHANGES" desc="Text shown to a user when they have not changed any site permissions instead of showing recently changed permissions">
     No recently changed permissions
@@ -2328,11 +2157,17 @@
   <message name="IDS_SETTINGS_SEARCH_ENGINES_SEARCH" desc="Label for a text input placeholder allowing the user to search/filter the displayed search engines">
     Search
   </message>
+  <message name="IDS_SETTINGS_SEARCH_ENGINES_SUBTITLE_FOR_POLICY" desc="Subtitle for a dialog that allows editing/viewing an existing search engine that is created by policy.">
+    This setting is managed by your administrator
+  </message>
   <message name="IDS_SETTINGS_SEARCH_ENGINES_ADD_SITE_SEARCH" desc="Title for a dialog that allows adding a new site search engine.">
     Add site search
   </message>
   <message name="IDS_SETTINGS_SEARCH_ENGINES_EDIT_SEARCH_ENGINE" desc="Title for a dialog that allows editing an existing search engine.">
     Edit search engine
+  </message>
+  <message name="IDS_SETTINGS_SEARCH_ENGINES_VIEW_SEARCH_ENGINE" desc="Title for a dialog that allows viewing details of an existing search engine.">
+    Search engine
   </message>
   <message name="IDS_SETTINGS_SEARCH_ENGINES_EDIT_SITE_SEARCH" desc="Title for a dialog that allows editing an existing site search engine.">
     Edit site search
@@ -2345,6 +2180,9 @@
   </message>
   <message name="IDS_SETTINGS_SEARCH_ENGINES_DELETE_CONFIRMATION_DESCRIPTION" desc="Description text for a dialog that confirms that a user wants to delete an existing search engine.">
     Are you sure you want to delete this search engine?
+  </message>
+  <message name="IDS_SETTINGS_SEARCH_ENGINES_DELETE_CONFIRMATION_DESCRIPTION_FOR_POLICY" desc="Description text for a dialog that confirms that a user wants to delete an existing search engine that is created by policy.">
+    This setting was set up by your organization. Are you sure you want to delete this search engine?
   </message>
   <message name="IDS_SETTINGS_SEARCH_ENGINES_SEARCH_ENGINES" desc="Label for 'Search Engines' section">
     Search engines
@@ -2793,19 +2631,16 @@
     Not allowed to use JavaScript
   </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_JAVASCRIPT_OPTIMIZER_ALLOWED" desc="Label for the enabled option of the JavaScript optimizer content setting.">
-    Sites can use the V8 optimizer
+    Sites can use JavaScript optimization
   </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_JAVASCRIPT_OPTIMIZER_BLOCKED" desc="Label for the disabled option of the JavaScript optimizer content setting.">
-    Don’t allow sites to use the V8 optimizer
-  </message>
-  <message name="IDS_SETTINGS_SITE_SETTINGS_JAVASCRIPT_OPTIMIZER_BLOCKED_SUB_LABEL" desc="Sub-label for the disabled option of the JavaScript optimizer content setting.">
-    Reduces performance but makes V8 more resistant to attacks
+    Don’t allow sites to use JavaScript optimization
   </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_JAVASCRIPT_OPTIMIZER_ALLOWED_EXCEPTIONS" desc="Label for the allowed exceptions site list of the JavaScript optimizer content setting.">
-    Always allowed to use the V8 optimizer
+    Always allowed to use JavaScript optimization
   </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_JAVASCRIPT_OPTIMIZER_BLOCKED_EXCEPTIONS" desc="Label for the blocked exceptions site list of the JavaScript optimizer content setting.">
-    Not allowed to use V8 optimizer
+    Not allowed to use JavaScript optimization
   </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_KEYBOARD_LOCK_DESCRIPTION" desc="Description of the keyboard lock content setting.">
     Sites use this feature to override the input of your keyboard, like for games or remote desktop apps
@@ -3388,6 +3223,12 @@
   <message name="IDS_SETTINGS_SITE_SETTINGS_RESET_MENU" desc="Label for the menu item to remove the permission for a particular site (make it ask you again next time).">
     Remove
   </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_RESET_FROM_LIST_A11Y" desc="Text read by screen readers when focusing on the remove icon for a particular site. Activating this button will remove the permission for the selected site. This text only announced by screen readers and is not visible in the UI.">
+    Remove <ph name="SITE">$1<ex>www.example.com</ex></ph> from the <ph name="SECTION_HEADER">$2<ex>Allowed to see your location</ex></ph> list
+  </message>
+  <message name="IDS_SETTINGS_SITE_SETTINGS_VIEW_FROM_LIST_A11Y" desc="Text read by screen readers when focusing on the view icon for a particular site. Activating this button will open the subpage for the permission for the selected site. This text only announced by screen readers and is not visible in the UI.">
+    View site details for <ph name="SITE">$1<ex>www.example.com</ex></ph> from the <ph name="SECTION_HEADER">$2<ex>Allowed to see your location</ex></ph> list
+  </message>
   <message name="IDS_SETTINGS_SITE_SETTINGS_SESSION_ONLY_MENU" desc="Label for the menu item to set cookies to be deleted on browser exit.">
     Delete on exit
   </message>
@@ -3832,6 +3673,24 @@
     <message name="IDS_SETTINGS_CREATE_SHORTCUT_SUBTITLE" desc="Subtitle of create shortcut section on the manage profile page.">
       Create a desktop shortcut on your device to access directly to this profile
     </message>
+    <message name="IDS_SETTINGS_ACCOUNT_PAGE_TITLE" desc="Name of the settings page which manages the signed in account.">
+      Your account
+    </message>
+    <message name="IDS_SETTINGS_ACCOUNT_DATATYPES_HEADING" desc="Heading of the section in the account settings page for managing data types.">
+      In your Google Account
+    </message>
+    <message name="IDS_SETTINGS_ACCOUNT_BODY" desc="Description of the section in the account settings page for managing data types.">
+      When on, data is saved in your Google Account and can be used on all your devices. When off, data is saved only to this device.
+    </message>
+    <message name="IDS_SETTINGS_ACCOUNT_SYNC_DISABLED"  desc="Section in the account settings page informing the user when the toggles to save a specific data type to the user's Google Account are disabled as per an Enterprise policy.">
+      Managed by your administrator
+    </message>
+    <message name="IDS_SETTINGS_ACCOUNT_HISTORY_TOGGLE"  desc="Title of the merged toggle in the account settings page combining the data types history, tabs, and saved tab groups. Shown on next to the toggle that controls whether these data types should be saved in the Google Account and synced across devices.">
+      History and tabs
+    </message>
+    <message name="IDS_SETTINGS_GOOGLE_SERVICES_PAGE_TITLE" desc="Name of the settings page for managing Google services.">
+      Google services
+    </message>
   </if>
 
   <message name="IDS_SETTINGS_SYNC_DISCONNECT_EXPLANATION" desc="The text to display in the Sign out of Chrome dialog to stop syncing for non-managed profiles.">
@@ -3955,38 +3814,11 @@
   <message name="IDS_SETTINGS_HISTORY_SEARCH_SETTING_LABEL" desc="Title of the page of the settings that enables history search.">
     History search, powered by AI
   </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_SETTING_SUBLABEL" desc="Sublabel of the setting that enables history search.">
-    Use everyday language to search your browsing history and find sites you visited. Only sites you visit after turning on this feature are shown in AI-powered history search results.
-  </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_SETTING_SUBLABEL_V2" desc="This string is the subheading of a setting for ‘History search, powered by AI’. This subheading summarizes the user benefit of the History Search feature. This is an AI (artificial intelligence) feature that improves the search functionality so that users can write queries in natural language and search their Chrome browsing history. The tone should be motivating.">
     Use everyday language to search your browsing history and find sites you visited
   </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_WHEN_ON_BULLET_ONE" desc="Bullet point in the 'When on' column of the description of the setting that enables history search.">
-    You can search your browsing history based on general page content, not only page title and URL. This gives you improved results, whether you're searching browsing history in the address bar using @history or from the History page.
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_CONSIDER_BULLET_ONE" desc="Bullet point in the 'Things to consider' column of the description of the setting that enables history search.">
-    When you search browsing history, your history search terms, page content of best matches, and generated model outputs are sent to Google and may be seen by human reviewers to improve this feature.
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_CONSIDER_BULLET_TWO" desc="Bullet point in the 'Things to consider' column of the description of the setting that enables history search.">
-    As you browse sites, their page contents are saved in an encrypted form on your device. This may affect Chrome's performance.
-  </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_LEARN_MORE_A11Y_LABEL" desc="Label for the 'Learn more' link in the toggle for the setting that enables history search.">
     Learn more about history searches
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_ANSWERS_SETTING_SUBLABEL" desc="Sublabel of the setting that enables history search with answers enabled.">
-    Use everyday language to search your browsing history. You can also ask questions and get answers based on your browsing history.
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_ANSWERS_WHEN_ON_BULLET_ONE" desc="Bullet point in the 'When on' column of the description of the setting that enables history search with answers enabled.">
-    Answers and search results are based on the content of a page.  This gives you improved results, whether you're searching browsing history in the address bar using “@history” or from the History page.
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_ANSWERS_WHEN_ON_BULLET_TWO" desc="Bullet point in the 'When on' column of the description of the setting that enables history search with answers enabled.">
-    Only sites you visit after turning on this feature are shown in AI-powered history search results.
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_ANSWERS_CONSIDER_BULLET_ONE" desc="Bullet point in the 'Things to consider' column of the description of the setting that enables history search with answers enabled.">
-    When you search browsing history, your history searches, the page content of best matches, and generated model outputs are sent to Google and may be seen by human reviewers to improve this feature.
-  </message>
-  <message name="IDS_SETTINGS_HISTORY_SEARCH_ANSWERS_CONSIDER_BULLET_TWO" desc="Bullet point in the 'Things to consider' column of the description of the setting that enables history search with answers enabled.">
-    As you browse sites, their page contents are encrypted and saved to your device.  AI-powered history search results and answers may become outdated if site content has changed since your last visit.  This feature may also affect Chrome’s performance.
   </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_WHEN_ON_PAGE_CONTENT" desc="This string is a bullet point in the ‘When on’ column, which describes the behavior of this feature. This string explains how users can write queries in natural language and search their Chrome browsing history. The tone should be motivating.">
     You can search your browsing history based on general page content, not only page title and URL, and see improved results
@@ -4004,10 +3836,10 @@
     As you browse sites, their page contents are encrypted and saved to your device
   </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_SUBLABEL_ON" desc="This string is the subheading of a setting for ‘History search, powered by AI’. This subheading notes that the setting is currently turned on. Then, it summarizes the user benefit of the History Search feature. This is an AI (artificial intelligence) feature that improves the search functionality so that users can write queries in natural language and search their Chrome browsing history. The tone should be motivating.">
-    On • Use everyday language to search your browsing history and find sites you visited
+    Use everyday language to search your browsing history and find sites you visited. This setting is on.
   </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_SUBLABEL_OFF" desc="This string is the subheading of a setting for ‘History search, powered by AI’. This subheading notes that the setting is currently turned on. Then, it summarizes the user benefit of the History Search feature. This is an AI (artificial intelligence) feature that improves the search functionality so that users can write queries in natural language and search their Chrome browsing history. The tone should be motivating.">
-    Off • Use everyday language to search your browsing history and find sites you visited
+    Use everyday language to search your browsing history and find sites you visited. This setting is off.
   </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_SETTING_SUBLABEL_V2" desc="Sublabel of the setting that enables history search, powered by AI, with answers enabled.">
     Use everyday language to search your browsing history and find sites you visited. You can also ask questions and get answers based on your browsing history
@@ -4025,10 +3857,10 @@
     AI-powered history search results and answers may become outdated if site content has changed since your last visit
   </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_SUBLABEL_ON" desc="This string is the subheading of a setting for ‘History search, powered by AI’ when answers are available. This subheading notes that the setting is currently turned on. Then, it summarizes the user benefit of the History Search feature. This is an AI (artificial intelligence) feature that improves the search functionality so that users can write queries in natural language and search their Chrome browsing history. The tone should be motivating.">
-    On • Use everyday language to search your browsing history and find sites you visited. You can also ask questions and get answers based on your browsing history
+    Use everyday language to search your browsing history and find sites you visited. You can also ask questions and get answers based on your browsing history. This setting is on.
   </message>
   <message name="IDS_SETTINGS_HISTORY_SEARCH_WITH_ANSWERS_SUBLABEL_OFF" desc="This string is the subheading of a setting for ‘History search, powered by AI’ when answers are available. This subheading notes that the setting is currently turned on. Then, it summarizes the user benefit of the History Search feature. This is an AI (artificial intelligence) feature that improves the search functionality so that users can write queries in natural language and search their Chrome browsing history. The tone should be motivating.">
-    Off • Use everyday language to search your browsing history and find sites you visited. You can also ask questions and get answers based on your browsing history
+    Use everyday language to search your browsing history and find sites you visited. You can also ask questions and get answers based on your browsing history. The setting is off.
   </message>
 
   <!-- Web Content -->
@@ -4386,27 +4218,6 @@
   <message name="IDS_SETTINGS_SECURITY_KEYS_FORCE_PIN_CHANGE" desc="An error message shown when a user attempts to use a security key (an authentication hardware device) that has a default PIN (short, often numeric codes that are often used with, for example, ATM cards) set. Before using the key, the user needs to change the PIN to a new code.">
     To use your new security key, set a new PIN
   </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONE_EDIT_DIALOG_TITLE" desc="The title of a dialog that is shown when a user chooses to edit details of a phone that can be used to sign-in with.">
-    Edit phone
-  </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONES_YOUR_DEVICES" desc="The title of a section on a settings page that lists phoens that are signed into (and syncing with) the user's Google account.">
-    Your devices
-  </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONES_SYNCED_DESC" desc="The description of a section on a settings page that lists phoens that are signed into (and syncing with) the user's Google account.">
-    You're signed in to Chrome on these devices, so you can use them as security keys.
-  </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONES_LINKED_DEVICES" desc="The title of a section on a settings page that lists phoens that can be used for signing into websites. The word 'linked' was picked to be distinct from 'paired', as in 'Bluetooth pairing'. The technology does use Bluetooth, but is distinct from Bluetooth pairing.">
-    Linked devices
-  </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONES_LINKED_DESC" desc="The description of a section on a settings page that lists phoens that can be used for signing into websites. The word 'linked' was picked to be distinct from 'paired', as in 'Bluetooth pairing'. The technology does use Bluetooth, but is distinct from Bluetooth pairing.">
-    You linked these devices by scanning a QR code.
-  </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONES_MANAGE" desc="The title of an option in Chrome's privacy settings for managing phones that can be used to sign into websites.">
-    Manage phones
-  </message>
-  <message name="IDS_SETTINGS_SECURITY_KEYS_PHONES_MANAGE_DESC" desc="The description of an option in Chrome's privacy settings for managing phones that can be used for signing into websites. A 'security key' is typically a USB peripherial used to secure sign-ins. In this case a phone can be used as a security key.">
-    Control which phones you use as security keys
-  </message>
   <message name="IDS_SETTINGS_EXTENSION_OR_APP_DISPLAY_NAME" desc="The title of a page containing site settings for an extension or Isolated Web App (IWA). The display name contains a human-readable extension/IWA name followed by the extension/IWA ID.">
     <ph name="EXTENSION_OR_APP_NAME">$1<ex>Google Docs Offline</ex></ph> (ID: <ph name="EXTENSION_OR_APP_ID">$2<ex>ghbmnnjooekpmoecnnnilnnbdlolhkhi</ex></ph>)
   </message>
@@ -4510,11 +4321,6 @@
      =1 {You can stop this site from sending future notifications.}
      other {You can stop these sites from sending future notifications.}}
   </message>
-  <message name="IDS_SETTINGS_SAFETY_HUB_UNUSED_SITE_PERMISSIONS_MENU_NOTIFICATION" desc="The unused site permissions module of Safety Hub revokes permissions of sites that the user hasn't visited in a while. This label is for the notification in Chrome's three-dot menu indicating for how many sites the permission was revoked.">
-    {NUM_SITES, plural,
-      =1 {Removed permissions for 1 unused site}
-      other {Removed permissions for {NUM_SITES} unused sites}}
-  </message>
   <message name="IDS_SETTINGS_SAFETY_HUB_REVOKED_PERMISSIONS_MENU_NOTIFICATION" desc="The revoked permissions module of Safety Hub revokes permissions of sites that the user hasn't visited in a while or that send abusive notifications. This label is for the notification in Chrome's three-dot menu indicating for how many sites the permission was revoked.">
     {NUM_SITES, plural,
       =1 {Removed permissions for 1 site}
@@ -4567,9 +4373,6 @@
   </message>
 
   <!-- Experimental settings strings -->
-  <message name="IDS_SETTINGS_AI_PAGE_TITLE" desc="Title of page holding experimental AI settings">
-    Experimental AI
-  </message>
   <message name="IDS_SETTINGS_AI_INNOVATIONS_PAGE_TITLE" desc="This label is on the left Navigation sidebar in Chrome’s settings. It tells the user that they can see settings related to AI (artificial intelligence) in this section. It is a noun phrase that refers to our collection of AI settings. These settings include Help me write, Tab organizer, and more. If possible, translate this so that it closely matches the Navigation tab title at the top of this marketing page: https://www.google.com/chrome/ai-innovations.">
     AI innovations
   </message>
@@ -4586,7 +4389,7 @@
     Data sent to Google may be seen by human reviewers to improve Chrome AI’s technology
   </message>
   <message name="IDS_SETTINGS_AI_PAGE_MAIN_MANAGED_SUBLABEL_3" desc="This is a bullet point on a card that sets the context for the ‘AI innovations’ section of Chrome’s settings. Here, the user can see settings related to AI (artificial intelligence) in this section; these settings include Help me write, Tab organizer, and more. This bullet point is after the ‘Reimagine Chrome, supercharged with AI’ title and ‘Things to consider’ subheading. We want users to read this card and understand the considerations that apply to all Chrome’s AI features. This bullet point specifically notes that AI features are actively developing, and that humans may review feature usage and corresponding data in order to further improve the feature. The tone should be informative.">
-    Your organization controls how data collected by these features may be used.
+    Your organization manages how data collected by these features may be used.
   </message>
   <message name="IDS_SETTINGS_AI_PAGE_MAIN_MANAGED_LEARN_MORE_ACCESSIBILITY_LABEL" desc="This string is found in a link that takes the user to the AI features and policies help center article when the user taps it. The tone should be informative">
     Learn more about using generative AI at work
@@ -4651,14 +4454,14 @@
   </message>
 
     <!-- Experimental settings - Password Change -->
-  <message name="IDS_SETTINGS_PASSWORD_CHANGE_LABEL" desc="Primary label for password change entry in settings.">
-    Automated password Change
+  <message name="IDS_SETTINGS_PASSWORD_CHANGE_LABEL" desc="Primary label for password change entry in settings. The user is in settings and this string represents the name of the feature. We were careful to choose “automated” and not “automatic” because we don’t want to give the user the impression that this will happen without their knowledge. There is an ‘automated’ process that the user initiates, but the process isn’t ‘automatic’ in the sense that it might be happening behind the scenes without the user’s knowledge.">
+    Automated Password Change
   </message>
-  <message name="IDS_SETTINGS_PASSWORD_CHANGE_SUBLABEL" desc="Sublabel for password change entry in settings.">
-    When Chrome finds one of your passwords in a data breach, it can offer to change your password for you when you sign in
+  <message name="IDS_SETTINGS_PASSWORD_CHANGE_SUBLABEL" desc="Sublabel for password change entry in settings. The description of the feature beneath the “Automated password change” feature title. This and the bullets beneath this paragraph represent the full description of the feature. * “public” does two things: 1) it provides distance between “Chrome” and “data breach”, because we don’t want users to associate the breach with Chrome (Chrome didn’t have a data leak, 2) and related, it might reassure the user to know that Chrome is using public information to establish these lists of compromised passwords. * “Google Password Manager can offer…”: The user has to agree to have this feature update their password for them each time. So Google Password Manager is ‘offering’ to do something for the user.">
+    If Chrome finds one of your passwords in a public data breach, Google Password Manager can offer to change your password for you if you're signed in.
   </message>
-  <message name="IDS_SETTINGS_PASSWORD_CHANGE_DATA_BREACH" desc="One of the bullet points explaining what happens when the feature is used.">
-    When one of your passwords is found in a data breach, Google Password Manager asks if you want it changed to a strong password
+  <message name="IDS_SETTINGS_PASSWORD_CHANGE_DATA_BREACH" desc="Bullet 1 of 2 that appears beneath the “When used” subtitle. This string is repetitive of the feature description, but we want to have a complete description of what happens when the feature is used. * “Google Password Manager asks…”: This part is similar to the general feature description above, but it’s written as if the feature is being used by the user, so we use “asks” and not “can offer”. * “Strong password”: As an existing autofill feature, Google Password Manager can offer to generate and save passwords for the user. These passwords are typically stronger than passwords the user might create on their own">
+    If one of your passwords is found in a data breach, Google Password Manager asks if you want it changed to a strong password
   </message>
   <message name="IDS_SETTINGS_PASSWORD_CHANGE_WHERE_SAVED" desc="One of the bullet points explaining what happens when the feature is used.">
     You don't need to remember the password because it gets saved for you in Google Password Manager

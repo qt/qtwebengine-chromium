@@ -31,8 +31,8 @@ class MotionMark13ProbeContext(MotionMark1ProbeContext):
 
 class MotionMark13Story(MotionMark1Story):
   NAME = "motionmark_1.3"
-  URL: str = "https://chromium-workloads.web.app/motionmark/v1.3/MotionMark/"
-  URL_OFFICIAL: str = "https://browserbench.org/MotionMark1.3/"
+  URL: str = "https://chromium-workloads.web.app/motionmark/v1.3/MotionMark"
+  URL_OFFICIAL: str = "https://browserbench.org/MotionMark1.3"
   READY_TIMEOUT: dt.timedelta = dt.timedelta(seconds=12)
   DEVELOPER_READY_JS: str = (
       "return !(document.querySelector('#frame-rate-detection span'));")

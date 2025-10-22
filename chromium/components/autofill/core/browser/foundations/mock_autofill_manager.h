@@ -76,7 +76,8 @@ class MockAutofillManager : public AutofillManager {
               (const FormData& form,
                const FieldGlobalId& field_id,
                const gfx::Rect& caret_bounds,
-               AutofillSuggestionTriggerSource trigger_source),
+               AutofillSuggestionTriggerSource trigger_source,
+               std::optional<PasswordSuggestionRequest> password_request),
               (override));
   MOCK_METHOD(void,
               OnFocusOnFormFieldImpl,

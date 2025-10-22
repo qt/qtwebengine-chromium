@@ -34,6 +34,30 @@ enum class Verify1QwacResult {
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:NetCertVerifier1QwacResult)
 
+// These values are persisted to logs. Entries should not be renumbered and
+// numeric values should never be reused.
+// LINT.IfChange(NetCertVerifier2QwacBindingResult)
+enum class Verify2QwacBindingResult {
+  kOtherError = 0,
+  kValid2QwacBinding = 1,
+  kBindingParsingError = 2,
+  kBindingSignatureInvalid = 3,
+  kTlsCertNotBound = 4,
+  kCertLeafParsingError = 5,
+  kCertNotQwac = 6,
+  kCertInconsistentBits = 7,
+  kCertNameInvalid = 8,
+  kCertDateInvalid = 9,
+  kCertAuthorityInvalid = 10,
+  kCertInvalid = 11,
+  kCertWeakKey = 12,
+  kCertNameConstraintViolation = 13,
+  kCertOtherError = 14,
+
+  kMaxValue = kCertOtherError,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/net/enums.xml:NetCertVerifier2QwacBindingResult)
+
 // TODO(crbug.com/41276779): This is not how other cert_verify_proc_*.h are
 // implemented -- they expose the type in the header. Use a consistent style
 // here too.

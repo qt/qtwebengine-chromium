@@ -186,7 +186,7 @@ and an optional parent JavaScript object. For a native menu item, this is:
 ```js
 VisualLogging.registerLoggable(descriptor, `${VisualLogging.action()
     .track({click: true}).context(descriptor.jslogContext)}`,
-    parent || descriptors);
+    parent || descriptors, size);
 ```
 
 This only registers the element and doesn’t log anything yet. To log
@@ -202,9 +202,7 @@ structure look like. To do that, run
 setVeDebuggingEnabled(true);
 ```
 
-in DevTools on DevTools. This will add red outline to each visual element and
-will show the details of logging config for an element and all its ancestors on
-hover.
+in DevTools on DevTools. This will show the details of logging config for an element and all its ancestors on hover.
 
 ![Visual Element debugging in DevTools on DevTools](visual_logging_debugging.png)
 

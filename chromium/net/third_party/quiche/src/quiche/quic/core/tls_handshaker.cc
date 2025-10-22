@@ -4,19 +4,21 @@
 
 #include "quiche/quic/core/tls_handshaker.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
-#include "absl/base/macros.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "absl/types/span.h"
 #include "openssl/crypto.h"
 #include "openssl/ssl.h"
+#include "quiche/quic/core/crypto/crypto_utils.h"
+#include "quiche/quic/core/crypto/quic_decrypter.h"
 #include "quiche/quic/core/quic_crypto_stream.h"
 #include "quiche/quic/platform/api/quic_bug_tracker.h"
-#include "quiche/quic/platform/api/quic_stack_trace.h"
 
 namespace quic {
 
@@ -224,11 +226,7 @@ ssl_early_data_reason_t TlsHandshaker::EarlyDataReason() const {
 }
 
 const EVP_MD* TlsHandshaker::Prf(const SSL_CIPHER* cipher) {
-#if BORINGSSL_API_VERSION >= 23
   return SSL_CIPHER_get_handshake_digest(cipher);
-#else
-  return EVP_get_digestbynid(SSL_CIPHER_get_prf_nid(cipher));
-#endif
 }
 
 enum ssl_verify_result_t TlsHandshaker::VerifyCert(uint8_t* out_alert) {
@@ -287,13 +285,14 @@ void TlsHandshaker::SetWriteSecret(EncryptionLevel level,
   std::unique_ptr<QuicEncrypter> encrypter =
       QuicEncrypter::CreateFromCipherSuite(SSL_CIPHER_get_id(cipher));
   const EVP_MD* prf = Prf(cipher);
+  std::vector<uint8_t> header_protection_key;
   CryptoUtils::SetKeyAndIV(prf, write_secret,
                            handshaker_delegate_->parsed_version(),
                            encrypter.get());
-  std::vector<uint8_t> header_protection_key =
-      CryptoUtils::GenerateHeaderProtectionKey(
-          prf, write_secret, handshaker_delegate_->parsed_version(),
-          encrypter->GetKeySize());
+  header_protection_key.resize(encrypter->GetKeySize());
+  CryptoUtils::GenerateHeaderProtectionKey(
+      prf, write_secret, handshaker_delegate_->parsed_version(),
+      absl::Span<uint8_t>(header_protection_key));
   encrypter->SetHeaderProtectionKey(
       absl::string_view(reinterpret_cast<char*>(header_protection_key.data()),
                         header_protection_key.size()));
@@ -319,13 +318,14 @@ bool TlsHandshaker::SetReadSecret(EncryptionLevel level,
   std::unique_ptr<QuicDecrypter> decrypter =
       QuicDecrypter::CreateFromCipherSuite(SSL_CIPHER_get_id(cipher));
   const EVP_MD* prf = Prf(cipher);
+  std::vector<uint8_t> header_protection_key;
   CryptoUtils::SetKeyAndIV(prf, read_secret,
                            handshaker_delegate_->parsed_version(),
                            decrypter.get());
-  std::vector<uint8_t> header_protection_key =
-      CryptoUtils::GenerateHeaderProtectionKey(
-          prf, read_secret, handshaker_delegate_->parsed_version(),
-          decrypter->GetKeySize());
+  header_protection_key.resize(decrypter->GetKeySize());
+  CryptoUtils::GenerateHeaderProtectionKey(
+      prf, read_secret, handshaker_delegate_->parsed_version(),
+      absl::Span<uint8_t>(header_protection_key));
   decrypter->SetHeaderProtectionKey(
       absl::string_view(reinterpret_cast<char*>(header_protection_key.data()),
                         header_protection_key.size()));
@@ -352,16 +352,18 @@ TlsHandshaker::AdvanceKeysAndCreateCurrentOneRttDecrypter() {
   }
   const SSL_CIPHER* cipher = SSL_get_current_cipher(ssl());
   const EVP_MD* prf = Prf(cipher);
-  latest_read_secret_ = CryptoUtils::GenerateNextKeyPhaseSecret(
-      prf, handshaker_delegate_->parsed_version(), latest_read_secret_);
-  latest_write_secret_ = CryptoUtils::GenerateNextKeyPhaseSecret(
-      prf, handshaker_delegate_->parsed_version(), latest_write_secret_);
-
+  CryptoUtils::GenerateNextKeyPhaseSecret(
+      prf, handshaker_delegate_->parsed_version(), latest_read_secret_,
+      absl::Span<uint8_t>(latest_read_secret_));
+  CryptoUtils::GenerateNextKeyPhaseSecret(
+      prf, handshaker_delegate_->parsed_version(), latest_write_secret_,
+      absl::Span<uint8_t>(latest_write_secret_));
   std::unique_ptr<QuicDecrypter> decrypter =
       QuicDecrypter::CreateFromCipherSuite(SSL_CIPHER_get_id(cipher));
   CryptoUtils::SetKeyAndIV(prf, latest_read_secret_,
                            handshaker_delegate_->parsed_version(),
                            decrypter.get());
+
   decrypter->SetHeaderProtectionKey(absl::string_view(
       reinterpret_cast<char*>(one_rtt_read_header_protection_key_.data()),
       one_rtt_read_header_protection_key_.size()));
@@ -420,7 +422,6 @@ void TlsHandshaker::SendAlert(EncryptionLevel level, uint8_t desc) {
 
 void TlsHandshaker::MessageCallback(bool is_write, int /*version*/,
                                     int content_type, absl::string_view data) {
-#if BORINGSSL_API_VERSION >= 17
   if (content_type == SSL3_RT_CLIENT_HELLO_INNER) {
     // Notify QuicConnectionDebugVisitor. Most TLS messages can be seen in
     // CRYPTO frames, but, with ECH enabled, the ClientHelloInner is encrypted
@@ -431,11 +432,6 @@ void TlsHandshaker::MessageCallback(bool is_write, int /*version*/,
       handshaker_delegate_->OnEncryptedClientHelloReceived(data);
     }
   }
-#else   // BORINGSSL_API_VERSION
-  (void)is_write;
-  (void)content_type;
-  (void)data;
-#endif  // BORINGSSL_API_VERSION
 }
 
 }  // namespace quic

@@ -46,6 +46,16 @@ class IdlSchemaTest(unittest.TestCase):
     self.idl_basics = loaded[0]
     self.maxDiff = None
 
+  def testNamespaceDescription(self):
+    # Tests the top level namespace description is cleaned up and joined
+    # together as expected.
+    schema = self.idl_basics
+    self.assertEqual(
+        'Tests a variety of basic API definition features, ensuring things are'
+        ' parsed and processed as expected.',
+        schema['description'],
+    )
+
   def testSimpleCallbacks(self):
     schema = self.idl_basics
     expected = {'name': 'cb', 'parameters': []}
@@ -293,7 +303,7 @@ class IdlSchemaTest(unittest.TestCase):
   def testAllPlatformsNamespace(self):
     schema = idl_schema.Load('test/idl_namespace_all_platforms.idl')[0]
     self.assertEqual('idl_namespace_all_platforms', schema['namespace'])
-    expected = ['chromeos', 'fuchsia', 'linux', 'mac', 'win']
+    expected = ['chromeos', 'desktop_android', 'linux', 'mac', 'win']
     self.assertEqual(expected, schema['platforms'])
 
   def testNonSpecificPlatformsNamespace(self):

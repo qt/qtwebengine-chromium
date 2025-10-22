@@ -29,9 +29,9 @@ cc_library(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":grammar_info",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_fuzztest//fuzztest:logging",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/strings:str_format",
+        "@com_google_fuzztest//fuzztest/internal:logging",
         "@com_google_fuzztest//grammar_codegen/generated_antlr_parser",
     ],
 )
@@ -42,11 +42,11 @@ cc_library(
     hdrs = ["backend.h"],
     deps = [
         ":grammar_info",
-        "@com_google_absl//absl/container:btree",
-        "@com_google_absl//absl/container:flat_hash_set",
-        "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
-        "@com_google_fuzztest//fuzztest:logging",
+        "@abseil-cpp//absl/container:btree",
+        "@abseil-cpp//absl/container:flat_hash_set",
+        "@abseil-cpp//absl/strings",
+        "@abseil-cpp//absl/strings:str_format",
+        "@com_google_fuzztest//fuzztest/internal:logging",
     ],
 )
 
@@ -57,7 +57,7 @@ cc_test(
         ":antlr_frontend",
         ":backend",
         ":grammar_info",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest_main",
     ],
 )
 
@@ -81,8 +81,8 @@ cc_test(
     ],
     deps = [
         ":code_generation",
-        "@com_google_absl//absl/strings",
-        "@com_google_googletest//:gtest_main",
+        "@abseil-cpp//absl/strings",
+        "@googletest//:gtest_main",
     ],
 )
 

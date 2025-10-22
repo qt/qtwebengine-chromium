@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "components/viz/service/display/display.h"
 
@@ -76,8 +72,10 @@
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
+#include "third_party/skia/include/core/SkRect.h"
 #include "ui/gfx/delegated_ink_metadata.h"
 #include "ui/gfx/delegated_ink_point.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 #include "ui/gfx/mojom/delegated_ink_point_renderer.mojom.h"
 #include "ui/gfx/overlay_transform.h"
 
@@ -140,12 +138,6 @@ class StubDisplayClient : public DisplayClient {
   void DisplayAddChildWindowToBrowser(
       gpu::SurfaceHandle child_window) override {}
   void SetWideColorEnabled(bool enabled) override {}
-  void SetPreferredFrameInterval(base::TimeDelta interval) override {}
-  base::TimeDelta GetPreferredFrameIntervalForFrameSinkId(
-      const FrameSinkId& id,
-      mojom::CompositorFrameSinkType* type) override {
-    return BeginFrameArgs::MinInterval();
-  }
 };
 
 void CopyCallback(bool* called,
@@ -158,10 +150,6 @@ void CopyCallback(bool* called,
 gfx::SwapTimings GetTestSwapTimings() {
   base::TimeTicks now = base::TimeTicks::Now();
   return gfx::SwapTimings{now, now};
-}
-
-std::string PostTestCaseName(const ::testing::TestParamInfo<bool>& info) {
-  return info.param ? "UseMapRect" : "RectExpansion";
 }
 
 }  // namespace
@@ -758,7 +746,7 @@ TEST_F(DisplayTest, BackdropFilterTest) {
       bd_pass->SetAll(
           render_pass_id_generator.GenerateNextId(), sub_surface_rect,
           no_damage, gfx::Transform(), cc::FilterOperations(), backdrop_filters,
-          gfx::RRectF(gfx::RectF(sub_surface_rect), 0), SubtreeCaptureId(),
+          SkPath::Rect(gfx::RectToSkRect(sub_surface_rect)), SubtreeCaptureId(),
           sub_surface_rect.size(), ViewTransitionElementResourceId(), false,
           false, false, false, false);
       pass_list.push_back(std::move(bd_pass));
@@ -908,31 +896,7 @@ TEST_F(DisplayTest, CompositorFrameDamagesCorrectDisplay) {
   manager_.UnregisterBeginFrameSource(begin_frame_source2.get());
 }
 
-// Supports testing features::OnBeginFrameAcks, which changes the expectations
-// of what IPCs are sent to the CompositorFrameSinkClient. When enabled
-// OnBeginFrame also handles ReturnResources as well as
-// DidReceiveCompositorFrameAck.
-class OnBeginFrameAcksDisplayTest : public DisplayTest,
-                                    public testing::WithParamInterface<bool> {
- public:
-  OnBeginFrameAcksDisplayTest();
-  ~OnBeginFrameAcksDisplayTest() override = default;
-
-  bool BeginFrameAcksEnabled() const { return GetParam(); }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-OnBeginFrameAcksDisplayTest::OnBeginFrameAcksDisplayTest() {
-  if (BeginFrameAcksEnabled()) {
-    scoped_feature_list_.InitAndEnableFeature(features::kOnBeginFrameAcks);
-  } else {
-    scoped_feature_list_.InitAndDisableFeature(features::kOnBeginFrameAcks);
-  }
-}
-
-TEST_P(OnBeginFrameAcksDisplayTest, CompositorFrameWithPresentationToken) {
+TEST_F(DisplayTest, CompositorFrameWithPresentationToken) {
   RendererSettings settings;
   id_allocator_.GenerateId();
   const LocalSurfaceId local_surface_id(
@@ -952,9 +916,6 @@ TEST_P(OnBeginFrameAcksDisplayTest, CompositorFrameWithPresentationToken) {
 
   auto sub_support = std::make_unique<CompositorFrameSinkSupport>(
       &sub_client, &manager_, kAnotherFrameSinkId, false /* is_root */);
-  if (BeginFrameAcksEnabled()) {
-    sub_support->SetWantsBeginFrameAcks();
-  }
 
   const gfx::Size display_size(100, 100);
   display_->Resize(display_size);
@@ -968,8 +929,7 @@ TEST_P(OnBeginFrameAcksDisplayTest, CompositorFrameWithPresentationToken) {
             .AddRenderPass(gfx::Rect(sub_surface_size), gfx::Rect())
             .SetBeginFrameSourceId(kBeginFrameSourceId)
             .Build();
-    EXPECT_CALL(sub_client, DidReceiveCompositorFrameAck(_))
-        .Times(BeginFrameAcksEnabled() ? 0 : 1);
+    EXPECT_CALL(sub_client, DidReceiveCompositorFrameAck(_));
     frame_token_1 = frame.metadata.frame_token;
     sub_support->SubmitCompositorFrame(sub_local_surface_id, std::move(frame));
   }
@@ -1025,8 +985,7 @@ TEST_P(OnBeginFrameAcksDisplayTest, CompositorFrameWithPresentationToken) {
                                 .Build();
     frame_token_2 = frame.metadata.frame_token;
 
-    EXPECT_CALL(sub_client, DidReceiveCompositorFrameAck(_))
-        .Times(BeginFrameAcksEnabled() ? 0 : 1);
+    EXPECT_CALL(sub_client, DidReceiveCompositorFrameAck(_));
     sub_support->SubmitCompositorFrame(sub_local_surface_id, std::move(frame));
 
     display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
@@ -1045,22 +1004,13 @@ TEST_P(OnBeginFrameAcksDisplayTest, CompositorFrameWithPresentationToken) {
             .SetBeginFrameSourceId(kBeginFrameSourceId)
             .Build();
 
-    EXPECT_CALL(sub_client, DidReceiveCompositorFrameAck(_))
-        .Times(BeginFrameAcksEnabled() ? 0 : 1);
+    EXPECT_CALL(sub_client, DidReceiveCompositorFrameAck(_));
     sub_support->SubmitCompositorFrame(sub_local_surface_id, std::move(frame));
 
     display_->DrawAndSwap({base::TimeTicks::Now(), base::TimeTicks::Now()});
     RunUntilIdle();
   }
 }
-
-INSTANTIATE_TEST_SUITE_P(,
-                         OnBeginFrameAcksDisplayTest,
-                         testing::Bool(),
-                         [](auto& info) {
-                           return info.param ? "BeginFrameAcks"
-                                             : "CompositoFrameAcks";
-                         });
 
 TEST_F(DisplayTest, BeginFrameThrottling) {
   id_allocator_.GenerateId();
@@ -1391,27 +1341,7 @@ TEST_F(DisplayTest, DisplaySizeMismatch) {
   }
 }
 
-class UseMapRectDisplayTest : public DisplayTest,
-                              public testing::WithParamInterface<bool> {
- public:
-  UseMapRectDisplayTest();
-  ~UseMapRectDisplayTest() override = default;
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-UseMapRectDisplayTest::UseMapRectDisplayTest() {
-  if (GetParam()) {
-    scoped_feature_list_.InitAndEnableFeature(
-        features::kUseMapRectForPixelMovement);
-  } else {
-    scoped_feature_list_.InitAndDisableFeature(
-        features::kUseMapRectForPixelMovement);
-  }
-}
-
-TEST_P(UseMapRectDisplayTest, PixelMovingForegroundFilterTest) {
+TEST_F(DisplayTest, PixelMovingForegroundFilterTest) {
   RendererSettings settings;
   settings.partial_swap_enabled = true;
   id_allocator_.GenerateId();
@@ -1458,12 +1388,13 @@ TEST_P(UseMapRectDisplayTest, PixelMovingForegroundFilterTest) {
       cc::FilterOperations foreground_filters;
       foreground_filters.Append(cc::FilterOperation::CreateDropShadowFilter(
           gfx::Point(5, 10), 2.f, SkColors::kTransparent));
-      bd_pass->SetAll(
-          render_pass_id_generator.GenerateNextId(), sub_surface_rect,
-          no_damage, gfx::Transform(), foreground_filters,
-          cc::FilterOperations(), gfx::RRectF(gfx::RectF(sub_surface_rect), 0),
-          SubtreeCaptureId(), sub_surface_rect.size(),
-          ViewTransitionElementResourceId(), false, false, false, false, false);
+      bd_pass->SetAll(render_pass_id_generator.GenerateNextId(),
+                      sub_surface_rect, no_damage, gfx::Transform(),
+                      foreground_filters, cc::FilterOperations(),
+                      SkPath::Rect(gfx::RectToSkRect(sub_surface_rect)),
+                      SubtreeCaptureId(), sub_surface_rect.size(),
+                      ViewTransitionElementResourceId(), false, false, false,
+                      false, false);
       pass_list.push_back(std::move(bd_pass));
 
       CompositorFrame frame = CompositorFrameBuilder()
@@ -1516,9 +1447,8 @@ TEST_P(UseMapRectDisplayTest, PixelMovingForegroundFilterTest) {
       EXPECT_EQ(expected_damage, software_output_device_->damage_rect());
       // The scissor rect is expanded by direct_renderer to include the
       // overlapping pixel-moving foreground filter surface.
-      auto expected_scissor_rect = first_frame  ? gfx::Rect(display_size)
-                                   : GetParam() ? gfx::Rect(4, 5, 56, 55)
-                                                : gfx::Rect(0, 0, 60, 60);
+      auto expected_scissor_rect =
+          first_frame ? gfx::Rect(display_size) : gfx::Rect(4, 5, 56, 55);
       EXPECT_EQ(
           expected_scissor_rect,
           display_->renderer_for_testing()->GetLastRootScissorRectForTesting());
@@ -2397,10 +2327,5 @@ TEST_F(UnsupportedRendererDelegatedInkTest,
   display_->InitDelegatedInkPointRendererReceiver(
       ink_renderer_remote.BindNewPipeAndPassReceiver());
 }
-
-INSTANTIATE_TEST_SUITE_P(,
-                         UseMapRectDisplayTest,
-                         testing::Bool(),
-                         &PostTestCaseName);
 
 }  // namespace viz

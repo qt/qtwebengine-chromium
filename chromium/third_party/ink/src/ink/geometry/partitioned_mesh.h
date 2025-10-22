@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -86,7 +86,7 @@ class PartitionedMesh {
     // TODO: b/295166196 - Once `MutableMesh` always uses 16-bit indices, change
     // this field to `absl::Span<const MutableMesh> meshes` (and change the type
     // of `outlines` to use `VertexIndexPair`).
-    absl::Nonnull<const MutableMesh*> mesh;
+    const MutableMesh* absl_nonnull mesh;
     absl::Span<const absl::Span<const uint32_t>> outlines;
     // A list of mesh attributes present in the `MutableMesh` that should be
     // stripped out during construction of the `PartitionedMesh`.
@@ -234,8 +234,11 @@ class PartitionedMesh {
 
   // Forces initialization of the spatial index. This is a no-op if the spatial
   // index has already been initialized, or if the `PartitionedMesh` contains no
-  // meshes.
-  void InitializeSpatialIndex();
+  // meshes. Note that this is treated as const because it only mutates
+  // explicitly mutable cache fields (i.e. it does not affect behavior, only
+  // performance, and is safe to do when changes to the contents are not
+  // expected).
+  void InitializeSpatialIndex() const;
 
   // Returns true if the spatial index has already been initialized.
   bool IsSpatialIndexInitialized() const;
@@ -348,7 +351,7 @@ class PartitionedMesh {
   // cached R-Tree, even if it was initialized after the copy.
   class Data {
    public:
-    static absl::StatusOr<absl::Nonnull<std::unique_ptr<Data>>> FromMeshGroups(
+    static absl::StatusOr<absl_nonnull std::unique_ptr<Data>> FromMeshGroups(
         absl::Span<const MeshGroup> groups);
 
     uint32_t RenderGroupCount() const;
@@ -403,7 +406,7 @@ class PartitionedMesh {
     //   moved out of while the method is executing. This would be a
     //   synchronization bug in the caller and would cause undefined behavior
     //   and/or a use-after-free of `Data` even if we mutex-guarded the pointee
-    mutable absl::Nullable<std::unique_ptr<const RTree>> rtree_
+    mutable absl_nullable std::unique_ptr<const RTree> rtree_
         ABSL_GUARDED_BY(cache_mutex_);
     mutable std::optional<float> cached_total_absolute_area_
         ABSL_GUARDED_BY(cache_mutex_);
@@ -411,9 +414,9 @@ class PartitionedMesh {
 
   // Constructor used by `FromMeshes` to instantiate the `PartitionedMesh` with
   // `Data`.
-  explicit PartitionedMesh(absl::Nonnull<std::unique_ptr<Data>> data);
+  explicit PartitionedMesh(absl_nonnull std::unique_ptr<Data> data);
 
-  absl::Nullable<std::shared_ptr<const Data>> data_;
+  absl_nullable std::shared_ptr<const Data> data_;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -475,7 +478,7 @@ inline uint32_t PartitionedMesh::OutlineVertexCount(
   return Outline(group_index, outline_index).size();
 }
 
-inline void PartitionedMesh::InitializeSpatialIndex() {
+inline void PartitionedMesh::InitializeSpatialIndex() const {
   if (!data_) return;
 
   (void)data_->SpatialIndex();
@@ -485,8 +488,7 @@ inline bool PartitionedMesh::IsSpatialIndexInitialized() const {
   return data_ && data_->IsSpatialIndexInitialized();
 }
 
-inline PartitionedMesh::PartitionedMesh(
-    absl::Nonnull<std::unique_ptr<Data>> data)
+inline PartitionedMesh::PartitionedMesh(absl_nonnull std::unique_ptr<Data> data)
     : data_(std::move(data)) {}
 
 inline uint32_t PartitionedMesh::Data::RenderGroupCount() const {

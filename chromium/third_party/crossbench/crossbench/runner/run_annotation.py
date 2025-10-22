@@ -7,7 +7,7 @@ from __future__ import annotations
 import dataclasses
 import enum
 import logging
-from typing import TYPE_CHECKING, Dict, Final, Iterable, List
+from typing import TYPE_CHECKING, Final, Iterable
 
 from crossbench.helper import collection_helper
 
@@ -70,7 +70,7 @@ class RunAnnotation:
   def log_all(cls,
               annotations: Iterable[RunAnnotation],
               limit: int = 2) -> None:
-    groups: Dict[WarnLevel, List[RunAnnotation]] = collection_helper.group_by(
+    groups: dict[WarnLevel, list[RunAnnotation]] = collection_helper.group_by(
         annotations, lambda annotation: annotation.level)
     if not groups:
       return

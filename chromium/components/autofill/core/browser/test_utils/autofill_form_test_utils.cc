@@ -12,6 +12,8 @@
 
 namespace autofill::test {
 
+using ::testing::ElementsAre;
+
 testing::Message DescribeFormData(const FormData& form_data) {
   testing::Message result;
   result << "Form contains " << form_data.fields().size() << " fields:\n";
@@ -22,6 +24,7 @@ testing::Message DescribeFormData(const FormData& form_data) {
   return result;
 }
 
+// Returns the form field relevant to the `role`.
 FormFieldData CreateFieldByRole(FieldType role) {
   FormFieldData field;
   // TODO(crbug.com/406073718): Add the missing roles and/or fail loudly.
@@ -81,6 +84,14 @@ FormFieldData CreateFieldByRole(FieldType role) {
     case FieldType::PASSWORD:
       field.set_label(u"Password");
       field.set_name(u"password");
+      break;
+    case FieldType::LOYALTY_MEMBERSHIP_ID:
+      field.set_label(u"Frequent Flyer Number");
+      field.set_name(u"frequentflyer");
+      break;
+    case FieldType::EMAIL_OR_LOYALTY_MEMBERSHIP_ID:
+      field.set_label(u"Email or Frequent Flyer Number");
+      field.set_name(u"email_or_frequentflyer");
       break;
     case FieldType::EMPTY_TYPE:
       break;
@@ -274,8 +285,9 @@ void FormStructureTest::CheckFormStructureTestData(
     }
     for (size_t i = 0;
          i < test_case.expected_field_types.expected_overall_type.size(); i++) {
-      EXPECT_EQ(test_case.expected_field_types.expected_overall_type[i],
-                form_structure->field(i)->Type().GetStorableType());
+      EXPECT_THAT(
+          form_structure->field(i)->Type().GetTypes(),
+          ElementsAre(test_case.expected_field_types.expected_overall_type[i]));
     }
   }
 }

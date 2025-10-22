@@ -16,7 +16,10 @@
 #include "content/public/browser/resource_context.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_function.h"
+#include "extensions/buildflags/buildflags.h"
 #include "media/audio/audio_device_description.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace media {
 class AudioSystem;
@@ -124,7 +127,7 @@ class WebrtcAudioPrivateGetAssociatedSinkFunction
   ResponseAction Run() override;
 
   // Receives the input device descriptions, looks up the raw source device ID
-  // basing on |params|, and requests the associated raw sink ID for it.
+  // basing on `params`, and requests the associated raw sink ID for it.
   void ReceiveInputDeviceDescriptions(
       const url::Origin& origin,
       const std::string& salt,

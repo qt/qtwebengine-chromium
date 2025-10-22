@@ -16,6 +16,21 @@ namespace password_manager::features {
 // All features in alphabetical order. The features should be documented
 // alongside the definition of their values in the .cc file.
 
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+BASE_DECLARE_FEATURE(kActorLogin);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+
+#if BUILDFLAG(IS_ANDROID)
+// Enables filling of OTPs received via SMS on Android.
+BASE_DECLARE_FEATURE(kAndroidSmsOtpFilling);
+#endif  // BUILDFLAG(IS_ANDROID)
+
+// Enables using clientside form classifier predictions for password forms.
+BASE_DECLARE_FEATURE(kApplyClientsideModelPredictionsForPasswordTypes);
+
+// Enables using clientside form classifier predictions for OTP forms.
+BASE_DECLARE_FEATURE(kApplyClientsideModelPredictionsForOtps);
+
 // When enabled, updates to shared existing passwords from the same sender are
 // auto-approved.
 BASE_DECLARE_FEATURE(kAutoApproveSharedPasswordUpdatesFromSameSender);
@@ -38,11 +53,21 @@ BASE_DECLARE_FEATURE(kWebAuthnUsePasskeyFromAnotherDeviceInContextMenu);
 // Enables Biometrics for the Touch To Fill feature. This only effects Android.
 BASE_DECLARE_FEATURE(kBiometricTouchToFill);
 
+// Checks if submitted form is identical to an observed form before evaluating
+// login success/failure.
+BASE_DECLARE_FEATURE(kCheckIfSubmittedFormIdenticalToObserved);
+
 // Delete undecryptable passwords from the login database.
 BASE_DECLARE_FEATURE(kClearUndecryptablePasswords);
 
 // Delete undecryptable passwords from the store when Sync is active.
 BASE_DECLARE_FEATURE(kClearUndecryptablePasswordsOnSync);
+
+#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)  // Desktop
+// Enables the Mojo JavaScript API for the password manager, replacing the
+// legacy passwordsPrivate extension API.
+BASE_DECLARE_FEATURE(kEnablePasswordManagerMojoApi);
+#endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 #if BUILDFLAG(IS_ANDROID)
 // Enables reading credentials from SharedPreferences.
@@ -52,6 +77,11 @@ BASE_DECLARE_FEATURE(kFetchGaiaHashOnSignIn);
 // Enables the experiment for the password manager to only fill on account
 // selection, rather than autofilling on page load, with highlighting of fields.
 BASE_DECLARE_FEATURE(kFillOnAccountSelect);
+
+#if BUILDFLAG(IS_ANDROID)
+// Allows filling from a secondary recovery password saved as a backup.
+BASE_DECLARE_FEATURE(kFillRecoveryPassword);
+#endif
 
 #if BUILDFLAG(IS_IOS)
 
@@ -66,13 +96,6 @@ BASE_DECLARE_FEATURE(kIosCleanupHangingPasswordFormExtractionRequests);
 extern const base::FeatureParam<int>
     kIosPasswordFormExtractionRequestsTimeoutMs;
 
-// Enable saving username in UFF on iOS.
-BASE_DECLARE_FEATURE(kIosDetectUsernameInUff);
-
-// Enables improving detecting the password fields when retrieving password
-// suggestions for filling.
-BASE_DECLARE_FEATURE(kIOSImprovePasswordFieldDetectionForFilling);
-
 // Enables the second version of the bottom sheet to fix a few bugs that we've
 // seen in production since the launch of the V1 of the feature.
 BASE_DECLARE_FEATURE(kIOSPasswordBottomSheetV2);
@@ -81,10 +104,11 @@ BASE_DECLARE_FEATURE(kIOSPasswordBottomSheetV2);
 // is signed-in and taps on a new password field.
 BASE_DECLARE_FEATURE(kIOSProactivePasswordGenerationBottomSheet);
 
-#endif
+// Allows filling from a secondary recovery password saved as a backup on iOS.
+// Acts as an iOS kill switch for the `kImprovedPasswordChangeService` feature.
+BASE_DECLARE_FEATURE(kIOSFillRecoveryPassword);
 
-// Enables saving enterprise password hashes to a local state preference.
-BASE_DECLARE_FEATURE(kLocalStateEnterprisePasswordHashes);
+#endif  // BUILDFLAG(IS_IOS)
 
 // Enables running the clientside form classifier to parse password forms.
 BASE_DECLARE_FEATURE(kPasswordFormClientsideClassifier);
@@ -96,14 +120,13 @@ BASE_DECLARE_FEATURE(kPasswordFormGroupedAffiliations);
 // Enables "chunking" generated passwords by adding hyphens every 4 characters
 // to make them more readable.
 BASE_DECLARE_FEATURE(kPasswordGenerationChunking);
+// Enables triggering password suggestions through the context menu.
+BASE_DECLARE_FEATURE(kPasswordManualFallbackAvailable);
 #endif  // !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
 
 // Enables logging the content of chrome://password-manager-internals to the
 // terminal.
 BASE_DECLARE_FEATURE(kPasswordManagerLogToTerminal);
-
-// Enables triggering password suggestions through the context menu.
-BASE_DECLARE_FEATURE(kPasswordManualFallbackAvailable);
 
 // Detects password reuse based on hashed password values.
 BASE_DECLARE_FEATURE(kReuseDetectionBasedOnPasswordHashes);
@@ -122,6 +145,14 @@ BASE_DECLARE_FEATURE(kBiometricsAuthForPwdFill);
 // passwords.
 BASE_DECLARE_FEATURE(kSetLeakCheckRequestCriticality);
 
+// Shows recovery password for the improved password change flow in the
+// management UI.
+BASE_DECLARE_FEATURE(kShowRecoveryPassword);
+
+// Shows a tab with password change instead of bubble/settings page after
+// successful password change.
+BASE_DECLARE_FEATURE(kShowTabWithPasswordChangeOnSuccess);
+
 // Displays at least the decryptable and never saved logins in the password
 // manager
 BASE_DECLARE_FEATURE(kSkipUndecryptablePasswords);
@@ -130,51 +161,19 @@ BASE_DECLARE_FEATURE(kSkipUndecryptablePasswords);
 // is enabled by default and should be treaded as a killswitch.
 BASE_DECLARE_FEATURE(kTriggerPasswordResyncAfterDeletingUndecryptablePasswords);
 
+// Starts passwords resync when undecryptable passwords are detected.
+BASE_DECLARE_FEATURE(kTriggerPasswordResyncWhenUndecryptablePasswordsDetected);
+
 #if BUILDFLAG(IS_ANDROID)
-// Enables showing various warnings for password manager users not yet enrolled
-// into the new experience of storing passwords in GMSCore.
-BASE_DECLARE_FEATURE(
-    kUnifiedPasswordManagerLocalPasswordsAndroidAccessLossWarning);
-
-// Whether to ignore the timeouts in between password access loss warning
-// prompts. Used for manual testing.
-// This param will be removed when the feature fully launches.
-inline constexpr base::FeatureParam<bool> kIgnoreAccessLossWarningTimeout = {
-    &kUnifiedPasswordManagerLocalPasswordsAndroidAccessLossWarning,
-    "ignore_access_loss_warning_timeout", false};
-
-// If set to true, this will simulate a failed migration to UPM (only if the
-// client hasn't migrated yet).
-inline constexpr base::FeatureParam<bool> kSimulateFailedMigration = {
-    &kUnifiedPasswordManagerLocalPasswordsAndroidAccessLossWarning,
-    "simulate_failed_migration", false};
-
 // The feature flag for the Identity Check feature. The feature makes biometric
 // authentication mandatory before password filling in untrusted locations.
 BASE_DECLARE_FEATURE(kBiometricAuthIdentityCheck);
-
-// If enabled, the profile login db will no longer be renamed to account
-// login db upon UPM with split stores activation. The db is cleared on
-// the following run anyway.
-BASE_DECLARE_FEATURE(kDropLoginDbRenameForUpmSyncingUsers);
-
-// If enabled, the password store no longer uses the Login DB as a backend.
-// Instead, it either uses the Android-specific storage or an empty backend
-// if the client isn't eligible for the former.
-BASE_DECLARE_FEATURE(kLoginDbDeprecationAndroid);
-
-inline constexpr base::FeatureParam<int> kLoginDbDeprecationExportDelay = {
-    &kLoginDbDeprecationAndroid,
-    /*name=*/"login-db-deprecation-export-delay-seconds", /*default_value=*/15};
 #endif  // BUILDFLAG(IS_ANDROID)
 
 // Improves PSL matching capabilities by utilizing PSL-extension list from
 // affiliation service. It fixes problem with incorrect password suggestions on
 // websites like slack.com.
 BASE_DECLARE_FEATURE(kUseExtensionListForPSLMatching);
-
-// Enables async implementation of OSCrypt inside LoginDatabase (Stage 1).
-BASE_DECLARE_FEATURE(kUseAsyncOsCryptInLoginDatabase);
 
 // Enables new encryption method of OSCrypt inside LoginDatabase (Stage 2).
 BASE_DECLARE_FEATURE(kUseNewEncryptionMethod);
@@ -190,7 +189,36 @@ BASE_DECLARE_FEATURE(kMarkAllCredentialsAsLeaked);
 // Enables improvements to password change functionality.
 BASE_DECLARE_FEATURE(kImprovedPasswordChangeService);
 
+#if BUILDFLAG(IS_ANDROID)
+// The feature flag for reloading passwords when the trusted vault encryption
+// state changes.
+BASE_DECLARE_FEATURE(kReloadPasswordsOnTrustedVaultEncryptionChange);
+
+// The feature flag for showing an action to unlock passwords in case of a
+// trusted vault error in the keyboard accessory.
+BASE_DECLARE_FEATURE(kRetrieveTrustedVaultKeyKeyboardAccessoryAction);
+#endif  // BUILDFLAG(IS_ANDROID)
+
+inline constexpr base::FeatureParam<std::string>
+    kPasswordChangeSuccessSurveyTriggerId{
+        &kImprovedPasswordChangeService, "PasswordChangeSuccessSurveyTriggerId",
+        /*default_value=*/""};
+inline constexpr base::FeatureParam<std::string>
+    kPasswordChangeErrorSurveyTriggerId{&kImprovedPasswordChangeService,
+                                        "PasswordChangeErrorSurveyTriggerId",
+                                        /*default_value=*/""};
+inline constexpr base::FeatureParam<std::string>
+    kPasswordChangeCanceledSurveyTriggerId{
+        &kImprovedPasswordChangeService,
+        "PasswordChangeCanceledSurveyTriggerId",
+        /*default_value=*/""};
+inline constexpr base::FeatureParam<std::string>
+    kPasswordChangeDelayedSurveyTriggerId{
+        &kImprovedPasswordChangeService, "PasswordChangeDelayedSurveyTriggerId",
+        /*default_value=*/""};
+
 // All features parameters in alphabetical order.
+
 }  // namespace password_manager::features
 
 #endif  // COMPONENTS_PASSWORD_MANAGER_CORE_BROWSER_FEATURES_PASSWORD_FEATURES_H_

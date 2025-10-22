@@ -19,6 +19,9 @@
 mod internal_utils;
 
 pub mod decoder;
+#[cfg(feature = "encoder")]
+pub mod encoder;
+pub mod gainmap;
 pub mod image;
 pub mod reformat;
 pub mod utils;
@@ -85,7 +88,7 @@ impl PixelFormat {
     pub fn chroma_shift_x(&self) -> (u32, u32) {
         match self {
             Self::Yuv422 | Self::Yuv420 => (1, 0),
-            Self::AndroidP010 => (1, 1),
+            Self::AndroidP010 | Self::AndroidNv12 => (1, 1),
             _ => (0, 0),
         }
     }
@@ -421,7 +424,18 @@ pub(crate) struct Grid {
     pub height: u32,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[cfg(feature = "encoder")]
+impl Grid {
+    pub(crate) fn is_last_column(&self, index: u32) -> bool {
+        (index + 1) % self.columns == 0
+    }
+
+    pub(crate) fn is_last_row(&self, index: u32) -> bool {
+        index >= (self.columns * (self.rows - 1))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, PartialEq)]
 pub enum Category {
     #[default]
     Color,
@@ -432,21 +446,22 @@ pub enum Category {
 impl Category {
     const COUNT: usize = 3;
     const ALL: [Category; Category::COUNT] = [Self::Color, Self::Alpha, Self::Gainmap];
-    const ALL_USIZE: [usize; Category::COUNT] = [0, 1, 2];
-
-    pub(crate) fn usize(self) -> usize {
-        match self {
-            Category::Color => 0,
-            Category::Alpha => 1,
-            Category::Gainmap => 2,
-        }
-    }
 
     pub fn planes(&self) -> &[Plane] {
         match self {
             Category::Alpha => &A_PLANE,
             _ => &YUV_PLANES,
         }
+    }
+
+    #[cfg(feature = "encoder")]
+    pub(crate) fn infe_name(&self) -> String {
+        match self {
+            Self::Color => "Color",
+            Self::Alpha => "Alpha",
+            Self::Gainmap => "GMap",
+        }
+        .into()
     }
 }
 
@@ -475,3 +490,43 @@ pub struct Nclx {
 }
 
 pub const MAX_AV1_LAYER_COUNT: usize = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum RepetitionCount {
+    Unknown,
+    Infinite,
+    Finite(u32),
+}
+
+impl Default for RepetitionCount {
+    fn default() -> Self {
+        Self::Finite(0)
+    }
+}
+
+impl RepetitionCount {
+    pub fn create_from(value: i32) -> Self {
+        if value >= 0 {
+            RepetitionCount::Finite(value as u32)
+        } else {
+            RepetitionCount::Infinite
+        }
+    }
+
+    #[cfg(feature = "encoder")]
+    pub(crate) fn is_infinite(&self) -> bool {
+        match self {
+            Self::Finite(x) if *x >= i32::MAX as u32 => true,
+            Self::Infinite => true,
+            _ => false,
+        }
+    }
+
+    #[cfg(feature = "encoder")]
+    pub(crate) fn loop_count(&self) -> u64 {
+        match self {
+            Self::Finite(x) if *x < i32::MAX as u32 => *x as u64 + 1,
+            _ => i32::MAX as u64,
+        }
+    }
+}

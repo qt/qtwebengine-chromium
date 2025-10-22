@@ -7,8 +7,8 @@ from __future__ import annotations
 from typing_extensions import override
 
 from crossbench.browsers.attributes import BrowserAttributes
-from crossbench.browsers.edge.base import EdgeBaseMixin
 from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
+from crossbench.browsers.edge.base import EdgeBaseMixin
 
 
 class Edge(EdgeBaseMixin, ChromiumBased):

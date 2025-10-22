@@ -8,6 +8,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,8 @@
 #include "ui/accessibility/platform/browser_accessibility.h"
 
 namespace content {
+
+struct AXStyleData;
 
 class CONTENT_EXPORT BrowserAccessibilityAndroid
     : public ui::BrowserAccessibility {
@@ -81,8 +84,9 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   // focusable or clickable aren't interesting.
   bool IsInterestingOnAndroid() const;
 
-  // Is a heading whose only child is a link.
-  bool IsHeadingLink() const;
+  // If it's a heading whose only child is a link, or a heading that is inside
+  // a link, returns the link node if it exists; otherwise nullptr.
+  BrowserAccessibilityAndroid* GetHeadingLinkOrLinkHeading() const;
 
   // If this node is interesting (IsInterestingOnAndroid() returns true),
   // returns |this|. If not, it recursively checks all of the
@@ -97,6 +101,8 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
 
   // Returns a relative score of how likely a node is to be clickable.
   int ClickableScore() const;
+
+  int ExpandedState() const;
 
   bool CanOpenPopup() const;
 
@@ -123,10 +129,19 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   std::u16string GetValueForControl() const override;
   int GetTextContentLengthUTF16() const override;
 
+  // This method firstly checks GetTextContentUTF16(). In the case of accessible
+  // name from kAttribute resulting in GetTextContentUTF16 is empty, it falls
+  // back to first non-empty GetContainerName(), GetContentDescription(), and
+  // GetSupplementalDescription().
+  std::u16string GetAccessibleNameUTF16() const;
+
   typedef base::RepeatingCallback<bool(const std::u16string& partial)>
       EarlyExitPredicate;
+  // Gets the text content of this node, up to at least `min_length` if given.
+  // If `style_data` is provided, it's populated with styling information.
   std::u16string GetSubstringTextContentUTF16(
-      std::optional<size_t> min_length) const;
+      std::optional<size_t> min_length,
+      AXStyleData* style_data = nullptr) const;
   static EarlyExitPredicate NonEmptyPredicate();
   static EarlyExitPredicate LengthAtLeast(size_t length);
 
@@ -136,6 +151,9 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   // the placeholder and describedby values for all nodes regardless of where
   // the value is placed. These pieces of content are concatenated for Android.
   std::u16string GetHint() const;
+
+  // This method maps to the Android API "TooltipText" attribute.
+  std::u16string GetTooltipText() const;
 
   std::string GetRoleString() const;
 
@@ -147,6 +165,8 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
 
   std::u16string GetStateDescription() const;
   std::u16string GetContainerTitle() const;
+  std::u16string GetContentDescription() const;
+  std::u16string GetSupplementalDescription() const;
   std::u16string GetMultiselectableStateDescription() const;
   std::u16string GetToggleStateDescription() const;
   std::u16string GetCheckboxStateDescription() const;
@@ -165,6 +185,7 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   // superscript from the methods above.
   float GetTextSize() const;
   int GetTextStyle() const;
+  int GetTextPosition() const;
   int GetTextColor() const;
   int GetTextBackgroundColor() const;
   std::string GetFontFamily() const;
@@ -187,6 +208,8 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   int GetMaxScrollX() const;
   int GetMaxScrollY() const;
   bool Scroll(int direction, bool is_page_scroll) const;
+
+  int GetChecked() const;
 
   int GetTextChangeFromIndex() const;
   int GetTextChangeAddedCount() const;
@@ -247,6 +270,10 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   // manager to the web_contents_accessibility_android JNI.
   std::u16string GenerateAccessibilityNodeInfoString() const;
 
+  // Used to determine paint order to see in what order nodes are drawn.
+  // Used by Android XR.
+  int GetPaintOrder() const;
+
  protected:
   BrowserAccessibilityAndroid(ui::BrowserAccessibilityManager* manager,
                               ui::AXNode* node);
@@ -293,10 +320,13 @@ class CONTENT_EXPORT BrowserAccessibilityAndroid
   // Returns tree if any child has kSelect action verb.
   bool HasSelectActionVerbChildren() const;
 
-  std::u16string cached_text_;
+  // Helper function that accumulates the text content for the node.
+  void AccumulateSubstringTextContentUTF16(std::u16string* accumulated_text,
+                                           std::optional<size_t> min_length,
+                                           AXStyleData* style_data) const;
+
   std::u16string old_value_;
   std::u16string new_value_;
-  int32_t unique_id_;
 };
 
 }  // namespace content

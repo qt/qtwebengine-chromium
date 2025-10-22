@@ -31,6 +31,10 @@
 #include "core_checks/core_validation.h"
 #include "profiling/profiling.h"
 #include "containers/small_vector.h"
+#include "utils/dispatch_utils.h"
+
+#define STRINGIFY(s) STRINGIFY_HELPER(s)
+#define STRINGIFY_HELPER(s) #s
 
 namespace vulkan_layer_chassis {
 
@@ -264,13 +268,20 @@ VKAPI_ATTR void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocati
         }
         vo->PreCallValidateDestroyInstance(instance, pAllocator, error_obj);
     }
-
+    vvl::base::Instance* state_tracker = nullptr;
     RecordObject record_obj(vvl::Func::vkDestroyInstance);
     for (auto& vo : instance_dispatch->object_dispatch) {
         if (!vo) {
             continue;
         }
+        if (vo->container_type == LayerObjectTypeStateTracker) {
+            state_tracker = vo.get();
+            continue;
+        }
         vo->PreCallRecordDestroyInstance(instance, pAllocator, record_obj);
+    }
+    if (state_tracker) {
+        state_tracker->PreCallRecordDestroyInstance(instance, pAllocator, record_obj);
     }
 
     VVL_TracyCZoneEnd(tracy_zone_precall);
@@ -283,7 +294,13 @@ VKAPI_ATTR void VKAPI_CALL DestroyInstance(VkInstance instance, const VkAllocati
         if (!vo) {
             continue;
         }
+        if (vo->container_type == LayerObjectTypeStateTracker) {
+            continue;
+        }
         vo->PostCallRecordDestroyInstance(instance, pAllocator, record_obj);
+    }
+    if (state_tracker) {
+        state_tracker->PostCallRecordDestroyInstance(instance, pAllocator, record_obj);
     }
 
     DeactivateInstanceDebugCallbacks(instance_dispatch->debug_report);
@@ -403,15 +420,19 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
         }
         vo->PreCallValidateDestroyDevice(device, pAllocator, error_obj);
     }
-
     RecordObject record_obj(vvl::Func::vkDestroyDevice);
+
+    // Even though layer object types reference the base device state tracker,
+    // it needs to be destroyed first: it stores the various object maps,
+    // those need to be destroyed by the time layer objects destroy their
+    // own device state.
     for (auto& vo : device_dispatch->object_dispatch) {
         if (!vo) {
             continue;
         }
+
         vo->PreCallRecordDestroyDevice(device, pAllocator, record_obj);
     }
-
     // Before device is destroyed, allow aborted objects to clean up
     for (auto& vo : device_dispatch->aborted_object_dispatch) {
         if (!vo) {
@@ -426,11 +447,30 @@ VKAPI_ATTR void VKAPI_CALL DestroyDevice(VkDevice device, const VkAllocationCall
 
     device_dispatch->DestroyDevice(device, pAllocator);
 
+    // The teardown order is
+    // 1. All active validation objects
+    // 2. All aborted validation objects (ex. if GPU-AV had to turn off mid run)
+    // 3. State Tracker validation object
+    // 4. Cleanup leaked handles that user didn't destroy
+    vvl::base::Device* state_tracker = nullptr;
     for (auto& vo : device_dispatch->object_dispatch) {
         if (!vo) {
             continue;
         }
+        if (vo->container_type == LayerObjectTypeStateTracker) {
+            state_tracker = vo.get();
+            continue;
+        }
         vo->PostCallRecordDestroyDevice(device, pAllocator, record_obj);
+    }
+    for (auto& vo : device_dispatch->aborted_object_dispatch) {
+        if (!vo) {
+            continue;
+        }
+        vo->PostCallRecordDestroyDevice(device, pAllocator, record_obj);
+    }
+    if (state_tracker) {
+        state_tracker->PostCallRecordDestroyDevice(device, pAllocator, record_obj);
     }
 
     auto instance_dispatch = vvl::dispatch::GetData(device_dispatch->physical_device);
@@ -450,7 +490,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateGraphicsPipelines(VkDevice device, VkPipeli
     bool skip = false;
     ErrorObject error_obj(vvl::Func::vkCreateGraphicsPipelines, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
 
-    PipelineStates pipeline_states[LayerObjectTypeMaxEnum];
+    PipelineStates pipeline_states;
     chassis::CreateGraphicsPipelines chassis_state(pCreateInfos);
 
     {
@@ -461,8 +501,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateGraphicsPipelines(VkDevice device, VkPipeli
             }
             auto lock = vo->ReadLock();
             skip |= vo->PreCallValidateCreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
-                                                               pPipelines, error_obj, pipeline_states[vo->container_type],
-                                                               chassis_state);
+                                                               pPipelines, error_obj, pipeline_states, chassis_state);
             if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
         }
     }
@@ -476,7 +515,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateGraphicsPipelines(VkDevice device, VkPipeli
             }
             auto lock = vo->WriteLock();
             vo->PreCallRecordCreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
-                                                     record_obj, pipeline_states[vo->container_type], chassis_state);
+                                                     record_obj, pipeline_states, chassis_state);
         }
     }
 
@@ -503,7 +542,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateGraphicsPipelines(VkDevice device, VkPipeli
             }
             auto lock = vo->WriteLock();
             vo->PostCallRecordCreateGraphicsPipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
-                                                      record_obj, pipeline_states[vo->container_type], chassis_state);
+                                                      record_obj, pipeline_states, chassis_state);
         }
     }
     return result;
@@ -519,7 +558,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateComputePipelines(VkDevice device, VkPipelin
     bool skip = false;
     ErrorObject error_obj(vvl::Func::vkCreateComputePipelines, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
 
-    PipelineStates pipeline_states[LayerObjectTypeMaxEnum];
+    PipelineStates pipeline_states;
     chassis::CreateComputePipelines chassis_state(pCreateInfos);
 
     {
@@ -530,8 +569,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateComputePipelines(VkDevice device, VkPipelin
             }
             auto lock = vo->ReadLock();
             skip |= vo->PreCallValidateCreateComputePipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
-                                                              pPipelines, error_obj, pipeline_states[vo->container_type],
-                                                              chassis_state);
+                                                              pPipelines, error_obj, pipeline_states, chassis_state);
             if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
         }
     }
@@ -545,7 +583,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateComputePipelines(VkDevice device, VkPipelin
             }
             auto lock = vo->WriteLock();
             vo->PreCallRecordCreateComputePipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
-                                                    record_obj, pipeline_states[vo->container_type], chassis_state);
+                                                    record_obj, pipeline_states, chassis_state);
         }
     }
 
@@ -571,7 +609,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateComputePipelines(VkDevice device, VkPipelin
             }
             auto lock = vo->WriteLock();
             vo->PostCallRecordCreateComputePipelines(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
-                                                     record_obj, pipeline_states[vo->container_type], chassis_state);
+                                                     record_obj, pipeline_states, chassis_state);
         }
     }
     return result;
@@ -584,7 +622,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesNV(VkDevice device, VkPi
     bool skip = false;
     ErrorObject error_obj(vvl::Func::vkCreateRayTracingPipelinesNV, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
 
-    PipelineStates pipeline_states[LayerObjectTypeMaxEnum];
+    PipelineStates pipeline_states;
 
     for (const auto& vo : device_dispatch->object_dispatch) {
         if (!vo) {
@@ -592,7 +630,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesNV(VkDevice device, VkPi
         }
         auto lock = vo->ReadLock();
         skip |= vo->PreCallValidateCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator,
-                                                               pPipelines, error_obj, pipeline_states[vo->container_type]);
+                                                               pPipelines, error_obj, pipeline_states);
         if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
     }
 
@@ -603,7 +641,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesNV(VkDevice device, VkPi
         }
         auto lock = vo->WriteLock();
         vo->PreCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
-                                                     record_obj, pipeline_states[vo->container_type]);
+                                                     record_obj, pipeline_states);
     }
 
     VkResult result;
@@ -617,7 +655,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesNV(VkDevice device, VkPi
         }
         auto lock = vo->WriteLock();
         vo->PostCallRecordCreateRayTracingPipelinesNV(device, pipelineCache, createInfoCount, pCreateInfos, pAllocator, pPipelines,
-                                                      record_obj, pipeline_states[vo->container_type]);
+                                                      record_obj, pipeline_states);
     }
     return result;
 }
@@ -632,7 +670,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesKHR(VkDevice device, VkD
     bool skip = false;
     ErrorObject error_obj(vvl::Func::vkCreateRayTracingPipelinesKHR, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
 
-    PipelineStates pipeline_states[LayerObjectTypeMaxEnum];
+    PipelineStates pipeline_states;
     auto chassis_state = std::make_shared<chassis::CreateRayTracingPipelinesKHR>(pCreateInfos);
 
     {
@@ -644,7 +682,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesKHR(VkDevice device, VkD
             auto lock = vo->ReadLock();
             skip |= vo->PreCallValidateCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount,
                                                                     pCreateInfos, pAllocator, pPipelines, error_obj,
-                                                                    pipeline_states[vo->container_type], *chassis_state);
+                                                                    pipeline_states, *chassis_state);
             if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
         }
     }
@@ -658,8 +696,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesKHR(VkDevice device, VkD
             }
             auto lock = vo->WriteLock();
             vo->PreCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
-                                                          pAllocator, pPipelines, record_obj, pipeline_states[vo->container_type],
-                                                          *chassis_state);
+                                                          pAllocator, pPipelines, record_obj, pipeline_states, *chassis_state);
         }
     }
 
@@ -687,8 +724,7 @@ VKAPI_ATTR VkResult VKAPI_CALL CreateRayTracingPipelinesKHR(VkDevice device, VkD
             }
             auto lock = vo->WriteLock();
             vo->PostCallRecordCreateRayTracingPipelinesKHR(device, deferredOperation, pipelineCache, createInfoCount, pCreateInfos,
-                                                           pAllocator, pPipelines, record_obj, pipeline_states[vo->container_type],
-                                                           chassis_state);
+                                                           pAllocator, pPipelines, record_obj, pipeline_states, chassis_state);
         }
     }
     return result;
@@ -745,6 +781,56 @@ VKAPI_ATTR VkResult VKAPI_CALL CreatePipelineLayout(VkDevice device, const VkPip
             }
             auto lock = vo->WriteLock();
             vo->PostCallRecordCreatePipelineLayout(device, pCreateInfo, pAllocator, pPipelineLayout, record_obj);
+        }
+    }
+    return result;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL GetShaderBinaryDataEXT(VkDevice device, VkShaderEXT shader, size_t* pDataSize, void* pData) {
+    VVL_ZoneScoped;
+
+    auto device_dispatch = vvl::dispatch::GetData(device);
+    bool skip = false;
+    ErrorObject error_obj(vvl::Func::vkGetShaderBinaryDataEXT, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
+    {
+        VVL_ZoneScopedN("PreCallValidate_vkGetShaderBinaryDataEXT");
+        for (const auto& vo : device_dispatch->intercept_vectors[InterceptIdPreCallValidateGetShaderBinaryDataEXT]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->ReadLock();
+            skip |= vo->PreCallValidateGetShaderBinaryDataEXT(device, shader, pDataSize, pData, error_obj);
+            if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
+        }
+    }
+
+    chassis::ShaderBinaryData chassis_state{shader};
+
+    RecordObject record_obj(vvl::Func::vkGetShaderBinaryDataEXT);
+    {
+        VVL_ZoneScopedN("PreCallRecord_vkGetShaderBinaryDataEXT");
+        for (auto& vo : device_dispatch->object_dispatch) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PreCallRecordGetShaderBinaryDataEXT(device, shader, pDataSize, pData, record_obj, chassis_state);
+        }
+    }
+    VkResult result;
+    {
+        VVL_ZoneScopedN("Dispatch_vkGetShaderBinaryDataEXT");
+        result = device_dispatch->GetShaderBinaryDataEXT(device, chassis_state.modified_shader_handle, pDataSize, pData);
+    }
+    record_obj.result = result;
+    {
+        VVL_ZoneScopedN("PostCallRecord_vkGetShaderBinaryDataEXT");
+        for (auto& vo : device_dispatch->intercept_vectors[InterceptIdPostCallRecordGetShaderBinaryDataEXT]) {
+            if (!vo) {
+                continue;
+            }
+            auto lock = vo->WriteLock();
+            vo->PostCallRecordGetShaderBinaryDataEXT(device, shader, pDataSize, pData, record_obj);
         }
     }
     return result;
@@ -880,7 +966,10 @@ VKAPI_ATTR VkResult VKAPI_CALL AllocateDescriptorSets(VkDevice device, const VkD
     bool skip = false;
     ErrorObject error_obj(vvl::Func::vkAllocateDescriptorSets, VulkanTypedHandle(device, kVulkanObjectTypeDevice));
 
-    vvl::AllocateDescriptorSetsData ads_state[LayerObjectTypeMaxEnum];
+    // Because this is a high frequency function call and want to save time and populate this struct once.
+    // Both CoreCheck and Best Practice need this information during PreCallValidate time.
+    // During State Tracker PreCallValidate (instead of PreCallRecord), we populate this so that everyone else can use it.
+    vvl::AllocateDescriptorSetsData ads_state;
 
     {
         VVL_ZoneScopedN("PreCallValidate_AllocateDescriptorSets");
@@ -888,10 +977,8 @@ VKAPI_ATTR VkResult VKAPI_CALL AllocateDescriptorSets(VkDevice device, const VkD
             if (!vo) {
                 continue;
             }
-            ads_state[vo->container_type].Init(pAllocateInfo->descriptorSetCount);
             auto lock = vo->ReadLock();
-            skip |= vo->PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, error_obj,
-                                                              ads_state[vo->container_type]);
+            skip |= vo->PreCallValidateAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, error_obj, ads_state);
             if (skip) return VK_ERROR_VALIDATION_FAILED_EXT;
         }
     }
@@ -922,8 +1009,7 @@ VKAPI_ATTR VkResult VKAPI_CALL AllocateDescriptorSets(VkDevice device, const VkD
                 continue;
             }
             auto lock = vo->WriteLock();
-            vo->PostCallRecordAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, record_obj,
-                                                     ads_state[vo->container_type]);
+            vo->PostCallRecordAllocateDescriptorSets(device, pAllocateInfo, pDescriptorSets, record_obj, ads_state);
         }
     }
     return result;

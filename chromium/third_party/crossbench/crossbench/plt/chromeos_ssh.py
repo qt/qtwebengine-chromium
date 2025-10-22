@@ -8,7 +8,7 @@ import functools
 import json
 import logging
 import subprocess
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Optional
 
 from typing_extensions import override
 
@@ -18,10 +18,8 @@ from crossbench.parse import NumberParser, ObjectParser
 from crossbench.plt.linux_ssh import LinuxSshPlatform
 
 if TYPE_CHECKING:
-  from typing import List, Optional, Tuple
-
-  from crossbench.plt.base import ListCmdArgs
   from crossbench.plt.display_info import DisplayInfo
+  from crossbench.plt.types import ListCmdArgs
 
 
 class ChromeOsSshPlatform(LinuxSshPlatform):
@@ -55,13 +53,18 @@ class ChromeOsSshPlatform(LinuxSshPlatform):
   def is_chromeos(self) -> bool:
     return True
 
+  @property
+  @override
+  def has_display(self) -> bool:
+    return True
+
   def create_debugging_session(self,
-                               browser_flags: Optional[Tuple[str, ...]] = None,
+                               browser_flags: Optional[tuple[str, ...]] = None,
                                username: Optional[str] = None,
                                password: Optional[str] = None) -> int:
     disable_extensions_flag: str = "--disable-extensions"
 
-    flags_for_session: List[str] = []
+    flags_for_session: list[str] = []
 
     if browser_flags:
       flags_for_session = list(browser_flags)
@@ -99,13 +102,24 @@ class ChromeOsSshPlatform(LinuxSshPlatform):
     self.sh("screenshot", result_path)
 
   @functools.lru_cache(maxsize=1)
-  def display_details(self) -> Tuple[DisplayInfo, ...]:
+  @override
+  def system_details(self) -> dict[str, Any]:
+    details = super().system_details()
+
+    details.update({
+        "ChromeOS": self._parse_lsb_release(),
+    })
+
+    return details
+
+  @functools.lru_cache(maxsize=1)
+  def display_details(self) -> tuple[DisplayInfo, ...]:
     # TODO(405995421): add refresh rate and potentially support multiple
     # displays.
     return ({"resolution": self.display_resolution(), "refresh_rate": -1},)
 
   @override
-  def display_resolution(self) -> Tuple[int, int]:
+  def display_resolution(self) -> tuple[int, int]:
     display_info_json = self.sh_stdout("cros-health-tool", "telem",
                                        "--category=display")
     display_info = json.loads(display_info_json)
@@ -116,3 +130,15 @@ class ChromeOsSshPlatform(LinuxSshPlatform):
     resolution_vertical = NumberParser.positive_int(
         embedded_display.get("resolution_vertical"), "resolution_vertical")
     return (resolution_horizontal, resolution_vertical)
+
+  def _parse_lsb_release(self) -> dict[str, str]:
+    # lsb-release has the format:
+    # KEY=VALUE
+    result = {}
+    for line in self.cat("/etc/lsb-release").splitlines():
+      if "=" not in line:
+        continue
+      key, value = line.split("=", 1)
+      result[key.strip()] = value.strip()
+
+    return result

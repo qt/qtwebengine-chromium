@@ -7,22 +7,16 @@
 
 #include <memory>
 
-#include "quiche/quic/core/quic_time.h"
-#include "quiche/quic/moqt/moqt_messages.h"
-#include "quiche/quic/moqt/moqt_priority.h"
 #include "quiche/quic/moqt/moqt_publisher.h"
-#include "quiche/common/platform/api/quiche_mem_slice.h"
+#include "quiche/common/quiche_mem_slice.h"
 
 namespace moqt {
 
 // CachedObject is a version of PublishedObject with a reference counted
 // payload.
 struct CachedObject {
-  FullSequence sequence;
-  MoqtObjectStatus status;
-  MoqtPriority publisher_priority;
+  PublishedObjectMetadata metadata;
   std::shared_ptr<quiche::QuicheMemSlice> payload;
-  quic::QuicTime arrival_time;
   bool fin_after_this;  // This is the last object before FIN.
 };
 

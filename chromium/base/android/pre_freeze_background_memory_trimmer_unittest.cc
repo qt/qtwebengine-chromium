@@ -10,6 +10,7 @@
 
 #include <optional>
 
+#include "base/android/self_compaction_manager.h"
 #include "base/compiler_specific.h"
 #include "base/files/file_util.h"
 #include "base/files/scoped_temp_file.h"
@@ -44,7 +45,8 @@ void PostDelayedIncGlobal() {
       base::BindRepeating(&IncGlobalCounter), base::Seconds(10));
 }
 
-class MockMetric : public PreFreezeBackgroundMemoryTrimmer::PreFreezeMetric {
+class MockMetric final
+    : public PreFreezeBackgroundMemoryTrimmer::PreFreezeMetric {
  public:
   MockMetric() : PreFreezeBackgroundMemoryTrimmer::PreFreezeMetric("Mock") {
     count_++;
@@ -67,7 +69,7 @@ std::optional<const debug::MappedMemoryRegion> GetMappedMemoryRegion(
   }
 
   for (const auto& region : regions) {
-    if (region.start == addr) {
+    if (region.start <= addr && addr < region.end) {
       return region;
     }
   }
@@ -132,13 +134,19 @@ class PreFreezeBackgroundMemoryTrimmerTest : public testing::Test {
 
 class PreFreezeSelfCompactionTest : public testing::Test {
  public:
-  void SetUp() override {
-    PreFreezeBackgroundMemoryTrimmer::ResetCompactionForTesting();
-  }
+  void SetUp() override { SelfCompactionManager::ResetCompactionForTesting(); }
 
   bool ShouldContinueCompaction(base::TimeTicks compaction_started_at) {
-    return PreFreezeBackgroundMemoryTrimmer::Instance()
-        .ShouldContinueCompaction(compaction_started_at);
+    return SelfCompactionManager::Instance().ShouldContinueCompaction(
+        compaction_started_at);
+  }
+
+  bool CompactionIsSupported() {
+    return SelfCompactionManager::CompactionIsSupported();
+  }
+
+  std::optional<int64_t> CompactRegion(debug::MappedMemoryRegion region) {
+    return SelfCompactionManager::CompactRegion(region);
   }
 
   // |size| is in bytes.
@@ -161,6 +169,10 @@ class PreFreezeSelfCompactionTest : public testing::Test {
     return addr;
   }
 
+  virtual std::string GetMetricName(std::string_view name) {
+    return StrCat({"Memory.SelfCompact2.Renderer.", name});
+  }
+
   // |addr| must have been allocated using |Map|. |size| is in bytes.
   void Unmap(void* addr, size_t size) {
     munmap(addr, size);
@@ -181,6 +193,49 @@ class PreFreezeSelfCompactionTest : public testing::Test {
 
  private:
   std::vector<debug::MappedMemoryRegion> mapped_regions_;
+};
+
+class PreFreezeSelfCompactionTestWithParam
+    : public PreFreezeSelfCompactionTest,
+      public testing::WithParamInterface<int> {
+ public:
+  std::unique_ptr<SelfCompactionManager::CompactionState> GetState(
+      const base::TimeTicks& triggered_at) {
+    auto task_runner = task_environment_.GetMainThreadTaskRunner();
+    if (UseRunningCompact()) {
+      return SelfCompactionManager::GetRunningCompactionStateForTesting(
+          task_runner, triggered_at);
+    } else {
+      return SelfCompactionManager::GetSelfCompactionStateForTesting(
+          task_runner, triggered_at);
+    }
+  }
+
+  void ExpectTotalCount(std::string_view name, size_t count) {
+    histograms_.ExpectTotalCount(GetMetricName(name), count);
+  }
+
+  std::string GetMetricName(std::string_view name) override {
+    if (UseRunningCompact()) {
+      return StrCat({"Memory.RunningCompact.Renderer.", name});
+    } else {
+      return StrCat({"Memory.SelfCompact2.Renderer.", name});
+    }
+  }
+
+  base::HistogramTester histograms_;
+
+ private:
+  bool UseRunningCompact() {
+    switch (GetParam()) {
+      case 0:
+        return false;
+      case 1:
+        return true;
+      default:
+        NOTREACHED();
+    }
+  }
 };
 
 // We do not expect any tasks to be registered with
@@ -680,11 +735,15 @@ TEST_F(PreFreezeBackgroundMemoryTrimmerTest, TimerBoolTaskRunFromPreFreeze) {
   EXPECT_EQ(called_task_type.value(), MemoryReductionTaskContext::kProactive);
 }
 
+INSTANTIATE_TEST_SUITE_P(PreFreezeSelfCompactionTestWithParam,
+                         PreFreezeSelfCompactionTestWithParam,
+                         testing::Values(0, 1));
+
 TEST_F(PreFreezeSelfCompactionTest, Simple) {
   // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
   // don't support it, we bail out early. This is a known problem on some 32
   // bit devices.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
 
@@ -705,8 +764,7 @@ TEST_F(PreFreezeSelfCompactionTest, Simple) {
   const auto region = GetMappedMemoryRegion(addr);
   ASSERT_TRUE(region);
 
-  const auto result =
-      PreFreezeBackgroundMemoryTrimmer::CompactRegion(std::move(*region));
+  const auto result = CompactRegion(std::move(*region));
   ASSERT_EQ(result, size);
 
   EXPECT_EQ(CountResidentPagesInRange(addr, size), 0u);
@@ -718,7 +776,7 @@ TEST_F(PreFreezeSelfCompactionTest, File) {
   // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
   // don't support it, we bail out early. This is a known problem on some 32
   // bit devices.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
 
@@ -747,8 +805,7 @@ TEST_F(PreFreezeSelfCompactionTest, File) {
   const auto region = GetMappedMemoryRegion(addr);
   ASSERT_TRUE(region);
 
-  const auto result =
-      PreFreezeBackgroundMemoryTrimmer::CompactRegion(std::move(*region));
+  const auto result = CompactRegion(std::move(*region));
   ASSERT_EQ(result, 0);
 
   EXPECT_EQ(CountResidentPagesInRange(addr, size), kNumPages);
@@ -760,7 +817,7 @@ TEST_F(PreFreezeSelfCompactionTest, Inaccessible) {
   // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
   // don't support it, we bail out early. This is a known problem on some 32
   // bit devices.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
 
@@ -776,8 +833,7 @@ TEST_F(PreFreezeSelfCompactionTest, Inaccessible) {
   ASSERT_TRUE(region);
 
   // We expect to not count this region.
-  const auto result =
-      PreFreezeBackgroundMemoryTrimmer::CompactRegion(std::move(*region));
+  const auto result = CompactRegion(std::move(*region));
   ASSERT_EQ(result, 0);
 
   munmap(addr, size);
@@ -787,7 +843,7 @@ TEST_F(PreFreezeSelfCompactionTest, Locked) {
   // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
   // don't support it, we bail out early. This is a known problem on some 32
   // bit devices.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
 
@@ -812,8 +868,7 @@ TEST_F(PreFreezeSelfCompactionTest, Locked) {
   const auto region = GetMappedMemoryRegion(addr);
   ASSERT_TRUE(region);
 
-  const auto result =
-      PreFreezeBackgroundMemoryTrimmer::CompactRegion(std::move(*region));
+  const auto result = CompactRegion(std::move(*region));
   ASSERT_EQ(result, 0);
 
   EXPECT_EQ(CountResidentPagesInRange(addr, size), kNumPages);
@@ -827,18 +882,17 @@ TEST_F(PreFreezeSelfCompactionTest, SimpleCancel) {
 
   EXPECT_TRUE(ShouldContinueCompaction(triggered_at));
 
-  PreFreezeBackgroundMemoryTrimmer::MaybeCancelCompaction(
-      PreFreezeBackgroundMemoryTrimmer::CompactCancellationReason::
-          kPageResumed);
+  SelfCompactionManager::MaybeCancelCompaction(
+      SelfCompactionManager::CompactCancellationReason::kPageResumed);
 
   EXPECT_FALSE(ShouldContinueCompaction(triggered_at));
 }
 
-TEST_F(PreFreezeSelfCompactionTest, Cancel) {
+TEST_P(PreFreezeSelfCompactionTestWithParam, Cancel) {
   // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
   // don't support it, we bail out early. This is a known problem on some 32
   // bit devices.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
 
@@ -850,34 +904,30 @@ TEST_F(PreFreezeSelfCompactionTest, Cancel) {
     ASSERT_NE(addrs[i], MAP_FAILED);
   }
 
-  base::HistogramTester histograms;
-
   // We should not record the metric here, because we are not currently
   // running.
-  PreFreezeBackgroundMemoryTrimmer::MaybeCancelCompaction(
-      PreFreezeBackgroundMemoryTrimmer::CompactCancellationReason::
-          kPageResumed);
-  histograms.ExpectTotalCount(
-      "Memory.SelfCompact2.Renderer.CancellationReason2", 0);
+  SelfCompactionManager::MaybeCancelCompaction(
+      SelfCompactionManager::CompactCancellationReason::kPageResumed);
+
+  // This metric is used for both self compaction and running compaction, with
+  // the same prefix for both.
+  histograms_.ExpectTotalCount(
+      "Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason", 0);
 
   // We want the triggered time to be slightly after the last cancelled time;
   // checks for whether we should cancel depend on this.
   task_environment_.FastForwardBy(base::Seconds(1));
 
   const auto triggered_at = base::TimeTicks::Now();
-  auto state =
-      std::make_unique<PreFreezeBackgroundMemoryTrimmer::CompactionState>(
-          task_environment_.GetMainThreadTaskRunner(), triggered_at, 1);
+  auto state = GetState(triggered_at);
   GetMappedMemoryRegions(&state->regions_);
   ASSERT_EQ(state->regions_.size(), 4u);
 
   {
     base::AutoLock locker(PreFreezeBackgroundMemoryTrimmer::lock());
-    PreFreezeBackgroundMemoryTrimmer::Instance().compaction_last_triggered_ =
-        triggered_at;
+    SelfCompactionManager::Instance().compaction_last_triggered_ = triggered_at;
   }
-  PreFreezeBackgroundMemoryTrimmer::Instance().StartCompaction(
-      std::move(state));
+  SelfCompactionManager::Instance().StartCompaction(std::move(state));
 
   EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
 
@@ -886,9 +936,8 @@ TEST_F(PreFreezeSelfCompactionTest, Cancel) {
 
   EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
 
-  PreFreezeBackgroundMemoryTrimmer::MaybeCancelCompaction(
-      PreFreezeBackgroundMemoryTrimmer::CompactCancellationReason::
-          kPageResumed);
+  SelfCompactionManager::MaybeCancelCompaction(
+      SelfCompactionManager::CompactCancellationReason::kPageResumed);
 
   task_environment_.FastForwardBy(
       task_environment_.NextMainThreadPendingTaskDelay());
@@ -899,33 +948,32 @@ TEST_F(PreFreezeSelfCompactionTest, Cancel) {
 
   // We should have exactly one metric recorded, the metric telling us we
   // cancelled self compaction.
-  EXPECT_EQ(histograms.GetTotalCountsForPrefix("Memory.SelfCompact2").size(),
-            1);
-  histograms.ExpectTotalCount(
-      "Memory.SelfCompact2.Renderer.CancellationReason2", 1);
+  EXPECT_EQ(histograms_.GetTotalCountsForPrefix("Memory.SelfCompact2").size(),
+            0);
+  EXPECT_EQ(histograms_.GetTotalCountsForPrefix("Memory.RunningCompact").size(),
+            0);
+  histograms_.ExpectTotalCount(
+      "Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason", 1);
 
   // Still only expect it to be recorded once, because we were not running the
   // second time we tried to cancel.
-  PreFreezeBackgroundMemoryTrimmer::MaybeCancelCompaction(
-      PreFreezeBackgroundMemoryTrimmer::CompactCancellationReason::
-          kPageResumed);
-  histograms.ExpectTotalCount(
-      "Memory.SelfCompact2.Renderer.CancellationReason2", 1);
+  SelfCompactionManager::MaybeCancelCompaction(
+      SelfCompactionManager::CompactCancellationReason::kPageResumed);
+  histograms_.ExpectTotalCount(
+      "Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason", 1);
 
   for (size_t i = 1; i < 5; i++) {
     Unmap(addrs[i], i * base::GetPageSize());
   }
 }
 
-TEST_F(PreFreezeSelfCompactionTest, NotCanceled) {
+TEST_P(PreFreezeSelfCompactionTestWithParam, TimeoutCancel) {
   // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
   // don't support it, we bail out early. This is a known problem on some 32
   // bit devices.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
-
-  base::HistogramTester histograms;
 
   ASSERT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 0u);
 
@@ -935,15 +983,90 @@ TEST_F(PreFreezeSelfCompactionTest, NotCanceled) {
     ASSERT_NE(addrs[i], MAP_FAILED);
   }
 
+  // This metric is used for both self compaction and running compaction, with
+  // the same prefix for both.
+  histograms_.ExpectTotalCount(
+      "Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason", 0);
+
   const auto triggered_at = base::TimeTicks::Now();
-  auto state =
-      std::make_unique<PreFreezeBackgroundMemoryTrimmer::CompactionState>(
-          task_environment_.GetMainThreadTaskRunner(), triggered_at, 1);
+  auto state = GetState(triggered_at);
   GetMappedMemoryRegions(&state->regions_);
   ASSERT_EQ(state->regions_.size(), 4u);
 
-  PreFreezeBackgroundMemoryTrimmer::Instance().StartCompaction(
-      std::move(state));
+  {
+    base::AutoLock locker(PreFreezeBackgroundMemoryTrimmer::lock());
+    SelfCompactionManager::Instance().compaction_last_triggered_ = triggered_at;
+  }
+  SelfCompactionManager::Instance().StartCompaction(std::move(state));
+
+  EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
+
+  // We should have 4 sections here, based on the sizes mapped above.
+  // |StartCompaction| doesn't run right away, but rather schedules a task.
+  // Because of the cancellation, we expect only three tasks to run. The first
+  // two should compact memory, the last should be cancelled below when we
+  // advance the clock.
+  for (size_t i = 0; i < 1; i++) {
+    EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
+    task_environment_.FastForwardBy(
+        task_environment_.NextMainThreadPendingTaskDelay());
+  }
+
+  EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
+
+  // Advance the clock here, to simulate a hang. This will not run any tasks.
+  task_environment_.AdvanceClock(base::Seconds(10));
+
+  task_environment_.RunUntilIdle();
+
+  for (size_t i = 1; i < 3; i++) {
+    size_t len = i * base::GetPageSize();
+    EXPECT_EQ(CountResidentPagesInRange(addrs[i], len), i);
+    Unmap(addrs[i], len);
+  }
+
+  for (size_t i = 3; i < 5; i++) {
+    size_t len = i * base::GetPageSize();
+    // Compaction is flakey in tests sometimes, so check LE here.
+    EXPECT_LE(CountResidentPagesInRange(addrs[i], len), i);
+    Unmap(addrs[i], len);
+  }
+
+  histograms_.ExpectTotalCount(
+      "Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason", 1);
+
+  // Bucket #2 is "Timeout".
+  EXPECT_THAT(histograms_.GetAllSamples(
+                  "Memory.RunningOrSelfCompact.Renderer.Cancellation.Reason"),
+              BucketsAre(Bucket(0, 0), Bucket(1, 0), Bucket(2, 1)));
+}
+
+TEST_F(PreFreezeSelfCompactionTest, NotCanceled) {
+  // MADV_PAGEOUT is only supported starting from Linux 5.4. So, on devices
+  // don't support it, we bail out early. This is a known problem on some 32
+  // bit devices.
+  if (!CompactionIsSupported()) {
+    GTEST_SKIP() << "No kernel support";
+  }
+
+  ASSERT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 0u);
+
+  std::array<void*, 5> addrs;
+  for (size_t i = 1; i < 5; i++) {
+    size_t len = i * base::GetPageSize();
+    addrs[i] = Map(len);
+    ASSERT_NE(addrs[i], MAP_FAILED);
+  }
+
+  base::HistogramTester histograms;
+
+  const auto triggered_at = base::TimeTicks::Now();
+  auto state = SelfCompactionManager::GetSelfCompactionStateForTesting(
+      task_environment_.GetMainThreadTaskRunner(), triggered_at);
+  GetMappedMemoryRegions(&state->regions_);
+  ASSERT_EQ(state->regions_.size(), 4u);
+
+  SelfCompactionManager::Instance().StartCompaction(std::move(state));
 
   // We should have 4 sections here, based on the sizes mapped above.
   // |StartCompaction| doesn't run right away, but rather schedules a task.
@@ -965,13 +1088,12 @@ TEST_F(PreFreezeSelfCompactionTest, NotCanceled) {
   for (const auto& name : {"Rss", "Pss", "PssAnon", "PssFile", "SwapPss"}) {
     for (const auto& timing :
          {"Before", "After", "After1s", "After10s", "After60s"}) {
-      histograms.ExpectTotalCount(
-          StrCat({"Memory.SelfCompact2.Renderer.", name, ".", timing}), 1);
+      histograms.ExpectTotalCount(StrCat({GetMetricName(name), ".", timing}),
+                                  1);
     }
     for (const auto& timing :
          {"BeforeAfter", "After1s", "After10s", "After60s"}) {
-      const auto metric =
-          StrCat({"Memory.SelfCompact2.Renderer.", name, ".Diff.", timing});
+      const auto metric = StrCat({GetMetricName(name), ".Diff.", timing});
       base::HistogramTester::CountsMap diff_metrics;
       diff_metrics[StrCat({metric, ".Increase"})] = 1;
       diff_metrics[StrCat({metric, ".Decrease"})] = 1;
@@ -982,8 +1104,7 @@ TEST_F(PreFreezeSelfCompactionTest, NotCanceled) {
 
   // We also check that no other histograms (other than the ones expected above)
   // were recorded.
-  EXPECT_EQ(histograms.GetTotalCountsForPrefix("Memory.SelfCompact2").size(),
-            47);
+  EXPECT_EQ(histograms.GetTotalCountsForPrefix(GetMetricName("")).size(), 47);
 
   for (size_t i = 1; i < 5; i++) {
     size_t len = i * base::GetPageSize();
@@ -993,22 +1114,20 @@ TEST_F(PreFreezeSelfCompactionTest, NotCanceled) {
 }
 
 // Test that we still record metrics even when the feature is disabled.
-TEST_F(PreFreezeSelfCompactionTest, Disabled) {
+TEST_P(PreFreezeSelfCompactionTestWithParam, Disabled) {
   // Although we are not actually compacting anything, the self compaction
   // code will exit out before metrics are recorded in the case where compaction
   // is not supported.
-  if (!PreFreezeBackgroundMemoryTrimmer::CompactionIsSupported()) {
+  if (!CompactionIsSupported()) {
     GTEST_SKIP() << "No kernel support";
   }
 
   base::test::ScopedFeatureList feature_list_;
-  feature_list_.InitAndDisableFeature(kShouldFreezeSelf);
-
-  base::HistogramTester histograms;
+  feature_list_.InitWithFeatures({}, {kShouldFreezeSelf, kUseRunningCompact});
 
   auto triggered_at = base::TimeTicks::Now();
-  PreFreezeBackgroundMemoryTrimmer::Instance().CompactSelf(
-      task_environment_.GetMainThreadTaskRunner(), triggered_at);
+  auto state = GetState(triggered_at);
+  SelfCompactionManager::CompactSelf(std::move(state));
 
   // Run metrics
   task_environment_.FastForwardBy(base::Seconds(60));
@@ -1019,33 +1138,35 @@ TEST_F(PreFreezeSelfCompactionTest, Disabled) {
   for (const auto& name : {"Rss", "Pss", "PssAnon", "PssFile", "SwapPss"}) {
     for (const auto& timing :
          {"Before", "After", "After1s", "After10s", "After60s"}) {
-      histograms.ExpectTotalCount(
-          StrCat({"Memory.SelfCompact2.Renderer.", name, ".", timing}), 1);
+      histograms_.ExpectTotalCount(StrCat({GetMetricName(name), ".", timing}),
+                                   1);
     }
     for (const auto& timing :
          {"BeforeAfter", "After1s", "After10s", "After60s"}) {
-      const auto metric =
-          StrCat({"Memory.SelfCompact2.Renderer.", name, ".Diff.", timing});
+      const auto metric = StrCat({GetMetricName(name), ".Diff.", timing});
       base::HistogramTester::CountsMap diff_metrics;
       diff_metrics[StrCat({metric, ".Increase"})] = 1;
       diff_metrics[StrCat({metric, ".Decrease"})] = 1;
-      EXPECT_THAT(histograms.GetTotalCountsForPrefix(metric),
+      EXPECT_THAT(histograms_.GetTotalCountsForPrefix(metric),
                   testing::IsSubsetOf(diff_metrics));
     }
   }
 
   // We also check that no other histograms (other than the ones expected above)
   // were recorded.
-  EXPECT_EQ(histograms.GetTotalCountsForPrefix("Memory.SelfCompact2").size(),
-            48);
+  EXPECT_EQ(histograms_.GetTotalCountsForPrefix(GetMetricName("")).size(), 48);
 }
 
 TEST_F(PreFreezeSelfCompactionTest, OnSelfFreezeCancel) {
   base::test::ScopedFeatureList feature_list_;
   feature_list_.InitAndEnableFeature(kShouldFreezeSelf);
 
-  PreFreezeBackgroundMemoryTrimmer::Instance().OnSelfFreezeInternal(
-      task_environment_.GetMainThreadTaskRunner());
+  auto state = SelfCompactionManager::GetSelfCompactionStateForTesting(
+      task_environment_.GetMainThreadTaskRunner(), TimeTicks::Now());
+  {
+    base::AutoLock locker(SelfCompactionManager::lock());
+    SelfCompactionManager::Instance().OnTriggerCompact(std::move(state));
+  }
   EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
 
   // We advance here because |MaybeCancelCompaction| relies on the current
@@ -1053,9 +1174,8 @@ TEST_F(PreFreezeSelfCompactionTest, OnSelfFreezeCancel) {
   // time otherwise.
   task_environment_.FastForwardBy(base::Seconds(1));
 
-  PreFreezeBackgroundMemoryTrimmer::MaybeCancelCompaction(
-      PreFreezeBackgroundMemoryTrimmer::CompactCancellationReason::
-          kPageResumed);
+  SelfCompactionManager::MaybeCancelCompaction(
+      SelfCompactionManager::CompactCancellationReason::kPageResumed);
   EXPECT_EQ(task_environment_.GetPendingMainThreadTaskCount(), 1u);
 
   task_environment_.FastForwardBy(

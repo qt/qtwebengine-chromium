@@ -6,11 +6,13 @@
 #include "base/functional/bind.h"
 #include "base/test/run_until.h"
 #include "base/test/scoped_feature_list.h"
+#include "components/soda/mock_soda_installer.h"
 #include "components/soda/soda_util.h"
 #include "content/browser/speech/fake_speech_recognition_manager_delegate.h"
 #include "content/public/browser/speech_recognition_audio_forwarder_config.h"
 #include "content/public/test/browser_task_environment.h"
 #include "content/test/mock_speech_recognition_event_listener.h"
+#include "media/base/limits.h"
 #include "media/base/media_switches.h"
 #include "media/mojo/mojom/speech_recognizer.mojom.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -56,7 +58,7 @@ class SpeechRecognitionManagerImplTest
   BrowserTaskEnvironment environment_;
 
  protected:
-  MockSodaInstaller mock_soda_installer_;
+  speech::MockSodaInstaller mock_soda_installer_;
   bool on_device_speech_recognition_supported_ =
       speech::IsOnDeviceSpeechRecognitionSupported();
   std::unique_ptr<SpeechRecognitionManagerImpl> manager_ =
@@ -179,7 +181,8 @@ TEST_F(SpeechRecognitionManagerImplTest, LanguageNotSupportedError) {
             media::mojom::AvailabilityStatus::kUnavailable);
 
   manager_->CreateSession(config, mojo::NullReceiver(),
-                          receiver_.BindNewPipeAndPassRemote(), std::nullopt);
+                          receiver_.BindNewPipeAndPassRemote(), std::nullopt,
+                          true);
 
   EXPECT_TRUE(base::test::RunUntil([&]() {
     return error_ == media::mojom::SpeechRecognitionErrorCode::
@@ -188,7 +191,82 @@ TEST_F(SpeechRecognitionManagerImplTest, LanguageNotSupportedError) {
   }));
 }
 
-TEST_F(SpeechRecognitionManagerImplTest, RecognitionContextNotSupportedError) {
+TEST_F(SpeechRecognitionManagerImplTest, AudioForwarderSampleRateTooHigh) {
+  SpeechRecognitionSessionConfig config;
+  config.on_device = false;
+  config.language = "en-US";
+
+  std::optional<SpeechRecognitionAudioForwarderConfig> audio_forwarder_config(
+      std::in_place, mojo::NullReceiver(), /*channel_count=*/1,
+      /*sample_rate=*/media::limits::kMaxSampleRate + 1);
+
+  manager_->CreateSession(config, mojo::NullReceiver(),
+                          receiver_.BindNewPipeAndPassRemote(),
+                          audio_forwarder_config.value());
+
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return error_ == media::mojom::SpeechRecognitionErrorCode::kAudioCapture &&
+           ended_;
+  }));
+}
+
+TEST_F(SpeechRecognitionManagerImplTest, AudioForwarderSampleRateTooLow) {
+  SpeechRecognitionSessionConfig config;
+  config.on_device = false;
+  config.language = "en-US";
+
+  std::optional<SpeechRecognitionAudioForwarderConfig> audio_forwarder_config(
+      std::in_place, mojo::NullReceiver(), /*channel_count=*/1,
+      /*sample_rate=*/media::limits::kMinSampleRate - 1);
+
+  manager_->CreateSession(config, mojo::NullReceiver(),
+                          receiver_.BindNewPipeAndPassRemote(),
+                          audio_forwarder_config.value());
+
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return error_ == media::mojom::SpeechRecognitionErrorCode::kAudioCapture &&
+           ended_;
+  }));
+}
+
+TEST_F(SpeechRecognitionManagerImplTest, AudioForwarderChannelCountTooLow) {
+  SpeechRecognitionSessionConfig config;
+  config.on_device = false;
+  config.language = "en-US";
+
+  std::optional<SpeechRecognitionAudioForwarderConfig> audio_forwarder_config(
+      std::in_place, mojo::NullReceiver(), /*channel_count=*/0, 48000);
+
+  manager_->CreateSession(config, mojo::NullReceiver(),
+                          receiver_.BindNewPipeAndPassRemote(),
+                          audio_forwarder_config.value());
+
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return error_ == media::mojom::SpeechRecognitionErrorCode::kAudioCapture &&
+           ended_;
+  }));
+}
+
+TEST_F(SpeechRecognitionManagerImplTest, AudioForwarderChannelCountTooHigh) {
+  SpeechRecognitionSessionConfig config;
+  config.on_device = false;
+  config.language = "en-US";
+
+  std::optional<SpeechRecognitionAudioForwarderConfig> audio_forwarder_config(
+      std::in_place, mojo::NullReceiver(),
+      /*channel_count=*/media::limits::kMaxChannels + 1, 48000);
+
+  manager_->CreateSession(config, mojo::NullReceiver(),
+                          receiver_.BindNewPipeAndPassRemote(),
+                          audio_forwarder_config.value());
+
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return error_ == media::mojom::SpeechRecognitionErrorCode::kAudioCapture &&
+           ended_;
+  }));
+}
+
+TEST_F(SpeechRecognitionManagerImplTest, PhrasesNotSupportedError) {
   SpeechRecognitionSessionConfig config;
   config.on_device = false;
   config.language = "en-US";
@@ -198,8 +276,8 @@ TEST_F(SpeechRecognitionManagerImplTest, RecognitionContextNotSupportedError) {
                           receiver_.BindNewPipeAndPassRemote(), std::nullopt);
 
   EXPECT_TRUE(base::test::RunUntil([&]() {
-    return error_ == media::mojom::SpeechRecognitionErrorCode::
-                         kRecognitionContextNotSupported &&
+    return error_ ==
+               media::mojom::SpeechRecognitionErrorCode::kPhrasesNotSupported &&
            ended_;
   }));
 }
@@ -213,10 +291,10 @@ TEST_F(SpeechRecognitionManagerImplTest, ConfigEventListenerThrowsError) {
 
   EXPECT_CALL(
       listener_,
-      OnRecognitionError(_, media::mojom::SpeechRecognitionError(
-                                media::mojom::SpeechRecognitionErrorCode::
-                                    kRecognitionContextNotSupported,
-                                media::mojom::SpeechAudioErrorDetails::kNone)));
+      OnRecognitionError(
+          _, media::mojom::SpeechRecognitionError(
+                 media::mojom::SpeechRecognitionErrorCode::kPhrasesNotSupported,
+                 media::mojom::SpeechAudioErrorDetails::kNone)));
   EXPECT_CALL(listener_, OnRecognitionEnd(_));
   manager_->CreateSession(config, mojo::NullReceiver(), mojo::NullRemote(),
                           std::nullopt);

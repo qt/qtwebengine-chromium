@@ -5,6 +5,7 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_STYLE_STYLE_SHAPE_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_STYLE_STYLE_SHAPE_H_
 
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <variant>
@@ -103,10 +104,12 @@ class StyleShape final : public BasicShape {
   struct ArcSegment : public SegmentWithTargetPoint<Type> {
     double angle;
     LengthSize radius;
+    Length direction_agnostic_radius;
     bool large;
     bool sweep;
     bool operator==(const ArcSegment& other) const = default;
   };
+
   struct ArcToSegment : public ArcSegment<SVGPathSegType::kPathSegArcAbs> {};
   struct ArcBySegment : public ArcSegment<SVGPathSegType::kPathSegArcRel> {};
 
@@ -135,7 +138,9 @@ class StyleShape final : public BasicShape {
              Vector<Segment> segments);
 
   ShapeType GetType() const override { return kStyleShapeType; }
-  Path GetPath(const gfx::RectF& bounding_box, float zoom) const override;
+  Path GetPath(const gfx::RectF& bounding_box,
+               float zoom,
+               float path_scale) const override;
 
   WindRule GetWindRule() const { return wind_rule_; }
   const LengthPoint& GetOrigin() const { return origin_; }

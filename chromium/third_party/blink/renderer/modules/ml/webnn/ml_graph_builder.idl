@@ -6,6 +6,8 @@
 
 typedef record<USVString, MLOperand> MLNamedOperands;
 
+typedef (bigint or unrestricted double) MLNumber;
+
 enum MLInputOperandLayout { "nchw", "nhwc" };
 
 enum MLConv2dFilterOperandLayout { "oihw", "hwio", "ohwi", "ihwo" };
@@ -143,13 +145,12 @@ dictionary MLLstmCellOptions : MLOperatorOptions {
 enum MLPaddingMode {
   "constant",
   "edge",
-  "reflection",
-  "symmetric"
+  "reflection"
 };
 
 dictionary MLPadOptions : MLOperatorOptions {
   MLPaddingMode mode = "constant";
-  float value = 0;
+  MLNumber value = 0;
 };
 
 enum MLRoundingType {
@@ -168,8 +169,8 @@ dictionary MLPool2dOptions : MLOperatorOptions {
 };
 
 dictionary MLClampOptions : MLOperatorOptions {
-  float minValue;
-  float maxValue;
+  MLNumber minValue;
+  MLNumber maxValue;
 };
 
 dictionary MLEluOptions : MLOperatorOptions {
@@ -240,6 +241,11 @@ dictionary MLTriangularOptions : MLOperatorOptions {
     CallWith=ScriptState,
     RaisesException
   ] MLOperand constant(MLOperandDescriptor desc, AllowSharedBufferSource buffer);
+
+  [
+    CallWith=ScriptState,
+    RaisesException
+  ] MLOperand constant(MLTensor tensor);
 
   [RaisesException] MLOperand argMin(MLOperand input, [EnforceRange] unsigned long axis, optional MLArgMinMaxOptions options = {});
   [RaisesException] MLOperand argMax(MLOperand input, [EnforceRange] unsigned long axis, optional MLArgMinMaxOptions options = {});

@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "components/gcm_driver/crypto/gcm_message_cryptographer.h"
 
@@ -19,7 +15,7 @@
 #include "base/logging.h"
 #include "components/gcm_driver/crypto/message_payload_parser.h"
 #include "components/gcm_driver/crypto/p256_key_util.h"
-#include "crypto/ec_private_key.h"
+#include "crypto/keypair.h"
 #include "crypto/random.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -81,9 +77,9 @@ static_assert(std::size(kCommonAuthSecret) == 16,
 // that was created using an separate JavaScript implementation of the draft.
 struct TestVector {
   const char* const input;
-  const unsigned char ecdh_shared_secret[kEcdhSharedSecretSize];
-  const unsigned char auth_secret[kAuthSecretSize];
-  const unsigned char salt[kSaltSize];
+  const std::array<unsigned char, kEcdhSharedSecretSize> ecdh_shared_secret;
+  const std::array<unsigned char, kAuthSecretSize> auth_secret;
+  const std::array<unsigned char, kSaltSize> salt;
   size_t record_size;
   const char* const output;
 };
@@ -248,10 +244,9 @@ bool ComputeSharedP256SecretFromPrivateKeyStr(std::string_view private_key,
                                               std::string_view peer_public_key,
                                               std::string* out_shared_secret) {
   DCHECK(out_shared_secret);
-  std::unique_ptr<crypto::ECPrivateKey> local_key(
-      crypto::ECPrivateKey::CreateFromPrivateKeyInfo(
-          std::vector<uint8_t>(private_key.begin(), private_key.end())));
-  if (!local_key) {
+  auto local_key = crypto::keypair::PrivateKey::FromPrivateKeyInfo(
+      base::as_byte_span(private_key));
+  if (!local_key || !local_key->IsEc()) {
     DLOG(ERROR) << "Unable to create the local key";
     return false;
   }
@@ -288,11 +283,10 @@ class GCMMessageCryptographerTestBase : public ::testing::Test {
 
     std::string recipient_private_key(std::begin(kCommonRecipientPrivateKey),
                                       std::end(kCommonRecipientPrivateKey));
-    std::vector<uint8_t> recipient_private_key_vec(
-      recipient_private_key.begin(), recipient_private_key.end());
-    std::unique_ptr<crypto::ECPrivateKey> recipient_key =
-      crypto::ECPrivateKey::CreateFromPrivateKeyInfo(recipient_private_key_vec);
+    auto recipient_key = crypto::keypair::PrivateKey::FromPrivateKeyInfo(
+        base::as_byte_span(recipient_private_key));
     ASSERT_TRUE(recipient_key);
+    ASSERT_TRUE(recipient_key->IsEc());
     ASSERT_TRUE(ComputeSharedP256Secret(
         *recipient_key, sender_public_key_, &ecdh_shared_secret_));
 
@@ -586,16 +580,23 @@ TEST_F(GCMMessageCryptographerTestVectorTest, EncryptionVectorsDraft03) {
     SCOPED_TRACE(i);
 
     ecdh_shared_secret.assign(
-        kEncryptionTestVectorsDraft03[i].ecdh_shared_secret,
-        kEncryptionTestVectorsDraft03[i].ecdh_shared_secret +
-            kEcdhSharedSecretSize);
+        kEncryptionTestVectorsDraft03[i].ecdh_shared_secret.data(),
+        base::span<const unsigned char>(
+            kEncryptionTestVectorsDraft03[i].ecdh_shared_secret)
+            .subspan(kEcdhSharedSecretSize)
+            .data());
 
-    auth_secret.assign(
-        kEncryptionTestVectorsDraft03[i].auth_secret,
-        kEncryptionTestVectorsDraft03[i].auth_secret + kAuthSecretSize);
+    auth_secret.assign(kEncryptionTestVectorsDraft03[i].auth_secret.data(),
+                       base::span<const unsigned char>(
+                           kEncryptionTestVectorsDraft03[i].auth_secret)
+                           .subspan(kAuthSecretSize)
+                           .data());
 
-    salt.assign(kEncryptionTestVectorsDraft03[i].salt,
-                kEncryptionTestVectorsDraft03[i].salt + kSaltSize);
+    salt.assign(
+        kEncryptionTestVectorsDraft03[i].salt.data(),
+        base::span<const unsigned char>(kEncryptionTestVectorsDraft03[i].salt)
+            .subspan(kSaltSize)
+            .data());
 
     ASSERT_TRUE(cryptographer.Encrypt(recipient_public_key_, sender_public_key_,
                                       ecdh_shared_secret, auth_secret, salt,
@@ -623,16 +624,23 @@ TEST_F(GCMMessageCryptographerTestVectorTest, DecryptionVectorsDraft03) {
         base::Base64UrlDecodePolicy::IGNORE_PADDING, &input));
 
     ecdh_shared_secret.assign(
-        kDecryptionTestVectorsDraft03[i].ecdh_shared_secret,
-        kDecryptionTestVectorsDraft03[i].ecdh_shared_secret +
-            kEcdhSharedSecretSize);
+        kDecryptionTestVectorsDraft03[i].ecdh_shared_secret.data(),
+        base::span<const unsigned char>(
+            kDecryptionTestVectorsDraft03[i].ecdh_shared_secret)
+            .subspan(kEcdhSharedSecretSize)
+            .data());
 
-    auth_secret.assign(
-        kDecryptionTestVectorsDraft03[i].auth_secret,
-        kDecryptionTestVectorsDraft03[i].auth_secret + kAuthSecretSize);
+    auth_secret.assign(kDecryptionTestVectorsDraft03[i].auth_secret.data(),
+                       base::span<const unsigned char>(
+                           kDecryptionTestVectorsDraft03[i].auth_secret)
+                           .subspan(kAuthSecretSize)
+                           .data());
 
-    salt.assign(kDecryptionTestVectorsDraft03[i].salt,
-                kDecryptionTestVectorsDraft03[i].salt + kSaltSize);
+    salt.assign(
+        kDecryptionTestVectorsDraft03[i].salt.data(),
+        base::span<const unsigned char>(kDecryptionTestVectorsDraft03[i].salt)
+            .subspan(kSaltSize)
+            .data());
 
     const bool has_output = kDecryptionTestVectorsDraft03[i].output;
     const bool result = cryptographer.Decrypt(
@@ -661,16 +669,23 @@ TEST_F(GCMMessageCryptographerTestVectorTest, EncryptionVectorsDraft08) {
     SCOPED_TRACE(i);
 
     ecdh_shared_secret.assign(
-        kEncryptionTestVectorsDraft08[i].ecdh_shared_secret,
-        kEncryptionTestVectorsDraft08[i].ecdh_shared_secret +
-            kEcdhSharedSecretSize);
+        kEncryptionTestVectorsDraft08[i].ecdh_shared_secret.data(),
+        base::span<const unsigned char>(
+            kEncryptionTestVectorsDraft08[i].ecdh_shared_secret)
+            .subspan(kEcdhSharedSecretSize)
+            .data());
 
-    auth_secret.assign(
-        kEncryptionTestVectorsDraft08[i].auth_secret,
-        kEncryptionTestVectorsDraft08[i].auth_secret + kAuthSecretSize);
+    auth_secret.assign(kEncryptionTestVectorsDraft08[i].auth_secret.data(),
+                       base::span<const unsigned char>(
+                           kEncryptionTestVectorsDraft08[i].auth_secret)
+                           .subspan(kAuthSecretSize)
+                           .data());
 
-    salt.assign(kEncryptionTestVectorsDraft08[i].salt,
-                kEncryptionTestVectorsDraft08[i].salt + kSaltSize);
+    salt.assign(
+        kEncryptionTestVectorsDraft08[i].salt.data(),
+        base::span<const unsigned char>(kEncryptionTestVectorsDraft08[i].salt)
+            .subspan(kSaltSize)
+            .data());
 
     ASSERT_TRUE(cryptographer.Encrypt(recipient_public_key_, sender_public_key_,
                                       ecdh_shared_secret, auth_secret, salt,
@@ -699,16 +714,23 @@ TEST_F(GCMMessageCryptographerTestVectorTest, DecryptionVectorsDraft08) {
         base::Base64UrlDecodePolicy::IGNORE_PADDING, &input));
 
     ecdh_shared_secret.assign(
-        kDecryptionTestVectorsDraft08[i].ecdh_shared_secret,
-        kDecryptionTestVectorsDraft08[i].ecdh_shared_secret +
-            kEcdhSharedSecretSize);
+        kDecryptionTestVectorsDraft08[i].ecdh_shared_secret.data(),
+        base::span<const unsigned char>(
+            kDecryptionTestVectorsDraft08[i].ecdh_shared_secret)
+            .subspan(kEcdhSharedSecretSize)
+            .data());
 
-    auth_secret.assign(
-        kDecryptionTestVectorsDraft08[i].auth_secret,
-        kDecryptionTestVectorsDraft08[i].auth_secret + kAuthSecretSize);
+    auth_secret.assign(kDecryptionTestVectorsDraft08[i].auth_secret.data(),
+                       base::span<const unsigned char>(
+                           kDecryptionTestVectorsDraft08[i].auth_secret)
+                           .subspan(kAuthSecretSize)
+                           .data());
 
-    salt.assign(kDecryptionTestVectorsDraft08[i].salt,
-                kDecryptionTestVectorsDraft08[i].salt + kSaltSize);
+    salt.assign(
+        kDecryptionTestVectorsDraft08[i].salt.data(),
+        base::span<const unsigned char>(kDecryptionTestVectorsDraft08[i].salt)
+            .subspan(kSaltSize)
+            .data());
 
     const bool has_output = kDecryptionTestVectorsDraft08[i].output;
     const bool result = cryptographer.Decrypt(

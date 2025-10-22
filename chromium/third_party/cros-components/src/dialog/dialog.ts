@@ -65,7 +65,7 @@ export class Dialog extends LitElement {
   };
 
   /** @export */
-  type: 'basic'|'illustration'|'list'|'pagination';
+  declare type: 'basic'|'illustration'|'list'|'pagination';
 
   constructor() {
     super();

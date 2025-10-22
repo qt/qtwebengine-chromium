@@ -19,6 +19,7 @@
 #include <utility>
 
 #include "base/base_export.h"
+#include "base/containers/span.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/trace_event/common/trace_event_common.h"
 #include "base/tracing_buildflags.h"
@@ -296,43 +297,29 @@ union BASE_EXPORT TraceValue {
   //    Foo foo = ...;
   //    TraceArguments args("foo_arg1", foo);
   //
-  template <typename T, class = void>
+  template <typename T>
   struct Helper {};
 
   template <typename T>
   static constexpr bool HasHelperSupport =
       requires { TraceValue::Helper<std::decay_t<T>>::kType; };
 
-  // TraceValue::TypeFor<T>::value returns the TRACE_VALUE_TYPE_XXX
+  // TypeCheck<T> is true iff T can be used to initialize a TraceValue instance.
+  template <typename T>
+  static constexpr bool TypeCheck =
+      HasHelperSupport<T> ||
+      perfetto::internal::has_traced_value_support<std::decay_t<T>>::value;
+
+  // InitialValue<T>() returns the TRACE_VALUE_TYPE_XXX
   // corresponding to initialization values of type T.
-  template <typename T, class = void>
-  struct TypeFor;
-
   template <typename T>
-  struct TypeFor<T, std::enable_if_t<HasHelperSupport<T>>> {
-    using ValueType = std::decay_t<T>;
-    static const unsigned char value = Helper<ValueType>::kType;
-  };
-  template <typename T>
-  struct TypeFor<T,
-                 std::enable_if_t<!HasHelperSupport<T> &&
-                                  perfetto::internal::has_traced_value_support<
-                                      std::decay_t<T>>::value>> {
-    static const unsigned char value = TRACE_VALUE_TYPE_PROTO;
-  };
-
-  // TraceValue::TypeCheck<T>::value is only defined iff T can be used to
-  // initialize a TraceValue instance. This is useful to restrict template
-  // instantiation to only the appropriate type (see TraceArguments
-  // constructors below).
-  template <
-      typename T,
-      class = std::enable_if_t<
-          HasHelperSupport<T> ||
-          perfetto::internal::has_traced_value_support<std::decay_t<T>>::value>>
-  struct TypeCheck {
-    static const bool value = true;
-  };
+    requires(TypeCheck<T>)
+  static consteval unsigned char InitialValue() {
+    if constexpr (HasHelperSupport<T>) {
+      return Helper<std::decay_t<T>>::kType;
+    }
+    return TRACE_VALUE_TYPE_PROTO;
+  }
 
   // There is no constructor to keep this structure POD intentionally.
   // This avoids un-needed initialization when only 0 or 1 arguments are
@@ -348,16 +335,17 @@ union BASE_EXPORT TraceValue {
   //
   // NOTE: For ConvertableToTraceFormat values, see the notes above.
   template <class T>
-  std::enable_if_t<HasHelperSupport<T>> Init(T&& value) {
+    requires(HasHelperSupport<T>)
+  void Init(T&& value) {
     using ValueType = std::decay_t<T>;
     Helper<ValueType>::SetValue(this, std::forward<T>(value));
   }
 
   template <class T>
-  std::enable_if_t<
-      !HasHelperSupport<T> &&
-      perfetto::internal::has_traced_value_support<std::decay_t<T>>::value>
-  Init(T&& value) {
+    requires(
+        !HasHelperSupport<T> &&
+        perfetto::internal::has_traced_value_support<std::decay_t<T>>::value)
+  void Init(T&& value) {
     as_proto = new protozero::HeapBuffered<
         perfetto::protos::pbzero::DebugAnnotation>();
     perfetto::WriteIntoTracedValue(
@@ -368,8 +356,8 @@ union BASE_EXPORT TraceValue {
 
 // TraceValue::Helper for integers and enums.
 template <typename T>
-struct TraceValue::
-    Helper<T, std::enable_if_t<std::is_integral_v<T> || std::is_enum_v<T>>> {
+  requires(std::is_integral_v<T> || std::is_enum_v<T>)
+struct TraceValue::Helper<T> {
   static constexpr unsigned char kType =
       std::is_signed_v<T> ? TRACE_VALUE_TYPE_INT : TRACE_VALUE_TYPE_UINT;
   static inline void SetValue(TraceValue* v, T value) {
@@ -379,7 +367,8 @@ struct TraceValue::
 
 // TraceValue::Helper for floating-point types
 template <typename T>
-struct TraceValue::Helper<T, std::enable_if_t<std::is_floating_point_v<T>>> {
+  requires(std::is_floating_point_v<T>)
+struct TraceValue::Helper<T> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_DOUBLE;
   static inline void SetValue(TraceValue* v, T value) { v->as_double = value; }
 };
@@ -432,10 +421,8 @@ struct TraceValue::Helper<std::string> {
 // IMPORTANT: This takes an std::unique_ptr<CONVERTABLE_TYPE> value, and takes
 // ownership of the pointed object!
 template <typename CONVERTABLE_TYPE>
-struct TraceValue::Helper<
-    std::unique_ptr<CONVERTABLE_TYPE>,
-    std::enable_if_t<
-        std::is_convertible_v<CONVERTABLE_TYPE*, ConvertableToTraceFormat*>>> {
+  requires(std::is_convertible_v<CONVERTABLE_TYPE*, ConvertableToTraceFormat*>)
+struct TraceValue::Helper<std::unique_ptr<CONVERTABLE_TYPE>> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_CONVERTABLE;
   static inline void SetValue(TraceValue* v,
                               std::unique_ptr<CONVERTABLE_TYPE> value) {
@@ -446,11 +433,10 @@ struct TraceValue::Helper<
 // Specialization for time-based values like base::Time, which provide a
 // a ToInternalValue() method.
 template <typename T>
-struct TraceValue::Helper<
-    T,
-    std::enable_if_t<std::is_same_v<T, base::Time> ||
-                     std::is_same_v<T, base::TimeTicks> ||
-                     std::is_same_v<T, base::ThreadTicks>>> {
+  requires(std::is_same_v<T, base::Time> ||
+           std::is_same_v<T, base::TimeTicks> ||
+           std::is_same_v<T, base::ThreadTicks>)
+struct TraceValue::Helper<T> {
   static constexpr unsigned char kType = TRACE_VALUE_TYPE_INT;
   static inline void SetValue(TraceValue* v, const T& value) {
     v->as_int = value.ToInternalValue();
@@ -591,28 +577,27 @@ class BASE_EXPORT TraceArguments {
   static constexpr size_t kMaxSize = 2;
 
   // Default constructor, no arguments.
-  TraceArguments() : size_(0) {}
+  TraceArguments() = default;
 
   // Constructor for a single argument.
-  template <typename T, class = decltype(TraceValue::TypeCheck<T>::value)>
+  template <typename T>
+    requires(TraceValue::TypeCheck<T>)
   TraceArguments(const char* arg1_name, T&& arg1_value) : size_(1) {
-    types_[0] = TraceValue::TypeFor<T>::value;
+    types_[0] = TraceValue::InitialValue<T>();
     names_[0] = arg1_name;
     values_[0].Init(std::forward<T>(arg1_value));
   }
 
   // Constructor for two arguments.
-  template <typename T1,
-            typename T2,
-            class = decltype(TraceValue::TypeCheck<T1>::value &&
-                             TraceValue::TypeCheck<T2>::value)>
+  template <typename T1, typename T2>
+    requires(TraceValue::TypeCheck<T1> && TraceValue::TypeCheck<T2>)
   TraceArguments(const char* arg1_name,
                  T1&& arg1_value,
                  const char* arg2_name,
                  T2&& arg2_value)
       : size_(2) {
-    types_[0] = TraceValue::TypeFor<T1>::value;
-    types_[1] = TraceValue::TypeFor<T2>::value;
+    types_[0] = TraceValue::InitialValue<T1>();
+    types_[1] = TraceValue::InitialValue<T2>();
     names_[0] = arg1_name;
     names_[1] = arg2_name;
     values_[0].Init(std::forward<T1>(arg1_value));
@@ -625,31 +610,6 @@ class BASE_EXPORT TraceArguments {
                  const char* const* arg_names,
                  const unsigned char* arg_types,
                  const unsigned long long* arg_values);
-
-  // Constructor used to convert legacy set of arguments, where the
-  // convertable values are also provided by an array of CONVERTABLE_TYPE.
-  template <typename CONVERTABLE_TYPE>
-  TraceArguments(int num_args,
-                 const char* const* arg_names,
-                 const unsigned char* arg_types,
-                 const unsigned long long* arg_values,
-                 CONVERTABLE_TYPE* arg_convertables) {
-    static int max_args = static_cast<int>(kMaxSize);
-    if (num_args > max_args) {
-      num_args = max_args;
-    }
-    size_ = static_cast<unsigned char>(num_args);
-    for (size_t n = 0; n < size_; ++n) {
-      types_[n] = arg_types[n];
-      names_[n] = arg_names[n];
-      if (arg_types[n] == TRACE_VALUE_TYPE_CONVERTABLE) {
-        values_[n].Init(
-            std::forward<CONVERTABLE_TYPE>(std::move(arg_convertables[n])));
-      } else {
-        values_[n].as_uint = arg_values[n];
-      }
-    }
-  }
 
   // Destructor. NOTE: Intentionally inlined (see note above).
   ~TraceArguments() {
@@ -669,7 +629,7 @@ class BASE_EXPORT TraceArguments {
 
   // Allow move operations.
   TraceArguments(TraceArguments&& other) noexcept {
-    ::memcpy(this, &other, sizeof(*this));
+    ::memcpy(static_cast<void*>(this), &other, sizeof(*this));
     // All owning pointers were copied to |this|. Setting |other.size_| will
     // mask the pointer values still in |other|.
     other.size_ = 0;
@@ -701,7 +661,7 @@ class BASE_EXPORT TraceArguments {
   void AppendDebugString(std::string* out);
 
  private:
-  unsigned char size_;
+  unsigned char size_ = 0;
   unsigned char types_[kMaxSize];
   const char* names_[kMaxSize];
   TraceValue values_[kMaxSize];

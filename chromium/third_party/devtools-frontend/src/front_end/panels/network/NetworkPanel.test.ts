@@ -5,7 +5,8 @@
 import * as Common from '../../core/common/common.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Logs from '../../models/logs/logs.js';
-import * as Trace from '../../models/trace/trace.js';
+import * as Tracing from '../../services/tracing/tracing.js';
+import {renderElementIntoDOM} from '../../testing/DOMHelpers.js';
 import {createTarget, registerNoopActions} from '../../testing/EnvironmentHelpers.js';
 import {describeWithMockConnection} from '../../testing/MockConnection.js';
 import {createNetworkPanelForMockConnection} from '../../testing/NetworkHelpers.js';
@@ -34,7 +35,7 @@ describeWithMockConnection('NetworkPanel', () => {
       Common.Settings.Settings.instance().moduleSetting('network-record-film-strip-setting').set(true);
       const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
       assert.exists(resourceTreeModel);
-      const tracingManager = target.model(Trace.TracingManager.TracingManager);
+      const tracingManager = target.model(Tracing.TracingManager.TracingManager);
       assert.exists(tracingManager);
       const tracingStart = sinon.spy(tracingManager, 'start');
       resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.WillReloadPage);
@@ -46,7 +47,7 @@ describeWithMockConnection('NetworkPanel', () => {
       Common.Settings.Settings.instance().moduleSetting('network-record-film-strip-setting').set(true);
       const resourceTreeModel = target.model(SDK.ResourceTreeModel.ResourceTreeModel);
       assert.exists(resourceTreeModel);
-      const tracingManager = target.model(Trace.TracingManager.TracingManager);
+      const tracingManager = target.model(Tracing.TracingManager.TracingManager);
       assert.exists(tracingManager);
       resourceTreeModel.dispatchEventToListeners(SDK.ResourceTreeModel.Events.WillReloadPage);
       SDK.TargetManager.TargetManager.instance().setScopeTarget(inScope ? target : null);
@@ -82,8 +83,7 @@ describeWithMockConnection('NetworkPanel', () => {
     UI.ShortcutRegistry.ShortcutRegistry.instance({forceNew: true, actionRegistry: actionRegistryInstance});
 
     networkPanel = Network.NetworkPanel.NetworkPanel.instance({forceNew: true, displayScreenshotDelay: 0});
-    networkPanel.markAsRoot();
-    networkPanel.show(document.body);
+    renderElementIntoDOM(networkPanel);
     await RenderCoordinator.done();
   });
 
@@ -98,6 +98,6 @@ describeWithMockConnection('NetworkPanel', () => {
     assert.instanceOf(button, HTMLElement);
     button.click();
     await RenderCoordinator.done({waitForWork: true});
-    assert.isTrue(networkLogResetSpy.called);
+    sinon.assert.called(networkLogResetSpy);
   });
 });

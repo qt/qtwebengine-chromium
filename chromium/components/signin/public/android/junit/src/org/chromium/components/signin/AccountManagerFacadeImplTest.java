@@ -50,17 +50,16 @@ import org.chromium.base.task.TaskTraits;
 import org.chromium.base.task.test.CustomShadowAsyncTask;
 import org.chromium.base.task.test.ShadowPostTask;
 import org.chromium.base.test.BaseRobolectricTestRunner;
-import org.chromium.base.test.util.Features;
 import org.chromium.base.test.util.HistogramWatcher;
 import org.chromium.components.externalauth.ExternalAuthUtils;
 import org.chromium.components.signin.AccountManagerDelegate.CapabilityResponse;
 import org.chromium.components.signin.AccountManagerFacade.ChildAccountStatusListener;
 import org.chromium.components.signin.base.AccountCapabilities;
 import org.chromium.components.signin.base.AccountInfo;
-import org.chromium.components.signin.base.CoreAccountId;
 import org.chromium.components.signin.base.CoreAccountInfo;
-import org.chromium.components.signin.base.GaiaId;
 import org.chromium.components.signin.test.util.FakeAccountManagerDelegate;
+import org.chromium.google_apis.gaia.CoreAccountId;
+import org.chromium.google_apis.gaia.GaiaId;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -168,16 +167,12 @@ public class AccountManagerFacadeImplTest {
     @Test
     public void testCanonicalAccount() throws Exception {
         addTestAccount("test@gmail.com");
-        List<CoreAccountInfo> coreAccountInfos = mFacade.getCoreAccountInfos().getResult();
+        var coreAccountInfos = mFacade.getAccounts().getResult();
 
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "test@gmail.com"));
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "Test@gmail.com"));
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "te.st@gmail.com"));
-        Assert.assertNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "te@googlemail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(coreAccountInfos, "test@gmail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(coreAccountInfos, "Test@gmail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(coreAccountInfos, "te.st@gmail.com"));
+        Assert.assertNull(AccountUtils.findAccountByEmail(coreAccountInfos, "te@googlemail.com"));
     }
 
     @Test
@@ -195,7 +190,6 @@ public class AccountManagerFacadeImplTest {
         delegate.addAccount(TEST_ACCOUNT);
         AccountManagerFacade facade = new AccountManagerFacadeImpl(delegate);
 
-        assertEquals(facade.getCoreAccountInfos().getResult(), List.of(TEST_ACCOUNT));
         assertEquals(facade.getAccounts().getResult(), List.of(TEST_ACCOUNT));
         assertTrue(facade.didAccountFetchSucceed());
         retriesHistogram.assertExpected();
@@ -225,16 +219,13 @@ public class AccountManagerFacadeImplTest {
 
         // Called once on AccountManagerFacade creation.
         verify(mDelegateMock).getAccountsSynchronous();
-        assertFalse(facade.getCoreAccountInfos().isFulfilled());
         assertFalse(facade.getAccounts().isFulfilled());
 
         // The delegate call is retried once, and succeeds.
         mPostTaskRunner.runAll();
         verify(mDelegateMock, times(2)).getAccountsSynchronous();
-        assertTrue(facade.getCoreAccountInfos().isFulfilled());
         assertTrue(facade.getAccounts().isFulfilled());
         assertTrue(facade.didAccountFetchSucceed());
-        assertEquals(facade.getCoreAccountInfos().getResult(), List.of(TEST_ACCOUNT));
         assertEquals(facade.getAccounts().getResult(), List.of(TEST_ACCOUNT));
         retriesHistogram.assertExpected();
         successHistogram.assertExpected();
@@ -263,7 +254,6 @@ public class AccountManagerFacadeImplTest {
         verify(mDelegate, times(AccountManagerFacadeImpl.MAXIMUM_RETRIES + 2))
                 .getAccountsSynchronous();
         assertFalse(mFacade.didAccountFetchSucceed());
-        assertEquals(mFacade.getCoreAccountInfos().getResult(), List.of());
         assertEquals(mFacade.getAccounts().getResult(), List.of());
         retriesHistogram.assertExpected();
         successHistogram.assertExpected();
@@ -276,7 +266,6 @@ public class AccountManagerFacadeImplTest {
         mDelegate.callOnCoreAccountInfoChanged();
         mPostTaskRunner.runAll();
         assertFalse(mFacade.didAccountFetchSucceed());
-        assertEquals(mFacade.getCoreAccountInfos().getResult(), List.of());
         assertEquals(mFacade.getAccounts().getResult(), List.of());
 
         // Accounts are updated again.
@@ -299,16 +288,12 @@ public class AccountManagerFacadeImplTest {
     @Test
     public void testNonCanonicalAccount() throws Exception {
         addTestAccount("test.me@gmail.com");
-        List<CoreAccountInfo> coreAccountInfos = mFacade.getCoreAccountInfos().getResult();
+        var accounts = mFacade.getAccounts().getResult();
 
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "test.me@gmail.com"));
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "testme@gmail.com"));
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "Testme@gmail.com"));
-        Assert.assertNotNull(
-                AccountUtils.findCoreAccountInfoByEmail(coreAccountInfos, "te.st.me@gmail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(accounts, "test.me@gmail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(accounts, "testme@gmail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(accounts, "Testme@gmail.com"));
+        Assert.assertNotNull(AccountUtils.findAccountByEmail(accounts, "te.st.me@gmail.com"));
     }
 
     @Test
@@ -316,12 +301,9 @@ public class AccountManagerFacadeImplTest {
         CoreAccountInfo accountInfo1 = addTestAccount("test1@gmail.com");
         CoreAccountInfo accountInfo2 = addTestAccount("test2@gmail.com");
 
-        assertEquals(
-                List.of(accountInfo1, accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1, accountInfo2), mFacade.getAccounts().getResult());
 
         removeTestAccount(accountInfo1.getId());
-        assertEquals(List.of(accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo2), mFacade.getAccounts().getResult());
     }
 
@@ -348,7 +330,6 @@ public class AccountManagerFacadeImplTest {
         addTestAccount(accountEmail);
 
         verify(mDelegate, atLeastOnce()).getAccountGaiaId(accountEmail);
-        assertTrue(mFacade.getCoreAccountInfos().getResult().isEmpty());
         assertTrue(mFacade.getAccounts().getResult().isEmpty());
     }
 
@@ -357,10 +338,10 @@ public class AccountManagerFacadeImplTest {
         final String accountEmail = "test@gmail.com";
         addTestAccount(accountEmail);
 
-        mFacade.getCoreAccountInfos().getResult();
-        mFacade.getCoreAccountInfos().getResult();
+        mFacade.getAccounts().getResult();
+        mFacade.getAccounts().getResult();
 
-        // The second call to getCoreAccountInfos() should not re-fetch gaia id.
+        // The second call to getAccounts() should not re-fetch gaia id.
         verify(mDelegate).getAccountGaiaId(accountEmail);
     }
 
@@ -368,25 +349,18 @@ public class AccountManagerFacadeImplTest {
     public void testGetCoreAccountInfosWithAccountPattern() throws Exception {
         setAccountRestrictionPatterns("*@example.com");
         CoreAccountInfo accountInfo1 = addTestAccount("test1@example.com");
-        assertEquals(List.of(accountInfo1), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1), mFacade.getAccounts().getResult());
 
         addTestAccount("test@gmail.com"); // Doesn't match the pattern.
-        assertEquals(List.of(accountInfo1), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1), mFacade.getAccounts().getResult());
 
         CoreAccountInfo accountInfo2 = addTestAccount("test2@example.com");
-        assertEquals(
-                List.of(accountInfo1, accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1, accountInfo2), mFacade.getAccounts().getResult());
 
         addTestAccount("test2@gmail.com"); // Doesn't match the pattern.
-        assertEquals(
-                List.of(accountInfo1, accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1, accountInfo2), mFacade.getAccounts().getResult());
 
         removeTestAccount(accountInfo1.getId());
-        assertEquals(List.of(accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo2), mFacade.getAccounts().getResult());
     }
 
@@ -395,57 +369,41 @@ public class AccountManagerFacadeImplTest {
         setAccountRestrictionPatterns("test1@example.com", "test2@gmail.com");
         addTestAccount("test@gmail.com"); // Doesn't match the pattern.
         addTestAccount("test@example.com"); // Doesn't match the pattern.
-        assertEquals(List.of(), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(), mFacade.getAccounts().getResult());
 
         CoreAccountInfo accountInfo1 = addTestAccount("test1@example.com");
-        assertEquals(List.of(accountInfo1), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1), mFacade.getAccounts().getResult());
 
         addTestAccount("test2@example.com");
-        assertEquals(List.of(accountInfo1), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1), mFacade.getAccounts().getResult());
 
         CoreAccountInfo accountInfo2 = addTestAccount("test2@gmail.com");
-        assertEquals(
-                List.of(accountInfo1, accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1, accountInfo2), mFacade.getAccounts().getResult());
     }
 
     @Test
     public void testGetCoreAccountInfosWithAccountPatternsChange() throws Exception {
         mDelegate.callOnCoreAccountInfoChanged();
-        assertEquals(List.of(), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(), mFacade.getAccounts().getResult());
 
         CoreAccountInfo accountInfo1 = addTestAccount("test1@gmail.com");
-        assertEquals(List.of(accountInfo1), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1), mFacade.getAccounts().getResult());
 
         CoreAccountInfo accountInfo2 = addTestAccount("test2@example.com");
-        assertEquals(
-                List.of(accountInfo1, accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1, accountInfo2), mFacade.getAccounts().getResult());
 
         CoreAccountInfo accountInfo3 = addTestAccount("test3@gmail.com");
         assertEquals(
                 List.of(accountInfo1, accountInfo2, accountInfo3),
-                mFacade.getCoreAccountInfos().getResult());
-        assertEquals(
-                List.of(accountInfo1, accountInfo2, accountInfo3),
                 mFacade.getAccounts().getResult());
 
         setAccountRestrictionPatterns("test1@gmail.com");
-        assertEquals(List.of(accountInfo1), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1), mFacade.getAccounts().getResult());
 
         setAccountRestrictionPatterns("*@example.com", "test3@gmail.com");
-        assertEquals(
-                List.of(accountInfo2, accountInfo3), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo2, accountInfo3), mFacade.getAccounts().getResult());
 
         removeTestAccount(accountInfo3.getId());
-        assertEquals(List.of(accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo2), mFacade.getAccounts().getResult());
     }
 
@@ -454,30 +412,25 @@ public class AccountManagerFacadeImplTest {
         CoreAccountInfo accountInfo1 = addTestAccount("test1@gmail.com");
         CoreAccountInfo accountInfo2 = addTestAccount("test2@example.com");
         setAccountRestrictionPatterns("*@example.com");
-        assertEquals(List.of(accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo2), mFacade.getAccounts().getResult());
 
         mShadowUserManager.setApplicationRestrictions(mContext.getPackageName(), new Bundle());
         mContext.sendBroadcast(new Intent(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED));
 
-        assertEquals(
-                List.of(accountInfo1, accountInfo2), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo1, accountInfo2), mFacade.getAccounts().getResult());
     }
 
     @Test
-    public void testGetCoreAccountInfosMultipleMatchingPatterns() throws Exception {
+    public void testGetCoreAccountInfosMultipleMatchingPatterns() {
         setAccountRestrictionPatterns("*@gmail.com", "test@gmail.com");
 
         // Matches both patterns
         CoreAccountInfo accountInfo = addTestAccount("test@gmail.com");
 
-        assertEquals(List.of(accountInfo), mFacade.getCoreAccountInfos().getResult());
         assertEquals(List.of(accountInfo), mFacade.getAccounts().getResult());
     }
 
     @Test
-    @Features.EnableFeatures(SigninFeatures.FORCE_SUPERVISED_SIGNIN_WITH_CAPABILITIES)
     public void testCheckIsSubjectToParentalControls() {
         AccountManagerFacade facade = new AccountManagerFacadeImpl(mDelegate);
         CoreAccountInfo accountInfo = addTestAccount("test@gmail.com");
@@ -492,7 +445,6 @@ public class AccountManagerFacadeImplTest {
     }
 
     @Test
-    @Features.EnableFeatures(SigninFeatures.FORCE_SUPERVISED_SIGNIN_WITH_CAPABILITIES)
     public void testCheckNotIsSubjectToParentalControls() {
         AccountManagerFacade facade = new AccountManagerFacadeImpl(mDelegate);
         CoreAccountInfo accountInfo = addTestAccount("test@gmail.com");
@@ -507,7 +459,6 @@ public class AccountManagerFacadeImplTest {
     }
 
     @Test
-    @Features.EnableFeatures(SigninFeatures.FORCE_SUPERVISED_SIGNIN_WITH_CAPABILITIES)
     public void testCheckIsSubjectToParentalControlsWithException() {
         AccountManagerFacade facade = new AccountManagerFacadeImpl(mDelegate);
         CoreAccountInfo accountInfo = addTestAccount("test@gmail.com");
@@ -517,30 +468,6 @@ public class AccountManagerFacadeImplTest {
                 .hasCapability(eq(CoreAccountInfo.getAndroidAccountFrom(accountInfo)), any());
 
         facade.checkIsSubjectToParentalControls(accountInfo, mChildAccountStatusListenerMock);
-
-        verify(mChildAccountStatusListenerMock).onStatusReady(false, null);
-    }
-
-    @Test
-    @Features.DisableFeatures(SigninFeatures.FORCE_SUPERVISED_SIGNIN_WITH_CAPABILITIES)
-    public void testCheckChildAccount() {
-        final CoreAccountInfo coreAccountInfo =
-                setFeaturesForAccount(
-                        "usm@gmail.com", AccountManagerFacadeImpl.FEATURE_IS_USM_ACCOUNT_KEY);
-
-        mFacadeWithSystemDelegate.checkChildAccountStatus(
-                coreAccountInfo, mChildAccountStatusListenerMock);
-
-        verify(mChildAccountStatusListenerMock).onStatusReady(true, coreAccountInfo);
-    }
-
-    @Test
-    @Features.DisableFeatures(SigninFeatures.FORCE_SUPERVISED_SIGNIN_WITH_CAPABILITIES)
-    public void testCheckChildAccountForAdult() {
-        final CoreAccountInfo coreAccountInfo = setFeaturesForAccount("adult@gmail.com");
-
-        mFacadeWithSystemDelegate.checkChildAccountStatus(
-                coreAccountInfo, mChildAccountStatusListenerMock);
 
         verify(mChildAccountStatusListenerMock).onStatusReady(false, null);
     }
@@ -603,14 +530,6 @@ public class AccountManagerFacadeImplTest {
         Assert.assertEquals(
                 Tribool.UNKNOWN,
                 capabilities.isSubjectToChromePrivacySandboxRestrictedMeasurementNotice());
-    }
-
-    private CoreAccountInfo setFeaturesForAccount(String email, String... features) {
-        final Account account = AccountUtils.createAccountFromName(email);
-        final CoreAccountInfo coreAccountInfo =
-                CoreAccountInfo.createFromEmailAndGaiaId(email, new GaiaId("notUsedGaiaId"));
-        mShadowAccountManager.setFeatures(account, features);
-        return coreAccountInfo;
     }
 
     private void setAccountRestrictionPatterns(String... patterns) {

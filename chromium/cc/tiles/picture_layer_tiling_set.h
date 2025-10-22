@@ -7,7 +7,6 @@
 
 #include <stddef.h>
 
-#include <deque>
 #include <memory>
 #include <set>
 #include <vector>
@@ -32,9 +31,7 @@ class CC_EXPORT PictureLayerTilingSet {
   enum TilingRangeType {
     HIGHER_THAN_HIGH_RES,
     HIGH_RES,
-    BETWEEN_HIGH_AND_LOW_RES,
-    LOW_RES,
-    LOWER_THAN_LOW_RES
+    LOWER_THAN_HIGH_RES,
   };
   struct TilingRange {
     TilingRange(size_t start, size_t end) : start(start), end(end) {}
@@ -227,8 +224,8 @@ class CC_EXPORT PictureLayerTilingSet {
   raw_ptr<PictureLayerTilingClient> client_;
   const float max_preraster_distance_;
   // State saved for computing velocities based on finite differences.
-  // .front() of the deque refers to the most recent FrameVisibleRect.
-  std::deque<FrameVisibleRect> visible_rect_history_;
+  // .back() of the vector refers to the most recent FrameVisibleRect.
+  std::vector<FrameVisibleRect> visible_rect_history_;
   StateSinceLastTilePriorityUpdate state_since_last_tile_priority_update_;
 
   scoped_refptr<RasterSource> raster_source_;

@@ -1,6 +1,7 @@
 // Copyright 2021 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -55,6 +56,7 @@ import elementsPanelStyles from './elementsPanel.css.js';
 import type {ElementsTreeElement} from './ElementsTreeElement.js';
 import {ElementsTreeElementHighlighter} from './ElementsTreeElementHighlighter.js';
 import {ElementsTreeOutline} from './ElementsTreeOutline.js';
+import {LayoutPane} from './LayoutPane.js';
 import type {MarkerDecorator} from './MarkerDecorator.js';
 import {MetricsSidebarPane} from './MetricsSidebarPane.js';
 import {
@@ -336,6 +338,17 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       return;
     }
     treeElement.select();
+  }
+
+  toggleAccessibilityTree(): void {
+    if (!this.domTreeButton) {
+      return;
+    }
+    if (this.splitWidget.mainWidget() === this.accessibilityTreeView) {
+      this.showDOMTree();
+    } else {
+      this.showAccessibilityTree();
+    }
   }
 
   static instance(opts: {
@@ -1179,9 +1192,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
       if (treeElement) {
         void treeElement.updateStyleAdorners();
       }
-
-      void ElementsComponents.LayoutPane.LayoutPane.instance().render();
     }
+    LayoutPane.instance().requestUpdate();
   }
 
   populateAdornerSettingsContextMenu(contextMenu: UI.ContextMenu.ContextMenu): void {
@@ -1227,8 +1239,8 @@ export class ElementsPanel extends UI.Panel.Panel implements UI.SearchableView.S
     adornerSet.delete(adorner);
   }
 
-  private static firstInspectElementCompletedForTest = function(): void {};
-  private static firstInspectElementNodeNameForTest = '';
+  protected static firstInspectElementCompletedForTest = function(): void {};
+  protected static firstInspectElementNodeNameForTest = '';
 }
 
 // @ts-expect-error exported for Tests.js
@@ -1414,6 +1426,14 @@ export class ElementsActionDelegate implements UI.ActionRegistration.ActionDeleg
         void SDK.DOMModel.DOMModelUndoStack.instance().redo();
         ElementsPanel.instance().stylesWidget.forceUpdate();
         return true;
+      case 'elements.toggle-a11y-tree':
+        ElementsPanel.instance().toggleAccessibilityTree();
+        return true;
+      case 'elements.toggle-word-wrap': {
+        const setting = Common.Settings.Settings.instance().moduleSetting<boolean>('dom-word-wrap');
+        setting.set(!setting.get());
+        return true;
+      }
       case 'elements.show-styles':
         ElementsPanel.instance().selectAndShowSidebarTab(SidebarPaneTabId.STYLES);
         return true;

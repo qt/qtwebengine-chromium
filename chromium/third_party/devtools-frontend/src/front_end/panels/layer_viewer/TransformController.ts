@@ -1,6 +1,7 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -41,8 +42,13 @@ export class TransformController extends Common.ObjectWrapper.ObjectWrapper<Even
   private minScale: number;
   private maxScale: number;
   private readonly controlPanelToolbar: UI.Toolbar.Toolbar;
-  private readonly modeButtons: {[x: string]: UI.Toolbar.ToolbarToggle};
-  constructor(element: HTMLElement, disableRotate?: boolean) {
+  private readonly modeButtons: Record<string, UI.Toolbar.ToolbarToggle>;
+  /**
+   * @param element - The HTML element to apply transformations to.
+   * @param disableRotate - Optional. If true, pan and rotate will be disabled. Defaults to false.
+   * @param preventDefaultOnMousedown - Optional. If true, mousedown events will be prevented from their default behavior (including focus). Defaults to true.
+   */
+  constructor(element: HTMLElement, disableRotate?: boolean, preventDefaultOnMouseDown = true) {
     super();
     this.scaleInternal = 1;
     this.offsetXInternal = 0;
@@ -56,7 +62,8 @@ export class TransformController extends Common.ObjectWrapper.ObjectWrapper<Even
     this.element = element;
     this.registerShortcuts();
     UI.UIUtils.installDragHandle(
-        element, this.onDragStart.bind(this), this.onDrag.bind(this), this.onDragEnd.bind(this), 'move', null);
+        element, this.onDragStart.bind(this), this.onDrag.bind(this), this.onDragEnd.bind(this), 'move', null, 0,
+        preventDefaultOnMouseDown);
     element.addEventListener('wheel', this.onMouseWheel.bind(this), false);
     this.minScale = 0;
     this.maxScale = Infinity;
@@ -213,7 +220,7 @@ export class TransformController extends Common.ObjectWrapper.ObjectWrapper<Even
     const rotateStepInDegrees = 5;
 
     if (this.mode === Modes.ROTATE) {
-      // Sic! onRotate treats X and Y as "rotate around X" and "rotate around Y", so swap X/Y multiplers.
+      // Sic! onRotate treats X and Y as "rotate around X" and "rotate around Y", so swap X/Y multipliers.
       this.onRotate(
           this.rotateXInternal + yMultiplier * rotateStepInDegrees,
           this.rotateYInternal + xMultiplier * rotateStepInDegrees);
@@ -224,9 +231,9 @@ export class TransformController extends Common.ObjectWrapper.ObjectWrapper<Even
   }
 
   private onMouseWheel(event: Event): void {
-    /** @const */
+    /** @constant */
     const zoomFactor = 1.1;
-    /** @const */
+    /** @constant */
     const wheelZoomSpeed = 1 / 53;
     const mouseEvent = event as WheelEvent;
     const scaleFactor = Math.pow(zoomFactor, -mouseEvent.deltaY * wheelZoomSpeed);

@@ -42,12 +42,12 @@ ProtoEnum MetatraceCategoriesToProtoEnum(MetatraceCategories categories) {
 
 }  // namespace
 
-Category g_enabled_categories = Category::NONE;
+thread_local Category g_enabled_categories = Category::NONE;
 
 void Enable(MetatraceConfig config) {
   g_enabled_categories = MetatraceCategoriesToProtoEnum(config.categories);
   if (config.override_buffer_size) {
-    RingBuffer::GetInstance()->Resize(config.override_buffer_size);
+    RingBuffer::GetInstance().Resize(config.override_buffer_size);
   }
 }
 
@@ -55,7 +55,7 @@ void DisableAndReadBuffer(std::function<void(Record*)> fn) {
   g_enabled_categories = Category::NONE;
   if (!fn)
     return;
-  RingBuffer::GetInstance()->ReadAll(fn);
+  RingBuffer::GetInstance().ReadAll(fn);
 }
 
 RingBuffer::RingBuffer() : data_(kDefaultCapacity) {
@@ -83,11 +83,11 @@ void RingBuffer::ReadAll(std::function<void(Record*)> fn) {
   uint64_t end = write_idx_;
 
   // Increment the write index by kCapacity + 1. This ensures that if
-  // ScopedEntry is destoryed in |fn| below, we won't get overwrites
+  // ScopedEntry is destroyed in |fn| below, we won't get overwrites
   // while reading the buffer.
   // This works because of the logic in ~ScopedEntry and
   // RingBuffer::HasOverwritten which ensures that we don't overwrite entries
-  // more than kCapcity elements in the past.
+  // more than kCapacity elements in the past.
   write_idx_ += data_.size() + 1;
 
   for (uint64_t i = start; i < end; ++i) {

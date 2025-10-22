@@ -9,6 +9,7 @@
 #include "base/base_paths.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback_helpers.h"
+#include "base/notimplemented.h"
 #include "base/notreached.h"
 #include "base/path_service.h"
 #include "base/scoped_environment_variable_override.h"
@@ -18,7 +19,7 @@
 #include "gpu/vulkan/vulkan_surface.h"
 #include "gpu/vulkan/vulkan_util.h"
 #include "ui/gfx/gpu_fence.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/ozone/platform/headless/vulkan_surface_headless.h"
 
 #if BUILDFLAG(IS_FUCHSIA)
@@ -150,7 +151,7 @@ VulkanImplementationHeadless::CreateImageFromGpuMemoryHandle(
       VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
   auto tiling = VK_IMAGE_TILING_OPTIMAL;
 #if BUILDFLAG(IS_LINUX)
-  if (gmb_handle.native_pixmap_handle.modifier !=
+  if (gmb_handle.native_pixmap_handle().modifier !=
       gfx::NativePixmapHandle::kNoModifier) {
     tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
   }

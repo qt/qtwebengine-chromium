@@ -4,6 +4,7 @@ export const description = `
   TODO: Ensure sure tests cover all createBindGroup validation rules.
 `;
 
+import { AllFeaturesMaxLimitsGPUTest, kResourceStates } from '../.././gpu_test.js';
 import { makeTestGroup } from '../../../common/framework/test_group.js';
 import { assert, makeValueTestVariant, unreachable } from '../../../common/util/util.js';
 import {
@@ -25,10 +26,9 @@ import {
 } from '../../capability_info.js';
 import { GPUConst } from '../../constants.js';
 import { kPossibleStorageTextureFormats, kRegularTextureFormats } from '../../format_info.js';
-import { kResourceStates } from '../../gpu_test.js';
 import { getTextureDimensionFromView } from '../../util/texture/base.js';
 
-import { AllFeaturesMaxLimitsValidationTest } from './validation_test.js';
+import * as vtu from './validation_test_utils.js';
 
 const kTestFormat: GPUTextureFormat = 'r32float';
 
@@ -37,7 +37,7 @@ function clone<T extends GPUTextureDescriptor>(descriptor: T): T {
 }
 
 function skipIfResourceNotSupportedInStages(
-  t: AllFeaturesMaxLimitsValidationTest,
+  t: AllFeaturesMaxLimitsGPUTest,
   entry: BGLEntry,
   visibility: number
 ) {
@@ -69,7 +69,7 @@ function skipIfResourceNotSupportedInStages(
   }
 }
 
-export const g = makeTestGroup(AllFeaturesMaxLimitsValidationTest);
+export const g = makeTestGroup(AllFeaturesMaxLimitsGPUTest);
 
 g.test('binding_count_mismatch')
   .desc('Test that the number of entries must match the number of entries in the BindGroupLayout.')
@@ -95,7 +95,7 @@ g.test('binding_count_mismatch')
     for (let i = 0; i < bindGroupEntryCount; ++i) {
       entries.push({
         binding: i,
-        resource: { buffer: t.getStorageBuffer() },
+        resource: { buffer: vtu.getStorageBuffer(t) },
       });
     }
 
@@ -127,7 +127,7 @@ g.test('binding_must_be_present_in_layout')
     });
 
     const descriptor = {
-      entries: [{ binding, resource: { buffer: t.getStorageBuffer() } }],
+      entries: [{ binding, resource: { buffer: vtu.getStorageBuffer(t) } }],
       layout: bindGroupLayout,
     };
 
@@ -154,9 +154,9 @@ g.test('binding_must_contain_resource_defined_in_layout')
       entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, ...entry }],
     });
 
-    const resource = t.getBindingResource(resourceType);
+    const resource = vtu.getBindingResource(t, resourceType);
 
-    const IsStorageTextureResourceType = (resourceType: BindableResource) => {
+    const isStorageTextureResourceType = (resourceType: BindableResource) => {
       switch (resourceType) {
         case 'readonlyStorageTex':
         case 'readwriteStorageTex':
@@ -180,7 +180,7 @@ g.test('binding_must_contain_resource_defined_in_layout')
       case 'readonlyStorageTex':
       case 'readwriteStorageTex':
       case 'writeonlyStorageTex':
-        resourceBindingIsCompatible = IsStorageTextureResourceType(resourceType);
+        resourceBindingIsCompatible = isStorageTextureResourceType(resourceType);
         break;
       default:
         resourceBindingIsCompatible = info.resource === resourceType;
@@ -446,6 +446,7 @@ g.test('buffer_offset_and_size_for_bind_groups_match')
   .paramsSubcasesOnly([
     { offset: 0, size: 512, _success: true }, // offset 0 is valid
     { offset: 256, size: 256, _success: true }, // offset 256 (aligned) is valid
+    { bindBufferResource: true, _success: true }, // full buffer is valid
 
     // Touching the end of the buffer
     { offset: 0, size: 1024, _success: true },
@@ -471,7 +472,7 @@ g.test('buffer_offset_and_size_for_bind_groups_match')
     { offset: 1024, size: 1, _success: false }, // offset+size is OOB
   ])
   .fn(t => {
-    const { offset, size, _success } = t.params;
+    const { bindBufferResource, offset, size, _success } = t.params;
 
     const bindGroupLayout = t.device.createBindGroupLayout({
       entries: [{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } }],
@@ -482,11 +483,12 @@ g.test('buffer_offset_and_size_for_bind_groups_match')
       usage: GPUBufferUsage.STORAGE,
     });
 
+    const resource = bindBufferResource ? buffer : { buffer, offset, size };
     const descriptor = {
       entries: [
         {
           binding: 0,
-          resource: { buffer, offset, size },
+          resource,
         },
       ],
       layout: bindGroupLayout,
@@ -561,9 +563,10 @@ g.test('buffer,resource_state')
       .combine('state', kResourceStates)
       .combine('entry', bufferBindingEntries(true))
       .combine('visibilityMask', [kAllShaderStages, GPUConst.ShaderStage.COMPUTE] as const)
+      .combine('bindBufferResource', [false, true] as const)
   )
   .fn(t => {
-    const { state, entry, visibilityMask } = t.params;
+    const { state, entry, visibilityMask, bindBufferResource } = t.params;
 
     assert(entry.buffer !== undefined);
     const info = bufferBindingTypeInfo(entry.buffer);
@@ -581,20 +584,19 @@ g.test('buffer,resource_state')
       ],
     });
 
-    const buffer = t.createBufferWithState(state, {
+    const buffer = vtu.createBufferWithState(t, state, {
       usage: info.usage,
       size: 4,
     });
 
+    const resource = bindBufferResource ? buffer : { buffer };
     t.expectValidationError(() => {
       t.device.createBindGroup({
         layout: bgl,
         entries: [
           {
             binding: 0,
-            resource: {
-              buffer,
-            },
+            resource,
           },
         ],
       });
@@ -608,9 +610,10 @@ g.test('texture,resource_state')
       .combine('state', kResourceStates)
       .combine('entry', sampledAndStorageBindingEntries(true, kTestFormat))
       .combine('visibilityMask', [kAllShaderStages, GPUConst.ShaderStage.COMPUTE] as const)
+      .combine('bindTextureResource', [false, true] as const)
   )
   .fn(t => {
-    const { state, entry, visibilityMask } = t.params;
+    const { state, entry, visibilityMask, bindTextureResource } = t.params;
     const info = texBindingTypeInfo(entry);
 
     const visibility = info.validStages & visibilityMask;
@@ -631,27 +634,26 @@ g.test('texture,resource_state')
       ? info.usage | GPUConst.TextureUsage.RENDER_ATTACHMENT
       : info.usage;
     const format = entry.storageTexture !== undefined ? 'r32float' : 'rgba8unorm';
-    const texture = t.createTextureWithState(state, {
+    const texture = vtu.createTextureWithState(t, state, {
       usage,
       size: [1, 1],
       format,
       sampleCount: entry.texture?.multisampled ? 4 : 1,
     });
 
-    let textureView: GPUTextureView;
-    t.expectValidationError(() => {
-      textureView = texture.createView();
-    }, state === 'invalid');
+    let resource: GPUTexture | GPUTextureView;
+    if (bindTextureResource) {
+      resource = texture;
+    } else {
+      t.expectValidationError(() => {
+        resource = texture.createView();
+      }, state === 'invalid');
+    }
 
     t.expectValidationError(() => {
       t.device.createBindGroup({
         layout: bgl,
-        entries: [
-          {
-            binding: 0,
-            resource: textureView,
-          },
-        ],
+        entries: [{ binding: 0, resource }],
       });
     }, state === 'invalid');
   });
@@ -683,7 +685,7 @@ g.test('bind_group_layout,device_mismatch')
         entries: [
           {
             binding: 0,
-            resource: { buffer: t.getUniformBuffer() },
+            resource: { buffer: vtu.getUniformBuffer(t) },
           },
         ],
       });
@@ -728,11 +730,11 @@ g.test('binding_resources,device_mismatch')
     skipIfResourceNotSupportedInStages(t, entry, visibility);
 
     const resource0 = resource0Mismatched
-      ? t.getDeviceMismatchedBindingResource(info.resource)
-      : t.getBindingResource(info.resource);
+      ? vtu.getDeviceMismatchedBindingResource(t, info.resource)
+      : vtu.getBindingResource(t, info.resource);
     const resource1 = resource1Mismatched
-      ? t.getDeviceMismatchedBindingResource(info.resource)
-      : t.getBindingResource(info.resource);
+      ? vtu.getDeviceMismatchedBindingResource(t, info.resource)
+      : vtu.getBindingResource(t, info.resource);
 
     const bgl = t.device.createBindGroupLayout({
       entries: [
@@ -870,7 +872,12 @@ g.test('storage_texture,format')
   )
   .fn(t => {
     const { storageTextureFormat, resourceFormat } = t.params;
-    t.skipIfTextureFormatNotUsableAsStorageTexture(storageTextureFormat, resourceFormat);
+    t.skipIfTextureFormatNotSupported(storageTextureFormat, resourceFormat);
+    t.skipIfTextureFormatNotUsableWithStorageAccessMode(
+      'write-only',
+      storageTextureFormat,
+      resourceFormat
+    );
 
     const bindGroupLayout = t.device.createBindGroupLayout({
       entries: [

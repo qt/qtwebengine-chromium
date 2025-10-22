@@ -478,44 +478,12 @@ TEST_F(HttpStreamPoolGroupTest, EnableDisableQuic) {
   set_enable_quic(true);
   InitializePool();
   ASSERT_TRUE(pool().CanUseQuic(kHost, NetworkAnonymizationKey(),
-                                /*enable_ip_based_pooling=*/true,
                                 /*enable_alternative_services=*/true));
 
   set_enable_quic(false);
   InitializePool();
   ASSERT_FALSE(pool().CanUseQuic(kHost, NetworkAnonymizationKey(),
-                                 /*enable_ip_based_pooling=*/true,
                                  /*enable_alternative_services=*/true));
-}
-
-TEST_F(HttpStreamPoolGroupTest, ComparePausedJobSet) {
-  Group& group = GetOrCreateTestGroup();
-  group.EnsureAttemptManager();
-  group.attempt_manager_->SetIsFailingForTest(true);
-
-  std::unique_ptr<TestJobDelegate> delegate1 =
-      std::make_unique<TestJobDelegate>(group.stream_key());
-  delegate1->CreateAndStartJob(pool());
-
-  FastForwardBy(base::Milliseconds(10));
-
-  // Create two jobs at the same time.
-  std::unique_ptr<TestJobDelegate> delegate2 =
-      std::make_unique<TestJobDelegate>(group.stream_key());
-  delegate2->CreateAndStartJob(pool());
-
-  std::unique_ptr<TestJobDelegate> delegate3 =
-      std::make_unique<TestJobDelegate>(group.stream_key());
-  delegate3->CreateAndStartJob(pool());
-
-  ASSERT_EQ(group.PausedJobCount(), 3u);
-
-  // Ensure that the group is deleted after all delegates are destroyed.
-  delegate1.reset();
-  delegate2.reset();
-  delegate3.reset();
-  WaitForAttemptManagerComplete(*GetTestGroup());
-  ASSERT_FALSE(GetTestGroup());
 }
 
 }  // namespace net

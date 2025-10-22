@@ -28,22 +28,12 @@
     // existing data should get a new version. Otherwise, existing data may
     // continue to be used and updates made here will not always appear.
     // Also then run tools/search_engine_choice/generate_search_engine_icons.py.
-    "kCurrentDataVersion": 178
+    "kCurrentDataVersion": 187
   },
 
   // The following engines are included in country lists and are added to the
   // list of search engines on the first run depending on user's country.
   "elements": {
-    "ask": {
-      "name": "Ask",
-      "keyword": "ask.com",
-      "favicon_url": "https://www.ask.com/wp-content/uploads/sites/3/2021/10/ask-favicon.png",
-      "search_url": "https://www.ask.com/web?q={searchTerms}",
-      "suggest_url": "https://lss.sse-iacapps.com/query?q={searchTerms}&li=ff",
-      "type": "SEARCH_ENGINE_ASK",
-      "id": 4
-    },
-
     "baidu": {
       "name": "\u767e\u5ea6",
       "keyword": "baidu.com",
@@ -63,6 +53,7 @@
       "name": "Microsoft Bing",
       "keyword": "bing.com",
       "favicon_url": "https://www.bing.com/sa/simg/bing_p_rr_teal_min.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_BING",
       "search_url": "https://www.bing.com/search?q={searchTerms}",
       "suggest_url": "https://www.bing.com/osjson.aspx?query={searchTerms}&language={language}",
       "image_url": "https://www.bing.com/images/detail/search?iss=sbiupload&FORM=CHROMI#enterInsights",
@@ -88,6 +79,7 @@
       "name": "Brave",
       "keyword": "search.brave.com",
       "favicon_url": "https://cdn.search.brave.com/serp/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_BRAVE",
       "search_url": "https://search.brave.com/search?q={searchTerms}",
       "suggest_url": "https://search.brave.com/api/suggest?q={searchTerms}",
       "type": "SEARCH_ENGINE_BRAVE",
@@ -127,6 +119,7 @@
       "name": "DuckDuckGo",
       "keyword": "duckduckgo.com",
       "favicon_url": "https://duckduckgo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_DUCKDUCKGO",
       "search_url": "https://duckduckgo.com/?q={searchTerms}",
       "suggest_url": "https://duckduckgo.com/ac/?q={searchTerms}&type=list",
       "new_tab_url": "https://duckduckgo.com/chrome_newtab",
@@ -144,6 +137,7 @@
       "name": "Ecosia",
       "keyword": "ecosia.org",
       "favicon_url": "https://cdn.ecosia.org/assets/images/ico/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_ECOSIA",
       "search_url": "https://www.ecosia.org/search?q={searchTerms}",
       "suggest_url": "https://ac.ecosia.org?q={searchTerms}&mkt={language}&type=list&language={language}",
       "new_tab_url": "https://www.ecosia.org/newtab/",
@@ -167,22 +161,16 @@
       "search_url": "https://freespoke.com/search/web?q={searchTerms}",
       "suggest_url": "https://api-lb.freespoke.com/typeahead/v1/browser?q={searchTerms}",
       "favicon_url": "https://freespoke.com/favicon-16x16.png",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_FREESPOKE",
       "type": "SEARCH_ENGINE_FREESPOKE",
       "id": 114
     },
 
-    // *** *** *** *** WARNING *** *** *** ***
-    // The Google Search Engine definitions below are not the only source of
-    // truth for Android devices.
-    // Please read http://go/chrome-templateurl-definitions-for-google for more
-    // information.
-    // *** *** *** *** WARNING *** *** *** ***
-    // TODO(crbug.com/343792225): Identify a way to resolve this problem and implement
-    // necessary changes.
     "google": {
       "name": "Google",
       "keyword": "google.com",
       "favicon_url": "https://www.google.com/images/branding/product/ico/googleg_alldp.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_GOOGLE",
       "search_url": "{google:baseURL}search?q={searchTerms}&{google:RLZ}{google:originalQueryForSuggestion}{google:assistedQueryStats}{google:searchFieldtrialParameter}{google:language}{google:prefetchSource}{google:searchClient}{google:sourceId}{google:contextualSearchVersion}ie={inputEncoding}",
       "suggest_url": "{google:baseSuggestURL}search?{google:searchFieldtrialParameter}client={google:suggestClient}&gs_ri={google:suggestRid}&xssi=t&q={searchTerms}&{google:inputType}{google:omniboxFocusType}{google:cursorPosition}{google:currentPageUrl}{google:pageClassification}{google:clientCacheTimeToLive}{google:searchVersion}{google:sessionToken}{google:prefetchQuery}sugkey={google:suggestAPIKeyParameter}",
       "image_url": "{google:baseSearchByImageURL}upload",
@@ -191,7 +179,7 @@
       "image_url_post_params": "encoded_image={google:imageThumbnail},image_url={google:imageURL},sbisrc={google:imageSearchSource},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},processed_image_dimensions={google:processedImageDimensions}",
       "image_translate_source_language_param_key": "sourcelang",
       "image_translate_target_language_param_key": "targetlang",
-      "search_intent_params": ["si", "gs_ssp"],
+      "search_intent_params": ["si", "gs_ssp", "udm"],
       "alternate_urls": [
         "{google:baseURL}#q={searchTerms}",
         "{google:baseURL}search#q={searchTerms}",
@@ -209,6 +197,7 @@
       "name": "Info.com",
       "keyword": "info.com",
       "favicon_url": "https://www.info.com/static/www.info.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_INFO",
       "search_url": "https://www.info.com/serp?q={searchTerms}&segment=info.0472",
       "type": "SEARCH_ENGINE_INFO_COM",
       "id": 97
@@ -221,6 +210,7 @@
       "suggest_url": "https://kagisuggest.com/api/autosuggest?q={searchTerms}",
       "new_tab_url": "https://kagi.com/",
       "favicon_url": "https://kagi.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_KAGI",
       "type": "SEARCH_ENGINE_KAGI",
       "id": 115
     },
@@ -229,6 +219,7 @@
       "name": "Karma Search",
       "keyword": "karmasearch.org",
       "favicon_url": "https://karmasearch.org/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_KARMA",
       "search_url": "https://karmasearch.org/search?q={searchTerms}",
       "suggest_url": "https://api.karmasearch.org/search/autosuggest?q={searchTerms}",
       "new_tab_url": "https://karmasearch.org/newtab",
@@ -250,6 +241,7 @@
       "name": "Lilo",
       "keyword": "lilo.org",
       "favicon_url": "https://www.lilo.org/wp-content/themes/jarvis_wp/ajans/assets/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_LILO",
       "search_url": "https://search.lilo.org/?q={searchTerms}",
       "suggest_url": "https://search.lilo.org/api/?service=suggestions&action=suggest&q={searchTerms}&f=chr&l={language}",
       "new_tab_url": "https://search.lilo.org",
@@ -261,6 +253,7 @@
       "name": "@MAIL.RU",
       "keyword": "mail.ru",
       "favicon_url": "https://go.imgsmail.ru/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_MAILRU",
       "search_url": "https://go.mail.ru/search?q={searchTerms}&{mailru:referralID}&fr=ch_omnibox",
       "alternate_urls": [
         "https://go.mail.ru/msearch?q={searchTerms}&{mailru:referralID}"
@@ -271,28 +264,11 @@
       "id": 83
     },
 
-    "metager_de": {
-      "name": "MetaGer",
-      "keyword": "metager.de",
-      "favicon_url": "https://metager.de/favicon.ico",
-      "search_url": "https://metager.de/meta/meta.ger3?eingabe={searchTerms}",
-      "type": "SEARCH_ENGINE_METAGER",
-      "id": 98
-    },
-
-    "metager_gb": {
-      "name": "MetaGer",
-      "keyword": "metager.org",
-      "favicon_url": "https://metager.de/favicon.ico",
-      "search_url": "https://metager.org/meta/meta.ger3?eingabe={searchTerms}",
-      "type": "SEARCH_ENGINE_METAGER",
-      "id": 98
-    },
-
     "mojeek": {
       "name": "Mojeek",
       "keyword": "mojeek.com",
       "favicon_url": "https://www.mojeek.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_MOJEEK",
       "search_url": "https://www.mojeek.com/search?q={searchTerms}",
       "type": "SEARCH_ENGINE_MOJEEK",
       "id": 103
@@ -312,6 +288,7 @@
       "name": "Nona",
       "keyword": "nona.de",
       "favicon_url": "https://www.nona.de/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_NONA",
       "search_url": "https://www.nona.de/?q={searchTerms}",
       "suggest_url": "https://www.nona.de/autocomplete/?q={searchTerms}",
       "type": "SEARCH_ENGINE_NONA",
@@ -322,6 +299,7 @@
       "name": "OceanHero",
       "keyword": "oceanhero.today",
       "favicon_url": "https://oceanhero.today/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_OCEANHERO",
       "search_url": "https://oceanhero.today/web?q={searchTerms}",
       "suggest_url": "https://api.oceanhero.today/suggestions?q={searchTerms}",
       "new_tab_url": "https://oceanhero.today/home",
@@ -340,35 +318,18 @@
       "name": "WWF Panda Search",
       "keyword": "panda-search.org",
       "favicon_url": "https://panda-search.org/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_PANDA",
       "search_url": "https://panda-search.org/search/?q={searchTerms}",
       "suggest_url": "https://suggest.panda-search.org/suggest?q={searchTerms}",
       "type": "SEARCH_ENGINE_PANDASEARCH",
       "id": 104
     },
 
-    "petal_search": {
-      "name": "Petal Search",
-      "keyword": "petalsearch.com",
-      "favicon_url": "https://search-static-dre.dbankcdn.com/pc/v1/favicon.ico",
-      "search_url": "https://petalsearch.com/search?query={searchTerms}",
-      "type": "SEARCH_ENGINE_PETALSEARCH",
-      "id": 102
-    },
-
-    "presearch": {
-      "name": "Presearch",
-      "keyword": "presearch.com",
-      "favicon_url": "https://presearch.com/favicon.ico",
-      "search_url": "https://presearch.com/search?q={searchTerms}&src=c",
-      "suggest_url": "https://presearch.com/api/suggest?q={searchTerms}&src=c",
-      "type": "SEARCH_ENGINE_PRESEARCH",
-      "id": 105
-    },
-
     "privacywall": {
       "name": "PrivacyWall",
       "keyword": "privacywall.org",
       "favicon_url": "https://www.privacywall.org/images/favicon_32x32.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_PRIVACYWALL",
       "search_url": "https://www.privacywall.org/search/secure/?q={searchTerms}",
       "suggest_url": "https://search.privacywall.org/suggest.php?q={searchTerms}",
       "new_tab_url": "https://www.privacywall.org/newtab/",
@@ -380,6 +341,7 @@
       "name": "Quendu.com",
       "keyword": "quendu.com",
       "favicon_url": "https://quendu.com/assets/favicon-48x48.png",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_QUENDU",
       "search_url": "https://www.quendu.com/search?q={searchTerms}",
       "suggest_url": "https://www.quendu.com/suggest?query={searchTerms}",
       "type": "SEARCH_ENGINE_QUENDU",
@@ -390,6 +352,7 @@
       "name": "Qwant",
       "keyword": "qwant.com",
       "favicon_url": "https://www.qwant.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_QWANT",
       "search_url": "https://www.qwant.com/?q={searchTerms}",
       "suggest_url": "https://api.qwant.com/api/suggest/?q={searchTerms}",
       "new_tab_url": "https://www.qwant.com/newtab?client=cs-chrome-newtab",
@@ -413,6 +376,7 @@
       "name": "Seznam.cz",
       "keyword": "seznam",
       "favicon_url": "https://search.seznam.cz/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_SEZNAM",
       "search_url": "https://search.seznam.cz/?q={searchTerms}",
       "suggest_url": "https://suggest.seznam.cz/fulltext_ff?phrase={searchTerms}",
       "new_tab_url": "https://search.seznam.cz/newtab",
@@ -457,6 +421,7 @@
       "name": "startpage",
       "keyword": "startpage.com",
       "favicon_url": "https://www.startpage.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_STARTPAGE",
       "search_url": "https://www.startpage.com/sp/search?q={searchTerms}",
       "suggest_url": "https://www.startpage.com/osuggestions?q={searchTerms}",
       "type": "SEARCH_ENGINE_STARTPAGE",
@@ -467,6 +432,7 @@
       "name": "Yahoo!",
       "keyword": "yahoo.com",
       "favicon_url": "https://search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas_sfp&p={searchTerms}",
       "suggest_url": "https://search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas_sfp&command={searchTerms}",
       "new_tab_url": "https://search.yahoo.com?fr=crmas_sfp",
@@ -478,6 +444,7 @@
       "name": "Yahoo! Argentina",
       "keyword": "ar.yahoo.com",
       "favicon_url": "https://ar.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://ar.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://ar.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -488,6 +455,7 @@
       "name": "Yahoo Search",
       "keyword": "at.yahoo.com",
       "favicon_url": "https://at.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://at.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://at.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -507,9 +475,10 @@
     },
 
     "yahoo_au": {
-      "name": "Yahoo!7",
+      "name": "Yahoo!",
       "keyword": "au.yahoo.com",
       "favicon_url": "https://au.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://au.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://au.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -520,6 +489,7 @@
       "name": "Yahoo! Brasil",
       "keyword": "br.yahoo.com",
       "favicon_url": "https://br.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://br.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://br.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -530,6 +500,7 @@
       "name": "Yahoo! Canada",
       "keyword": "ca.yahoo.com",
       "favicon_url": "https://ca.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://ca.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://ca.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -540,6 +511,7 @@
       "name": "Yahoo! Schweiz",
       "keyword": "ch.yahoo.com",
       "favicon_url": "https://ch.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://ch.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://ch.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -550,6 +522,7 @@
       "name": "Yahoo! Chile",
       "keyword": "cl.yahoo.com",
       "favicon_url": "https://cl.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://cl.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://cl.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -560,6 +533,7 @@
       "name": "Yahoo! Colombia",
       "keyword": "co.yahoo.com",
       "favicon_url": "https://co.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://co.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://co.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -570,6 +544,7 @@
       "name": "Yahoo Search",
       "keyword": "de.yahoo.com",
       "favicon_url": "https://de.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://de.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://de.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -592,6 +567,7 @@
       "name": "Yahoo Search",
       "keyword": "dk.yahoo.com",
       "favicon_url": "https://dk.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://dk.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://dk.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -614,6 +590,7 @@
       "name": "Yahoo Search",
       "keyword": "emea.yahoo.com",
       "favicon_url": "https://emea.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://emea.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://emea.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -636,6 +613,7 @@
       "name": "Yahoo Búsquedas",
       "keyword": "es.yahoo.com",
       "favicon_url": "https://es.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://es.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://es.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -658,6 +636,7 @@
       "name": "Yahoo Search",
       "keyword": "fi.yahoo.com",
       "favicon_url": "https://fi.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://fi.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://fi.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -680,6 +659,7 @@
       "name": "Yahoo Recherche",
       "keyword": "fr.yahoo.com",
       "favicon_url": "https://fr.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://fr.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://fr.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -702,6 +682,7 @@
       "name": "Yahoo! Hong Kong",
       "keyword": "hk.yahoo.com",
       "favicon_url": "https://hk.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://hk.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://hk.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -712,6 +693,7 @@
       "name": "Yahoo! Indonesia",
       "keyword": "id.yahoo.com",
       "favicon_url": "https://id.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://id.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://id.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -722,6 +704,7 @@
       "name": "Yahoo! India",
       "keyword": "in.yahoo.com",
       "favicon_url": "https://in.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://in.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://in.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -732,6 +715,7 @@
       "name": "Ricerca di Yahoo",
       "keyword": "it.yahoo.com",
       "favicon_url": "https://it.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://it.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://it.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -754,6 +738,7 @@
       "name": "Yahoo! JAPAN",
       "keyword": "yahoo.co.jp",
       "favicon_url": "https://search.yahoo.co.jp/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://search.yahoo.co.jp/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://search.yahooapis.jp/AssistSearchService/V2/webassistSearch?p={searchTerms}&appid=oQsoxcyxg66enp0TYoirkKoryq6rF8bK76mW0KYxZ0v0WPLtn.Lix6wy8F_LwGWHUII-&output=fxjson&fr=crmas",
       "new_tab_url": "https://search.yahoo.co.jp/?fr=crmas_dt",
@@ -765,6 +750,7 @@
       "name": "Yahoo! M\u00e9xico",
       "keyword": "mx.yahoo.com",
       "favicon_url": "https://mx.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://mx.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://mx.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -775,6 +761,7 @@
       "name": "Yahoo! Malaysia",
       "keyword": "malaysia.yahoo.com",
       "favicon_url": "https://malaysia.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://malaysia.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://malaysia.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -785,6 +772,7 @@
       "name": "Yahoo Search",
       "keyword": "nl.yahoo.com",
       "favicon_url": "https://nl.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://nl.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://nl.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -807,6 +795,7 @@
       "name": "Yahoo! New Zealand",
       "keyword": "nz.yahoo.com",
       "favicon_url": "https://nz.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://nz.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://nz.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -817,6 +806,7 @@
       "name": "Yahoo! Per\u00fa",
       "keyword": "pe.yahoo.com",
       "favicon_url": "https://pe.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://pe.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://pe.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -827,6 +817,7 @@
       "name": "Yahoo! Philippines",
       "keyword": "ph.yahoo.com",
       "favicon_url": "https://ph.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://ph.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://ph.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -837,6 +828,7 @@
       "name": "Yahoo Search",
       "keyword": "se.yahoo.com",
       "favicon_url": "https://se.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://se.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://se.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -859,6 +851,7 @@
       "name": "Yahoo! Singapore",
       "keyword": "sg.yahoo.com",
       "favicon_url": "https://sg.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://sg.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://sg.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -869,6 +862,7 @@
       "name": "Yahoo! \u0e1b\u0e23\u0e30\u0e40\u0e17\u0e28\u0e44\u0e17\u0e22",
       "keyword": "th.yahoo.com",
       "favicon_url": "https://th.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://th.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://th.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -879,6 +873,7 @@
       "name": "Yahoo! T\u00fcrkiye",
       "keyword": "tr.yahoo.com",
       "favicon_url": "https://tr.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://tr.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://tr.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -889,6 +884,7 @@
       "name": "Yahoo!\u5947\u6469",
       "keyword": "tw.yahoo.com",
       "favicon_url": "https://tw.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://tw.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
       "suggest_url": "https://tw.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -899,6 +895,7 @@
       "name": "Yahoo Search",
       "keyword": "uk.yahoo.com",
       "favicon_url": "https://uk.search.yahoo.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YAHOO",
       "search_url": "https://uk.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&p={searchTerms}",
       "suggest_url": "https://uk.search.yahoo.com/sugg/chrome?output=fxjson&command={searchTerms}",
       "type": "SEARCH_ENGINE_YAHOO",
@@ -917,31 +914,12 @@
       ]
     },
 
-    "yahoo_ve": {
-      "name": "Yahoo! Venezuela",
-      "keyword": "ve.yahoo.com",
-      "favicon_url": "https://ve.search.yahoo.com/favicon.ico",
-      "search_url": "https://ve.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
-      "suggest_url": "https://ve.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
-      "type": "SEARCH_ENGINE_YAHOO",
-      "id": 2
-    },
-
-    "yahoo_vn": {
-      "name": "Yahoo! Vi\u1ec7t Nam",
-      "keyword": "vn.yahoo.com",
-      "favicon_url": "https://vn.search.yahoo.com/favicon.ico",
-      "search_url": "https://vn.search.yahoo.com/search{google:pathWildcard}?ei={inputEncoding}&fr=crmas&p={searchTerms}",
-      "suggest_url": "https://vn.search.yahoo.com/sugg/chrome?output=fxjson&appid=crmas&command={searchTerms}",
-      "type": "SEARCH_ENGINE_YAHOO",
-      "id": 2
-    },
-
     "yandex_by": {
       "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
       "keyword": "yandex.by",
       "favicon_url": "https://yastatic.net/s3/web4static/_/v2/v9YNE_BX0evwMHbDyd0NZv8ReK0.png",
-      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/yandex/drawable-xxhdpi/yandex.png",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_ru/logo.png",
       "search_url": "https://yandex.by/{yandex:searchPath}?text={searchTerms}",
       "suggest_url": "https://suggest.yandex.by/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
       "image_url": "https://yandex.by/images/search/?rpt=imageview",
@@ -955,6 +933,8 @@
       "name": "Yandex",
       "keyword": "yandex.com",
       "favicon_url": "https://yastatic.net/s3/web4static/_/v2/v9YNE_BX0evwMHbDyd0NZv8ReK0.png",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_com/logo.png",
       "search_url": "https://yandex.com/{yandex:searchPath}?text={searchTerms}",
       "suggest_url": "https://suggest.yandex.com/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
       "image_url": "https://yandex.com/images/search?rpt=imageview",
@@ -979,7 +959,8 @@
       "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
       "keyword": "yandex.kz",
       "favicon_url": "https://yastatic.net/lego/_/pDu9OWAQKB0s2J9IojKpiS_Eho.ico",
-      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/yandex/drawable-xxhdpi/yandex.png",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_kz/logo.png",
       "search_url": "https://yandex.kz/{yandex:searchPath}?text={searchTerms}",
       "suggest_url": "https://suggest.yandex.kz/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
       "image_url": "https://yandex.kz/images/search/?rpt=imageview",
@@ -993,7 +974,8 @@
       "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
       "keyword": "yandex.ru",
       "favicon_url": "https://yastatic.net/lego/_/pDu9OWAQKB0s2J9IojKpiS_Eho.ico",
-      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/yandex/drawable-xxhdpi/yandex.png",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_ru/logo.png",
       "search_url": "https://yandex.ru/{yandex:searchPath}?text={searchTerms}&{yandex:referralID}",
       "suggest_url": "https://suggest.yandex.ru/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
       "image_url": "https://yandex.ru/images/search/?rpt=imageview",
@@ -1007,6 +989,8 @@
       "name": "Yandex",
       "keyword": "yandex.com.tr",
       "favicon_url": "https://yastatic.net/lego/_/rBTjd6UOPk5913OSn5ZQVYMTQWQ.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YANDEX",
+      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/chrome_tr/logo.png",
       "search_url": "https://www.yandex.com.tr/{yandex:searchPath}?text={searchTerms}",
       "suggest_url": "https://suggest.yandex.com.tr/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
       "image_url": "https://yandex.com.tr/gorsel/search?rpt=imageview",
@@ -1016,24 +1000,11 @@
       "id": 15
     },
 
-    "yandex_ua": {
-      "name": "\u042f\u043d\u0434\u0435\u043a\u0441",
-      "keyword": "yandex.ua",
-      "favicon_url": "https://yastatic.net/lego/_/pDu9OWAQKB0s2J9IojKpiS_Eho.ico",
-      "logo_url": "https://storage.ape.yandex.net/get/browser/Doodles/yandex/drawable-xxhdpi/yandex.png",
-      "search_url": "https://yandex.ua/{yandex:searchPath}?text={searchTerms}",
-      "suggest_url": "https://suggest.yandex.ua/suggest-ff.cgi?part={searchTerms}&{google:cursorPosition}",
-      "image_url": "https://yandex.ua/images/search/?rpt=imageview",
-      "image_url_post_params": "upfile={google:imageThumbnail},original_width={google:imageOriginalWidth},original_height={google:imageOriginalHeight},prg=1",
-      "new_tab_url": "https://www.yandex.ua/chrome/newtab",
-      "type": "SEARCH_ENGINE_YANDEX",
-      "id": 15
-    },
-
     "yep": {
       "name": "Yep",
       "keyword": "yep.com",
       "favicon_url": "https://cdn.yep.com/static/meta/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YEP",
       "search_url": "https://yep.com/web?q={searchTerms}",
       "suggest_url": "https://api.yep.com/ac/?query={searchTerms}&os=true",
       "type": "SEARCH_ENGINE_YEP",
@@ -1044,6 +1015,7 @@
       "name": "You.com",
       "keyword": "you.com",
       "favicon_url": "https://api.you.com/favicon.ico",
+      "base_builtin_resource_id": "IDR_SEARCH_ENGINE_YOU",
       "search_url": "https://you.com/search?tbm=youchat&q={searchTerms}",
       "suggest_url": "https://you.com/api/ac?domain=default&q={searchTerms}",
       "type": "SEARCH_ENGINE_YOU",

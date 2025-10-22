@@ -221,8 +221,8 @@ void PasswordProtectionRequestContent::GetDomFeatures() {
       LogCSDCacheContainsImages(
           verdict->mutable_visual_features()->has_image());
 
-      base::UmaHistogramCounts100(
-          "PasswordProtection.CSDCacheSizeAtHit",
+      base::UmaHistogramCounts100000(
+          "PasswordProtection.CSDCacheSizeAtHit2",
           feature_cache_map->GetTotalVerdictEntriesSize());
 
       ExtractClientPhishingRequestFeatures(*verdict);
@@ -247,6 +247,7 @@ void PasswordProtectionRequestContent::GetDomFeatures() {
   dom_features_collection_complete_ = false;
   phishing_detector_->StartPhishingDetection(
       main_frame_url(),
+      safe_browsing::mojom::ClientSideDetectionType::kPasswordProtection,
       base::BindRepeating(&PasswordProtectionRequestContent::OnGetDomFeatures,
                           weak_factory_.GetWeakPtr()));
 

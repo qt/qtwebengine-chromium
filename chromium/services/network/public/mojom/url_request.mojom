@@ -19,6 +19,7 @@ import "services/network/public/mojom/data_pipe_getter.mojom";
 import "services/network/public/mojom/device_bound_sessions.mojom";
 import "services/network/public/mojom/devtools_observer.mojom";
 import "services/network/public/mojom/fetch_api.mojom";
+import "services/network/public/mojom/fetch_retry_options.mojom";
 import "services/network/public/mojom/http_raw_headers.mojom";
 import "services/network/public/mojom/http_request_headers.mojom";
 import "services/network/public/mojom/ip_address_space.mojom";
@@ -36,16 +37,44 @@ import "services/network/public/mojom/trust_tokens.mojom";
 import "services/network/public/mojom/url_loader_network_service_observer.mojom";
 import "services/network/public/mojom/url_response_head.mojom";
 import "services/network/public/mojom/web_bundle_handle.mojom";
+import "services/network/public/mojom/web_client_hints_types.mojom";
 import "url/mojom/origin.mojom";
 import "url/mojom/url.mojom";
 
+// Caches enabled client hints to allow handling `ACCEPT_CH` frames in the
+// network service, avoiding an IPC to the browser process.
+// This should be used only in TrustedUrlRequestParams so that only
+// trustworthy clients can pass it.
+struct EnabledClientHints {
+  // The origin for which the client hints are enabled.
+  url.mojom.Origin origin;
+
+  // Whether this is for an outermost main frame.
+  bool is_outermost_main_frame;
+
+  // The client hints enabled for the request.
+  array<WebClientHintsType> hints;
+};
+
 // See documentation at `URLRequest.trusted_params`.
+//
+// For values that have a corresponding value in URLLoaderFactoryParams
+// (e.g., `isolation_info`, `client_security_state`, and `disable_secure_dns`),
+// the values in the TrustedParams are preferred, if set, unless stated
+// otherwise. `isolation_info` cannot be null, so it always takes precedence
+// when TrustedUrlRequestParams are provided.
+//
+// TODO(https://crbug.com/409959475): Make `isolation_info` and
+// `disable_secure_dns` optional, and take precedence over the corresponding
+// URLLoaderFactoryParams value when set, so they behave consistently.
 struct TrustedUrlRequestParams {
   // If non-empty, this value will be used to set the SiteForCookies and
   // NetworkIsolationKey used by the network request.
   IsolationInfo isolation_info;
 
-  // Whether secure DNS should be disabled for the request.
+  // Whether secure DNS should be disabled for the request. The effective value
+  // for the request is the logical or of this field and the corresponding
+  // values in URLLoaderFactoryParams.
   bool disable_secure_dns;
 
   // Whether a navigation is triggered with a user gesture.
@@ -73,6 +102,10 @@ struct TrustedUrlRequestParams {
   // should take care to remove them if they forward the response head to a
   // client which should not be able to see them.
   bool include_request_cookies_with_response = false;
+
+  // Enabled Client Hints to be evaluated quickly within the network layer
+  // when it receives the AcceptCHFrame.
+  EnabledClientHints? enabled_client_hints;
 
   // Observer which should be notified when this URLRequest reads or writes
   // a cookie. If this is set to non-null, the observer passed to
@@ -317,7 +350,7 @@ struct URLRequest {
   // to populate an `Accept-Signatures` header.
   //
   // https://www.rfc-editor.org/rfc/rfc9421.html#name-the-accept-signature-field
-  array<string> expected_public_keys;
+  array<array<uint8>> expected_public_keys;
 
   // https://fetch.spec.whatwg.org/#concept-request-destination
   RequestDestination destination;
@@ -392,9 +425,9 @@ struct URLRequest {
   // be different to the current requestor which is |render_frame_id|. For
   // example, if a navigation for window "abc" is intercepted by a service
   // worker, which re-issues the request via fetch, the re-issued request has
-  // |render_frame_id| of MSG_ROUTING_NONE (the service worker) and |window_id|
-  // of "abc". This is used for, e.g., client certificate selection. It's
-  // important that this id be unguessable so renderers cannot impersonate
+  // |render_frame_id| of IPC::mojom::kRoutingIdNone (the service worker) and
+  // |window_id| of "abc". This is used for, e.g., client certificate selection.
+  // It's important that this id be unguessable so renderers cannot impersonate
   // other renderers.
   //
   // This may be empty when the original requestor is the current requestor or
@@ -593,12 +626,16 @@ struct URLRequest {
   // Whether this request is allowed to register new device bound
   // sessions or process challenges for existing device bound sessions
   // (e.g. due to an Origin Trial).
-  bool allows_device_bound_sessions;
+  bool allows_device_bound_session_registration;
 
   // Permissions Policy of the request.
   // If it's nullopt then the request's initiator didn't set the permissions
   // policy. Example: https://crrev.com/c/6295903
   network.mojom.PermissionsPolicy? permissions_policy;
+
+  // The policies to be used when retrying a fetch. Will only be set on fetch
+  // requests who specified its RetryOptions.
+  network.mojom.FetchRetryOptions? fetch_retry_options;
 };
 
 // URLRequestBody represents body (i.e. upload data) of a HTTP request.

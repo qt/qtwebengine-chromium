@@ -32,6 +32,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/sequence_checker.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/task_traits.h"
@@ -138,8 +139,7 @@ AndroidComponentLoaderPolicy::AndroidComponentLoaderPolicy(
     : loader_policy_(std::move(loader_policy)) {
   JNIEnv* env = base::android::AttachCurrentThread();
   obj_.Reset(env, Java_ComponentLoaderPolicyBridge_Constructor(
-                      env, reinterpret_cast<intptr_t>(this))
-                      .obj());
+                      env, reinterpret_cast<intptr_t>(this)));
 }
 
 AndroidComponentLoaderPolicy::~AndroidComponentLoaderPolicy() = default;

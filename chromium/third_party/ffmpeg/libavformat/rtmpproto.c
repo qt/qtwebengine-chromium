@@ -347,6 +347,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
         if ((fourcc_str_len + 1) % 5 != 0) {
             av_log(s, AV_LOG_ERROR, "Malformed rtmp_enhanched_codecs, "
                    "should be of the form hvc1[,av01][,vp09][,...]\n");
+            ff_rtmp_packet_destroy(&pkt);
             return AVERROR(EINVAL);
         }
 
@@ -370,6 +371,7 @@ static int gen_connect(URLContext *s, RTMPContext *rt)
                     ff_amf_write_string(&p, fourcc);
             } else {
                     av_log(s, AV_LOG_ERROR, "Unsupported codec fourcc, %.*s\n", 4, fourcc_data);
+                    ff_rtmp_packet_destroy(&pkt);
                     return AVERROR_PATCHWELCOME;
             }
 
@@ -2925,10 +2927,6 @@ reconnect:
     return 0;
 
 fail:
-    av_freep(&rt->playpath);
-    av_freep(&rt->tcurl);
-    av_freep(&rt->flashver);
-    av_dict_free(opts);
     rtmp_close(s);
     return ret;
 }
@@ -3053,7 +3051,12 @@ static int rtmp_write(URLContext *s, const uint8_t *buf, int size)
                                              pkttype, ts, pktsize)) < 0)
                 return ret;
 
-            rt->out_pkt.extra = rt->stream_id;
+            // If rt->listen, then we're running as a a server and should
+            // use the ID that we've sent in Stream Begin and in the
+            // _result to createStream.
+            // Otherwise, we're running as a client and should use the ID
+            // that we've received in the createStream from the server.
+            rt->out_pkt.extra = (rt->listen) ? rt->nb_streamid : rt->stream_id;
             rt->flv_data = rt->out_pkt.data;
         }
 

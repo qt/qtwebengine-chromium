@@ -6,12 +6,10 @@ from __future__ import annotations
 
 import argparse
 import datetime as dt
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Sequence, Tuple,
-                    Type)
+from typing import TYPE_CHECKING, Any, Mapping, Optional, Sequence, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.config import ActionRunnerConfig
 from crossbench.benchmarks.base import StoryFilter, SubStoryBenchmark
 from crossbench.benchmarks.loading.config.pages import (
     DevToolsRecorderPagesConfig, ListPagesConfig, PageConfig, PagesConfig)
@@ -27,7 +25,7 @@ from crossbench.benchmarks.loading.tab_controller import TabController
 from crossbench.parse import DurationParser, ObjectParser
 
 if TYPE_CHECKING:
-  from crossbench.action_runner.base import ActionRunner
+  from crossbench.action_runner.config import ActionRunnerConfig
   from crossbench.cli.parser import CrossBenchArgumentParser
   from crossbench.stories.story import Story
 
@@ -50,9 +48,9 @@ class LoadingPageFilter(StoryFilter[Page]):
 
   @classmethod
   @override
-  def add_cli_parser(
+  def add_cli_arguments(
       cls, parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser = super().add_cli_parser(parser)
+    parser = super().add_cli_arguments(parser)
     cls.add_page_config_parser(parser)
     tab_group = parser.add_mutually_exclusive_group()
     tab_group.add_argument(
@@ -127,6 +125,17 @@ class LoadingPageFilter(StoryFilter[Page]):
     return parser
 
   @classmethod
+  def add_page_config_arguments(cls, group: argparse._ArgumentGroup) -> None:
+    group.add_argument(
+        "--page-config",
+        "--pages-config",
+        dest="pages_config",
+        type=PagesConfig.parse,
+        help="Stories we want to perform in the benchmark run following a "
+        "specified scenario. For a reference on how to build scenarios and "
+        "possible actions check config/doc/pages.config.hjson")
+
+  @classmethod
   def add_page_config_parser(cls, parser) -> None:
     page_config_group = parser.add_mutually_exclusive_group()
     # TODO: move --stories into mutually exclusive group as well
@@ -135,14 +144,7 @@ class LoadingPageFilter(StoryFilter[Page]):
         "--url",
         dest="urls",
         help="List of urls and durations to load: url,seconds,...")
-    page_config_group.add_argument(
-        "--page-config",
-        "--pages-config",
-        dest="pages_config",
-        type=PagesConfig.parse,
-        help="Stories we want to perform in the benchmark run following a"
-        "specified scenario. For a reference on how to build scenarios and"
-        "possible actions check config/doc/pages.config.hjson")
+    cls.add_page_config_arguments(page_config_group)
     page_config_group.add_argument(
         "--url-file",
         "--urls-file",
@@ -160,19 +162,10 @@ class LoadingPageFilter(StoryFilter[Page]):
 
   @classmethod
   @override
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
     kwargs = super().kwargs_from_cli(args)
     kwargs["separate"] = args.separate
-    kwargs["args"] = args
     return kwargs
-
-  def __init__(self,
-               story_cls: Type[Page],
-               patterns: Sequence[str],
-               args: argparse.Namespace,
-               separate: bool = True) -> None:
-    self._args: argparse.Namespace = args
-    super().__init__(story_cls, patterns, separate)
 
   @override
   def process_all(self, patterns: Sequence[str]) -> None:
@@ -186,14 +179,14 @@ class LoadingPageFilter(StoryFilter[Page]):
         return
     # Let the PageConfig handle the arg splitting again:
     config = PagesConfig.parse(",".join(patterns))
-    self.stories = self.stories_from_config(self._args, config)
+    self.stories = self.stories_from_config(self.args, config)
 
   @classmethod
-  def all_stories(cls) -> Tuple[Page, ...]:
+  def all_stories(cls) -> tuple[Page, ...]:
     return tuple(PAGE_LIST)
 
   @classmethod
-  def default_stories(cls) -> Tuple[Page, ...]:
+  def default_stories(cls) -> tuple[Page, ...]:
     return PAGE_LIST_SMALL
 
   @classmethod
@@ -202,7 +195,7 @@ class LoadingPageFilter(StoryFilter[Page]):
     labels = set(page_config.label for page_config in config.pages)
     use_labels = len(labels) == len(config.pages)
 
-    stories: List[Page] = []
+    stories: list[Page] = []
     for page_config in config.pages:
       stories.append(cls._story_from_config(args, page_config, use_labels))
 
@@ -236,24 +229,32 @@ class LoadingPageFilter(StoryFilter[Page]):
     if not config.blocks:
       return LivePage(label, config.first_url, duration, playback, tabs,
                       args.about_blank_duration)
-    return InteractivePage(label, config.blocks, config.setup, config.login,
-                           config.secrets, playback, tabs,
-                           args.about_blank_duration, args.run_login,
-                           args.run_setup)
+    return InteractivePage(
+        name=label,
+        blocks=config.blocks,
+        login=config.login,
+        setup=config.setup,
+        teardown=config.teardown,
+        secrets=config.secrets,
+        playback=playback,
+        tabs=tabs,
+        about_blank_duration=args.about_blank_duration,
+        run_login=args.run_login,
+        run_setup=args.run_setup)
 
   @override
   def create_stories(self, separate: bool) -> Sequence[Page]:
     if not separate and len(self.stories) > 1:
       combined_name = "_".join(page.name for page in self.stories)
-      self.stories = (CombinedPage(self.stories, combined_name,
-                                   self._args.playback, self._args.tabs),)
-    self.log_stories(self.stories)
+      args = self.args
+      self.stories = (CombinedPage(self.stories, combined_name, args.playback,
+                                   args.tabs),)
     return self.stories
 
 
 class LoadingBenchmark(SubStoryBenchmark):
   """
-  Benchmark runner for loading pages.
+  Benchmark runner for loading pages with complex interactions.
 
   Use --urls/--stories to either choose from an existing set of pages, or direct
   URLs. After each page you can also specify a custom wait/load duration in
@@ -268,38 +269,29 @@ class LoadingBenchmark(SubStoryBenchmark):
   """
   NAME = "loading"
   DEFAULT_STORY_CLS = Page
-  STORY_FILTER_CLS = LoadingPageFilter
+  STORY_FILTER_CLS: Type[LoadingPageFilter] = LoadingPageFilter
 
   @classmethod
   @override
   def add_cli_parser(
-      cls, subparsers: argparse.ArgumentParser, aliases: Sequence[str] = ()
-  ) -> CrossBenchArgumentParser:
-    parser = super().add_cli_parser(subparsers, aliases)
-    cls.STORY_FILTER_CLS.add_cli_parser(parser)
-    parser.add_argument(
-        "--action-runner",
-        type=ActionRunnerConfig.parse,
-        help="Set the action runner for interactive pages.",
-        required=False)
+      cls, subparsers: argparse.ArgumentParser) -> CrossBenchArgumentParser:
+    parser = super().add_cli_parser(subparsers)
+    cls.STORY_FILTER_CLS.add_cli_arguments(parser)
     return parser
-
-  @classmethod
-  def requires_separate(cls, args: argparse.Namespace) -> bool:
-    return args.separate
 
   @classmethod
   @override
   def stories_from_cli_args(cls, args: argparse.Namespace) -> Sequence[Story]:
-    has_default_stories: bool = args.stories and args.stories == "default"
+    has_default_stories: bool = (
+        args.stories and args.stories == LoadingPageFilter.DEFAULT_STORY_NAME)
     if config := cls.get_pages_config(args):
       # TODO: make stories and page_config mutually exclusive.
       if not has_default_stories:
         raise argparse.ArgumentTypeError(
             f"Cannot specify --stories={repr(args.stories)} "
             "with any other page config option.")
-      pages = LoadingPageFilter.stories_from_config(args, config)
-      if cls.requires_separate(args):
+      pages = cls.STORY_FILTER_CLS.stories_from_config(args, config)
+      if args.separate:
         return pages
       if len(pages) == 1:
         return pages
@@ -338,33 +330,30 @@ class LoadingBenchmark(SubStoryBenchmark):
 
   @classmethod
   @override
-  def aliases(cls) -> Tuple[str, ...]:
+  def aliases(cls) -> tuple[str, ...]:
     return ("load", "ld")
 
   @classmethod
   @override
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
-    kwargs = super().kwargs_from_cli(args)
-    kwargs["action_runner"] = args.action_runner
-    return kwargs
+  def describe_stories(cls) -> Mapping[str, str]:
+    result: dict[str, str] = {}
+    for story in cls.all_stories():
+      story_help = story.help()
+      if story_help == story.name:
+        story_help = ""
+      result[story.name] = story_help
+    return result
 
   @classmethod
   @override
   def all_story_names(cls) -> Sequence[str]:
-    return sorted(LivePage.all_story_names())
+    # TODO: Use StoryFilter for listing stories everywhere.
+    return sorted(story.name for story in cls.STORY_FILTER_CLS.all_stories())
 
-  def __init__(self,
-               stories: Sequence[Page],
-               action_runner: Optional[ActionRunner] = None) -> None:
-    self._action_runner = action_runner
+  def __init__(
+      self,
+      stories: Sequence[Page],
+      action_runner_config: Optional[ActionRunnerConfig] = None) -> None:
     for story in stories:
       assert isinstance(story, Page)
-    super().__init__(stories)
-
-  @property
-  def action_runner(self) -> Optional[ActionRunner]:
-    return self._action_runner
-
-  @action_runner.setter
-  def action_runner(self, action_runner: Optional[ActionRunner]) -> None:
-    self._action_runner = action_runner
+    super().__init__(stories, action_runner_config)

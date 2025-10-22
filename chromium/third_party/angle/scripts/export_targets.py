@@ -115,7 +115,7 @@ def dag_traverse(root_keys: Sequence[str], pre_recurse_func: Callable[[str], lis
 print('Importing graph', file=sys.stderr)
 
 try:
-    p = run_checked('gn', 'desc', '--format=json', str(OUT_DIR), '*', stdout=subprocess.PIPE,
+    p = run_checked(sys.executable, 'third_party/depot_tools/gn.py', 'desc', '--format=json', str(OUT_DIR), '*', stdout=subprocess.PIPE,
                 env=GN_ENV, shell=(True if sys.platform == 'win32' else False))
 except subprocess.CalledProcessError:
     sys.stderr.buffer.write(b'"gn desc" failed. Is depot_tools in your PATH?\n')
@@ -232,6 +232,7 @@ IGNORED_INCLUDES = {
     b'vulkan_ios.h',
     b'vulkan_macos.h',
     b'vulkan_metal.h',
+    b'vulkan_ohos.h',
     b'vulkan_sci.h',
     b'vulkan_vi.h',
     b'vulkan_wayland.h',
@@ -247,6 +248,7 @@ IGNORED_INCLUDES = {
     b'parallel_hashmap/phmap.h',
     # Validation layers optionally use mimalloc
     b'mimalloc-new-delete.h',
+    b'mimalloc-stats.h',
     # From the Vulkan-Loader
     b'winres.h',
     # From a comment in vulkan-validation-layers/src/layers/vk_mem_alloc.h

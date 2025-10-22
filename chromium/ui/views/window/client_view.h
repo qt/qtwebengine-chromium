@@ -6,6 +6,7 @@
 #define UI_VIEWS_WINDOW_CLIENT_VIEW_H_
 
 #include "base/memory/raw_ptr.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
 #include "ui/views/metadata/view_factory.h"
 #include "ui/views/view.h"
 
@@ -54,13 +55,13 @@ class VIEWS_EXPORT ClientView : public View {
   // corner of resizable dialog boxes.
   virtual int NonClientHitTest(const gfx::Point& point);
 
-  // Updates and applies the `corner_radius` to the ClientView's contents as
-  // part of rounding the window.
+  // Updates the ClientView's contents as part of rounding the window.
   // Some platforms, such as ChromeOS, do not have borders surrounding
   // ClientView part of the NonClientFrameView. Therefore, the
   // NonClientFrameView has to delegate part of the rounding logic to the
   // ClientView.
-  virtual void UpdateWindowRoundedCorners(int corner_radius);
+  virtual void UpdateWindowRoundedCorners(
+      const gfx::RoundedCornersF& window_radii);
 
   // Overridden from View:
   gfx::Size CalculatePreferredSize(
@@ -81,6 +82,8 @@ class VIEWS_EXPORT ClientView : public View {
   }
 
  private:
+  friend class Widget;
+
   // The View that this ClientView contains. This can temporarily dangle during
   // teardown of the Widget in some hard-to-resolve cases. Specifically, if the
   // contents view is also a WidgetDelegate (which happens with the

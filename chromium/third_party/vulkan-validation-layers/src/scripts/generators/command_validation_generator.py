@@ -63,6 +63,7 @@ class CommandValidationOutputGenerator(BaseGenerator):
         out.append('''
             #include "error_message/logging.h"
             #include "core_checks/core_validation.h"
+            #include "state_tracker/cmd_buffer_state.h"
 
             enum CMD_SCOPE_TYPE { CMD_SCOPE_INSIDE, CMD_SCOPE_OUTSIDE, CMD_SCOPE_BOTH };
 
@@ -114,7 +115,12 @@ class CommandValidationOutputGenerator(BaseGenerator):
             queue_flags.extend(["VK_QUEUE_VIDEO_DECODE_BIT_KHR"] if Queues.DECODE & command.queues else [])
             queue_flags.extend(["VK_QUEUE_VIDEO_ENCODE_BIT_KHR"] if Queues.ENCODE & command.queues else [])
             queue_flags.extend(["VK_QUEUE_OPTICAL_FLOW_BIT_NV"] if Queues.OPTICAL_FLOW & command.queues else [])
+            queue_flags.extend(["VK_QUEUE_DATA_GRAPH_BIT_ARM"] if Queues.DATA_GRAPH & command.queues else [])
             queue_flags = ' | '.join(queue_flags)
+
+            if not queue_flags:
+                print('Warning: No queue flags found for command', command.name)
+                queue_flags = '0'
 
             vuid = getVUID(self.valid_vuids, f'VUID-{alias_name}-commandBuffer-cmdpool')
             out.append(f'    {queue_flags}, {vuid},\n')
@@ -170,14 +176,20 @@ class CommandValidationOutputGenerator(BaseGenerator):
                         skip |= ValidateCmdSubpassState(cb_state, loc, info.recording_vuid);
                         break;
 
-                    case CbState::InvalidComplete:
                     case CbState::InvalidIncomplete:
                         skip |= ReportInvalidCommandBuffer(cb_state, loc, info.recording_vuid);
                         break;
 
-                    default:
-                        assert(loc.function != Func::Empty);
+                    case CbState::New:
                         skip |= LogError(info.recording_vuid, cb_state.Handle(), loc, "was called before vkBeginCommandBuffer().");
+                        break;
+
+                    case CbState::Recorded:
+                    case CbState::InvalidComplete:
+                        assert(loc.function != Func::Empty);
+                        skip |= LogError(info.recording_vuid, cb_state.Handle(), loc,
+                                        "was recorded, but vkBeginCommandBuffer() was not called prior to this command.");
+                        break;
                 }
 
                 // Validate the command pool from which the command buffer is from that the command is allowed for queue type

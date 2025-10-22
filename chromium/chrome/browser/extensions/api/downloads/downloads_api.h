@@ -30,7 +30,7 @@ class Profile;
 
 // Functions in the chrome.downloads namespace facilitate
 // controlling downloads from extensions. See the full API doc at
-// http://goo.gl/6hO1n
+// https://docs.google.com/document/d/12rNimeeGaA8jEV60PPKtT4pmJYmY9ae_edl3hJyoXYE/
 
 namespace download_extension_errors {
 
@@ -284,6 +284,7 @@ class DownloadsOpenFunction : public ExtensionFunction {
   static OnPromptCreatedCallback* on_prompt_created_cb_;
 };
 
+// TODO(crbug.com/40858206): Remove this deprecated function.
 class DownloadsSetShelfEnabledFunction : public ExtensionFunction {
  public:
   DECLARE_EXTENSION_FUNCTION("downloads.setShelfEnabled",

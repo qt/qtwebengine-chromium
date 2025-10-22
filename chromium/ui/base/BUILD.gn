@@ -12,7 +12,6 @@ import("//build/config/locales.gni")
 import("//build/config/ozone.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 import("//build/config/ui.gni")
-import("//build/util/branding.gni")
 import("//skia/features.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
@@ -28,6 +27,7 @@ if (is_android) {
   import("//build/config/apple/mobile_config.gni")
 } else if (is_mac) {
   import("//build/config/mac/rules.gni")
+  import("//build/util/branding.gni")
 }
 
 build_ime = !is_ios
@@ -48,8 +48,8 @@ component("ui_data_pack") {
     ":base",
     "//chromeos/crosapi/mojom",  # This target requires minimal dependencies.
     "//ios/chrome/tools/strings:generate_localizable_strings",
-    "//third_party/blink/renderer/core:core",
-    "//third_party/blink/renderer/platform:platform",
+    "//third_party/blink/renderer/core",
+    "//third_party/blink/renderer/platform",
     "//ui/gfx:*",
   ]
 
@@ -145,6 +145,9 @@ component("base") {
     "interaction/framework_specific_implementation.h",
     "interaction/interaction_sequence.cc",
     "interaction/interaction_sequence.h",
+    "interaction/typed_data.h",
+    "interaction/typed_data_collection.cc",
+    "interaction/typed_data_collection.h",
     "interaction/typed_identifier.h",
     "l10n/formatter.cc",
     "l10n/formatter.h",
@@ -197,6 +200,8 @@ component("base") {
     "pointer/touch_ui_controller.cc",
     "pointer/touch_ui_controller.h",
     "resource/allowlist.h",
+    "resource/lottie_resource.cc",
+    "resource/lottie_resource.h",
     "resource/resource_bundle.cc",
     "resource/resource_bundle.h",
     "resource/scoped_startup_resource_bundle.cc",
@@ -408,13 +413,6 @@ component("base") {
       ]
     }
 
-    if (is_linux) {
-      sources += [
-        "linux/xdg_shortcut.cc",
-        "linux/xdg_shortcut.h",
-      ]
-    }
-
     if (is_linux || is_chromeos) {
       sources += [
         "accelerators/menu_label_accelerator_util_linux.cc",
@@ -444,7 +442,7 @@ component("base") {
       sources += [ "pointer/pointer_device_win.cc" ]
     } else if (is_android) {
       sources += [ "pointer/pointer_device_android.cc" ]
-    } else if (is_ios) {
+    } else if (is_ios && target_platform == "iphoneos") {
       sources += [ "pointer/pointer_device_ios.cc" ]
     } else if (is_linux || is_chromeos) {
       sources += [ "pointer/pointer_device_linux.cc" ]
@@ -506,7 +504,7 @@ component("base") {
     "//third_party/brotli:dec",
     "//third_party/icu",
     "//third_party/modp_b64",
-    "//third_party/zlib:zlib",
+    "//third_party/zlib",
     "//third_party/zlib/google:compression_utils",
     "//ui/base:data_exchange",
     "//ui/base/clipboard:clipboard_types",
@@ -540,16 +538,18 @@ component("base") {
     deps += [
       ":l10n_util_ios",
       "//base",
+      "//ui/events",
       "//ui/events:dom_keycode_converter",
-      "//ui/events:events",
       "//ui/events:events_base",
     ]
   }
 
   if (use_blink) {
     deps += [
+      "//cc/paint",
       "//ui/events",
       "//ui/events/devices",
+      "//ui/lottie",
     ]
   }
 
@@ -579,14 +579,7 @@ component("base") {
   }
 
   if (use_glib) {
-    configs += [ "//build/config/linux:glib" ]
-    sources += [
-      "glib/glib_cast.h",
-      "glib/glib_integers.h",
-      "glib/scoped_gobject.h",
-      "glib/scoped_gsignal.cc",
-      "glib/scoped_gsignal.h",
-    ]
+    public_deps += [ "//ui/base/glib" ]
   }
 
   if (is_chromeos || (use_aura && is_linux) || is_fuchsia) {
@@ -732,6 +725,10 @@ if (is_win || is_mac || is_linux || is_chromeos) {
     if (!is_fuchsia) {
       data_deps = [ ":goldctl" ]
     }
+
+    # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+    # enable the diagnostic by removing this line.
+    configs += [ "//build/config/compiler:no_exit_time_destructors" ]
   }
 }
 
@@ -917,6 +914,10 @@ static_library("test_support") {
       "//ui/base/ime/ash:typing_session_manager",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_android) {
@@ -992,7 +993,7 @@ source_set("run_all_unittests") {
   deps = [
     "//base",
     "//base/test:test_support",
-    "//mojo/core/embedder:embedder",
+    "//mojo/core/embedder",
     "//skia",
     "//testing/gtest",
     "//ui/base",
@@ -1013,6 +1014,7 @@ test("ui_base_unittests") {
     "interaction/interaction_sequence_unittest.cc",
     "interaction/interaction_test_util_unittest.cc",
     "interaction/interactive_test_unittest.cc",
+    "interaction/typed_data_collection_unittest.cc",
     "l10n/l10n_util_unittest.cc",
     "l10n/time_format_unittest.cc",
     "models/image_model_unittest.cc",
@@ -1067,7 +1069,7 @@ test("ui_base_unittests") {
     "//ui/base/cursor:unittests",
     "//ui/base/data_transfer_policy:unittests",
     "//ui/base/metadata:metadata_tests",
-    "//ui/base/prediction:prediction",
+    "//ui/base/prediction",
     "//ui/color",
     "//ui/display",
     "//ui/gfx:test_support",
@@ -1083,6 +1085,10 @@ test("ui_base_unittests") {
       "//ui/base/accelerators/global_accelerator_listener",
       "//ui/events:events_base",
     ]
+  }
+
+  if (is_win || is_mac || is_linux || is_chromeos || is_android) {
+    deps += [ "//ui/base/unowned_user_data:unit_tests" ]
   }
 
   if (!is_android && !is_ios) {
@@ -1318,10 +1324,7 @@ test("ui_base_unittests") {
 
   if (use_glib) {
     sources += [ "glib/scoped_gsignal_unittest.cc" ]
-  }
-
-  if (is_linux) {
-    sources += [ "linux/xdg_shortcut_unittest.cc" ]
+    deps += [ "//ui/base/glib" ]
   }
 
   if (is_linux && use_dbus) {
@@ -1333,6 +1336,10 @@ test("ui_base_unittests") {
       "//ui/base/accelerators/global_accelerator_listener",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_mac) {
@@ -1383,7 +1390,7 @@ source_set("base_interactive_ui_tests") {
       ":test_support",
       "//base/test:test_support",
       "//testing/gtest",
-      "//ui/events:events",
+      "//ui/events",
     ]
   }
 }

@@ -49,6 +49,8 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
         void browserTarget.targetAgent().invoke_autoAttachRelated(
             {targetId: parentTarget.id() as Protocol.Target.TargetID, waitForDebuggerOnStart: true});
       }
+    } else if (parentTarget.type() === Type.NODE) {
+      void this.#targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: true, flatten: false});
     } else {
       void this.#targetAgent.invoke_setAutoAttach({autoAttach: true, waitForDebuggerOnStart: true, flatten: true});
     }
@@ -185,6 +187,8 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
       type = Type.ServiceWorker;
     } else if (targetInfo.type === 'auction_worklet') {
       type = Type.AUCTION_WORKLET;
+    } else if (targetInfo.type === 'node_worker') {
+      type = Type.NODE_WORKER;
     }
     const target = this.#targetManager.createTarget(
         targetInfo.targetId, targetName, type, this.#parentTarget, sessionId, undefined, undefined, targetInfo);
@@ -219,7 +223,7 @@ export class ChildTargetManager extends SDKModel<EventTypes> implements Protocol
     // We use flatten protocol.
   }
 
-  async createParallelConnection(onMessage: (arg0: (Object|string)) => void):
+  async createParallelConnection(onMessage: (arg0: Object|string) => void):
       Promise<{connection: ProtocolClient.InspectorBackend.Connection, sessionId: string}> {
     // The main Target id is actually just `main`, instead of the real targetId.
     // Get the real id (requires an async operation) so that it can be used synchronously later.

@@ -24,10 +24,10 @@
 #include "components/password_manager/core/browser/password_cross_domain_confirmation_popup_controller.h"
 #include "components/password_manager/core/browser/password_manager.h"
 #include "components/password_manager/core/browser/password_store/password_store_backend_error.h"
+#include "components/password_manager/core/browser/undo_password_change_controller.h"
 #include "components/password_manager/core/browser/webauthn_credentials_delegate.h"
 #include "components/profile_metrics/browser_profile_type.h"
 #include "components/safe_browsing/buildflags.h"
-#include "components/sync/service/sync_service.h"
 #include "net/cert/cert_status_flags.h"
 
 #if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) || \
@@ -69,6 +69,10 @@ namespace signin_metrics {
 enum class AccessPoint;
 }  // namespace signin_metrics
 
+namespace syncer {
+class SyncService;
+}  // namespace syncer
+
 namespace url {
 class Origin;
 }
@@ -101,16 +105,18 @@ class FieldInfoManager;
 #if BUILDFLAG(IS_ANDROID)
 class FirstCctPageLoadPasswordsUkmRecorder;
 #endif  // BUILDFLAG(IS_ANDROID)
+class HttpAuthManager;
+class OtpManager;
 class PasswordChangeServiceInterface;
 class PasswordFeatureManager;
 class PasswordFormManagerForUI;
 class PasswordManagerDriver;
 class PasswordManagerInterface;
 class PasswordManagerMetricsRecorder;
-class HttpAuthManager;
 class PasswordRequirementsService;
 class PasswordReuseManager;
 class PasswordStoreInterface;
+class SmsOtpBackend;
 class WebAuthnCredentialsDelegate;
 struct PasswordForm;
 
@@ -286,7 +292,8 @@ class PasswordManagerClient {
   virtual void UpdateCredentialCache(
       const url::Origin& origin,
       base::span<const PasswordForm> best_matches,
-      bool is_blocklisted);
+      bool is_blocklisted,
+      std::optional<PasswordStoreBackendError> backend_error);
 
   // Called when a password is saved in an automated fashion. Embedder may
   // inform the user that this save has occurred.
@@ -370,6 +377,9 @@ class PasswordManagerClient {
 
   // Returns the HttpAuthManager associated with this client.
   virtual HttpAuthManager* GetHttpAuthManager();
+
+  // Returns the OtpManager associated with this client.
+  virtual OtpManager* GetOtpManager();
 
   // Returns the AutofillCrowdsourcingManager for votes uploading.
   virtual autofill::AutofillCrowdsourcingManager*
@@ -522,6 +532,8 @@ class PasswordManagerClient {
   // Marks all credentials that have been loaded for this page and have been
   // received via the password sharing feature as notified.
   virtual void MarkSharedCredentialsAsNotified(const GURL& url);
+
+  virtual SmsOtpBackend* GetSmsOtpBackend() const;
 #endif  // BUILDFLAG(IS_ANDROID)
 
   // Returns the Chrome channel for the installation.
@@ -537,6 +549,11 @@ class PasswordManagerClient {
   // Shows the bubble with the details of the `form`.
   virtual void OpenPasswordDetailsBubble(
       const password_manager::PasswordForm& form) = 0;
+
+  // Possibly shows a promo priming the user to engage with password saving,
+  // based on the current URL.
+  virtual void MaybeShowSavePasswordPrimingPromo(const GURL& current_url) = 0;
+
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
         // BUILDFLAG(IS_CHROMEOS)
 
@@ -552,6 +569,8 @@ class PasswordManagerClient {
 #endif  // !BUILDFLAG(IS_IOS)
 
   virtual password_manager::LeakDetectionInitiator GetLeakDetectionInitiator();
+
+  virtual UndoPasswordChangeController* GetUndoPasswordChangeController();
 };
 
 }  // namespace password_manager

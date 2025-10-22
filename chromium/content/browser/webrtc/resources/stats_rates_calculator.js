@@ -440,6 +440,13 @@ export class StatsRatesCalculator {
         },
       },
       {
+        type: 'media-playout',
+        metricCalculators: {
+          totalPlayoutDelay: new RateCalculator('totalPlayoutDelay',
+                                                'totalSamplesCount'),
+        },
+      },
+      {
         type: 'outbound-rtp',
         metricCalculators: {
           bytesSent: new RateCalculator(
@@ -545,9 +552,20 @@ export class StatsRatesCalculator {
         },
       },
       {
+        type: 'remote-inbound-rtp',
+        metricCalculators: {
+          totalRoundTripTime:
+              new RateCalculator('totalRoundTripTime',
+                                 'roundTripTimeMeasurements'),
+        },
+      },
+      {
         type: 'remote-outbound-rtp',
         metricCalculators: {
           remoteTimestamp: new DateCalculator('remoteTimestamp'),
+          totalRoundTripTime:
+              new RateCalculator('totalRoundTripTime',
+                                 'roundTripTimeMeasurements'),
         },
       },
       {

@@ -961,6 +961,34 @@ TEST(BrowserControlsOffsetManagerTest, ControlsStayAtMinHeightOnHeightChange) {
   EXPECT_FLOAT_EQ(20.f, manager->ContentTopOffset());
 }
 
+TEST(BrowserControlsOffsetManagerTest,
+     ControlsStayAtFullHeightWhenPreviousMinHeightEqualledFullHeight) {
+  MockBrowserControlsOffsetManagerClient client(20.f, 0.5f, 0.5f);
+  BrowserControlsOffsetManager* manager = client.manager();
+
+  // Set the min-height to 20.
+  client.SetBrowserControlsParams({20, 20, 0, 0, false, false});
+
+  // Change the height to 120.
+  client.SetBrowserControlsParams({120, 20, 0, 0, false, false});
+  EXPECT_FALSE(manager->HasAnimation());
+  EXPECT_FLOAT_EQ(120.f, manager->TopControlsHeight());
+  EXPECT_FLOAT_EQ(20.f, manager->TopControlsMinHeight());
+  // Top controls should stay at the same visible height.
+  EXPECT_FLOAT_EQ(0.f, manager->ControlsTopOffset());
+  EXPECT_FLOAT_EQ(120.f, manager->ContentTopOffset());
+
+  // Repeat the above for bottom controls.
+  client.SetBrowserControlsParams({0, 0, 20, 20, false, false});
+  client.SetBrowserControlsParams({0, 0, 100, 0, false, false});
+
+  EXPECT_FALSE(manager->HasAnimation());
+  EXPECT_FLOAT_EQ(100.f, manager->BottomControlsHeight());
+  EXPECT_FLOAT_EQ(0.f, manager->TopControlsMinHeight());
+  // Bottom controls should stay at the same visible height.
+  EXPECT_FLOAT_EQ(100.f, manager->ContentBottomOffset());
+}
+
 TEST(BrowserControlsOffsetManagerTest, ControlsAdjustToNewHeight) {
   MockBrowserControlsOffsetManagerClient client(100.f, 0.5f, 0.5f);
   BrowserControlsOffsetManager* manager = client.manager();

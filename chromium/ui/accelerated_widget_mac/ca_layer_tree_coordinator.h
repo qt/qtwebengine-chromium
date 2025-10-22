@@ -16,6 +16,7 @@
 
 @class CAContext;
 @class CALayer;
+@protocol MTLDevice;
 
 namespace ui {
 using BufferPresentedCallback =
@@ -63,12 +64,13 @@ struct PresentedFrame {
 class ACCELERATED_WIDGET_MAC_EXPORT CALayerTreeCoordinator {
  public:
   CALayerTreeCoordinator(bool allow_av_sample_buffer_display_layer,
-                         BufferPresentedCallback buffer_preseneted_callback);
+                         BufferPresentedCallback buffer_presented_callback,
+                         id<MTLDevice> metal_device);
 
   CALayerTreeCoordinator(const CALayerTreeCoordinator&) = delete;
   CALayerTreeCoordinator& operator=(const CALayerTreeCoordinator&) = delete;
 
-  ~CALayerTreeCoordinator();
+  virtual ~CALayerTreeCoordinator();
 
   // Set the composited frame's size.
   void Resize(const gfx::Size& pixel_size, float scale_factor);
@@ -80,20 +82,21 @@ class ACCELERATED_WIDGET_MAC_EXPORT CALayerTreeCoordinator {
   // the CALayer tree for the CoreAnimation renderer.
   CARendererLayerTree* GetPendingCARendererLayerTree();
 
-  void Present(gl::Presenter::SwapCompletionCallback completion_callback,
-               gl::Presenter::PresentationCallback presentation_callback);
+  virtual void Present(
+      gl::Presenter::SwapCompletionCallback completion_callback,
+      gl::Presenter::PresentationCallback presentation_callback);
 
   //  Do a GL fence for flush to apply back-pressure on the committed frame.
   void ApplyBackpressure();
 
   // Commit the presented frame's OpenGL backbuffer or CALayer tree to be
   // attached to the root CALayer.
-  void CommitPresentedFrameToCA(base::TimeDelta frame_interval,
-                                base::TimeTicks display_time);
+  virtual void CommitPresentedFrameToCA(base::TimeDelta frame_interval,
+                                        base::TimeTicks display_time);
 
   void SetMaxCALayerTrees(int cap_max_ca_layer_trees);
 
-  int NumPendingSwaps();
+  virtual int NumPendingSwaps() const;
 
   CALayer* root_ca_layer() { return root_ca_layer_; }
 
@@ -117,6 +120,10 @@ class ACCELERATED_WIDGET_MAC_EXPORT CALayerTreeCoordinator {
   CALayer* __strong root_ca_layer_;
 
   BufferPresentedCallback buffer_presented_callback_;
+
+  // This is needed to ensure synchronization between the display compositor and
+  // the HDRCopierLayer. See https://crbug.com/1372898
+  id<MTLDevice> __strong metal_device_;
 
   // The frame that is currently under construction. It has had planes
   // scheduled, but has not had Present() called yet. When Present() is called,

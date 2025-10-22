@@ -112,8 +112,7 @@ std::optional<syncer::ModelError> ParseDeskTemplatesOnBackendSequence(
       if (!uuid.is_valid()) {
         return syncer::ModelError(
             FROM_HERE,
-            base::StringPrintf("Failed to parse WorkspaceDeskSpecifics uuid %s",
-                               specifics->uuid().c_str()));
+            syncer::ModelError::Type::kWorkspaceDeskFailedToParseUuid);
       }
 
       std::unique_ptr<ash::DeskTemplate> entry =
@@ -124,7 +123,8 @@ std::optional<syncer::ModelError> ParseDeskTemplatesOnBackendSequence(
       (*desk_templates)[uuid] = std::move(entry);
     } else {
       return syncer::ModelError(
-          FROM_HERE, "Failed to deserialize WorkspaceDeskSpecifics.");
+          FROM_HERE,
+          syncer::ModelError::Type::kWorkspaceDeskFailedToDeserializeSpecifics);
     }
   }
 
@@ -265,12 +265,12 @@ std::unique_ptr<syncer::DataBatch> DeskSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string DeskSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return GetStorageKey(entity_data);
 }
 
 std::string DeskSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return entity_data.specifics.workspace_desk().uuid();
 }
 

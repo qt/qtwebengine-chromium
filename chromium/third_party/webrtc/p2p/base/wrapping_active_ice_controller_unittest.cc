@@ -31,18 +31,18 @@
 
 namespace {
 
-using ::cricket::Connection;
-using ::cricket::IceControllerInterface;
-using ::cricket::IceMode;
-using ::cricket::IceRecheckEvent;
-using ::cricket::IceSwitchReason;
-using ::cricket::WrappingActiveIceController;
+using ::webrtc::Connection;
 using ::webrtc::IceConfig;
 using ::webrtc::IceControllerFactoryArgs;
+using ::webrtc::IceControllerInterface;
+using ::webrtc::IceMode;
+using ::webrtc::IceRecheckEvent;
+using ::webrtc::IceSwitchReason;
 using ::webrtc::MockIceAgent;
 using ::webrtc::MockIceController;
 using ::webrtc::MockIceControllerFactory;
 using ::webrtc::NominationMode;
+using ::webrtc::WrappingActiveIceController;
 
 using ::testing::_;
 using ::testing::ElementsAreArray;
@@ -59,17 +59,15 @@ using ::webrtc::TimeDelta;
 
 using NiceMockIceController = NiceMock<MockIceController>;
 
-static const Connection* kConnection =
-    reinterpret_cast<const Connection*>(0xabcd);
-static const Connection* kConnectionTwo =
-    reinterpret_cast<const Connection*>(0xbcde);
-static const Connection* kConnectionThree =
+const Connection* kConnection = reinterpret_cast<const Connection*>(0xabcd);
+const Connection* kConnectionTwo = reinterpret_cast<const Connection*>(0xbcde);
+const Connection* kConnectionThree =
     reinterpret_cast<const Connection*>(0xcdef);
 
-static const std::vector<const Connection*> kEmptyConnsList =
+const std::vector<const Connection*> kEmptyConnsList =
     std::vector<const Connection*>();
 
-static const TimeDelta kTick = TimeDelta::Millis(1);
+constexpr TimeDelta kTick = TimeDelta::Millis(1);
 
 TEST(WrappingActiveIceControllerTest, CreateLegacyIceControllerFromFactory) {
   AutoThread main;
@@ -95,10 +93,10 @@ TEST(WrappingActiveIceControllerTest, PassthroughIceControllerInterface) {
 
   EXPECT_CALL(*wrapped,
               GetUseCandidateAttr(kConnection, NominationMode::AGGRESSIVE,
-                                  IceMode::ICEMODE_LITE))
+                                  webrtc::ICEMODE_LITE))
       .WillOnce(Return(true));
   EXPECT_TRUE(controller.GetUseCandidateAttribute(
-      kConnection, NominationMode::AGGRESSIVE, IceMode::ICEMODE_LITE));
+      kConnection, NominationMode::AGGRESSIVE, webrtc::ICEMODE_LITE));
 
   EXPECT_CALL(*wrapped, AddConnection(kConnection));
   controller.OnConnectionAdded(kConnection);

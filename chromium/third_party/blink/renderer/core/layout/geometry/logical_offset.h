@@ -8,13 +8,9 @@
 #include <tuple>
 
 #include "third_party/blink/renderer/core/core_export.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/geometry/layout_unit.h"
+#include "third_party/blink/renderer/platform/geometry/physical_offset.h"
 #include "third_party/blink/renderer/platform/text/writing_direction_mode.h"
-
-namespace WTF {
-class String;
-}  // namespace WTF
 
 namespace blink {
 
@@ -53,13 +49,7 @@ struct CORE_EXPORT LogicalOffset {
                                    PhysicalSize outer_size,
                                    PhysicalSize inner_size) const;
 
-  constexpr bool operator==(const LogicalOffset& other) const {
-    return std::tie(other.inline_offset, other.block_offset) ==
-           std::tie(inline_offset, block_offset);
-  }
-  constexpr bool operator!=(const LogicalOffset& other) const {
-    return !operator==(other);
-  }
+  constexpr bool operator==(const LogicalOffset& other) const = default;
 
   LogicalOffset operator+(const LogicalOffset& other) const {
     return {inline_offset + other.inline_offset,

@@ -30,8 +30,8 @@ class MotionMark10ProbeContext(MotionMark1ProbeContext):
 
 class MotionMark10Story(MotionMark1Story):
   NAME = "motionmark_1.0"
-  URL: str = "https://chromium-workloads.web.app/motionmark/v1.0/MotionMark/"
-  URL_OFFICIAL: str = "https://browserbench.org/MotionMark1.0/"
+  URL: str = "https://chromium-workloads.web.app/motionmark/v1.0/MotionMark"
+  URL_OFFICIAL: str = "https://browserbench.org/MotionMark1.0"
 
 
 class MotionMark10Benchmark(MotionMark1Benchmark):

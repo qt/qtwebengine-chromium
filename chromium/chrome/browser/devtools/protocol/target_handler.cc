@@ -15,6 +15,7 @@
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/browser_window/public/browser_window_features.h"
 #include "chrome/browser/ui/exclusive_access/exclusive_access_manager.h"
 #include "chrome/browser/ui/exclusive_access/fullscreen_controller.h"
 #include "chrome/common/webui_url_constants.h"
@@ -92,7 +93,12 @@ protocol::Response TargetHandler::CreateTarget(
     std::optional<bool> new_window,
     std::optional<bool> background,
     std::optional<bool> for_tab,
+    std::optional<bool> hidden,
     std::string* out_target_id) {
+  if (hidden.value_or(false)) {
+    // Rely on web contents implementation.
+    return protocol::Response::FallThrough();
+  }
   Profile* profile = nullptr;
   if (browser_context_id.has_value()) {
     std::string profile_id = browser_context_id.value();
@@ -209,7 +215,8 @@ protocol::Response TargetHandler::CreateTarget(
     } else if (*window_state == protocol::Target::WindowStateEnum::Maximized) {
       params.browser->window()->Maximize();
     } else if (*window_state == protocol::Target::WindowStateEnum::Fullscreen) {
-      params.browser->exclusive_access_manager()
+      params.browser->GetFeatures()
+          .exclusive_access_manager()
           ->fullscreen_controller()
           ->ToggleBrowserFullscreenMode(/*user_initiated=*/false);
     } else {

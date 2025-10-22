@@ -11,9 +11,9 @@
   // substituted using the corresponding entry in "args". Parameters can be any
   // type - including complex types like lists or dicts.
   //
-  // To escape parameter substitution, use the escape sequence "$[[ ]".
-  // For example: "$[[ don't substitute ]" will result in
-  // "$[ don't substitute ]" in the final config.
+  // To escape parameter substitution, use the escape sequence "$[[ARG]".
+  // For example: "$[[DONT_SUBSTITUTE]" will result in
+  // "$[DONT_SUBSTITUTE]" in the final config.
 
   "args": {
     "GOOGLE_URL": "https://www.google.com",

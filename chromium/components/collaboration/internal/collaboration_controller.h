@@ -5,15 +5,19 @@
 #ifndef COMPONENTS_COLLABORATION_INTERNAL_COLLABORATION_CONTROLLER_H_
 #define COMPONENTS_COLLABORATION_INTERNAL_COLLABORATION_CONTROLLER_H_
 
+#include <array>
 #include <map>
 #include <memory>
 
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "components/collaboration/public/collaboration_controller_delegate.h"
 #include "components/collaboration/public/collaboration_flow_type.h"
+#include "components/collaboration/public/collaboration_service.h"
 #include "components/data_sharing/public/data_sharing_service.h"
 #include "components/data_sharing/public/group_data.h"
+#include "components/saved_tab_groups/public/tab_group_sync_service.h"
 #include "components/saved_tab_groups/public/types.h"
 #include "components/signin/public/identity_manager/identity_manager.h"
 
@@ -21,17 +25,14 @@ namespace syncer {
 class SyncService;
 }  // namespace syncer
 
-namespace tab_groups {
-class TabGroupSyncService;
-}  // namespace tab_groups
-
 namespace collaboration {
 
-class CollaborationService;
 class ControllerState;
 
 // The class for managing a single collaboration group flow.
-class CollaborationController {
+class CollaborationController
+    : public tab_groups::TabGroupSyncService::Observer,
+      public CollaborationService::Observer {
  public:
   // States of a collaboration group flow. All new flows starts PENDNG.
   enum class StateId {
@@ -76,6 +77,12 @@ class CollaborationController {
     // Delegate is showing the manage people screen.
     kShowingManageScreen,
 
+    // Delegate is showing the leave group screen.
+    kLeavingGroup,
+
+    // Delegate is showing the delete group screen.
+    kDeletingGroup,
+
     // A shared tab group has been deleted, cleaning up.
     kCleaningUpSharedTabGroup,
 
@@ -91,7 +98,7 @@ class CollaborationController {
     // Join flow constructor.
     Flow(FlowType type, const data_sharing::GroupToken& token);
 
-    // Share flow constructor.
+    // Share/manage/leave/delete flow constructor.
     Flow(FlowType type, const tab_groups::EitherGroupID& either_id);
 
     ~Flow();
@@ -106,7 +113,6 @@ class CollaborationController {
     }
 
     const tab_groups::EitherGroupID& either_id() const {
-      DCHECK_EQ(type, FlowType::kShareOrManage);
       return either_id_;
     }
 
@@ -124,12 +130,12 @@ class CollaborationController {
     // ID for join flow.
     const data_sharing::GroupToken join_token_;
 
-    // ID for share flow.
+    // ID for share/manage/leave/delete flow.
     const tab_groups::EitherGroupID either_id_;
     data_sharing::GroupToken share_token_;
   };
 
-  using FinishCallback = base::OnceCallback<void()>;
+  using FinishCallback = base::OnceCallback<void(const void*)>;
 
   explicit CollaborationController(
       const Flow& flow,
@@ -140,7 +146,7 @@ class CollaborationController {
       signin::IdentityManager* identity_manager,
       std::unique_ptr<CollaborationControllerDelegate> delegate,
       FinishCallback finish_and_delete);
-  ~CollaborationController();
+  ~CollaborationController() override;
 
   // Disallow copy/assign.
   CollaborationController(const CollaborationController&) = delete;
@@ -164,11 +170,9 @@ class CollaborationController {
   Flow& flow() { return flow_; }
 
   // Called to transition to another state.
-  void TransitionTo(
-      StateId state,
-      const CollaborationControllerDelegate::ErrorInfo& error =
-          CollaborationControllerDelegate::ErrorInfo(
-              CollaborationControllerDelegate::ErrorInfo::Type::kUnknown));
+  void TransitionTo(StateId state,
+                    const CollaborationControllerDelegate::ErrorInfo& error =
+                        CollaborationControllerDelegate::ErrorInfo());
 
   // Called to refocus the current flow.
   void PromoteCurrentSession();
@@ -184,9 +188,41 @@ class CollaborationController {
   void SetStateForTesting(StateId state);
   StateId GetStateForTesting();
 
+  // TabGroupSyncService::Observer implementation.
+  void OnTabGroupRemoved(const tab_groups::LocalTabGroupID& local_id,
+                         tab_groups::TriggerSource source) override;
+  void OnTabGroupRemoved(const base::Uuid& sync_id,
+                         tab_groups::TriggerSource source) override;
+  void OnTabGroupMigrated(const tab_groups::SavedTabGroup& new_group,
+                          const base::Uuid& old_sync_id,
+                          tab_groups::TriggerSource source) override;
+
+  // CollaborationService::Observer implementation.
+  void OnServiceStatusChanged(
+      const CollaborationService::Observer::ServiceStatusUpdate& update)
+      override;
+
  private:
-  static constexpr std::array<std::pair<StateId, StateId>, 35>
+  static constexpr std::array<std::pair<StateId, StateId>, 53>
       kValidTransitions = {{
+          // Note: All state transition to kCancel when exiting.
+          {StateId::kPending, StateId::kCancel},
+          {StateId::kWaitingForPolicyUpdate, StateId::kCancel},
+          {StateId::kAuthenticating, StateId::kCancel},
+          {StateId::kWaitingForServicesToInitialize, StateId::kCancel},
+          {StateId::kCheckingFlowRequirements, StateId::kCancel},
+          {StateId::kAddingUserToGroup, StateId::kCancel},
+          {StateId::kWaitingForSyncAndDataSharingGroup, StateId::kCancel},
+          {StateId::kOpeningLocalTabGroup, StateId::kCancel},
+          {StateId::kShowingShareScreen, StateId::kCancel},
+          {StateId::kMakingTabGroupShared, StateId::kCancel},
+          {StateId::kSharingTabGroupUrl, StateId::kCancel},
+          {StateId::kShowingManageScreen, StateId::kCancel},
+          {StateId::kLeavingGroup, StateId::kCancel},
+          {StateId::kDeletingGroup, StateId::kCancel},
+          {StateId::kCleaningUpSharedTabGroup, StateId::kCancel},
+          {StateId::kError, StateId::kCancel},
+          //
           // kPending transitions to:
           //
           //   kAuthenticating: After all initialization steps complete
@@ -216,11 +252,9 @@ class CollaborationController {
           //   kWaitingForPolicyUpdate: Current account info are not ready.
           //   kCheckingFlowRequirements: After all authentication steps are
           //   completed and verified.
-          //   kCancel: After the user cancels the process.
           //   kError: An error occurred during authentication.
           {StateId::kAuthenticating, StateId::kWaitingForPolicyUpdate},
           {StateId::kAuthenticating, StateId::kWaitingForServicesToInitialize},
-          {StateId::kAuthenticating, StateId::kCancel},
           {StateId::kAuthenticating, StateId::kError},
 
           // kWaitingForServicesToInitialize transition to:
@@ -253,6 +287,8 @@ class CollaborationController {
           {StateId::kCheckingFlowRequirements, StateId::kOpeningLocalTabGroup},
           {StateId::kCheckingFlowRequirements, StateId::kShowingShareScreen},
           {StateId::kCheckingFlowRequirements, StateId::kShowingManageScreen},
+          {StateId::kCheckingFlowRequirements, StateId::kLeavingGroup},
+          {StateId::kCheckingFlowRequirements, StateId::kDeletingGroup},
           {StateId::kCheckingFlowRequirements, StateId::kError},
 
           // kAddingUserToGroup transition to:
@@ -262,12 +298,10 @@ class CollaborationController {
           //   invitation and the tab group is not yet added in sync.
           //   kOpeningLocalTabGroup: After the user accept the join invitation
           //   and the tab group is in sync.
-          //   kCancel: After the user cancels the join invitation
           //   kError: An error occurred during invitation screen.
           {StateId::kAddingUserToGroup,
            StateId::kWaitingForSyncAndDataSharingGroup},
           {StateId::kAddingUserToGroup, StateId::kOpeningLocalTabGroup},
-          {StateId::kAddingUserToGroup, StateId::kCancel},
           {StateId::kAddingUserToGroup, StateId::kError},
 
           // kWaitingForSyncAndDataSharingGroup transition to:
@@ -280,20 +314,15 @@ class CollaborationController {
 
           // kOpeningLocalTabGroup transition to:
           //
-          //   kCancel: After the promote is done successfully, cancel the flow
-          //   to clean up.
           //   kError: An error occurred while opening local tab group.
-          {StateId::kOpeningLocalTabGroup, StateId::kCancel},
           {StateId::kOpeningLocalTabGroup, StateId::kError},
 
           // kShowingShareScreen transition to:
           //
           //   kSharingTabGroupUrl: After share screen request creating a shared
           //   tab group.
-          //   kCancel: After the user exit the share screen without sharing.
           //   kError: An error occurred while showing the share screen.
           {StateId::kShowingShareScreen, StateId::kMakingTabGroupShared},
-          {StateId::kShowingShareScreen, StateId::kCancel},
           {StateId::kShowingShareScreen, StateId::kError},
 
           // kMakingTabGroupShared transition to:
@@ -316,10 +345,32 @@ class CollaborationController {
           //   kError: An error occurred while showing the manage people screen.
           {StateId::kShowingManageScreen, StateId::kCleaningUpSharedTabGroup},
           {StateId::kShowingManageScreen, StateId::kError},
+
+          // kShowingManageScreen transition to:
+          //
+          //   kCleaningUpSharedTabGroup: After leaving group successfully.
+          //   kError: An error occurred while leaving group.
+          {StateId::kLeavingGroup, StateId::kCleaningUpSharedTabGroup},
+          {StateId::kLeavingGroup, StateId::kError},
+
+          // kDeletingGroup transition to:
+          //
+          //   kCleaningUpSharedTabGroup: When deletion has been completed.
+          //   kError: An error occurred while deleting group.
+          {StateId::kDeletingGroup, StateId::kCleaningUpSharedTabGroup},
+          {StateId::kDeletingGroup, StateId::kError},
       }};
 
+  // Note: This would only cancel the flow if the flow was started with the same
+  // variant of the EitherGroupID. The caller must call this method using both
+  // sync ID and local ID to be sure that the flow for the tab group is
+  // cancelled.
+  void CancelShareOrManageFlow(const tab_groups::EitherGroupID& either_id);
   bool IsValidStateTransition(StateId from, StateId to);
   std::unique_ptr<ControllerState> CreateStateObject(StateId state);
+  void Start();
+
+  THREAD_CHECKER(thread_checker_);
 
   std::unique_ptr<ControllerState> current_state_;
 
@@ -332,6 +383,11 @@ class CollaborationController {
   const raw_ptr<signin::IdentityManager> identity_manager_;
   std::unique_ptr<CollaborationControllerDelegate> delegate_;
   FinishCallback finish_and_delete_;
+  base::ScopedObservation<tab_groups::TabGroupSyncService,
+                          tab_groups::TabGroupSyncService::Observer>
+      tab_group_sync_service_observer_{this};
+  base::ScopedObservation<CollaborationService, CollaborationService::Observer>
+      collaboration_service_observer_{this};
   base::WeakPtrFactory<CollaborationController> weak_ptr_factory_{this};
 };
 

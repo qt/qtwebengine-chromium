@@ -44,16 +44,9 @@ class CONTENT_EXPORT GestureListenerManager
 
   ~GestureListenerManager() override;
 
-  void ResetGestureDetection(JNIEnv* env,
-                             const base::android::JavaParamRef<jobject>& obj);
-  void SetDoubleTapSupportEnabled(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
-      jboolean enabled);
-  void SetMultiTouchZoomSupportEnabled(
-      JNIEnv* env,
-      const base::android::JavaParamRef<jobject>& obj,
-      jboolean enabled);
+  void ResetGestureDetection(JNIEnv* env);
+  void SetDoubleTapSupportEnabled(JNIEnv* env, jboolean enabled);
+  void SetMultiTouchZoomSupportEnabled(JNIEnv* env, jboolean enabled);
   cc::mojom::RootScrollOffsetUpdateFrequency
   root_scroll_offset_update_frequency() const {
     return root_scroll_offset_update_frequency_.value_or(
@@ -113,7 +106,6 @@ class CONTENT_EXPORT GestureListenerManager
   std::unique_ptr<ResetScrollObserver> reset_scroll_observer_;
   raw_ptr<WebContentsImpl> web_contents_;
   raw_ptr<RenderWidgetHostViewAndroid> rwhva_ = nullptr;
-  int active_pointers_ = 0;
   bool is_in_a_fling_ = false;
 
   // A weak reference to the Java GestureListenerManager object.

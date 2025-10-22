@@ -203,7 +203,7 @@ class HTMLAutofillContainedFormsTest : public HTMLFormElementTest {};
 
 TEST_F(HTMLAutofillContainedFormsTest, ListedElementsAfterIncludeShadowTrees) {
   HTMLBodyElement* body = GetDocument().FirstBodyElement();
-  body->setHTMLUnsafe(R"HTML(
+  body->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <form id=form1>
       <input id=input1>
       <div id=div1>
@@ -230,7 +230,7 @@ TEST_F(HTMLAutofillContainedFormsTest, ListedElementsAfterIncludeShadowTrees) {
 TEST_F(HTMLAutofillContainedFormsTest,
        ListedElementsAfterIncludeShadowTreesWithDynamicChange) {
   HTMLBodyElement* body = GetDocument().FirstBodyElement();
-  body->setHTMLUnsafe(R"HTML(
+  body->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <form id=form1>
       <input id=input1>
       <!--
@@ -279,7 +279,7 @@ TEST_F(HTMLAutofillContainedFormsTest,
 // form element.
 TEST_F(HTMLAutofillContainedFormsTest, ListedElementsIncludesOnlyDescendants) {
   HTMLBodyElement* body = GetDocument().FirstBodyElement();
-  body->setHTMLUnsafe(R"HTML(
+  body->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <form id=form1>
       <div id=div1>
         <template shadowrootmode=open>
@@ -302,10 +302,10 @@ TEST_F(HTMLAutofillContainedFormsTest, ListedElementsIncludesOnlyDescendants) {
 }
 
 // Tests that form control elements inside nested forms are extracted and
-// included in `ListedElements` if `include_shadow_trees` is true.
+// included in `ListedElements` if `collect_for_autofill` is true.
 TEST_F(HTMLAutofillContainedFormsTest, ListedElementsInNestedForms) {
   HTMLBodyElement* body = GetDocument().FirstBodyElement();
-  body->setHTMLUnsafe(R"HTML(
+  body->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <form id=f1>
       <div id=shadowhost>
         <template shadowrootmode=open>
@@ -335,7 +335,7 @@ TEST_F(HTMLAutofillContainedFormsTest, ListedElementsInNestedForms) {
 // properly invalidates the caches of all ancestors.
 TEST_F(HTMLAutofillContainedFormsTest, ListedElementsInDeepNestedForms) {
   HTMLBodyElement* body = GetDocument().FirstBodyElement();
-  body->setHTMLUnsafe(R"HTML(
+  body->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <form id=f1>
       <div id=shadowhost1>
         <template shadowrootmode=open>
@@ -435,7 +435,7 @@ TEST_F(HTMLAutofillContainedFormsTest,
 // shadow DOM whose shadow hosts are descendants of `f`.
 TEST_F(HTMLAutofillContainedFormsTest, ShadowDomTreesMustBeDescendantsOfForm) {
   HTMLBodyElement* body = GetDocument().FirstBodyElement();
-  body->setHTMLUnsafe(R"HTML(
+  body->SetHTMLUnsafeWithoutTrustedTypes(R"HTML(
     <form id=f1>
       <input id=i1>
     </form>
@@ -477,7 +477,7 @@ TEST_F(HTMLAutofillContainedFormsTest, FormInsertionsInvalidateFormCaches) {
   f3->AppendChild(t);
   f2->AppendChild(f3);
 
-  // Input fields in child forms are included iff `include_shadow_trees` is
+  // Input fields in child forms are included iff `collect_for_autofill` is
   // true.
   EXPECT_THAT(f1->ListedElements(), IsEmpty());
   EXPECT_THAT(f1->AllContainedFormElementsForAutofill(), ElementsAre(t));
@@ -500,7 +500,7 @@ TEST_F(HTMLAutofillContainedFormsTest, FormRemovalsInvalidateFormCaches) {
   f2->AppendChild(f3);
   f3->AppendChild(t);
 
-  // Input fields in child forms are included iff `include_shadow_trees` is
+  // Input fields in child forms are included iff `collect_for_autofill` is
   // true.
   EXPECT_THAT(f1->ListedElements(), IsEmpty());
   EXPECT_THAT(f1->AllContainedFormElementsForAutofill(), ElementsAre(t));
@@ -517,7 +517,7 @@ TEST_F(HTMLAutofillContainedFormsTest, FormRemovalsInvalidateFormCaches) {
   EXPECT_THAT(f2->AllContainedFormElementsForAutofill(), IsEmpty());
 }
 
-// Tests that `include_shadow_trees=true` also includes form control elements
+// Tests that `collect_for_autofill=true` also includes form control elements
 // that are associated via form-attribute with forms nested inside the form
 // whose listed elements we are examining.
 TEST_F(HTMLAutofillContainedFormsTest, ElementsAssociateWithNestedForms) {
@@ -546,7 +546,7 @@ class HTMLFormElementSimTest : public SimTest {
   }
 };
 
-// Tests that `include_shadow_trees=true` also includes form control elements
+// Tests that `collect_for_autofill=true` also includes form control elements
 // that are associated by the HTML parser.
 // Regression test for crbug.com/347059988#comment40.
 TEST_F(HTMLFormElementSimTest, NestedFormsAssociatedByParserMalformedHtml) {

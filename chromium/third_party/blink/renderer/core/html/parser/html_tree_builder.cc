@@ -37,6 +37,8 @@
 #include "third_party/blink/renderer/core/frame/web_feature.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_opt_group_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_option_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_select_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
 #include "third_party/blink/renderer/core/html/html_template_element.h"
@@ -62,6 +64,7 @@
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_names.h"
 #include "third_party/blink/renderer/platform/wtf/text/character_visitor.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_buffer.h"
 
 namespace blink {
@@ -205,7 +208,7 @@ class HTMLTreeBuilder::CharacterTokenBuffer {
   }
 
   void GiveRemainingTo(StringBuilder& recipient) {
-    WTF::VisitCharacters(characters_, [&](auto chars) {
+    VisitCharacters(characters_, [&](auto chars) {
       recipient.Append(chars.subspan(current_, end_ - current_));
     });
     current_ = end_;
@@ -285,12 +288,12 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
                                  ParserContentPolicy parser_content_policy,
                                  const HTMLParserOptions& options,
                                  bool include_shadow_roots,
-                                 DocumentFragment* for_fragment,
+                                 ContainerNode* fragment_target,
                                  Element* fragment_context_element)
     : tree_(parser->ReentryPermit(),
             document,
             parser_content_policy,
-            for_fragment,
+            fragment_target,
             fragment_context_element),
       insertion_mode_(kInitialMode),
       original_insertion_mode_(kInitialMode),
@@ -313,27 +316,27 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
                       nullptr,
                       nullptr) {}
 HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
-                                 DocumentFragment* fragment,
+                                 ContainerNode* fragment_target,
                                  Element* context_element,
                                  ParserContentPolicy parser_content_policy,
                                  const HTMLParserOptions& options,
                                  bool include_shadow_roots)
     : HTMLTreeBuilder(parser,
-                      fragment->GetDocument(),
+                      fragment_target->GetDocument(),
                       parser_content_policy,
                       options,
                       include_shadow_roots,
-                      fragment,
+                      fragment_target,
                       context_element) {
   DCHECK(IsMainThread());
-  fragment_context_.Init(fragment, context_element);
+  fragment_context_.Init(fragment_target, context_element);
 
   // Steps 4.2-4.6 of the HTML5 Fragment Case parsing algorithm:
   // http://www.whatwg.org/specs/web-apps/current-work/multipage/the-end.html#fragment-case
   // For efficiency, we skip step 4.2 ("Let root be a new html element with no
   // attributes") and instead use the DocumentFragment as a root node.
   tree_.OpenElements()->PushRootNode(MakeGarbageCollected<HTMLStackItem>(
-      fragment, HTMLStackItem::kItemForDocumentFragmentNode));
+      fragment_target, HTMLStackItem::kItemForDocumentFragmentNode));
 
   if (IsA<HTMLTemplateElement>(*context_element))
     template_insertion_modes_.push_back(kTemplateContentsMode);
@@ -343,17 +346,21 @@ HTMLTreeBuilder::HTMLTreeBuilder(HTMLDocumentParser* parser,
 
 HTMLTreeBuilder::~HTMLTreeBuilder() = default;
 
-void HTMLTreeBuilder::FragmentParsingContext::Init(DocumentFragment* fragment,
-                                                   Element* context_element) {
-  DCHECK(fragment);
-  DCHECK(!fragment->HasChildren());
-  fragment_ = fragment;
+void HTMLTreeBuilder::FragmentParsingContext::Init(
+    ContainerNode* fragment_target,
+    Element* context_element) {
+  DCHECK(fragment_target);
+  DCHECK((fragment_target == context_element &&
+          RuntimeEnabledFeatures::DocumentPatchingEnabled()) ||
+         (fragment_target->IsDocumentFragment() &&
+          !fragment_target->HasChildren()));
+  fragment_target_ = fragment_target;
   context_element_stack_item_ = MakeGarbageCollected<HTMLStackItem>(
       context_element, HTMLStackItem::kItemForContextElement);
 }
 
 void HTMLTreeBuilder::FragmentParsingContext::Trace(Visitor* visitor) const {
-  visitor->Trace(fragment_);
+  visitor->Trace(fragment_target_);
   visitor->Trace(context_element_stack_item_);
 }
 
@@ -611,7 +618,8 @@ void AddNamesWithPrefix(PrefixedNameToQualifiedNameMap* map,
   for (size_t i = 0; i < names.size(); ++i) {
     const QualifiedName& name = *names[i];
     const AtomicString& local_name = name.LocalName();
-    AtomicString prefix_colon_local_name = prefix + ':' + local_name;
+    AtomicString prefix_colon_local_name =
+        AtomicString(StrCat({prefix, ":", local_name}));
     QualifiedName name_with_prefix(prefix, local_name, name.NamespaceURI());
     map->insert(prefix_colon_local_name, name_with_prefix);
   }
@@ -628,7 +636,7 @@ void AdjustForeignAttributes(AtomicHTMLToken* token) {
     base::HeapArray<const QualifiedName*> xml_attrs = xml_names::GetAttrs();
     AddNamesWithPrefix(map, g_xml_atom, xml_attrs);
 
-    map->insert(WTF::g_xmlns_atom, xmlns_names::kXmlnsAttr);
+    map->insert(g_xmlns_atom, xmlns_names::kXmlnsAttr);
     map->insert(
         AtomicString("xmlns:xlink"),
         QualifiedName(g_xmlns_atom, g_xlink_atom, xmlns_names::kNamespaceURI));
@@ -734,11 +742,34 @@ void HTMLTreeBuilder::ProcessStartTagForInBody(AtomicHTMLToken* token) {
       ProcessCloseWhenNestedTag<IsLi>(token);
       break;
     case HTMLTag::kInput: {
-      if (RuntimeEnabledFeatures::InputClosesSelectEnabled() &&
-          HTMLSelectElement::SelectParserRelaxationEnabled(
+      if (HTMLSelectElement::SelectParserRelaxationEnabled(
               tree_.CurrentNode())) {
         if (tree_.OpenElements()->InScope(HTMLTag::kSelect)) {
-          ProcessFakeEndTag(HTMLTag::kSelect);
+          bool parent_select = IsA<HTMLSelectElement>(tree_.CurrentNode());
+          bool parent_option_optgroup =
+              IsA<HTMLOptionElement>(tree_.CurrentNode()) ||
+              IsA<HTMLOptGroupElement>(tree_.CurrentNode());
+
+          if (parent_select) {
+            UseCounter::Count(tree_.CurrentNode()->GetDocument(),
+                              WebFeature::kInputParsedParentSelect);
+          } else if (parent_option_optgroup) {
+            UseCounter::Count(tree_.CurrentNode()->GetDocument(),
+                              WebFeature::kInputParsedParentOptionOrOptgroup);
+          }
+
+          if (parent_select || parent_option_optgroup) {
+            if (RuntimeEnabledFeatures::InputInSelectEnabled()) {
+              ProcessFakeEndTag(HTMLTag::kSelect);
+            }
+          } else {
+            UseCounter::Count(tree_.CurrentNode()->GetDocument(),
+                              WebFeature::kInputParsedAncestorSelect);
+          }
+
+          if (!RuntimeEnabledFeatures::InputInSelectEnabled()) {
+            ProcessFakeEndTag(HTMLTag::kSelect);
+          }
         }
       }
       // Per spec https://html.spec.whatwg.org/C/#parsing-main-inbody,
@@ -1035,15 +1066,6 @@ void HTMLTreeBuilder::ProcessStartTagForInBody(AtomicHTMLToken* token) {
     case HTMLTag::kTr:
       ParseError(token);
       break;
-    case HTMLTag::kPermissionOrUnknown:
-      if (RuntimeEnabledFeatures::PermissionElementEnabled(
-              tree_.OwnerDocumentForCurrentNode().GetExecutionContext())) {
-        tree_.ReconstructTheActiveFormattingElements();
-        tree_.InsertSelfClosingHTMLElementDestroyingToken(token);
-        frameset_ok_ = false;
-        break;
-      }
-      [[fallthrough]];
     default:
       if (token->GetName() == mathml_names::kMathTag.LocalName()) {
         tree_.ReconstructTheActiveFormattingElements();
@@ -1097,6 +1119,10 @@ void HTMLTreeBuilder::ProcessTemplateStartTag(AtomicHTMLToken* token) {
   frameset_ok_ = false;
   template_insertion_modes_.push_back(kTemplateContentsMode);
   SetInsertionMode(kTemplateContentsMode);
+  if (DynamicTo<HTMLTemplateElement>(tree_.CurrentElement())->OutgoingPatch()) {
+    DCHECK(RuntimeEnabledFeatures::DocumentPatchingEnabled());
+    parser_->tokenizer().SetState(HTMLTokenizer::kRAWTEXTState);
+  }
 }
 
 bool HTMLTreeBuilder::ProcessTemplateEndTag(AtomicHTMLToken* token) {
@@ -1596,11 +1622,11 @@ void HTMLTreeBuilder::ProcessStartTag(AtomicHTMLToken* token) {
             tree_.OpenElements()->TopNode()->AddConsoleMessage(
                 mojom::blink::ConsoleMessageSource::kJavaScript,
                 mojom::blink::ConsoleMessageLevel::kWarning,
-                "A " + token->GetName() +
-                    " tag was parsed inside of a <select> which caused a "
-                    "</select> to be inserted before this tag. "
-                    "This is not valid HTML and the behavior may be changed in "
-                    "future versions of chrome.");
+                StrCat({"A ", token->GetName(),
+                        " tag was parsed inside of a <select> which caused a "
+                        "</select> to be inserted before this tag. This is not "
+                        "valid HTML and the behavior may be changed in future "
+                        "versions of chrome."}));
           }
           return;
         }
@@ -1643,11 +1669,12 @@ void HTMLTreeBuilder::ProcessStartTag(AtomicHTMLToken* token) {
             tree_.OpenElements()->TopNode()->AddConsoleMessage(
                 mojom::blink::ConsoleMessageSource::kJavaScript,
                 mojom::blink::ConsoleMessageLevel::kWarning,
-                "A " + token->GetName() +
-                    " tag was parsed inside of a <select> which was not "
-                    "inserted into the document. This is not valid HTML and "
-                    "the behavior may be changed in future versions of "
-                    "chrome.");
+                StrCat(
+                    {"A ", token->GetName(),
+                     " tag was parsed inside of a <select> which was not "
+                     "inserted into the document. This is not valid HTML and "
+                     "the behavior may be changed in future versions of "
+                     "chrome."}));
           }
           break;
       }
@@ -1913,9 +1940,10 @@ void HTMLTreeBuilder::ResetInsertionModeAppropriately() {
         case HTMLTag::kTable:
           return SetInsertionMode(kInTableMode);
         case HTMLTag::kHead:
-          if (!fragment_context_.Fragment() ||
-              fragment_context_.ContextElement() != item->GetNode())
+          if (!fragment_context_.FragmentTarget() ||
+              fragment_context_.ContextElement() != item->GetNode()) {
             return SetInsertionMode(kInHeadMode);
+          }
           return SetInsertionMode(kInBodyMode);
         case HTMLTag::kBody:
           return SetInsertionMode(kInBodyMode);

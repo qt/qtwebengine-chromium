@@ -13,7 +13,6 @@
 
 #include "base/time/time.h"
 #include "media/base/container_names.h"
-#include "media/base/data_source.h"
 #include "media/base/demuxer_stream.h"
 #include "media/base/eme_constants.h"
 #include "media/base/media_export.h"
@@ -34,7 +33,7 @@ enum class DemuxerType {
   kMockDemuxer = 1,
   kFFmpegDemuxer = 2,
   kChunkDemuxer = 3,
-  kMediaUrlDemuxer = 4,
+  // kMediaUrlDemuxer = 4,     // Deprecated
   kFrameInjectingDemuxer = 5,
   kStreamProviderDemuxer = 6,
   kManifestDemuxer = 7,
@@ -81,14 +80,7 @@ class MEDIA_EXPORT Demuxer : public MediaResource {
       base::RepeatingCallback<void(std::unique_ptr<MediaTracks>)>;
 
   // Called once the demuxer has finished enabling or disabling tracks.
-  using TrackChangeCB =
-      base::OnceCallback<void(const std::vector<DemuxerStream*>&)>;
-
-  enum DemuxerTypes {
-    kChunkDemuxer,
-    kFFmpegDemuxer,
-    kMediaUrlDemuxer,
-  };
+  using TrackChangeCB = base::OnceCallback<void(DemuxerStream*)>;
 
   Demuxer();
 
@@ -175,19 +167,13 @@ class MEDIA_EXPORT Demuxer : public MediaResource {
   virtual std::optional<container_names::MediaContainerName>
   GetContainerForMetrics() const = 0;
 
-  // The |track_ids| vector has either 1 track, or is empty, indicating that
-  // all tracks should be disabled. |change_completed_cb| is fired after the
-  // demuxer streams are disabled, however this callback should then notify
-  // the appropriate renderer in order for tracks to be switched fully.
-  virtual void OnEnabledAudioTracksChanged(
-      const std::vector<MediaTrack::Id>& track_ids,
-      base::TimeDelta curr_time,
-      TrackChangeCB change_completed_cb) = 0;
-
-  virtual void OnSelectedVideoTrackChanged(
-      const std::vector<MediaTrack::Id>& track_ids,
-      base::TimeDelta curr_time,
-      TrackChangeCB change_completed_cb) = 0;
+  // Ask the demuxer to switch the enabled track for the selected stream type.
+  // `change_completed_cb` is fired after the appropriate stream changes are
+  // made.
+  virtual void OnTracksChanged(DemuxerStream::Type track_type,
+                               std::optional<MediaTrack::Id> track_id,
+                               base::TimeDelta curr_time,
+                               TrackChangeCB change_completed_cb) = 0;
 
   // Allows a demuxer to change behavior based on the playback rate, including
   // but not limited to changing the amount of buffer space.

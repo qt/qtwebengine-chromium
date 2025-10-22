@@ -39,7 +39,7 @@ namespace angle
 void WriteCppReplayFunctionWithPartsCL(ReplayFunc replayFunc,
                                        ReplayWriter &replayWriter,
                                        uint32_t frameIndex,
-                                       std::vector<uint8_t> *binaryData,
+                                       FrameCaptureBinaryData *binaryData,
                                        const std::vector<CallCapture> &calls,
                                        std::stringstream &header,
                                        std::stringstream &out)
@@ -67,7 +67,7 @@ void WriteCppReplayForCallCL(const CallCapture &call,
                              ReplayWriter &replayWriter,
                              std::ostream &out,
                              std::ostream &header,
-                             std::vector<uint8_t> *binaryData)
+                             FrameCaptureBinaryData *binaryData)
 {
     if (call.customFunctionName == "Comment")
     {
@@ -479,10 +479,8 @@ void WriteCppReplayForCallCL(const CallCapture &call,
                             out << ", ";
                         }
                         data          = &param.data[i];
-                        size_t offset = rx::roundUpPow2(binaryData->size(), kBinaryAlignment);
-                        binaryData->resize(offset + data->size());
-                        memcpy(binaryData->data() + offset, data->data(), data->size());
-                        out << tempStructureType << "&gBinaryData[" << offset << "]";
+                        const size_t offset = binaryData->append(data->data(), data->size());
+                        out << tempStructureType << "GetBinaryData[" << offset << "]";
                     }
                     out << "};\n    ";
                     callOut << tempStructureName << ".data()";
@@ -568,9 +566,9 @@ void WriteInitReplayCallCL(bool compression,
     out << "    // clKernelsMapSize = " << maxCLParamsSize.at(ParamType::Tcl_kernel) << "\n";
     out << "    // clSamplerMapSize = " << maxCLParamsSize.at(ParamType::Tcl_sampler) << "\n";
     out << "    // clVoidMapSize = " << maxCLParamsSize.at(ParamType::TvoidPointer) << "\n";
-    out << "    InitializeReplayCL(\"" << binaryDataFileName << "\", " << maxClientArraySize << ", "
-        << readBufferSize << ", " << maxCLParamsSize.at(ParamType::Tcl_platform_idPointer) << ", "
-        << maxCLParamsSize.at(ParamType::Tcl_device_idPointer) << ", "
+    out << "    InitializeReplayCL2(\"" << binaryDataFileName << "\", " << maxClientArraySize
+        << ", " << readBufferSize << ", " << maxCLParamsSize.at(ParamType::Tcl_platform_idPointer)
+        << ", " << maxCLParamsSize.at(ParamType::Tcl_device_idPointer) << ", "
         << maxCLParamsSize.at(ParamType::Tcl_context) << ", "
         << maxCLParamsSize.at(ParamType::Tcl_command_queue) << ", "
         << maxCLParamsSize.at(ParamType::Tcl_mem) << ", "
@@ -579,6 +577,9 @@ void WriteInitReplayCallCL(bool compression,
         << maxCLParamsSize.at(ParamType::Tcl_kernel) << ", "
         << maxCLParamsSize.at(ParamType::Tcl_sampler) << ", "
         << maxCLParamsSize.at(ParamType::TvoidPointer) << ");\n";
+
+    // Load binary data
+    out << "    InitializeBinaryDataLoader();\n";
 }
 
 void FrameCaptureShared::trackCLMemUpdate(const cl_mem *mem, bool referenced)
@@ -1626,8 +1627,21 @@ void FrameCaptureShared::captureCLCall(CallCapture &&inCall, bool isCallValid)
         std::atexit(onCLProgramEnd);
     }
 
+    if (checkForCaptureEnd())
+    {
+        onEndCLCapture();
+        mCaptureEndFrame = 0;
+        return;
+    }
+
     if (mFrameIndex <= mCaptureEndFrame)
     {
+        if ((mFrameIndex == mCaptureStartFrame - 1) ||
+            ((mFrameIndex == 1) && (mCaptureStartFrame == 1)))
+        {
+            std::string fileName = GetBinaryDataFilePath(mCompression, mCaptureLabel);
+            mBinaryData.initializeBinaryDataStore(mCompression, mOutDirectory, fileName);
+        }
 
         // Keep track of return values from OpenCL calls
         updateResourceCountsFromCallCaptureCL(inCall);
@@ -1671,8 +1685,6 @@ void FrameCaptureShared::captureCLCall(CallCapture &&inCall, bool isCallValid)
             if (mFrameIndex == mCaptureEndFrame)
             {
                 writeCppReplayIndexFilesCL();
-                SaveBinaryData(mCompression, mOutDirectory, kNoContextId, mCaptureLabel,
-                               mBinaryData);
             }
             reset();
         }
@@ -2018,7 +2030,6 @@ bool FrameCaptureShared::onEndCLCapture()
         mCaptureEndFrame = mFrameIndex;
         writeMainContextCppReplayCL();
         writeCppReplayIndexFilesCL();
-        SaveBinaryData(mCompression, mOutDirectory, kNoContextId, mCaptureLabel, mBinaryData);
         return true;
     }
     return false;
@@ -2161,6 +2172,21 @@ void FrameCaptureShared::writeJSONCL()
     json.addBool("IsOpenCL", true);
     json.endGroup();
 
+    json.startGroup("BinaryMetadata");
+    json.addScalar("Version", mIndexInfo.version);
+    json.addScalar("BlockCount", mIndexInfo.blockCount);
+    // These values are handled as strings to avoid json-related underflows
+    std::stringstream blockSizeString;
+    blockSizeString << mIndexInfo.blockSize;
+    json.addString("BlockSize", blockSizeString.str());
+    std::stringstream resSizeString;
+    resSizeString << mIndexInfo.residentSize;
+    json.addString("ResidentSize", resSizeString.str());
+    std::stringstream offsetString;
+    offsetString << mIndexInfo.indexOffset;
+    json.addString("IndexOffset", offsetString.str());
+    json.endGroup();
+
     {
         const std::vector<std::string> &traceFiles = mReplayWriter.getAndResetWrittenFiles();
         json.addVectorOfStrings("TraceFiles", traceFiles);
@@ -2202,8 +2228,7 @@ void FrameCaptureShared::saveCLGetInfo(const CallCapture &call)
                 .value.size_tPointerVal;
         if (!sizePointer)
         {
-            size =
-                call.params.getParam("param_value_size", ParamType::Tcl_uint, 3).value.cl_uintVal;
+            size = call.params.getParam("num_entries", ParamType::Tcl_uint, 3).value.cl_uintVal;
         }
         else
         {
@@ -3246,6 +3271,8 @@ void FrameCaptureShared::writeCppReplayIndexFilesCL()
 
     mReplayWriter.saveIndexFilesAndHeader();
 
+    // Finalize binary data file
+    mIndexInfo = mBinaryData.closeBinaryDataStore();
     writeJSONCL();
     writeJSONCLGetInfo();
 }

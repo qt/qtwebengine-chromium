@@ -32,6 +32,7 @@
 #include "src/trace_processor/importers/common/flow_tracker.h"
 #include "src/trace_processor/importers/common/process_tracker.h"
 #include "src/trace_processor/importers/common/slice_tracker.h"
+#include "src/trace_processor/importers/common/track_compressor.h"
 #include "src/trace_processor/importers/common/track_tracker.h"
 #include "src/trace_processor/importers/common/tracks.h"
 #include "src/trace_processor/importers/common/tracks_common.h"
@@ -413,7 +414,8 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
           }
           int64_t duration = end_ts - ts;
           if (duration < 0) {
-            context_->storage->IncrementStats(stats::fuchsia_timestamp_overflow);
+            context_->storage->IncrementStats(
+                stats::fuchsia_timestamp_overflow);
             return;
           }
           UniqueTid utid =
@@ -432,8 +434,9 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
           }
           UniquePid upid =
               procs->GetOrCreateProcess(static_cast<uint32_t>(tinfo.pid));
-          TrackId track_id = context_->track_tracker->InternLegacyAsyncTrack(
-              name, upid, correlation_id, false, kNullStringId);
+          TrackId track_id = context_->track_compressor->InternLegacyAsyncTrack(
+              name, upid, correlation_id, false, kNullStringId,
+              TrackCompressor::AsyncSliceType::kBegin);
           slices->Begin(ts, track_id, cat, name, std::move(insert_args));
           break;
         }
@@ -445,8 +448,9 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
           }
           UniquePid upid =
               procs->GetOrCreateProcess(static_cast<uint32_t>(tinfo.pid));
-          TrackId track_id = context_->track_tracker->InternLegacyAsyncTrack(
-              name, upid, correlation_id, false, kNullStringId);
+          TrackId track_id = context_->track_compressor->InternLegacyAsyncTrack(
+              name, upid, correlation_id, false, kNullStringId,
+              TrackCompressor::AsyncSliceType::kInstant);
           slices->Scoped(ts, track_id, cat, name, 0, std::move(insert_args));
           break;
         }
@@ -458,8 +462,9 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
           }
           UniquePid upid =
               procs->GetOrCreateProcess(static_cast<uint32_t>(tinfo.pid));
-          TrackId track_id = context_->track_tracker->InternLegacyAsyncTrack(
-              name, upid, correlation_id, false, kNullStringId);
+          TrackId track_id = context_->track_compressor->InternLegacyAsyncTrack(
+              name, upid, correlation_id, false, kNullStringId,
+              TrackCompressor::AsyncSliceType::kEnd);
           slices->End(ts, track_id, cat, name, std::move(insert_args));
           break;
         }
@@ -528,14 +533,16 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
             return;
           }
           if (ts < 0) {
-            context_->storage->IncrementStats(stats::fuchsia_timestamp_overflow);
+            context_->storage->IncrementStats(
+                stats::fuchsia_timestamp_overflow);
             return;
           }
 
           FuchsiaThreadInfo outgoing_thread_info;
           if (fuchsia_trace_utils::IsInlineThread(outgoing_thread_ref)) {
             if (!cursor.ReadInlineThread(&outgoing_thread_info)) {
-              context_->storage->IncrementStats(stats::fuchsia_record_read_error);
+              context_->storage->IncrementStats(
+                  stats::fuchsia_record_read_error);
               return;
             }
           } else {
@@ -546,7 +553,8 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
           FuchsiaThreadInfo incoming_thread_info;
           if (fuchsia_trace_utils::IsInlineThread(incoming_thread_ref)) {
             if (!cursor.ReadInlineThread(&incoming_thread_info)) {
-              context_->storage->IncrementStats(stats::fuchsia_record_read_error);
+              context_->storage->IncrementStats(
+                  stats::fuchsia_record_read_error);
               return;
             }
           } else {
@@ -585,7 +593,8 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
             return;
           }
           if (ts < 0) {
-            context_->storage->IncrementStats(stats::fuchsia_timestamp_overflow);
+            context_->storage->IncrementStats(
+                stats::fuchsia_timestamp_overflow);
             return;
           }
 
@@ -617,14 +626,16 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
             if (arg.name == incoming_weight_id_) {
               if (arg.value.Type() !=
                   fuchsia_trace_utils::ArgValue::ArgType::kInt32) {
-                context_->storage->IncrementStats(stats::fuchsia_invalid_event_arg_type);
+                context_->storage->IncrementStats(
+                    stats::fuchsia_invalid_event_arg_type);
                 return;
               }
               incoming_weight = arg.value.Int32();
             } else if (arg.name == outgoing_weight_id_) {
               if (arg.value.Type() !=
                   fuchsia_trace_utils::ArgValue::ArgType::kInt32) {
-                context_->storage->IncrementStats(stats::fuchsia_invalid_event_arg_type);
+                context_->storage->IncrementStats(
+                    stats::fuchsia_invalid_event_arg_type);
                 return;
               }
               outgoing_weight = arg.value.Int32();
@@ -657,7 +668,8 @@ void FuchsiaTraceParser::ParseFuchsiaRecord(int64_t, FuchsiaRecord fr) {
             return;
           }
           if (ts < 0) {
-            context_->storage->IncrementStats(stats::fuchsia_timestamp_overflow);
+            context_->storage->IncrementStats(
+                stats::fuchsia_timestamp_overflow);
             return;
           }
 

@@ -23,6 +23,7 @@ import type {CrButtonElement} from 'chrome://resources/cr_elements/cr_button/cr_
 import type {CrIconButtonElement} from 'chrome://resources/cr_elements/cr_icon_button/cr_icon_button.js';
 import type {CrInputElement} from 'chrome://resources/cr_elements/cr_input/cr_input.js';
 import {I18nMixin} from 'chrome://resources/cr_elements/i18n_mixin.js';
+import {htmlEscape} from 'chrome://resources/js/util.js';
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import type {PasswordsMovedEvent, ValueCopiedEvent} from '../password_manager_app.js';
@@ -125,19 +126,19 @@ export class PasswordDetailsCardElement extends PasswordDetailsCardElementBase {
     };
   }
 
-  password: chrome.passwordsPrivate.PasswordUiEntry;
-  groupName: string;
-  iconUrl: string;
-  isUsingAccountStore: boolean;
+  declare password: chrome.passwordsPrivate.PasswordUiEntry;
+  declare groupName: string;
+  declare iconUrl: string;
+  declare isUsingAccountStore: boolean;
   /* This is set by the parent element, to only show help buble on the first
    * card on the page. */
-  shouldRegisterSharingPromo = false;
-  private showEditPasswordDialog_: boolean;
-  private passwordSharingDisabled_: boolean;
-  private showDeletePasswordDialog_: boolean;
-  private showShareFlow_: boolean;
-  private showShareButton_: boolean;
-  private showMovePasswordDialog_: boolean;
+  declare shouldRegisterSharingPromo: boolean;
+  declare private showEditPasswordDialog_: boolean;
+  declare private passwordSharingDisabled_: boolean;
+  declare private showDeletePasswordDialog_: boolean;
+  declare private showShareFlow_: boolean;
+  declare private showShareButton_: boolean;
+  declare private showMovePasswordDialog_: boolean;
 
   override connectedCallback() {
     super.connectedCallback();
@@ -154,8 +155,10 @@ export class PasswordDetailsCardElement extends PasswordDetailsCardElementBase {
   }
 
   private getPasswordValue_(): string|undefined {
-    return this.isFederated_() ? this.password.federationText :
-                                 this.password.password;
+    if (this.isFederated_()) {
+      return this.password.federationText;
+    }
+    return this.password.password;
   }
 
   private getPasswordType_(): string {
@@ -277,7 +280,7 @@ export class PasswordDetailsCardElement extends PasswordDetailsCardElementBase {
     return this.password.username ?
         this.i18n(
             'passwordDetailsCardAriaLabel', this.getCredentialTypeString_(),
-            this.password.username) :
+            htmlEscape(this.password.username)) :
         this.getCredentialTypeString_();
   }
 
@@ -285,7 +288,8 @@ export class PasswordDetailsCardElement extends PasswordDetailsCardElementBase {
     return this.password.username ?
         this.i18n(
             'passwordDetailsCardEditButtonAriaLabel',
-            this.getCredentialTypeString_(), this.password.username) :
+            this.getCredentialTypeString_(),
+            htmlEscape(this.password.username)) :
         this.i18n(
             'passwordDetailsCardEditButtonNoUsernameAriaLabel',
             this.getCredentialTypeString_());
@@ -295,7 +299,8 @@ export class PasswordDetailsCardElement extends PasswordDetailsCardElementBase {
     return this.password.username ?
         this.i18n(
             'passwordDetailsCardDeleteButtonAriaLabel',
-            this.getCredentialTypeString_(), this.password.username) :
+            this.getCredentialTypeString_(),
+            htmlEscape(this.password.username)) :
         this.i18n(
             'passwordDetailsCardDeleteButtonNoUsernameAriaLabel',
             this.getCredentialTypeString_());

@@ -126,7 +126,7 @@ class FormControlsBrowserTest : public ContentBrowserTest {
     auto comparator = cc::FuzzyPixelComparator()
                           .DiscardAlpha()
                           .SetErrorPixelsPercentageLimit(11.f)
-                          .SetAvgAbsErrorLimit(5.f)
+                          .SetAvgAbsErrorLimit(11.f)
                           .SetAbsErrorLimit(140);
 #else
     cc::AlphaDiscardingExactPixelComparator comparator;
@@ -353,7 +353,7 @@ IN_PROC_BROWSER_TEST_F(FormControlsBrowserTest, MAYBE_Select) {
 // TODO(crbug.com/377986468) : Flaky on Windows. Seems to lose focus of top
 // <select> in some runs which causes the results to be different from
 // expectations.
-#if BUILDFLAG(IS_WIN)
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS)
 #define MAYBE_MultiSelect DISABLED_MultiSelect
 #else
 #define MAYBE_MultiSelect MultiSelect

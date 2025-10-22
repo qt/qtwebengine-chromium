@@ -258,8 +258,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   // Visibility and LayerTreeFrameSink -------------------------------
 
   // Sets or gets if the LayerTreeHost is visible. When not visible it will:
-  // - Not request a new LayerTreeFrameSink from the client (except
-  //   `kWarmUpCompositor` is enabled and warm-up is explicitly requested).
+  // - Not request a new LayerTreeFrameSink from the client (except the warm-up
+  //   is explicitly requested by `SetShouldWarmUp`).
   // - Stop submitting frames to the display compositor.
   // - Stop producing main frames and committing them.
   // The LayerTreeHost is not visible when first created, so this must be called
@@ -268,10 +268,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   bool IsVisible() const;
 
   // Indicates that warm-up is requested to create a new LayerTreeFrameSink
-  // even if the LayerTreeHost is invisible. This is an experimental function
-  // and only used if `kWarmUpCompositor` is enabled. Currently, this will be
-  // requested only from prerendered pages. Please see crbug.com/41496019 for
-  // more details.
+  // even if the LayerTreeHost is invisible.
   void SetShouldWarmUp();
   bool ShouldWarmUp() const;
 
@@ -750,9 +747,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   Layer* LayerByElementId(ElementId element_id);
   const Layer* LayerByElementId(ElementId element_id) const;
 
-  void RegisterElement(ElementId element_id,
-                       Layer* layer);
-  void UnregisterElement(ElementId element_id);
+  void RegisterElement(ElementId element_id, Layer* layer);
+  void UnregisterElement(ElementId element_id, const Layer* layer);
 
   void SetElementIdsForTesting();
   void BuildPropertyTreesForTesting();
@@ -900,7 +896,9 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
                                          ElementListType tree_type) override {}
 
   void QueueImageDecode(const DrawImage& image,
-                        base::OnceCallback<void(bool)> callback);
+                        base::OnceCallback<void(bool)> callback,
+                        bool speculative);
+  bool SpeculativeDecodeRequestInFlight() const;
   void ImageDecodesFinished(const std::vector<std::pair<int, bool>>& results);
 
   void RequestBeginMainFrameNotExpected(bool new_state);
@@ -915,7 +913,6 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   }
 
   void SetSourceURL(ukm::SourceId source_id, const GURL& url);
-  base::ReadOnlySharedMemoryRegion CreateSharedMemoryForSmoothnessUkm();
   base::ReadOnlySharedMemoryRegion CreateSharedMemoryForDroppedFramesUkm();
 
   void SetRenderFrameObserver(
@@ -942,8 +939,8 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
   std::vector<ViewTransitionRequest::ViewTransitionCaptureCallback>
   TakeViewTransitionCallbacksForTesting();
 
-  // Returns a percentage of dropped frames of the last second.
-  double GetPercentDroppedFrames() const;
+  // Returns a percentage of dropped frames as measured by the FrameSorter.
+  double GetAverageThroughput() const;
 
   // TODO(szager): Remove these once threaded compositing is enabled for all
   // web_tests.
@@ -1126,7 +1123,7 @@ class CC_EXPORT LayerTreeHost : public MutatorHostClient {
 
   raw_ptr<RasterDarkModeFilter> dark_mode_filter_;
 
-  std::unordered_map<int, base::OnceCallback<void(bool)>>
+  std::unordered_map<int, std::pair<base::OnceCallback<void(bool)>, bool>>
       pending_image_decodes_;
 
   struct ScrollAnimationState {

@@ -64,6 +64,7 @@
 #include "third_party/blink/renderer/core/probe/core_probes.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image.h"
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_for_container.h"
+#include "third_party/blink/renderer/core/timing/soft_navigation_heuristics.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/bindings/script_state.h"
 #include "third_party/blink/renderer/platform/bindings/v8_per_isolate_data.h"
@@ -217,7 +218,8 @@ void ImageLoader::DispatchDecodeRequestsIfComplete() {
                      frame, draw_image,
                      WTF::BindOnce(&ImageLoader::DecodeRequestFinished,
                                    MakeUnwrappingCrossThreadHandle(this),
-                                   request->request_id()));
+                                   request->request_id()),
+                     /*speculative*/ false);
                  request->NotifyDecodeDispatched();
                  return false;
                }));
@@ -413,6 +415,7 @@ void ImageLoader::UpdateImageState(ImageResourceContent* new_image_content) {
 
 void ImageLoader::DoUpdateFromElement(const DOMWrapperWorld* world,
                                       UpdateFromElementBehavior update_behavior,
+                                      const KURL* source_url,
                                       UpdateType update_type,
                                       bool force_blocking) {
   // FIXME: According to
@@ -439,8 +442,14 @@ void ImageLoader::DoUpdateFromElement(const DOMWrapperWorld* world,
     return;
   }
 
+  KURL url;
   AtomicString image_source_url = element_->ImageSourceURL();
-  const KURL url = ImageSourceToKURL(image_source_url);
+  if (base::FeatureList::IsEnabled(features::kOptimizeHTMLElementUrls) &&
+      source_url) {
+    url = *source_url;
+  } else {
+    url = ImageSourceToKURL(image_source_url);
+  }
   ImageResourceContent* new_image_content = nullptr;
   if (!url.IsNull() && !url.IsEmpty()) {
     // Unlike raw <img>, we block mixed content inside of <picture> or
@@ -610,6 +619,7 @@ void ImageLoader::DoUpdateFromElement(const DOMWrapperWorld* world,
     // dispatched.
     if (new_image_content) {
       new_image_content->AddObserver(this);
+      document.Fetcher()->MaybeStartSpeculativeImageDecode();
     }
     if (old_image_content) {
       old_image_content->RemoveObserver(this);
@@ -658,10 +668,19 @@ void ImageLoader::UpdateFromElement(UpdateFromElementBehavior update_behavior,
     delay_until_do_update_from_element_ = nullptr;
   }
 
-  if (ShouldLoadImmediately(ImageSourceToKURL(image_source_url)) &&
+  // Soft Navigation tracking needs to know about image changes caused by
+  // attribute changes, e.g. changing an HTMLImageElement's src, so it can
+  // attribute the subsequent paint.
+  if (update_behavior == kUpdateIgnorePreviousError) {
+    SoftNavigationHeuristics::ModifiedNode(element_.Get());
+  }
+
+  const KURL image_source_kurl = ImageSourceToKURL(image_source_url);
+  if (ShouldLoadImmediately(image_source_kurl) &&
       update_behavior != kUpdateFromMicrotask) {
     DoUpdateFromElement(element_->GetExecutionContext()->GetCurrentWorld(),
-                        update_behavior, UpdateType::kSync, force_blocking);
+                        update_behavior, &image_source_kurl, UpdateType::kSync,
+                        force_blocking);
     return;
   }
   // Allow the idiom "img.src=''; img.src='.." to clear down the image before an
@@ -778,7 +797,7 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* content) {
       // Check that the SVGImage has completed loading (i.e the 'load' event
       // has been dispatched in the SVG document).
       svg_image->CheckLoaded();
-      svg_image->UpdateUseCounters(GetElement()->GetDocument());
+      svg_image->UpdateUseCountersAfterLoad(GetElement()->GetDocument());
       svg_image->MaybeRecordSvgImageProcessingTime(GetElement()->GetDocument());
     }
   }
@@ -798,6 +817,7 @@ void ImageLoader::ImageNotifyFinished(ImageResourceContent* content) {
   }
 
   content->RecordDecodedImageType(&element_->GetDocument());
+  content->RecordDecodedImageC2PA(&element_->GetDocument());
 
   CHECK(!pending_load_event_.IsActive());
   pending_load_event_ = PostCancellableTask(

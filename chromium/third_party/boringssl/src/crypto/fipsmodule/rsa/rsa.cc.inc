@@ -26,7 +26,6 @@
 #include <openssl/md5.h>
 #include <openssl/mem.h>
 #include <openssl/nid.h>
-#include <openssl/thread.h>
 
 #include "../../internal.h"
 #include "../bcm_interface.h"
@@ -184,10 +183,8 @@ RSA *RSA_new_method(const ENGINE *engine) {
   CRYPTO_new_ex_data(&rsa->ex_data);
 
   if (rsa->meth->init && !rsa->meth->init(rsa)) {
-    CRYPTO_free_ex_data(g_rsa_ex_data_class_bss_get(), rsa, &rsa->ex_data);
-    CRYPTO_MUTEX_cleanup(&rsa->lock);
-    METHOD_unref(rsa->meth);
-    OPENSSL_free(rsa);
+    rsa->meth = nullptr;
+    RSA_free(rsa);
     return NULL;
   }
 
@@ -213,12 +210,12 @@ void RSA_free(RSA *rsa) {
     return;
   }
 
-  if (rsa->meth->finish) {
+  if (rsa->meth != nullptr && rsa->meth->finish != nullptr) {
     rsa->meth->finish(rsa);
   }
   METHOD_unref(rsa->meth);
 
-  CRYPTO_free_ex_data(g_rsa_ex_data_class_bss_get(), rsa, &rsa->ex_data);
+  CRYPTO_free_ex_data(g_rsa_ex_data_class_bss_get(), &rsa->ex_data);
 
   BN_free(rsa->n);
   BN_free(rsa->e);
@@ -718,15 +715,15 @@ static int check_mod_inverse(int *out_ok, const BIGNUM *a, const BIGNUM *ainv,
   // Note |bn_mul_consttime| and |bn_div_consttime| do not scale linearly, but
   // checking |ainv| is in range bounds the running time, assuming |m|'s bounds
   // were checked by the caller.
-  BN_CTX_start(ctx);
+  bssl::BN_CTXScope scope(ctx);
   BIGNUM *tmp = BN_CTX_get(ctx);
-  int ret = tmp != NULL && bn_mul_consttime(tmp, a, ainv, ctx) &&
-            bn_div_consttime(NULL, tmp, tmp, m, m_min_bits, ctx);
-  if (ret) {
-    *out_ok = constant_time_declassify_int(BN_is_one(tmp));
+  if (tmp == nullptr ||  //
+      !bn_mul_consttime(tmp, a, ainv, ctx) ||
+      !bn_div_consttime(NULL, tmp, tmp, m, m_min_bits, ctx)) {
+    return 0;
   }
-  BN_CTX_end(ctx);
-  return ret;
+  *out_ok = constant_time_declassify_int(BN_is_one(tmp));
+  return 1;
 }
 
 int RSA_check_key(const RSA *key) {

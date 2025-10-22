@@ -17,7 +17,6 @@ from crossbench.browsers.safari.version import SafariVersion
 if TYPE_CHECKING:
   from crossbench import plt
   from crossbench.browsers.settings import Settings
-  from crossbench.browsers.version import BrowserVersion
 
 
 SAFARIDRIVER_PATH = pth.AnyPosixPath("/usr/bin/safaridriver")

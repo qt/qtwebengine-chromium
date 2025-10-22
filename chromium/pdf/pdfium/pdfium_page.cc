@@ -13,6 +13,7 @@
 #include <utility>
 
 #include "base/check_op.h"
+#include "base/containers/span.h"
 #include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
@@ -52,7 +53,6 @@
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "ui/gfx/skbitmap_operations.h"
 #endif
 
 using printing::ConvertUnitFloat;
@@ -316,8 +316,8 @@ bool AreTextStyleEqual(FPDF_PAGEOBJECT text_object,
   // has upper case or tall letters or not.
   // Comparing the font size is done heuristically, as the smaller value should
   // not be less than half the larger one.
-  // TODO(crbug.com/360803943): Add unittests with OCRed PDF data.
-  // TODO(crbug.com/360803943): Add block information from OCR results to
+  // TODO(crbug.com/398064843): Add unittests with OCRed PDF data.
+  // TODO(crbug.com/398064843): Add block information from OCR results to
   // objects and create text runs based on them.
   bool font_size_match =
       is_searchified ? FloatAtLeastHalf(char_style.font_size, style.font_size)
@@ -432,10 +432,6 @@ void PDFiumPage::Unload() {
   text_page_.reset();
 
   if (page_) {
-#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-    // TODO(crbug.com/360803943): Keep objects added by searchify.
-    engine_->CancelPendingSearchify(index_);
-#endif
     if (engine_->form()) {
       FORM_OnBeforeClosePage(page(), engine_->form());
     }
@@ -887,7 +883,7 @@ bool PDFiumPage::IsCharInPageBounds(int char_index,
 }
 
 std::vector<AccessibilityLinkInfo> PDFiumPage::GetLinkInfo(
-    const std::vector<AccessibilityTextRunInfo>& text_runs) {
+    base::span<const AccessibilityTextRunInfo> text_runs) {
   std::vector<AccessibilityLinkInfo> link_info;
   if (!available_)
     return link_info;
@@ -950,28 +946,17 @@ std::vector<int> PDFiumPage::GetImageObjectIndices() {
 }
 
 #if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
-SkBitmap PDFiumPage::GetImageForOcr(int page_object_index) {
+bool PDFiumPage::HasImages() {
+  CalculateImages();
+  return images_.size();
+}
+
+SkBitmap PDFiumPage::GetImageForOcr(int page_object_index,
+                                    int max_image_dimension) {
   FPDF_PAGE page = GetPage();
   FPDF_PAGEOBJECT page_object = FPDFPage_GetObject(page, page_object_index);
-  SkBitmap bitmap =
-      ::chrome_pdf::GetImageForOcr(engine_->doc(), page, page_object);
-
-  SkBitmapOperations::RotationAmount rotation;
-  switch (FPDFPage_GetRotation(page)) {
-    case 0:
-      return bitmap;
-    case 1:
-      rotation = SkBitmapOperations::RotationAmount::ROTATION_90_CW;
-      break;
-    case 2:
-      rotation = SkBitmapOperations::RotationAmount::ROTATION_180_CW;
-      break;
-    case 3:
-      rotation = SkBitmapOperations::RotationAmount::ROTATION_270_CW;
-      break;
-  }
-
-  return SkBitmapOperations::Rotate(bitmap, rotation);
+  return ::chrome_pdf::GetImageForOcr(engine_->doc(), page, page_object,
+                                      max_image_dimension);
 }
 
 void PDFiumPage::OnSearchifyGotOcrResult(bool added_text) {
@@ -985,10 +970,14 @@ void PDFiumPage::OnSearchifyGotOcrResult(bool added_text) {
 bool PDFiumPage::IsPageSearchified() const {
   return has_searchify_added_text_.has_value();
 }
+
+bool PDFiumPage::PageCanBeUnloaded() const {
+  return preventing_unload_count_ == 0;
+}
 #endif  // BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
 
 std::vector<AccessibilityHighlightInfo> PDFiumPage::GetHighlightInfo(
-    const std::vector<AccessibilityTextRunInfo>& text_runs) {
+    base::span<const AccessibilityTextRunInfo> text_runs) {
   std::vector<AccessibilityHighlightInfo> highlight_info;
   if (!available_)
     return highlight_info;

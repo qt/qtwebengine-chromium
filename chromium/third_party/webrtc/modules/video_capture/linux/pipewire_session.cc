@@ -17,13 +17,23 @@
 #include <spa/pod/parser.h>
 
 #include <algorithm>
+#include <cstdint>
+#include <cstdio>
+#include <cstring>
+#include <memory>
+#include <optional>
 
+#include "absl/strings/string_view.h"
 #include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "modules/video_capture/device_info_impl.h"
+#include "modules/portal/pipewire_utils.h"
+#include "modules/portal/portal_request_response.h"
+#include "modules/video_capture/linux/camera_portal.h"
+#include "modules/video_capture/video_capture_defines.h"
+#include "modules/video_capture/video_capture_options.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/sanitizer.h"
-#include "rtc_base/string_encode.h"
 #include "rtc_base/string_to_number.h"
+#include "rtc_base/synchronization/mutex.h"
 
 namespace webrtc {
 namespace videocapturemodule {
@@ -103,8 +113,8 @@ void PipeWireNode::OnNodeInfo(void* data, const pw_node_info* info) {
 
     vid_str = spa_dict_lookup(info->props, SPA_KEY_DEVICE_VENDOR_ID);
     pid_str = spa_dict_lookup(info->props, SPA_KEY_DEVICE_PRODUCT_ID);
-    vid = vid_str ? rtc::StringToNumber<int>(vid_str) : std::nullopt;
-    pid = pid_str ? rtc::StringToNumber<int>(pid_str) : std::nullopt;
+    vid = vid_str ? webrtc::StringToNumber<int>(vid_str) : std::nullopt;
+    pid = pid_str ? webrtc::StringToNumber<int>(pid_str) : std::nullopt;
 
     if (vid && pid) {
       char model_str[10];

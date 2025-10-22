@@ -28,6 +28,7 @@
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/hit_test_result.h"
 #include "third_party/blink/renderer/core/layout/layout_image_resource.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/natural_sizing_info.h"
 #include "third_party/blink/renderer/core/layout/pointer_events_hit_rules.h"
@@ -65,6 +66,19 @@ void LayoutSVGImage::StyleDidChange(StyleDifference diff,
   TransformHelper::UpdateOffsetPath(*GetElement(), old_style);
   transform_uses_reference_box_ =
       TransformHelper::DependsOnReferenceBox(StyleRef());
+
+  if (old_style && EverHadLayout()) {
+    const ComputedStyle& style = StyleRef();
+    bool length_attribute_changed = old_style->X() != style.X() ||
+                                    old_style->Y() != style.Y() ||
+                                    old_style->Width() != style.Width() ||
+                                    old_style->Height() != style.Height();
+    if (length_attribute_changed) {
+      LayoutSVGResourceContainer::MarkForLayoutAndParentResourceInvalidation(
+          *this);
+    }
+  }
+
   LayoutSVGModelObject::StyleDidChange(diff, old_style);
 }
 

@@ -120,7 +120,7 @@ class FormDataImporter : public AddressDataManager::Observer,
                           const history::DeletionInfo& deletion_info) override;
 
   // See `FormAssociator::GetFormAssociations()`.
-  std::optional<FormStructure::FormAssociations> GetFormAssociations(
+  FormStructure::FormAssociations GetFormAssociations(
       FormSignature form_signature) const {
     return form_associator_.GetFormAssociations(form_signature);
   }
@@ -132,6 +132,10 @@ class FormDataImporter : public AddressDataManager::Observer,
   void SetPaymentMethodTypeIfNonInteractiveAuthenticationFlowCompleted(
       std::optional<NonInteractivePaymentMethodType>
           payment_method_type_if_non_interactive_authentication_flow_completed);
+
+  void set_card_was_fetched_from_cache(bool card_was_fetched_from_cache) {
+    card_was_fetched_from_cache_ = card_was_fetched_from_cache;
+  }
 
  private:
   // Defines an extracted address profile, which is a candidate for address
@@ -145,8 +149,6 @@ class FormDataImporter : public AddressDataManager::Observer,
     AutofillProfile profile{i18n_model_definition::kLegacyHierarchyCountryCode};
     // The URL the profile was extracted from.
     GURL url;
-    // Indicates if all import requirements have been fulfilled.
-    bool all_requirements_fulfilled;
     // Metadata about the import, used for metric collection in
     // ProfileImportProcess after the user's decision.
     ProfileImportMetadata import_metadata;
@@ -276,21 +278,6 @@ class FormDataImporter : public AddressDataManager::Observer,
   // Helper function which extracts the IBAN from the form structure.
   Iban ExtractIbanFromForm(const FormStructure& form);
 
-  // Returns true if credit card upload, local save, or cvc local save should be
-  // offered to user. `extracted_credit_card` is the credit card imported from
-  // the form if there is any. If no valid card was imported, it is set to
-  // nullopt. It might be set to a copy of a LOCAL_CARD or SERVER_CARD we have
-  // already saved if we were able to find a matching copy.
-  // |is_credit_card_upstream_enabled| denotes whether the user has credit card
-  // upload enabled. This function is used to prevent offering upload card save
-  // or local card save in situations where it would be invalid to offer them.
-  // For example, we should not offer to upload card if it is already a valid
-  // server card.
-  // TODO(crbug.com/40270301): Move to CreditCardSaveManger.
-  bool ShouldOfferCreditCardSave(
-      const std::optional<CreditCard>& extracted_credit_card,
-      bool is_credit_card_upstream_enabled);
-
   // If the `profile`'s country is not empty, complements it with
   // `AddressDataManager::GetDefaultCountryCodeForNewAddress()`, while logging
   // to the `import_log_buffer`.
@@ -361,6 +348,13 @@ class FormDataImporter : public AddressDataManager::Observer,
   // decide whether the card submitted is the same card retrieved. This field is
   // optional and is set when an Autofill Downstream has happened.
   std::optional<int64_t> fetched_card_instrument_id_;
+
+  // TODO(crbug.com/403617982): Combine all last fetched card related
+  // information into a struct.
+  // Whether the last unmasked card (note: it may or may not be the extracted
+  // card) is fetched from the local cache (instead of going through a server
+  // retrieval process).
+  std::optional<bool> card_was_fetched_from_cache_;
 
   friend class FormDataImporterTestApi;
 };

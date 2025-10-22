@@ -11,12 +11,10 @@
 #include <string_view>
 #include <vector>
 
-#include "base/apple/owned_objc.h"
 #include "base/component_export.h"
 #include "base/containers/span.h"
 #include "base/memory/raw_ptr.h"
 #include "build/build_config.h"
-#include "components/sync/protocol/webauthn_credential_specifics.pb.h"
 #include "device/fido/cable/cable_discovery_data.h"
 #include "device/fido/cable/v2_constants.h"
 #include "device/fido/ctap_get_assertion_request.h"
@@ -31,6 +29,7 @@
 #include "services/network/public/mojom/network_context.mojom-forward.h"
 
 #if BUILDFLAG(IS_MAC)
+#include "base/apple/owned_objc.h"
 #include "device/fido/mac/authenticator_config.h"
 #endif  // BUILDFLAG(IS_MAC)
 

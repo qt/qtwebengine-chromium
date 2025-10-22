@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/socket/ssl_server_socket_impl.h"
 
 #include <memory>
@@ -19,6 +14,7 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_util.h"
 #include "crypto/openssl_util.h"
 #include "crypto/rsa_private_key.h"
@@ -49,6 +45,17 @@ namespace {
 // This constant can be any non-negative/non-zero value (eg: it does not
 // overlap with any value of the net::Error range, including net::OK).
 const int kSSLServerSocketNoPendingResult = 1;
+
+std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> ChainFromX509Certificate(
+    X509Certificate* cert) {
+  std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> cert_chain;
+  cert_chain.reserve(1 + cert->intermediate_buffers().size());
+  cert_chain.push_back(bssl::UpRef(cert->cert_buffer()));
+  for (const auto& handle : cert->intermediate_buffers()) {
+    cert_chain.push_back(bssl::UpRef(handle.get()));
+  }
+  return cert_chain;
+}
 
 }  // namespace
 
@@ -125,15 +132,11 @@ class SSLServerContextImpl::SocketImpl : public SSLServerSocket,
                                                              size_t* out_len,
                                                              size_t max_out);
 
-  ssl_private_key_result_t PrivateKeySignCallback(uint8_t* out,
-                                                  size_t* out_len,
-                                                  size_t max_out,
-                                                  uint16_t algorithm,
-                                                  const uint8_t* in,
-                                                  size_t in_len);
-  ssl_private_key_result_t PrivateKeyCompleteCallback(uint8_t* out,
-                                                      size_t* out_len,
-                                                      size_t max_out);
+  ssl_private_key_result_t PrivateKeySignCallback(
+      uint16_t algorithm,
+      base::span<const uint8_t> input);
+  ssl_private_key_result_t PrivateKeyCompleteCallback(base::span<uint8_t> buf,
+                                                      size_t* out_len);
   void OnPrivateKeyComplete(Error error, const std::vector<uint8_t>& signature);
 
   static int ALPNSelectCallback(SSL* ssl,
@@ -244,8 +247,13 @@ SSLServerContextImpl::SocketImpl::PrivateKeySignCallback(SSL* ssl,
                                                          uint16_t algorithm,
                                                          const uint8_t* in,
                                                          size_t in_len) {
-  return FromSSL(ssl)->PrivateKeySignCallback(out, out_len, max_out, algorithm,
-                                              in, in_len);
+  return FromSSL(ssl)->PrivateKeySignCallback(
+      algorithm,
+      // SAFETY:
+      // https://commondatastorage.googleapis.com/chromium-boringssl-docs/ssl.h.html#ssl_private_key_method_st
+      // `ssl_private_key_method_st::sign` implies that the value of `in_len`
+      // is equal to the actual size of `in`.
+      UNSAFE_BUFFERS(base::span(in, in_len)));
 }
 
 // static
@@ -266,41 +274,43 @@ SSLServerContextImpl::SocketImpl::PrivateKeyCompleteCallback(SSL* ssl,
                                                              uint8_t* out,
                                                              size_t* out_len,
                                                              size_t max_out) {
-  return FromSSL(ssl)->PrivateKeyCompleteCallback(out, out_len, max_out);
+  return FromSSL(ssl)->PrivateKeyCompleteCallback(
+      // SAFETY:
+      // https://commondatastorage.googleapis.com/chromium-boringssl-docs/ssl.h.html#ssl_private_key_method_st
+      // The comment of `ssl_private_key_method_st::complete` indicates that
+      // `max_out` is the actual size of the buffer.
+      UNSAFE_BUFFERS(base::span(out, max_out)), out_len);
 }
 
 ssl_private_key_result_t
-SSLServerContextImpl::SocketImpl::PrivateKeySignCallback(uint8_t* out,
-                                                         size_t* out_len,
-                                                         size_t max_out,
-                                                         uint16_t algorithm,
-                                                         const uint8_t* in,
-                                                         size_t in_len) {
+SSLServerContextImpl::SocketImpl::PrivateKeySignCallback(
+    uint16_t algorithm,
+    base::span<const uint8_t> input) {
   DCHECK(context_);
   DCHECK(context_->private_key_);
   signature_result_ = ERR_IO_PENDING;
   context_->private_key_->Sign(
-      algorithm, base::span(in, in_len),
+      algorithm, input,
       base::BindOnce(&SSLServerContextImpl::SocketImpl::OnPrivateKeyComplete,
                      weak_factory_.GetWeakPtr()));
   return ssl_private_key_retry;
 }
 
 ssl_private_key_result_t
-SSLServerContextImpl::SocketImpl::PrivateKeyCompleteCallback(uint8_t* out,
-                                                             size_t* out_len,
-                                                             size_t max_out) {
+SSLServerContextImpl::SocketImpl::PrivateKeyCompleteCallback(
+    base::span<uint8_t> buf,
+    size_t* out_len) {
   if (signature_result_ == ERR_IO_PENDING)
     return ssl_private_key_retry;
   if (signature_result_ != OK) {
     OpenSSLPutNetError(FROM_HERE, signature_result_);
     return ssl_private_key_failure;
   }
-  if (signature_.size() > max_out) {
+  if (signature_.size() > buf.size()) {
     OpenSSLPutNetError(FROM_HERE, ERR_SSL_CLIENT_AUTH_SIGNATURE_FAILED);
     return ssl_private_key_failure;
   }
-  memcpy(out, signature_.data(), signature_.size());
+  buf.copy_prefix_from(signature_);
   *out_len = signature_.size();
   signature_.clear();
   return ssl_private_key_success;
@@ -576,6 +586,7 @@ bool SSLServerContextImpl::SocketImpl::GetSSLInfo(SSLInfo* ssl_info) {
                                 &ssl_info->connection_status);
 
   ssl_info->early_data_received = early_data_received_;
+  ssl_info->early_data_accepted = SSL_early_data_accepted(ssl_.get());
   ssl_info->encrypted_client_hello = SSL_ech_accepted(ssl_.get());
   ssl_info->handshake_type = SSL_session_reused(ssl_.get())
                                  ? SSLInfo::HANDSHAKE_RESUME
@@ -809,29 +820,53 @@ int SSLServerContextImpl::SocketImpl::Init() {
 
   SSL_set_shed_handshake_config(ssl_.get(), 1);
 
-  // Set certificate and private key.
-  if (context_->pkey_) {
-    DCHECK(context_->cert_->cert_buffer());
-    if (!SetSSLChainAndKey(ssl_.get(), context_->cert_.get(),
-                           context_->pkey_.get(), nullptr)) {
-      return ERR_UNEXPECTED;
-    }
-  } else {
-    DCHECK(context_->private_key_);
-    if (!SetSSLChainAndKey(ssl_.get(), context_->cert_.get(), nullptr,
-                           &kPrivateKeyMethod)) {
-      return ERR_UNEXPECTED;
-    }
-    std::vector<uint16_t> preferences =
-        context_->private_key_->GetAlgorithmPreferences();
-    SSL_set_signing_algorithm_prefs(ssl_.get(), preferences.data(),
-                                    preferences.size());
-  }
-
+  std::vector<uint16_t> signing_algorithm_prefs;
   if (context_->ssl_server_config_.signature_algorithm_for_testing
           .has_value()) {
-    uint16_t id = *context_->ssl_server_config_.signature_algorithm_for_testing;
-    CHECK(SSL_set_signing_algorithm_prefs(ssl_.get(), &id, 1));
+    signing_algorithm_prefs.emplace_back(
+        *context_->ssl_server_config_.signature_algorithm_for_testing);
+  } else if (context_->private_key_) {
+    signing_algorithm_prefs = context_->private_key_->GetAlgorithmPreferences();
+  }
+
+  ConfigureSSLCredentialParams params{
+      .private_key = context_->pkey_
+                         ? ConfigureSSLCredentialParams::PrivateKeyVariant(
+                               context_->pkey_.get())
+                         : ConfigureSSLCredentialParams::PrivateKeyVariant(
+                               &kPrivateKeyMethod),
+      .signing_algorithm_prefs = signing_algorithm_prefs,
+      .ocsp_response = context_->ssl_server_config_.ocsp_response,
+      .signed_cert_timestamp_list =
+          context_->ssl_server_config_.signed_cert_timestamp_list,
+  };
+
+  // If a Trust Anchor ID for the intermediate certificate was provided,
+  // configure an alternative, shorter chain that omits the intermediate.
+  if (!context_->ssl_server_config_.intermediate_trust_anchor_id.empty()) {
+    // The current Trust Anchor IDs API only allows configuring a Trust Anchor
+    // ID for a single intermediate certificate.
+    DCHECK_EQ(context_->cert_chain_.size(), 2u);
+
+    std::vector<CRYPTO_BUFFER*> elided_chain = {context_->cert_chain_[0].get()};
+
+    ConfigureSSLCredentialParams params_with_trust_anchor_id = params;
+    params_with_trust_anchor_id.cert_chain = elided_chain;
+    params_with_trust_anchor_id.trust_anchor_id =
+        context_->ssl_server_config_.intermediate_trust_anchor_id;
+
+    if (!ConfigureSSLCredential(ssl_.get(), params_with_trust_anchor_id)) {
+      return ERR_UNEXPECTED;
+    }
+  }
+
+  // Set the full (un-elided) certificate chain and private key.
+  std::vector<CRYPTO_BUFFER*> chain_raw =
+      GetCertChainRawVector(context_->cert_chain_);
+  params.cert_chain = chain_raw;
+
+  if (!ConfigureSSLCredential(ssl_.get(), params)) {
+    return ERR_UNEXPECTED;
   }
 
   const std::vector<int>& curves =
@@ -906,6 +941,19 @@ std::unique_ptr<SSLServerContext> CreateSSLServerContext(
 }
 
 std::unique_ptr<SSLServerContext> CreateSSLServerContext(
+    base::span<const bssl::UniquePtr<CRYPTO_BUFFER>> cert_chain,
+    EVP_PKEY* pkey,
+    const SSLServerConfig& ssl_server_config) {
+  std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> copied_cert_chain;
+  copied_cert_chain.reserve(cert_chain.size());
+  for (const auto& handle : cert_chain) {
+    copied_cert_chain.push_back(bssl::UpRef(handle.get()));
+  }
+  return std::make_unique<SSLServerContextImpl>(std::move(copied_cert_chain),
+                                                pkey, ssl_server_config);
+}
+
+std::unique_ptr<SSLServerContext> CreateSSLServerContext(
     X509Certificate* certificate,
     const crypto::RSAPrivateKey& key,
     const SSLServerConfig& ssl_server_config) {
@@ -925,7 +973,7 @@ SSLServerContextImpl::SSLServerContextImpl(
     scoped_refptr<net::SSLPrivateKey> key,
     const SSLServerConfig& ssl_server_config)
     : ssl_server_config_(ssl_server_config),
-      cert_(certificate),
+      cert_chain_(ChainFromX509Certificate(certificate)),
       private_key_(key) {
   CHECK(private_key_);
   Init();
@@ -935,7 +983,16 @@ SSLServerContextImpl::SSLServerContextImpl(
     X509Certificate* certificate,
     EVP_PKEY* pkey,
     const SSLServerConfig& ssl_server_config)
-    : ssl_server_config_(ssl_server_config), cert_(certificate) {
+    : SSLServerContextImpl(ChainFromX509Certificate(certificate),
+                           pkey,
+                           ssl_server_config) {}
+
+SSLServerContextImpl::SSLServerContextImpl(
+    std::vector<bssl::UniquePtr<CRYPTO_BUFFER>> cert_chain,
+    EVP_PKEY* pkey,
+    const SSLServerConfig& ssl_server_config)
+    : ssl_server_config_(ssl_server_config),
+      cert_chain_(std::move(cert_chain)) {
   CHECK(pkey);
   pkey_ = bssl::UpRef(pkey);
   Init();

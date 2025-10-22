@@ -58,6 +58,22 @@ T&& Lift(ContentAutofillDriver& source, T&& x) {
   return std::forward<T>(x);
 }
 
+gfx::Rect Lift(ContentAutofillDriver& source, gfx::Rect r) {
+  if (content::RenderWidgetHostView* view =
+          source.render_frame_host()->GetView()) {
+    r.set_origin(view->TransformPointToRootCoordSpace(r.origin()));
+  }
+  return r;
+}
+
+gfx::RectF Lift(ContentAutofillDriver& source, gfx::RectF r) {
+  if (content::RenderWidgetHostView* view =
+          source.render_frame_host()->GetView()) {
+    r.set_origin(view->TransformPointToRootCoordSpaceF(r.origin()));
+  }
+  return r;
+}
+
 FormData Lift(ContentAutofillDriver& source, FormData form) {
   content::RenderFrameHost& rfh = *source.render_frame_host();
   form.set_host_frame(source.GetFrameToken());
@@ -71,10 +87,7 @@ FormData Lift(ContentAutofillDriver& source, FormData form) {
     unstripped_url = rfh.GetLastCommittedOrigin().GetURL();
   }
   form.set_url(StripAuthAndParams(unstripped_url));
-  if (base::FeatureList::IsEnabled(
-          features::kAutofillIncludeUrlInCrowdsourcing)) {
-    form.set_full_url(StripAuth(unstripped_url));
-  }
+  form.set_full_url(StripAuth(unstripped_url));
 
   // The form signature must be calculated after setting FormData::url.
   FormSignature signature = CalculateFormSignature(form);
@@ -84,11 +97,7 @@ FormData Lift(ContentAutofillDriver& source, FormData form) {
     field.set_host_form_id(form.renderer_id());
     field.set_host_form_signature(signature);
     field.set_origin(rfh.GetLastCommittedOrigin());
-    if (content::RenderWidgetHostView* view = rfh.GetView()) {
-      gfx::RectF r = field.bounds();
-      r.set_origin(view->TransformPointToRootCoordSpaceF(r.origin()));
-      field.set_bounds(r);
-    }
+    field.set_bounds(Lift(source, field.bounds()));
   }
   form.set_fields(std::move(fields));
   return form;
@@ -102,11 +111,25 @@ FieldGlobalId Lift(ContentAutofillDriver& source, FieldRendererId id) {
   return FieldGlobalId(source.GetFrameToken(), id);
 }
 
+PasswordSuggestionRequest Lift(ContentAutofillDriver& source,
+                               PasswordSuggestionRequest request) {
+  // These indices are equal to fields().size() for manual requests.
+  if (request.username_field_index > request.form_data.fields().size() ||
+      request.password_field_index > request.form_data.fields().size()) {
+    mojo::ReportBadMessage(
+        "username_field_index or password_field_index cannot be greater than "
+        "form.fields.size()!");
+  }
+  request.form_data = Lift(source, std::move(request.form_data));
+  request.field.bounds = Lift(source, std::move(request.field.bounds));
+  return request;
+}
+
 template <typename T>
-auto Lift(ContentAutofillDriver& source, const std::optional<T>& x) {
-  std::optional<std::remove_cvref_t<decltype(Lift(source, *x))>> y;
+std::optional<T> Lift(ContentAutofillDriver& source, std::optional<T> x) {
+  std::optional<T> y;
   if (x) {
-    y.emplace(Lift(source, *x));
+    y.emplace(Lift(source, *std::move(x)));
   }
   return y;
 }
@@ -119,14 +142,6 @@ auto Lift(ContentAutofillDriver& source, const std::vector<T>& xs) {
     ys.push_back(Lift(source, x));
   }
   return ys;
-}
-
-gfx::Rect Lift(ContentAutofillDriver& source, gfx::Rect r) {
-  if (content::RenderWidgetHostView* view =
-          source.render_frame_host()->GetView()) {
-    r.set_origin(view->TransformPointToRootCoordSpace(r.origin()));
-  }
-  return r;
 }
 
 template <typename... Args>
@@ -183,6 +198,14 @@ auto& WithNewVersion(const std::vector<FormData>& browser_forms) {
     WithNewVersion(form);
   }
   return browser_forms;
+}
+
+std::optional<PasswordSuggestionRequest> WithNewVersion(
+    std::optional<PasswordSuggestionRequest> password_request) {
+  if (password_request) {
+    WithNewVersion(password_request->form_data);
+  }
+  return password_request;
 }
 
 template <typename... Args>
@@ -399,14 +422,8 @@ std::optional<LocalFrameToken> ContentAutofillDriver::Resolve(
 }
 
 ukm::SourceId ContentAutofillDriver::GetPageUkmSourceId() const {
-  if (render_frame_host_->IsInLifecycleState(
-          content::RenderFrameHost::LifecycleState::kPrerendering)) {
-    // TODO(crbug.com/380129810): When `return ukm::kInvalidSourceId` is
-    // removed, FormInteractionsUkmLogger::CanLog() doesn't need to check the
-    // `ukm::SourceId` anymore.
-    NOTREACHED(base::NotFatalUntil::M134);
-    return ukm::kInvalidSourceId;
-  }
+  CHECK(!render_frame_host_->IsInLifecycleState(
+          content::RenderFrameHost::LifecycleState::kPrerendering));
   return render_frame_host_->GetPageUkmSourceId();
 }
 
@@ -435,7 +452,8 @@ base::flat_set<FieldGlobalId> ContentAutofillDriver::ApplyFormAction(
     mojom::ActionPersistence action_persistence,
     base::span<const FormFieldData> data,
     const url::Origin& triggered_origin,
-    const base::flat_map<FieldGlobalId, FieldType>& field_type_map) {
+    const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
+    const Section& section_for_clear_form_on_ios) {
   // If this driver is active, then its main frame is identical to the main
   // frame at the time the form was received from a renderer and their origins
   // are the same.
@@ -480,17 +498,17 @@ void ContentAutofillDriver::ExtractForm(FormGlobalId form_id,
       form_id, WithNewVersion(std::move(final_handler)));
 }
 
+void ContentAutofillDriver::ExposeDomNodeIDs() {
+  GetAutofillAgent()->ExposeDomNodeIDs();
+}
+
 void ContentAutofillDriver::SendTypePredictionsToRenderer(
-    base::span<const raw_ptr<FormStructure, VectorExperimental>> forms) {
-  if (!base::FeatureList::IsEnabled(
-          features::test::kAutofillShowTypePredictions)) {
-    return;
-  }
-  std::vector<FormDataPredictions> type_predictions =
-      FormStructure::GetFieldTypePredictions(forms);
+    const FormStructure& form) {
+  CHECK(base::FeatureList::IsEnabled(
+      features::test::kAutofillShowTypePredictions));
   RouteToAgent(router(), &AutofillDriverRouter::SendTypePredictionsToRenderer,
                &mojom::AutofillAgent::FieldTypePredictionsAvailable,
-               type_predictions);
+               form.GetFieldTypePredictions());
 }
 
 void ContentAutofillDriver::RendererShouldAcceptDataListSuggestion(
@@ -573,10 +591,11 @@ void ContentAutofillDriver::AskForValuesToFill(
     const FormData& form,
     FieldRendererId field_id,
     const gfx::Rect& caret_bounds,
-    AutofillSuggestionTriggerSource trigger_source) {
+    AutofillSuggestionTriggerSource trigger_source,
+    const std::optional<PasswordSuggestionRequest>& password_request) {
   RouteToManager(*this, router(), &AutofillDriverRouter::AskForValuesToFill,
                  &AutofillManager::OnAskForValuesToFill, form, field_id,
-                 caret_bounds, trigger_source);
+                 caret_bounds, trigger_source, password_request);
 }
 
 void ContentAutofillDriver::HidePopup() {

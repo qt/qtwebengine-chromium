@@ -9,10 +9,12 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <array>
 #include <memory>
 
 #include "base/android/scoped_java_ref.h"
 #include "base/time/time.h"
+#include "ui/events/android/motion_event_android_source.h"
 #include "ui/events/events_export.h"
 #include "ui/events/velocity_tracker/motion_event.h"
 #include "ui/gfx/geometry/point_f.h"
@@ -25,6 +27,12 @@ namespace ui {
 // while all *output* coordinates are in DIPs (as with WebTouchEvent).
 class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
  public:
+  // A struct to hold the oldest and latest event times.
+  struct EventTimes {
+    base::TimeTicks oldest;
+    base::TimeTicks latest;
+  };
+
   // Returns the motion event action defined in Java layer for a given
   // MotionEvent::Action.
   static int GetAndroidAction(Action action);
@@ -36,6 +44,7 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
             jfloat pos_y_pixels,
             jfloat touch_major_pixels,
             jfloat touch_minor_pixels,
+            jfloat pressure,
             jfloat orientation_rad,
             jfloat tilt_rad,
             jint tool_type);
@@ -44,6 +53,7 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
     jfloat pos_y_pixels;
     jfloat touch_major_pixels;
     jfloat touch_minor_pixels;
+    jfloat pressure;
     jfloat orientation_rad;
     // Unlike the tilt angles in motion_event.h, this field matches the
     // MotionEvent spec because we get this values from Java.
@@ -65,13 +75,13 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
                      int android_action_button,
                      int android_gesture_classification,
                      int android_button_state,
-                     int meta_state,
-                     int source,
+                     int android_meta_state,
                      float raw_offset_x_pixels,
                      float raw_offset_y_pixels,
                      bool for_touch_handle,
                      const Pointer* const pointer0,
-                     const Pointer* const pointer1);
+                     const Pointer* const pointer1,
+                     std::unique_ptr<MotionEventAndroidSource> source);
 
   ~MotionEventAndroid() override;
 
@@ -91,9 +101,17 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
   Action GetAction() const override;
   int GetActionIndex() const override;
   size_t GetPointerCount() const override;
+  int GetPointerId(size_t pointer_index) const override;
+  float GetX(size_t pointer_index) const override;
+  float GetY(size_t pointer_index) const override;
   float GetRawX(size_t pointer_index) const override;
   float GetRawY(size_t pointer_index) const override;
+  float GetTouchMajor(size_t pointer_index) const override;
+  float GetTouchMinor(size_t pointer_index) const override;
+  float GetOrientation(size_t pointer_index) const override;
   float GetTwist(size_t pointer_index) const override;
+  float GetTiltX(size_t pointer_index) const override;
+  float GetTiltY(size_t pointer_index) const override;
   float GetTangentialPressure(size_t pointer_index) const override;
   // TODO(crbug.com/41493853): Cleanup GetEventTime method to have same
   // semantics as Android side of MotionEvent.GetEventTime(). On Android side
@@ -103,7 +121,16 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
   base::TimeTicks GetLatestEventTime() const override;
   base::TimeTicks GetDownTime() const override;
   size_t GetHistorySize() const override;
+  base::TimeTicks GetHistoricalEventTime(
+      size_t historical_index) const override;
+  float GetHistoricalTouchMajor(size_t pointer_index,
+                                size_t historical_index) const override;
+  float GetHistoricalX(size_t pointer_index,
+                       size_t historical_index) const override;
+  float GetHistoricalY(size_t pointer_index,
+                       size_t historical_index) const override;
   int GetSourceDeviceId(size_t pointer_index) const override;
+  ToolType GetToolType(size_t pointer_index) const override;
   int GetButtonState() const override;
   int GetFlags() const override;
   Classification GetClassification() const override;
@@ -124,36 +151,60 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
 
  protected:
   float pix_to_dip() const { return pix_to_dip_; }
-  float ToDips(float pixels) const;
 
   // Cache pointer coords, id's and major lengths for the most common
   // touch-related scenarios, i.e., scrolling and pinching.  This prevents
   // redundant JNI fetches for the same bits.
   enum { MAX_POINTERS_TO_CACHE = 2 };
 
+  // Returns true if the pointer at `pointer_index` is cached and its data
+  // should be retrieved from the cache.
+  bool IsPointerCacheable(size_t pointer_index) const;
+
+  // Returns the id of the pointer at `pointer_index` from the cache.
+  int GetCachedPointerId(size_t pointer_index) const;
+
+  // Returns the position of the pointer at `pointer_index` from the cache.
+  const gfx::PointF& GetCachedPointerPosition(size_t pointer_index) const;
+
+  // Returns the touch major/minor of the pointer at `pointer_index` from the
+  // cache.
+  float GetCachedPointerTouchMajor(size_t pointer_index) const;
+  float GetCachedPointerTouchMinor(size_t pointer_index) const;
+
+  // Returns the pressure/orientation of the pointer at `pointer_index` from the
+  // cache.
+  float GetCachedPointerPressure(size_t pointer_index) const;
+  float GetCachedPointerOrientation(size_t pointer_index) const;
+
+  // Returns the tilt of the pointer at `pointer_index` from the cache.
+  float GetCachedPointerTiltX(size_t pointer_index) const;
+  float GetCachedPointerTiltY(size_t pointer_index) const;
+
+  // Returns the tool type of the pointer at `pointer_index` from the cache.
+  ToolType GetCachedPointerToolType(size_t pointer_index) const;
+
   MotionEventAndroid(const MotionEventAndroid& e, const gfx::PointF& point);
 
+  const MotionEventAndroidSource* source() const { return source_.get(); }
+
+ private:
+  float ToDips(float pixels) const;
   struct CachedPointer {
     CachedPointer();
     int id = 0;
     gfx::PointF position;
     float touch_major = 0;
     float touch_minor = 0;
+    float pressure = 0;
     float orientation = 0;
     float tilt_x = 0;
     float tilt_y = 0;
     ToolType tool_type = ToolType::UNKNOWN;
-  } cached_pointers_[MAX_POINTERS_TO_CACHE];
+  };
 
-  static ToolType FromAndroidToolType(int android_tool_type);
-  static base::TimeTicks FromAndroidTime(base::TimeTicks time);
-  static float ToValidFloat(float x);
-  static void ConvertTiltOrientationToTiltXY(float tilt_rad,
-                                             float orientation_rad,
-                                             float* tilt_x,
-                                             float* tilt_y);
+  std::array<CachedPointer, MAX_POINTERS_TO_CACHE> cached_pointers_;
 
- private:
   CachedPointer FromAndroidPointer(const Pointer& pointer) const;
   CachedPointer CreateCachedPointer(const CachedPointer& pointer,
                                     const gfx::PointF& point) const;
@@ -166,7 +217,6 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
   const float ticks_x_;
   const float ticks_y_;
   const float tick_multiplier_;
-  const int source_;
 
   const bool for_touch_handle_;
 
@@ -191,6 +241,8 @@ class EVENTS_EXPORT MotionEventAndroid : public MotionEvent {
 
   // A unique identifier for the Android motion event.
   const uint32_t unique_event_id_;
+
+  std::unique_ptr<MotionEventAndroidSource> source_;
 };
 
 }  // namespace ui

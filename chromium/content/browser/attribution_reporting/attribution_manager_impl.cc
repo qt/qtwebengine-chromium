@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include <algorithm>
 #include <cmath>
 #include <functional>
 #include <optional>
@@ -23,7 +24,6 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/functional/callback_helpers.h"
-#include "base/functional/overloaded.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/ptr_util.h"
@@ -56,6 +56,7 @@
 #include "content/browser/aggregation_service/report_scheduler_timer.h"
 #include "content/browser/attribution_reporting/aggregatable_attribution_utils.h"
 #include "content/browser/attribution_reporting/aggregatable_debug_report.h"
+#include "content/browser/attribution_reporting/attribution_constants.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager_impl.h"
 #include "content/browser/attribution_reporting/attribution_debug_report.h"
@@ -90,11 +91,13 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "net/base/schemeful_site.h"
+#include "services/metrics/public/cpp/metrics_utils.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_recorder.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "services/network/public/mojom/network_change_manager.mojom-forward.h"
 #include "storage/browser/quota/special_storage_policy.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -123,7 +126,8 @@ enum class ConversionReportSendOutcome {
   kFailed = 1,
   kDropped = 2,
   kFailedToAssemble = 3,
-  kMaxValue = kFailedToAssemble,
+  kExpired = 4,
+  kMaxValue = kExpired,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/attribution_reporting/enums.xml:ConversionReportSendOutcome)
 
@@ -135,7 +139,8 @@ enum class ConversionReportSendRetryCount {
   kNone = 0,
   kOnce = 1,
   kTwice = 2,
-  kFailed = 3,
+  kThrice = 3,
+  kFailed = 4,
   kMaxValue = kFailed,
 };
 // LINT.ThenChange(//tools/metrics/histograms/metadata/attribution_reporting/enums.xml:ConversionReportSendRetryCount)
@@ -268,19 +273,37 @@ void RecordCreateReportStatus(const CreateReportResult& result) {
   }
 }
 
-// If `retry_attempts` <= 2, represents the number of retries before success.
-// If `retry_attempts == 3`, represents failure after two retries.
-void RecordReportRetriesEventLevel(int retry_attempts) {
-  DCHECK_LE(retry_attempts, 3);
-  base::UmaHistogramEnumeration(
-      "Conversions.EventLevelReport.ReportRetriesTillSuccessOrFailure",
-      static_cast<ConversionReportSendRetryCount>(retry_attempts));
+// If `retry_attempts` is a number, represents the number of retries before
+// success. If `retry_attempts` is null, represents failure after all retries.
+void RecordReportRetriesEventLevel(std::optional<int> retry_attempts) {
+  static constexpr char kNavigationRetryMetric[] =
+      "Conversions.EventLevelReport.ReportRetriesTillSuccessOrFailure2";
+
+  if (retry_attempts.has_value()) {
+    CHECK_LT(*retry_attempts,
+             static_cast<int>(ConversionReportSendRetryCount::kFailed));
+    base::UmaHistogramEnumeration(
+        kNavigationRetryMetric,
+        static_cast<ConversionReportSendRetryCount>(*retry_attempts));
+  } else {
+    base::UmaHistogramEnumeration(kNavigationRetryMetric,
+                                  ConversionReportSendRetryCount::kFailed);
+  }
 }
-void RecordReportRetriesAggregatable(int retry_attempts) {
-  DCHECK_LE(retry_attempts, 3);
-  base::UmaHistogramEnumeration(
-      "Conversions.AggregatableReport.ReportRetriesTillSuccessOrFailure",
-      static_cast<ConversionReportSendRetryCount>(retry_attempts));
+void RecordReportRetriesAggregatable(std::optional<int> retry_attempts) {
+  static constexpr char kNavigationRetryMetric[] =
+      "Conversions.AggregatableReport.ReportRetriesTillSuccessOrFailure2";
+
+  if (retry_attempts.has_value()) {
+    CHECK_LT(*retry_attempts,
+             static_cast<int>(ConversionReportSendRetryCount::kFailed));
+    base::UmaHistogramEnumeration(
+        kNavigationRetryMetric,
+        static_cast<ConversionReportSendRetryCount>(*retry_attempts));
+  } else {
+    base::UmaHistogramEnumeration(kNavigationRetryMetric,
+                                  ConversionReportSendRetryCount::kFailed);
+  }
 }
 
 ConversionReportSendOutcome ConvertToConversionReportSendOutcome(
@@ -293,6 +316,8 @@ ConversionReportSendOutcome ConvertToConversionReportSendOutcome(
       return ConversionReportSendOutcome::kFailed;
     case SendResult::Status::kDropped:
       return ConversionReportSendOutcome::kDropped;
+    case SendResult::Status::kExpired:
+      return ConversionReportSendOutcome::kExpired;
     case SendResult::Status::kAssemblyFailure:
     case SendResult::Status::kTransientAssemblyFailure:
       return ConversionReportSendOutcome::kFailedToAssemble;
@@ -348,7 +373,7 @@ void LogAggregatableReportHistogramCustomTimes(const char* suffix,
 // to be assembled for aggregatable reports, for logging metrics.
 void LogMetricsOnReportSend(const AttributionReport& report, base::Time now) {
   std::visit(
-      base::Overloaded{
+      absl::Overload{
           [&](const AttributionReport::EventLevelData&) {
             // Use a large time range to capture users that might not open the
             // browser for a long time while a conversion report is pending.
@@ -424,6 +449,7 @@ void RecordTimeSinceLastNavigationOnReportComplete(
           /*buckets=*/100);
       break;
     case SendResult::Status::kDropped:
+    case SendResult::Status::kExpired:
     case SendResult::Status::kAssemblyFailure:
     case SendResult::Status::kTransientAssemblyFailure:
       break;
@@ -490,6 +516,17 @@ void LogMetricsOnReportSent(const AttributionReport& report) {
           time_since_original_report_time > base::Days(30));
 
       RecordReportRetriesEventLevel(report.failed_send_attempts());
+
+      // `time_since_original_report_time` can be negative when sent from the
+      // web UI.
+      dwa::builders::AttributionConversionsSendReport()
+          .SetContent(report.reporting_origin().Serialize())
+          .SetEventLevelExtraReportDelay(
+              ukm::GetSemanticBucketMinForDurationTiming(
+                  std::max(time_since_original_report_time.InMilliseconds(),
+                           int64_t(0))))
+          .Record(metrics::dwa::DwaRecorder::Get());
+
       break;
     case AttributionReport::Type::kAggregatableAttribution:
       UMA_HISTOGRAM_CUSTOM_TIMES(
@@ -512,6 +549,16 @@ void LogMetricsOnReportSent(const AttributionReport& report) {
           time_since_original_report_time > base::Days(30));
 
       RecordReportRetriesAggregatable(report.failed_send_attempts());
+
+      // `time_from_conversion_to_report_sent` can be negative in edge cases,
+      // e.g. the user adjusted the clock backwards and sent from the web UI.
+      dwa::builders::AttributionConversionsSendReport()
+          .SetContent(report.reporting_origin().Serialize())
+          .SetAggregatableReportDelayFromTrigger(
+              ukm::GetSemanticBucketMinForDurationTiming(
+                  std::max(time_from_conversion_to_report_sent.InMilliseconds(),
+                           int64_t(0))))
+          .Record(metrics::dwa::DwaRecorder::Get());
       break;
     case AttributionReport::Type::kNullAggregatable:
       break;
@@ -572,20 +619,24 @@ std::unique_ptr<AttributionOsLevelManager> CreateOsLevelManager() {
 #endif
 }
 
+base::Time GetReportExpiryTime(const AttributionReport& report) {
+  return report.initial_report_time() + kReportExpiry;
+}
+
 // Returns new report time if any.
 std::optional<base::Time> HandleTransientFailureOnSendReport(
     const AttributionReport& report) {
-  int retry_attempts = report.failed_send_attempts() + 1;
-  if (std::optional<base::TimeDelta> delay =
-          GetFailedReportDelay(retry_attempts)) {
-    return base::Time::Now() + *delay;
+  if (std::optional<base::Time> report_retry_time = GetReportTimeForRetry(
+          /*failed_send_attempts=*/report.failed_send_attempts() + 1,
+          GetReportExpiryTime(report))) {
+    return *report_retry_time;
   } else {
     switch (report.GetReportType()) {
       case AttributionReport::Type::kEventLevel:
-        RecordReportRetriesEventLevel(retry_attempts);
+        RecordReportRetriesEventLevel(/*retry_attempts=*/std::nullopt);
         break;
       case AttributionReport::Type::kAggregatableAttribution:
-        RecordReportRetriesAggregatable(retry_attempts);
+        RecordReportRetriesAggregatable(/*retry_attempts=*/std::nullopt);
         break;
       case AttributionReport::Type::kNullAggregatable:
         break;
@@ -598,15 +649,28 @@ bool g_run_in_memory = false;
 
 }  // namespace
 
-std::optional<base::TimeDelta> GetFailedReportDelay(int failed_send_attempts) {
-  DCHECK_GT(failed_send_attempts, 0);
+std::optional<base::Time> GetReportTimeForRetry(int failed_send_attempts,
+                                                base::Time report_expiry) {
+  CHECK_GT(failed_send_attempts, 0);
 
   constexpr int kMaxFailedSendAttempts = 3;
-  if (failed_send_attempts >= kMaxFailedSendAttempts) {
+  const int navigation_retry_attempt =
+      static_cast<int>(kAttributionReportNavigationRetryAttempt.Get());
+  const bool navigation_based_retry_enabled =
+      base::FeatureList::IsEnabled(kAttributionReportNavigationBasedRetry);
+
+  if (navigation_based_retry_enabled) {
+    if (failed_send_attempts == navigation_retry_attempt) {
+      return report_expiry;
+    } else if (failed_send_attempts > navigation_retry_attempt) {
+      return std::nullopt;
+    }
+  } else if (failed_send_attempts >= kMaxFailedSendAttempts) {
     return std::nullopt;
   }
-  return failed_send_attempts == 1 ? kReportDeliveryFirstRetryDelay
-                                   : kReportDeliverySecondRetryDelay;
+  return base::Time::Now() + (failed_send_attempts == 1
+                                  ? kReportDeliveryFirstRetryDelay
+                                  : kReportDeliverySecondRetryDelay);
 }
 
 ScopedUseInMemoryStorageForTesting::ScopedUseInMemoryStorageForTesting()
@@ -693,9 +757,9 @@ AttributionManagerImpl::AttributionManagerImpl(
       report_sender_(std::move(report_sender)),
       os_level_manager_(std::move(os_level_manager)),
       debug_mode_(debug_mode) {
-  DCHECK(resolver_task_runner_);
-  DCHECK(report_sender_);
-  DCHECK(os_level_manager_);
+  CHECK(resolver_task_runner_);
+  CHECK(report_sender_);
+  CHECK(os_level_manager_);
 
   scheduler_timer_ = std::make_unique<ReportSchedulerTimer>(
       std::make_unique<ReportScheduler>(weak_factory_.GetWeakPtr()));
@@ -729,7 +793,7 @@ void AttributionManagerImpl::RemoveObserver(AttributionObserver* observer) {
 }
 
 AttributionDataHostManager* AttributionManagerImpl::GetDataHostManager() {
-  DCHECK(data_host_manager_);
+  CHECK(data_host_manager_);
   return data_host_manager_.get();
 }
 
@@ -985,7 +1049,7 @@ void AttributionManagerImpl::GetPendingReportsForInternalUse(
 
 void AttributionManagerImpl::SendReportForWebUI(AttributionReport::Id id,
                                                 base::OnceClosure done) {
-  DCHECK(done);
+  CHECK(done);
 
   OnUserVisibleTaskStarted();
   done = std::move(done).Then(
@@ -1045,7 +1109,7 @@ void AttributionManagerImpl::OnUserVisibleTaskStarted() {
 }
 
 void AttributionManagerImpl::OnUserVisibleTaskComplete() {
-  DCHECK_GT(num_pending_user_visible_tasks_, 0);
+  CHECK_GT(num_pending_user_visible_tasks_, 0);
   --num_pending_user_visible_tasks_;
 
   // No more user-visible tasks, so we can reset the priority.
@@ -1095,6 +1159,21 @@ void AttributionManagerImpl::RemoveAttributionDataByDataKey(
 void AttributionManagerImpl::UpdateLastNavigationTime(
     base::Time navigation_time) {
   last_navigation_time_ = navigation_time;
+
+  if (base::FeatureList::IsEnabled(kAttributionReportNavigationBasedRetry)) {
+    base::OnceCallback then = base::BindOnce(
+        [](base::WeakPtr<AttributionManagerImpl> manager,
+           std::optional<base::Time> new_report_time) {
+          if (manager && new_report_time.has_value()) {
+            manager->NotifyReportsChanged();
+            manager->scheduler_timer_->MaybeSet(new_report_time);
+          }
+        },
+        weak_factory_.GetWeakPtr());
+    attribution_resolver_
+        .AsyncCall(&AttributionResolver::AdjustNavigationRetryReportTimes)
+        .Then(std::move(then));
+  }
 }
 
 void AttributionManagerImpl::GetReportsToSend() {
@@ -1115,7 +1194,7 @@ void AttributionManagerImpl::GetReportsToSend() {
 void AttributionManagerImpl::OnGetReportToSendFromWebUI(
     base::OnceClosure done,
     std::optional<AttributionReport> report) {
-  DCHECK(done);
+  CHECK(done);
 
   if (!report.has_value()) {
     std::move(done).Run();
@@ -1141,7 +1220,7 @@ void AttributionManagerImpl::SendReports(
 void AttributionManagerImpl::SendReport(base::OnceClosure web_ui_callback,
                                         const base::Time now,
                                         AttributionReport report) {
-  DCHECK_LE(report.report_time(), now);
+  CHECK_LE(report.report_time(), now);
 
   bool inserted = reports_being_sent_.emplace(report.id()).second;
   if (!inserted) {
@@ -1151,11 +1230,19 @@ void AttributionManagerImpl::SendReport(base::OnceClosure web_ui_callback,
     return;
   }
 
+  // Drop the report on the floor if the report is expired. We need to make sure
+  // we forward that the report was "sent" to ensure it is deleted from storage,
+  // etc. This simulates sending the report through a null channel.
+  if (base::FeatureList::IsEnabled(kAttributionReportExpiry) &&
+      now > GetReportExpiryTime(report)) {
+    OnReportSent(std::move(web_ui_callback), std::move(report),
+                 SendResult(SendResult::Expired()));
+    return;
+  }
+
   if (!IsReportAllowed(report)) {
-    // If measurement is disallowed, just drop the report on the floor. We
-    // need to make sure we forward that the report was "sent" to ensure it is
-    // deleted from storage, etc. This simulates sending the report through a
-    // null channel.
+    // If measurement is disallowed, just drop the report on the floor the same
+    // way we do above.
     OnReportSent(std::move(web_ui_callback), std::move(report),
                  SendResult(SendResult::Dropped()));
     return;
@@ -1213,7 +1300,7 @@ void AttributionManagerImpl::OnReportSent(base::OnceClosure done,
   // from storage.
 
   std::optional<base::Time> new_report_time =
-      std::visit(base::Overloaded{
+      std::visit(absl::Overload{
                      [&](SendResult::Sent sent) -> std::optional<base::Time> {
                        switch (sent.result) {
                          case SendResult::Sent::Result::kSent:
@@ -1232,6 +1319,9 @@ void AttributionManagerImpl::OnReportSent(base::OnceClosure done,
                        }
                      },
                      [](SendResult::Dropped) -> std::optional<base::Time> {
+                       return std::nullopt;
+                     },
+                     [](SendResult::Expired) -> std::optional<base::Time> {
                        return std::nullopt;
                      },
                      [&](SendResult::AssemblyFailure failure)

@@ -29,7 +29,6 @@
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "services/network/public/mojom/url_response_head.mojom-forward.h"
 #include "third_party/blink/public/common/service_worker/service_worker_status_code.h"
-#include "third_party/blink/public/mojom/blob/blob.mojom-forward.h"
 #include "third_party/blink/public/mojom/blob/blob.mojom.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_event_status.mojom-forward.h"
 #include "third_party/blink/public/mojom/service_worker/service_worker_fetch_response_callback.mojom.h"
@@ -88,8 +87,6 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
     kStarted,
     // A redirect happened, waiting for FollowRedirect().
     kSentRedirect,
-    // The response head has been sent to |url_loader_client_|.
-    kSentHeader,
     // The data pipe for the response body has been sent to
     // |url_loader_client_|. The body is being written to the pipe.
     kSentBody,
@@ -144,9 +141,6 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
   void SetCommitResponsibility(FetchResponseFrom fetch_response_from) override;
 
   // ServiceWorkerResourceLoader overrides:
-  void CommitResponseHeaders(
-      const network::mojom::URLResponseHeadPtr&) override;
-
   // Calls url_loader_client_->OnReceiveResponse() with given |response_head|,
   // |response_body|, and |cached_metadata|.
   void CommitResponseBody(
@@ -222,7 +216,7 @@ class CONTENT_EXPORT ServiceWorkerSubresourceLoader
   bool MaybeStartAutoPreload();
 
   void DidCacheStorageMatch(base::TimeTicks event_dispatch_time,
-                            blink::mojom::MatchResultPtr result);
+                            blink::mojom::CacheStorage::MatchResult result);
 
   void MaybeDeleteThis();
   bool IsResponseAlreadyCommittedByRaceNetworkRequest();

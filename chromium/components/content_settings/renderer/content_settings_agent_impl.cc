@@ -73,10 +73,6 @@ bool ContentSettingsAgentImpl::Delegate::AllowWriteToClipboard() {
   return false;
 }
 
-std::optional<bool> ContentSettingsAgentImpl::Delegate::AllowMutationEvents() {
-  return std::nullopt;
-}
-
 ContentSettingsAgentImpl::ContentSettingsAgentImpl(
     content::RenderFrame* render_frame,
     std::unique_ptr<Delegate> delegate)
@@ -207,8 +203,6 @@ void ContentSettingsAgentImpl::OnContentSettingsAgentRequest(
 mojom::ContentSettingsManager::StorageType
 ContentSettingsAgentImpl::ConvertToMojoStorageType(StorageType storage_type) {
   switch (storage_type) {
-    case StorageType::kDatabase:
-      return mojom::ContentSettingsManager::StorageType::DATABASE;
     case StorageType::kIndexedDB:
       return mojom::ContentSettingsManager::StorageType::INDEXED_DB;
     case StorageType::kCacheStorage:
@@ -296,10 +290,6 @@ bool ContentSettingsAgentImpl::AllowReadFromClipboard() {
 
 bool ContentSettingsAgentImpl::AllowWriteToClipboard() {
   return delegate_->AllowWriteToClipboard();
-}
-
-bool ContentSettingsAgentImpl::AllowMutationEvents(bool default_value) {
-  return delegate_->AllowMutationEvents().value_or(default_value);
 }
 
 bool ContentSettingsAgentImpl::AllowRunningInsecureContent(

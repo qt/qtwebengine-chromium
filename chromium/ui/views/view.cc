@@ -31,7 +31,6 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/scoped_observation.h"
@@ -311,8 +310,7 @@ View::~View() {
 // Tree operations -------------------------------------------------------------
 
 const Widget* View::GetWidget() const {
-  // The root view holds a reference to this view hierarchy's Widget.
-  return parent_ ? parent_->GetWidget() : nullptr;
+  return widget_;
 }
 
 Widget* View::GetWidget() {
@@ -699,15 +697,24 @@ void View::SetEnabled(bool enabled) {
   }
 
   enabled_ = enabled;
-  GetViewAccessibility().SetIsEnabled(enabled);
-
-  AdvanceFocusIfNecessary();
+  UpdateEnabledInViewsSubtreeState();
   OnPropertyChanged(&enabled_, kPropertyEffectsPaint);
 }
 
 base::CallbackListSubscription View::AddEnabledChangedCallback(
     PropertyChangedCallback callback) {
   return AddPropertyChangedCallback(&enabled_, std::move(callback));
+}
+
+bool View::GetEnabledInViewsSubtree() const {
+  return enabled_in_views_subtree_;
+}
+
+[[nodiscard]] base::CallbackListSubscription
+View::AddEnabledInViewsSubtreeChangedCallback(
+    PropertyChangedCallback callback) {
+  return AddPropertyChangedCallback(&enabled_in_views_subtree_,
+                                    std::move(callback));
 }
 
 View::Views View::GetChildrenInZOrder() {
@@ -1637,6 +1644,15 @@ bool View::OnMouseWheel(const ui::MouseWheelEvent& event) {
   return false;
 }
 
+void View::OnEvent(ui::Event* event) {
+  if (!GetEnabledInViewsSubtree()) {
+    // if this view or any of it parent is disabled, we should "eat" events
+    // without processing
+    return;
+  }
+  ui::EventHandler::OnEvent(event);
+}
+
 void View::OnKeyEvent(ui::KeyEvent* event) {
   bool consumed = (event->type() == ui::EventType::kKeyPressed)
                       ? OnKeyPressed(*event)
@@ -1782,13 +1798,15 @@ void View::AddAccelerator(const ui::Accelerator& accelerator) {
 }
 
 void View::RemoveAccelerator(const ui::Accelerator& accelerator) {
-  CHECK(accelerators_) << "Removing non-existent accelerator";
+  CHECK(accelerators_) << "Removing non-existent accelerator "
+                       << accelerator.GetShortcutText();
 
-  auto i(std::ranges::find(*accelerators_, accelerator));
-  CHECK(i != accelerators_->end()) << "Removing non-existent accelerator";
+  const auto found_iter = std::ranges::find(*accelerators_, accelerator);
+  CHECK(found_iter != accelerators_->end())
+      << "Removing non-existent accelerator " << accelerator.GetShortcutText();
 
-  auto index = static_cast<size_t>(i - accelerators_->begin());
-  accelerators_->erase(i);
+  const auto index = static_cast<size_t>(found_iter - accelerators_->begin());
+  accelerators_->erase(found_iter);
   if (index >= registered_accelerator_count_) {
     // The accelerator is not registered to FocusManager.
     return;
@@ -1812,7 +1830,8 @@ bool View::AcceleratorPressed(const ui::Accelerator& accelerator) {
 
 bool View::CanHandleAccelerators() const {
   const Widget* widget = GetWidget();
-  if (!GetEnabled() || !IsDrawn() || !widget || !widget->IsVisible()) {
+  if (!GetEnabledInViewsSubtree() || !IsDrawn() || !widget ||
+      !widget->IsVisible()) {
     return false;
   }
 #if BUILDFLAG(ENABLE_DESKTOP_AURA)
@@ -1831,6 +1850,10 @@ bool View::CanHandleAccelerators() const {
   }
 #endif
   return true;
+}
+
+base::span<const ui::Accelerator> View::GetAccelerators() const {
+  return accelerators_ ? *accelerators_ : base::span<const ui::Accelerator>();
 }
 
 // Focus -----------------------------------------------------------------------
@@ -1971,8 +1994,8 @@ void View::SetFocusBehavior(FocusBehavior focus_behavior) {
 }
 
 bool View::IsFocusable() const {
-  return GetFocusBehavior() == FocusBehavior::ALWAYS && GetEnabled() &&
-         IsDrawn();
+  return GetFocusBehavior() == FocusBehavior::ALWAYS &&
+         GetEnabledInViewsSubtree() && IsDrawn();
 }
 
 FocusManager* View::GetFocusManager() {
@@ -2983,6 +3006,14 @@ void View::AddChildViewAtImpl(View* view, size_t index) {
   const auto pos = children_.insert(
       std::next(children_.cbegin(), static_cast<ptrdiff_t>(index)), view);
 
+  // If the view was previously attached to a widget before being added here,
+  // its Widget pointer will already be cached. Propagate it to the new child.
+  // This must be done now because the functions below may call `GetWidget()`.
+  Widget* widget = GetWidget();
+  if (widget) {
+    view->SetWidget(widget);
+  }
+
   view->RemoveFromFocusList();
   SetFocusSiblings(view, pos);
 
@@ -2990,7 +3021,6 @@ void View::AddChildViewAtImpl(View* view, size_t index) {
   // code. This way if client code further modifies the view tree we are in a
   // sane state.
   const bool did_reparent_any_layers = view->UpdateParentLayers();
-  Widget* widget = GetWidget();
   if (did_reparent_any_layers && widget) {
     widget->LayerTreeChanged();
   }
@@ -3044,6 +3074,7 @@ void View::AddChildViewAtImpl(View* view, size_t index) {
   }
 
   view->PropagateAddNotifications(details, widget && widget != old_widget);
+  view->UpdateEnabledInViewsSubtreeState();
 
   UpdateTooltip();
 
@@ -3101,6 +3132,11 @@ void View::DoRemoveChildView(View* view,
     widget->LayerTreeChanged();
   }
 
+  if (view->parent_) {
+    view->parent_->GetViewAccessibility().NotifyEvent(
+        ax::mojom::Event::kChildrenChanged, true);
+  }
+
   view->parent_ = nullptr;
 
   if (delete_removed_view && !view->owned_by_client_) {
@@ -3142,6 +3178,7 @@ void View::PropagateRemoveNotifications(View* old_parent,
   if (is_removed_from_widget) {
     RemovedFromWidget();
     observers_.Notify(&ViewObserver::OnViewRemovedFromWidget, this);
+    widget_ = nullptr;
   }
 }
 
@@ -3189,6 +3226,16 @@ void View::ViewHierarchyChangedImpl(
   details.parent->needs_layout_ = true;
 }
 
+void View::SetWidget(Widget* widget) {
+  widget_ = widget;
+
+  // Recursively set the widget on all child views.
+  internal::ScopedChildrenLock lock(this);
+  for (View* child : children_) {
+    child->SetWidget(widget);
+  }
+}
+
 // Size and disposition --------------------------------------------------------
 
 void View::PropagateVisibilityNotifications(View* start, bool is_visible) {
@@ -3203,8 +3250,8 @@ void View::PropagateVisibilityNotifications(View* start, bool is_visible) {
 
 void View::VisibilityChangedImpl(View* starting_from, bool is_visible) {
   VisibilityChanged(starting_from, is_visible);
-  observers_.Notify(&ViewObserver::OnViewVisibilityChanged, this,
-                    starting_from);
+  observers_.Notify(&ViewObserver::OnViewVisibilityChanged, this, starting_from,
+                    is_visible);
 }
 
 void View::SnapLayerToPixelBoundary(const LayerOffsetData& offset_data) {
@@ -3285,7 +3332,7 @@ void View::RemoveDescendantToNotify(View* view) {
   DCHECK(view);
   DCHECK(descendants_to_notify_);
   auto i = std::ranges::find(*descendants_to_notify_, view);
-  CHECK(i != descendants_to_notify_->end(), base::NotFatalUntil::M130);
+  CHECK(i != descendants_to_notify_->end());
   descendants_to_notify_->erase(i);
   if (descendants_to_notify_->empty()) {
     descendants_to_notify_.reset();
@@ -3314,6 +3361,25 @@ void View::SetLayoutManagerImpl(std::unique_ptr<LayoutManager> layout_manager) {
 void View::SetToDefaultFillLayout() {
   SetLayoutManager(std::make_unique<FillLayout>())->SetIncludeInsets(false);
   has_default_fill_layout_ = true;
+}
+
+void View::UpdateEnabledInViewsSubtreeState() {
+  bool new_state = GetEnabled();
+  if (parent() && !parent()->GetEnabledInViewsSubtree()) {
+    // Inherit disabled state from parent.
+    new_state = false;
+  }
+  if (enabled_in_views_subtree_ == new_state) {
+    return;
+  }
+  enabled_in_views_subtree_ = new_state;
+  GetViewAccessibility().SetIsEnabled(enabled_in_views_subtree_);
+  AdvanceFocusIfNecessary();
+  internal::ScopedChildrenLock lock(this);
+  for (views::View* child : base::Reversed(children_)) {
+    child->UpdateEnabledInViewsSubtreeState();
+  }
+  OnPropertyChanged(&enabled_in_views_subtree_, kPropertyEffectsPaint);
 }
 
 void View::SetLayerBounds(const gfx::Size& size,
@@ -3846,6 +3912,7 @@ ADD_PROPERTY_METADATA(std::unique_ptr<Background>, Background)
 ADD_PROPERTY_METADATA(std::unique_ptr<Border>, Border)
 ADD_READONLY_PROPERTY_METADATA(std::string_view, ClassName)
 ADD_PROPERTY_METADATA(bool, Enabled)
+ADD_READONLY_PROPERTY_METADATA(bool, EnabledInViewsSubtree)
 ADD_PROPERTY_METADATA(View::FocusBehavior, FocusBehavior)
 ADD_PROPERTY_METADATA(bool, FlipCanvasOnPaintForRTLUI)
 ADD_PROPERTY_METADATA(int, Group)

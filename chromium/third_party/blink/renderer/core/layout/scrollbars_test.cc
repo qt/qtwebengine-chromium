@@ -1006,7 +1006,7 @@ TEST_P(ScrollbarsTest, MouseOverCustomScrollbarTrackPieceWithCustomCursor) {
 
   Element* div = document.getElementById(AtomicString("d1"));
 
-  div->scrollTo(0, 100);
+  div->scrollToForTesting(0, 100);
   // Ensure hittest has DIV and scrollbar.
   HitTestResult hit_test_result = HitTest(195, 5);
 
@@ -4038,7 +4038,10 @@ TEST_P(ScrollbarsTest, ScrollbarsRestoredAfterCapturePaintPreview) {
   content_div->setInnerText("B");
 
   cc::RecordPaintCanvas canvas;
-  MainFrame().CapturePaintPreview(gfx::Rect(1000, 1000), &canvas, false, false);
+  MainFrame().CapturePaintPreview(gfx::Rect(1000, 1000), &canvas,
+                                  /*include_linked_destinations=*/false,
+                                  /*skip_accelerated_content=*/false,
+                                  /*allow_scrollbars=*/false);
 
   // Scrollbars are removed during the capture (see LocalFrame::ClipsContent).
   ASSERT_FALSE(layout_viewport->VerticalScrollbar() ||
@@ -4049,6 +4052,150 @@ TEST_P(ScrollbarsTest, ScrollbarsRestoredAfterCapturePaintPreview) {
   Compositor().BeginFrame();
   ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
               layout_viewport->HorizontalScrollbar());
+
+  // Hover the vertical scrollbar thumb.
+  HandleMouseMoveEvent(795, 100);
+  auto* scrollbar = layout_viewport->VerticalScrollbar();
+  ASSERT_EQ(kThumbPart, scrollbar->HoveredPart());
+
+  // Make sure we invoked SetNeedsDisplay on the scrollbar's cc::Layer. If this
+  // was successful, we will have cleared the Scrollbar::needs_update_display_
+  // bit in ScrollableArea::SetScrollbarNeedsPaintInvalidation.
+  ASSERT_FALSE(scrollbar->NeedsUpdateDisplay());
+}
+
+TEST_P(ScrollbarsTest, OverlayScrollbarsRestoredAfterCapturePaintPreview) {
+  ENABLE_OVERLAY_SCROLLBARS(true);
+
+  ResizeView(gfx::Size(800, 600));
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style>
+      body {
+        margin: 0;
+      }
+      #content {
+        width: 1200px;
+        height: 1200px;
+      }
+    </style>
+    <div id="content">A</div>
+  )HTML");
+  Compositor().BeginFrame();
+
+  Document& document = GetDocument();
+  LocalFrameView* frame_view = document.View();
+  PaintLayerScrollableArea* layout_viewport = frame_view->LayoutViewport();
+  HTMLElement* content_div =
+      To<HTMLElement>(document.getElementById(AtomicString("content")));
+
+  ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
+              layout_viewport->HorizontalScrollbar());
+
+  // Make layout dirty.
+  content_div->setInnerText("B");
+
+  cc::RecordPaintCanvas canvas;
+  MainFrame().CapturePaintPreview(gfx::Rect(1000, 1000), &canvas,
+                                  /*include_linked_destinations=*/false,
+                                  /*skip_accelerated_content=*/false,
+                                  /*allow_scrollbars=*/false);
+
+  // Scrollbars are removed during the capture (see LocalFrame::ClipsContent).
+  ASSERT_FALSE(layout_viewport->VerticalScrollbar() ||
+               layout_viewport->HorizontalScrollbar());
+  ASSERT_TRUE(frame_view->NeedsLayout());
+
+  // Update lifecycle to restore the scrollbars.
+  Compositor().BeginFrame();
+  ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
+              layout_viewport->HorizontalScrollbar());
+}
+
+TEST_P(ScrollbarsTest, CapturePaintPreviewWithScrollbarsEnabled) {
+  ENABLE_OVERLAY_SCROLLBARS(false);
+
+  ResizeView(gfx::Size(800, 600));
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style>
+      body {
+        margin: 0;
+      }
+      #content {
+        width: 1200px;
+        height: 1200px;
+      }
+    </style>
+    <div id="content">A</div>
+  )HTML");
+  Compositor().BeginFrame();
+
+  Document& document = GetDocument();
+  LocalFrameView* frame_view = document.View();
+  PaintLayerScrollableArea* layout_viewport = frame_view->LayoutViewport();
+
+  ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
+              layout_viewport->HorizontalScrollbar());
+
+  cc::RecordPaintCanvas canvas;
+  MainFrame().CapturePaintPreview(
+      gfx::Rect(1000, 1000), &canvas, /*include_linked_destinations=*/false,
+      /*skip_accelerated_content=*/false, /*allow_scrollbars=*/true);
+
+  // Scrollbars are allowed during the capture (see LocalFrame::ClipsContent).
+  ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
+              layout_viewport->HorizontalScrollbar());
+
+  // Relayout will not be needed if scrollbars are allowed in capture paint
+  // preview.
+  ASSERT_FALSE(frame_view->NeedsLayout());
+}
+
+TEST_P(ScrollbarsTest, CapturePaintPreviewWithOverlayScrollbarsEnabled) {
+  ENABLE_OVERLAY_SCROLLBARS(true);
+
+  ResizeView(gfx::Size(800, 600));
+  SimRequest request("https://example.com/test.html", "text/html");
+  LoadURL("https://example.com/test.html");
+  request.Complete(R"HTML(
+    <!DOCTYPE html>
+    <style>
+      body {
+        margin: 0;
+      }
+      #content {
+        width: 1200px;
+        height: 1200px;
+      }
+    </style>
+    <div id="content">A</div>
+  )HTML");
+  Compositor().BeginFrame();
+
+  Document& document = GetDocument();
+  LocalFrameView* frame_view = document.View();
+  PaintLayerScrollableArea* layout_viewport = frame_view->LayoutViewport();
+
+  ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
+              layout_viewport->HorizontalScrollbar());
+
+  cc::RecordPaintCanvas canvas;
+  MainFrame().CapturePaintPreview(
+      gfx::Rect(1000, 1000), &canvas, /*include_linked_destinations=*/false,
+      /*skip_accelerated_content=*/false, /*allow_scrollbars=*/true);
+
+  // Scrollbars are allowed during the capture (see LocalFrame::ClipsContent).
+  ASSERT_TRUE(layout_viewport->VerticalScrollbar() &&
+              layout_viewport->HorizontalScrollbar());
+
+  // Relayout will not be needed if scrollbars are allowed in capture paint
+  // preview.
+  ASSERT_FALSE(frame_view->NeedsLayout());
 }
 
 // Tests that when overlay scrollbars are on, Scrollbar::UsedColorScheme follows

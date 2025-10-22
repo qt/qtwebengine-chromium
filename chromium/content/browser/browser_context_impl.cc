@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/check_is_test.h"
+#include "base/debug/crash_logging.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/location.h"
@@ -36,8 +37,6 @@
 #include "content/public/browser/shared_worker_service.h"
 #include "content/public/common/content_client.h"
 #include "media/capabilities/webrtc_video_stats_db_impl.h"
-#include "media/learning/common/media_learning_tasks.h"
-#include "media/learning/impl/learning_session_impl.h"
 #include "media/mojo/services/video_decode_perf_history.h"
 #include "media/mojo/services/webrtc_video_perf_history.h"
 
@@ -54,15 +53,6 @@ void NotifyContextWillBeDestroyed(StoragePartition* partition) {
       ->OnBrowserContextWillBeDestroyed();
 }
 
-void RegisterMediaLearningTask(
-    media::learning::LearningSessionImpl* learning_session,
-    const media::learning::LearningTask& task) {
-  // The RegisterTask method cannot be directly used in base::Bind, because it
-  // provides a default argument value for the 2nd parameter
-  // (`feature_provider`).
-  learning_session->RegisterTask(task);
-}
-
 // Kill switch that controls whether to cancel navigations as part of
 // BrowserContext shutdown. See https://crbug.com/40274462.
 BASE_FEATURE(kCancelNavigationsDuringBrowserContextShutdown,
@@ -76,19 +66,19 @@ BrowserContextImpl* BrowserContextImpl::From(BrowserContext* self) {
   return self->impl();
 }
 
-void BrowserContextImpl::MaybeCleanupDips() {
-  base::ScopedClosureRunner quit_runner(dips_cleanup_loop_.QuitClosure());
-  // Don't attempt to delete the database if the DIPS feature is enabled; we
-  // need it.
+void BrowserContextImpl::MaybeCleanupBtm() {
+  base::ScopedClosureRunner quit_runner(btm_cleanup_loop_.QuitClosure());
+  // Don't attempt to delete the database if the BTM feature is enabled; we need
+  // it.
   if (base::FeatureList::IsEnabled(features::kBtm)) {
     return;
   }
 
   // Don't attempt to delete the database if this browser context should never
-  // have DIPS enabled. (This is important for embedders like ChromeOS, which
+  // have BTM enabled. (This is important for embedders like ChromeOS, which
   // have internal non-user-facing browser contexts. We don't want to touch
   // them.)
-  if (!GetContentClient()->browser()->ShouldEnableDips(self_)) {
+  if (!GetContentClient()->browser()->ShouldEnableBtm(self_)) {
     return;
   }
 
@@ -102,8 +92,8 @@ void BrowserContextImpl::MaybeCleanupDips() {
   BtmStorage::DeleteDatabaseFiles(GetBtmFilePath(self_), quit_runner.Release());
 }
 
-void BrowserContextImpl::WaitForDipsCleanupForTesting() {
-  dips_cleanup_loop_.Run();
+void BrowserContextImpl::WaitForBtmCleanupForTesting() {
+  btm_cleanup_loop_.Run();
 }
 
 BrowserContextImpl::BrowserContextImpl(BrowserContext* self) : self_(self) {
@@ -111,12 +101,12 @@ BrowserContextImpl::BrowserContextImpl(BrowserContext* self) : self_(self) {
 
   background_sync_scheduler_ = base::MakeRefCounted<BackgroundSyncScheduler>();
 
-  // Run MaybeCleanupDips() very soon. We can't call it right now because it
+  // Run MaybeCleanupBtm() very soon. We can't call it right now because it
   // calls a virtual function (BrowserContext::IsOffTheRecord()), which causes
   // undefined behavior since we're called by the BrowserContext constructor
   // and the method is not implemented by that class.
   base::SequencedTaskRunner::GetCurrentDefault()->PostTask(
-      FROM_HERE, base::BindOnce(&BrowserContextImpl::MaybeCleanupDips,
+      FROM_HERE, base::BindOnce(&BrowserContextImpl::MaybeCleanupBtm,
                                 weak_factory_.GetWeakPtr()));
 }
 
@@ -231,22 +221,6 @@ BrowsingDataRemoverImpl* BrowserContextImpl::GetBrowsingDataRemover() {
   return browsing_data_remover_.get();
 }
 
-media::learning::LearningSession* BrowserContextImpl::GetLearningSession() {
-  DCHECK_CURRENTLY_ON(BrowserThread::UI);
-
-  if (!learning_session_) {
-    learning_session_ = std::make_unique<media::learning::LearningSessionImpl>(
-        base::SequencedTaskRunner::GetCurrentDefault());
-
-    // Using base::Unretained is safe below, because the callback here will not
-    // be called or retained after the Register method below returns.
-    media::learning::MediaLearningTasks::Register(base::BindRepeating(
-        &RegisterMediaLearningTask, base::Unretained(learning_session_.get())));
-  }
-
-  return learning_session_.get();
-}
-
 media::VideoDecodePerfHistory* BrowserContextImpl::GetVideoDecodePerfHistory() {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
@@ -295,7 +269,7 @@ void BrowserContextImpl::ShutdownStoragePartitions() {
   // Delete the BtmService, causing its SQLite database file to be closed. This
   // is necessary for TestBrowserContext to be able to delete its temporary
   // directory.
-  dips_service_.reset();
+  btm_service_.reset();
 }
 
 DownloadManager* BrowserContextImpl::GetDownloadManager() {
@@ -398,12 +372,12 @@ void BrowserContextImpl::WriteIntoTrace(
 }
 
 namespace {
-bool ShouldEnableDips(BrowserContext* browser_context) {
+bool ShouldEnableBtm(BrowserContext* browser_context) {
   if (!base::FeatureList::IsEnabled(features::kBtm)) {
     return false;
   }
 
-  if (!GetContentClient()->browser()->ShouldEnableDips(browser_context)) {
+  if (!GetContentClient()->browser()->ShouldEnableBtm(browser_context)) {
     return false;
   }
 
@@ -411,18 +385,18 @@ bool ShouldEnableDips(BrowserContext* browser_context) {
 }
 }  // namespace
 
-BtmServiceImpl* BrowserContextImpl::GetDipsService() {
-  if (!dips_service_) {
-    if (!ShouldEnableDips(self_)) {
+BtmServiceImpl* BrowserContextImpl::GetBtmService() {
+  if (!btm_service_) {
+    if (!ShouldEnableBtm(self_)) {
       return nullptr;
     }
-    dips_service_ = std::make_unique<BtmServiceImpl>(
+    btm_service_ = std::make_unique<BtmServiceImpl>(
         base::PassKey<BrowserContextImpl>(), self_);
-    GetContentClient()->browser()->OnDipsServiceCreated(self_,
-                                                        dips_service_.get());
+    GetContentClient()->browser()->OnBtmServiceCreated(self_,
+                                                       btm_service_.get());
   }
 
-  return dips_service_.get();
+  return btm_service_.get();
 }
 
 namespace {
@@ -442,8 +416,8 @@ void CreatePopupHeuristicGrants(base::WeakPtr<BrowserContext> browser_context,
       continue;
     }
 
-    // `popup_site` and `opener_site` were read from the DIPS database,
-    // and were originally computed by calling GetSiteForBtm().
+    // `popup_site` and `opener_site` were read from the BTM database, and were
+    // originally computed by calling GetSiteForBtm().
     // GrantCookieAccessDueToHeuristic() takes SchemefulSites, so we create some
     // here, but since we pass ignore_schemes=true the scheme doesn't matter
     // (and port never matters for SchemefulSites), so we hardcode http and 80.
@@ -472,7 +446,7 @@ void BrowserContextImpl::BackfillPopupHeuristicGrants(
 
   // TODO: crbug.com/1502264 - ensure backfill is completed if Chrome is
   // shutdown or crashes.
-  GetDipsService()
+  GetBtmService()
       ->storage()
       ->AsyncCall(&BtmStorage::ReadRecentPopupsWithInteraction)
       .WithArgs(

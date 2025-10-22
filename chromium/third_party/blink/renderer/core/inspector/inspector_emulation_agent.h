@@ -55,6 +55,7 @@ class CORE_EXPORT InspectorEmulationAgent final
       std::unique_ptr<protocol::Array<protocol::Emulation::MediaFeature>>
           features) override;
   protocol::Response setEmulatedVisionDeficiency(const String&) override;
+  protocol::Response setEmulatedOSTextScale(std::optional<double>) override;
   protocol::Response setCPUThrottlingRate(double) override;
   protocol::Response setFocusEmulationEnabled(bool) override;
   protocol::Response setAutoDarkModeOverride(std::optional<bool>) override;
@@ -86,6 +87,8 @@ class CORE_EXPORT InspectorEmulationAgent final
       std::unique_ptr<protocol::Emulation::DisplayFeature>,
       std::unique_ptr<protocol::Emulation::DevicePosture>) override;
   protocol::Response clearDeviceMetricsOverride() override;
+  protocol::Response setDataSaverOverride(
+      std::optional<bool> data_saver) override;
   protocol::Response setHardwareConcurrencyOverride(
       int hardware_concurrency) override;
   protocol::Response setUserAgentOverride(
@@ -99,12 +102,15 @@ class CORE_EXPORT InspectorEmulationAgent final
       std::unique_ptr<protocol::Array<protocol::Emulation::DisabledImageType>>)
       override;
   protocol::Response setAutomationOverride(bool enabled) override;
+  protocol::Response setSmallViewportHeightDifferenceOverride(
+      int difference) override;
 
   // Automation Emulation API
   void ApplyAutomationOverride(bool& enabled) const;
 
   // InspectorInstrumentation API
   void ApplyAcceptLanguageOverride(String* accept_lang);
+  void ApplyDataSaverOverride(bool& data_saver);
   void ApplyHardwareConcurrencyOverride(unsigned int& hardware_concurrency);
   void ApplyUserAgentOverride(String* user_agent);
   void ApplyUserAgentMetadataOverride(
@@ -157,8 +163,11 @@ class CORE_EXPORT InspectorEmulationAgent final
   InspectorAgentState::String emulated_media_;
   InspectorAgentState::StringMap emulated_media_features_;
   InspectorAgentState::String emulated_vision_deficiency_;
+  InspectorAgentState::Boolean os_text_scale_emulation_enabled_;
+  InspectorAgentState::Double emulated_os_text_scale_;
   InspectorAgentState::String navigator_platform_override_;
   InspectorAgentState::Integer hardware_concurrency_override_;
+  InspectorAgentState::Integer data_saver_override_;
   InspectorAgentState::String user_agent_override_;
   InspectorAgentState::Bytes serialized_ua_metadata_override_;
   std::optional<blink::UserAgentMetadata> ua_metadata_override_;
@@ -176,6 +185,7 @@ class CORE_EXPORT InspectorEmulationAgent final
   InspectorAgentState::Double cpu_throttling_rate_;
   InspectorAgentState::Boolean automation_override_;
   InspectorAgentState::Bytes safe_area_insets_override_;
+  InspectorAgentState::Double small_viewport_height_difference_override_;
 };
 
 }  // namespace blink

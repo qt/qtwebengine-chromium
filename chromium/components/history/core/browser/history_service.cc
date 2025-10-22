@@ -627,11 +627,11 @@ void HistoryService::AddPage(const GURL& url,
   AddPage(HistoryAddPageArgs(
       url, time, /*context_id=*/0, /*nav_entry_id=*/0,
       /*local_navigation_id=*/std::nullopt,
-      /*referrer=*/url, RedirectList(), ui::PAGE_TRANSITION_LINK,
+      /*referrer=*/GURL(), RedirectList(), ui::PAGE_TRANSITION_LINK,
       /*hidden=*/false, visit_source,
       /*did_replace_entry=*/false, /*consider_for_ntp_most_visited=*/true,
       /*is_ephemeral=*/false, /*title=*/std::nullopt,
-      /*top_level_url=*/url));
+      /*top_level_url=*/url, /*frame_url=*/url));
 }
 
 void HistoryService::AddPage(HistoryAddPageArgs add_page_args) {
@@ -692,8 +692,11 @@ void HistoryService::AddPartitionedVisitedLinks(
   // If we were unable to obtain valid URLs for either of our top-level or
   // frame origin parameters, we cannot successfully construct our
   // triple-partition key and should not add this navigation to the hashtable.
-  if (!args.top_level_url.has_value() || !args.top_level_url->is_valid() ||
-      !args.referrer.is_valid()) {
+  if (!args.top_level_url.has_value() || !args.top_level_url->is_valid()) {
+    return;
+  }
+
+  if (!args.frame_url.has_value() || !args.frame_url->is_valid()) {
     return;
   }
 
@@ -707,12 +710,12 @@ void HistoryService::AddPartitionedVisitedLinks(
     for (const GURL& redirect : args.redirects) {
       // All redirects originate from the same top-level site and frame origin.
       VisitedLink link = {redirect, net::SchemefulSite(*args.top_level_url),
-                          url::Origin::Create(args.referrer)};
+                          url::Origin::Create(*args.frame_url)};
       visit_delegate_->AddVisitedLink(link);
     }
   } else {
     VisitedLink link = {args.url, net::SchemefulSite(*args.top_level_url),
-                        url::Origin::Create(args.referrer)};
+                        url::Origin::Create(*args.frame_url)};
     visit_delegate_->AddVisitedLink(link);
   }
 }
@@ -1428,13 +1431,15 @@ base::CancelableTaskTracker::TaskId HistoryService::QueryMostVisitedURLs(
     QueryMostVisitedURLsCallback callback,
     base::CancelableTaskTracker* tracker,
     const std::optional<std::string>& recency_factor_name,
-    std::optional<size_t> recency_window_days) {
+    std::optional<size_t> recency_window_days,
+    bool check_visual_deduplication_flag) {
   DCHECK(backend_task_runner_) << "History service being called after cleanup";
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return tracker->PostTaskAndReplyWithResult(
       backend_task_runner_.get(), FROM_HERE,
       base::BindOnce(&HistoryBackend::QueryMostVisitedURLs, history_backend_,
-                     result_count, recency_factor_name, recency_window_days),
+                     result_count, recency_factor_name, recency_window_days,
+                     check_visual_deduplication_flag),
       std::move(callback));
 }
 

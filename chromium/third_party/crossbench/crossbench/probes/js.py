@@ -11,10 +11,10 @@ from typing_extensions import override
 from crossbench.parse import ObjectParser
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import MetricsMerger
-from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
+  from crossbench.probes.probe import ProbeConfigParser, ProbeKeyT
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup

@@ -6,6 +6,7 @@
 #define COMPONENTS_AUTOFILL_CORE_BROWSER_DATA_MODEL_VALUABLES_LOYALTY_CARD_H_
 
 #include <string>
+#include <vector>
 
 #include "components/autofill/core/browser/data_model/valuables/valuable_types.h"
 #include "url/gurl.h"
@@ -15,11 +16,20 @@ namespace autofill {
 // Represents a loyalty card coming from the Google Wallet.
 class LoyaltyCard final {
  public:
+  // A loyalty card is considered `kAffiliated` with a specific URL if any of
+  // its merchant domains match the URL.
+  enum class AffiliationCategory {
+    kNonAffiliated = 0,
+    kAffiliated = 1,
+    kMaxValue = kAffiliated
+  };
+
   LoyaltyCard(ValuableId loyalty_card_id,
               std::string merchant_name,
               std::string program_name,
               GURL program_logo,
-              std::string loyalty_card_suffix);
+              std::string loyalty_card_number,
+              std::vector<GURL> merchant_domains);
 
   LoyaltyCard(const LoyaltyCard&);
   LoyaltyCard(LoyaltyCard&&);
@@ -46,11 +56,18 @@ class LoyaltyCard final {
     program_logo_ = program_logo;
   }
 
-  const std::string& loyalty_card_suffix() const {
-    return loyalty_card_suffix_;
+  const std::string& loyalty_card_number() const {
+    return loyalty_card_number_;
   }
-  void set_loyalty_card_suffix(const std::string& loyalty_card_suffix) {
-    loyalty_card_suffix_ = loyalty_card_suffix;
+  void set_loyalty_card_number(const std::string& loyalty_card_number) {
+    loyalty_card_number_ = loyalty_card_number;
+  }
+
+  const std::vector<GURL>& merchant_domains() const {
+    return merchant_domains_;
+  }
+  void set_merchant_domains(std::vector<GURL> merchant_domains) {
+    merchant_domains_ = std::move(merchant_domains);
   }
 
   // Checks if this loyalty card is valid. A valid loyalty card contains a
@@ -58,12 +75,19 @@ class LoyaltyCard final {
   // valid.
   bool IsValid() const;
 
+  // Returns whether the card is an affiliated card i.e. whether any of its
+  // merchang domains matches `url`.  URLs are compared using their public
+  // suffix domains.
+  AffiliationCategory GetAffiliationCategory(const GURL& url) const;
+
   friend bool operator==(const LoyaltyCard&, const LoyaltyCard&) = default;
+  friend auto operator<=>(const LoyaltyCard&, const LoyaltyCard&) = default;
 
  private:
   // A unique identifier coming from the server, which is used as a primary key
   // for storing loyalty cards in the database.
   ValuableId id_;
+
   // The merchant name e.g. "Deutsche Bahn".
   std::string merchant_name_;
 
@@ -73,9 +97,11 @@ class LoyaltyCard final {
   // The logo icon URL.
   GURL program_logo_;
 
-  // The unmasked part of the  loyalty card issuer text code. The full number
-  // is not available on the client.
-  std::string loyalty_card_suffix_;
+  // The loyalty card text code.
+  std::string loyalty_card_number_;
+
+  // The list of merchant domains associated to this card.
+  std::vector<GURL> merchant_domains_;
 };
 
 }  // namespace autofill

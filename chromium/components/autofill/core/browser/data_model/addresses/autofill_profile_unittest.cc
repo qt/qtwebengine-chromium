@@ -11,7 +11,6 @@
 #include <vector>
 
 #include "base/format_macros.h"
-#include "base/memory/raw_ptr.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
@@ -39,14 +38,11 @@ namespace autofill {
 using base::UTF8ToUTF16;
 using ObservationType = ProfileTokenQuality::ObservationType;
 
-constexpr VerificationStatus kObserved = VerificationStatus::kObserved;
-
 namespace {
 
 std::u16string GetSuggestionLabel(AutofillProfile* profile) {
-  std::vector<raw_ptr<const AutofillProfile, VectorExperimental>> profiles;
-  profiles.push_back(profile);
-  return AutofillProfile::CreateDifferentiatingLabels(profiles, "en-US")[0];
+  return AutofillProfile::CreateDifferentiatingLabels(
+      base::span_from_ref(profile), "en-US")[0];
 }
 
 void SetupTestProfile(AutofillProfile& profile) {
@@ -56,9 +52,9 @@ void SetupTestProfile(AutofillProfile& profile) {
                        "Hollywood", "CA", "91601", "US", "12345678910");
 }
 
-std::vector<raw_ptr<const AutofillProfile, VectorExperimental>>
-ToRawPointerVector(const std::vector<std::unique_ptr<AutofillProfile>>& list) {
-  std::vector<raw_ptr<const AutofillProfile, VectorExperimental>> result;
+std::vector<const AutofillProfile*> ToRawPointerVector(
+    const std::vector<std::unique_ptr<AutofillProfile>>& list) {
+  std::vector<const AutofillProfile*> result;
   for (const auto& item : list) {
     result.push_back(item.get());
   }
@@ -169,7 +165,7 @@ TEST_F(AutofillProfileTest, PreviewSummaryString) {
   test::SetProfileInfo(&profile7a, "Marion", "Mitchell", "Morrison",
                        "marion@me.xyz", "Fox", "123 Zoo St.", "unit 5",
                        "Hollywood", "CA", "91601", "US", "16505678910");
-  std::vector<raw_ptr<const AutofillProfile, VectorExperimental>> profiles;
+  std::vector<const AutofillProfile*> profiles;
   profiles.push_back(&profile7);
   profiles.push_back(&profile7a);
   std::vector<std::u16string> labels =
@@ -1407,12 +1403,8 @@ TEST_F(AutofillProfileTest, Compare) {
 // value and the status.
 // TODO(crbug.com/40275657): Extend this test to cover i18n profiles.
 TEST_F(AutofillProfileTest, Compare_StructuredTypes) {
-  base::test::ScopedFeatureList feature_list;
-  feature_list.InitWithFeatures({features::kAutofillUseFRAddressModel,
-                                 features::kAutofillUseINAddressModel,
-                                 features::kAutofillUseNLAddressModel,
-                                 features::kAutofillUseITAddressModel},
-                                {});
+  base::test::ScopedFeatureList feature_list{
+      features::kAutofillUseINAddressModel};
   // Those types do store a verification status.
   FieldTypeSet structured_types{
       NAME_FULL,
@@ -1630,20 +1622,6 @@ TEST_F(AutofillProfileTest, RecordUseAndLog_Delay) {
   task_environment().FastForwardBy(base::Seconds(55));
   profile.RecordAndLogUse();
   EXPECT_EQ(profile.usage_history().use_count(), 2u);
-}
-
-// Tests that the |HasStructuredData| returns whether the profile has structured
-// data or not.
-TEST_F(AutofillProfileTest, HasStructuredData) {
-  AutofillProfile profile(i18n_model_definition::kLegacyHierarchyCountryCode);
-  profile.SetRawInfoWithVerificationStatus(
-      NAME_FULL, u"marion mitchell morrison", kObserved);
-  EXPECT_FALSE(profile.HasStructuredData());
-
-  profile.SetRawInfoWithVerificationStatus(NAME_FIRST, u"marion", kObserved);
-  profile.SetRawInfoWithVerificationStatus(NAME_MIDDLE, u"mitchell", kObserved);
-  profile.SetRawInfoWithVerificationStatus(NAME_LAST, u"morrison", kObserved);
-  EXPECT_TRUE(profile.HasStructuredData());
 }
 
 TEST_F(AutofillProfileTest, ConvertToAccountProfile) {

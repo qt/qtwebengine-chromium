@@ -137,8 +137,8 @@ class MEDIA_EXPORT PaintCanvasVideoRenderer {
       unsigned int format,
       unsigned int type,
       int level,
-      bool premultiply_alpha,
-      bool flip_y);
+      SkAlphaType dst_alpha_type,
+      GrSurfaceOrigin dst_origin);
 
   // Copy the CPU-side YUV contents of |video_frame| to texture |texture| in
   // context |destination_gl|.
@@ -157,8 +157,8 @@ class MEDIA_EXPORT PaintCanvasVideoRenderer {
       unsigned int format,
       unsigned int type,
       int level,
-      bool premultiply_alpha,
-      bool flip_y);
+      SkAlphaType dst_alpha_type,
+      GrSurfaceOrigin dst_origin);
 
   // Calls texImage2D where the texture image data source is the contents of
   // |video_frame|. Texture |texture| needs to be created and bound to |target|
@@ -178,8 +178,8 @@ class MEDIA_EXPORT PaintCanvasVideoRenderer {
                          int internalformat,
                          unsigned format,
                          unsigned type,
-                         bool flip_y,
-                         bool premultiply_alpha);
+                         GrSurfaceOrigin dst_origin,
+                         SkAlphaType dst_alpha_type);
 
   // Calls texSubImage2D where the texture image data source is the contents of
   // |video_frame|.
@@ -197,8 +197,8 @@ class MEDIA_EXPORT PaintCanvasVideoRenderer {
                             unsigned type,
                             int xoffset,
                             int yoffset,
-                            bool flip_y,
-                            bool premultiply_alpha);
+                            GrSurfaceOrigin dst_origin,
+                            SkAlphaType dst_alpha_type);
 
   // Copies VideoFrame contents to the `destination` shared image. if
   // `use_visible_rect` is set to true, only `VideoFrame::visible_rect()`
@@ -206,7 +206,7 @@ class MEDIA_EXPORT PaintCanvasVideoRenderer {
   [[nodiscard]] gpu::SyncToken CopyVideoFrameToSharedImage(
       viz::RasterContextProvider* raster_context_provider,
       scoped_refptr<VideoFrame> video_frame,
-      const gpu::Mailbox& dest_mailbox,
+      scoped_refptr<gpu::ClientSharedImage> dest_shared_image,
       const gpu::SyncToken& dest_sync_token,
       bool use_visible_rect);
 
@@ -243,10 +243,6 @@ class MEDIA_EXPORT PaintCanvasVideoRenderer {
     // The backing for the source texture. This is also responsible for managing
     // the lifetime of the texture.
     sk_sp<VideoTextureBacking> texture_backing;
-
-    // The GL texture ID used in non-OOP code path.
-    // This is only set if the VideoFrame was texture-backed.
-    uint32_t source_texture = 0;
 
     // The allocated size of VideoFrame texture.
     // This is only set if the VideoFrame was texture-backed.

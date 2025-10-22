@@ -20,6 +20,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
+#include "base/test/scoped_run_loop_timeout.h"
 #include "base/test/task_environment.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
@@ -29,6 +30,7 @@
 #include "components/heavy_ad_intervention/heavy_ad_blocklist.h"
 #include "components/heavy_ad_intervention/heavy_ad_features.h"
 #include "components/history/core/test/history_service_test_util.h"
+#include "components/page_load_metrics/browser/features.h"
 #include "components/page_load_metrics/browser/metrics_navigation_throttle.h"
 #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
 #include "components/page_load_metrics/browser/observers/ad_metrics/frame_tree_data.h"
@@ -171,14 +173,14 @@ void PopulateRequiredTimingFieldsExceptFEtPAndFCP(
 class ResourceLoadingCancellingThrottle
     : public content::TestNavigationThrottle {
  public:
-  static std::unique_ptr<content::NavigationThrottle> Create(
-      content::NavigationHandle* handle) {
-    return std::make_unique<ResourceLoadingCancellingThrottle>(handle);
+  static void Create(content::NavigationThrottleRegistry& registry) {
+    registry.AddThrottle(
+        std::make_unique<ResourceLoadingCancellingThrottle>(registry));
   }
 
   explicit ResourceLoadingCancellingThrottle(
-      content::NavigationHandle* navigation_handle)
-      : content::TestNavigationThrottle(navigation_handle) {
+      content::NavigationThrottleRegistry& registry)
+      : content::TestNavigationThrottle(registry) {
     SetResponse(TestNavigationThrottle::WILL_PROCESS_RESPONSE,
                 TestNavigationThrottle::ASYNCHRONOUS, CANCEL);
   }
@@ -462,6 +464,8 @@ class AdsPageLoadMetricsObserverTest
 
   void SetUp() override {
     SetUpScopedFeatureList();
+    // Subresource filter indexing is slow. Use a longer timeout.
+    base::test::ScopedRunLoopTimeout timeout{FROM_HERE, base::Seconds(45)};
     SubresourceFilterTestHarness::SetUp();
     tester_ = std::make_unique<PageLoadMetricsObserverTester>(
         web_contents(), this,
@@ -883,12 +887,9 @@ class AdsPageLoadMetricsObserverTest
  private:
   // SubresourceFilterTestHarness::
   void AppendCustomNavigationThrottles(
-      content::NavigationHandle* navigation_handle,
-      std::vector<std::unique_ptr<content::NavigationThrottle>>* throttles)
-      override {
-    if (navigation_handle->IsInMainFrame()) {
-      throttles->push_back(
-          MetricsNavigationThrottle::Create(navigation_handle));
+      content::NavigationThrottleRegistry& registry) override {
+    if (registry.GetNavigationHandle().IsInMainFrame()) {
+      MetricsNavigationThrottle::CreateAndAdd(registry);
     }
   }
 
@@ -2624,6 +2625,36 @@ TEST_P(AdsPageLoadMetricsObserverTest, HeavyAdPeakCpuUsage_InterventionFired) {
       SuffixedHistogram("HeavyAds.NetworkBytesAtFrameUnload"), 0);
 }
 
+TEST_P(AdsPageLoadMetricsObserverTest,
+       ErrorPageNavigationReplaceNavigationEntry) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitAndEnableFeature(
+      heavy_ad_intervention::features::kHeavyAdIntervention);
+
+  // Navigate the existing main frame.
+  ASSERT_EQ(controller().GetEntryCount(), 1);
+  RenderFrameHost* main_frame = NavigateMainFrame(kNonAdUrl);
+  ASSERT_EQ(controller().GetEntryCount(), 2);
+
+  // Create, then navigate the ad frame.
+  RenderFrameHost* ad_frame = CreateAndNavigateSubFrame(kAdUrl, main_frame);
+  int ad_frame_entry_count = WithFencedFrames() ? 1 : 2;
+  ASSERT_EQ(ad_frame->GetController().GetEntryCount(), ad_frame_entry_count);
+
+  // Add enough data to trigger the intervention.
+  ErrorPageWaiter waiter(web_contents());
+  ResourceDataUpdate(ad_frame, ResourceCached::kNotCached,
+                     (heavy_ad_thresholds::kMaxNetworkBytes / 1024) + 1);
+
+  EXPECT_TRUE(HasInterventionReportsAfterFlush(ad_frame));
+  waiter.WaitForError();
+
+  EXPECT_EQ(controller().GetEntryCount(), 2);
+  // After heavy ads intervention is fired, the error page navigation should
+  // replace the navigation entries. So the count stays unchanged.
+  EXPECT_EQ(ad_frame->GetController().GetEntryCount(), ad_frame_entry_count);
+}
+
 TEST_P(AdsPageLoadMetricsObserverTest, HeavyAdFeatureDisabled_NotFired) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitWithFeatures(
@@ -3562,7 +3593,7 @@ class AdsMemoryMeasurementTest : public AdsPageLoadMetricsObserverTest {
         {
             {blink::features::kFencedFrames,
              {{"implementation_type", "mparch"}}},
-            {::features::kV8PerFrameMemoryMonitoring, {}},
+            {page_load_metrics::features::kV8PerFrameMemoryMonitoring, {}},
         },
         {});
   }

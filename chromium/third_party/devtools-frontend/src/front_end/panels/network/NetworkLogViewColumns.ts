@@ -1,6 +1,7 @@
 // Copyright 2016 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -33,6 +34,10 @@ const UIStrings = {
    *@description A context menu item in the Network Log View Columns of the Network panel
    */
   responseHeaders: 'Response Headers',
+  /**
+   *@description A context menu item in the Network Log View Columns of the Network panel
+   */
+  requestHeaders: 'Request Headers',
   /**
    *@description Text in Network Log View Columns of the Network panel
    */
@@ -152,12 +157,10 @@ const i18nLazyString = i18n.i18n.getLazilyComputedLocalizedString.bind(undefined
 
 export class NetworkLogViewColumns {
   private networkLogView: NetworkLogView;
-  private readonly persistentSettings: Common.Settings.Setting<{
-    [x: string]: {
-      visible: boolean,
-      title: string,
-    },
-  }>;
+  private readonly persistentSettings: Common.Settings.Setting<Record<string, {
+    visible: boolean,
+    title: string,
+  }>>;
   private readonly networkLogLargeRowsSetting: Common.Settings.Setting<boolean>;
   private readonly eventDividers: Map<string, number[]>;
   private eventDividersShown: boolean;
@@ -325,9 +328,8 @@ export class NetworkLogViewColumns {
 
     this.switchViewMode(false);
 
-    function handleContextMenu(this: NetworkLogViewColumns, ev: Event): void {
-      const event = (ev as MouseEvent);
-      const node = this.waterfallColumn.getNodeFromPoint(event.offsetX, event.offsetY);
+    function handleContextMenu(this: NetworkLogViewColumns, event: MouseEvent): void {
+      const node = this.waterfallColumn.getNodeFromPoint(event.offsetY);
       if (!node) {
         return;
       }
@@ -341,29 +343,26 @@ export class NetworkLogViewColumns {
     }
   }
 
-  private onMouseWheel(shouldConsume: boolean, ev: Event): void {
+  private onMouseWheel(shouldConsume: boolean, event: WheelEvent): void {
     if (shouldConsume) {
-      ev.consume(true);
+      event.consume(true);
     }
-    const event = (ev as WheelEvent);
     const hasRecentWheel = Date.now() - this.lastWheelTime < 80;
     this.activeScroller.scrollBy({top: event.deltaY, behavior: hasRecentWheel ? 'auto' : 'smooth'});
     this.syncScrollers();
     this.lastWheelTime = Date.now();
   }
 
-  private onTouchStart(ev: Event): void {
-    const event = (ev as TouchEvent);
+  private onTouchStart(event: TouchEvent): void {
     this.hasScrollerTouchStarted = true;
     this.scrollerTouchStartPos = event.changedTouches[0].pageY;
   }
 
-  private onTouchMove(ev: Event): void {
+  private onTouchMove(event: TouchEvent): void {
     if (!this.hasScrollerTouchStarted) {
       return;
     }
 
-    const event = (ev as TouchEvent);
     const currentPos = event.changedTouches[0].pageY;
     const delta = (this.scrollerTouchStartPos as number) - currentPos;
 
@@ -478,6 +477,15 @@ export class NetworkLogViewColumns {
     this.sortHandler();
   }
 
+  filterChanged(): void {
+    // Request an animation frame because when the filter is cleared the
+    // NetworkLogView can be empty until it has been invalidated (see
+    // crbug.com/379762016).
+    window.requestAnimationFrame(() => {
+      this.dataGridInternal.scheduleUpdate();
+    });
+  }
+
   private sortHandler(): void {
     const columnId = this.dataGridInternal.sortColumnId();
     this.networkLogView.removeAllNodeHighlights();
@@ -585,13 +593,13 @@ export class NetworkLogViewColumns {
   }
 
   private saveColumnsSettings(): void {
-    const saveableSettings: {
-      // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      [x: string]: any,
-    } = {};
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const saveableSettings: Record<string, any> = {};
     for (const columnConfig of this.columns) {
-      saveableSettings[columnConfig.id] = {visible: columnConfig.visible, title: columnConfig.title};
+      saveableSettings[columnConfig.id] = {
+        visible: columnConfig.visible,
+        title: columnConfig.title,
+      };
     }
 
     this.persistentSettings.set(saveableSettings);
@@ -606,11 +614,14 @@ export class NetworkLogViewColumns {
       if (!columnConfig && setting.title) {
         columnConfig = this.addCustomHeader(setting.title, columnId) || undefined;
       }
-      if (columnConfig && columnConfig.hideable && typeof setting.visible === 'boolean') {
-        columnConfig.visible = Boolean(setting.visible);
-      }
-      if (columnConfig && typeof setting.title === 'string') {
-        columnConfig.title = setting.title;
+
+      if (columnConfig) {
+        if (columnConfig.hideable && typeof setting.visible === 'boolean') {
+          columnConfig.visible = Boolean(setting.visible);
+        }
+        if (typeof setting.title === 'string') {
+          columnConfig.title = setting.title;
+        }
       }
     }
   }
@@ -625,15 +636,16 @@ export class NetworkLogViewColumns {
 
   private innerHeaderContextMenu(contextMenu: UI.ContextMenu.SubMenu): void {
     const columnConfigs = this.columns.filter(columnConfig => columnConfig.hideable);
-    const nonResponseHeaders = columnConfigs.filter(columnConfig => !columnConfig.isResponseHeader);
+    const nonRequestResponseHeaders =
+        columnConfigs.filter(columnConfig => !columnConfig.isRequestHeader && !columnConfig.isResponseHeader);
 
     const hideableGroups = new Map<string, Descriptor[]>();
-    const nonResponseHeadersWithoutGroup: Descriptor[] = [];
+    const nonRequestResponseHeadersWithoutGroup: Descriptor[] = [];
 
     // Sort columns into their groups
-    for (const columnConfig of nonResponseHeaders) {
+    for (const columnConfig of nonRequestResponseHeaders) {
       if (!columnConfig.hideableGroup) {
-        nonResponseHeadersWithoutGroup.push(columnConfig);
+        nonRequestResponseHeadersWithoutGroup.push(columnConfig);
       } else {
         const name = columnConfig.hideableGroup;
         let hideableGroup = hideableGroups.get(name);
@@ -664,7 +676,7 @@ export class NetworkLogViewColumns {
     }
 
     // Add normal columns not belonging to any group
-    for (const columnConfig of nonResponseHeadersWithoutGroup) {
+    for (const columnConfig of nonRequestResponseHeadersWithoutGroup) {
       const title = columnConfig.title instanceof Function ? columnConfig.title() : columnConfig.title;
       contextMenu.headerSection().appendCheckboxItem(
           title, this.toggleColumnVisibility.bind(this, columnConfig),
@@ -682,7 +694,21 @@ export class NetworkLogViewColumns {
     }
 
     responseSubMenu.footerSection().appendItem(
-        i18nString(UIStrings.manageHeaderColumns), this.manageCustomHeaderDialog.bind(this),
+        i18nString(UIStrings.manageHeaderColumns), this.manageResponseCustomHeaderDialog.bind(this),
+        {jslogContext: 'manage-header-columns'});
+
+    const requestSubMenu =
+        contextMenu.footerSection().appendSubMenuItem(i18nString(UIStrings.requestHeaders), false, 'request-headers');
+    const requestHeaders = columnConfigs.filter(columnConfig => columnConfig.isRequestHeader);
+    for (const columnConfig of requestHeaders) {
+      const title = columnConfig.title instanceof Function ? columnConfig.title() : columnConfig.title;
+      requestSubMenu.defaultSection().appendCheckboxItem(
+          title, this.toggleColumnVisibility.bind(this, columnConfig),
+          {checked: columnConfig.visible, jslogContext: columnConfig.id});
+    }
+
+    requestSubMenu.footerSection().appendItem(
+        i18nString(UIStrings.manageHeaderColumns), this.manageRequestCustomHeaderDialog.bind(this),
         {jslogContext: 'manage-header-columns'});
 
     const waterfallSortIds = WaterfallSortIds;
@@ -718,21 +744,48 @@ export class NetworkLogViewColumns {
     }
   }
 
-  private manageCustomHeaderDialog(): void {
-    const customHeaders = [];
+  private manageRequestCustomHeaderDialog(): void {
+    const customHeadersRequest = [];
+    for (const columnConfig of this.columns) {
+      const title = columnConfig.title instanceof Function ? columnConfig.title() : columnConfig.title;
+      if (columnConfig.isRequestHeader) {
+        customHeadersRequest.push({title, editable: columnConfig.isCustomHeader});
+      }
+    }
+
+    const manageCustomHeadersRequest = new NetworkManageCustomHeadersView(
+        customHeadersRequest,
+        headerTitle => Boolean(this.addCustomHeader(headerTitle, `request-header-${headerTitle}`)),
+        (oldHeaderId, headerTitle) => Boolean(
+            this.changeCustomHeader(`request-header-${oldHeaderId}`, headerTitle, `request-header-${headerTitle}`)),
+        headerTitle => Boolean(this.removeCustomHeader(`request-header-${headerTitle}`)));
+    const dialogRequest = new UI.Dialog.Dialog('manage-custom-request-headers');
+    manageCustomHeadersRequest.show(dialogRequest.contentElement);
+    dialogRequest.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
+    dialogRequest.show(this.networkLogView.element);
+  }
+
+  private manageResponseCustomHeaderDialog(): void {
+    const customHeadersResponse = [];
+
     for (const columnConfig of this.columns) {
       const title = columnConfig.title instanceof Function ? columnConfig.title() : columnConfig.title;
       if (columnConfig.isResponseHeader) {
-        customHeaders.push({title, editable: columnConfig.isCustomHeader});
+        customHeadersResponse.push({title, editable: columnConfig.isCustomHeader});
       }
     }
-    const manageCustomHeaders = new NetworkManageCustomHeadersView(
-        customHeaders, headerTitle => Boolean(this.addCustomHeader(headerTitle)), this.changeCustomHeader.bind(this),
-        this.removeCustomHeader.bind(this));
-    const dialog = new UI.Dialog.Dialog('manage-custom-headers');
-    manageCustomHeaders.show(dialog.contentElement);
-    dialog.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
-    dialog.show(this.networkLogView.element);
+
+    const manageCustomHeadersResponse = new NetworkManageCustomHeadersView(
+        customHeadersResponse,
+        headerTitle => Boolean(this.addCustomHeader(headerTitle, `response-header-${headerTitle}`)),
+        (oldHeaderId, headerTitle) => Boolean(
+            this.changeCustomHeader(`response-header-${oldHeaderId}`, headerTitle, `response-header-${headerTitle}`)),
+        headerTitle => Boolean(this.removeCustomHeader(`response-header-${headerTitle}`)));
+
+    const dialogResponse = new UI.Dialog.Dialog('manage-custom-response-headers');
+    manageCustomHeadersResponse.show(dialogResponse.contentElement);
+    dialogResponse.setSizeBehavior(UI.GlassPane.SizeBehavior.MEASURE_CONTENT);
+    dialogResponse.show(this.networkLogView.element);
   }
 
   private removeCustomHeader(headerId: string): boolean {
@@ -741,6 +794,7 @@ export class NetworkLogViewColumns {
     if (index === -1) {
       return false;
     }
+
     this.columns.splice(index, 1);
     this.dataGridInternal.removeColumn(headerId);
     this.saveColumnsSettings();
@@ -750,8 +804,10 @@ export class NetworkLogViewColumns {
 
   private addCustomHeader(headerTitle: string, headerId?: string, index?: number): Descriptor|null {
     if (!headerId) {
-      headerId = headerTitle.toLowerCase();
+      headerId = headerTitle;
     }
+    headerId = headerId.toLowerCase();
+
     if (index === undefined) {
       index = this.columns.length - 1;
     }
@@ -761,18 +817,23 @@ export class NetworkLogViewColumns {
       return null;
     }
 
+    const isRequestHeader = headerId.startsWith('request-header-');
+    const sortingFunction = isRequestHeader ? NetworkRequestNode.RequestHeaderStringComparator.bind(null, headerId) :
+                                              NetworkRequestNode.ResponseHeaderStringComparator.bind(null, headerId);
+
     const columnConfigBase = Object.assign({}, DEFAULT_COLUMN_CONFIG, {
       id: headerId,
       title: headerTitle,
-      isResponseHeader: true,
+      isRequestHeader,
+      isResponseHeader: !isRequestHeader,
       isCustomHeader: true,
       visible: true,
-      sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, headerId),
+      sortingFunction,
     });
 
     // Split out the column config from the typed version, as doing it in a single assignment causes
     // issues with Closure compiler.
-    const columnConfig = (columnConfigBase as Descriptor);
+    const columnConfig = columnConfigBase as Descriptor;
 
     this.columns.splice(index, 0, columnConfig);
     if (this.dataGridInternal) {
@@ -784,11 +845,11 @@ export class NetworkLogViewColumns {
   }
 
   private changeCustomHeader(oldHeaderId: string, newHeaderTitle: string, newHeaderId?: string): boolean {
+    const headerType = oldHeaderId.startsWith('request-header-') ? 'request' : 'response';
     if (!newHeaderId) {
-      newHeaderId = newHeaderTitle.toLowerCase();
+      newHeaderId = `${headerType}-header-${newHeaderTitle.toLowerCase()}`;
     }
     oldHeaderId = oldHeaderId.toLowerCase();
-
     const oldIndex = this.columns.findIndex(columnConfig => columnConfig.id === oldHeaderId);
     const oldColumnConfig = this.columns[oldIndex];
     const currentColumnConfig = this.columns.find(columnConfig => columnConfig.id === newHeaderId);
@@ -828,7 +889,7 @@ export class NetworkLogViewColumns {
         if (!content) {
           return false;
         }
-        popover.contentElement.appendChild(content.element);
+        content.show(popover.contentElement);
         return true;
       },
       hide: this.popupLinkifier.reset.bind(this.popupLinkifier),
@@ -889,6 +950,7 @@ const DEFAULT_COLUMN_CONFIG = {
   hideable: true,
   hideableGroup: null,
   nonSelectable: false,
+  isRequestHeader: false,
   isResponseHeader: false,
   isCustomHeader: false,
   allowInSortByEvenWhenHidden: false,
@@ -1015,64 +1077,118 @@ const DEFAULT_COLUMNS = [
     sortingFunction: NetworkRequestNode.RequestPropertyComparator.bind(null, 'connectionId'),
   },
   {
-    id: 'cache-control',
+    id: 'response-header-cache-control',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Cache-Control'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'cache-control'),
   },
   {
-    id: 'connection',
+    id: 'response-header-connection',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Connection'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'connection'),
   },
   {
-    id: 'content-encoding',
+    id: 'response-header-content-encoding',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Content-Encoding'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'content-encoding'),
   },
   {
-    id: 'content-length',
+    id: 'response-header-content-length',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Content-Length'),
     align: DataGrid.DataGrid.Align.RIGHT,
     sortingFunction: NetworkRequestNode.ResponseHeaderNumberComparator.bind(null, 'content-length'),
   },
   {
-    id: 'etag',
+    id: 'response-header-etag',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('ETag'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'etag'),
   },
   {
-    id: 'has-overrides',
+    id: 'response-header-has-overrides',
     title: i18nLazyString(UIStrings.hasOverrides),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'has-overrides'),
   },
   {
-    id: 'keep-alive',
+    id: 'response-header-keep-alive',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Keep-Alive'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'keep-alive'),
   },
   {
-    id: 'last-modified',
+    id: 'response-header-last-modified',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Last-Modified'),
     sortingFunction: NetworkRequestNode.ResponseHeaderDateComparator.bind(null, 'last-modified'),
   },
   {
-    id: 'server',
+    id: 'response-header-server',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Server'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'server'),
   },
   {
-    id: 'vary',
+    id: 'response-header-vary',
     isResponseHeader: true,
     title: i18n.i18n.lockedLazyString('Vary'),
     sortingFunction: NetworkRequestNode.ResponseHeaderStringComparator.bind(null, 'vary'),
+  },
+  {
+    id: 'request-header-accept',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Accept'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'accept'),
+  },
+  {
+    id: 'request-header-accept-encoding',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Accept-Encoding'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'accept-encoding'),
+  },
+  {
+    id: 'request-header-accept-language',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Accept-Language'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'accept-language'),
+  },
+  {
+    id: 'request-header-content-type',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Content-Type'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'Content-Type'),
+  },
+  {
+    id: 'request-header-origin',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Origin'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'origin'),
+  },
+  {
+    id: 'request-header-referer',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Referer'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'referer'),
+  },
+  {
+    id: 'request-header-sec-fetch-dest',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Sec-Fetch-Dest'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'sec-fetch-dest'),
+  },
+  {
+    id: 'request-header-sec-fetch-mode',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('Sec-Fetch-Mode'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'sec-fetch-mode'),
+  },
+  {
+    id: 'request-header-user-agent',
+    isRequestHeader: true,
+    title: i18n.i18n.lockedLazyString('User-Agent'),
+    sortingFunction: NetworkRequestNode.RequestHeaderStringComparator.bind(null, 'user-agent'),
   },
   // This header is a placeholder to let datagrid know that it can be sorted by this column, but never shown.
   {
@@ -1106,6 +1222,7 @@ export interface Descriptor {
   sortable: boolean;
   align?: string|null;
   isResponseHeader: boolean;
+  isRequestHeader: boolean;
   sortingFunction: (arg0: NetworkNode, arg1: NetworkNode) => number | undefined;
   isCustomHeader: boolean;
   allowInSortByEvenWhenHidden: boolean;

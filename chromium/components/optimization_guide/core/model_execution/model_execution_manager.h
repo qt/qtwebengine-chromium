@@ -12,12 +12,12 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/sequence_checker.h"
+#include "components/optimization_guide/core/delivery/optimization_target_model_observer.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_adaptation_loader.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_component.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_model_executor.h"
-#include "components/optimization_guide/core/optimization_target_model_observer.h"
 #include "components/optimization_guide/proto/model_execution.pb.h"
 #include "components/optimization_guide/proto/model_quality_service.pb.h"
 #include "url/gurl.h"
@@ -42,7 +42,7 @@ class ModelExecutionManager final {
   ModelExecutionManager(
       scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
       signin::IdentityManager* identity_manager,
-      scoped_refptr<OnDeviceModelServiceController>
+      base::WeakPtr<OnDeviceModelServiceController>
           on_device_model_service_controller,
       OptimizationGuideLogger* optimization_guide_logger,
       base::WeakPtr<ModelQualityLogsUploaderService>
@@ -86,6 +86,16 @@ class ModelExecutionManager final {
   // no model is available.
   on_device_model::Capabilities GetOnDeviceCapabilities();
 
+  OnDeviceModelServiceController* GetOnDeviceModelServiceController() {
+    return on_device_model_service_controller_.get();
+  }
+
+  // Records a fake model execution response to be returned when ExecuteModel is
+  // called for the given feature.
+  void AddExecutionResultForTesting(
+      ModelBasedCapabilityKey feature,
+      OptimizationGuideModelExecutionResult result);
+
   void Shutdown();
 
  private:
@@ -118,6 +128,10 @@ class ModelExecutionManager final {
   std::map<ModelBasedCapabilityKey, ModelExecutionFetcher>
       active_model_execution_fetchers_;
 
+  // Model execution results to override in tests.
+  std::map<ModelBasedCapabilityKey, OptimizationGuideModelExecutionResult>
+      test_execution_results_;
+
   // The URL Loader Factory that will be used by the fetchers.
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
 
@@ -126,7 +140,7 @@ class ModelExecutionManager final {
   const raw_ptr<signin::IdentityManager> identity_manager_;
 
   // Controller for the on-device service.
-  scoped_refptr<OnDeviceModelServiceController>
+  base::WeakPtr<OnDeviceModelServiceController>
       on_device_model_service_controller_;
 
   SEQUENCE_CHECKER(sequence_checker_);

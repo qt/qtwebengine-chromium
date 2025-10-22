@@ -21,7 +21,7 @@
 #include "base/test/task_environment.h"
 #include "base/test/test_future.h"
 #include "base/time/time.h"
-#include "crypto/secure_hash.h"
+#include "crypto/hash.h"
 #include "net/base/hash_value.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
@@ -153,7 +153,7 @@ void WriteDictionary(
   ASSERT_TRUE(writer.has_value());
   ASSERT_TRUE(*writer);
   for (const std::string& data : data_list) {
-    (*writer)->Append(data.c_str(), data.size());
+    (*writer)->Append(base::as_byte_span(data));
   }
   (*writer)->Finish();
 }
@@ -649,7 +649,7 @@ TEST_P(SharedDictionaryManagerTest, DictionaryLifetimeFromCacheControlHeader) {
     }
     ASSERT_TRUE(writer.has_value());
     ASSERT_TRUE(*writer);
-    (*writer)->Append(kTestData1.c_str(), kTestData1.size());
+    (*writer)->Append(base::as_byte_span(kTestData1));
     (*writer)->Finish();
     if (GetManagerType() == TestManagerType::kOnDisk) {
       FlushCacheTasks();
@@ -723,7 +723,7 @@ TEST_P(SharedDictionaryManagerTest, WriterForUseAsDictionaryIdOption) {
     }
     ASSERT_TRUE(writer.has_value());
     ASSERT_TRUE(*writer);
-    (*writer)->Append(kTestData1.c_str(), kTestData1.size());
+    (*writer)->Append(base::as_byte_span(kTestData1));
     (*writer)->Finish();
     if (GetManagerType() == TestManagerType::kOnDisk) {
       FlushCacheTasks();
@@ -819,7 +819,7 @@ TEST_P(SharedDictionaryManagerTest, WriterForUseAsDictionaryMatchDestOption) {
     }
     ASSERT_TRUE(writer.has_value());
     ASSERT_TRUE(*writer);
-    (*writer)->Append(kTestData1.c_str(), kTestData1.size());
+    (*writer)->Append(base::as_byte_span(kTestData1));
     (*writer)->Finish();
     if (GetManagerType() == TestManagerType::kOnDisk) {
       FlushCacheTasks();
@@ -980,7 +980,7 @@ TEST_P(SharedDictionaryManagerTest, SameDictionaryFromDiskCache) {
           }));
   ASSERT_TRUE(writer1.has_value());
   ASSERT_TRUE(*writer1);
-  (*writer1)->Append(kTestData1.c_str(), kTestData1.size());
+  (*writer1)->Append(base::as_byte_span(kTestData1));
   (*writer1)->Finish();
   if (GetManagerType() == TestManagerType::kOnDisk) {
     FlushCacheTasks();
@@ -1036,7 +1036,7 @@ TEST_P(SharedDictionaryManagerTest, DifferentDictionaryFromDiskCache) {
           }));
   ASSERT_TRUE(writer1.has_value());
   ASSERT_TRUE(*writer1);
-  (*writer1)->Append(kTestData1.c_str(), kTestData1.size());
+  (*writer1)->Append(base::as_byte_span(kTestData1));
   (*writer1)->Finish();
   if (GetManagerType() == TestManagerType::kOnDisk) {
     FlushCacheTasks();
@@ -1107,12 +1107,11 @@ TEST_P(SharedDictionaryManagerTest, WriteAndReadDictionary) {
                   {data1, data2});
 
   // Calculate the hash.
-  std::unique_ptr<crypto::SecureHash> secure_hash =
-      crypto::SecureHash::Create(crypto::SecureHash::SHA256);
-  secure_hash->Update(data1.c_str(), data1.size());
-  secure_hash->Update(data2.c_str(), data2.size());
+  crypto::hash::Hasher hasher(crypto::hash::kSha256);
+  hasher.Update(data1);
+  hasher.Update(data2);
   net::SHA256HashValue sha256;
-  secure_hash->Finish(sha256);
+  hasher.Finish(sha256);
 
   if (GetManagerType() == TestManagerType::kOnDisk) {
     FlushCacheTasks();

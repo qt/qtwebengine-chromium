@@ -17,6 +17,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/status.h"
+#include "absl/status/status_matchers.h"
 #include "absl/status/statusor.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
@@ -27,42 +28,60 @@ namespace ink {
 
 namespace {
 
+using ::absl_testing::IsOk;
+using ::absl_testing::StatusIs;
 using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::HasSubstr;
 
 TEST(TessellatorTest, ReturnsErrorForEmptyPolyline) {
-  absl::Status empty_polyline = CreateMeshFromPolyline({}).status();
-  EXPECT_EQ(empty_polyline.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(empty_polyline.message(), HasSubstr("size: 0"));
+  EXPECT_THAT(
+      CreateMeshFromPolyline({}),
+      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("size: 0")));
 }
 
 TEST(TessellatorTest, ReturnsErrorForSinglePointPolyline) {
-  absl::Status single_point = CreateMeshFromPolyline({Point{0, 0}}).status();
-  EXPECT_EQ(single_point.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(single_point.message(), HasSubstr("size: 1"));
+  EXPECT_THAT(
+      CreateMeshFromPolyline({Point{0, 0}}),
+      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("size: 1")));
 }
 
 TEST(TessellatorTest, ReturnsErrorForTwoPointPolyline) {
-  absl::Status two_points =
-      CreateMeshFromPolyline({Point{0, 0}, Point{10, 10}}).status();
-  EXPECT_EQ(two_points.code(), absl::StatusCode::kInvalidArgument);
-  EXPECT_THAT(two_points.message(), HasSubstr("size: 2"));
+  EXPECT_THAT(
+      CreateMeshFromPolyline({Point{0, 0}, Point{10, 10}}),
+      StatusIs(absl::StatusCode::kInvalidArgument, HasSubstr("size: 2")));
 }
 
 TEST(TessellatorTest, ReturnsErrorForCollinearPoints) {
-  absl::Status collinear_points =
-      CreateMeshFromPolyline(
-          {Point{0, 0}, Point{1, 2}, Point{2, 4}, Point{3, 6}})
-          .status();
-  EXPECT_EQ(collinear_points.code(), absl::StatusCode::kInternal);
-  EXPECT_THAT(collinear_points.message(), HasSubstr("tessellate"));
+  EXPECT_THAT(CreateMeshFromPolyline(
+                  {Point{0, 0}, Point{1, 2}, Point{2, 4}, Point{3, 6}}),
+              StatusIs(absl::StatusCode::kInternal, HasSubstr("tessellate")));
+}
+
+TEST(TessellatorFuzzTest, ReturnsErrorForOverflowingBoundingBox) {
+  // Each point is finite, but some are too big for the tessellator to handle
+  // without a risk of overflow errors.
+  EXPECT_THAT(CreateMeshFromPolyline(
+                  {Point{-2e+38f, 0}, Point{0, 0}, Point{2e+38f, -1}}),
+              StatusIs(absl::StatusCode::kInternal, HasSubstr("tessellate")));
+  EXPECT_THAT(CreateMeshFromPolyline(
+                  {Point{0, 0}, Point{0, 2e+38f}, Point{-1, -2e+38f}}),
+              StatusIs(absl::StatusCode::kInternal, HasSubstr("tessellate")));
+  EXPECT_THAT(CreateMeshFromPolyline(
+                  {Point{-1e+17f, 0}, Point{0, 1e+21f}, Point{1e17f, -1e+21f}}),
+              StatusIs(absl::StatusCode::kInternal, HasSubstr("tessellate")));
+
+  // The bounding box doesn't overflow, but some coordinates are still too big.
+  // The tessellator allows coordinates between -2^23 and 2^23.
+  EXPECT_THAT(CreateMeshFromPolyline(
+                  {Point{-2e+37f, 0}, Point{0, 5}, Point{1e37f, -5}}),
+              StatusIs(absl::StatusCode::kInternal, HasSubstr("tessellate")));
 }
 
 TEST(TessellatorTest, ReturnsMeshForSingleTriangle) {
   absl::StatusOr<Mesh> mesh =
       CreateMeshFromPolyline({Point{0, 0}, Point{10, 0}, Point{0, 10}});
-  ASSERT_EQ(mesh.status(), absl::OkStatus());
+  ASSERT_THAT(mesh, IsOk());
 
   EXPECT_THAT(mesh->VertexCount(), Eq(3));
   EXPECT_THAT(mesh->TriangleCount(), Eq(1));
@@ -87,7 +106,7 @@ TEST(TessellatorTest, ReturnsMeshForSingleTriangle) {
 TEST(TessellatorTest, ReturnsMeshForConcaveLoop) {
   absl::StatusOr<Mesh> mesh = CreateMeshFromPolyline(
       {Point{0, 0}, Point{10, 0}, Point{2, 2}, Point{0, 10}});
-  ASSERT_EQ(mesh.status(), absl::OkStatus());
+  ASSERT_THAT(mesh, IsOk());
 
   EXPECT_THAT(mesh->VertexCount(), Eq(4));
   EXPECT_THAT(mesh->TriangleCount(), Eq(2));
@@ -123,7 +142,7 @@ TEST(TessellatorTest, PreservesDuplicatePointsAndReturnsMesh) {
   absl::StatusOr<Mesh> mesh =
       CreateMeshFromPolyline({Point{0, 0}, Point{10, 0}, Point{20, 0},
                               Point{15, 5}, Point{10, 0}, Point{5, 5}});
-  ASSERT_EQ(mesh.status(), absl::OkStatus());
+  ASSERT_THAT(mesh, IsOk());
   EXPECT_THAT(mesh->VertexCount(), Eq(6));
   EXPECT_THAT(mesh->TriangleCount(), Eq(2));
 
@@ -159,7 +178,7 @@ TEST(TessellatorTest, PreservesDuplicatePointsAndReturnsMesh) {
 TEST(TessellatorTest, ReturnsMeshForSelfIntersectingPolyline) {
   absl::StatusOr<Mesh> mesh = CreateMeshFromPolyline(
       {Point{0, 0}, Point{10, 10}, Point{10, 0}, Point{0, 10}});
-  ASSERT_EQ(mesh.status(), absl::OkStatus());
+  ASSERT_THAT(mesh, IsOk());
   EXPECT_THAT(mesh->VertexCount(), Eq(5));
   EXPECT_THAT(mesh->TriangleCount(), Eq(2));
 

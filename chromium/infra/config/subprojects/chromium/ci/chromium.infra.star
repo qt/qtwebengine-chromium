@@ -3,21 +3,23 @@
 # found in the LICENSE file.
 """Definitions of builders in the chromium.infra builder group."""
 
-load("//lib/branches.star", "branches")
-load("//lib/builder_health_indicators.star", "health_spec")
-load("//lib/builders.star", "cpu", "gardener_rotations", "os")
-load("//lib/ci.star", "ci")
-load("//lib/consoles.star", "consoles")
+load("@chromium-luci//branches.star", "branches")
+load("@chromium-luci//builder_health_indicators.star", "health_spec")
+load("@chromium-luci//builders.star", "cpu", "os")
+load("@chromium-luci//ci.star", "ci")
+load("@chromium-luci//consoles.star", "consoles")
+load("//lib/ci_constants.star", "ci_constants")
+load("//lib/gardener_rotations.star", "gardener_rotations")
 
 ci.defaults.set(
     builder_group = "chromium.infra",
-    pool = ci.DEFAULT_POOL,
+    pool = ci_constants.DEFAULT_POOL,
     cores = 8,
     os = os.LINUX_DEFAULT,
-    execution_timeout = ci.DEFAULT_EXECUTION_TIMEOUT,
-    health_spec = health_spec.DEFAULT,
-    service_account = ci.DEFAULT_SERVICE_ACCOUNT,
-    shadow_service_account = ci.DEFAULT_SHADOW_SERVICE_ACCOUNT,
+    execution_timeout = ci_constants.DEFAULT_EXECUTION_TIMEOUT,
+    health_spec = health_spec.default(),
+    service_account = ci_constants.DEFAULT_SERVICE_ACCOUNT,
+    shadow_service_account = ci_constants.DEFAULT_SHADOW_SERVICE_ACCOUNT,
 )
 
 consoles.console_view(
@@ -66,7 +68,6 @@ packager_builder(
                 "cmd": [
                     "{CHECKOUT}/src/third_party/android_deps/fetch_all.py",
                     "-v",
-                    "--ignore-vulnerabilities",
                 ],
             }],
             "gclient_config": "chromium",
@@ -337,6 +338,10 @@ packager_builder(
                 "cipd_yaml": "third_party/android_sdk/cipd/system_images/android-34/google_apis/x86_64.yaml",
             },
             {
+                "sdk_package_name": "system-images;android-34-ext9;android-automotive;x86_64",
+                "cipd_yaml": "third_party/android_sdk/cipd/system_images/android-34/android-automotive/x86_64.yaml",
+            },
+            {
                 "sdk_package_name": "system-images;android-35;google_apis;x86_64",
                 "cipd_yaml": "third_party/android_sdk/cipd/system_images/android-35/google_apis/x86_64.yaml",
             },
@@ -352,37 +357,15 @@ packager_builder(
     },
 )
 
-packager_builder(
-    name = "rts-model-packager",
-    executable = "recipe:chromium_rts/create_model",
-    schedule = "0 9 * * *",  # at 1AM or 2AM PT (depending on DST), once a day.
-    triggered_by = [],
-    builderless = False,
-    cores = None,
-    console_view_entry = consoles.console_view_entry(
-        category = "packager|rts",
-        short_name = "create-model",
-    ),
-    execution_timeout = 10 * time.hour,
-    notifies = [
-        luci.notifier(
-            name = "rts-model-packager-notifier",
-            notify_emails = ["chrome-browser-infra-team@google.com"],
-            on_occurrence = ["FAILURE", "INFRA_FAILURE"],
-        ),
-    ],
-)
-
 ci.builder(
     name = "android-device-flasher",
     executable = "recipe:android/device_flasher",
-    # TODO(crbug.com/40201767): Find the sweet spot for the frequency.
-    schedule = "0 9 * * 1",  # at 9am UTC every Monday.
+    schedule = "0 9 * * 1,3",  # at 9am UTC every Monday and Wednesday.
     triggered_by = [],
     console_view_entry = consoles.console_view_entry(
         short_name = "flash",
     ),
-    notifies = ["chromium-infra"],
+    notifies = ["chromium-android-device-flasher"],
     properties = {
         "flash_criteria": [
             # Used by ci/Android Release (Nexus 5X)

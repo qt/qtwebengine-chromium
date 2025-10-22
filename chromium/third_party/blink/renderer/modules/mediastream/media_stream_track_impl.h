@@ -57,6 +57,8 @@ class ScriptState;
 // Primary implementation of the MediaStreamTrack interface and idl type.
 class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
                                             public MediaStreamSource::Observer {
+  USING_PRE_FINALIZER(MediaStreamTrackImpl, Dispose);
+
  public:
   // Create a MediaStreamTrackImpl of the appropriate type for the display
   // surface type.
@@ -169,6 +171,8 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   friend class CanvasCaptureMediaStreamTrack;
   friend class InternalsMediaStream;
 
+  void Dispose();
+
   // MediaStreamTrack
   void applyConstraints(ScriptPromiseResolver<IDLUndefined>*,
                         const MediaTrackConstraints*) override;
@@ -181,6 +185,8 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   void SourceChangedZoomLevel(int) override;
 #endif
   void PropagateTrackEnded();
+
+  void PropagateTrackEnabled(bool enabled);
 
   void SendLogMessage(const WTF::String& message);
 
@@ -226,6 +232,7 @@ class MODULES_EXPORT MediaStreamTrackImpl : public MediaStreamTrack,
   std::optional<int> zoom_level_;
   MediaConstraints constraints_;
   std::optional<bool> suppress_local_audio_playback_setting_;
+  std::optional<bool> restrict_own_audio_setting_;
   Member<V8UnionMediaStreamTrackAudioStatsOrMediaStreamTrackVideoStats> stats_;
 };
 

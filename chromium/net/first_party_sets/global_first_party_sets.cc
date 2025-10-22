@@ -17,8 +17,8 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/map_util.h"
 #include "base/functional/function_ref.h"
-#include "base/not_fatal_until.h"
 #include "base/types/optional_ref.h"
+#include "base/types/optional_util.h"
 #include "net/base/schemeful_site.h"
 #include "net/first_party_sets/addition_overlaps_union_find.h"
 #include "net/first_party_sets/first_party_set_entry.h"
@@ -89,7 +89,7 @@ GlobalFirstPartySets::GlobalFirstPartySets(
   CHECK(std::ranges::all_of(aliases_, [&](const auto& pair) {
     return entries_.contains(pair.second);
   }));
-  CHECK(IsValid(), base::NotFatalUntil::M130) << "Sets must be valid";
+  CHECK(IsValid()) << "Sets must be valid";
 }
 
 GlobalFirstPartySets::GlobalFirstPartySets(GlobalFirstPartySets&&) = default;
@@ -99,9 +99,6 @@ GlobalFirstPartySets& GlobalFirstPartySets::operator=(GlobalFirstPartySets&&) =
 GlobalFirstPartySets::~GlobalFirstPartySets() = default;
 
 bool GlobalFirstPartySets::operator==(const GlobalFirstPartySets& other) const =
-    default;
-
-bool GlobalFirstPartySets::operator!=(const GlobalFirstPartySets& other) const =
     default;
 
 GlobalFirstPartySets GlobalFirstPartySets::Clone() const {
@@ -136,15 +133,7 @@ std::optional<FirstPartySetEntry> GlobalFirstPartySets::FindEntry(
   }
 
   // Finally, look up in `entries_`, applying an alias if applicable.
-  const auto canonical_it = aliases_.find(site);
-  const SchemefulSite& canonical_site =
-      canonical_it == aliases_.end() ? site : canonical_it->second;
-  if (const auto entry_it = entries_.find(canonical_site);
-      entry_it != entries_.end()) {
-    return entry_it->second;
-  }
-
-  return std::nullopt;
+  return base::OptionalFromPtr(base::FindOrNull(entries_, ResolveAlias(site)));
 }
 
 base::flat_map<SchemefulSite, FirstPartySetEntry>
@@ -181,7 +170,7 @@ void GlobalFirstPartySets::ApplyManuallySpecifiedSet(
 
   manual_config_ = ComputeConfig(local_set_declaration.ComputeMutation());
 
-  CHECK(IsValid(), base::NotFatalUntil::M130) << "Sets must be valid";
+  CHECK(IsValid()) << "Sets must be valid";
 }
 
 void GlobalFirstPartySets::UnsafeSetManualConfig(
@@ -216,10 +205,6 @@ GlobalFirstPartySets::FindPrimariesAffectedByReplacements(
     return {{}, {}};
   }
 
-  const auto canonicalize = [&](const SchemefulSite& site) {
-    const auto it = aliases_.find(site);
-    return it != aliases_.end() ? it->second : site;
-  };
   std::map<SchemefulSite, std::set<SchemefulSite>> canonical_to_aliases;
   ForEachAlias([&](const SchemefulSite& alias, const SchemefulSite& canonical) {
     canonical_to_aliases[canonical].insert(alias);
@@ -227,15 +212,14 @@ GlobalFirstPartySets::FindPrimariesAffectedByReplacements(
   // Runs the given FunctionRef for all (existing) variants of the given site,
   // i.e. all the aliases and the "canonical" variant.
   const auto for_all_variants =
-      [canonical_to_aliases = std::move(canonical_to_aliases),
-       canonicalize = std::move(canonicalize)](
+      [this, canonical_to_aliases = std::move(canonical_to_aliases)](
           const SchemefulSite& site,
           const base::FunctionRef<void(const SchemefulSite&)> f) {
-        const SchemefulSite canonical = canonicalize(site);
+        const SchemefulSite& canonical = ResolveAlias(site);
         f(canonical);
-        if (const auto it = canonical_to_aliases.find(canonical);
-            it != canonical_to_aliases.end()) {
-          for (const auto& alias : it->second) {
+        if (const std::set<SchemefulSite>* aliases =
+                base::FindOrNull(canonical_to_aliases, canonical)) {
+          for (const auto& alias : *aliases) {
             f(alias);
           }
         }
@@ -320,26 +304,25 @@ FirstPartySetsContextConfig GlobalFirstPartySets::ComputeConfig(
         /*config=*/std::nullopt,
         [&](const SchemefulSite& member, const FirstPartySetEntry& set_entry) {
           // Reparent all sites in any intersecting addition sets.
-          if (const auto entry =
-                  addition_intersected_primaries.find(set_entry.primary());
-              entry != addition_intersected_primaries.end() &&
-              !replacements.contains(member)) {
+          if (const FirstPartySetEntry* entry = base::FindOrNull(
+                  addition_intersected_primaries, set_entry.primary());
+              entry && !replacements.contains(member)) {
             site_to_override.emplace_back(
-                member, FirstPartySetEntry(entry->second.primary(),
-                                           member == entry->second.primary()
+                member, FirstPartySetEntry(entry->primary(),
+                                           member == entry->primary()
                                                ? SiteType::kPrimary
-                                               : SiteType::kAssociated,
-                                           std::nullopt));
+                                               : SiteType::kAssociated));
           }
           if (member == set_entry.primary())
             return true;
           // Remove non-singletons from the potential list.
-          if (const auto entry = potential_singletons.find(set_entry.primary());
-              entry != potential_singletons.end() &&
-              !entry->second.contains(member)) {
+          if (const auto singletons_it =
+                  potential_singletons.find(set_entry.primary());
+              singletons_it != potential_singletons.end() &&
+              !singletons_it->second.contains(member)) {
             // This primary lost members, but it still has at least one
             // (`member`), so it's not a singleton.
-            potential_singletons.erase(entry);
+            potential_singletons.erase(singletons_it);
           }
           // Remove members from sets whose primary left.
           if (replaced_existing_primaries.contains(set_entry.primary()) &&
@@ -390,8 +373,7 @@ FirstPartySetsContextConfig GlobalFirstPartySets::ComputeConfig(
                                           mutation.aliases());
   CHECK(config.has_value());  // This class ensures the invariants that the
                               // config relies on.
-  CHECK(IsValid(config), base::NotFatalUntil::M130)
-      << "Sets must not contain singleton or orphan";
+  CHECK(IsValid(config)) << "Sets must not contain singleton or orphan";
   return std::move(config).value();
 }
 
@@ -436,8 +418,7 @@ GlobalFirstPartySets::NormalizeAdditionSets(
         bool inserted =
             normalized
                 .emplace(child_site_and_entry.first,
-                         FirstPartySetEntry(rep_primary, SiteType::kAssociated,
-                                            std::nullopt))
+                         FirstPartySetEntry(rep_primary, SiteType::kAssociated))
                 .second;
         CHECK(inserted);
       }
@@ -455,10 +436,11 @@ bool GlobalFirstPartySets::ForEachPublicSetEntry(
       return false;
   }
   for (const auto& [alias, canonical] : aliases_) {
-    auto it = entries_.find(canonical);
-    CHECK(it != entries_.end());
-    if (!f(alias, it->second))
+    const FirstPartySetEntry* entry = base::FindOrNull(entries_, canonical);
+    CHECK(entry);
+    if (!f(alias, *entry)) {
       return false;
+    }
   }
   return true;
 }
@@ -539,6 +521,12 @@ bool GlobalFirstPartySets::IsValid(
   return validator.IsValid();
 }
 
+const SchemefulSite& GlobalFirstPartySets::ResolveAlias(
+    const SchemefulSite& site) const {
+  const SchemefulSite* canonical = base::FindOrNull(aliases_, site);
+  return canonical ? *canonical : site;
+}
+
 std::ostream& operator<<(std::ostream& os, const GlobalFirstPartySets& sets) {
   os << "{entries = {";
   for (const auto& [site, entry] : sets.entries_) {
@@ -550,7 +538,7 @@ std::ostream& operator<<(std::ostream& os, const GlobalFirstPartySets& sets) {
   }
   os << "}, manual_config = {";
   sets.ForEachManualConfigEntry(
-      [&](const net::SchemefulSite& site,
+      [&](const SchemefulSite& site,
           const FirstPartySetEntryOverride& override) {
         os << "{" << site.Serialize() << ": " << override << "},";
         return true;

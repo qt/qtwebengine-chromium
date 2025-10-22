@@ -321,6 +321,10 @@ void BaselineCompiler::GenerateCode() {
   DCHECK_EQ(__ pc_offset(), 0);
   __ CodeEntry();
 
+#ifdef V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+  __ AssertInSandboxedExecutionMode();
+#endif  // V8_ENABLE_SANDBOX_HARDWARE_SUPPORT
+
   {
     RCS_BASELINE_SCOPE(Visit);
     Prologue();
@@ -626,8 +630,8 @@ constexpr static bool BuiltinMayDeopt(Builtin id) {
     case Builtin::kBaselineOutOfLinePrologue:
     case Builtin::kIncBlockCounter:
     case Builtin::kToObject:
-    case Builtin::kStoreScriptContextSlotBaseline:
-    case Builtin::kStoreCurrentScriptContextSlotBaseline:
+    case Builtin::kStoreContextElementBaseline:
+    case Builtin::kStoreCurrentContextElementBaseline:
     // This one explicitly skips the construct if the debugger is enabled.
     case Builtin::kFindNonDefaultConstructorOrConstruct:
       return false;
@@ -757,37 +761,41 @@ void BaselineCompiler::VisitPopContext() {
   __ StoreContext(context);
 }
 
-void BaselineCompiler::VisitLdaContextSlot() {
+void BaselineCompiler::VisitLdaContextSlotNoCell() {
   BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
   Register context = scratch_scope.AcquireScratch();
   LoadRegister(context, 0);
   uint32_t index = Index(1);
   uint32_t depth = Uint(2);
-  __ LdaContextSlot(context, index, depth);
+  __ LdaContextSlotNoCell(context, index, depth);
 }
 
-void BaselineCompiler::VisitLdaScriptContextSlot() {
+void BaselineCompiler::VisitLdaContextSlot() {
   BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
   Register context = scratch_scope.AcquireScratch();
   Label done;
   LoadRegister(context, 0);
   uint32_t index = Index(1);
   uint32_t depth = Uint(2);
-  __ LdaContextSlot(context, index, depth,
-                    BaselineAssembler::CompressionMode::kForceDecompression);
+  __ LdaContextSlotNoCell(
+      context, index, depth,
+      BaselineAssembler::CompressionMode::kForceDecompression);
   __ JumpIfSmi(kInterpreterAccumulatorRegister, &done);
   __ JumpIfObjectTypeFast(kNotEqual, kInterpreterAccumulatorRegister,
-                          HEAP_NUMBER_TYPE, &done, Label::kNear);
-  CallBuiltin<Builtin::kAllocateIfMutableHeapNumberScriptContextSlot>(
+                          CONTEXT_CELL_TYPE, &done, Label::kNear);
+  // TODO(victorgomes): inline trivial constant value read from context cell.
+  CallBuiltin<Builtin::kLoadFromContextCell>(
       kInterpreterAccumulatorRegister,  // heap number
       context,                          // context
       Smi::FromInt(index));             // slot
   __ Bind(&done);
 }
 
-void BaselineCompiler::VisitLdaImmutableContextSlot() { VisitLdaContextSlot(); }
+void BaselineCompiler::VisitLdaImmutableContextSlot() {
+  VisitLdaContextSlotNoCell();
+}
 
-void BaselineCompiler::VisitLdaCurrentContextSlot() {
+void BaselineCompiler::VisitLdaCurrentContextSlotNoCell() {
   BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
   Register context = scratch_scope.AcquireScratch();
   __ LoadContext(context);
@@ -795,7 +803,7 @@ void BaselineCompiler::VisitLdaCurrentContextSlot() {
                      Context::OffsetOfElementAt(Index(0)));
 }
 
-void BaselineCompiler::VisitLdaCurrentScriptContextSlot() {
+void BaselineCompiler::VisitLdaCurrentContextSlot() {
   BaselineAssembler::ScratchRegisterScope scratch_scope(&basm_);
   Register context = scratch_scope.AcquireScratch();
   Label done;
@@ -805,8 +813,9 @@ void BaselineCompiler::VisitLdaCurrentScriptContextSlot() {
                      Context::OffsetOfElementAt(index));
   __ JumpIfSmi(kInterpreterAccumulatorRegister, &done);
   __ JumpIfObjectTypeFast(kNotEqual, kInterpreterAccumulatorRegister,
-                          HEAP_NUMBER_TYPE, &done, Label::kNear);
-  CallBuiltin<Builtin::kAllocateIfMutableHeapNumberScriptContextSlot>(
+                          CONTEXT_CELL_TYPE, &done, Label::kNear);
+  // TODO(victorgomes): inline trivial constant value read from context cell.
+  CallBuiltin<Builtin::kLoadFromContextCell>(
       kInterpreterAccumulatorRegister,  // heap number
       context,                          // context
       Smi::FromInt(index));             // slot
@@ -814,10 +823,10 @@ void BaselineCompiler::VisitLdaCurrentScriptContextSlot() {
 }
 
 void BaselineCompiler::VisitLdaImmutableCurrentContextSlot() {
-  VisitLdaCurrentContextSlot();
+  VisitLdaCurrentContextSlotNoCell();
 }
 
-void BaselineCompiler::VisitStaContextSlot() {
+void BaselineCompiler::VisitStaContextSlotNoCell() {
   Register value = WriteBarrierDescriptor::ValueRegister();
   Register context = WriteBarrierDescriptor::ObjectRegister();
   DCHECK(!AreAliased(value, context, kInterpreterAccumulatorRegister));
@@ -825,10 +834,10 @@ void BaselineCompiler::VisitStaContextSlot() {
   LoadRegister(context, 0);
   uint32_t index = Index(1);
   uint32_t depth = Uint(2);
-  __ StaContextSlot(context, value, index, depth);
+  __ StaContextSlotNoCell(context, value, index, depth);
 }
 
-void BaselineCompiler::VisitStaCurrentContextSlot() {
+void BaselineCompiler::VisitStaCurrentContextSlotNoCell() {
   Register value = WriteBarrierDescriptor::ValueRegister();
   Register context = WriteBarrierDescriptor::ObjectRegister();
   DCHECK(!AreAliased(value, context, kInterpreterAccumulatorRegister));
@@ -838,26 +847,25 @@ void BaselineCompiler::VisitStaCurrentContextSlot() {
       context, Context::OffsetOfElementAt(Index(0)), value);
 }
 
-void BaselineCompiler::VisitStaScriptContextSlot() {
+void BaselineCompiler::VisitStaContextSlot() {
   Register value = WriteBarrierDescriptor::ValueRegister();
   Register context = WriteBarrierDescriptor::ObjectRegister();
   DCHECK(!AreAliased(value, context, kInterpreterAccumulatorRegister));
   __ Move(value, kInterpreterAccumulatorRegister);
   LoadRegister(context, 0);
   SaveAccumulatorScope accumulator_scope(this, &basm_);
-  CallBuiltin<Builtin::kStoreScriptContextSlotBaseline>(
-      context,           // context
-      value,             // value
-      IndexAsSmi(1),     // slot
-      UintAsTagged(2));  // depth
+  CallBuiltin<Builtin::kStoreContextElementBaseline>(context,        // context
+                                                     value,          // value
+                                                     IndexAsSmi(1),  // slot
+                                                     UintAsTagged(2));  // depth
 }
 
-void BaselineCompiler::VisitStaCurrentScriptContextSlot() {
+void BaselineCompiler::VisitStaCurrentContextSlot() {
   Register value = WriteBarrierDescriptor::ValueRegister();
   DCHECK(!AreAliased(value, kInterpreterAccumulatorRegister));
   SaveAccumulatorScope accumulator_scope(this, &basm_);
   __ Move(value, kInterpreterAccumulatorRegister);
-  CallBuiltin<Builtin::kStoreCurrentScriptContextSlotBaseline>(
+  CallBuiltin<Builtin::kStoreCurrentContextElementBaseline>(
       value,           // value
       IndexAsSmi(0));  // slot
 }
@@ -866,12 +874,12 @@ void BaselineCompiler::VisitLdaLookupSlot() {
   CallRuntime(Runtime::kLoadLookupSlot, Constant<Name>(0));
 }
 
-void BaselineCompiler::VisitLdaLookupContextSlot() {
-  CallBuiltin<Builtin::kLookupContextBaseline>(
+void BaselineCompiler::VisitLdaLookupContextSlotNoCell() {
+  CallBuiltin<Builtin::kLookupContextNoCellBaseline>(
       Constant<Name>(0), UintAsTagged(2), IndexAsTagged(1));
 }
 
-void BaselineCompiler::VisitLdaLookupScriptContextSlot() {
+void BaselineCompiler::VisitLdaLookupContextSlot() {
   CallBuiltin<Builtin::kLookupScriptContextBaseline>(
       Constant<Name>(0), UintAsTagged(2), IndexAsTagged(1));
 }
@@ -885,13 +893,13 @@ void BaselineCompiler::VisitLdaLookupSlotInsideTypeof() {
   CallRuntime(Runtime::kLoadLookupSlotInsideTypeof, Constant<Name>(0));
 }
 
-void BaselineCompiler::VisitLdaLookupContextSlotInsideTypeof() {
-  CallBuiltin<Builtin::kLookupContextInsideTypeofBaseline>(
+void BaselineCompiler::VisitLdaLookupContextSlotNoCellInsideTypeof() {
+  CallBuiltin<Builtin::kLookupContextNoCellInsideTypeofBaseline>(
       Constant<Name>(0), UintAsTagged(2), IndexAsTagged(1));
 }
 
-void BaselineCompiler::VisitLdaLookupScriptContextSlotInsideTypeof() {
-  CallBuiltin<Builtin::kLookupScriptContextInsideTypeofBaseline>(
+void BaselineCompiler::VisitLdaLookupContextSlotInsideTypeof() {
+  CallBuiltin<Builtin::kLookupContextInsideTypeofBaseline>(
       Constant<Name>(0), UintAsTagged(2), IndexAsTagged(1));
 }
 
@@ -1070,6 +1078,25 @@ void BaselineCompiler::VisitDefineKeyedOwnPropertyInLiteral() {
 void BaselineCompiler::VisitAdd() {
   CallBuiltin<Builtin::kAdd_Baseline>(
       RegisterOperand(0), kInterpreterAccumulatorRegister, Index(1));
+}
+
+void BaselineCompiler::VisitAdd_StringConstant_Internalize() {
+  using ASVariant = AddStringConstantAndInternalizeVariant;
+  uint8_t flags = Flag8(2);
+  const ASVariant as_variant = static_cast<ASVariant>(flags);
+  DCHECK(as_variant == ASVariant::kLhsIsStringConstant ||
+         as_variant == ASVariant::kRhsIsStringConstant);
+  static constexpr auto kTargetL =
+      Builtin::kAdd_LhsIsStringConstant_Internalize_Baseline;
+  static constexpr auto kTargetR =
+      Builtin::kAdd_RhsIsStringConstant_Internalize_Baseline;
+  if (as_variant == ASVariant::kLhsIsStringConstant) {
+    CallBuiltin<kTargetL>(RegisterOperand(0), kInterpreterAccumulatorRegister,
+                          Index(1));
+  } else {
+    CallBuiltin<kTargetR>(RegisterOperand(0), kInterpreterAccumulatorRegister,
+                          Index(1));
+  }
 }
 
 void BaselineCompiler::VisitSub() {
@@ -1981,6 +2008,15 @@ void BaselineCompiler::VisitCreateFunctionContext() {
   CallBuiltin<Builtin::kFastNewFunctionContextFunction>(info, slot_count);
 }
 
+void BaselineCompiler::VisitCreateFunctionContextWithCells() {
+  Handle<ScopeInfo> info = Constant<ScopeInfo>(0);
+  uint32_t slot_count = Uint(1);
+  DCHECK_LE(slot_count, ConstructorBuiltins::MaximumFunctionContextSlots());
+  DCHECK_EQ(info->scope_type(), ScopeType::FUNCTION_SCOPE);
+  CallBuiltin<Builtin::kFastNewFunctionContextFunctionWithCells>(info,
+                                                                 slot_count);
+}
+
 void BaselineCompiler::VisitCreateEvalContext() {
   Handle<ScopeInfo> info = Constant<ScopeInfo>(0);
   uint32_t slot_count = Uint(1);
@@ -2405,6 +2441,13 @@ void BaselineCompiler::VisitResumeGenerator() {
   CallBuiltin<Builtin::kResumeGeneratorBaseline>(
       generator_object,
       static_cast<int>(RegisterCount(2)));  // register_count
+}
+
+void BaselineCompiler::VisitForOfNext() {
+  CallBuiltin<Builtin::kForOfNextBaseline>(RegisterOperand(0),   // object
+                                           RegisterOperand(1));  // next
+
+  __ Move(__ RegisterFrameOperand(RegisterOperand(2)), kReturnRegister1);
 }
 
 void BaselineCompiler::VisitGetIterator() {

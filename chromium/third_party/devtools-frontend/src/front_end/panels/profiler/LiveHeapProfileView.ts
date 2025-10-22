@@ -1,6 +1,7 @@
 // Copyright 2019 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import '../../ui/legacy/legacy.js';
 
@@ -67,7 +68,7 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
   currentPollId: number;
 
   private constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.gridNodeByUrl = new Map();
     this.registerRequiredCSS(liveHeapProfileStyles);
 
@@ -219,7 +220,7 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
     });
 
     const rootNode = this.dataGrid.rootNode();
-    const exisitingNodes = new Set<GridNode>();
+    const existingNodes = new Set<GridNode>();
     for (const pair of dataByUrl) {
       const url = (pair[0]);
       const size = (pair[1].size);
@@ -236,12 +237,12 @@ export class LiveHeapProfileView extends UI.Widget.VBox {
         this.gridNodeByUrl.set(url, node);
         rootNode.appendChild(node);
       }
-      exisitingNodes.add(node);
+      existingNodes.add(node);
     }
 
     for (const node of rootNode.children.slice()) {
       const gridNode = node as GridNode;
-      if (!exisitingNodes.has(gridNode)) {
+      if (!existingNodes.has(gridNode)) {
         gridNode.remove();
       }
       this.gridNodeByUrl.delete(gridNode.url);

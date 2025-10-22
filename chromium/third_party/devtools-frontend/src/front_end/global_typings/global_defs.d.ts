@@ -2,8 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+/**
+ * Branded type used for CSS text bundled with our `*.css.js` files.
+ */
+type CSSInJS = string&{_tag: 'CSS-in-JS'};
+
 declare module '*.css.js' {
-  const styles: {cssText: string};
+  const styles: CSSInJS;
   export default styles;
 }
 
@@ -51,6 +56,11 @@ interface Scheduler {
 
 interface Window {
   readonly scheduler: Scheduler;
+
+  // Chromium only feature so not exposed on TypeScript lib.dom
+  showSaveFilePicker(opts: {
+    suggestedName: string,
+  }): Promise<FileSystemFileHandle>;
 }
 
 interface WorkerGlobalScope {

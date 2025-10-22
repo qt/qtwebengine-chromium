@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_PAGE_ALLOCATOR_INTERNALS_POSIX_H_
 #define PARTITION_ALLOC_PAGE_ALLOCATOR_INTERNALS_POSIX_H_
 
@@ -156,8 +161,16 @@ void SetSystemPagesAccessInternal(
   //
   // In this case, we are almost certainly bumping into the sandbox limit, mark
   // the crash as OOM. See SandboxLinux::LimitAddressSpace() for details.
-  if (ret == -1 && errno == ENOMEM && (access_flags & PROT_WRITE)) {
-    OOM_CRASH(length);
+  if (ret == -1 && errno == ENOMEM) {
+    // Likely setrlimit(2) related.
+    if (access_flags & PROT_WRITE) {
+      OOM_CRASH(length);
+    } else {
+      // Linux-based systems have a low-ish default limit of ~65k VMAs per
+      // process, and we've seen crashes triggered by that. Single out this
+      // error so that we can track it in crashes.
+      OnErrnoNoMem();
+    }
   }
 
   PA_PCHECK(0 == ret);

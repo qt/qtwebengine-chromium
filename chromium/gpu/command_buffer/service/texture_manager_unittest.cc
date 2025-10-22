@@ -23,7 +23,6 @@
 #include "gpu/command_buffer/service/mocks.h"
 #include "gpu/command_buffer/service/service_discardable_manager.h"
 #include "gpu/command_buffer/service/test_helper.h"
-#include "gpu/command_buffer/service/test_memory_tracker.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_mock.h"
 #include "ui/gl/gl_switches.h"
@@ -238,7 +237,7 @@ TEST_F(TextureManagerTest, UseDefaultTexturesTrue) {
   EXPECT_TRUE(manager.GetDefaultTextureInfo(GL_TEXTURE_2D) != nullptr);
   EXPECT_TRUE(manager.GetDefaultTextureInfo(GL_TEXTURE_CUBE_MAP) != nullptr);
 
-  // TODO(vmiura): Test GL_TEXTURE_EXTERNAL_OES & GL_TEXTURE_RECTANGLE_ARB.
+  // TODO(vmiura): Test GL_TEXTURE_EXTERNAL_OES & GL_TEXTURE_RECTANGLE_ANGLE.
 
   manager.MarkContextLost();
   manager.Destroy();
@@ -258,7 +257,7 @@ TEST_F(TextureManagerTest, UseDefaultTexturesFalse) {
   EXPECT_TRUE(manager.GetDefaultTextureInfo(GL_TEXTURE_2D) == nullptr);
   EXPECT_TRUE(manager.GetDefaultTextureInfo(GL_TEXTURE_CUBE_MAP) == nullptr);
 
-  // TODO(vmiura): Test GL_TEXTURE_EXTERNAL_OES & GL_TEXTURE_RECTANGLE_ARB.
+  // TODO(vmiura): Test GL_TEXTURE_EXTERNAL_OES & GL_TEXTURE_RECTANGLE_ANGLE.
 
   manager.MarkContextLost();
   manager.Destroy();
@@ -385,7 +384,7 @@ TEST_F(TextureManagerTest, MaxValues) {
   EXPECT_EQ(kMaxCubeMapTextureSize,
             manager_->MaxSizeForTarget(GL_TEXTURE_CUBE_MAP_NEGATIVE_Z));
   EXPECT_EQ(kMaxRectangleTextureSize,
-            manager_->MaxSizeForTarget(GL_TEXTURE_RECTANGLE_ARB));
+            manager_->MaxSizeForTarget(GL_TEXTURE_RECTANGLE_ANGLE));
   EXPECT_EQ(kMaxExternalTextureSize,
             manager_->MaxSizeForTarget(GL_TEXTURE_EXTERNAL_OES));
   EXPECT_EQ(kMaxTextureSize, manager_->MaxSizeForTarget(GL_TEXTURE_2D_ARRAY));
@@ -517,14 +516,15 @@ class TextureTestBase : public GpuServiceTest {
   ~TextureTestBase() override { texture_ref_ = nullptr; }
 
  protected:
-  void SetUpBase(MemoryTracker* memory_tracker, const std::string& extensions) {
+  void SetUpBase(scoped_refptr<MemoryTracker> memory_tracker,
+                 const std::string& extensions) {
     GpuServiceTest::SetUp();
     TestHelper::SetupFeatureInfoInitExpectations(gl_.get(),
                                                  extensions.c_str());
     feature_info_->InitializeForTesting();
 
     manager_.reset(new TextureManager(
-        memory_tracker, feature_info_.get(), kMaxTextureSize,
+        std::move(memory_tracker), feature_info_.get(), kMaxTextureSize,
         kMaxCubeMapTextureSize, kMaxRectangleTextureSize, kMax3DTextureSize,
         kMaxArrayTextureLayers, kUseDefaultTextures, nullptr,
         &discardable_manager_));
@@ -580,13 +580,17 @@ class TextureTest : public TextureTestBase {
 
 class TextureMemoryTrackerTest : public TextureTestBase {
  protected:
-  void SetUp() override { SetUpBase(&mock_memory_tracker_, std::string()); }
+  void SetUp() override {
+    mock_memory_tracker_ =
+        base::MakeRefCounted<StrictMock<MockMemoryTracker>>();
+    SetUpBase(mock_memory_tracker_, std::string());
+  }
 
-  StrictMock<MockMemoryTracker> mock_memory_tracker_;
+  scoped_refptr<StrictMock<MockMemoryTracker>> mock_memory_tracker_;
 };
 
 #define EXPECT_MEMORY_ALLOCATION_CHANGE(old_size, new_size)    \
-  EXPECT_CALL(mock_memory_tracker_,                            \
+  EXPECT_CALL(*mock_memory_tracker_,                           \
               TrackMemoryAllocatedChange(new_size - old_size)) \
       .Times(1)                                                \
       .RetiresOnSaturation()
@@ -1860,16 +1864,16 @@ TEST_F(ProduceConsumeTextureTest, ProduceConsume2D) {
 }
 
 TEST_F(ProduceConsumeTextureTest, ProduceConsumeClearRectangle) {
-  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_RECTANGLE_ARB);
+  manager_->SetTarget(texture_ref_.get(), GL_TEXTURE_RECTANGLE_ANGLE);
   Texture* texture = texture_ref_->texture();
-  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_RECTANGLE_ARB), texture->target());
-  LevelInfo level0(GL_TEXTURE_RECTANGLE_ARB, GL_RGBA, 1, 1, 1, 0,
+  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_RECTANGLE_ANGLE), texture->target());
+  LevelInfo level0(GL_TEXTURE_RECTANGLE_ANGLE, GL_RGBA, 1, 1, 1, 0,
                    GL_UNSIGNED_BYTE, gfx::Rect());
   SetLevelInfo(texture_ref_.get(), 0, level0);
   EXPECT_TRUE(TextureTestHelper::IsTextureComplete(texture));
   Texture* produced_texture = Produce(texture_ref_.get());
   EXPECT_EQ(produced_texture, texture);
-  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_RECTANGLE_ARB),
+  EXPECT_EQ(static_cast<GLenum>(GL_TEXTURE_RECTANGLE_ANGLE),
             produced_texture->target());
 
   GLuint client_id = texture2_->client_id();
@@ -1879,8 +1883,8 @@ TEST_F(ProduceConsumeTextureTest, ProduceConsumeClearRectangle) {
   EXPECT_EQ(produced_texture, restored_texture->texture());
 
   // See if we can clear the previously uncleared level now.
-  EXPECT_EQ(level0,
-            GetLevelInfo(restored_texture.get(), GL_TEXTURE_RECTANGLE_ARB, 0));
+  EXPECT_EQ(level0, GetLevelInfo(restored_texture.get(),
+                                 GL_TEXTURE_RECTANGLE_ANGLE, 0));
   EXPECT_CALL(*decoder_, ClearLevel(_, _, _, _, _, _, _, _, _))
       .WillRepeatedly(Return(true));
   // The code path taken when IsCompressedTextureFormat returns true
@@ -1890,7 +1894,7 @@ TEST_F(ProduceConsumeTextureTest, ProduceConsumeClearRectangle) {
   EXPECT_CALL(*decoder_.get(), GetFeatureInfo())
      .WillRepeatedly(Return(feature_info_.get()));
   EXPECT_TRUE(manager_->ClearTextureLevel(
-      decoder_.get(), restored_texture.get(), GL_TEXTURE_RECTANGLE_ARB, 0));
+      decoder_.get(), restored_texture.get(), GL_TEXTURE_RECTANGLE_ANGLE, 0));
 }
 
 TEST_F(ProduceConsumeTextureTest, ProduceConsumeExternal) {
@@ -1931,8 +1935,11 @@ TEST_P(ProduceConsumeTextureTest, ProduceConsumeTextureWithImage) {
   EXPECT_EQ(service_id, restored_texture->service_id());
 }
 
-static const GLenum kTextureTargets[] = {GL_TEXTURE_2D, GL_TEXTURE_EXTERNAL_OES,
-                                         GL_TEXTURE_RECTANGLE_ARB, };
+static const GLenum kTextureTargets[] = {
+    GL_TEXTURE_2D,
+    GL_TEXTURE_EXTERNAL_OES,
+    GL_TEXTURE_RECTANGLE_ANGLE,
+};
 
 INSTANTIATE_TEST_SUITE_P(Target,
                          ProduceConsumeTextureTest,
@@ -1971,14 +1978,16 @@ class SharedTextureTest : public GpuServiceTest {
 
   SharedTextureTest()
       : feature_info_(new FeatureInfo()),
-        discardable_manager_(GpuPreferences()) {}
+        discardable_manager_(GpuPreferences()),
+        memory_tracker1_(base::MakeRefCounted<MemoryTracker>()),
+        memory_tracker2_(base::MakeRefCounted<MemoryTracker>()) {}
 
   ~SharedTextureTest() override = default;
 
   void SetUp() override {
     GpuServiceTest::SetUp();
     texture_manager1_.reset(new TextureManager(
-        &memory_tracker1_, feature_info_.get(),
+        memory_tracker1_, feature_info_.get(),
         TextureManagerTest::kMaxTextureSize,
         TextureManagerTest::kMaxCubeMapTextureSize,
         TextureManagerTest::kMaxRectangleTextureSize,
@@ -1986,7 +1995,7 @@ class SharedTextureTest : public GpuServiceTest {
         TextureManagerTest::kMaxArrayTextureLayers, kUseDefaultTextures,
         nullptr, &discardable_manager_));
     texture_manager2_.reset(new TextureManager(
-        &memory_tracker2_, feature_info_.get(),
+        memory_tracker2_, feature_info_.get(),
         TextureManagerTest::kMaxTextureSize,
         TextureManagerTest::kMaxCubeMapTextureSize,
         TextureManagerTest::kMaxRectangleTextureSize,
@@ -2033,9 +2042,11 @@ class SharedTextureTest : public GpuServiceTest {
 
   scoped_refptr<FeatureInfo> feature_info_;
   ServiceDiscardableManager discardable_manager_;
-  TestMemoryTracker memory_tracker1_;
+
+  scoped_refptr<MemoryTracker> memory_tracker1_;
   std::unique_ptr<TextureManager> texture_manager1_;
-  TestMemoryTracker memory_tracker2_;
+
+  scoped_refptr<MemoryTracker> memory_tracker2_;
   std::unique_ptr<TextureManager> texture_manager2_;
 };
 
@@ -2173,8 +2184,8 @@ TEST_F(SharedTextureTest, FBOCompletenessCheck) {
 }
 
 TEST_F(SharedTextureTest, Memory) {
-  size_t initial_memory1 = memory_tracker1_.GetSize();
-  size_t initial_memory2 = memory_tracker2_.GetSize();
+  size_t initial_memory1 = memory_tracker1_->GetSize();
+  size_t initial_memory2 = memory_tracker2_->GetSize();
 
   // Newly created texture is unrenderable.
   scoped_refptr<TextureRef> ref1 = texture_manager1_->CreateTexture(10, 10);
@@ -2184,29 +2195,29 @@ TEST_F(SharedTextureTest, Memory) {
 
   EXPECT_LT(0u, ref1->texture()->estimated_size());
   EXPECT_EQ(initial_memory1 + ref1->texture()->estimated_size(),
-            memory_tracker1_.GetSize());
+            memory_tracker1_->GetSize());
 
   // Associate new texture ref to other texture manager, it doesn't account for
   // the texture memory, the first memory tracker still has it.
   scoped_refptr<TextureRef> ref2 =
       texture_manager2_->Consume(20, ref1->texture());
   EXPECT_EQ(initial_memory1 + ref1->texture()->estimated_size(),
-            memory_tracker1_.GetSize());
-  EXPECT_EQ(initial_memory2, memory_tracker2_.GetSize());
+            memory_tracker1_->GetSize());
+  EXPECT_EQ(initial_memory2, memory_tracker2_->GetSize());
 
   // Delete the texture, memory should go to the remaining tracker.
   texture_manager1_->RemoveTexture(10);
   ref1 = nullptr;
-  EXPECT_EQ(initial_memory1, memory_tracker1_.GetSize());
+  EXPECT_EQ(initial_memory1, memory_tracker1_->GetSize());
   EXPECT_EQ(initial_memory2 + ref2->texture()->estimated_size(),
-            memory_tracker2_.GetSize());
+            memory_tracker2_->GetSize());
 
   EXPECT_CALL(*gl_, DeleteTextures(1, _))
       .Times(1)
       .RetiresOnSaturation();
   ref2 = nullptr;
   texture_manager2_->RemoveTexture(20);
-  EXPECT_EQ(initial_memory2, memory_tracker2_.GetSize());
+  EXPECT_EQ(initial_memory2, memory_tracker2_->GetSize());
 }
 
 class TextureFormatTypeValidationTest : public TextureManagerTest {

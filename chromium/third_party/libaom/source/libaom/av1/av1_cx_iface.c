@@ -54,6 +54,7 @@ struct av1_extracfg {
   unsigned int enable_auto_bwd_ref;
   unsigned int noise_sensitivity;
   unsigned int sharpness;
+  unsigned int enable_adaptive_sharpness;
   unsigned int static_thresh;
   unsigned int row_mt;
   unsigned int fp_mt;
@@ -213,6 +214,7 @@ struct av1_extracfg {
   int strict_level_conformance;
   int kf_max_pyr_height;
   int sb_qp_sweep;
+  aom_screen_detection_mode screen_detection_mode;
 };
 
 #if !CONFIG_REALTIME_ONLY
@@ -222,6 +224,7 @@ static const struct av1_extracfg default_extra_cfg = {
   0,              // enable_auto_bwd_ref
   0,              // noise_sensitivity
   0,              // sharpness
+  0,              // enable_adaptive_sharpness
   0,              // static_thresh
   1,              // row_mt
   0,              // fp_mt
@@ -367,6 +370,7 @@ static const struct av1_extracfg default_extra_cfg = {
   0,               // strict_level_conformance
   -1,              // kf_max_pyr_height
   0,               // sb_qp_sweep
+  AOM_SCREEN_DETECTION_STANDARD,
 };
 #else
 // Some settings are changed for realtime only build.
@@ -376,6 +380,7 @@ static const struct av1_extracfg default_extra_cfg = {
   0,              // enable_auto_bwd_ref
   0,              // noise_sensitivity
   0,              // sharpness
+  0,              // enable_adaptive_sharpness
   0,              // static_thresh
   1,              // row_mt
   0,              // fp_mt
@@ -439,45 +444,45 @@ static const struct av1_extracfg default_extra_cfg = {
   NULL,                         // film_grain_table_filename
   0,                            // motion_vector_unit_test
 #if CONFIG_FPMT_TEST
-  0,                            // fpmt_unit_test
+  0,  // fpmt_unit_test
 #endif
-  1,                            // CDF update mode
-  0,                            // enable rectangular partitions
-  0,                            // enable ab shape partitions
-  0,                            // enable 1:4 and 4:1 partitions
-  4,                            // min_partition_size
-  128,                          // max_partition_size
-  0,                            // enable intra edge filter
-  0,                            // frame order hint
-  0,                            // enable 64-pt transform usage
-  1,                            // enable flip and identity transform
-  1,                            // enable rectangular transform usage
-  0,                            // dist-wtd compound
-  3,                            // max_reference_frames
-  0,                            // enable_reduced_reference_set
-  0,                            // enable_ref_frame_mvs sequence level
-  0,                            // allow ref_frame_mvs frame level
-  0,                            // enable masked compound at sequence level
-  0,                            // enable one sided compound at sequence level
-  0,                            // enable interintra compound at sequence level
-  0,                            // enable smooth interintra mode
-  0,                            // enable difference-weighted compound
-  0,                            // enable interinter wedge compound
-  0,                            // enable interintra wedge compound
-  0,                            // enable_global_motion usage
-  0,                            // enable_warped_motion at sequence level
-  0,                            // allow_warped_motion at frame level
-  0,                            // enable filter intra at sequence level
-  0,                            // enable smooth intra modes usage for sequence
-  0,                            // enable Paeth intra mode usage for sequence
-  0,                            // enable CFL uv intra mode usage for sequence
-  1,   // enable directional intra mode usage for sequence
-  1,   // enable D45 to D203 intra mode usage for sequence
-  0,   // superres
-  0,   // enable overlay
-  1,   // enable palette
-  0,   // enable intrabc
-  0,   // enable angle delta
+  1,    // CDF update mode
+  0,    // enable rectangular partitions
+  0,    // enable ab shape partitions
+  0,    // enable 1:4 and 4:1 partitions
+  4,    // min_partition_size
+  128,  // max_partition_size
+  0,    // enable intra edge filter
+  0,    // frame order hint
+  0,    // enable 64-pt transform usage
+  1,    // enable flip and identity transform
+  1,    // enable rectangular transform usage
+  0,    // dist-wtd compound
+  3,    // max_reference_frames
+  0,    // enable_reduced_reference_set
+  0,    // enable_ref_frame_mvs sequence level
+  0,    // allow ref_frame_mvs frame level
+  0,    // enable masked compound at sequence level
+  0,    // enable one sided compound at sequence level
+  0,    // enable interintra compound at sequence level
+  0,    // enable smooth interintra mode
+  0,    // enable difference-weighted compound
+  0,    // enable interinter wedge compound
+  0,    // enable interintra wedge compound
+  0,    // enable_global_motion usage
+  0,    // enable_warped_motion at sequence level
+  0,    // allow_warped_motion at frame level
+  0,    // enable filter intra at sequence level
+  0,    // enable smooth intra modes usage for sequence
+  0,    // enable Paeth intra mode usage for sequence
+  0,    // enable CFL uv intra mode usage for sequence
+  1,    // enable directional intra mode usage for sequence
+  1,    // enable D45 to D203 intra mode usage for sequence
+  0,    // superres
+  0,    // enable overlay
+  1,    // enable palette
+  0,    // enable intrabc
+  0,    // enable angle delta
 #if CONFIG_DENOISE
   0,   // noise_level
   32,  // noise_block_size
@@ -521,6 +526,7 @@ static const struct av1_extracfg default_extra_cfg = {
   0,               // strict_level_conformance
   -1,              // kf_max_pyr_height
   0,               // sb_qp_sweep
+  AOM_SCREEN_DETECTION_STANDARD,
 };
 #endif
 
@@ -762,6 +768,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
         "coding.");
 
   RANGE_CHECK_HI(extra_cfg, sharpness, 7);
+  RANGE_CHECK_HI(extra_cfg, enable_adaptive_sharpness, 1);
   RANGE_CHECK_HI(extra_cfg, arnr_max_frames, 15);
   RANGE_CHECK_HI(extra_cfg, arnr_strength, 6);
   RANGE_CHECK_HI(extra_cfg, cq_level, 63);
@@ -923,6 +930,7 @@ static aom_codec_err_t validate_config(aom_codec_alg_priv_t *ctx,
         "gf-min-pyr-height");
   }
 
+  RANGE_CHECK(extra_cfg, screen_detection_mode, 1, 2);
   return AOM_CODEC_OK;
 }
 
@@ -1284,6 +1292,7 @@ static void set_encoder_config(AV1EncoderConfig *oxcf,
   algo_cfg->enable_overlay = extra_cfg->enable_overlay;
   algo_cfg->disable_trellis_quant = extra_cfg->disable_trellis_quant;
   algo_cfg->sharpness = extra_cfg->sharpness;
+  algo_cfg->enable_adaptive_sharpness = extra_cfg->enable_adaptive_sharpness;
   algo_cfg->arnr_max_frames = extra_cfg->arnr_max_frames;
   algo_cfg->arnr_strength = extra_cfg->arnr_strength;
   algo_cfg->cdf_update_mode = (uint8_t)extra_cfg->cdf_update_mode;
@@ -1292,6 +1301,7 @@ static void set_encoder_config(AV1EncoderConfig *oxcf,
       resize_cfg->resize_mode ? 0 : extra_cfg->enable_tpl_model;
   algo_cfg->loopfilter_control = extra_cfg->loopfilter_control;
   algo_cfg->skip_postproc_filtering = extra_cfg->skip_postproc_filtering;
+  algo_cfg->screen_detection_mode = extra_cfg->screen_detection_mode;
 
   // Set two-pass stats configuration.
   oxcf->twopass_stats_in = cfg->rc_twopass_stats_in;
@@ -1741,6 +1751,14 @@ static aom_codec_err_t ctrl_set_sharpness(aom_codec_alg_priv_t *ctx,
   return update_extra_cfg(ctx, &extra_cfg);
 }
 
+static aom_codec_err_t ctrl_set_enable_adaptive_sharpness(
+    aom_codec_alg_priv_t *ctx, va_list args) {
+  struct av1_extracfg extra_cfg = ctx->extra_cfg;
+  extra_cfg.enable_adaptive_sharpness =
+      CAST(AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS, args);
+  return update_extra_cfg(ctx, &extra_cfg);
+}
+
 static aom_codec_err_t ctrl_set_static_thresh(aom_codec_alg_priv_t *ctx,
                                               va_list args) {
   struct av1_extracfg extra_cfg = ctx->extra_cfg;
@@ -1833,8 +1851,8 @@ static aom_codec_err_t handle_tuning(aom_codec_alg_priv_t *ctx,
     extra_cfg->enable_qm = 1;
     extra_cfg->qm_min = QM_FIRST_IQ_SSIMULACRA2;
     extra_cfg->qm_max = QM_LAST_IQ_SSIMULACRA2;
-    // We can turn on loop filter sharpness, as frames do not have to serve as
-    // references to others.
+    // We can turn on sharpness, as frames do not have to serve as references to
+    // others.
     extra_cfg->sharpness = 7;
     // Using the QM-PSNR metric was found to be beneficial for images (over the
     // default PSNR metric), as it correlates better with subjective image
@@ -1852,6 +1870,14 @@ static aom_codec_err_t handle_tuning(aom_codec_alg_priv_t *ctx,
     extra_cfg->enable_chroma_deltaq = 1;
     // Enable "Variance Boost" deltaq mode, optimized for images.
     extra_cfg->deltaq_mode = DELTA_Q_VARIANCE_BOOST;
+    // Enable "anti-aliased text and graphics aware" screen detection mode.
+    extra_cfg->screen_detection_mode = AOM_SCREEN_DETECTION_ANTIALIASING_AWARE;
+  }
+  if (extra_cfg->tuning == AOM_TUNE_IQ) {
+    // Enable adaptive sharpness to adjust loop filter levels according to QP.
+    // Takes a small SSIMULACRA2 hit on the lower quality end, so enable it
+    // just for tune IQ.
+    extra_cfg->enable_adaptive_sharpness = 1;
   }
   return AOM_CODEC_OK;
 }
@@ -2806,6 +2832,16 @@ static aom_codec_err_t ctrl_set_postencode_drop_rtc(aom_codec_alg_priv_t *ctx,
   return AOM_CODEC_OK;
 }
 
+static aom_codec_err_t ctrl_set_screen_content_detection_mode(
+    aom_codec_alg_priv_t *ctx, va_list args) {
+  struct av1_extracfg extra_cfg = ctx->extra_cfg;
+  const aom_screen_detection_mode screen_detection_mode =
+      CAST(AV1E_SET_SCREEN_CONTENT_DETECTION_MODE, args);
+
+  extra_cfg.screen_detection_mode = screen_detection_mode;
+  return update_extra_cfg(ctx, &extra_cfg);
+}
+
 #if !CONFIG_REALTIME_ONLY
 static aom_codec_err_t create_stats_buffer(FIRSTPASS_STATS **frame_stats_buffer,
                                            STATS_BUFFER_CTX *stats_buf_context,
@@ -3253,8 +3289,20 @@ static aom_codec_err_t encoder_encode(aom_codec_alg_priv_t *ctx,
   if (res == AOM_CODEC_OK) {
     AV1_COMP *cpi = ppi->cpi;
 
+    // Per-frame PSNR is not supported when g_lag_in_frames is greater than 0.
+    if ((flags & AOM_EFLAG_CALCULATE_PSNR) && ctx->cfg.g_lag_in_frames != 0) {
+      aom_internal_error(
+          &ppi->error, AOM_CODEC_INCAPABLE,
+          "Cannot calculate per-frame PSNR when g_lag_in_frames is nonzero");
+    }
+
     // Set up internal flags
-    if (ctx->base.init_flags & AOM_CODEC_USE_PSNR) ppi->b_calculate_psnr = 1;
+#if CONFIG_INTERNAL_STATS
+    assert(ppi->b_calculate_psnr == 1);
+#else
+    ppi->b_calculate_psnr = (ctx->base.init_flags & AOM_CODEC_USE_PSNR) ||
+                            (flags & AOM_EFLAG_CALCULATE_PSNR);
+#endif  // CONFIG_INTERNAL_STATS
 
     if (img != NULL) {
       if (!ctx->pts_offset_initialized) {
@@ -3774,10 +3822,14 @@ static aom_codec_err_t ctrl_use_reference(aom_codec_alg_priv_t *ctx,
 
 static aom_codec_err_t ctrl_set_roi_map(aom_codec_alg_priv_t *ctx,
                                         va_list args) {
-  (void)ctx;
-  (void)args;
+  aom_roi_map_t *data = va_arg(args, aom_roi_map_t *);
 
-  // TODO(yaowu): Need to re-implement and test for AV1.
+  if (data) {
+    aom_roi_map_t *roi = data;
+    return av1_set_roi_map(ctx->ppi->cpi, roi->roi_map, roi->rows, roi->cols,
+                           roi->delta_q, roi->delta_lf, roi->skip,
+                           roi->ref_frame);
+  }
   return AOM_CODEC_INVALID_PARAM;
 }
 
@@ -3850,7 +3902,12 @@ static aom_codec_err_t ctrl_set_spatial_layer_id(aom_codec_alg_priv_t *ctx,
 static aom_codec_err_t ctrl_set_number_spatial_layers(aom_codec_alg_priv_t *ctx,
                                                       va_list args) {
   const int number_spatial_layers = va_arg(args, int);
-  if (number_spatial_layers > MAX_NUM_SPATIAL_LAYERS)
+  // Note svc.use_flexible_mode is set by AV1E_SET_SVC_REF_FRAME_CONFIG. When
+  // it is false (the default) the actual limit is 3 for both spatial and
+  // temporal layers. Given the order of these calls are unpredictable the
+  // final check is deferred until encoder_encode() (av1_set_svc_fixed_mode()).
+  if (number_spatial_layers <= 0 ||
+      number_spatial_layers > MAX_NUM_SPATIAL_LAYERS)
     return AOM_CODEC_INVALID_PARAM;
   ctx->ppi->number_spatial_layers = number_spatial_layers;
   // update_encoder_cfg() is somewhat costly and this control may be called
@@ -3879,10 +3936,48 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
   AV1_COMP *const cpi = ppi->cpi;
   aom_svc_params_t *const params = va_arg(args, aom_svc_params_t *);
   int64_t target_bandwidth = 0;
+  // Note svc.use_flexible_mode is set by AV1E_SET_SVC_REF_FRAME_CONFIG. When
+  // it is false (the default) the actual limit is 3 for both spatial and
+  // temporal layers. Given the order of these calls are unpredictable the
+  // final check is deferred until encoder_encode() (av1_set_svc_fixed_mode()).
+  if (params->number_spatial_layers <= 0 ||
+      params->number_spatial_layers > MAX_NUM_SPATIAL_LAYERS ||
+      params->number_temporal_layers <= 0 ||
+      params->number_temporal_layers > MAX_NUM_TEMPORAL_LAYERS) {
+    return AOM_CODEC_INVALID_PARAM;
+  }
   ppi->number_spatial_layers = params->number_spatial_layers;
   ppi->number_temporal_layers = params->number_temporal_layers;
   cpi->svc.number_spatial_layers = params->number_spatial_layers;
   cpi->svc.number_temporal_layers = params->number_temporal_layers;
+  // Sequence parameters (operating_points_cnt_minus_1, operating_point_idc[])
+  // need to be updated if the number of layers have changed.
+  // Force a keyframe here and update the two relevant sequence parameters.
+  if (cpi->svc.prev_number_temporal_layers &&
+      cpi->svc.prev_number_spatial_layers &&
+      (cpi->svc.number_temporal_layers !=
+           cpi->svc.prev_number_temporal_layers ||
+       cpi->svc.number_spatial_layers != cpi->svc.prev_number_spatial_layers)) {
+    SequenceHeader *const seq_params = &ppi->seq_params;
+    seq_params->operating_points_cnt_minus_1 =
+        ppi->number_spatial_layers * ppi->number_temporal_layers - 1;
+    ctx->next_frame_flags |= AOM_EFLAG_FORCE_KF;
+    av1_set_svc_seq_params(ppi);
+    // Check for valid values for the spatial/temporal_layer_id here, since
+    // there has been a dynamic change in the number_spatial/temporal_layers,
+    // and if the ctrl_set_layer_id is not used after this call, the
+    // previous (last_encoded) values of spatial/temporal_layer_id will be used,
+    // which may be invalid.
+    cpi->svc.spatial_layer_id =
+        clamp(cpi->svc.spatial_layer_id, 0, cpi->svc.number_spatial_layers - 1);
+    cpi->svc.temporal_layer_id = clamp(cpi->svc.temporal_layer_id, 0,
+                                       cpi->svc.number_temporal_layers - 1);
+    cpi->common.spatial_layer_id = clamp(cpi->common.spatial_layer_id, 0,
+                                         cpi->svc.number_spatial_layers - 1);
+    cpi->common.temporal_layer_id = clamp(cpi->common.temporal_layer_id, 0,
+                                          cpi->svc.number_temporal_layers - 1);
+  }
+
   if (ppi->number_spatial_layers > 1 || ppi->number_temporal_layers > 1) {
     unsigned int sl, tl;
     ctx->ppi->use_svc = 1;
@@ -3911,7 +4006,7 @@ static aom_codec_err_t ctrl_set_svc_params(aom_codec_alg_priv_t *ctx,
         } else {
           lc->layer_target_bitrate = 1000 * layer_target_bitrate;
         }
-        lc->framerate_factor = params->framerate_factor[tl];
+        lc->framerate_factor = AOMMAX(1, params->framerate_factor[tl]);
         if (tl == ppi->number_temporal_layers - 1)
           target_bandwidth += lc->layer_target_bitrate;
       }
@@ -4125,6 +4220,11 @@ static aom_codec_err_t encoder_set_option(aom_codec_alg_priv_t *ctx,
   } else if (arg_match_helper(&arg, &g_av1_codec_arg_defs.sharpness, argv,
                               err_string)) {
     extra_cfg.sharpness = arg_parse_uint_helper(&arg, err_string);
+  } else if (arg_match_helper(&arg,
+                              &g_av1_codec_arg_defs.enable_adaptive_sharpness,
+                              argv, err_string)) {
+    extra_cfg.enable_adaptive_sharpness =
+        arg_parse_int_helper(&arg, err_string);
   } else if (arg_match_helper(&arg, &g_av1_codec_arg_defs.static_thresh, argv,
                               err_string)) {
     extra_cfg.static_thresh = arg_parse_uint_helper(&arg, err_string);
@@ -4539,6 +4639,9 @@ static aom_codec_err_t encoder_set_option(aom_codec_alg_priv_t *ctx,
                               err_string)) {
     ctx->cfg.tile_height_count = arg_parse_list_helper(
         &arg, ctx->cfg.tile_heights, MAX_TILE_HEIGHTS, err_string);
+  } else if (arg_match_helper(&arg, &g_av1_codec_arg_defs.screen_detection_mode,
+                              argv, err_string)) {
+    extra_cfg.screen_detection_mode = arg_parse_int_helper(&arg, err_string);
   } else {
     match = 0;
     snprintf(err_string, ARG_ERR_MSG_MAX_LEN, "Cannot find aom option %s",
@@ -4759,6 +4862,9 @@ static aom_codec_ctrl_fn_map_t encoder_ctrl_maps[] = {
     ctrl_set_max_consec_frame_drop_ms_cbr },
   { AV1E_SET_ENABLE_LOW_COMPLEXITY_DECODE,
     ctrl_set_enable_low_complexity_decode },
+  { AV1E_SET_SCREEN_CONTENT_DETECTION_MODE,
+    ctrl_set_screen_content_detection_mode },
+  { AV1E_SET_ENABLE_ADAPTIVE_SHARPNESS, ctrl_set_enable_adaptive_sharpness },
 
   // Getters
   { AOME_GET_LAST_QUANTIZER, ctrl_get_quantizer },

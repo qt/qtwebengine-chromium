@@ -29,7 +29,7 @@
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_WIN)
@@ -489,7 +489,7 @@ StackSamplingProfiler::SamplingThread::GetOrCreateTaskRunnerForAdd() {
 
   if (thread_execution_state_ == EXITING) {
     // StopSoon() was previously called to shut down the thread
-    // asynchonously. Stop() must now be called before calling Start() again to
+    // asynchronously. Stop() must now be called before calling Start() again to
     // reset the thread state.
     //
     // We must allow blocking here to satisfy the Thread implementation, but in

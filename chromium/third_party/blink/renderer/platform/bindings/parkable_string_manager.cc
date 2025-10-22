@@ -12,7 +12,6 @@
 #include "base/memory/post_delayed_memory_reduction_task.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
 #include "base/trace_event/memory_allocator_dump.h"
@@ -75,7 +74,7 @@ void MoveString(ParkableStringImpl* string,
                 ParkableStringManager::StringMap* from,
                 ParkableStringManager::StringMap* to) {
   auto it = from->find(string->digest());
-  CHECK(it != from->end(), base::NotFatalUntil::M130);
+  CHECK(it != from->end());
   DCHECK_EQ(it->value, string);
   from->erase(it);
   auto insert_result = to->insert(string->digest(), string);
@@ -155,8 +154,7 @@ bool ParkableStringManager::OnMemoryDump(
   dump->AddScalar("on_disk_free_chunks", "bytes",
                   data_allocator().free_chunks_size());
 
-  pmd->AddSuballocation(dump->guid(),
-                        WTF::Partitions::kAllocatedObjectPoolName);
+  pmd->AddSuballocation(dump->guid(), Partitions::kAllocatedObjectPoolName);
   return true;
 }
 
@@ -192,9 +190,7 @@ scoped_refptr<ParkableStringImpl> ParkableStringManager::Add(
     // Otherwise the lookups below would not correctly deduplicate strings.
     std::unique_ptr<ParkableStringImpl::SecureDigest> expected_digest =
         ParkableStringImpl::HashString(string_impl.get());
-    base::span<const uint8_t> expected_span(*expected_digest);
-    base::span<const uint8_t> provided_span(*digest);
-    CHECK_EQ(expected_span, provided_span);
+    CHECK(*expected_digest == *digest);
 #endif  // DCHECK_IS_ON()
   }
   DCHECK(digest.get());
@@ -265,7 +261,7 @@ void ParkableStringManager::RemoveOnMainThread(ParkableStringImpl* string) {
     }
 
     auto it = map->find(string->digest());
-    CHECK(it != map->end(), base::NotFatalUntil::M130);
+    CHECK(it != map->end());
     map->erase(it);
   }
 

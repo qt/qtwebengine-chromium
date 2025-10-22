@@ -91,6 +91,10 @@ wayland_protocol("notification_shell_protocol") {
   sources = [ "unstable/notification-shell/notification-shell-unstable-v1.xml" ]
 }
 
+wayland_protocol("org_kde_kwin_appmenu") {
+  sources = [ "kde/src/protocols/appmenu.xml" ]
+}
+
 wayland_protocol("org_kde_kwin_idle") {
   sources = [ "kde/src/protocols/idle.xml" ]
 }
@@ -164,11 +168,12 @@ wayland_protocol("touchpad_haptics_protocol") {
 }
 
 wayland_protocol("ui_controls_protocol") {
-  sources = [ "unstable/ui-controls/ui-controls-unstable-v1.xml" ]
+  sources = [ "unstable/ui-controls/ui-controls-unstable-v2.xml" ]
 }
 
-wayland_protocol("test_controller_protocol") {
-  sources = [ "unstable/test-controller/test-controller-unstable-v1.xml" ]
+wayland_protocol("ui_controls_v1_protocol") {
+  # This is used by exo.
+  sources = [ "unstable/ui-controls/ui-controls-unstable-v1.xml" ]
 }
 
 wayland_protocol("viewporter_protocol") {

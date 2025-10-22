@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>  // NOLINT
 #include <memory>
 #include <string>
 
@@ -25,9 +24,11 @@
 #include "absl/status/statusor.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
+#include "internal/base/file_path.h"
 #include "internal/base/files.h"
 #include "internal/platform/implementation/atomic_boolean.h"
 #include "internal/platform/implementation/atomic_reference.h"
+#include "internal/platform/implementation/awdl.h"
 #include "internal/platform/implementation/ble.h"
 #include "internal/platform/implementation/ble_v2.h"
 #include "internal/platform/implementation/bluetooth_adapter.h"
@@ -36,6 +37,7 @@
 #include "internal/platform/implementation/count_down_latch.h"
 #include "internal/platform/implementation/credential_storage.h"
 #include "internal/platform/implementation/device_info.h"
+#include "internal/platform/implementation/g3/awdl.h"
 #include "internal/platform/implementation/http_loader.h"
 #include "internal/platform/implementation/input_file.h"
 #include "internal/platform/implementation/log_message.h"
@@ -162,12 +164,12 @@ std::unique_ptr<OutputFile> ImplementationPlatform::CreateOutputFile(
 
 std::unique_ptr<OutputFile> ImplementationPlatform::CreateOutputFile(
     const std::string& file_path) {
-  std::filesystem::path path = std::filesystem::u8path(file_path);
-  std::filesystem::path folder_path = path.parent_path();
+  FilePath path(file_path);
+  FilePath folder_path = path.GetParentPath();
   // Verifies that a path is a valid directory.
-  if (!sharing::DirectoryExists(folder_path)) {
-    if (!sharing::CreateDirectories(folder_path)) {
-      LOG(ERROR) << "Failed to create directory: " << folder_path.string();
+  if (!Files::DirectoryExists(folder_path)) {
+    if (!Files::CreateDirectories(folder_path)) {
+      LOG(ERROR) << "Failed to create directory: " << folder_path.ToString();
       return nullptr;
     }
   }
@@ -211,6 +213,10 @@ std::unique_ptr<WifiMedium> ImplementationPlatform::CreateWifiMedium() {
 
 std::unique_ptr<WifiLanMedium> ImplementationPlatform::CreateWifiLanMedium() {
   return std::make_unique<g3::WifiLanMedium>();
+}
+
+std::unique_ptr<AwdlMedium> ImplementationPlatform::CreateAwdlMedium() {
+  return std::make_unique<g3::AwdlMedium>();
 }
 
 std::unique_ptr<WifiHotspotMedium>
@@ -262,7 +268,7 @@ ImplementationPlatform::CreateDeviceInfo() {
 
 std::unique_ptr<nearby::api::PreferencesManager>
 ImplementationPlatform::CreatePreferencesManager(absl::string_view path) {
-  return std::make_unique<g3::PreferencesManager>(path);
+  return std::make_unique<g3::PreferencesManager>();
 }
 
 }  // namespace api

@@ -13,7 +13,6 @@
 #include "base/containers/adapters.h"
 #include "base/containers/contains.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "cc/slim/layer.h"
 #include "components/viz/common/frame_sinks/copy_output_request.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -187,7 +186,7 @@ bool ViewAndroid::SubtreeHasEventForwarder(ViewAndroid* view) {
 void ViewAndroid::MoveToFront(ViewAndroid* child) {
   DCHECK(child);
   auto it = std::ranges::find(children_, child);
-  CHECK(it != children_.end(), base::NotFatalUntil::M130);
+  CHECK(it != children_.end());
 
   // Top element is placed at the end of the list.
   if (*it != children_.back())
@@ -197,7 +196,7 @@ void ViewAndroid::MoveToFront(ViewAndroid* child) {
 void ViewAndroid::MoveToBack(ViewAndroid* child) {
   DCHECK(child);
   auto it = std::ranges::find(children_, child);
-  CHECK(it != children_.end(), base::NotFatalUntil::M130);
+  CHECK(it != children_.end());
 
   // Bottom element is placed at the beginning of the list.
   if (*it != children_.front())
@@ -293,7 +292,7 @@ void ViewAndroid::RemoveChild(ViewAndroid* child) {
     child->OnDetachedFromWindow();
   std::list<raw_ptr<ViewAndroid, CtnExperimental>>::iterator it =
       std::ranges::find(children_, child);
-  CHECK(it != children_.end(), base::NotFatalUntil::M130);
+  CHECK(it != children_.end());
   children_.erase(it);
   child->parent_ = nullptr;
 }
@@ -321,6 +320,15 @@ void ViewAndroid::RequestUnbufferedDispatch(const MotionEventAndroid& event) {
   JNIEnv* env = base::android::AttachCurrentThread();
   Java_ViewAndroidDelegate_requestUnbufferedDispatch(env, delegate,
                                                      event.GetJavaObject());
+}
+
+void ViewAndroid::SetTooltip(const std::u16string& text) {
+  ScopedJavaLocalRef<jobject> delegate(GetViewAndroidDelegate());
+  if (delegate.is_null()) {
+    return;
+  }
+  JNIEnv* env = base::android::AttachCurrentThread();
+  Java_ViewAndroidDelegate_setTooltipText(env, delegate, text);
 }
 
 void ViewAndroid::SetCopyOutputCallback(CopyViewCallback callback) {
@@ -691,12 +699,12 @@ void ViewAndroid::NotifyVirtualKeyboardOverlayRect(
   }
 }
 
-void ViewAndroid::NotifyContextMenuInsetsObservers(const gfx::Rect& safe_area) {
+void ViewAndroid::ShowInterestInElement(int nodeID) {
   if (event_handler_) {
-    event_handler_->NotifyContextMenuInsetsObservers(safe_area);
+    event_handler_->ShowInterestInElement(nodeID);
   }
   for (ViewAndroid* child : children_) {
-    child->NotifyContextMenuInsetsObservers(safe_area);
+    child->ShowInterestInElement(nodeID);
   }
 }
 

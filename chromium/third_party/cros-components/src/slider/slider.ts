@@ -135,19 +135,19 @@ export class Slider extends LitElement {
   };
 
   /** @export */
-  value: number;
+  declare value: number;
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  withTickMarks: boolean;
+  declare withTickMarks: boolean;
   /** @export */
-  withLabel: boolean;
+  declare withLabel: boolean;
   /** @export */
-  min: number;
+  declare min: number;
   /** @export */
-  max: number;
+  declare max: number;
   /** @export */
-  step: number;
+  declare step: number;
 
 
   constructor() {

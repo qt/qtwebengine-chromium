@@ -144,6 +144,7 @@ devtools_entrypoint("bundle") {
     "../../panels/*",
     "../../services/window_bounds/*",
     "../../testing/*",
+    "../components/copy_to_clipboard:*",
     "../components/data_grid:*",
     "../components/docs/combo_box/*",
     "../components/docs/performance_panel/*",
@@ -154,11 +155,17 @@ devtools_entrypoint("bundle") {
     "../components/linear_memory_inspector:*",
     "../components/markdown_view:*",
     "../components/request_link_icon:unittests",
+    "../components/snackbars:*",
+    "../components/tooltips:*",
     "./*",
 
     # Required for x-link
     "../components/panel_feedback/*",
     "../components/text_editor/*",
+
+    # Required for correct button styling in the Computed tab
+    # (http://crbug.com/435601104).
+    "../components/tree_outline:*",
   ]
 
   visibility += devtools_ui_legacy_visibility
@@ -180,6 +187,7 @@ ts_library("unittests") {
     "KeyboardShortcut.test.ts",
     "ListModel.test.ts",
     "ListWidget.test.ts",
+    "SettingsUI.test.ts",
     "ShortcutRegistry.test.ts",
     "SplitWidget.test.ts",
     "SuggestBox.test.ts",
@@ -187,6 +195,7 @@ ts_library("unittests") {
     "Treeoutline.test.ts",
     "UIUtils.test.ts",
     "View.test.ts",
+    "ViewManager.test.ts",
     "ViewRegistration.test.ts",
     "Widget.test.ts",
     "XLink.test.ts",
@@ -199,6 +208,7 @@ ts_library("unittests") {
     "../../core/platform:bundle",
     "../../core/root:bundle",
     "../../testing",
+    "../lit:bundle",
     "./components/quick_open:bundle",
   ]
 }

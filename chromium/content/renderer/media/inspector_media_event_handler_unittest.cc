@@ -77,7 +77,7 @@ class InspectorMediaEventHandlerTest : public testing::Test {
   template <media::MediaLogEvent T>
   media::MediaLogRecord CreateEvent() {
     media::MediaLogRecord event;
-    event.id = 0;
+    event.id = media::MediaPlayerLoggingID(0);
     event.type = media::MediaLogRecord::Type::kMediaEventTriggered;
     event.time = base::TimeTicks();
     event.params.Set("event", media::MediaLogEventTypeSupport<T>::TypeName());
@@ -87,7 +87,7 @@ class InspectorMediaEventHandlerTest : public testing::Test {
   media::MediaLogRecord CreatePropChange(
       std::vector<std::pair<std::string, std::string>> props) {
     media::MediaLogRecord event;
-    event.id = 0;
+    event.id = media::MediaPlayerLoggingID(0);
     event.type = media::MediaLogRecord::Type::kMediaPropertyChange;
     event.time = base::TimeTicks();
     for (auto p : props) {
@@ -98,7 +98,7 @@ class InspectorMediaEventHandlerTest : public testing::Test {
 
   media::MediaLogRecord CreateMessage(std::string msg) {
     media::MediaLogRecord event;
-    event.id = 0;
+    event.id = media::MediaPlayerLoggingID(0);
     event.type = media::MediaLogRecord::Type::kMessage;
     event.time = base::TimeTicks();
     event.params.Set("warning", msg);
@@ -107,7 +107,7 @@ class InspectorMediaEventHandlerTest : public testing::Test {
 
   media::MediaLogRecord CreateError(int errorcode) {
     media::MediaLogRecord error;
-    error.id = 0;
+    error.id = media::MediaPlayerLoggingID(0);
     error.type = media::MediaLogRecord::Type::kMediaStatus;
     error.time = base::TimeTicks();
     error.params.Set(media::StatusConstants::kCodeKey, errorcode);
@@ -122,19 +122,9 @@ bool operator==(const blink::InspectorPlayerProperty& lhs,
   return lhs.name == rhs.name && lhs.value == rhs.value;
 }
 
-bool operator!=(const blink::InspectorPlayerProperty& lhs,
-                const blink::InspectorPlayerProperty& rhs) {
-  return !(lhs == rhs);
-}
-
 bool operator==(const blink::InspectorPlayerEvent& lhs,
                 const blink::InspectorPlayerEvent& rhs) {
   return lhs.timestamp == rhs.timestamp && lhs.value == rhs.value;
-}
-
-bool operator!=(const blink::InspectorPlayerEvent& lhs,
-                const blink::InspectorPlayerEvent& rhs) {
-  return !(lhs == rhs);
 }
 
 bool operator==(const blink::InspectorPlayerMessage& lhs,
@@ -142,19 +132,9 @@ bool operator==(const blink::InspectorPlayerMessage& lhs,
   return lhs.level == rhs.level && lhs.message == rhs.message;
 }
 
-bool operator!=(const blink::InspectorPlayerMessage& lhs,
-                const blink::InspectorPlayerMessage& rhs) {
-  return !(lhs == rhs);
-}
-
 bool operator==(const blink::InspectorPlayerError& lhs,
                 const blink::InspectorPlayerError& rhs) {
   return lhs.group == rhs.group && lhs.code == rhs.code;
-}
-
-bool operator!=(const blink::InspectorPlayerError& lhs,
-                const blink::InspectorPlayerError& rhs) {
-  return !(lhs == rhs);
 }
 
 MATCHER_P(PropertiesEqualTo, props, "") {

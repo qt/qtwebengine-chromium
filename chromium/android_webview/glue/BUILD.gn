@@ -44,8 +44,6 @@ android_library("glue_java") {
     "java/src/com/android/webview/chromium/DrawFunctor.java",
     "java/src/com/android/webview/chromium/DrawGLFunctor.java",
     "java/src/com/android/webview/chromium/GeolocationPermissionsAdapter.java",
-    "java/src/com/android/webview/chromium/GlueApiHelperForOMR1.java",
-    "java/src/com/android/webview/chromium/GlueApiHelperForP.java",
     "java/src/com/android/webview/chromium/GlueApiHelperForQ.java",
     "java/src/com/android/webview/chromium/GlueApiHelperForR.java",
     "java/src/com/android/webview/chromium/GraphicsUtils.java",
@@ -68,7 +66,6 @@ android_library("glue_java") {
     "java/src/com/android/webview/chromium/SharedWebViewContentsClientAdapter.java",
     "java/src/com/android/webview/chromium/SharedWebViewRendererClientAdapter.java",
     "java/src/com/android/webview/chromium/SpeculativeLoadingConfig.java",
-    "java/src/com/android/webview/chromium/SplitApkWorkaround.java",
     "java/src/com/android/webview/chromium/TracingControllerAdapter.java",
     "java/src/com/android/webview/chromium/WebBackForwardListChromium.java",
     "java/src/com/android/webview/chromium/WebHistoryItemChromium.java",
@@ -77,6 +74,7 @@ android_library("glue_java") {
     "java/src/com/android/webview/chromium/WebResourceErrorAdapter.java",
     "java/src/com/android/webview/chromium/WebResourceRequestAdapter.java",
     "java/src/com/android/webview/chromium/WebStorageAdapter.java",
+    "java/src/com/android/webview/chromium/WebViewCachedFlags.java",
     "java/src/com/android/webview/chromium/WebViewChromium.java",
     "java/src/com/android/webview/chromium/WebViewChromiumAwInit.java",
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProvider.java",
@@ -86,7 +84,6 @@ android_library("glue_java") {
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForQ.java",
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForR.java",
     "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForS.java",
-    "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForT.java",
     "java/src/com/android/webview/chromium/WebViewContentsClientAdapter.java",
     "java/src/com/android/webview/chromium/WebViewDatabaseAdapter.java",
     "java/src/com/android/webview/chromium/WebViewLibraryPreloader.java",
@@ -94,4 +91,11 @@ android_library("glue_java") {
     "java/src/com/android/webview/chromium/WebViewRenderProcessClientAdapter.java",
     "java/src/com/android/webview/chromium/WebkitToSharedGlueConverter.java",
   ]
+
+  # If we are using a public version of the Android SDK, include the "empty"
+  # upstream version of the entry point class. When using an unreleased Android
+  # SDK snapshot, this class is instead provided by the downstream glue code.
+  if (public_android_sdk) {
+    sources += [ "java/src/com/android/webview/chromium/WebViewChromiumFactoryProviderForT.java" ]
+  }
 }

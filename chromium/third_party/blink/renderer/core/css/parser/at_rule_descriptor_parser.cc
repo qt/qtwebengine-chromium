@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/core/css/parser/css_variable_parser.h"
 #include "third_party/blink/renderer/core/css/properties/css_parsing_utils.h"
 #include "third_party/blink/renderer/core/css/properties/css_property.h"
+#include "third_party/blink/renderer/core/frame/web_feature.h"
 
 namespace blink {
 
@@ -310,6 +311,7 @@ CSSValue* ConsumeDescriptor(StyleRule::RuleType rule_type,
     case StyleRule::kMixin:
     case StyleRule::kApplyMixin:
     case StyleRule::kPositionTry:
+    case StyleRule::kCustomMedia:
       // TODO(andruud): Handle other descriptor types here.
       // Note that we can reach this path through @supports at-rule(...).
       return nullptr;
@@ -334,6 +336,8 @@ CSSValue* AtRuleDescriptorParser::ParseFontFaceDescriptor(
     const CSSParserContext& context) {
   CSSValue* parsed_value = nullptr;
   stream.ConsumeWhitespace();
+  CSSParserContext::ParserModeOverridingScope scope(context,
+                                                    kCSSFontFaceRuleMode);
   switch (id) {
     case AtRuleDescriptorID::FontFamily:
       // In order to avoid confusion, <family-name> does not accept unquoted
@@ -359,14 +363,10 @@ CSSValue* AtRuleDescriptorParser::ParseFontFaceDescriptor(
       parsed_value = ConsumeFontDisplay(stream);
       break;
     case AtRuleDescriptorID::FontStretch: {
-      CSSParserContext::ParserModeOverridingScope scope(context,
-                                                        kCSSFontFaceRuleMode);
       parsed_value = css_parsing_utils::ConsumeFontStretch(stream, context);
       break;
     }
     case AtRuleDescriptorID::FontStyle: {
-      CSSParserContext::ParserModeOverridingScope scope(context,
-                                                        kCSSFontFaceRuleMode);
       parsed_value = css_parsing_utils::ConsumeFontStyle(stream, context);
       break;
     }
@@ -374,8 +374,6 @@ CSSValue* AtRuleDescriptorParser::ParseFontFaceDescriptor(
       parsed_value = ConsumeFontVariantList(stream);
       break;
     case AtRuleDescriptorID::FontWeight: {
-      CSSParserContext::ParserModeOverridingScope scope(context,
-                                                        kCSSFontFaceRuleMode);
       parsed_value = css_parsing_utils::ConsumeFontWeight(stream, context);
       break;
     }
@@ -383,10 +381,19 @@ CSSValue* AtRuleDescriptorParser::ParseFontFaceDescriptor(
       parsed_value =
           css_parsing_utils::ConsumeFontFeatureSettings(stream, context);
       break;
+    case AtRuleDescriptorID::FontVariationSettings:
+      if (RuntimeEnabledFeatures::FontVariationSettingsDescriptorEnabled()) {
+        parsed_value =
+            css_parsing_utils::ConsumeFontVariationSettings(stream, context);
+      }
+      break;
     case AtRuleDescriptorID::AscentOverride:
     case AtRuleDescriptorID::DescentOverride:
     case AtRuleDescriptorID::LineGapOverride:
       parsed_value = ConsumeFontMetricOverride(stream, context);
+      if (parsed_value && IsUseCounterEnabledForMode(context.Mode())) {
+        context.Count(WebDXFeature::kFontMetricOverrides);
+      }
       break;
     case AtRuleDescriptorID::SizeAdjust:
       parsed_value = css_parsing_utils::ConsumePercent(

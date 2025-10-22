@@ -27,11 +27,10 @@
 
 #include <memory>
 
-#include "base/functional/bind.h"
-#include "base/not_fatal_until.h"
 #include "base/synchronization/lock.h"
 #include "third_party/blink/renderer/platform/graphics/image_frame_generator.h"
 #include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
+#include "third_party/blink/renderer/platform/wtf/functional.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
 
 namespace blink {
@@ -47,8 +46,8 @@ ImageDecodingStore::ImageDecodingStore()
       heap_memory_usage_in_bytes_(0),
       memory_pressure_listener_(
           FROM_HERE,
-          base::BindRepeating(&ImageDecodingStore::OnMemoryPressure,
-                              base::Unretained(this))) {}
+          blink::BindRepeating(&ImageDecodingStore::OnMemoryPressure,
+                               blink::Unretained(this))) {}
 
 ImageDecodingStore::~ImageDecodingStore() {
 #if DCHECK_IS_ON()
@@ -280,7 +279,7 @@ void ImageDecodingStore::RemoveFromCacheInternal(
 
   // Remove entry from identifier map.
   typename V::iterator iter = identifier_map->find(cache_entry->Generator());
-  CHECK(iter != identifier_map->end(), base::NotFatalUntil::M130);
+  CHECK(iter != identifier_map->end());
   iter->value.erase(cache_entry->CacheKey());
   if (!iter->value.size())
     identifier_map->erase(iter);

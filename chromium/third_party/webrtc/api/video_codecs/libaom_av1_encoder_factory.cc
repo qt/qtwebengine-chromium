@@ -105,7 +105,7 @@ class LibaomAv1Encoder : public VideoEncoderInterface {
       const VideoEncoderFactoryInterface::StaticEncoderSettings& settings,
       const std::map<std::string, std::string>& encoder_specific_settings);
 
-  void Encode(rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,
+  void Encode(scoped_refptr<VideoFrameBuffer> frame_buffer,
               const TemporalUnitSettings& tu_settings,
               std::vector<FrameEncodeSettings> frame_settings) override;
 
@@ -269,7 +269,7 @@ ThreadTilesAndSuperblockSizeInfo GetThreadingTilesAndSuperblockSize(
 }
 
 bool ValidateEncodeParams(
-    const webrtc::VideoFrameBuffer& /* frame_buffer */,
+    const VideoFrameBuffer& /* frame_buffer */,
     const VideoEncoderInterface::TemporalUnitSettings& /* tu_settings */,
     const std::vector<VideoEncoderInterface::FrameEncodeSettings>&
         frame_settings,
@@ -537,7 +537,7 @@ aom_svc_ref_frame_config_t GetSvcRefFrameConfig(
 }
 
 aom_svc_params_t GetSvcParams(
-    const webrtc::VideoFrameBuffer& frame_buffer,
+    const VideoFrameBuffer& frame_buffer,
     const std::vector<VideoEncoderInterface::FrameEncodeSettings>&
         frame_settings) {
   aom_svc_params_t svc_params = {};
@@ -634,10 +634,9 @@ aom_svc_params_t GetSvcParams(
   return svc_params;
 }
 
-void LibaomAv1Encoder::Encode(
-    rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,
-    const TemporalUnitSettings& tu_settings,
-    std::vector<FrameEncodeSettings> frame_settings) {
+void LibaomAv1Encoder::Encode(scoped_refptr<VideoFrameBuffer> frame_buffer,
+                              const TemporalUnitSettings& tu_settings,
+                              std::vector<FrameEncodeSettings> frame_settings) {
   absl::Cleanup on_return = [&] {
     // On return call `EncodeComplete` with EncodingError result unless they
     // were already called with an EncodedData result.
@@ -782,10 +781,10 @@ void LibaomAv1Encoder::Encode(
                aom_codec_get_cx_data(&ctx_, &iter)) {
       if (pkt->kind == AOM_CODEC_CX_FRAME_PKT && pkt->data.frame.sz > 0) {
         SET_OR_RETURN(AOME_GET_LAST_QUANTIZER_64, &result.encoded_qp);
-        result.frame_type = pkt->data.frame.flags & AOM_EFLAG_FORCE_KF
+        result.frame_type = pkt->data.frame.flags & AOM_FRAME_IS_KEY
                                 ? FrameType::kKeyframe
                                 : FrameType::kDeltaFrame;
-        rtc::ArrayView<uint8_t> output_buffer =
+        ArrayView<uint8_t> output_buffer =
             settings.frame_output->GetBitstreamOutputBuffer(
                 DataSize::Bytes(pkt->data.frame.sz));
         if (output_buffer.size() != pkt->data.frame.sz) {

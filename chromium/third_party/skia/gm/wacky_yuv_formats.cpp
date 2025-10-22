@@ -48,11 +48,17 @@
 #include "src/core/SkYUVMath.h"
 #include "src/gpu/ganesh/GrCaps.h"
 #include "src/gpu/ganesh/GrRecordingContextPriv.h"
+#include "src/gpu/ganesh/SkGaneshRecorder.h"
 #include "src/image/SkImage_Base.h"
 #include "tools/DecodeUtils.h"
 #include "tools/ToolUtils.h"
 #include "tools/fonts/FontToolUtils.h"
 #include "tools/gpu/YUVUtils.h"
+
+#if defined(SK_GRAPHITE)
+#include "include/gpu/graphite/Recorder.h"
+#include "src/gpu/graphite/RecorderPriv.h"
+#endif
 
 #include <math.h>
 #include <string.h>
@@ -936,10 +942,8 @@ protected:
     }
 
     void onDraw(SkCanvas* canvas) override {
-        auto direct = GrAsDirectContext(canvas->recordingContext());
-#if defined(SK_GRAPHITE)
-        auto recorder = canvas->recorder();
-#endif
+        auto recorder = canvas->baseRecorder();
+        SkASSERT(recorder);
 
         float cellWidth = kTileWidthHeight, cellHeight = kTileWidthHeight;
         if (fUseSubset) {
@@ -990,17 +994,8 @@ protected:
                         // Making a CS-specific version of a kIdentity_SkYUVColorSpace YUV image
                         // doesn't make a whole lot of sense. The colorSpace conversion will
                         // operate on the YUV components rather than the RGB components.
-                        sk_sp<SkImage> csImage;
-#if defined(SK_GRAPHITE)
-                        if (recorder) {
-                            csImage = fImages[opaque][cs][format]->makeColorSpace(
-                                    recorder, fTargetColorSpace, {});
-                        } else
-#endif
-                        {
-                            csImage = fImages[opaque][cs][format]->makeColorSpace(
-                                    direct, fTargetColorSpace);
-                        }
+                        sk_sp<SkImage> csImage = fImages[opaque][cs][format]->makeColorSpace(
+                                recorder, fTargetColorSpace, {});
                         canvas->drawImageRect(csImage, srcRect, dstRect, sampling,
                                               &paint, constraint);
                     } else {
@@ -1193,9 +1188,8 @@ protected:
     DrawResult onDraw(SkCanvas* canvas, SkString* msg) override {
         SkASSERT(fImages[0][0] && fImages[0][1] && fImages[1][0] && fImages[1][1]);
 
-        auto dContext = GrAsDirectContext(canvas->recordingContext());
-        auto recorder = canvas->recorder();
-        if (!dContext && !recorder) {
+        auto recorder = canvas->baseRecorder();
+        if (!recorder) {
             *msg = "YUV ColorSpace image creation requires a GPU context.";
             return DrawResult::kSkip;
         }
@@ -1206,22 +1200,13 @@ protected:
                 int y = kPad;
 
                 auto raster = fOriginalBMs[opaque].asImage()->makeColorSpace(
-                      nullptr, fTargetColorSpace);
+                        nullptr, fTargetColorSpace, {});
                 canvas->drawImage(raster, x, y);
                 y += kTileWidthHeight + kPad;
 
                 if (fImages[opaque][tagged]) {
-                    sk_sp<SkImage> yuv;
-#if defined(SK_GRAPHITE)
-                    if (recorder) {
-                        yuv = fImages[opaque][tagged]->makeColorSpace(recorder,
-                                                                      fTargetColorSpace,
-                                                                      {/*fMipmapped=*/false});
-                    } else
-#endif
-                    {
-                        yuv = fImages[opaque][tagged]->makeColorSpace(dContext, fTargetColorSpace);
-                    }
+                    sk_sp<SkImage> yuv = fImages[opaque][tagged]->makeColorSpace(
+                            recorder, fTargetColorSpace, {/*fMipmapped=*/false});
 
                     SkASSERT(yuv);
                     SkASSERT(SkColorSpace::Equals(yuv->colorSpace(), fTargetColorSpace.get()));
@@ -1231,12 +1216,13 @@ protected:
                     SkIRect bounds = SkIRect::MakeWH(kTileWidthHeight / 2, kTileWidthHeight / 2);
                     sk_sp<SkImage> subset;
 #if defined(SK_GRAPHITE)
-                    if (recorder) {
-                        subset = SkImages::SubsetTextureFrom(recorder, yuv.get(), bounds);
+                    if (auto gr = skgpu::graphite::AsGraphiteRecorder(recorder)) {
+                        subset = SkImages::SubsetTextureFrom(gr, yuv.get(), bounds);
                     } else
 #endif
-                    {
-                        subset = SkImages::SubsetTextureFrom(dContext, yuv.get(), bounds);
+                    if (auto gRecorder = AsGaneshRecorder(recorder)) {
+                        subset = SkImages::SubsetTextureFrom(
+                                gRecorder->directContext(), yuv.get(), bounds);
                     }
                     SkASSERT(subset);
                     canvas->drawImage(subset, x, y);
@@ -1252,10 +1238,11 @@ protected:
 
                     SkBitmap readBack;
                     readBack.allocPixels(yuv->imageInfo());
-                    if (recorder) {
+                    if (recorder->type() == SkRecorder::Type::kGraphite) {
                         SkAssertResult(
                                 as_IB(yuv)->readPixelsGraphite(recorder, readBack.pixmap(), 0, 0));
                     } else {
+                        auto dContext = GrAsDirectContext(canvas->recordingContext());
                         SkAssertResult(yuv->readPixels(dContext, readBack.pixmap(), 0, 0));
                     }
                     canvas->drawImage(readBack.asImage(), x, y);

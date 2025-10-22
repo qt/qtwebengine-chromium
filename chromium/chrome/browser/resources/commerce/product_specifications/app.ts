@@ -316,33 +316,20 @@ export class ProductSpecificationsElement extends CrLitElement {
         this.callbackRouter_.onProductSpecificationsSetRemoved.addListener(
             (uuid: Uuid) => this.onSetRemoved_(uuid)),
         this.callbackRouter_.onProductSpecificationsSetUpdated.addListener(
-            (set: ProductSpecificationsSet) => this.onSetUpdated_(set)));
+            (set: ProductSpecificationsSet) => this.onSetUpdated_(set)),
+        this.callbackRouter_.onSyncStateChanged.addListener(
+            () => this.updateFeatureState_()));
 
-    // TODO: b/358131415 - use listeners to update. Temporary workaround uses
-    // window focus to update the feature state, to check signin.
-    window.addEventListener('focus', async () => {
+    window.addEventListener('focus', () => {
       this.isWindowFocused_ = true;
 
-      const previousState = this.productSpecificationsFeatureState_;
-      const {state} =
-          await this.shoppingApi_.getProductSpecificationsFeatureState();
-      if (!state || areStatesEqual(previousState, state)) {
-        if (this.pendingSetUpdate_) {
-          this.pendingSetUpdate_();
-          this.pendingSetUpdate_ = null;
-        }
-        return;
+      if (this.pendingSetUpdate_) {
+        this.pendingSetUpdate_();
       }
 
       // If there is a set update, the new set will be fetched when the table
       // is reloaded.
       this.pendingSetUpdate_ = null;
-
-      // States have changed, so we need to reload the table.
-      // Update the featureState after loadTable_(), so that the loading
-      // state will animate first.
-      await this.loadTable_(state);
-      this.productSpecificationsFeatureState_ = state;
     });
 
     window.addEventListener('blur', () => {
@@ -372,15 +359,7 @@ export class ProductSpecificationsElement extends CrLitElement {
       return;
     }
 
-    // TODO(b/358131415): update after we use listener/ observers and no longer
-    // need the featureState
-    const {state} =
-        await this.shoppingApi_.getProductSpecificationsFeatureState();
-    if (!state) {
-      return;
-    }
-    await this.loadTable_(state);
-    this.productSpecificationsFeatureState_ = state;
+    await this.updateFeatureState_();
   }
 
   override disconnectedCallback() {
@@ -431,6 +410,20 @@ export class ProductSpecificationsElement extends CrLitElement {
     await this.createNewSet_(urls);
   }
 
+  private async updateFeatureState_() {
+    const {state} =
+        await this.shoppingApi_.getProductSpecificationsFeatureState();
+    if (!state) {
+      return;
+    }
+
+    if (!this.productSpecificationsFeatureState_ ||
+        !areStatesEqual(state, this.productSpecificationsFeatureState_)) {
+      await this.loadTable_(state);
+      this.productSpecificationsFeatureState_ = state;
+    }
+  }
+
   private computeAppState_() {
     if (this.productSpecificationsFeatureState_) {
       if (!this.productSpecificationsFeatureState_.isSyncingTabCompare) {
@@ -471,10 +464,6 @@ export class ProductSpecificationsElement extends CrLitElement {
   }
 
   private computeShowComparisonTableList_() {
-    if (!loadTimeData.getBoolean('comparisonTableListEnabled')) {
-      return false;
-    }
-
     return this.showEmptyState_ && this.id_ === null && this.sets_.length > 0 &&
         this.appState_ === AppState.TABLE_EMPTY;
   }
@@ -702,13 +691,7 @@ export class ProductSpecificationsElement extends CrLitElement {
   }
 
   protected seeAllSets_() {
-    if (loadTimeData.getBoolean('comparisonTableListEnabled')) {
-      this.productSpecificationsProxy_.showComparePage(true);
-      return;
-    }
-
-    OpenWindowProxyImpl.getInstance().openUrl(
-        loadTimeData.getString('productSpecificationsManagementUrl'));
+    this.productSpecificationsProxy_.showComparePage(true);
   }
 
   protected async onUrlAdd_(
@@ -1041,8 +1024,7 @@ export class ProductSpecificationsElement extends CrLitElement {
 
     // If we show the empty state and there are no comparison tables, try to
     // fetch them.
-    if (loadTimeData.getBoolean('comparisonTableListEnabled') &&
-        this.showEmptyState_ && this.sets_.length === 0) {
+    if (this.showEmptyState_ && this.sets_.length === 0) {
       const {sets} = await this.shoppingApi_.getAllProductSpecificationsSets();
       this.sets_ = sets;
     }

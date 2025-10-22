@@ -36,12 +36,13 @@ describeWithMockConnection('NetworkNavigatorView', () => {
     workspace = Workspace.Workspace.WorkspaceImpl.instance();
     const targetManager = SDK.TargetManager.TargetManager.instance();
     const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
+    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
     const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
       resourceMapping,
       targetManager,
+      ignoreListManager,
     });
-    Bindings.IgnoreListManager.IgnoreListManager.instance({forceNew: true, debuggerWorkspaceBinding});
     const breakpointManager = Breakpoints.BreakpointManager.BreakpointManager.instance(
         {forceNew: true, targetManager, workspace, debuggerWorkspaceBinding});
     Persistence.Persistence.PersistenceImpl.instance({forceNew: true, workspace, breakpointManager});
@@ -237,8 +238,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
 
       project.removeProject();
 
-      assert.isTrue(nodeBSelectSpy.notCalled);
-      assert.isTrue(nodeCSelectSpy.called);
+      sinon.assert.notCalled(nodeBSelectSpy);
+      sinon.assert.called(nodeCSelectSpy);
 
       otherProject.removeProject();
     });
@@ -276,9 +277,9 @@ describeWithMockConnection('NetworkNavigatorView', () => {
 
       project.removeProject();
 
-      assert.isTrue(nodeBSelectSpy.notCalled);
-      assert.isTrue(nodeCSelectSpy.notCalled);
-      assert.isTrue(nodeExampleComSelectSpy.called);
+      sinon.assert.notCalled(nodeBSelectSpy);
+      sinon.assert.notCalled(nodeCSelectSpy);
+      sinon.assert.called(nodeExampleComSelectSpy);
 
       // Note that the last asserion is slightly misleading since the empty example.com node is removed.
       // Let us make that clear here.
@@ -330,8 +331,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       // Instead, the selection will be pushed to 'c.js' (with an intermediate step at 'd').
       // (Ideally, it would move directly from 'a.js' to 'c.js', but we are currently only
       // optimizing away the moves to siblings.)
-      assert.isTrue(nodeBSelectSpy.notCalled);
-      assert.isTrue(nodeCSelectSpy.called);
+      sinon.assert.notCalled(nodeBSelectSpy);
+      sinon.assert.called(nodeCSelectSpy);
 
       // Also note that the folder 'd' is removed. Let us make that explicit.
       assert.strictEqual(exampleComNode.childCount(), 1);
@@ -387,9 +388,9 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       // it should move to 'c' rather being pushed forward to 'e'.
       project.removeProject();
 
-      assert.isTrue(nodeESelectSpy.notCalled);
-      assert.isTrue(nodeBSelectSpy.notCalled);
-      assert.isTrue(nodeCSelectSpy.called);
+      sinon.assert.notCalled(nodeESelectSpy);
+      sinon.assert.notCalled(nodeBSelectSpy);
+      sinon.assert.called(nodeCSelectSpy);
 
       // Also note that nodeD and nodeE are removed. Let us make that explicit.
       assert.strictEqual(exampleComNode.childCount(), 1);
@@ -440,8 +441,8 @@ describeWithMockConnection('NetworkNavigatorView', () => {
       dispatchEvent(
           target, 'Runtime.executionContextDestroyed', {executionContextId: 2, executionContextUniqueId: 'c2'});
 
-      assert.isTrue(nodeBSelectSpy.notCalled);
-      assert.isTrue(nodeCSelectSpy.called);
+      sinon.assert.notCalled(nodeBSelectSpy);
+      sinon.assert.called(nodeCSelectSpy);
 
       // Sanity check - we should have only one source now.
       assert.strictEqual(exampleComNode.childCount(), 1);
@@ -454,7 +455,7 @@ describeWithMockConnection('NetworkNavigatorView', () => {
 
     beforeEach(() => {
       target = createTarget();
-      Bindings.IgnoreListManager.IgnoreListManager.instance().addChangeListener(() => {
+      Workspace.IgnoreListManager.IgnoreListManager.instance().addChangeListener(() => {
         if (resolveFn) {
           resolveFn();
           resolveFn = null;

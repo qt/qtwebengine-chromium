@@ -84,7 +84,7 @@ bool IsOne(Value* v) {
 bool IsIncrementOrDecrementOfVar(const Var& var, Value* val) {
     auto is_var_op_one = [&](Value* a, Value* b) {
         if (auto* a_load = As<Load>(a)) {
-            return (a_load->From() == var.Result(0)) && IsOne(b);
+            return (a_load->From() == var.Result()) && IsOne(b);
         }
         return false;
     };
@@ -127,7 +127,7 @@ struct LoopAnalysisImpl {
                     continue;
                 }
 
-                const auto* pty = var->Result(0)->Type()->As<core::type::Pointer>();
+                const auto* pty = var->Result()->Type()->As<core::type::Pointer>();
                 if (!pty->StoreType()->IsIntegerScalar()) {
                     break;
                 }
@@ -151,7 +151,7 @@ struct LoopAnalysisImpl {
         // Look for a store to the index in the continuing block.
         // Make sure there is only one, and make sure that the only other uses are loads.
         Store* single_store_in_continue_block = nullptr;
-        const auto& uses = index.Result(0)->UsagesUnsorted();
+        const auto& uses = index.Result()->UsagesUnsorted();
         for (auto& use : uses) {
             if (auto* store = use->instruction->As<Store>()) {
                 if (store->Block() != loop.Continuing()) {
@@ -210,7 +210,7 @@ struct LoopAnalysisImpl {
         // Returns `true` if the given value is a load of the index variable.
         auto is_index = [&index](Value* v) {
             if (auto* load = As<Load>(UnwrapBitcast(v))) {
-                return load->From() == index.Result(0);
+                return load->From() == index.Result();
             }
             return false;
         };
@@ -226,6 +226,72 @@ struct LoopAnalysisImpl {
                 }  //
             );
         };
+        auto is_constant_i32_or_u32 = [](Value* v) {
+            auto* constant_value = v->As<Constant>();
+            if (!constant_value) {
+                return false;
+            }
+            return constant_value->Type()->IsAnyOf<type::I32, type::U32>();
+        };
+        auto is_capable_binary_for_loop_exit = [&](Binary* binary) {
+            switch (binary->Op()) {
+                case BinaryOp::kLessThan:
+                case BinaryOp::kGreaterThan: {
+                    return (is_index(binary->LHS()) && is_immutable_before_body(binary->RHS())) ||
+                           (is_index(binary->RHS()) && is_immutable_before_body(binary->LHS()));
+                }
+                case BinaryOp::kLessThanEqual: {
+                    if (is_index(binary->LHS()) && is_constant_i32_or_u32(binary->RHS())) {
+                        // index <= kConstantValue
+                        // `kConstantValue` being the highest value will cause an infinite loop.
+                        auto* constant_value = binary->RHS()->As<Constant>()->Value();
+                        if (constant_value->Type()->Is<type::I32>()) {
+                            return constant_value->ValueAs<int32_t>() < i32::kHighestValue;
+                        } else {
+                            TINT_ASSERT(constant_value->Type()->Is<type::U32>());
+                            return constant_value->ValueAs<uint32_t>() < u32::kHighestValue;
+                        }
+                    } else if (is_index(binary->RHS()) && is_constant_i32_or_u32(binary->LHS())) {
+                        // kConstantValue <= index
+                        // `kConstantValue` being the lowest value will cause an infinite loop.
+                        auto* constant_value = binary->LHS()->As<Constant>()->Value();
+                        if (constant_value->Type()->Is<type::I32>()) {
+                            return constant_value->ValueAs<int32_t>() > i32::kLowestValue;
+                        } else {
+                            TINT_ASSERT(constant_value->Type()->Is<type::U32>());
+                            return constant_value->ValueAs<uint32_t>() > u32::kLowestValue;
+                        }
+                    }
+                    return false;
+                }
+                case BinaryOp::kGreaterThanEqual: {
+                    if (is_index(binary->LHS()) && is_constant_i32_or_u32(binary->RHS())) {
+                        // index >= kConstantValue
+                        // `kConstantValue` being the lowest value will cause an infinite loop.
+                        auto* constant_value = binary->RHS()->As<Constant>()->Value();
+                        if (constant_value->Type()->Is<type::I32>()) {
+                            return constant_value->ValueAs<int32_t>() > i32::kLowestValue;
+                        } else {
+                            TINT_ASSERT(constant_value->Type()->Is<type::U32>());
+                            return constant_value->ValueAs<uint32_t>() > u32::kLowestValue;
+                        }
+                    } else if (is_index(binary->RHS()) && is_constant_i32_or_u32(binary->LHS())) {
+                        // kConstantValue >= index
+                        // `kConstantValue` being the highest value will cause an infinite loop.
+                        auto* constant_value = binary->LHS()->As<Constant>()->Value();
+                        if (constant_value->Type()->Is<type::I32>()) {
+                            return constant_value->ValueAs<int32_t>() < i32::kHighestValue;
+                        } else {
+                            TINT_ASSERT(constant_value->Type()->Is<type::U32>());
+                            return constant_value->ValueAs<uint32_t>() < u32::kHighestValue;
+                        }
+                    }
+                    return false;
+                }
+                default:
+                    return false;
+            }
+        };
 
         // Check if the condition matches (%idx < %bound) or (%idx > %bound).
         // The value %bound can be any immutable value that was declared before the body.
@@ -233,11 +299,7 @@ struct LoopAnalysisImpl {
         if (!binary) {
             return false;
         }
-        if (binary->Op() != BinaryOp::kLessThan && binary->Op() != BinaryOp::kGreaterThan) {
-            return false;
-        }
-        if ((is_index(binary->LHS()) && is_immutable_before_body(binary->RHS())) ||
-            (is_index(binary->RHS()) && is_immutable_before_body(binary->LHS()))) {
+        if (is_capable_binary_for_loop_exit(binary)) {
             // The condition matches, so now make sure that one of the branches will exit from the
             // loop and do nothing else.
             auto is_simple_loop_exit = [](Block* b) {

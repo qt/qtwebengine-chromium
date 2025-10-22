@@ -83,15 +83,15 @@ wgpu::FeatureLevel AsDawnFeatureLevel(const String& feature_level) {
 }
 
 wgpu::RequestAdapterOptions AsDawnType(
-    const GPURequestAdapterOptions* webgpu_options) {
+    const GPURequestAdapterOptions* webgpu_options,
+    const ExecutionContext* execution_context) {
   DCHECK(webgpu_options);
 
   wgpu::RequestAdapterOptions dawn_options;
   dawn_options.forceFallbackAdapter = webgpu_options->forceFallbackAdapter();
 
-  if (webgpu_options->compatibilityMode()) {
-    dawn_options.featureLevel = wgpu::FeatureLevel::Compatibility;
-  } else if (RuntimeEnabledFeatures::WebGPUFeatureLevelEnabled()) {
+  if (RuntimeEnabledFeatures::WebGPUCompatibilityModeEnabled(
+          execution_context)) {
     dawn_options.featureLevel =
         AsDawnFeatureLevel(webgpu_options->featureLevel());
   }
@@ -392,7 +392,8 @@ void GPU::RequestAdapterImpl(
 #endif
 
   if (options->featureLevel() == "compatibility" &&
-      !RuntimeEnabledFeatures::WebGPUExperimentalFeaturesEnabled()) {
+      !RuntimeEnabledFeatures::WebGPUCompatibilityModeEnabled(
+          execution_context)) {
     AddConsoleWarning(
         execution_context,
         "Beware! featureLevel was set to \"compatibility\", but this request "
@@ -402,19 +403,16 @@ void GPU::RequestAdapterImpl(
         "https://github.com/gpuweb/gpuweb/issues/4266");
   }
 
-  if (options->compatibilityMode() &&
-      options->featureLevel() != "compatibility") {
-    AddConsoleWarning(execution_context,
-                      "The \"compatibilityMode\" option is deprecated. Use "
-                      "\"featureLevel\": \"compatibility\" instead. See "
-                      "https://gpuweb.github.io/gpuweb/"
-                      "#dom-gpurequestadapteroptions-featurelevel");
-  }
-
-  wgpu::RequestAdapterOptions dawn_options = AsDawnType(options);
+  wgpu::RequestAdapterOptions dawn_options =
+      AsDawnType(options, execution_context);
   auto* callback = MakeWGPUOnceCallback(resolver->WrapCallbackInScriptScope(
       WTF::BindOnce(&GPU::OnRequestAdapterCallback, WrapPersistent(this),
                     WrapPersistent(script_state), WrapPersistent(options))));
+
+  if (dawn_options.featureLevel == wgpu::FeatureLevel::Compatibility) {
+    UseCounter::Count(execution_context,
+                      WebFeature::kWebGPUFeatureLevelCompatibility);
+  }
 
   dawn_control_client_->GetWGPUInstance().RequestAdapter(
       &dawn_options, wgpu::CallbackMode::AllowSpontaneous,
@@ -449,10 +447,10 @@ ScriptPromise<IDLNullable<GPUAdapter>> GPU::requestAdapter(
 }
 
 V8GPUTextureFormat GPU::getPreferredCanvasFormat() {
-  return FromDawnEnum(preferred_canvas_format());
+  return FromDawnEnum(GetPreferredCanvasFormat());
 }
 
-wgpu::TextureFormat GPU::preferred_canvas_format() {
+wgpu::TextureFormat GPU::GetPreferredCanvasFormat() {
 #if BUILDFLAG(IS_ANDROID)
   return wgpu::TextureFormat::RGBA8Unorm;
 #else

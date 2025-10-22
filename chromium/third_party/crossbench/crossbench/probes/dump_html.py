@@ -5,13 +5,11 @@
 from __future__ import annotations
 
 import datetime as dt
-import os
-from typing import TYPE_CHECKING, List, Optional, Self, Type
+from typing import TYPE_CHECKING, Optional, Self, Type
 
 from typing_extensions import override
 
-from crossbench.probes.probe import Probe, ProbeConfigParser
-from crossbench.probes.probe_context import ProbeContext
+from crossbench.probes.probe import Probe, ProbeConfigParser, ProbeContext
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
@@ -46,12 +44,12 @@ class DumpHtmlProbeContext(ProbeContext[DumpHtmlProbe]):
 
   def __init__(self, probe: DumpHtmlProbe, run: Run) -> None:
     super().__init__(probe, run)
-    self._results: List[AnyPath] = []
+    self._results: list[AnyPath] = []
 
   @override
   def get_default_result_path(self) -> AnyPath:
     dump_dir = super().get_default_result_path()
-    os.mkdir(dump_dir)
+    self.host_platform.mkdir(dump_dir)
     return dump_dir
 
   def start(self) -> None:
@@ -66,7 +64,7 @@ class DumpHtmlProbeContext(ProbeContext[DumpHtmlProbe]):
     path = self.result_path / f"{label}.html"
     html = self.browser.js("return document.children[0].outerHTML",
                            dt.timedelta(seconds=10))
-    self.host_platform.set_file_contents(path, html)
+    self.host_platform.write_text(path, html)
     self._results.append(path)
 
   @override

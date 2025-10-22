@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_PARTITION_ALLOC_BASE_COMPONENT_EXPORT_H_
 #define PARTITION_ALLOC_PARTITION_ALLOC_BASE_COMPONENT_EXPORT_H_
 
@@ -39,7 +44,7 @@
 #define PA_COMPONENT_IMPORT_ANNOTATION __declspec(dllimport)
 #else  // defined(WIN32)
 #define PA_COMPONENT_EXPORT_ANNOTATION __attribute__((visibility("default")))
-#define PA_COMPONENT_IMPORT_ANNOTATION
+#define PA_COMPONENT_IMPORT_ANNOTATION __attribute__((visibility("default")))
 #endif  // defined(WIN32)
 #else   // defined(COMPONENT_BUILD)
 #define PA_COMPONENT_EXPORT_ANNOTATION

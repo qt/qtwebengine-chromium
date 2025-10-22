@@ -11,7 +11,6 @@
 #include "third_party/blink/renderer/core/layout/layout_block_flow.h"
 #include "third_party/blink/renderer/core/layout/physical_box_fragment.h"
 #include "third_party/blink/renderer/core/testing/core_unit_test_helper.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 namespace {
@@ -42,13 +41,14 @@ struct AnchorTestData {
       const PhysicalAnchorQuery& anchor_query) {
     Vector<AnchorTestData> items;
     for (auto entry : anchor_query) {
-      if (auto** name = std::get_if<const ScopedCSSName*>(&entry.key)) {
-        items.push_back(AnchorTestData{(*name)->GetName(), entry.value->rect});
+      if (auto** name = std::get_if<const AnchorScopedName*>(&entry.key)) {
+        items.push_back(AnchorTestData{(*name)->GetName(),
+                                       entry.value->RectWithoutTransforms()});
       }
     }
     std::sort(items.begin(), items.end(),
               [](const AnchorTestData& a, const AnchorTestData& b) {
-                return CodeUnitCompare(a.name, b.name) < 0;
+                return WTF::CodeUnitCompare(a.name, b.name) < 0;
               });
     return items;
   }
@@ -357,7 +357,7 @@ TEST_F(AnchorEvaluatorImplTest, Scroll) {
   )HTML");
   Element* container = GetElementById("container");
   ASSERT_NE(container, nullptr);
-  container->scrollTo(30, 20);
+  container->scrollToForTesting(30, 20);
   UpdateAllLifecyclePhasesForTest();
 
   const PhysicalAnchorQuery* anchor_query = AnchorQuery(*container);

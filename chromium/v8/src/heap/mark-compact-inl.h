@@ -15,6 +15,8 @@
 #include "src/heap/marking-worklist-inl.h"
 #include "src/heap/marking-worklist.h"
 #include "src/heap/marking.h"
+#include "src/heap/memory-chunk.h"
+#include "src/heap/page-metadata.h"
 #include "src/heap/remembered-set-inl.h"
 #include "src/objects/js-collection-inl.h"
 #include "src/objects/transitions.h"
@@ -37,6 +39,21 @@ void MarkCompactCollector::MarkRootObject(
   DCHECK(ReadOnlyHeap::Contains(obj) || heap_->Contains(obj));
   MarkingHelper::TryMarkAndPush(heap_, local_marking_worklists_.get(),
                                 marking_state_, target_worklist, obj);
+  if (V8_UNLIKELY(in_conservative_stack_scanning_)) {
+    DCHECK_EQ(root, Root::kStackRoots);
+    MemoryChunk* chunk = MemoryChunk::FromHeapObject(obj);
+    auto* metadata = MutablePageMetadata::cast(chunk->Metadata());
+    if (chunk->IsEvacuationCandidate()) {
+      DCHECK(!chunk->InYoungGeneration());
+      ReportAbortedEvacuationCandidateDueToFlags(PageMetadata::cast(metadata),
+                                                 chunk);
+    } else if (chunk->InYoungGeneration() && !chunk->IsLargePage()) {
+      DCHECK(chunk->IsToPage());
+      if (!metadata->is_quarantined()) {
+        metadata->set_is_quarantined(true);
+      }
+    }
+  }
 }
 
 // static
@@ -72,14 +89,17 @@ void MarkCompactCollector::RecordSlot(MemoryChunk* source_chunk,
           source_page, source_chunk->Offset(slot.address()));
     } else if (V8_LIKELY(!target_chunk->InWritableSharedSpace()) ||
                source_page->heap()->isolate()->is_shared_space_isolate()) {
-      DCHECK_EQ(source_page->heap(), target_chunk->GetHeap());
+      DCHECK_EQ(source_page->heap(), target_chunk->Metadata()->heap());
       RememberedSet<OLD_TO_OLD>::Insert<AccessMode::ATOMIC>(
           source_page, source_chunk->Offset(slot.address()));
     } else {
       // DCHECK here that we only don't record in case of local->shared
       // references in a client GC.
       DCHECK(!source_page->heap()->isolate()->is_shared_space_isolate());
-      DCHECK(target_chunk->GetHeap()->isolate()->is_shared_space_isolate());
+      DCHECK(target_chunk->Metadata()
+                 ->heap()
+                 ->isolate()
+                 ->is_shared_space_isolate());
       DCHECK(target_chunk->InWritableSharedSpace());
     }
   }
@@ -87,6 +107,11 @@ void MarkCompactCollector::RecordSlot(MemoryChunk* source_chunk,
 
 void MarkCompactCollector::AddTransitionArray(Tagged<TransitionArray> array) {
   local_weak_objects()->transition_arrays_local.Push(array);
+}
+
+// static
+bool MarkCompactCollector::IsOnEvacuationCandidate(Tagged<MaybeObject> obj) {
+  return MemoryChunk::FromAddress(obj.ptr())->IsEvacuationCandidate();
 }
 
 void RootMarkingVisitor::VisitRootPointer(Root root, const char* description,

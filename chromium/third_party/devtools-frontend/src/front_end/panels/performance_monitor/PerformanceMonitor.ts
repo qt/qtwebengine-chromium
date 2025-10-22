@@ -1,6 +1,7 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -72,24 +73,24 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
   private width!: number;
   private height!: number;
   private model?: SDK.PerformanceMetricsModel.PerformanceMetricsModel|null;
-  private startTimestamp?: number;
   private pollTimer?: number;
 
   constructor(pollIntervalMs = 500) {
-    super(true);
+    super({
+      jslog: `${VisualLogging.panel('performance.monitor').track({resize: true})}`,
+      useShadowDom: true,
+    });
     this.registerRequiredCSS(performanceMonitorStyles);
-
-    this.element.setAttribute('jslog', `${VisualLogging.panel('performance.monitor').track({resize: true})}`);
 
     this.contentElement.classList.add('perfmon-pane');
     this.metricsBuffer = [];
-    /** @const */
+    /** @constant */
     this.pixelsPerMs = 10 / 1000;
-    /** @const */
+    /** @constant */
     this.pollIntervalMs = pollIntervalMs;
-    /** @const */
+    /** @constant */
     this.scaleHeight = 16;
-    /** @const */
+    /** @constant */
     this.graphHeight = 90;
     this.gridColor = ThemeSupport.ThemeSupport.instance().getComputedValue('--divider-line');
     this.controlPane = new ControlPane(this.contentElement);
@@ -162,7 +163,6 @@ export class PerformanceMonitorImpl extends UI.Widget.HBox implements
   }
 
   private startPolling(): void {
-    this.startTimestamp = 0;
     this.pollTimer = window.setInterval(() => this.poll(), this.pollIntervalMs);
     this.onResize();
     const animate = (): void => {
@@ -640,8 +640,8 @@ export class MetricIndicator {
     const chartName = info.metrics[0].name;
     this.swatchElement = UI.UIUtils.CheckboxLabel.create(info.title, active, undefined, chartName);
     this.element.appendChild(this.swatchElement);
-    this.swatchElement.checkboxElement.addEventListener('change', () => {
-      onToggle(this.swatchElement.checkboxElement.checked);
+    this.swatchElement.addEventListener('change', () => {
+      onToggle(this.swatchElement.checked);
       this.element.classList.toggle('active');
     });
     this.valueElement = this.element.createChild('div', 'perfmon-indicator-value');

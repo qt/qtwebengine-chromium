@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "chrome/browser/prefs/profile_pref_store_manager.h"
 
@@ -173,7 +169,7 @@ class ProfilePrefStoreManagerTest : public testing::Test,
 
   void ReloadConfiguration() {
     manager_ = std::make_unique<ProfilePrefStoreManager>(profile_dir_.GetPath(),
-                                                         seed_, "device_id");
+                                                         seed_);
   }
 
   void TearDown() override {
@@ -225,7 +221,7 @@ class ProfilePrefStoreManagerTest : public testing::Test,
         manager_->CreateProfilePrefStore(
             prefs::CloneTrackedConfiguration(configuration_), kReportingIdCount,
             base::SingleThreadTaskRunner::GetCurrentDefault(),
-            std::move(observer), std::move(validation_delegate));
+            std::move(observer), std::move(validation_delegate), nullptr);
     InitializePrefStore(pref_store.get());
     pref_store = nullptr;
   }
@@ -277,7 +273,7 @@ class ProfilePrefStoreManagerTest : public testing::Test,
     pref_store_ = manager_->CreateProfilePrefStore(
         prefs::CloneTrackedConfiguration(configuration_), kReportingIdCount,
         base::SingleThreadTaskRunner::GetCurrentDefault(), std::move(observer),
-        std::move(validation_delegate));
+        std::move(validation_delegate), nullptr);
     pref_store_->AddObserver(&registry_verifier_);
     PrefStoreReadObserver read_observer(pref_store_);
     read_observer.Read();
@@ -394,7 +390,7 @@ TEST_F(ProfilePrefStoreManagerTest, InitializePrefsFromMasterPrefs) {
   master_prefs.Set(kProtectedAtomic, kHelloWorld);
   EXPECT_TRUE(manager_->InitializePrefsFromMasterPrefs(
       prefs::CloneTrackedConfiguration(configuration_), kReportingIdCount,
-      std::move(master_prefs)));
+      std::move(master_prefs), nullptr));
 
   LoadExistingPrefs();
 

@@ -20,7 +20,7 @@ class CPDF_Font;
 
 class CPVT_FontMap final : public IPVT_FontMap {
  public:
-  CPVT_FontMap(CPDF_Document* pDoc,
+  CPVT_FontMap(CPDF_Document* doc,
                RetainPtr<CPDF_Dictionary> pResDict,
                RetainPtr<CPDF_Font> pDefFont,
                const ByteString& sDefFontAlias);
@@ -38,12 +38,12 @@ class CPVT_FontMap final : public IPVT_FontMap {
  private:
   void SetupAnnotSysPDFFont();
 
-  UnownedPtr<CPDF_Document> const m_pDocument;
-  RetainPtr<CPDF_Dictionary> const m_pResDict;
-  RetainPtr<CPDF_Font> const m_pDefFont;
-  RetainPtr<CPDF_Font> m_pSysFont;
-  const ByteString m_sDefFontAlias;
-  ByteString m_sSysFontAlias;
+  UnownedPtr<CPDF_Document> const document_;
+  RetainPtr<CPDF_Dictionary> const res_dict_;
+  RetainPtr<CPDF_Font> const def_font_;
+  RetainPtr<CPDF_Font> sys_font_;
+  const ByteString def_font_alias_;
+  ByteString sys_font_alias_;
 };
 
 #endif  // CORE_FPDFDOC_CPVT_FONTMAP_H_

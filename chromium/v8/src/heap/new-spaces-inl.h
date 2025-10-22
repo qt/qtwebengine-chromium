@@ -65,11 +65,13 @@ SemiSpaceObjectIterator::SemiSpaceObjectIterator(const SemiSpaceNewSpace* space)
     : current_(space->first_allocatable_address()) {}
 
 Tagged<HeapObject> SemiSpaceObjectIterator::Next() {
+  if (!current_) return {};
+
   while (true) {
     if (PageMetadata::IsAlignedToPageSize(current_)) {
       PageMetadata* page = PageMetadata::FromAllocationAreaAddress(current_);
       page = page->next_page();
-      if (page == nullptr) return Tagged<HeapObject>();
+      if (page == nullptr) return {};
       current_ = page->area_start();
     }
     Tagged<HeapObject> object = HeapObject::FromAddress(current_);
@@ -100,9 +102,11 @@ bool SemiSpaceNewSpace::IsAddressBelowAgeMark(Address address) const {
   // This method is only ever used on non-large pages in the young generation.
   // However, on page promotion (new to old) during a full GC the page flags are
   // already updated to old space before using this method.
-  DCHECK(chunk->InYoungGeneration() ||
-         chunk->IsFlagSet(MemoryChunk::PAGE_NEW_OLD_PROMOTION));
-  DCHECK(!chunk->IsLargePage());
+#ifdef DEBUG
+  auto* metadata = chunk->Metadata(heap()->isolate());
+  DCHECK_IMPLIES(!chunk->InYoungGeneration(), metadata->will_be_promoted());
+  DCHECK(!metadata->is_large());
+#endif  // DEBUG
 
   if (!chunk->IsFlagSet(MemoryChunk::NEW_SPACE_BELOW_AGE_MARK)) {
     return false;

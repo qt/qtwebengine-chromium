@@ -369,13 +369,13 @@ inline void MaglevAssembler::BindBlock(BasicBlock* block) {
   }
 }
 
-inline void MaglevAssembler::SmiTagInt32AndSetFlags(Register dst,
-                                                    Register src) {
+inline Condition MaglevAssembler::TrySmiTagInt32(Register dst, Register src) {
   if (SmiValuesAre31Bits()) {
     Adds(dst.W(), src.W(), src.W());
   } else {
     SmiTag(dst, src);
   }
+  return kNoOverflow;
 }
 
 inline void MaglevAssembler::CheckInt32IsSmi(Register obj, Label* fail,
@@ -765,6 +765,9 @@ inline void MaglevAssembler::Move(Register dst, int32_t i) {
 inline void MaglevAssembler::Move(Register dst, uint32_t i) {
   Mov(dst.W(), Immediate(i));
 }
+inline void MaglevAssembler::Move(Register dst, intptr_t p) {
+  Mov(dst, Immediate(p));
+}
 inline void MaglevAssembler::Move(Register dst, IndirectPointerTag i) {
   Mov(dst, Immediate(i));
 }
@@ -1146,6 +1149,44 @@ void MaglevAssembler::JumpIfByte(Condition cc, Register value, int32_t byte,
   CompareAndBranch(value, Immediate(byte), cc, target);
 }
 
+void MaglevAssembler::Float64SilenceNan(DoubleRegister value) {
+  CanonicalizeNaN(value);
+}
+
+#ifdef V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+void MaglevAssembler::JumpIfUndefinedNan(DoubleRegister value, Register scratch,
+                                         Label* target,
+                                         Label::Distance distance) {
+  // TODO(leszeks): Right now this only accepts Zone-allocated target labels.
+  // This works because all callsites are jumping to either a deopt, deferred
+  // code, or a basic block. If we ever need to jump to an on-stack label, we
+  // have to add support for it here change the caller to pass a ZoneLabelRef.
+  DCHECK(compilation_info()->zone()->Contains(target));
+  ZoneLabelRef is_undefined = ZoneLabelRef::UnsafeFromLabelPointer(target);
+  ZoneLabelRef is_not_undefined(this);
+  Fcmp(value, value);
+  JumpIf(ConditionForNaN(),
+         MakeDeferredCode(
+             [](MaglevAssembler* masm, DoubleRegister value, Register scratch,
+                ZoneLabelRef is_undefined, ZoneLabelRef is_not_undefined) {
+               masm->Umov(scratch.W(), value.V2S(), 1);
+               masm->CompareInt32AndJumpIf(scratch.W(), kUndefinedNanUpper32,
+                                           kEqual, *is_undefined);
+               masm->Jump(*is_not_undefined);
+             },
+             value, scratch, is_undefined, is_not_undefined));
+  bind(*is_not_undefined);
+}
+void MaglevAssembler::JumpIfNotUndefinedNan(DoubleRegister value,
+                                            Register scratch, Label* target,
+                                            Label::Distance distance) {
+  JumpIfNotNan(value, target, distance);
+  Umov(scratch.W(), value.V2S(), 1);
+  CompareInt32AndJumpIf(scratch.W(), kUndefinedNanUpper32, kNotEqual, target,
+                        distance);
+}
+#endif  // V8_ENABLE_EXPERIMENTAL_UNDEFINED_DOUBLE
+
 void MaglevAssembler::JumpIfHoleNan(DoubleRegister value, Register scratch,
                                     Label* target, Label::Distance distance) {
   // TODO(leszeks): Right now this only accepts Zone-allocated target labels.
@@ -1378,19 +1419,36 @@ inline void MaglevAssembler::TestUint8AndJumpIfAllClear(
   TestAndBranchIfAllClear(value, mask, target);
 }
 
+inline void MaglevAssembler::LoadContextCellState(Register state,
+                                                  Register cell) {
+  Ldr(state, FieldMemOperand(cell, offsetof(ContextCell, state_)));
+}
+
+inline void MaglevAssembler::LoadContextCellInt32Value(Register value,
+                                                       Register cell) {
+  AssertContextCellState(cell, ContextCell::kInt32);
+  Ldr(value, FieldMemOperand(cell, offsetof(ContextCell, double_value_)));
+}
+
+inline void MaglevAssembler::LoadContextCellFloat64Value(DoubleRegister value,
+                                                         Register cell) {
+  AssertContextCellState(cell, ContextCell::kFloat64);
+  Ldr(value, FieldMemOperand(cell, offsetof(ContextCell, double_value_)));
+}
+
+inline void MaglevAssembler::StoreContextCellInt32Value(Register cell,
+                                                        Register value) {
+  Str(value, FieldMemOperand(cell, offsetof(ContextCell, double_value_)));
+}
+
+inline void MaglevAssembler::StoreContextCellFloat64Value(
+    Register cell, DoubleRegister value) {
+  Str(value, FieldMemOperand(cell, offsetof(ContextCell, double_value_)));
+}
+
 inline void MaglevAssembler::LoadHeapNumberValue(DoubleRegister result,
                                                  Register heap_number) {
   Ldr(result, FieldMemOperand(heap_number, offsetof(HeapNumber, value_)));
-}
-
-inline void MaglevAssembler::LoadHeapInt32Value(Register result,
-                                                Register heap_number) {
-  Ldr(result, FieldMemOperand(heap_number, offsetof(HeapNumber, value_)));
-}
-
-inline void MaglevAssembler::StoreHeapInt32Value(Register value,
-                                                 Register heap_number) {
-  Str(value, (FieldMemOperand(heap_number, offsetof(HeapNumber, value_))));
 }
 
 inline void MaglevAssembler::Int32ToDouble(DoubleRegister result,

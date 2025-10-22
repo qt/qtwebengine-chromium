@@ -2,9 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/address_pool_manager.h"
 
-#include <algorithm>
 #include <atomic>
 #include <cstdint>
 #include <limits>
@@ -14,6 +18,7 @@
 #include "partition_alloc/buildflags.h"
 #include "partition_alloc/page_allocator.h"
 #include "partition_alloc/page_allocator_constants.h"
+#include "partition_alloc/partition_alloc_base/cxx_wrapper/algorithm.h"
 #include "partition_alloc/partition_alloc_base/notreached.h"
 #include "partition_alloc/partition_alloc_check.h"
 #include "partition_alloc/partition_alloc_constants.h"

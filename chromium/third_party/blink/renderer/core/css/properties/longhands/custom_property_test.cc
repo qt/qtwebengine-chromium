@@ -17,7 +17,6 @@
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
-#include "third_party/blink/renderer/platform/testing/runtime_enabled_features_test_helpers.h"
 
 namespace blink {
 
@@ -28,8 +27,8 @@ namespace {
 class CustomPropertyTest : public PageTestBase {
  public:
   void SetElementWithStyle(const String& value) {
-    GetDocument().body()->setInnerHTML("<div id='target' style='" + value +
-                                       "'></div>");
+    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(
+        "<div id='target' style='" + value + "'></div>");
     UpdateAllLifecyclePhasesForTest();
   }
 
@@ -323,7 +322,7 @@ TEST_F(CustomPropertyTest, ValueMode) {
 TEST_F(CustomPropertyTest, SelectionPropertyUseCounted) {
   EXPECT_FALSE(
       GetDocument().IsUseCounted(WebFeature::kSelectionCustomProperty));
-  GetDocument().body()->setInnerHTML(
+  GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(
       "<style>div::selection { --x: black; background-color: var(--x); "
       "}</style> <div id='target'></div>");
   UpdateAllLifecyclePhasesForTest();

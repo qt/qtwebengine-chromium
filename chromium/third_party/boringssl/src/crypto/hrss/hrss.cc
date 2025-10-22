@@ -23,7 +23,7 @@
 #include <openssl/hmac.h>
 #include <openssl/mem.h>
 #include <openssl/rand.h>
-#include <openssl/sha.h>
+#include <openssl/sha2.h>
 
 #include "../internal.h"
 #include "internal.h"
@@ -275,7 +275,7 @@ static inline void poly3_vec_rshift1(vec_t a_s[6], vec_t a_a[6]) {
 #endif  // (ARM || AARCH64) && NEON
 
 // Polynomials in this scheme have N terms.
-// #define N 701
+#define N HRSS_N
 
 // Underlying data types and arithmetic operations.
 // ------------------------------------------------

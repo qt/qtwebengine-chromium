@@ -15,6 +15,8 @@
 import m from 'mithril';
 import {defer} from '../base/deferred';
 import {Icon} from './icon';
+import {Button, ButtonVariant} from './button';
+import {Intent} from './common';
 
 // This module deals with modal dialogs. Unlike most components, here we want to
 // render the DOM elements outside of the corresponding vdom tree. For instance
@@ -45,6 +47,8 @@ import {Icon} from './icon';
 
 export interface ModalAttrs {
   title: string;
+  icon?: string;
+  className?: string;
   buttons?: ModalButton[];
   vAlign?: 'MIDDLE' /* default */ | 'TOP';
 
@@ -68,6 +72,7 @@ export interface ModalButton {
   text: string;
   primary?: boolean;
   id?: string;
+  disabled?: boolean;
   action?: () => void;
 }
 
@@ -105,7 +110,9 @@ export class Modal implements m.ClassComponent<ModalAttrs> {
       // even if the user has not clicked yet on any element.
       // If there is a primary button, focus that, so Enter does the default
       // action. If not just focus the whole dialog.
-      const primaryBtn = vnode.dom.querySelector('.modal-btn-primary');
+      const primaryBtn = vnode.dom.querySelector(
+        '.pf-button.pf-intent-primary',
+      );
       if (primaryBtn) {
         (primaryBtn as HTMLElement).focus();
       } else {
@@ -123,36 +130,39 @@ export class Modal implements m.ClassComponent<ModalAttrs> {
     const buttons: m.Children = [];
     for (const button of attrs.buttons || []) {
       buttons.push(
-        m(
-          'button.modal-btn',
-          {
-            class: button.primary ? 'modal-btn-primary' : '',
-            id: button.id,
-            onclick: () => {
-              closeModal(attrs.key);
-              if (button.action !== undefined) button.action();
-            },
+        m(Button, {
+          intent: button.primary ? Intent.Primary : Intent.None,
+          variant: ButtonVariant.Filled,
+          id: button.id,
+          onclick: () => {
+            closeModal(attrs.key);
+            if (button.action !== undefined) button.action();
           },
-          button.text,
-        ),
+          label: button.text,
+          disabled: button.disabled,
+        }),
       );
     }
 
     const aria = '[aria-labelledby=mm-title][aria-model][role=dialog]';
     const align = attrs.vAlign === 'TOP' ? '.modal-dialog-valign-top' : '';
+    const customClass = attrs.className ? '.' + attrs.className : '';
     return m(
       '.modal-backdrop',
       {
         onclick: this.onBackdropClick.bind(this, attrs),
-        onkeyup: this.onBackdropKeyupdown.bind(this, attrs),
-        onkeydown: this.onBackdropKeyupdown.bind(this, attrs),
+        onkeydown: this.onBackdropKeydown.bind(this, attrs),
         tabIndex: 0,
       },
       m(
-        `.modal-dialog${align}${aria}`,
+        `.modal-dialog${align}${customClass}${aria}`,
         m(
           'header',
-          m('h2', {id: 'mm-title'}, attrs.title),
+          m(
+            '.modal-title',
+            attrs.icon && m(Icon, {icon: attrs.icon}),
+            m('h2', {id: 'mm-title'}, attrs.title),
+          ),
           m(
             'button[aria-label=Close Modal]',
             {onclick: () => closeModal(attrs.key)},
@@ -175,9 +185,9 @@ export class Modal implements m.ClassComponent<ModalAttrs> {
     }
   }
 
-  onBackdropKeyupdown(attrs: ModalAttrs, e: KeyboardEvent) {
+  onBackdropKeydown(attrs: ModalAttrs, e: KeyboardEvent) {
     e.stopPropagation();
-    if (e.key === 'Escape' && e.type !== 'keyup') {
+    if (e.key === 'Escape') {
       closeModal(attrs.key);
     }
   }

@@ -83,14 +83,20 @@ class NET_EXPORT SSLInfo {
   // set for server sockets.
   bool early_data_received = false;
 
+  // True if early data was accepted on the server. This field is only
+  // set for server sockets.
+  bool early_data_accepted = false;
+
   // True if the connection negotiated the Encrypted ClientHello extension.
   bool encrypted_client_hello = false;
 
   HandshakeType handshake_type = HANDSHAKE_UNKNOWN;
 
-  // The hashes, in several algorithms, of the SubjectPublicKeyInfos from
-  // each certificate in the chain.
-  HashValueVector public_key_hashes;
+  // If the certificate was successfully verified, contains the hashes of the
+  // SubjectPublicKeyInfo from each certificate in the verified chain. The
+  // ordering of the hashes matches the order of the verified chain (leaf to
+  // root).
+  std::vector<SHA256HashValue> public_key_hashes;
 
   // List of SignedCertificateTimestamps and their corresponding validation
   // status.

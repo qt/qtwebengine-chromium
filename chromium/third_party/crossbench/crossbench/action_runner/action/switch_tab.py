@@ -9,8 +9,8 @@ from typing import TYPE_CHECKING, Type
 
 from typing_extensions import override
 
-from crossbench.action_runner.action.base_tab_action import BaseTabAction
 from crossbench.action_runner.action.action_type import ActionType
+from crossbench.action_runner.action.base_tab_action import BaseTabAction
 
 if TYPE_CHECKING:
   from crossbench.action_runner.action.action import ActionT
@@ -37,5 +37,9 @@ class SwitchTabAction(BaseTabAction):
   def validate(self) -> None:
     super().validate()
 
-    if not self.title and not self.url and self.tab_index is None:
+    if (not self.title and not self.url and self.tab_index is None and
+        self.relative_tab_index is None):
       raise ValueError("One of tab_index, title, or url is required.")
+
+    if self.relative_tab_index is not None and self.tab_index is not None:
+      raise ValueError("relative_tab_index and tab_index can not both be set")

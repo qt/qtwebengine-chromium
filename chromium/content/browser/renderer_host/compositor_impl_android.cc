@@ -19,7 +19,6 @@
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
-#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/raw_ref.h"
@@ -106,8 +105,6 @@ gpu::SharedMemoryLimits GetCompositorContextSharedMemoryLimits(
 
 gpu::ContextCreationAttribs GetCompositorContextAttributes() {
   gpu::ContextCreationAttribs attributes;
-  attributes.bind_generates_resource = false;
-
   attributes.enable_raster_interface = true;
   attributes.enable_gles2_interface = false;
   attributes.enable_grcontext = false;
@@ -131,7 +128,6 @@ void CreateContextProviderAfterGpuChannelEstablished(
   constexpr bool support_locking = false;
 
   gpu::ContextCreationAttribs attributes;
-  attributes.bind_generates_resource = false;
   attributes.enable_gles2_interface = true;
 
   auto context_provider =
@@ -708,17 +704,6 @@ bool CompositorImpl::IsDrawingFirstVisibleFrame() const {
   return !has_submitted_frame_since_became_visible_;
 }
 
-void CompositorImpl::SetVSyncPaused(bool paused) {
-  if (vsync_paused_ == paused) {
-    return;
-  }
-
-  vsync_paused_ = paused;
-  if (display_private_) {
-    display_private_->SetVSyncPaused(paused);
-  }
-}
-
 void CompositorImpl::OnUpdateRefreshRate(float refresh_rate) {
   if (display_private_) {
     display_private_->UpdateRefreshRate(refresh_rate);
@@ -738,8 +723,7 @@ void CompositorImpl::OnAdaptiveRefreshRateInfoChanged() {
         root_window_->adaptive_refresh_rate_info();
     display_private_->SetAdaptiveRefreshRateInfo(
         arr_info.supports_adaptive_refresh_rate,
-        arr_info.suggested_frame_rate_normal,
-        arr_info.suggested_frame_rate_high, arr_info.supported_frame_rates,
+        arr_info.suggested_frame_rate_high,
         display::Screen::GetScreen()
             ->GetDisplayNearestWindow(root_window_)
             .device_scale_factor());
@@ -793,16 +777,13 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
   renderer_settings.allow_antialiasing = false;
   renderer_settings.highp_threshold_min = 2048;
   renderer_settings.requires_alpha_channel = requires_alpha_channel_;
-  renderer_settings.initial_screen_size = display_props.GetSizeInPixel();
-  renderer_settings.color_space = display_color_spaces_.GetOutputColorSpace(
-      gfx::ContentColorUsage::kHDR, requires_alpha_channel_);
 
   root_params->frame_sink_id = frame_sink_id_;
   root_params->widget = surface_handle_;
   root_params->gpu_compositing = true;
   root_params->renderer_settings = renderer_settings;
   root_params->refresh_rate = root_window_->GetRefreshRate();
-  if (input::IsTransferInputToVizSupported()) {
+  if (input::InputUtils::IsTransferInputToVizSupported()) {
     root_params->create_input_receiver = true;
   }
 
@@ -814,7 +795,6 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
   display_private_->SetDisplayVisible(true);
   display_private_->Resize(size_);
   display_private_->SetDisplayColorSpaces(display_color_spaces_);
-  display_private_->SetVSyncPaused(vsync_paused_);
   display_private_->SetSupportedRefreshRates(
       root_window_->GetSupportedRefreshRates());
   MaybeUpdateObserveBeginFrame();
@@ -823,7 +803,6 @@ void CompositorImpl::InitializeVizLayerTreeFrameSink(
   auto frame_sink = cc::slim::FrameSink::Create(
       std::move(sink_remote), std::move(client_receiver),
       std::move(context_provider), std::move(task_runner),
-      BrowserGpuChannelHostFactory::instance()->GetGpuMemoryBufferManager(),
       BrowserMainLoop::GetInstance()->GetIOThreadId());
   host_->SetFrameSink(std::move(frame_sink));
 }

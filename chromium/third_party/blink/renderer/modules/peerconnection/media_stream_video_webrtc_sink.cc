@@ -77,7 +77,7 @@ void RequestRefreshFrame(
 // on libjingle's network thread. WebRtcVideoCapturerAdapter implements a video
 // capturer for libjingle.
 class MediaStreamVideoWebRtcSink::WebRtcVideoSourceAdapter
-    : public WTF::ThreadSafeRefCounted<WebRtcVideoSourceAdapter> {
+    : public ThreadSafeRefCounted<WebRtcVideoSourceAdapter> {
  public:
   WebRtcVideoSourceAdapter(
       const scoped_refptr<base::SingleThreadTaskRunner>&
@@ -100,7 +100,7 @@ class MediaStreamVideoWebRtcSink::WebRtcVideoSourceAdapter
   void OnNotifyVideoFrameDroppedOnIO(media::VideoCaptureFrameDropReason);
 
  private:
-  friend class WTF::ThreadSafeRefCounted<WebRtcVideoSourceAdapter>;
+  friend class ThreadSafeRefCounted<WebRtcVideoSourceAdapter>;
 
   void OnVideoFrameOnNetworkThread(scoped_refptr<media::VideoFrame> frame);
 
@@ -223,9 +223,9 @@ MediaStreamVideoWebRtcSink::MediaStreamVideoWebRtcSink(
              : base::DoNothing();
 
   // TODO(pbos): Consolidate WebRtcVideoCapturerAdapter into WebRtcVideoSource
-  // by removing the need for and dependency on a cricket::VideoCapturer.
+  // by removing the need for and dependency on a webrtc::VideoCapturer.
   video_source_ = scoped_refptr<WebRtcVideoTrackSource>(
-      new rtc::RefCountedObject<WebRtcVideoTrackSource>(
+      new webrtc::RefCountedObject<WebRtcVideoTrackSource>(
           is_screencast, needs_denoising, feedback_cb,
           request_refresh_frame_closure, factory->GetGpuFactories()));
 

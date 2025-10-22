@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Platform from '../../core/platform/platform.js';
@@ -114,7 +116,7 @@ export class Layers3DView extends Common.ObjectWrapper.eventMixin<EventTypes, ty
   private readonly layerViewHost: LayerViewHost;
   private transformController: TransformController;
   private canvasElement: HTMLCanvasElement;
-  private lastSelection: {[x: string]: Selection|null};
+  private lastSelection: Record<string, Selection|null>;
   private layerTree: SDK.LayerTreeBase.LayerTreeBase|null;
   private readonly textureManager: LayerTextureManager;
   private chromeTextures: Array<WebGLTexture|undefined>;
@@ -140,9 +142,11 @@ export class Layers3DView extends Common.ObjectWrapper.eventMixin<EventTypes, ty
   private mouseDownY?: number;
 
   constructor(layerViewHost: LayerViewHost) {
-    super(true);
+    super({
+      jslog: `${VisualLogging.pane('layers-3d-view')}`,
+      useShadowDom: true,
+    });
     this.registerRequiredCSS(layers3DViewStyles);
-    this.element.setAttribute('jslog', `${VisualLogging.pane('layers-3d-view')}`);
 
     this.contentElement.classList.add('layers-3d-view');
     this.failBanner = new UI.EmptyWidget.EmptyWidget(
@@ -150,7 +154,11 @@ export class Layers3DView extends Common.ObjectWrapper.eventMixin<EventTypes, ty
 
     this.layerViewHost = layerViewHost;
     this.layerViewHost.registerView(this);
-    this.transformController = new TransformController(this.contentElement);
+    // Install transform controller, but still allow drag events to set focus on the element, which is needed
+    // to correctly listen for keyboard shortcuts.
+    this.transformController =
+        new TransformController(this.contentElement, false, false /* preventDefaultOnMouseDown */);
+
     this.transformController.addEventListener(TransformControllerEvents.TRANSFORM_CHANGED, this.update, this);
 
     this.initToolbar();

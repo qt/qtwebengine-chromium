@@ -160,8 +160,11 @@ String FrameDetachTypeToProtocol(FrameDetachType type) {
   switch (type) {
     case FrameDetachType::kRemove:
       return ReasonEnum::Remove;
-    case FrameDetachType::kSwap:
+    case FrameDetachType::kSwapForRemote:
       return ReasonEnum::Swap;
+    case FrameDetachType::kSwapForLocal:
+      // These are not supposed to be reported to client.
+      NOTREACHED();
   }
 }
 
@@ -263,7 +266,7 @@ static std::unique_ptr<TextResourceDecoder> CreateResourceTextDecoder(
   if (!text_encoding_name.empty()) {
     return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kPlainTextContent,
-        WTF::TextEncoding(text_encoding_name)));
+        TextEncoding(text_encoding_name)));
   }
   if (MIMETypeRegistry::IsXMLMIMEType(mime_type)) {
     TextResourceDecoderOptions options(TextResourceDecoderOptions::kXMLContent);
@@ -272,17 +275,17 @@ static std::unique_ptr<TextResourceDecoder> CreateResourceTextDecoder(
   }
   if (EqualIgnoringASCIICase(mime_type, "text/html")) {
     return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
-        TextResourceDecoderOptions::kHTMLContent, UTF8Encoding()));
+        TextResourceDecoderOptions::kHTMLContent, Utf8Encoding()));
   }
   if (MIMETypeRegistry::IsSupportedJavaScriptMIMEType(mime_type) ||
       MIMETypeRegistry::IsJSONMimeType(mime_type)) {
     return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
-        TextResourceDecoderOptions::kPlainTextContent, UTF8Encoding()));
+        TextResourceDecoderOptions::kPlainTextContent, Utf8Encoding()));
   }
   if (MIMETypeRegistry::IsPlainTextMIMEType(mime_type)) {
     return std::make_unique<TextResourceDecoder>(TextResourceDecoderOptions(
         TextResourceDecoderOptions::kPlainTextContent,
-        WTF::TextEncoding("ISO-8859-1")));
+        TextEncoding("ISO-8859-1")));
   }
   return nullptr;
 }
@@ -338,13 +341,13 @@ bool InspectorPageAgent::SegmentedBufferContent(
   String text_content;
   std::unique_ptr<TextResourceDecoder> decoder =
       CreateResourceTextDecoder(mime_type, text_encoding_name);
-  WTF::TextEncoding encoding(text_encoding_name);
+  TextEncoding encoding(text_encoding_name);
 
   const SegmentedBuffer::DeprecatedFlatData flat_buffer(buffer);
   const auto byte_buffer = base::as_byte_span(flat_buffer);
   if (decoder) {
     text_content = decoder->Decode(byte_buffer);
-    text_content = text_content + decoder->Flush();
+    text_content = StrCat({text_content, decoder->Flush()});
   } else if (encoding.IsValid()) {
     text_content = encoding.Decode(byte_buffer);
   }
@@ -564,7 +567,7 @@ protocol::Response InspectorPageAgent::disable() {
       resource_content_loader_client_id_);
   requested_compilation_cache_.clear();
   compilation_cache_.clear();
-  ad_script_identifiers_.clear();
+  frame_ad_script_ancestry_.clear();
   stopScreencast();
 
   return protocol::Response::Success();
@@ -795,18 +798,37 @@ void InspectorPageAgent::getResourceContent(
           WrapPersistent(this), frame_id, url, std::move(callback)));
 }
 
-protocol::Response InspectorPageAgent::getAdScriptId(
+protocol::Response InspectorPageAgent::getAdScriptAncestry(
     const String& frame_id,
-    std::unique_ptr<protocol::Page::AdScriptId>* ad_script_id) {
-  if (ad_script_identifiers_.Contains(frame_id)) {
-    AdScriptIdentifier* ad_script_identifier =
-        ad_script_identifiers_.at(frame_id);
-    *ad_script_id =
-        protocol::Page::AdScriptId::create()
-            .setScriptId(String::Number(ad_script_identifier->id))
-            .setDebuggerId(ToCoreString(
-                ad_script_identifier->context_id.toString()->string()))
+    std::unique_ptr<protocol::Page::AdScriptAncestry>* out_ad_script_ancestry) {
+  auto it = frame_ad_script_ancestry_.find(frame_id);
+  if (it != frame_ad_script_ancestry_.end()) {
+    const AdTracker::AdScriptAncestry& ad_script_ancestry = it->value;
+    CHECK(!ad_script_ancestry.ancestry_chain.empty());
+
+    std::vector<std::unique_ptr<protocol::Page::AdScriptId>> ancestry_chain;
+    for (const auto& ad_script_identifier : ad_script_ancestry.ancestry_chain) {
+      ancestry_chain.push_back(
+          protocol::Page::AdScriptId::create()
+              .setScriptId(String::Number(ad_script_identifier.id))
+              .setDebuggerId(ToCoreString(
+                  ad_script_identifier.context_id.toString()->string()))
+              .build());
+    }
+
+    std::unique_ptr<protocol::Page::AdScriptAncestry> ancestry =
+        protocol::Page::AdScriptAncestry::create()
+            .setAncestryChain(
+                std::make_unique<protocol::Array<protocol::Page::AdScriptId>>(
+                    std::move(ancestry_chain)))
             .build();
+
+    if (ad_script_ancestry.root_script_filterlist_rule.IsValid()) {
+      ancestry->setRootScriptFilterlistRule(
+          String(ad_script_ancestry.root_script_filterlist_rule.ToString()));
+    }
+
+    *out_ad_script_ancestry = std::move(ancestry);
   }
 
   return protocol::Response::Success();
@@ -1147,16 +1169,14 @@ void InspectorPageAgent::DidOpenDocument(LocalFrame* frame,
 
 void InspectorPageAgent::FrameAttachedToParent(
     LocalFrame* frame,
-    const std::optional<AdScriptIdentifier>& ad_script_on_stack) {
+    const AdTracker::AdScriptAncestry& ad_script_ancestry) {
   // TODO(crbug.com/1217041): If an ad script on the stack caused this frame to
   // be tagged as an ad, send the script's ID to the frontend.
   Frame* parent_frame = frame->Tree().Parent();
-  std::unique_ptr<SourceLocation> location =
-      SourceLocation::CaptureWithFullStackTrace();
-  if (ad_script_on_stack.has_value()) {
-    ad_script_identifiers_.Set(
-        IdentifiersFactory::FrameId(frame),
-        std::make_unique<AdScriptIdentifier>(ad_script_on_stack.value()));
+  SourceLocation* location = SourceLocation::CaptureWithFullStackTrace();
+  if (!ad_script_ancestry.ancestry_chain.empty()) {
+    frame_ad_script_ancestry_.Set(IdentifiersFactory::FrameId(frame),
+                                  ad_script_ancestry);
   }
   GetFrontend()->frameAttached(
       IdentifiersFactory::FrameId(frame),
@@ -1172,9 +1192,13 @@ void InspectorPageAgent::FrameDetachedFromParent(LocalFrame* frame,
                                                  FrameDetachType type) {
   // If the frame is swapped, we still maintain the ad script id for it.
   if (type == FrameDetachType::kRemove) {
-    ad_script_identifiers_.erase(IdentifiersFactory::FrameId(frame));
+    frame_ad_script_ancestry_.erase(IdentifiersFactory::FrameId(frame));
   }
-
+  // Skip reporting local swaps as nothing changes for the client and the
+  // frame remains in current frame tree.
+  if (type == FrameDetachType::kSwapForLocal) {
+    return;
+  }
   GetFrontend()->frameDetached(IdentifiersFactory::FrameId(frame),
                                FrameDetachTypeToProtocol(type));
 }
@@ -1535,7 +1559,7 @@ std::unique_ptr<protocol::Page::Frame> InspectorPageAgent::BuildObjectForFrame(
           .setGatedAPIFeatures(CreateGatedAPIFeaturesArray(frame->DomWindow()))
           .build();
   if (url.HasFragmentIdentifier()) {
-    frame_object->setUrlFragment("#" + url.FragmentIdentifier());
+    frame_object->setUrlFragment(StrCat({"#", url.FragmentIdentifier()}));
   }
   Frame* parent_frame = frame->Tree().Parent();
   if (parent_frame) {

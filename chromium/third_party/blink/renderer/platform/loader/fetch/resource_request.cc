@@ -41,6 +41,8 @@
 #include "third_party/blink/renderer/platform/network/http_names.h"
 #include "third_party/blink/renderer/platform/network/network_utils.h"
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
+#include "third_party/blink/renderer/platform/wtf/text/base64.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -405,8 +407,10 @@ void ResourceRequestHead::SetPriorityIncremental(bool priority_incremental) {
 void ResourceRequestHead::AddHttpHeaderField(const AtomicString& name,
                                              const AtomicString& value) {
   HTTPHeaderMap::AddResult result = http_header_fields_.Add(name, value);
-  if (!result.is_new_entry)
-    result.stored_value->value = result.stored_value->value + ", " + value;
+  if (!result.is_new_entry) {
+    String new_value = StrCat({result.stored_value->value, ", ", value});
+    result.stored_value->value = AtomicString(new_value);
+  }
 }
 
 void ResourceRequestHead::AddHTTPHeaderFields(
@@ -471,7 +475,7 @@ void ResourceRequestHead::SetFetchIntegrity(
 void ResourceRequestHead::SetExpectedPublicKeys(
     const IntegrityMetadataSet& metadata) {
   for (const auto& public_key : metadata.public_keys) {
-    expected_public_keys_.push_back(public_key.digest);
+    expected_public_keys_.push_back(public_key.value);
   }
 }
 

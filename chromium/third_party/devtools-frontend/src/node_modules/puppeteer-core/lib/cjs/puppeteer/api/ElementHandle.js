@@ -389,7 +389,7 @@ let ElementHandle = (() => {
          * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
          * can be passed as-is and a
          * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-         * allows quering by
+         * allows querying by
          * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
          * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
          * and
@@ -414,7 +414,7 @@ let ElementHandle = (() => {
          * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
          * can be passed as-is and a
          * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-         * allows quering by
+         * allows querying by
          * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
          * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
          * and
@@ -472,7 +472,7 @@ let ElementHandle = (() => {
          * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
          * can be passed as-is and a
          * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-         * allows quering by
+         * allows querying by
          * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
          * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
          * and
@@ -537,7 +537,7 @@ let ElementHandle = (() => {
          * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
          * can be passed as-is and a
          * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-         * allows quering by
+         * allows querying by
          * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
          * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
          * and
@@ -722,7 +722,43 @@ let ElementHandle = (() => {
         async click(options = {}) {
             await this.scrollIntoViewIfNeeded();
             const { x, y } = await this.clickablePoint(options.offset);
-            await this.frame.page().mouse.click(x, y, options);
+            try {
+                await this.frame.page().mouse.click(x, y, options);
+            }
+            finally {
+                if (options.debugHighlight) {
+                    await this.frame.page().evaluate((x, y) => {
+                        const highlight = document.createElement('div');
+                        highlight.innerHTML = `<style>
+        @scope {
+          :scope {
+              position: fixed;
+              left: ${x}px;
+              top: ${y}px;
+              width: 10px;
+              height: 10px;
+              border-radius: 50%;
+              animation: colorChange 10s 1 normal;
+              animation-fill-mode: forwards;
+          }
+
+          @keyframes colorChange {
+              from {
+                  background-color: red;
+              }
+              to {
+                  background-color: #FADADD00;
+              }
+          }
+        }
+      </style>`;
+                        highlight.addEventListener('animationend', () => {
+                            highlight.remove();
+                        }, { once: true });
+                        document.body.append(highlight);
+                    }, x, y);
+                }
+            }
         }
         /**
          * Drags an element over the given element or point.
@@ -1358,5 +1394,7 @@ function intersectBoundingBox(box, width, height) {
     box.height = Math.max(box.y >= 0
         ? Math.min(height - box.y, box.height)
         : Math.min(height, box.height + box.y), 0);
+    box.x = Math.max(box.x, 0);
+    box.y = Math.max(box.y, 0);
 }
 //# sourceMappingURL=ElementHandle.js.map

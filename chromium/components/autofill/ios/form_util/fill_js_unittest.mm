@@ -57,7 +57,7 @@ web::JavaScriptFeature* GetDummyFeatureForContentWorld(
   }
 }
 
-// TODO(crbug.com/359538514): Make test non-parametrized once Autofill in the
+// TODO(crbug.com/359538514): Make test non-parameterized once Autofill in the
 // isolated world is launched.
 class FillJsTest : public web::WebTestWithWebState,
                    public ::testing::WithParamInterface<bool> {
@@ -114,14 +114,14 @@ class FillJsTest : public web::WebTestWithWebState,
             @"__gCrWeb.fill.getUniqueID(document.getElementById('%@'))",
             element_id];
 
-    id result_id = web::test::ExecuteJavaScriptForFeature(
+    id result_id = web::test::ExecuteJavaScriptForFeatureAndReturnResult(
         web_state(), script, GetDummyFeatureForContentWorld(content_world));
     return base::apple::ObjCCastStrict<NSString>(result_id);
   }
 
   // Runs `script` in the main content world for Autofill features.
   id ExecuteJavaScriptInAutofillContentWorld(NSString* script) {
-    return web::test::ExecuteJavaScriptForFeature(
+    return web::test::ExecuteJavaScriptForFeatureAndReturnResult(
         web_state(), script,
         GetDummyFeatureForContentWorld(
             ContentWorldForAutofillJavascriptFeatures()));

@@ -2,10 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/task/bind_post_task.h"
 #include "content/browser/media/media_devices_util.h"
 
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
+#include "base/task/bind_post_task.h"
 #include "base/test/bind.h"
 #include "base/test/test_future.h"
 #include "content/browser/browser_main_loop.h"
@@ -15,6 +16,7 @@
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/media_device_id.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/content_browser_test.h"
 #include "content/shell/browser/shell.h"

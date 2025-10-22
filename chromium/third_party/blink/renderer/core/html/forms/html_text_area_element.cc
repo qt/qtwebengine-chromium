@@ -55,10 +55,12 @@
 #include "third_party/blink/renderer/core/layout/forms/layout_text_control_multi_line.h"
 #include "third_party/blink/renderer/core/layout/layout_box.h"
 #include "third_party/blink/renderer/core/layout/layout_object.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/platform/bindings/exception_state.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/instrumentation/tracing/trace_event.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/text/platform_locale.h"
@@ -358,6 +360,8 @@ void HTMLTextAreaElement::DefaultEventHandler(Event& event) {
 }
 
 void HTMLTextAreaElement::SubtreeHasChanged() {
+  TRACE_EVENT0("blink", "HTMLTextAreaElement::SubtreeHasChanged");
+  AdjustPlaceholderBreakElement();
 #if DCHECK_IS_ON()
   // The innerEditor should have either Text nodes or a placeholder break
   // element. If we see other nodes, it's a bug in editing code and we should
@@ -367,10 +371,15 @@ void HTMLTextAreaElement::SubtreeHasChanged() {
     if (node.IsTextNode())
       continue;
     DCHECK(IsA<HTMLBRElement>(node));
-    DCHECK_EQ(&node, inner_editor->lastChild());
+    if (RuntimeEnabledFeatures::TextareaLineEndingsAsBrEnabled()) {
+      if (IsPlaceholderBreakElement(&node)) {
+        DCHECK_EQ(&node, inner_editor->lastChild());
+      }
+    } else {
+      DCHECK_EQ(&node, inner_editor->lastChild());
+    }
   }
 #endif
-  AddPlaceholderBreakElementIfNecessary();
   SetValueBeforeFirstUserEditIfNotSet();
   UpdateValue();
   CheckIfValueWasReverted(Value());
@@ -388,7 +397,7 @@ void HTMLTextAreaElement::SubtreeHasChanged() {
     return;
 
   DCHECK(GetDocument().IsActive());
-  if (InnerEditorValue().empty()) {
+  if (value_.empty()) {
     GetDocument().GetPage()->GetChromeClient().DidClearValueInTextField(*this);
   }
   GetDocument().GetPage()->GetChromeClient().DidChangeValueInTextField(*this);
@@ -457,7 +466,7 @@ String HTMLTextAreaElement::SanitizeUserInputValue(const String& proposed_value,
 }
 
 void HTMLTextAreaElement::UpdateValue() {
-  value_ = InnerEditorValue();
+  value_ = SerializeInnerEditorValue();
   NotifyFormStateChanged();
   is_dirty_ = true;
   UpdatePlaceholderVisibility();
@@ -715,7 +724,11 @@ void HTMLTextAreaElement::CreateInnerEditorElementIfNecessary() const {
 }
 
 bool HTMLTextAreaElement::IsInnerEditorValueEmpty() const {
-  return InnerEditorValue().empty();
+  return Value().empty();
+}
+
+String HTMLTextAreaElement::InnerEditorValue() const {
+  return Value();
 }
 
 HTMLElement* HTMLTextAreaElement::UpdatePlaceholderText() {

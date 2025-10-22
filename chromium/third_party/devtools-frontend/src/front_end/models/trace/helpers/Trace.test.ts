@@ -128,9 +128,7 @@ describeWithEnvironment('Trace helpers', function() {
       const fcp = PageLoadMetrics.metricScoresByFrameId.get(Meta.mainFrameId)
                       ?.get(firstNavigationId)
                       ?.get(Trace.Handlers.ModelHandlers.PageLoadMetrics.MetricName.FCP);
-      if (!fcp?.event) {
-        assert.fail('FCP not found');
-      }
+      assert.isOk(fcp?.event, 'FCP not found');
       const navigationForFirstRequest =
           Trace.Helpers.Trace.getNavigationForTraceEvent(fcp.event, Meta.mainFrameId, Meta.navigationsByFrameId);
       assert.strictEqual(navigationForFirstRequest?.args.data?.navigationId, firstNavigationId);
@@ -671,9 +669,9 @@ describeWithEnvironment('Trace helpers', function() {
         onInstantEvent,
       });
 
-      assert.strictEqual(onStartEvent.callCount, 0);
-      assert.strictEqual(onEndEvent.callCount, 0);
-      assert.strictEqual(onInstantEvent.callCount, 1);
+      sinon.assert.callCount(onStartEvent, 0);
+      sinon.assert.callCount(onEndEvent, 0);
+      sinon.assert.callCount(onInstantEvent, 1);
     });
 
     it('skips async events by default', async () => {
@@ -691,9 +689,9 @@ describeWithEnvironment('Trace helpers', function() {
         onInstantEvent,
       });
 
-      assert.strictEqual(onStartEvent.callCount, 0);
-      assert.strictEqual(onEndEvent.callCount, 0);
-      assert.strictEqual(onInstantEvent.callCount, 0);
+      sinon.assert.callCount(onStartEvent, 0);
+      sinon.assert.callCount(onEndEvent, 0);
+      sinon.assert.callCount(onInstantEvent, 0);
     });
 
     it('can be configured to include async events', async () => {
@@ -712,9 +710,9 @@ describeWithEnvironment('Trace helpers', function() {
         ignoreAsyncEvents: false,
       });
 
-      assert.strictEqual(onStartEvent.callCount, 0);
-      assert.strictEqual(onEndEvent.callCount, 0);
-      assert.strictEqual(onInstantEvent.callCount, 2);
+      sinon.assert.callCount(onStartEvent, 0);
+      sinon.assert.callCount(onEndEvent, 0);
+      sinon.assert.callCount(onInstantEvent, 2);
     });
   });
 

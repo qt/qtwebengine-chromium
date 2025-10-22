@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
 
 #include <stdint.h>
 
@@ -18,6 +14,7 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_future.h"
+#include "base/test/values_test_util.h"
 #include "build/build_config.h"
 #include "content/browser/direct_sockets/direct_sockets_service_impl.h"
 #include "content/browser/direct_sockets/direct_sockets_test_utils.h"
@@ -259,8 +256,8 @@ class DirectSocketsTcpBrowserTest : public ContentBrowserTest {
         )",
         kLocalhostAddress, port);
 
-    ASSERT_TRUE(
-        EvalJs(shell(), content::test::WrapAsync(open_socket)).value.is_none());
+    ASSERT_EQ(EvalJs(shell(), content::test::WrapAsync(open_socket)),
+              base::Value());
   }
 
  protected:
@@ -648,8 +645,8 @@ IN_PROC_BROWSER_TEST_F(DirectSocketsTcpServerBrowserTest, HasFirewallHole) {
       std::make_unique<DelegateImpl>(local_port, run_loop.QuitClosure());
   client->AttachDelegate(delegate.get());
 
-  EXPECT_TRUE(EvalJs(shell(), content::test::WrapAsync("socket.close()"))
-                  .error.empty());
+  EXPECT_TRUE(
+      EvalJs(shell(), content::test::WrapAsync("socket.close()")).is_ok());
   run_loop.Run();
 }
 

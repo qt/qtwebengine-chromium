@@ -17,14 +17,16 @@
 #include <windows.graphics.h>
 #include <wrl/client.h>
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "api/sequence_checker.h"
 #include "modules/desktop_capture/desktop_capture_options.h"
+#include "modules/desktop_capture/desktop_frame.h"
+#include "modules/desktop_capture/desktop_region.h"
 #include "modules/desktop_capture/screen_capture_frame_queue.h"
 #include "modules/desktop_capture/shared_desktop_frame.h"
-#include "modules/desktop_capture/win/wgc_capture_source.h"
-#include "rtc_base/event.h"
 
 namespace webrtc {
 
@@ -154,6 +156,11 @@ class WgcCaptureSession final {
 
   // The unique id to represent a Source of current DesktopCapturer.
   intptr_t source_id_;
+
+  // The monitor that is being captured when the target source_id is a
+  // screen. For window sources, it can't be used because the window can move
+  // around around the different monitors.
+  std::optional<HMONITOR> monitor_;
 
   // The source type of the capture session. It can be either a window or a
   // screen.

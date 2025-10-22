@@ -83,6 +83,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.context_menu_on_mouse_up;
   }
 
+  static bool always_show_context_menu_on_touch(
+      const blink::web_pref::WebPreferences& r) {
+    return r.always_show_context_menu_on_touch;
+  }
+
   static bool javascript_enabled(const blink::web_pref::WebPreferences& r) {
     return r.javascript_enabled;
   }
@@ -145,10 +150,6 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.local_storage_enabled;
   }
 
-  static bool databases_enabled(const blink::web_pref::WebPreferences& r) {
-    return r.databases_enabled;
-  }
-
   static bool tabs_to_links(const blink::web_pref::WebPreferences& r) {
     return r.tabs_to_links;
   }
@@ -179,10 +180,6 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
 
   static bool webgl2_enabled(const blink::web_pref::WebPreferences& r) {
     return r.webgl2_enabled;
-  }
-
-  static bool pepper_3d_enabled(const blink::web_pref::WebPreferences& r) {
-    return r.pepper_3d_enabled;
   }
 
   static bool privileged_webgl_extensions_enabled(
@@ -355,9 +352,9 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.target_blank_implies_no_opener_enabled_will_be_removed;
   }
 
-  static bool allow_non_empty_navigator_plugins(
+  static bool ignore_permission_for_device_changed_event(
       const blink::web_pref::WebPreferences& r) {
-    return r.allow_non_empty_navigator_plugins;
+    return r.ignore_permission_for_device_changed_event;
   }
 
   static uint32_t number_of_cpu_cores(
@@ -776,6 +773,11 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
     return r.touch_drag_drop_enabled;
   }
 
+  static bool touch_dragend_context_menu(
+      const blink::web_pref::WebPreferences& r) {
+    return r.touch_dragend_context_menu;
+  }
+
   static bool webxr_immersive_ar_allowed(
       const blink::web_pref::WebPreferences& r) {
     return r.webxr_immersive_ar_allowed;
@@ -809,6 +811,16 @@ struct BLINK_COMMON_EXPORT StructTraits<blink::mojom::WebPreferencesDataView,
   static bool payment_request_enabled(
       const blink::web_pref::WebPreferences& r) {
     return r.payment_request_enabled;
+  }
+
+  static bool api_based_fingerprinting_interventions_enabled(
+      const blink::web_pref::WebPreferences& r) {
+    return r.api_based_fingerprinting_interventions_enabled;
+  }
+
+  static bool content_based_fingerprinting_protection_enabled(
+      const blink::web_pref::WebPreferences& r) {
+    return r.content_based_fingerprinting_protection_enabled;
   }
 
   static bool Read(blink::mojom::WebPreferencesDataView r,

@@ -134,25 +134,19 @@ GestureListenerManager::~GestureListenerManager() {
   Java_GestureListenerManagerImpl_onNativeDestroyed(env, j_obj);
 }
 
-void GestureListenerManager::ResetGestureDetection(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj) {
+void GestureListenerManager::ResetGestureDetection(JNIEnv* env) {
   if (rwhva_)
     rwhva_->ResetGestureDetection();
 }
 
-void GestureListenerManager::SetDoubleTapSupportEnabled(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    jboolean enabled) {
+void GestureListenerManager::SetDoubleTapSupportEnabled(JNIEnv* env,
+                                                        jboolean enabled) {
   if (rwhva_)
     rwhva_->SetDoubleTapSupportEnabled(enabled);
 }
 
-void GestureListenerManager::SetMultiTouchZoomSupportEnabled(
-    JNIEnv* env,
-    const JavaParamRef<jobject>& obj,
-    jboolean enabled) {
+void GestureListenerManager::SetMultiTouchZoomSupportEnabled(JNIEnv* env,
+                                                             jboolean enabled) {
   if (rwhva_)
     rwhva_->SetMultiTouchZoomSupportEnabled(enabled);
 }
@@ -192,18 +186,9 @@ void GestureListenerManager::OnInputEvent(const RenderWidgetHost& widget,
     web_contents_->GetNativeView()->RequestFocus();
   }
 
-  if (WebInputEvent::IsTouchEventType(event_type)) {
-    if (event_type == blink::mojom::EventType::kTouchStart) {
-      active_pointers_++;
-      if (active_pointers_ == 1) {
-        UpdateOnTouchDown();
-      }
-    } else if (event_type == blink::mojom::EventType::kTouchCancel) {
-      active_pointers_ = 0;
-    } else if (event_type == blink::mojom::EventType::kTouchEnd) {
-      active_pointers_--;
-      DCHECK(active_pointers_ >= 0);
-    }
+  if (WebInputEvent::IsTouchEventType(event_type) &&
+      static_cast<const blink::WebTouchEvent&>(event).IsTouchSequenceStart()) {
+    UpdateOnTouchDown();
     return;
   }
 
@@ -211,7 +196,8 @@ void GestureListenerManager::OnInputEvent(const RenderWidgetHost& widget,
     DCHECK(!is_in_a_fling_);
     is_in_a_fling_ = true;
   } else if (event_type == blink::mojom::EventType::kGestureFlingCancel ||
-             event_type == blink::mojom::EventType::kGestureScrollEnd) {
+             event_type == blink::mojom::EventType::kGestureScrollEnd ||
+             event_type == blink::mojom::EventType::kGestureScrollBegin) {
     if (is_in_a_fling_) {
       DidStopFlinging();
     }

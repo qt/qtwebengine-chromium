@@ -6,18 +6,18 @@ from __future__ import annotations
 
 import enum
 import textwrap
-from typing import Any, List, NamedTuple, Optional, Self, Tuple, Type, cast
+from typing import Any, NamedTuple, Optional, Self, Type, cast
 
 import tabulate
 
 
-class StrHelpDataMixin(NamedTuple):
+class StrEnumWithHelpData(NamedTuple):
   value: str
   help: str
 
 
 
-class StrEnumWithHelp(StrHelpDataMixin, enum.Enum):
+class StrEnumWithHelp(StrEnumWithHelpData, enum.Enum):
 
   @classmethod
   def _missing_(cls: Type[Self], value: Any) -> Optional[Self]:
@@ -28,7 +28,7 @@ class StrEnumWithHelp(StrHelpDataMixin, enum.Enum):
     return None
 
   @classmethod
-  def help_text_items(cls) -> List[Tuple[str, str]]:
+  def help_text_items(cls) -> list[tuple[str, str]]:
     return [
         (repr(instance.value), instance.help) for instance in cls  # pytype: disable=missing-parameter
     ]

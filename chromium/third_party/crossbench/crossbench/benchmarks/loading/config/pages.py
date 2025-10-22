@@ -8,8 +8,7 @@ import argparse
 import dataclasses
 import datetime as dt
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, List, Optional, Self, Sequence,
-                    Tuple)
+from typing import TYPE_CHECKING, Any, ClassVar, Optional, Self, Sequence
 
 from typing_extensions import override
 
@@ -28,12 +27,14 @@ from crossbench.config import ConfigObject
 from crossbench.parse import DurationParseError, DurationParser, ObjectParser
 
 if TYPE_CHECKING:
+  import urllib.parse as urlparse
+
   from crossbench.action_runner.action.action import Action
 
 
 @dataclasses.dataclass(frozen=True)
 class PagesConfig(ConfigObject):
-  pages: Tuple[PageConfig, ...] = ()
+  pages: tuple[PageConfig, ...] = ()
   secrets: Secrets | None = None
 
   @override
@@ -47,14 +48,13 @@ class PagesConfig(ConfigObject):
   @override
   def parse_str(cls, value: str) -> Self:
     """
-    Simple comma-separate config:
-    value = URL, [DURATION], ...
+    Variant 1: Full inline hjson:
+      { ... }
+    Variant 2: Simple comma-separate config:
+      value = URL, [DURATION], ...
     """
     value = ObjectParser.non_empty_str(value)
-    if value[0] == "{":
-      return cls.parse_inline_hjson(value)
-
-    values: List[str] = []
+    values: list[str] = []
     previous_part: str | None = None
     for part in value.strip().split(","):
       part = ObjectParser.non_empty_str(part, "url or duration")
@@ -67,12 +67,18 @@ class PagesConfig(ConfigObject):
         values[-1] = f"{previous_part},{part}"
         previous_part = None
       except DurationParseError:
+        # part is likely a URL
         previous_part = part
         values.append(part)
     return cls.parse_sequence(values)
 
   @classmethod
-  def parse_unknown_path(cls, path: pth.LocalPath, **kwargs) -> Self:
+  def parse_any_url(cls, url: urlparse.ParseResult, **kwargs) -> Self:
+    # We might get comma-separate URL lists here.
+    return cls.parse_str(url.geturl(), **kwargs)
+
+  @classmethod
+  def parse_any_path(cls, path: pth.LocalPath, **kwargs) -> Self:
     # Make sure we get errors for invalid files.
     return cls.parse_config_path(path, **kwargs)
 
@@ -92,7 +98,7 @@ class PagesConfig(ConfigObject):
     if not values:
       raise argparse.ArgumentTypeError("Got empty page list.")
     ObjectParser.non_empty_sequence(values, "page list")
-    pages: List[PageConfig] = []
+    pages: list[PageConfig] = []
     for index, single_line_config in enumerate(values):
       with exception.annotate_argparsing(
           f"Parsing pages[{index}]: {repr(single_line_config)}"):
@@ -101,7 +107,7 @@ class PagesConfig(ConfigObject):
 
   @classmethod
   @override
-  def parse_dict(cls, config: Dict, **kwargs) -> Self:
+  def parse_dict(cls, config: dict, **kwargs) -> Self:
     """
     Variant a):
       { "pages": { "LABEL": PAGE_CONFIG }, "secrets": { ... } }
@@ -121,8 +127,8 @@ class PagesConfig(ConfigObject):
 
   @classmethod
   def _parse_pages(cls,
-                   data: Dict[str, Any],
-                   secrets: Optional[Secrets] = None) -> Tuple[PageConfig, ...]:
+                   data: dict[str, Any],
+                   secrets: Optional[Secrets] = None) -> tuple[PageConfig, ...]:
     pages = []
     for name, page_config in data.items():
       with exception.annotate_argparsing(f"Parsing story ...['{name}']"):
@@ -146,7 +152,7 @@ class DevToolsRecorderPagesConfig(PagesConfig):
 
   @classmethod
   @override
-  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> Self:
+  def parse_dict(cls, config: dict[str, Any], **kwargs) -> Self:
     config = ObjectParser.non_empty_dict(config)
     with exception.annotate_argparsing("Loading DevTools recording file"):
       title = ObjectParser.non_empty_str(config["title"], "title")
@@ -158,8 +164,8 @@ class DevToolsRecorderPagesConfig(PagesConfig):
     raise exception.UnreachableError()
 
   @classmethod
-  def _parse_steps(cls, steps: List[Dict[str, Any]]) -> Tuple[Action, ...]:
-    actions: List[Action] = []
+  def _parse_steps(cls, steps: list[dict[str, Any]]) -> tuple[Action, ...]:
+    actions: list[Action] = []
     for step in steps:
       if maybe_actions := cls.parse_step(step):
         actions.extend(maybe_actions)
@@ -168,7 +174,7 @@ class DevToolsRecorderPagesConfig(PagesConfig):
     return tuple(actions)
 
   @classmethod
-  def parse_step(cls, step: Dict[str, Any]) -> List[Action]:
+  def parse_step(cls, step: dict[str, Any]) -> list[Action]:
     step_type: str = step["type"]
     default_timeout = dt.timedelta(seconds=10)
     if step_type == "navigate":
@@ -181,14 +187,14 @@ class DevToolsRecorderPagesConfig(PagesConfig):
     raise ValueError(f"Unsupported step: {step_type}")
 
   @classmethod
-  def _parse_navigate_step(cls, step: Dict[str, Any],
+  def _parse_navigate_step(cls, step: dict[str, Any],
                            default_timeout: dt.timedelta) -> Action:
     del default_timeout
     return GetAction(  # type: ignore
         step["url"], ready_state=ReadyState.COMPLETE)
 
   @classmethod
-  def _parse_click_step(cls, step: Dict[str, Any],
+  def _parse_click_step(cls, step: dict[str, Any],
                         default_timeout: dt.timedelta) -> Action:
     selector = cls._parse_selectors(step["selectors"])
     return ClickAction(
@@ -198,7 +204,7 @@ class DevToolsRecorderPagesConfig(PagesConfig):
         timeout=default_timeout)
 
   @classmethod
-  def _parse_selectors(cls, selectors: List[List[str]]) -> str:
+  def _parse_selectors(cls, selectors: list[list[str]]) -> str:
     xpath: str | None = None
     aria: str | None = None
     text: str | None = None
@@ -241,7 +247,7 @@ class DevToolsRecorderPagesConfig(PagesConfig):
 
 class ListPagesConfig(PagesConfig):
 
-  VALID_EXTENSIONS: Tuple[str, ...] = (".txt", ".list")
+  VALID_EXTENSIONS: ClassVar[tuple[str, ...]] = (".txt", ".list")
 
   @classmethod
   @override
@@ -253,7 +259,7 @@ class ListPagesConfig(PagesConfig):
   @override
   def parse_path(cls, path: pth.LocalPath, **kwargs) -> Self:
     assert not kwargs, f"{cls.__name__} does not support extra kwargs"
-    pages: List[PageConfig] = []
+    pages: list[PageConfig] = []
     with exception.annotate_argparsing(f"Loading Pages list file: {path.name}"):
       line: int = 0
       with path.open() as f:
@@ -269,7 +275,7 @@ class ListPagesConfig(PagesConfig):
 
   @classmethod
   @override
-  def parse_dict(cls, config: Dict, **kwargs) -> Self:
+  def parse_dict(cls, config: dict, **kwargs) -> Self:
     config = ObjectParser.non_empty_dict(config, "pages")
     with exception.annotate_argparsing("Parsing scenarios / pages"):
       if "pages" not in config:

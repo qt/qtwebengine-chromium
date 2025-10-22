@@ -37,6 +37,7 @@ class CORE_EXPORT FragmentBuilder {
  public:
   ~FragmentBuilder() {
     // Clear collections so the backing gets promptly freed, and reused.
+    children_.clear();
     oof_positioned_candidates_.clear();
     oof_positioned_fragmentainer_descendants_.clear();
     oof_positioned_descendants_.clear();
@@ -154,6 +155,10 @@ class CORE_EXPORT FragmentBuilder {
     would_be_last_line_if_not_for_ellipsis_ = true;
   }
 
+  void SetLineClampAfterLayoutObject(const LayoutObject* layout_object) {
+    line_clamp_after_layout_object_ = layout_object;
+  }
+
   bool IsBlockEndTrimmableLine() const { return is_block_end_trimmable_line_; }
   void SetIsBlockEndTrimmableLine() { is_block_end_trimmable_line_ = true; }
 
@@ -225,17 +230,16 @@ class CORE_EXPORT FragmentBuilder {
       LogicalStaticPosition::BlockEdge = LogicalStaticPosition::kBlockStart,
       LogicalStaticPosition::LogicalAlignmentDirection align_self_direction =
           LogicalStaticPosition::LogicalAlignmentDirection::kBlock,
-      bool is_hidden_for_paint = false,
       bool allow_top_layer_nodes = false);
 
   // This should only be used for inline-level OOF-positioned nodes.
-  // |inline_container_direction| is the current text direction for determining
-  // the correct static-position.
+  // |inline_container_writing_direction| is the current writing mode direction
+  // for determining the correct static-position.
   void AddOutOfFlowInlineChildCandidate(
       BlockNode,
       const LogicalOffset& child_offset,
-      TextDirection inline_container_direction,
-      bool is_hidden_for_paint = false);
+      WritingDirectionMode inline_container_writing_direction,
+      LayoutUnit line_box_block_size);
 
   void AddOutOfFlowFragmentainerDescendant(
       const LogicalOofNodeForFragmentation& descendant);
@@ -531,8 +535,8 @@ class CORE_EXPORT FragmentBuilder {
     layout_object_ = node.GetLayoutBox();
   }
 
-  HeapVector<Member<LayoutBoxModelObject>>& EnsureStickyDescendants();
-  HeapVector<Member<Element>>& EnsureSnapAreas();
+  GCedHeapVector<Member<LayoutBoxModelObject>>& EnsureStickyDescendants();
+  GCedHeapVector<Member<Element>>& EnsureSnapAreas();
   PhysicalAnchorQuery& EnsureAnchorQuery();
 
   void PropagateFromLayoutResultAndFragment(
@@ -582,8 +586,8 @@ class CORE_EXPORT FragmentBuilder {
   // The break token to store in the resulting fragment.
   const BreakToken* break_token_ = nullptr;
 
-  HeapVector<Member<LayoutBoxModelObject>>* sticky_descendants_ = nullptr;
-  HeapVector<Member<Element>>* snap_areas_ = nullptr;
+  GCedHeapVector<Member<LayoutBoxModelObject>>* sticky_descendants_ = nullptr;
+  GCedHeapVector<Member<Element>>* snap_areas_ = nullptr;
   // [1] https://drafts.csswg.org/css-scroll-snap-2/#scroll-initial-target
   const LayoutObject* scroll_start_target_ = nullptr;
   PhysicalAnchorQuery* anchor_query_ = nullptr;
@@ -592,6 +596,7 @@ class CORE_EXPORT FragmentBuilder {
   MarginStrut end_margin_strut_;
   ExclusionSpace exclusion_space_;
   std::optional<int> lines_until_clamp_;
+  const LayoutObject* line_clamp_after_layout_object_ = nullptr;
 
   ChildrenVector children_;
 

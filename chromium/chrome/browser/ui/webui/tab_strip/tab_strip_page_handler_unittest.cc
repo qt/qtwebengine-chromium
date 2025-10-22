@@ -7,10 +7,16 @@
 #include <memory>
 #include <optional>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
 #include "base/values.h"
+#include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
+#include "chrome/browser/tab_group_sync/tab_group_sync_service_factory.h"
+#include "chrome/browser/ui/tabs/saved_tab_groups/saved_tab_group_utils.h"
+#include "chrome/browser/ui/tabs/saved_tab_groups/tab_group_sync_service_initialized_observer.h"
 #include "chrome/browser/ui/tabs/tab_group_model.h"
 #include "chrome/browser/ui/webui/tab_strip/tab_strip_ui.h"
 #include "chrome/browser/ui/webui/tab_strip/tab_strip_ui_embedder.h"
@@ -18,6 +24,7 @@
 #include "chrome/browser/ui/webui/webui_util_desktop.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile_manager.h"
+#include "components/bookmarks/test/bookmark_test_helpers.h"
 #include "components/tab_groups/tab_group_color.h"
 #include "components/tab_groups/tab_group_id.h"
 #include "components/tab_groups/tab_group_visual_data.h"
@@ -61,7 +68,9 @@ class StubTabStripUIEmbedder : public TabStripUIEmbedder {
   void ShowContextMenuAtPoint(
       gfx::Point point,
       std::unique_ptr<ui::MenuModel> menu_model,
-      base::RepeatingClosure on_menu_closed_callback) override {}
+      base::RepeatingClosure on_menu_closed_callback) override {
+    menu_model_ = std::move(menu_model);
+  }
   void CloseContextMenu() override {}
   void ShowEditDialogForGroupAtPoint(gfx::Point point,
                                      gfx::Rect rect,
@@ -72,6 +81,11 @@ class StubTabStripUIEmbedder : public TabStripUIEmbedder {
   SkColor GetColorProviderColor(ui::ColorId id) const override {
     return SK_ColorWHITE;
   }
+
+  std::unique_ptr<ui::MenuModel> menu_model() { return std::move(menu_model_); }
+
+ private:
+  std::unique_ptr<ui::MenuModel> menu_model_;
 };
 
 class MockPage : public tab_strip::mojom::Page {
@@ -133,6 +147,10 @@ class TabStripPageHandlerTest : public BrowserWithTestWindowTest {
     handler_ = std::make_unique<TestTabStripPageHandler>(
         page_.BindAndGetRemote(), web_ui(), browser(), &stub_embedder_);
     web_ui()->ClearTrackedCalls();
+
+    // Wait for the TabGroupSyncService to properly initialize before making any
+    // changes to tab groups.
+    WaitForTabGroupSyncServiceInitialized(profile());
   }
   void TearDown() override {
     web_contents_.reset();
@@ -142,11 +160,19 @@ class TabStripPageHandlerTest : public BrowserWithTestWindowTest {
 
   TabStripPageHandler* handler() { return handler_.get(); }
   content::TestWebUI* web_ui() { return &web_ui_; }
+  StubTabStripUIEmbedder* embedder() { return &stub_embedder_; }
 
   void ExpectVisualData(const tab_groups::TabGroupVisualData& visual_data,
                         const tab_strip::mojom::TabGroupVisualData& tab_group) {
     EXPECT_EQ(base::UTF16ToASCII(visual_data.title()), tab_group.title);
     EXPECT_EQ(color_utils::SkColorToRgbString(SK_ColorWHITE), tab_group.color);
+  }
+
+  void WaitForTabGroupSyncServiceInitialized(Profile* profile) {
+    auto observer =
+        std::make_unique<tab_groups::TabGroupSyncServiceInitializedObserver>(
+            tab_groups::SavedTabGroupUtils::GetServiceForProfile(profile));
+    observer->Wait();
   }
 
  protected:
@@ -203,20 +229,12 @@ TEST_F(TabStripPageHandlerTest, GetGroupVisualData) {
       browser()->tab_strip_model()->AddToNewGroup({0});
   const tab_groups::TabGroupVisualData group1_visuals(
       u"Group 1", tab_groups::TabGroupColorId::kGreen);
-  browser()
-      ->tab_strip_model()
-      ->group_model()
-      ->GetTabGroup(group1)
-      ->SetVisualData(group1_visuals);
+  browser()->tab_strip_model()->ChangeTabGroupVisuals(group1, group1_visuals);
   tab_groups::TabGroupId group2 =
       browser()->tab_strip_model()->AddToNewGroup({1});
   const tab_groups::TabGroupVisualData group2_visuals(
       u"Group 2", tab_groups::TabGroupColorId::kCyan);
-  browser()
-      ->tab_strip_model()
-      ->group_model()
-      ->GetTabGroup(group2)
-      ->SetVisualData(group2_visuals);
+  browser()->tab_strip_model()->ChangeTabGroupVisuals(group2, group2_visuals);
 
   tab_strip::mojom::PageHandler::GetGroupVisualDataCallback callback =
       base::BindLambdaForTesting(
@@ -237,11 +255,8 @@ TEST_F(TabStripPageHandlerTest, GroupVisualDataChangedEvent) {
       browser()->tab_strip_model()->AddToNewGroup({0});
   const tab_groups::TabGroupVisualData new_visual_data(
       u"My new title", tab_groups::TabGroupColorId::kGreen);
-  browser()
-      ->tab_strip_model()
-      ->group_model()
-      ->GetTabGroup(expected_group_id)
-      ->SetVisualData(new_visual_data);
+  browser()->tab_strip_model()->ChangeTabGroupVisuals(expected_group_id,
+                                                      new_visual_data);
 
   EXPECT_CALL(
       page_,
@@ -389,11 +404,8 @@ TEST_F(TabStripPageHandlerTest, MoveGroupAcrossWindows) {
   // Create some visual data to make sure it gets transferred.
   const tab_groups::TabGroupVisualData visual_data(
       u"My group", tab_groups::TabGroupColorId::kGreen);
-  new_browser.get()
-      ->tab_strip_model()
-      ->group_model()
-      ->GetTabGroup(group_id)
-      ->SetVisualData(visual_data);
+  new_browser.get()->tab_strip_model()->ChangeTabGroupVisuals(group_id,
+                                                              visual_data);
 
   content::WebContents* moved_contents1 =
       new_browser.get()->tab_strip_model()->GetWebContentsAt(0);
@@ -445,11 +457,8 @@ TEST_F(TabStripPageHandlerTest, NoopMoveGroupAcrossWindowsBreaksContiguity) {
   // Create some visual data to make sure it gets transferred.
   const tab_groups::TabGroupVisualData visual_data(
       u"My group", tab_groups::TabGroupColorId::kGreen);
-  new_browser.get()
-      ->tab_strip_model()
-      ->group_model()
-      ->GetTabGroup(group_id)
-      ->SetVisualData(visual_data);
+  new_browser.get()->tab_strip_model()->ChangeTabGroupVisuals(group_id,
+                                                              visual_data);
 
   web_ui()->ClearTrackedCalls();
 
@@ -472,6 +481,9 @@ TEST_F(TabStripPageHandlerTest, MoveGroupAcrossProfiles) {
   std::unique_ptr<Browser> new_browser = CreateBrowser(
       different_profile, browser()->type(), false, new_window.get());
   AddTab(new_browser.get(), GURL("http://foo"));
+
+  WaitForTabGroupSyncServiceInitialized(different_profile);
+
   tab_groups::TabGroupId group_id =
       new_browser.get()->tab_strip_model()->AddToNewGroup({0});
 
@@ -776,4 +788,33 @@ TEST_F(TabStripPageHandlerTest, OnThemeChanged) {
   webui::GetNativeThemeDeprecated(web_ui()->GetWebContents())
       ->NotifyOnNativeThemeUpdated();
   EXPECT_CALL(page_, ThemeChanged());
+}
+
+TEST_F(TabStripPageHandlerTest, BookmarkAllTabs) {
+  BookmarkModelFactory::GetInstance()->SetTestingFactory(
+      browser()->profile(), BookmarkModelFactory::GetDefaultFactory());
+  bookmarks::test::WaitForBookmarkModelToLoad(
+      BookmarkModelFactory::GetForBrowserContext(browser()->profile()));
+
+  // Assert that the bookmark all tabs menu item exists.
+  tab_strip::mojom::PageHandler* page_handler = handler();
+  page_handler->ShowBackgroundContextMenu(0, 0);
+  std::unique_ptr<ui::MenuModel> menu_model = embedder()->menu_model();
+  int bookmark_all_tabs_index = -1;
+  for (size_t i = 0; i < menu_model->GetItemCount(); i++) {
+    if (IDC_BOOKMARK_ALL_TABS == menu_model->GetCommandIdAt(i)) {
+      bookmark_all_tabs_index = i;
+    }
+  }
+  ASSERT_GE(bookmark_all_tabs_index, 0);
+
+  // Add one tab. Bookmark all tabs should be disabled.
+  AddTab(browser(), GURL("http://foo"));
+  page_handler->ShowBackgroundContextMenu(0, 0);
+  EXPECT_FALSE(embedder()->menu_model()->IsEnabledAt(bookmark_all_tabs_index));
+
+  // Add a second tab. Bookmark all tabs should be enabled.
+  AddTab(browser(), GURL("http://bar"));
+  page_handler->ShowBackgroundContextMenu(0, 0);
+  EXPECT_TRUE(embedder()->menu_model()->IsEnabledAt(bookmark_all_tabs_index));
 }

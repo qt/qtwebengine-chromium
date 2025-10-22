@@ -1,4 +1,3 @@
-
 /* Copyright (c) 2020-2025 The Khronos Group Inc.
  * Copyright (c) 2020-2025 Valve Corporation
  * Copyright (c) 2020-2025 LunarG, Inc.
@@ -17,14 +16,17 @@
  */
 #pragma once
 #include <cstdint>
+#include <string>
+#include <vector>
+
 // Default values for those settings should match layers/VkLayer_khronos_validation.json.in
 
 struct GpuAVSettings {
-    bool unsafe_mode = false;
+    bool safe_mode = false;
 
     bool force_on_robustness = false;
-    uint32_t max_bda_in_use = 10000;
     bool select_instrumented_shaders = false;
+    std::vector<std::string> shader_selection_regexes{};
 
     bool validate_indirect_draws_buffers = true;
     bool validate_indirect_dispatches_buffers = true;
@@ -53,48 +55,25 @@ struct GpuAVSettings {
         bool vertex_attribute_fetch_oob = true;
     } shader_instrumentation;
 
-    bool IsShaderInstrumentationEnabled() const {
-        return shader_instrumentation.descriptor_checks || shader_instrumentation.buffer_device_address ||
-               shader_instrumentation.ray_query || shader_instrumentation.post_process_descriptor_indexing ||
-               shader_instrumentation.vertex_attribute_fetch_oob;
-    }
-    bool IsSpirvModified() const { return IsShaderInstrumentationEnabled() || debug_printf_enabled; }
+    bool IsShaderInstrumentationEnabled() const;
+    bool IsSpirvModified() const;
 
     // Also disables shader caching and select shader instrumentation
-    void DisableShaderInstrumentationAndOptions() {
-        shader_instrumentation.descriptor_checks = false;
-        shader_instrumentation.buffer_device_address = false;
-        shader_instrumentation.ray_query = false;
-        shader_instrumentation.post_process_descriptor_indexing = false;
-        shader_instrumentation.vertex_attribute_fetch_oob = false;
-        // Because of this setting, cannot really have an "enabled" parameter to pass to this method
-        select_instrumented_shaders = false;
-    }
-    bool IsBufferValidationEnabled() const {
-        return validate_indirect_draws_buffers || validate_indirect_dispatches_buffers || validate_indirect_trace_rays_buffers ||
-               validate_buffer_copies || validate_index_buffers;
-    }
-    void SetBufferValidationEnabled(bool enabled) {
-        validate_indirect_draws_buffers = enabled;
-        validate_indirect_dispatches_buffers = enabled;
-        validate_indirect_trace_rays_buffers = enabled;
-        validate_buffer_copies = enabled;
-        validate_index_buffers = enabled;
-    }
+    void DisableShaderInstrumentationAndOptions();
+    bool IsBufferValidationEnabled() const;
+    void SetBufferValidationEnabled(bool enabled);
+
+    void SetShaderSelectionRegexes(std::vector<std::string> &&shader_selection_regexes);
+    bool MatchesAnyShaderSelectionRegex(const std::string &debug_name);
 
     // For people who are using VkValidationFeatureEnableEXT to set only DebugPrintf (and want the rest of GPU-AV off)
     bool debug_printf_only = false;
-    void SetOnlyDebugPrintf() {
-        DisableShaderInstrumentationAndOptions();
-        SetBufferValidationEnabled(false);
-
-        // Turn on the minmal settings for DebugPrintf
-        debug_printf_enabled = true;
-        debug_printf_only = true;
-    }
+    void SetOnlyDebugPrintf();
 
     bool debug_printf_enabled = false;
     bool debug_printf_to_stdout = false;
     bool debug_printf_verbose = false;
     uint32_t debug_printf_buffer_size = 1024;
+
+    void TracyLogSettings() const;
 };

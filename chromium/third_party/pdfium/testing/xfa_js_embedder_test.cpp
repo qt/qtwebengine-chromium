@@ -35,17 +35,20 @@ void XFAJSEmbedderTest::TearDown() {
 }
 
 CXFA_Document* XFAJSEmbedderTest::GetXFADocument() const {
-  auto* pDoc = CPDFDocumentFromFPDFDocument(document());
-  if (!pDoc)
+  auto* doc = CPDFDocumentFromFPDFDocument(document());
+  if (!doc) {
     return nullptr;
+  }
 
-  auto* pContext = static_cast<CPDFXFA_Context*>(pDoc->GetExtension());
-  if (!pContext)
+  auto* pContext = static_cast<CPDFXFA_Context*>(doc->GetExtension());
+  if (!pContext) {
     return nullptr;
+  }
 
   CXFA_FFDoc* pFFDoc = pContext->GetXFADoc();
-  if (!pFFDoc)
+  if (!pFFDoc) {
     return nullptr;
+  }
 
   return pFFDoc->GetXFADoc();
 }
@@ -65,35 +68,40 @@ bool XFAJSEmbedderTest::OpenDocumentWithOptions(
           filename, password, linearize_option, javascript_option)) {
     return false;
   }
-  CXFA_Document* pDoc = GetXFADocument();
-  if (!pDoc)
+  CXFA_Document* doc = GetXFADocument();
+  if (!doc) {
     return false;
+  }
 
-  script_context_ = pDoc->GetScriptContext();
+  script_context_ = doc->GetScriptContext();
   return true;
 }
 
 bool XFAJSEmbedderTest::Execute(ByteStringView input) {
   CFXJSE_ScopeUtil_IsolateHandleContext scope(
       script_context_->GetJseContextForTest());
-  if (ExecuteHelper(input))
+  if (ExecuteHelper(input)) {
     return true;
+  }
 
   fprintf(stderr, "FormCalc: %.*s\n", static_cast<int>(input.GetLength()),
           input.unterminated_c_str());
 
   v8::Local<v8::Value> result = GetValue();
-  if (!fxv8::IsArray(result))
+  if (!fxv8::IsArray(result)) {
     return false;
+  }
 
   v8::Local<v8::Value> msg = fxv8::ReentrantGetArrayElementHelper(
       isolate(), result.As<v8::Array>(), 1);
-  if (!fxv8::IsString(msg))
+  if (!fxv8::IsString(msg)) {
     return false;
+  }
 
   WideString str = fxv8::ReentrantToWideStringHelper(isolate(), msg);
-  if (!str.IsEmpty())
+  if (!str.IsEmpty()) {
     fprintf(stderr, "JS ERROR: %ls\n", str.c_str());
+  }
   return false;
 }
 

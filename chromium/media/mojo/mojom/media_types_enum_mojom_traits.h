@@ -372,8 +372,6 @@ struct EnumTraits<media::mojom::RendererType, ::media::RendererType> {
         return media::mojom::RendererType::kRendererImpl;
       case ::media::RendererType::kMojo:
         return media::mojom::RendererType::kMojo;
-      case ::media::RendererType::kMediaPlayer:
-        return media::mojom::RendererType::kMediaPlayer;
       case ::media::RendererType::kCourier:
         return media::mojom::RendererType::kCourier;
       case ::media::RendererType::kFlinging:
@@ -405,9 +403,6 @@ struct EnumTraits<media::mojom::RendererType, ::media::RendererType> {
         return true;
       case media::mojom::RendererType::kMojo:
         *output = ::media::RendererType::kMojo;
-        return true;
-      case media::mojom::RendererType::kMediaPlayer:
-        *output = ::media::RendererType::kMediaPlayer;
         return true;
       case media::mojom::RendererType::kCourier:
         *output = ::media::RendererType::kCourier;
@@ -451,8 +446,6 @@ struct EnumTraits<media::mojom::DemuxerType, ::media::DemuxerType> {
         return media::mojom::DemuxerType::kFFmpegDemuxer;
       case ::media::DemuxerType::kChunkDemuxer:
         return media::mojom::DemuxerType::kChunkDemuxer;
-      case ::media::DemuxerType::kMediaUrlDemuxer:
-        return media::mojom::DemuxerType::kMediaUrlDemuxer;
       case ::media::DemuxerType::kFrameInjectingDemuxer:
         return media::mojom::DemuxerType::kFrameInjectingDemuxer;
       case ::media::DemuxerType::kStreamProviderDemuxer:
@@ -480,9 +473,6 @@ struct EnumTraits<media::mojom::DemuxerType, ::media::DemuxerType> {
         return true;
       case media::mojom::DemuxerType::kChunkDemuxer:
         *output = ::media::DemuxerType::kChunkDemuxer;
-        return true;
-      case media::mojom::DemuxerType::kMediaUrlDemuxer:
-        *output = ::media::DemuxerType::kMediaUrlDemuxer;
         return true;
       case media::mojom::DemuxerType::kFrameInjectingDemuxer:
         *output = ::media::DemuxerType::kFrameInjectingDemuxer;
@@ -531,8 +521,6 @@ struct EnumTraits<media::mojom::CreateCdmStatus, media::CreateCdmStatus> {
         return media::mojom::CreateCdmStatus::kDisconnectionError;
       case media::CreateCdmStatus::kNotAllowedOnUniqueOrigin:
         return media::mojom::CreateCdmStatus::kNotAllowedOnUniqueOrigin;
-      case media::CreateCdmStatus::kMediaDrmBridgeCreationFailed:
-        return media::mojom::CreateCdmStatus::kMediaDrmBridgeCreationFailed;
       case media::CreateCdmStatus::kMediaCryptoNotAvailable:
         return media::mojom::CreateCdmStatus::kMediaCryptoNotAvailable;
       case media::CreateCdmStatus::kNoMoreInstances:
@@ -613,9 +601,6 @@ struct EnumTraits<media::mojom::CreateCdmStatus, media::CreateCdmStatus> {
         return true;
       case media::mojom::CreateCdmStatus::kNotAllowedOnUniqueOrigin:
         *output = media::CreateCdmStatus::kNotAllowedOnUniqueOrigin;
-        return true;
-      case media::mojom::CreateCdmStatus::kMediaDrmBridgeCreationFailed:
-        *output = media::CreateCdmStatus::kMediaDrmBridgeCreationFailed;
         return true;
       case media::mojom::CreateCdmStatus::kMediaCryptoNotAvailable:
         *output = media::CreateCdmStatus::kMediaCryptoNotAvailable;

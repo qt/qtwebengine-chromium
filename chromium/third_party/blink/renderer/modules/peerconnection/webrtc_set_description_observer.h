@@ -18,6 +18,7 @@
 #include "third_party/blink/renderer/modules/peerconnection/transceiver_state_surfacer.h"
 #include "third_party/blink/renderer/modules/peerconnection/webrtc_media_stream_track_adapter_map.h"
 #include "third_party/blink/renderer/platform/allow_discouraged_type.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_copier_std.h"
 #include "third_party/blink/renderer/platform/wtf/thread_safe_ref_counted.h"
 #include "third_party/webrtc/api/jsep.h"
 #include "third_party/webrtc/api/peer_connection_interface.h"
@@ -29,6 +30,13 @@
 #include "third_party/webrtc/rtc_base/ref_counted_object.h"
 
 namespace blink {
+
+template <>
+struct CrossThreadCopier<TransceiverStateSurfacer> {
+  STATIC_ONLY(CrossThreadCopier);
+  using Type = TransceiverStateSurfacer;
+  static Type Copy(Type&& value) { return std::move(value); }
+};
 
 // Copies the session description.
 // Note: At the time of writing, third_party/webrtc/pc/sdp_utils.h's
@@ -44,7 +52,7 @@ std::unique_ptr<webrtc::SessionDescriptionInterface> CopySessionDescription(
 // process the state changes of the Set[Local/Remote]Description() by inspecting
 // the updated States.
 class MODULES_EXPORT WebRtcSetDescriptionObserver
-    : public WTF::ThreadSafeRefCounted<WebRtcSetDescriptionObserver> {
+    : public ThreadSafeRefCounted<WebRtcSetDescriptionObserver> {
  public:
   // The states as they were when the operation finished on the webrtc signaling
   // thread. Note that other operations may have occurred while jumping back to
@@ -88,7 +96,7 @@ class MODULES_EXPORT WebRtcSetDescriptionObserver
                                         States states) = 0;
 
  protected:
-  friend class WTF::ThreadSafeRefCounted<WebRtcSetDescriptionObserver>;
+  friend class ThreadSafeRefCounted<WebRtcSetDescriptionObserver>;
   virtual ~WebRtcSetDescriptionObserver();
 };
 
@@ -103,13 +111,12 @@ class MODULES_EXPORT WebRtcSetDescriptionObserver
 // classes because local and remote description observers have different
 // interfaces in webrtc.
 class MODULES_EXPORT WebRtcSetDescriptionObserverHandlerImpl
-    : public WTF::ThreadSafeRefCounted<
-          WebRtcSetDescriptionObserverHandlerImpl> {
+    : public ThreadSafeRefCounted<WebRtcSetDescriptionObserverHandlerImpl> {
  public:
   WebRtcSetDescriptionObserverHandlerImpl(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner,
-      rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
+      webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
       scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
       scoped_refptr<WebRtcSetDescriptionObserver> observer);
 
@@ -123,8 +130,7 @@ class MODULES_EXPORT WebRtcSetDescriptionObserverHandlerImpl
   void OnSetDescriptionComplete(webrtc::RTCError error);
 
  private:
-  friend class WTF::ThreadSafeRefCounted<
-      WebRtcSetDescriptionObserverHandlerImpl>;
+  friend class ThreadSafeRefCounted<WebRtcSetDescriptionObserverHandlerImpl>;
   virtual ~WebRtcSetDescriptionObserverHandlerImpl();
 
   void OnSetDescriptionCompleteOnMainThread(
@@ -142,7 +148,7 @@ class MODULES_EXPORT WebRtcSetDescriptionObserverHandlerImpl
 
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner_;
-  rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc_;
+  webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc_;
   scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_adapter_map_;
   scoped_refptr<WebRtcSetDescriptionObserver> observer_;
 };
@@ -155,7 +161,7 @@ class MODULES_EXPORT WebRtcSetLocalDescriptionObserverHandler
   static scoped_refptr<WebRtcSetLocalDescriptionObserverHandler> Create(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner,
-      rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
+      webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
       scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
       scoped_refptr<WebRtcSetDescriptionObserver> observer);
 
@@ -172,7 +178,7 @@ class MODULES_EXPORT WebRtcSetLocalDescriptionObserverHandler
   WebRtcSetLocalDescriptionObserverHandler(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner,
-      rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
+      webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
       scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
       scoped_refptr<WebRtcSetDescriptionObserver> observer);
   ~WebRtcSetLocalDescriptionObserverHandler() override;
@@ -188,7 +194,7 @@ class MODULES_EXPORT WebRtcSetRemoteDescriptionObserverHandler
   static scoped_refptr<WebRtcSetRemoteDescriptionObserverHandler> Create(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner,
-      rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
+      webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
       scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
       scoped_refptr<WebRtcSetDescriptionObserver> observer);
 
@@ -206,7 +212,7 @@ class MODULES_EXPORT WebRtcSetRemoteDescriptionObserverHandler
   WebRtcSetRemoteDescriptionObserverHandler(
       scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> signaling_task_runner,
-      rtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
+      webrtc::scoped_refptr<webrtc::PeerConnectionInterface> pc,
       scoped_refptr<blink::WebRtcMediaStreamTrackAdapterMap> track_adapter_map,
       scoped_refptr<WebRtcSetDescriptionObserver> observer);
   ~WebRtcSetRemoteDescriptionObserverHandler() override;

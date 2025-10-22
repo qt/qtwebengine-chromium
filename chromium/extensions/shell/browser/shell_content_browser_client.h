@@ -30,6 +30,7 @@ class AssociatedInterfaceRegistry;
 
 namespace content {
 class BrowserContext;
+class NavigationThrottleRegistry;
 }
 
 namespace service_manager {
@@ -65,7 +66,6 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
   // content::ContentBrowserClient overrides.
   std::unique_ptr<content::BrowserMainParts> CreateBrowserMainParts(
       bool is_integration_test) override;
-  void RenderProcessWillLaunch(content::RenderProcessHost* host) override;
   bool ShouldUseProcessPerSite(content::BrowserContext* browser_context,
                                const GURL& site_url) override;
   bool IsHandledURL(const GURL& url) override;
@@ -75,8 +75,6 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
                                       int child_process_id) override;
   content::SpeechRecognitionManagerDelegate*
   CreateSpeechRecognitionManagerDelegate() override;
-  content::BrowserPpapiHost* GetExternalBrowserPpapiHost(
-      int plugin_process_id) override;
   void GetAdditionalAllowedSchemesForFileSystem(
       std::vector<std::string>* additional_schemes) override;
   std::unique_ptr<content::DevToolsManagerDelegate>
@@ -88,9 +86,8 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
   void RegisterAssociatedInterfaceBindersForRenderFrameHost(
       content::RenderFrameHost& render_frame_host,
       blink::AssociatedInterfaceRegistry& associated_registry) override;
-  std::vector<std::unique_ptr<content::NavigationThrottle>>
-  CreateThrottlesForNavigation(
-      content::NavigationHandle* navigation_handle) override;
+  void CreateThrottlesForNavigation(
+      content::NavigationThrottleRegistry& registry) override;
   std::unique_ptr<content::NavigationUIData> GetNavigationUIData(
       content::NavigationHandle* navigation_handle) override;
   mojo::PendingRemote<network::mojom::URLLoaderFactory>
@@ -144,6 +141,7 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
       content::BrowserContext* browser_context,
       const url::Origin& origin,
       bool is_for_isolated_world,
+      bool is_for_service_worker,
       network::mojom::URLLoaderFactoryParams* factory_params) override;
   base::FilePath GetSandboxedStorageServiceDataDirectory() override;
   std::string GetUserAgent() override;
@@ -158,7 +156,7 @@ class ShellContentBrowserClient : public content::ContentBrowserClient {
   // Appends command line switches for a renderer process.
   void AppendRendererSwitches(base::CommandLine* command_line);
 
-  // Returns the extension or app associated with |site_instance| or NULL.
+  // Returns the extension or app associated with `site_instance` or NULL.
   const Extension* GetExtension(content::SiteInstance* site_instance);
 
   // Owned by content::BrowserMainLoop.

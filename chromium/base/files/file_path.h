@@ -196,6 +196,9 @@ class BASE_EXPORT FilePath {
   // The character used to identify a file extension.
   static constexpr CharType kExtensionSeparator = FILE_PATH_LITERAL('.');
 
+  // Initializes features for this class. See `base::features::Init()`.
+  static void InitializeFeatures();
+
   FilePath();
   FilePath(const FilePath& that);
   explicit FilePath(StringViewType path);
@@ -515,6 +518,14 @@ class BASE_EXPORT FilePath {
   // to access it.
   // Returns true if the path is a content uri, or false otherwise.
   bool IsContentUri() const;
+
+  // Checks whether this path looks like a virtual document path. It is a quick
+  // check by a string matching, meaning that returning true does not guarantee
+  // that resolving it to a content URI will succeed. A virtual document path is
+  // a //base abstraction to transparently represent files and directories
+  // managed by Android's Storage Access Framework (SAF). See
+  // //base/android/virtual_document_path.h for details.
+  bool IsVirtualDocumentPath() const;
 #endif
 
   // NOTE: When adding a new public method, consider adding it to
@@ -527,6 +538,9 @@ class BASE_EXPORT FilePath {
   // separators is never stripped, to support alternate roots.  This is used to
   // support UNC paths on Windows.
   void StripTrailingSeparatorsInternal();
+
+  bool IsParentFast(const FilePath& child) const;
+  bool IsParentSlow(const FilePath& child) const;
 
   StringType path_;
 };

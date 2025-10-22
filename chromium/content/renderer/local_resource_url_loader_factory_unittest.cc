@@ -17,7 +17,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_refptr.h"
-#include "base/notimplemented.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/thread_pool.h"
 #include "base/test/bind.h"
@@ -82,13 +81,6 @@ class FakeURLLoaderFactory : public network::mojom::URLLoaderFactory {
 class LocalResourceURLLoaderFactoryTest : public ::testing::Test {
  public:
   void SetUp() override {
-    // Swap in mock ResourceBundle.
-    original_resource_bundle_ =
-        ui::ResourceBundle::SwapSharedInstanceForTesting(nullptr);
-    ui::ResourceBundle::InitSharedInstanceWithLocale(
-        "en-US", &resource_bundle_delegate_,
-        ui::ResourceBundle::DO_NOT_LOAD_COMMON_RESOURCES);
-
     source_ = blink::mojom::LocalResourceSource::New();
     source_->headers =
         net::HttpResponseHeaders::Builder(net::HttpVersion(1, 1), "200 OK")
@@ -96,11 +88,6 @@ class LocalResourceURLLoaderFactoryTest : public ::testing::Test {
             ->raw_headers();
 
     UpdateLoaderFactory();
-  }
-
-  void TearDown() override {
-    ui::ResourceBundle::CleanupSharedInstance();
-    ui::ResourceBundle::SwapSharedInstanceForTesting(original_resource_bundle_);
   }
 
  protected:
@@ -156,9 +143,13 @@ class LocalResourceURLLoaderFactoryTest : public ::testing::Test {
   // update the loader factory state.
   blink::mojom::LocalResourceSourcePtr source_;
 
-  // Temporary storage of original ResourceBundle while we swap in the test
-  // mock.
-  raw_ptr<ui::ResourceBundle> original_resource_bundle_;
+  // A ResourceBundle that uses the test's mock delegate.
+  ui::ResourceBundle resource_bundle_with_mock_delegate_{
+      &resource_bundle_delegate_};
+
+  // Swap in the test ResourceBundle for the lifetime of the test.
+  ui::ResourceBundle::SharedInstanceSwapperForTesting resource_bundle_swapper_{
+      &resource_bundle_with_mock_delegate_};
 
   // For CreateLoaderAndStart, which posts a task.
   base::test::TaskEnvironment task_environment_;

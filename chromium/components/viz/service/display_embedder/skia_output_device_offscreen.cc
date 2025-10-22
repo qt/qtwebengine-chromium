@@ -9,6 +9,7 @@
 
 #include "base/check_is_test.h"
 #include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/service/graphite_shared_context.h"
 #include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
 #include "gpu/command_buffer/service/skia_utils.h"
@@ -30,11 +31,11 @@ SkiaOutputDeviceOffscreen::SkiaOutputDeviceOffscreen(
     scoped_refptr<gpu::SharedContextState> context_state,
     gfx::SurfaceOrigin origin,
     bool has_alpha,
-    gpu::MemoryTracker* memory_tracker,
+    scoped_refptr<gpu::MemoryTracker> memory_tracker,
     DidSwapBufferCompleteCallback did_swap_buffer_complete_callback)
     : SkiaOutputDevice(context_state->gr_context(),
-                       context_state->graphite_context(),
-                       memory_tracker,
+                       context_state->graphite_shared_context(),
+                       std::move(memory_tracker),
                        did_swap_buffer_complete_callback),
       context_state_(context_state),
       has_alpha_(has_alpha) {
@@ -146,7 +147,7 @@ void SkiaOutputDeviceOffscreen::EnsureBackbuffer() {
       backbuffer_estimated_size_ = estimated_size;
     }
   } else {
-    CHECK(context_state_->graphite_context());
+    CHECK(context_state_->graphite_shared_context());
     if (!has_alpha_) {
       is_emulated_rgbx_ = true;
     }
@@ -181,10 +182,10 @@ void SkiaOutputDeviceOffscreen::DiscardBackbuffer() {
     memory_type_tracker_->TrackMemFree(backbuffer_estimated_size_);
     backbuffer_estimated_size_ = 0u;
   } else if (graphite_texture_.isValid()) {
-    auto* graphite_context = context_state_->graphite_context();
-    CHECK(graphite_context);
+    auto* graphite_shared_context = context_state_->graphite_shared_context();
+    CHECK(graphite_shared_context);
     sk_surface_.reset();
-    graphite_context->deleteBackendTexture(graphite_texture_);
+    graphite_shared_context->deleteBackendTexture(graphite_texture_);
     graphite_texture_ = skgpu::graphite::BackendTexture();
     memory_type_tracker_->TrackMemFree(backbuffer_estimated_size_);
     backbuffer_estimated_size_ = 0u;
@@ -204,7 +205,7 @@ SkSurface* SkiaOutputDeviceOffscreen::BeginPaint(
               : kBottomLeft_GrSurfaceOrigin,
           sample_count_, sk_color_type_, sk_color_space_, &surface_props);
     } else {
-      CHECK(context_state_->graphite_context());
+      CHECK(context_state_->graphite_shared_context());
       sk_surface_ = SkSurfaces::WrapBackendTexture(
           context_state_->gpu_main_graphite_recorder(), graphite_texture_,
           sk_color_type_, sk_color_space_, &surface_props);
@@ -233,12 +234,16 @@ void SkiaOutputDeviceOffscreen::ReadbackForTesting(
   };
 
   ReadPixelsContext context;
-  if (auto* graphite_context = context_state_->graphite_context()) {
-    graphite_context->asyncRescaleAndReadPixels(
+  if (auto* graphite_shared_context =
+          context_state_->graphite_shared_context()) {
+    context_state_->FlushAndSubmit(true);
+    // asyncRescaleAndReadPixels is a context operation that inserts its own
+    // recording internally.
+    graphite_shared_context->asyncRescaleAndReadPixelsAndSubmit(
         sk_surface_.get(), sk_surface_->imageInfo(),
         SkIRect::MakeSize(sk_surface_->imageInfo().dimensions()),
         SkImage::RescaleGamma::kSrc, SkImage::RescaleMode::kRepeatedLinear,
-        &ReadPixelsContext::OnReadPixelsDone, &context);
+        base::BindOnce(&ReadPixelsContext::OnReadPixelsDone), &context);
   } else {
     CHECK(context_state_->gr_context());
     sk_surface_->asyncRescaleAndReadPixels(
@@ -246,9 +251,9 @@ void SkiaOutputDeviceOffscreen::ReadbackForTesting(
         SkIRect::MakeSize(sk_surface_->imageInfo().dimensions()),
         SkImage::RescaleGamma::kSrc, SkImage::RescaleMode::kRepeatedLinear,
         &ReadPixelsContext::OnReadPixelsDone, &context);
+    context_state_->FlushAndSubmit(true);
   }
 
-  context_state_->FlushAndSubmit(true);
   CHECK(context.finished);
   CHECK(context.async_result);
 

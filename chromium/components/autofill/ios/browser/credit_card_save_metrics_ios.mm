@@ -6,6 +6,7 @@
 
 #import "base/metrics/histogram_functions.h"
 #import "base/strings/strcat.h"
+#import "base/strings/string_number_conversions.h"
 
 namespace autofill::autofill_metrics {
 
@@ -17,6 +18,8 @@ std::string_view SaveCreditCardPromptOverlayTypeToMetricSuffix(
   switch (type) {
     case SaveCreditCardPromptOverlayType::kBanner:
       return ".Banner";
+    case SaveCreditCardPromptOverlayType::kBottomSheet:
+      return ".BottomSheet";
     case SaveCreditCardPromptOverlayType::kModal:
       return ".Modal";
   }

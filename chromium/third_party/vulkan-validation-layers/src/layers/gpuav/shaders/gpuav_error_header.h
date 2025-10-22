@@ -73,9 +73,13 @@ const int kHeaderStageInfoOffset_1 = 4;
 const int kHeaderStageInfoOffset_2 = 5;
 
 // Compressed dword to know where the error came from in the API
-const int kHeaderActionIdOffset = 6;
+const int kHeaderActionIdErrorLoggerIdOffset = 6;
 
 const int kHeaderSize = 7;
+
+const int kInstLogErrorParameterOffset_0 = kHeaderSize;
+const int kInstLogErrorParameterOffset_1 = kHeaderSize + 1;
+const int kInstLogErrorParameterOffset_2 = kHeaderSize + 2;
 
 // kHeaderShaderIdErrorOffset
 // ---
@@ -101,7 +105,7 @@ const int kStageIdShift = 27;
 const int kStageIdMask = 0x1F << kStageIdShift;  // 32 slot
 const int kInstructionIdMask = 0x7FFFFFF;
 
-// kHeaderActionIdOffset
+// kHeaderActionIdErrorLoggerIdOffset
 // ---
 // This dword is split up as
 // | 31 ..... 16 | 15 ................. 0 |
@@ -109,34 +113,30 @@ const int kInstructionIdMask = 0x7FFFFFF;
 // Note we have a limit (kMaxActionsPerCommandBuffer) but for simplicity, divide in half until find need to adjust.
 const int kActionIdShift = 16;
 const int kActionIdMask = 0xFFFF << kActionIdShift;  // 64k slot
-const int kCommandResourceIdMask = 0xFFFF;
+const int kErrorLoggerIdMask = 0xFFFF;
 
 // Error specific parameters offsets:
 // ----------------------------------
 
 // Descriptor Indexing
 // ---
-const int kInstDescriptorIndexingDescSetOffset = kHeaderSize;
-const int kInstDescriptorIndexingDescBindingOffset = kHeaderSize + 1;
-const int kInstDescriptorIndexingDescIndexOffset = kHeaderSize + 2;
-const int kInstDescriptorIndexingParamOffset_0 = kHeaderSize + 3;
-const int kInstDescriptorIndexingParamOffset_1 = kHeaderSize + 4;
+const int kInstDescriptorIndexingSetAndIndexOffset = kHeaderSize;
+const int kInstDescriptorIndexingParamOffset_0 = kHeaderSize + 1;
+const int kInstDescriptorIndexingParamOffset_1 = kHeaderSize + 2;
 
-// Descriptor Class
+// kInstDescriptorIndexingSetAndIndexOffset
 // ---
-const int kInstDescriptorClassDescSetOffset = kHeaderSize;
-const int kInstDescriptorClassDescBindingOffset = kHeaderSize + 1;
-const int kInstDescriptorClassDescIndexOffset = kHeaderSize + 2;
-const int kInstDescriptorClassParamOffset_0 = kHeaderSize + 3;
-const int kInstDescriptorClassParamOffset_1 = kHeaderSize + 4;
+// This dword is split up as
+// | 31 ........ 27 | 26 ............................................ 0 |
+// | Descriptor Set | Global Descriptor index (with binding LUT offset) |
+// We only allow for 32 sets (see kDebugInputBindlessMaxDescSets)
+// We use a LUT per set that knows which binding the "global" Descriptor Index value lives
+const int kInstDescriptorIndexingSetShift = 27;
+const int kInstDescriptorIndexingSetMask = 0x1F << kInstDescriptorIndexingSetShift;  // 32 slot
+const int kInstDescriptorIndexingIndexMask = 0x7FFFFFF;
 
 // Buffer device addresses
 // ---
-// A buffer address unalloc error will output the 64-bit pointer in
-// two 32-bit pieces, lower bits first.
-const int kInstBuffAddrUnallocDescPtrLoOffset = kHeaderSize;
-const int kInstBuffAddrUnallocDescPtrHiOffset = kHeaderSize + 1;
-const int kInstBuffAddrAccessPayloadOffset = kHeaderSize + 2;
 // Payload contains 3 pieces of data, compressed into a single uint32_t
 // We can be safe that assume alignment we don't need these upper 2 bytes
 // Note - if needed, we could use log2(alignment) as it must be a Power-of-Two

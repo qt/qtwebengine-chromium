@@ -23,23 +23,12 @@
 #include "url/origin.h"
 #include "url/url_constants.h"
 
-namespace {
-
-void LogMixedFormInterstitialMetrics(
-    security_interstitials::InsecureFormNavigationThrottle::
-        InterstitialTriggeredState state) {
-  base::UmaHistogramEnumeration("Security.MixedForm.InterstitialTriggerState",
-                                state);
-}
-
-}  // namespace
-
 namespace security_interstitials {
 
 InsecureFormNavigationThrottle::InsecureFormNavigationThrottle(
-    content::NavigationHandle* navigation_handle,
+    content::NavigationThrottleRegistry& registry,
     std::unique_ptr<SecurityBlockingPageFactory> blocking_page_factory)
-    : content::NavigationThrottle(navigation_handle),
+    : content::NavigationThrottle(registry),
       blocking_page_factory_(std::move(blocking_page_factory)) {}
 
 InsecureFormNavigationThrottle::~InsecureFormNavigationThrottle() = default;
@@ -72,15 +61,15 @@ const char* InsecureFormNavigationThrottle::GetNameForLogging() {
 }
 
 // static
-std::unique_ptr<InsecureFormNavigationThrottle>
-InsecureFormNavigationThrottle::MaybeCreateNavigationThrottle(
-    content::NavigationHandle* navigation_handle,
+void InsecureFormNavigationThrottle::MaybeCreateAndAdd(
+    content::NavigationThrottleRegistry& registry,
     std::unique_ptr<SecurityBlockingPageFactory> blocking_page_factory,
     PrefService* prefs) {
-  if (prefs && !prefs->GetBoolean(prefs::kMixedFormsWarningsEnabled))
-    return nullptr;
-  return std::make_unique<InsecureFormNavigationThrottle>(
-      navigation_handle, std::move(blocking_page_factory));
+  if (prefs && !prefs->GetBoolean(prefs::kMixedFormsWarningsEnabled)) {
+    return;
+  }
+  registry.AddThrottle(std::make_unique<InsecureFormNavigationThrottle>(
+      registry, std::move(blocking_page_factory)));
 }
 
 content::NavigationThrottle::ThrottleCheckResult
@@ -107,18 +96,21 @@ InsecureFormNavigationThrottle::GetThrottleResultForMixedForm(
   // There's an exception to this: Reloading a GET form will proceed since a
   // prerender shouldn't check the InsecureFormTabStorage, which is a per-tab
   // object. This is done in the check above.
-  if (handle->IsInPrerenderedMainFrame())
+  if (handle->IsInPrerenderedMainFrame()) {
     return content::NavigationThrottle::CANCEL;
+  }
 
   // If user has just chosen to proceed on an interstitial, we don't show
   // another one.
-  if (tab_storage && tab_storage->IsProceeding())
+  if (tab_storage && tab_storage->IsProceeding()) {
     return content::NavigationThrottle::PROCEED;
+  }
 
   // Do not set special error page HTML for insecure forms in subframes; those
   // are already hard blocked.
-  if (!handle->IsInOutermostMainFrame())
+  if (!handle->IsInOutermostMainFrame()) {
     return content::NavigationThrottle::PROCEED;
+  }
 
   url::Origin form_originating_origin =
       handle->GetInitiatorOrigin().value_or(url::Origin());
@@ -128,8 +120,6 @@ InsecureFormNavigationThrottle::GetThrottleResultForMixedForm(
     return content::NavigationThrottle::PROCEED;
   }
 
-  InterstitialTriggeredState log_state =
-      InterstitialTriggeredState::kMixedFormDirect;
   bool should_proceed = false;
 
   if (is_redirect) {
@@ -140,19 +130,14 @@ InsecureFormNavigationThrottle::GetThrottleResultForMixedForm(
          handle->GetResponseHeaders()->response_code() ==
              net::HTTP_PERMANENT_REDIRECT) &&
         handle->IsPost()) {
-      log_state = InterstitialTriggeredState::kMixedFormRedirectWithFormData;
     } else {
-      log_state = InterstitialTriggeredState::kMixedFormRedirectNoFormData;
       should_proceed = true;
     }
   }
 
   if (should_proceed) {
-    LogMixedFormInterstitialMetrics(log_state);
     return content::NavigationThrottle::PROCEED;
   }
-
-  LogMixedFormInterstitialMetrics(log_state);
 
   std::unique_ptr<InsecureFormBlockingPage> blocking_page =
       blocking_page_factory_->CreateInsecureFormBlockingPage(contents,
@@ -160,8 +145,9 @@ InsecureFormNavigationThrottle::GetThrottleResultForMixedForm(
   std::string interstitial_html = blocking_page->GetHTMLContents();
   SecurityInterstitialTabHelper::AssociateBlockingPage(
       handle, std::move(blocking_page));
-  if (!tab_storage)
+  if (!tab_storage) {
     tab_storage = InsecureFormTabStorage::GetOrCreate(contents);
+  }
   tab_storage->SetInterstitialShown(true);
   return content::NavigationThrottle::ThrottleCheckResult(
       CANCEL, net::ERR_BLOCKED_BY_CLIENT, std::move(interstitial_html));

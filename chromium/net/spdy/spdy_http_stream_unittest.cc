@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "net/spdy/spdy_http_stream.h"
 
@@ -18,9 +14,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
 #include "base/task/single_thread_task_runner.h"
-#include "crypto/ec_private_key.h"
-#include "crypto/ec_signature_creator.h"
-#include "crypto/signature_creator.h"
 #include "net/base/chunked_upload_data_stream.h"
 #include "net/base/load_timing_info.h"
 #include "net/base/load_timing_info_test_util.h"
@@ -189,13 +182,13 @@ class SpdyHttpStreamTest : public TestWithTaskEnvironment {
 };
 
 TEST_F(SpdyHttpStreamTest, SendRequest) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 1, LOWEST));
   MockWrite writes[] = {
       CreateMockWrite(req, 0),
   };
-  spdy::SpdySerializedFrame resp(
-      spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(
+      base::span<const std::string_view>(), 1));
   MockRead reads[] = {
       CreateMockRead(resp, 1), MockRead(SYNCHRONOUS, 0, 2)  // EOF
   };
@@ -250,11 +243,11 @@ TEST_F(SpdyHttpStreamTest, SendRequest) {
 }
 
 TEST_F(SpdyHttpStreamTest, RequestInfoDestroyedBeforeRead) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 1, LOWEST));
   MockWrite writes[] = {CreateMockWrite(req, 0)};
-  spdy::SpdySerializedFrame resp(
-      spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(
+      base::span<const std::string_view>(), 1));
   spdy::SpdySerializedFrame body(
       spdy_util_.ConstructSpdyDataFrame(1, "", true));
   MockRead reads[] = {
@@ -312,19 +305,19 @@ TEST_F(SpdyHttpStreamTest, RequestInfoDestroyedBeforeRead) {
 }
 
 TEST_F(SpdyHttpStreamTest, LoadTimingTwoRequests) {
-  spdy::SpdySerializedFrame req1(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 1, LOWEST));
-  spdy::SpdySerializedFrame req2(
-      spdy_util_.ConstructSpdyGet(nullptr, 0, 3, LOWEST));
+  spdy::SpdySerializedFrame req1(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 1, LOWEST));
+  spdy::SpdySerializedFrame req2(spdy_util_.ConstructSpdyGet(
+      base::span<const std::string_view>(), 3, LOWEST));
   MockWrite writes[] = {
       CreateMockWrite(req1, 0), CreateMockWrite(req2, 1),
   };
-  spdy::SpdySerializedFrame resp1(
-      spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  spdy::SpdySerializedFrame resp1(spdy_util_.ConstructSpdyGetReply(
+      base::span<const std::string_view>(), 1));
   spdy::SpdySerializedFrame body1(
       spdy_util_.ConstructSpdyDataFrame(1, "", true));
-  spdy::SpdySerializedFrame resp2(
-      spdy_util_.ConstructSpdyGetReply(nullptr, 0, 3));
+  spdy::SpdySerializedFrame resp2(spdy_util_.ConstructSpdyGetReply(
+      base::span<const std::string_view>(), 3));
   spdy::SpdySerializedFrame body2(
       spdy_util_.ConstructSpdyDataFrame(3, "", true));
   MockRead reads[] = {
@@ -421,8 +414,8 @@ TEST_F(SpdyHttpStreamTest, LoadTimingTwoRequests) {
 }
 
 TEST_F(SpdyHttpStreamTest, SendChunkedPost) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame body(
       spdy_util_.ConstructSpdyDataFrame(1, kUploadData,
                                         /*fin=*/true));
@@ -431,7 +424,8 @@ TEST_F(SpdyHttpStreamTest, SendChunkedPost) {
       CreateMockWrite(body, 1)  // POST upload frame
   };
 
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   MockRead reads[] = {
       CreateMockRead(resp, 2), CreateMockRead(body, 3, SYNCHRONOUS),
       MockRead(SYNCHRONOUS, 0, 4)  // EOF
@@ -485,8 +479,8 @@ TEST_F(SpdyHttpStreamTest, SendChunkedPost) {
 
 // This unittest tests the request callback is properly called and handled.
 TEST_F(SpdyHttpStreamTest, SendChunkedPostLastEmpty) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame chunk(
       spdy_util_.ConstructSpdyDataFrame(1, "", true));
   MockWrite writes[] = {
@@ -494,7 +488,8 @@ TEST_F(SpdyHttpStreamTest, SendChunkedPostLastEmpty) {
       CreateMockWrite(chunk, 1),
   };
 
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   MockRead reads[] = {
       CreateMockRead(resp, 2), CreateMockRead(chunk, 3, SYNCHRONOUS),
       MockRead(SYNCHRONOUS, 0, 4)  // EOF
@@ -542,8 +537,8 @@ TEST_F(SpdyHttpStreamTest, SendChunkedPostLastEmpty) {
 }
 
 TEST_F(SpdyHttpStreamTest, ConnectionClosedDuringChunkedPost) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame body(
       spdy_util_.ConstructSpdyDataFrame(1, kUploadData,
                                         /*fin=*/false));
@@ -552,7 +547,8 @@ TEST_F(SpdyHttpStreamTest, ConnectionClosedDuringChunkedPost) {
       CreateMockWrite(body, 1)  // First POST upload frame
   };
 
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   MockRead reads[] = {
       MockRead(ASYNC, ERR_CONNECTION_CLOSED, 2)  // Server hangs up early.
   };
@@ -615,8 +611,8 @@ TEST_F(SpdyHttpStreamTest, ConnectionClosedDuringChunkedPost) {
 TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPost) {
   const char kUploadData1[] = "12345678";
   const int kUploadData1Size = std::size(kUploadData1) - 1;
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame chunk1(spdy_util_.ConstructSpdyDataFrame(1, false));
   spdy::SpdySerializedFrame chunk2(
       spdy_util_.ConstructSpdyDataFrame(1, kUploadData1, false));
@@ -626,7 +622,8 @@ TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPost) {
       CreateMockWrite(chunk1, 1),  // POST upload frames
       CreateMockWrite(chunk2, 2), CreateMockWrite(chunk3, 3),
   };
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   MockRead reads[] = {
       CreateMockRead(resp, 4), CreateMockRead(chunk1, 5),
       CreateMockRead(chunk2, 6), CreateMockRead(chunk3, 7),
@@ -718,8 +715,8 @@ TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPost) {
 // Test that the SpdyStream state machine can handle sending a final empty data
 // frame when uploading a chunked data stream.
 TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPostWithEmptyFinalDataFrame) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame chunk1(spdy_util_.ConstructSpdyDataFrame(1, false));
   spdy::SpdySerializedFrame chunk2(
       spdy_util_.ConstructSpdyDataFrame(1, "", true));
@@ -728,7 +725,8 @@ TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPostWithEmptyFinalDataFrame) {
       CreateMockWrite(chunk1, 1),  // POST upload frames
       CreateMockWrite(chunk2, 2),
   };
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   MockRead reads[] = {
       CreateMockRead(resp, 3), CreateMockRead(chunk1, 4),
       CreateMockRead(chunk2, 5), MockRead(ASYNC, 0, 6)  // EOF
@@ -811,14 +809,15 @@ TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPostWithEmptyFinalDataFrame) {
 // Test that the SpdyStream state machine handles a chunked upload with no
 // payload. Unclear if this is a case worth supporting.
 TEST_F(SpdyHttpStreamTest, ChunkedPostWithEmptyPayload) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame chunk(
       spdy_util_.ConstructSpdyDataFrame(1, "", true));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(chunk, 1),
   };
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   MockRead reads[] = {
       CreateMockRead(resp, 2), CreateMockRead(chunk, 3),
       MockRead(ASYNC, 0, 4)  // EOF
@@ -890,8 +889,8 @@ TEST_F(SpdyHttpStreamTest, SpdyURLTest) {
   MockWrite writes[] = {
       CreateMockWrite(req, 0),
   };
-  spdy::SpdySerializedFrame resp(
-      spdy_util_.ConstructSpdyGetReply(nullptr, 0, 1));
+  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyGetReply(
+      base::span<const std::string_view>(), 1));
   MockRead reads[] = {
       CreateMockRead(resp, 1), MockRead(SYNCHRONOUS, 0, 2)  // EOF
   };
@@ -934,13 +933,14 @@ TEST_F(SpdyHttpStreamTest, SpdyURLTest) {
 // Test the receipt of a WINDOW_UPDATE frame while waiting for a chunk to be
 // made available is handled correctly.
 TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPostWithWindowUpdate) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame chunk1(spdy_util_.ConstructSpdyDataFrame(1, true));
   MockWrite writes[] = {
       CreateMockWrite(req, 0), CreateMockWrite(chunk1, 1),
   };
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
   spdy::SpdySerializedFrame window_update(
       spdy_util_.ConstructSpdyWindowUpdate(1, kUploadDataSize));
   MockRead reads[] = {
@@ -1036,8 +1036,8 @@ TEST_F(SpdyHttpStreamTest, DelayedSendChunkedPostWithWindowUpdate) {
 }
 
 TEST_F(SpdyHttpStreamTest, DataReadErrorSynchronous) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
 
   // Server receives spdy::ERROR_CODE_INTERNAL_ERROR on client's internal
   // failure. The failure is a reading error in this case caused by
@@ -1050,7 +1050,8 @@ TEST_F(SpdyHttpStreamTest, DataReadErrorSynchronous) {
       CreateMockWrite(rst_frame, 1, SYNCHRONOUS)  // Reset frame
   };
 
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
 
   MockRead reads[] = {
       CreateMockRead(resp, 2), MockRead(SYNCHRONOUS, 0, 3),
@@ -1093,8 +1094,8 @@ TEST_F(SpdyHttpStreamTest, DataReadErrorSynchronous) {
 }
 
 TEST_F(SpdyHttpStreamTest, DataReadErrorAsynchronous) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
 
   // Server receives spdy::ERROR_CODE_INTERNAL_ERROR on client's internal
   // failure. The failure is a reading error in this case caused by
@@ -1107,7 +1108,8 @@ TEST_F(SpdyHttpStreamTest, DataReadErrorAsynchronous) {
       CreateMockWrite(rst_frame, 1)  // Reset frame
   };
 
-  spdy::SpdySerializedFrame resp(spdy_util_.ConstructSpdyPostReply(nullptr, 0));
+  spdy::SpdySerializedFrame resp(
+      spdy_util_.ConstructSpdyPostReply(base::span<const std::string_view>()));
 
   MockRead reads[] = {
       MockRead(ASYNC, 0, 2),
@@ -1152,8 +1154,8 @@ TEST_F(SpdyHttpStreamTest, DataReadErrorAsynchronous) {
 
 // Regression test for https://crbug.com/622447.
 TEST_F(SpdyHttpStreamTest, RequestCallbackCancelsStream) {
-  spdy::SpdySerializedFrame req(
-      spdy_util_.ConstructChunkedSpdyPost(nullptr, 0));
+  spdy::SpdySerializedFrame req(spdy_util_.ConstructChunkedSpdyPost(
+      base::span<const std::string_view>()));
   spdy::SpdySerializedFrame chunk(
       spdy_util_.ConstructSpdyDataFrame(1, "", true));
   spdy::SpdySerializedFrame rst(

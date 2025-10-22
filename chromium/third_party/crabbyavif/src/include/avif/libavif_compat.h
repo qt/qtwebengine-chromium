@@ -16,7 +16,12 @@
 
 // Functions.
 #define avifAlloc crabby_avifAlloc
-#define avifCropRectConvertCleanApertureBox crabby_avifCropRectConvertCleanApertureBox
+#define avifCleanApertureBoxConvertCropRect \
+  crabby_avifCleanApertureBoxConvertCropRect
+#define avifCodecChoiceFromName crabby_avifCodecChoiceFromName
+#define avifCodecName crabby_avifCodecName
+#define avifCropRectConvertCleanApertureBox \
+  crabby_avifCropRectConvertCleanApertureBox
 #define avifDecoderCreate crabby_avifDecoderCreate
 #define avifDecoderDecodedRowCount crabby_avifDecoderDecodedRowCount
 #define avifDecoderDestroy crabby_avifDecoderDestroy
@@ -30,12 +35,23 @@
 #define avifDecoderRead crabby_avifDecoderRead
 #define avifDecoderReadFile crabby_avifDecoderReadFile
 #define avifDecoderReadMemory crabby_avifDecoderReadMemory
+#define avifDecoderReset crabby_avifDecoderReset
 #define avifDecoderSetIO crabby_avifDecoderSetIO
 #define avifDecoderSetIOFile crabby_avifDecoderSetIOFile
 #define avifDecoderSetIOMemory crabby_avifDecoderSetIOMemory
 #define avifDecoderSetSource crabby_avifDecoderSetSource
 #define avifDiagnosticsClearError crabby_avifDiagnosticsClearError
+#define avifEncoderAddImage crabby_avifEncoderAddImage
+#define avifEncoderAddImageGrid crabby_avifEncoderAddImageGrid
+#define avifEncoderCreate crabby_avifEncoderCreate
+#define avifEncoderDestroy crabby_avifEncoderDestroy
+#define avifEncoderFinish crabby_avifEncoderFinish
+#define avifEncoderSetCodecSpecificOption \
+  crabby_avifEncoderSetCodecSpecificOption
+#define avifEncoderWrite crabby_avifEncoderWrite
 #define avifFree crabby_avifFree
+#define avifGainMapCreate crabby_avifGainMapCreate
+#define avifGainMapDestroy crabby_avifGainMapDestroy
 #define avifGetPixelFormatInfo crabby_avifGetPixelFormatInfo
 #define avifIOCreateFileReader crabby_avifIOCreateFileReader
 #define avifIOCreateMemoryReader crabby_avifIOCreateMemoryReader
@@ -51,18 +67,29 @@
 #define avifImagePlaneHeight crabby_avifImagePlaneHeight
 #define avifImagePlaneRowBytes crabby_avifImagePlaneRowBytes
 #define avifImagePlaneWidth crabby_avifImagePlaneWidth
+#define avifImageRGBToYUV crabby_avifImageRGBToYUV
 #define avifImageScale crabby_avifImageScale
+#define avifImageSetMetadataExif crabby_avifImageSetMetadataExif
+#define avifImageSetMetadataXMP crabby_avifImageSetMetadataXMP
+#define avifImageSetProfileICC crabby_avifImageSetProfileICC
 #define avifImageSetViewRect crabby_avifImageSetViewRect
 #define avifImageUsesU16 crabby_avifImageUsesU16
 #define avifImageYUVToRGB crabby_avifImageYUVToRGB
 #define avifPeekCompatibleFileType crabby_avifPeekCompatibleFileType
+#define avifPixelFormatToString crabby_avifPixelFormatToString
+#define avifRGBFormatChannelCount crabby_avifRGBFormatChannelCount
+#define avifRGBFormatHasAlpha crabby_avifRGBFormatHasAlpha
+#define avifRGBImageAllocatePixels crabby_avifRGBImageAllocatePixels
+#define avifRGBImageFreePixels crabby_avifRGBImageFreePixels
+#define avifRGBImagePixelSize crabby_avifRGBImagePixelSize
 #define avifRGBImageSetDefaults crabby_avifRGBImageSetDefaults
 #define avifRWDataFree crabby_avifRWDataFree
 #define avifRWDataRealloc crabby_avifRWDataRealloc
 #define avifRWDataSet crabby_avifRWDataSet
 #define avifResultToString crabby_avifResultToString
 // Constants.
-#define AVIF_DIAGNOSTICS_ERROR_BUFFER_SIZE CRABBY_AVIF_DIAGNOSTICS_ERROR_BUFFER_SIZE
+#define AVIF_DIAGNOSTICS_ERROR_BUFFER_SIZE \
+  CRABBY_AVIF_DIAGNOSTICS_ERROR_BUFFER_SIZE
 #define AVIF_FALSE CRABBY_AVIF_FALSE
 #define AVIF_PLANE_COUNT_YUV CRABBY_AVIF_PLANE_COUNT_YUV
 #define AVIF_REPETITION_COUNT_INFINITE CRABBY_AVIF_REPETITION_COUNT_INFINITE

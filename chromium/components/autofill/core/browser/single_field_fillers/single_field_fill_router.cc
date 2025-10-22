@@ -39,11 +39,11 @@ void SingleFieldFillRouter::OnWillSubmitForm(
     // them to autocomplete functionality by default.
     bool skip_because_promo_code =
         merchant_promo_code_manager_ && form_structure &&
-        form_structure->field(i)->Type().GetStorableType() ==
-            MERCHANT_PROMO_CODE;
+        form_structure->field(i)->Type().GetTypes().contains(
+            MERCHANT_PROMO_CODE);
     bool skip_because_iban =
         iban_manager_ && form_structure &&
-        form_structure->field(i)->Type().GetStorableType() == IBAN_VALUE;
+        form_structure->field(i)->Type().GetTypes().contains(IBAN_VALUE);
     if (!skip_because_iban && !skip_because_promo_code) {
       autocomplete_fields.push_back(form.fields()[i]);
     }
@@ -52,39 +52,8 @@ void SingleFieldFillRouter::OnWillSubmitForm(
       autocomplete_fields, is_autocomplete_enabled);
 }
 
-bool SingleFieldFillRouter::OnGetSingleFieldSuggestions(
-    const FormStructure* form_structure,
-    const FormFieldData& field,
-    const AutofillField* autofill_field,
-    const AutofillClient& client,
-    SingleFieldFillRouter::OnSuggestionsReturnedCallback
-        on_suggestions_returned) {
-  // Retrieving suggestions for a new field; select the appropriate filler.
-  if (merchant_promo_code_manager_ && form_structure && autofill_field &&
-      merchant_promo_code_manager_->OnGetSingleFieldSuggestions(
-          *form_structure, field, *autofill_field, client,
-          on_suggestions_returned)) {
-    return true;
-  }
-  if (iban_manager_ && autofill_field &&
-      iban_manager_->OnGetSingleFieldSuggestions(field, *autofill_field, client,
-                                                 on_suggestions_returned)) {
-    return true;
-  }
-  if (autocomplete_history_manager_->OnGetSingleFieldSuggestions(
-          field, client, on_suggestions_returned)) {
-    return true;
-  }
-
-  CancelPendingQueries();
-  if (on_suggestions_returned) {
-    std::move(on_suggestions_returned).Run(field.global_id(), {});
-  }
-  return false;
-}
-
 void SingleFieldFillRouter::CancelPendingQueries() {
-  autocomplete_history_manager_->CancelPendingQueries();
+  autocomplete_history_manager_->CancelPendingQuery();
 }
 
 void SingleFieldFillRouter::OnRemoveCurrentSingleFieldSuggestion(

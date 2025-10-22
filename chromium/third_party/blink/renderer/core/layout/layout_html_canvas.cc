@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
 #include "third_party/blink/renderer/core/html/canvas/html_canvas_element.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_replaced.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/page/page.h"
@@ -48,18 +49,6 @@ void LayoutHTMLCanvas::PaintReplaced(const PaintInfo& paint_info,
     return;
   }
   HTMLCanvasPainter(*this).PaintReplaced(paint_info, paint_offset);
-}
-
-void LayoutHTMLCanvas::DidInvalidatePaintForPlacedElement(
-    Element* placedElement) {
-  NOT_DESTROYED();
-  DCHECK(RuntimeEnabledFeatures::CanvasPlaceElementEnabled());
-  auto* canvas = To<HTMLCanvasElement>(GetNode());
-  DCHECK(canvas->HasPlacedElements());
-  InvalidateDisplayItemClients(PaintInvalidationReason::kSubtree);
-  // TODO(issues.chromium.org/379143301): We should only invalidate the sub rect
-  // of whatever placed element was invalidated.
-  canvas->MarkPlacedElementDirty(placedElement);
 }
 
 void LayoutHTMLCanvas::CanvasSizeChanged() {
@@ -135,9 +124,12 @@ void LayoutHTMLCanvas::Trace(Visitor* visitor) const {
 bool LayoutHTMLCanvas::IsChildAllowed(LayoutObject* child,
                                       const ComputedStyle& style) const {
   NOT_DESTROYED();
-  return IsA<Element>(GetNode()) && !child->IsText() &&
-         To<HTMLCanvasElement>(GetNode())->HasPlacedElements() &&
-         RuntimeEnabledFeatures::CanvasPlaceElementEnabled();
+  if (!IsA<Element>(GetNode()) || child->IsText()) {
+    return false;
+  }
+
+  const auto* canvas = To<HTMLCanvasElement>(GetNode());
+  return canvas->layoutSubtree();
 }
 
 }  // namespace blink

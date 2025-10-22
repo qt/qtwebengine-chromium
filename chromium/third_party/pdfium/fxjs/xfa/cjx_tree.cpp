@@ -37,13 +37,15 @@ bool CJX_Tree::DynamicTypeIs(TypeTag eType) const {
 
 CJS_Result CJX_Tree::resolveNode(CFXJSE_Engine* runtime,
                                  pdfium::span<v8::Local<v8::Value>> params) {
-  if (params.size() != 1)
+  if (params.size() != 1) {
     return CJS_Result::Failure(JSMessage::kParamError);
+  }
 
   WideString wsExpression = runtime->ToWideString(params[0]);
   CXFA_Object* pRefNode = GetXFAObject();
-  if (pRefNode->GetElementType() == XFA_Element::Xfa)
+  if (pRefNode->GetElementType() == XFA_Element::Xfa) {
     pRefNode = runtime->GetThisObject();
+  }
 
   std::optional<CFXJSE_Engine::ResolveResult> maybeResult =
       runtime->ResolveObjects(
@@ -52,8 +54,9 @@ CJS_Result CJX_Tree::resolveNode(CFXJSE_Engine* runtime,
               XFA_ResolveFlag::kChildren, XFA_ResolveFlag::kAttributes,
               XFA_ResolveFlag::kProperties, XFA_ResolveFlag::kParent,
               XFA_ResolveFlag::kSiblings});
-  if (!maybeResult.has_value())
+  if (!maybeResult.has_value()) {
     return CJS_Result::Success(runtime->NewNull());
+  }
 
   if (maybeResult.value().type == CFXJSE_Engine::ResolveResult::Type::kNodes) {
     return CJS_Result::Success(runtime->GetOrCreateJSBindingFromMap(
@@ -76,12 +79,14 @@ CJS_Result CJX_Tree::resolveNode(CFXJSE_Engine* runtime,
 
 CJS_Result CJX_Tree::resolveNodes(CFXJSE_Engine* runtime,
                                   pdfium::span<v8::Local<v8::Value>> params) {
-  if (params.size() != 1)
+  if (params.size() != 1) {
     return CJS_Result::Failure(JSMessage::kParamError);
+  }
 
   CXFA_Object* refNode = GetXFAObject();
-  if (refNode->GetElementType() == XFA_Element::Xfa)
+  if (refNode->GetElementType() == XFA_Element::Xfa) {
     refNode = runtime->GetThisObject();
+  }
 
   const Mask<XFA_ResolveFlag> kFlags = {
       XFA_ResolveFlag::kChildren, XFA_ResolveFlag::kAttributes,
@@ -130,12 +135,12 @@ void CJX_Tree::nodes(v8::Isolate* pIsolate,
     return;
   }
 
-  CXFA_Document* pDoc = GetDocument();
+  CXFA_Document* doc = GetDocument();
   auto* pNodeList = cppgc::MakeGarbageCollected<CXFA_AttachNodeList>(
-      pDoc->GetHeap()->GetAllocationHandle(), pDoc, GetXFANode());
-  pDoc->GetNodeOwner()->PersistList(pNodeList);
+      doc->GetHeap()->GetAllocationHandle(), doc, GetXFANode());
+  doc->GetNodeOwner()->PersistList(pNodeList);
 
-  CFXJSE_Engine* pEngine = pDoc->GetScriptContext();
+  CFXJSE_Engine* pEngine = doc->GetScriptContext();
   *pValue = pNodeList->JSObject()->NewBoundV8Object(
       pIsolate, pEngine->GetJseNormalClass()->GetTemplate(pIsolate));
 }
@@ -204,15 +209,16 @@ v8::Local<v8::Value> CJX_Tree::ResolveNodeList(v8::Isolate* pIsolate,
                                                WideString wsExpression,
                                                Mask<XFA_ResolveFlag> dwFlag,
                                                CXFA_Node* refNode) {
-  if (!refNode)
+  if (!refNode) {
     refNode = GetXFANode();
+  }
 
-  CXFA_Document* pDoc = GetDocument();
+  CXFA_Document* doc = GetDocument();
   auto* pNodeList = cppgc::MakeGarbageCollected<CXFA_ArrayNodeList>(
-      pDoc->GetHeap()->GetAllocationHandle(), pDoc);
-  pDoc->GetNodeOwner()->PersistList(pNodeList);
+      doc->GetHeap()->GetAllocationHandle(), doc);
+  doc->GetNodeOwner()->PersistList(pNodeList);
 
-  CFXJSE_Engine* pScriptContext = pDoc->GetScriptContext();
+  CFXJSE_Engine* pScriptContext = doc->GetScriptContext();
   std::optional<CFXJSE_Engine::ResolveResult> maybeResult =
       pScriptContext->ResolveObjects(refNode, wsExpression.AsStringView(),
                                      dwFlag);
@@ -221,8 +227,9 @@ v8::Local<v8::Value> CJX_Tree::ResolveNodeList(v8::Isolate* pIsolate,
     if (maybeResult.value().type ==
         CFXJSE_Engine::ResolveResult::Type::kNodes) {
       for (auto& pObject : maybeResult.value().objects) {
-        if (pObject->IsNode())
+        if (pObject->IsNode()) {
           pNodeList->Append(pObject->AsNode());
+        }
       }
     } else {
       if (maybeResult.value().script_attribute.callback &&
@@ -236,8 +243,9 @@ v8::Local<v8::Value> CJX_Tree::ResolveNodeList(v8::Isolate* pIsolate,
               maybeResult.value().script_attribute.attribute);
           CXFA_Object* obj =
               CFXJSE_Engine::ToObject(pScriptContext->GetIsolate(), innerValue);
-          if (obj->IsNode())
+          if (obj->IsNode()) {
             pNodeList->Append(obj->AsNode());
+          }
         }
       }
     }

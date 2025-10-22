@@ -442,9 +442,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "keyLen": [{
           "min": 8, "max": 524288, "increment": 8
         }],
-        "macLen": [{
-          "min": 32, "max": 160, "increment": 8
-        }]
+        "macLen": [160]
       },
       {
         "algorithm": "HMAC-SHA2-224",
@@ -452,9 +450,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "keyLen": [{
           "min": 8, "max": 524288, "increment": 8
         }],
-        "macLen": [{
-          "min": 32, "max": 224, "increment": 8
-        }]
+        "macLen": [224]
       },
       {
         "algorithm": "HMAC-SHA2-256",
@@ -462,9 +458,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "keyLen": [{
           "min": 8, "max": 524288, "increment": 8
         }],
-        "macLen": [{
-          "min": 32, "max": 256, "increment": 8
-        }]
+        "macLen": [256]
       },
       {
         "algorithm": "HMAC-SHA2-384",
@@ -472,9 +466,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "keyLen": [{
           "min": 8, "max": 524288, "increment": 8
         }],
-        "macLen": [{
-          "min": 32, "max": 384, "increment": 8
-        }]
+        "macLen": [384]
       },
       {
         "algorithm": "HMAC-SHA2-512",
@@ -482,9 +474,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "keyLen": [{
           "min": 8, "max": 524288, "increment": 8
         }],
-        "macLen": [{
-          "min": 32, "max": 512, "increment": 8
-        }]
+        "macLen": [512]
       },
       {
         "algorithm": "HMAC-SHA2-512/256",
@@ -492,9 +482,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "keyLen": [{
           "min": 8, "max": 524288, "increment": 8
         }],
-        "macLen": [{
-          "min": 32, "max": 256, "increment": 8
-        }]
+        "macLen": [256]
       },
       {
         "algorithm": "ctrDRBG",
@@ -848,11 +836,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
             "increment": 8
           }],
           "keyLen": [128, 256],
-          "macLen": [{
-            "min": 8,
-            "max": 128,
-            "increment": 8
-          }]
+          "macLen": [128]
         }]
       },
       {
@@ -951,6 +935,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         "mode": "keyGen",
         "revision": "FIPS204",
         "parameterSets": [
+          "ML-DSA-44",
           "ML-DSA-65",
           "ML-DSA-87"
         ]
@@ -969,6 +954,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
         ],
         "capabilities": [{
           "parameterSets": [
+            "ML-DSA-44",
             "ML-DSA-65",
             "ML-DSA-87"
           ],
@@ -991,6 +977,7 @@ static bool GetConfig(const Span<const uint8_t> args[],
             "increment": 8
           }],
           "parameterSets": [
+            "ML-DSA-44",
             "ML-DSA-65",
             "ML-DSA-87"
           ]
@@ -1966,11 +1953,11 @@ static bool CMAC_AES(const Span<const uint8_t> args[],
     return false;
   }
   memcpy(&mac_len, args[0].data(), sizeof(mac_len));
-  if (mac_len > sizeof(mac)) {
+  if (mac_len != sizeof(mac)) {
     return false;
   }
 
-  return write_reply({Span<const uint8_t>(mac, mac_len)});
+  return write_reply({Span<const uint8_t>(mac, sizeof(mac))});
 }
 
 static bool CMAC_AESVerify(const Span<const uint8_t> args[],
@@ -2059,7 +2046,7 @@ static bool RSASigGen(const Span<const uint8_t> args[],
   size_t sig_len;
   if (UsePSS) {
     if (!RSA_sign_pss_mgf1(key, &sig_len, sig.data(), sig.size(), digest_buf,
-                           digest_len, md, md, -1)) {
+                           digest_len, md, md, RSA_PSS_SALTLEN_DIGEST)) {
       return false;
     }
   } else {
@@ -2103,8 +2090,8 @@ static bool RSASigVer(const Span<const uint8_t> args[],
 
   uint8_t ok;
   if (UsePSS) {
-    ok = RSA_verify_pss_mgf1(key.get(), digest_buf, digest_len, md, md, -1,
-                             sig.data(), sig.size());
+    ok = RSA_verify_pss_mgf1(key.get(), digest_buf, digest_len, md, md,
+                             RSA_PSS_SALTLEN_DIGEST, sig.data(), sig.size());
   } else {
     ok = RSA_verify(EVP_MD_type(md), digest_buf, digest_len, sig.data(),
                     sig.size(), key.get());
@@ -2585,6 +2572,10 @@ static constexpr struct {
     {"ECDH/P-384", 3, ECDH<NID_secp384r1>},
     {"ECDH/P-521", 3, ECDH<NID_secp521r1>},
     {"FFDH", 6, FFDH},
+    {"ML-DSA-44/keyGen", 1,
+     MLDSAKeyGen<BCM_mldsa44_private_key, BCM_MLDSA44_PUBLIC_KEY_BYTES,
+                 BCM_mldsa44_generate_key_external_entropy_fips,
+                 BCM_mldsa44_marshal_private_key>},
     {"ML-DSA-65/keyGen", 1,
      MLDSAKeyGen<BCM_mldsa65_private_key, BCM_MLDSA65_PUBLIC_KEY_BYTES,
                  BCM_mldsa65_generate_key_external_entropy_fips,
@@ -2593,12 +2584,18 @@ static constexpr struct {
      MLDSAKeyGen<BCM_mldsa87_private_key, BCM_MLDSA87_PUBLIC_KEY_BYTES,
                  BCM_mldsa87_generate_key_external_entropy_fips,
                  BCM_mldsa87_marshal_private_key>},
+    {"ML-DSA-44/sigGen", 3,
+     MLDSASigGen<BCM_mldsa44_private_key, BCM_MLDSA44_SIGNATURE_BYTES,
+                 BCM_mldsa44_parse_private_key, BCM_mldsa44_sign_internal>},
     {"ML-DSA-65/sigGen", 3,
      MLDSASigGen<BCM_mldsa65_private_key, BCM_MLDSA65_SIGNATURE_BYTES,
                  BCM_mldsa65_parse_private_key, BCM_mldsa65_sign_internal>},
     {"ML-DSA-87/sigGen", 3,
      MLDSASigGen<BCM_mldsa87_private_key, BCM_MLDSA87_SIGNATURE_BYTES,
                  BCM_mldsa87_parse_private_key, BCM_mldsa87_sign_internal>},
+    {"ML-DSA-44/sigVer", 3,
+     MLDSASigVer<BCM_mldsa44_public_key, BCM_MLDSA44_SIGNATURE_BYTES,
+                 BCM_mldsa44_parse_public_key, BCM_mldsa44_verify_internal>},
     {"ML-DSA-65/sigVer", 3,
      MLDSASigVer<BCM_mldsa65_public_key, BCM_MLDSA65_SIGNATURE_BYTES,
                  BCM_mldsa65_parse_public_key, BCM_mldsa65_verify_internal>},

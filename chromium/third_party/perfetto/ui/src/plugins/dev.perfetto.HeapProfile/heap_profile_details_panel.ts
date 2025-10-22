@@ -32,12 +32,11 @@ import {
 } from '../../public/details_panel';
 import {Trace} from '../../public/trace';
 import {NUM} from '../../trace_processor/query_result';
-import {Button} from '../../widgets/button';
+import {Button, ButtonVariant} from '../../widgets/button';
 import {Intent} from '../../widgets/common';
 import {DetailsShell} from '../../widgets/details_shell';
 import {Icon} from '../../widgets/icon';
 import {Modal, showModal} from '../../widgets/modal';
-import {Popup} from '../../widgets/popup';
 import {
   Flamegraph,
   FLAMEGRAPH_STATE_SCHEMA,
@@ -46,6 +45,8 @@ import {
 } from '../../widgets/flamegraph';
 import {SqlTableDescription} from '../../components/widgets/sql/table/table_description';
 import {StandardColumn} from '../../components/widgets/sql/table/columns';
+import {Stack} from '../../widgets/stack';
+import {Tooltip} from '../../widgets/tooltip';
 
 export enum ProfileType {
   HEAP_PROFILE = 'heap_profile',
@@ -110,34 +111,35 @@ export class HeapProfileFlamegraphDetailsPanel
         {
           fillParent: true,
           title: m(
-            '.title',
+            'span',
             getFlamegraphTitle(type),
-            type === ProfileType.MIXED_HEAP_PROFILE &&
+            type === ProfileType.MIXED_HEAP_PROFILE && [
+              ' ', // Some space between title and icon
               m(
-                Popup,
+                Tooltip,
                 {
-                  trigger: m(Icon, {icon: 'warning'}),
+                  trigger: m(Icon, {icon: 'warning', intent: Intent.Warning}),
                 },
                 m(
                   '',
-                  {style: {width: '300px'}},
                   'This is a mixed java/native heap profile, free()s are not visualized. To visualize free()s, remove "all_heaps: true" from the config.',
                 ),
               ),
+            ],
           ),
-          description: [],
-          buttons: [
-            m('.time', `Snapshot time: `, m(Timestamp, {ts})),
+          buttons: m(Stack, {orientation: 'horizontal', spacing: 'large'}, [
+            m('span', `Snapshot time: `, m(Timestamp, {ts})),
             (type === ProfileType.NATIVE_HEAP_PROFILE ||
               type === ProfileType.JAVA_HEAP_SAMPLES) &&
               m(Button, {
                 icon: 'file_download',
                 intent: Intent.Primary,
+                variant: ButtonVariant.Filled,
                 onclick: () => {
                   downloadPprof(this.trace, this.upid, ts);
                 },
               }),
-          ],
+          ]),
         },
         assertExists(this.flamegraph).render(),
       ),
@@ -489,6 +491,7 @@ async function downloadPprof(trace: Trace, upid: number, ts: time) {
       title: 'Download not supported',
       content: m('div', 'This trace file does not support downloads'),
     });
+    return;
   }
   const blob = await trace.getTraceFile();
   convertTraceToPprofAndDownload(blob, pid.firstRow({pid: NUM}).pid, ts);
@@ -611,11 +614,11 @@ function getHeapGraphNodeOptionalActions(
         if (value !== undefined) {
           const uuid = uuidv4Sql();
           const pathHashTableName = `_heap_graph_filtered_path_hashes_${uuid}`;
-          await createPerfettoTable(
-            trace.engine,
-            pathHashTableName,
-            pathHashesToTableStatement(value),
-          );
+          await createPerfettoTable({
+            engine: trace.engine,
+            name: pathHashTableName,
+            as: pathHashesToTableStatement(value),
+          });
 
           const tableName = `_heap_graph${tableModifier(isDominator)}object_references`;
           const macroArgs = `_heap_graph${tableModifier(isDominator)}path_hashes, ${pathHashTableName}`;
@@ -643,11 +646,11 @@ function getHeapGraphNodeOptionalActions(
             if (value !== undefined) {
               const uuid = uuidv4Sql();
               const pathHashTableName = `_heap_graph_filtered_path_hashes_${uuid}`;
-              await createPerfettoTable(
-                trace.engine,
-                pathHashTableName,
-                pathHashesToTableStatement(value),
-              );
+              await createPerfettoTable({
+                engine: trace.engine,
+                name: pathHashTableName,
+                as: pathHashesToTableStatement(value),
+              });
 
               const tableName = `_heap_graph${tableModifier(isDominator)}incoming_references`;
               const macroArgs = `_heap_graph${tableModifier(isDominator)}path_hashes, ${pathHashTableName}`;
@@ -669,11 +672,11 @@ function getHeapGraphNodeOptionalActions(
             if (value !== undefined) {
               const uuid = uuidv4Sql();
               const pathHashTableName = `_heap_graph_filtered_path_hashes_${uuid}`;
-              await createPerfettoTable(
-                trace.engine,
-                pathHashTableName,
-                pathHashesToTableStatement(value),
-              );
+              await createPerfettoTable({
+                engine: trace.engine,
+                name: pathHashTableName,
+                as: pathHashesToTableStatement(value),
+              });
 
               const tableName = `_heap_graph${tableModifier(isDominator)}outgoing_references`;
               const macroArgs = `_heap_graph${tableModifier(isDominator)}path_hashes, ${pathHashTableName}`;
@@ -703,11 +706,11 @@ function getHeapGraphNodeOptionalActions(
             if (value !== undefined) {
               const uuid = uuidv4Sql();
               const pathHashTableName = `_heap_graph_filtered_path_hashes_${uuid}`;
-              await createPerfettoTable(
-                trace.engine,
-                pathHashTableName,
-                pathHashesToTableStatement(value),
-              );
+              await createPerfettoTable({
+                engine: trace.engine,
+                name: pathHashTableName,
+                as: pathHashesToTableStatement(value),
+              });
 
               const tableName = `_heap_graph${tableModifier(isDominator)}retained_object_counts`;
               const macroArgs = `_heap_graph${tableModifier(isDominator)}path_hashes, ${pathHashTableName}`;
@@ -729,11 +732,11 @@ function getHeapGraphNodeOptionalActions(
             if (value !== undefined) {
               const uuid = uuidv4Sql();
               const pathHashTableName = `_heap_graph_filtered_path_hashes_${uuid}`;
-              await createPerfettoTable(
-                trace.engine,
-                pathHashTableName,
-                pathHashesToTableStatement(value),
-              );
+              await createPerfettoTable({
+                engine: trace.engine,
+                name: pathHashTableName,
+                as: pathHashesToTableStatement(value),
+              });
 
               const tableName = `_heap_graph${tableModifier(isDominator)}retaining_object_counts`;
               const macroArgs = `_heap_graph${tableModifier(isDominator)}path_hashes, ${pathHashTableName}`;

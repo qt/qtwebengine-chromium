@@ -15,6 +15,7 @@
 #include "cc/base/tiling_data.h"
 #include "cc/cc_export.h"
 #include "cc/layers/layer_impl.h"
+#include "cc/mojom/missing_tile_reason.mojom.h"
 #include "cc/tiles/tile_index.h"
 #include "cc/tiles/tile_priority.h"
 #include "cc/tiles/tiling_coverage_iterator.h"
@@ -31,25 +32,24 @@ namespace cc {
 // layer down to Viz, and this layer uses that information to draw tile quads.
 class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
  public:
-  class CC_EXPORT Client {
-   public:
-    virtual ~Client() = default;
-    virtual void DidAppendQuadsWithResources(
-        const std::vector<viz::TransferableResource>& resource) = 0;
+  struct NoContents {
+    mojom::MissingTileReason reason =
+        mojom::MissingTileReason::kResourceNotReady;
+
+    NoContents() = default;
+    explicit NoContents(mojom::MissingTileReason r) : reason(r) {}
   };
 
-  struct NoContents {};
-
   struct CC_EXPORT TileResource {
-    TileResource(const viz::TransferableResource& resource,
-                 bool is_premultiplied,
+    TileResource(viz::ResourceId resource_id,
+                 gfx::Size resource_size,
                  bool is_checkered);
     TileResource(const TileResource&);
     TileResource& operator=(const TileResource&);
     ~TileResource();
 
-    viz::TransferableResource resource;
-    bool is_premultiplied;
+    viz::ResourceId resource_id;
+    gfx::Size resource_size;
     bool is_checkered;
   };
 
@@ -57,11 +57,9 @@ class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
 
   class CC_EXPORT Tile {
    public:
-    Tile();
-    explicit Tile(const TileContents& contents);
-    Tile(Tile&&);
-    Tile& operator=(Tile&&);
+    explicit Tile(TileDisplayLayerImpl& layer, const TileContents& contents);
     ~Tile();
+    Tile(Tile&&);
 
     const TileContents& contents() const { return contents_; }
 
@@ -83,6 +81,7 @@ class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
     bool IsReadyToDraw() const { return true; }
 
    private:
+    const raw_ref<TileDisplayLayerImpl> layer_;
     TileContents contents_;
   };
 
@@ -115,7 +114,9 @@ class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
     void SetRasterTransform(const gfx::AxisTransform2d& transform);
     void SetTileSize(const gfx::Size& size);
     void SetTilingRect(const gfx::Rect& rect);
-    void SetTileContents(const TileIndex& key, const TileContents& contents);
+    void SetTileContents(const TileIndex& key,
+                         const TileContents& contents,
+                         bool update_damage);
 
     CoverageIterator Cover(const gfx::Rect& coverage_rect,
                            float coverage_scale) const;
@@ -134,15 +135,26 @@ class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
     using TilingCoverageIterator<Tiling>::TilingCoverageIterator;
   };
 
-  TileDisplayLayerImpl(Client& client, LayerTreeImpl& tree, int id);
+  TileDisplayLayerImpl(LayerTreeImpl& tree, int id);
   ~TileDisplayLayerImpl() override;
 
   Tiling& GetOrCreateTilingFromScaleKey(float scale_key);
+  void RemoveTiling(float scale_key);
 
   void SetSolidColor(std::optional<SkColor4f> color) { solid_color_ = color; }
   void SetIsBackdropFilterMask(bool is_backdrop_filter_mask) {
     is_backdrop_filter_mask_ = is_backdrop_filter_mask;
   }
+  void SetIsDirectlyCompositedImage(bool is_directly_composited_image) {
+    is_directly_composited_image_ = is_directly_composited_image;
+  }
+  void SetNearestNeighbor(bool nearest_neighbor) {
+    nearest_neighbor_ = nearest_neighbor;
+  }
+  bool is_directly_composited_image() const {
+    return is_directly_composited_image_;
+  }
+  bool nearest_neighbor() const { return nearest_neighbor_; }
 
   // LayerImpl overrides:
   mojom::LayerType GetLayerType() const override;
@@ -155,13 +167,32 @@ class CC_EXPORT TileDisplayLayerImpl : public LayerImpl {
   void GetContentsResourceId(viz::ResourceId* resource_id,
                              gfx::Size* resource_size,
                              gfx::SizeF* resource_uv_size) const override;
+  gfx::Rect GetDamageRect() const override;
+  void ResetChangeTracking() override;
+
+  void RecordDamage(const gfx::Rect& damage_rect);
+
+  const Tiling* GetTilingForTesting(float scale_key) const;
+  void DiscardResource(viz::ResourceId resource);
+
+  // For testing
+  std::optional<SkColor4f> solid_color_for_testing() const {
+    return solid_color_;
+  }
+  bool is_backdrop_filter_mask_for_testing() const {
+    return is_backdrop_filter_mask_;
+  }
 
  private:
-  raw_ref<Client> client_;
-  std::vector<std::unique_ptr<Tiling>> tilings_;
-  std::vector<viz::TransferableResource> discarded_resources_;
   std::optional<SkColor4f> solid_color_;
   bool is_backdrop_filter_mask_ = false;
+  bool is_directly_composited_image_ = false;
+  bool nearest_neighbor_ = false;
+
+  // Denotes an area that is damaged and needs redraw. This is in the layer's
+  // space.
+  gfx::Rect damage_rect_;
+  std::vector<std::unique_ptr<Tiling>> tilings_;
 };
 
 }  // namespace cc

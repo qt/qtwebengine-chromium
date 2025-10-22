@@ -12,6 +12,7 @@
 #include "base/bits.h"
 #include "base/memory/raw_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
@@ -26,7 +27,6 @@
 #include "media/gpu/vaapi/vaapi_wrapper.h"
 #include "media/gpu/vaapi/vp9_vaapi_video_encoder_delegate.h"
 #include "media/gpu/vp9_picture.h"
-#include "media/video/fake_gpu_memory_buffer.h"
 #include "media/video/video_encode_accelerator.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -749,8 +749,8 @@ class VaapiVideoEncodeAcceleratorTest
 
     auto buffer_format = gfx::BufferFormat::YUV_420_BIPLANAR;
     // Create a mappable shared image.
-    auto pixmap_handle =
-        CreatePixmapHandleForTesting(kDefaultEncodeSize, buffer_format);
+    auto pixmap_handle = gpu::TestSharedImageInterface::CreatePixmapHandle(
+        kDefaultEncodeSize, buffer_format);
     auto shared_image = test_sii->CreateSharedImage(
         {viz::GetSharedImageFormat(buffer_format), kDefaultEncodeSize,
          gfx::ColorSpace(), gpu::SharedImageUsageSet(si_usage),

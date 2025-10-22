@@ -8,7 +8,7 @@ import abc
 import argparse
 import enum
 import re
-from typing import TYPE_CHECKING, Any, Dict, Hashable, List, Pattern, TypeAlias
+from typing import TYPE_CHECKING, Any, Hashable, Mapping, Pattern, TypeAlias
 
 from immutabledict import immutabledict
 from typing_extensions import override
@@ -54,7 +54,7 @@ class CPUFrequencyMap(ConfigObject, metaclass=abc.ABCMeta):
 
   @classmethod
   @override
-  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> CPUFrequencyMap:
+  def parse_dict(cls, config: Mapping[str, Any], **kwargs) -> CPUFrequencyMap:
     if _WILDCARD_CONFIG_KEY in config:
       return WildcardCPUFrequencyMap(config)
     return ExplicitCPUFrequencyMap(config)
@@ -93,7 +93,7 @@ class CPUFrequencyMap(ConfigObject, metaclass=abc.ABCMeta):
     if not platform.is_dir(cpu_dir):
       raise ValueError(f"Invalid CPU name: {cpu_name}.")
 
-    available_frequencies: List[int] = [
+    available_frequencies: list[int] = [
         NumberParser.positive_zero_int(f)
         for f in platform.cat(cpu_dir / "scaling_available_frequencies").rstrip(
             "\n").rstrip(" ").split(" ")
@@ -116,7 +116,7 @@ class CPUFrequencyMap(ConfigObject, metaclass=abc.ABCMeta):
 
 class WildcardCPUFrequencyMap(CPUFrequencyMap):
 
-  def __init__(self, frequencies: Dict) -> None:
+  def __init__(self, frequencies: Mapping) -> None:
     if len(frequencies) != 1:
       raise argparse.ArgumentTypeError(
           f"A wildcard ({_WILDCARD_CONFIG_KEY}) in "
@@ -143,8 +143,8 @@ class WildcardCPUFrequencyMap(CPUFrequencyMap):
 
 class ExplicitCPUFrequencyMap(CPUFrequencyMap):
 
-  def __init__(self, frequencies: Dict) -> None:
-    typed_map: Dict[str, FrequencyType] = {}
+  def __init__(self, frequencies: Mapping) -> None:
+    typed_map: dict[str, FrequencyType] = {}
     for k, v in frequencies.items():
       with exception.annotate_argparsing(f"Parsing cpu frequency: {k}, {v}"):
         typed_map[ObjectParser.non_empty_str(k)] = (

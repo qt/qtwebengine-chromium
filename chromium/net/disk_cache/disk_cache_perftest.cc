@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/disk_cache/disk_cache.h"
 
 #include <array>
@@ -40,6 +35,7 @@
 #include "net/disk_cache/backend_cleanup_tracker.h"
 #include "net/disk_cache/blockfile/backend_impl.h"
 #include "net/disk_cache/blockfile/block_files.h"
+#include "net/disk_cache/buildflags.h"
 #include "net/disk_cache/disk_cache_test_base.h"
 #include "net/disk_cache/disk_cache_test_util.h"
 #include "net/disk_cache/simple/simple_backend_impl.h"
@@ -126,7 +122,11 @@ enum class WhatToRead {
 
 class DiskCachePerfTest : public DiskCacheTestWithCache {
  public:
-  DiskCachePerfTest() { MaybeIncreaseFdLimitTo(kFdLimitForCacheTests); }
+  DiskCachePerfTest()
+      : DiskCacheTestWithCache(
+            base::test::TaskEnvironment::TimeSource::SYSTEM_TIME) {
+    MaybeIncreaseFdLimitTo(kFdLimitForCacheTests);
+  }
 
   const std::vector<TestEntry>& entries() const { return entries_; }
 
@@ -319,7 +319,8 @@ class ReadHandler {
 
   int pending_result_ = net::OK;
 
-  scoped_refptr<net::IOBuffer> read_buffers_[kMaxParallelOperations];
+  std::array<scoped_refptr<net::IOBuffer>, kMaxParallelOperations>
+      read_buffers_;
 };
 
 void ReadHandler::Run() {
@@ -473,7 +474,7 @@ void DiskCachePerfTest::ResetAndEvictSystemDiskCache() {
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID)
   // And, cache directories, on platforms where the eviction utility supports
   // this (currently Linux and Android only).
-  if (simple_cache_mode_) {
+  if (backend_to_test() == BackendToTest::kSimple) {
     ASSERT_TRUE(
         base::EvictFileFromSystemCache(cache_path_.AppendASCII("index-dir")));
   }
@@ -493,7 +494,7 @@ void DiskCachePerfTest::CacheBackendPerformance(const std::string& story) {
   InitCache();
   EXPECT_TRUE(TimeWrites(story));
 
-  disk_cache::FlushCacheThreadForTesting();
+  FlushQueueForTest();
   base::RunLoop().RunUntilIdle();
 
   ResetAndEvictSystemDiskCache();
@@ -502,7 +503,7 @@ void DiskCachePerfTest::CacheBackendPerformance(const std::string& story) {
   EXPECT_TRUE(TimeReads(WhatToRead::HEADERS_ONLY,
                         kMetricCacheHeadersReadTimeWarmMs, story));
 
-  disk_cache::FlushCacheThreadForTesting();
+  FlushQueueForTest();
   base::RunLoop().RunUntilIdle();
 
   ResetAndEvictSystemDiskCache();
@@ -511,7 +512,7 @@ void DiskCachePerfTest::CacheBackendPerformance(const std::string& story) {
   EXPECT_TRUE(TimeReads(WhatToRead::HEADERS_AND_BODY,
                         kMetricCacheEntriesReadTimeWarmMs, story));
 
-  disk_cache::FlushCacheThreadForTesting();
+  FlushQueueForTest();
   base::RunLoop().RunUntilIdle();
 }
 
@@ -533,9 +534,16 @@ TEST_F(DiskCachePerfTest, MAYBE_CacheBackendPerformance) {
 #define MAYBE_SimpleCacheBackendPerformance SimpleCacheBackendPerformance
 #endif
 TEST_F(DiskCachePerfTest, MAYBE_SimpleCacheBackendPerformance) {
-  SetSimpleCacheMode();
+  SetBackendToTest(BackendToTest::kSimple);
   CacheBackendPerformance("simple_cache");
 }
+
+#if BUILDFLAG(ENABLE_DISK_CACHE_SQL_BACKEND)
+TEST_F(DiskCachePerfTest, SqlCacheBackendPerformance) {
+  SetBackendToTest(BackendToTest::kSql);
+  CacheBackendPerformance("sql_cache");
+}
+#endif  // ENABLE_DISK_CACHE_SQL_BACKEND
 
 // Creating and deleting "entries" on a block-file is something quite frequent
 // (after all, almost everything is stored on block files). The operation is
@@ -590,15 +598,12 @@ TEST_F(DiskCachePerfTest, SimpleCacheInitialReadPortion) {
   // overhead.
   const int kBatchSize = 100;
 
-  SetSimpleCacheMode();
+  SetBackendToTest(BackendToTest::kSimple);
 
   InitCache();
   // Write out the entries, and keep their objects around.
-  auto buffer1 = base::MakeRefCounted<net::IOBufferWithSize>(kHeadersSize);
-  auto buffer2 = base::MakeRefCounted<net::IOBufferWithSize>(kBodySize);
-
-  CacheTestFillBuffer(buffer1->span(), false);
-  CacheTestFillBuffer(buffer2->span(), false);
+  auto buffer1 = CacheTestCreateAndFillBuffer(kHeadersSize, false);
+  auto buffer2 = CacheTestCreateAndFillBuffer(kBodySize, false);
 
   std::array<disk_cache::Entry*, kBatchSize> cache_entry;
   for (int i = 0; i < kBatchSize; ++i) {

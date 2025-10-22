@@ -108,21 +108,14 @@ bool InputTypeIsCancelable(InputEvent::InputType input_type) {
 
 }  // anonymous namespace
 
-/* static */ InputEvent* InputEvent::Create(v8::Isolate* isolate,
-                                            const AtomicString& type,
+/* static */ InputEvent* InputEvent::Create(const AtomicString& type,
                                             const InputEventInit* initializer,
                                             ExceptionState& exception_state) {
   InputEvent* result;
-  if (RuntimeEnabledFeatures::InputEventConstructorThrowsEnabled()) {
-    CHECK(!exception_state.HadException());
-    result =
-        MakeGarbageCollected<InputEvent>(type, initializer, exception_state);
-    if (exception_state.HadException()) {
-      return nullptr;
-    }
-  } else {
-    result = MakeGarbageCollected<InputEvent>(type, initializer,
-                                              IgnoreException(isolate));
+  CHECK(!exception_state.HadException());
+  result = MakeGarbageCollected<InputEvent>(type, initializer, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
   }
   return result;
 }

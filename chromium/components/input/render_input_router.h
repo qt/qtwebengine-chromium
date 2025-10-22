@@ -5,6 +5,7 @@
 #ifndef COMPONENTS_INPUT_RENDER_INPUT_ROUTER_H_
 #define COMPONENTS_INPUT_RENDER_INPUT_ROUTER_H_
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -18,7 +19,6 @@
 #include "components/input/render_input_router_iterator.h"
 #include "components/input/render_input_router_latency_tracker.h"
 #include "components/viz/common/resources/peak_gpu_memory_tracker.h"
-#include "mojo/public/cpp/bindings/associated_receiver.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
@@ -81,6 +81,9 @@ class COMPONENT_EXPORT(INPUT) RenderInputRouter
 
   void SetView(RenderWidgetHostViewInput* view);
 
+  void SetBeginFrameSourceForFlingScheduler(
+      viz::BeginFrameSource* begin_frame_source);
+
   // InputRouterClient overrides.
   blink::mojom::WidgetInputHandler* GetWidgetInputHandler() override;
   void OnImeCompositionRangeChanged(
@@ -107,7 +110,7 @@ class COMPONENT_EXPORT(INPUT) RenderInputRouter
   void IncrementInFlightEventCount() override;
   void DecrementInFlightEventCount(
       blink::mojom::InputEventResultSource ack_source) override;
-  void DidOverscroll(const ui::DidOverscrollParams& params) override;
+  void DidOverscroll(blink::mojom::DidOverscrollParamsPtr params) override;
   void DidStartScrollingViewport() override;
   void OnSetCompositorAllowedTouchAction(cc::TouchAction) override {}
   void OnInvalidInputEventSource() override;
@@ -204,6 +207,8 @@ class COMPONENT_EXPORT(INPUT) RenderInputRouter
     return fling_scheduler_.get();
   }
 
+  void RenderProcessBlockedStateChanged(bool blocked);
+
   // Stops all existing hang monitor timeouts and assumes the renderer is
   // responsive.
   void StopInputEventAckTimeout();
@@ -237,6 +242,8 @@ class COMPONENT_EXPORT(INPUT) RenderInputRouter
   // This value denotes the number of input events yet to be acknowledged
   // by the renderer.
   int in_flight_event_count_ = 0;
+
+  bool is_blocked_ = false;
 
   base::OneShotTimer input_event_ack_timeout_;
 

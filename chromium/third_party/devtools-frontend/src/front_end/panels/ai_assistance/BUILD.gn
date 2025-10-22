@@ -12,7 +12,9 @@ generate_css("css_files") {
   sources = [
     "./aiAssistancePanel.css",
     "./components/chatView.css",
+    "./components/exploreWidget.css",
     "./components/userActionRow.css",
+    "./selectWorkspaceDialog.css",
   ]
 }
 
@@ -20,7 +22,9 @@ devtools_module("ai_assistance") {
   sources = [
     "AiAssistancePanel.ts",
     "PatchWidget.ts",
+    "SelectWorkspaceDialog.ts",
     "components/ChatView.ts",
+    "components/ExploreWidget.ts",
     "components/MarkdownRendererWithCodeBlock.ts",
     "components/UserActionRow.ts",
   ]
@@ -36,15 +40,14 @@ devtools_module("ai_assistance") {
     "../../models/workspace:bundle",
     "../../models/workspace_diff:bundle",
     "../../panels/changes:bundle",
-    "../../panels/elements:bundle",
-    "../../panels/network:bundle",
-    "../../panels/sources:bundle",
+    "../../panels/common:bundle",
+    "../../panels/network/forward:bundle",
     "../../panels/timeline:bundle",
     "../../panels/timeline/utils:bundle",
     "../../third_party/marked:bundle",
     "../../ui/components/markdown_view:bundle",
+    "../../ui/components/snackbars:bundle",
     "../../ui/components/spinners:bundle",
-    "../../ui/components/tooltips:bundle",
     "../../ui/legacy:bundle",
     "../../ui/lit:bundle",
   ]
@@ -57,7 +60,6 @@ devtools_entrypoint("bundle") {
 
   visibility = [
     ":*",
-    "../../../test/interactions/*",
     "../../entrypoints/*",
     "../../ui/components/docs/ai_assistance/*",
     "../explain",
@@ -80,7 +82,9 @@ ts_library("unittests") {
   sources = [
     "AiAssistancePanel.test.ts",
     "PatchWidget.test.ts",
+    "SelectWorkspaceDialog.test.ts",
     "components/ChatView.test.ts",
+    "components/ExploreWidget.test.ts",
     "components/MarkdownRendererWithCodeBlock.test.ts",
     "components/UserActionRow.test.ts",
   ]
@@ -92,7 +96,9 @@ ts_library("unittests") {
     "../../core/platform:bundle",
     "../../core/sdk:bundle",
     "../../generated:protocol",
+    "../../panels/network:bundle",
     "../../panels/timeline/utils:bundle",
     "../../testing",
+    "../../ui/legacy:bundle",
   ]
 }

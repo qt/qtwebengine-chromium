@@ -222,6 +222,11 @@ class CORE_EXPORT WebFrameWidgetImpl
       const WebCoalescedInputEvent&,
       WidgetBaseInputHandler::HandledEventCallback);
 
+  // Overrides `browser_controls_params.top_controls_height` of the properties
+  // passed to `UpdateVisualProperties()`. Passing `std::nullopt` disables the
+  // override.
+  void SetBrowserControlsTopHeightOverride(std::optional<float> height);
+
   // FrameWidget overrides.
   cc::AnimationHost* AnimationHost() const final;
   cc::AnimationTimeline* ScrollAnimationTimeline() const final;
@@ -230,8 +235,9 @@ class CORE_EXPORT WebFrameWidgetImpl
   void RequestAnimationAfterDelay(const base::TimeDelta&, bool urgent) final;
   void SetRootLayer(scoped_refptr<cc::Layer>) override;
   void RequestDecode(const cc::DrawImage&,
-                     base::OnceCallback<void(bool)>) override;
-  void RequestBeginMainFrameNotExpected(bool request) final;
+                     base::OnceCallback<void(bool)>,
+                     bool speculative) override;
+  bool SpeculativeDecodeRequestInFlight() const override;
   int GetLayerTreeId() final;
   const cc::LayerTreeSettings* GetLayerTreeSettings() final;
   void UpdateBrowserControlsState(
@@ -385,6 +391,7 @@ class CORE_EXPORT WebFrameWidgetImpl
   FrameWidgetTestHelper* GetFrameWidgetTestHelperForTesting() override;
   void PrepareForFinalLifecyclUpdateForTesting() override;
   void ApplyLocalSurfaceIdUpdate(const viz::LocalSurfaceId& id) override;
+  bool InsertVisualStateRequest(base::OnceClosure callback) override;
 
   // Called when a drag-n-drop operation should begin.
   virtual void StartDragging(LocalFrame* source_frame,
@@ -719,9 +726,6 @@ class CORE_EXPORT WebFrameWidgetImpl
   // compositor submits a frame.
   void PropagateHistorySequenceNumberToCompositor();
 
-  // Ask compositor to create the shared memory for smoothness ukm region.
-  base::ReadOnlySharedMemoryRegion CreateSharedMemoryForSmoothnessUkm();
-
   // Ask compositor to create the shared memory for dropped frames ukm region.
   base::ReadOnlySharedMemoryRegion CreateSharedMemoryForDroppedFramesUkm();
 #if BUILDFLAG(IS_ANDROID)
@@ -790,7 +794,6 @@ class CORE_EXPORT WebFrameWidgetImpl
       override;
   void BeginUpdateLayers() override;
   void EndUpdateLayers() override;
-  void DidCommitAndDrawCompositorFrame() override;
   void DidObserveFirstScrollDelay(
       base::TimeDelta first_scroll_delay,
       base::TimeTicks first_scroll_timestamp) override;
@@ -954,13 +957,6 @@ class CORE_EXPORT WebFrameWidgetImpl
       base::FunctionRef<void(RemoteFrame*)> callback);
 
   void SendOverscrollEventFromImplSide(const gfx::Vector2dF& overscroll_delta,
-                                       cc::ElementId scroll_latched_element_id);
-  // TODO(crbug.com/372627916): This function is not used when
-  // MultipleImplOnlyScrollAnimations is enabled. It should be considered
-  // deprecated and should be deleted when the MultipleImplOnlyScrollAnimations
-  // code path is the only existing code path.
-  void SendEndOfScrollEventsDeprecated(bool affects_outer_viewport,
-                                       bool affects_inner_viewport,
                                        cc::ElementId scroll_latched_element_id);
   void SendEndOfScrollEvents(const cc::CompositorCommitData& commit_data);
   void SendScrollSnapChangingEventIfNeeded(
@@ -1282,6 +1278,8 @@ class CORE_EXPORT WebFrameWidgetImpl
 
   double zoom_level_ = 0;
   double css_zoom_factor_ = 1;
+
+  std::optional<float> browser_controls_top_height_override_;
 
   bool throttling_frame_rate_ = false;
 };

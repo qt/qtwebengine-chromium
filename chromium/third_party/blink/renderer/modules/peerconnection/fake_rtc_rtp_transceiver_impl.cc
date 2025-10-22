@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "third_party/blink/renderer/modules/peerconnection/fake_rtc_rtp_transceiver_impl.h"
+
 #include <utility>
 
+#include "base/notimplemented.h"
 #include "base/task/single_thread_task_runner.h"
-#include "third_party/blink/renderer/modules/peerconnection/fake_rtc_rtp_transceiver_impl.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_audio_track.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_component_impl.h"
 #include "third_party/blink/renderer/platform/mediastream/media_stream_source.h"
@@ -56,7 +58,7 @@ uintptr_t FakeRTCRtpSenderImpl::Id() const {
   return 0;
 }
 
-rtc::scoped_refptr<webrtc::DtlsTransportInterface>
+webrtc::scoped_refptr<webrtc::DtlsTransportInterface>
 FakeRTCRtpSenderImpl::DtlsTransport() {
   NOTIMPLEMENTED();
   return nullptr;
@@ -136,7 +138,7 @@ uintptr_t FakeRTCRtpReceiverImpl::Id() const {
   return 0;
 }
 
-rtc::scoped_refptr<webrtc::DtlsTransportInterface>
+webrtc::scoped_refptr<webrtc::DtlsTransportInterface>
 FakeRTCRtpReceiverImpl::DtlsTransport() {
   NOTIMPLEMENTED();
   return nullptr;

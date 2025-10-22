@@ -157,13 +157,13 @@ CollaborationGroupSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string CollaborationGroupSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   return GetStorageKey(entity_data);
 }
 
 std::string CollaborationGroupSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   CHECK(entity_data.specifics.has_collaboration_group());
   return entity_data.specifics.collaboration_group().collaboration_id();
@@ -230,8 +230,7 @@ void CollaborationGroupSyncBridge::OnReadAllData(
   for (const auto& record : *record_list) {
     sync_pb::CollaborationGroupSpecifics specifics;
     if (!specifics.ParseFromString(record.value)) {
-      change_processor()->ReportError(
-          {FROM_HERE, "Failed to deserialize database record as specifics."});
+      change_processor()->ReportError(*error);
       return;
     }
     ids_to_specifics_[specifics.collaboration_id()] = std::move(specifics);

@@ -6,6 +6,7 @@
 
 #include <utility>
 
+#include "base/check_deref.h"
 #include "content/browser/renderer_host/navigation_request.h"
 
 namespace content {
@@ -58,8 +59,8 @@ NavigationThrottle::ThrottleCheckResult::ThrottleCheckResult(
 
 NavigationThrottle::ThrottleCheckResult::~ThrottleCheckResult() {}
 
-NavigationThrottle::NavigationThrottle(NavigationHandle* navigation_handle)
-    : navigation_handle_(navigation_handle) {}
+NavigationThrottle::NavigationThrottle(NavigationThrottleRegistry& registry)
+    : registry_(registry) {}
 
 NavigationThrottle::~NavigationThrottle() {}
 
@@ -91,7 +92,7 @@ void NavigationThrottle::Resume() {
     resume_callback_.Run();
     return;
   }
-  NavigationRequest::From(navigation_handle_)->Resume(this);
+  NavigationRequest::From(&registry_->GetNavigationHandle())->Resume(this);
 }
 
 void NavigationThrottle::CancelDeferredNavigation(
@@ -100,7 +101,7 @@ void NavigationThrottle::CancelDeferredNavigation(
     cancel_deferred_navigation_callback_.Run(result);
     return;
   }
-  NavigationRequest::From(navigation_handle_)
+  NavigationRequest::From(&registry_->GetNavigationHandle())
       ->CancelDeferredNavigation(this, result);
 }
 

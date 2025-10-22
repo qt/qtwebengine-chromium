@@ -12,11 +12,12 @@
 #include "base/test/bind.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
+#include "components/viz/common/resources/shared_image_format_utils.h"
+#include "gpu/command_buffer/client/client_shared_image.h"
 #include "gpu/command_buffer/client/test_shared_image_interface.h"
 #include "media/base/format_utils.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_frame.h"
-#include "media/video/fake_gpu_memory_buffer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/platform/testing/video_frame_utils.h"
@@ -39,7 +40,7 @@ void ExpectUpdateRectEquals(const gfx::Rect& expected,
   EXPECT_EQ(expected.height(), actual.height);
 }
 
-class MockVideoSink : public rtc::VideoSinkInterface<webrtc::VideoFrame> {
+class MockVideoSink : public webrtc::VideoSinkInterface<webrtc::VideoFrame> {
  public:
   MOCK_METHOD1(OnFrame, void(const webrtc::VideoFrame&));
 };
@@ -59,8 +60,7 @@ TEST(WebRtcVideoTrackSourceRefreshFrameTest, CallsRefreshFrame) {
 
 class WebRtcVideoTrackSourceTest
     : public ::testing::TestWithParam<
-          std::tuple<media::VideoFrame::StorageType, media::VideoPixelFormat>>,
-      public media::FakeGpuMemoryBuffer::MapCallbackController {
+          std::tuple<media::VideoFrame::StorageType, media::VideoPixelFormat>> {
  public:
   WebRtcVideoTrackSourceTest()
       : shared_resources_(
@@ -74,7 +74,7 @@ class WebRtcVideoTrackSourceTest
             base::BindLambdaForTesting([] {}),
             /*gpu_factories=*/nullptr,
             shared_resources_)) {
-    track_source_->AddOrUpdateSink(&mock_sink_, rtc::VideoSinkWants());
+    track_source_->AddOrUpdateSink(&mock_sink_, webrtc::VideoSinkWants());
     test_sii_ = base::MakeRefCounted<gpu::TestSharedImageInterface>();
     test_sii_->UseTestGMBInSharedImageCreationWithBufferUsage();
   }
@@ -97,7 +97,7 @@ class WebRtcVideoTrackSourceTest
     media::VideoPixelFormat pixel_format;
   };
 
-  void RegisterCallback(base::OnceCallback<void(bool)> result_cb) override {
+  void RegisterCallback(base::OnceCallback<void(bool)> result_cb) {
     map_callbacks_.push_back(std::move(result_cb));
   }
 
@@ -120,17 +120,29 @@ class WebRtcVideoTrackSourceTest
   void SendTestFrameWithMappableGMB(const FrameParameters& frame_parameters,
                                     base::TimeDelta timestamp,
                                     bool premapped) {
-    std::unique_ptr<media::FakeGpuMemoryBuffer> fake_gmb =
-        std::make_unique<media::FakeGpuMemoryBuffer>(
-            frame_parameters.coded_size,
-            media::VideoPixelFormatToGfxBufferFormat(
-                frame_parameters.pixel_format)
-                .value(),
-            premapped, this);
-    scoped_refptr<media::VideoFrame> frame = CreateTestFrameWithGMB(
-        frame_parameters.coded_size, frame_parameters.visible_rect,
-        frame_parameters.natural_size, frame_parameters.storage_type,
-        frame_parameters.pixel_format, timestamp, std::move(fake_gmb));
+    std::optional<gfx::BufferFormat> buffer_format =
+        media::VideoPixelFormatToGfxBufferFormat(frame_parameters.pixel_format);
+    CHECK(buffer_format) << "Pixel format "
+                         << media::VideoPixelFormatToString(
+                                frame_parameters.pixel_format)
+                         << " has no corresponding gfx::BufferFormat";
+
+    // Setting some default usage in order to get a mappable shared image.
+    auto si_usage = gpu::SHARED_IMAGE_USAGE_CPU_WRITE_ONLY |
+                    gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
+    auto shared_image = test_sii_->CreateSharedImageWithAsyncMapControl(
+        {viz::GetSharedImageFormat(*buffer_format), frame_parameters.coded_size,
+         gfx::ColorSpace(), gpu::SharedImageUsageSet(si_usage),
+         "WebRtcVideoTrackSourceTest"},
+        gfx::BufferUsage::GPU_READ_CPU_READ_WRITE, premapped,
+        base::BindRepeating(&WebRtcVideoTrackSourceTest::RegisterCallback,
+                            base::Unretained(this)));
+    CHECK(shared_image) << "Failed to create a mappable shared image.";
+    auto frame = media::VideoFrame::WrapMappableSharedImage(
+        std::move(shared_image), test_sii_->GenVerifiedSyncToken(),
+        base::NullCallback(), frame_parameters.visible_rect,
+        frame_parameters.natural_size, timestamp);
+
     track_source_->OnFrameCaptured(frame);
   }
 
@@ -163,7 +175,8 @@ class WebRtcVideoTrackSourceTest
     scoped_refptr<media::VideoFrame> frame = CreateTestFrame(
         frame_parameters.coded_size, frame_parameters.visible_rect,
         frame_parameters.natural_size, frame_parameters.storage_type,
-        frame_parameters.pixel_format, base::TimeDelta(), test_sii_.get());
+        frame_parameters.pixel_format, base::TimeDelta(), test_sii_.get(),
+        color_space);
     frame->set_color_space(color_space);
     track_source_->OnFrameCaptured(frame);
   }
@@ -217,7 +230,7 @@ class WebRtcVideoTrackSourceTest
   scoped_refptr<WebRtcVideoFrameAdapter::SharedResources> shared_resources_;
   scoped_refptr<WebRtcVideoTrackSource> track_source_;
   media::VideoCaptureFeedback feedback_;
-  WTF::Deque<base::OnceCallback<void(bool)>> map_callbacks_;
+  Deque<base::OnceCallback<void(bool)>> map_callbacks_;
   scoped_refptr<gpu::TestSharedImageInterface> test_sii_;
 };
 
@@ -327,14 +340,18 @@ TEST_P(WebRtcVideoTrackSourceTest, TestColorSpaceSettings) {
         EXPECT_EQ(frame.color_space().value().range(),
                   webrtc::ColorSpace::RangeID::kFull);
       }));
-
-  // For default REC709{BT709,BT709,BT709,Limited}, we will not set color space
-  // and transmit it by RTP since decoder side would guess it if color space is
-  // invalid.
   EXPECT_CALL(mock_sink_, OnFrame(_))
       .InSequence(s)
       .WillOnce(Invoke([](const webrtc::VideoFrame& frame) {
-        ASSERT_FALSE(frame.color_space().has_value());
+        ASSERT_TRUE(frame.color_space().has_value());
+        EXPECT_EQ(frame.color_space().value().matrix(),
+                  webrtc::ColorSpace::MatrixID::kSMPTE170M);
+        EXPECT_EQ(frame.color_space().value().transfer(),
+                  webrtc::ColorSpace::TransferID::kSMPTE170M);
+        EXPECT_EQ(frame.color_space().value().primaries(),
+                  webrtc::ColorSpace::PrimaryID::kSMPTE170M);
+        EXPECT_EQ(frame.color_space().value().range(),
+                  webrtc::ColorSpace::RangeID::kLimited);
       }));
 
   gfx::ColorSpace color_range_limited(
@@ -347,10 +364,11 @@ TEST_P(WebRtcVideoTrackSourceTest, TestColorSpaceSettings) {
       gfx::ColorSpace::MatrixID::BT709, gfx::ColorSpace::RangeID::FULL);
   SendTestFrameWithColorSpace(frame_parameters, color_range_full);
 
-  gfx::ColorSpace default_bt709_color_space(
-      gfx::ColorSpace::PrimaryID::BT709, gfx::ColorSpace::TransferID::BT709,
-      gfx::ColorSpace::MatrixID::BT709, gfx::ColorSpace::RangeID::LIMITED);
-  SendTestFrameWithColorSpace(frame_parameters, default_bt709_color_space);
+  gfx::ColorSpace default_bt601_color_space(
+      gfx::ColorSpace::PrimaryID::SMPTE170M,
+      gfx::ColorSpace::TransferID::SMPTE170M,
+      gfx::ColorSpace::MatrixID::SMPTE170M, gfx::ColorSpace::RangeID::LIMITED);
+  SendTestFrameWithColorSpace(frame_parameters, default_bt601_color_space);
 }
 
 TEST_P(WebRtcVideoTrackSourceTest, SetsFeedback) {
@@ -363,7 +381,7 @@ TEST_P(WebRtcVideoTrackSourceTest, SetsFeedback) {
   const gfx::Size kScaleToSize = gfx::Size(320, 180);
   const float k5Fps = 5.0;
 
-  rtc::VideoSinkWants sink_wants;
+  webrtc::VideoSinkWants sink_wants;
   sink_wants.max_pixel_count = kScaleToSize.GetArea();
   sink_wants.max_framerate_fps = static_cast<int>(k5Fps);
   track_source_->SetSinkWantsForTesting(sink_wants);
@@ -688,16 +706,13 @@ TEST_P(WebRtcVideoTrackSourceTest, PassesMappedFramesInOrder) {
   // This will be the 1st async frame.
   SendTestFrameWithMappableGMB(frame_parameters, base::Seconds(1),
                                /*premapped=*/false);
-
   SetRequireMappedFrame(true);
   // This will be the 2nd async frame.
   SendTestFrameWithMappableGMB(frame_parameters, base::Seconds(2),
                                /*premapped=*/false);
-
   SetRequireMappedFrame(true);
   SendTestFrameWithMappableGMB(frame_parameters, base::Seconds(3),
                                /*premapped=*/true);
-
   // This will return the 1st async frame.
   InvokeNextMapCallback();
 
@@ -754,15 +769,12 @@ TEST_P(WebRtcVideoTrackSourceTest, DoesntCrashOnLateCallbacks) {
     // Mapping is only valid for GMB backed frames.
     return;
   }
-
   SetRequireMappedFrame(true);
   SendTestFrameWithMappableGMB(frame_parameters, base::Seconds(0),
                                /*premapped=*/false);
-
   track_source_->Dispose();
   track_source_->RemoveSink(&mock_sink_);
   track_source_.reset();
-
   InvokeNextMapCallback();
 }
 

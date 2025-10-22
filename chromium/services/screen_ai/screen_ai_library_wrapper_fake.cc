@@ -32,8 +32,14 @@ bool ScreenAILibraryWrapperFake::InitOCR() {
   return true;
 }
 
+void ScreenAILibraryWrapperFake::SetOCRLightMode(bool enabled) {}
+
 bool ScreenAILibraryWrapperFake::InitMainContentExtraction() {
   return true;
+}
+
+uint32_t ScreenAILibraryWrapperFake::GetMaxImageDimension() {
+  return 2048;
 }
 
 std::optional<chrome_screen_ai::VisualAnnotation>

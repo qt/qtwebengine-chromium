@@ -11,6 +11,7 @@
 #include "base/containers/flat_map.h"
 #include "base/i18n/case_conversion.h"
 #include "base/pickle.h"
+#include "base/strings/strcat.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
@@ -225,4 +226,8 @@ bool TemplateURLData::CreatedByNonDefaultSearchProviderPolicy() const {
 
 bool TemplateURLData::CreatedByEnterpriseSearchAggregatorPolicy() const {
   return policy_origin == PolicyOrigin::kSearchAggregator;
+}
+
+bool TemplateURLData::CreatedBySiteSearchPolicy() const {
+  return policy_origin == PolicyOrigin::kSiteSearch;
 }

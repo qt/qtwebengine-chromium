@@ -2,10 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
+#include <array>
+
 
 #include <memory>
 #include <string>
@@ -383,7 +381,7 @@ class SubCaptureBrowserTestBase : public WebRtcTestBase {
   raw_ptr<base::CommandLine> command_line_ = nullptr;
 
   // Holds the tabs manipulated by this test.
-  TabInfo tabs_[kTabCount];
+  std::array<TabInfo, kTabCount> tabs_;
 
   // Each page is served from a distinct origin, thereby proving that
   // cropping/restricting works irrespective of whether iframes are
@@ -601,7 +599,13 @@ IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest,
       tab.ApplySubCaptureTarget(target, type_, Frame::kTopLevelDocument));
 }
 
-IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MaxIdsInTopLevelDocument) {
+// TODO(crbug.com/431852186): Re-enable after flakes are resolved.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_MaxIdsInTopLevelDocument DISABLED_MaxIdsInTopLevelDocument
+#else
+#define MAYBE_MaxIdsInTopLevelDocument MaxIdsInTopLevelDocument
+#endif
+IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MAYBE_MaxIdsInTopLevelDocument) {
   SetUpTest(Frame::kNone, /*self_capture=*/false);
   TabInfo& tab = tabs_[kMainTab];
 
@@ -622,7 +626,13 @@ IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MaxIdsInTopLevelDocument) {
             base::StringPrintf("top-level-produce-%s-error", ToString(type_)));
 }
 
-IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MaxIdsInEmbeddedFrame) {
+// TODO(crbug.com/431852186): Re-enable after flakes are resolved.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_MaxIdsInEmbeddedFrame DISABLED_MaxIdsInEmbeddedFrame
+#else
+#define MAYBE_MaxIdsInEmbeddedFrame MaxIdsInEmbeddedFrame
+#endif
+IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MAYBE_MaxIdsInEmbeddedFrame) {
   SetUpTest(Frame::kNone, /*self_capture=*/false);
   TabInfo& tab = tabs_[kMainTab];
 
@@ -643,7 +653,15 @@ IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MaxIdsInEmbeddedFrame) {
       base::StringPrintf("embedded-produce-%s-error", ToString(type_)));
 }
 
-IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest, MaxIdsSharedBetweenFramesInTab) {
+// TODO(crbug.com/431852186): Re-enable after flakes are resolved.
+#if BUILDFLAG(IS_LINUX)
+#define MAYBE_MaxIdsSharedBetweenFramesInTab \
+  DISABLED_MaxIdsSharedBetweenFramesInTab
+#else
+#define MAYBE_MaxIdsSharedBetweenFramesInTab MaxIdsSharedBetweenFramesInTab
+#endif
+IN_PROC_BROWSER_TEST_P(SubCaptureBrowserTest,
+                       MAYBE_MaxIdsSharedBetweenFramesInTab) {
   SetUpTest(Frame::kNone, /*self_capture=*/false);
   TabInfo& tab = tabs_[kMainTab];
 

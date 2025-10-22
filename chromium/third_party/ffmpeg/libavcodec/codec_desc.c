@@ -1985,6 +1985,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .props     = AV_CODEC_PROP_LOSSY | AV_CODEC_PROP_LOSSLESS,
         .mime_types= MT("image/jxl"),
     },
+    {
+        .id        = AV_CODEC_ID_APV,
+        .type      = AVMEDIA_TYPE_VIDEO,
+        .name      = "apv",
+        .long_name = NULL_IF_CONFIG_SMALL("Advanced Professional Video"),
+        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+    },
 
     /* various PCM "codecs" */
     {
@@ -2610,6 +2617,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .type      = AVMEDIA_TYPE_AUDIO,
         .name      = "adpcm_ima_xbox",
         .long_name = NULL_IF_CONFIG_SMALL("ADPCM IMA Xbox"),
+        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+    },
+    {
+        .id        = AV_CODEC_ID_ADPCM_SANYO,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "adpcm_sanyo",
+        .long_name = NULL_IF_CONFIG_SMALL("ADPCM Sanyo"),
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
 
@@ -3466,6 +3480,13 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .long_name = NULL_IF_CONFIG_SMALL("LC3 (Low Complexity Communication Codec)"),
         .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
     },
+    {
+        .id        = AV_CODEC_ID_G728,
+        .type      = AVMEDIA_TYPE_AUDIO,
+        .name      = "g728",
+        .long_name = NULL_IF_CONFIG_SMALL("G.728"),
+        .props     = AV_CODEC_PROP_INTRA_ONLY | AV_CODEC_PROP_LOSSY,
+    },
 
     /* subtitle codecs */
     {
@@ -3648,6 +3669,12 @@ static const AVCodecDescriptor codec_descriptors[] = {
         .name      = "arib_caption",
         .long_name = NULL_IF_CONFIG_SMALL("ARIB STD-B24 caption"),
         .profiles  = NULL_IF_CONFIG_SMALL(ff_arib_caption_profiles),
+    },
+    {
+        .id        = AV_CODEC_ID_IVTV_VBI,
+        .type      = AVMEDIA_TYPE_SUBTITLE,
+        .name      = "ivtv_vbi",
+        .long_name = NULL_IF_CONFIG_SMALL("ivtv VBI captions"),
     },
 
     /* other kind of codecs and pseudo-codecs */

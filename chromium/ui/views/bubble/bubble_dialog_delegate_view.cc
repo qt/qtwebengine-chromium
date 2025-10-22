@@ -38,6 +38,7 @@
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_element.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/compositor/layer_type.h"
 #include "ui/display/screen.h"
 #include "ui/gfx/color_palette.h"
 #include "ui/gfx/color_utils.h"
@@ -174,7 +175,7 @@ Widget* CreateBubbleWidget(BubbleDialogDelegate* bubble,
   bubble_params.opacity = Widget::InitParams::WindowOpacity::kTranslucent;
   bubble_params.accept_events = bubble->accept_events();
   bubble_params.remove_standard_frame = true;
-  bubble_params.layer_type = bubble->GetLayerType();
+  bubble_params.layer_type = bubble->layer_type();
   // TODO(crbug.com/41493925): Remove CHECK once native frame dialogs support
   // autosize.
   CHECK(!bubble->is_autosized() || bubble->use_custom_frame())
@@ -397,21 +398,6 @@ class BubbleDialogDelegate::BubbleWidgetObserver : public WidgetObserver {
       this};
 };
 
-class BubbleDialogDelegate::ThemeObserver : public ViewObserver {
- public:
-  explicit ThemeObserver(BubbleDialogDelegate* delegate) : delegate_(delegate) {
-    observation_.Observe(delegate->GetContentsView());
-  }
-
-  void OnViewThemeChanged(views::View* view) override {
-    delegate_->UpdateColorsFromTheme();
-  }
-
- private:
-  const raw_ptr<BubbleDialogDelegate> delegate_;
-  base::ScopedObservation<View, ViewObserver> observation_{this};
-};
-
 class BubbleDialogDelegateView::CloseOnDeactivatePin::Pins {
  public:
   Pins() = default;
@@ -459,7 +445,6 @@ BubbleDialogDelegate::BubbleDialogDelegate(View* anchor_view,
       close_on_deactivate_pins_(std::make_unique<CloseOnDeactivatePin::Pins>()),
       bubble_created_time_(base::TimeTicks::Now()) {
   bubble_uma_logger().set_delegate(this);
-  SetOwnedByWidget(true);
   SetAnchorView(anchor_view);
   SetArrow(arrow);
   SetShowCloseButton(false);
@@ -476,11 +461,9 @@ BubbleDialogDelegate::BubbleDialogDelegate(View* anchor_view,
 
   RegisterWidgetInitializedCallback(base::BindOnce(
       [](BubbleDialogDelegate* bubble_delegate) {
-        bubble_delegate->theme_observer_ =
-            std::make_unique<ThemeObserver>(bubble_delegate);
         // Call the theme callback to make sure the initial theme is picked up
         // by the BubbleDialogDelegate.
-        bubble_delegate->UpdateColorsFromTheme();
+        bubble_delegate->UpdateFrameColor();
       },
       this));
 
@@ -516,10 +499,8 @@ BubbleDialogDelegate::~BubbleDialogDelegate() {
 
 // static
 Widget* BubbleDialogDelegate::CreateBubble(
-    std::unique_ptr<BubbleDialogDelegate> bubble_delegate_unique,
+    BubbleDialogDelegate* bubble_delegate,
     Widget::InitParams::Ownership ownership) {
-  BubbleDialogDelegate* const bubble_delegate = bubble_delegate_unique.get();
-
   // On Mac, MODAL_TYPE_WINDOW is implemented using sheets, which can't be
   // anchored at a specific point - they are always placed near the top center
   // of the window. To avoid unpleasant surprises, disallow setting an anchor
@@ -531,9 +512,10 @@ Widget* BubbleDialogDelegate::CreateBubble(
 
   bubble_delegate->Init();
   // Get the latest anchor widget from the anchor view at bubble creation time.
-  bubble_delegate->SetAnchorView(bubble_delegate->GetAnchorView());
-  Widget* const bubble_widget =
-      CreateBubbleWidget(bubble_delegate_unique.release(), ownership);
+  if (auto* anchor_view = bubble_delegate->GetAnchorView()) {
+    bubble_delegate->SetAnchorView(anchor_view);
+  }
+  Widget* const bubble_widget = CreateBubbleWidget(bubble_delegate, ownership);
 
   bubble_delegate->set_adjust_if_offscreen(
       PlatformStyle::kAdjustBubbleIfOffscreen);
@@ -544,6 +526,14 @@ Widget* BubbleDialogDelegate::CreateBubble(
   return bubble_widget;
 }
 
+// static
+Widget* BubbleDialogDelegate::CreateBubble(
+    std::unique_ptr<BubbleDialogDelegate> bubble_delegate_unique,
+    Widget::InitParams::Ownership ownership) {
+  return CreateBubble(bubble_delegate_unique.release(), ownership);
+}
+
+// static
 Widget* BubbleDialogDelegateView::CreateBubble(
     BubbleDialogDelegateView* delegate_view,
     Widget::InitParams::Ownership ownership) {
@@ -556,7 +546,6 @@ BubbleDialogDelegateView::BubbleDialogDelegateView(View* anchor_view,
                                                    bool autosize)
     : BubbleDialogDelegate(anchor_view, arrow, shadow, autosize) {
   bubble_uma_logger().set_bubble_view(this);
-  SetOwnedByWidget(false);
 }
 
 BubbleDialogDelegateView::~BubbleDialogDelegateView() {
@@ -590,7 +579,7 @@ BubbleDialogDelegate::CreateNonClientFrameView(Widget* widget) {
   border->SetColor(background_color());
 
   if (GetParams().round_corners) {
-    border->SetCornerRadius(GetCornerRadius());
+    border->set_rounded_corners(gfx::RoundedCornersF(GetCornerRadius()));
   }
 
   frame->SetBubbleBorder(std::move(border));
@@ -598,19 +587,18 @@ BubbleDialogDelegate::CreateNonClientFrameView(Widget* widget) {
 }
 
 ClientView* BubbleDialogDelegate::CreateClientView(Widget* widget) {
-  client_view_ = DialogDelegate::CreateClientView(widget);
-  // In order for the |client_view|'s content view hierarchy to respect its
+  auto* client_view = DialogDelegate::CreateClientView(widget);
+
+  // In order for the `client_view`'s content view hierarchy to respect its
   // rounded corner clip we must paint the client view to a layer. This is
   // necessary because layers do not respect the clip of a non-layer backed
   // parent.
-  if (paint_client_to_layer_) {
-    client_view_->SetPaintToLayer();
-    client_view_->layer()->SetRoundedCornerRadius(
-        gfx::RoundedCornersF(GetCornerRadius()));
-    client_view_->layer()->SetIsFastRoundedCorner(true);
-  }
+  client_view->SetPaintToLayer(layer_type());
+  client_view->layer()->SetRoundedCornerRadius(
+      gfx::RoundedCornersF(GetCornerRadius()));
+  client_view->layer()->SetIsFastRoundedCorner(true);
 
-  return client_view_;
+  return client_view;
 }
 
 Widget* BubbleDialogDelegateView::GetWidget() {
@@ -727,6 +715,17 @@ void BubbleDialogDelegate::SetHighlightedButton(Button* highlighted_button) {
   }
 }
 
+void BubbleDialogDelegate::SetBackgroundColor(ui::ColorVariant color) {
+  if (color_ == color) {
+    return;
+  }
+
+  color_ = color;
+  if (GetWidget()) {
+    UpdateFrameColor();
+  }
+}
+
 void BubbleDialogDelegate::SetArrow(BubbleBorder::Arrow arrow) {
   SetArrowWithoutResizing(arrow);
   // If SetArrow() is called before CreateWidget(), there's no need to update
@@ -788,15 +787,6 @@ gfx::Rect BubbleDialogDelegate::GetAnchorRect() const {
   }
 
   return anchor_rect_.value();
-}
-
-ui::LayerType BubbleDialogDelegate::GetLayerType() const {
-  return ui::LAYER_TEXTURED;
-}
-
-void BubbleDialogDelegate::SetPaintClientToLayer(bool paint_client_to_layer) {
-  DCHECK(!client_view_);
-  paint_client_to_layer_ = paint_client_to_layer;
 }
 
 void BubbleDialogDelegate::UseCompactMargins() {
@@ -1027,6 +1017,22 @@ gfx::Size BubbleDialogDelegateView::GetMaximumSize() const {
   return gfx::Size();
 }
 
+void BubbleDialogDelegate::SetAnchorWidget(views::Widget* anchor_widget) {
+  if (anchor_widget_ == anchor_widget) {
+    return;
+  }
+  // Reset the anchor view.
+  SetAnchorView(nullptr);
+  if (anchor_widget_) {
+    anchor_widget_observer_.reset();
+  }
+  anchor_widget_ = anchor_widget;
+  if (anchor_widget_) {
+    anchor_widget_observer_ =
+        std::make_unique<AnchorWidgetObserver>(this, anchor_widget_);
+  }
+}
+
 void BubbleDialogDelegate::SetAnchorView(View* anchor_view) {
   if (anchor_view && anchor_view->GetWidget()) {
     anchor_widget_observer_ =
@@ -1117,7 +1123,7 @@ void BubbleDialogDelegate::SetSubtitleAllowCharacterBreak(bool allow) {
   }
 }
 
-void BubbleDialogDelegate::UpdateColorsFromTheme() {
+void BubbleDialogDelegate::UpdateFrameColor() {
   View* const contents_view = GetContentsView();
   DCHECK(contents_view);
 
@@ -1126,14 +1132,18 @@ void BubbleDialogDelegate::UpdateColorsFromTheme() {
     frame_view->SetBackgroundColor(background_color());
   }
 
-  // When there's an opaque layer, the bubble border background won't show
-  // through, so explicitly paint a background color.
+  // If layer_type() is LAYER_NOT_DRAWN, then the BubbleFrameView (and
+  // BubbleBorderBackground) will not be painted, so shouldn't worry about what
+  // contents are doing.
   const bool contents_layer_opaque =
-      contents_view->layer() && contents_view->layer()->fills_bounds_opaquely();
-  contents_view->SetBackground(contents_layer_opaque ||
-                                       force_create_contents_background_
-                                   ? CreateSolidBackground(background_color())
-                                   : nullptr);
+      layer_type() != ui::LAYER_NOT_DRAWN && contents_view->layer() &&
+      contents_view->layer()->type() != ui::LAYER_NOT_DRAWN &&
+      contents_view->layer()->fills_bounds_opaquely();
+  if (contents_layer_opaque) {
+    CHECK(contents_view->background())
+        << "If contents paint to an opaque layer, the bubble border background "
+           "won't show through, so explicitly paint a background color";
+  }
 }
 
 void BubbleDialogDelegate::OnBubbleWidgetVisibilityChanged(bool visible) {

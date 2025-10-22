@@ -38,7 +38,6 @@
 #include "third_party/skia/include/core/SkRefCnt.h"
 #include "third_party/skia/include/core/SkYUVAPixmaps.h"
 #include "third_party/skia/include/gpu/GpuTypes.h"
-#include "ui/gfx/gpu_memory_buffer.h"
 
 namespace media {
 
@@ -195,15 +194,15 @@ void ProcessAsyncMappingResult(
   }
 
   const size_t num_planes = VideoFrame::NumPlanes(video_frame->format());
-  std::array<uint8_t*, VideoFrame::kMaxPlanes> plane_addrs = {};
+  std::array<base::span<uint8_t>, VideoFrame::kMaxPlanes> planes = {};
   for (size_t i = 0; i < num_planes; i++) {
-    plane_addrs[i] = scoped_mapping->Memory(i);
+    planes[i] = scoped_mapping->GetMemoryAsSpan(i);
   }
 
   auto mapped_frame = VideoFrame::WrapExternalYuvDataWithLayout(
       video_frame->layout(), video_frame->visible_rect(),
-      video_frame->natural_size(), plane_addrs[0], plane_addrs[1],
-      plane_addrs[2], video_frame->timestamp());
+      video_frame->natural_size(), planes[0], planes[1], planes[2],
+      video_frame->timestamp());
 
   if (!mapped_frame) {
     std::move(result_cb).Run(nullptr);
@@ -569,14 +568,14 @@ scoped_refptr<VideoFrame> ConvertToMemoryMappedFrame(
   }
 
   const size_t num_planes = VideoFrame::NumPlanes(video_frame->format());
-  std::array<uint8_t*, VideoFrame::kMaxPlanes> plane_addrs = {};
+  std::array<base::span<uint8_t>, VideoFrame::kMaxPlanes> planes = {};
   for (size_t i = 0; i < num_planes; i++)
-    plane_addrs[i] = scoped_mapping->Memory(i);
+    planes[i] = scoped_mapping->GetMemoryAsSpan(i);
 
   auto mapped_frame = VideoFrame::WrapExternalYuvDataWithLayout(
       video_frame->layout(), video_frame->visible_rect(),
-      video_frame->natural_size(), plane_addrs[0], plane_addrs[1],
-      plane_addrs[2], video_frame->timestamp());
+      video_frame->natural_size(), planes[0], planes[1], planes[2],
+      video_frame->timestamp());
 
   if (!mapped_frame) {
     return nullptr;
@@ -735,7 +734,9 @@ bool ReadbackTexturePlaneToMemorySync(VideoFrame& src_frame,
   // Perform readback passing the appropriate `src_plane` for the mailbox.
   auto mailbox = src_frame.shared_image()->mailbox();
   auto sync_token = src_frame.acquire_sync_token();
-  ri->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  std::unique_ptr<gpu::RasterScopedAccess> ri_access =
+      src_frame.shared_image()->BeginRasterAccess(ri, sync_token,
+                                                  /*readonly=*/true);
   bool readback_result =
       ri->ReadbackImagePixels(mailbox, info, dest_stride, src_rect.x(),
                               src_rect.y(), src_plane, dest_pixels);
@@ -744,8 +745,10 @@ bool ReadbackTexturePlaneToMemorySync(VideoFrame& src_frame,
                 ri->GetGraphicsResetStatusKHR() == GL_NO_ERROR &&
                 ri->GetError() == GL_NO_ERROR;
   if (result) {
-    WaitAndReplaceSyncTokenClient client(ri);
+    WaitAndReplaceSyncTokenClient client(ri, std::move(ri_access));
     src_frame.UpdateReleaseSyncToken(&client);
+  } else {
+    gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
   }
 
   return result;
@@ -834,7 +837,10 @@ scoped_refptr<VideoFrame> CreateFromSkImage(sk_sp<SkImage> sk_image,
       *layout, visible_rect, natural_size,
       // TODO(crbug.com/40162403): We should be able to wrap readonly memory in
       // a VideoFrame instead of using writable_addr() here.
-      reinterpret_cast<uint8_t*>(pm.writable_addr()), pm.computeByteSize(),
+      // SAFETY: We take the pointer and size from SkPixmap, we rely on Skia
+      // to give us a valid memory region.
+      UNSAFE_BUFFERS(base::span(reinterpret_cast<uint8_t*>(pm.writable_addr()),
+                                pm.computeByteSize())),
       timestamp);
   if (!frame)
     return nullptr;

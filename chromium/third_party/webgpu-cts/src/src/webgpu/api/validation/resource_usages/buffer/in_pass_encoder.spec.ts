@@ -4,8 +4,8 @@ Buffer Usages Validation Tests in Render Pass and Compute Pass.
 
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { assert, unreachable } from '../../../../../common/util/util.js';
-import { GPUTestBase } from '../../../../gpu_test.js';
-import { AllFeaturesMaxLimitsValidationTest } from '../../validation_test.js';
+import { GPUTestBase, AllFeaturesMaxLimitsGPUTest } from '../../../../gpu_test.js';
+import * as vtu from '../../validation_test_utils.js';
 
 const kBoundBufferSize = 256;
 
@@ -32,7 +32,7 @@ function resourceVisibilityToVisibility(resourceVisibility: 'compute' | 'fragmen
   return resourceVisibility === 'compute' ? GPUShaderStage.COMPUTE : GPUShaderStage.FRAGMENT;
 }
 
-export class BufferResourceUsageTest extends AllFeaturesMaxLimitsValidationTest {
+export class BufferResourceUsageTest extends AllFeaturesMaxLimitsGPUTest {
   createBindGroupLayoutForTest(
     type: 'uniform' | 'storage' | 'read-only-storage',
     resourceVisibility: 'compute' | 'fragment'
@@ -105,7 +105,7 @@ export class BufferResourceUsageTest extends AllFeaturesMaxLimitsValidationTest 
       layout: pipelineLayout,
       vertex: {
         module: this.device.createShaderModule({
-          code: this.getNoOpShaderCode('VERTEX'),
+          code: vtu.getNoOpShaderCode('VERTEX'),
         }),
         entryPoint: 'main',
         buffers: vertexBuffers,
@@ -126,7 +126,7 @@ export class BufferResourceUsageTest extends AllFeaturesMaxLimitsValidationTest 
   }
 }
 
-function IsBufferUsageInBindGroup(bufferUsage: BufferUsage): boolean {
+function isBufferUsageInBindGroup(bufferUsage: BufferUsage): boolean {
   switch (bufferUsage) {
     case 'uniform':
     case 'storage':
@@ -214,7 +214,7 @@ bindGroup, dynamicOffsets), do not contribute directly to a usage scope.`
       numStorageBuffersNeededInFragmentStage
     );
 
-    const buffer = t.createBufferWithState('valid', {
+    const buffer = vtu.createBufferWithState(t, 'valid', {
       size: kBoundBufferSize * 2,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.STORAGE,
     });
@@ -324,7 +324,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
       numStorageBuffersNeededInFragmentStage
     );
 
-    const buffer = t.createBufferWithState('valid', {
+    const buffer = vtu.createBufferWithState(t, 'valid', {
       size: kBoundBufferSize * 2,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT,
     });
@@ -353,7 +353,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
               bindGroupLayouts: [bindGroupLayout0],
             });
           }
-          const computePipeline = t.createNoOpComputePipeline(pipelineLayout);
+          const computePipeline = vtu.createNoOpComputePipeline(t, pipelineLayout);
           computePassEncoder.setPipeline(computePipeline);
           computePassEncoder.dispatchWorkgroups(1);
         }
@@ -365,7 +365,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
          * setBindGroup(bindGroup1);
          */
         assert(dispatchBeforeUsage1);
-        const computePipeline = t.createNoOpComputePipeline();
+        const computePipeline = vtu.createNoOpComputePipeline(t);
         computePassEncoder.setPipeline(computePipeline);
         computePassEncoder.dispatchWorkgroupsIndirect(buffer, offset0);
         break;
@@ -401,7 +401,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
                 bindGroupLayouts,
               })
             : undefined;
-          const computePipeline = t.createNoOpComputePipeline(pipelineLayout);
+          const computePipeline = vtu.createNoOpComputePipeline(t, pipelineLayout);
           computePassEncoder.setPipeline(computePipeline);
           computePassEncoder.dispatchWorkgroups(1);
         }
@@ -420,7 +420,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
             bindGroupLayouts: [t.createBindGroupLayoutForTest(usage0, visibility0)],
           });
         }
-        const computePipeline = t.createNoOpComputePipeline(pipelineLayout);
+        const computePipeline = vtu.createNoOpComputePipeline(t, pipelineLayout);
         computePassEncoder.setPipeline(computePipeline);
         computePassEncoder.dispatchWorkgroupsIndirect(buffer, offset1);
         break;
@@ -461,7 +461,7 @@ dispatch calls refer to different usage scopes.`
   .fn(t => {
     const { usage0, usage1, inSamePass, hasOverlap } = t.params;
 
-    const UseBufferOnComputePassEncoder = (
+    const useBufferOnComputePassEncoder = (
       computePassEncoder: GPUComputePassEncoder,
       buffer: GPUBuffer,
       usage: 'uniform' | 'storage' | 'read-only-storage' | 'indirect',
@@ -478,13 +478,13 @@ dispatch calls refer to different usage scopes.`
           const pipelineLayout = t.device.createPipelineLayout({
             bindGroupLayouts: [bindGroupLayout],
           });
-          const computePipeline = t.createNoOpComputePipeline(pipelineLayout);
+          const computePipeline = vtu.createNoOpComputePipeline(t, pipelineLayout);
           computePassEncoder.setPipeline(computePipeline);
           computePassEncoder.dispatchWorkgroups(1);
           break;
         }
         case 'indirect': {
-          const computePipeline = t.createNoOpComputePipeline();
+          const computePipeline = vtu.createNoOpComputePipeline(t);
           computePassEncoder.setPipeline(computePipeline);
           computePassEncoder.dispatchWorkgroupsIndirect(buffer, offset);
           break;
@@ -495,7 +495,7 @@ dispatch calls refer to different usage scopes.`
       }
     };
 
-    const buffer = t.createBufferWithState('valid', {
+    const buffer = vtu.createBufferWithState(t, 'valid', {
       size: kBoundBufferSize * 2,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.STORAGE | GPUBufferUsage.INDIRECT,
     });
@@ -505,15 +505,15 @@ dispatch calls refer to different usage scopes.`
 
     const offset0 = 0;
     const offset1 = hasOverlap ? offset0 : kBoundBufferSize;
-    UseBufferOnComputePassEncoder(computePassEncoder, buffer, usage0, offset0);
+    useBufferOnComputePassEncoder(computePassEncoder, buffer, usage0, offset0);
 
     if (inSamePass) {
-      UseBufferOnComputePassEncoder(computePassEncoder, buffer, usage1, offset1);
+      useBufferOnComputePassEncoder(computePassEncoder, buffer, usage1, offset1);
       computePassEncoder.end();
     } else {
       computePassEncoder.end();
       const anotherComputePassEncoder = encoder.beginComputePass();
-      UseBufferOnComputePassEncoder(anotherComputePassEncoder, buffer, usage1, offset1);
+      useBufferOnComputePassEncoder(anotherComputePassEncoder, buffer, usage1, offset1);
       anotherComputePassEncoder.end();
     }
 
@@ -537,9 +537,9 @@ there is no draw call in the render pass.
       .beginSubcases()
       .combine('hasOverlap', [true, false])
       .combine('visibility0', ['compute', 'fragment'] as const)
-      .unless(t => t.visibility0 === 'compute' && !IsBufferUsageInBindGroup(t.usage0))
+      .unless(t => t.visibility0 === 'compute' && !isBufferUsageInBindGroup(t.usage0))
       .combine('visibility1', ['compute', 'fragment'] as const)
-      .unless(t => t.visibility1 === 'compute' && !IsBufferUsageInBindGroup(t.usage1))
+      .unless(t => t.visibility1 === 'compute' && !isBufferUsageInBindGroup(t.usage1))
   )
   .fn(t => {
     const { usage0, usage1, hasOverlap, visibility0, visibility1 } = t.params;
@@ -558,7 +558,7 @@ there is no draw call in the render pass.
       numStorageBuffersNeededInFragmentStage
     );
 
-    const UseBufferOnRenderPassEncoder = (
+    const useBufferOnRenderPassEncoder = (
       buffer: GPUBuffer,
       offset: number,
       type: BufferUsage,
@@ -588,7 +588,7 @@ there is no draw call in the render pass.
       }
     };
 
-    const buffer = t.createBufferWithState('valid', {
+    const buffer = vtu.createBufferWithState(t, 'valid', {
       size: kBoundBufferSize * 2,
       usage:
         GPUBufferUsage.UNIFORM |
@@ -600,9 +600,9 @@ there is no draw call in the render pass.
     const encoder = t.device.createCommandEncoder();
     const renderPassEncoder = t.beginSimpleRenderPass(encoder);
     const offset0 = 0;
-    UseBufferOnRenderPassEncoder(buffer, offset0, usage0, visibility0, renderPassEncoder);
+    useBufferOnRenderPassEncoder(buffer, offset0, usage0, visibility0, renderPassEncoder);
     const offset1 = hasOverlap ? offset0 : kBoundBufferSize;
-    UseBufferOnRenderPassEncoder(buffer, offset1, usage1, visibility1, renderPassEncoder);
+    useBufferOnRenderPassEncoder(buffer, offset1, usage1, visibility1, renderPassEncoder);
     renderPassEncoder.end();
 
     const fail = (usage0 === 'storage') !== (usage1 === 'storage');
@@ -724,7 +724,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
       numStorageBuffersNeededInFragmentStage
     );
 
-    const buffer = t.createBufferWithState('valid', {
+    const buffer = vtu.createBufferWithState(t, 'valid', {
       size: kBoundBufferSize * 2,
       usage:
         GPUBufferUsage.UNIFORM |
@@ -734,7 +734,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
         GPUBufferUsage.INDIRECT,
     });
 
-    const UseBufferOnRenderPassEncoder = (
+    const useBufferOnRenderPassEncoder = (
       bufferAccessibleInDraw: boolean,
       bufferIndex: number,
       offset: number,
@@ -772,7 +772,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
       }
     };
 
-    const MakeDrawCallWithOneUsage = (
+    const makeDrawCallWithOneUsage = (
       usage: BufferUsage,
       offset: number,
       renderPassEncoder: GPURenderPassEncoder
@@ -811,7 +811,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
     const bufferIndex0 = visibility0 === 'fragment' ? 0 : 1;
     const usedBindGroupLayouts: GPUBindGroupLayout[] = [];
 
-    UseBufferOnRenderPassEncoder(
+    useBufferOnRenderPassEncoder(
       usage0AccessibleInDraw,
       bufferIndex0,
       offset0,
@@ -838,7 +838,7 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
       if (!usage0AccessibleInDraw) {
         renderPassEncoder.draw(1);
       } else {
-        MakeDrawCallWithOneUsage(usage0, offset0, renderPassEncoder);
+        makeDrawCallWithOneUsage(usage0, offset0, renderPassEncoder);
       }
     }
 
@@ -851,14 +851,14 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
     } else if (visibility0 === 'fragment' && usage0AccessibleInDraw) {
       // When buffer is bound to different bind groups or bound as vertex buffers in one render pass
       // encoder, the second buffer binding should consume the slot 1.
-      if (IsBufferUsageInBindGroup(usage0) && IsBufferUsageInBindGroup(usage1)) {
+      if (isBufferUsageInBindGroup(usage0) && isBufferUsageInBindGroup(usage1)) {
         bufferIndex1 = 1;
       } else if (usage0 === 'vertex' && usage1 === 'vertex') {
         bufferIndex1 = 1;
       }
     }
 
-    UseBufferOnRenderPassEncoder(
+    useBufferOnRenderPassEncoder(
       usage1AccessibleInDraw,
       bufferIndex1,
       offset1,
@@ -885,15 +885,15 @@ have tests covered (https://github.com/gpuweb/cts/issues/2232)
       if (!usage0AccessibleInDraw && !usage1AccessibleInDraw) {
         renderPassEncoder.draw(1);
       } else if (usage0AccessibleInDraw && !usage1AccessibleInDraw) {
-        MakeDrawCallWithOneUsage(usage0, offset0, renderPassEncoder);
+        makeDrawCallWithOneUsage(usage0, offset0, renderPassEncoder);
       } else if (!usage0AccessibleInDraw && usage1AccessibleInDraw) {
-        MakeDrawCallWithOneUsage(usage1, offset1, renderPassEncoder);
+        makeDrawCallWithOneUsage(usage1, offset1, renderPassEncoder);
       } else {
         if (usage1 === 'indexedIndirect') {
           // If the index buffer has already been set (as usage0), we won't need to set another
           // index buffer.
           if (usage0 !== 'index') {
-            const indexBuffer = t.createBufferWithState('valid', {
+            const indexBuffer = vtu.createBufferWithState(t, 'valid', {
               size: 4,
               usage: GPUBufferUsage.INDEX,
             });
@@ -937,7 +937,7 @@ different render pass encoders belong to different usage scopes.`
   )
   .fn(t => {
     const { usage0, usage1, inSamePass, hasOverlap } = t.params;
-    const buffer = t.createBufferWithState('valid', {
+    const buffer = vtu.createBufferWithState(t, 'valid', {
       size: kBoundBufferSize * 2,
       usage:
         GPUBufferUsage.UNIFORM |
@@ -961,7 +961,7 @@ different render pass encoders belong to different usage scopes.`
       numStorageBuffersNeededInFragmentStage
     );
 
-    const UseBufferOnRenderPassEncoderInDrawCall = (
+    const useBufferOnRenderPassEncoderInDrawCall = (
       offset: number,
       usage: BufferUsage,
       renderPassEncoder: GPURenderPassEncoder
@@ -1005,7 +1005,7 @@ different render pass encoders belong to different usage scopes.`
         case 'indexedIndirect': {
           const pipeline = t.createRenderPipelineForTest('auto', 0);
           renderPassEncoder.setPipeline(pipeline);
-          const indexBuffer = t.createBufferWithState('valid', {
+          const indexBuffer = vtu.createBufferWithState(t, 'valid', {
             size: 4,
             usage: GPUBufferUsage.INDEX,
           });
@@ -1020,16 +1020,16 @@ different render pass encoders belong to different usage scopes.`
     const renderPassEncoder = t.beginSimpleRenderPass(encoder);
 
     const offset0 = 0;
-    UseBufferOnRenderPassEncoderInDrawCall(offset0, usage0, renderPassEncoder);
+    useBufferOnRenderPassEncoderInDrawCall(offset0, usage0, renderPassEncoder);
 
     const offset1 = hasOverlap ? offset0 : kBoundBufferSize;
     if (inSamePass) {
-      UseBufferOnRenderPassEncoderInDrawCall(offset1, usage1, renderPassEncoder);
+      useBufferOnRenderPassEncoderInDrawCall(offset1, usage1, renderPassEncoder);
       renderPassEncoder.end();
     } else {
       renderPassEncoder.end();
       const anotherRenderPassEncoder = t.beginSimpleRenderPass(encoder);
-      UseBufferOnRenderPassEncoderInDrawCall(offset1, usage1, anotherRenderPassEncoder);
+      useBufferOnRenderPassEncoderInDrawCall(offset1, usage1, anotherRenderPassEncoder);
       anotherRenderPassEncoder.end();
     }
 

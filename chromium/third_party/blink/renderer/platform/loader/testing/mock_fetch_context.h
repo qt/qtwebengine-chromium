@@ -53,9 +53,8 @@ class MockFetchContext : public FetchContext {
       const KURL&,
       const ResourceLoaderOptions&,
       ReportingDisposition,
-      base::optional_ref<const ResourceRequest::RedirectInfo> redirect_info,
-      FetchParameters::HasPreloadedResponseCandidate
-          has_preloaded_response_candidate) const override {
+      base::optional_ref<const ResourceRequest::RedirectInfo> redirect_info)
+      const override {
     return std::nullopt;
   }
   std::optional<ResourceRequestBlockedReason>
@@ -116,7 +115,8 @@ class MockFetchContext : public FetchContext {
       const ResourceRequestHead& resource_request,
       base::optional_ref<const KURL> alias_url,
       ResourceType type,
-      const FetchInitiatorInfo& initiator_info) override {
+      const FetchInitiatorInfo& initiator_info,
+      subresource_filter::ScopedRule* out_rule) override {
     const KURL url =
         alias_url.has_value() ? alias_url.value() : resource_request.Url();
     return tagged_urls_.Contains(url.GetString());

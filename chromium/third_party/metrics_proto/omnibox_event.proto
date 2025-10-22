@@ -14,7 +14,7 @@ package metrics;
 import "omnibox_input_type.proto";
 
 // Stores information about an omnibox interaction.
-// Next tag: 28
+// Next tag: 29
 message OmniboxEventProto {
   // The timestamp for the event, in seconds.
   // This value comes from Chromium's TimeTicks::Now(), which is an abstract
@@ -218,9 +218,20 @@ message OmniboxEventProto {
     // The searchbox in the Android Hub.
     ANDROID_HUB = 29;
 
-    // When adding new classifications, please consider adding them in
-    // chromium's chrome/browser/resources/omnibox/omnibox.html
-    // so that these new options are displayed on about:omnibox.
+    // JumpStart Omnibox feature (Android): start Chrome to Search Activity on
+    // Low End devices.
+    JUMP_START = 30;
+
+    // The new tab page in which this omnibox interaction started with the user
+    // having focus in the composebox.
+    NTP_COMPOSEBOX = 31;
+
+    // When adding new classifications, please update the `OmniboxPageContext`
+    // variants listed in chromium's
+    // tools/metrics/histograms/metadata/omnibox/histograms.xml and also
+    // consider adding them in chromium's
+    // chrome/browser/resources/omnibox/omnibox.html so that these new options
+    // are displayed in the chrome://omnibox debug UI.
   }
 
   optional PageClassification current_page_classification = 10;
@@ -331,6 +342,14 @@ message OmniboxEventProto {
     // Contextual search autocomplete provider for the '@page' keyword mode of
     // the omnibox.
     CONTEXTUAL_SEARCH_PROVIDER = 33;
+
+    // A verbatim match for the input.
+    VERBATIM_MATCH = 34;
+
+    // Groups of tabs which are available (or opened) locally. These results are
+    // provided by the TabGroupsProvider. Currently only used by Android's hub
+    // search feature.
+    TAB_GROUP_PROVIDER = 35;
   }
 
   // The result set displayed on the completion popup
@@ -432,6 +451,7 @@ message OmniboxEventProto {
       HISTORY_EMBEDDINGS_ANSWER = 40;   // A generated answer based on past
                                         // visits with similar embeddings to the
                                         // query.
+      TAB_GROUP = 41;                   // Tab group suggestion result.
     }
 
     optional ResultType result_type = 2;
@@ -628,6 +648,18 @@ message OmniboxEventProto {
 
       // Moved to OmniboxScoringSignals proto in cl/651828883:
       optional bool is_verbatim = 27 [deprecated = true];
+      // Whether the host part of the `destination_url` associated with this
+      // suggestion matches the host part of the URL for the page the user is
+      // currently on.
+      // As such, this signal will take on the following values:
+      //   - True:  `destination_url` for this suggestion has the same host as
+      //            the current page.
+      //   - False: Current page is the NTP (any default search engine)
+      //            OR `destination_url` for this suggestion is empty
+      //            OR `destination_url` does not have the same host as the
+      //            current page.
+      //   - Unset: Otherwise (due to unexpected client-side behavior).
+      optional bool destination_host_match_for_current_page = 35;
     }
 
     optional ScoringSignals scoring_signals = 10;
@@ -681,6 +713,45 @@ message OmniboxEventProto {
   // Whether the Omnibox was in keyword mode, however it was entered.
   optional bool in_keyword_mode = 19;
 
+  // The type of keyword used in keyword mode. The field storing this enum is
+  // not present if not in keyword mode.
+  enum KeywordType {
+    KEYWORD_TYPE_UNSPECIFIED = 0;
+    STARTER_PACK = 1;  // Starter pack keyword.
+    PREPOPULATED = 2;  // Prepopulated keyword.
+    EXTENSION = 3;     // Keyword set by extension.
+
+    // Enterprise policy keyword types. Each enterprise keyword can be:
+    // - Featured or non-featured
+    // - Not-overridable or overridable
+    // - Site search or search aggregator
+    //   - Search aggregator keywords cannot be overridable
+    //   - Search aggregator keywords always come in featured and non-featured
+    //   pairs
+    // All are set by policy.
+    FEATURED_SEARCH_AGGREGATOR_SET_BY_POLICY = 4;
+    FEATURED_SITE_SEARCH_SET_BY_POLICY = 5;
+    NON_FEATURED_SITE_SEARCH_SET_BY_POLICY = 6;
+
+    DEFAULT_SEARCH_ENGINE_SET_BY_POLICY = 7;       // Default search engine
+                                                   // keyword set by policy.
+    NON_SUBSTITUTING_SITE_SEARCH_SET_BY_USER = 8;  // Site search keyword
+                                                   // without substitution
+                                                   // set by user.
+    SUBSTITUTING_SITE_SEARCH_SET_BY_USER = 9;      // Site search keyword
+                                                   // with substitution
+                                                   // set by user.
+    DEFAULT_SEARCH_ENGINE_SET_BY_USER = 10;        // Default search engine
+                                                   // keyword set by user.
+
+    // See comment above for enterprise policy keywords.
+    NON_FEATURED_SEARCH_AGGREGATOR_SET_BY_POLICY = 11;
+    FEATURED_OVERRIDABLE_SITE_SEARCH_SET_BY_POLICY = 12;
+    NON_FEATURED_OVERRIDABLE_SITE_SEARCH_SET_BY_POLICY = 13;
+  }
+
+  optional KeywordType keyword_type = 28;
+
   // How the Omnibox got into keyword mode. Not present if not in keyword
   // mode.
   enum KeywordModeEntryMethod {
@@ -698,6 +769,8 @@ message OmniboxEventProto {
                             // and touch the reminder that one can press Tab.
     SELECT_SUGGESTION = 8;  // Select a keyword suggestion, such as by arrowing
                             // or tabbing to it.
+    TOOLBELT = 9;           // Select and activate a search shortcuts action
+                            // from the omnibox toolbelt.
   }
 
   optional KeywordModeEntryMethod keyword_mode_entry_method = 20;
@@ -729,6 +802,10 @@ message OmniboxEventProto {
     // the model returned 0 matches or its matches were hidden. Suffixed with
     // '_FEATURE' to avoid name conflict with 'ProviderType.HISTORY_EMBEDDINGS'.
     HISTORY_EMBEDDINGS_FEATURE = 12;
+
+    // Whether the "AIM page action omnibox entrypoint" was shown in the
+    // right-hand side of the Omnibox for AIM eligible users.
+    AIM_PAGE_ACTION_OMNIBOX_ENTRYPOINT = 13;
   }
 
   // The set of features triggered in the most recent query. Each element is a

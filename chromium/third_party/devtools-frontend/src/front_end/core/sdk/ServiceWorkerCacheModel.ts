@@ -287,6 +287,10 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
   sharedStorageAccessed(_event: Protocol.Storage.SharedStorageAccessedEvent): void {
   }
 
+  sharedStorageWorkletOperationExecutionFinished(
+      _event: Protocol.Storage.SharedStorageWorkletOperationExecutionFinishedEvent): void {
+  }
+
   storageBucketCreatedOrUpdated(_event: Protocol.Storage.StorageBucketCreatedOrUpdatedEvent): void {
   }
 
@@ -298,6 +302,13 @@ export class ServiceWorkerCacheModel extends SDKModel<EventTypes> implements Pro
   }
 
   attributionReportingSourceRegistered(_event: Protocol.Storage.AttributionReportingSourceRegisteredEvent): void {
+  }
+
+  attributionReportingReportSent(_event: Protocol.Storage.AttributionReportingReportSentEvent): void {
+  }
+
+  attributionReportingVerboseDebugReportSent(_event: Protocol.Storage.AttributionReportingVerboseDebugReportSentEvent):
+      void {
   }
 }
 

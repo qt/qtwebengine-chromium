@@ -50,7 +50,8 @@ class CC_PAINT_EXPORT CorePaintFlags {
   ALWAYS_INLINE float getAlphaf() const { return color_.fA; }
   ALWAYS_INLINE bool isFullyTransparent() const { return color_.fA == 0.0f; }
   ALWAYS_INLINE bool isOpaque() const { return color_.fA >= 1.0f; }
-  template <class F, class = std::enable_if_t<std::is_same_v<F, float>>>
+  template <class F>
+    requires(std::is_same_v<F, float>)
   ALWAYS_INLINE void setAlphaf(F a) {
     color_.fA = a;
   }
@@ -119,7 +120,10 @@ class CC_PAINT_EXPORT CorePaintFlags {
           constrained_high_mix(constrained_high_mix) {}
     friend bool operator==(const DynamicRangeLimitMixture&,
                            const DynamicRangeLimitMixture&) = default;
-    float ComputeHdrHeadroom(float target_hdr_headroom) const;
+    // Compute the effective HDR headroom when this limit is applied to
+    // `target_hdr_headroom`.
+    float ComputeEffectiveHdrHeadroom(float target_hdr_headroom) const;
+
     float standard_mix = 0.f;
     float constrained_high_mix = 0.f;
     // The weight for "high" is implicit and calculated as "one minus the

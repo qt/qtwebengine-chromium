@@ -174,7 +174,11 @@ class AutofillManager
     // Fired when the field types predictions of a form *may* have changed.
     // At the moment, we cannot distinguish whether autocomplete attributes or
     // local heuristics changed.
-    enum class FieldTypeSource { kHeuristicsOrAutocomplete, kAutofillServer };
+    enum class FieldTypeSource {
+      kHeuristicsOrAutocomplete,
+      kAutofillServer,
+      kAutofillAiModel
+    };
     virtual void OnFieldTypesDetermined(AutofillManager& manager,
                                         FormGlobalId form,
                                         FieldTypeSource source) {}
@@ -189,14 +193,15 @@ class AutofillManager
     // be filled: each `FormFieldData::value` contains the filled or previewed
     // value; the corresponding `AutofillField` contains the field type
     // information. The field values come from `filling_payload`.
-    // TODO(crbug.com/40227496): Get rid of FormFieldData.
     // TODO(crbug.com/40280003): Consider removing the event in favor of
     // OnAfterDidFillAutofillFormData(), which is fired by the renderer.
-    virtual void OnFillOrPreviewDataModelForm(
+    // TODO(crbug.com/40227071): Consider removing `action_persistence` as the
+    // preview signal is only used for testing.
+    virtual void OnFillOrPreviewForm(
         AutofillManager& manager,
-        FormGlobalId form,
+        FormGlobalId form_id,
         mojom::ActionPersistence action_persistence,
-        base::span<const FormFieldData* const> filled_fields,
+        const base::flat_set<FieldGlobalId>& filled_field_ids,
         const FillingPayload& filling_payload) {}
 
     // Fired when a form is submitted. A `FormData` is passed instead of a
@@ -206,13 +211,6 @@ class AutofillManager
     virtual void OnFormSubmitted(AutofillManager& manager,
                                  const FormData& form) {}
   };
-
-  // TODO(crbug.com/40733066): Move to anonymous namespace once
-  // BrowserAutofillManager::OnLoadedServerPredictions() moves to
-  // AutofillManager.
-  static void LogTypePredictionsAvailable(
-      LogManager* log_manager,
-      const std::vector<raw_ptr<FormStructure, VectorExperimental>>& forms);
 
   AutofillManager(const AutofillManager&) = delete;
   AutofillManager& operator=(const AutofillManager&) = delete;
@@ -254,7 +252,8 @@ class AutofillManager
       const FormData& form,
       const FieldGlobalId& field_id,
       const gfx::Rect& caret_bounds,
-      AutofillSuggestionTriggerSource trigger_source);
+      AutofillSuggestionTriggerSource trigger_source,
+      std::optional<PasswordSuggestionRequest> password_request);
   void OnHidePopup();
   virtual void OnCaretMovedInFormField(const FormData& form,
                                        const FieldGlobalId& field_id,
@@ -385,7 +384,8 @@ class AutofillManager
       const FormData& form,
       const FieldGlobalId& field_id,
       const gfx::Rect& caret_bounds,
-      AutofillSuggestionTriggerSource trigger_source) = 0;
+      AutofillSuggestionTriggerSource trigger_source,
+      std::optional<PasswordSuggestionRequest> password_request) = 0;
   virtual void OnDidFillAutofillFormDataImpl(
       const FormData& form,
       const base::TimeTicks timestamp) = 0;
@@ -459,6 +459,11 @@ class AutofillManager
   mutable_form_structures() {
     return &form_structures_;
   }
+
+  // Logs the field types of `form` to chrome://autofill-internals and the
+  // autofill-information attribute (if
+  // `features::test::kAutofillShowTypePredictions` is enabled).
+  void LogCurrentFieldTypes(const FormStructure& form);
 
  private:
   friend class AutofillManagerTestApi;

@@ -12,6 +12,7 @@
 #include "components/regional_capabilities/regional_capabilities_test_utils.h"
 #include "components/search_engines/search_engine_choice/search_engine_choice_service.h"
 #include "components/search_engines/search_engines_pref_names.h"
+#include "components/search_engines/search_engines_test_util.h"
 #include "components/search_engines/template_url_prepopulate_data_resolver.h"
 #include "components/search_engines/template_url_service.h"
 #include "components/search_engines/template_url_service_test_util.h"
@@ -29,13 +30,7 @@ SearchEnginesTestEnvironment::ServiceFactories CreateDefaultFactories(
             environment.pref_service());
       });
   default_factories.search_engine_choice_service_factory =
-      base::BindRepeating([](SearchEnginesTestEnvironment& environment) {
-        return std::make_unique<SearchEngineChoiceService>(
-            environment.pref_service(), &environment.local_state(),
-            environment.regional_capabilities_service(),
-            environment.prepopulate_data_resolver(),
-            /*is_profile_eligible_for_dse_guest_propagation=*/false);
-      });
+      SearchEnginesTestEnvironment::GetSearchEngineChoiceServiceFactory();
 
   default_factories.template_url_service_factory = base::BindLambdaForTesting(
       [deps](SearchEnginesTestEnvironment& environment) {
@@ -59,6 +54,28 @@ SearchEnginesTestEnvironment::ServiceFactories::operator=(
     const ServiceFactories& other) = default;
 
 SearchEnginesTestEnvironment::ServiceFactories::~ServiceFactories() = default;
+
+// static
+SearchEnginesTestEnvironment::ServiceFactory<SearchEngineChoiceService>
+SearchEnginesTestEnvironment::GetSearchEngineChoiceServiceFactory(
+    bool skip_init,
+    base::RepeatingCallback<
+        std::unique_ptr<SearchEngineChoiceService::Client>()> client_factory) {
+  return base::BindLambdaForTesting(
+      [skip_init, client_factory](SearchEnginesTestEnvironment& environment) {
+        auto service = std::make_unique<SearchEngineChoiceService>(
+            client_factory
+                ? client_factory.Run()
+                : std::make_unique<FakeSearchEngineChoiceServiceClient>(),
+            environment.pref_service(), &environment.local_state(),
+            environment.regional_capabilities_service(),
+            environment.prepopulate_data_resolver());
+        if (!skip_init) {
+          service->Init();
+        }
+        return service;
+      });
+}
 
 SearchEnginesTestEnvironment::SearchEnginesTestEnvironment(
     const Deps& deps,

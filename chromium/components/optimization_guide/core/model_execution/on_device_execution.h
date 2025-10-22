@@ -14,11 +14,13 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/timer/timer.h"
+#include "components/optimization_guide/core/model_execution/execute_remote_fn.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/model_execution/multimodal_message.h"
 #include "components/optimization_guide/core/model_execution/on_device_context.h"
 #include "components/optimization_guide/core/model_execution/on_device_model_feature_adapter.h"
 #include "components/optimization_guide/core/model_execution/optimization_guide_model_execution_error.h"
+#include "components/optimization_guide/core/model_execution/repetition_checker.h"
 #include "components/optimization_guide/core/model_execution/safety_checker.h"
 #include "components/optimization_guide/core/model_execution/substitution.h"
 #include "components/optimization_guide/core/model_quality/model_quality_logs_uploader_service.h"
@@ -32,18 +34,6 @@
 #include "services/on_device_model/public/mojom/on_device_model.mojom.h"
 
 namespace optimization_guide {
-
-using ExecuteRemoteFn = base::RepeatingCallback<void(
-    ModelBasedCapabilityKey feature,
-    const google::protobuf::MessageLite&,
-    std::optional<base::TimeDelta> timeout,
-    std::unique_ptr<proto::LogAiDataRequest>,
-    OptimizationGuideModelExecutionResultCallback)>;
-
-void InvokeStreamingCallbackWithRemoteResult(
-    OptimizationGuideModelExecutionResultStreamingCallback callback,
-    OptimizationGuideModelExecutionResult result,
-    std::unique_ptr<ModelQualityLogEntry> log_entry);
 
 // The state for an ongoing ExecuteModel() call.
 class OnDeviceExecution final
@@ -120,6 +110,7 @@ class OnDeviceExecution final
       OnDeviceOptions opts,
       ExecuteRemoteFn execute_remote_fn,
       MultimodalMessage message,
+      on_device_model::mojom::ResponseConstraintPtr constraint,
       std::unique_ptr<ResultLogger> logger,
       OptimizationGuideModelExecutionResultStreamingCallback callback,
       base::OnceCallback<void(bool)> cleanup_callback);
@@ -228,8 +219,12 @@ class OnDeviceExecution final
 
   // The request message.
   MultimodalMessage last_message_;
+  // A constraint defining structured output requirements for the response.
+  on_device_model::mojom::ResponseConstraintPtr constraint_;
   // Time ExecuteModel() was called.
   base::TimeTicks start_;
+  // Time we receive the first token.
+  base::TimeTicks first_response_time_;
   // Used to log the result of ExecuteModel().
   std::unique_ptr<ResultLogger> histogram_logger_;
   // Used to log execution information for the request.
@@ -259,6 +254,11 @@ class OnDeviceExecution final
 
   // The number of tokens in the returned output.
   size_t output_token_count_ = 0;
+  // The number of tokens in execute portion of the input.
+  size_t execute_input_token_count_ = 0;
+
+  // A buffer to hold trailing newlines.
+  NewlineBuffer newline_buffer_;
 
   // Callback to provide the execution result.
   OptimizationGuideModelExecutionResultStreamingCallback callback_;

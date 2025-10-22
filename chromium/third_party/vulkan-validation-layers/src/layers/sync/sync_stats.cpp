@@ -1,6 +1,6 @@
-/* Copyright (c) 2024 The Khronos Group Inc.
- * Copyright (c) 2024 Valve Corporation
- * Copyright (c) 2024 LunarG, Inc.
+/* Copyright (c) 2024-2025 The Khronos Group Inc.
+ * Copyright (c) 2024-2025 Valve Corporation
+ * Copyright (c) 2024-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,35 +19,55 @@
 
 #if VVL_ENABLE_SYNCVAL_STATS != 0
 #include "sync_commandbuffer.h"
-#include "utils/vk_layer_utils.h"
 
 #include <iostream>
 
+namespace vvl {
+// Until C++ 26 std::atomic<T>::fetch_max arrives
+// https://en.cppreference.com/w/cpp/atomic/atomic/fetch_max
+// https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2024/p0493r5.pdf
+template <typename T>
+inline T atomic_fetch_max(std::atomic<T> &current_max, const T &value) noexcept {
+    T t = current_max.load();
+    while (!current_max.compare_exchange_weak(t, std::max(t, value)))
+        ;
+    return t;
+}
+}  // namespace vvl
+
 namespace syncval_stats {
 
+// NOTE: fetch_add/fetch_sub return value before increment/decrement.
+// Our Add/Sub functions return new counter values, so they need to
+// adjust result of the atomic function by adding/subtracting one.
+
 void Value32::Update(uint32_t new_value) { u32.store(new_value); }
+uint32_t Value32::Add(uint32_t n) { return u32.fetch_add(n) + 1; }
+uint32_t Value32::Sub(uint32_t n) { return u32.fetch_sub(n) - 1; }
 
-uint32_t Value32::Add(uint32_t n) {
-    // fetch_add returns value before increment; add one to get new value
-    return u32.fetch_add(n) + 1;
-}
-
-uint32_t Value32::Sub(uint32_t n) {
-    // fetch_sub returns value before decrement; subtract one to get new value
-    return u32.fetch_sub(n) - 1;
-}
+void Value64::Update(uint64_t new_value) { u64.store(new_value); }
+uint64_t Value64::Add(uint64_t n) { return u64.fetch_add(n) + 1; }
+uint64_t Value64::Sub(uint64_t n) { return u64.fetch_sub(n) - 1; }
 
 void ValueMax32::Update(uint32_t new_value) {
     value.Update(new_value);
     vvl::atomic_fetch_max(max_value.u32, new_value);
 }
-
 void ValueMax32::Add(uint32_t n) {
     uint32_t new_value = value.Add(n);
     vvl::atomic_fetch_max(max_value.u32, new_value);
 }
-
 void ValueMax32::Sub(uint32_t n) { value.Sub(n); }
+
+void ValueMax64::Update(uint64_t new_value) {
+    value.Update(new_value);
+    vvl::atomic_fetch_max(max_value.u64, new_value);
+}
+void ValueMax64::Add(uint64_t n) {
+    uint64_t new_value = value.Add(n);
+    vvl::atomic_fetch_max(max_value.u64, new_value);
+}
+void ValueMax64::Sub(uint64_t n) { value.Sub(n); }
 
 Stats::~Stats() {
     if (report_on_destruction) {
@@ -70,6 +90,16 @@ void Stats::RemoveUnresolvedBatch() { unresolved_batch_counter.Sub(1); }
 
 void Stats::AddHandleRecord(uint32_t count) { handle_record_counter.Add(count); }
 void Stats::RemoveHandleRecord(uint32_t count) { handle_record_counter.Sub(count); }
+
+void Stats::UpdateMemoryStats() {
+#if defined(USE_MIMALLOC_STATS)
+    mi_stats_merge();
+    {
+        std::unique_lock<std::mutex> lock(mi_stats_mutex);
+        mi_stats_get(sizeof(mi_stats), &mi_stats);
+    }
+#endif
+}
 
 void Stats::ReportOnDestruction() { report_on_destruction = true; }
 
@@ -114,6 +144,13 @@ std::string Stats::CreateReport() {
         str << "\tmax_count = " << handle_record_max << '\n';
         str << "\tmax_memory = " << handle_record_max_memory << " bytes\n";
     }
+
+#if defined(USE_MIMALLOC_STATS)
+    mi_stats_print_out([](const char* msg, void* arg) { *static_cast<std::ostringstream*>(arg) << msg; }, &str);
+    // Print allocation counts (these are not reported by mi_stats_print_out)
+    str << "malloc_normal_count: " << mi_stats.malloc_normal_count.total << "\n";
+    str << "malloc_huge_count: " << mi_stats.malloc_huge_count.total << "\n";
+#endif
     return str.str();
 }
 

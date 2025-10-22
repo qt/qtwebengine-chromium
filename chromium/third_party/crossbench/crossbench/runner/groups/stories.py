@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, List, Tuple
+from typing import TYPE_CHECKING, Iterable
 
 from typing_extensions import override
 
@@ -31,13 +31,13 @@ class StoriesRunGroup(RunGroup):
 
   def __init__(self, throw: bool = False) -> None:
     super().__init__(throw)
-    self._repetitions_groups: List[RepetitionsRunGroup] = []
+    self._repetitions_groups: list[RepetitionsRunGroup] = []
     self._browser: Browser | None = None
 
   @classmethod
   def groups(cls,
              run_groups: Iterable[RepetitionsRunGroup],
-             throw: bool = False) -> Tuple[StoriesRunGroup, ...]:
+             throw: bool = False) -> tuple[StoriesRunGroup, ...]:
     return tuple(
         collection_helper.group_by(
             run_groups,
@@ -54,7 +54,7 @@ class StoriesRunGroup(RunGroup):
     self._repetitions_groups.append(group)
 
   @property
-  def repetitions_groups(self) -> List[RepetitionsRunGroup]:
+  def repetitions_groups(self) -> list[RepetitionsRunGroup]:
     return self._repetitions_groups
 
   @property

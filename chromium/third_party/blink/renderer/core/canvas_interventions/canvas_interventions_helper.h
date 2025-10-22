@@ -9,33 +9,19 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/html/canvas/canvas_rendering_context.h"
-#include "third_party/blink/renderer/platform/graphics/canvas_resource_host.h"
 #include "third_party/blink/renderer/platform/graphics/static_bitmap_image.h"
 #include "third_party/blink/renderer/platform/supplementable.h"
 
 namespace blink {
 
-enum class CanvasNoiseReason {
-  kAllConditionsMet = 0,
-  kNoRenderContext = 1,
-  kNoTrigger = 2,
-  kNo2d = 4,
-  kNoGpu = 8,
-  kNotEnabledInMode = 16,
-  kNoExecutionContext = 32,
-  kMaxValue = kNoExecutionContext
-};
-
-inline constexpr CanvasNoiseReason operator|(CanvasNoiseReason a,
-                                             CanvasNoiseReason b) {
-  return static_cast<CanvasNoiseReason>(static_cast<int>(a) |
-                                        static_cast<int>(b));
-}
-inline constexpr CanvasNoiseReason& operator|=(CanvasNoiseReason& a,
-                                               CanvasNoiseReason b) {
-  a = a | b;
-  return a;
-}
+inline constexpr std::string_view kNoiseReasonMetricName =
+    "FingerprintingProtection.CanvasNoise.InterventionReason";
+inline constexpr std::string_view kNoiseDurationMetricName =
+    "FingerprintingProtection.CanvasNoise.NoiseDuration";
+inline constexpr std::string_view kCanvasSizeMetricName =
+    "FingerprintingProtection.CanvasNoise.NoisedCanvasSize";
+inline constexpr std::string_view kCanvasOperationMetricName =
+    "FingerprintingProtection.CanvasNoise.OperationTriggered";
 
 class CORE_EXPORT CanvasInterventionsHelper
     : public GarbageCollected<CanvasInterventionsHelper>,
@@ -58,8 +44,7 @@ class CORE_EXPORT CanvasInterventionsHelper
   // inputted snapshot.
   static bool MaybeNoiseSnapshot(CanvasRenderingContext* rendering_context,
                                  ExecutionContext* execution_context,
-                                 scoped_refptr<StaticBitmapImage>& snapshot,
-                                 RasterMode raster_mode);
+                                 scoped_refptr<StaticBitmapImage>& snapshot);
 
   void Trace(Visitor* visitor) const override {
     Supplement<ExecutionContext>::Trace(visitor);

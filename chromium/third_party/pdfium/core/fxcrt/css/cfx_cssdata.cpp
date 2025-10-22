@@ -7,6 +7,7 @@
 #include "core/fxcrt/css/cfx_cssdata.h"
 
 #include <algorithm>
+#include <functional>
 #include <utility>
 
 #include "core/fxcrt/check_op.h"
@@ -57,15 +58,13 @@ const CFX_CSSData::Color kColorTable[] = {
 
 const CFX_CSSData::Property* CFX_CSSData::GetPropertyByName(
     WideStringView name) {
-  if (name.IsEmpty())
+  if (name.IsEmpty()) {
     return nullptr;
+  }
 
   uint32_t hash = FX_HashCode_GetLoweredW(name);
-  auto* result = std::lower_bound(
-      std::begin(kPropertyTable), std::end(kPropertyTable), hash,
-      [](const CFX_CSSData::Property& iter, const uint32_t& hash) {
-        return iter.dwHash < hash;
-      });
+  auto* result = std::ranges::lower_bound(kPropertyTable, hash, std::less<>{},
+                                          &CFX_CSSData::Property::dwHash);
 
   if (result != std::end(kPropertyTable) && result->dwHash == hash) {
     return result;
@@ -83,15 +82,14 @@ const CFX_CSSData::Property* CFX_CSSData::GetPropertyByEnum(
 
 const CFX_CSSData::PropertyValue* CFX_CSSData::GetPropertyValueByName(
     WideStringView wsName) {
-  if (wsName.IsEmpty())
+  if (wsName.IsEmpty()) {
     return nullptr;
+  }
 
   uint32_t hash = FX_HashCode_GetLoweredW(wsName);
-  auto* result = std::lower_bound(
-      std::begin(kPropertyValueTable), std::end(kPropertyValueTable), hash,
-      [](const PropertyValue& iter, const uint32_t& hash) {
-        return iter.dwHash < hash;
-      });
+  auto* result =
+      std::ranges::lower_bound(kPropertyValueTable, hash, std::less<>{},
+                               &CFX_CSSData::PropertyValue::dwHash);
 
   if (result != std::end(kPropertyValueTable) && result->dwHash == hash) {
     return result;
@@ -104,11 +102,10 @@ const CFX_CSSData::LengthUnit* CFX_CSSData::GetLengthUnitByName(
   if (wsName.IsEmpty() || wsName.GetLength() != 2) {
     return nullptr;
   }
-  auto* iter =
-      std::find_if(std::begin(kLengthUnitTable), std::end(kLengthUnitTable),
-                   [wsName](const CFX_CSSData::LengthUnit& unit) {
-                     return wsName.EqualsASCIINoCase(unit.value);
-                   });
+  auto* iter = std::ranges::find_if(
+      kLengthUnitTable, [wsName](const CFX_CSSData::LengthUnit& unit) {
+        return wsName.EqualsASCIINoCase(unit.value);
+      });
   return iter != std::end(kLengthUnitTable) ? iter : nullptr;
 }
 
@@ -116,9 +113,9 @@ const CFX_CSSData::Color* CFX_CSSData::GetColorByName(WideStringView wsName) {
   if (wsName.IsEmpty()) {
     return nullptr;
   }
-  auto* iter = std::find_if(std::begin(kColorTable), std::end(kColorTable),
-                            [wsName](const CFX_CSSData::Color& color) {
-                              return wsName.EqualsASCIINoCase(color.name);
-                            });
+  auto* iter = std::ranges::find_if(
+      kColorTable, [wsName](const CFX_CSSData::Color& color) {
+        return wsName.EqualsASCIINoCase(color.name);
+      });
   return iter != std::end(kColorTable) ? iter : nullptr;
 }

@@ -31,7 +31,7 @@ describeWithEnvironment('Ignore List Setting', () => {
     assert.isNotNull(component.shadowRoot);
     const regexRows = component.shadowRoot.querySelectorAll<HTMLElement>('.regex-row');
     return Array.from(regexRows).map(row => {
-      const checkboxShadow = row.querySelector('dt-checkbox')?.shadowRoot;
+      const checkboxShadow = row.querySelector('devtools-checkbox')?.shadowRoot;
       assert.exists(checkboxShadow);
       return {
         regex: checkboxShadow.querySelector('label')?.textContent?.trim() ?? '',
@@ -53,11 +53,12 @@ describeWithEnvironment('Ignore List Setting', () => {
     const targetManager = SDK.TargetManager.TargetManager.instance();
     const workspace = Workspace.Workspace.WorkspaceImpl.instance({forceNew: true});
     const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-    const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(
-        {forceNew: true, resourceMapping, targetManager});
-    Bindings.IgnoreListManager.IgnoreListManager.instance({
+    const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
+    Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
       forceNew: true,
-      debuggerWorkspaceBinding,
+      resourceMapping,
+      targetManager,
+      ignoreListManager,
     });
   });
 
@@ -109,7 +110,7 @@ describeWithEnvironment('Ignore List Setting', () => {
     // Add sanity checks to make sure the rule is enabled before toggling.
     assert.isFalse(isIgnoreRegexDisabled('rule 1'));
 
-    const rule1CheckBox = regexRows[0].querySelector('dt-checkbox')?.shadowRoot?.querySelector('input');
+    const rule1CheckBox = regexRows[0].querySelector('devtools-checkbox')?.shadowRoot?.querySelector('input');
     rule1CheckBox?.click();
     assert.isTrue(isIgnoreRegexDisabled('rule 1'));
   });
@@ -136,7 +137,7 @@ describeWithEnvironment('Ignore List Setting', () => {
     // There should only be one add new regex row.
     assert.lengthOf(newRegexRows, 1);
     // There are two elements, one is checkbox, one is the input
-    const newRegexCheckboxes = newRegexRows[0].querySelectorAll<HTMLInputElement>('dt-checkbox');
+    const newRegexCheckboxes = newRegexRows[0].querySelectorAll<HTMLInputElement>('devtools-checkbox');
     assert.lengthOf(newRegexCheckboxes, 1);
     const newRegexInputs = newRegexRows[0].querySelectorAll<HTMLInputElement>('.new-regex-text-input');
     assert.lengthOf(newRegexInputs, 1);

@@ -54,9 +54,8 @@ Node* JSGraph::ConstantNoHole(ObjectRef ref, JSHeapBroker* broker) {
   CHECK(ref.IsSmi() || ref.IsHeapNumber() ||
         ref.AsHeapObject().GetHeapObjectType(broker).hole_type() ==
             HoleType::kNone);
-  if (IsThinString(*ref.object())) {
-    ref = MakeRefAssumeMemoryFence(broker,
-                                   Cast<ThinString>(*ref.object())->actual());
+  if (ref.IsString()) {
+    ref = ref.AsString().UnpackIfThin(broker);
   }
   return Constant(ref, broker);
 }
@@ -93,6 +92,7 @@ Node* JSGraph::Constant(ObjectRef ref, JSHeapBroker* broker) {
     case HoleType::kArgumentsMarker:
     case HoleType::kSelfReferenceMarker:
     case HoleType::kBasicBlockCountersMarker:
+    case HoleType::kUndefinedContextCell:
       UNREACHABLE();
   }
 
@@ -296,6 +296,9 @@ DEFINE_GETTER(
 
 DEFINE_GETTER(ExternalObjectMapConstant, Map,
               HeapConstantNoHole(factory()->external_map()))
+
+DEFINE_GETTER(ContextCellMapConstant, Map,
+              HeapConstantNoHole(factory()->context_cell_map()))
 
 #undef DEFINE_GETTER
 #undef GET_CACHED_FIELD

@@ -24,6 +24,7 @@
 #include "api/environment/environment.h"
 #include "api/field_trials_view.h"
 #include "modules/audio_processing/aec3/api_call_jitter_metrics.h"
+#include "modules/audio_processing/aec3/block.h"
 #include "modules/audio_processing/aec3/block_delay_buffer.h"
 #include "modules/audio_processing/aec3/block_framer.h"
 #include "modules/audio_processing/aec3/block_processor.h"
@@ -32,7 +33,7 @@
 #include "modules/audio_processing/aec3/multi_channel_content_detector.h"
 #include "modules/audio_processing/audio_buffer.h"
 #include "modules/audio_processing/logging/apm_data_dumper.h"
-#include "rtc_base/checks.h"
+#include "rtc_base/gtest_prod_util.h"
 #include "rtc_base/race_checker.h"
 #include "rtc_base/swap_queue.h"
 #include "rtc_base/thread_annotations.h"
@@ -139,9 +140,6 @@ class EchoCanceller3 : public EchoControl {
     block_processor_->UpdateEchoLeakageStatus(leakage_detected);
   }
 
-  // Produces a default configuration for multichannel.
-  static EchoCanceller3Config CreateDefaultMultichannelConfig();
-
  private:
   friend class EchoCanceller3Tester;
   FRIEND_TEST_ALL_PREFIXES(EchoCanceller3, DetectionOfProperStereo);
@@ -219,11 +217,11 @@ class EchoCanceller3 : public EchoControl {
   std::unique_ptr<Block> linear_output_block_
       RTC_GUARDED_BY(capture_race_checker_);
   Block capture_block_ RTC_GUARDED_BY(capture_race_checker_);
-  std::vector<std::vector<rtc::ArrayView<float>>> render_sub_frame_view_
+  std::vector<std::vector<ArrayView<float>>> render_sub_frame_view_
       RTC_GUARDED_BY(capture_race_checker_);
-  std::vector<std::vector<rtc::ArrayView<float>>> linear_output_sub_frame_view_
+  std::vector<std::vector<ArrayView<float>>> linear_output_sub_frame_view_
       RTC_GUARDED_BY(capture_race_checker_);
-  std::vector<std::vector<rtc::ArrayView<float>>> capture_sub_frame_view_
+  std::vector<std::vector<ArrayView<float>>> capture_sub_frame_view_
       RTC_GUARDED_BY(capture_race_checker_);
   std::unique_ptr<BlockDelayBuffer> block_delay_buffer_
       RTC_GUARDED_BY(capture_race_checker_);

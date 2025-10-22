@@ -23,6 +23,7 @@ export interface SerializedConversation {
   id: string;
   type: ConversationType;
   history: ResponseData[];
+  isExternal: boolean;
 }
 
 export interface SerializedImage {
@@ -40,11 +41,15 @@ export class Conversation {
   readonly type: ConversationType;
   #isReadOnly: boolean;
   readonly history: ResponseData[];
+  #isExternal: boolean;
 
-  constructor(type: ConversationType, data: ResponseData[] = [], id: string = crypto.randomUUID(), isReadOnly = true) {
+  constructor(
+      type: ConversationType, data: ResponseData[] = [], id: string = crypto.randomUUID(), isReadOnly = true,
+      isExternal = false) {
     this.type = type;
     this.id = id;
     this.#isReadOnly = isReadOnly;
+    this.#isExternal = isExternal;
     this.history = this.#reconstructHistory(data);
   }
 
@@ -59,6 +64,10 @@ export class Conversation {
       return;
     }
 
+    if (this.#isExternal) {
+      return `[External] ${query.substring(0, MAX_TITLE_LENGTH - 11)}${
+          query.length > MAX_TITLE_LENGTH - 11 ? '…' : ''}`;
+    }
     return `${query.substring(0, MAX_TITLE_LENGTH)}${query.length > MAX_TITLE_LENGTH ? '…' : ''}`;
   }
 
@@ -90,6 +99,8 @@ export class Conversation {
   }
 
   async addHistoryItem(item: ResponseData): Promise<void> {
+    this.history.push(item);
+    await AiHistoryStorage.instance().upsertHistoryEntry(this.serialize());
     if (item.type === ResponseType.USER_QUERY) {
       if (item.imageId && item.imageInput && 'inlineData' in item.imageInput) {
         const inlineData = item.imageInput.inlineData;
@@ -97,8 +108,6 @@ export class Conversation {
             {id: item.imageId, data: inlineData.data, mimeType: inlineData.mimeType});
       }
     }
-    this.history.push(item);
-    await AiHistoryStorage.instance().upsertHistoryEntry(this.serialize());
   }
 
   serialize(): SerializedConversation {
@@ -111,6 +120,7 @@ export class Conversation {
         return item;
       }),
       type: this.type,
+      isExternal: this.#isExternal,
     };
   }
 }
@@ -119,13 +129,22 @@ let instance: AiHistoryStorage|null = null;
 
 const DEFAULT_MAX_STORAGE_SIZE = 50 * 1024 * 1024;
 
-export class AiHistoryStorage {
+export const enum Events {
+  HISTORY_DELETED = 'AiHistoryDeleted',
+}
+
+export interface EventTypes {
+  [Events.HISTORY_DELETED]: void;
+}
+
+export class AiHistoryStorage extends Common.ObjectWrapper.ObjectWrapper<EventTypes> {
   #historySetting: Common.Settings.Setting<SerializedConversation[]>;
   #imageHistorySettings: Common.Settings.Setting<SerializedImage[]>;
   #mutex = new Common.Mutex.Mutex();
   #maxStorageSize: number;
 
   constructor(maxStorageSize = DEFAULT_MAX_STORAGE_SIZE) {
+    super();
     this.#historySetting = Common.Settings.Settings.instance().createSetting('ai-assistance-history-entries', []);
     this.#imageHistorySettings = Common.Settings.Settings.instance().createSetting(
         'ai-assistance-history-images',
@@ -219,6 +238,7 @@ export class AiHistoryStorage {
       this.#imageHistorySettings.set([]);
     } finally {
       release();
+      this.dispatchEventToListeners(Events.HISTORY_DELETED);
     }
   }
 

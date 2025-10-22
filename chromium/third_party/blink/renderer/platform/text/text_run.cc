@@ -23,11 +23,6 @@
  * THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/platform/text/text_run.h"
 
 #include "third_party/blink/renderer/platform/text/character.h"
@@ -40,7 +35,7 @@ String TextRun::NormalizedUTF16() const {
   String string_for8_bit_run;
   if (Is8Bit()) {
     string_for8_bit_run = String::Make16BitFrom8BitSource(Span8());
-    source = string_for8_bit_run.Characters16();
+    source = string_for8_bit_run.Span16().data();
   } else {
     source = Span16().data();
   }
@@ -53,23 +48,24 @@ String TextRun::NormalizedUTF16() const {
   unsigned position = 0;
   while (position < len) {
     UChar32 character;
-    U16_NEXT(source, position, len, character);
+    UNSAFE_TODO(U16_NEXT(source, position, len, character));
     // Don't normalize tabs as they are not treated as spaces for word-end.
     if (NormalizeSpace() &&
         Character::IsNormalizedCanvasSpaceCharacter(character)) {
-      character = kSpaceCharacter;
+      character = uchar::kSpace;
     } else if (Character::TreatAsSpace(character) &&
-               character != kNoBreakSpaceCharacter) {
-      character = kSpaceCharacter;
+               character != uchar::kNoBreakSpace) {
+      character = uchar::kSpace;
     } else if (Character::TreatAsZeroWidthSpaceInComplexScriptLegacy(
                    character)) {
       // Repalce only ZWS-like characters in BMP because we'd like to avoid
       // changing the string length.
       DCHECK_LT(character, 0x10000);
-      character = kZeroWidthSpaceCharacter;
+      character = uchar::kZeroWidthSpace;
     }
 
-    U16_APPEND(buffer.Characters(), result_length, len, character, error);
+    UNSAFE_TODO(
+        U16_APPEND(buffer.Characters(), result_length, len, character, error));
     DCHECK(!error);
   }
 

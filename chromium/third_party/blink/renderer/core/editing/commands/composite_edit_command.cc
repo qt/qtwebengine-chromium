@@ -44,6 +44,7 @@
 #include "third_party/blink/renderer/core/editing/commands/insert_into_text_node_command.h"
 #include "third_party/blink/renderer/core/editing/commands/insert_line_break_command.h"
 #include "third_party/blink/renderer/core/editing/commands/insert_node_before_command.h"
+#include "third_party/blink/renderer/core/editing/commands/insert_node_list_before_command.h"
 #include "third_party/blink/renderer/core/editing/commands/insert_paragraph_separator_command.h"
 #include "third_party/blink/renderer/core/editing/commands/merge_identical_elements_command.h"
 #include "third_party/blink/renderer/core/editing/commands/remove_css_property_command.h"
@@ -98,7 +99,7 @@ namespace {
 
 bool IsWhitespaceForRebalance(const Text& text_node, UChar character) {
   if (IsWhitespace(character)) {
-    if (character == kNewlineCharacter &&
+    if (character == uchar::kLineFeed &&
         RuntimeEnabledFeatures::InsertLineBreakIfPhrasingContentEnabled()) {
       return !text_node.GetLayoutObject() ||
              text_node.GetLayoutObject()->StyleRef().ShouldCollapseBreaks();
@@ -347,6 +348,20 @@ void CompositeEditCommand::InsertNodeAfter(Node* insert_child,
   }
 }
 
+void CompositeEditCommand::InsertNodeListAfter(Node& insert_first_child,
+                                               Node& ref_child,
+                                               EditingState* editing_state) {
+  ContainerNode* parent = ref_child.parentNode();
+  ABORT_EDITING_COMMAND_IF(!parent);
+  ABORT_EDITING_COMMAND_IF(GetDocument().body() == &ref_child);
+  ABORT_EDITING_COMMAND_IF(!IsEditable(*parent) && parent->InActiveDocument());
+  DCHECK(!parent->IsShadowRoot()) << parent;
+  ApplyCommandToComposite(
+      MakeGarbageCollected<InsertNodeListBeforeCommand>(
+          insert_first_child, *parent, ref_child.nextSibling()),
+      editing_state);
+}
+
 void CompositeEditCommand::InsertNodeAt(Node* insert_child,
                                         const Position& editing_position,
                                         EditingState* editing_state) {
@@ -372,8 +387,8 @@ void CompositeEditCommand::InsertNodeAt(Node* insert_child,
   } else if (ref_child_text_node && CaretMaxOffset(ref_child) > offset) {
     SplitTextNode(ref_child_text_node, offset);
 
-    // Mutation events (bug 22634) from the text node insertion may have
-    // removed the refChild
+    // Synchronous events (bug 22634) from the text node insertion may have
+    // removed the refChild.
     if (!ref_child->isConnected())
       return;
     InsertNodeBefore(insert_child, ref_child, editing_state);
@@ -1517,6 +1532,12 @@ void CompositeEditCommand::MoveParagraphs(
   // the end and before the start are treated as though they were rendered.
   Position start = MostForwardCaretPosition(start_candidate);
   Position end = MostBackwardCaretPosition(end_candidate);
+  if (RuntimeEnabledFeatures::
+          AvoidNormalizingVisiblePositionsWhenStartEqualsEndEnabled() &&
+      start_candidate == end_candidate) {
+    start = start_candidate;
+    end = end_candidate;
+  }
   if (end < start)
     end = start;
 

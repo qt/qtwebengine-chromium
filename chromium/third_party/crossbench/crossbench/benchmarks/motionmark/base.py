@@ -8,6 +8,7 @@ from typing_extensions import override
 
 from crossbench.benchmarks.base import PressBenchmark
 
+
 class MotionMarkBenchmark(PressBenchmark):
 
   @classmethod

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/webui/browser_command/browser_command_handler.h"
 
+#include "base/command_line.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "chrome/app/chrome_command_ids.h"
@@ -28,6 +29,7 @@
 #include "chrome/browser/user_education/user_education_service_factory.h"
 #include "chrome/common/buildflags.h"
 #include "chrome/common/chrome_features.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/webui_url_constants.h"
 #include "components/password_manager/core/common/password_manager_features.h"
 #include "components/performance_manager/public/features.h"
@@ -38,6 +40,7 @@
 #include "components/saved_tab_groups/public/features.h"
 #include "components/user_education/common/tutorial/tutorial_identifier.h"
 #include "components/user_education/common/tutorial/tutorial_service.h"
+#include "net/base/url_util.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/page_transition_types.h"
 #include "ui/base/ui_base_features.h"
@@ -46,8 +49,9 @@
 
 #if BUILDFLAG(ENABLE_GLIC)
 #include "chrome/browser/glic/glic_enabling.h"
-#include "chrome/browser/glic/glic_keyed_service.h"
-#include "chrome/browser/glic/glic_keyed_service_factory.h"
+#include "chrome/browser/glic/glic_settings_util.h"
+#include "chrome/browser/glic/public/glic_keyed_service.h"
+#include "chrome/browser/glic/public/glic_keyed_service_factory.h"
 #include "chrome/browser/ui/webui/webui_embedding_context.h"
 #endif  // BUILDFLAG(ENABLE_GLIC)
 
@@ -141,6 +145,12 @@ void BrowserCommandHandler::CanExecuteCommand(
     case Command::kOpenGlic:
       can_execute = true;
       break;
+    case Command::kOpenGlicSettings:
+      can_execute = true;
+      break;
+    case Command::kPrewarmGlicFre:
+      can_execute = true;
+      break;
   }
   std::move(callback).Run(can_execute);
 }
@@ -227,6 +237,12 @@ void BrowserCommandHandler::ExecuteCommandWithDisposition(
       OpenGlic();
       break;
     }
+    case Command::kOpenGlicSettings:
+      OpenGlicSettings();
+      break;
+    case Command::kPrewarmGlicFre:
+      PrewarmGlicFre();
+      break;
     default:
       NOTREACHED() << "Unspecified behavior for command " << id;
   }
@@ -331,9 +347,6 @@ void BrowserCommandHandler::StartSavedTabGroupTutorial() {
 
 void BrowserCommandHandler::OpenGlic() {
 #if BUILDFLAG(ENABLE_GLIC)
-  if (!glic::GlicEnabling::IsEnabledForProfile(profile_)) {
-    return;
-  }
 
   glic::GlicKeyedService* glic_service = glic::GlicKeyedService::Get(profile_);
 
@@ -346,6 +359,44 @@ void BrowserCommandHandler::OpenGlic() {
   glic_service->window_controller().Toggle(
       browser_window, /*prevent_close=*/false,
       glic::mojom::InvocationSource::kWhatsNew);
+#endif  // BUILDFLAG(ENABLE_GLIC)
+}
+
+void BrowserCommandHandler::OpenGlicSettings() {
+#if BUILDFLAG(ENABLE_GLIC)
+  if (glic::GlicEnabling::ShouldShowSettingsPage(profile_)) {
+    glic::OpenGlicKeyboardShortcutSetting(profile_);
+  } else {
+    // Link to help center article.
+    auto* command_line = base::CommandLine::ForCurrentProcess();
+    bool has_url =
+        command_line->HasSwitch(::switches::kGlicShortcutsLearnMoreURL);
+    const std::string url = has_url
+                                ? command_line->GetSwitchValueASCII(
+                                      ::switches::kGlicShortcutsLearnMoreURL)
+                                : features::kGlicShortcutsLearnMoreURL.Get();
+    if (url.empty()) {
+      return;
+    }
+
+    std::string ks_param;
+#if BUILDFLAG(IS_WIN)
+    ks_param = "chrome_ks_win";
+#elif BUILDFLAG(IS_MAC)
+    ks_param = "chrome_ks_mac";
+#endif
+    NavigateToURL(net::AppendOrReplaceQueryParameter(GURL(url), "p", ks_param),
+                  WindowOpenDisposition::SINGLETON_TAB);
+  }
+#endif
+}
+
+void BrowserCommandHandler::PrewarmGlicFre() {
+#if BUILDFLAG(ENABLE_GLIC)
+  glic::GlicKeyedService* glic_service = glic::GlicKeyedService::Get(profile_);
+  if (glic_service) {
+    glic_service->TryPreloadFre(glic::GlicPrewarmingFreSource::kBrowserCommand);
+  }
 #endif  // BUILDFLAG(ENABLE_GLIC)
 }
 

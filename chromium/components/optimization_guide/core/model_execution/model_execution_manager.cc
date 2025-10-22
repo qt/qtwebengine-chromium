@@ -13,6 +13,9 @@
 #include "base/strings/strcat.h"
 #include "base/strings/stringprintf.h"
 #include "base/types/expected.h"
+#include "components/optimization_guide/core/delivery/model_util.h"
+#include "components/optimization_guide/core/delivery/optimization_guide_model_provider.h"
+#include "components/optimization_guide/core/model_execution/execute_remote_fn.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
 #include "components/optimization_guide/core/model_execution/model_execution_features.h"
 #include "components/optimization_guide/core/model_execution/model_execution_fetcher.h"
@@ -22,16 +25,13 @@
 #include "components/optimization_guide/core/model_execution/on_device_model_service_controller.h"
 #include "components/optimization_guide/core/model_execution/optimization_guide_model_execution_error.h"
 #include "components/optimization_guide/core/model_quality/model_quality_log_entry.h"
-#include "components/optimization_guide/core/model_util.h"
 #include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_logger.h"
 #include "components/optimization_guide/core/optimization_guide_model_executor.h"
-#include "components/optimization_guide/core/optimization_guide_model_provider.h"
 #include "components/optimization_guide/core/optimization_guide_prefs.h"
 #include "components/optimization_guide/core/optimization_guide_proto_util.h"
 #include "components/optimization_guide/core/optimization_guide_util.h"
-#include "components/optimization_guide/core/optimization_metadata.h"
 #include "components/optimization_guide/proto/common_types.pb.h"
 #include "net/base/url_util.h"
 #include "services/network/public/cpp/shared_url_loader_factory.h"
@@ -74,17 +74,6 @@ class ScopedModelExecutionResponseLogger {
   raw_ptr<OptimizationGuideLogger> optimization_guide_logger_;
 };
 
-// Returns the URL endpoint for the model execution service.
-GURL GetModelExecutionServiceURL() {
-  base::CommandLine* command_line = base::CommandLine::ForCurrentProcess();
-  if (command_line->HasSwitch(
-          switches::kOptimizationGuideServiceModelExecutionURL)) {
-    return GURL(command_line->GetSwitchValueASCII(
-        switches::kOptimizationGuideServiceModelExecutionURL));
-  }
-  return GURL(kOptimizationGuideServiceModelExecutionDefaultURL);
-}
-
 void RecordSessionUsedRemoteExecutionHistogram(ModelBasedCapabilityKey feature,
                                                bool is_remote) {
   base::UmaHistogramBoolean(
@@ -102,26 +91,6 @@ void RecordModelExecutionResultHistogram(ModelBasedCapabilityKey feature,
       result);
 }
 
-void NoOpExecuteRemoteFn(
-    ModelBasedCapabilityKey feature,
-    const google::protobuf::MessageLite& request,
-    std::optional<base::TimeDelta> timeout,
-    std::unique_ptr<proto::LogAiDataRequest> log_ai_data_request,
-    OptimizationGuideModelExecutionResultCallback callback) {
-  auto execution_info = std::make_unique<proto::ModelExecutionInfo>();
-  execution_info->set_model_execution_error_enum(
-      static_cast<uint32_t>(OptimizationGuideModelExecutionError::
-                                ModelExecutionError::kGenericFailure));
-  std::move(callback).Run(
-      OptimizationGuideModelExecutionResult(
-          base::unexpected(
-              OptimizationGuideModelExecutionError::FromModelExecutionError(
-                  OptimizationGuideModelExecutionError::ModelExecutionError::
-                      kGenericFailure)),
-          std::move(execution_info)),
-      nullptr);
-}
-
 }  // namespace
 
 using ModelExecutionError =
@@ -130,7 +99,7 @@ using ModelExecutionError =
 ModelExecutionManager::ModelExecutionManager(
     scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
     signin::IdentityManager* identity_manager,
-    scoped_refptr<OnDeviceModelServiceController>
+    base::WeakPtr<OnDeviceModelServiceController>
         on_device_model_service_controller,
     OptimizationGuideLogger* optimization_guide_logger,
     base::WeakPtr<ModelQualityLogsUploaderService>
@@ -138,14 +107,13 @@ ModelExecutionManager::ModelExecutionManager(
     : model_quality_uploader_service_(model_quality_uploader_service),
       optimization_guide_logger_(optimization_guide_logger),
       model_execution_service_url_(net::AppendOrReplaceQueryParameter(
-          GetModelExecutionServiceURL(),
+          switches::GetModelExecutionServiceURL(),
           "key",
           features::GetOptimizationGuideServiceAPIKey())),
       url_loader_factory_(url_loader_factory),
       identity_manager_(identity_manager),
       on_device_model_service_controller_(
-          std::move(on_device_model_service_controller)) {
-}
+          std::move(on_device_model_service_controller)) {}
 
 ModelExecutionManager::~ModelExecutionManager() {
 }
@@ -159,6 +127,12 @@ void ModelExecutionManager::Shutdown() {
   active_model_execution_fetchers_.clear();
 }
 
+void ModelExecutionManager::AddExecutionResultForTesting(
+    ModelBasedCapabilityKey feature,
+    OptimizationGuideModelExecutionResult result) {
+  test_execution_results_.insert({feature, std::move(result)});
+}
+
 void ModelExecutionManager::ExecuteModel(
     ModelBasedCapabilityKey feature,
     const google::protobuf::MessageLite& request_metadata,
@@ -166,6 +140,13 @@ void ModelExecutionManager::ExecuteModel(
     std::unique_ptr<proto::LogAiDataRequest> log_ai_data_request,
     OptimizationGuideModelExecutionResultCallback callback) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
+
+  if (test_execution_results_.find(feature) != test_execution_results_.end()) {
+    std::move(callback).Run(std::move(test_execution_results_[feature]),
+                            nullptr);
+    test_execution_results_.erase(feature);
+    return;
+  }
 
   auto previous_fetcher_it = active_model_execution_fetchers_.find(feature);
   if (previous_fetcher_it != active_model_execution_fetchers_.end()) {
@@ -234,7 +215,7 @@ ModelExecutionManager::StartSession(
                     : SessionConfigParams::ExecutionMode::kDefault;
   ExecuteRemoteFn execute_fn =
       execution_mode == SessionConfigParams::ExecutionMode::kOnDeviceOnly
-          ? base::BindRepeating(&NoOpExecuteRemoteFn)
+          ? CreateNoOpExecuteRemoteFn()
           : base::BindRepeating(&ModelExecutionManager::ExecuteModel,
                                 weak_ptr_factory_.GetWeakPtr());
   if (on_device_model_service_controller_ &&
@@ -405,19 +386,19 @@ ModelExecutionManager::GetOnDeviceModelEligibility(
   return on_device_model_service_controller_->CanCreateSession(feature);
 }
 
-std::optional<optimization_guide::OnDeviceModelAdaptationMetadata>
+std::optional<OnDeviceModelAdaptationMetadata>
 ModelExecutionManager::GetOnDeviceModelAdaptationMetadata(
-    optimization_guide::ModelBasedCapabilityKey feature) {
+    ModelBasedCapabilityKey feature) {
   if (!on_device_model_service_controller_) {
     return std::nullopt;
   }
 
-  optimization_guide::OnDeviceModelAdaptationMetadata* metadata =
+  MaybeAdaptationMetadata metadata =
       on_device_model_service_controller_->GetFeatureMetadata(feature);
-  if (!metadata) {
+  if (!metadata.has_value()) {
     return std::nullopt;
   }
-  return *metadata;
+  return metadata.value();
 }
 
 std::optional<optimization_guide::SamplingParamsConfig>

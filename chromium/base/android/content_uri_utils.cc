@@ -40,6 +40,8 @@ std::optional<std::string> TranslateOpenFlagsToJavaMode(uint32_t open_flags) {
 
   switch (open_flags) {
     case File::FLAG_OPEN | File::FLAG_READ:
+    case File::FLAG_OPEN_ALWAYS | File::FLAG_READ:
+    case File::FLAG_CREATE | File::FLAG_READ:
       return "r";
     case File::FLAG_OPEN_ALWAYS | File::FLAG_READ | File::FLAG_WRITE:
       return "rw";
@@ -54,11 +56,26 @@ std::optional<std::string> TranslateOpenFlagsToJavaMode(uint32_t open_flags) {
   }
 }
 
-int OpenContentUri(const FilePath& content_uri, uint32_t open_flags) {
-  JNIEnv* env = base::android::AttachCurrentThread();
+ScopedJavaLocalRef<jobject> OpenContentUri(const FilePath& content_uri,
+                                           uint32_t open_flags) {
+  JNIEnv* env = android::AttachCurrentThread();
   auto mode = TranslateOpenFlagsToJavaMode(open_flags);
   CHECK(mode.has_value()) << "Unsupported flags=0x" << std::hex << open_flags;
   return Java_ContentUriUtils_openContentUri(env, content_uri.value(), *mode);
+}
+
+int ContentUriGetFd(const JavaRef<jobject>& java_parcel_file_descriptor) {
+  if (!java_parcel_file_descriptor) {
+    return -1;
+  }
+  JNIEnv* env = android::AttachCurrentThread();
+  int fd = Java_ContentUriUtils_getFd(env, java_parcel_file_descriptor);
+  return dup(fd);
+}
+
+void ContentUriClose(const JavaRef<jobject>& java_parcel_file_descriptor) {
+  JNIEnv* env = android::AttachCurrentThread();
+  Java_ContentUriUtils_close(env, java_parcel_file_descriptor);
 }
 
 bool ContentUriGetFileInfo(const FilePath& content_uri,

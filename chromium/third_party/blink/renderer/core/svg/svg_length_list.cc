@@ -37,12 +37,6 @@ SVGLengthList* SVGLengthList::Clone() const {
   return ret;
 }
 
-SVGPropertyBase* SVGLengthList::CloneForAnimation(const String& value) const {
-  auto* ret = MakeGarbageCollected<SVGLengthList>(mode_);
-  ret->SetValueAsString(value);
-  return ret;
-}
-
 template <typename CharType>
 SVGParsingError SVGLengthList::ParseInternal(const CharType* ptr,
                                              const CharType* end) {
@@ -75,7 +69,7 @@ SVGParsingError SVGLengthList::SetValueAsString(const String& value) {
   if (value.empty())
     return SVGParseStatus::kNoError;
 
-  return WTF::VisitCharacters(value, [&](auto chars) {
+  return VisitCharacters(value, [&](auto chars) {
     return ParseInternal(chars.data(), chars.data() + chars.size());
   });
 }

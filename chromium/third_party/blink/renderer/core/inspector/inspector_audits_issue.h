@@ -7,6 +7,7 @@
 
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "base/unguessable_token.h"
 #include "services/network/public/mojom/blocked_by_response_reason.mojom-forward.h"
@@ -17,11 +18,8 @@
 #include "third_party/blink/renderer/core/inspector/protocol/audits.h"
 #include "third_party/blink/renderer/platform/graphics/dom_node_id.h"
 #include "third_party/blink/renderer/platform/loader/fetch/fetch_initiator_info.h"
+#include "third_party/blink/renderer/platform/wtf/forward.h"
 #include "third_party/blink/renderer/platform/wtf/text/text_position.h"
-
-namespace WTF {
-class String;
-}
 
 namespace blink {
 
@@ -64,12 +62,13 @@ enum class ClientHintIssueReason {
   kMetaTagModifiedHTML,
 };
 
-enum class SelectElementAccessibilityIssueReason {
+enum class ElementAccessibilityIssueReason {
   kDisallowedSelectChild,
   kDisallowedOptGroupChild,
   kNonPhrasingContentOptionChild,
   kInteractiveContentOptionChild,
   kInteractiveContentLegendChild,
+  kInteractiveContentSummaryDescendant,
   kValidChild,
 };
 
@@ -178,14 +177,14 @@ class CORE_EXPORT AuditsIssue {
       mojom::blink::PartitioningBlobURLInfo info);
   static void ReportStylesheetLoadingLateImportIssue(Document* document,
                                                      const KURL& url,
-                                                     WTF::OrdinalNumber line,
-                                                     WTF::OrdinalNumber column);
+                                                     OrdinalNumber line,
+                                                     OrdinalNumber column);
 
   static void ReportPropertyRuleIssue(
       Document* document,
       const KURL& url,
-      WTF::OrdinalNumber line,
-      WTF::OrdinalNumber column,
+      OrdinalNumber line,
+      OrdinalNumber column,
       protocol::Audits::PropertyRuleIssueReason reason,
       const String& propertyValue);
 
@@ -194,15 +193,20 @@ class CORE_EXPORT AuditsIssue {
       const KURL& url,
       const String& request_id,
       const KURL& initiator_url,
-      WTF::OrdinalNumber initiator_line,
-      WTF::OrdinalNumber initiator_column,
+      OrdinalNumber initiator_line,
+      OrdinalNumber initiator_column,
       const String& failureMessage);
 
-  static void ReportSelectElementAccessibilityIssue(
+  static void ReportElementAccessibilityIssue(
       Document* document,
       DOMNodeId node_id,
-      SelectElementAccessibilityIssueReason issue_reason,
+      ElementAccessibilityIssueReason issue_reason,
       bool has_disallowed_attributes);
+
+  static void ReportUserReidentificationIssue(
+      LocalFrame* frame,
+      std::optional<std::string> devtools_request_id,
+      const KURL& affected_request_url);
 
  private:
 

@@ -24,6 +24,10 @@
 class PrefService;
 class PrefRegistrySimple;
 
+namespace metrics_services_manager {
+class MetricsServicesManager;
+}
+
 namespace metrics {
 
 class EnabledStateProvider;
@@ -180,10 +184,7 @@ class MetricsStateManager final {
   // only returns an entropy provider that is based on a low entropy source.
   //
   // When |enable_limited_entropy_mode| is true, a limited entropy
-  // randomization source value will be generated for this client. This
-  // parameter can only be false before the limited entropy synthetic trial
-  // completes (See limited_entropy_synthetic_trial.h), after which it should be
-  // removed (TODO(crbug.com/40948861)).
+  // randomization source value will be generated for this client.
   std::unique_ptr<const variations::EntropyProviders> CreateEntropyProviders(
       bool enable_limited_entropy_mode);
 
@@ -232,6 +233,7 @@ class MetricsStateManager final {
                            ProvisionalClientId_PersistedAcrossFirstRuns);
   FRIEND_TEST_ALL_PREFIXES(MetricsStateManagerTest, ResetBackup);
   FRIEND_TEST_ALL_PREFIXES(MetricsStateManagerTest, ResetMetricsIDs);
+  friend class ::metrics_services_manager::MetricsServicesManager;
 
   // Designates which entropy source was returned from this class.
   // This is used for testing to validate that we return the correct source
@@ -281,10 +283,11 @@ class MetricsStateManager final {
                       StoreClientInfoCallback store_client_info,
                       LoadClientInfoCallback load_client_info);
 
-  // Returns a MetricsStateManagerProvider instance and sets its
-  // |log_normal_metric_state_.gen| with the provided random seed.
-  std::unique_ptr<MetricsProvider> GetProviderAndSetRandomSeedForTesting(
-      int64_t seed);
+  // Returns the ClonedInstallDetector. This is useful in case we're checking
+  // whether an install was detected in this session.
+  // Marked as private (exposed selectively via friend classes) for the metrics
+  // team to be able to control and monitor if/how this function gets called.
+  const ClonedInstallDetector& GetClonedInstallDetector() const;
 
   // Backs up the current client info via |store_client_info_|.
   void BackUpCurrentClientInfo();

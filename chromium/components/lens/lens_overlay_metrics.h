@@ -9,6 +9,7 @@
 #include <string>
 
 #include "base/time/time.h"
+#include "components/lens/lens_composebox_user_action.h"
 #include "components/lens/lens_overlay_dismissal_source.h"
 #include "components/lens/lens_overlay_first_interaction_type.h"
 #include "components/lens/lens_overlay_invocation_source.h"
@@ -20,23 +21,6 @@
 #include "services/metrics/public/cpp/ukm_source_id.h"
 
 namespace lens {
-
-// Designates the selected item in the lens speedbump menu.
-//
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
-//
-// LINT.IfChange(LensOverlaySpeedbumpMenuSelection)
-enum class LensOverlaySpeedbumpMenuSelection {
-  // Item summoning Lens Overlay.
-  kSearchYourScreen = 0,
-
-  // Item summoning Lens Live View Finder (LVF).
-  kSearchWithCamera = 1,
-
-  kMaxValue = kSearchWithCamera
-};
-// LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensOverlaySpeedbumpMenuSelection)
 
 struct ContextualSearchboxSessionEndMetrics {
   // Indicates whether zps was shown for the initial query in a session.
@@ -71,6 +55,33 @@ struct ContextualSearchboxSessionEndMetrics {
   // Whether the contextual searchbox should be shown in the session.
   bool searchbox_shown_ = false;
 };
+
+struct AimSessionEndMetrics {
+  // Indicates whether the AIM searchbox was shown in the session.
+  bool composebox_shown_ = false;
+
+  // Indicates whether the AIM handshake was received in the session.
+  bool handshake_completed_ = false;
+
+  // Indicates whether the AIM searchbox was focused in the session.
+  bool composebox_focused_ = false;
+
+  // Indicates whether a query was issued in the session.
+  bool query_issued_ = false;
+};
+
+// LINT.IfChange(LensOverlayTextDirectiveResult)
+enum class LensOverlayTextDirectiveResult {
+  // The text directive was found on the page.
+  kFoundOnPage = 0,
+  // The URL with a text directive was opened in a new tab because it did not
+  // match the current page.
+  kOpenedInNewTab = 1,
+  // The text directive was not found on the page.
+  kNotFoundOnPage = 2,
+  kMaxValue = kNotFoundOnPage,
+};
+// LINT.ThenChange(//tools/metrics/histograms/metadata/lens/enums.xml:LensOverlayTextDirectiveResult)
 
 // Returns the string representation of the invocation source.
 std::string InvocationSourceToString(
@@ -116,6 +127,12 @@ void RecordContextualSearchboxSessionEndMetrics(
     ContextualSearchboxSessionEndMetrics session_end_metrics,
     lens::MimeType page_content_type,
     lens::MimeType document_content_type);
+
+// Records the end of sessions metrics for the AIM searchbox.
+void RecordAimSessionEndMetrics(AimSessionEndMetrics aim_session_end_metrics);
+
+// Records user action in the AIM composebox.
+void RecordAimComposeboxUserAction(LensComposeboxUserAction user_action);
 
 // Records the time in foreground of a lens overlay. Both sliced and unsliced.
 void RecordSessionForegroundDuration(
@@ -190,6 +207,10 @@ void RecordSidePanelResultStatus(SidePanelResultStatus status);
 // Records that a side panel menu option has been selected.
 void RecordSidePanelMenuOptionSelected(
     lens::LensOverlaySidePanelMenuOption menu_option);
+
+// Records the result of handling a text directive in the Lens Overlay.
+void RecordHandleTextDirectiveResult(
+    lens::LensOverlayTextDirectiveResult result);
 
 }  // namespace lens
 

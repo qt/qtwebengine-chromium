@@ -6,6 +6,7 @@
 #define COMPONENTS_PDF_BROWSER_PDF_DOCUMENT_HELPER_H_
 
 #include <memory>
+#include <vector>
 
 #include "base/memory/raw_ptr.h"
 #include "base/observer_list.h"
@@ -96,12 +97,14 @@ class PDFDocumentHelper
 #endif
 
   // Returns whether document is loaded, at which point, the other calls to
-  // document metadata such  as `GetPdfBytes`, `GetPageText` can be made.
+  // document metadata such as `GetPdfBytes`, `GetPageText` can return data.
   bool IsDocumentLoadComplete() const { return is_document_load_complete_; }
-
+  // Get PDF bytes, if they do not exceed the size limit. If called before
+  // document is loaded, the callback will be invoked with an empty vector.
   void GetPdfBytes(uint32_t size_limit,
                    pdf::mojom::PdfListener::GetPdfBytesCallback callback);
-
+  // Returns text of the given page. If called before document is loaded, the
+  // callback will be invoked with an empty string.
   void GetPageText(int32_t page_index,
                    pdf::mojom::PdfListener::GetPageTextCallback callback);
   void GetMostVisiblePageIndex(
@@ -110,10 +113,14 @@ class PDFDocumentHelper
   // Registers `callback` to be run when document load completes successfully.
   // When the PDF is already loaded, `callback` is invoked immediately. Will not
   // be invoked when the load fails. This is useful to wait for document
-  // metadata to be loaded, before calls to `GetPdfBytes`, and `GetPageText` can
-  // be made.
+  // metadata to be loaded, before calls to `GetPdfBytes`, and `GetPageText`
+  // should be made.
   void RegisterForDocumentLoadComplete(base::OnceClosure callback);
 
+#if BUILDFLAG(ENABLE_SCREEN_AI_SERVICE)
+  // Returns whether document is searchified.
+  bool SearchifyStarted() const { return searchify_started_; }
+#endif
  private:
   friend class content::DocumentUserData<PDFDocumentHelper>;
 

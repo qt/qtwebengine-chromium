@@ -12,13 +12,13 @@ from typing import (TYPE_CHECKING, Generic, Iterable, Iterator, Optional,
 
 from typing_extensions import override
 
-from crossbench import plt
 from crossbench.probes.results import (BrowserProbeResult, EmptyProbeResult,
                                        LocalProbeResult, ProbeResult)
 
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import BaseOptions
 
+  from crossbench import plt
   from crossbench.browsers.browser import Browser
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.probe import Probe
@@ -91,14 +91,12 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     return self.browser.host_platform
 
   @property
-  @abc.abstractmethod
   def browser(self) -> Browser:
-    pass
+    return self._result_origin.browser
 
   @property
-  @abc.abstractmethod
   def runner(self) -> Runner:
-    pass
+    return self._result_origin.runner
 
   @property
   @abc.abstractmethod
@@ -130,9 +128,8 @@ class BaseProbeContext(Generic[ProbeT], metaclass=abc.ABCMeta):
     pass
 
   @property
-  @abc.abstractmethod
   def local_result_path(self) -> LocalPath:
-    pass
+    return self.host_platform.local_path(self.result_path)
 
   @property
   def name(self) -> str:
@@ -213,23 +210,8 @@ class ProbeContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
 
   @property
   @override
-  def browser(self) -> Browser:
-    return self._run.browser
-
-  @property
-  @override
-  def runner(self) -> Runner:
-    return self._run.runner
-
-  @property
-  @override
   def result_path(self) -> AnyPath:
     return self._default_result_path
-
-  @property
-  @override
-  def local_result_path(self) -> LocalPath:
-    return self.host_platform.local_path(self.result_path)
 
   def setup_selenium_options(self, options: BaseOptions) -> None:
     """
@@ -309,11 +291,6 @@ class ProbeSessionContext(BaseProbeContext[ProbeT], metaclass=abc.ABCMeta):
   @override
   def result_origin(self) -> ResultOrigin:
     return self._session
-
-  @property
-  @override
-  def browser(self) -> Browser:
-    return self._session.browser
 
   @property
   @override

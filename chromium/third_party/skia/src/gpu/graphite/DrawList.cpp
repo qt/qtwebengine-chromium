@@ -4,12 +4,11 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #include "src/gpu/graphite/DrawList.h"
 
-#include "src/gpu/BufferWriter.h"
+#include "include/core/SkTypes.h"
 #include "src/gpu/graphite/Renderer.h"
-#include "src/gpu/graphite/geom/Shape.h"
+#include "src/gpu/graphite/geom/Geometry.h"
 
 namespace skgpu::graphite {
 
@@ -38,18 +37,21 @@ void DrawList::recordDraw(const Renderer* renderer,
 
     fDraws.emplace_back(renderer, this->deduplicateTransform(localToDevice),
                         geometry, clip, ordering, paint, stroke);
+
+    // Accumulate renderer information for each draw added to this list
     fRenderStepCount += renderer->numRenderSteps();
+    fRequiresMSAA |= renderer->requiresMSAA();
+    fDepthStencilFlags |= renderer->depthStencilFlags();
+    if (paint && paint->dstReadRequired()) {
+        // For paints that read from the dst, update the bounds. It may later be determined that the
+        // DstReadStrategy does not require them, but they are inexpensive to track.
+        fDstReadBounds.join(clip.drawBounds());
+    }
 
 #if defined(SK_DEBUG)
     if (geometry.isCoverageMaskShape()) {
         fCoverageMaskShapeDrawCount++;
     }
 #endif
-    if (paint && paint->dstReadRequired()) {
-        // For paints that read from the dst, update the bounds. It may later be determined that the
-        // DstReadStrategy does not require them, but they are inexpensive to track.
-        fDstReadBounds.join(clip.drawBounds());
-    }
 }
-
 } // namespace skgpu::graphite

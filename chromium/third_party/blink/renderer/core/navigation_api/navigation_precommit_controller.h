@@ -13,6 +13,8 @@
 
 namespace blink {
 
+class NavigationNavigateOptions;
+
 class NavigationPrecommitController final : public ScriptWrappable {
   DEFINE_WRAPPERTYPEINFO();
 
@@ -20,8 +22,10 @@ class NavigationPrecommitController final : public ScriptWrappable {
   explicit NavigationPrecommitController(NavigateEvent* event)
       : navigate_event_(event) {}
 
-  void redirect(const String& url, ExceptionState& exception_state) {
-    navigate_event_->Redirect(url, exception_state);
+  void redirect(const String& url,
+                NavigationNavigateOptions* options,
+                ExceptionState& exception_state) {
+    navigate_event_->Redirect(url, options, exception_state);
   }
 
   void Trace(Visitor* visitor) const final {

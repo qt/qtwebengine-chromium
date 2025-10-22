@@ -293,7 +293,7 @@ static constexpr int int_pow(int base, unsigned exp, int acc = 1) {
 }
 
 
-size_t SkPDFUtils::ColorToDecimalF(float value, char result[kFloatColorDecimalCount + 2]) {
+size_t SkPDFUtils::ColorToDecimalF(float value, char (&result)[kFloatColorDecimalCount + 2]) {
     static constexpr int kFactor = int_pow(10, kFloatColorDecimalCount);
     int x = sk_float_round2int(value * kFactor);
     if (x >= kFactor || x <= 0) {  // clamp to 0-1
@@ -316,12 +316,11 @@ size_t SkPDFUtils::ColorToDecimal(uint8_t value, char result[5]) {
 }
 
 bool SkPDFUtils::InverseTransformBBox(const SkMatrix& matrix, SkRect* bbox) {
-    SkMatrix inverse;
-    if (!matrix.invert(&inverse)) {
-        return false;
+    if (auto inverse = matrix.invert()) {
+        inverse->mapRect(bbox);
+        return true;
     }
-    inverse.mapRect(bbox);
-    return true;
+    return false;
 }
 
 void SkPDFUtils::PopulateTilingPatternDict(SkPDFDict* pattern,

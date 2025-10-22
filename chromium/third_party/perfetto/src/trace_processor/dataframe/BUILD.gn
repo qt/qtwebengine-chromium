@@ -16,8 +16,15 @@ import("../../../gn/test.gni")
 
 source_set("dataframe") {
   sources = [
+    "adhoc_dataframe_builder.cc",
+    "adhoc_dataframe_builder.h",
+    "cursor.h",
+    "cursor_impl.h",
     "dataframe.cc",
     "dataframe.h",
+    "runtime_dataframe_builder.h",
+    "typed_cursor.cc",
+    "typed_cursor.h",
   ]
   deps = [
     "../../../gn:default_deps",
@@ -34,17 +41,22 @@ source_set("specs") {
   sources = [
     "specs.h",
     "type_set.h",
+    "types.h",
+    "value_fetcher.h",
   ]
   deps = [
     "../../../gn:default_deps",
     "../../base",
+    "../containers",
   ]
 }
 
 perfetto_unittest_source_set("unittests") {
   testonly = true
   sources = [
+    "dataframe_test_utils.h",
     "dataframe_unittest.cc",
+    "runtime_dataframe_builder_unittest.cc",
     "type_set_unittest.cc",
   ]
   deps = [
@@ -54,6 +66,7 @@ perfetto_unittest_source_set("unittests") {
     "../../base",
     "../../base:test_support",
     "../containers",
+    "../util:regex",
     "impl",
   ]
 }

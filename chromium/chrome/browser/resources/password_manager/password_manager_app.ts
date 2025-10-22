@@ -33,6 +33,7 @@ import type {DomIf} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundle
 import {PolymerElement} from 'chrome://resources/polymer/v3_0/polymer/polymer_bundled.min.js';
 
 import type {CheckupSectionElement} from './checkup_section.js';
+import type {BackupPasswordRemovedEvent} from './credential_details/backup_password_details_card.js';
 import type {PasswordRemovedEvent} from './credential_details/password_details_card.js';
 import type {FocusConfig} from './focus_config.js';
 import {getTemplate} from './password_manager_app.html.js';
@@ -113,6 +114,7 @@ export class PasswordManagerAppElement extends PasswordManagerAppElementBase {
 
       pageTitle_: {
         type: String,
+        value: () => loadTimeData.getString('passwordManagerTitle'),
       },
 
       /*
@@ -146,14 +148,14 @@ export class PasswordManagerAppElement extends PasswordManagerAppElementBase {
     };
   }
 
-  private prefs_: {[key: string]: any};
-  private selectedPage_: Page;
-  private narrow_: boolean;
-  private collapsed_: boolean;
-  private pageTitle_: string = this.i18n('passwordManagerTitle');
-  private toastMessage_: string;
-  private showUndo_: boolean;
-  private focusConfig_: FocusConfig;
+  declare private prefs_: {[key: string]: any};
+  declare private selectedPage_: Page;
+  declare private narrow_: boolean;
+  declare private collapsed_: boolean;
+  declare private pageTitle_: string;
+  declare private toastMessage_: string;
+  declare private showUndo_: boolean;
+  declare private focusConfig_: FocusConfig;
   private eventTracker_: EventTracker = new EventTracker();
 
   override connectedCallback() {
@@ -196,7 +198,7 @@ export class PasswordManagerAppElement extends PasswordManagerAppElementBase {
       controlledSettingParent:
           loadTimeData.getString('controlledSettingParent'),
 
-      // <if expr="chromeos_ash">
+      // <if expr="is_chromeos">
       controlledSettingShared:
           loadTimeData.getString('controlledSettingShared'),
       controlledSettingWithOwner:
@@ -309,6 +311,12 @@ export class PasswordManagerAppElement extends PasswordManagerAppElementBase {
 
   private onPasswordRemoved_(_event: PasswordRemovedEvent) {
     // TODO(crbug.com/40234318): Show different message if account store user.
+    this.showUndo_ = true;
+    this.toastMessage_ = this.i18n('passwordDeleted');
+    this.$.toast.show();
+  }
+
+  private onBackupPasswordRemoved_(_event: BackupPasswordRemovedEvent) {
     this.showUndo_ = true;
     this.toastMessage_ = this.i18n('passwordDeleted');
     this.$.toast.show();

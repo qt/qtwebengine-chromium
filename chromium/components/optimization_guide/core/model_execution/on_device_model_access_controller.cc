@@ -6,6 +6,7 @@
 
 #include "base/metrics/histogram_functions.h"
 #include "components/optimization_guide/core/model_execution/model_execution_prefs.h"
+#include "components/optimization_guide/core/model_execution/on_device_model_validator.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_model_executor.h"
 #include "components/prefs/pref_service.h"
@@ -99,8 +100,10 @@ void OnDeviceModelAccessController::OnResponseCompleted() {
   next_attempt_time_after_crash_ = base::Time::Now();
 }
 
-void OnDeviceModelAccessController::OnDisconnectedFromRemote() {
+base::Time OnDeviceModelAccessController::OnDisconnectedFromRemote() {
   int crash_count = pref_service_->GetInteger(kOnDeviceModelCrashCount) + 1;
+  base::UmaHistogramCounts100(
+      "OptimizationGuide.ModelExecution.OnDeviceModelCrashCount", crash_count);
   pref_service_->SetInteger(kOnDeviceModelCrashCount, crash_count);
   // If the model will be disabled because of crash count, use exponential
   // backoff to re-enable.
@@ -108,6 +111,7 @@ void OnDeviceModelAccessController::OnDisconnectedFromRemote() {
       crash_count, features::GetOnDeviceModelCrashCountBeforeDisable(),
       features::GetOnDeviceModelCrashBackoffBaseTime(),
       features::GetOnDeviceModelMaxCrashBackoffTime());
+  return next_attempt_time_after_crash_;
 }
 
 void OnDeviceModelAccessController::OnGpuBlocked() {

@@ -170,7 +170,7 @@ class TestAndroidAutofillManager : public AndroidAutofillManager {
     gfx::Rect caret_bounds(gfx::Point(p.x(), p.y()), gfx::Size(0, 10));
     OnAskForValuesToFillImpl(
         form, field.global_id(), caret_bounds,
-        AutofillSuggestionTriggerSource::kTextFieldValueChanged);
+        AutofillSuggestionTriggerSource::kTextFieldValueChanged, std::nullopt);
   }
 
   void SimulateOnFocusOnFormField(const FormData& form,
@@ -939,28 +939,40 @@ TEST_F(AndroidAutofillProviderWithCredManTest,
 }
 
 TEST_F(AndroidAutofillProviderWithCredManTest,
-       LogConditionalPasskeysFlowPasskeysAvailableMetricWithoutPasskeys) {
+       LogConditionalPasskeysFlowPasskeysAvailableOnLongPress) {
+  ON_CALL(cred_man_delegate(), HasPasskeys())
+      .WillByDefault(
+          Return(webauthn::WebAuthnCredManDelegate::State::kNoPasskeys));
+
+  // Focus the form field which has no immediate passkey effect.
+  FocusFormField(webauthn_email_field());
+  EXPECT_FALSE(keyboard_suppressor().is_suppressing());
+
+  // Simulate the long-press suggestion was accepted.
+  EXPECT_CALL(cred_man_delegate(),
+              TriggerCredManUi(Eq(
+                  webauthn::WebAuthnCredManDelegate::RequestPasswords(false))));
+  test_api(autofill_provider()).OnTriggerPasskeyRequest();
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest,
+       LogConditionalPasskeysFlowPasskeysUnavailableWithoutPasskeys) {
   base::HistogramTester histogram_tester;
   ON_CALL(cred_man_delegate(), HasPasskeys())
       .WillByDefault(
           Return(webauthn::WebAuthnCredManDelegate::State::kNoPasskeys));
 
   // Focus the form field.
-  base::RepeatingCallback<void(bool)> completed_callback;
-  EXPECT_CALL(cred_man_delegate(), SetRequestCompletionCallback)
-      .WillOnce(SaveArg<0>(&completed_callback));
+  EXPECT_CALL(cred_man_delegate(), SetRequestCompletionCallback).Times(0);
   FocusFormField(webauthn_email_field());
 
-  // Keyboard is suppressed while CredMan is showing.
-  EXPECT_TRUE(keyboard_suppressor().is_suppressing());
+  // Don't expect Keyboard without CredMan showing.
+  EXPECT_FALSE(keyboard_suppressor().is_suppressing());
   Mock::VerifyAndClearExpectations(&cred_man_delegate());
-
-  // Hide CredMan.
-  completed_callback.Run(/*success=*/true);
 
   histogram_tester.ExpectUniqueSample(
       "Autofill.ConditionalPasskeysFlow.PasskeysState",
-      webauthn::WebAuthnCredManDelegate::State::kNoPasskeys, 1);
+      webauthn::WebAuthnCredManDelegate::State::kNoPasskeys, 0);
 }
 
 TEST_F(AndroidAutofillProviderWithCredManTest, NoCredManWithoutAnnotation) {
@@ -978,6 +990,22 @@ TEST_F(AndroidAutofillProviderWithCredManTest, SkipsCredManCallBeforeReady) {
 
   EXPECT_CALL(cred_man_delegate(), TriggerCredManUi).Times(0);
   FocusFormField(webauthn_email_field());
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest, OfferLongPressOption) {
+  FocusFormField(webauthn_email_field());
+  EXPECT_TRUE(provider_bridge_delegate().HasPasskeyRequest());
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest,
+       OfferNoLongPressOptionWithoutAnnotation) {
+  FocusFormField(non_webauthn_password_field());
+  EXPECT_FALSE(provider_bridge_delegate().HasPasskeyRequest());
+}
+
+TEST_F(AndroidAutofillProviderWithCredManTest,
+       OfferNoLongPressOptionWithoutField) {
+  EXPECT_FALSE(provider_bridge_delegate().HasPasskeyRequest());
 }
 
 TEST_F(AndroidAutofillProviderWithCredManTest, NotifyFocusOnCredManError) {
@@ -1342,10 +1370,6 @@ TEST_F(AndroidAutofillProviderPrefillRequestTest,
   histogram_tester.ExpectUniqueSample(
       AndroidAutofillProvider::kPrefillRequestStateUma,
       PrefillRequestState::kRequestSentStructureNotProvided, 1);
-  histogram_tester.ExpectTotalCount(
-      AndroidAutofillProvider::
-          kPrefillRequestBottomsheetNoViewStructureDelayUma,
-      1);
 }
 
 // Tests that the correct metrics are emitted when the bottom sheet is not shown

@@ -7,12 +7,10 @@ from __future__ import annotations
 import contextlib
 import enum
 import logging
-from typing import TYPE_CHECKING, Iterable, Iterator, List, Optional, Tuple
+from typing import TYPE_CHECKING, Iterable, Iterator, Optional
 
 from typing_extensions import override
 
-from crossbench.exception import TInfoStack
-from crossbench.flags.base import Flags
 from crossbench.flags.js_flags import JSFlags
 from crossbench.helper.cwd import ChangeCWD
 from crossbench.helper.durations import Durations
@@ -26,8 +24,11 @@ from crossbench.runner.result_origin import ResultOrigin
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import ArgOptions
 
+  from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
+  from crossbench.exception import TInfoStack
+  from crossbench.flags.base import Flags
   from crossbench.network.base import Network
   from crossbench.path import AnyPath, LocalPath
   from crossbench.probes.probe import Probe
@@ -55,26 +56,26 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
   browser is (re-)started.
   """
 
-  def __init__(self, env: HostEnvironment, probes: Iterable[Probe],
-               browser: Browser, extra_flags: Flags, index: int,
-               root_dir: LocalPath, create_symlinks: bool, throw: bool) -> None:
+  def __init__(self, env: RunnerEnv, probes: Iterable[Probe], browser: Browser,
+               extra_flags: Flags, index: int, root_dir: LocalPath,
+               create_symlinks: bool, throw: bool) -> None:
     super().__init__(throw)
     self._state: StateMachine[State] = StateMachine(State.BUILDING)
     self._env = env
     self._create_symlinks = create_symlinks
-    self._probes: Tuple[Probe, ...] = tuple(probes)
+    self._probes: tuple[Probe, ...] = tuple(probes)
     self._durations = Durations()
     self._browser = browser
     self._network: Network = browser.network
     self._index: int = index
-    self._runs: List[Run] = []
+    self._runs: list[Run] = []
     self._root_dir: LocalPath = root_dir
     self._browser_tmp_dir: AnyPath | None = None
     self._extra_js_flags = JSFlags()
     self._extra_flags = extra_flags
     # Temporary objects, reset after all runs are ready (see set_ready).
     self._probe_results = ProbeResultDict(root_dir)
-    self._probe_context_manager = ProbeSessionContextManager(
+    self._probe_session_context_manager = ProbeSessionContextManager(
         self, self._probe_results)
 
   def append(self, run: Run) -> None:
@@ -91,7 +92,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     self._validate()
     self._set_path(self._get_session_dir())
     self._probe_results = ProbeResultDict(self.path)
-    self._probe_context_manager = ProbeSessionContextManager(
+    self._probe_session_context_manager = ProbeSessionContextManager(
         self, self._probe_results)
 
   def _validate(self) -> None:
@@ -150,7 +151,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     return self._durations
 
   @property
-  def env(self) -> HostEnvironment:
+  def env(self) -> RunnerEnv:
     return self._env
 
   @property
@@ -166,6 +167,10 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
   @override
   def browser(self) -> Browser:
     return self._browser
+
+  @property
+  def benchmark(self) -> Benchmark:
+    return self.first_run.benchmark
 
   @property
   def index(self) -> int:
@@ -264,7 +269,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     with self.measure("browser-session-setup"):
       self._setup(is_dry_run)
     try:
-      with self._start_network(), self._start_probes(is_dry_run):
+      with self._start_network(is_dry_run), self._start_probes(is_dry_run):
         self._start(is_dry_run)
         try:
           self._state.expect(State.RUNNING)
@@ -278,7 +283,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
 
   def _setup(self, is_dry_run: bool) -> None:
     self._state.expect(State.SETUP)
-    self._probe_context_manager.setup(self.probes, is_dry_run)
+    self._probe_session_context_manager.setup(self.probes, is_dry_run)
     # TODO: handle session vs run probe.
     for run in self.runs:
       with self._exceptions.annotate(f"Setting up {run}"):
@@ -306,8 +311,11 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
         self.raw_session_dir.symlink_to(self.path)
 
   @contextlib.contextmanager
-  def _start_network(self):
+  def _start_network(self, is_dry_run: bool = False):
     logging.debug("Starting network: %s", self.network)
+    if is_dry_run:
+      yield
+      return
     with self._exceptions.annotate(f"Starting Network: {self.network}"):
       with self.network.open(self):
         yield
@@ -315,7 +323,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
   @contextlib.contextmanager
   def _start_probes(self, is_dry_run: bool):
     with self._exceptions.annotate("Starting Session Probes"):
-      with self._probe_context_manager.open(is_dry_run):
+      with self._probe_session_context_manager.open(is_dry_run):
         yield
 
   def _start(self, is_dry_run: bool) -> None:
@@ -327,11 +335,11 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
 
   def _start_browser(self, is_dry_run: bool) -> None:
     self._state.expect(State.STARTING)
-    assert self.network.is_running, "Network isn't running yet"
     if is_dry_run:
       logging.info("BROWSER: %s", self.browser.path)
       return
-    assert self._probe_context_manager.is_running
+    assert self.network.is_running, "Network isn't running yet"
+    assert self._probe_session_context_manager.is_running
     browser_log_file = self.path / "browser.log"
     assert not browser_log_file.exists(), (
         f"Default browser log file {browser_log_file} already exists.")
@@ -356,7 +364,7 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
         self._stop_browser(is_dry_run)
       finally:
         self._state.transition(State.STOPPING, to=State.DONE)
-    self._probe_context_manager.teardown(is_dry_run)
+    self._probe_session_context_manager.teardown(is_dry_run)
 
   def _stop_browser(self, is_dry_run: bool) -> None:
     self._state.expect(State.STOPPING)
@@ -365,6 +373,14 @@ class BrowserSessionRunGroup(RunGroup, ResultOrigin):
     # in a unclean state.
     if self.browser.is_running:
       self._runs[-1]._teardown_browser(is_dry_run)  # pylint: disable=protected-access
+
+  def handle_startup_failure(self) -> None:
+    runs = tuple(self.runs)
+    self.exceptions.log(f"SESSION STARTUP ERRORS: Skipping {len(runs)} runs")
+    for run in runs:
+      with self.exception_capture(f"Processing startup failures for {run}"):
+        run.exceptions.extend(self.exceptions)
+        run.teardown_write_results_db()
 
   # TODO: remove once cleanly implemented
   def is_first_run(self, run: Run) -> bool:

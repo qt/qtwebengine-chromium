@@ -27,6 +27,7 @@
 #include "components/autofill/core/browser/strike_databases/strike_database_base.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service_observer.h"
+#include "components/autofill/core/common/dense_set.h"
 #include "components/history/core/browser/history_types.h"
 #include "components/prefs/pref_member.h"
 #include "components/signin/public/identity_manager/account_info.h"
@@ -44,6 +45,7 @@ namespace autofill {
 class AddressDataCleaner;
 class AlternativeStateNameMapUpdater;
 class ContactInfoPreconditionChecker;
+class HomeAndWorkMetadataStore;
 
 // Contains all address-related logic of the `PersonalDataManager`. See comment
 // above the `PersonalDataManager` first. In the `AddressDataManager` (ADM),
@@ -123,6 +125,9 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
   std::vector<const AutofillProfile*> GetProfilesByRecordType(
       AutofillProfile::RecordType record_type,
       ProfileOrder order = ProfileOrder::kNone) const;
+  std::vector<const AutofillProfile*> GetProfilesByRecordType(
+      DenseSet<AutofillProfile::RecordType> record_types,
+      ProfileOrder order = ProfileOrder::kNone) const;
 
   // Returns the profiles to suggest to the user for filling, ordered by
   // frecency.
@@ -133,7 +138,7 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
   std::vector<const AutofillProfile*> GetProfilesForSettings() const;
 
   // Returns the profile with the specified `guid`, or nullptr if there is no
-  // profile such profile. See `GetProfiles()` for the lifetime of the pointer.
+  // such profile. See `GetProfiles()` for the lifetime of the pointer.
   const AutofillProfile* GetProfileByGUID(const std::string& guid) const;
 
   // Adds |profile| to the web database.
@@ -155,11 +160,6 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
   // Autofill address profiles to their account.
   virtual bool IsEligibleForAddressAccountStorage() const;
 
-  // Users based in unsupported countries and profiles with a country value set
-  // to an unsupported country are not eligible for account storage. This
-  // function determines if the `country_code` is eligible.
-  bool IsCountryEligibleForAccountStorage(std::string_view country_code) const;
-
   // Migrates a given kLocalOrSyncable `profile` to kAccount. This has multiple
   // side-effects for the profile:
   // - It is stored in a different backend.
@@ -170,7 +170,7 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
   void MigrateProfileToAccount(const AutofillProfile& profile);
 
   // Asynchronously loads all `AutofillProfile`s (from all record types) into
-  // the class's state. See `synced_local_profiles_` and `account_profiles_`.
+  // `profiles_`.
   virtual void LoadProfiles();
 
   // Updates the `profile`'s use count and use date in the database.
@@ -301,6 +301,10 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
   AlternativeStateNameMapUpdater*
   get_alternative_state_name_map_updater_for_testing() {
     return alternative_state_name_map_updater_.get();
+  }
+
+  HomeAndWorkMetadataStore* home_and_work_metadata_store() {
+    return home_and_work_metadata_.get();
   }
 
  protected:
@@ -452,6 +456,10 @@ class AddressDataManager : public AutofillWebDataServiceObserverOnUISequence {
   // deduplication, disused address removal) at browser startup or when the sync
   // starts.
   std::unique_ptr<AddressDataCleaner> address_data_cleaner_;
+
+  // Manages metadata sync for Home and Work addresses. Non-null if Home and
+  // Work support is enabled and a pref service is available.
+  std::unique_ptr<HomeAndWorkMetadataStore> home_and_work_metadata_;
 
   // If true, new addresses imports are automatically accepted without a prompt.
   // Only to be used for testing.

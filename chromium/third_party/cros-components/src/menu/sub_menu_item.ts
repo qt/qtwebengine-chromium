@@ -50,13 +50,13 @@ export class SubMenuItem extends LitElement {
    * Headline is the primary text of the list item, name follows
    * from md-menu-item.
    */
-  headline: string;
+  declare headline: string;
 
   // The following properties are necessary for wrapping and keyboard navigation
   /**
    * Whether or not the menu-item is disabled.
    */
-  disabled: boolean;
+  declare disabled: boolean;
 
   /**
    * Sets the item in the selected visual state when a submenu is opened.

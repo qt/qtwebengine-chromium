@@ -70,7 +70,6 @@ if (!build_with_chromium) {
         "pc:rtc_pc_unittests",
         "pc:slow_peer_connection_unittests",
         "pc:svc_tests",
-        "rtc_tools:rtp_generator",
         "rtc_tools:video_encoder",
         "rtc_tools:video_replay",
         "stats:rtc_stats_unittests",
@@ -83,7 +82,9 @@ if (!build_with_chromium) {
       if (use_libfuzzer) {
         deps += [ "test/fuzzers" ]
       }
-      if (!is_asan) {
+
+      # TODO(bugs.webrtc.org/430260876): Remove once rust links with libwebrtc.
+      if (!is_asan && !rtc_rusty_base64) {
         # Do not build :webrtc_lib_link_test because lld complains on some OS
         # (e.g. when target_os = "mac") when is_asan=true. For more details,
         # see bugs.webrtc.org/11027#c5.
@@ -373,8 +374,7 @@ config("common_config") {
 
   if (is_clang) {
     cflags += [
-      # TODO(webrtc:13219): Fix -Wshadow instances and enable.
-      "-Wno-shadow",
+      "-Wshadow",
 
       # See https://reviews.llvm.org/D56731 for details about this
       # warning.
@@ -523,11 +523,13 @@ if (!build_with_chromium) {
     ]
 
     sources = []
+
     complete_static_lib = true
     suppressed_configs += [ "//build/config/compiler:thin_archive" ]
     defines = []
 
     deps = [
+      "api:create_modular_peer_connection_factory",
       "api:create_peerconnection_factory",
       "api:enable_media",
       "api:libjingle_peerconnection_api",
@@ -538,7 +540,6 @@ if (!build_with_chromium) {
       "api/rtc_event_log:rtc_event_log_factory",
       "api/task_queue",
       "api/task_queue:default_task_queue_factory",
-      "api/test/metrics",
       "api/video_codecs:video_decoder_factory_template",
       "api/video_codecs:video_decoder_factory_template_dav1d_adapter",
       "api/video_codecs:video_decoder_factory_template_libvpx_vp8_adapter",
@@ -580,9 +581,15 @@ if (!build_with_chromium) {
     if (rtc_enable_protobuf) {
       deps += [ "logging:rtc_event_log_proto" ]
     }
+
+    if (rtc_include_internal_audio_device) {
+      deps += [ "api/audio:create_audio_device_module" ]
+    }
   }
 
-  if (rtc_include_tests && !is_asan) {
+  # TODO(bugs.webrtc.org/430260876): Compile webrtc lib with rust once toolchain
+  # is working.
+  if (rtc_include_tests && !is_asan && !rtc_rusty_base64) {
     rtc_executable("webrtc_lib_link_test") {
       testonly = true
 
@@ -628,9 +635,12 @@ if (rtc_include_tests && !build_with_chromium) {
       "api:rtc_api_unittests",
       "api/audio:audio_api_unittests",
       "api/audio_codecs/test:audio_codecs_api_unittests",
+      "api/crypto:crypto_options_unittest",
+      "api/crypto:options",
       "api/numerics:numerics_unittests",
       "api/task_queue:pending_task_safety_flag_unittests",
       "api/test/metrics:metrics_unittests",
+      "api/test/network_emulation:network_queue_unittests",
       "api/transport:stun_unittest",
       "api/transport/rtp:corruption_detection_message_unittest",
       "api/video/test:rtc_api_video_unittests",
@@ -641,6 +651,7 @@ if (rtc_include_tests && !build_with_chromium) {
       "call:fake_network_pipe_unittests",
       "rtc_base:async_dns_resolver_unittests",
       "rtc_base:async_packet_socket_unittest",
+      "rtc_base:async_tcp_socket_unittest",
       "rtc_base:async_udp_socket_unittest",
       "rtc_base:callback_list_unittests",
       "rtc_base:rtc_base_approved_unittests",
@@ -818,4 +829,15 @@ group("poison_environment_construction") {
 }
 
 group("poison_software_video_codecs") {
+}
+
+if (!build_with_chromium) {
+  # Write debug logs to gn_logs.txt.
+  # This is also required for Siso builds.
+  import("//build/gn_logs.gni")
+  lines = [
+            "Generated during 'gn gen' by //BUILD.gn.",
+            "",
+          ] + build_gn_logs
+  write_file("$root_build_dir/gn_logs.txt", lines)
 }

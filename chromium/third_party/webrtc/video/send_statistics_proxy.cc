@@ -13,19 +13,50 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdio>
 #include <limits>
+#include <map>
+#include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/strings/match.h"
+#include "api/field_trials_view.h"
+#include "api/units/data_rate.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
+#include "api/video/encoded_image.h"
+#include "api/video/video_adaptation_counters.h"
+#include "api/video/video_adaptation_reason.h"
+#include "api/video/video_bitrate_allocation.h"
 #include "api/video/video_codec_constants.h"
 #include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_timing.h"
 #include "api/video_codecs/video_codec.h"
+#include "call/rtp_config.h"
+#include "call/video_send_stream.h"
+#include "common_video/frame_counts.h"
+#include "common_video/include/quality_limitation_reason.h"
+#include "modules/rtp_rtcp/include/report_block_data.h"
+#include "modules/rtp_rtcp/include/rtcp_statistics.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
+#include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/mod_ops.h"
 #include "rtc_base/strings/string_builder.h"
+#include "rtc_base/synchronization/mutex.h"
+#include "system_wrappers/include/clock.h"
 #include "system_wrappers/include/metrics.h"
+#include "video/config/video_encoder_config.h"
+#include "video/stats_counter.h"
+#include "video/video_stream_encoder_observer.h"
 
 namespace webrtc {
 namespace {
@@ -116,7 +147,7 @@ std::optional<int> GetFallbackMaxPixels(const std::string& group) {
 }
 
 std::optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled(
-    const webrtc::FieldTrialsView& field_trials) {
+    const FieldTrialsView& field_trials) {
   std::string group = field_trials.Lookup(kVp8ForcedFallbackEncoderFieldTrial);
   return (absl::StartsWith(group, "Enabled"))
              ? GetFallbackMaxPixels(group.substr(7))
@@ -124,7 +155,7 @@ std::optional<int> GetFallbackMaxPixelsIfFieldTrialEnabled(
 }
 
 std::optional<int> GetFallbackMaxPixelsIfFieldTrialDisabled(
-    const webrtc::FieldTrialsView& field_trials) {
+    const FieldTrialsView& field_trials) {
   std::string group = field_trials.Lookup(kVp8ForcedFallbackEncoderFieldTrial);
   return (absl::StartsWith(group, "Disabled"))
              ? GetFallbackMaxPixels(group.substr(8))
@@ -145,7 +176,7 @@ SendStatisticsProxy::SendStatisticsProxy(
       fallback_max_pixels_disabled_(
           GetFallbackMaxPixelsIfFieldTrialDisabled(field_trials)),
       content_type_(content_type),
-      start_ms_(clock->TimeInMilliseconds()),
+      start_(clock->CurrentTime()),
       encode_time_(kEncodeTimeWeigthFactor),
       quality_limitation_reason_tracker_(clock_),
       media_byte_rate_tracker_(kBucketSizeMs, kBucketCount),
@@ -163,11 +194,11 @@ SendStatisticsProxy::~SendStatisticsProxy() {
   MutexLock lock(&mutex_);
   uma_container_->UpdateHistograms(rtp_config_, stats_);
 
-  int64_t elapsed_sec = (clock_->TimeInMilliseconds() - start_ms_) / 1000;
+  TimeDelta elapsed = clock_->CurrentTime() - start_;
   RTC_HISTOGRAM_COUNTS_100000("WebRTC.Video.SendStreamLifetimeInSeconds",
-                              elapsed_sec);
+                              elapsed.seconds());
 
-  if (elapsed_sec >= metrics::kMinRunTimeInSeconds)
+  if (elapsed >= metrics::kMinRunTime)
     UpdateCodecTypeHistogram(payload_name_);
 }
 
@@ -489,7 +520,7 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   if (first_rtp_stats_time_ms_ != -1) {
     quality_adapt_timer_.Stop(clock_->TimeInMilliseconds());
     int64_t elapsed_sec = quality_adapt_timer_.total_ms / 1000;
-    if (elapsed_sec >= metrics::kMinRunTimeInSeconds) {
+    if (elapsed_sec >= metrics::kMinRunTime.seconds()) {
       int quality_changes = current_stats.number_of_quality_adapt_changes -
                             start_stats_.number_of_quality_adapt_changes;
       // Only base stats on changes during a call, discard initial changes.
@@ -503,7 +534,7 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
     }
     cpu_adapt_timer_.Stop(clock_->TimeInMilliseconds());
     elapsed_sec = cpu_adapt_timer_.total_ms / 1000;
-    if (elapsed_sec >= metrics::kMinRunTimeInSeconds) {
+    if (elapsed_sec >= metrics::kMinRunTime.seconds()) {
       int cpu_changes = current_stats.number_of_cpu_adapt_changes -
                         start_stats_.number_of_cpu_adapt_changes;
       RTC_HISTOGRAMS_COUNTS_100(kIndex,
@@ -515,7 +546,7 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   if (first_rtcp_stats_time_ms_ != -1) {
     int64_t elapsed_sec =
         (clock_->TimeInMilliseconds() - first_rtcp_stats_time_ms_) / 1000;
-    if (elapsed_sec >= metrics::kMinRunTimeInSeconds) {
+    if (elapsed_sec >= metrics::kMinRunTime.seconds()) {
       int fraction_lost = report_block_stats_.FractionLostInPercent();
       if (fraction_lost != -1) {
         RTC_HISTOGRAMS_PERCENTAGE(
@@ -565,14 +596,14 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
   if (first_rtp_stats_time_ms_ != -1) {
     int64_t elapsed_sec =
         (clock_->TimeInMilliseconds() - first_rtp_stats_time_ms_) / 1000;
-    if (elapsed_sec >= metrics::kMinRunTimeInSeconds) {
+    if (elapsed_sec >= metrics::kMinRunTime.seconds()) {
       RTC_HISTOGRAMS_COUNTS_100(kIndex, uma_prefix_ + "NumberOfPauseEvents",
                                 target_rate_updates_.pause_resume_events);
       log_stream << uma_prefix_ << "NumberOfPauseEvents "
                  << target_rate_updates_.pause_resume_events << "\n";
 
       int paused_time_percent =
-          paused_time_counter_.Percent(metrics::kMinRunTimeInSeconds * 1000);
+          paused_time_counter_.Percent(metrics::kMinRunTime.seconds() * 1000);
       if (paused_time_percent != -1) {
         RTC_HISTOGRAMS_PERCENTAGE(kIndex, uma_prefix_ + "PausedTimeInPercent",
                                   paused_time_percent);
@@ -584,10 +615,11 @@ void SendStatisticsProxy::UmaSamplesContainer::UpdateHistograms(
 
   if (fallback_info_.is_possible) {
     // Double interval since there is some time before fallback may occur.
-    const int kMinRunTimeMs = 2 * metrics::kMinRunTimeInSeconds * 1000;
+    const TimeDelta kMinRunTime = 2 * metrics::kMinRunTime;
     int64_t elapsed_ms = fallback_info_.elapsed_ms;
-    int fallback_time_percent = fallback_active_counter_.Percent(kMinRunTimeMs);
-    if (fallback_time_percent != -1 && elapsed_ms >= kMinRunTimeMs) {
+    int fallback_time_percent =
+        fallback_active_counter_.Percent(kMinRunTime.ms());
+    if (fallback_time_percent != -1 && elapsed_ms >= kMinRunTime.ms()) {
       RTC_HISTOGRAMS_PERCENTAGE(
           kIndex, uma_prefix_ + "Encoder.ForcedSwFallbackTimeInPercent.Vp8",
           fallback_time_percent);

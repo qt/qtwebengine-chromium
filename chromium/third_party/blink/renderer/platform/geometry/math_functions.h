@@ -5,9 +5,11 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_MATH_FUNCTIONS_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_GEOMETRY_MATH_FUNCTIONS_H_
 
+#include <array>
 #include <cfloat>
 #include <cmath>
 #include <optional>
+#include <type_traits>
 #include <utility>
 
 #include "base/notreached.h"
@@ -265,6 +267,12 @@ ValueType EvaluateSteppedValueFunction(OperatorType op,
     default:
       NOTREACHED();
   }
+}
+
+template <typename ValueType>
+  requires std::floating_point<ValueType>
+ValueType EvaluateSignFunction(ValueType v) {
+  return (v == 0 || std::isnan(v)) ? v : ((v > 0) ? 1 : -1);
 }
 
 }  // namespace blink

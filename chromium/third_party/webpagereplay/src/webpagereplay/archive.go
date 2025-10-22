@@ -120,7 +120,7 @@ type Archive struct {
 	DisableFuzzyURLMatching bool
 }
 
-func newArchive() Archive {
+func NewArchive() Archive {
 	return Archive{Requests: make(map[string]map[string][]*ArchivedRequest)}
 }
 
@@ -147,7 +147,7 @@ func OpenArchive(path string) (*Archive, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read failed: %v", err)
 	}
-	a := newArchive()
+	a := NewArchive()
 	if err := json.Unmarshal(buf, &a); err != nil {
 		return nil, fmt.Errorf("json unmarshal failed: %v", err)
 	}
@@ -371,7 +371,7 @@ const (
 	AddModeSkipExisting      AddMode = 2
 )
 
-func (a *Archive) addArchivedRequest(req *http.Request, resp *http.Response, mode AddMode) error {
+func (a *Archive) AddArchivedRequest(req *http.Request, resp *http.Response, mode AddMode) error {
 	// Always use the absolute URL in this mapping.
 	assertCompleteURL(req.URL)
 	archivedRequest, err := serializeRequest(req, resp)
@@ -413,7 +413,7 @@ func (a *Archive) StartNewReplaySession() {
 // edit the request. If f returns a nil pair, the request is deleted.
 // The edited archive is returned, leaving the current archive is unchanged.
 func (a *Archive) Edit(edit func(req *http.Request, resp *http.Response) (*http.Request, *http.Response, error)) (*Archive, error) {
-	clone := newArchive()
+	clone := NewArchive()
 	err := a.ForEach(func(oldReq *http.Request, oldResp *http.Response) error {
 		newReq, newResp, err := edit(oldReq, oldResp)
 		if err != nil {
@@ -426,7 +426,7 @@ func (a *Archive) Edit(edit func(req *http.Request, resp *http.Response) (*http.
 			return nil
 		}
 		// TODO: allow changing scheme or protocol?
-		return clone.addArchivedRequest(newReq, newResp, AddModeAppend)
+		return clone.AddArchivedRequest(newReq, newResp, AddModeAppend)
 	})
 	if err != nil {
 		return nil, err
@@ -443,7 +443,7 @@ func (a *Archive) Merge(other *Archive) error {
 		if notFoundErr == ErrNotFound ||
 				req.URL.String() != foundReq.URL.String() ||
 				!reflect.DeepEqual(req.Header, foundReq.Header) {
-			if err := a.addArchivedRequest(req, resp, AddModeAppend); err != nil {
+			if err := a.AddArchivedRequest(req, resp, AddModeAppend); err != nil {
 				return err
 			}
 			numAddedRequests++
@@ -461,7 +461,7 @@ func (a *Archive) Merge(other *Archive) error {
 // The trimmed archive is returned, leaving the current archive unchanged.
 func (a *Archive) Trim(trimMatch func(req *http.Request, resp *http.Response) (bool, error)) (*Archive, error) {
 	var numRemovedRequests = 0
-	clone := newArchive()
+	clone := NewArchive()
 	err := a.ForEach(func(req *http.Request, resp *http.Response) error {
 		trimReq, err := trimMatch(req, resp)
 		if err != nil {
@@ -470,7 +470,7 @@ func (a *Archive) Trim(trimMatch func(req *http.Request, resp *http.Response) (b
 		if trimReq {
 			numRemovedRequests++
 		} else {
-			clone.addArchivedRequest(req, resp, AddModeAppend)
+			clone.AddArchivedRequest(req, resp, AddModeAppend)
 		}
 		return nil
 	})
@@ -508,7 +508,7 @@ func (a *Archive) Add(method string, urlString string, mode AddMode) error {
 		return fmt.Errorf("Error fetching url: %v", err)
 	}
 
-	if err = a.addArchivedRequest(req, resp, mode); err != nil {
+	if err = a.AddArchivedRequest(req, resp, mode); err != nil {
 		return err
 	}
 
@@ -540,14 +540,14 @@ func OpenWritableArchive(path string) (*WritableArchive, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not open %s: %v", path, err)
 	}
-	return &WritableArchive{Archive: newArchive(), f: f}, nil
+	return &WritableArchive{Archive: NewArchive(), f: f}, nil
 }
 
 // RecordRequest records a request/response pair in the archive.
 func (a *WritableArchive) RecordRequest(req *http.Request, resp *http.Response) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.addArchivedRequest(req, resp, AddModeAppend)
+	return a.AddArchivedRequest(req, resp, AddModeAppend)
 }
 
 // RecordTlsConfig records the cert used and protocol negotiated for a host.

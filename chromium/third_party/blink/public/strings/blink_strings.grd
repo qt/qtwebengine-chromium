@@ -378,6 +378,7 @@ below:
         Pretty-print
       </message>
 
+
 <!-- The following IDS_FORM_VALIDATION_* messages were taken from Mozilla's dom.properties file.
 
 # ***** BEGIN LICENSE BLOCK *****

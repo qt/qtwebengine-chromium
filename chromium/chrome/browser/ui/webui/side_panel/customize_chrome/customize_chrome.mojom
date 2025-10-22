@@ -94,12 +94,19 @@ struct ModuleSettings {
   bool visible;
 };
 
+// The state of the management notice in the NTP footer.
+struct ManagementNoticeState {
+  bool can_be_shown;
+  bool enabled_by_policy;
+};
+
 enum CustomizeChromeSection {
   kAppearance,
   kShortcuts,
   kModules,
   kWallpaperSearch,
   kToolbar,
+  kFooter,
 };
 
 enum ChromeWebStoreCollection {
@@ -109,6 +116,17 @@ enum ChromeWebStoreCollection {
 enum ChromeWebStoreCategory {
   kWorkflowPlanning,
   kShopping,
+};
+
+// Types of New Tabs that CustomizeChromePage can attach to.
+enum NewTabPageType {
+  kFirstPartyWebUI,
+  kThirdPartyWebUI,
+  kThirdPartyRemote,
+  kExtension,
+  kIncognito,
+  kGuestMode,
+  kNone,
 };
 
 // Used by the WebUI page to bootstrap bidirectional communication.
@@ -200,6 +218,12 @@ interface CustomizeChromePageHandler {
 
   // Triggers a call to |CustomizeChromePage.NtpManagedByNameUpdated()|.
   UpdateNtpManagedByName();
+
+  // If |visible| the NTP footer will be shown.
+  SetFooterVisible(bool visible);
+
+  // Triggers a call to |CustomizeChromePage.SetFooterSettings()|.
+  UpdateFooterSettings();
 };
 
 // WebUI-side handler for requests from the browser.
@@ -210,6 +234,11 @@ interface CustomizeChromePage {
       bool visible);
   // Sets the visibility of NTP tiles and whether custom links are enabled.
   SetMostVisitedSettings(bool custom_links_enabled, bool visible);
+  // Sets the visibility and disabled state of the NTP Footer.
+  SetFooterSettings(bool visible,
+                    bool extension_policy_enabled,
+                    ManagementNoticeState management_notice_state);
+
   // Sets the current theme.
   SetTheme(Theme theme);
   // Sets whether edit theme should be enabled.
@@ -218,8 +247,8 @@ interface CustomizeChromePage {
   // |CustomizeChromePageHandler.UpdateScrollToSection()|.
   ScrollToSection(CustomizeChromeSection section);
   // Sets Information about the tab that is attached to the CustomizeChromePage.
-  AttachedTabStateUpdated(bool is_source_tab_first_party_ntp);
-  // Sets the name of the system that manages the new tab page if there is one.
-  // If not, empty string should be provided.
-  NtpManagedByNameUpdated(string ntp_managed_by_name);
+  AttachedTabStateUpdated(NewTabPageType ntp_type);
+  // Sets the name and description of the system that manages the new tab page,
+  // if there is one. If not, empty strings should be provided.
+  NtpManagedByNameUpdated(string name, string description);
 };

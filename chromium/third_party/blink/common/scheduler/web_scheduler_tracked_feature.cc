@@ -92,12 +92,6 @@ FeatureNames FeatureToNames(WebSchedulerTrackedFeature feature) {
                   ? "masked"
                   : "printing",
               "Printing"};
-    case WebSchedulerTrackedFeature::kWebDatabase:
-      return {base::FeatureList::IsEnabled(
-                  features::kBackForwardCacheUpdateNotRestoredReasonsName)
-                  ? "masked"
-                  : "web-database",
-              "WebDatabase"};
     case WebSchedulerTrackedFeature::kPictureInPicture:
       return {"pictureinpicturewindow", "PictureInPicture"};
     case WebSchedulerTrackedFeature::kSpeechRecognizer:
@@ -154,6 +148,8 @@ FeatureNames FeatureToNames(WebSchedulerTrackedFeature feature) {
       return {"webbluetooth", "Active Bluetooth connection"};
     case WebSchedulerTrackedFeature::kWebAuthentication:
       return {"webauthn", "Active WebAuthn transaction"};
+    case WebSchedulerTrackedFeature::kSharedWorkerMessage:
+      return {"sharedworker-message", "Message posted from SharedWorker"};
   }
   return {};
 }
@@ -228,7 +224,6 @@ WebSchedulerTrackedFeatures StickyFeatures() {
           WebSchedulerTrackedFeature::kRequestedVideoCapturePermission,
           WebSchedulerTrackedFeature::kRequestedBackForwardCacheBlockedSensors,
           WebSchedulerTrackedFeature::kRequestedBackgroundWorkPermission,
-          WebSchedulerTrackedFeature::kWebLocks,
           WebSchedulerTrackedFeature::kRequestedStorageAccessGrant,
           WebSchedulerTrackedFeature::kWebNfc,
           WebSchedulerTrackedFeature::kPrinting,

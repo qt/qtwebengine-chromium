@@ -22,6 +22,10 @@
 #include "ui/views/views_export.h"
 #include "ui/views/widget/widget.h"
 
+#if defined(USE_AURA)
+#include "ui/views/accessibility/tree/browser_views_ax_manager.h"
+#endif
+
 namespace gfx {
 class ImageSkia;
 class Rect;
@@ -144,8 +148,10 @@ class VIEWS_EXPORT ViewsDelegate {
 #endif
 
   // Creates a default NonClientFrameView to be used for windows that don't
-  // specify their own. If this function returns NULL, the
-  // views::CustomFrameView type will be used.
+  // specify their own and where no platform frame view is specified.
+  //
+  // Defaults to `DefaultFrameView`. This method should never return null, as a
+  // fallback is needed on all platforms.
   virtual std::unique_ptr<NonClientFrameView> CreateDefaultNonClientFrameView(
       Widget* widget);
 
@@ -166,6 +172,8 @@ class VIEWS_EXPORT ViewsDelegate {
   // |remove_standard_frame| in InitParams). If |maximized|, this applies to
   // maximized windows; otherwise to restored windows.
   virtual bool WindowManagerProvidesTitleBar(bool maximized);
+
+  void InitializeViewsAXManager();
 
 #if BUILDFLAG(IS_MAC)
   // Returns the context factory for new windows.
@@ -197,6 +205,8 @@ class VIEWS_EXPORT ViewsDelegate {
  private:
 #if defined(USE_AURA)
   std::unique_ptr<TouchSelectionMenuRunnerViews> touch_selection_menu_runner_;
+  std::unique_ptr<views::BrowserViewsAXManager::LifetimeHandle>
+      browser_views_ax_manager_handle_;
 #endif
 
   NativeWidgetFactory native_widget_factory_;

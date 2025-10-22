@@ -1218,6 +1218,31 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR *>(header);
             break;
+        case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSurfaceCapabilitiesPresentId2KHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPresentId2KHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDevicePresentId2FeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_WAIT_2_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSurfaceCapabilitiesPresentWait2KHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDevicePresentWait2FeaturesKHR *>(header);
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -1242,6 +1267,46 @@ void PnextChainFree(void *chain) {
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPipelineBinaryInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSurfacePresentModeKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSurfacePresentScalingCapabilitiesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSurfacePresentModeCompatibilityKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSwapchainPresentFenceInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSwapchainPresentModesCreateInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSwapchainPresentModeInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkSwapchainPresentScalingCreateInfoKHR *>(header);
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR:
             PnextChainFree(header->pNext);
@@ -1343,6 +1408,26 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkVideoEncodeAV1RateControlLayerInfoKHR *>(header);
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_DECODE_VP9_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceVideoDecodeVP9FeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PROFILE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoDecodeVP9ProfileInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_CAPABILITIES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoDecodeVP9CapabilitiesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PICTURE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoDecodeVP9PictureInfoKHR *>(header);
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -1352,6 +1437,41 @@ void PnextChainFree(void *chain) {
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
             delete reinterpret_cast<const VkVideoInlineQueryInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_ATTACHMENT_FEEDBACK_LOOP_INFO_EXT:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkAttachmentFeedbackLoopInfoEXT *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_CAPABILITIES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoEncodeIntraRefreshCapabilitiesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_INTRA_REFRESH_CREATE_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoEncodeSessionIntraRefreshCreateInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoEncodeIntraRefreshInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkVideoReferenceIntraRefreshInfoKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR *>(header);
             break;
         case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_CAPABILITIES_KHR:
             PnextChainFree(header->pNext);
@@ -1438,6 +1558,21 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkMemoryBarrierAccessFlags3KHR *>(header);
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_9_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceMaintenance9FeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_9_PROPERTIES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceMaintenance9PropertiesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_QUEUE_FAMILY_OWNERSHIP_TRANSFER_PROPERTIES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkQueueFamilyOwnershipTransferPropertiesKHR *>(header);
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -1462,6 +1597,21 @@ void PnextChainFree(void *chain) {
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceDepthClampZeroOneFeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceRobustness2FeaturesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceRobustness2PropertiesKHR *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR *>(header);
             break;
         case VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT:
             PnextChainFree(header->pNext);
@@ -2088,46 +2238,6 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT *>(header);
             break;
-        case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSurfacePresentModeEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSurfacePresentScalingCapabilitiesEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSurfacePresentModeCompatibilityEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSwapchainPresentFenceInfoEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSwapchainPresentModesCreateInfoEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSwapchainPresentModeInfoEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkSwapchainPresentScalingCreateInfoEXT *>(header);
-            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_PROPERTIES_NV:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -2188,16 +2298,6 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkDeviceDeviceMemoryReportCreateInfoEXT *>(header);
             break;
-        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkPhysicalDeviceRobustness2FeaturesEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkPhysicalDeviceRobustness2PropertiesEXT *>(header);
-            break;
         case VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -2250,6 +2350,21 @@ void PnextChainFree(void *chain) {
             delete reinterpret_cast<const VkPhysicalDeviceCudaKernelLaunchPropertiesNV *>(header);
             break;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_SHADING_FEATURES_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceTileShadingFeaturesQCOM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_SHADING_PROPERTIES_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceTileShadingPropertiesQCOM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_RENDER_PASS_TILE_SHADING_CREATE_INFO_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkRenderPassTileShadingCreateInfoQCOM *>(header);
+            break;
         case VK_STRUCTURE_TYPE_QUERY_LOW_LATENCY_SUPPORT_NV:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -2491,11 +2606,6 @@ void PnextChainFree(void *chain) {
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT *>(header);
-            break;
-        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_EXT:
-            PnextChainFree(header->pNext);
-            header->pNext = nullptr;
-            delete reinterpret_cast<const VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT *>(header);
             break;
 #ifdef VK_USE_PLATFORM_FUCHSIA
         case VK_STRUCTURE_TYPE_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA:
@@ -2886,6 +2996,71 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkDirectDriverLoadingListLUNARG *>(header);
             break;
+        case VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTensorDescriptionARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkWriteDescriptorSetTensorARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTensorFormatPropertiesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_PROPERTIES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceTensorPropertiesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTensorMemoryBarrierARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTensorDependencyInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceTensorFeaturesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkMemoryDedicatedAllocateInfoTensorARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_TENSOR_CREATE_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkExternalMemoryTensorCreateInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_TENSOR_FEATURES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceDescriptorBufferTensorFeaturesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_TENSOR_PROPERTIES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceDescriptorBufferTensorPropertiesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_DESCRIPTOR_GET_TENSOR_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkDescriptorGetTensorInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_FRAME_BOUNDARY_TENSORS_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkFrameBoundaryTensorsARM *>(header);
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_FEATURES_EXT:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -3058,6 +3233,36 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkLatencySurfaceCapabilitiesNV *>(header);
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceDataGraphFeaturesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_COMPILER_CONTROL_CREATE_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkDataGraphPipelineCompilerControlCreateInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkDataGraphPipelineShaderModuleCreateInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_IDENTIFIER_CREATE_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkDataGraphPipelineIdentifierCreateInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_DATA_GRAPH_PROCESSING_ENGINE_CREATE_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkDataGraphProcessingEngineCreateInfoARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_TENSOR_SEMI_STRUCTURED_SPARSITY_INFO_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkDataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM *>(header);
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_RENDER_AREAS_FEATURES_QCOM:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -3155,6 +3360,31 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV *>(header);
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_MEMORY_HEAP_FEATURES_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceTileMemoryHeapFeaturesQCOM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_MEMORY_HEAP_PROPERTIES_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceTileMemoryHeapPropertiesQCOM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_TILE_MEMORY_REQUIREMENTS_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTileMemoryRequirementsQCOM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_TILE_MEMORY_BIND_INFO_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTileMemoryBindInfoQCOM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_TILE_MEMORY_SIZE_INFO_QCOM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkTileMemorySizeInfoQCOM *>(header);
+            break;
         case VK_STRUCTURE_TYPE_DISPLAY_SURFACE_STEREO_CREATE_INFO_NV:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -3170,6 +3400,16 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceRawAccessChainsFeaturesNV *>(header);
             break;
+        case VK_STRUCTURE_TYPE_EXTERNAL_COMPUTE_QUEUE_DEVICE_CREATE_INFO_NV:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkExternalComputeQueueDeviceCreateInfoNV *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_COMPUTE_QUEUE_PROPERTIES_NV:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceExternalComputeQueuePropertiesNV *>(header);
+            break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMMAND_BUFFER_INHERITANCE_FEATURES_NV:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
@@ -3184,6 +3424,11 @@ void PnextChainFree(void *chain) {
             PnextChainFree(header->pNext);
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceShaderFloat8FeaturesEXT *>(header);
             break;
         case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_VALIDATION_FEATURES_NV:
             PnextChainFree(header->pNext);
@@ -3307,6 +3552,26 @@ void PnextChainFree(void *chain) {
             header->pNext = nullptr;
             delete reinterpret_cast<const VkPhysicalDeviceVertexAttributeRobustnessFeaturesEXT *>(header);
             break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FORMAT_PACK_FEATURES_ARM:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceFormatPackFeaturesARM *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_LAYERED_FEATURES_VALVE:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceFragmentDensityMapLayeredFeaturesVALVE *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_LAYERED_PROPERTIES_VALVE:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceFragmentDensityMapLayeredPropertiesVALVE *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_DENSITY_MAP_LAYERED_CREATE_INFO_VALVE:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPipelineFragmentDensityMapLayeredCreateInfoVALVE *>(header);
+            break;
 #ifdef VK_ENABLE_BETA_EXTENSIONS
         case VK_STRUCTURE_TYPE_SET_PRESENT_CONFIG_NV:
             PnextChainFree(header->pNext);
@@ -3319,6 +3584,16 @@ void PnextChainFree(void *chain) {
             delete reinterpret_cast<const VkPhysicalDevicePresentMeteringFeaturesNV *>(header);
             break;
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_DEVICE_MEMORY_FEATURES_EXT:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT *>(header);
+            break;
+        case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CACHE_INCREMENTAL_MODE_FEATURES_SEC:
+            PnextChainFree(header->pNext);
+            header->pNext = nullptr;
+            delete reinterpret_cast<const VkPhysicalDevicePipelineCacheIncrementalModeFeaturesSEC *>(header);
+            break;
         case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR:
             PnextChainFree(header->pNext);
             header->pNext = nullptr;

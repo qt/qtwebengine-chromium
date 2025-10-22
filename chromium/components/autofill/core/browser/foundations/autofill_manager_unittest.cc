@@ -26,7 +26,7 @@
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/form_data_test_api.h"
 #include "components/autofill/core/common/mojom/autofill_types.mojom-shared.h"
-#include "components/optimization_guide/core/test_optimization_guide_model_provider.h"
+#include "components/optimization_guide/core/delivery/test_optimization_guide_model_provider.h"
 #include "components/password_manager/core/browser/features/password_features.h"
 #include "components/translate/core/common/language_detection_details.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -242,10 +242,8 @@ TEST_F(AutofillManagerTest, UpdateAndRemoveSameForms) {
 // so many properties of forms that may change, the test only covers a small
 // fraction:
 // - Events: OnFormsSeen(), OnTextFieldValueChanged(), OnFocusOnFormField()
-// - Properties: AutofillField::value(ValueSemantics::kCurrent)
+// - Properties: AutofillField::value()
 TEST_F(AutofillManagerTest, FormCacheUpdatesValue) {
-  base::test::ScopedFeatureList scoped_feature_list(
-      features::kAutofillFixValueSemantics);
   EXPECT_CALL(manager(), ShouldParseForms)
       .Times(AtLeast(0))
       .WillRepeatedly(Return(true));
@@ -259,7 +257,7 @@ TEST_F(AutofillManagerTest, FormCacheUpdatesValue) {
     if (!cached_form || cached_form->fields().empty()) {
       return std::nullopt;
     }
-    return cached_form->fields()[0]->value(ValueSemantics::kCurrent);
+    return cached_form->fields()[0]->value();
   };
 
   EXPECT_EQ(current_cached_value(), std::nullopt);
@@ -306,8 +304,7 @@ TEST_F(AutofillManagerTest, FormCacheUpdatesValue) {
 TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitWithFeatures(
-      /*enabled_features=*/{features::kAutofillPageLanguageDetection,
-                            features::kAutofillFixValueSemantics},
+      /*enabled_features=*/{features::kAutofillPageLanguageDetection},
       /*disabled_features=*/{});
 
   std::vector<FormData> forms = CreateTestForms(2);
@@ -352,7 +349,7 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
   EXPECT_CALL(observer, OnBeforeLoadedServerPredictions).Times(0);
   EXPECT_CALL(observer, OnAfterLoadedServerPredictions).Times(0);
   EXPECT_CALL(observer, OnFieldTypesDetermined).Times(0);
-  EXPECT_CALL(observer, OnFillOrPreviewDataModelForm).Times(0);
+  EXPECT_CALL(observer, OnFillOrPreviewForm).Times(0);
   EXPECT_CALL(observer, OnFormSubmitted).Times(0);
 
   EXPECT_CALL(manager(), ShouldParseForms)
@@ -443,7 +440,8 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
   EXPECT_CALL(observer, OnBeforeAskForValuesToFill(m, f, ff, Ref(form)));
   EXPECT_CALL(observer, OnAfterAskForValuesToFill(m, f, ff));
   manager().OnAskForValuesToFill(form, field.global_id(), gfx::Rect(),
-                                 AutofillSuggestionTriggerSource::kUnspecified);
+                                 AutofillSuggestionTriggerSource::kUnspecified,
+                                 std::nullopt);
 
   EXPECT_CALL(observer, OnBeforeFocusOnFormField(m, f, ff));
   EXPECT_CALL(observer, OnAfterFocusOnFormField(m, f, ff));
@@ -454,7 +452,7 @@ TEST_F(AutofillManagerTest, ObserverReceiveCalls) {
   manager().OnJavaScriptChangedAutofilledValue(form, field.global_id(), {});
 
   // TODO(crbug.com/) Test in browser_autofill_manager_unittest.cc that
-  // FillOrPreviewForm() triggers OnFillOrPreviewDataModelForm().
+  // FillOrPreviewForm() triggers OnFillOrPreviewForm().
 
   EXPECT_CALL(observer, OnFormSubmitted(m, Ref(form)));
   manager().OnFormSubmitted(form, mojom::SubmissionSource::FORM_SUBMISSION);

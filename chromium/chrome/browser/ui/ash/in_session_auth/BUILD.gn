@@ -49,6 +49,7 @@ source_set("unit_tests") {
     "//base/test:test_support",
     "//chrome/browser/ash/login/users:test_support",
     "//chrome/browser/ash/profiles",
+    "//chrome/test:test_support",
     "//chromeos/ash/components/cryptohome",
     "//chromeos/ash/components/dbus/userdataauth",
     "//chromeos/ash/components/install_attributes:test_support",
@@ -58,4 +59,8 @@ source_set("unit_tests") {
     "//content/test:test_support",
     "//testing/gtest",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

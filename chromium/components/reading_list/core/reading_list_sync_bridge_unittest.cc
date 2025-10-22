@@ -106,21 +106,6 @@ base::Time AdvanceAndGetTime(base::SimpleTestClock* clock) {
   return clock->Now();
 }
 
-syncer::DataTypeStore::RecordList ReadAllDataFromDataTypeStore(
-    syncer::DataTypeStore* store) {
-  syncer::DataTypeStore::RecordList result;
-  base::RunLoop loop;
-  store->ReadAllData(base::BindLambdaForTesting(
-      [&](const std::optional<syncer::ModelError>& error,
-          std::unique_ptr<syncer::DataTypeStore::RecordList> records) {
-        EXPECT_FALSE(error.has_value()) << error->ToString();
-        result = std::move(*records);
-        loop.Quit();
-      }));
-  loop.Run();
-  return result;
-}
-
 }  // namespace
 
 class ReadingListSyncBridgeTest : public testing::Test {
@@ -282,7 +267,8 @@ TEST_F(ReadingListSyncBridgeTest, ApplyIncrementalSyncChangesOneMerge) {
   AdvanceAndGetTime(&clock_);
   model_->AddOrReplaceEntry(GURL("http://unread.example.com/"), "unread title",
                             reading_list::ADDED_VIA_CURRENT_APP,
-                            /*estimated_read_time=*/base::TimeDelta());
+                            /*estimated_read_time=*/std::nullopt,
+                            /*creation_time=*/std::nullopt);
 
   auto new_entry = base::MakeRefCounted<ReadingListEntry>(
       GURL("http://unread.example.com/"), "unread title",
@@ -321,7 +307,8 @@ TEST_F(ReadingListSyncBridgeTest, ApplyIncrementalSyncChangesOneIgnored) {
   model_->AddOrReplaceEntry(GURL("http://unread.example.com/"),
                             "new unread title",
                             reading_list::ADDED_VIA_CURRENT_APP,
-                            /*estimated_read_time=*/base::TimeDelta());
+                            /*estimated_read_time=*/std::nullopt,
+                            /*creation_time=*/std::nullopt);
 
   std::unique_ptr<sync_pb::ReadingListSpecifics> specifics =
       old_entry->AsReadingListSpecifics();
@@ -348,7 +335,8 @@ TEST_F(ReadingListSyncBridgeTest, ApplyIncrementalSyncChangesOneIgnored) {
 TEST_F(ReadingListSyncBridgeTest, ApplyIncrementalSyncChangesOneRemove) {
   model_->AddOrReplaceEntry(GURL("http://read.example.com/"), "read title",
                             reading_list::ADDED_VIA_CURRENT_APP,
-                            /*estimated_read_time=*/base::TimeDelta());
+                            /*estimated_read_time=*/std::nullopt,
+                            /*creation_time=*/std::nullopt);
 
   syncer::EntityChangeList delete_changes;
   delete_changes.push_back(syncer::EntityChange::CreateDelete(
@@ -367,7 +355,8 @@ TEST_F(ReadingListSyncBridgeTest, DisableSyncWithUnspecifiedStorage) {
                       /*initial_sync_done=*/true);
   model_->AddOrReplaceEntry(GURL("http://read.example.com/"), "read title",
                             reading_list::ADDED_VIA_CURRENT_APP,
-                            /*estimated_read_time=*/base::TimeDelta());
+                            /*estimated_read_time=*/std::nullopt,
+                            /*creation_time=*/std::nullopt);
 
   ASSERT_EQ(1ul, model_->size());
   bridge()->ApplyDisableSyncChanges(bridge()->CreateMetadataChangeList());
@@ -380,7 +369,8 @@ TEST_F(ReadingListSyncBridgeTest, DisableSyncWithAccountStorage) {
                       /*initial_sync_done=*/true);
   model_->AddOrReplaceEntry(GURL("http://read.example.com/"), "read title",
                             reading_list::ADDED_VIA_CURRENT_APP,
-                            /*estimated_read_time=*/base::TimeDelta());
+                            /*estimated_read_time=*/std::nullopt,
+                            /*creation_time=*/std::nullopt);
 
   ASSERT_EQ(1ul, model_->size());
   bridge()->ApplyDisableSyncChanges(bridge()->CreateMetadataChangeList());
@@ -409,12 +399,14 @@ TEST_F(ReadingListSyncBridgeTest, DisableSyncWithAccountStorageAndOrphanData) {
           }));
   loop.Run();
 
-  ASSERT_THAT(ReadAllDataFromDataTypeStore(underlying_in_memory_store_),
+  ASSERT_THAT(syncer::DataTypeStoreTestUtil::ReadAllDataAndWait(
+                  *underlying_in_memory_store_),
               SizeIs(1));
 
   bridge()->ApplyDisableSyncChanges(bridge()->CreateMetadataChangeList());
 
-  EXPECT_THAT(ReadAllDataFromDataTypeStore(underlying_in_memory_store_),
+  EXPECT_THAT(syncer::DataTypeStoreTestUtil::ReadAllDataAndWait(
+                  *underlying_in_memory_store_),
               SizeIs(0));
 }
 

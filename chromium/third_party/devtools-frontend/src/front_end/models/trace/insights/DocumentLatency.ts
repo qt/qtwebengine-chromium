@@ -34,16 +34,20 @@ export const UIStrings = {
   passingRedirects: 'Avoids redirects',
   /**
    * @description Text to tell the user that the document request had redirects.
+   * @example {3} PH1
+   * @example {1000 ms} PH2
    */
-  failedRedirects: 'Had redirects',
+  failedRedirects: 'Had redirects ({PH1} redirects, +{PH2})',
   /**
    * @description Text to tell the user that the time starting the document request to when the server started responding is acceptable.
+   * @example {600 ms} PH1
    */
-  passingServerResponseTime: 'Server responds quickly',
+  passingServerResponseTime: 'Server responds quickly (observed {PH1})',
   /**
    * @description Text to tell the user that the time starting the document request to when the server started responding is not acceptable.
+   * @example {601 ms} PH1
    */
-  failedServerResponseTime: 'Server responded slowly',
+  failedServerResponseTime: 'Server responded slowly (observed {PH1})',
   /**
    * @description Text to tell the user that text compression (like gzip) was applied.
    */
@@ -91,7 +95,17 @@ export type DocumentLatencyInsightModel = InsightModel<typeof UIStrings, {
   },
 }>;
 
-function getServerResponseTime(request: Types.Events.SyntheticNetworkRequest): Types.Timing.Milli|null {
+function getServerResponseTime(
+    request: Types.Events.SyntheticNetworkRequest, context: InsightSetContext): Types.Timing.Milli|null {
+  // Prefer the value as given by the Lantern provider.
+  // For PSI, Lighthouse uses this to set a better value for the server response
+  // time. For technical reasons, in Lightrider we do not have `sendEnd` timing
+  // values. See Lighthouse's `asLanternNetworkRequest` function for more.
+  const lanternRequest = context.navigation && context.lantern?.requests.find(r => r.rawRequest === request);
+  if (lanternRequest?.serverResponseTime !== undefined) {
+    return lanternRequest.serverResponseTime as Types.Timing.Milli;
+  }
+
   const timing = request.args.data.timing;
   if (!timing) {
     return null;
@@ -181,13 +195,12 @@ export function generateInsight(
     return finalize({});
   }
 
-  const documentRequest =
-      parsedTrace.NetworkRequests.byTime.find(req => req.args.data.requestId === context.navigationId);
+  const documentRequest = parsedTrace.NetworkRequests.byId.get(context.navigationId);
   if (!documentRequest) {
     return finalize({warnings: [InsightWarning.NO_DOCUMENT_REQUEST]});
   }
 
-  const serverResponseTime = getServerResponseTime(documentRequest);
+  const serverResponseTime = getServerResponseTime(documentRequest, context);
   if (serverResponseTime === null) {
     throw new Error('missing document request timing');
   }
@@ -222,12 +235,18 @@ export function generateInsight(
       documentRequest,
       checklist: {
         noRedirects: {
-          label: noRedirects ? i18nString(UIStrings.passingRedirects) : i18nString(UIStrings.failedRedirects),
+          label: noRedirects ? i18nString(UIStrings.passingRedirects) : i18nString(UIStrings.failedRedirects, {
+            PH1: documentRequest.args.data.redirects.length,
+            PH2: i18n.TimeUtilities.millisToString(redirectDuration),
+          }),
           value: noRedirects
         },
         serverResponseIsFast: {
-          label: serverResponseIsFast ? i18nString(UIStrings.passingServerResponseTime) :
-                                        i18nString(UIStrings.failedServerResponseTime),
+          label: serverResponseIsFast ?
+              i18nString(
+                  UIStrings.passingServerResponseTime, {PH1: i18n.TimeUtilities.millisToString(serverResponseTime)}) :
+              i18nString(
+                  UIStrings.failedServerResponseTime, {PH1: i18n.TimeUtilities.millisToString(serverResponseTime)}),
           value: serverResponseIsFast
         },
         usesCompression: {
@@ -238,5 +257,62 @@ export function generateInsight(
       },
     },
     metricSavings,
+    wastedBytes: uncompressedResponseBytes,
   });
+}
+
+export function createOverlays(model: DocumentLatencyInsightModel): Types.Overlays.Overlay[] {
+  if (!model.data?.documentRequest) {
+    return [];
+  }
+
+  const overlays: Types.Overlays.Overlay[] = [];
+  const event = model.data.documentRequest;
+  const redirectDurationMicro = Helpers.Timing.milliToMicro(model.data.redirectDuration);
+
+  const sections = [];
+  if (model.data.redirectDuration) {
+    const bounds = Helpers.Timing.traceWindowFromMicroSeconds(
+        event.ts,
+        (event.ts + redirectDurationMicro) as Types.Timing.Micro,
+    );
+    sections.push({bounds, label: i18nString(UIStrings.redirectsLabel), showDuration: true});
+    overlays.push({type: 'CANDY_STRIPED_TIME_RANGE', bounds, entry: event});
+  }
+  if (!model.data.checklist.serverResponseIsFast.value) {
+    const serverResponseTimeMicro = Helpers.Timing.milliToMicro(model.data.serverResponseTime);
+    // NOTE: NetworkRequestHandlers never makes a synthetic network request event if `timing` is missing.
+    const sendEnd = event.args.data.timing?.sendEnd ?? Types.Timing.Milli(0);
+    const sendEndMicro = Helpers.Timing.milliToMicro(sendEnd);
+    const bounds = Helpers.Timing.traceWindowFromMicroSeconds(
+        sendEndMicro,
+        (sendEndMicro + serverResponseTimeMicro) as Types.Timing.Micro,
+    );
+    sections.push({bounds, label: i18nString(UIStrings.serverResponseTimeLabel), showDuration: true});
+  }
+  if (model.data.uncompressedResponseBytes) {
+    const bounds = Helpers.Timing.traceWindowFromMicroSeconds(
+        event.args.data.syntheticData.downloadStart,
+        (event.args.data.syntheticData.downloadStart + event.args.data.syntheticData.download) as Types.Timing.Micro,
+    );
+    sections.push({bounds, label: i18nString(UIStrings.uncompressedDownload), showDuration: true});
+    overlays.push({type: 'CANDY_STRIPED_TIME_RANGE', bounds, entry: event});
+  }
+
+  if (sections.length) {
+    overlays.push({
+      type: 'TIMESPAN_BREAKDOWN',
+      sections,
+      entry: model.data.documentRequest,
+      // Always render below because the document request is guaranteed to be
+      // the first request in the network track.
+      renderLocation: 'BELOW_EVENT',
+    });
+  }
+  overlays.push({
+    type: 'ENTRY_SELECTED',
+    entry: model.data.documentRequest,
+  });
+
+  return overlays;
 }

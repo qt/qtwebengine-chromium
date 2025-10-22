@@ -23,7 +23,6 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
-#include "base/functional/overloaded.h"
 #include "base/memory/raw_ptr.h"
 #include "base/rand_util.h"
 #include "base/run_loop.h"
@@ -70,6 +69,7 @@
 #include "sql/test/scoped_error_expecter.h"
 #include "sql/test/test_helpers.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/storage_key/storage_key.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -85,7 +85,6 @@ using ::testing::AllOf;
 using ::testing::ElementsAre;
 using ::testing::Field;
 using ::testing::IsEmpty;
-using ::testing::Key;
 using ::testing::Pair;
 using ::testing::Property;
 using ::testing::SizeIs;
@@ -299,6 +298,13 @@ class AttributionStorageSqlTest : public testing::Test {
   void AddReportToStorage() {
     storage_->StoreSource(SourceBuilder().Build());
     storage_->MaybeCreateAndStoreReport(DefaultTrigger());
+  }
+
+  void AddEventAndAggregatableReportsToStorage() {
+    storage_->StoreSource(
+        TestAggregatableSourceProvider().GetBuilder().Build());
+    storage_->MaybeCreateAndStoreReport(
+        DefaultAggregatableTriggerBuilder().Build());
   }
 
   void ExpectAllTablesEmpty() {
@@ -1074,14 +1080,7 @@ TEST_F(AttributionStorageSqlTest, ExpiredImpressionWithSentConversion_Deleted) {
 TEST_F(AttributionStorageSqlTest, DeleteAggregatableAttributionReport) {
   OpenDatabase();
 
-  storage()->StoreSource(TestAggregatableSourceProvider().GetBuilder().Build());
-
-  EXPECT_THAT(storage()->MaybeCreateAndStoreReport(
-                  DefaultAggregatableTriggerBuilder().Build()),
-              AllOf(CreateReportEventLevelStatusIs(
-                        AttributionTrigger::EventLevelResult::kSuccess),
-                    CreateReportAggregatableStatusIs(
-                        AttributionTrigger::AggregatableResult::kSuccess)));
+  AddEventAndAggregatableReportsToStorage();
 
   std::vector<AttributionReport> reports =
       storage()->GetAttributionReports(base::Time::Max());
@@ -1136,17 +1135,7 @@ TEST_F(AttributionStorageSqlTest,
        ExpiredSourceWithPendingAggregatableAttribution_NotDeleted) {
   OpenDatabase();
 
-  storage()->StoreSource(TestAggregatableSourceProvider()
-                             .GetBuilder()
-                             .SetExpiry(base::Milliseconds(3))
-                             .Build());
-
-  EXPECT_THAT(storage()->MaybeCreateAndStoreReport(
-                  DefaultAggregatableTriggerBuilder().Build()),
-              AllOf(CreateReportEventLevelStatusIs(
-                        AttributionTrigger::EventLevelResult::kSuccess),
-                    CreateReportAggregatableStatusIs(
-                        AttributionTrigger::AggregatableResult::kSuccess)));
+  AddEventAndAggregatableReportsToStorage();
 
   std::vector<AttributionReport> reports =
       storage()->GetAttributionReports(base::Time::Max());
@@ -1530,15 +1519,21 @@ TEST_F(AttributionStorageSqlTest,
 
   OpenDatabase();
 
-  EXPECT_THAT(storage()->GetActiveSources(),
-              UnorderedElementsAre(
-                  AllOf(Property(&StoredSource::source_event_id, 1u),
-                        Property(&StoredSource::trigger_specs,
-                                 ElementsAre(Key(0), Key(1), Key(2), Key(3),
-                                             Key(4), Key(5), Key(6), Key(7)))),
-                  AllOf(Property(&StoredSource::source_event_id, 2u),
-                        Property(&StoredSource::trigger_specs,
-                                 ElementsAre(Key(0), Key(1))))));
+  EXPECT_THAT(
+      storage()->GetActiveSources(),
+      UnorderedElementsAre(
+          AllOf(
+              Property(&StoredSource::source_event_id, 1u),
+              Property(
+                  &StoredSource::trigger_data,
+                  Property(&attribution_reporting::TriggerDataSet::trigger_data,
+                           ElementsAre(0, 1, 2, 3, 4, 5, 6, 7)))),
+          AllOf(
+              Property(&StoredSource::source_event_id, 2u),
+              Property(
+                  &StoredSource::trigger_data,
+                  Property(&attribution_reporting::TriggerDataSet::trigger_data,
+                           ElementsAre(0, 1))))));
 }
 
 // Having the missing field default to the correct value allows us to avoid a
@@ -1652,7 +1647,7 @@ TEST_F(AttributionStorageSqlTest,
     CloseDatabase();
 
     std::string metadata =
-        std::visit(base::Overloaded{
+        std::visit(absl::Overload{
                        [](const AttributionEventLevelMetadataRecord& record) {
                          return SerializeReportMetadata(record);
                        },
@@ -1902,7 +1897,7 @@ TEST_F(AttributionStorageSqlTest,
     CloseDatabase();
 
     std::string metadata =
-        std::visit(base::Overloaded{
+        std::visit(absl::Overload{
                        [](const AttributionAggregatableMetadataRecord& record) {
                          return SerializeReportMetadata(record);
                        },
@@ -2008,7 +2003,7 @@ TEST_F(AttributionStorageSqlTest,
     CloseDatabase();
 
     std::string metadata = std::visit(
-        base::Overloaded{
+        absl::Overload{
             [](const AttributionNullAggregatableMetadataRecord& record) {
               return SerializeReportMetadata(record);
             },
@@ -2419,7 +2414,11 @@ TEST_F(AttributionStorageSqlTest,
                                AttributionStorageSql::ReportCorruptionStatus::
                                    kSourceInvalidAggregatableNamedBudgets,
                                2);
-  histograms.ExpectTotalCount("Conversions.CorruptReportsInDatabase5", 31);
+  histograms.ExpectBucketCount("Conversions.CorruptReportsInDatabase5",
+                               AttributionStorageSql::ReportCorruptionStatus::
+                                   kSourceInvalidEventReportWindows,
+                               1);
+  histograms.ExpectTotalCount("Conversions.CorruptReportsInDatabase5", 32);
 }
 
 TEST_F(AttributionStorageSqlTest, SourceRemainingAggregatableBudget) {
@@ -2768,6 +2767,100 @@ TEST_F(AttributionStorageSqlTest, ClearData_OsRegistrationsDataDeleted) {
                        /*filter=*/base::NullCallback(),
                        /*delete_rate_limit_data=*/false);
   EXPECT_THAT(storage()->GetAllDataKeys(), IsEmpty());
+}
+
+TEST_F(AttributionStorageSqlTest, UniqueReportingOriginsCounted) {
+  OpenDatabase();
+
+  auto s1 =
+      SourceBuilder()
+          .SetReportingOrigin(*SuitableOrigin::Deserialize("https://a.test"))
+          .Build();
+  auto s2 =
+      SourceBuilder()
+          .SetReportingOrigin(*SuitableOrigin::Deserialize("https://b.test"))
+          .Build();
+  auto s3 =
+      SourceBuilder()
+          .SetReportingOrigin(*SuitableOrigin::Deserialize("https://b.test"))
+          .Build();
+  storage()->StoreSource(s1);
+  storage()->StoreSource(s2);
+  storage()->StoreSource(s3);
+
+  storage()->StoreOsRegistrations(
+      {url::Origin::Create(GURL("https://c.test"))});
+  CloseDatabase();
+
+  base::HistogramTester histograms;
+
+  OpenDatabase();
+  EXPECT_THAT(storage()->GetActiveSources(), SizeIs(3));
+  CloseDatabase();
+
+  histograms.ExpectUniqueSample("Conversions.DistinctReportingOrigins", 3, 1);
+}
+
+class AttributionStorageSqlNavigationRetryTest
+    : public AttributionStorageSqlTest {
+ public:
+  AttributionStorageSqlNavigationRetryTest() {
+    scoped_feature_list_.InitAndEnableFeature(
+        kAttributionReportNavigationBasedRetry);
+  }
+
+ protected:
+  base::test::ScopedFeatureList scoped_feature_list_;
+};
+
+TEST_F(AttributionStorageSqlNavigationRetryTest,
+       AdjustNavigationRetryEventReportTimes) {
+  const char sql[] = "UPDATE reports SET failed_send_attempts=?";
+  base::HistogramTester histograms;
+
+  OpenDatabase();
+
+  delegate()->use_realistic_report_times();
+  delegate()->set_report_delay(base::Minutes(5));
+  AddEventAndAggregatableReportsToStorage();
+
+  CloseDatabase();
+
+  {
+    sql::Database raw_db(sql::test::kTestTag);
+    ASSERT_TRUE(raw_db.Open(db_path()));
+
+    sql::Statement statement(raw_db.GetUniqueStatement(sql));
+    statement.BindInt(
+        0, static_cast<int>(kAttributionReportNavigationRetryAttempt.Get()));
+    ASSERT_TRUE(statement.Run());
+  }
+
+  OpenDatabase();
+  delegate()->set_offline_report_delay_config(
+      AttributionResolverDelegate::OfflineReportDelayConfig{
+          .min = base::Minutes(1), .max = base::Minutes(1)});
+
+  EXPECT_TRUE(storage()->AdjustNavigationRetryReportTimes().has_value());
+
+  EXPECT_THAT(
+      storage()->GetAttributionReports(base::Time::Max()),
+      UnorderedElementsAre(
+          AllOf(ReportTypeIs(AttributionReport::Type::kEventLevel),
+                ReportTimeIs(base::Time::Now() + base::Minutes(1)),
+                FailedSendAttemptsIs(3)),
+          AllOf(ReportTypeIs(AttributionReport::Type::kAggregatableAttribution),
+                ReportTimeIs(base::Time::Now() + base::Minutes(1)),
+                FailedSendAttemptsIs(3))));
+
+  storage()->ClearData(base::Time::Min(), base::Time::Max(),
+                       base::NullCallback(),
+                       /*delete_rate_limit_data=*/false);
+  CloseDatabase();
+  histograms.ExpectUniqueSample(
+      "Conversions.ReportsAdjustedOnNavigationRetryAttempt.Event", 1, 1);
+  histograms.ExpectUniqueSample(
+      "Conversions.ReportsAdjustedOnNavigationRetryAttempt.Aggregatable", 1, 1);
 }
 
 }  // namespace

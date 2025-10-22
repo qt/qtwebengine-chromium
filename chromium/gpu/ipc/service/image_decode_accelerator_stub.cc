@@ -18,6 +18,7 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/task/single_thread_task_runner.h"
@@ -55,7 +56,7 @@
 #include "ui/gfx/buffer_format_util.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/color_space.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "ui/gfx/linux/native_pixmap_dmabuf.h"
@@ -252,7 +253,7 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
 #if BUILDFLAG(IS_CHROMEOS)
   DCHECK_EQ(
       gfx::NumberOfPlanesForLinearBufferFormat(completed_decode->buffer_format),
-      completed_decode->handle.native_pixmap_handle.planes.size());
+      completed_decode->handle.native_pixmap_handle().planes.size());
   // We should notify the SharedContextState that we or Skia may have modified
   // the driver's GL state. We put this in a ScopedClosureRunner so that if we
   // return early, the SharedContextState ends up in a consistent state.
@@ -265,7 +266,7 @@ void ImageDecodeAcceleratorStub::ProcessCompletedDecode(
       shared_context_state));
 
   const size_t num_planes =
-      completed_decode->handle.native_pixmap_handle.planes.size();
+      completed_decode->handle.native_pixmap_handle().planes.size();
   plane_sk_images.resize(num_planes);
 
   // Right now, we only support YUV 4:2:0 for the output of the decoder (either

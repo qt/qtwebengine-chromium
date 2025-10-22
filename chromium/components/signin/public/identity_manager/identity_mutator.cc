@@ -16,7 +16,9 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "components/signin/public/android/jni_headers/IdentityMutator_jni.h"
+#include "components/signin/public/base/signin_switches.h"
 #include "components/signin/public/identity_manager/account_info.h"
+#include "google_apis/gaia/core_account_id.h"
 #endif
 
 namespace signin {
@@ -27,7 +29,7 @@ JniIdentityMutator::JniIdentityMutator(IdentityMutator* identity_mutator)
 
 jint JniIdentityMutator::SetPrimaryAccount(
     JNIEnv* env,
-    const base::android::JavaParamRef<jobject>& primary_account_id,
+    const CoreAccountId& primary_account_id,
     jint j_consent_level,
     jint j_access_point,
     const base::android::JavaParamRef<jobject>& j_prefs_committed_callback) {
@@ -37,8 +39,7 @@ jint JniIdentityMutator::SetPrimaryAccount(
 
   PrimaryAccountMutator::PrimaryAccountError error =
       primary_account_mutator->SetPrimaryAccount(
-          ConvertFromJavaCoreAccountId(env, primary_account_id),
-          static_cast<ConsentLevel>(j_consent_level),
+          primary_account_id, static_cast<ConsentLevel>(j_consent_level),
           static_cast<signin_metrics::AccessPoint>(j_access_point),
           base::BindOnce(base::android::RunRunnableAndroid,
                          base::android::ScopedJavaGlobalRef<jobject>(
@@ -46,12 +47,20 @@ jint JniIdentityMutator::SetPrimaryAccount(
   return static_cast<jint>(error);
 }
 
+// TODO(crbug.com/373290337): Rename this method after feature launch.
 bool JniIdentityMutator::ClearPrimaryAccount(JNIEnv* env, jint source_metric) {
   PrimaryAccountMutator* primary_account_mutator =
       identity_mutator_->GetPrimaryAccountMutator();
   DCHECK(primary_account_mutator);
-  return primary_account_mutator->ClearPrimaryAccount(
-      static_cast<signin_metrics::ProfileSignout>(source_metric));
+  if (base::FeatureList::IsEnabled(
+          switches::kMakeAccountsAvailableInIdentityManager)) {
+    // If the feature is enabled we will not clear the accounts.
+    return primary_account_mutator->RemovePrimaryAccountButKeepTokens(
+        static_cast<signin_metrics::ProfileSignout>(source_metric));
+  } else {
+    return primary_account_mutator->ClearPrimaryAccount(
+        static_cast<signin_metrics::ProfileSignout>(source_metric));
+  }
 }
 
 void JniIdentityMutator::RevokeSyncConsent(JNIEnv* env, jint source_metric) {
@@ -69,7 +78,7 @@ void JniIdentityMutator::SeedAccountsThenReloadAllAccountsWithPrimaryAccount(
   std::vector<AccountInfo> accounts;
   for (size_t i = 0;
        i < base::android::SafeGetArrayLength(env, j_account_infos); i++) {
-    base::android::ScopedJavaLocalRef<jobject> account_info_java(
+    auto account_info_java = base::android::ScopedJavaLocalRef<jobject>::Adopt(
         env, env->GetObjectArrayElement(j_account_infos.obj(), i));
     accounts.push_back(ConvertFromJavaAccountInfo(env, account_info_java));
   }

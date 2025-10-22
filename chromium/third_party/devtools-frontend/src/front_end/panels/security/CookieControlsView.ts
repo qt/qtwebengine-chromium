@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../ui/components/switch/switch.js';
 import '../../ui/components/cards/cards.js';
@@ -94,7 +95,7 @@ const UIStrings = {
    */
   enterpriseTooltip: 'This setting is managed by your organization',
   /**
-    +*@description Button with the enterpise disclaimer that takes the user to the relevant enterprise cookie chrome setting
+   * +*@description Button with the enterpise disclaimer that takes the user to the relevant enterprise cookie chrome setting
    */
   viewDetails: 'View details',
   /**
@@ -304,11 +305,11 @@ export class CookieControlsView extends UI.Widget.VBox {
     `, target, {host: this});
     // clang-format on
   }) {
-    super(true, undefined, element);
+    super(element, {useShadowDom: true});
     this.#view = view;
     this.#isGracePeriodActive = false;
     this.#thirdPartyControlsDict = Root.Runtime.hostConfig.thirdPartyCookieControls;
-    this.registerRequiredCSS(Input.checkboxStylesRaw, cookieControlsViewStyles);
+    this.registerRequiredCSS(Input.checkboxStyles, cookieControlsViewStyles);
 
     SDK.TargetManager.TargetManager.instance().addModelListener(
         SDK.ResourceTreeModel.ResourceTreeModel, SDK.ResourceTreeModel.Events.PrimaryPageChanged,

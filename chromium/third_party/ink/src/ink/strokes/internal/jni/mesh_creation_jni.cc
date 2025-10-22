@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,12 +14,14 @@
 
 #include <jni.h>
 
+#include <algorithm>
 #include <cstddef>
-#include <memory>
+#include <limits>
 #include <vector>
 
 #include "absl/status/statusor.h"
 #include "absl/types/span.h"
+#include "ink/geometry/internal/jni/partitioned_mesh_jni_helper.h"
 #include "ink/geometry/internal/polyline_processing.h"
 #include "ink/geometry/mesh.h"
 #include "ink/geometry/mesh_format.h"
@@ -29,6 +31,7 @@
 #include "ink/jni/internal/jni_defines.h"
 #include "ink/jni/internal/jni_throw_util.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
 
 namespace {
 
@@ -36,6 +39,18 @@ using ::ink::Mesh;
 using ::ink::PartitionedMesh;
 using ::ink::Point;
 using ::ink::StrokeInputBatch;
+using ::ink::jni::CastToStrokeInputBatch;
+using ::ink::jni::NewNativePartitionedMesh;
+using ::ink::jni::ThrowExceptionFromStatus;
+
+// private method to calculate the slope of a line segment. If the slope is
+// infinite, return float::infinity.
+float calculateSlope(Point p1, Point p2) {
+  if (p2.x == p1.x) {
+    return std::numeric_limits<float>::infinity();
+  }
+  return (p2.y - p1.y) / (p2.x - p1.x);
+}
 
 }  // namespace
 
@@ -44,21 +59,20 @@ extern "C" {
 JNI_METHOD(strokes, MeshCreationNative, jlong,
            createClosedShapeFromStrokeInputBatch)
 (JNIEnv* env, jobject object, jlong stroke_input_batch_native_pointer) {
-  const auto* input = reinterpret_cast<const StrokeInputBatch*>(
-      stroke_input_batch_native_pointer);
+  const StrokeInputBatch& input =
+      CastToStrokeInputBatch(stroke_input_batch_native_pointer);
 
   // If the input is empty then this will return an empty PartitionedMesh with
   // no location and no area. This will not intersect with anything if used for
   // hit testing.
-  if (input->IsEmpty()) {
-    return reinterpret_cast<jlong>(
-        std::make_unique<PartitionedMesh>(PartitionedMesh()).release());
+  if (input.IsEmpty()) {
+    return NewNativePartitionedMesh();
   }
 
   std::vector<Point> points;
-  points.reserve(input->Size());
-  for (size_t i = 0; i < input->Size(); ++i) {
-    points.push_back(input->Get(i).position);
+  points.reserve(input.Size());
+  for (size_t i = 0; i < input.Size(); ++i) {
+    points.push_back(input.Get(i).position);
   }
 
   std::vector<Point> processed_points =
@@ -86,16 +100,50 @@ JNI_METHOD(strokes, MeshCreationNative, jlong,
   } else {
     mesh = ink::CreateMeshFromPolyline(processed_points);
   }
-  if (!ink::jni::CheckOkOrThrow(env, mesh.status())) {
+  if (!mesh.status().ok() && processed_points.size() >= 2) {
+    // determine if input points are colinear
+    float min_x = std::min(processed_points[0].x, processed_points[1].x);
+    float max_x = std::max(processed_points[0].x, processed_points[1].x);
+    float min_y = std::min(processed_points[0].y, processed_points[1].y);
+    float max_y = std::max(processed_points[0].y, processed_points[1].y);
+    float slope = calculateSlope(processed_points[0], processed_points[1]);
+    bool is_colinear = true;
+    for (size_t i = 2; i < processed_points.size(); ++i) {
+      if (slope !=
+          calculateSlope(processed_points[i - 1], processed_points[i])) {
+        is_colinear = false;
+        break;
+      }
+      max_x = std::max(max_x, processed_points[i].x);
+      min_x = std::min(min_x, processed_points[i].x);
+      max_y = std::max(max_y, processed_points[i].y);
+      min_y = std::min(min_y, processed_points[i].y);
+    }
+    // if so, create a mesh with a single triangle that has repeated and
+    // overlapping points. This effectively creates a point-like or
+    // segment-like mesh. The resulting mesh will have an area of 0 but can
+    // still be used for hit testing via intersection.
+    // if not, return an error.
+    if (is_colinear) {
+      std::vector<float> x_values = {min_x, min_x, max_x};
+      std::vector<float> y_values =
+          slope < 0 ? std::vector<float>{max_y, max_y, min_y}
+                    : std::vector<float>{min_y, min_y, max_y};
+      mesh = Mesh::Create(ink::MeshFormat(), {x_values, y_values}, {0, 1, 2});
+    }
+  }
+  if (!mesh.ok()) {
+    ThrowExceptionFromStatus(env, mesh.status());
     return 0;
   }
 
   absl::StatusOr<PartitionedMesh> partitioned_mesh =
       PartitionedMesh::FromMeshes(absl::MakeSpan(&mesh.value(), 1));
-  if (!ink::jni::CheckOkOrThrow(env, partitioned_mesh.status())) {
+  if (!partitioned_mesh.ok()) {
+    ThrowExceptionFromStatus(env, partitioned_mesh.status());
     return 0;
   }
-  return reinterpret_cast<jlong>(new PartitionedMesh(*partitioned_mesh));
+  return NewNativePartitionedMesh(*partitioned_mesh);
 }
 
 }  // extern "C

@@ -4,15 +4,17 @@
 
 from __future__ import annotations
 
-import abc
+import argparse
 import logging
-from typing import Dict, Final, Iterable, Iterator, Optional, Tuple
+from typing import Final, Iterable, Optional
 
-from ordered_set import OrderedSet
 from typing_extensions import override
 
 from crossbench import path as pth
-from crossbench.flags.base import Flags, FlagsData, Freezable
+from crossbench.flags.base import Flags, FlagsData
+from crossbench.flags.chrome_extensions import ChromeExtensions
+from crossbench.flags.chrome_features import (ChromeBlinkFeatures,
+                                              ChromeFeatures)
 from crossbench.flags.js_flags import JSFlags
 from crossbench.flags.known_js_flags import KNOWN_JS_FLAGS
 
@@ -24,35 +26,33 @@ class ChromeFlags(Flags):
   --enable-features/--disable-features
   --enable-blink-features/--disable-blink-features
   """
-  _JS_FLAG = "--js-flags"
+  JS_FLAG: Final[str] = "--js-flags"
 
   # All flags that might affect how finch / field-trials are loaded.
-  FIELD_TRIAL_FLAGS: Final[Tuple[str, ...]] = (
+  FIELD_TRIAL_ENABLE_FLAGS: tuple[str, ...] = (
       "--force-fieldtrials",
       "--variations-server-url",
       "--variations-insecure-server-url",
       "--variations-test-seed-path",
       "--enable-field-trial-config",
       "--disable-variations-safe-mode",
-      # The benchmarking flag without value is a no-experiment flag. However,
-      # when used as '--enable-benchmarking=enable-field-trial-config' it
-      # works with experiments.
-      "--enable-benchmarking",
   )
 
-  NO_EXPERIMENTS_FLAGS: Final[Tuple[str, ...]] = (
-      "--no-experiments",
-      # The benchmarking flag without value is a no-experiment flag. However,
-      # when used as '--enable-benchmarking=enable-field-trial-config' it
-      # works with experiments.
-      "--enable-benchmarking",
-      "--disable-field-trial-config",
-  )
+  FIELD_TRIAL_DISABLE_FLAGS: tuple[str, ...] = ("--disable-field-trial-config",)
+
+  USER_DATA_DIR_FLAG: Final[str] = "--user-data-dir"
+
+  @classmethod
+  def for_milestone(cls, initial_data: FlagsData = None, milestone: int = 0):
+    if milestone in ChromePreM139Flags.VERSION_RANGE:
+      return ChromePreM139Flags(initial_data)
+    return ChromeFlags(initial_data)
 
   def __init__(self, initial_data: FlagsData = None) -> None:
-    self._features = ChromeFeatures()
-    self._blink_features = ChromeBlinkFeatures()
-    self._js_flags = JSFlags()
+    self._features: ChromeFeatures = ChromeFeatures()
+    self._blink_features: ChromeBlinkFeatures = ChromeBlinkFeatures()
+    self._js_flags: JSFlags = JSFlags()
+    self._extensions: ChromeExtensions = ChromeExtensions()
     super().__init__(initial_data)
 
   def freeze(self) -> ChromeFlags:
@@ -60,10 +60,11 @@ class ChromeFlags(Flags):
     self._js_flags.freeze()
     self._features.freeze()
     self._blink_features.freeze()
+    self._extensions.freeze()
     return self
 
   def __getitem__(self, key):
-    if key == self._JS_FLAG and self._js_flags:
+    if key == self.JS_FLAG and self._js_flags:
       return self._js_flags
     if key == ChromeFeatures.ENABLE_FLAG and self._features.enabled:
       return self._features.enabled_str()
@@ -74,6 +75,8 @@ class ChromeFlags(Flags):
     if (key == ChromeBlinkFeatures.DISABLE_FLAG and
         self._blink_features.disabled):
       return self._blink_features.disabled_str()
+    if key in ChromeExtensions.FLAGS:
+      return self._extensions[key]
     return super().__getitem__(key)
 
   @override
@@ -83,33 +86,69 @@ class ChromeFlags(Flags):
            should_override: bool = False) -> None:
     self.assert_not_frozen()
     # pylint: disable=signature-differs
+    if self._set_special_flags(flag_name, flag_value, should_override):
+      return
+    if candidate := self._find_misspelled_flag(flag_name):
+      logging.error(
+          "Potentially misspelled flag: '%s'. "
+          "Did you mean to use %s ?", flag_name, candidate)
+      # Retry setting special flags.
+      if self._set_special_flags(candidate, flag_value, should_override):
+        return
+    super()._set(flag_name, flag_value, should_override)
+
+  def _set_special_flags(self,
+                         flag_name: str,
+                         flag_value: Optional[str] = None,
+                         should_override: bool = False) -> bool:
     if flag_name == ChromeFeatures.ENABLE_FLAG:
       if flag_value is None:
-        raise ValueError(f"{ChromeFeatures.ENABLE_FLAG} cannot be None")
-      for feature in flag_value.split(","):
-        self._features.enable(feature)
-    elif flag_name == ChromeFeatures.DISABLE_FLAG:
+        self._features.clear_enabled()
+      else:
+        for feature in flag_value.split(","):
+          self._features.enable(feature)
+      return True
+    if flag_name == ChromeFeatures.DISABLE_FLAG:
       if flag_value is None:
-        raise ValueError(f"{ChromeFeatures.DISABLE_FLAG} cannot be None")
-      for feature in flag_value.split(","):
-        self._features.disable(feature)
-    elif flag_name == ChromeBlinkFeatures.ENABLE_FLAG:
+        self._features.clear_disabled()
+      else:
+        for feature in flag_value.split(","):
+          self._features.disable(feature)
+      return True
+    if flag_name == ChromeBlinkFeatures.ENABLE_FLAG:
       if flag_value is None:
-        raise ValueError(f"{ChromeBlinkFeatures.ENABLE_FLAG} cannot be None")
-      for feature in flag_value.split(","):
-        self._blink_features.enable(feature)
-    elif flag_name == ChromeBlinkFeatures.DISABLE_FLAG:
+        self.blink_features.clear_enabled()
+      else:
+        for feature in flag_value.split(","):
+          self._blink_features.enable(feature)
+      return True
+    if flag_name == ChromeBlinkFeatures.DISABLE_FLAG:
       if flag_value is None:
-        raise ValueError(f"{ChromeBlinkFeatures.DISABLE_FLAG} cannot be None")
-      for feature in flag_value.split(","):
-        self._blink_features.disable(feature)
-    elif flag_name == self._JS_FLAG:
+        self.blink_features.clear_disabled()
+      else:
+        for feature in flag_value.split(","):
+          self._blink_features.disable(feature)
+      return True
+    if flag_name == self.JS_FLAG:
       if flag_value is None:
-        raise ValueError(f"{self._JS_FLAG} cannot be None")
-      self._set_js_flag(flag_value, should_override)
-    else:
-      flag_value = self._verify_flag(flag_name, flag_value)
-      super()._set(flag_name, flag_value, should_override)
+        self._js_flags.clear()
+      else:
+        self._set_js_flag(flag_value, should_override)
+      return True
+    if flag_name == self.USER_DATA_DIR_FLAG:
+      self._set_user_data_dir(flag_value)
+      return True
+    if flag_name in ChromeExtensions.FLAGS:
+      self._extensions.set(flag_name, flag_value, should_override)
+      return True
+    if candidate := self._find_js_flag(flag_name):
+      js_flags = JSFlags()
+      js_flags.set(candidate, flag_value)
+      logging.error(
+          "Got potential V8 flag %s that should be used as "
+          "--js-flags=%s", repr(flag_name), js_flags)
+      return False
+    return False
 
   def _set_js_flag(self, raw_js_flags: str, should_override: bool) -> None:
     new_js_flags = JSFlags(self._js_flags)
@@ -117,29 +156,6 @@ class ChromeFlags(Flags):
       new_js_flags.set(
           js_flag_name, js_flag_value, should_override=should_override)
     self._js_flags.update(new_js_flags)
-
-  def _verify_flag(self, name: str, value: Optional[str]) -> Optional[str]:
-    if candidate := self._find_misspelled_flag(name):
-      logging.error(
-          "Potentially misspelled flag: '%s'. "
-          "Did you mean to use %s ?", name, candidate)
-    if candidate := self._find_js_flag(name):
-      js_flags = JSFlags()
-      js_flags.set(candidate, value)
-      logging.error(
-          "Got potential V8 flag that should be used as "
-          "--js-flags=%s", js_flags)
-    if name == "--user-data-dir":
-      if not value or not value.strip():
-        raise ValueError("--user-data-dir cannot be the empty string.")
-      # TODO: support remote platforms
-      expanded_dir = str(pth.LocalPath(value).expanduser())
-      if expanded_dir != value:
-        logging.warning(
-            "Chrome Flags: auto-expanding --user-data-dir from '%s' to '%s'",
-            value, expanded_dir)
-      return expanded_dir
-    return value
 
   def _find_misspelled_flag(self, name: str) -> Optional[str]:
     if name in ("--enable-feature", "--enabled-feature", "--enabled-features"):
@@ -153,6 +169,10 @@ class ChromeFlags(Flags):
     if name in ("--disable-blink-feature", "--disabled-blink-feature",
                 "--disabled-blink-features"):
       return "--disable-blink-features"
+    if name in ("--enable-field-trials", "--enable-field-trials-config"):
+      return "--enable-field-trial-config"
+    if name in ("--enable-extensions", "--load-extensions"):
+      return "--load-extension"
     return None
 
   def _find_js_flag(self, name: str) -> Optional[str]:
@@ -165,6 +185,17 @@ class ChromeFlags(Flags):
       return name
     return None
 
+  def _set_user_data_dir(self, value: Optional[str]):
+    if not value or not value.strip():
+      raise ValueError("--user-data-dir cannot be the empty string.")
+    # TODO: support remote platforms
+    expanded_dir = str(pth.LocalPath(value).expanduser())
+    if expanded_dir != value:
+      logging.warning(
+          "Chrome Flags: auto-expanding --user-data-dir from '%s' to '%s'",
+          value, expanded_dir)
+    self.data[self.USER_DATA_DIR_FLAG] = expanded_dir
+
   @property
   def features(self) -> ChromeFeatures:
     return self._features
@@ -174,37 +205,23 @@ class ChromeFlags(Flags):
     return self._blink_features
 
   @property
+  def extensions(self) -> ChromeExtensions:
+    return self._extensions
+
+  @property
   def js_flags(self) -> JSFlags:
     return self._js_flags
 
-  def has_enable_benchmarking_field_trials(self):
-    # Enable the benchmarking extension with field trial configs which
-    # requires a special value. See `ShouldUseFieldTrialTestingConfig()`.
-    # https://crsrc.org/c/components/variations/service/variations_field_trial_creator_base.cc;l=138;drc=27d34700b83f381c62e3a348de2e6dfdc08364b8
-    return self.get("--enable-benchmarking") == "enable-field-trial-config"
+  @property
+  def field_trial_enable_flags(self) -> ChromeFlags:
+    return self.filtered(self.FIELD_TRIAL_ENABLE_FLAGS)
 
   @property
-  def field_trial_flags(self) -> ChromeFlags:
-    filtered = self.filtered(self.FIELD_TRIAL_FLAGS)
-    if "--enable-benchmarking" in self and (
-        not self.has_enable_benchmarking_field_trials()):
-      del filtered["--enable-benchmarking"]
-    return filtered
+  def field_trial_disable_flags(self) -> ChromeFlags:
+    return self.filtered(self.FIELD_TRIAL_DISABLE_FLAGS)
 
-  @property
-  def no_experiments_flags(self) -> ChromeFlags:
-    filtered = self.filtered(self.NO_EXPERIMENTS_FLAGS)
-    # Special case for --enable-benchmarking which disables field trials
-    # by default, unless it has a "enable-field-trial-config" value.
-    if self.has_enable_benchmarking_field_trials():
-      del filtered["--enable-benchmarking"]
-    return filtered
-
-  def enable_benchmarking_extension(self) -> None:
-    if self.field_trial_flags:
-      self.set("--enable-benchmarking", "enable-field-trial-config")
-    else:
-      self.set("--enable-benchmarking")
+  def enable_benchmarking_api(self) -> None:
+    self.set("--enable-benchmarking-api")
 
   @override
   def merge(self, other: FlagsData) -> None:
@@ -213,163 +230,83 @@ class ChromeFlags(Flags):
     self.features.merge(other.features)
     self.blink_features.merge(other.blink_features)
     self.js_flags.merge(other.js_flags)
+    self.extensions.merge(other.extensions)
     for name, value in other.base_items():
       self.set(name, value)
 
-  def base_items(self) -> Iterable[Tuple[str, Optional[str]]]:
+  def base_items(self) -> Iterable[tuple[str, str | None]]:
     yield from super().items()
 
   @override
-  def items(self) -> Iterable[Tuple[str, Optional[str]]]:  # type: ignore
+  def items(self) -> Iterable[tuple[str, str | None]]:  # type: ignore
     yield from self.base_items()
     if self._js_flags:
-      yield (self._JS_FLAG, str(self.js_flags))
+      yield (self.JS_FLAG, str(self.js_flags))
     yield from self.features.items()
     yield from self.blink_features.items()
+    yield from self.extensions.items()
 
   def __bool__(self) -> bool:
     return bool(self.data) or bool(self._js_flags) or bool(
         self._features) or bool(self._blink_features)
 
+  @override
+  def validate(self) -> None:
+    field_trial_enable_flags = self.field_trial_enable_flags
+    field_trial_disable_flags = self.field_trial_disable_flags
+    if field_trial_enable_flags and field_trial_disable_flags:
+      raise argparse.ArgumentTypeError(
+          f"Conflicting {type(self).__name__} detected: "
+          f"{field_trial_enable_flags} vs {field_trial_disable_flags}.\n"
+          "Cannot enable and disable finch / field-trials at the same time.")
 
-class ChromeBaseFeatures(Freezable, abc.ABC):
-  ENABLE_FLAG: str = ""
-  DISABLE_FLAG: str = ""
 
-  def __init__(self) -> None:
-    super().__init__()
-    self._enabled: Dict[str, str | None] = {}
-    self._disabled: OrderedSet[str] = OrderedSet()
+class ChromePreM139Flags(ChromeFlags):
+  VERSION_RANGE: Final[range] = range(1, 139)
+  FIELD_TRIAL_ENABLE_FLAGS: tuple[
+      str, ...] = ChromeFlags.FIELD_TRIAL_ENABLE_FLAGS + (
+          # The benchmarking flag without value is a no-field-trial flag.
+          # However, when used as
+          # '--enable-benchmarking=enable-field-trial-config' it works
+          # with field trials.
+          "--enable-benchmarking",)
+
+  FIELD_TRIAL_DISABLE_FLAGS: tuple[
+      str, ...] = ChromeFlags.FIELD_TRIAL_DISABLE_FLAGS + (
+          # The benchmarking flag without value is a no-field-trial flag.
+          # However, when used as
+          # '--enable-benchmarking=enable-field-trial-config' it works
+          # with field trials.
+          "--enable-benchmarking",)
+
+  def has_enable_benchmarking_field_trials(self):
+    # Enable the benchmarking extension with field trial configs which
+    # requires a special value. See `ShouldUseFieldTrialTestingConfig()`.
+    # https://crsrc.org/c/components/variations/service/variations_field_trial_creator_base.cc;l=138;drc=27d34700b83f381c62e3a348de2e6dfdc08364b8
+    return self.get("--enable-benchmarking") == "enable-field-trial-config"
 
   @property
-  def is_empty(self) -> bool:
-    return len(self._enabled) == 0 and len(self._disabled) == 0
+  @override
+  def field_trial_enable_flags(self) -> ChromeFlags:
+    filtered = self.filtered(self.FIELD_TRIAL_ENABLE_FLAGS)
+    if "--enable-benchmarking" in self and (
+        not self.has_enable_benchmarking_field_trials()):
+      del filtered["--enable-benchmarking"]
+    return filtered
 
   @property
-  def enabled(self) -> Dict[str, Optional[str]]:
-    return dict(self._enabled)
+  @override
+  def field_trial_disable_flags(self) -> ChromeFlags:
+    filtered_copy = self.filtered(self.FIELD_TRIAL_DISABLE_FLAGS)
+    # Special case for --enable-benchmarking which disables field trials
+    # by default, unless it has a "enable-field-trial-config" value.
+    if self.has_enable_benchmarking_field_trials():
+      del filtered_copy["--enable-benchmarking"]
+    return filtered_copy
 
-  @property
-  def disabled(self) -> OrderedSet[str]:
-    return OrderedSet(self._disabled)
-
-  def _parse_feature(self, feature: str) -> Tuple[str, Optional[str]]:
-    if not feature:
-      raise ValueError("Cannot parse empty feature")
-    if "," in feature:
-      raise ValueError(f"{repr(feature)} contains multiple features. "
-                       "Please split them first.")
-    return self._parse_feature_parts(feature)
-
-  @abc.abstractmethod
-  def _parse_feature_parts(self, feature: str) -> Tuple[str, Optional[str]]:
-    pass
-
-  def enable(self, feature: str) -> None:
-    name, value = self._parse_feature(feature)
-    self._enable(name, value)
-
-  def _enable(self, name: str, value: Optional[str]) -> None:
-    self.assert_not_frozen()
-    if name in self._disabled:
-      raise ValueError(
-          f"Cannot enable previously disabled feature={repr(name)}")
-    if name in self._enabled:
-      prev_value = self._enabled[name]
-      if value != prev_value:
-        raise ValueError("Cannot set conflicting values "
-                         f"({repr(prev_value)}, vs. {repr(value)}) "
-                         f"for the same feature={repr(name)}")
+  @override
+  def enable_benchmarking_api(self) -> None:
+    if self.field_trial_enable_flags:
+      self.set("--enable-benchmarking", "enable-field-trial-config")
     else:
-      self._enabled[name] = value
-
-  def disable(self, feature: str) -> None:
-    self.assert_not_frozen()
-    name, _ = self._parse_feature(feature)
-    if name in self._enabled:
-      raise ValueError(
-          f"Cannot disable previously enabled feature={repr(name)}")
-    self._disabled.add(name)
-
-  def update(self, other: ChromeBaseFeatures) -> None:
-    if not isinstance(other, type(self)):
-      raise TypeError(f"Cannot merge {type(self)} with {type(other)}")
-    for disabled in other.disabled:
-      self.disable(disabled)
-    for name, value in other.enabled.items():
-      self._enable(name, value)
-
-  def merge(self, other: ChromeBaseFeatures) -> None:
-    self.update(other)
-
-  def items(self) -> Iterable[Tuple[str, str]]:
-    if self._enabled:
-      yield (self.ENABLE_FLAG, self.enabled_str())
-    if self._disabled:
-      yield (self.DISABLE_FLAG, self.disabled_str())
-
-  def enabled_str(self) -> str:
-    return ",".join(
-        k if v is None else f"{k}{v}" for k, v in self._enabled.items())
-
-  def disabled_str(self) -> str:
-    return ",".join(self._disabled)
-
-  def __iter__(self) -> Iterator[str]:
-    for flag_name, features_str in self.items():
-      yield f"{flag_name}={features_str}"
-
-  def __bool__(self) -> bool:
-    return bool(self._enabled) or bool(self._disabled)
-
-  def __str__(self) -> str:
-    return " ".join(self)
-
-
-class ChromeFeatures(ChromeBaseFeatures):
-  """
-  Chrome Features set, throws if features are enabled and disabled at the same
-  time.
-  Examples:
-    --disable-features="MyFeature1"
-    --enable-features="MyFeature1,MyFeature2"
-    --enable-features="MyFeature1:k1/v1/k2/v2,MyFeature2"
-    --enable-features="MyFeature3<Trial2:k1/v1/k2/v2"
-  """
-
-  ENABLE_FLAG: str = "--enable-features"
-  DISABLE_FLAG: str = "--disable-features"
-
-  @override
-  def _parse_feature_parts(self, feature: str) -> Tuple[str, Optional[str]]:
-    parts = feature.split("<")
-    if len(parts) == 2:
-      return (parts[0], "<" + parts[1])
-    if len(parts) != 1:
-      raise ValueError(f"Invalid number of feature parts: {repr(parts)}")
-    parts = feature.split(":")
-    if len(parts) == 2:
-      return (parts[0], ":" + parts[1])
-    if len(parts) != 1:
-      raise ValueError(f"Invalid number of feature parts: {repr(parts)}")
-    return (feature, None)
-
-
-class ChromeBlinkFeatures(ChromeBaseFeatures):
-  """
-  Chrome Features set, throws if features are enabled and disabled at the same
-  time.
-  Examples:
-    --disable-blink-features="MyFeature1"
-    --enable-blink-features="MyFeature1,MyFeature2"
-  """
-
-  ENABLE_FLAG: str = "--enable-blink-features"
-  DISABLE_FLAG: str = "--disable-blink-features"
-
-  @override
-  def _parse_feature_parts(self, feature: str) -> Tuple[str, Optional[str]]:
-    if "<" in feature or ":" in feature:
-      raise ValueError("blink features do not have params, "
-                       f"but found param separator in {repr(feature)}")
-    return (feature, None)
+      self.set("--enable-benchmarking")

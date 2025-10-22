@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-@import "widgets/theme";
+@import "theme";
 
-.metrics-page-picker {
+.pf-metrics-page-picker {
   display: flex;
 }
 
-.metrics-page-picker > * {
+.pf-metrics-page-picker > * {
   margin-right: 1rem;
 }
 
@@ -42,5 +42,11 @@
     &.metric-error {
       color: #ef6c00;
     }
+  }
+}
+
+.pf-metricsv2-page {
+  &__metric_id_box {
+    margin-bottom: 1rem;
   }
 }

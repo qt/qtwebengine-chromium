@@ -85,19 +85,19 @@ export class LottieRenderer extends LitElement {
    * The path to the lottie asset JSON file.
    * @export
    */
-  assetUrl: string;
+  declare assetUrl: string;
 
   /**
    * When true, animation will begin to play as soon as it's loaded.
    * @export
    */
-  autoplay: boolean;
+  declare autoplay: boolean;
 
   /**
    * When true, animation will loop continuously.
    * @export
    */
-  loop: boolean;
+  declare loop: boolean;
 
   /**
    * Whether or not the illustration should render using a dynamic palette
@@ -105,7 +105,7 @@ export class LottieRenderer extends LitElement {
    * with.
    * @export
    */
-  dynamic: boolean;
+  declare dynamic: boolean;
 
   /**
    * Function which returns a web worker loaded up with lottie worker js.

@@ -31,11 +31,14 @@
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
 #include "base/trace_event/trace_event.h"
+#include "gpu/ipc/service/gpu_channel_shared_image_interface.h"
+#include "gpu/ipc/service/shared_image_stub.h"
 #include "media/base/bitstream_buffer.h"
 #include "media/base/color_plane_layout.h"
 #include "media/base/encoder_status.h"
@@ -47,6 +50,7 @@
 #include "media/gpu/chromeos/fourcc.h"
 #include "media/gpu/chromeos/image_processor_factory.h"
 #include "media/gpu/chromeos/platform_video_frame_utils.h"
+#include "media/gpu/command_buffer_helper.h"
 #include "media/gpu/gpu_video_encode_accelerator_helpers.h"
 #include "media/gpu/macros.h"
 #include "media/gpu/v4l2/v4l2_utils.h"
@@ -306,10 +310,34 @@ EncoderStatus V4L2VideoEncodeAccelerator::Initialize(
   }
 
   driver_name_ = device_->GetDriverName();
+  config_ = config;
 
-  encoder_task_runner_->PostTask(
-      FROM_HERE, base::BindOnce(&V4L2VideoEncodeAccelerator::InitializeTask,
-                                weak_this_, config));
+  if (gpu_task_runner_ && get_command_buffer_helper_cb_) {
+    gpu_task_runner_->PostTaskAndReplyWithResult(
+        FROM_HERE,
+        base::BindOnce(
+            [](base::RepeatingCallback<scoped_refptr<CommandBufferHelper>()>
+                   get_command_buffer_helper_cb)
+                -> scoped_refptr<gpu::SharedImageInterface> {
+              auto helper = get_command_buffer_helper_cb.Run();
+              if (helper && helper->GetSharedImageStub()) {
+                return helper->GetSharedImageStub()->shared_image_interface();
+              }
+              return nullptr;
+            },
+            std::move(get_command_buffer_helper_cb_)),
+        base::BindOnce(
+            &V4L2VideoEncodeAccelerator::OnSharedImageInterfaceAvailable,
+            weak_this_));
+  } else {
+    // |gpu_task_runner_| or |get_command_buffer_helper_cb_| were not set. The
+    // shared image interface must not be important for the client. Finishes
+    // initialization now.
+    encoder_task_runner_->PostTask(
+        FROM_HERE, base::BindOnce(&V4L2VideoEncodeAccelerator::InitializeTask,
+                                  weak_this_, config_));
+  }
+
   return {EncoderStatus::Codes::kOk};
 }
 
@@ -555,11 +583,12 @@ bool V4L2VideoEncodeAccelerator::AllocateImageProcessorOutputBuffers(
   for (size_t i = 0; i < count; i++) {
     switch (output_config.storage_type) {
       case VideoFrame::STORAGE_GPU_MEMORY_BUFFER:
-        image_processor_output_buffers_[i] = CreateGpuMemoryBufferVideoFrame(
+        CHECK(sii_);
+        image_processor_output_buffers_[i] = CreateMappableVideoFrame(
             output_config.fourcc.ToVideoPixelFormat(), output_config.size,
             output_config.visible_rect, output_config.visible_rect.size(),
             base::TimeDelta(),
-            gfx::BufferUsage::VEA_READ_CAMERA_AND_CPU_READ_WRITE);
+            gfx::BufferUsage::VEA_READ_CAMERA_AND_CPU_READ_WRITE, sii_.get());
         break;
       default:
         LOG(ERROR) << "Unsupported output storage type of image processor: "
@@ -703,6 +732,36 @@ void V4L2VideoEncodeAccelerator::FlushTask(FlushCallback flush_callback) {
 
 bool V4L2VideoEncodeAccelerator::IsFlushSupported() {
   return is_flush_supported_;
+}
+
+void V4L2VideoEncodeAccelerator::OnSharedImageInterfaceAvailable(
+    scoped_refptr<gpu::SharedImageInterface> sii) {
+  sii_ = std::move(sii);
+  // We can now run the 'InitializeTask' given the valid sii from the gpu.
+  encoder_task_runner_->PostTask(
+      FROM_HERE, base::BindOnce(&V4L2VideoEncodeAccelerator::InitializeTask,
+                                weak_this_, config_));
+}
+
+void V4L2VideoEncodeAccelerator::SetCommandBufferHelperCB(
+    base::RepeatingCallback<scoped_refptr<CommandBufferHelper>()>
+        get_command_buffer_helper_cb,
+    scoped_refptr<base::SingleThreadTaskRunner> gpu_task_runner) {
+  // we should store this here and then run it on init.
+  // this way we know when the ssi comes back we can finish off with the
+  // InitializeTask (knowing that init has actually run)
+  // We store the callback and task runner here so that when the ssi comes back
+  // we know that 'Initialize' has been run and it is save to run
+  // 'InitializeTask' on the encoder. (Which likely uses ssi to allocate
+  // buffers)
+  get_command_buffer_helper_cb_ = get_command_buffer_helper_cb;
+  gpu_task_runner_ = gpu_task_runner;
+}
+
+void V4L2VideoEncodeAccelerator::SetSharedImageInterfaceForTesting(
+    scoped_refptr<gpu::SharedImageInterface> sii) {
+  CHECK(!sii_) << "SharedImageInterface is already set.";
+  sii_ = std::move(sii);
 }
 
 VideoEncodeAccelerator::SupportedProfiles
@@ -1505,7 +1564,7 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord(
 
       case V4L2_MEMORY_DMABUF: {
         const std::vector<gfx::NativePixmapPlane>& planes =
-            gmb_handle.native_pixmap_handle.planes;
+            gmb_handle.native_pixmap_handle().planes;
         // TODO(crbug.com/901264): The way to pass an offset within a DMA-buf is
         // not defined in V4L2 specification, so we abuse data_offset for now.
         // Fix it when we have the right interface, including any necessary
@@ -1556,7 +1615,7 @@ bool V4L2VideoEncodeAccelerator::EnqueueInputRecord(
     }
     case V4L2_MEMORY_DMABUF: {
       if (!std::move(input_buf).QueueDMABuf(
-              gmb_handle.native_pixmap_handle.planes)) {
+              gmb_handle.native_pixmap_handle().planes)) {
         SetErrorState(
             {EncoderStatus::Codes::kEncoderHardwareDriverError,
              base::StrCat(

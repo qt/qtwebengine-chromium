@@ -34,9 +34,12 @@
 #include "extensions/browser/event_router_factory.h"
 #include "extensions/browser/extension_system.h"
 #include "extensions/browser/mock_extension_system.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
 #include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 using value_store::ValueStore;
 
@@ -111,7 +114,7 @@ class MockSyncChangeProcessor : public syncer::SyncChangeProcessor {
       const syncer::SyncChangeList& change_list) override {
     if (fail_all_requests_) {
       return syncer::ModelError(FROM_HERE,
-                                "MockSyncChangeProcessor: configured to fail");
+                                syncer::ModelError::Type::kGenericTestError);
     }
     for (const auto& sync_change : change_list) {
       changes_.push_back(std::make_unique<SettingSyncData>(sync_change));

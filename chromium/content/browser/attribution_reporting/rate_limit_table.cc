@@ -23,6 +23,7 @@
 #include "base/containers/flat_set.h"
 #include "base/containers/flat_tree.h"
 #include "base/containers/span.h"
+#include "base/containers/to_vector.h"
 #include "base/feature_list.h"
 #include "base/memory/raw_ref.h"
 #include "base/notreached.h"
@@ -225,7 +226,7 @@ bool RateLimitTable::AddRateLimit(
   // operations.
   const base::TimeDelta delete_frequency =
       delegate_->GetDeleteExpiredRateLimitsFrequency();
-  DCHECK_GE(delete_frequency, base::TimeDelta());
+  CHECK_GE(delete_frequency, base::TimeDelta());
   const base::Time now = base::Time::Now();
   if (now - last_cleared_ >= delete_frequency) {
     if (!DeleteExpiredRateLimits(db)) {
@@ -306,8 +307,8 @@ RateLimitResult RateLimitTable::AttributionAllowedForAttributionLimit(
 
   const AttributionConfig::RateLimitConfig& rate_limits =
       delegate_->GetRateLimits();
-  DCHECK_GT(rate_limits.time_window, base::TimeDelta());
-  DCHECK_GT(rate_limits.max_attributions, 0);
+  CHECK_GT(rate_limits.time_window, base::TimeDelta());
+  CHECK_GT(rate_limits.max_attributions, 0);
 
   // Note that we intentionally use source time to bound the limit for any
   // source, which is consistent with the time stored in `AddRateLimit()`.
@@ -540,7 +541,7 @@ RateLimitTable::GetSourcesToDeactivateForDestinationLimit(
   }
 
   const int limit = delegate_->GetMaxDestinationsPerSourceSiteReportingSite();
-  DCHECK_GT(limit, 0);
+  CHECK_GT(limit, 0);
 
   return SelectDestinations(std::move(destination_datas), limit);
 }
@@ -592,19 +593,12 @@ RateLimitTable::SourceAllowedForDestinationRateLimit(
   // Value is true if the reporting site matched, false otherwise.
   using DestinationSiteMap = base::flat_map<net::SchemefulSite, bool>;
 
-  DestinationSiteMap destination_sites = [&]() {
-    const base::flat_set<net::SchemefulSite>& destinations =
-        source.registration().destination_set.destinations();
-
-    DestinationSiteMap::container_type pairs;
-    pairs.reserve(destinations.size());
-
-    for (const net::SchemefulSite& site : destinations) {
-      pairs.emplace_back(site, true);
-    }
-
-    return DestinationSiteMap(base::sorted_unique, std::move(pairs));
-  }();
+  DestinationSiteMap destination_sites(
+      base::sorted_unique,
+      base::ToVector(source.registration().destination_set.destinations(),
+                     [](const net::SchemefulSite& site) {
+                       return std::make_pair(site, true);
+                     }));
 
   size_t num_with_same_reporting_site = destination_sites.size();
 
@@ -627,10 +621,10 @@ RateLimitTable::SourceAllowedForDestinationRateLimit(
   }
 
   const int global_limit = destination_rate_limit.max_total;
-  DCHECK_GT(global_limit, 0);
+  CHECK_GT(global_limit, 0);
 
   const int reporting_limit = destination_rate_limit.max_per_reporting_site;
-  DCHECK_GT(reporting_limit, 0);
+  CHECK_GT(reporting_limit, 0);
 
   bool global_limit_hit =
       destination_sites.size() > static_cast<size_t>(global_limit);
@@ -671,7 +665,7 @@ RateLimitResult RateLimitTable::SourceAllowedForDestinationPerDayRateLimit(
 
   const int limit =
       delegate_->GetDestinationRateLimit().max_per_reporting_site_per_day;
-  DCHECK_GT(limit, 0);
+  CHECK_GT(limit, 0);
 
   base::flat_set<net::SchemefulSite> destination_sites =
       source.registration().destination_set.destinations();
@@ -711,7 +705,7 @@ RateLimitResult RateLimitTable::AllowedForReportingOriginLimit(
     base::span<const net::SchemefulSite> destination_sites) {
   const AttributionConfig::RateLimitConfig& rate_limits =
       delegate_->GetRateLimits();
-  DCHECK_GT(rate_limits.time_window, base::TimeDelta());
+  CHECK_GT(rate_limits.time_window, base::TimeDelta());
 
   sql::Statement statement;
 
@@ -727,7 +721,7 @@ RateLimitResult RateLimitTable::AllowedForReportingOriginLimit(
         SQL_FROM_HERE,
         attribution_queries::kRateLimitSelectAttributionReportingOriginsSql));
   }
-  DCHECK_GT(max, 0);
+  CHECK_GT(max, 0);
 
   const std::string serialized_reporting_origin =
       common_info.reporting_origin().Serialize();
@@ -858,8 +852,8 @@ bool RateLimitTable::DeleteAttributionRateLimit(
 bool RateLimitTable::ClearAllDataInRange(sql::Database* db,
                                          base::Time delete_begin,
                                          base::Time delete_end) {
-  DCHECK(!((delete_begin.is_null() || delete_begin.is_min()) &&
-           delete_end.is_max()));
+  CHECK(!((delete_begin.is_null() || delete_begin.is_min()) &&
+          delete_end.is_max()));
 
   // TODO(linnan): Optimize using a more appropriate index.
   sql::Statement statement(db->GetCachedStatement(

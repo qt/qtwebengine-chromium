@@ -5,6 +5,7 @@
 #include "components/security_interstitials/core/ssl_error_ui.h"
 
 #include "base/i18n/time_formatting.h"
+#include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
 #include "components/security_interstitials/core/common_string_util.h"
 #include "components/security_interstitials/core/controller_client.h"
@@ -80,10 +81,11 @@ void SSLErrorUI::PopulateStringsForHTML(base::Value::Dict& load_time_data) {
           IDS_SSL_V2_PRIMARY_PARAGRAPH,
           common_string_util::GetFormattedHostName(request_url_)));
 
-  if (soft_override_enabled_)
+  if (soft_override_enabled_) {
     PopulateOverridableStrings(load_time_data);
-  else
+  } else {
     PopulateNonOverridableStrings(load_time_data);
+  }
 }
 
 const net::SSLInfo& SSLErrorUI::ssl_info() const {
@@ -165,8 +167,9 @@ void SSLErrorUI::PopulateNonOverridableStrings(
       help_string = IDS_SSL_NONOVERRIDABLE_INVALID;
       break;
     default:
-      if (requested_strict_enforcement_)
+      if (requested_strict_enforcement_) {
         help_string = IDS_SSL_NONOVERRIDABLE_HSTS;
+      }
   }
   load_time_data.Set("finalParagraph",
                      l10n_util::GetStringFUTF16(help_string, url));
@@ -247,7 +250,8 @@ void SSLErrorUI::HandleCommand(SecurityInterstitialCommand command) {
     case CMD_OPEN_LOGIN:
     case CMD_REPORT_PHISHING_ERROR:
     case CMD_CLOSE_INTERSTITIAL_WITHOUT_UI:
-    case CMD_REQUEST_SITE_ACCESS_PERMISSION: {
+    case CMD_REQUEST_SITE_ACCESS_PERMISSION:
+    case CMD_OPEN_ANDROID_ADVANCED_PROTECTION_SETTINGS: {
       // Not supported by the SSL error page.
       DUMP_WILL_BE_NOTREACHED() << "Unsupported command: " << command;
       break;
@@ -261,4 +265,4 @@ void SSLErrorUI::HandleCommand(SecurityInterstitialCommand command) {
   }
 }
 
-}  // security_interstitials
+}  // namespace security_interstitials

@@ -7,9 +7,9 @@
 #include <memory>
 #include <string_view>
 
-#include "base/hash/md5.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
+#include "crypto/hash.h"
 #include "media/base/audio_bus.h"
 #include "media/base/audio_hash.h"
 #include "media/base/decoder_buffer.h"
@@ -33,9 +33,7 @@ class AudioFileReaderTest : public testing::Test {
 
   void Initialize(const char* filename) {
     data_ = ReadTestDataFile(filename);
-    auto data_span = base::span(*data_);
-    protocol_ = std::make_unique<InMemoryUrlProtocol>(data_span.data(),
-                                                      data_span.size(), false);
+    protocol_ = std::make_unique<InMemoryUrlProtocol>(*data_, false);
     reader_ = std::make_unique<AudioFileReader>(protocol_.get());
   }
 
@@ -69,23 +67,27 @@ class AudioFileReaderTest : public testing::Test {
 
     auto packet = ScopedAVPacket::Allocate();
     base::TimeDelta start_timestamp;
-    std::vector<std::string> packet_md5_hashes_;
+    std::vector<std::array<uint8_t, crypto::hash::kSha256Size>> packet_hashes;
     for (int i = 0; i < kTestPasses; ++i) {
       for (int j = 0; j < packet_reads; ++j) {
         ASSERT_TRUE(reader_->ReadPacketForTesting(packet.get()));
 
-        // On the first pass save the MD5 hash of each packet, on subsequent
+        // On the first pass save the SHA-256 hash of each packet, on subsequent
         // passes ensure it matches.
-        const std::string md5_hash = base::MD5String(std::string_view(
-            reinterpret_cast<char*>(packet->data), packet->size));
+        // SAFETY: libavcodec guarantees us that packet->data points to at least
+        // packet->size bytes of memory.
+        UNSAFE_BUFFERS(
+            const base::span data(packet->data,
+                                  base::checked_cast<size_t>(packet->size));)
+        const auto hash = crypto::hash::Sha256(data);
         if (i == 0) {
-          packet_md5_hashes_.push_back(md5_hash);
+          packet_hashes.push_back(hash);
           if (j == 0) {
             start_timestamp = ConvertFromTimeBase(
                 reader_->codec_context_for_testing()->time_base, packet->pts);
           }
         } else {
-          EXPECT_EQ(packet_md5_hashes_[j], md5_hash) << "j = " << j;
+          EXPECT_EQ(packet_hashes[j], hash) << "j = " << j;
         }
 
         av_packet_unref(packet.get());
@@ -194,7 +196,7 @@ TEST_F(AudioFileReaderTest, WaveF32LE) {
 
 TEST_F(AudioFileReaderTest, MP3) {
   RunTest("sfx.mp3", "1.30,2.72,4.56,5.08,3.74,2.03,", 1, 44100,
-          base::Microseconds(313470), 13825, 11025);
+          base::Microseconds(250001), 11026, 11025);
 }
 
 TEST_F(AudioFileReaderTest, CorruptMP3) {

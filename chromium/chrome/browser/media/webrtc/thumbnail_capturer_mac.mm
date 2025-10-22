@@ -27,6 +27,7 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/task/bind_post_task.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/timer/timer.h"
 #include "chrome/browser/media/webrtc/delegated_source_list_capturer.h"
 #include "chrome/browser/media/webrtc/desktop_capturer_wrapper.h"
@@ -675,7 +676,7 @@ void ThumbnailCapturerMac::OnCapturedFrame(
 
   // The image has been captured, pass it on to the consumer as a DesktopFrame.
   std::unique_ptr<webrtc::DesktopFrame> frame =
-      webrtc::CreateDesktopFrameFromCGImage(rtc::AdoptCF(cg_image.get()));
+      webrtc::CreateDesktopFrameFromCGImage(webrtc::AdoptCF(cg_image.get()));
   consumer_->OnRecurrentCaptureResult(Result::SUCCESS, std::move(frame),
                                       source_id);
 }

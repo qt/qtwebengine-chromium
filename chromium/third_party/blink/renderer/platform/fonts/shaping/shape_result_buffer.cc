@@ -6,7 +6,7 @@
 
 #include "third_party/blink/renderer/platform/fonts/character_range.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result.h"
-#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_inline_headers.h"
+#include "third_party/blink/renderer/platform/fonts/shaping/shape_result_run.h"
 #include "third_party/blink/renderer/platform/fonts/shaping/shape_result_view.h"
 #include "third_party/blink/renderer/platform/fonts/simple_font_data.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
@@ -129,59 +129,6 @@ CharacterRange ShapeResultBuffer::GetCharacterRange(
   }
   return CharacterRange(*context.to_x, *context.from_x, -context.min_y,
                         context.max_y);
-}
-
-int ShapeResultBuffer::OffsetForPosition(
-    const TextRun& run,
-    float target_x,
-    IncludePartialGlyphsOption partial_glyphs,
-    BreakGlyphsOption break_glyphs) const {
-  StringView text = run.ToStringView();
-  unsigned total_offset;
-  if (run.Rtl()) {
-    total_offset = run.length();
-    for (unsigned i = results_.size(); i; --i) {
-      const Member<const ShapeResult>& word_result = results_[i - 1];
-      if (!word_result)
-        continue;
-      total_offset -= word_result->NumCharacters();
-      if (target_x >= 0 && target_x <= word_result->Width()) {
-        int offset_for_word = word_result->OffsetForPosition(
-            target_x,
-            StringView(text, total_offset, word_result->NumCharacters()),
-            partial_glyphs, break_glyphs);
-        return total_offset + offset_for_word;
-      }
-      target_x -= word_result->Width();
-    }
-  } else {
-    total_offset = 0;
-    for (const Member<const ShapeResult>& word_result : results_) {
-      if (!word_result)
-        continue;
-      int offset_for_word = word_result->OffsetForPosition(
-          target_x, StringView(text, 0, word_result->NumCharacters()),
-          partial_glyphs, break_glyphs);
-      DCHECK_GE(offset_for_word, 0);
-      total_offset += offset_for_word;
-      if (target_x >= 0 && target_x <= word_result->Width())
-        return total_offset;
-      text = StringView(text, word_result->NumCharacters());
-      target_x -= word_result->Width();
-    }
-  }
-  return total_offset;
-}
-
-HeapVector<ShapeResult::RunFontData> ShapeResultBuffer::GetRunFontData() const {
-  HeapVector<ShapeResult::RunFontData> font_data;
-  for (const auto& result : results_)
-    result->GetRunFontData(&font_data);
-  return font_data;
-}
-
-ShapeResultView* ShapeResultBuffer::ViewAt(wtf_size_t index) const {
-  return ShapeResultView::Create(results_[index]);
 }
 
 GlyphData ShapeResultBuffer::EmphasisMarkGlyphData(

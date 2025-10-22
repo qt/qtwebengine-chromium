@@ -23,7 +23,7 @@
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type.h"
 #include "components/autofill/core/browser/data_model/autofill_ai/entity_type_names.h"
 #include "components/autofill/core/browser/field_types.h"
-#include "components/autofill_ai/core/browser/autofill_ai_utils.h"
+#include "components/autofill/core/browser/integrators/autofill_ai/autofill_ai_labels.h"
 #include "components/strings/grit/components_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -32,10 +32,6 @@ namespace autofill_private = extensions::api::autofill_private;
 namespace extensions::autofill_ai_util {
 
 namespace {
-
-// Arbitrary delimiter to use when concatenating labels to decide whether
-// a series of labels for different entities are unique.
-constexpr char16_t kLabelsDelimiter[] = u" - - ";
 
 using autofill::AttributeInstance;
 using autofill::AttributeType;
@@ -52,15 +48,7 @@ using autofill::EntityTypeName;
 // 1. Retrieve all available labels for each entity using
 //    `GetLabelsForEntities()`.
 //
-// 2. Initialize `autofill_ai::EntitiesLabels`, which will be a vector
-//    of final labels for each entity. Also sets the maximum number of
-//    labels to use, which will be same as the entity with the largest
-//    number of available labels.
-//
-// 3. Adds labels to each entity final list of labels, until the
-//    concatenation of such labels are unique across entities.
-//
-// 4. Finally, creates for each entity an
+// 2. Creates for each entity an
 //    `api::autofill_private::EntityInstanceWithLabels`,
 //    setting its label (first line in the settings page list) as the entity
 //    name, and its sublabel (second line) as the concatenation of the final
@@ -71,70 +59,16 @@ void EntityInstanceToPrivateApiEntityInstanceWithLabels(
     const std::string& app_locale,
     std::vector<autofill_private::EntityInstanceWithLabels>& output) {
   // Step 1#, get all available labels for `entity_instances`.
-  autofill_ai::EntitiesLabels entities_labels_available =
-      autofill_ai::GetLabelsForEntities(
-          entity_instances, /*attribute_types_to_exclude=*/{}, app_locale);
-  //  Step 2#
-  //  Initialize the final list of labels to be used by each entity.
-  autofill_ai::EntitiesLabels entities_labels_output =
-      autofill_ai::EntitiesLabels(std::vector<std::vector<std::u16string>>(
-          entity_instances.size(), std::vector<std::u16string>()));
+  const std::vector<autofill::EntityLabel> labels_for_entities =
+      autofill::GetLabelsForEntities(entity_instances,
+                                     /*allow_only_disambiguating_types=*/false,
+                                     /*allow_only_disambiguating_values=*/false,
+                                     app_locale);
 
-  // The max number of labels is defined by the entity that has the largest
-  // number of available labels.
-  size_t max_number_of_labels = 0;
-  for (const std::vector<std::u16string>& entity_labels_available :
-       *entities_labels_available) {
-    max_number_of_labels =
-        std::max(max_number_of_labels, entity_labels_available.size());
-  }
-
-  // Step 3#
-  for (size_t label_count = 1; label_count <= max_number_of_labels;
-       label_count++) {
-    // Used to check whether the list of labels for the entities is unique.
-    std::set<std::u16string> current_labels;
-
-    // Iterate over the available labels for each entity and add labels to
-    // the final `entity_labels_available`, until the concatenation of all
-    // labels leads to unique strings across all entities. Note that
-    // `entity_labels_available` contains for each entity a vector of labels
-    // (strings) to be used.
-    CHECK_EQ(entities_labels_available->size(), entities_labels_output->size());
-    for (size_t i = 0; i < entities_labels_available->size(); ++i) {
-      std::vector<std::u16string>& entity_labels_available =
-          (*entities_labels_available)[i];
-      std::vector<std::u16string>& entity_labels_output =
-          (*entities_labels_output)[i];
-      std::u16string current_label =
-          base::JoinString(entity_labels_output, kLabelsDelimiter);
-      // If there is no more available labels for an entity, simply add the
-      // concatenation of all labels already used to the Set.
-      if (entity_labels_available.empty()) {
-        current_labels.insert(std::move(current_label));
-        continue;
-      }
-
-      // Otherwise add the current top label, update the set and remove the
-      // label from the available list. Note that the labels are sorted from
-      // lowest to highest priority.
-      entity_labels_output.push_back(entity_labels_available.back());
-      current_labels.insert(base::StrCat(
-          {current_label, kLabelsDelimiter, entity_labels_available.back()}));
-
-      // Label uniqueness was reached if the number of unique main_text + labels
-      // concatenated strings is same as the entities size
-      if (current_labels.size() == entity_instances.size()) {
-        goto found_unique_labels;
-      }
-      entity_labels_available.pop_back();
-    }
-  }
-found_unique_labels:
-  // Step 4#
-  // Now that we have all labels, we just need to update the `output` with each
-  // entity's respective `autofill_private::EntityInstanceWithLabels`, making
-  // sure to set the label and sublabels. In the context of the settings page,
+  // Step 2#
+  // Update the `output` with each entity's respective
+  // `autofill_private::EntityInstanceWithLabels`, making sure to set the label
+  //  and sublabels. In the context of the settings page,
   // `autofill_private::EntityInstanceWithLabels::entity_instance_label` is the
   // first line of each entities list (the equivalent of a filling suggestion
   // main text) while
@@ -142,7 +76,7 @@ found_unique_labels:
   // the second line.
   std::vector<autofill_private::EntityInstanceWithLabels>
       entities_instances_with_labels;
-  CHECK_EQ(entity_instances.size(), entities_labels_output->size());
+  CHECK_EQ(entity_instances.size(), labels_for_entities.size());
   for (size_t i = 0; i < entity_instances.size(); i++) {
     const EntityInstance& entity_instance = *entity_instances[i];
     autofill_private::EntityInstanceWithLabels& entity_instance_with_labels =
@@ -151,9 +85,8 @@ found_unique_labels:
         entity_instance.guid().AsLowercaseString();
     entity_instance_with_labels.entity_instance_label =
         base::UTF16ToUTF8(entity_instance.type().GetNameForI18n());
-    entity_instance_with_labels.entity_instance_sub_label =
-        base::UTF16ToUTF8(base::JoinString((*entities_labels_output)[i],
-                                           autofill_ai::kLabelSeparator));
+    entity_instance_with_labels.entity_instance_sub_label = base::UTF16ToUTF8(
+        base::JoinString(labels_for_entities[i], autofill::kLabelSeparator));
   }
 }
 
@@ -161,26 +94,66 @@ found_unique_labels:
 
 std::string GetAddEntityTypeStringForI18n(EntityType entity_type) {
   switch (entity_type.name()) {
-    case EntityTypeName::kPassport:
-      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_ADD_PASSPORT_ENTITY);
-    case EntityTypeName::kVehicle:
-      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_ADD_VEHICLE_ENTITY);
     case EntityTypeName::kDriversLicense:
       return l10n_util::GetStringUTF8(
           IDS_AUTOFILL_AI_ADD_DRIVERS_LICENSE_ENTITY);
+    case EntityTypeName::kKnownTravelerNumber:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_ADD_KNOWN_TRAVELER_NUMBER_ENTITY);
+    case EntityTypeName::kNationalIdCard:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_ADD_NATIONAL_ID_CARD_ENTITY);
+    case EntityTypeName::kPassport:
+      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_ADD_PASSPORT_ENTITY);
+    case EntityTypeName::kRedressNumber:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_ADD_REDRESS_NUMBER_ENTITY);
+    case EntityTypeName::kVehicle:
+      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_ADD_VEHICLE_ENTITY);
   }
   NOTREACHED();
 }
 
 std::string GetEditEntityTypeStringForI18n(EntityType entity_type) {
   switch (entity_type.name()) {
-    case EntityTypeName::kPassport:
-      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_EDIT_PASSPORT_ENTITY);
-    case EntityTypeName::kVehicle:
-      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_EDIT_VEHICLE_ENTITY);
     case EntityTypeName::kDriversLicense:
       return l10n_util::GetStringUTF8(
           IDS_AUTOFILL_AI_EDIT_DRIVERS_LICENSE_ENTITY);
+    case EntityTypeName::kKnownTravelerNumber:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_EDIT_KNOWN_TRAVELER_NUMBER_ENTITY);
+    case EntityTypeName::kNationalIdCard:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_EDIT_NATIONAL_ID_CARD_ENTITY);
+    case EntityTypeName::kPassport:
+      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_EDIT_PASSPORT_ENTITY);
+    case EntityTypeName::kRedressNumber:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_EDIT_REDRESS_NUMBER_ENTITY);
+    case EntityTypeName::kVehicle:
+      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_EDIT_VEHICLE_ENTITY);
+  }
+  NOTREACHED();
+}
+
+std::string GetDeleteEntityTypeStringForI18n(EntityType entity_type) {
+  switch (entity_type.name()) {
+    case EntityTypeName::kDriversLicense:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_DELETE_DRIVERS_LICENSE_ENTITY);
+    case EntityTypeName::kKnownTravelerNumber:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_DELETE_KNOWN_TRAVELER_NUMBER_ENTITY);
+    case EntityTypeName::kNationalIdCard:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_DELETE_NATIONAL_ID_CARD_ENTITY);
+    case EntityTypeName::kPassport:
+      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_DELETE_PASSPORT_ENTITY);
+    case EntityTypeName::kRedressNumber:
+      return l10n_util::GetStringUTF8(
+          IDS_AUTOFILL_AI_DELETE_REDRESS_NUMBER_ENTITY);
+    case EntityTypeName::kVehicle:
+      return l10n_util::GetStringUTF8(IDS_AUTOFILL_AI_DELETE_VEHICLE_ENTITY);
   }
   NOTREACHED();
 }
@@ -268,7 +241,8 @@ std::optional<EntityInstance> PrivateApiEntityInstanceToEntityInstance(
           : base::Uuid::ParseLowercase(private_api_entity_instance.guid);
   return EntityInstance(std::move(entity_type), attribute_instances,
                         std::move(guid), private_api_entity_instance.nickname,
-                        base::Time::Now());
+                        base::Time::Now(), /*use_count=*/0,
+                        /*use_date=*/base::Time::Now());
 }
 
 autofill_private::EntityInstance EntityInstanceToPrivateApiEntityInstance(
@@ -320,6 +294,8 @@ autofill_private::EntityInstance EntityInstanceToPrivateApiEntityInstance(
       GetAddEntityTypeStringForI18n(entity_instance.type());
   private_api_entity_instance.type.edit_entity_type_string =
       GetEditEntityTypeStringForI18n(entity_instance.type());
+  private_api_entity_instance.type.delete_entity_type_string =
+      GetDeleteEntityTypeStringForI18n(entity_instance.type());
   private_api_entity_instance.attribute_instances =
       std::move(private_api_attribute_instances);
   private_api_entity_instance.guid = entity_instance.guid().AsLowercaseString();

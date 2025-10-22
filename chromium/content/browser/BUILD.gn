@@ -11,15 +11,16 @@ import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 import("//chromeos/ash/components/assistant/assistant.gni")
 import("//components/viz/common/debugger/viz_debugger.gni")
+import("//content/browser/devtools/features.gni")
 import("//content/common/features.gni")
 import("//content/public/common/features.gni")
 import("//content/public/common/zygote/features.gni")
 import("//device/bluetooth/emulation/buildflags.gni")
 import("//device/vr/buildflags/buildflags.gni")
 import("//gpu/vulkan/features.gni")
+import("//media/gpu/args.gni")
 import("//media/media_options.gni")
 import("//net/features.gni")
-import("//ppapi/buildflags/buildflags.gni")
 import("//printing/buildflags/buildflags.gni")
 import("//services/device/public/cpp/compute_pressure/buildflags.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -42,9 +43,9 @@ if (is_android) {
       "//content/test:*",
     ]
     deps = [
-      "//third_party/rust/font_types/v0_8:lib",
-      "//third_party/rust/read_fonts/v0_27:lib",
-      "//third_party/rust/skrifa/v0_29:lib",
+      "//third_party/rust/font_types/v0_9:lib",
+      "//third_party/rust/read_fonts/v0_31:lib",
+      "//third_party/rust/skrifa/v0_33:lib",
     ]
   }
 }
@@ -71,6 +72,13 @@ source_set("browser") {
     "//content/test/fuzzer:indexed_db_fuzzer_support",
     "//content/test/fuzzer:media_stream_dispatcher_host_mojolpm_fuzzer",
   ]
+
+  if (use_fuzzing_engine && is_android) {
+    visibility += [
+      ":*",
+      "//content/test/fuzzer:*",
+    ]
+  }
 
   configs += [
     "//build/config:precompiled_headers",
@@ -99,7 +107,7 @@ source_set("browser") {
     "//components/attribution_reporting:mojom",
     "//components/back_forward_cache:enum",
     "//components/browsing_data/core:cookie_or_cache_deletion_choice",
-    "//components/browsing_topics/common:common",
+    "//components/browsing_topics/common",
     "//components/cbor",
     "//components/discardable_memory/common",
     "//components/discardable_memory/service",
@@ -116,19 +124,20 @@ source_set("browser") {
     "//components/link_header_util",
     "//components/metrics",
     "//components/metrics:single_sample_metrics",
-    "//components/metrics/dwa:dwa",
+    "//components/metrics/dwa",
     "//components/metrics/dwa:dwa_builders",
     "//components/network_session_configurator/browser",
     "//components/offline_pages/buildflags",
     "//components/offline_pages/core/request_header",
     "//components/optimization_guide/core:features",
+    "//components/optimization_guide/public/mojom",
     "//components/os_crypt/sync",
     "//components/payments/content/icon",
     "//components/payments/mojom",
     "//components/performance_manager/scenario_api",
     "//components/power_monitor",
     "//components/services/filesystem:lib",
-    "//components/services/quarantine:quarantine",
+    "//components/services/quarantine",
     "//components/services/storage",
     "//components/services/storage:filesystem_proxy_factory",
     "//components/services/storage/dom_storage:local_storage_proto",
@@ -136,8 +145,7 @@ source_set("browser") {
     "//components/services/storage/public/mojom",
     "//components/sqlite_proto",
     "//components/system_media_controls",
-    "//components/tracing:startup_tracing",
-    "//components/ui_devtools",
+    "//components/tracing:tracing_config",
     "//components/ukm",
     "//components/ukm/debug:util",
     "//components/url_formatter",
@@ -171,13 +179,14 @@ source_set("browser") {
     "//content/browser/private_aggregation:mojo_bindings",
     "//content/browser/private_aggregation/proto:private_aggregation_budgets_proto",
     "//content/browser/process_internals:mojo_bindings",
-    "//content/browser/resources:resources",
+    "//content/browser/resources",
     "//content/browser/resources/media:resources",
-    "//content/browser/tracing/trace_report:mojo_bindings",
+    "//content/browser/tracing/traces_internals:mojo_bindings",
     "//content/browser/webrtc/resources",
     "//content/common",
     "//content/common:buildflags",
     "//content/common:mojo_bindings",
+    "//content/common/memory_coordinator/mojom",
     "//content/public/browser:proto",
     "//content/public/common:buildflags",
     "//content/public/common:common_sources",
@@ -193,7 +202,6 @@ source_set("browser") {
     "//device/gamepad",
     "//device/vr/public/mojom:isolated_xr_service",
     "//google_apis",
-    "//gpu",
     "//gpu/command_buffer/client:gles2_implementation",
     "//gpu/command_buffer/client:gles2_interface",
     "//gpu/command_buffer/client:raster_interface",
@@ -203,7 +211,6 @@ source_set("browser") {
     "//media:media_buildflags",
     "//media/capture",
     "//media/capture:capture_switches",
-    "//media/learning/impl",
     "//media/midi",
     "//media/midi:mojo",
     "//media/mojo:buildflags",
@@ -219,7 +226,6 @@ source_set("browser") {
     "//mojo/public/js:resources",
     "//net",
     "//net:extras",
-    "//ppapi/buildflags",
     "//printing/buildflags",
     "//services/audio",
     "//services/audio/public/cpp",
@@ -260,7 +266,7 @@ source_set("browser") {
     "//services/video_capture/public/cpp",
     "//services/video_capture/public/mojom:constants",
     "//services/video_effects/buildflags",
-    "//services/video_effects/public/mojom:mojom",
+    "//services/video_effects/public/mojom",
     "//services/viz/privileged/mojom",
     "//services/viz/public/cpp/gpu",
     "//services/viz/public/mojom",
@@ -280,13 +286,12 @@ source_set("browser") {
     "//third_party/blink/public:resources",
     "//third_party/blink/public:scaled_resources",
     "//third_party/blink/public/common",
-    "//third_party/blink/public/common:common",
+    "//third_party/blink/public/common",
     "//third_party/blink/public/common:font_enumeration_table_proto",
     "//third_party/blink/public/common:preloading_headers",
     "//third_party/blink/public/strings",
     "//third_party/boringssl",
     "//third_party/brotli:dec",
-    "//third_party/distributed_point_functions",
     "//third_party/icu",
     "//third_party/inspector_protocol:crdtp",
     "//third_party/libyuv",
@@ -460,6 +465,8 @@ source_set("browser") {
     "ai/echo_ai_language_model.h",
     "ai/echo_ai_manager_impl.cc",
     "ai/echo_ai_manager_impl.h",
+    "ai/echo_ai_proofreader.cc",
+    "ai/echo_ai_proofreader.h",
     "ai/echo_ai_rewriter.cc",
     "ai/echo_ai_rewriter.h",
     "ai/echo_ai_summarizer.cc",
@@ -931,6 +938,8 @@ source_set("browser") {
     "devtools/protocol/fetch_handler.h",
     "devtools/protocol/handler_helpers.cc",
     "devtools/protocol/handler_helpers.h",
+    "devtools/protocol/hidden_target_manager.cc",
+    "devtools/protocol/hidden_target_manager.h",
     "devtools/protocol/input_handler.cc",
     "devtools/protocol/input_handler.h",
     "devtools/protocol/inspector_handler.cc",
@@ -1047,6 +1056,8 @@ source_set("browser") {
     "fenced_frame/fenced_frame_reporter.h",
     "fenced_frame/fenced_frame_url_mapping.cc",
     "fenced_frame/fenced_frame_url_mapping.h",
+    "fenced_frame/fenced_frame_viewport_observer.cc",
+    "fenced_frame/fenced_frame_viewport_observer.h",
     "field_trial_recorder.cc",
     "field_trial_recorder.h",
     "field_trial_synchronizer.cc",
@@ -1163,8 +1174,6 @@ source_set("browser") {
     "gpu/gpu_internals_ui.h",
     "gpu/gpu_main_thread_factory.cc",
     "gpu/gpu_main_thread_factory.h",
-    "gpu/gpu_memory_buffer_manager_singleton.cc",
-    "gpu/gpu_memory_buffer_manager_singleton.h",
     "gpu/gpu_process_host.cc",
     "gpu/gpu_process_host.h",
     "gpu/gpu_process_host_receiver_bindings.cc",
@@ -1230,13 +1239,19 @@ source_set("browser") {
     "interest_group/bidding_and_auction_serializer.h",
     "interest_group/bidding_and_auction_server_key_fetcher.cc",
     "interest_group/bidding_and_auction_server_key_fetcher.h",
+    "interest_group/data_decoder_manager.cc",
+    "interest_group/data_decoder_manager.h",
     "interest_group/debuggable_auction_worklet.cc",
     "interest_group/debuggable_auction_worklet.h",
     "interest_group/debuggable_auction_worklet_tracker.cc",
     "interest_group/debuggable_auction_worklet_tracker.h",
     "interest_group/devtools_enums.h",
+    "interest_group/dwa_auction_metrics.cc",
+    "interest_group/dwa_auction_metrics.h",
     "interest_group/for_debugging_only_report_util.cc",
     "interest_group/for_debugging_only_report_util.h",
+    "interest_group/group_by_origin_key.cc",
+    "interest_group/group_by_origin_key.h",
     "interest_group/header_direct_from_seller_signals.cc",
     "interest_group/header_direct_from_seller_signals.h",
     "interest_group/interest_group_auction.cc",
@@ -1257,6 +1272,8 @@ source_set("browser") {
     "interest_group/interest_group_permissions_cache.h",
     "interest_group/interest_group_permissions_checker.cc",
     "interest_group/interest_group_permissions_checker.h",
+    "interest_group/interest_group_pmt_report_util.cc",
+    "interest_group/interest_group_pmt_report_util.h",
     "interest_group/interest_group_priority_util.cc",
     "interest_group/interest_group_priority_util.h",
     "interest_group/interest_group_real_time_report_util.cc",
@@ -1278,6 +1295,8 @@ source_set("browser") {
     "interest_group/subresource_url_authorizations.h",
     "interest_group/subresource_url_builder.cc",
     "interest_group/subresource_url_builder.h",
+    "interest_group/trusted_bidding_signals_kvv1_requester.cc",
+    "interest_group/trusted_bidding_signals_kvv1_requester.h",
     "interest_group/trusted_signals_cache_impl.cc",
     "interest_group/trusted_signals_cache_impl.h",
     "interest_group/trusted_signals_fetcher.cc",
@@ -1365,12 +1384,11 @@ source_set("browser") {
     "media/audio_stream_broker_impl.h",
     "media/audio_stream_monitor.cc",
     "media/audio_stream_monitor.h",
-    "media/browser_feature_provider.cc",
-    "media/browser_feature_provider.h",
     "media/capture/desktop_capture_device_uma_types.cc",
     "media/capture/desktop_capture_device_uma_types.h",
     "media/capture/desktop_streams_registry_impl.cc",
     "media/capture/desktop_streams_registry_impl.h",
+    "permissions/permission_descriptor_util.cc",
 
     # TODO(crbug.com/202736352): This is built even if enable_screen_capture is
     # false. Consider better separation of the screen capture and the other
@@ -1448,6 +1466,8 @@ source_set("browser") {
     "media_session/media_session_service.cc",
     "memory/swap_metrics_driver_impl.cc",
     "memory/swap_metrics_driver_impl.h",
+    "memory_coordinator/browser_memory_consumer_registry.cc",
+    "memory_coordinator/browser_memory_consumer_registry.h",
     "message_port_provider.cc",
     "metrics/histogram_shared_memory_config.cc",
     "metrics/histogram_shared_memory_config.h",
@@ -1545,6 +1565,8 @@ source_set("browser") {
     "permissions/embedded_permission_control_checker.h",
     "permissions/permission_controller_impl.cc",
     "permissions/permission_controller_impl.h",
+    "permissions/permission_overrides.cc",
+    "permissions/permission_overrides.h",
     "permissions/permission_service_context.cc",
     "permissions/permission_service_context.h",
     "permissions/permission_service_impl.cc",
@@ -1557,6 +1579,8 @@ source_set("browser") {
     "picture_in_picture/video_picture_in_picture_window_controller_impl.h",
     "preloading/anchor_element_interaction_host_impl.cc",
     "preloading/anchor_element_interaction_host_impl.h",
+    "preloading/preconnect_manager_impl.cc",
+    "preloading/preconnect_manager_impl.h",
     "preloading/preconnector.cc",
     "preloading/preconnector.h",
     "preloading/prefetch/contamination_delay_navigation_throttle.cc",
@@ -1665,15 +1689,21 @@ source_set("browser") {
     "preloading/prerender/prerender_subframe_navigation_throttle.h",
     "preloading/prerender/prerender_url_loader_throttle.cc",
     "preloading/prerender/prerender_url_loader_throttle.h",
+    "preloading/prerender/reserved_prerender_host_info.cc",
+    "preloading/prerender/reserved_prerender_host_info.h",
     "preloading/prerenderer.h",
     "preloading/prerenderer_impl.cc",
     "preloading/prerenderer_impl.h",
+    "preloading/resolve_host_client_impl.cc",
+    "preloading/resolve_host_client_impl.h",
     "preloading/speculation_rules/speculation_host_impl.cc",
     "preloading/speculation_rules/speculation_host_impl.h",
     "preloading/speculation_rules/speculation_rules_params.cc",
     "preloading/speculation_rules/speculation_rules_params.h",
     "preloading/speculation_rules/speculation_rules_tags.cc",
     "preloading/speculation_rules/speculation_rules_tags.h",
+    "preloading/speculation_rules/speculation_rules_util.h",
+    "prerender_host_id.h",
     "presentation/presentation_service_impl.cc",
     "presentation/presentation_service_impl.h",
     "private_aggregation/private_aggregation_budget_key.cc",
@@ -1887,6 +1917,8 @@ source_set("browser") {
     "renderer_host/mixed_content_checker.h",
     "renderer_host/mixed_content_navigation_throttle.cc",
     "renderer_host/mixed_content_navigation_throttle.h",
+    "renderer_host/mojo_render_input_router_delegate_impl.cc",
+    "renderer_host/mojo_render_input_router_delegate_impl.h",
     "renderer_host/navigation_controller_delegate.h",
     "renderer_host/navigation_controller_impl.cc",
     "renderer_host/navigation_controller_impl.h",
@@ -1904,8 +1936,12 @@ source_set("browser") {
     "renderer_host/navigation_request_info.h",
     "renderer_host/navigation_state_keep_alive.cc",
     "renderer_host/navigation_state_keep_alive.h",
+    "renderer_host/navigation_throttle_registry_impl.cc",
+    "renderer_host/navigation_throttle_registry_impl.h",
     "renderer_host/navigation_throttle_runner.cc",
     "renderer_host/navigation_throttle_runner.h",
+    "renderer_host/navigation_throttle_runner2.cc",
+    "renderer_host/navigation_throttle_runner2.h",
     "renderer_host/navigation_transitions/navigation_entry_screenshot.cc",
     "renderer_host/navigation_transitions/navigation_entry_screenshot.h",
     "renderer_host/navigation_transitions/navigation_entry_screenshot_cache.cc",
@@ -2061,9 +2097,6 @@ source_set("browser") {
     "screenlock_monitor/screenlock_monitor_device_source.h",
     "screenlock_monitor/screenlock_monitor_source.cc",
     "screenlock_monitor/screenlock_monitor_source.h",
-    "security/coop/coop_related_group.cc",
-    "security/coop/coop_related_group.h",
-    "security/coop/coop_swap_result.h",
     "security/coop/cross_origin_isolation_mode.h",
     "security/coop/cross_origin_opener_policy_access_report_manager.cc",
     "security/coop/cross_origin_opener_policy_access_report_manager.h",
@@ -2288,11 +2321,11 @@ source_set("browser") {
     "tracing/memory_instrumentation_util.h",
     "tracing/startup_tracing_controller.cc",
     "tracing/startup_tracing_controller.h",
-    "tracing/trace_report/trace_report_database.cc",
-    "tracing/trace_report/trace_report_database.h",
-    "tracing/trace_report/trace_report_handler.cc",
-    "tracing/trace_report/trace_report_handler.h",
-    "tracing/trace_report/trace_upload_list.h",
+    "tracing/trace_report_database.cc",
+    "tracing/trace_report_database.h",
+    "tracing/trace_upload_list.h",
+    "tracing/traces_internals/traces_internals_handler.cc",
+    "tracing/traces_internals/traces_internals_handler.h",
     "tracing/tracing_controller_impl.cc",
     "tracing/tracing_controller_impl.h",
     "tracing/tracing_controller_impl_data_endpoint.cc",
@@ -2316,22 +2349,16 @@ source_set("browser") {
     "wake_lock/wake_lock_context_host.h",
     "wake_lock/wake_lock_service_impl.cc",
     "wake_lock/wake_lock_service_impl.h",
-    "web_contents/accessibility_mode_policy.cc",
-    "web_contents/accessibility_mode_policy.h",
     "web_contents/aura/gesture_nav_simple.cc",
     "web_contents/aura/gesture_nav_simple.h",
     "web_contents/aura/types.cc",
     "web_contents/aura/types.h",
     "web_contents/file_chooser_impl.cc",
     "web_contents/file_chooser_impl.h",
-    "web_contents/immediate_accessibility_mode_policy.cc",
-    "web_contents/immediate_accessibility_mode_policy.h",
     "web_contents/java_script_dialog_commit_deferring_condition.cc",
     "web_contents/java_script_dialog_commit_deferring_condition.h",
     "web_contents/partitioned_popins_controller.cc",
     "web_contents/partitioned_popins_controller.h",
-    "web_contents/progressive_accessibility_mode_policy.cc",
-    "web_contents/progressive_accessibility_mode_policy.h",
     "web_contents/slow_web_preference_cache.cc",
     "web_contents/slow_web_preference_cache.h",
     "web_contents/web_contents_impl.cc",
@@ -2343,8 +2370,6 @@ source_set("browser") {
     "web_contents/web_contents_view_child_frame.h",
     "web_contents/web_contents_view_drag_security_info.cc",
     "web_contents/web_contents_view_drag_security_info.h",
-    "web_database/web_database_host_impl.cc",
-    "web_database/web_database_host_impl.h",
     "web_exposed_isolation_info.cc",
     "web_exposed_isolation_info.h",
     "web_package/prefetched_signed_exchange_cache.cc",
@@ -2399,8 +2424,18 @@ source_set("browser") {
     "webid/digital_credentials/digital_identity_request_impl.h",
     "webid/fake_identity_request_dialog_controller.cc",
     "webid/fake_identity_request_dialog_controller.h",
+    "webid/fedcm_accounts_fetcher.cc",
+    "webid/fedcm_accounts_fetcher.h",
+    "webid/fedcm_config_fetcher.cc",
+    "webid/fedcm_config_fetcher.h",
+    "webid/fedcm_idp_registration_handler.cc",
+    "webid/fedcm_idp_registration_handler.h",
+    "webid/fedcm_mappers.cc",
+    "webid/fedcm_mappers.h",
     "webid/fedcm_metrics.cc",
     "webid/fedcm_metrics.h",
+    "webid/fedcm_url_computations.cc",
+    "webid/fedcm_url_computations.h",
     "webid/federated_auth_autofill_source.cc",
     "webid/federated_auth_disconnect_request.cc",
     "webid/federated_auth_disconnect_request.h",
@@ -2410,10 +2445,12 @@ source_set("browser") {
     "webid/federated_auth_request_page_data.h",
     "webid/federated_auth_user_info_request.cc",
     "webid/federated_auth_user_info_request.h",
-    "webid/federated_provider_fetcher.cc",
-    "webid/federated_provider_fetcher.h",
+    "webid/federated_sd_jwt_handler.cc",
+    "webid/federated_sd_jwt_handler.h",
     "webid/flags.cc",
     "webid/flags.h",
+    "webid/identity_provider_info.cc",
+    "webid/identity_provider_info.h",
     "webid/identity_registry.cc",
     "webid/identity_registry.h",
     "webid/identity_registry_delegate.h",
@@ -2539,6 +2576,8 @@ source_set("browser") {
       "compute_pressure/web_contents_pressure_manager_proxy.cc",
       "compute_pressure/web_contents_pressure_manager_proxy.h",
     ]
+
+    deps += [ "//services/device/public/cpp/compute_pressure" ]
   }
 
   if (use_viz_debugger) {
@@ -2574,8 +2613,6 @@ source_set("browser") {
       "font_access/font_enumeration_data_source_linux.h",
       "font_service.cc",
       "font_service.h",
-      "media/video_encode_accelerator_provider_launcher.cc",
-      "media/video_encode_accelerator_provider_launcher.h",
       "memory/swap_metrics_driver_impl_linux.cc",
       "memory/swap_metrics_driver_impl_linux.h",
       "sandbox_host_linux.cc",
@@ -2585,7 +2622,12 @@ source_set("browser") {
       "zygote_host/zygote_host_impl_linux.cc",
       "zygote_host/zygote_host_impl_linux.h",
     ]
-
+    if (use_linux_video_acceleration) {
+      sources += [
+        "media/video_encode_accelerator_provider_launcher.cc",
+        "media/video_encode_accelerator_provider_launcher.h",
+      ]
+    }
     public_deps += [ "//components/services/font/public/mojom" ]
 
     deps += [
@@ -2598,7 +2640,7 @@ source_set("browser") {
   if (is_win) {
     deps += [
       "//components/services/font_data:lib",
-      "//components/stylus_handwriting/win:win",
+      "//components/stylus_handwriting/win",
     ]
   }
 
@@ -2617,6 +2659,8 @@ source_set("browser") {
       "lock_screen/lock_screen_service_impl.h",
       "lock_screen/lock_screen_storage_impl.cc",
       "lock_screen/lock_screen_storage_impl.h",
+      "smart_card/smart_card_histograms.cc",
+      "smart_card/smart_card_histograms.h",
       "smart_card/smart_card_service.cc",
       "smart_card/smart_card_service.h",
     ]
@@ -2662,7 +2706,7 @@ source_set("browser") {
       "//ui/base/ime/ash",
       "//ui/chromeos/styles:cros_styles_views",
     ]
-    public_deps += [ "//ash/webui/common/resources:resources" ]
+    public_deps += [ "//ash/webui/common/resources" ]
   }
 
   if (is_castos) {
@@ -2725,11 +2769,25 @@ source_set("browser") {
 
   if (is_apple) {
     sources += [
-      "child_process_task_port_provider_mac.cc",
-      "child_process_task_port_provider_mac.h",
       "font_access/font_enumeration_data_source_mac.h",
       "font_access/font_enumeration_data_source_mac.mm",
     ]
+
+    if (!(is_ios && target_platform == "tvos")) {
+      sources += [
+        "child_process_task_port_provider_mac.cc",
+        "child_process_task_port_provider_mac.h",
+      ]
+    }
+  }
+
+  if (is_ios && target_platform == "iphoneos") {
+    sources += [
+      "ios/nfc_host.h",
+      "ios/nfc_host.mm",
+    ]
+    frameworks += [ "CoreNFC.framework" ]
+    deps += [ "//services/device/public/cpp/nfc" ]
   }
 
   if (is_mac) {
@@ -2836,17 +2894,6 @@ source_set("browser") {
     ]
   } else if (is_ios) {
     sources += [
-      "date_time_chooser/ios/date_time_chooser_coordinator.h",
-      "date_time_chooser/ios/date_time_chooser_coordinator.mm",
-      "date_time_chooser/ios/date_time_chooser_delegate.h",
-      "date_time_chooser/ios/date_time_chooser_ios.h",
-      "date_time_chooser/ios/date_time_chooser_ios.mm",
-      "date_time_chooser/ios/date_time_chooser_mediator.h",
-      "date_time_chooser/ios/date_time_chooser_mediator.mm",
-      "date_time_chooser/ios/date_time_chooser_util.h",
-      "date_time_chooser/ios/date_time_chooser_util.mm",
-      "date_time_chooser/ios/date_time_chooser_view_controller.h",
-      "date_time_chooser/ios/date_time_chooser_view_controller.mm",
       "devtools/protocol/native_input_event_builder_ios.mm",
       "renderer_host/begin_frame_source_ios.h",
       "renderer_host/begin_frame_source_ios.mm",
@@ -2860,23 +2907,39 @@ source_set("browser") {
       "renderer_host/popup_menu_helper_ios.mm",
       "renderer_host/render_widget_host_view_ios.h",
       "renderer_host/render_widget_host_view_ios.mm",
-      "renderer_host/render_widget_host_view_ios_uiview.h",
-      "renderer_host/render_widget_host_view_ios_uiview.mm",
       "renderer_host/web_menu_runner_ios.h",
       "renderer_host/web_menu_runner_ios.mm",
       "speech/tts_ios.mm",
+      "web_contents/web_contents_impl_ios.mm",
       "web_contents/web_contents_view_ios.h",
       "web_contents/web_contents_view_ios.mm",
     ]
 
-    if (target_platform != "tvos") {
-      sources += [ "child_process_launcher_helper_ios.mm" ]
+    if (target_platform == "iphoneos") {
+      sources += [
+        "child_process_launcher_helper_ios.mm",
+        "date_time_chooser/ios/date_time_chooser_coordinator.h",
+        "date_time_chooser/ios/date_time_chooser_coordinator.mm",
+        "date_time_chooser/ios/date_time_chooser_delegate.h",
+        "date_time_chooser/ios/date_time_chooser_ios.h",
+        "date_time_chooser/ios/date_time_chooser_ios.mm",
+        "date_time_chooser/ios/date_time_chooser_mediator.h",
+        "date_time_chooser/ios/date_time_chooser_mediator.mm",
+        "date_time_chooser/ios/date_time_chooser_util.h",
+        "date_time_chooser/ios/date_time_chooser_util.mm",
+        "date_time_chooser/ios/date_time_chooser_view_controller.h",
+        "date_time_chooser/ios/date_time_chooser_view_controller.mm",
+        "renderer_host/render_widget_host_view_ios_uiview.h",
+        "renderer_host/render_widget_host_view_ios_uiview.mm",
+      ]
       frameworks += [ "BrowserEngineKit.framework" ]
     } else {
       sources += [
         "child_process_launcher_helper_tvos.mm",
         "renderer_host/render_widget_host_view_tvos.h",
         "renderer_host/render_widget_host_view_tvos.mm",
+        "renderer_host/render_widget_host_view_tvos_uiview.h",
+        "renderer_host/render_widget_host_view_tvos_uiview.mm",
       ]
     }
 
@@ -2911,10 +2974,14 @@ source_set("browser") {
       "media/capture/web_contents_video_capture_device.cc",
       "media/capture/web_contents_video_capture_device.h",
     ]
-    if (!is_android && !is_ios) {
+    if (!is_ios) {
       sources += [
         "media/capture/desktop_capture_device.cc",
         "media/capture/desktop_capture_device.h",
+      ]
+    }
+    if (!is_android && !is_ios) {
+      sources += [
         "media/capture/mouse_cursor_overlay_controller.cc",
         "media/capture/mouse_cursor_overlay_controller.h",
         "media/captured_surface_control_permission_manager.cc",
@@ -2932,7 +2999,6 @@ source_set("browser") {
         "media/capture/mouse_cursor_overlay_controller_aura.cc",
       ]
     }
-
     if (is_mac) {
       sources += [
         "media/capture/desktop_capture_device_mac.cc",
@@ -2964,6 +3030,12 @@ source_set("browser") {
         "media/capture/desktop_capturer_ash.h",
         "media/capture/desktop_frame_skia.cc",
         "media/capture/desktop_frame_skia.h",
+      ]
+    }
+    if (is_android) {
+      sources += [
+        "media/capture/desktop_capturer_android.cc",
+        "media/capture/desktop_capturer_android.h",
       ]
     }
   }
@@ -3073,82 +3145,6 @@ source_set("browser") {
     ]
   }
 
-  if (enable_ppapi) {
-    sources += [
-      "media/session/pepper_playback_observer.cc",
-      "media/session/pepper_playback_observer.h",
-      "media/session/pepper_player_delegate.cc",
-      "media/session/pepper_player_delegate.h",
-      "ppapi_plugin_process_host.cc",
-      "ppapi_plugin_process_host.h",
-      "ppapi_plugin_process_host_receiver_bindings.cc",
-      "ppapi_plugin_sandboxed_process_launcher_delegate.cc",
-      "ppapi_plugin_sandboxed_process_launcher_delegate.h",
-      "renderer_host/pepper/browser_ppapi_host_impl.cc",
-      "renderer_host/pepper/browser_ppapi_host_impl.h",
-      "renderer_host/pepper/content_browser_pepper_host_factory.cc",
-      "renderer_host/pepper/content_browser_pepper_host_factory.h",
-      "renderer_host/pepper/pepper_browser_font_singleton_host.cc",
-      "renderer_host/pepper/pepper_browser_font_singleton_host.h",
-      "renderer_host/pepper/pepper_external_file_ref_backend.cc",
-      "renderer_host/pepper/pepper_external_file_ref_backend.h",
-      "renderer_host/pepper/pepper_file_io_host.cc",
-      "renderer_host/pepper/pepper_file_io_host.h",
-      "renderer_host/pepper/pepper_file_ref_host.cc",
-      "renderer_host/pepper/pepper_file_ref_host.h",
-      "renderer_host/pepper/pepper_file_system_browser_host.cc",
-      "renderer_host/pepper/pepper_file_system_browser_host.h",
-      "renderer_host/pepper/pepper_gamepad_host.cc",
-      "renderer_host/pepper/pepper_gamepad_host.h",
-      "renderer_host/pepper/pepper_host_resolver_message_filter.cc",
-      "renderer_host/pepper/pepper_host_resolver_message_filter.h",
-      "renderer_host/pepper/pepper_internal_file_ref_backend.cc",
-      "renderer_host/pepper/pepper_internal_file_ref_backend.h",
-      "renderer_host/pepper/pepper_network_monitor_host.cc",
-      "renderer_host/pepper/pepper_network_monitor_host.h",
-      "renderer_host/pepper/pepper_network_proxy_host.cc",
-      "renderer_host/pepper/pepper_network_proxy_host.h",
-      "renderer_host/pepper/pepper_print_settings_manager.cc",
-      "renderer_host/pepper/pepper_print_settings_manager.h",
-      "renderer_host/pepper/pepper_printing_host.cc",
-      "renderer_host/pepper/pepper_printing_host.h",
-      "renderer_host/pepper/pepper_proxy_lookup_helper.cc",
-      "renderer_host/pepper/pepper_proxy_lookup_helper.h",
-      "renderer_host/pepper/pepper_renderer_connection.cc",
-      "renderer_host/pepper/pepper_renderer_connection.h",
-      "renderer_host/pepper/pepper_security_helper.cc",
-      "renderer_host/pepper/pepper_security_helper.h",
-      "renderer_host/pepper/pepper_socket_utils.cc",
-      "renderer_host/pepper/pepper_socket_utils.h",
-      "renderer_host/pepper/pepper_tcp_server_socket_message_filter.cc",
-      "renderer_host/pepper/pepper_tcp_server_socket_message_filter.h",
-      "renderer_host/pepper/pepper_tcp_socket_message_filter.cc",
-      "renderer_host/pepper/pepper_tcp_socket_message_filter.h",
-      "renderer_host/pepper/pepper_udp_socket_message_filter.cc",
-      "renderer_host/pepper/pepper_udp_socket_message_filter.h",
-      "renderer_host/pepper/quota_reservation.cc",
-      "renderer_host/pepper/quota_reservation.h",
-      "renderer_host/render_frame_host_impl_ppapi_support.cc",
-      "renderer_host/render_frame_host_impl_ppapi_support.h",
-    ]
-    deps += [
-      "//ppapi/host",
-      "//ppapi/proxy:common",
-      "//ppapi/proxy:ipc",
-      "//ppapi/shared_impl",
-    ]
-
-    assert(enable_printing)
-    deps += [ "//printing" ]
-
-    if (is_chromeos) {
-      sources += [
-        "renderer_host/pepper/pepper_vpn_provider_message_filter_chromeos.cc",
-        "renderer_host/pepper/pepper_vpn_provider_message_filter_chromeos.h",
-      ]
-    }
-  }
-
   if (enable_library_cdms) {
     sources += [
       "media/cdm_file_impl.cc",
@@ -3203,6 +3199,8 @@ source_set("browser") {
       "accessibility/accessibility_tree_formatter_android_external.h",
       "accessibility/accessibility_tree_snapshot_combiner.cc",
       "accessibility/accessibility_tree_snapshot_combiner.h",
+      "accessibility/ax_style_data.cc",
+      "accessibility/ax_style_data.h",
       "accessibility/browser_accessibility_android.cc",
       "accessibility/browser_accessibility_android.h",
       "accessibility/browser_accessibility_manager_android.cc",
@@ -3211,6 +3209,8 @@ source_set("browser") {
       "accessibility/browser_accessibility_state_impl_android.h",
       "accessibility/captioning_controller.cc",
       "accessibility/captioning_controller.h",
+      "accessibility/text_formatting_metrics_android.cc",
+      "accessibility/text_formatting_metrics_android.h",
       "accessibility/web_contents_accessibility_android.cc",
       "accessibility/web_contents_accessibility_android.h",
       "android/additional_navigation_params_utils.cc",
@@ -3226,6 +3226,7 @@ source_set("browser") {
       "android/browser_context_handle.cc",
       "android/browser_startup_controller.cc",
       "android/browser_startup_controller.h",
+      "android/child_process_importance.cc",
       "android/client_data_json_android.cc",
       "android/content_feature_map.cc",
       "android/content_startup_flags.cc",
@@ -3284,8 +3285,6 @@ source_set("browser") {
       "android/page_proxy.h",
       "android/render_widget_host_connector.cc",
       "android/render_widget_host_connector.h",
-      "android/scoped_surface_request_manager.cc",
-      "android/scoped_surface_request_manager.h",
       "android/select_popup.cc",
       "android/select_popup.h",
       "android/selection/composited_touch_handle_drawable.cc",
@@ -3325,12 +3324,6 @@ source_set("browser") {
       "font_unique_name_lookup/font_unique_name_lookup_service.h",
       "media/android/browser_gpu_video_accelerator_factories.cc",
       "media/android/browser_gpu_video_accelerator_factories.h",
-      "media/android/media_player_renderer.cc",
-      "media/android/media_player_renderer.h",
-      "media/android/media_player_renderer_web_contents_observer.cc",
-      "media/android/media_player_renderer_web_contents_observer.h",
-      "media/android/media_resource_getter_impl.cc",
-      "media/android/media_resource_getter_impl.h",
       "media/key_system_support_android.cc",
       "media/key_system_support_android.h",
       "media/session/audio_focus_delegate_android.cc",
@@ -3390,10 +3383,11 @@ source_set("browser") {
     deps += [
       ":fontations_name_table_ffi",
       ":reflection_jni_headers",
-      ":transfer_input_to_viz_result_enum",
       "//cc/slim",
+      "//components/origin_matcher",
       "//components/tracing:graphics_provider",
       "//content/public/android:browser_jni",
+      "//content/public/browser:transfer_input_to_viz_result_enum",
       "//device/gamepad/public/mojom",
       "//gpu/command_buffer/service:gles2",
       "//media",
@@ -3517,10 +3511,10 @@ source_set("browser") {
     deps += [
       "//components/device_event_log",
       "//components/password_manager/core/common",
+      "//components/soda",
       "//components/soda:constants",
-      "//components/soda:soda",
       "//components/soda:utils",
-      "//components/speech:speech",
+      "//components/speech",
       "//components/vector_icons",
       "//components/webauthn/json",
       "//content/browser/tracing:resources",
@@ -3529,7 +3523,7 @@ source_set("browser") {
     ]
   }
 
-  if ((!is_android || is_desktop_android) && !is_ios && !is_fuchsia) {
+  if (enable_devtools_frontend) {
     sources += [
       # Devtools frontend not included in mobile Android and iOS
       "devtools/devtools_frontend_host_impl.cc",
@@ -3545,8 +3539,8 @@ source_set("browser") {
   if (!is_android && !is_ios && !is_fuchsia) {
     sources += [
       # Trace report internal UI is not adapted for mobile use.
-      "tracing/trace_report/trace_report_internals_ui.cc",
-      "tracing/trace_report/trace_report_internals_ui.h",
+      "tracing/traces_internals/traces_internals_ui.cc",
+      "tracing/traces_internals/traces_internals_ui.h",
     ]
   }
 
@@ -3678,7 +3672,7 @@ source_set("browser") {
 
   # TODO(crbug.com/371609830): Remove dep on experiment end.
   if (is_chromeos) {
-    deps += [ "//ash/constants:constants" ]
+    deps += [ "//ash/constants" ]
   }
 }
 
@@ -3714,9 +3708,6 @@ group("for_content_tests") {
 if (is_android) {
   java_cpp_enum("client_data_json_generated_enum") {
     sources = [ "webauth/client_data_json.h" ]
-  }
-  java_cpp_enum("transfer_input_to_viz_result_enum") {
-    sources = [ "renderer_host/input/transfer_input_to_viz_result.h" ]
   }
 }
 

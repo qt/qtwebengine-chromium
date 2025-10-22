@@ -2,9 +2,10 @@
     "file_format_version": "1.2.0",
     "layer": {
         "name": "@JSON_LAYER_NAME@",
+        "prefix": "vvl",
         "type": "GLOBAL",
         "library_path": "@JSON_LIBRARY_PATH@",
-        "api_version": "1.4.311",
+        "api_version": "1.4.323",
         "implementation_version": "1",
         "description": "Khronos Validation Layer",
         "introduction": "The main, comprehensive Khronos validation layer.\n\nVulkan is an Explicit API, enabling direct control over how GPUs actually work. By design, minimal error checking is done inside a Vulkan driver. Applications have full control and responsibility for correct operation. Any errors in how Vulkan is used can result in a crash. \n\nThe Khronos Validation Layer can be enabled to assist development by enabling developers to verify their applications correctly use the Vulkan API.",
@@ -81,6 +82,7 @@
                         { "key": "unique_handles", "value": true },
                         { "key": "object_lifetime", "value": true },
                         { "key": "stateless_param", "value": true },
+                        { "key": "deprecation", "value": false },
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
@@ -107,6 +109,7 @@
                         { "key": "unique_handles", "value": false },
                         { "key": "object_lifetime", "value": true },
                         { "key": "stateless_param", "value": true },
+                        { "key": "deprecation", "value": false },
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
@@ -133,6 +136,7 @@
                         { "key": "unique_handles", "value": false },
                         { "key": "object_lifetime", "value": false },
                         { "key": "stateless_param", "value": false },
+                        { "key": "deprecation", "value": false },
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
@@ -159,6 +163,7 @@
                         { "key": "unique_handles", "value": true },
                         { "key": "object_lifetime", "value": false },
                         { "key": "stateless_param", "value": false },
+                        { "key": "deprecation", "value": false },
                         { "key": "thread_safety", "value": true },
                         { "key": "validate_sync", "value": true },
                         { "key": "printf_enable", "value": false },
@@ -185,6 +190,7 @@
                         { "key": "unique_handles", "value": false },
                         { "key": "object_lifetime", "value": false },
                         { "key": "stateless_param", "value": false },
+                        { "key": "deprecation", "value": false },
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "printf_enable", "value": false },
@@ -192,7 +198,6 @@
                         { "key": "gpuav_shader_instrumentation", "value": true },
                         { "key": "gpuav_select_instrumented_shaders", "value": false },
                         { "key": "gpuav_buffers_validation", "value": true },
-                        { "key": "gpuav_reserve_binding_slot", "value": true },
                         { "key": "validate_best_practices", "value": false },
                         { "key": "report_flags", "value": [ "error" ] },
                         { "key": "debug_action", "value": [ "VK_DBG_LAYER_ACTION_LOG_MSG" ] },
@@ -215,6 +220,7 @@
                         { "key": "unique_handles", "value": false },
                         { "key": "object_lifetime", "value": false },
                         { "key": "stateless_param", "value": false },
+                        { "key": "deprecation", "value": false },
                         { "key": "thread_safety", "value": false },
                         { "key": "validate_sync", "value": false },
                         { "key": "gpuav_enable", "value": false },
@@ -233,20 +239,22 @@
                     "description": "Control of the Validation layer validation",
                     "type": "GROUP",
                     "expanded": true,
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                     "settings": [
                         {
                             "key": "fine_grained_locking",
                             "env": "VK_LAYER_FINE_GRAINED_LOCKING",
                             "label": "Fine Grained Locking",
                             "description": "Enable fine grained locking for Core Validation, which should improve performance in multithreaded applications. This setting allows the optimization to be disabled for debugging.",
+                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/fine_grained_locking_usage.md",
                             "type": "BOOL",
-                            "default": true,
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "default": true
                         },
                         {
                             "key": "validate_core",
                             "label": "Core",
                             "description": "The main, heavy-duty validation checks. This may be valuable early in the development cycle to reduce validation output while correcting parameter/object usage errors.",
+                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/core_checks.md",
                             "type": "BOOL",
                             "default": true,
                             "settings": [
@@ -333,12 +341,42 @@
                                         {
                                             "key": "debug_disable_spirv_val",
                                             "label": "Disable spirv-val",
-                                            "view": "ADVANCED",
+                                            "view": "DEBUG",
                                             "description": "Allows normal shader validation to run, but removes just spirv-val for performance reasons",
                                             "type": "BOOL",
                                             "default": false
                                         }
                                     ]
+                                }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "validate_core_msg0",
+                                    "title": "Validation layer performance issue",
+                                    "version": 1,
+                                    "description": "Both 'Core validation' and 'GPU-assisted validation' are enabled. This is going to require a lot of CPU resource causing the Vulkan application to run very slowly.",
+                                    "informative": "Are you sure you want to enable 'Core Validation'?",
+                                    "severity": "WARNING",
+                                    "conditions": [
+                                        { "setting": { "key": "validate_core", "value": true }},
+                                        { "setting": { "key": "gpuav_enable", "value": true }}
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "changes": [
+                                                { "setting": { "key": "validate_core", "value": true }},
+                                                { "setting": { "key": "gpuav_enable", "value": true }}
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "changes": [
+                                                { "setting": { "key": "validate_core", "value": false }}
+                                            ]
+                                        }
+                                    }
                                 }
                             ]
                         },
@@ -346,37 +384,40 @@
                             "key": "unique_handles",
                             "label": "Handle Wrapping",
                             "description": "Handle wrapping checks. Disable this feature if you are experiencing crashes when creating new extensions or developing new Vulkan objects/structures.",
+                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/handle_wrapping.md",
                             "type": "BOOL",
-                            "default": true,
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "default": true
                         },
                         {
                             "key": "object_lifetime",
                             "label": "Object Lifetime",
                             "description": "Object tracking checks. This may not always be necessary late in a development cycle.",
+                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/object_lifetimes.md",
                             "type": "BOOL",
-                            "default": true,
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "default": true
                         },
                         {
                             "key": "stateless_param",
                             "label": "Stateless Parameter",
                             "description": "Stateless parameter checks. This may not always be necessary late in a development cycle.",
+                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/stateless_validation.md",
                             "type": "BOOL",
-                            "default": true,
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "default": true
+                        },
+                        {
+                            "key": "deprecation",
+                            "label": "Deprecation",
+                            "description": "Give warnings when using deprecated parts of the API.",
+                            "type": "BOOL",
+                            "default": false
                         },
                         {
                             "key": "thread_safety",
                             "label": "Thread Safety",
                             "description": "Thread checks. In order to not degrade performance, it might be best to run your program with thread-checking disabled most of the time, enabling it occasionally for a quick sanity check or when debugging difficult application behaviors.",
+                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/thread_safety.md",
                             "type": "BOOL",
-                            "default": true,
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "default": true
                         },
                         {
                             "key": "validate_sync",
@@ -386,8 +427,6 @@
                             "type": "BOOL",
                             "default": false,
                             "expanded": true,
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                             "settings": [
                                 {
                                     "key": "syncval_submit_time_validation",
@@ -395,7 +434,6 @@
                                     "description": "Enable synchronization validation on the boundary between submitted command buffers. This also validates accesses from presentation operations. This option can incur a significant performance cost.",
                                     "type": "BOOL",
                                     "default": true,
-                                    "status": "STABLE",
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -409,7 +447,6 @@
                                     "description": "Take into account memory accesses performed by the shader based on SPIR-V static analysis. Warning: can produce false-positives, can ignore certain types of accesses.",
                                     "type": "BOOL",
                                     "default": false,
-                                    "status": "STABLE",
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -422,7 +459,7 @@
                                     "label": "Error messages",
                                     "description": "Options to configure synchronization validation error reporting",
                                     "type": "GROUP",
-                                    "expanded": false,
+                                    "expanded": true,
                                     "settings": [
                                         {
                                             "key": "syncval_message_extra_properties",
@@ -436,56 +473,8 @@
                                                     { "key": "validate_sync", "value": true }
                                                 ]
                                             }
-                                        },
-                                        {
-                                            "key": "syncval_message_extra_properties_pretty_print",
-                                            "label": "Pretty print extra properties",
-                                            "description": "Enable formatted output of key-value properties. Disabled by default to simplify pattern matching when filtering errors.",
-                                            "type": "BOOL",
-                                            "default": false,
-                                            "dependence": {
-                                                "mode": "ALL",
-                                                "settings": [
-                                                    { "key": "validate_sync", "value": true },
-                                                    { "key": "syncval_message_extra_properties", "value": true }
-                                                ]
-                                            }
                                         }
                                     ]
-                                }
-                            ]
-                        },
-                        {
-                            "key": "validate_gpu_based",
-                            "label": "GPU Base",
-                            "description": "[Deprecated] Setting to choose between DebugPrintf and GPU-AV",
-                            "type": "ENUM",
-                            "default": "GPU_BASED_NONE",
-                            "expanded": true,
-                            "view": "HIDDEN",
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX" ],
-                            "flags": [
-                                {
-                                    "key": "GPU_BASED_NONE",
-                                    "label": "None",
-                                    "description": "No GPU-based validation."
-                                },
-                                {
-                                    "key": "GPU_BASED_DEBUG_PRINTF",
-                                    "label": "Debug Printf",
-                                    "description": "Enables processing of debug printf instructions in shaders and sending debug strings to the debug callback.",
-                                    "url": "${LUNARG_SDK}/debug_printf.html",
-                                    "status": "STABLE",
-                                    "platforms": [ "WINDOWS", "LINUX" ]
-                                },
-                                {
-                                    "key": "GPU_BASED_GPU_ASSISTED",
-                                    "label": "GPU-Assisted",
-                                    "description": "Check for API usage errors at shader execution time.",
-                                    "url": "${LUNARG_SDK}/gpu_validation.html",
-                                    "status": "STABLE",
-                                    "platforms": [ "WINDOWS", "LINUX" ]
                                 }
                             ]
                         },
@@ -495,7 +484,7 @@
                             "description": "A single, quick setting to turn on only DebugPrintf and turn off everything else",
                             "type": "BOOL",
                             "default": false,
-                            "view": "HIDDEN",
+                            "view": "DEBUG",
                             "platforms": [ "WINDOWS", "LINUX" ]
                         },
                         {
@@ -513,13 +502,36 @@
                                     "description": "Enable redirection of Debug Printf messages from the debug callback to stdout",
                                     "type": "BOOL",
                                     "default": true,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
                                             { "key": "printf_enable", "value": true }
                                         ]
-                                    }
+                                    },
+                                    "messages": [
+                                        {
+                                            "key": "printf_enable_msg3",
+                                            "title": "Debug Printf without 'info' level message severity flag",
+                                            "version": 1,
+                                            "description": "Enabling Debug Printf output redirection to the debug callback, but 'info' level message severity is disabled, so printf message won't be shown.",
+                                            "informative": "Adding 'info' level to 'Message Severity'",
+                                            "severity": "INFORMATION",
+                                            "conditions": [
+                                                { "setting": { "key": "printf_enable", "value": true }},
+                                                { "setting": { "key": "printf_to_stdout", "value": false }},
+                                                { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                            ],
+                                            "actions": {
+                                                "default": "BUTTON0",
+                                                "BUTTON0": {
+                                                    "type": "OK",
+                                                    "changes": [
+                                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "APPEND" }
+                                                    ]
+                                                }
+                                            }
+                                        }
+                                    ]
                                 },
                                 {
                                     "key": "printf_verbose",
@@ -527,7 +539,6 @@
                                     "description": "Will print out handles, instruction location, position in command buffer, and more",
                                     "type": "BOOL",
                                     "default": false,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -546,12 +557,35 @@
                                         "max": 1048576
                                     },
                                     "unit": "bytes",
-                                    "platforms": [ "WINDOWS", "LINUX" ],
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
                                             { "key": "printf_enable", "value": true }
                                         ]
+                                    }
+                                }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "printf_enable_msg1",
+                                    "title": "Warning: Debug Printf without info level message severity flag",
+                                    "version": 1,
+                                    "description": "Enabling Debug Printf, with output directed to the debug callback, but info level message severity is disabled, so printf message won't be shown.",
+                                    "informative": "Adding 'info' level to 'Message Severity'",
+                                    "severity": "INFORMATION",
+                                    "conditions": [
+                                        { "setting": { "key": "printf_enable", "value": true }},
+                                        { "setting": { "key": "printf_to_stdout", "value": false }},
+                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "changes": [
+                                                { "setting": { "key": "report_flags", "value": ["info"] }, "operator": "APPEND" }
+                                            ]
+                                        }
                                     }
                                 }
                             ]
@@ -560,19 +594,31 @@
                             "key": "gpuav_enable",
                             "label": "GPU Assisted Validation",
                             "description": "Enable validation that cannot be done the CPU and needs hooks into the GPU execution",
+                            "url": "${LUNARG_SDK}/gpu_validation.html",
                             "type": "BOOL",
                             "default": false,
                             "expanded": true,
-                            "status": "STABLE",
                             "platforms": [ "WINDOWS", "LINUX" ],
                             "settings": [
                                 {
-                                    "key": "gpuav_unsafe_mode",
-                                    "label": "Unsafe Mode",
-                                    "description": "Normally GPU-AV will try to prevent crashes, but with unsafe mode, it will be much faster to validate, but might not stop a crash",
+                                    "key": "gpuav_safe_mode",
+                                    "label": "Safe Mode",
+                                    "description": "Will have GPU-AV try and prevent crashes, but will be much slower to validate. If using Safe Mode, consider using selective shader instrumentation, to only instrument the shaders/pipelines causing issues.",
                                     "type": "BOOL",
                                     "default": false,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
+                                    "dependence": {
+                                        "mode": "ALL",
+                                        "settings": [
+                                            { "key": "gpuav_enable", "value": true }
+                                        ]
+                                    }
+                                },
+                                {
+                                    "key": "gpuav_force_on_robustness",
+                                    "label": "Force on robustness features",
+                                    "description": "This will enable all possible robustness features for the app at device creation time. This can be used to quickly detect if with robustness, your issue disappears. GPU-AV will also skip validating things already covered by robustness, so turning on should reduce GPU-AV performance overhead.",
+                                    "type": "BOOL",
+                                    "default": false,
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -584,10 +630,10 @@
                                     "key": "gpuav_shader_instrumentation",
                                     "label": "Shader instrumentation",
                                     "description": "Instrument shaders to validate descriptors, descriptor indexing, buffer device addresses and ray queries. Warning: will considerably slow down shader executions.",
+                                    "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/gpu_av_shader_instrumentation.md",
                                     "type": "BOOL",
                                     "expanded": true,
                                     "default": true,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -596,13 +642,62 @@
                                     },
                                     "settings": [
                                         {
+                                            "key": "gpuav_select_instrumented_shaders",
+                                            "label": "Enable instrumenting shaders selectively",
+                                            "description": "Select which shaders to instrument by passing a VkValidationFeaturesEXT struct with GPU-AV enabled in the VkShaderModuleCreateInfo pNext or using a regex matching a shader/pipeline debug name. Because this only validates the selected shaders, it will allow GPU-AV to run much faster.",
+                                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/gpu_av_selective_shader.md",
+                                            "type": "BOOL",
+                                            "default": false,
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    { "key": "gpuav_enable", "value": true },
+                                                    { "key": "gpuav_shader_instrumentation", "value": true }
+                                                ]
+                                            },
+                                            "settings": [
+                                                {
+                                                    "key": "gpuav_shaders_to_instrument",
+                                                    "label": "Shader/pipeline name regexes",
+                                                    "description": "Any shader or pipeline library debug name (set with vkSetDebugUtilsObjectNameEXT) fully matching any listed regular expression will be instrumented when creating pipelines with those shaders or libraries. Regex grammar: Modified ECMAScript. No support for shader objects yet. Warning: instrumentation being performed at final pipeline creation time, if shaders modules have already been destroyed at this step (possible when using pipeline libraries), they won't be found by this regex selection system. In this case, consider naming pipeline libraries instead.",
+                                                    "type": "LIST",
+                                                    "default": [],
+                                                    "dependence": {
+                                                        "mode": "ALL",
+                                                        "settings": [
+                                                            { "key": "gpuav_enable", "value": true },
+                                                            { "key": "gpuav_shader_instrumentation", "value": true },
+                                                            { "key": "gpuav_select_instrumented_shaders", "value": true }
+                                                        ]
+                                                    }
+                                                }
+                                            ]
+                                        },
+                                        {
                                             "key": "gpuav_descriptor_checks",
                                             "label": "Descriptors indexing",
                                             "description": "Enable descriptors and buffer out of bounds validation when using descriptor indexing",
+                                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/gpu_av_descriptor_indexing.md",
                                             "type": "BOOL",
+                                            "view": "DEBUG",
                                             "expanded": true,
                                             "default": true,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
+                                            "dependence": {
+                                                "mode": "ALL",
+                                                "settings": [
+                                                    { "key": "gpuav_enable", "value": true },
+                                                    { "key": "gpuav_shader_instrumentation", "value": true }
+                                                ]
+                                            }
+                                        },
+                                        {
+                                            "key": "gpuav_post_process_descriptor_indexing",
+                                            "label": "Post process descriptor indexing",
+                                            "description": "Track which descriptor indexes were used in shader to run normal validation afterwards",
+                                            "url": "https://github.com/KhronosGroup/Vulkan-ValidationLayers/blob/main/docs/gpu_av_post_process.md",
+                                            "type": "BOOL",
+                                            "view": "DEBUG",
+                                            "default": true,
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -615,47 +710,10 @@
                                             "key": "gpuav_buffer_address_oob",
                                             "label": "Out of bounds buffer device addresses",
                                             "type": "BOOL",
+                                            "view": "DEBUG",
                                             "default": true,
                                             "expanded": true,
                                             "description": "Check for invalid access using buffer device address",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
-                                            "dependence": {
-                                                "mode": "ALL",
-                                                "settings": [
-                                                    { "key": "gpuav_enable", "value": true },
-                                                    { "key": "gpuav_shader_instrumentation", "value": true }
-                                                ]
-                                            },
-                                            "settings": [
-                                                {
-                                                    "key": "gpuav_max_buffer_device_addresses",
-                                                    "label": "Maximum number of buffer device addresses in use at one time",
-                                                    "description": "",
-                                                    "type": "INT",
-                                                    "default": 10000,
-                                                    "range": {
-                                                        "min": 100,
-                                                        "max": 10000000
-                                                    },
-                                                    "platforms": [ "WINDOWS", "LINUX" ],
-                                                    "dependence": {
-                                                        "mode": "ALL",
-                                                        "settings": [
-                                                            { "key": "gpuav_enable", "value": true },
-                                                            { "key": "gpuav_shader_instrumentation", "value": true },
-                                                            { "key": "gpuav_buffer_address_oob", "value": true }
-                                                        ]
-                                                    }
-                                                }
-                                            ]
-                                        },
-                                        {
-                                            "key": "gpuav_validate_ray_query",
-                                            "label": "RayQuery SPIR-V Instructions",
-                                            "description": "Enable shader instrumentation on OpRayQueryInitializeKHR",
-                                            "type": "BOOL",
-                                            "default": true,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -665,12 +723,12 @@
                                             }
                                         },
                                         {
-                                            "key": "gpuav_post_process_descriptor_indexing",
-                                            "label": "Post Process Descriptor Indexing",
-                                            "description": "Track which descriptor indexes were used in shader to run normal validation afterwards",
+                                            "key": "gpuav_validate_ray_query",
+                                            "label": "RayQuery SPIR-V instructions",
+                                            "description": "Enable shader instrumentation on OpRayQueryInitializeKHR",
                                             "type": "BOOL",
+                                            "view": "DEBUG",
                                             "default": true,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -684,24 +742,8 @@
                                             "label": "Out of bounds vertex attribute fetching",
                                             "description": "Validate that no vertex attribute fetching is out of bonds",
                                             "type": "BOOL",
+                                            "view": "DEBUG",
                                             "default": true,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
-                                            "dependence": {
-                                                "mode": "ALL",
-                                                "settings": [
-                                                    { "key": "gpuav_enable", "value": true },
-                                                    { "key": "gpuav_shader_instrumentation", "value": true }
-                                                ]
-                                            }
-                                        },
-
-                                        {
-                                            "key": "gpuav_select_instrumented_shaders",
-                                            "label": "Enable instrumenting shaders selectively",
-                                            "description": "Select which shaders to instrument passing a VkValidationFeaturesEXT struct with GPU-AV enabled in the VkShaderModuleCreateInfo pNext",
-                                            "type": "BOOL",
-                                            "default": false,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -717,8 +759,8 @@
                                     "label": "Buffer content validation",
                                     "description": "Validate buffers containing parameters used in indirect Vulkan commands, or used in copy commands",
                                     "type": "BOOL",
+                                    "view": "DEBUG",
                                     "default": true,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -732,7 +774,6 @@
                                             "type": "BOOL",
                                             "default": true,
                                             "description": "Validate buffers containing draw parameters used in indirect draw commands. Includes vkCmdDrawMeshTasks* calls as well",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -747,7 +788,6 @@
                                             "type": "BOOL",
                                             "default": true,
                                             "description": "Validate buffers containing dispatch parameters used in indirect dispatch commands",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -762,7 +802,6 @@
                                             "type": "BOOL",
                                             "default": true,
                                             "description": "Validate buffers containing ray tracing parameters used in indirect ray tracing commands",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -777,7 +816,6 @@
                                             "type": "BOOL",
                                             "default": true,
                                             "description": "Validate copies involving a VkBuffer. Right now only validates copy buffer to image.",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -792,7 +830,6 @@
                                             "type": "BOOL",
                                             "default": true,
                                             "description": "Validate that indexed draws do not fetch indices outside of the bounds of the index buffer.",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -804,84 +841,11 @@
                                     ]
                                 },
                                 {
-                                    "key": "gpuav_image_layout",
-                                    "label": "Image Layout",
-                                    "description": "(Warning - still known to have false positives) Use GPU-AV to detect which descriptors where accessed. Then using post processing, check that the layout of each image subresource is correct whenever it is used by a command buffer.",
-                                    "type": "BOOL",
-                                    "default": false,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
-                                    "dependence": {
-                                        "mode": "ALL",
-                                        "settings": [
-                                            { "key": "gpuav_enable", "value": true }
-                                        ]
-                                    }
-                                },
-                                {
-                                    "key": "gpuav_force_on_robustness",
-                                    "label": "Force robustness on behalf of the user",
-                                    "description": "When robustness is enabled, GPU-AV will skip checks already covered by robustness",
-                                    "type": "BOOL",
-                                    "default": false,
-                                    "platforms": [ "WINDOWS", "LINUX" ],
-                                    "dependence": {
-                                        "mode": "ALL",
-                                        "settings": [
-                                            { "key": "gpuav_enable", "value": true }
-                                        ]
-                                    }
-                                },
-                                {
-                                    "key": "gpuav_advanced_settings",
-                                    "label": "Advanced Settings",
-                                    "description": "GPU-AV advanced settings",
-                                    "type": "GROUP",
-                                    "view": "ADVANCED",
-                                    "platforms": [ "WINDOWS", "LINUX" ],
-                                    "dependence": {
-                                        "mode": "ALL",
-                                        "settings": [
-                                            { "key": "gpuav_enable", "value": true }
-                                        ]
-                                    },
-                                    "settings": [
-                                        {
-                                            "key": "gpuav_reserve_binding_slot",
-                                            "label": "Reserve Descriptor Set Binding Slot",
-                                            "type": "BOOL",
-                                            "default": true,
-                                            "description": "Specifies that the validation layers reserve a descriptor set binding slot for their own use. The layer reports a value for VkPhysicalDeviceLimits::maxBoundDescriptorSets that is one less than the value reported by the device. If the device supports the binding of only one descriptor set, the validation layer does not perform GPU-assisted validation.",
-                                            "platforms": [ "WINDOWS", "LINUX" ],
-                                            "dependence": {
-                                                "mode": "ALL",
-                                                "settings": [
-                                                    { "key": "gpuav_enable", "value": true }
-                                                ]
-                                            }
-                                        },
-                                        {
-                                            "key": "gpuav_vma_linear_output",
-                                            "label": "Linear Memory Allocation Mode",
-                                            "description": "Use VMA linear memory allocations for GPU-AV output buffers instead of finding best place for new allocations among free regions to optimize memory usage. Enabling this setting reduces performance cost but disabling this method minimizes memory usage.",
-                                            "type": "BOOL",
-                                            "default": true,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
-                                            "dependence": {
-                                                "mode": "ALL",
-                                                "settings": [
-                                                    { "key": "gpuav_enable", "value": true }
-                                                ]
-                                            }
-                                        }
-                                    ]
-                                },
-                                {
                                     "key": "gpuav_debug_settings",
                                     "label": "Developer Debug Settings",
                                     "description": "GPU-AV debug settings",
                                     "type": "GROUP",
-                                    "view": "ADVANCED",
-                                    "platforms": [ "WINDOWS", "LINUX" ],
+                                    "view": "DEBUG",
                                     "dependence": {
                                         "mode": "ALL",
                                         "settings": [
@@ -894,9 +858,7 @@
                                             "label": "Disable all of GPU-AV",
                                             "description": "Acts as a VkValidationFeatureDisableEXT to override the VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT passed by the user",
                                             "type": "BOOL",
-                                            "view": "HIDDEN",
                                             "default": false,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -910,7 +872,6 @@
                                             "description": "Run spirv-val after doing shader instrumentation",
                                             "type": "BOOL",
                                             "default": false,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -924,7 +885,6 @@
                                             "description": "Will dump the instrumented shaders (before and after) to working directory",
                                             "type": "BOOL",
                                             "default": false,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -941,7 +901,6 @@
                                             "range": {
                                                 "min": 0
                                             },
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -955,7 +914,6 @@
                                             "description": "Prints verbose information about the instrumentation of the SPIR-V",
                                             "type": "BOOL",
                                             "default": false,
-                                            "platforms": [ "WINDOWS", "LINUX" ],
                                             "dependence": {
                                                 "mode": "ALL",
                                                 "settings": [
@@ -964,6 +922,36 @@
                                             }
                                         }
                                     ]
+                                }
+                            ],
+                            "messages": [
+                                {
+                                    "key": "gpuav_enable_msg0",
+                                    "title": "Validation layer performance warning",
+                                    "version": 1,
+                                    "description": "Both 'Core validation' and 'GPU-assisted validation' are enabled. This is going to require a lot of CPU resource causing the Vulkan application to run very slowly.",
+                                    "informative": "Are you sure you want to enable 'GPU Assisted Validation'?",
+                                    "severity": "WARNING",
+                                    "conditions": [
+                                        { "setting": { "key": "validate_core", "value": true }},
+                                        { "setting": { "key": "gpuav_enable", "value": true }}
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "changes": [
+                                                { "setting": { "key": "validate_core", "value": true }},
+                                                { "setting": { "key": "gpuav_enable", "value": true }}
+                                            ]
+                                        },
+                                        "BUTTON1": {
+                                            "type": "CANCEL",
+                                            "changes": [
+                                                { "setting": { "key": "gpuav_enable", "value": false }}
+                                            ]
+                                        }
+                                    }
                                 }
                             ]
                         },
@@ -1042,6 +1030,7 @@
                     "key": "debug_action",
                     "label": "Debug Action",
                     "description": "Specifies what action is to be taken when a layer reports information",
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                     "type": "FLAGS",
                     "flags": [
                         {
@@ -1090,12 +1079,37 @@
                     "key": "report_flags",
                     "label": "Message Severity",
                     "description": "Comma-delineated list of options specifying the types of messages to be reported",
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                     "type": "FLAGS",
                     "flags": [
                         {
                             "key": "info",
                             "label": "Info",
-                            "description": "Report informational messages."
+                            "description": "Report informational messages.",
+                            "messages": [
+                                {
+                                    "key": "printf_enable_msg2",
+                                    "title": "Warning: Debug Printf without info level message severity flag",
+                                    "version": 1,
+                                    "description": "Disabling info level message severity is disabled, but Debug Printf output is directed to the debug callback, so printf message won't be shown.",
+                                    "informative": "Adding 'info' level to 'Message Severity'",
+                                    "severity": "INFORMATION",
+                                    "conditions": [
+                                        { "setting": { "key": "printf_enable", "value": true }},
+                                        { "setting": { "key": "printf_to_stdout", "value": false }},
+                                        { "setting": { "key": "report_flags", "value": ["info"]}, "operator": "NOT" }
+                                    ],
+                                    "actions": {
+                                        "default": "BUTTON0",
+                                        "BUTTON0": {
+                                            "type": "OK",
+                                            "changes": [
+                                                { "setting": {"key": "report_flags", "value": ["info"]}, "operator": "APPEND" }
+                                            ]
+                                        }
+                                    }
+                                }
+                            ]
                         },
                         {
                             "key": "warn",
@@ -1116,7 +1130,7 @@
                             "key": "debug",
                             "label": "Debug",
                             "description": "For layer development. Report messages for debugging layer behavior.",
-                            "view": "HIDDEN"
+                            "view": "DEBUG"
                         }
                     ],
                     "default": [
@@ -1127,6 +1141,7 @@
                     "key": "enable_message_limit",
                     "label": "Limit Duplicated Messages",
                     "description": "Enable limiting of duplicate messages.",
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                     "type": "BOOL",
                     "default": true,
                     "settings": [
@@ -1153,6 +1168,7 @@
                     "key": "message_id_filter",
                     "label": "Mute Message VUIDs",
                     "description": "List of VUIDs and VUID identifiers which are to be IGNORED by the validation layer",
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                     "type": "LIST",
                     "env": "VK_LAYER_MESSAGE_ID_FILTER",
                     "default": []
@@ -1161,6 +1177,7 @@
                     "key": "message_format",
                     "label": "Message Format",
                     "description": "Specifies how error messages are reported",
+                    "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
                     "type": "GROUP",
                     "expanded": true,
                     "settings": [
@@ -1169,95 +1186,99 @@
                             "label": "JSON",
                             "description": "Display Validation as JSON (VkDebugUtilsMessengerCallbackDataEXT::pMessage will contain JSON)",
                             "type": "BOOL",
-                            "default": false,
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "default": false
                         },
                         {
                             "key": "message_format_display_application_name",
                             "label": "Display Application Name",
                             "description": "Useful when running multiple instances to know which instance the message is from.",
                             "type": "BOOL",
-                            "default": false,
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
-                        },
-                        {
-                            "key": "debug_stable_messages",
-                            "label": "Stable messages",
-                            "view": "ADVANCED",
-                            "description": "Improves the reproducibility of error messages by removing fields that can vary between application runs (e.g., dispatchable handles) for comparison purposes.",
-                            "type": "BOOL",
                             "default": false
                         }
                     ]
+                },
+                {
+                    "key": "custom_stype_list",
+                    "label": "Provide Custom SType",
+                    "type": "LIST",
+                    "description": "specify custom pNext structs using a vector of strings",
+                    "view": "HIDDEN",
+                    "default": []
                 },
                 {
                     "key": "disables",
                     "label": "Disables",
                     "description": "Specify areas of validation to be disabled",
                     "type": "FLAGS",
+                    "status": "DEPRECATED",
                     "view": "HIDDEN",
                     "env": "VK_LAYER_DISABLES",
                     "flags": [
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_THREAD_SAFETY_EXT",
                             "label": "Thread Safety",
-                            "description": "Thread checks. In order to not degrade performance, it might be best to run your program with thread-checking disabled most of the time, enabling it occasionally for a quick sanity check or when debugging difficult application behaviors."
+                            "description": "Thread checks. In order to not degrade performance, it might be best to run your program with thread-checking disabled most of the time, enabling it occasionally for a quick sanity check or when debugging difficult application behaviors.",
+                            "deprecated_by_key": "thread_safety"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_API_PARAMETERS_EXT",
                             "label": "Stateless Parameter",
-                            "description": "Stateless parameter checks. This may not always be necessary late in a development cycle."
+                            "description": "Stateless parameter checks. This may not always be necessary late in a development cycle.",
+                            "deprecated_by_key": "stateless_param"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_OBJECT_LIFETIMES_EXT",
                             "label": "Object Lifetime",
-                            "description": "Object tracking checks. This may not always be necessary late in a development cycle."
+                            "description": "Object tracking checks. This may not always be necessary late in a development cycle.",
+                            "deprecated_by_key": "object_lifetime"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_CORE_CHECKS_EXT",
                             "label": "Core",
-                            "description": "The main, heavy-duty validation checks. This may be valuable early in the development cycle to reduce validation output while correcting parameter/object usage errors."
+                            "description": "The main, heavy-duty validation checks. This may be valuable early in the development cycle to reduce validation output while correcting parameter/object usage errors.",
+                            "deprecated_by_key": "validate_core"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_UNIQUE_HANDLES_EXT",
                             "label": "Handle Wrapping",
-                            "description": "Handle wrapping checks. Disable this feature if you are experiencing crashes when creating new extensions or developing new Vulkan objects/structures."
+                            "description": "Handle wrapping checks. Disable this feature if you are experiencing crashes when creating new extensions or developing new Vulkan objects/structures.",
+                            "deprecated_by_key": "unique_handles"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_SHADERS_EXT",
                             "label": "Shader Validation",
                             "description": "Shader checks. These checks can be CPU intensive during application start up, especially if Shader Validation Caching is also disabled.",
-                            "view": "ADVANCED"
+                            "deprecated_by_key": "check_shaders"
                         },
                         {
                             "key": "VALIDATION_CHECK_DISABLE_COMMAND_BUFFER_STATE",
                             "label": "Command Buffer State",
                             "description": "Check that all Vulkan objects used by a command buffer have not been destroyed. These checks can be CPU intensive for some applications.",
-                            "view": "ADVANCED"
+                            "deprecated_by_key": "check_command_buffer"
                         },
                         {
                             "key": "VALIDATION_CHECK_DISABLE_IMAGE_LAYOUT_VALIDATION",
                             "label": "Image Layout",
                             "description": "Check that the layout of each image subresource is correct whenever it is used by a command buffer. These checks are very CPU intensive for some applications.",
-                            "view": "ADVANCED"
+                            "deprecated_by_key": "check_image_layout"
                         },
                         {
                             "key": "VALIDATION_CHECK_DISABLE_QUERY_VALIDATION",
                             "label": "Query",
                             "description": "Checks for commands that use VkQueryPool objects.",
-                            "view": "ADVANCED"
+                            "deprecated_by_key": "check_query"
                         },
                         {
                             "key": "VALIDATION_CHECK_DISABLE_OBJECT_IN_USE",
                             "label": "Object in Use",
                             "description": "Check that Vulkan objects are not in use by a command buffer when they are destroyed.",
-                            "view": "ADVANCED"
+                            "deprecated_by_key": "check_object_in_use"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_DISABLE_SHADER_VALIDATION_CACHE_EXT",
                             "label": "Shader Validation Caching",
                             "description": "Disable caching of shader validation results.",
-                            "view": "ADVANCED"
+                            "deprecated_by_key": "check_shaders_caching"
                         }
                     ],
                     "default": [
@@ -1269,6 +1290,7 @@
                     "label": "Enables",
                     "description": "Setting an option here will enable specialized areas of validation",
                     "type": "FLAGS",
+                    "status": "DEPRECATED",
                     "view": "HIDDEN",
                     "env": "VK_LAYER_ENABLES",
                     "flags": [
@@ -1277,60 +1299,67 @@
                             "label": "Synchronization",
                             "description": "This feature reports resource access conflicts due to missing or incorrect synchronization operations between actions (Draw, Copy, Dispatch, Blit) reading or writing the same regions of memory.",
                             "url": "${LUNARG_SDK}/synchronization_usage.html",
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
+                            "deprecated_by_key": "validate_sync"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_ENABLE_DEBUG_PRINTF_EXT",
                             "label": "Debug Printf",
                             "description": "Enables processing of debug printf instructions in shaders and sending debug strings to the debug callback.",
                             "url": "${LUNARG_SDK}/debug_printf.html",
-                            "status": "STABLE",
-                            "platforms": [ "WINDOWS", "LINUX" ]
+                            "platforms": [ "WINDOWS", "LINUX" ],
+                            "deprecated_by_key": "printf_enable"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_EXT",
                             "label": "GPU-Assisted",
                             "description": "Check for API usage errors at shader execution time.",
                             "url": "${LUNARG_SDK}/gpu_validation.html",
-                            "platforms": [ "WINDOWS", "LINUX" ]
+                            "platforms": [ "WINDOWS", "LINUX" ],
+                            "deprecated_by_key": "gpuav_enable"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_ENABLE_GPU_ASSISTED_RESERVE_BINDING_SLOT_EXT",
                             "label": "Reserve Descriptor Set Binding Slot",
                             "description": "Specifies that the validation layers reserve a descriptor set binding slot for their own use. The layer reports a value for VkPhysicalDeviceLimits::maxBoundDescriptorSets that is one less than the value reported by the device. If the device supports the binding of only one descriptor set, the validation layer does not perform GPU-assisted validation.",
-                            "platforms": ["WINDOWS", "LINUX" ]
+                            "platforms": [ "WINDOWS", "LINUX" ],
+                            "deprecated_by_key": "gpuav_enable"
                         },
                         {
                             "key": "VK_VALIDATION_FEATURE_ENABLE_BEST_PRACTICES_EXT",
                             "label": "Best Practices",
                             "description": "Activating this feature enables the output of warnings related to common misuse of the API, but which are not explicitly prohibited by the specification.",
                             "url": "${LUNARG_SDK}/best_practices.html",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
+                            "deprecated_by_key": "validate_best_practices"
                         },
                         {
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ARM",
                             "label": "ARM-specific best practices",
                             "description": "Activating this feature enables the output of warnings related to ARM-specific misuse of the API, but which are not explicitly prohibited by the specification.",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ]
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS", "ANDROID" ],
+                            "deprecated_by_key": "validate_best_practices_arm"
                         },
                         {
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_AMD",
                             "label": "AMD-specific best practices",
                             "description": "Adds check for spec-conforming but non-ideal code on AMD GPUs.",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS" ]
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS" ],
+                            "deprecated_by_key": "validate_best_practices_amd"
                         },
                         {
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_IMG",
                             "label": "IMG-specific best practices",
                             "description": "Adds check for spec-conforming but non-ideal code on Imagination GPUs.",
-                            "platforms": [ "WINDOWS", "LINUX", "MACOS" ]
+                            "platforms": [ "WINDOWS", "LINUX", "MACOS" ],
+                            "deprecated_by_key": "validate_best_practices_img"
                         },
                         {
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_NVIDIA",
                             "label": "NVIDIA-specific best practices",
                             "description": "Activating this feature enables the output of warnings related to NVIDIA-specific misuse of the API, but which are not explicitly prohibited by the specification.",
-                            "platforms": [ "WINDOWS", "LINUX", "ANDROID" ]
+                            "platforms": [ "WINDOWS", "LINUX", "ANDROID" ],
+                            "deprecated_by_key": "validate_best_practices_nvidia"
                         },
                         {
                             "key": "VALIDATION_CHECK_ENABLE_VENDOR_SPECIFIC_ALL",

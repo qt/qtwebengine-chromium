@@ -2,21 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/platform/loader/fetch/script_cached_metadata_handler.h"
 
+#include "base/compiler_specific.h"
 #include "base/metrics/histogram_macros.h"
 #include "third_party/blink/renderer/platform/crypto.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
 ScriptCachedMetadataHandler::ScriptCachedMetadataHandler(
-    const WTF::TextEncoding& encoding,
+    const TextEncoding& encoding,
     std::unique_ptr<CachedMetadataSender> sender)
     : sender_(std::move(sender)), encoding_(encoding) {}
 
@@ -91,11 +88,11 @@ void ScriptCachedMetadataHandler::OnMemoryDump(
     const String& dump_prefix) const {
   if (!cached_metadata_)
     return;
-  const String dump_name = dump_prefix + "/script";
+  const String dump_name = StrCat({dump_prefix, "/script"});
   auto* dump = pmd->CreateMemoryAllocatorDump(dump_name);
   dump->AddScalar("size", "bytes", GetCodeCacheSize());
   pmd->AddSuballocation(dump->Guid(),
-                        String(WTF::Partitions::kAllocatedObjectPoolName));
+                        String(Partitions::kAllocatedObjectPoolName));
 }
 
 size_t ScriptCachedMetadataHandler::GetCodeCacheSize() const {
@@ -112,7 +109,7 @@ void ScriptCachedMetadataHandler::CommitToPersistentStorage(
 }
 
 ScriptCachedMetadataHandlerWithHashing::ScriptCachedMetadataHandlerWithHashing(
-    const WTF::TextEncoding& encoding,
+    const TextEncoding& encoding,
     std::unique_ptr<CachedMetadataSender> sender)
     : ScriptCachedMetadataHandler(encoding, std::move(sender)) {}
 
@@ -137,7 +134,7 @@ void ScriptCachedMetadataHandlerWithHashing::Check(
 
   if (hash_state_ != kUninitialized) {
     // Compare the hash of the new source text with the one previously loaded.
-    if (memcmp(digest->data(), hash_, kSha256Bytes) != 0) {
+    if (base::span(*digest) != hash_) {
       // If this handler was previously checked and is now being checked again
       // with a different hash value, then something bad happened. We expect the
       // handler to only be used with one script source text.
@@ -150,7 +147,7 @@ void ScriptCachedMetadataHandlerWithHashing::Check(
 
   // Remember the computed hash so that it can be used when saving data to
   // persistent storage.
-  memcpy(hash_, digest->data(), kSha256Bytes);
+  base::span(hash_).copy_from(*digest);
   hash_state_ = kChecked;
 }
 
@@ -181,7 +178,7 @@ void ScriptCachedMetadataHandlerWithHashing::SetSerializedCachedMetadata(
   }
 
   // Split out the data into the hash and the CachedMetadata that follows.
-  memcpy(hash_, header->hash, kSha256Bytes);
+  base::span(hash_).copy_from(header->hash);
   hash_state_ = kDeserialized;
   set_cached_metadata(CachedMetadata::CreateFromSerializedData(
       data, sizeof(CachedMetadataHeaderWithHash)));

@@ -7,6 +7,7 @@
 #include <utility>
 
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "components/autofill/core/common/password_generation_util.h"
 #include "components/device_reauth/device_authenticator.h"
 #include "components/password_manager/core/browser/field_info_manager.h"
@@ -57,7 +58,8 @@ void PasswordManagerClient::GeneratePassword(
 void PasswordManagerClient::UpdateCredentialCache(
     const url::Origin& origin,
     base::span<const PasswordForm> best_matches,
-    bool is_blocklisted) {}
+    bool is_blocklisted,
+    std::optional<PasswordStoreBackendError> backend_error) {}
 
 void PasswordManagerClient::PasswordWasAutofilled(
     base::span<const PasswordForm> best_matches,
@@ -123,6 +125,10 @@ HttpAuthManager* PasswordManagerClient::GetHttpAuthManager() {
   return nullptr;
 }
 
+OtpManager* PasswordManagerClient::GetOtpManager() {
+  return nullptr;
+}
+
 autofill::AutofillCrowdsourcingManager*
 PasswordManagerClient::GetAutofillCrowdsourcingManager() {
   return nullptr;
@@ -181,6 +187,9 @@ PasswordManagerClient::GetWebAuthnCredManDelegateForDriver(
 
 void PasswordManagerClient::MarkSharedCredentialsAsNotified(const GURL& url) {}
 
+SmsOtpBackend* PasswordManagerClient::GetSmsOtpBackend() const {
+  return nullptr;
+}
 #endif  // BUILDFLAG(IS_ANDROID)
 
 version_info::Channel PasswordManagerClient::GetChannel() const {
@@ -193,5 +202,10 @@ void PasswordManagerClient::RefreshPasswordManagerSettingsIfNeeded() const {
 
 void PasswordManagerClient::TriggerSignIn(
     signin_metrics::AccessPoint access_point) const {}
+
+UndoPasswordChangeController*
+PasswordManagerClient::GetUndoPasswordChangeController() {
+  return nullptr;
+}
 
 }  // namespace password_manager

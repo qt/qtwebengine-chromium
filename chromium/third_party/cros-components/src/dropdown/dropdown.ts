@@ -249,7 +249,7 @@ export class Dropdown extends LitElement {
   private preRenderValue: string|undefined = undefined;
 
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
 
   /**
    * The error text shown below the dropdown on `error`. This will override
@@ -257,22 +257,22 @@ export class Dropdown extends LitElement {
    * `error` is set.
    *  @export
    */
-  errorText?: string;
+  declare errorText?: string;
 
   /** @export */
-  error: boolean;
+  declare error: boolean;
 
   /**
    * The visible label above the dropdown.
    * @export
    */
-  label: string;
+  declare label: string;
 
   /**
    * Whether or not the dropdown is open.
    * @export
    */
-  open: boolean;
+  declare open: boolean;
 
   /**
    * When false, will use the darker container designed to sit on app-base. When
@@ -280,10 +280,10 @@ export class Dropdown extends LitElement {
    * app-base-shaded. Purely a cosmetic difference to improve contrast.
    * @export
    */
-  shaded = false;
+  declare shaded: boolean;
 
   /** @export */
-  supportingText?: string;
+  declare supportingText?: string;
 
   get mdSelect(): MdOutlinedSelect|null {
     return this.shadowRoot?.querySelector('md-outlined-select') || null;

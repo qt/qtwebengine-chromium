@@ -5,11 +5,15 @@
 #include "components/input/features.h"
 
 #include "base/feature_list.h"
+#include "components/input/input_constants.h"
 
 namespace input::features {
 
 #if BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kInputOnViz, "InputOnViz", base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE(kUseAndroidBufferedInputDispatch,
+             "UseAndroidBufferedInputDispatch",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 #endif
 
 BASE_FEATURE(kLogBubblingTouchscreenGesturesForDebug,
@@ -34,6 +38,18 @@ BASE_FEATURE(kScrollBubblingFix,
 // Flag guard for fix for crbug.com/404464598.
 BASE_FEATURE(kUseFirstCoalescedFrameAsFlingGenerationTimestamp,
              "UseFirstCoalescedFrameAsFlingGenerationTimestamp",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Flag guard for renderer hang watcher \ hang monitor.
+BASE_FEATURE(kRendererHangWatcher,
+             "RendererHangWatcher",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(
+    base::TimeDelta,
+    kRendererHangWatcherDelay,
+    &kRendererHangWatcher,
+    "delay",
+    input::kHungRendererDelay  // Default value in input_constants.h
+);
 
 }  // namespace input::features

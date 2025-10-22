@@ -2,18 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "media/audio/android/aaudio_stream_wrapper.h"
+
+#include <aaudio/AAudio.h>
+
+#include <array>
 
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
+#include "base/metrics/histogram_functions.h"
+#include "base/strings/strcat.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/thread_annotations.h"
 #include "base/trace_event/trace_event.h"
+#include "media/audio/android/audio_device.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/channel_layout.h"
 
@@ -95,8 +97,9 @@ static REQUIRES_ANDROID_API(AAUDIO_MIN_API) void OnStreamErrorCallback(
 }
 
 // Matches the ordering of media::Channels.
-static constexpr REQUIRES_ANDROID_API(AAUDIO_CHANNEL_MASK_MIN_API) uint32_t
-    kMediaChannelToAAudioChannel[] = {
+static constexpr REQUIRES_ANDROID_API(
+    AAUDIO_CHANNEL_MASK_MIN_API) auto kMediaChannelToAAudioChannel =
+    std::to_array<uint32_t>({
         AAUDIO_CHANNEL_FRONT_LEFT,
         AAUDIO_CHANNEL_FRONT_RIGHT,
         AAUDIO_CHANNEL_FRONT_CENTER,
@@ -108,7 +111,7 @@ static constexpr REQUIRES_ANDROID_API(AAUDIO_CHANNEL_MASK_MIN_API) uint32_t
         AAUDIO_CHANNEL_BACK_CENTER,
         AAUDIO_CHANNEL_SIDE_LEFT,
         AAUDIO_CHANNEL_SIDE_RIGHT,
-};
+    });
 
 REQUIRES_ANDROID_API(AAUDIO_CHANNEL_MASK_MIN_API)
 std::optional<aaudio_channel_mask_t> ChannelMaskFromChannelLayout(
@@ -158,8 +161,10 @@ void SetChannelMask(AAudioStreamBuilder* builder,
 AAudioStreamWrapper::AAudioStreamWrapper(DataCallback* callback,
                                          StreamType stream_type,
                                          const AudioParameters& params,
+                                         android::AudioDevice device,
                                          aaudio_usage_t usage)
     : params_(params),
+      device_(std::move(device)),
       stream_type_(stream_type),
       usage_(usage),
       callback_(callback),
@@ -236,6 +241,7 @@ bool AAudioStreamWrapper::Open() {
   AAudioStreamBuilder_setPerformanceMode(builder, performance_mode_);
   AAudioStreamBuilder_setFramesPerDataCallback(builder,
                                                params_.frames_per_buffer());
+  AAudioStreamBuilder_setDeviceId(builder, device_.GetId().ToAAudioDeviceId());
 
   if (__builtin_available(android AAUDIO_CHANNEL_MASK_MIN_API, *)) {
     SetChannelMask(builder, params_);
@@ -275,6 +281,20 @@ bool AAudioStreamWrapper::Open() {
   }
 
   CHECK_EQ(AAUDIO_FORMAT_PCM_FLOAT, AAudioStream_getFormat(aaudio_stream_));
+
+  if (!device_.GetId().IsDefault()) {
+    // `AAudioStreamBuilder_setDeviceId` is not guaranteed to set the specified
+    // device.
+    const int32_t expected_device_id = device_.GetId().ToAAudioDeviceId();
+    const int32_t actual_device_id = AAudioStream_getDeviceId(aaudio_stream_);
+    bool device_id_matches = expected_device_id == actual_device_id;
+    EmitSetDeviceIdResultToHistogram(device_id_matches);
+    if (!device_id_matches) {
+      DLOG(WARNING) << "Failed to set device ID for AAudio stream. Expected: "
+                    << expected_device_id << "; actual: " << actual_device_id;
+      return false;
+    }
+  }
 
   // After opening the stream, sets the effective buffer size to 3X the burst
   // size to prevent glitching if the burst is small (e.g. < 128). On some
@@ -422,6 +442,25 @@ void AAudioStreamWrapper::OnStreamError(aaudio_result_t error) {
   } else {
     callback_->OnError();
   }
+}
+
+void AAudioStreamWrapper::EmitSetDeviceIdResultToHistogram(bool success) {
+  std::string_view direction_string;
+  switch (stream_type_) {
+    case StreamType::kInput:
+      direction_string = "Input";
+      break;
+    case StreamType::kOutput:
+      direction_string = "Output";
+      break;
+  }
+
+  std::string_view success_string = success ? "Success" : "Failure";
+
+  std::string histogram_name =
+      base::StrCat({"Media.Audio.Android.AAudioSetDeviceId.", direction_string,
+                    ".", success_string});
+  base::UmaHistogramEnumeration(histogram_name, device_.GetType());
 }
 
 }  // namespace media

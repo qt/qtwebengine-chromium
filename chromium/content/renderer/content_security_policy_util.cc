@@ -7,6 +7,7 @@
 #include "base/containers/to_vector.h"
 #include "services/network/public/cpp/content_security_policy/content_security_policy.h"
 #include "services/network/public/mojom/content_security_policy.mojom.h"
+#include "services/network/public/mojom/integrity_metadata.mojom.h"
 
 namespace content {
 
@@ -24,23 +25,18 @@ network::mojom::CSPSourcePtr BuildCSPSource(const blink::WebCSPSource& source) {
       source.is_host_wildcard, source.is_port_wildcard);
 }
 
-network::mojom::CSPHashSourcePtr BuildCSPHashSource(
-    const blink::WebCSPHashSource& hash_source) {
-  return network::mojom::CSPHashSource::New(hash_source.algorithm,
-                                            hash_source.value);
-}
-
 network::mojom::CSPSourceListPtr BuildCSPSourceList(
     const blink::WebCSPSourceList& source_list) {
   return network::mojom::CSPSourceList::New(
       base::ToVector(source_list.sources, BuildCSPSource),
-      BuildVectorOfStrings(source_list.nonces),
-      base::ToVector(source_list.hashes, BuildCSPHashSource),
-      source_list.allow_self, source_list.allow_star, source_list.allow_inline,
+      BuildVectorOfStrings(source_list.nonces), source_list.hashes,
+      source_list.url_hashes, source_list.eval_hashes, source_list.allow_self,
+      source_list.allow_star, source_list.allow_inline,
       source_list.allow_inline_speculation_rules, source_list.allow_eval,
       source_list.allow_wasm_eval, source_list.allow_wasm_unsafe_eval,
-      source_list.allow_dynamic, source_list.allow_unsafe_hashes,
-      source_list.report_sample, source_list.report_hash_algorithm);
+      source_list.allow_dynamic, source_list.allow_dynamic_url,
+      source_list.allow_unsafe_hashes, source_list.report_sample,
+      source_list.report_hash_algorithm);
 }
 
 std::vector<blink::WebString> ToVectorOfWebStrings(
@@ -59,16 +55,13 @@ blink::WebCSPSource ToWebCSPSource(const network::mojom::CSPSourcePtr& source) {
           source->is_port_wildcard};
 }
 
-blink::WebCSPHashSource ToWebCSPHashSource(
-    const network::mojom::CSPHashSourcePtr& hash_source) {
-  return {hash_source->algorithm, std::move(hash_source->value)};
-}
-
 blink::WebCSPSourceList ToWebCSPSourceList(
     network::mojom::CSPSourceListPtr source_list) {
   return {base::ToVector(std::move(source_list->sources), ToWebCSPSource),
           ToVectorOfWebStrings(std::move(source_list->nonces)),
-          base::ToVector(std::move(source_list->hashes), ToWebCSPHashSource),
+          base::ToVector(std::move(source_list->hashes)),
+          base::ToVector(std::move(source_list->url_hashes)),
+          base::ToVector(std::move(source_list->eval_hashes)),
           source_list->allow_self,
           source_list->allow_star,
           source_list->allow_inline,
@@ -77,6 +70,7 @@ blink::WebCSPSourceList ToWebCSPSourceList(
           source_list->allow_wasm_eval,
           source_list->allow_wasm_unsafe_eval,
           source_list->allow_dynamic,
+          source_list->allow_dynamic_url,
           source_list->allow_unsafe_hashes,
           source_list->report_sample,
           source_list->report_hash_algorithm};
@@ -123,7 +117,7 @@ network::mojom::ContentSecurityPolicyPtr BuildContentSecurityPolicy(
           policy_in.header.source),
       policy_in.use_reporting_api,
       BuildVectorOfStrings(policy_in.report_endpoints),
-      policy_in.require_sri_for, policy_in.require_trusted_types_for,
+      policy_in.require_trusted_types_for,
       policy_in.trusted_types
           ? network::mojom::CSPTrustedTypes::New(
                 BuildVectorOfStrings(policy_in.trusted_types->list),
@@ -157,7 +151,6 @@ blink::WebContentSecurityPolicy ToWebContentSecurityPolicy(
           ToWebContentSecurityPolicyHeader(std::move(policy_in->header)),
           policy_in->use_reporting_api,
           ToVectorOfWebStrings(std::move(policy_in->report_endpoints)),
-          policy_in->require_sri_for,
           policy_in->require_trusted_types_for,
           ToOptionalWebCSPTrustedTypes(std::move(policy_in->trusted_types)),
           ToVectorOfWebStrings(std::move(policy_in->parsing_errors))};

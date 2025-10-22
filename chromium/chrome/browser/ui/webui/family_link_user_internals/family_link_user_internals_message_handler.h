@@ -69,11 +69,6 @@ class FamilyLinkUserInternalsMessageHandler
   void HandleRegisterForEvents(const base::Value::List& args);
   void HandleGetBasicInfo(const base::Value::List& args);
   void HandleTryURL(const base::Value::List& args);
-  void HandleChangeSearchContentFilters(const base::Value::List& args);
-
-  // Sets the browser's state of search content filtering as indicated in this
-  // UI.
-  void ConfigureSearchContentFilters();
 
   void SendBasicInfo();
   void SendFamilyLinkUserSettings(const base::Value::Dict& settings);
@@ -86,11 +81,13 @@ class FamilyLinkUserInternalsMessageHandler
   void OnURLChecked(supervised_user::SupervisedUserURLFilter::Result
                         filtering_result) override;
 
-  // Emulates device-level setting that manipulates search content filtering.
-  // Available only to non-supervised profiles. Note: if multiple chrome://
-  // pages are open simultaneously, they might override each other. This is
-  // safe, but will render web-ui off-sync.
+  // Emulates device-level setting that manipulates search or browser content
+  // filtering. Available only to non-supervised profiles. Note: if multiple
+  // chrome:// pages are open simultaneously, they might override each other.
+  // This is safe, but will render web-ui off-sync.
   WebContentFilters search_content_filtering_status_{
+      WebContentFilters::kDisabled};
+  WebContentFilters browser_content_filtering_status_{
       WebContentFilters::kDisabled};
 
   base::CallbackListSubscription user_settings_subscription_;

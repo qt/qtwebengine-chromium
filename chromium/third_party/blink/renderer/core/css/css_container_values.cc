@@ -4,10 +4,12 @@
 
 #include "third_party/blink/renderer/core/css/css_container_values.h"
 
+#include "third_party/blink/renderer/core/css/container_state.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/flat_tree_traversal.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
+#include "third_party/blink/renderer/core/style/position_try_fallbacks.h"
 
 namespace blink {
 
@@ -20,17 +22,25 @@ CSSContainerValues::CSSContainerValues(
     ContainerStuckPhysical stuck_vertical,
     ContainerSnappedFlags snapped,
     ContainerScrollableFlags scrollable_horizontal,
-    ContainerScrollableFlags scrollable_vertical)
+    ContainerScrollableFlags scrollable_vertical,
+    ContainerScrollDirection scroll_direction_horizontal,
+    ContainerScrollDirection scroll_direction_vertical,
+    WritingDirectionMode abs_container_writing_direction,
+    const PositionTryFallback& anchored_fallback)
     : MediaValuesDynamic(document.GetFrame()),
       element_(&container),
       width_(width),
       height_(height),
       writing_direction_(container.ComputedStyleRef().GetWritingDirection()),
+      abs_container_writing_direction_(abs_container_writing_direction),
       stuck_horizontal_(stuck_horizontal),
       stuck_vertical_(stuck_vertical),
       snapped_(snapped),
       scrollable_horizontal_(scrollable_horizontal),
       scrollable_vertical_(scrollable_vertical),
+      scroll_direction_horizontal_(scroll_direction_horizontal),
+      scroll_direction_vertical_(scroll_direction_vertical),
+      anchored_fallback_(anchored_fallback),
       font_sizes_(CSSToLengthConversionData::FontSizes(
           container.ComputedStyleRef().GetFontSizeStyle(),
           document.documentElement()->GetComputedStyle())),
@@ -44,6 +54,7 @@ void CSSContainerValues::Trace(Visitor* visitor) const {
   visitor->Trace(container_sizes_);
   visitor->Trace(font_sizes_);
   visitor->Trace(line_height_size_);
+  visitor->Trace(anchored_fallback_);
   MediaValuesDynamic::Trace(visitor);
 }
 
@@ -151,6 +162,22 @@ ContainerScrollableFlags CSSContainerValues::ScrollableBlock() const {
                                                   : ScrollableHorizontal();
   return writing_direction_.IsFlippedBlocks() ? Flip(scrollable_block)
                                               : scrollable_block;
+}
+
+ContainerScrollDirection CSSContainerValues::ScrollDirectionInline() const {
+  ContainerScrollDirection scroll_direction_inline =
+      writing_direction_.IsHorizontal() ? ScrollDirectionHorizontal()
+                                        : ScrollDirectionVertical();
+  return writing_direction_.IsRtl() ? Flip(scroll_direction_inline)
+                                    : scroll_direction_inline;
+}
+
+ContainerScrollDirection CSSContainerValues::ScrollDirectionBlock() const {
+  ContainerScrollDirection scroll_direction_block =
+      writing_direction_.IsHorizontal() ? ScrollDirectionVertical()
+                                        : ScrollDirectionHorizontal();
+  return writing_direction_.IsFlippedBlocks() ? Flip(scroll_direction_block)
+                                              : scroll_direction_block;
 }
 
 }  // namespace blink

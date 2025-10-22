@@ -39,6 +39,7 @@
 #include "net/ssl/ssl_info.h"
 #include "services/network/public/cpp/cors/cors_error_status.h"
 #include "services/network/public/mojom/cross_origin_embedder_policy.mojom-forward.h"
+#include "services/network/public/mojom/device_bound_sessions.mojom-shared.h"
 #include "services/network/public/mojom/fetch_api.mojom-shared.h"
 #include "services/network/public/mojom/ip_address_space.mojom-shared.h"
 #include "third_party/blink/public/mojom/timing/resource_timing.mojom-blink-forward.h"
@@ -53,10 +54,12 @@
 #include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
 #include "third_party/blink/renderer/platform/wtf/vector.h"
 
+namespace network {
+struct IntegrityMetadata;
+}
+
 namespace blink {
 
-class FeatureContext;
-class UnencodedDigest;
 class ResourceLoadTiming;
 class ServiceWorkerRouterInfo;
 class UseCounter;
@@ -175,7 +178,6 @@ class PLATFORM_EXPORT ResourceResponse final {
   std::optional<base::Time> LastModified(UseCounter&) const;
   // Will always return values >= 0.
   base::TimeDelta CacheControlStaleWhileRevalidate() const;
-  std::optional<UnencodedDigest> UnencodedDigest(const FeatureContext*) const;
 
   unsigned ConnectionID() const;
   void SetConnectionID(unsigned);
@@ -230,6 +232,11 @@ class PLATFORM_EXPORT ResourceResponse final {
   }
   void SetWasFetchedViaServiceWorker(bool value) {
     was_fetched_via_service_worker_ = value;
+  }
+
+  bool FromSyntheticResponse() const { return from_synthetic_response_; }
+  void SetFromSyntheticResponse(bool value) {
+    from_synthetic_response_ = value;
   }
 
   network::mojom::FetchResponseSource GetServiceWorkerResponseSource() const {
@@ -296,6 +303,11 @@ class PLATFORM_EXPORT ResourceResponse final {
   base::Time ResponseTime() const { return response_time_; }
   void SetResponseTime(base::Time response_time) {
     response_time_ = response_time;
+  }
+
+  base::Time OriginalResponseTime() const { return original_response_time_; }
+  void SetOriginalResponseTime(base::Time original_response_time) {
+    original_response_time_ = original_response_time;
   }
 
   const net::IPEndPoint& RemoteIPEndpoint() const {
@@ -474,6 +486,24 @@ class PLATFORM_EXPORT ResourceResponse final {
         should_use_source_hash_for_js_code_cache;
   }
 
+  void SetDeviceBoundSessionUsage(
+      network::mojom::DeviceBoundSessionUsage usage) {
+    device_bound_session_usage_ = usage;
+  }
+  network::mojom::DeviceBoundSessionUsage DeviceBoundSessionUsage() const {
+    return device_bound_session_usage_;
+  }
+
+  // Returns true if the request was routed through an IP Protection proxy.
+  bool IsIpProtectionUsed() const { return is_ip_protection_used_; }
+  // Sets the flag indicating IP Protection usage.
+  void SetIsIpProtectionUsed(bool is_ip_protection_used) {
+    is_ip_protection_used_ = is_ip_protection_used;
+  }
+
+  const Vector<network::IntegrityMetadata>& GetUnencodedDigests() const;
+  void SetUnencodedDigests(Vector<network::IntegrityMetadata> digests);
+
  private:
   void UpdateHeaderParsedState(const AtomicString& name);
 
@@ -506,6 +536,9 @@ class PLATFORM_EXPORT ResourceResponse final {
       private_network_access_preflight_result_ =
           network::mojom::PrivateNetworkAccessPreflightResult::kNone;
 
+  network::mojom::DeviceBoundSessionUsage device_bound_session_usage_ =
+      network::mojom::DeviceBoundSessionUsage::kUnknown;
+
   bool was_cached_ : 1;
   bool connection_reused_ : 1;
   bool is_null_ : 1;
@@ -531,6 +564,9 @@ class PLATFORM_EXPORT ResourceResponse final {
 
   // Was the resource fetched over a ServiceWorker.
   bool was_fetched_via_service_worker_ : 1;
+
+  // True if the response is created with the synthetic response.
+  bool from_synthetic_response_ : 1;
 
   // True if service worker navigation preload was performed due to
   // the request for this resource.
@@ -649,6 +685,9 @@ class PLATFORM_EXPORT ResourceResponse final {
   // responses, this time could be "far" in the past.
   base::Time response_time_;
 
+  // Like response_time, but ignoring revalidations.
+  base::Time original_response_time_;
+
   // ALPN negotiated protocol of the socket which fetched this resource.
   AtomicString alpn_negotiated_protocol_;
 
@@ -683,6 +722,16 @@ class PLATFORM_EXPORT ResourceResponse final {
   std::optional<net::AuthChallengeInfo> auth_challenge_info_;
 
   bool emitted_extra_info_ = false;
+
+  // Flag indicating if the request used IP Protection proxies.
+  // This differs from the `is_for_ip_protection` used in the network proxy
+  // chain, but uses `is_for_ip_protection`, along with whether the response was
+  // cached, to determine if the request was actively sent through an IP
+  // Protection proxy. This value is currently only set if
+  // kIpPrivacyEnableIppInDevTools is enabled.
+  bool is_ip_protection_used_ = false;
+
+  Vector<network::IntegrityMetadata> unencoded_digests_;
 };
 
 }  // namespace blink

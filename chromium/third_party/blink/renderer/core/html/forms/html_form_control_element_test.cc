@@ -5,6 +5,8 @@
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
 
 #include <memory>
+
+#include "base/strings/stringprintf.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/frame/local_frame_view.h"
@@ -132,7 +134,8 @@ TEST_F(HTMLFormControlElementTest, DoNotUpdateLayoutDuringDOMMutation) {
   // ShowValidationMessage(). So calling it during DOM mutation is
   // dangerous. This test ensures ShowValidationMessage() is NOT called in
   // appendChild(). crbug.com/756408
-  GetDocument().documentElement()->setInnerHTML("<select></select>");
+  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+      "<select></select>");
   auto* const select = To<HTMLFormControlElement>(
       GetDocument().QuerySelector(AtomicString("select")));
   auto* const optgroup =
@@ -167,7 +170,8 @@ TEST_P(HTMLFormControlElementFormControlTypeTest, FormControlType) {
     html += base::StringPrintf("</%s>", tag_name());
   }
   SCOPED_TRACE(testing::Message() << html);
-  GetDocument().documentElement()->setInnerHTML(html.c_str());
+  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+      html.c_str());
   auto* form_control = To<HTMLFormControlElement>(
       GetDocument().getElementById(AtomicString("x")));
   EXPECT_EQ(form_control->FormControlType(), expected_type())

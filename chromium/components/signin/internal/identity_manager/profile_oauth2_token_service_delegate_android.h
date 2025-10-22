@@ -62,6 +62,12 @@ class ProfileOAuth2TokenServiceDelegateAndroid
       const std::vector<CoreAccountId>& prev_ids,
       const std::vector<CoreAccountId>& curr_ids);
 
+  // Wrapper method to call the native UpdateAuthError() method from java.
+  void UpdateAuthErrorFromJava(JNIEnv* env,
+                               CoreAccountId& core_account_id,
+                               GoogleServiceAuthError& auth_error,
+                               jboolean fire_auth_error_changed);
+
  protected:
   std::unique_ptr<OAuth2AccessTokenFetcher> CreateAccessTokenFetcher(
       const CoreAccountId& account_id,
@@ -90,10 +96,6 @@ class ProfileOAuth2TokenServiceDelegateAndroid
   void LoadCredentialsInternal(
       const CoreAccountId& primary_account_id) override;
 
-  std::string MapAccountIdToAccountName(const CoreAccountId& account_id) const;
-  CoreAccountId MapAccountNameToAccountId(
-      const std::string& account_name) const;
-
   enum RefreshTokenLoadStatus {
     RT_LOAD_NOT_START,
     RT_WAIT_FOR_VALIDATION,
@@ -109,7 +111,7 @@ class ProfileOAuth2TokenServiceDelegateAndroid
                          std::vector<CoreAccountId>* refreshed_ids,
                          std::vector<CoreAccountId>* revoked_ids);
   // As |GetAccounts| but with only validated account IDs.
-  std::vector<CoreAccountId> GetValidAccounts();
+  std::vector<CoreAccountId> GetValidAccounts() const;
   // Set accounts that have been advertised by OnRefreshTokenAvailable.
   virtual void SetAccounts(const std::vector<CoreAccountId>& accounts);
 

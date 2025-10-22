@@ -154,8 +154,7 @@ bool ssl_pkey_supports_algorithm(const SSL *ssl, EVP_PKEY *pkey,
     // EC keys have a curve requirement.
     if (alg->pkey_type == EVP_PKEY_EC &&
         (alg->curve == NID_undef ||
-         EC_GROUP_get_curve_name(
-             EC_KEY_get0_group(EVP_PKEY_get0_EC_KEY(pkey))) != alg->curve)) {
+         EVP_PKEY_get_ec_curve_nid(pkey) != alg->curve)) {
       return false;
     }
   } else if (!alg->tls12_ok) {
@@ -185,7 +184,7 @@ static bool setup_ctx(SSL *ssl, EVP_MD_CTX *ctx, EVP_PKEY *pkey,
 
   if (alg->is_rsa_pss) {
     if (!EVP_PKEY_CTX_set_rsa_padding(pctx, RSA_PKCS1_PSS_PADDING) ||
-        !EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, -1 /* salt len = hash len */)) {
+        !EVP_PKEY_CTX_set_rsa_pss_saltlen(pctx, RSA_PSS_SALTLEN_DIGEST)) {
       return false;
     }
   }
@@ -519,18 +518,6 @@ int SSL_is_signature_algorithm_rsa_pss(uint16_t sigalg) {
   return alg != nullptr && alg->is_rsa_pss;
 }
 
-static int compare_uint16_t(const void *p1, const void *p2) {
-  uint16_t u1 = *((const uint16_t *)p1);
-  uint16_t u2 = *((const uint16_t *)p2);
-  if (u1 < u2) {
-    return -1;
-  } else if (u1 > u2) {
-    return 1;
-  } else {
-    return 0;
-  }
-}
-
 static bool sigalgs_unique(Span<const uint16_t> in_sigalgs) {
   if (in_sigalgs.size() < 2) {
     return true;
@@ -541,8 +528,7 @@ static bool sigalgs_unique(Span<const uint16_t> in_sigalgs) {
     return false;
   }
 
-  qsort(sigalgs.data(), sigalgs.size(), sizeof(uint16_t), compare_uint16_t);
-
+  std::sort(sigalgs.begin(), sigalgs.end());
   for (size_t i = 1; i < sigalgs.size(); i++) {
     if (sigalgs[i - 1] == sigalgs[i]) {
       OPENSSL_PUT_ERROR(SSL, SSL_R_DUPLICATE_SIGNATURE_ALGORITHM);

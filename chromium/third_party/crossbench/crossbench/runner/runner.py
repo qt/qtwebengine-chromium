@@ -4,30 +4,27 @@
 
 from __future__ import annotations
 
-import argparse
 import datetime as dt
 import enum
 import logging
-from typing import (TYPE_CHECKING, Any, Dict, Iterable, List, Optional,
-                    Sequence, Set, Tuple, Type)
+from typing import TYPE_CHECKING, Any, Iterable, Optional, Sequence, Set, Type
 
 from crossbench import exception
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.benchmarks import benchmark_validator
 from crossbench.benchmarks.benchmark_probe import BenchmarkProbeMixin
-from crossbench.env import EnvironmentConfig, HostEnvironment, ValidationMode
+from crossbench.env.runner_env import EnvConfig, RunnerEnv, ValidationMode
 from crossbench.helper import collection_helper
-from crossbench.helper.sleep_preventer import SystemSleepPreventer
 from crossbench.helper.state import BaseState, StateMachine
 from crossbench.helper.wait import WaitRange
+from crossbench.helper.wake_lock import WakeLock
 from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes import all as all_probes
 from crossbench.probes.internal.summary import ResultsSummaryProbe
 from crossbench.probes.perfetto.trace_processor.trace_processor import \
     TraceProcessorProbe
 from crossbench.probes.probe import Probe, ProbeIncompatibleBrowser
-from crossbench.probes.thermal_monitor import ThermalStatus
 from crossbench.results_db.db import ResultsDB
 from crossbench.runner.groups.browsers import BrowsersRunGroup
 from crossbench.runner.groups.cache_temperatures import \
@@ -35,14 +32,18 @@ from crossbench.runner.groups.cache_temperatures import \
 from crossbench.runner.groups.repetitions import RepetitionsRunGroup
 from crossbench.runner.groups.session import BrowserSessionRunGroup
 from crossbench.runner.groups.stories import StoriesRunGroup
-from crossbench.runner.groups.thread import RunThreadGroup
+from crossbench.runner.groups.thread import RunMainGroup, RunThreadGroup
 from crossbench.runner.run import Run
 from crossbench.runner.timing import Timing
 from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
+  import argparse
+
+  from crossbench.action_runner.base import ActionRunner
   from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
+  from crossbench.probes.thermal_monitor import ThermalStatus
   from crossbench.runner.groups.base import RunGroup
   from crossbench.runner.timing import AnyTimeUnit
   from crossbench.stories.story import Story
@@ -69,10 +70,10 @@ class ThreadMode(StrEnumWithHelp):
       "Execute run from each browser-session in a parallel thread. "
       "High interference risk, don't use for time-critical measurements."))
 
-  def group(self, runs: List[Run]) -> List[RunThreadGroup]:
+  def group(self, runs: list[Run]) -> list[RunThreadGroup]:
     if self == ThreadMode.NONE:
-      return [RunThreadGroup(runs)]
-    groups: Dict[Any, List[Run]] = {}
+      return [RunMainGroup(runs)]
+    groups: dict[Any, list[Run]] = {}
     if self == ThreadMode.SESSION:
       groups = collection_helper.group_by(
           runs, lambda run: run.browser_session, sort_key=None)
@@ -115,7 +116,15 @@ class Runner:
   def add_cli_parser(
       cls, benchmark_cls: Type[Benchmark],
       parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    parser.add_argument(
+    cls._add_run_arguments(benchmark_cls, parser)
+    cls._add_output_arguments(benchmark_cls, parser)
+    return parser
+
+  @classmethod
+  def _add_run_arguments(cls, benchmark_cls: Type[Benchmark],
+                         parser: argparse.ArgumentParser) -> None:
+    run_group = parser.add_argument_group("Run & Repetition Options")
+    run_group.add_argument(
         "--repetitions",
         "--repeat",
         "--invocations",
@@ -125,7 +134,7 @@ class Runner:
         help=("Number of times each benchmark story is repeated. "
               f"Defaults to {benchmark_cls.DEFAULT_REPETITIONS}. "
               "Metrics are aggregated over multiple repetitions"))
-    parser.add_argument(
+    run_group.add_argument(
         "--warmup-repetitions",
         "--warmups",
         default=0,
@@ -133,22 +142,28 @@ class Runner:
         help=("Number of times each benchmark story is repeated for warmup. "
               "Defaults to 0. "
               "Metrics for warmup-repetitions are discarded."))
-    parser.add_argument(
+    run_group.add_argument(
         "--cache-temperatures",
         default=["default"],
         const=["cold", "warm", "hot"],
         action="store_const",
         help=("Repeat each run with different cache temperatures without "
               "closing the browser in between."))
-
-    parser.add_argument(
+    run_group.add_argument(
         "--thread-mode",
         "--parallel",
         default=ThreadMode.NONE,
         type=ThreadMode,  # type: ignore
         help=("Change how Runs are executed.\n" +
               ThreadMode.help_text(indent=2)))
+    run_group.add_argument(
+        "--step-by-step-mode",
+        action="store_true",
+        help="Wait for user input before executing each action.")
 
+  @classmethod
+  def _add_output_arguments(cls, benchmark_cls: Type[Benchmark],
+                            parser: argparse.ArgumentParser) -> None:
     out_dir_group = parser.add_argument_group("Output Directory Options")
     symlink_group = out_dir_group.add_mutually_exclusive_group()
     symlink_group.add_argument(
@@ -180,10 +195,15 @@ class Runner:
         default=benchmark_cls.NAME,
         help=("Add a name to the default output directory. "
               "Defaults to the benchmark name"))
-    return parser
+    out_dir_group.add_argument(
+        "--cache-dir",
+        type=pth.LocalPath,
+        default=None,
+        help=("Used for caching browser binaries and archives. "
+              "Defaults to binary_cache"))
 
   @classmethod
-  def kwargs_from_cli(cls, args: argparse.Namespace) -> Dict[str, Any]:
+  def kwargs_from_cli(cls, args: argparse.Namespace) -> dict[str, Any]:
     if args.out_dir:
       out_dir = args.out_dir
     else:
@@ -201,6 +221,7 @@ class Runner:
         "throw": args.throw,
         "create_symlinks": args.create_symlinks,
         "cool_down_threshold": args.cool_down_threshold,
+        "step_by_step_mode": args.step_by_step_mode,
     }
 
   def __init__(self,
@@ -209,7 +230,7 @@ class Runner:
                benchmark: Benchmark,
                additional_probes: Iterable[Probe] = (),
                platform: Optional[plt.Platform] = None,
-               env_config: Optional[EnvironmentConfig] = None,
+               env_config: Optional[EnvConfig] = None,
                env_validation_mode: ValidationMode = ValidationMode.THROW,
                repetitions: int = 1,
                warmup_repetitions: int = 0,
@@ -219,43 +240,45 @@ class Runner:
                thread_mode: ThreadMode = ThreadMode.NONE,
                throw: bool = False,
                create_symlinks: bool = True,
-               in_memory_result_db: bool = False) -> None:
+               in_memory_result_db: bool = False,
+               step_by_step_mode: bool = False) -> None:
     self._state = StateMachine(RunnerState.INITIAL)
     self.out_dir = out_dir.absolute()
     assert not self.out_dir.exists(), f"out_dir={self.out_dir} exists already"
     self.out_dir.mkdir(parents=True)
     self._timing = timing
     self._cool_down_threshold: ThermalStatus | None = cool_down_threshold
-    self._browsers: Tuple[Browser, ...] = tuple(browsers)
+    self._browsers: tuple[Browser, ...] = tuple(browsers)
     self._validate_browser_labels()
     self._benchmark = benchmark
     self._stories = tuple(benchmark.stories)
     self._repetitions = NumberParser.positive_int(repetitions, "repetitions")
     self._warmup_repetitions = NumberParser.positive_zero_int(
         warmup_repetitions, "warmup repetitions")
-    self._cache_temperatures: Tuple[str, ...] = tuple(cache_temperatures)
-    self._probes: List[Probe] = []
-    self._default_probes: List[Probe] = []
+    self._cache_temperatures: tuple[str, ...] = tuple(cache_temperatures)
+    self._probes: list[Probe] = []
+    self._default_probes: list[Probe] = []
     # Contains both measure and warmup runs:
-    self._all_runs: List[Run] = []
-    self._measured_runs: List[Run] = []
+    self._all_runs: list[Run] = []
+    self._measured_runs: list[Run] = []
     self._thread_mode = thread_mode
     self._exceptions = exception.Annotator(throw)
     self._platform = platform or plt.PLATFORM
-    self._env = HostEnvironment(self.platform, self.out_dir, self.browsers,
-                                self.probes, self.repetitions, env_config,
-                                env_validation_mode)
+    self._env = RunnerEnv(self.platform, self.out_dir, self.browsers,
+                          self.probes, self.repetitions, env_config,
+                          env_validation_mode)
     self._attach_default_probes(additional_probes)
     self._prepare_benchmark()
     if in_memory_result_db:
       self._results_db = ResultsDB()
     else:
       self._results_db = ResultsDB(self.out_dir / "results.db")
-    self._cache_temperatures_groups: Tuple[CacheTemperaturesRunGroup, ...] = ()
-    self._repetitions_groups: Tuple[RepetitionsRunGroup, ...] = ()
-    self._story_groups: Tuple[StoriesRunGroup, ...] = ()
+    self._cache_temperatures_groups: tuple[CacheTemperaturesRunGroup, ...] = ()
+    self._repetitions_groups: tuple[RepetitionsRunGroup, ...] = ()
+    self._story_groups: tuple[StoriesRunGroup, ...] = ()
     self._browser_group: BrowsersRunGroup | None = None
     self._create_symlinks: bool = create_symlinks
+    self._step_by_step_mode: bool = step_by_step_mode
 
   def _prepare_benchmark(self) -> None:
     benchmark_validator.validate_cls(type(self._benchmark))
@@ -333,15 +356,15 @@ class Runner:
     return self._timing
 
   @property
-  def cache_temperatures(self) -> Tuple[str, ...]:
+  def cache_temperatures(self) -> tuple[str, ...]:
     return self._cache_temperatures
 
   @property
-  def browsers(self) -> Tuple[Browser, ...]:
+  def browsers(self) -> tuple[Browser, ...]:
     return self._browsers
 
   @property
-  def stories(self) -> Tuple[Story, ...]:
+  def stories(self) -> tuple[Story, ...]:
     return self._stories
 
   @property
@@ -381,7 +404,7 @@ class Runner:
     return self._platform
 
   @property
-  def env(self) -> HostEnvironment:
+  def env(self) -> RunnerEnv:
     return self._env
 
   @property
@@ -393,26 +416,26 @@ class Runner:
     return self._results_db
 
   @property
-  def all_runs(self) -> Tuple[Run, ...]:
+  def all_runs(self) -> tuple[Run, ...]:
     return tuple(self._all_runs)
 
   @property
-  def runs(self) -> Tuple[Run, ...]:
+  def runs(self) -> tuple[Run, ...]:
     return tuple(self._measured_runs)
 
   @property
-  def cache_temperatures_groups(self) -> Tuple[CacheTemperaturesRunGroup, ...]:
+  def cache_temperatures_groups(self) -> tuple[CacheTemperaturesRunGroup, ...]:
     assert self._cache_temperatures_groups, (
         f"No CacheTemperatureRunGroup in {self}")
     return self._cache_temperatures_groups
 
   @property
-  def repetitions_groups(self) -> Tuple[RepetitionsRunGroup, ...]:
+  def repetitions_groups(self) -> tuple[RepetitionsRunGroup, ...]:
     assert self._repetitions_groups, f"No RepetitionsRunGroup in {self}"
     return self._repetitions_groups
 
   @property
-  def story_groups(self) -> Tuple[StoriesRunGroup, ...]:
+  def story_groups(self) -> tuple[StoriesRunGroup, ...]:
     assert self._story_groups, f"No StoriesRunGroup in {self}"
     return self._story_groups
 
@@ -425,11 +448,13 @@ class Runner:
   def has_browser_group(self) -> bool:
     return self._browser_group is not None
 
-  def wait_range(self, min_wait: AnyTimeUnit, timeout: AnyTimeUnit,
-                 delay: AnyTimeUnit) -> WaitRange:
+  def wait_range(self,
+                 min_interval: AnyTimeUnit,
+                 timeout: AnyTimeUnit,
+                 delay: AnyTimeUnit = 0) -> WaitRange:
     timing = self.timing
     return WaitRange(
-        min=timing.timedelta(min_wait),
+        min=timing.timedelta(min_interval),
         timeout=timing.timeout_timedelta(timeout),
         delay=timing.timedelta(delay))
 
@@ -441,7 +466,7 @@ class Runner:
 
   def run(self, is_dry_run: bool = False) -> None:
     self._state.expect(RunnerState.INITIAL)
-    with SystemSleepPreventer(self._platform):
+    with WakeLock(self._platform):
       with self._exceptions.annotate("Preparing"):
         self._setup()
       with self._exceptions.capture("Running"):
@@ -467,6 +492,8 @@ class Runner:
     assert self.browsers, "No browsers provided: self.browsers is empty"
     assert self.stories, "No stories provided: self.stories is empty"
     self._setup_validate_browsers()
+    with self._exceptions.annotate("Preparing Probes"):
+      self._setup_probes()
     with self._exceptions.annotate("Preparing Runs"):
       self._all_runs = list(self.get_runs())
       assert self._all_runs, f"{type(self)}.get_runs() produced no runs"
@@ -494,6 +521,11 @@ class Runner:
       assert probe in self._probes, (
           f"Browser {browser} probe {probe} not in Runner.probes. "
           "Use Runner.attach_probe()")
+
+  def _setup_probes(self) -> None:
+    for probe in self.probes:
+      with self._exceptions.annotate(f"Preparing Probe: {probe.name}"):
+        probe.setup(self)
 
   def has_any_live_network(self) -> bool:
     return any(browser.network.is_live for browser in self.browsers)
@@ -526,24 +558,30 @@ class Runner:
             if len(self.cache_temperatures) > 1:
               name_parts.append(f"temperature={temperature_icon(temperature)}")
             name_parts.append(f"index={index}")
+            action_runner = self.benchmark.new_action_runner(browser.platform)
+            action_runner.set_step_by_step_mode(self._step_by_step_mode)
             yield self.create_run(
                 browser_session,
                 story,
+                action_runner,
                 repetition,
                 is_warmup,
                 f"{t_index}_{temperature}",
                 index,
                 name=", ".join(name_parts),
                 timeout=self.timing.run_timeout,
-                throw=throw)
+                throw=throw,
+                env_validation_mode=self.env.validation_mode)
             index += 1
           browser_session.set_ready()
 
   def create_run(self, browser_session: BrowserSessionRunGroup, story: Story,
-                 repetition: int, is_warmup: bool, temperature: str, index: int,
-                 name: str, timeout: dt.timedelta, throw: bool) -> Run:
-    return Run(self, browser_session, story, repetition, is_warmup, temperature,
-               index, name, timeout, throw)
+                 action_runner: ActionRunner, repetition: int, is_warmup: bool,
+                 temperature: str, index: int, name: str, timeout: dt.timedelta,
+                 throw: bool, env_validation_mode: ValidationMode) -> Run:
+    return Run(self, browser_session, story, action_runner, repetition,
+               is_warmup, temperature, index, name, timeout, throw,
+               env_validation_mode)
 
   def assert_successful_sessions_and_runs(self) -> None:
     if self._exceptions.is_success:
@@ -567,15 +605,17 @@ class Runner:
     # Raise a RunnerException to be handled in the CLI.
     self._exceptions.assert_success(message, RunnerException)
 
-  def _get_thread_groups(self) -> List[RunThreadGroup]:
+  def _get_thread_groups(self) -> list[RunThreadGroup]:
     # Also include warmup runs here.
     return self._thread_mode.group(self._all_runs)
 
   def _run(self, is_dry_run: bool = False) -> None:
     self._state.transition(RunnerState.SETUP, to=RunnerState.RUNNING)
-    thread_groups: List[RunThreadGroup] = []
+    thread_groups: list[RunThreadGroup] = []
     with self._exceptions.info("Creating thread groups for all Runs"):
       thread_groups = self._get_thread_groups()
+      for thread_group in thread_groups:
+        thread_group.is_dry_run = is_dry_run
 
     group_count = len(thread_groups)
     if group_count == 1:
@@ -584,7 +624,6 @@ class Runner:
 
     with self._exceptions.annotate(f"Starting {group_count} thread groups."):
       for thread_group in thread_groups:
-        thread_group.is_dry_run = is_dry_run
         thread_group.start()
     with self._exceptions.annotate(
         "Waiting for all thread groups to complete."):
@@ -634,10 +673,62 @@ class Runner:
         group_exceptions.extend(group.exceptions, is_nested=True)
     finally:
       self._exceptions.extend(group_exceptions)
-      if not group_exceptions.is_success:
+      # Don't clutter the output if we have global failures.
+      any_successful_group = any(group.is_success for group in groups)
+      if any_successful_group and not group_exceptions.is_success:
         group_exceptions.log(
             f"❗ MERGED {group_name.upper()} PROBE DATA WITH ERRORS",
             separator="-")
+
+  def update_symlinks(self) -> None:
+    if not self.create_symlinks:
+      logging.debug("Symlink disabled by command line option")
+      return
+    if self.out_dir.exists():
+      self._create_runs_results_symlinks()
+
+  def _create_runs_results_symlinks(self) -> None:
+    assert self.create_symlinks
+    results_root = self.out_dir.parent
+    runs: tuple[Run, ...] = self.all_runs
+    if not runs:
+      logging.debug("Skip creating result symlinks in '%s': no runs produced.",
+                    results_root)
+      return
+    self._create_first_last_run_symlinks(runs)
+    self._create_runs_symlinks(runs)
+    self._create_sessions_symlinks(runs)
+
+  def _create_first_last_run_symlinks(self, runs: tuple[Run, ...]) -> None:
+    out_dir = self.out_dir
+    first_run_dir = out_dir / "first_run"
+    if first_run_dir.exists():
+      logging.error("Cannot create first_run symlink: %s", first_run_dir)
+    else:
+      first_run_dir.symlink_to(runs[0].out_dir.relative_to(out_dir))
+    last_run_dir = out_dir / "last_run"
+    if last_run_dir.exists():
+      logging.error("Cannot create last_run symlink: %s", last_run_dir)
+    else:
+      last_run_dir.symlink_to(runs[-1].out_dir.relative_to(out_dir))
+
+  def _create_runs_symlinks(self, runs: tuple[Run, ...]) -> None:
+    out_dir = self.out_dir
+    runs_dir = out_dir / "runs"
+    runs_dir.mkdir()
+    for run in runs:
+      if not run.out_dir.exists():
+        continue
+      relative = pth.LocalPath("..") / run.out_dir.relative_to(out_dir)
+      (runs_dir / str(run.index)).symlink_to(relative)
+
+  def _create_sessions_symlinks(self, runs: tuple[Run, ...]) -> None:
+    out_dir = self.out_dir
+    sessions_dir = out_dir / "sessions"
+    sessions_dir.mkdir()
+    for session in set(run.browser_session for run in runs):
+      relative = pth.LocalPath("..") / session.path.relative_to(out_dir)
+      (sessions_dir / str(session.index)).symlink_to(relative)
 
 
 TEMPERATURE_ICONS = {

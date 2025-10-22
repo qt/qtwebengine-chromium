@@ -4,27 +4,15 @@
 
 #include "crypto/hash.h"
 
+#include <ostream>
+
+#include "base/check.h"
+#include "base/check_op.h"
 #include "base/notreached.h"
 #include "third_party/boringssl/src/include/openssl/digest.h"
 #include "third_party/boringssl/src/include/openssl/evp.h"
 
 namespace crypto::hash {
-
-namespace {
-
-const EVP_MD* EVPMDForHashKind(HashKind kind) {
-  switch (kind) {
-    case HashKind::kSha1:
-      return EVP_sha1();
-    case HashKind::kSha256:
-      return EVP_sha256();
-    case HashKind::kSha512:
-      return EVP_sha512();
-  }
-  NOTREACHED();
-}
-
-}  // namespace
 
 void Hash(HashKind kind,
           base::span<const uint8_t> data,
@@ -36,10 +24,18 @@ void Hash(HashKind kind,
                    nullptr));
 }
 
+void Hash(HashKind kind, std::string_view data, base::span<uint8_t> digest) {
+  Hash(kind, base::as_byte_span(data), digest);
+}
+
 std::array<uint8_t, kSha1Size> Sha1(base::span<const uint8_t> data) {
   std::array<uint8_t, kSha1Size> result;
   Hash(HashKind::kSha1, data, result);
   return result;
+}
+
+std::array<uint8_t, kSha1Size> Sha1(std::string_view data) {
+  return Sha1(base::as_byte_span(data));
 }
 
 std::array<uint8_t, kSha256Size> Sha256(base::span<const uint8_t> data) {
@@ -48,10 +44,46 @@ std::array<uint8_t, kSha256Size> Sha256(base::span<const uint8_t> data) {
   return result;
 }
 
+std::array<uint8_t, kSha256Size> Sha256(std::string_view data) {
+  return Sha256(base::as_byte_span(data));
+}
+
 std::array<uint8_t, kSha512Size> Sha512(base::span<const uint8_t> data) {
   std::array<uint8_t, kSha512Size> result;
   Hash(HashKind::kSha512, data, result);
   return result;
+}
+
+std::array<uint8_t, kSha512Size> Sha512(std::string_view data) {
+  return Sha512(base::as_byte_span(data));
+}
+
+const EVP_MD* EVPMDForHashKind(HashKind kind) {
+  switch (kind) {
+    case HashKind::kSha1:
+      return EVP_sha1();
+    case HashKind::kSha256:
+      return EVP_sha256();
+    case HashKind::kSha384:
+      return EVP_sha384();
+    case HashKind::kSha512:
+      return EVP_sha512();
+  }
+  NOTREACHED();
+}
+
+std::optional<HashKind> HashKindForEVPMD(const EVP_MD* evp_md) {
+  switch (EVP_MD_type(evp_md)) {
+    case NID_sha1:
+      return crypto::hash::kSha1;
+    case NID_sha256:
+      return crypto::hash::kSha256;
+    case NID_sha384:
+      return crypto::hash::kSha384;
+    case NID_sha512:
+      return crypto::hash::kSha512;
+  }
+  return std::nullopt;
 }
 
 Hasher::Hasher(HashKind kind) {
@@ -79,10 +111,17 @@ Hasher& Hasher::operator=(Hasher&& other) {
 Hasher::~Hasher() = default;
 
 void Hasher::Update(base::span<const uint8_t> data) {
+  CHECK(EVP_MD_CTX_md(ctx_.get()))
+      << "Hasher::Update() called after Hasher::Finish()";
   CHECK(EVP_DigestUpdate(ctx_.get(), data.data(), data.size()));
 }
 
+void Hasher::Update(std::string_view data) {
+  Update(base::as_byte_span(data));
+}
+
 void Hasher::Finish(base::span<uint8_t> digest) {
+  CHECK(EVP_MD_CTX_md(ctx_.get())) << "Hasher::Finish() called multiple times";
   CHECK_EQ(digest.size(), EVP_MD_CTX_size(ctx_.get()));
   CHECK(EVP_DigestFinal(ctx_.get(), digest.data(), nullptr));
 }

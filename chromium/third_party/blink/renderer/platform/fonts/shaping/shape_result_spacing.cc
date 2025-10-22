@@ -123,7 +123,8 @@ TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::NextExpansion() {
 template <typename TextContainerType>
 TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::ComputeSpacing(
     const ComputeSpacingParameters& parameters,
-    float& offset) {
+    float& offset,
+    bool is_cursive_script) {
   DCHECK(has_spacing_);
   unsigned index = parameters.index;
   UChar32 character = text_[index];
@@ -132,18 +133,28 @@ TextRunLayoutUnit ShapeResultSpacing<TextContainerType>::ComputeSpacing(
        (normalize_space_ &&
         Character::IsNormalizedCanvasSpaceCharacter(character))) &&
       (character != '\t' || !allow_tabs_);
-  if (treat_as_space && character != kNoBreakSpaceCharacter)
-    character = kSpaceCharacter;
+  if (treat_as_space && character != uchar::kNoBreakSpace) {
+    character = uchar::kSpace;
+  }
 
   TextRunLayoutUnit spacing;
 
   bool has_letter_spacing = letter_spacing_;
-  if (has_letter_spacing && !Character::TreatAsZeroWidthSpace(character))
+  bool apply_letter_spacing =
+      RuntimeEnabledFeatures::IgnoreLetterSpacingInCursiveScriptsEnabled()
+          ? !is_cursive_script
+          : true;
+  if (has_letter_spacing && !Character::TreatAsZeroWidthSpace(character) &&
+      apply_letter_spacing) {
     spacing += letter_spacing_;
+    is_letter_spacing_applied_ = true;
+  }
 
   if (treat_as_space && (allow_word_spacing_anywhere_ || index ||
-                         character == kNoBreakSpaceCharacter))
+                         character == uchar::kNoBreakSpace)) {
     spacing += word_spacing_;
+    is_word_spacing_applied_ = true;
+  }
 
   if (!HasExpansion())
     return spacing;

@@ -12,11 +12,13 @@
 #include "third_party/blink/renderer/core/css/style_scope_data.h"
 #include "third_party/blink/renderer/core/display_lock/display_lock_context.h"
 #include "third_party/blink/renderer/core/dom/attr.h"
+#include "third_party/blink/renderer/core/dom/css_pseudo_element.h"
 #include "third_party/blink/renderer/core/dom/dataset_dom_string_map.h"
 #include "third_party/blink/renderer/core/dom/dom_token_list.h"
+#include "third_party/blink/renderer/core/dom/explicitly_set_attr_elements_map.h"
 #include "third_party/blink/renderer/core/dom/has_invalidation_flags.h"
-#include "third_party/blink/renderer/core/dom/interest_invoker_data.h"
 #include "third_party/blink/renderer/core/dom/interest_invoker_target_data.h"
+#include "third_party/blink/renderer/core/dom/invoker_data.h"
 #include "third_party/blink/renderer/core/dom/named_node_map.h"
 #include "third_party/blink/renderer/core/dom/names_map.h"
 #include "third_party/blink/renderer/core/dom/node_rare_data.h"
@@ -27,6 +29,7 @@
 #include "third_party/blink/renderer/core/editing/ime/edit_context.h"
 #include "third_party/blink/renderer/core/html/anchor_element_observer.h"
 #include "third_party/blink/renderer/core/html/custom/custom_element_definition.h"
+#include "third_party/blink/renderer/core/html/custom/custom_element_registry.h"
 #include "third_party/blink/renderer/core/html/custom/element_internals.h"
 #include "third_party/blink/renderer/core/html/html_element.h"
 #include "third_party/blink/renderer/core/intersection_observer/element_intersection_observer_data.h"
@@ -98,10 +101,11 @@ PseudoElement* ElementRareDataVector::GetPseudoElement(
     return nullptr;
   return data->GetPseudoElement(pseudo_id, document_transition_tag);
 }
-bool ElementRareDataVector::HasViewTransitionGroupPseudoElement() const {
+
+bool ElementRareDataVector::HasScrollButtonOrMarkerGroupPseudos() const {
   PseudoElementData* data =
       static_cast<PseudoElementData*>(GetField(FieldId::kPseudoElementData));
-  return data && data->HasViewTransitionGroupPseudoElement();
+  return data && data->HasScrollButtonOrMarkerGroupPseudos();
 }
 
 PseudoElementData::PseudoElementVector
@@ -421,17 +425,12 @@ void ElementRareDataVector::RemovePopoverData() {
   SetField(FieldId::kPopoverData, nullptr);
 }
 
-InterestInvokerData* ElementRareDataVector::GetInterestInvokerData() const {
-  return static_cast<InterestInvokerData*>(
-      GetField(FieldId::kInterestInvokerData));
+InvokerData* ElementRareDataVector::GetInvokerData() const {
+  return static_cast<InvokerData*>(GetField(FieldId::kInvokerData));
 }
-InterestInvokerData& ElementRareDataVector::EnsureInterestInvokerData() {
-  return EnsureField<InterestInvokerData>(FieldId::kInterestInvokerData);
+InvokerData& ElementRareDataVector::EnsureInvokerData() {
+  return EnsureField<InvokerData>(FieldId::kInvokerData);
 }
-void ElementRareDataVector::RemoveInterestInvokerData() {
-  SetField(FieldId::kInterestInvokerData, nullptr);
-}
-
 InterestInvokerTargetData* ElementRareDataVector::GetInterestInvokerTargetData()
     const {
   return static_cast<InterestInvokerTargetData*>(
@@ -469,6 +468,24 @@ ElementRareDataVector::GetScrollMarkerGroupContainerData() const {
       GetField(FieldId::kScrollMarkerGroupContainerData));
 }
 
+void ElementRareDataVector::CacheCSSPseudoElement(
+    PseudoId pseudo_id,
+    CSSPseudoElement& pseudo_element) {
+  auto& data =
+      EnsureField<CSSPseudoElementsCacheData>(FieldId::kCSSPseudoElementData);
+  data.CacheCSSPseudoElement(pseudo_id, pseudo_element);
+}
+
+CSSPseudoElement* ElementRareDataVector::GetCSSPseudoElement(
+    PseudoId pseudo_id) const {
+  auto* data = static_cast<CSSPseudoElementsCacheData*>(
+      GetField(FieldId::kCSSPseudoElementData));
+  if (!data) {
+    return {};
+  }
+  return data->GetCSSPseudoElement(pseudo_id);
+}
+
 AnchorPositionScrollData* ElementRareDataVector::GetAnchorPositionScrollData()
     const {
   return static_cast<AnchorPositionScrollData*>(
@@ -485,6 +502,18 @@ AnchorPositionScrollData& ElementRareDataVector::EnsureAnchorPositionScrollData(
       FieldId::kAnchorPositionScrollData, anchored_element);
 }
 
+ExplicitlySetAttrElementsMap*
+ElementRareDataVector::GetExplicitlySetElementsForAttr() const {
+  return static_cast<ExplicitlySetAttrElementsMap*>(
+      GetField(FieldId::kExplicitlySetElementsForAttr));
+}
+
+ExplicitlySetAttrElementsMap&
+ElementRareDataVector::EnsureExplicitlySetElementsForAttr() {
+  return EnsureField<ExplicitlySetAttrElementsMap>(
+      FieldId::kExplicitlySetElementsForAttr);
+}
+
 AnchorElementObserver& ElementRareDataVector::EnsureAnchorElementObserver(
     Element* new_source_element) {
   DCHECK(!GetAnchorElementObserver() ||
@@ -497,6 +526,17 @@ AnchorElementObserver& ElementRareDataVector::EnsureAnchorElementObserver(
 AnchorElementObserver* ElementRareDataVector::GetAnchorElementObserver() const {
   return static_cast<AnchorElementObserver*>(
       GetField(FieldId::kAnchorElementObserver));
+}
+
+CustomElementRegistry* ElementRareDataVector::GetCustomElementRegistry() const {
+  return static_cast<CustomElementRegistry*>(
+      GetField(FieldId::kCustomElementRegistry));
+}
+
+void ElementRareDataVector::SetCustomElementRegistry(CustomElementRegistry* registry) {
+  // An element's custom element registry should only be set once.
+  CHECK_EQ(GetField(FieldId::kCustomElementRegistry), nullptr);
+  SetField(FieldId::kCustomElementRegistry, registry);
 }
 
 void ElementRareDataVector::IncrementImplicitlyAnchoredElementCount() {

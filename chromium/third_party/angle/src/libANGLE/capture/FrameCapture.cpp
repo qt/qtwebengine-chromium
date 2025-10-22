@@ -131,7 +131,6 @@ std::string GetCaptureTrigger()
     // Use the GetAndSet variant to improve future lookup times
     return GetAndSetEnvironmentVarOrUnCachedAndroidProperty(kTriggerVarName, kAndroidTrigger);
 }
-
 struct FmtGetSerializedContextStateFunction
 {
     FmtGetSerializedContextStateFunction(gl::ContextID contextIdIn,
@@ -184,7 +183,7 @@ void WriteStringParamReplay(ReplayWriter &replayWriter,
                             std::ostream &header,
                             const CallCapture &call,
                             const ParamCapture &param,
-                            std::vector<uint8_t> *binaryData)
+                            FrameCaptureBinaryData *binaryData)
 {
     const std::vector<uint8_t> &data = param.data[0];
     // null terminate C style string
@@ -196,10 +195,8 @@ void WriteStringParamReplay(ReplayWriter &replayWriter,
     {
         // Store in binary file if the string is too long.
         // Round up to 16-byte boundary for cross ABI safety.
-        size_t offset = rx::roundUpPow2(binaryData->size(), kBinaryAlignment);
-        binaryData->resize(offset + str.size() + 1);
-        memcpy(binaryData->data() + offset, str.data(), str.size() + 1);
-        out << "(const char *)&gBinaryData[" << offset << "]";
+        const size_t offset = binaryData->append(str.data(), str.size() + 1);
+        out << "(const char *)GetBinaryData(" << offset << ")";
     }
     else if (str.find('\n') != std::string::npos)
     {
@@ -272,7 +269,7 @@ void WriteCppReplayForCall(const CallCapture &call,
                            ReplayWriter &replayWriter,
                            std::ostream &out,
                            std::ostream &header,
-                           std::vector<uint8_t> *binaryData,
+                           FrameCaptureBinaryData *binaryData,
                            size_t *maxResourceIDBufferSize)
 {
     if (call.customFunctionName == "Comment")
@@ -443,7 +440,7 @@ void WriteInitReplayCall(bool compression,
         const char *name = GetResourceIDTypeName(resourceID);
         out << "    // max" << name << " = " << maxIDs[resourceID] << "\n";
     }
-    out << "    InitializeReplay4(\"" << binaryDataFileName << "\", " << maxClientArraySize << ", "
+    out << "    InitializeReplay5(\"" << binaryDataFileName << "\", " << maxClientArraySize << ", "
         << readBufferSize << ", " << resourceIDBufferSize << ", " << contextID;
 
     for (ResourceIDType resourceID : AllEnums<ResourceIDType>())
@@ -454,6 +451,8 @@ void WriteInitReplayCall(bool compression,
     }
 
     out << ");\n";
+    // Load binary data
+    out << "    InitializeBinaryDataLoader();\n";
 }
 
 void DeleteResourcesInReset(std::stringstream &out,
@@ -495,7 +494,7 @@ void MaybeResetResources(egl::Display *display,
                          std::stringstream &out,
                          std::stringstream &header,
                          ResourceTracker *resourceTracker,
-                         std::vector<uint8_t> *binaryData,
+                         FrameCaptureBinaryData *binaryData,
                          bool &anyResourceReset,
                          size_t *maxResourceIDBufferSize)
 {
@@ -942,7 +941,7 @@ void MaybeResetFenceSyncObjects(std::stringstream &out,
                                 ReplayWriter &replayWriter,
                                 std::stringstream &header,
                                 ResourceTracker *resourceTracker,
-                                std::vector<uint8_t> *binaryData,
+                                FrameCaptureBinaryData *binaryData,
                                 size_t *maxResourceIDBufferSize)
 {
     FenceSyncCalls &fenceSyncRegenCalls = resourceTracker->getFenceSyncRegenCalls();
@@ -1016,7 +1015,7 @@ void MaybeResetDefaultUniforms(std::stringstream &out,
                                std::stringstream &header,
                                const gl::Context *context,
                                ResourceTracker *resourceTracker,
-                               std::vector<uint8_t> *binaryData,
+                               FrameCaptureBinaryData *binaryData,
                                size_t *maxResourceIDBufferSize)
 {
     DefaultUniformLocationsPerProgramMap &defaultUniformsToReset =
@@ -1083,7 +1082,7 @@ void MaybeResetOpaqueTypeObjects(ReplayWriter &replayWriter,
                                  std::stringstream &header,
                                  const gl::Context *context,
                                  ResourceTracker *resourceTracker,
-                                 std::vector<uint8_t> *binaryData,
+                                 FrameCaptureBinaryData *binaryData,
                                  size_t *maxResourceIDBufferSize)
 {
     MaybeResetFenceSyncObjects(out, replayWriter, header, resourceTracker, binaryData,
@@ -1098,7 +1097,7 @@ void MaybeResetContextState(ReplayWriter &replayWriter,
                             std::stringstream &header,
                             ResourceTracker *resourceTracker,
                             const gl::Context *context,
-                            std::vector<uint8_t> *binaryData,
+                            FrameCaptureBinaryData *binaryData,
                             StateResetHelper &stateResetHelper,
                             size_t *maxResourceIDBufferSize)
 {
@@ -1233,7 +1232,7 @@ void WriteCppReplayFunctionWithParts(const gl::ContextID contextID,
                                      ReplayFunc replayFunc,
                                      ReplayWriter &replayWriter,
                                      uint32_t frameIndex,
-                                     std::vector<uint8_t> *binaryData,
+                                     FrameCaptureBinaryData *binaryData,
                                      const std::vector<CallCapture> &calls,
                                      std::stringstream &header,
                                      std::stringstream &out,
@@ -1308,7 +1307,7 @@ void WriteCppReplayFunctionWithPartsMultiContext(const gl::ContextID contextID,
                                                  ReplayFunc replayFunc,
                                                  ReplayWriter &replayWriter,
                                                  uint32_t frameIndex,
-                                                 std::vector<uint8_t> *binaryData,
+                                                 FrameCaptureBinaryData *binaryData,
                                                  std::vector<CallCapture> &calls,
                                                  std::stringstream &header,
                                                  std::stringstream &out,
@@ -1459,7 +1458,7 @@ void WriteAuxiliaryContextCppSetupReplay(ReplayWriter &replayWriter,
                                          const std::string &captureLabel,
                                          uint32_t frameIndex,
                                          const std::vector<CallCapture> &setupCalls,
-                                         std::vector<uint8_t> *binaryData,
+                                         FrameCaptureBinaryData *binaryData,
                                          bool serializeStateEnabled,
                                          const FrameCaptureShared &frameCaptureShared,
                                          size_t *maxResourceIDBufferSize)
@@ -1511,7 +1510,7 @@ void WriteShareGroupCppSetupReplay(ReplayWriter &replayWriter,
                                    uint32_t frameCount,
                                    const std::vector<CallCapture> &setupCalls,
                                    ResourceTracker *resourceTracker,
-                                   std::vector<uint8_t> *binaryData,
+                                   FrameCaptureBinaryData *binaryData,
                                    bool serializeStateEnabled,
                                    gl::ContextID windowSurfaceContextID,
                                    size_t *maxResourceIDBufferSize)
@@ -2685,6 +2684,7 @@ void CaptureVertexArrayState(std::vector<CallCapture> *setupCalls,
 
         const gl::VertexAttribute &attrib = vertexAttribs[attribIndex];
         const gl::VertexBinding &binding  = vertexBindings[attrib.bindingIndex];
+        gl::Buffer *buffer                = vertexArray->getVertexArrayBuffer(attrib.bindingIndex);
 
         if (attrib.enabled != defaultAttrib.enabled)
         {
@@ -2703,17 +2703,15 @@ void CaptureVertexArrayState(std::vector<CallCapture> *setupCalls,
 
         // Don't capture CaptureVertexAttribPointer calls when a non-default VAO is bound, the array
         // buffer is null and a non-null attrib pointer is used.
-        bool skipInvalidAttrib = vertexArray->id().value != 0 &&
-                                 binding.getBuffer().get() == nullptr && attrib.pointer != nullptr;
+        bool skipInvalidAttrib =
+            vertexArray->id().value != 0 && buffer == nullptr && attrib.pointer != nullptr;
 
         if (!skipInvalidAttrib &&
             (attrib.format != defaultAttrib.format || attrib.pointer != defaultAttrib.pointer ||
              binding.getStride() != defaultBinding.getStride() ||
-             attrib.bindingIndex != defaultAttrib.bindingIndex ||
-             binding.getBuffer().get() != nullptr))
+             attrib.bindingIndex != defaultAttrib.bindingIndex || buffer != nullptr))
         {
             // Each attribute can pull from a separate buffer, so check the binding
-            gl::Buffer *buffer = binding.getBuffer().get();
             if (buffer != replayState->getArrayBuffer())
             {
                 replayState->setBufferBinding(context, gl::BufferBinding::Array, buffer);
@@ -2799,13 +2797,13 @@ void CaptureVertexArrayState(std::vector<CallCapture> *setupCalls,
     for (size_t bindingIndex : vertexPointerBindings.flip())
     {
         const gl::VertexBinding &binding = vertexBindings[bindingIndex];
+        gl::Buffer *buffer               = vertexArray->getVertexArrayBuffer(bindingIndex);
 
-        if (binding.getBuffer().id().value != 0)
+        if (buffer)
         {
-            Capture(setupCalls,
-                    CaptureBindVertexBuffer(*replayState, true, static_cast<GLuint>(bindingIndex),
-                                            binding.getBuffer().id(), binding.getOffset(),
-                                            binding.getStride()));
+            Capture(setupCalls, CaptureBindVertexBuffer(
+                                    *replayState, true, static_cast<GLuint>(bindingIndex),
+                                    buffer->id(), binding.getOffset(), binding.getStride()));
         }
 
         if (binding.getDivisor() != 0)
@@ -3541,6 +3539,42 @@ void CompressPalettedTexture(angle::MemoryBuffer &data,
         indexBits * extents.width / 8,                              // outputRowPitch
         indexBits * extents.width * extents.height / 8              // outputDepthPitch
     );
+}
+
+bool BlendStateEqualPerDrawBuffer(const gl::State &currentState)
+{
+    const gl::BlendStateExt &currentBlend = currentState.getBlendStateExt();
+
+    // For each buffer, compare again the zero buffer state
+    for (unsigned int idx = 1; idx < currentBlend.getDrawBufferCount(); idx++)
+    {
+        if (currentBlend.getEnabledMask().test(0) != currentBlend.getEnabledMask().test(idx))
+        {
+            return false;
+        }
+
+        if (currentBlend.getSrcColorIndexed(0) != currentBlend.getSrcColorIndexed(idx) ||
+            currentBlend.getDstColorIndexed(0) != currentBlend.getDstColorIndexed(idx) ||
+            currentBlend.getSrcAlphaIndexed(0) != currentBlend.getSrcAlphaIndexed(idx) ||
+            currentBlend.getDstAlphaIndexed(0) != currentBlend.getDstAlphaIndexed(idx))
+        {
+            return false;
+        }
+
+        if (currentBlend.getEquationColorIndexed(0) != currentBlend.getEquationColorIndexed(idx) ||
+            currentBlend.getEquationAlphaIndexed(0) != currentBlend.getEquationAlphaIndexed(idx))
+        {
+            return false;
+        }
+
+        if (currentBlend.getColorMaskIndexed(0) != currentBlend.getColorMaskIndexed(idx))
+        {
+            return false;
+        }
+    }
+
+    // If we reach here, all buffer blend states match the zero buffer
+    return true;
 }
 
 // Capture the setup of the state that's shared by all of the contexts in the share group
@@ -5262,70 +5296,151 @@ void CaptureMidExecutionSetup(const gl::Context *context,
     }
 
     // Blend state.
-    const gl::BlendState &defaultBlendState = replayState.getBlendState();
-    const gl::BlendState &currentBlendState = apiState.getBlendState();
 
-    if (currentBlendState.blend != defaultBlendState.blend)
+    // First, check if every draw buffer blend state matches zero buffer.
+    // If so, we can set them all the same using calls available before ES 3.2
+    if (BlendStateEqualPerDrawBuffer(apiState))
     {
-        capCap(GL_BLEND, currentBlendState.blend);
-    }
+        const gl::BlendState &defaultBlendState = replayState.getBlendState();
+        const gl::BlendState &currentBlendState = apiState.getBlendState();
 
-    if (currentBlendState.sourceBlendRGB != defaultBlendState.sourceBlendRGB ||
-        currentBlendState.destBlendRGB != defaultBlendState.destBlendRGB ||
-        currentBlendState.sourceBlendAlpha != defaultBlendState.sourceBlendAlpha ||
-        currentBlendState.destBlendAlpha != defaultBlendState.destBlendAlpha)
-    {
-        if (context->isGLES1())
+        if (currentBlendState.blend != defaultBlendState.blend)
         {
-            // Even though their states are tracked independently, in GLES1 blendAlpha
-            // and blendRGB cannot be set separately and are always equal
-            cap(CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
-                                 currentBlendState.destBlendRGB));
-            Capture(&resetCalls[angle::EntryPoint::GLBlendFunc],
-                    CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
-                                     currentBlendState.destBlendRGB));
+            capCap(GL_BLEND, currentBlendState.blend);
         }
-        else
+
+        if (currentBlendState.sourceBlendRGB != defaultBlendState.sourceBlendRGB ||
+            currentBlendState.destBlendRGB != defaultBlendState.destBlendRGB ||
+            currentBlendState.sourceBlendAlpha != defaultBlendState.sourceBlendAlpha ||
+            currentBlendState.destBlendAlpha != defaultBlendState.destBlendAlpha)
         {
-            // Always use BlendFuncSeparate for non-GLES1 as it covers all cases
-            cap(CaptureBlendFuncSeparate(
-                replayState, true, currentBlendState.sourceBlendRGB, currentBlendState.destBlendRGB,
-                currentBlendState.sourceBlendAlpha, currentBlendState.destBlendAlpha));
-            Capture(&resetCalls[angle::EntryPoint::GLBlendFuncSeparate],
-                    CaptureBlendFuncSeparate(replayState, true, currentBlendState.sourceBlendRGB,
+            if (context->isGLES1())
+            {
+                // Even though their states are tracked independently, in GLES1 blendAlpha
+                // and blendRGB cannot be set separately and are always equal
+                cap(CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
+                                     currentBlendState.destBlendRGB));
+                Capture(&resetCalls[angle::EntryPoint::GLBlendFunc],
+                        CaptureBlendFunc(replayState, true, currentBlendState.sourceBlendRGB,
+                                         currentBlendState.destBlendRGB));
+            }
+            else
+            {
+                // Always use BlendFuncSeparate for non-GLES1 as it covers all cases
+                cap(CaptureBlendFuncSeparate(replayState, true, currentBlendState.sourceBlendRGB,
                                              currentBlendState.destBlendRGB,
                                              currentBlendState.sourceBlendAlpha,
                                              currentBlendState.destBlendAlpha));
+                Capture(&resetCalls[angle::EntryPoint::GLBlendFuncSeparate],
+                        CaptureBlendFuncSeparate(
+                            replayState, true, currentBlendState.sourceBlendRGB,
+                            currentBlendState.destBlendRGB, currentBlendState.sourceBlendAlpha,
+                            currentBlendState.destBlendAlpha));
+            }
         }
-    }
 
-    if (currentBlendState.blendEquationRGB != defaultBlendState.blendEquationRGB ||
-        currentBlendState.blendEquationAlpha != defaultBlendState.blendEquationAlpha)
-    {
-        // Similarly to BlendFunc, using BlendEquation in some cases complicates Reset.
-        cap(CaptureBlendEquationSeparate(replayState, true, currentBlendState.blendEquationRGB,
-                                         currentBlendState.blendEquationAlpha));
-        Capture(&resetCalls[angle::EntryPoint::GLBlendEquationSeparate],
+        if (currentBlendState.blendEquationRGB != defaultBlendState.blendEquationRGB ||
+            currentBlendState.blendEquationAlpha != defaultBlendState.blendEquationAlpha)
+        {
+            // Similarly to BlendFunc, using BlendEquation in some cases complicates Reset.
+            cap(CaptureBlendEquationSeparate(replayState, true, currentBlendState.blendEquationRGB,
+                                             currentBlendState.blendEquationAlpha));
+            Capture(
+                &resetCalls[angle::EntryPoint::GLBlendEquationSeparate],
                 CaptureBlendEquationSeparate(replayState, true, currentBlendState.blendEquationRGB,
                                              currentBlendState.blendEquationAlpha));
-    }
+        }
 
-    if (currentBlendState.colorMaskRed != defaultBlendState.colorMaskRed ||
-        currentBlendState.colorMaskGreen != defaultBlendState.colorMaskGreen ||
-        currentBlendState.colorMaskBlue != defaultBlendState.colorMaskBlue ||
-        currentBlendState.colorMaskAlpha != defaultBlendState.colorMaskAlpha)
-    {
-        cap(CaptureColorMask(replayState, true,
-                             gl::ConvertToGLBoolean(currentBlendState.colorMaskRed),
-                             gl::ConvertToGLBoolean(currentBlendState.colorMaskGreen),
-                             gl::ConvertToGLBoolean(currentBlendState.colorMaskBlue),
-                             gl::ConvertToGLBoolean(currentBlendState.colorMaskAlpha)));
-        Capture(&resetCalls[angle::EntryPoint::GLColorMask],
-                CaptureColorMask(replayState, true,
+        if (currentBlendState.colorMaskRed != defaultBlendState.colorMaskRed ||
+            currentBlendState.colorMaskGreen != defaultBlendState.colorMaskGreen ||
+            currentBlendState.colorMaskBlue != defaultBlendState.colorMaskBlue ||
+            currentBlendState.colorMaskAlpha != defaultBlendState.colorMaskAlpha)
+        {
+            cap(CaptureColorMask(replayState, true,
                                  gl::ConvertToGLBoolean(currentBlendState.colorMaskRed),
                                  gl::ConvertToGLBoolean(currentBlendState.colorMaskGreen),
                                  gl::ConvertToGLBoolean(currentBlendState.colorMaskBlue),
                                  gl::ConvertToGLBoolean(currentBlendState.colorMaskAlpha)));
+            Capture(&resetCalls[angle::EntryPoint::GLColorMask],
+                    CaptureColorMask(replayState, true,
+                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskRed),
+                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskGreen),
+                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskBlue),
+                                     gl::ConvertToGLBoolean(currentBlendState.colorMaskAlpha)));
+        }
+    }
+    else
+    {
+        // Otherwise, we must use EXT_draw_buffers_indexed features to set them independently
+        const gl::BlendStateExt &defaultBlend = replayState.getBlendStateExt();
+        const gl::BlendStateExt &currentBlend = apiState.getBlendStateExt();
+
+        for (int idx = 0; idx < currentBlend.getDrawBufferCount(); idx++)
+        {
+            if (currentBlend.getEnabledMask().test(idx) != defaultBlend.getEnabledMask().test(idx))
+            {
+                if (currentBlend.getEnabledMask().test(idx))
+                {
+                    cap(CaptureEnableiEXT(replayState, true, GL_BLEND, static_cast<GLint>(idx)));
+                }
+                else
+                {
+                    cap(CaptureDisableiEXT(replayState, true, GL_BLEND, static_cast<GLint>(idx)));
+                }
+            }
+
+            if (currentBlend.getSrcColorIndexed(idx) != defaultBlend.getSrcColorIndexed(idx) ||
+                currentBlend.getDstColorIndexed(idx) != defaultBlend.getDstColorIndexed(idx) ||
+                currentBlend.getSrcAlphaIndexed(idx) != defaultBlend.getSrcAlphaIndexed(idx) ||
+                currentBlend.getDstAlphaIndexed(idx) != defaultBlend.getDstAlphaIndexed(idx))
+            {
+                // Always use BlendFuncSeparate as it covers all cases
+                cap(CaptureBlendFuncSeparateiEXT(replayState, true, idx,
+                                                 ToGLenum(currentBlend.getSrcColorIndexed(idx)),
+                                                 ToGLenum(currentBlend.getDstColorIndexed(idx)),
+                                                 ToGLenum(currentBlend.getSrcAlphaIndexed(idx)),
+                                                 ToGLenum(currentBlend.getDstAlphaIndexed(idx))));
+                Capture(&resetCalls[angle::EntryPoint::GLBlendFuncSeparate],
+                        CaptureBlendFuncSeparateiEXT(
+                            replayState, true, idx, ToGLenum(currentBlend.getSrcColorIndexed(idx)),
+                            ToGLenum(currentBlend.getDstColorIndexed(idx)),
+                            ToGLenum(currentBlend.getSrcAlphaIndexed(idx)),
+                            ToGLenum(currentBlend.getDstAlphaIndexed(idx))));
+            }
+
+            if (currentBlend.getEquationColorIndexed(idx) !=
+                    defaultBlend.getEquationColorIndexed(idx) ||
+                currentBlend.getEquationAlphaIndexed(idx) !=
+                    defaultBlend.getEquationAlphaIndexed(idx))
+            {
+                // Similarly to BlendFunc, using BlendEquation in some cases complicates Reset.
+                cap(CaptureBlendEquationSeparateiEXT(
+                    replayState, true, idx, ToGLenum(currentBlend.getEquationColorIndexed(idx)),
+                    ToGLenum(currentBlend.getEquationAlphaIndexed(idx))));
+                Capture(
+                    &resetCalls[angle::EntryPoint::GLBlendEquationSeparate],
+                    CaptureBlendEquationSeparateiEXT(
+                        replayState, true, idx, ToGLenum(currentBlend.getEquationColorIndexed(idx)),
+                        ToGLenum(currentBlend.getEquationAlphaIndexed(idx))));
+            }
+
+            if (currentBlend.getColorMaskIndexed(idx) != defaultBlend.getColorMaskIndexed(idx))
+            {
+                cap(CaptureColorMaskiEXT(
+                    replayState, true, idx,
+                    gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 1),
+                    gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 2),
+                    gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 4),
+                    gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 8)));
+                Capture(&resetCalls[angle::EntryPoint::GLColorMask],
+                        CaptureColorMaskiEXT(
+                            replayState, true, idx,
+                            gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 1),
+                            gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 2),
+                            gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 4),
+                            gl::ConvertToGLBoolean(currentBlend.getColorMaskIndexed(idx) & 8)));
+            }
+        }
     }
 
     const gl::ColorF &currentBlendColor = apiState.getBlendColor();
@@ -6692,7 +6807,7 @@ void FrameCaptureShared::maybeCaptureDrawArraysClientData(const gl::Context *con
                                                           CallCapture &call,
                                                           size_t instanceCount)
 {
-    if (!context->getStateCache().hasAnyActiveClientAttrib())
+    if (!context->hasAnyActiveClientAttrib())
     {
         return;
     }
@@ -6708,7 +6823,7 @@ void FrameCaptureShared::maybeCaptureDrawElementsClientData(const gl::Context *c
                                                             CallCapture &call,
                                                             size_t instanceCount)
 {
-    if (!context->getStateCache().hasAnyActiveClientAttrib())
+    if (!context->hasAnyActiveClientAttrib())
     {
         return;
     }
@@ -6745,7 +6860,7 @@ void FrameCaptureShared::maybeCaptureDrawElementsClientData(const gl::Context *c
     }
 
     // index starts from 0
-    captureClientArraySnapshot(context, indexRange.end + 1, instanceCount);
+    captureClientArraySnapshot(context, indexRange.end() + 1, instanceCount);
 }
 
 template <typename AttribT, typename FactoryT>
@@ -7861,7 +7976,7 @@ void FrameCaptureShared::captureClientArraySnapshot(const gl::Context *context,
     const gl::VertexArray *vao = context->getState().getVertexArray();
 
     // Capture client array data.
-    for (size_t attribIndex : context->getStateCache().getActiveClientAttribsMask())
+    for (size_t attribIndex : context->getActiveClientAttribsMask())
     {
         const gl::VertexAttribute &attrib = vao->getVertexAttribute(attribIndex);
         const gl::VertexBinding &binding  = vao->getVertexBinding(attrib.bindingIndex);
@@ -8097,7 +8212,7 @@ void FrameCaptureShared::runMidExecutionCapture(gl::Context *mainContext)
     gl::State mainContextReplayState(
         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, contextState.getClientVersion(),
         false, true, true, true, false, EGL_CONTEXT_PRIORITY_MEDIUM_IMG,
-        contextState.hasRobustAccess(), contextState.hasProtectedContent(), false);
+        contextState.hasRobustAccess(), contextState.hasProtectedContent(), false, false);
     mainContextReplayState.initializeForCapture(mainContext);
 
     CaptureShareGroupMidExecutionSetup(mainContext, &mShareGroupSetupCalls, &mResourceTracker,
@@ -8143,7 +8258,7 @@ void FrameCaptureShared::runMidExecutionCapture(gl::Context *mainContext)
                                             shareContextState.getClientVersion(), false, true, true,
                                             true, false, EGL_CONTEXT_PRIORITY_MEDIUM_IMG,
                                             shareContextState.hasRobustAccess(),
-                                            shareContextState.hasProtectedContent(), false);
+                                            shareContextState.hasProtectedContent(), false, false);
             auxContextReplayState.initializeForCapture(shareContext.second);
 
             egl::Error error = shareContext.second->makeCurrent(display, draw, read);
@@ -8210,20 +8325,26 @@ void FrameCaptureShared::onEndFrame(gl::Context *context)
 
     // On Android, we can trigger a capture during the run
     checkForCaptureTrigger();
+    checkForCaptureEnd();
 
     // Check for MEC. Done after checkForCaptureTrigger(), since that can modify mCaptureStartFrame.
     if (mFrameIndex < mCaptureStartFrame)
     {
         if (mFrameIndex == mCaptureStartFrame - 1)
         {
-            // Update output directory location
-            getOutputDirectory();
+            initalizeTraceStorage();
             // Trigger MEC.
             runMidExecutionCapture(context);
         }
         mFrameIndex++;
         reset();
         return;
+    }
+
+    // If not MEC, initialize capture storage
+    if (mFrameIndex == 1 && mCaptureStartFrame == 1)
+    {
+        initalizeTraceStorage();
     }
 
     ASSERT(isCaptureActive());
@@ -8257,10 +8378,8 @@ void FrameCaptureShared::onEndFrame(gl::Context *context)
 
         // Save the index files after the last frame.
         writeCppReplayIndexFiles(context, false);
-        SaveBinaryData(mCompression, mOutDirectory, kSharedContextId, mCaptureLabel, mBinaryData);
-        mBinaryData.clear();
+
         mWroteIndexFile = true;
-        INFO() << "Finished recording graphics API capture";
     }
 
     reset();
@@ -8281,13 +8400,15 @@ void FrameCaptureShared::onDestroyContext(const gl::Context *context)
         mFrameIndex -= 1;
         mCaptureEndFrame = mFrameIndex;
         writeCppReplayIndexFiles(context, true);
-        SaveBinaryData(mCompression, mOutDirectory, kSharedContextId, mCaptureLabel, mBinaryData);
-        mBinaryData.clear();
+
         mWroteIndexFile = true;
     }
 }
 
-void FrameCaptureShared::onMakeCurrent(const gl::Context *context, const egl::Surface *drawSurface)
+void FrameCaptureShared::onMakeCurrent(const gl::Context *context,
+                                       const egl::Surface *drawSurface,
+                                       EGLint surfaceWidth,
+                                       EGLint surfaceHeight)
 {
     if (!drawSurface)
     {
@@ -8296,8 +8417,16 @@ void FrameCaptureShared::onMakeCurrent(const gl::Context *context, const egl::Su
 
     // Track the width, height and color space of the draw surface as provided to makeCurrent
     SurfaceParams &params = mDrawSurfaceParams[context->id()];
-    params.extents        = gl::Extents(drawSurface->getWidth(), drawSurface->getHeight(), 1);
+    params.extents        = gl::Extents(surfaceWidth, surfaceHeight, 1);
     params.colorSpace     = egl::FromEGLenum<egl::ColorSpace>(drawSurface->getGLColorspace());
+}
+
+void FrameCaptureShared::initalizeTraceStorage()
+{
+    // Update output directory location
+    getOutputDirectory();
+    std::string fileName = GetBinaryDataFilePath(mCompression, mCaptureLabel);
+    mBinaryData.initializeBinaryDataStore(mCompression, mOutDirectory, fileName);
 }
 
 void StateResetHelper::setDefaultResetCalls(const gl::Context *context,
@@ -8557,8 +8686,16 @@ void ResourceTracker::onShaderProgramAccess(gl::ShaderProgramID shaderProgramID)
 // ... etc ...
 void FrameCaptureShared::writeJSON(const gl::Context *context)
 {
+    SurfaceParams noSurface;
+    noSurface.extents.width  = 16;
+    noSurface.extents.height = 9;
+    noSurface.colorSpace     = egl::ColorSpace::sRGB;
+
     const gl::ContextID contextId           = context->id();
-    const SurfaceParams &surfaceParams      = mDrawSurfaceParams.at(contextId);
+    const SurfaceParams &surfaceParams =
+        mDrawSurfaceParams.find(contextId) != mDrawSurfaceParams.end()
+            ? mDrawSurfaceParams.at(contextId)
+            : noSurface;
     const gl::State &glState                = context->getState();
     const egl::Config *config               = context->getConfig();
     const egl::AttributeMap &displayAttribs = context->getDisplay()->getAttributeMap();
@@ -8568,8 +8705,8 @@ void FrameCaptureShared::writeJSON(const gl::Context *context)
     JsonSerializer json;
     json.startGroup("TraceMetadata");
     json.addScalar("CaptureRevision", GetANGLERevision());
-    json.addScalar("ContextClientMajorVersion", context->getClientMajorVersion());
-    json.addScalar("ContextClientMinorVersion", context->getClientMinorVersion());
+    json.addScalar("ContextClientMajorVersion", context->getClientVersion().getMajor());
+    json.addScalar("ContextClientMinorVersion", context->getClientVersion().getMinor());
     json.addHexValue("DisplayPlatformType", displayAttribs.getAsInt(EGL_PLATFORM_ANGLE_TYPE_ANGLE));
     json.addHexValue("DisplayDeviceType",
                      displayAttribs.getAsInt(EGL_PLATFORM_ANGLE_DEVICE_TYPE_ANGLE));
@@ -8601,6 +8738,21 @@ void FrameCaptureShared::writeJSON(const gl::Context *context)
     json.addBool("IsBindGeneratesResourcesEnabled", glState.isBindGeneratesResourceEnabled());
     json.addBool("IsWebGLCompatibilityEnabled", glState.isWebGL());
     json.addBool("IsRobustResourceInitEnabled", glState.isRobustResourceInitEnabled());
+    json.endGroup();
+
+    json.startGroup("BinaryMetadata");
+    json.addScalar("Version", mIndexInfo.version);
+    json.addScalar("BlockCount", mIndexInfo.blockCount);
+    // These values are handled as strings to avoid json-related underflows
+    std::stringstream blockSizeString;
+    blockSizeString << mIndexInfo.blockSize;
+    json.addString("BlockSize", blockSizeString.str());
+    std::stringstream resSizeString;
+    resSizeString << mIndexInfo.residentSize;
+    json.addString("ResidentSize", resSizeString.str());
+    std::stringstream offsetString;
+    offsetString << mIndexInfo.indexOffset;
+    json.addString("IndexOffset", offsetString.str());
     json.endGroup();
 
     {
@@ -8740,6 +8892,8 @@ void FrameCaptureShared::writeCppReplayIndexFiles(const gl::Context *context,
 
     mReplayWriter.saveIndexFilesAndHeader();
 
+    // Finalize binary data file
+    mIndexInfo = mBinaryData.closeBinaryDataStore();
     writeJSON(context);
 }
 

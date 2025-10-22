@@ -80,8 +80,9 @@ TARGETS = [
 DEFAULT_TARGETS = ["d8"]
 # Tests that run-tests.py would run by default that can be run with
 # BUILD_TARGETS_TESTS.
-DEFAULT_TESTS = ["cctest", "debugger", "intl", "message", "mjsunit",
-                 "unittests"]
+DEFAULT_TESTS = [
+    "cctest", "debugger", "filecheck", "intl", "message", "mjsunit", "unittests"
+]
 # These can be suffixed to any <arch>.<mode> combo, or used standalone,
 # or used as global modifiers (affecting all <arch>.<mode> combos).
 ACTIONS = {
@@ -131,6 +132,7 @@ TESTSUITES_TARGETS = {
     "bigint": "bigint_shell",
     "cctest": "cctest",
     "debugger": "d8",
+    "filecheck": "d8",
     "fuzzer": "v8_fuzzers",
     "inspector": "inspector-test",
     "intl": "d8",
@@ -150,6 +152,8 @@ if out_dir_override and Path(out_dir_override).is_file:
   OUTDIR = Path(out_dir_override)
 else:
   OUTDIR = Path("out")
+
+build_dir_prefix = os.getenv("V8_GM_BUILD_DIR_PREFIX")
 
 V8_DIR = Path(__file__).resolve().parent.parent.parent
 GCLIENT_FILE_PATH = V8_DIR.parent / ".gclient"
@@ -360,6 +364,8 @@ def _get_machine():
 
 
 def get_path(arch, mode):
+  if build_dir_prefix:
+    return OUTDIR / f"{build_dir_prefix}-{arch}.{mode}"
   return OUTDIR / f"{arch}.{mode}"
 
 
@@ -753,6 +759,9 @@ class ArgumentParser(object):
   def parse_arguments(self, argv):
     if len(argv) == 0:
       print_help_and_exit()
+    if len(argv) >= 2 and argv[0] == "args" and os.path.exists(argv[1]):
+      code = _call(f"gn args {argv[1]}")
+      sys.exit(code)
     for argstring in argv:
       self.parse_arg(argstring)
     self.process_global_actions()

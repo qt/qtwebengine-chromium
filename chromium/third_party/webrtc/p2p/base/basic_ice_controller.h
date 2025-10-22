@@ -26,26 +26,27 @@
 #include "p2p/base/ice_switch_reason.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
+#include "p2p/base/p2p_transport_channel_ice_field_trials.h"
 #include "p2p/base/transport_description.h"
 #include "rtc_base/network.h"
 #include "rtc_base/network_constants.h"
 
-namespace cricket {
+namespace webrtc {
 
 class BasicIceController : public IceControllerInterface {
  public:
-  explicit BasicIceController(const webrtc::IceControllerFactoryArgs& args);
+  explicit BasicIceController(const IceControllerFactoryArgs& args);
   virtual ~BasicIceController();
 
-  void SetIceConfig(const webrtc::IceConfig& config) override;
+  void SetIceConfig(const IceConfig& config) override;
   void SetSelectedConnection(const Connection* selected_connection) override;
   void AddConnection(const Connection* connection) override;
   void OnConnectionDestroyed(const Connection* connection) override;
-  rtc::ArrayView<const Connection* const> GetConnections() const override {
+  ArrayView<const Connection* const> GetConnections() const override {
     return connections_;
   }
-  rtc::ArrayView<const Connection*> connections() const override {
-    return rtc::ArrayView<const Connection*>(
+  ArrayView<const Connection*> connections() const override {
+    return ArrayView<const Connection*>(
         const_cast<const Connection**>(connections_.data()),
         connections_.size());
   }
@@ -55,7 +56,7 @@ class BasicIceController : public IceControllerInterface {
   PingResult SelectConnectionToPing(int64_t last_ping_sent_ms) override;
 
   bool GetUseCandidateAttr(const Connection* conn,
-                           webrtc::NominationMode mode,
+                           NominationMode mode,
                            IceMode remote_ice_mode) const override;
 
   SwitchResult ShouldSwitchConnection(IceSwitchReason reason,
@@ -112,7 +113,7 @@ class BasicIceController : public IceControllerInterface {
   int CalculateActiveWritablePingInterval(const Connection* conn,
                                           int64_t now) const;
 
-  std::map<const rtc::Network*, const Connection*> GetBestConnectionByNetwork()
+  std::map<const Network*, const Connection*> GetBestConnectionByNetwork()
       const;
   std::vector<const Connection*> GetBestWritableConnectionPerNetwork() const;
 
@@ -122,7 +123,7 @@ class BasicIceController : public IceControllerInterface {
   int CompareCandidatePairNetworks(
       const Connection* a,
       const Connection* b,
-      std::optional<webrtc::AdapterType> network_preference) const;
+      std::optional<AdapterType> network_preference) const;
 
   // The methods below return a positive value if `a` is preferable to `b`,
   // a negative value if `b` is preferable, and 0 if they're equally preferable.
@@ -151,11 +152,11 @@ class BasicIceController : public IceControllerInterface {
   SwitchResult HandleInitialSelectDampening(IceSwitchReason reason,
                                             const Connection* new_connection);
 
-  std::function<IceTransportState()> ice_transport_state_func_;
+  std::function<IceTransportStateInternal()> ice_transport_state_func_;
   std::function<IceRole()> ice_role_func_;
   std::function<bool(const Connection*)> is_connection_pruned_func_;
 
-  webrtc::IceConfig config_;
+  IceConfig config_;
   const IceFieldTrials* field_trials_;
 
   // `connections_` is a sorted list with the first one always be the
@@ -172,6 +173,7 @@ class BasicIceController : public IceControllerInterface {
   int64_t initial_select_timestamp_ms_ = 0;
 };
 
-}  // namespace cricket
+}  //  namespace webrtc
+
 
 #endif  // P2P_BASE_BASIC_ICE_CONTROLLER_H_

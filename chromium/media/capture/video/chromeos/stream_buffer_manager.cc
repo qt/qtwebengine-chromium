@@ -12,6 +12,7 @@
 #include <memory>
 #include <string>
 
+#include "base/check_is_test.h"
 #include "base/functional/bind.h"
 #include "base/posix/safe_strerror.h"
 #include "base/strings/string_number_conversions.h"
@@ -95,9 +96,8 @@ StreamBufferManager::AcquireBufferForClientById(StreamType stream_type,
         gfx::Size(format->frame_size.height(), format->frame_size.width());
   }
 
-  const std::optional<gfx::BufferFormat> gfx_format =
-      PixFormatVideoToGfx(format->pixel_format);
-  DCHECK(gfx_format);
+  const std::optional<viz::SharedImageFormat> si_format =
+      VideoPixelFormatToVizSIFormat(format->pixel_format);
   const auto& original_shared_image = buffer_pair.shared_image;
   std::unique_ptr<gpu::ClientSharedImage::ScopedMapping>
       original_scoped_mapping;
@@ -170,7 +170,7 @@ StreamBufferManager::AcquireBufferForClientById(StreamType stream_type,
   auto rotated_shared_image =
       camera_buffer_factory_->CreateSharedImageFromGmbHandle(
           rotated_buffer.handle_provider->GetGpuMemoryBufferHandle(),
-          format->frame_size, *gfx_format, stream_context->buffer_usage);
+          format->frame_size, *si_format, stream_context->buffer_usage);
   std::unique_ptr<gpu::ClientSharedImage::ScopedMapping> rotated_scoped_mapping;
   if (rotated_shared_image) {
     rotated_scoped_mapping = rotated_shared_image->Map();
@@ -352,8 +352,12 @@ std::optional<BufferInfo> StreamBufferManager::RequestBufferForCaptureRequest(
       it->second.shared_image->CloneGpuMemoryBufferHandle();
   buffer_info.drm_format = drm_format;
   buffer_info.hal_pixel_format = stream_context_[stream_type]->stream->format;
-  buffer_info.modifier =
-      buffer_info.gpu_memory_buffer_handle.native_pixmap_handle.modifier;
+  if (buffer_info.gpu_memory_buffer_handle.type == gfx::NATIVE_PIXMAP) {
+    buffer_info.modifier =
+        buffer_info.gpu_memory_buffer_handle.native_pixmap_handle().modifier;
+  } else {
+    CHECK_IS_TEST(base::NotFatalUntil::M139);
+  }
   return buffer_info;
 }
 
@@ -383,11 +387,10 @@ StreamBufferManager::CreateSharedImageFromGmbHandle(
     gfx::GpuMemoryBufferHandle handle,
     const VideoCaptureFormat& format,
     gfx::BufferUsage buffer_usage) {
-  std::optional<gfx::BufferFormat> buffer_format =
-      PixFormatVideoToGfx(format.pixel_format);
-  CHECK(buffer_format);
+  std::optional<viz::SharedImageFormat> si_format =
+      VideoPixelFormatToVizSIFormat(format.pixel_format);
   auto shared_image = camera_buffer_factory_->CreateSharedImageFromGmbHandle(
-      std::move(handle), format.frame_size, *buffer_format, buffer_usage);
+      std::move(handle), format.frame_size, *si_format, buffer_usage);
   if (!shared_image) {
     LOG(ERROR) << "Failed to create mappable shared image.";
   }
@@ -414,9 +417,10 @@ bool StreamBufferManager::CanReserveBufferFromPool(StreamType stream_type) {
 
 void StreamBufferManager::ReserveBufferFromFactory(StreamType stream_type) {
   auto& stream_context = stream_context_[stream_type];
-  std::optional<gfx::BufferFormat> gfx_format =
-      PixFormatVideoToGfx(stream_context->capture_format.pixel_format);
-  if (!gfx_format) {
+  std::optional<viz::SharedImageFormat> si_format =
+      VideoPixelFormatToVizSIFormat(
+          stream_context->capture_format.pixel_format);
+  if (!si_format) {
     device_context_->SetErrorState(
         media::VideoCaptureError::
             kCrosHalV3BufferManagerFailedToCreateMappableSI,
@@ -424,7 +428,7 @@ void StreamBufferManager::ReserveBufferFromFactory(StreamType stream_type) {
     return;
   }
   auto shared_image = camera_buffer_factory_->CreateSharedImage(
-      stream_context->buffer_dimension, *gfx_format,
+      stream_context->buffer_dimension, *si_format,
       stream_context->buffer_usage);
   if (!shared_image) {
     device_context_->SetErrorState(
@@ -445,9 +449,10 @@ void StreamBufferManager::ReserveBufferFromFactory(StreamType stream_type) {
 
 void StreamBufferManager::ReserveBufferFromPool(StreamType stream_type) {
   auto& stream_context = stream_context_[stream_type];
-  std::optional<gfx::BufferFormat> gfx_format =
-      PixFormatVideoToGfx(stream_context->capture_format.pixel_format);
-  if (!gfx_format) {
+  std::optional<viz::SharedImageFormat> si_format =
+      VideoPixelFormatToVizSIFormat(
+          stream_context->capture_format.pixel_format);
+  if (!si_format) {
     device_context_->SetErrorState(
         media::VideoCaptureError::
             kCrosHalV3BufferManagerFailedToCreateMappableSI,
@@ -479,7 +484,7 @@ void StreamBufferManager::ReserveBufferFromPool(StreamType stream_type) {
   // converted to create MappableSI.
   auto shared_image = camera_buffer_factory_->CreateSharedImageFromGmbHandle(
       vcd_buffer.handle_provider->GetGpuMemoryBufferHandle(),
-      stream_context->buffer_dimension, *gfx_format,
+      stream_context->buffer_dimension, *si_format,
       stream_context->buffer_usage);
   if (!shared_image) {
     device_context_->SetErrorState(
@@ -491,10 +496,13 @@ void StreamBufferManager::ReserveBufferFromPool(StreamType stream_type) {
 
   if (kEnableBufferSynchronizationWithCameraService &&
       require_new_buffer_id != VideoCaptureBufferPool::kInvalidId) {
-    gfx::GpuMemoryBufferHandle gpu_memory_buffer_handle =
-        shared_image->CloneGpuMemoryBufferHandle();
-    gfx::NativePixmapHandle& native_pixmap_handle =
-        gpu_memory_buffer_handle.native_pixmap_handle;
+    gfx::NativePixmapHandle native_pixmap_handle;
+    if (auto gmb_handle = shared_image->CloneGpuMemoryBufferHandle();
+        gmb_handle.type == gfx::NATIVE_PIXMAP) {
+      native_pixmap_handle = std::move(gmb_handle).native_pixmap_handle();
+    } else {
+      CHECK_IS_TEST(base::NotFatalUntil::M139);
+    }
     auto buffer_handle = cros::mojom::CameraBufferHandle::New();
     buffer_handle->buffer_id = GetBufferIpcId(stream_type, vcd_buffer.id);
     buffer_handle->drm_format =

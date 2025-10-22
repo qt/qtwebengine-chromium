@@ -26,6 +26,7 @@
 #include "third_party/blink/renderer/bindings/modules/v8/v8_binding_for_modules.h"
 
 #include "base/containers/span.h"
+#include "base/debug/crash_logging.h"
 #include "third_party/blink/public/common/indexeddb/indexeddb_key.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom-blink.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
@@ -81,9 +82,11 @@ static std::unique_ptr<IDBKey> CreateIDBKeyFromSimpleValue(
   if (value->IsNumber() && !std::isnan(value.As<v8::Number>()->Value()))
     return IDBKey::CreateNumber(value.As<v8::Number>()->Value());
 
-  if (value->IsString())
+  if (value->IsString()) {
+    SCOPED_CRASH_KEY_NUMBER("CreateIDBKey", "String",
+                            value.As<v8::String>()->Length());
     return IDBKey::CreateString(ToCoreString(isolate, value.As<v8::String>()));
-
+  }
   if (value->IsDate() && !std::isnan(value.As<v8::Date>()->ValueOf()))
     return IDBKey::CreateDate(value.As<v8::Date>()->ValueOf());
 
@@ -97,6 +100,8 @@ static std::unique_ptr<IDBKey> CreateIDBKeyFromSimpleValue(
                                         "The ArrayBuffer is detached.");
       return IDBKey::CreateInvalid();
     }
+    SCOPED_CRASH_KEY_NUMBER("CreateIDBKey", "ArrayBuffer",
+                            buffer->ByteLength());
     return IDBKey::CreateBinary(
         base::MakeRefCounted<base::RefCountedData<Vector<char>>>(
             Vector<char>(base::as_chars(buffer->ByteSpan()))));
@@ -114,6 +119,7 @@ static std::unique_ptr<IDBKey> CreateIDBKeyFromSimpleValue(
                                         "The viewed ArrayBuffer is detached.");
       return IDBKey::CreateInvalid();
     }
+    SCOPED_CRASH_KEY_NUMBER("CreateIDBKey", "ArrayBuffer", view->byteLength());
     return IDBKey::CreateBinary(
         base::MakeRefCounted<base::RefCountedData<Vector<char>>>(
             Vector<char>(base::as_chars(view->ByteSpan()))));
@@ -686,22 +692,6 @@ ScriptValue DeserializeScriptValue(ScriptState* script_state,
   options.blob_info = blob_info;
   return ScriptValue(isolate, serialized_value->Deserialize(isolate, options));
 }
-
-SQLValue NativeValueTraits<SQLValue>::NativeValue(
-    v8::Isolate* isolate,
-    v8::Local<v8::Value> value,
-    ExceptionState& exception_state) {
-  if (value.IsEmpty() || value->IsNull())
-    return SQLValue();
-  if (value->IsNumber())
-    return SQLValue(value.As<v8::Number>()->Value());
-  V8StringResource<> string_value(isolate, value);
-  if (!string_value.Prepare(exception_state)) {
-    return SQLValue();
-  }
-  return SQLValue(string_value);
-}
-
 
 #if DCHECK_IS_ON()
 // This assertion is used when a value has been retrieved from an object store

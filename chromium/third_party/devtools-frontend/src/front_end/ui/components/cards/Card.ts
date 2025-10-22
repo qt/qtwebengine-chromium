@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import {html, nothing, render} from '../../lit/lit.js';
 
@@ -40,7 +41,7 @@ import cardStyles from './card.css.js';
  * ```
  *
  * @attr heading - The heading text.
- * @prop {String} heading - The `"heading"` attribute is reflect as property.
+ * @property heading - The `"heading"` attribute is reflect as property.
  */
 export class Card extends HTMLElement {
   static readonly observedAttributes = ['heading'];
@@ -66,7 +67,7 @@ export class Card extends HTMLElement {
    * Changes the value of the `"heading"` attribute of this `Card`. If you pass
    * `null`, the `"heading"` attribute will be removed from this element.
    *
-   * @param heading the new heading of `null` to unset.
+   * @param heading - the new heading of `null` to unset.
    */
   set heading(heading: string|null) {
     if (heading) {
@@ -85,7 +86,7 @@ export class Card extends HTMLElement {
   #render(): void {
     render(
         html`
-        <style>${cardStyles.cssText}</style>
+        <style>${cardStyles}</style>
         <div id="card">
           <div id="heading">
             <slot name="heading-prefix"></slot>

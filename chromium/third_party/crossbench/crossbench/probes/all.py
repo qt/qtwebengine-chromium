@@ -4,14 +4,16 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Tuple, Type
+from typing import TYPE_CHECKING, Type
 
 from crossbench.probes.android_logcat import LogcatAndroidProbe
 from crossbench.probes.chrome_histograms import ChromeHistogramsProbe
+from crossbench.probes.chromium_pgo import ChromiumPgoProbe
 from crossbench.probes.debugger import DebuggerProbe
 from crossbench.probes.downloads import DownloadsProbe
 from crossbench.probes.dtrace import DTraceProbe
 from crossbench.probes.dump_html import DumpHtmlProbe
+from crossbench.probes.embedder import WebviewEmbedderProbe
 from crossbench.probes.frequency import FrequencyProbe
 from crossbench.probes.helper import INTERNAL_NAME_PREFIX
 from crossbench.probes.internal.browser.driver_log import BrowserDriverLogProbe
@@ -22,6 +24,7 @@ from crossbench.probes.internal.summary import ResultsSummaryProbe
 from crossbench.probes.internal.system_details import SystemDetailsProbe
 from crossbench.probes.js import JSProbe
 from crossbench.probes.json import JsonResultProbe
+from crossbench.probes.meminfo import MeminfoProbe
 from crossbench.probes.perfetto.perfetto import PerfettoProbe
 from crossbench.probes.perfetto.trace_processor.trace_processor import \
     TraceProcessorProbe
@@ -42,13 +45,14 @@ from crossbench.probes.v8.log import V8LogProbe
 from crossbench.probes.v8.rcs import V8RCSProbe
 from crossbench.probes.v8.turbolizer import V8TurbolizerProbe
 from crossbench.probes.video import VideoProbe
+from crossbench.probes.video_acceleration import VideoAccelerationProbe
 from crossbench.probes.web_page_replay.recorder import WebPageReplayProbe
 
 if TYPE_CHECKING:
   from crossbench.probes.internal.base import InternalProbe
-  InternalProbeTuple = Tuple[Type[InternalProbe], ...]
+  InternalProbeTuple = tuple[Type[InternalProbe], ...]
 
-ABSTRACT_PROBES: Tuple[Type[Probe], ...] = (Probe, JsonResultProbe)
+ABSTRACT_PROBES: tuple[Type[Probe], ...] = (Probe, JsonResultProbe)
 
 # Probes that are not user-configurable
 # Order matters, not alpha-sorted:
@@ -84,16 +88,19 @@ assert DEFAULT_INTERNAL_PROBES[1] == DurationsProbe
 
 
 # Probes that can be used on arbitrary stories and may be user configurable.
-GENERAL_PURPOSE_PROBES: Tuple[Type[Probe], ...] = (
+GENERAL_PURPOSE_PROBES: tuple[Type[Probe], ...] = (
     BrowserProfilingProbe,
     ChromeHistogramsProbe,
+    ChromiumPgoProbe,
     DebuggerProbe,
     DownloadsProbe,
     DTraceProbe,
     DumpHtmlProbe,
+    WebviewEmbedderProbe,
     FrequencyProbe,
     JSProbe,
     LogcatAndroidProbe,
+    MeminfoProbe,
     PerfettoProbe,
     PerformanceEntriesProbe,
     PollingShellProbe,
@@ -110,6 +117,7 @@ GENERAL_PURPOSE_PROBES: Tuple[Type[Probe], ...] = (
     V8RCSProbe,
     V8TurbolizerProbe,
     VideoProbe,
+    VideoAccelerationProbe,
     WebPageReplayProbe,
 )
 

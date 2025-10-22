@@ -18,6 +18,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
+#include "gpu/command_buffer/client/test_shared_image_interface.h"
 #include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "gpu/command_buffer/common/sync_token.h"
@@ -25,7 +26,6 @@
 #include "media/base/video_frame.h"
 #include "media/base/video_frame_layout.h"
 #include "media/mojo/mojom/traits_test_service.test-mojom.h"
-#include "media/video/fake_gpu_memory_buffer.h"
 #include "mojo/public/cpp/bindings/message.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -90,9 +90,7 @@ class VideoFrameStructTraitsTest : public testing::Test,
                       EchoVideoFrameCallback callback) override {
     // Touch all data in the received frame to ensure that it is valid.
     if (f && f->IsMappable()) {
-      base::MD5Context md5_context;
-      base::MD5Init(&md5_context);
-      VideoFrame::HashFrameForTesting(&md5_context, *f);
+      VideoFrame::HexHashOfFrameForTesting(*f);
     }
 
     std::move(callback).Run(f);
@@ -151,10 +149,12 @@ TEST_F(VideoFrameStructTraitsTest, MappableVideoFrame) {
         region = base::ReadOnlySharedMemoryRegion::Create(aggregate_size);
         ASSERT_TRUE(region.IsValid());
 
-        std::array<uint8_t*, 3> data = {};
-        data[0] = const_cast<uint8_t*>(region.mapping.GetMemoryAs<uint8_t>());
-        for (size_t i = 1; i < strides.size(); ++i) {
-          data[i] = data[i - 1] + sizes[i - 1];
+        std::array<base::span<uint8_t>, 3> data = {};
+        auto mapping_span = region.mapping.GetMemoryAsSpan<uint8_t>();
+        size_t offset = 0;
+        for (size_t i = 0; i < strides.size(); ++i) {
+          data[i] = mapping_span.subspan(offset, sizes[i]);
+          offset += sizes[i];
         }
 
         if (format == PIXEL_FORMAT_I420) {
@@ -231,8 +231,8 @@ TEST_F(VideoFrameStructTraitsTest, InterleavedPlanes) {
 
   frame = media::VideoFrame::WrapExternalYuvData(
       format, kCodedSize, kVisibleRect, kNaturalSize, strides[0], uv_stride,
-      uv_stride, y_plane.data(), uv_plane.data(),
-      uv_plane.subspan(normal_stride).data(), kTimestamp);
+      uv_stride, y_plane, uv_plane, uv_plane.subspan(normal_stride),
+      kTimestamp);
   auto ro_region =
       base::WritableSharedMemoryRegion::ConvertToReadOnly(std::move(region));
   frame->BackWithSharedMemory(&ro_region);
@@ -280,10 +280,14 @@ TEST_F(VideoFrameStructTraitsTest, InvalidOffsets) {
   auto region = base::ReadOnlySharedMemoryRegion::Create(aggregate_size);
   ASSERT_TRUE(region.IsValid());
 
-  std::array<uint8_t*, 3> data = {};
-  data[0] = const_cast<uint8_t*>(region.mapping.GetMemoryAs<uint8_t>());
-  for (size_t i = 1; i < strides.size(); ++i) {
-    data[i] = data[i - 1] + sizes[i];
+  std::array<base::span<uint8_t>, 3> data = {};
+  std::vector<size_t> offsets;
+  auto mapping_span = region.mapping.GetMemoryAsSpan<uint8_t>();
+  size_t offset = 0;
+  for (size_t i = 0; i < strides.size(); ++i) {
+    offsets.push_back(offset);
+    data[i] = mapping_span.subspan(offset, sizes[i]);
+    offset += sizes[i];
   }
 
   auto frame = VideoFrame::WrapExternalYuvData(
@@ -300,11 +304,6 @@ TEST_F(VideoFrameStructTraitsTest, InvalidOffsets) {
   base::span<uint32_t> body(
       reinterpret_cast<uint32_t*>(message.mutable_payload()),
       message.payload_num_bytes() / sizeof(uint32_t));
-  std::vector<uint32_t> offsets = {
-      static_cast<uint32_t>(data[0] - data[0]),  // offsets[0]
-      static_cast<uint32_t>(data[1] - data[0]),  // offsets[1]
-      static_cast<uint32_t>(data[2] - data[0]),  // offsets[2]
-  };
 
   bool patched_offsets = false;
   for (size_t i = 0; i + 3 < body.size(); ++i) {
@@ -367,13 +366,21 @@ TEST_F(VideoFrameStructTraitsTest, TrackingTokenVideoFrame) {
 }
 
 TEST_F(VideoFrameStructTraitsTest, SharedImageVideoFrame) {
+  auto si_size = gfx::Size(100, 100);
+  gpu::SharedImageMetadata metadata;
+  metadata.format = viz::SinglePlaneFormat::kRGBA_8888;
+  metadata.size = si_size;
+  metadata.color_space = gfx::ColorSpace::CreateSRGB();
+  metadata.surface_origin = kTopLeft_GrSurfaceOrigin;
+  metadata.alpha_type = kOpaque_SkAlphaType;
+  metadata.usage = gpu::SharedImageUsageSet();
   scoped_refptr<gpu::ClientSharedImage> shared_image =
-      gpu::ClientSharedImage::CreateForTesting();
+      gpu::ClientSharedImage::CreateForTesting(metadata);
   scoped_refptr<VideoFrame> frame = VideoFrame::WrapSharedImage(
       PIXEL_FORMAT_ARGB, shared_image, gpu::SyncToken(),
-      VideoFrame::ReleaseMailboxCB(), gfx::Size(100, 100),
-      gfx::Rect(10, 10, 80, 80), gfx::Size(200, 100), base::Seconds(100));
-
+      VideoFrame::ReleaseMailboxCB(), si_size, gfx::Rect(10, 10, 80, 80),
+      gfx::Size(200, 100), base::Seconds(100));
+  frame->set_color_space(shared_image->color_space());
   ASSERT_TRUE(RoundTrip(&frame));
   ASSERT_TRUE(frame);
   EXPECT_FALSE(frame->metadata().end_of_stream);
@@ -636,44 +643,36 @@ TEST_F(VideoFrameStructTraitsTest, DmabufsVideoFrameTooSmall) {
 }
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
-// BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) because
-// media::FakeGpuMemoryBuffer supports NativePixmapHandle backed
-// GpuMemoryBufferHandle only. !BUILDFLAG(IS_OZONE) so as to force
-// GpuMemoryBufferSupport to select gfx::ClientNativePixmapFactoryDmabuf for
-// gfx::ClientNativePixmapFactory.
-// TODO(crbug.com/40286368): Allow this test without !BUILDFLAG(IS_OZONE)
-#if (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) && !BUILDFLAG(IS_OZONE)
-TEST_F(VideoFrameStructTraitsTest, GpuMemoryBufferSharedImageVideoFrame) {
+TEST_F(VideoFrameStructTraitsTest, MappableSharedImageVideoFrame) {
+  auto test_sii = base::MakeRefCounted<gpu::TestSharedImageInterface>();
+  test_sii->UseTestGMBInSharedImageCreationWithBufferUsage();
   gfx::Size coded_size = gfx::Size(256, 256);
   gfx::Rect visible_rect(coded_size);
   auto timestamp = base::Milliseconds(1);
-  std::unique_ptr<gfx::GpuMemoryBuffer> gmb =
-      std::make_unique<FakeGpuMemoryBuffer>(
-          coded_size, gfx::BufferFormat::YUV_420_BIPLANAR);
-  gfx::BufferFormat expected_gmb_format = gmb->GetFormat();
-  gfx::Size expected_gmb_size = gmb->GetSize();
-  scoped_refptr<gpu::ClientSharedImage> shared_image =
-      gpu::ClientSharedImage::CreateForTesting();
-  auto frame = VideoFrame::WrapExternalGpuMemoryBuffer(
-      visible_rect, visible_rect.size(), std::move(gmb), shared_image,
-      gpu::SyncToken(), base::NullCallback(), timestamp);
+  auto si_format = viz::SinglePlaneFormat::kRGBA_8888;
+  const auto si_usage = gpu::SHARED_IMAGE_USAGE_CPU_WRITE_ONLY |
+                        gpu::SHARED_IMAGE_USAGE_DISPLAY_READ;
+  auto shared_image = test_sii->CreateSharedImage(
+      {si_format, coded_size, gfx::ColorSpace(),
+       gpu::SharedImageUsageSet(si_usage), "VideoFrameStructTraitsTest"},
+      gpu::kNullSurfaceHandle, gfx::BufferUsage::GPU_READ);
+  ASSERT_TRUE(shared_image);
+  auto frame = VideoFrame::WrapMappableSharedImage(
+      shared_image, test_sii->GenVerifiedSyncToken(), base::NullCallback(),
+      visible_rect, visible_rect.size(), timestamp);
+  ASSERT_TRUE(frame);
   ASSERT_TRUE(RoundTrip(&frame));
   ASSERT_TRUE(frame);
   ASSERT_EQ(frame->storage_type(), VideoFrame::STORAGE_GPU_MEMORY_BUFFER);
   EXPECT_TRUE(frame->HasMappableGpuBuffer());
   EXPECT_FALSE(frame->metadata().end_of_stream);
-  EXPECT_EQ(frame->format(), PIXEL_FORMAT_NV12);
+  EXPECT_EQ(frame->format(), PIXEL_FORMAT_ABGR);
   EXPECT_EQ(frame->coded_size(), coded_size);
   EXPECT_EQ(frame->visible_rect(), visible_rect);
   EXPECT_EQ(frame->natural_size(), visible_rect.size());
   EXPECT_EQ(frame->timestamp(), timestamp);
   ASSERT_TRUE(frame->HasSharedImage());
-  EXPECT_EQ(frame->mailbox_holder(0).mailbox, shared_image->mailbox());
-  EXPECT_EQ(frame->GetGpuMemoryBufferForTesting()->GetFormat(),
-            expected_gmb_format);
-  EXPECT_EQ(frame->GetGpuMemoryBufferForTesting()->GetSize(),
-            expected_gmb_size);
+  ASSERT_EQ(frame->shared_image()->mailbox(), shared_image->mailbox());
 }
-#endif  // (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)) &&
-        // !BUILDFLAG(IS_OZONE)
+
 }  // namespace media

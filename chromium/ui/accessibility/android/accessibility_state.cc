@@ -4,6 +4,8 @@
 
 #include "ui/accessibility/android/accessibility_state.h"
 
+#include <string>
+
 #include "base/android/jni_android.h"
 #include "base/android/jni_array.h"
 #include "base/no_destructor.h"
@@ -127,6 +129,12 @@ std::vector<std::string> AccessibilityState::GetAccessibilityServiceIds() {
   std::vector<std::string> service_ids;
   AppendJavaStringArrayToStringVector(env, j_service_ids, &service_ids);
   return service_ids;
+}
+
+// static
+bool AccessibilityState::PrefersReducedMotion() {
+  JNIEnv* env = AttachCurrentThread();
+  return Java_AccessibilityState_prefersReducedMotion(env);
 }
 
 // static

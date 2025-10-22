@@ -4,15 +4,25 @@
 
 import("//extensions/buildflags/buildflags.gni")
 
-assert(enable_extensions)
+assert(enable_extensions_core)
 
 source_set("extension_action") {
   sources = [
     "extension_action_api.cc",
     "extension_action_api.h",
-    "extension_page_actions_api_constants.cc",
-    "extension_page_actions_api_constants.h",
   ]
+
+  deps = []
+
+  if (is_android) {
+    sources += [ "extension_action_api_android.cc" ]
+  } else {
+    sources += [ "extension_action_api_non_android.cc" ]
+    deps += [
+      "//chrome/browser/ui/extensions",
+      "//chrome/browser/ui/extensions:extension_popup_types",
+    ]
+  }
 
   configs += [ "//build/config/compiler:wexit_time_destructors" ]
 
@@ -22,11 +32,11 @@ source_set("extension_action") {
     "//extensions/common",
   ]
 
-  deps = [
+  deps += [
     "//chrome/browser/extensions",
-    "//chrome/browser/profiles:profile",
+    "//chrome/browser/profiles",
     "//chrome/browser/ui",
-    "//chrome/browser/ui/tabs:tab_strip",
+    "//chrome/browser/ui/toolbar",
     "//components/sessions",
     "//content/public/common",
     "//extensions/common:common_constants",
@@ -34,4 +44,8 @@ source_set("extension_action") {
     "//ui/gfx",
     "//url",
   ]
+
+  if (enable_extensions) {
+    deps += [ "//chrome/browser/ui/tabs:tab_strip" ]
+  }
 }

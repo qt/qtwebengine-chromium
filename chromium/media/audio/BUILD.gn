@@ -142,11 +142,10 @@ source_set("audio") {
   ]
   deps = [
     "//base",
-    "//build:android_buildflags",
     "//build:chromecast_buildflags",
     "//media/base",
     "//third_party/flac",
-    "//third_party/opus:opus",
+    "//third_party/opus",
     "//url",
   ]
   libs = []
@@ -188,6 +187,10 @@ source_set("audio") {
       "mac/audio_loopback_input_mac_impl.mm",
       "mac/audio_manager_mac.cc",
       "mac/audio_manager_mac.h",
+      "mac/catap_api.h",
+      "mac/catap_api.mm",
+      "mac/catap_audio_input_stream.h",
+      "mac/catap_audio_input_stream.mm",
       "mac/core_audio_util_mac.cc",
       "mac/core_audio_util_mac.h",
       "mac/screen_capture_kit_swizzler.h",
@@ -224,6 +227,8 @@ source_set("audio") {
       "win/audio_low_latency_output_win.h",
       "win/audio_manager_win.cc",
       "win/audio_manager_win.h",
+      "win/audio_session_creation_observer_win.cc",
+      "win/audio_session_creation_observer_win.h",
       "win/audio_session_event_listener_win.cc",
       "win/audio_session_event_listener_win.h",
       "win/avrt_wrapper_win.cc",
@@ -242,17 +247,26 @@ source_set("audio") {
       "dxguid.lib",
       "setupapi.lib",
       "winmm.lib",
+      "mmdevapi.lib",
     ]
   }
 
   if (is_android) {
     sources += [
+      "android/aaudio_bluetooth_output.cc",
+      "android/aaudio_bluetooth_output.h",
       "android/aaudio_input.cc",
       "android/aaudio_input.h",
       "android/aaudio_output.cc",
       "android/aaudio_output.h",
       "android/aaudio_stream_wrapper.cc",
       "android/aaudio_stream_wrapper.h",
+      "android/audio_device.cc",
+      "android/audio_device.h",
+      "android/audio_device_id.cc",
+      "android/audio_device_id.h",
+      "android/audio_device_type.cc",
+      "android/audio_device_type.h",
       "android/audio_manager_android.cc",
       "android/audio_manager_android.h",
       "android/audio_track_output_stream.cc",
@@ -410,6 +424,10 @@ static_library("test_support") {
       "alsa/mock_alsa_wrapper.h",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 source_set("unit_tests") {
@@ -444,7 +462,7 @@ source_set("unit_tests") {
     "//media:test_support",
     "//testing/gmock",
     "//testing/gtest",
-    "//third_party/opus:opus",
+    "//third_party/opus",
     "//url",
   ]
 
@@ -454,9 +472,14 @@ source_set("unit_tests") {
   ]
 
   if (is_android) {
-    sources += [ "android/audio_android_unittest.cc" ]
+    sources += [
+      "android/audio_android_unittest.cc",
+      "android/audio_device_id_unittest.cc",
+      "android/audio_device_type_unittest.cc",
+      "android/audio_device_unittest.cc",
+    ]
     deps += [
-      "//media/gpu:gpu",
+      "//media/gpu",
       "//ui/gl",
     ]
   }
@@ -473,6 +496,7 @@ source_set("unit_tests") {
       "mac/audio_device_listener_mac_unittest.cc",
       "mac/audio_loopback_input_mac_unittest.mm",
       "mac/audio_manager_mac_unittest.cc",
+      "mac/catap_audio_input_stream_unittest.mm",
     ]
     deps += [ "//third_party/ocmock" ]
     frameworks = [ "CoreMedia.framework" ]
@@ -505,9 +529,18 @@ source_set("unit_tests") {
       "win/audio_session_event_listener_win_unittest.cc",
       "win/core_audio_util_win_unittest.cc",
       "win/device_enumeration_win_unittest.cc",
+      "win/test_support/fake_iactivate_audio_interface_async_operation.cc",
+      "win/test_support/fake_iactivate_audio_interface_async_operation.h",
+      "win/test_support/fake_iaudio_capture_client.cc",
+      "win/test_support/fake_iaudio_capture_client.h",
+      "win/test_support/fake_iaudio_client.cc",
+      "win/test_support/fake_iaudio_client.h",
+      "win/test_support/fake_win_wasapi_environment.cc",
+      "win/test_support/fake_win_wasapi_environment.h",
+      "win/test_support/wasapi_test_error_code.h",
     ]
 
-    deps += [ "//media/gpu:gpu" ]
+    deps += [ "//media/gpu" ]
   }
 
   if (is_fuchsia) {
@@ -522,6 +555,10 @@ source_set("unit_tests") {
       "audio_low_latency_input_output_unittest.cc",
     ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 fuzzer_test("wav_audio_handler_fuzzer") {

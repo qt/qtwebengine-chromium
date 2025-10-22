@@ -28,6 +28,7 @@ cc_library(
         "leveldb_data_set.h",
     ],
     deps = [
+        "//internal/base:file_path",
         "//internal/platform:types",
         "//third_party/leveldb:db",
         "//third_party/leveldb:table",
@@ -37,7 +38,13 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_protobuf//:protobuf_lite",
-    ],
+    ] + select({
+        "@platforms//os:windows": [
+            "//location/nearby/apps/better_together/windows/common:leveldb_env_windows",
+        ],
+        "//conditions:default": [
+        ],
+    }),
 )
 
 proto_library(
@@ -60,9 +67,12 @@ cc_test(
     deps = [
         ":data_manager",
         ":leveldb_data_set_test_cc_proto",
+        "//internal/base:file_path",
+        "//internal/base:files",
         "//internal/platform/implementation/g3",  # fixdeps: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",
         "@com_google_googletest//:gtest_main",

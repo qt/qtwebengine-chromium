@@ -20,6 +20,7 @@
 #include "api/units/timestamp.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_codec_type.h"
+#include "common_video/frame_instrumentation_data.h"
 #include "modules/rtp_rtcp/source/rtp_video_header.h"
 #include "modules/video_coding/include/video_codec_interface.h"
 
@@ -40,7 +41,7 @@ class EncodedFrame : public EncodedImage {
   virtual int64_t ReceivedTime() const { return -1; }
   // Returns a Timestamp from `ReceivedTime`, or nullopt if there is no receive
   // time.
-  std::optional<webrtc::Timestamp> ReceivedTimestamp() const;
+  std::optional<Timestamp> ReceivedTimestamp() const;
 
   // When this frame should be rendered.
   // TODO(bugs.webrtc.org/13756): Use Timestamp instead of int.
@@ -49,7 +50,7 @@ class EncodedFrame : public EncodedImage {
   int64_t RenderTimeMs() const { return _renderTimeMs; }
   // Returns a Timestamp from `RenderTime`, or nullopt if there is no
   // render time.
-  std::optional<webrtc::Timestamp> RenderTimestamp() const;
+  std::optional<Timestamp> RenderTimestamp() const;
 
   // This information is currently needed by the timing calculation class.
   // TODO(philipel): Remove this function when a new timing class has

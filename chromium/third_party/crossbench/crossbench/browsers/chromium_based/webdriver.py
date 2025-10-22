@@ -8,8 +8,8 @@ import abc
 import datetime as dt
 import logging
 import os
-from typing import (TYPE_CHECKING, Any, Iterable, List, Optional, Sequence,
-                    Tuple, Type, cast)
+from typing import (TYPE_CHECKING, Any, Iterable, Optional, Sequence, TextIO,
+                    Type, cast)
 
 from selenium.webdriver.chromium.options import ChromiumOptions
 from selenium.webdriver.chromium.service import ChromiumService
@@ -24,8 +24,8 @@ from crossbench.browsers.chromium.version import (ChromeDriverVersion,
                                                   ChromiumVersion)
 from crossbench.browsers.chromium_based import helper
 from crossbench.browsers.chromium_based.chromium_based import ChromiumBased
+from crossbench.browsers.chromium_based.devtools_tracer import DevToolsTracer
 from crossbench.browsers.webdriver import WebDriverBrowser
-from crossbench.flags.base import FlagsT
 from crossbench.flags.chrome import ChromeFlags
 from crossbench.helper import wait
 
@@ -35,6 +35,7 @@ if TYPE_CHECKING:
   from selenium import webdriver
 
   from crossbench.browsers.version import BrowserVersion
+  from crossbench.flags.base import FlagsT
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 
@@ -43,7 +44,13 @@ class ChromiumBasedWebDriver(
 
   WEB_DRIVER_OPTIONS: Type[ChromiumOptions] = ChromiumOptions
   WEB_DRIVER_SERVICE: Type[ChromiumService] = ChromiumService
-  UNSUPPORTED_FLAGS: Tuple[str, ...] = ()
+  UNSUPPORTED_FLAGS: tuple[str, ...] = ()
+
+  def __init__(self, *args, **kwargs) -> None:
+    super().__init__(*args, **kwargs)
+    self._script_identifier_kwargs: dict[Any, Any] | None = None
+    self._tracer: DevToolsTracer | None = None
+    self._stdout_log_file: TextIO | None = None
 
   @classmethod
   @override
@@ -55,7 +62,12 @@ class ChromiumBasedWebDriver(
     return self.version.major == 0 or self.is_locally_compiled()
 
   def is_locally_compiled(self) -> bool:
-    return pth.LocalPath(self.app_path.parent / "args.gn").exists()
+    return bool(self.local_build_dir())
+
+  def local_build_dir(self) -> pth.LocalPath | None:
+    if path := helper.find_build_dir(self.path, self.host_platform):
+      return self.host_platform.local_path(path)
+    return None
 
   def _execute_cdp_cmd(self, driver: webdriver.Remote, cmd: str,
                        cmd_args: dict):
@@ -111,7 +123,7 @@ class ChromiumBasedWebDriver(
     options = self._create_options(session, args)
 
     self._log_browser_start(args, driver_path)
-    service_args: List[str] = []
+    service_args: list[str] = []
     if self._settings.driver_logging:
       service_args += [
           "--verbose", f"--log-path={os.fspath(self._setup_driver_log_file())}"
@@ -123,8 +135,8 @@ class ChromiumBasedWebDriver(
 
     # pytype: disable=wrong-keyword-args
     assert self._stdout_log_file is None
-    self._stdout_log_file = self.log_file.with_suffix(
-        ".browser.stdout.log").open("w+")
+    # On desktop platforms service logs contain browser stdout, hence the name.
+    self._stdout_log_file = self.log_file.with_stem("browser.stdout").open("w+")
     service = self.WEB_DRIVER_SERVICE(
         executable_path=os.fspath(driver_path),
         service_args=service_args,
@@ -198,9 +210,18 @@ class ChromiumBasedWebDriver(
 
   @override
   def run_script_on_new_document(self, script: str) -> None:
-    self._execute_cdp_cmd(self._private_driver,
-                          "Page.addScriptToEvaluateOnNewDocument",
-                          {"source": script})
+    if self._script_identifier_kwargs is not None:
+      self._execute_cdp_cmd(self._private_driver,
+                            "Page.removeScriptToEvaluateOnNewDocument",
+                            self._script_identifier_kwargs)
+    self._script_identifier_kwargs = self._execute_cdp_cmd(
+        self._private_driver, "Page.addScriptToEvaluateOnNewDocument",
+        {"source": script})
+
+  @override
+  def quit(self) -> None:
+    self._script_identifier_kwargs = None
+    super().quit()
 
   @override
   def current_window_id(self) -> str:
@@ -216,8 +237,10 @@ class ChromiumBasedWebDriver(
       title: Optional[re.Pattern] = None,
       url: Optional[re.Pattern] = None,
       tab_index: Optional[int] = None,
+      relative_tab_index: Optional[int] = None,
       timeout: dt.timedelta = dt.timedelta(seconds=0)
   ) -> str:
+    assert not (tab_index is not None and relative_tab_index is not None)
     driver = self._private_driver
     original_handle = driver.current_window_handle
     for _ in wait.wait_with_backoff(timeout):
@@ -227,18 +250,21 @@ class ChromiumBasedWebDriver(
       except ValueError as e:
         raise RuntimeError("Original starting tab no longer exists") from e
 
+      if relative_tab_index is not None:
+        tab_index = (i + relative_tab_index) % len(driver.window_handles)
       if tab_index is not None:
         handles = [driver.window_handles[tab_index]]
       else:
-        handles = driver.window_handles[i:] + driver.window_handles[:i]
+        # Start searching with the tab after the current tab.
+        handles = driver.window_handles[i + 1:] + driver.window_handles[:i + 1]
 
       for handle in handles:
         driver.switch_to.window(handle)
         if title is not None:
-          if title.match(driver.title) is None:
+          if title.search(driver.title) is None:
             continue
         if url is not None:
-          if url.match(driver.current_url) is None:
+          if url.search(driver.current_url) is None:
             continue
         return handle
     error = "No new tab found"
@@ -248,6 +274,8 @@ class ChromiumBasedWebDriver(
       error += f" with url matching {repr(url.pattern)}"
     if tab_index is not None:
       error += f" with tab_index matching {tab_index}"
+    if relative_tab_index is not None:
+      error += f" with relative_tab_index matching {tab_index}"
     raise RuntimeError(error)
 
   @override
@@ -256,6 +284,7 @@ class ChromiumBasedWebDriver(
       title: Optional[re.Pattern] = None,
       url: Optional[re.Pattern] = None,
       tab_index: Optional[int] = None,
+      relative_tab_index: Optional[int] = None,
       timeout: dt.timedelta = dt.timedelta(seconds=0)
   ) -> None:
     driver = self._private_driver
@@ -263,7 +292,8 @@ class ChromiumBasedWebDriver(
     tab_to_close = original_handle
 
     if title or url or (tab_index is not None):
-      tab_to_close = self.switch_tab(title, url, tab_index, timeout)
+      tab_to_close = self.switch_tab(title, url, tab_index, relative_tab_index,
+                                     timeout)
 
     driver.close()
 
@@ -274,35 +304,44 @@ class ChromiumBasedWebDriver(
       # to switching to the first tab.
       driver.switch_to.window(driver.window_handles[0])
 
+  @override
+  def close_all_tabs(self) -> None:
+    driver = self._private_driver
+    current_handle = driver.current_window_handle
+
+    for handle in driver.window_handles:
+      driver.switch_to.window(handle)
+      if handle != current_handle:
+        driver.close()
+
+    # Closing every tab will cause the browser to exit.
+    # As a workaround navigate the final tab to about:blank.
+    driver.switch_to.window(current_handle)
+    self.show_url("about:blank")
+
   @property
   def current_url(self) -> str:
     return self._private_driver.current_url
 
+  # TODO(crbug.com/428953697): Consider unifying BrowserProfilingProbe with
+  # other similar ones.
   def start_profiling(self) -> None:
     assert isinstance(self._private_driver, ChromiumDriver)
-    # TODO: reuse the TraceProbe categories,
-    self._execute_cdp_cmd(
-        self._private_driver, "Tracing.start", {
-            "transferMode":
-                "ReturnAsStream",
-            "includedCategories": [
-                "devtools.timeline",
-                "v8.execute",
-                "disabled-by-default-devtools.timeline",
-                "disabled-by-default-devtools.timeline.frame",
-                "toplevel",
-                "blink.console",
-                "blink.user_timing",
-                "latencyInfo",
-                "disabled-by-default-devtools.timeline.stack",
-                "disabled-by-default-v8.cpu_profiler",
-            ],
-        })
+    self._tracer = DevToolsTracer(self._private_driver)
+    self._tracer.start()
 
   def stop_profiling(self) -> Any:
     assert isinstance(self._private_driver, ChromiumDriver)
-    data = self._execute_cdp_cmd(self._private_driver,
-                                 "Tracing.tracingComplete", {})
-    # TODO: use webdriver bidi to get the async Tracing.end event.
-    # self._execute_cdp_cmd(self._driver, "Tracing.end", {})
-    return data
+    assert self._tracer is not None
+    output = self._tracer.end()
+    self._tracer = None
+    return output
+
+  @override
+  def force_quit(self) -> None:
+    try:
+      super().force_quit()
+    finally:
+      if self._stdout_log_file:
+        self._stdout_log_file.close()
+        self._stdout_log_file = None

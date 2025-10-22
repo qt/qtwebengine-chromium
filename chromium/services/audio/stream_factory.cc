@@ -9,7 +9,6 @@
 
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
-#include "base/not_fatal_until.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "base/unguessable_token.h"
@@ -20,8 +19,10 @@
 #include "services/audio/local_muter.h"
 #include "services/audio/loopback_stream.h"
 #include "services/audio/output_stream.h"
+#include "services/audio/reference_signal_provider.h"
 
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+#include "services/audio/loopback_reference_manager.h"
 #include "services/audio/output_device_mixer.h"
 #endif
 
@@ -37,6 +38,15 @@ std::unique_ptr<OutputDeviceMixerManager> MaybeCreateOutputDeviceMixerManager(
 
   return std::make_unique<OutputDeviceMixerManager>(
       audio_manager, base::BindRepeating(&OutputDeviceMixer::Create));
+}
+
+std::unique_ptr<LoopbackReferenceManager> MaybeCreateLoopbackReferenceManager(
+    media::AudioManager* audio_manager) {
+  if (!media::IsSystemLoopbackAsAecReferenceEnabled()) {
+    return nullptr;
+  }
+
+  return std::make_unique<LoopbackReferenceManager>(audio_manager);
 }
 #endif  // BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
 
@@ -56,6 +66,8 @@ StreamFactory::StreamFactory(
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
       output_device_mixer_manager_(
           MaybeCreateOutputDeviceMixerManager(audio_manager)),
+      loopback_reference_manager_(
+          MaybeCreateLoopbackReferenceManager(audio_manager)),
 #endif
       loopback_worker_thread_("Loopback Worker", kReatimeThreadPeriod) {
 }
@@ -90,12 +102,33 @@ void StreamFactory::CreateInputStream(
   auto deleter_callback = base::BindOnce(&StreamFactory::DestroyInputStream,
                                          base::Unretained(this));
 
+  // The `pending_log` parameter is a `mojo::PendingRemote`, which represents
+  // the client end of a Mojo IPC pipe. Here, we bind it directly into a
+  // `mojo::SharedRemote` to allow immediate use of the interface methods (e.g.,
+  // OnLogMessage) while also enabling safe ownership transfer to the
+  // InputStream.
+  //
+  // `SharedRemote` allows multiple components to safely share access to the
+  // same remote endpoint. By binding once here and passing the shared remote
+  // directly to the `InputStream` constructor, we avoid having to unbind and
+  // rebind, simplifying lifetime management and reducing risk of IPC misuse.
+  mojo::SharedRemote<media::mojom::AudioLog> shared_log(std::move(pending_log));
+  if (shared_log) {
+    shared_log->OnLogMessage(
+        base::StrCat({"SF::CreateInputStream(device_id=", device_id,
+                      ", params=[", params.AsHumanReadableString(), "])"}));
+  }
+#if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+  auto reference_provider =
+      GetNewReferenceSignalProvider(processing_config, shared_log);
+#endif
+
   input_streams_.insert(std::make_unique<InputStream>(
       std::move(created_callback), std::move(deleter_callback),
       std::move(stream_receiver), std::move(client), std::move(observer),
-      std::move(pending_log), audio_manager_, aecdump_recording_manager_,
+      std::move(shared_log), audio_manager_, aecdump_recording_manager_,
 #if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
-      output_device_mixer_manager_.get(), std::move(processing_config),
+      std::move(reference_provider), std::move(processing_config),
 #else
       nullptr, nullptr,
 #endif
@@ -279,7 +312,7 @@ void StreamFactory::DestroyLoopbackStream(LoopbackStream* stream) {
 
   const auto it =
       std::ranges::find_if(loopback_streams_, base::MatchesUniquePtr(stream));
-  CHECK(it != loopback_streams_.end(), base::NotFatalUntil::M130);
+  CHECK(it != loopback_streams_.end());
   loopback_streams_.erase(it);
 
   // If all LoopbackStreams have ended, stop and join the worker thread.
@@ -345,5 +378,40 @@ void StreamFactory::CreateOutputStreamInternal(
       std::move(observer), std::move(log), audio_manager_,
       device_id_or_group_id, params, &coordinator_, group_id));
 }
+
+#if BUILDFLAG(CHROME_WIDE_ECHO_CANCELLATION)
+std::unique_ptr<ReferenceSignalProvider>
+StreamFactory::GetNewReferenceSignalProvider(
+    const media::mojom::AudioProcessingConfigPtr& processing_config,
+    const mojo::SharedRemote<media::mojom::AudioLog>& audio_log) {
+  if (audio_log) {
+    audio_log->OnLogMessage("SF::GetNewReferenceSignalProvider()");
+  }
+  if (!processing_config) {
+    if (audio_log) {
+      audio_log->OnLogMessage("SF::GetNewReferenceSignalProvider: No config!");
+    }
+    return nullptr;
+  }
+  if (processing_config->settings.use_loopback_aec_reference) {
+    CHECK(loopback_reference_manager_);
+    if (audio_log) {
+      audio_log->OnLogMessage(
+          "SF::GetNewReferenceSignalProvider: using "
+          "LoopbackReferenceManager");
+    }
+    return loopback_reference_manager_->GetReferenceSignalProvider();
+  }
+  if (output_device_mixer_manager_) {
+    if (audio_log) {
+      audio_log->OnLogMessage(
+          "SF::GetNewReferenceSignalProvider: using "
+          "OutputDeviceMixerManager");
+    }
+    return output_device_mixer_manager_->GetReferenceSignalProvider();
+  }
+  return nullptr;
+}
+#endif
 
 }  // namespace audio

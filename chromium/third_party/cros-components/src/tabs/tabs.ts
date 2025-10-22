@@ -52,7 +52,7 @@ export class Tabs extends LitElement {
    * The index of the active tab.
    * @export
    */
-  activeTabIndex: number;
+  declare activeTabIndex: number;
 
   /** @nocollapse */
   static override properties = {

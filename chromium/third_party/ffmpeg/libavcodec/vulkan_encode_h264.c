@@ -1061,11 +1061,11 @@ static int parse_feedback_units(AVCodecContext *avctx,
     if (err < 0)
         return err;
 
-    err = ff_cbs_read(cbs, &au, data, size);
+    err = ff_cbs_read(cbs, &au, NULL, data, size);
     if (err < 0) {
         av_log(avctx, AV_LOG_ERROR, "Unable to parse feedback units, bad drivers: %s\n",
                av_err2str(err));
-        return err;
+        goto fail;
     }
 
     /* If PPS has an override, just copy it entirely. */
@@ -1079,10 +1079,12 @@ static int parse_feedback_units(AVCodecContext *avctx,
         }
     }
 
+    err = 0;
+fail:
     ff_cbs_fragment_free(&au);
     ff_cbs_close(&cbs);
 
-    return 0;
+    return err;
 }
 
 static int init_base_units(AVCodecContext *avctx)
@@ -1658,10 +1660,7 @@ const FFCodec ff_h264_vulkan_encoder = {
                       AV_CODEC_CAP_ENCODER_REORDERED_OPAQUE,
     .caps_internal  = FF_CODEC_CAP_INIT_CLEANUP,
     .defaults       = vulkan_encode_h264_defaults,
-    .p.pix_fmts = (const enum AVPixelFormat[]) {
-        AV_PIX_FMT_VULKAN,
-        AV_PIX_FMT_NONE,
-    },
+    CODEC_PIXFMTS(AV_PIX_FMT_VULKAN),
     .hw_configs     = ff_vulkan_encode_hw_configs,
     .p.wrapper_name = "vulkan",
 };

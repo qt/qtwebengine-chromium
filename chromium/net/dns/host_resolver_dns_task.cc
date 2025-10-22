@@ -8,9 +8,9 @@
 #include <string_view>
 #include <variant>
 
+#include "base/feature_list.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/time/tick_clock.h"
 #include "base/types/optional_util.h"
 #include "net/base/features.h"
@@ -26,6 +26,11 @@
 #include "net/dns/public/util.h"
 
 namespace net {
+
+// When enabled, query HTTPS RR first.
+BASE_FEATURE(kPrioritizeHttpsResourceRecord,
+             "PrioritizeHttpsResourceRecord",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 namespace {
 
@@ -405,25 +410,38 @@ void HostResolverDnsTask::PushTransactionsNeeded(DnsQueryTypeSet query_types) {
                                       TransactionErrorBehavior::kFatalOrEmpty);
   }
 
-  // Give AAAA/A queries a head start by pushing them to the queue first.
-  constexpr DnsQueryType kHighPriorityQueries[] = {DnsQueryType::AAAA,
-                                                   DnsQueryType::A};
-  for (DnsQueryType high_priority_query : kHighPriorityQueries) {
-    if (query_types.Has(high_priority_query)) {
-      query_types.Remove(high_priority_query);
-      transactions_needed_.emplace_back(high_priority_query);
-    }
-  }
-  for (DnsQueryType remaining_query : query_types) {
-    if (remaining_query == DnsQueryType::HTTPS) {
+  auto add_transaction = [&](DnsQueryType query) {
+    if (query == DnsQueryType::HTTPS) {
       // Ignore errors for these types. In most cases treating them normally
       // would only result in fallback to resolution without querying the
       // type. Instead, synthesize empty results.
       transactions_needed_.emplace_back(
-          remaining_query, TransactionErrorBehavior::kSynthesizeEmpty);
+          query, TransactionErrorBehavior::kSynthesizeEmpty);
     } else {
-      transactions_needed_.emplace_back(remaining_query);
+      transactions_needed_.emplace_back(query);
     }
+  };
+
+  if (query_types.Has(DnsQueryType::HTTPS) &&
+      (base::FeatureList::IsEnabled(kPrioritizeHttpsResourceRecord) ||
+       base::FeatureList::IsEnabled(features::kHappyEyeballsV3))) {
+    query_types.Remove(DnsQueryType::HTTPS);
+    add_transaction(DnsQueryType::HTTPS);
+  }
+
+  // Give AAAA/A queries a head start by pushing them to the queue first.
+  constexpr DnsQueryType kHighPriorityQueries[] = {DnsQueryType::AAAA,
+                                                   DnsQueryType::A};
+  for (DnsQueryType high_priority_query : kHighPriorityQueries) {
+    if (!query_types.Has(high_priority_query)) {
+      continue;
+    }
+    query_types.Remove(high_priority_query);
+    add_transaction(high_priority_query);
+  }
+
+  for (DnsQueryType remaining_query : query_types) {
+    add_transaction(remaining_query);
   }
 }
 
@@ -504,8 +522,7 @@ void HostResolverDnsTask::OnDnsTransactionComplete(
     uint16_t request_port,
     int net_error,
     const DnsResponse* response) {
-  CHECK(transaction_info_it != transactions_in_progress_.end(),
-        base::NotFatalUntil::M130);
+  CHECK(transaction_info_it != transactions_in_progress_.end());
   DCHECK(base::Contains(transactions_in_progress_, *transaction_info_it));
 
   // Pull the TransactionInfo out of `transactions_in_progress_` now, so it

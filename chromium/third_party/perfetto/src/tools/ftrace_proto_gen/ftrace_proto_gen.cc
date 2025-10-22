@@ -54,7 +54,8 @@ std::string EventNameToProtoFieldName(const std::string& group,
   // These groups have events where the name alone conflicts with an existing
   // proto:
   if (group == "sde" || group == "g2d" || group == "dpu" || group == "mali" ||
-      group == "lwis" || group == "samsung" || group == "kgsl") {
+      group == "lwis" || group == "samsung" || group == "kgsl" ||
+      group == "hypervisor") {
     event_name = group + "_" + event_name;
   }
   return event_name;
@@ -127,6 +128,9 @@ void GenerateFtraceEventProto(const std::vector<FtraceEventName>& raw_eventlist,
   // existence of this common field. If this becomes needed for all events:
   // consider merging with common_preempt_count to avoid extra proto tags.
   optional uint32 common_flags = 5;
+
+  // Range reserved for self-describing messages.
+  reserved 65536 to 131072;
 
   oneof event {
 )";

@@ -288,22 +288,16 @@ bool PlusAddressServiceImpl::IsPlusAddressFillingEnabled(
   return IsEnabled() && IsSupportedOrigin(origin);
 }
 
-bool PlusAddressServiceImpl::IsPlusAddressFullFormFillingEnabled() const {
-  return base::FeatureList::IsEnabled(features::kPlusAddressFullFormFill);
-}
-
 bool PlusAddressServiceImpl::IsFieldEligibleForPlusAddress(
     const autofill::AutofillField& field) const {
-  autofill::FillingProduct filling_product =
-      autofill::GetFillingProductFromFieldTypeGroup(field.Type().group());
+  auto filling_products = autofill::DenseSet<autofill::FillingProduct>(
+      field.Type().GetGroups(), &autofill::GetFillingProductFromFieldTypeGroup);
 
-  if (filling_product == autofill::FillingProduct::kAddress) {
+  if (filling_products.contains(autofill::FillingProduct::kAddress)) {
     return true;
   }
 
-  return base::FeatureList::IsEnabled(
-             features::kPlusAddressSuggestionsOnUsernameFields) &&
-         (field.server_type() == autofill::FieldType::USERNAME ||
+  return (field.server_type() == autofill::FieldType::USERNAME ||
           field.server_type() == autofill::FieldType::SINGLE_USERNAME) &&
          field.heuristic_type() == autofill::FieldType::EMAIL_ADDRESS;
 }
@@ -331,7 +325,7 @@ std::vector<Suggestion> PlusAddressServiceImpl::GetSuggestionsFromPlusAddresses(
     bool is_off_the_record,
     const autofill::FormData& focused_form,
     const autofill::FormFieldData& focused_field,
-    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroup>&
+    const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroupSet>&
         form_field_type_groups,
     const autofill::PasswordFormClassification& focused_form_classification,
     AutofillSuggestionTriggerSource trigger_source) {
@@ -521,6 +515,11 @@ void PlusAddressServiceImpl::OnWebDataServiceRequestDone(
   }
 }
 
+void PlusAddressServiceImpl::Shutdown() {
+  identity_manager_observation_.Reset();
+  PlusAddressService::Shutdown();
+}
+
 void PlusAddressServiceImpl::OnPrimaryAccountChanged(
     const signin::PrimaryAccountChangeEvent& event) {
   signin::PrimaryAccountChangeEvent::Type type =
@@ -543,6 +542,12 @@ void PlusAddressServiceImpl::OnErrorStateOfRefreshTokenUpdatedForAccount(
   if (error.state() != GoogleServiceAuthError::NONE) {
     HandleSignout();
   }
+}
+
+void PlusAddressServiceImpl::OnIdentityManagerShutdown(
+    signin::IdentityManager* identity_manager) {
+  // Needs to be shutdown before IdentityManager.
+  NOTREACHED(base::NotFatalUntil::M142);
 }
 
 void PlusAddressServiceImpl::HandleSignout() {

@@ -2,21 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "gpu/command_buffer/service/dawn_caching_interface.h"
 
 #include <cstring>
 #include <variant>
 
+#include "base/compiler_specific.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
+#include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/memory_dump_manager.h"
 #include "base/trace_event/memory_dump_request_args.h"
 #include "base/trace_event/trace_event.h"
+#include "gpu/command_buffer/service/service_utils.h"
 #include "gpu/config/gpu_preferences.h"
 #include "net/base/io_buffer.h"
 
@@ -107,6 +105,15 @@ void DawnCachingInterfaceFactory::ReleaseHandle(
   backends_.erase(handle);
 }
 
+void DawnCachingInterfaceFactory::PurgeMemory(
+    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+  for (auto& [key, backend] : backends_) {
+    CHECK(std::holds_alternative<GpuDiskCacheDawnGraphiteHandle>(key) ||
+          std::holds_alternative<GpuDiskCacheDawnWebGPUHandle>(key));
+    backend->PurgeMemory(memory_pressure_level);
+  }
+}
+
 bool DawnCachingInterfaceFactory::OnMemoryDump(
     const base::trace_event::MemoryDumpArgs& args,
     base::trace_event::ProcessMemoryDump* pmd) {
@@ -164,7 +171,7 @@ size_t DawnCachingBackend::Entry::ReadData(void* value_out,
   // Otherwise, verify that the size that is being copied out is identical.
   TRACE_EVENT0("gpu", "DawnCachingInterface::CacheHit");
   DCHECK(value_size == DataSize());
-  memcpy(value_out, data_.data(), value_size);
+  UNSAFE_TODO(memcpy(value_out, data_.data(), value_size));
   return value_size;
 }
 
@@ -244,6 +251,17 @@ void DawnCachingBackend::StoreData(const std::string& key,
 
   auto [it, inserted] = entries_.insert(std::move(entry));
   DCHECK(inserted);
+}
+
+void DawnCachingBackend::PurgeMemory(
+    base::MemoryPressureListener::MemoryPressureLevel memory_pressure_level) {
+  base::AutoLock lock(mutex_);
+  size_t new_limit = gpu::UpdateShaderCacheSizeOnMemoryPressure(
+      max_size_, memory_pressure_level);
+  // Evict the least recently used entries until we reach the `new_limit`
+  while (current_size_ > new_limit) {
+    EvictEntry(lru_.head()->value());
+  }
 }
 
 void DawnCachingBackend::OnMemoryDump(

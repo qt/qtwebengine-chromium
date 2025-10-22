@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 import * as SDK from '../../core/sdk/sdk.js';
+import * as AiAssistanceModel from '../../models/ai_assistance/ai_assistance.js';
+import * as AiAssistance from '../../panels/ai_assistance/ai_assistance.js';
 import {getMenuForToolbarButton} from '../../testing/ContextMenuHelpers.js';
 import {createTarget, stubNoopSettings} from '../../testing/EnvironmentHelpers.js';
 import {
@@ -16,6 +18,7 @@ describeWithMockConnection('MainMenuItem', () => {
   beforeEach(async () => {
     stubNoopSettings();
     sinon.stub(UI.ShortcutRegistry.ShortcutRegistry, 'instance').returns({
+      keyAndModifiersForAction: () => {},
       shortcutTitleForAction: () => {},
       shortcutsForAction: () => [],
     } as unknown as UI.ShortcutRegistry.ShortcutRegistry);
@@ -52,8 +55,34 @@ describeWithMockConnection('MainMenuItem', () => {
       cancelable: true,
     }));
 
-    assert.isTrue(contextMenuShow.calledOnce);
+    sinon.assert.calledOnce(contextMenuShow);
     assert.notExists(contextMenuShow.thisValues[0].defaultSection().items.find(
         (item: UI.ContextMenu.Item) => item.buildDescriptor().label === 'Focus page'));
+  });
+
+  describe('handleExternalRequest', () => {
+    const {handleExternalRequestGenerator} = Main.MainImpl;
+
+    it('calls into the AiAssistance Panel for LIVE_STYLE_DEBUGGER', async () => {
+      const panel = sinon.createStubInstance(AiAssistance.AiAssistancePanel);
+      sinon.stub(AiAssistance.AiAssistancePanel, 'instance').callsFake(() => Promise.resolve(panel));
+
+      await handleExternalRequestGenerator({kind: 'LIVE_STYLE_DEBUGGER', args: {prompt: 'test', selector: '#test'}});
+      sinon.assert.calledWith(
+          panel.handleExternalRequest,
+          {prompt: 'test', conversationType: AiAssistanceModel.ConversationType.STYLING, selector: '#test'});
+    });
+
+    it('returns an error for file assistance requests', async () => {
+      const panel = sinon.createStubInstance(AiAssistance.AiAssistancePanel);
+      sinon.stub(AiAssistance.AiAssistancePanel, 'instance').callsFake(() => Promise.resolve(panel));
+
+      // @ts-expect-error
+      const generator = await handleExternalRequestGenerator({kind: 'FILE_DEBUGGER', args: {prompt: 'test'}});
+      const iteratorResponse = await generator.next();
+      assert.strictEqual(iteratorResponse.value.type, 'error');
+      assert.strictEqual(
+          iteratorResponse.value.message, 'Debugging with an agent of type \'FILE_DEBUGGER\' is not implemented yet.');
+    });
   });
 });

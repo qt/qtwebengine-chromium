@@ -22,7 +22,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/stl_util.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
@@ -80,15 +79,15 @@ bool ParseCookieLifetime(const net::ParsedCookie& cookie,
   // 'Max-Age' is processed first because according to:
   // http://tools.ietf.org/html/rfc6265#section-5.3 'Max-Age' attribute
   // overrides 'Expires' attribute.
-  if (cookie.HasMaxAge() &&
-      base::StringToInt64(cookie.MaxAge(), seconds_till_expiry)) {
+  if (cookie.MaxAge().has_value() &&
+      base::StringToInt64(cookie.MaxAge().value(), seconds_till_expiry)) {
     return true;
   }
 
   Time parsed_expiry_time;
-  if (cookie.HasExpires()) {
+  if (cookie.Expires().has_value()) {
     parsed_expiry_time =
-        net::cookie_util::ParseCookieExpirationTime(cookie.Expires());
+        net::cookie_util::ParseCookieExpirationTime(cookie.Expires().value());
   }
 
   if (!parsed_expiry_time.is_null()) {
@@ -350,8 +349,7 @@ std::string GetDNRNewRequestHeaderValue(net::HttpRequestHeaders* headers,
   std::optional<std::string> existing_value = headers->GetHeader(header_name);
   if (existing_value && operation == dnr_api::HeaderOperation::kAppend) {
     const auto it = dnr::kDNRRequestHeaderAppendAllowList.find(header_name);
-    CHECK(it != dnr::kDNRRequestHeaderAppendAllowList.end(),
-          base::NotFatalUntil::M130);
+    CHECK(it != dnr::kDNRRequestHeaderAppendAllowList.end());
     return base::StrCat({*existing_value, it->second, header_value});
   }
 
@@ -1420,28 +1418,28 @@ static bool DoesResponseCookieMatchFilter(
     return false;
   }
   if (filter->expires) {
-    std::string actual_value =
-        cookie.HasExpires() ? cookie.Expires() : std::string();
+    std::string_view actual_value =
+        cookie.Expires().value_or(std::string_view());
     if (actual_value != *filter->expires) {
       return false;
     }
   }
   if (filter->max_age) {
-    std::string actual_value =
-        cookie.HasMaxAge() ? cookie.MaxAge() : std::string();
+    std::string_view actual_value =
+        cookie.MaxAge().value_or(std::string_view());
     if (actual_value != base::NumberToString(*filter->max_age)) {
       return false;
     }
   }
   if (filter->domain) {
-    std::string actual_value =
-        cookie.HasDomain() ? cookie.Domain() : std::string();
+    std::string_view actual_value =
+        cookie.Domain().value_or(std::string_view());
     if (actual_value != *filter->domain) {
       return false;
     }
   }
   if (filter->path) {
-    std::string actual_value = cookie.HasPath() ? cookie.Path() : std::string();
+    std::string_view actual_value = cookie.Path().value_or(std::string_view());
     if (actual_value != *filter->path) {
       return false;
     }

@@ -11,6 +11,7 @@
 #include "components/viz/common/resources/shared_image_format_utils.h"
 #include "gpu/command_buffer/service/shared_context_state.h"
 #include "gpu/command_buffer/service/shared_image/shared_image_format_service_utils.h"
+#include "gpu/command_buffer/service/shared_image/shared_image_manager.h"
 #include "gpu/command_buffer/service/texture_manager.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImage.h"
@@ -803,6 +804,16 @@ std::string SkiaGraphiteImageRepresentation::WrappedTextureDebugLabel(
   }
   return debug_label;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// WebNNTensorRepresentation
+
+#if BUILDFLAG(IS_WIN)
+Microsoft::WRL::ComPtr<ID3D12Resource>
+WebNNTensorRepresentation::GetD3D12Buffer() const {
+  NOTREACHED();
+}
+#endif
 
 ///////////////////////////////////////////////////////////////////////////////
 // OverlayImageRepresentation

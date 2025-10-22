@@ -1264,7 +1264,7 @@ TEST(CSSParserImplTest, AllPropertiesCanParseImportant) {
   }
 
   // So that we don't introduce more, or break the entire test inadvertently.
-  EXPECT_EQ(broken_properties, 17);
+  EXPECT_EQ(broken_properties, 16);
 }
 
 TEST(CSSParserImplTest, ParseSupportsBlinkFeature) {
@@ -1286,7 +1286,8 @@ TEST(CSSParserImplTest, ParseSupportsBlinkFeature) {
   StyleRuleSupports* supports_rule = DynamicTo<StyleRuleSupports>(rule);
   ASSERT_TRUE(supports_rule->ConditionIsSupported());
 
-  HeapVector<Member<StyleRuleBase>> child_rules = supports_rule->ChildRules();
+  const HeapVector<Member<StyleRuleBase>>& child_rules =
+      supports_rule->ChildRules();
   ASSERT_EQ(child_rules.size(), 2u);
   ASSERT_EQ(String("div"),
             To<StyleRule>(child_rules[0].Get())->SelectorsText());
@@ -1333,7 +1334,8 @@ TEST(CSSParserImplTest, ParseSupportsBlinkFeatureDisabledFeature) {
   StyleRuleSupports* supports_rule = DynamicTo<StyleRuleSupports>(rule);
   ASSERT_FALSE(supports_rule->ConditionIsSupported());
 
-  HeapVector<Member<StyleRuleBase>> child_rules = supports_rule->ChildRules();
+  const HeapVector<Member<StyleRuleBase>>& child_rules =
+      supports_rule->ChildRules();
   ASSERT_EQ(child_rules.size(), 2u);
   ASSERT_EQ(String("div"),
             To<StyleRule>(child_rules[0].Get())->SelectorsText());
@@ -1418,6 +1420,17 @@ TEST(CSSParserImplTest, ParseNestedRule) {
             To<StyleRule>(nested)
                 ->FirstSelector()
                 ->SelectorTextExpandingPseudoReferences(/*scope_id=*/0));
+}
+
+TEST(CSSParserImplTest, UnexpectedTokenInVar_IdentFunctionDisabled) {
+  test::TaskEnvironment task_environment;
+  ScopedNullExecutionContext execution_context;
+  ScopedCSSIdentFunctionForTest scoped_feature(false);
+  Document* document =
+      Document::CreateForTest(execution_context.GetExecutionContext());
+  // Don't crash:
+  css_test_helpers::ParseRule(*document, ".a { color: var(42); }");
+  css_test_helpers::ParseRule(*document, ".a { color: var(ident('thing')); }");
 }
 
 }  // namespace blink

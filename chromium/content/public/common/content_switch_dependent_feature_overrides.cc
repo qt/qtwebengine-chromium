@@ -40,14 +40,7 @@ GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
        std::cref(features::kExperimentalContentSecurityPolicyFeatures),
        base::FeatureList::OVERRIDE_ENABLE_FEATURE},
       {switches::kEnableExperimentalWebPlatformFeatures,
-       std::cref(blink::features::kDocumentPictureInPictureAPI),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-      {switches::kEnableExperimentalWebPlatformFeatures,
        std::cref(features::kOriginIsolationHeader),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-      {switches::kEnableExperimentalWebPlatformFeatures,
-       std::cref(
-           blink::features::kDocumentPolicyIncludeJSCallStacksInCrashReports),
        base::FeatureList::OVERRIDE_ENABLE_FEATURE},
       {switches::kEnableExperimentalWebPlatformFeatures,
        std::cref(features::kEnableCanvas2DLayers),
@@ -57,9 +50,6 @@ GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
        base::FeatureList::OVERRIDE_ENABLE_FEATURE},
       {switches::kEnableExperimentalWebPlatformFeatures,
        std::cref(features::kCriticalClientHint),
-       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
-      {switches::kEnableExperimentalWebPlatformFeatures,
-       std::cref(net::features::kSchemefulSameSite),
        base::FeatureList::OVERRIDE_ENABLE_FEATURE},
       {switches::kEnableExperimentalWebPlatformFeatures,
        std::cref(features::kBlockInsecurePrivateNetworkRequests),
@@ -80,7 +70,10 @@ GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
        std::cref(blink::features::kPartitionedPopins),
        base::FeatureList::OVERRIDE_ENABLE_FEATURE},
       {switches::kEnableExperimentalWebPlatformFeatures,
-       std::cref(network::features::kStorageAccessHeaders),
+       std::cref(network::features::kCookieIndicesHeader),
+       base::FeatureList::OVERRIDE_ENABLE_FEATURE},
+      {switches::kEnableExperimentalWebPlatformFeatures,
+       std::cref(features::kPrefetchCookieIndices),
        base::FeatureList::OVERRIDE_ENABLE_FEATURE},
 
       // Overrides for --enable-experimental-cookie-features.
@@ -118,6 +111,11 @@ GetSwitchDependentFeatureOverrides(const base::CommandLine& command_line) {
 
       // Overrides for headless
       {::switches::kHeadless, std::cref(blink::features::kPaintHolding),
+       base::FeatureList::OVERRIDE_DISABLE_FEATURE},
+
+      // Overrides for disable-ignore-duplicate-navs-for-testing.
+      {switches::kDisableIgnoreDuplicateNavsForTesting,
+       std::cref(features::kIgnoreDuplicateNavs),
        base::FeatureList::OVERRIDE_DISABLE_FEATURE},
 
       // Override for --reduce-user-agent-minor-version.

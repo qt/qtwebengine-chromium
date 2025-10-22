@@ -42,7 +42,7 @@ class PPCOperandConverter final : public InstructionOperandConverter {
       case kFlags_conditional_branch:
       case kFlags_deoptimize:
       case kFlags_set:
-      case kFlags_conditional_set:
+      case kFlags_conditional_trap:
       case kFlags_trap:
       case kFlags_select:
         return SetRC;
@@ -634,7 +634,7 @@ static inline bool is_wasm_on_be(bool IsWasm) {
 #define ASSEMBLE_ATOMIC_BINOP_BYTE(bin_inst, _type)                          \
   do {                                                                       \
     auto bin_op = [&](Register dst, Register lhs, Register rhs) {            \
-      if (std::is_signed<_type>::value) {                                    \
+      if (std::is_signed_v<_type>) {                                         \
         __ extsb(dst, lhs);                                                  \
         __ bin_inst(dst, dst, rhs);                                          \
       } else {                                                               \
@@ -653,7 +653,7 @@ static inline bool is_wasm_on_be(bool IsWasm) {
     auto bin_op = [&](Register dst, Register lhs, Register rhs) {             \
       Register _lhs = lhs;                                                    \
       MAYBE_REVERSE_IF_WASM(dst, _lhs, reverse_op, scratch, true);            \
-      if (std::is_signed<_type>::value) {                                     \
+      if (std::is_signed_v<_type>) {                                          \
         switch (sizeof(_type)) {                                              \
           case 1:                                                             \
             UNREACHABLE();                                                    \
@@ -919,17 +919,15 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       }
       uint32_t num_arguments =
           i.InputUint32(instr->JSCallArgumentCountInputIndex());
-      __ CallJSFunction(func, num_arguments, kScratchReg);
+      __ CallJSFunction(func, num_arguments);
       RecordCallPosition(instr);
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       frame_access_state()->ClearSPDelta();
       break;
     }
     case kArchPrepareCallCFunction: {
-      int const num_gp_parameters = ParamField::decode(instr->opcode());
-      int const num_fp_parameters = FPParamField::decode(instr->opcode());
-      __ PrepareCallCFunction(num_gp_parameters + num_fp_parameters,
-                              kScratchReg);
+      int const num_parameters = MiscField::decode(instr->opcode());
+      __ PrepareCallCFunction(num_parameters, kScratchReg);
       // Frame alignment requires using FP-relative frame addressing.
       frame_access_state()->SetFrameAccessToFP();
       break;
@@ -968,10 +966,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ RecordComment(reinterpret_cast<const char*>(i.InputInt64(0)),
                        SourceLocation());
       break;
-    case kArchCallCFunctionWithFrameState:
     case kArchCallCFunction: {
-      int const num_gp_parameters = ParamField::decode(instr->opcode());
-      int const fp_param_field = FPParamField::decode(instr->opcode());
+      uint32_t param_counts = i.InputUint32(instr->InputCount() - 1);
+      int const num_gp_parameters = ParamField::decode(param_counts);
+      int const fp_param_field = FPParamField::decode(param_counts);
       int num_fp_parameters = fp_param_field;
       bool has_function_descriptor = false;
       SetIsolateDataSlots set_isolate_data_slots = SetIsolateDataSlots::kYes;
@@ -1030,9 +1028,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
 #endif  // V8_ENABLE_WEBASSEMBLY
       RecordSafepoint(instr->reference_map(), pc_offset);
 
-      bool const needs_frame_state =
-          (opcode == kArchCallCFunctionWithFrameState);
-      if (needs_frame_state) {
+      if (instr->HasCallDescriptorFlag(CallDescriptor::kHasExceptionHandler)) {
+        handlers_.push_back({nullptr, pc_offset});
+      }
+      if (instr->HasCallDescriptorFlag(CallDescriptor::kNeedsFrameState)) {
         RecordDeoptInfo(instr, pc_offset);
       }
 
@@ -1080,9 +1079,11 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       __ DebugBreak();
       break;
     case kArchNop:
-    case kArchThrowTerminator:
       // don't emit code for nops.
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
+      break;
+    case kArchPause:
+      __ isync();
       break;
     case kArchDeoptimize: {
       DeoptimizationExit* exit =
@@ -1104,6 +1105,10 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       } else {
         __ mr(i.OutputRegister(), fp);
       }
+      break;
+    case kArchRootPointer:
+      __ mr(i.OutputRegister(), kRootRegister);
+      DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
 #if V8_ENABLE_WEBASSEMBLY
     case kArchStackPointer:
@@ -1139,7 +1144,8 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
       break;
     case kArchTruncateDoubleToI:
       __ TruncateDoubleToI(isolate(), zone(), i.OutputRegister(),
-                           i.InputDoubleRegister(0), DetermineStubCallMode());
+                           i.InputDoubleRegister(0), DetermineStubCallMode(),
+                           kScratchDoubleReg);
       DCHECK_EQ(LeaveRC, i.OutputRCBit());
       break;
     case kArchStoreWithWriteBarrier: {
@@ -2051,7 +2057,58 @@ CodeGenerator::CodeGenResult CodeGenerator::AssembleArchInstruction(
     }
     case kPPC_AtomicCompareExchangeWord64: {
       ASSEMBLE_ATOMIC_COMPARE_EXCHANGE(uint64_t, ByteReverseU64);
-    } break;
+      break;
+    }
+    case kAtomicExchangeWithWriteBarrier: {
+      if constexpr (COMPRESS_POINTERS_BOOL) {
+        ASSEMBLE_ATOMIC_EXCHANGE(uint32_t, ByteReverseU32);
+        __ AddS64(i.OutputRegister(), i.OutputRegister(),
+                  kPtrComprCageBaseRegister);
+      } else {
+        ASSEMBLE_ATOMIC_EXCHANGE(uint64_t, ByteReverseU64);
+      }
+      if (v8_flags.disable_write_barriers) break;
+      // Emit the write barrier.
+      Register object = i.InputRegister(0);
+      Register offset = i.InputRegister(1);
+      Register value = i.InputRegister(2);
+      Register scratch0 = i.TempRegister(0);
+      Register scratch1 = i.TempRegister(1);
+      auto ool = zone()->New<OutOfLineRecordWrite>(
+          this, object, offset, value, scratch0, scratch1,
+          RecordWriteMode::kValueIsAny, DetermineStubCallMode(),
+          &unwinding_info_writer_);
+      __ JumpIfSmi(value, ool->exit());
+      __ CheckPageFlag(object, scratch0,
+                       MemoryChunk::kPointersFromHereAreInterestingMask, ne,
+                       ool->entry());
+      __ bind(ool->exit());
+      break;
+    }
+    case kAtomicCompareExchangeWithWriteBarrier: {
+      if constexpr (COMPRESS_POINTERS_BOOL) {
+        ASSEMBLE_ATOMIC_COMPARE_EXCHANGE(uint32_t, ByteReverseU32);
+        __ AddS64(i.OutputRegister(), i.OutputRegister(),
+                  kPtrComprCageBaseRegister);
+      } else {
+        ASSEMBLE_ATOMIC_COMPARE_EXCHANGE(uint64_t, ByteReverseU64);
+      }
+      if (v8_flags.disable_write_barriers) break;
+      // Emit the write barrier.
+      Register object = i.InputRegister(0);
+      Register offset = i.InputRegister(1);
+      Register value = i.InputRegister(2);
+      auto ool = zone()->New<OutOfLineRecordWrite>(
+          this, object, offset, value, ip, kScratchReg,
+          RecordWriteMode::kValueIsAny, DetermineStubCallMode(),
+          &unwinding_info_writer_);
+      __ JumpIfSmi(value, ool->exit());
+      __ CheckPageFlag(object, kScratchReg,
+                       MemoryChunk::kPointersFromHereAreInterestingMask, ne,
+                       ool->entry());
+      __ bind(ool->exit());
+      break;
+    }
 
 #define ATOMIC_BINOP_CASE(op, inst)                            \
   case kPPC_Atomic##op##Int8:                                  \
@@ -2998,9 +3055,12 @@ void CodeGenerator::AssembleArchBoolean(Instruction* instr,
   __ bind(&done);
 }
 
-void CodeGenerator::AssembleArchConditionalBoolean(Instruction* instr) {
+#if V8_ENABLE_WEBASSEMBLY
+void CodeGenerator::AssembleArchConditionalTrap(Instruction* instr,
+                                                FlagsCondition condition) {
   UNREACHABLE();
 }
+#endif  // V8_ENABLE_WEBASSEMBLY
 
 void CodeGenerator::AssembleArchConditionalBranch(Instruction* instr,
                                                   BranchInfo* branch) {
@@ -3175,7 +3235,17 @@ void CodeGenerator::AssembleConstructFrame() {
             WasmHandleStackOverflowDescriptor::FrameBaseRegister(), fp,
             Operand(call_descriptor->ParameterSlotCount() * kSystemPointerSize +
                     CommonFrameConstants::kFixedFrameSizeAboveFp));
-        __ CallBuiltin(Builtin::kWasmHandleStackOverflow);
+        __ Call(static_cast<Address>(Builtin::kWasmHandleStackOverflow),
+                RelocInfo::WASM_STUB_CALL);
+        // If the call succesfully grew the stack, we don't expect it to have
+        // allocated any heap objects or otherwise triggered any GC.
+        // If it was not able to grow the stack, it may have triggered a GC when
+        // allocating the stack overflow exception object, but the call did not
+        // return in this case.
+        // So either way, we can just ignore any references and record an empty
+        // safepoint here.
+        ReferenceMap* reference_map = zone()->New<ReferenceMap>(zone());
+        RecordSafepoint(reference_map);
         __ MultiPopF64AndV128(fp_regs_to_save,
                               Simd128RegList::FromBits(fp_regs_to_save.bits()),
                               ip, r0);

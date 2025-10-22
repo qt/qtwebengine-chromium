@@ -172,7 +172,7 @@ TEST_F(GlslWriterTest, AccessNested) {
     Vector members_a{
         ty.Get<core::type::StructMember>(b.ir.symbols.New("d"), ty.i32(), 0u, 0u, 4u, 4u,
                                          core::IOAttributes{}),
-        ty.Get<core::type::StructMember>(b.ir.symbols.New("e"), ty.array<f32, 3>(), 1u, 4u, 4u, 4u,
+        ty.Get<core::type::StructMember>(b.ir.symbols.New("e"), ty.array<f32, 3>(), 1u, 4u, 4u, 12u,
                                          core::IOAttributes{}),
     };
     auto* a_strct = ty.Struct(b.ir.symbols.New("A"), std::move(members_a));
@@ -182,7 +182,7 @@ TEST_F(GlslWriterTest, AccessNested) {
                                          core::IOAttributes{}),
         ty.Get<core::type::StructMember>(b.ir.symbols.New("b"), ty.f32(), 1u, 4u, 4u, 4u,
                                          core::IOAttributes{}),
-        ty.Get<core::type::StructMember>(b.ir.symbols.New("c"), a_strct, 2u, 8u, 8u, 8u,
+        ty.Get<core::type::StructMember>(b.ir.symbols.New("c"), a_strct, 2u, 8u, 8u, 16u,
                                          core::IOAttributes{}),
     };
     auto* s_strct = ty.Struct(b.ir.symbols.New("S"), std::move(members_s));
@@ -580,9 +580,9 @@ TEST_F(GlslWriterTest, AccessChainFromUnnamedAccessChain) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         auto* x = b.Access(ty.ptr(storage, sb, core::Access::kReadWrite), var, 2_u);
-        auto* y = b.Access(ty.ptr(storage, Inner, core::Access::kReadWrite), x->Result(0), 1_u);
-        b.Let("b", b.Load(b.Access(ty.ptr(storage, ty.u32(), core::Access::kReadWrite),
-                                   y->Result(0), 1_u)));
+        auto* y = b.Access(ty.ptr(storage, Inner, core::Access::kReadWrite), x->Result(), 1_u);
+        b.Let("b", b.Load(b.Access(ty.ptr(storage, ty.u32(), core::Access::kReadWrite), y->Result(),
+                                   1_u)));
         b.Return(func);
     });
 
@@ -628,9 +628,9 @@ TEST_F(GlslWriterTest, AccessChainFromLetAccessChain) {
     b.Append(func->Block(), [&] {
         auto* x = b.Let("x", var);
         auto* y = b.Let(
-            "y", b.Access(ty.ptr(storage, Inner, core::Access::kReadWrite), x->Result(0), 1_u));
+            "y", b.Access(ty.ptr(storage, Inner, core::Access::kReadWrite), x->Result(), 1_u));
         auto* z = b.Let(
-            "z", b.Access(ty.ptr(storage, ty.f32(), core::Access::kReadWrite), y->Result(0), 0_u));
+            "z", b.Access(ty.ptr(storage, ty.f32(), core::Access::kReadWrite), y->Result(), 0_u));
         b.Let("a", b.Load(z));
         b.Return(func);
     });
@@ -833,9 +833,9 @@ TEST_F(GlslWriterTest, AccessUniformChainFromUnnamedAccessChain) {
     auto* func = b.Function("foo", ty.void_(), core::ir::Function::PipelineStage::kFragment);
     b.Append(func->Block(), [&] {
         auto* x = b.Access(ty.ptr(uniform, sb, core::Access::kRead), var, 2_u);
-        auto* y = b.Access(ty.ptr(uniform, Inner, core::Access::kRead), x->Result(0), 1_u);
+        auto* y = b.Access(ty.ptr(uniform, Inner, core::Access::kRead), x->Result(), 1_u);
         b.Let("b",
-              b.Load(b.Access(ty.ptr(uniform, ty.u32(), core::Access::kRead), y->Result(0), 1_u)));
+              b.Load(b.Access(ty.ptr(uniform, ty.u32(), core::Access::kRead), y->Result(), 1_u)));
         b.Return(func);
     });
 
@@ -886,9 +886,9 @@ TEST_F(GlslWriterTest, AccessUniformChainFromLetAccessChain) {
     b.Append(func->Block(), [&] {
         auto* x = b.Let("x", var);
         auto* y =
-            b.Let("y", b.Access(ty.ptr(uniform, Inner, core::Access::kRead), x->Result(0), 1_u));
+            b.Let("y", b.Access(ty.ptr(uniform, Inner, core::Access::kRead), x->Result(), 1_u));
         auto* z =
-            b.Let("z", b.Access(ty.ptr(uniform, ty.f32(), core::Access::kRead), y->Result(0), 0_u));
+            b.Let("z", b.Access(ty.ptr(uniform, ty.f32(), core::Access::kRead), y->Result(), 0_u));
         b.Let("a", b.Load(z));
         b.Return(func);
     });
@@ -2354,9 +2354,10 @@ int g() {
 }
 void foo() {
   int arr[4] = int[4](0, 0, 0, 0);
-  uint v = min(uint((f() + 1)), 3u);
+  uint v = uint(f());
+  uint v_1 = min(uint(int((v + uint(1)))), 3u);
   int y = g();
-  int x = arr[v];
+  int x = arr[v_1];
 }
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 void main() {

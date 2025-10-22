@@ -35,7 +35,8 @@ enum class MediaStreamRequestResult2 {
   kDeviceInUse = 16,
   kRequestCancelled = 17,
   kStartTimeout = 18,
-  kMaxValue = kStartTimeout
+  kPermissionDeniedByUser = 19,
+  kMaxValue = kPermissionDeniedByUser
 };
 
 MediaStreamRequestResult2 MapResultToResult2(
@@ -72,7 +73,7 @@ MediaStreamRequestResult2 MapResultToResult2(
       return MediaStreamRequestResult2::kFailedDueToShutdown;
     case MediaStreamRequestResult::KILL_SWITCH_ON:
       return MediaStreamRequestResult2::kKillSwitchOn;
-    case MediaStreamRequestResult::SYSTEM_PERMISSION_DENIED:
+    case MediaStreamRequestResult::PERMISSION_DENIED_BY_SYSTEM:
       return MediaStreamRequestResult2::kSystemPermissionDenied;
     case MediaStreamRequestResult::DEVICE_IN_USE:
       return MediaStreamRequestResult2::kDeviceInUse;
@@ -80,8 +81,10 @@ MediaStreamRequestResult2 MapResultToResult2(
       return MediaStreamRequestResult2::kRequestCancelled;
     case MediaStreamRequestResult::START_TIMEOUT:
       return MediaStreamRequestResult2::kStartTimeout;
+    case MediaStreamRequestResult::PERMISSION_DENIED_BY_USER:
+      return MediaStreamRequestResult2::kPermissionDeniedByUser;
     case MediaStreamRequestResult::NUM_MEDIA_REQUEST_RESULTS:
-      break;
+      break;  // Not a valid enum value.
   }
   NOTREACHED();
 }

@@ -57,6 +57,10 @@
 #include "third_party/webrtc/modules/desktop_capture/mouse_cursor_monitor.h"
 #include "ui/gfx/icc_profile.h"
 
+#if BUILDFLAG(IS_WIN)
+#include "base/win/windows_version.h"
+#endif
+
 namespace content {
 
 namespace {
@@ -107,17 +111,6 @@ void BindWakeLockProvider(
   GetDeviceService().BindWakeLockProvider(std::move(receiver));
 }
 
-void LogDesktopCaptureZeroHzIsActive(DesktopMediaID::Type capturer_type,
-                                     bool zero_hz_is_active) {
-  if (capturer_type == DesktopMediaID::TYPE_SCREEN) {
-    UMA_HISTOGRAM_BOOLEAN("WebRTC.DesktopCapture.IsZeroHzActive.Screen",
-                          zero_hz_is_active);
-  } else {
-    UMA_HISTOGRAM_BOOLEAN("WebRTC.DesktopCapture.IsZeroHzActive.Window",
-                          zero_hz_is_active);
-  }
-}
-
 void LogDesktopCaptureFrameIsRefresh(DesktopMediaID::Type capturer_type,
                                      bool is_refresh_frame) {
   if (capturer_type == DesktopMediaID::TYPE_SCREEN) {
@@ -150,6 +143,43 @@ void LogDesktopCaptureRequestRefreshRate(DesktopMediaID::Type capturer_type,
                              rrf_rate_fps);
   }
 }
+
+#if BUILDFLAG(IS_WIN)
+bool IsWgcEnabledForScreenCapture() {
+  bool enabled =
+      base::FeatureList::IsEnabled(features::kWebRtcAllowWgcScreenCapturer);
+  if (enabled) {
+    return true;
+  }
+
+  if (base::FeatureList::GetInstance() &&
+      base::FeatureList::GetInstance()->IsFeatureOverridden(
+          features::kWebRtcAllowWgcScreenCapturer.name)) {
+    return enabled;
+  }
+
+  // Starting from WIN11 24H2 (build 26100), the Capture API returns empty
+  // frame when the captured content is unchanged, helping to maintain
+  // performance for 0Hz capture scenarios.
+  enabled = (base::win::GetVersion() >= base::win::Version::WIN11_24H2);
+  return enabled;
+}
+
+bool IsWgcZeroHzEnabledForScreenCapture() {
+  bool enabled =
+      base::FeatureList::IsEnabled(features::kWebRtcAllowWgcScreenZeroHz);
+  if (enabled) {
+    return true;
+  }
+
+  if (base::FeatureList::GetInstance() &&
+      base::FeatureList::GetInstance()->IsFeatureOverridden(
+          features::kWebRtcAllowWgcScreenZeroHz.name)) {
+    return enabled;
+  }
+  return IsWgcEnabledForScreenCapture();
+}
+#endif  // BUILDFLAG(IS_WIN)
 
 // Helper class which request that the system-global Windows timer interrupt
 // frequency be raised at construction. The corresponding deactivation is done
@@ -517,9 +547,6 @@ void DesktopCaptureDevice::Core::OnCaptureResult(
       !frame_is_refresh && frame->updated_region().is_empty();
   VLOG(2) << __func__ << " [SUCCESS]" << (frame_is_refresh ? "[RRF]" : "")
           << (zero_hertz_is_active ? "[0Hz]" : "");
-  if (zero_hertz_is_supported()) {
-    LogDesktopCaptureZeroHzIsActive(capturer_type_, zero_hertz_is_active);
-  }
   if (zero_hertz_is_active) {
     ScheduleNextCaptureFrame();
     return;
@@ -851,6 +878,9 @@ base::TimeTicks DesktopCaptureDevice::Core::NowTicks() const {
 // static
 std::unique_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
     const DesktopMediaID& source) {
+  CHECK(source.type == DesktopMediaID::TYPE_WINDOW ||
+        source.type == DesktopMediaID::TYPE_SCREEN);
+
   VLOG(1) << __func__ << "(source=" << source.ToString() << ")";
   auto options = desktop_capture::CreateDesktopCaptureOptions();
   std::unique_ptr<webrtc::DesktopCapturer> capturer;
@@ -868,7 +898,7 @@ std::unique_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
   // set to true. GDI does not use this option.
   options.set_prefer_cursor_embedded(true);
 
-  if (base::FeatureList::IsEnabled(features::kWebRtcAllowWgcScreenCapturer)) {
+  if (IsWgcEnabledForScreenCapture()) {
     options.set_allow_wgc_screen_capturer(true);
 
     // 0Hz support is by default disabled for WGC but it can be enabled using
@@ -879,24 +909,25 @@ std::unique_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
     // has changed and contain one (damage) region corresponding to the complete
     // screen or window being captured if any change is detected.
     if (source.type == DesktopMediaID::TYPE_SCREEN) {
-      options.set_allow_wgc_zero_hertz(
-          base::FeatureList::IsEnabled(features::kWebRtcAllowWgcScreenZeroHz));
+      options.set_allow_wgc_zero_hertz(IsWgcZeroHzEnabledForScreenCapture());
     }
   }
-  if (base::FeatureList::IsEnabled(features::kWebRtcAllowWgcWindowCapturer)) {
-    options.set_allow_wgc_window_capturer(true);
-    if (source.type == DesktopMediaID::TYPE_WINDOW) {
-      options.set_allow_wgc_zero_hertz(
-          base::FeatureList::IsEnabled(features::kWebRtcAllowWgcWindowZeroHz));
-    }
+  options.set_allow_wgc_window_capturer(true);
+  if (source.type == DesktopMediaID::TYPE_WINDOW) {
+    options.set_allow_wgc_zero_hertz(
+        base::FeatureList::IsEnabled(features::kWebRtcAllowWgcWindowZeroHz));
   }
+
+  options.set_wgc_require_border(
+      base::FeatureList::IsEnabled(features::kWebRtcWgcRequireBorder));
+
   VLOG(1) << "DesktopCaptureOptions: options={prefer_cursor_embedded: "
           << options.prefer_cursor_embedded() << ", allow_wgc_screen_capturer: "
           << options.allow_wgc_screen_capturer()
           << ", allow_wgc_window_capturer: "
           << options.allow_wgc_window_capturer()
           << ", allow_wgc_zero_hertz: " << options.allow_wgc_zero_hertz()
-          << "}";
+          << ", wgc_require_border: " << options.wgc_require_border() << "}";
 #endif
 
   // For browser tests, to create a fake desktop capturer.
@@ -909,7 +940,8 @@ std::unique_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
   switch (source.type) {
     case DesktopMediaID::TYPE_SCREEN: {
       std::unique_ptr<webrtc::DesktopCapturer> screen_capturer(
-          webrtc::DesktopCapturer::CreateScreenCapturer(options));
+          desktop_capture::CreateScreenCapturer(options,
+                                                /*for_snapshot=*/false));
       if (screen_capturer && screen_capturer->SelectSource(source.id)) {
         capturer = std::make_unique<webrtc::DesktopAndCursorComposer>(
             std::move(screen_capturer), options);
@@ -923,7 +955,7 @@ std::unique_ptr<media::VideoCaptureDevice> DesktopCaptureDevice::Create(
 
     case DesktopMediaID::TYPE_WINDOW: {
       std::unique_ptr<webrtc::DesktopCapturer> window_capturer =
-          webrtc::DesktopCapturer::CreateWindowCapturer(options);
+          desktop_capture::CreateWindowCapturer(options);
       if (window_capturer && window_capturer->SelectSource(source.id)) {
         capturer = std::make_unique<webrtc::DesktopAndCursorComposer>(
             std::move(window_capturer), options);
@@ -994,28 +1026,12 @@ DesktopCaptureDevice::DesktopCaptureDevice(
     DesktopMediaID::Type type)
     : thread_("desktopCaptureThread") {
   DVLOG(1) << __func__ << "(type=" << DesktopMediaTypeToString(type) << ")";
-#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
-  // On Windows/OSX the thread must be a UI thread.
-  base::MessagePumpType thread_type = base::MessagePumpType::UI;
-#else
-  base::MessagePumpType thread_type = base::MessagePumpType::DEFAULT;
-#endif
   bool zero_hertz_is_supported = true;
 #if BUILDFLAG(IS_WIN)
-  const bool wgc_screen_zero_hertz =
-      base::FeatureList::IsEnabled(features::kWebRtcAllowWgcScreenZeroHz);
+  const bool wgc_screen_zero_hertz = IsWgcZeroHzEnabledForScreenCapture();
   const bool wgc_window_zero_hertz =
       base::FeatureList::IsEnabled(features::kWebRtcAllowWgcWindowZeroHz);
-  const bool wgc_screen_capturer =
-      base::FeatureList::IsEnabled(features::kWebRtcAllowWgcScreenCapturer);
-  const bool wgc_window_capturer =
-      base::FeatureList::IsEnabled(features::kWebRtcAllowWgcWindowCapturer);
-  if (!wgc_window_capturer && !wgc_screen_capturer) {
-    zero_hertz_is_supported = true;
-  } else if (!wgc_window_capturer && wgc_screen_capturer) {
-    zero_hertz_is_supported =
-        (type == DesktopMediaID::TYPE_SCREEN) ? wgc_screen_zero_hertz : true;
-  } else if (wgc_window_capturer && !wgc_screen_capturer) {
+  if (!IsWgcEnabledForScreenCapture()) {
     zero_hertz_is_supported =
         (type == DesktopMediaID::TYPE_WINDOW) ? wgc_window_zero_hertz : true;
   } else {
@@ -1031,7 +1047,17 @@ DesktopCaptureDevice::DesktopCaptureDevice(
           << "]";
 #endif
 
+#if BUILDFLAG(IS_ANDROID)
+  thread_.Start();
+#else
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC)
+  // On Windows/OSX the thread must be a UI thread.
+  base::MessagePumpType thread_type = base::MessagePumpType::UI;
+#else
+  base::MessagePumpType thread_type = base::MessagePumpType::DEFAULT;
+#endif
   thread_.StartWithOptions(base::Thread::Options(thread_type, 0));
+#endif
 
   core_ = std::make_unique<Core>(thread_.task_runner(), std::move(capturer),
                                  type, zero_hertz_is_supported);

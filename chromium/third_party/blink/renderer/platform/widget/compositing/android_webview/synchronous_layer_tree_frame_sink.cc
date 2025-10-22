@@ -12,7 +12,7 @@
 #include "base/functional/bind.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
-#include "base/notreached.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/single_thread_task_runner.h"
 #include "cc/trees/layer_tree_frame_sink_client.h"
 #include "components/viz/common/display/renderer_settings.h"
@@ -34,6 +34,7 @@
 #include "gpu/command_buffer/common/gpu_memory_allocation.h"
 #include "gpu/command_buffer/common/swap_buffers_complete_params.h"
 #include "gpu/ipc/client/client_shared_image_interface.h"
+#include "third_party/blink/public/common/switches.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "ui/gfx/geometry/rect_conversions.h"
@@ -86,7 +87,6 @@ class SoftwareCompositorFrameSinkClient
   }
   void OnBeginFrame(const viz::BeginFrameArgs& args,
                     const viz::FrameTimingDetailsMap& timing_details,
-                    bool frame_ack,
                     std::vector<viz::ReturnedResource> resources) override {
     DCHECK(resources.empty());
   }
@@ -121,17 +121,9 @@ class SynchronousLayerTreeFrameSink::SoftwareOutputSurface
   }
 };
 
-base::TimeDelta SynchronousLayerTreeFrameSink::StubDisplayClient::
-    GetPreferredFrameIntervalForFrameSinkId(
-        const viz::FrameSinkId& id,
-        viz::mojom::blink::CompositorFrameSinkType* type) {
-  return viz::BeginFrameArgs::MinInterval();
-}
-
 SynchronousLayerTreeFrameSink::SynchronousLayerTreeFrameSink(
     scoped_refptr<viz::RasterContextProvider> context_provider,
-    scoped_refptr<cc::RasterContextProviderWrapper>
-        worker_context_provider_wrapper,
+    scoped_refptr<viz::RasterContextProvider> worker_context_provider_wrapper,
     scoped_refptr<base::SingleThreadTaskRunner> compositor_task_runner,
     uint32_t layer_tree_frame_sink_id,
     std::unique_ptr<viz::BeginFrameSource> synthetic_begin_frame_source,
@@ -159,6 +151,19 @@ SynchronousLayerTreeFrameSink::SynchronousLayerTreeFrameSink(
   DETACH_FROM_THREAD(thread_checker_);
   memory_policy_.priority_cutoff_when_visible =
       gpu::MemoryAllocation::CUTOFF_ALLOW_NICE_TO_HAVE;
+
+  base::CommandLine* cl = base::CommandLine::ForCurrentProcess();
+
+  // If the value was overridden on the command line, use the specified value.
+  if (cl->HasSwitch(switches::kForceGpuMemAvailableMb)) {
+    uint64_t value = 0;
+    if (base::StringToUint64(
+            base::CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
+                switches::kForceGpuMemAvailableMb),
+            &value)) {
+      gpu_memory_override_in_bytes_ = value * 1024 * 1024;
+    }
+  }
 }
 
 SynchronousLayerTreeFrameSink::~SynchronousLayerTreeFrameSink() = default;
@@ -420,6 +425,12 @@ void SynchronousLayerTreeFrameSink::DidNotProduceFrame(
   // submission of frame depends on DemandDraw calls.
 }
 
+void SynchronousLayerTreeFrameSink::
+    NotifyNewLocalSurfaceIdExpectedWhilePaused() {
+  if (child_support_) {
+    child_support_->NotifyNewLocalSurfaceIdExpectedWhilePaused();
+  }
+}
 
 void SynchronousLayerTreeFrameSink::Invalidate(bool needs_draw) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -527,6 +538,9 @@ void SynchronousLayerTreeFrameSink::
 
 void SynchronousLayerTreeFrameSink::SetMemoryPolicy(size_t bytes_limit) {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+
+  bytes_limit = gpu_memory_override_in_bytes_.value_or(bytes_limit);
+
   bool became_zero = memory_policy_.bytes_limit_when_visible && !bytes_limit;
   bool became_non_zero =
       !memory_policy_.bytes_limit_when_visible && bytes_limit;
@@ -568,15 +582,10 @@ void SynchronousLayerTreeFrameSink::DidReceiveCompositorFrameAck(
 void SynchronousLayerTreeFrameSink::OnBeginFrame(
     const viz::BeginFrameArgs& args,
     const HashMap<uint32_t, viz::FrameTimingDetails>& timing_details,
-    bool frame_ack,
     Vector<viz::ReturnedResource> resources) {
   DCHECK(viz_frame_submission_enabled_);
-  if (::features::IsOnBeginFrameAcksEnabled()) {
-    if (frame_ack) {
-      DidReceiveCompositorFrameAck(std::move(resources));
-    } else if (!resources.empty()) {
-      ReclaimResources(std::move(resources));
-    }
+  if (!resources.empty()) {
+    ReclaimResources(std::move(resources));
   }
 
   // We do not receive BeginFrames via CompositorFrameSink, so we do not forward

@@ -34,10 +34,15 @@
 #include "media/media_buildflags.h"
 #include "media/mojo/clients/mojo_video_encoder_metrics_provider.h"
 #include "media/video/gpu_video_accelerator_factories.h"
+#include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "net/net_buildflags.h"
+#include "services/network/public/cpp/ip_address_space_util.h"
+#include "services/network/public/mojom/ip_address_space.mojom-shared.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/peerconnection/webrtc_ip_handling_policy.h"
 #include "third_party/blink/public/mojom/peerconnection/webrtc_ip_handling_policy.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions/permission.mojom-blink.h"
+#include "third_party/blink/public/mojom/permissions/permission_status.mojom-blink-forward.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/task_type.h"
@@ -49,6 +54,9 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/execution_context/execution_context_lifecycle_observer.h"
 #include "third_party/blink/renderer/core/frame/dom_window.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
+#include "third_party/blink/renderer/core/frame/local_frame.h"
+#include "third_party/blink/renderer/core/frame/policy_container.h"
 #include "third_party/blink/renderer/core/page/chrome_client.h"
 #include "third_party/blink/renderer/core/page/page.h"
 #include "third_party/blink/renderer/core/probe/core_probes.h"
@@ -57,6 +65,7 @@
 #include "third_party/blink/renderer/modules/peerconnection/intercepting_network_controller.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_error_util.h"
 #include "third_party/blink/renderer/modules/peerconnection/rtc_peer_connection_handler.h"
+#include "third_party/blink/renderer/modules/permissions/permission_utils.h"
 #include "third_party/blink/renderer/modules/webrtc/webrtc_audio_device_impl.h"
 #include "third_party/blink/renderer/platform/graphics/video_frame_sink_bundle.h"
 #include "third_party/blink/renderer/platform/heap/cross_thread_persistent.h"
@@ -77,9 +86,11 @@
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_base.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_gfx.h"
+#include "third_party/blink/renderer/platform/wtf/cross_thread_copier_mojo.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_copier_std.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
+#include "third_party/webrtc/api/create_modular_peer_connection_factory.h"
 #include "third_party/webrtc/api/enable_media.h"
 #include "third_party/webrtc/api/peer_connection_interface.h"
 #include "third_party/webrtc/api/rtc_event_log/rtc_event_log_factory.h"
@@ -89,20 +100,19 @@
 #include "third_party/webrtc/modules/video_coding/codecs/h264/include/h264.h"
 #include "third_party/webrtc/rtc_base/ref_counted_object.h"
 #include "third_party/webrtc/rtc_base/ssl_adapter.h"
+#include "third_party/webrtc_overrides/environment.h"
 #include "third_party/webrtc_overrides/metronome_source.h"
-#include "third_party/webrtc_overrides/task_queue_factory.h"
 #include "third_party/webrtc_overrides/timer_based_tick_provider.h"
 
-namespace WTF {
+namespace blink {
+
 template <>
 struct CrossThreadCopier<base::RepeatingCallback<void(base::TimeDelta)>>
     : public CrossThreadCopierPassThrough<
           base::RepeatingCallback<void(base::TimeDelta)>> {
   STATIC_ONLY(CrossThreadCopier);
 };
-}  // namespace WTF
 
-namespace blink {
 namespace {
 
 using PassKey = base::PassKey<PeerConnectionDependencyFactory>;
@@ -124,6 +134,17 @@ CreateMojoVideoEncoderMetricsProviderFactory(LocalFrame* local_frame) {
       std::move(video_encoder_metrics_provider));
 }
 
+network::mojom::IPAddressSpace FromSocketAddress(
+    const webrtc::SocketAddress socket_address) {
+  if (socket_address.IsLoopbackIP()) {
+    return network::mojom::IPAddressSpace::kLoopback;
+  }
+  if (socket_address.IsPrivateIP()) {
+    return network::mojom::IPAddressSpace::kLocal;
+  }
+  return network::mojom::IPAddressSpace::kPublic;
+}
+
 // PeerConnectionDependencies wants to own the factory, so we provide a simple
 // object that delegates calls to the IpcPacketSocketFactory.
 // TODO(zstein): Move the creation logic from IpcPacketSocketFactory in to this
@@ -140,14 +161,14 @@ class ProxyAsyncDnsResolverFactory final
     return ipc_psf_->CreateAsyncDnsResolver();
   }
   std::unique_ptr<webrtc::AsyncDnsResolverInterface> CreateAndResolve(
-      const rtc::SocketAddress& addr,
+      const webrtc::SocketAddress& addr,
       absl::AnyInvocable<void()> callback) override {
     auto temp = Create();
     temp->Start(addr, std::move(callback));
     return temp;
   }
   std::unique_ptr<webrtc::AsyncDnsResolverInterface> CreateAndResolve(
-      const rtc::SocketAddress& addr,
+      const webrtc::SocketAddress& addr,
       int family,
       absl::AnyInvocable<void()> callback) override {
     auto temp = Create();
@@ -159,12 +180,118 @@ class ProxyAsyncDnsResolverFactory final
   raw_ptr<IpcPacketSocketFactory, DanglingUntriaged> ipc_psf_;
 };
 
-std::string WorkerThreadName() {
-  if (base::FeatureList::IsEnabled(
-          features::kWebRtcCombinedNetworkAndWorkerThread)) {
-    return "WebRTC_W_and_N";
+class LocalNetworkAccessPermission final
+    : public webrtc::LocalNetworkAccessPermissionInterface {
+ public:
+  explicit LocalNetworkAccessPermission(
+      network::mojom::IPAddressSpace originator_address_space,
+      mojo::Remote<mojom::blink::PermissionService> permission_service)
+      : originator_address_space_(originator_address_space),
+        permission_service_(std::move(permission_service)) {}
+
+  ~LocalNetworkAccessPermission() override {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   }
-  return "WebRTC_Worker";
+
+  void RequestPermission(
+      const webrtc::SocketAddress& candidate_address,
+      absl::AnyInvocable<void(webrtc::LocalNetworkAccessPermissionStatus)>
+          callback) override {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+    CHECK(RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled());
+
+    callback_ = std::move(callback);
+
+    if (!network::IsLessPublicAddressSpace(FromSocketAddress(candidate_address),
+                                           originator_address_space_)) {
+      // Can't use Frame-based task runners because this method is called on a
+      // WebRTC thread.
+      base::SingleThreadTaskRunner::GetCurrentDefault()->PostTask(
+          FROM_HERE,
+          base::BindOnce(&LocalNetworkAccessPermission::OnPermissionRequested,
+                         weak_ptr_factory_.GetWeakPtr(),
+                         mojom::blink::PermissionStatus::GRANTED));
+      return;
+    }
+
+    permission_service_->RequestPermission(
+        CreatePermissionDescriptor(
+            mojom::blink::PermissionName::LOCAL_NETWORK_ACCESS),
+        /*user_gesture=*/false,
+        base::BindRepeating(
+            &LocalNetworkAccessPermission::OnPermissionRequested,
+            // This is safe because this class owns `permission_service_` which
+            // won't call its callback after its destroyed.
+            base::Unretained(this)));
+  }
+
+  void OnPermissionRequested(mojom::blink::PermissionStatus status) {
+    DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+
+    switch (status) {
+      case mojom::blink::PermissionStatus::GRANTED:
+        callback_(webrtc::LocalNetworkAccessPermissionStatus::kGranted);
+        break;
+      case mojom::blink::PermissionStatus::ASK:
+      // Treat ASK i.e. the user closing the prompt, as denied.
+      case mojom::blink::PermissionStatus::DENIED:
+        callback_(webrtc::LocalNetworkAccessPermissionStatus::kDenied);
+        break;
+    }
+  }
+
+  absl::AnyInvocable<void(webrtc::LocalNetworkAccessPermissionStatus)>
+      callback_;
+  const network::mojom::IPAddressSpace originator_address_space_;
+  mojo::Remote<mojom::blink::PermissionService> permission_service_;
+
+  THREAD_CHECKER(thread_checker_);
+
+  base::WeakPtrFactory<LocalNetworkAccessPermission> weak_ptr_factory_{this};
+};
+
+class LocalNetworkAccessPermissionFactory final
+    : public webrtc::LocalNetworkAccessPermissionFactoryInterface {
+ public:
+  explicit LocalNetworkAccessPermissionFactory(
+      PeerConnectionDependencyFactory* factory)
+      : factory_(factory),
+        originator_address_space_(factory->DomWindow()
+                                      ->GetPolicyContainer()
+                                      ->GetPolicies()
+                                      .ip_address_space),
+        main_thread_task_runner_(
+            factory->DomWindow()->GetTaskRunner(TaskType::kNetworking)) {}
+
+  std::unique_ptr<webrtc::LocalNetworkAccessPermissionInterface> Create()
+      override {
+    CHECK(RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled());
+
+    mojo::Remote<mojom::blink::PermissionService> permission_service;
+    PostCrossThreadTask(
+        *main_thread_task_runner_.get(), FROM_HERE,
+        CrossThreadBindOnce(
+            &PeerConnectionDependencyFactory::BindPermissionService,
+            MakeUnwrappingCrossThreadWeakHandle(factory_),
+            permission_service.BindNewPipeAndPassReceiver()));
+
+    return std::make_unique<LocalNetworkAccessPermission>(
+        originator_address_space_, std::move(permission_service));
+  }
+
+ private:
+  // Use a WeakHandle to allow the factory to be garbage collected.
+  //
+  // Binding BindPermissionService with a CrossThreadHandle, would cause
+  // PeerConnectionDependencyFactory to not be garbage-collected and leak, so
+  // we use a CrossThreadWeakHandle instead.
+  CrossThreadWeakHandle<PeerConnectionDependencyFactory> factory_;
+  network::mojom::IPAddressSpace originator_address_space_;
+  scoped_refptr<base::SingleThreadTaskRunner> main_thread_task_runner_;
+};
+
+std::string WorkerThreadName() {
+  return "WebRTC_W_and_N";
 }
 
 // Encapsulates process-wide static dependencies used by
@@ -175,12 +302,7 @@ class PeerConnectionStaticDeps {
  public:
   PeerConnectionStaticDeps()
       : chrome_signaling_thread_("WebRTC_Signaling"),
-        chrome_worker_thread_(WorkerThreadName()) {
-    if (!base::FeatureList::IsEnabled(
-            features::kWebRtcCombinedNetworkAndWorkerThread)) {
-      chrome_network_thread_.emplace("WebRTC_Network");
-    }
-  }
+        chrome_worker_thread_(WorkerThreadName()) {}
 
   ~PeerConnectionStaticDeps() {
     if (chrome_worker_thread_.IsRunning()) {
@@ -313,9 +435,9 @@ class PeerConnectionStaticDeps {
     return init_signaling_event;
   }
 
-  rtc::Thread* GetSignalingThread() { return signaling_thread_; }
-  rtc::Thread* GetWorkerThread() { return worker_thread_; }
-  rtc::Thread* GetNetworkThread() {
+  webrtc::Thread* GetSignalingThread() { return signaling_thread_; }
+  webrtc::Thread* GetWorkerThread() { return worker_thread_; }
+  webrtc::Thread* GetNetworkThread() {
     return chrome_network_thread_ ? network_thread_ : worker_thread_;
   }
   base::Thread& GetChromeSignalingThread() { return chrome_signaling_thread_; }
@@ -358,7 +480,7 @@ class PeerConnectionStaticDeps {
   }
 
   static void InitializeOnThread(
-      raw_ptr<rtc::Thread>* thread,
+      raw_ptr<webrtc::Thread>* thread,
       base::WaitableEvent* event,
       base::RepeatingCallback<void(base::TimeDelta)> latency_callback,
       base::RepeatingCallback<void(base::TimeDelta)> duration_callback) {
@@ -374,9 +496,9 @@ class PeerConnectionStaticDeps {
 
   // PeerConnection threads. signaling_thread_ is created from the "current"
   // (main) chrome thread.
-  raw_ptr<rtc::Thread> signaling_thread_ = nullptr;
-  raw_ptr<rtc::Thread> worker_thread_ = nullptr;
-  raw_ptr<rtc::Thread> network_thread_ = nullptr;
+  raw_ptr<webrtc::Thread> signaling_thread_ = nullptr;
+  raw_ptr<webrtc::Thread> worker_thread_ = nullptr;
+  raw_ptr<webrtc::Thread> network_thread_ = nullptr;
   base::Thread chrome_signaling_thread_;
   base::Thread chrome_worker_thread_;
   std::optional<base::Thread> chrome_network_thread_;
@@ -409,13 +531,13 @@ PeerConnectionStaticDeps& StaticDeps() {
   return instance;
 }
 
-rtc::Thread* GetSignalingThread() {
+webrtc::Thread* GetSignalingThread() {
   return StaticDeps().GetSignalingThread();
 }
-rtc::Thread* GetWorkerThread() {
+webrtc::Thread* GetWorkerThread() {
   return StaticDeps().GetWorkerThread();
 }
-rtc::Thread* GetNetworkThread() {
+webrtc::Thread* GetNetworkThread() {
   return StaticDeps().GetNetworkThread();
 }
 base::Thread& GetChromeSignalingThread() {
@@ -591,7 +713,7 @@ PeerConnectionDependencyFactory::CreateRTCPeerConnectionHandler(
                                                     encoded_insertable_streams);
 }
 
-const rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>&
+const webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>&
 PeerConnectionDependencyFactory::GetPcFactory() {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
 
@@ -638,7 +760,7 @@ void PeerConnectionDependencyFactory::CreatePeerConnectionFactory() {
   // TODO: https://issues.webrtc.org/issues/339300437 - remove once
   // BoringSSL no longer requires this after
   // https://bugs.chromium.org/p/boringssl/issues/detail?id=35
-  if (!rtc::InitializeSSL()) {
+  if (!webrtc::InitializeSSL()) {
     NOTREACHED() << "Failed on InitializeSSL.";
   }
 
@@ -749,7 +871,7 @@ void PeerConnectionDependencyFactory::InitializeSignalingThread(
     )");
   // TODO(crbug.com/40265716): remove batch_udp_packets parameter.
   socket_factory_ = std::make_unique<IpcPacketSocketFactory>(
-      WTF::CrossThreadBindRepeating(
+      CrossThreadBindRepeating(
           &PeerConnectionDependencyFactory::DoGetDevtoolsToken,
           WrapCrossThreadWeakPersistent(this)),
       p2p_socket_dispatcher_.Get(), traffic_annotation, /*batch_udp_packets=*/
@@ -801,7 +923,7 @@ void PeerConnectionDependencyFactory::InitializeSignalingThread(
   if (pcf_deps.worker_thread == pcf_deps.network_thread) {
     LOG(INFO) << "Running WebRTC with a combined Network and Worker thread.";
   }
-  pcf_deps.task_queue_factory = CreateWebRtcTaskQueueFactory();
+  pcf_deps.env = WebRtcEnvironment();
   pcf_deps.decode_metronome = StaticDeps().CreateDecodeMetronome();
   pcf_deps.encode_metronome = StaticDeps().MaybeCreateEncodeMetronome();
   pcf_deps.event_log_factory = std::make_unique<webrtc::RtcEventLogFactory>();
@@ -830,7 +952,7 @@ void PeerConnectionDependencyFactory::DoGetDevtoolsToken(
     base::OnceCallback<void(std::optional<base::UnguessableToken>)> then) {
   context_task_runner_->PostTaskAndReplyWithResult(
       FROM_HERE,
-      ConvertToBaseOnceCallback(WTF::CrossThreadBindOnce(
+      ConvertToBaseOnceCallback(CrossThreadBindOnce(
           [](PeerConnectionDependencyFactory* factory)
               -> std::optional<base::UnguessableToken> {
             if (!factory) {
@@ -857,7 +979,7 @@ bool PeerConnectionDependencyFactory::PeerConnectionFactoryCreated() {
   return !!pc_factory_;
 }
 
-rtc::scoped_refptr<webrtc::PeerConnectionInterface>
+webrtc::scoped_refptr<webrtc::PeerConnectionInterface>
 PeerConnectionDependencyFactory::CreatePeerConnection(
     const webrtc::PeerConnectionInterface::RTCConfiguration& config,
     blink::WebLocalFrame* web_frame,
@@ -875,6 +997,10 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
     dependencies.allocator = CreatePortAllocator(web_frame);
   }
   dependencies.async_dns_resolver_factory = CreateAsyncDnsResolverFactory();
+  if (RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled()) {
+    dependencies.lna_permission_factory =
+        std::make_unique<LocalNetworkAccessPermissionFactory>(this);
+  }
   if (rtp_transport) {
     dependencies.network_controller_factory =
         std::make_unique<InterceptingNetworkControllerFactory>(
@@ -891,7 +1017,7 @@ PeerConnectionDependencyFactory::CreatePeerConnection(
   }
 }
 
-std::unique_ptr<cricket::PortAllocator>
+std::unique_ptr<webrtc::PortAllocator>
 PeerConnectionDependencyFactory::CreatePortAllocator(
     blink::WebLocalFrame* web_frame) {
   DCHECK(web_frame);
@@ -973,7 +1099,7 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
     }
   }
 
-  std::unique_ptr<rtc::NetworkManager> network_manager;
+  std::unique_ptr<webrtc::NetworkManager> network_manager;
   if (port_config.enable_multiple_routes) {
     network_manager = std::make_unique<FilteringNetworkManager>(
         network_manager_.get(), media_permission, allow_mdns_obfuscation);
@@ -981,8 +1107,16 @@ PeerConnectionDependencyFactory::CreatePortAllocator(
     network_manager =
         std::make_unique<blink::EmptyNetworkManager>(network_manager_.get());
   }
+
+  std::unique_ptr<LocalNetworkAccessPermissionFactory> lna_permission_factory;
+  if (RuntimeEnabledFeatures::LocalNetworkAccessWebRTCEnabled()) {
+    lna_permission_factory =
+        std::make_unique<LocalNetworkAccessPermissionFactory>(this);
+  }
+
   auto port_allocator = std::make_unique<P2PPortAllocator>(
-      std::move(network_manager), socket_factory_.get(), port_config);
+      std::move(network_manager), socket_factory_.get(), port_config,
+      std::move(lna_permission_factory));
   if (IsValidPortRange(min_port, max_port))
     port_allocator->SetPortRange(min_port, max_port);
 
@@ -1019,7 +1153,7 @@ PeerConnectionDependencyFactory::CreateLocalVideoTrack(
     webrtc::VideoTrackSourceInterface* source) {
   return GetPcFactory()
       ->CreateVideoTrack(
-          rtc::scoped_refptr<webrtc::VideoTrackSourceInterface>(source),
+          webrtc::scoped_refptr<webrtc::VideoTrackSourceInterface>(source),
           id.Utf8())
       .get();
 }
@@ -1087,7 +1221,8 @@ void PeerConnectionDependencyFactory::CleanupPeerConnectionFactory() {
     signaling_thread->PostTask(
         FROM_HERE,
         base::BindOnce(
-            [](rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface> pcf) {
+            [](webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
+                   pcf) {
               // The binding releases `pcf` on the signaling thread as this
               // method goes out of scope.
             },
@@ -1146,7 +1281,7 @@ void PeerConnectionDependencyFactory::EnsureWebRtcAudioDeviceImpl() {
   if (audio_device_.get())
     return;
 
-  audio_device_ = new rtc::RefCountedObject<blink::WebRtcAudioDeviceImpl>();
+  audio_device_ = new webrtc::RefCountedObject<blink::WebRtcAudioDeviceImpl>();
 }
 
 std::unique_ptr<webrtc::RtpCapabilities>
@@ -1189,4 +1324,17 @@ std::unique_ptr<webrtc::Metronome>
 PeerConnectionDependencyFactory::CreateDecodeMetronome() {
   return StaticDeps().CreateDecodeMetronome();
 }
+
+void PeerConnectionDependencyFactory::BindPermissionService(
+    mojo::PendingReceiver<mojom::blink::PermissionService> permission_service) {
+  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
+  auto* execution_context = GetExecutionContext();
+  if (!execution_context) {
+    return;
+  }
+
+  execution_context->GetBrowserInterfaceBroker().GetInterface(
+      std::move(permission_service));
+}
+
 }  // namespace blink

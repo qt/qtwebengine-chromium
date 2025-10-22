@@ -11,9 +11,9 @@ from typing_extensions import override
 
 from crossbench.probes.internal.base import InternalProbe
 from crossbench.probes.probe_context import ProbeContext
-from crossbench.probes.results import ProbeResult
 
 if TYPE_CHECKING:
+  from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
 
 

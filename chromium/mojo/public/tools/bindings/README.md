@@ -411,6 +411,26 @@ interface Foo {
 Anything which is a valid struct field type (see [Structs](#Structs)) is also a
 valid request or response argument type. The type notation is the same for both.
 
+#### Result response
+
+In addition to the normal response types, there is a `result<T,E>` response
+type, where T is the success type and E is the error type. An example usage
+would be:
+
+```
+interface Foo {
+  // A success would return an int32, whereas an error would return an E.
+  MyMethod() => result<int32, Error>;
+}
+```
+
+`result<T,E>` is intended to represent higher level logical errors, which
+include things like invalid user input, unexpected state on the receiving
+end (e.g.: if a dependency is in a bad state).
+
+**Note:** `result<T,E>` can only used in the return expression. It cannot
+be used as a parameter type.
+
 ### Attributes
 
 Mojom definitions may have their meaning altered by **attributes**, specified
@@ -588,6 +608,18 @@ interesting attributes supported today.
   selectively – only for frequently-called methods with large payloads
   that may trigger many allocations.
 
+* **`[SendValidation=feature]`**:
+  The `SendValidation` attribute should reference a mojo `feature`.  If this
+  feature is enabled (e.g. using `--enable-features={feature.name}`) then when
+  the method message is serialized, the serialization result will be validated
+  immediately for errors in addition to at the point of deserialization. This
+  can help diagnose bugs only found in production.
+
+  Note: SendValidation can be binary size expensive, so use sparingly.
+
+  `SendValidation` is currently only supported for C++ bindings and has no
+  effect for, say, Java or TypeScript bindings (see https://crbug.com/1278253).
+
 * **`[DispatchDebugAlias]`**:
   The `DispatchDebugAlias` attribute can be used on an interface to opt into
   having every dispatched message retain an aliased copy of the message ID on
@@ -702,9 +734,6 @@ interface. On Chrome OS, there are several places where versioning is required.
 For example,
 [ARC++](https://developer.android.com/chrome-os/intro)
 uses versioned mojo to send IPC to the Android container.
-Likewise, the
-[Lacros](/docs/lacros.md)
-browser uses versioned mojo to talk to the ash system UI.
 ***
 
 Services extend their interfaces to support new features over time, and clients
@@ -1080,7 +1109,9 @@ ParameterList = <empty> | NonEmptyParameterList
 NonEmptyParameterList = Parameter
                       | Parameter "," NonEmptyParameterList
 Parameter = AttributeSection TypeSpec Name Ordinal
-Response = <empty> | "=>" "(" ParameterList ")"
+Response = <empty>
+         | "=>" "(" ParameterList ")"
+         | "=>" "result<" Typename "," Typename ">"
 
 TypeSpec = TypeName "?" | TypeName
 TypeName = BasicTypeName

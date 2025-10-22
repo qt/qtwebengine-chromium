@@ -5,7 +5,7 @@
 #ifndef COMPONENTS_PAGE_LOAD_METRICS_BROWSER_RESPONSIVENESS_METRICS_NORMALIZATION_H_
 #define COMPONENTS_PAGE_LOAD_METRICS_BROWSER_RESPONSIVENESS_METRICS_NORMALIZATION_H_
 
-#include <queue>
+#include <vector>
 
 #include "base/time/time.h"
 #include "components/page_load_metrics/common/page_load_metrics.mojom.h"

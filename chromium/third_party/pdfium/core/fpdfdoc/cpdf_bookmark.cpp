@@ -18,17 +18,17 @@ CPDF_Bookmark::CPDF_Bookmark() = default;
 
 CPDF_Bookmark::CPDF_Bookmark(const CPDF_Bookmark& that) = default;
 
-CPDF_Bookmark::CPDF_Bookmark(RetainPtr<const CPDF_Dictionary> pDict)
-    : m_pDict(std::move(pDict)) {}
+CPDF_Bookmark::CPDF_Bookmark(RetainPtr<const CPDF_Dictionary> dict)
+    : dict_(std::move(dict)) {}
 
 CPDF_Bookmark::~CPDF_Bookmark() = default;
 
 WideString CPDF_Bookmark::GetTitle() const {
-  if (!m_pDict) {
+  if (!dict_) {
     return WideString();
   }
   RetainPtr<const CPDF_String> pString =
-      ToString(m_pDict->GetDirectObjectFor("Title"));
+      ToString(dict_->GetDirectObjectFor("Title"));
   if (!pString) {
     return WideString();
   }
@@ -41,16 +41,17 @@ WideString CPDF_Bookmark::GetTitle() const {
   return result;
 }
 
-CPDF_Dest CPDF_Bookmark::GetDest(CPDF_Document* pDocument) const {
-  if (!m_pDict)
+CPDF_Dest CPDF_Bookmark::GetDest(CPDF_Document* document) const {
+  if (!dict_) {
     return CPDF_Dest(nullptr);
-  return CPDF_Dest::Create(pDocument, m_pDict->GetDirectObjectFor("Dest"));
+  }
+  return CPDF_Dest::Create(document, dict_->GetDirectObjectFor("Dest"));
 }
 
 CPDF_Action CPDF_Bookmark::GetAction() const {
-  return CPDF_Action(m_pDict ? m_pDict->GetDictFor("A") : nullptr);
+  return CPDF_Action(dict_ ? dict_->GetDictFor("A") : nullptr);
 }
 
 int CPDF_Bookmark::GetCount() const {
-  return m_pDict->GetIntegerFor("Count");
+  return dict_->GetIntegerFor("Count");
 }

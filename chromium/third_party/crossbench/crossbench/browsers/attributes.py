@@ -16,6 +16,8 @@ class BrowserAttributes(enum.IntFlag):
 
   CHROMIUM_BASED = enum.auto()
 
+  D8 = enum.auto()
+
   WEBDRIVER = enum.auto()
   APPLESCRIPT = enum.auto()
 

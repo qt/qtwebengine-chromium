@@ -54,7 +54,7 @@ class CPDF_Font : public Retainable, public Observable {
     virtual ~FormFactoryIface() = default;
 
     virtual std::unique_ptr<FormIface> CreateForm(
-        CPDF_Document* pDocument,
+        CPDF_Document* document,
         RetainPtr<CPDF_Dictionary> pPageResources,
         RetainPtr<CPDF_Stream> pFormStream) = 0;
   };
@@ -62,10 +62,10 @@ class CPDF_Font : public Retainable, public Observable {
   static constexpr uint32_t kInvalidCharCode = static_cast<uint32_t>(-1);
 
   // |pFactory| only required for Type3 fonts.
-  static RetainPtr<CPDF_Font> Create(CPDF_Document* pDoc,
-                                     RetainPtr<CPDF_Dictionary> pFontDict,
+  static RetainPtr<CPDF_Font> Create(CPDF_Document* doc,
+                                     RetainPtr<CPDF_Dictionary> font_dict,
                                      FormFactoryIface* pFactory);
-  static RetainPtr<CPDF_Font> GetStockFont(CPDF_Document* pDoc,
+  static RetainPtr<CPDF_Font> GetStockFont(CPDF_Document* doc,
                                            ByteStringView fontname);
 
   virtual bool IsType1Font() const;
@@ -95,27 +95,27 @@ class CPDF_Font : public Retainable, public Observable {
   virtual uint32_t CharCodeFromUnicode(wchar_t Unicode) const;
   virtual bool HasFontWidths() const;
 
-  ByteString GetBaseFontName() const { return m_BaseFontName; }
+  ByteString GetBaseFontName() const { return base_font_name_; }
   std::optional<FX_Charset> GetSubstFontCharset() const;
-  bool IsEmbedded() const { return IsType3Font() || m_pFontFile != nullptr; }
-  RetainPtr<CPDF_Dictionary> GetMutableFontDict() { return m_pFontDict; }
-  RetainPtr<const CPDF_Dictionary> GetFontDict() const { return m_pFontDict; }
-  uint32_t GetFontDictObjNum() const { return m_pFontDict->GetObjNum(); }
+  bool IsEmbedded() const { return IsType3Font() || font_file_ != nullptr; }
+  RetainPtr<CPDF_Dictionary> GetMutableFontDict() { return font_dict_; }
+  RetainPtr<const CPDF_Dictionary> GetFontDict() const { return font_dict_; }
+  uint32_t GetFontDictObjNum() const { return font_dict_->GetObjNum(); }
   bool FontDictIs(const CPDF_Dictionary* pThat) const {
-    return m_pFontDict == pThat;
+    return font_dict_ == pThat;
   }
-  void ClearFontDict() { m_pFontDict = nullptr; }
+  void ClearFontDict() { font_dict_ = nullptr; }
   bool IsStandardFont() const;
-  bool HasFace() const { return !!m_Font.GetFace(); }
+  bool HasFace() const { return !!font_.GetFace(); }
 
-  const FX_RECT& GetFontBBox() const { return m_FontBBox; }
-  int GetTypeAscent() const { return m_Ascent; }
-  int GetTypeDescent() const { return m_Descent; }
+  const FX_RECT& GetFontBBox() const { return font_bbox_; }
+  int GetTypeAscent() const { return ascent_; }
+  int GetTypeDescent() const { return descent_; }
   int GetStringWidth(ByteStringView pString);
   uint32_t FallbackFontFromCharcode(uint32_t charcode);
   int FallbackGlyphFromCharcode(int fallbackFont, uint32_t charcode);
-  int GetFontFlags() const { return m_Flags; }
-  int GetItalicAngle() const { return m_ItalicAngle; }
+  int GetFontFlags() const { return flags_; }
+  int GetItalicAngle() const { return italic_angle_; }
 
   // Note that even when non-nullopt, the value may be outside the normal range
   // of [100, 900].
@@ -126,24 +126,24 @@ class CPDF_Font : public Retainable, public Observable {
 
   // Can return nullptr for stock Type1 fonts. Always returns non-null for other
   // font types.
-  CPDF_Document* GetDocument() const { return m_pDocument; }
+  CPDF_Document* GetDocument() const { return document_; }
 
-  CFX_Font* GetFont() { return &m_Font; }
-  const CFX_Font* GetFont() const { return &m_Font; }
+  CFX_Font* GetFont() { return &font_; }
+  const CFX_Font* GetFont() const { return &font_; }
 
   CFX_Font* GetFontFallback(int position);
 
-  const ByteString& GetResourceName() const { return m_ResourceName; }
-  void SetResourceName(const ByteString& name) { m_ResourceName = name; }
+  const ByteString& GetResourceName() const { return resource_name_; }
+  void SetResourceName(const ByteString& name) { resource_name_ = name; }
 
  protected:
-  CPDF_Font(CPDF_Document* pDocument, RetainPtr<CPDF_Dictionary> pFontDict);
+  CPDF_Font(CPDF_Document* document, RetainPtr<CPDF_Dictionary> font_dict);
   ~CPDF_Font() override;
 
+  // Tries to select any Unicode character map.
+  static bool UseTTCharmapUnicode(const RetainPtr<CFX_Face>& face);
+
   // Commonly used wrappers for UseTTCharmap().
-  static bool UseTTCharmapMSUnicode(const RetainPtr<CFX_Face>& face) {
-    return UseTTCharmap(face, 3, 1);
-  }
   static bool UseTTCharmapMSSymbol(const RetainPtr<CFX_Face>& face) {
     return UseTTCharmap(face, 3, 0);
   }
@@ -161,25 +161,25 @@ class CPDF_Font : public Retainable, public Observable {
   virtual bool Load() = 0;
 
   void LoadUnicodeMap() const;  // logically const only.
-  void LoadFontDescriptor(const CPDF_Dictionary* pFontDesc);
+  void LoadFontDescriptor(const CPDF_Dictionary* font_desc);
   void CheckFontMetrics();
 
-  UnownedPtr<CPDF_Document> const m_pDocument;
-  ByteString m_ResourceName;  // The resource name for this font.
-  CFX_Font m_Font;
-  std::vector<std::unique_ptr<CFX_Font>> m_FontFallbacks;
-  RetainPtr<CPDF_StreamAcc> m_pFontFile;
-  RetainPtr<CPDF_Dictionary> m_pFontDict;
-  ByteString m_BaseFontName;
-  mutable std::unique_ptr<CPDF_ToUnicodeMap> m_pToUnicodeMap;
-  mutable bool m_bToUnicodeLoaded = false;
-  bool m_bWillBeDestroyed = false;
-  int m_Flags = 0;
-  int m_StemV = 0;
-  int m_Ascent = 0;
-  int m_Descent = 0;
-  int m_ItalicAngle = 0;
-  FX_RECT m_FontBBox;
+  UnownedPtr<CPDF_Document> const document_;
+  ByteString resource_name_;  // The resource name for this font.
+  CFX_Font font_;
+  std::vector<std::unique_ptr<CFX_Font>> font_fallbacks_;
+  RetainPtr<CPDF_StreamAcc> font_file_;
+  RetainPtr<CPDF_Dictionary> font_dict_;
+  ByteString base_font_name_;
+  mutable std::unique_ptr<CPDF_ToUnicodeMap> to_unicode_map_;
+  mutable bool to_unicode_loaded_ = false;
+  bool will_be_destroyed_ = false;
+  int flags_ = 0;
+  int stem_v_ = 0;
+  int ascent_ = 0;
+  int descent_ = 0;
+  int italic_angle_ = 0;
+  FX_RECT font_bbox_;
 };
 
 #endif  // CORE_FPDFAPI_FONT_CPDF_FONT_H_

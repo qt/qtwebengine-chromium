@@ -21,36 +21,40 @@ CXFA_FontMgr::~CXFA_FontMgr() = default;
 
 void CXFA_FontMgr::Trace(cppgc::Visitor* visitor) const {}
 
-RetainPtr<CFGAS_GEFont> CXFA_FontMgr::GetFont(CXFA_FFDoc* pDoc,
+RetainPtr<CFGAS_GEFont> CXFA_FontMgr::GetFont(CXFA_FFDoc* doc,
                                               const WideString& wsFontFamily,
                                               uint32_t dwFontStyles) {
   auto key = std::make_pair(wsFontFamily, dwFontStyles);
-  auto iter = m_FontMap.find(key);
-  if (iter != m_FontMap.end())
+  auto iter = font_map_.find(key);
+  if (iter != font_map_.end()) {
     return iter->second;
+  }
 
   WideString wsEnglishName = FGAS_FontNameToEnglishName(wsFontFamily);
-  RetainPtr<CFGAS_GEFont> pFont =
-      pDoc->GetPDFFont(wsEnglishName, dwFontStyles, true);
-  if (pFont)
-    return pFont;
+  RetainPtr<CFGAS_GEFont> font =
+      doc->GetPDFFont(wsEnglishName, dwFontStyles, true);
+  if (font) {
+    return font;
+  }
 
-  pFont = CFGAS_DefaultFontManager::GetFont(wsFontFamily, dwFontStyles);
-  if (!pFont) {
-    pFont = pDoc->GetPDFFont(wsEnglishName, dwFontStyles, false);
-    if (pFont)
-      return pFont;
+  font = CFGAS_DefaultFontManager::GetFont(wsFontFamily, dwFontStyles);
+  if (!font) {
+    font = doc->GetPDFFont(wsEnglishName, dwFontStyles, false);
+    if (font) {
+      return font;
+    }
   }
-  if (!pFont) {
-    pFont = CFGAS_DefaultFontManager::GetDefaultFont(dwFontStyles);
+  if (!font) {
+    font = CFGAS_DefaultFontManager::GetDefaultFont(dwFontStyles);
   }
-  if (!pFont) {
-    pFont = CFGAS_GEFont::LoadStockFont(
-        pDoc->GetPDFDoc(), ByteString::Format("%ls", wsFontFamily.c_str()));
+  if (!font) {
+    font = CFGAS_GEFont::LoadStockFont(
+        doc->GetPDFDoc(), ByteString::Format("%ls", wsFontFamily.c_str()));
   }
-  if (!pFont)
+  if (!font) {
     return nullptr;
+  }
 
-  m_FontMap[key] = pFont;
-  return pFont;
+  font_map_[key] = font;
+  return font;
 }

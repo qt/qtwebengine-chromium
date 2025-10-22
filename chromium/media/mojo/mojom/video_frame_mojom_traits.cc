@@ -7,16 +7,13 @@
 #include <utility>
 #include <vector>
 
-#include "base/feature_list.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
 #include "base/memory/unsafe_shared_memory_region.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
-#include "gpu/ipc/common/gpu_memory_buffer_support.h"
 #include "media/base/color_plane_layout.h"
 #include "media/base/format_utils.h"
-#include "media/base/media_switches.h"
 #include "media/mojo/mojom/video_frame_metadata_mojom_traits.h"
 #include "mojo/public/cpp/base/time_mojom_traits.h"
 #include "mojo/public/cpp/system/handle.h"
@@ -29,15 +26,14 @@
 #include "media/gpu/buffer_validation.h"
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
+#if BUILDFLAG(IS_CHROMEOS)
+#include "ui/ozone/public/client_native_pixmap_factory_ozone.h"  // nogncheck
+#include "ui/ozone/public/ozone_platform.h"                      // nogncheck
+#endif
+
 namespace mojo {
 
 namespace {
-
-// Determines whether Mappable SharedImage over mojo is supported.
-bool SupportMappableSI() {
-  return base::FeatureList::IsEnabled(
-      media::kSupportMappableSharedImageOverMojo);
-}
 
 base::ReadOnlySharedMemoryRegion CreateRegion(const media::VideoFrame& frame,
                                               std::vector<uint32_t>& offsets,
@@ -131,16 +127,17 @@ media::mojom::VideoFrameDataPtr MakeVideoFrameData(
     // STORAGE_GPU_MEMORY_BUFFER may carry meaningful or dummy shared_image.
     std::optional<gpu::ExportedSharedImage> shared_image;
     gpu::SyncToken sync_token;
+#if BUILDFLAG(IS_CHROMEOS)
     if (input->HasSharedImage()) {
-      bool with_buffer_handle = is_mappable_si_enabled && SupportMappableSI();
-      shared_image = input->shared_image()->Export(with_buffer_handle);
+      shared_image = input->shared_image()->Export(
+          /*with_buffer_handle=*/is_mappable_si_enabled);
       sync_token = input->acquire_sync_token();
 
-      if (with_buffer_handle) {
+      if (is_mappable_si_enabled) {
         return media::mojom::VideoFrameData::NewSharedImageData(
             media::mojom::SharedImageVideoFrameData::New(
                 std::move(shared_image.value()), std::move(sync_token),
-                is_mappable_si_enabled, std::move(input->ycbcr_info())));
+                /*is_mappable_si_enabled=*/true));
       }
     }
 
@@ -148,6 +145,24 @@ media::mojom::VideoFrameDataPtr MakeVideoFrameData(
         media::mojom::GpuMemoryBufferSharedImageVideoFrameData::New(
             std::move(gpu_memory_buffer_handle), std::move(shared_image),
             std::move(sync_token)));
+#else
+    CHECK(input->HasSharedImage());
+    CHECK(is_mappable_si_enabled);
+    shared_image = input->shared_image()->Export(
+        /*with_buffer_handle=*/true);
+    sync_token = input->acquire_sync_token();
+#if BUILDFLAG(IS_ANDROID)
+    return media::mojom::VideoFrameData::NewSharedImageData(
+        media::mojom::SharedImageVideoFrameData::New(
+            std::move(shared_image.value()), std::move(sync_token),
+            /*is_mappable_si_enabled=*/true, std::move(input->ycbcr_info())));
+#else
+    return media::mojom::VideoFrameData::NewSharedImageData(
+        media::mojom::SharedImageVideoFrameData::New(
+            std::move(shared_image.value()), std::move(sync_token),
+            /*is_mappable_si_enabled=*/true));
+#endif
+#endif
   }
 
   if (input->HasSharedImage()) {
@@ -155,10 +170,17 @@ media::mojom::VideoFrameDataPtr MakeVideoFrameData(
     // VideoFrames.
     CHECK(!is_mappable_si_enabled);
     gpu::ExportedSharedImage shared_image = input->shared_image()->Export();
+#if BUILDFLAG(IS_ANDROID)
     return media::mojom::VideoFrameData::NewSharedImageData(
         media::mojom::SharedImageVideoFrameData::New(
             std::move(shared_image), input->acquire_sync_token(),
             /*is_mappable_si_enabled=*/false, std::move(input->ycbcr_info())));
+#else
+    return media::mojom::VideoFrameData::NewSharedImageData(
+        media::mojom::SharedImageVideoFrameData::New(
+            std::move(shared_image), input->acquire_sync_token(),
+            /*is_mappable_si_enabled=*/false));
+#endif
   }
 
   if (input->storage_type() == media::VideoFrame::STORAGE_OPAQUE) {
@@ -334,6 +356,7 @@ bool StructTraits<media::mojom::VideoFrameDataView,
       frame->BackWithOwnedSharedMemory(std::move(region), std::move(mapping));
     }
   } else if (data.is_gpu_memory_buffer_shared_image_data()) {
+#if BUILDFLAG(IS_CHROMEOS)
     media::mojom::GpuMemoryBufferSharedImageVideoFrameDataDataView
         gpu_memory_buffer_data;
     data.GetGpuMemoryBufferSharedImageDataDataView(&gpu_memory_buffer_data);
@@ -345,51 +368,33 @@ bool StructTraits<media::mojom::VideoFrameDataView,
       return false;
     }
 
-    std::optional<gpu::ExportedSharedImage> exported_shared_image;
-    if (!gpu_memory_buffer_data.ReadSharedImage(&exported_shared_image)) {
-      DLOG(ERROR) << "Failed to get shared image";
-      return false;
-    }
-    scoped_refptr<gpu::ClientSharedImage> shared_image;
-    if (exported_shared_image) {
-      shared_image = gpu::ClientSharedImage::ImportUnowned(
-          std::move(*exported_shared_image));
-    }
-
-    gpu::SyncToken sync_token;
-    if (!gpu_memory_buffer_data.ReadSyncToken(&sync_token)) {
-      return false;
-    }
-
     std::optional<gfx::BufferFormat> buffer_format =
         VideoPixelFormatToGfxBufferFormat(format);
     if (!buffer_format) {
       return false;
     }
 
-    // Shared memory GMBs do not support VEA/CAMERA usage.
+    if (gpu_memory_buffer_handle.type !=
+        gfx::GpuMemoryBufferType::NATIVE_PIXMAP) {
+      return false;
+    }
+
     gfx::BufferUsage buffer_usage;
     if (metadata.protected_video) {
       buffer_usage = gfx::BufferUsage::PROTECTED_SCANOUT_VDA_WRITE;
-    } else if (gpu_memory_buffer_handle.type ==
-               gfx::GpuMemoryBufferType::SHARED_MEMORY_BUFFER) {
-      buffer_usage = gfx::BufferUsage::SCANOUT_CPU_READ_WRITE;
     } else {
       buffer_usage = gfx::BufferUsage::VEA_READ_CAMERA_AND_CPU_READ_WRITE;
     }
 
-    gpu::GpuMemoryBufferSupport support;
-    std::unique_ptr<gfx::GpuMemoryBuffer> gpu_memory_buffer =
-        support.CreateGpuMemoryBufferImplFromHandle(
-            std::move(gpu_memory_buffer_handle), coded_size, *buffer_format,
-            buffer_usage, base::NullCallback());
-    if (!gpu_memory_buffer) {
-      return false;
-    }
-
-    frame = media::VideoFrame::WrapExternalGpuMemoryBuffer(
-        visible_rect, natural_size, std::move(gpu_memory_buffer), shared_image,
-        sync_token, base::NullCallback(), timestamp);
+    auto client_native_pixmap_factory =
+        ui::CreateClientNativePixmapFactoryOzone();
+    frame = media::VideoFrame::WrapExternalGpuMemoryBufferHandle(
+        visible_rect, natural_size, client_native_pixmap_factory.get(),
+        std::move(gpu_memory_buffer_handle), coded_size, *buffer_format,
+        buffer_usage, timestamp);
+#else
+    return false;
+#endif  // BUILDFLAG(IS_CHROMEOS)
   } else if (data.is_shared_image_data()) {
     media::mojom::SharedImageVideoFrameDataDataView shared_image_data;
     data.GetSharedImageDataDataView(&shared_image_data);
@@ -405,13 +410,9 @@ bool StructTraits<media::mojom::VideoFrameDataView,
     if (!shared_image_data.ReadSyncToken(&sync_token)) {
       return false;
     }
-    std::optional<gpu::VulkanYCbCrInfo> ycbcr_info;
-    if (!shared_image_data.ReadYcbcrData(&ycbcr_info)) {
-      return false;
-    }
 
     bool is_mappable_si_enabled = shared_image_data.is_mappable_si_enabled();
-    if (is_mappable_si_enabled && SupportMappableSI()) {
+    if (is_mappable_si_enabled) {
       // VideoFrame should have buffer usage if Mappable SharedImage is enabled.
       // NOTE: This isn't exactly correct for software SharedImages can be
       // mappable but do not have buffer usage. But since, such software
@@ -420,9 +421,8 @@ bool StructTraits<media::mojom::VideoFrameDataView,
         return false;
       }
       frame = media::VideoFrame::WrapMappableSharedImage(
-          shared_image, sync_token,
-          media::VideoFrame::ReleaseMailboxAndGpuMemoryBufferCB(), visible_rect,
-          natural_size, timestamp);
+          shared_image, sync_token, media::VideoFrame::ReleaseMailboxCB(),
+          visible_rect, natural_size, timestamp);
     } else {
       frame = media::VideoFrame::WrapSharedImage(
           format, shared_image, sync_token,
@@ -430,7 +430,13 @@ bool StructTraits<media::mojom::VideoFrameDataView,
           natural_size, timestamp);
     }
 
+#if BUILDFLAG(IS_ANDROID)
+    std::optional<gpu::VulkanYCbCrInfo> ycbcr_info;
+    if (!shared_image_data.ReadYcbcrData(&ycbcr_info)) {
+      return false;
+    }
     frame->set_ycbcr_info(ycbcr_info);
+#endif
   } else if (data.is_opaque_data()) {
     DCHECK(metadata.tracking_token.has_value());
     frame = media::VideoFrame::WrapTrackingToken(
@@ -521,12 +527,33 @@ bool StructTraits<media::mojom::VideoFrameDataView,
           media::VideoFrame::Rows(i, format, coded_size.height());
       base::CheckedNumeric<size_t> min_plane_size = base::CheckMul(
           base::strict_cast<size_t>(planes[i].stride), plane_height);
-      const size_t plane_pixel_width =
-          media::VideoFrame::RowBytes(i, format, coded_size.width());
       if (!min_plane_size.IsValid<uint64_t>() ||
-          min_plane_size.ValueOrDie<uint64_t>() > planes[i].size ||
-          base::strict_cast<size_t>(planes[i].stride) < plane_pixel_width) {
-        DLOG(ERROR) << "Invalid plane stride/size at index " << i;
+          min_plane_size.ValueOrDie<uint64_t>() > planes[i].size) {
+        DLOG(ERROR) << "Invalid plane size at index " << i;
+        return false;
+      }
+
+      size_t plane_pixel_width =
+          media::VideoFrame::RowBytes(i, format, coded_size.width());
+      // If this is a tiled, protected 10bpp MTK format, then
+      // VideoFrame::RowBytes() produces the wrong stride. This fixes
+      // |plane_pixel_width| for that picture type.
+      if (metadata.protected_video && metadata.needs_detiling &&
+          format == media::PIXEL_FORMAT_P010LE) {
+        constexpr int kMT2TBppNumerator = 5;
+        constexpr int kMT2TBppDenominator = 4;
+        base::CheckedNumeric<size_t> stride = coded_size.width();
+        stride *= kMT2TBppNumerator;
+        stride /= kMT2TBppDenominator;
+        if (!stride.IsValid()) {
+          DLOG(ERROR) << "Failed to compute MT2T stride at index " << i;
+          return false;
+        }
+        plane_pixel_width = stride.ValueOrDie<size_t>();
+      }
+
+      if (base::strict_cast<size_t>(planes[i].stride) < plane_pixel_width) {
+        DLOG(ERROR) << "Invalid plane stride at index " << i;
         return false;
       }
 

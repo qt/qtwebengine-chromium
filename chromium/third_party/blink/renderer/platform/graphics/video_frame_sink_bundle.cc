@@ -124,12 +124,6 @@ void VideoFrameSinkBundle::RemoveClient(const viz::FrameSinkId& frame_sink_id) {
   clients_.erase(frame_sink_id.sink_id());
 }
 
-void VideoFrameSinkBundle::InitializeCompositorFrameSinkType(
-    uint32_t sink_id,
-    viz::mojom::blink::CompositorFrameSinkType type) {
-  bundle_->InitializeCompositorFrameSinkType(sink_id, type);
-}
-
 void VideoFrameSinkBundle::SetNeedsBeginFrame(uint32_t sink_id,
                                               bool needs_begin_frame) {
   DVLOG(2) << __func__ << " this " << this << " sink_id " << sink_id
@@ -149,11 +143,6 @@ void VideoFrameSinkBundle::SetNeedsBeginFrame(uint32_t sink_id,
   }
   // These messages are not sent often, so we don't bother batching them.
   bundle_->SetNeedsBeginFrame(sink_id, needs_begin_frame);
-}
-
-void VideoFrameSinkBundle::SetWantsBeginFrameAcks(uint32_t sink_id) {
-  // These messages are not sent often, so we don't bother batching them.
-  bundle_->SetWantsBeginFrameAcks(sink_id);
 }
 
 void VideoFrameSinkBundle::SubmitCompositorFrame(
@@ -235,7 +224,7 @@ void VideoFrameSinkBundle::FlushNotifications(
     if (it == clients_.end())
       continue;
     it->value->OnBeginFrame(std::move(entry->args), std::move(entry->details),
-                            entry->frame_ack, std::move(entry->resources));
+                            std::move(entry->resources));
   }
   defer_submissions_ = false;
 

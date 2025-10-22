@@ -47,12 +47,17 @@
 #include <stddef.h>
 #include <string.h>
 
+#if defined(__CHROMEOS__)
+#include <algorithm>
+#endif  // defined(__CHROMEOS__)
+
 #include "client/linux/minidump_writer/line_reader.h"
 #include "common/linux/elfutils.h"
 #include "common/linux/file_id.h"
 #include "common/linux/linux_libc_support.h"
 #include "common/linux/memory_mapped_file.h"
 #include "common/linux/safe_readlink.h"
+#include "common/memory_allocator.h"
 #include "google_breakpad/common/minidump_exception_linux.h"
 #include "third_party/lss/linux_syscall_support.h"
 
@@ -577,6 +582,7 @@ bool LinuxDumper::EnumerateMappings() {
       const char* i2 = my_read_hex_ptr(&end_addr, i1 + 1);
       if (*i2 == ' ') {
         bool exec = (*(i2 + 3) == 'x');
+        bool is_padding = (my_memcmp(i2, " ---p ", 6) == 0);
         const char* i3 = my_read_hex_ptr(&offset, i2 + 6 /* skip ' rwxp ' */);
         if (*i3 == ' ') {
           const char* name = nullptr;
@@ -588,22 +594,35 @@ bool LinuxDumper::EnumerateMappings() {
             name = kLinuxGateLibraryName;
             offset = 0;
           }
-          // Merge adjacent mappings into one module, assuming they're a single
-          // library mapped by the dynamic linker. Do this only if their name
-          // matches and either they have the same +x protection flag, or if the
-          // previous mapping is not executable and the new one is, to handle
-          // lld's output (see crbug.com/716484).
-          if (name && !mappings_.empty()) {
+
+          if (!mappings_.empty()) {
+            // Merge adjacent mappings into one module, assuming they're a
+            // single library mapped by the dynamic linker. Do this only if
+            // their name matches and either they have the same +x protection
+            // flag, or if the previous mapping is not executable and the new
+            // one is, to handle lld's output (see crbug.com/716484).
             MappingInfo* module = mappings_.back();
-            if ((start_addr == module->start_addr + module->size) &&
-                (my_strlen(name) == my_strlen(module->name)) &&
-                (my_strncmp(name, module->name, my_strlen(name)) == 0) &&
-                ((exec == module->exec) || (!module->exec && exec))) {
-              module->system_mapping_info.end_addr = end_addr;
-              module->size = end_addr - module->start_addr;
-              module->exec |= exec;
-              line_reader->PopLine(line_len);
-              continue;
+            if (name) {
+              if ((start_addr == module->start_addr + module->size) &&
+                  (my_strlen(name) == my_strlen(module->name)) &&
+                  (my_strncmp(name, module->name, my_strlen(name)) == 0) &&
+                  ((exec == module->exec) || (!module->exec && exec))) {
+                module->system_mapping_info.end_addr = end_addr;
+                module->size = end_addr - module->start_addr;
+                module->exec |= exec;
+                line_reader->PopLine(line_len);
+                continue;
+              }
+            } else if (is_padding) {
+              // Extend the previous mapping if the current mapping is a padding
+              // segment.
+              if ((start_addr == module->start_addr + module->size) &&
+                  module->name[0] != '\0') {
+                module->system_mapping_info.end_addr = end_addr;
+                module->size = end_addr - module->start_addr;
+                line_reader->PopLine(line_len);
+                continue;
+              }
             }
           }
           MappingInfo* const module = new(allocator_) MappingInfo;
@@ -840,8 +859,7 @@ void LinuxDumper::SanitizeStackCopy(uint8_t* stack_copy, size_t stack_len,
   }
 
   // Zero memory that is below the current stack pointer.
-  const uintptr_t offset =
-      (sp_offset + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
+  const uintptr_t offset = PageAllocator::AlignUp(sp_offset, sizeof(uintptr_t));
   if (offset) {
     my_memset(stack_copy, 0, offset);
   }
@@ -891,8 +909,7 @@ bool LinuxDumper::StackHasPointerToMapping(const uint8_t* stack_copy,
   // aligned word in the target process.
   const uintptr_t low_addr = mapping.system_mapping_info.start_addr;
   const uintptr_t high_addr = mapping.system_mapping_info.end_addr;
-  const uintptr_t offset =
-      (sp_offset + sizeof(uintptr_t) - 1) & ~(sizeof(uintptr_t) - 1);
+  const uintptr_t offset = PageAllocator::AlignUp(sp_offset, sizeof(uintptr_t));
 
   for (const uint8_t* sp = stack_copy + offset;
        sp <= stack_copy + stack_len - sizeof(uintptr_t);

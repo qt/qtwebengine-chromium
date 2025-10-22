@@ -4,11 +4,15 @@
 
 #include "components/input/utils.h"
 
+#include <string>
+
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "third_party/blink/public/mojom/input/input_event_result.mojom-shared.h"
 
 #if BUILDFLAG(IS_ANDROID)
-#include "base/android/build_info.h"
+#include "base/android/android_info.h"
+#include "base/android/jni_android.h"
 #include "components/input/android/jni_headers/InputUtils_jni.h"
 #include "components/input/features.h"
 #endif
@@ -20,21 +24,71 @@ using blink::mojom::InputEventResultState;
 using perfetto::protos::pbzero::ChromeLatencyInfo2;
 
 #if BUILDFLAG(IS_ANDROID)
+bool InputUtils::initialized_ = false;
+bool InputUtils::has_security_update_ = false;
+
 jboolean JNI_InputUtils_IsTransferInputToVizSupported(JNIEnv* env) {
-  return IsTransferInputToVizSupported();
+  return InputUtils::IsTransferInputToVizSupported();
+}
+
+// Check whether the fix for `CVE-2025-0097` is present, which went in Feb 2025
+// security update: https://source.android.com/docs/security/bulletin/2025-02-01
+// static
+bool InputUtils::HasSecurityUpdate(const std::string& security_patch,
+                                   int sdk_int) {
+  if (sdk_int >= base::android::android_info::SdkVersion::SDK_VERSION_BAKLAVA) {
+    // Security patch is present on Android 16+.
+    return true;
+  }
+  base::Time min_security_patch_date;
+  CHECK(base::Time::FromString("2025-02-05", &min_security_patch_date));
+
+  base::Time security_patch_date;
+  if (!base::Time::FromString(security_patch.c_str(), &security_patch_date)) {
+    return false;
+  }
+
+  return security_patch_date >= min_security_patch_date;
 }
 #endif
 
-bool IsTransferInputToVizSupported() {
+// static
+bool InputUtils::IsTransferInputToVizSupported() {
 #if BUILDFLAG(IS_ANDROID)
-  if (base::FeatureList::IsEnabled(input::features::kInputOnViz) &&
-      (base::android::BuildInfo::GetInstance()->sdk_int() >=
-       base::android::SdkVersion::SDK_VERSION_V)) {
-    return true;
+  if (base::android::android_info::sdk_int() <
+      base::android::android_info::SdkVersion::SDK_VERSION_V) {
+    // InputOnViz does not work on < Android V, since the touch transfer APIs
+    // were introduced in Android V.
+    return false;
   }
-#endif
+  // Thread safety: In normal operation (GPU out of process) only a single
+  // thread per process calls this function. In the --in-process-gpu or
+  // --single-process case two threads technically could race to initialize
+  // however the HasSecurityUpdate will resolve to the same value and thus the
+  // data race is benign (behaviour of the program remains unchanged just
+  // potentially wasted effort).
+  if (!initialized_) {
+    has_security_update_ =
+        HasSecurityUpdate(base::android::android_info::security_patch(),
+                          base::android::android_info::sdk_int());
+    initialized_ = true;
+  }
+  // Enable on user debug builds to have test coverage on older Android 15 bots.
+  return (has_security_update_ ||
+          base::android::android_info::is_debug_android()) &&
+         base::FeatureList::IsEnabled(input::features::kInputOnViz);
+#else
   return false;
+#endif
 }
+
+#if BUILDFLAG(IS_ANDROID)
+
+void InputUtils::RunGarbageCollection() {
+  Java_InputUtils_runGarbageCollection(base::android::AttachCurrentThread());
+}
+
+#endif
 
 ChromeLatencyInfo2::InputType InputEventTypeToProto(
     blink::WebInputEvent::Type event_type) {

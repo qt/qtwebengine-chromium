@@ -79,6 +79,7 @@ class NET_EXPORT CertVerifier {
     virtual ~Request() = default;
   };
 
+  // LINT.IfChange(CertVerifier.VerifyFlags)
   enum VerifyFlags {
     // If set, actively overrides the current CertVerifier::Config to disable
     // dependent network fetches. This can be used to avoid triggering
@@ -91,8 +92,14 @@ class NET_EXPORT CertVerifier {
     // without accessing the network.
     VERIFY_DISABLE_NETWORK_FETCHES = 1 << 0,
 
-    VERIFY_FLAGS_LAST = VERIFY_DISABLE_NETWORK_FETCHES
+    // If set, Certificate Transparency requirements are evaluated in a
+    // stricter fashion as required by Signed Exchanges. This only has effect
+    // in implementations where CT is handled by chrome.
+    VERIFY_SXG_CT_REQUIREMENTS = 1 << 1,
+
+    VERIFY_FLAGS_LAST = VERIFY_SXG_CT_REQUIREMENTS
   };
+  // LINT.ThenChange(/net/log/net_log_util.cc:CertVerifier.VerifyFlags)
 
   // Parameters to verify |certificate| against the supplied
   // |hostname| as an SSL server.
@@ -181,6 +188,18 @@ class NET_EXPORT CertVerifier {
                      CompletionOnceCallback callback,
                      std::unique_ptr<Request>* out_req,
                      const NetLogWithSource& net_log) = 0;
+
+  // Verifies that `binding` is a valid 2-QWAC binding for `hostname` and
+  // `tls_cert`. On success, callback will be called asynchronously with the
+  // verified 2-QWAC certificate chain. Otherwise the callback will be called
+  // with nullptr. The callback might be run even after the CertVerifier is
+  // destroyed.
+  virtual void Verify2QwacBinding(
+      const std::string& binding,
+      const std::string& hostname,
+      const scoped_refptr<X509Certificate>& tls_cert,
+      base::OnceCallback<void(const scoped_refptr<X509Certificate>&)> callback,
+      const NetLogWithSource& net_log) = 0;
 
   // Sets the configuration for new certificate verifications to be |config|.
   // Any in-progress verifications (i.e. those with outstanding Request

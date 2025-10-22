@@ -25,6 +25,7 @@
 
 #include "third_party/blink/renderer/core/editing/commands/typing_command.h"
 
+#include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/element.h"
 #include "third_party/blink/renderer/core/dom/element_traversal.h"
@@ -115,6 +116,7 @@ DispatchEventResult DispatchTextInputEvent(LocalFrame* frame,
 }
 
 PlainTextRange GetSelectionOffsets(const SelectionInDOMTree& selection) {
+  TRACE_EVENT0("blink", "GetSelectionOffsets");
   const EphemeralRange range = selection.ComputeRange();
   if (range.IsNull())
     return PlainTextRange();
@@ -381,6 +383,7 @@ void TypingCommand::InsertText(
     TextCompositionType composition_type,
     const bool is_incremental_insertion,
     InputEvent::InputType input_type) {
+  TRACE_EVENT0("blink", "TypingCommand::InsertText");
   DCHECK(!document.NeedsLayoutTreeUpdate());
   LocalFrame* frame = document.GetFrame();
   DCHECK(frame);

@@ -1,7 +1,7 @@
 /* ***** BEGIN LICENSE BLOCK *****
  * Version: MPL 1.1/GPL 2.0/LGPL 2.1
  *
- * Copyright (C) 2002-2017 Németh László
+ * Copyright (C) 2002-2022 Németh László
  *
  * The contents of this file are subject to the Mozilla Public License Version
  * 1.1 (the "License"); you may not use this file except in compliance with
@@ -83,7 +83,10 @@
 
 #define SPELL_XML "<?xml?>"
 
-#define MAXSUGGESTION 5
+#ifndef MAXSUGGESTION
+#define MAXSUGGESTION 15
+#endif
+
 #define MAXSHARPS 5
 
 #ifndef MAXWORDLEN
@@ -102,10 +105,6 @@ class HunspellImpl;
 
 class LIBHUNSPELL_DLL_EXPORTED Hunspell {
  private:
-  Hunspell(const Hunspell&);
-  Hunspell& operator=(const Hunspell&);
-
- private:
   HunspellImpl* m_Impl;
 
  public:
@@ -122,6 +121,8 @@ class LIBHUNSPELL_DLL_EXPORTED Hunspell {
 #else
   Hunspell(const char* affpath, const char* dpath, const char* key = NULL);
 #endif
+  Hunspell(const Hunspell&) = delete;
+  Hunspell& operator=(const Hunspell&) = delete;
   ~Hunspell();
 
 #ifndef HUNSPELL_CHROME_CLIENT
@@ -207,6 +208,8 @@ class LIBHUNSPELL_DLL_EXPORTED Hunspell {
 
   int add(const std::string& word);
 
+  int add_with_flags(const std::string& word, const std::string& flags, const std::string& desc);
+
   /* add word to the run-time dictionary with affix flags of
    * the example (a dictionary word): Hunspell will recognize
    * affixed forms of the new word, too.
@@ -225,7 +228,7 @@ class LIBHUNSPELL_DLL_EXPORTED Hunspell {
   const std::string& get_wordchars_cpp() const;
   const std::vector<w_char>& get_wordchars_utf16() const;
 
-  struct cs_info* get_csconv();
+  const struct cs_info* get_csconv() const;
   
   const char* get_version() const;
   const std::string& get_version_cpp() const;

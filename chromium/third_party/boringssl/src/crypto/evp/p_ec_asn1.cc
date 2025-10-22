@@ -20,6 +20,7 @@
 #include <openssl/ec_key.h>
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
+#include <openssl/nid.h>
 
 #include "internal.h"
 
@@ -30,11 +31,11 @@ static int eckey_pub_encode(CBB *out, const EVP_PKEY *key) {
   const EC_POINT *public_key = EC_KEY_get0_public_key(ec_key);
 
   // See RFC 5480, section 2.
-  CBB spki, algorithm, oid, key_bitstring;
+  CBB spki, algorithm, key_bitstring;
   if (!CBB_add_asn1(out, &spki, CBS_ASN1_SEQUENCE) ||
       !CBB_add_asn1(&spki, &algorithm, CBS_ASN1_SEQUENCE) ||
-      !CBB_add_asn1(&algorithm, &oid, CBS_ASN1_OBJECT) ||
-      !CBB_add_bytes(&oid, ec_asn1_meth.oid, ec_asn1_meth.oid_len) ||
+      !CBB_add_asn1_element(&algorithm, CBS_ASN1_OBJECT, ec_asn1_meth.oid,
+                            ec_asn1_meth.oid_len) ||
       !EC_KEY_marshal_curve_name(&algorithm, group) ||
       !CBB_add_asn1(&spki, &key_bitstring, CBS_ASN1_BITSTRING) ||
       !CBB_add_u8(&key_bitstring, 0 /* padding */) ||
@@ -114,12 +115,12 @@ static int eckey_priv_encode(CBB *out, const EVP_PKEY *key) {
   unsigned enc_flags = EC_KEY_get_enc_flags(ec_key) | EC_PKEY_NO_PARAMETERS;
 
   // See RFC 5915.
-  CBB pkcs8, algorithm, oid, private_key;
+  CBB pkcs8, algorithm, private_key;
   if (!CBB_add_asn1(out, &pkcs8, CBS_ASN1_SEQUENCE) ||
       !CBB_add_asn1_uint64(&pkcs8, 0 /* version */) ||
       !CBB_add_asn1(&pkcs8, &algorithm, CBS_ASN1_SEQUENCE) ||
-      !CBB_add_asn1(&algorithm, &oid, CBS_ASN1_OBJECT) ||
-      !CBB_add_bytes(&oid, ec_asn1_meth.oid, ec_asn1_meth.oid_len) ||
+      !CBB_add_asn1_element(&algorithm, CBS_ASN1_OBJECT, ec_asn1_meth.oid,
+                            ec_asn1_meth.oid_len) ||
       !EC_KEY_marshal_curve_name(&algorithm, EC_KEY_get0_group(ec_key)) ||
       !CBB_add_asn1(&pkcs8, &private_key, CBS_ASN1_OCTETSTRING) ||
       !EC_KEY_marshal_private_key(&private_key, ec_key, enc_flags) ||
@@ -283,4 +284,24 @@ EC_KEY *EVP_PKEY_get1_EC_KEY(const EVP_PKEY *pkey) {
     EC_KEY_up_ref(ec_key);
   }
   return ec_key;
+}
+
+int EVP_PKEY_get_ec_curve_nid(const EVP_PKEY *pkey) {
+  const EC_KEY *ec_key = EVP_PKEY_get0_EC_KEY(pkey);
+  if (ec_key == nullptr) {
+    return NID_undef;
+  }
+  const EC_GROUP *group = EC_KEY_get0_group(ec_key);
+  if (group == nullptr) {
+    return NID_undef;
+  }
+  return EC_GROUP_get_curve_name(group);
+}
+
+int EVP_PKEY_get_ec_point_conv_form(const EVP_PKEY *pkey) {
+  const EC_KEY *ec_key = EVP_PKEY_get0_EC_KEY(pkey);
+  if (ec_key == nullptr) {
+    return 0;
+  }
+  return EC_KEY_get_conv_form(ec_key);
 }

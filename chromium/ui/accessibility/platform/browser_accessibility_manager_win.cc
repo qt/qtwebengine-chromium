@@ -13,17 +13,18 @@
 #include "base/command_line.h"
 #include "base/containers/contains.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/typed_macros.h"
 #include "base/win/scoped_bstr.h"
 #include "base/win/scoped_variant.h"
 #include "base/win/windows_version.h"
-#include "ui/accessibility/platform/browser_accessibility_win.h"
 #include "ui/accessibility/ax_role_properties.h"
 #include "ui/accessibility/platform/ax_fragment_root_win.h"
 #include "ui/accessibility/platform/ax_platform.h"
 #include "ui/accessibility/platform/ax_platform_node_delegate_utils_win.h"
 #include "ui/accessibility/platform/ax_platform_node_textprovider_win.h"
 #include "ui/accessibility/platform/ax_platform_tree_manager_delegate.h"
+#include "ui/accessibility/platform/browser_accessibility_win.h"
 #include "ui/accessibility/platform/uia_registrar_win.h"
 #include "ui/base/win/atl_module.h"
 
@@ -139,12 +140,32 @@ void BrowserAccessibilityManagerWin::FireAriaNotificationEvent(
     ax::mojom::AriaNotificationInterrupt interrupt_property,
     const std::string& type) {
   DCHECK(node);
-  if (!AXPlatform::GetInstance().IsUiaProviderEnabled()) {
+  // Allow fallback implementation when UIA is not supported or enabled.
+  if (ShouldExposeExtraAnnouncementNodes()) {
+    BrowserAccessibility* announcement_browser_accessibility =
+        node->GetExtraAnnouncementNode(priority_property);
+    AXNode* announcement_node = announcement_browser_accessibility->node();
+    AXNodeData data = announcement_node->data();
+    data.SetName(announcement);
+    announcement_node->SetData(data);
+    static_cast<AXPlatformNodeWin*>(
+        announcement_browser_accessibility->GetAXPlatformNode())
+        ->OnAriaNotificationIA2Fallback(announcement, priority_property);
     return;
   }
 
   auto* provider = ToBrowserAccessibilityWin(node)->GetCOM();
-  if (!provider->HasEventListenerForEvent(UIA_NotificationEventId)) {
+  while (provider && !provider->IsUIAControl()) {
+    // If the node is not a UIA control, we need to find the first ancestor
+    // that is a UIA control.
+    BrowserAccessibility* parent = node->PlatformGetParent();
+    CHECK(parent) << "FireAriaNotificationEvent called on a node without a UIA "
+                     "control ancestor.";
+    provider = ToBrowserAccessibilityWin(parent)->GetCOM();
+    node = parent;
+  }
+  if (!provider ||
+      !provider->HasEventListenerForEvent(UIA_NotificationEventId)) {
     return;
   }
 
@@ -198,6 +219,30 @@ void BrowserAccessibilityManagerWin::FireAriaNotificationEvent(
   uia_raise_notification_event_func(provider, NotificationKind_ActionCompleted,
                                     MapPropertiesToUiaNotificationProcessing(),
                                     announcement_bstr.Get(), type_bstr.Get());
+}
+
+bool BrowserAccessibilityManagerWin::ShouldExposeExtraAnnouncementNodes()
+    const {
+  return !AXPlatform::GetInstance().IsUiaProviderEnabled();
+}
+
+BrowserAccessibility*
+BrowserAccessibilityManagerWin::GetExtraAnnouncementNodeFromNode(
+    const BrowserAccessibility* node,
+    ax::mojom::AriaNotificationPriority priority_property) const {
+  CHECK(ShouldExposeExtraAnnouncementNodes());
+  AXNode* extra_announcement_node =
+      node->node()->GetExtraAnnouncementNode(priority_property);
+  return GetFromAXNode(extra_announcement_node);
+}
+
+bool BrowserAccessibilityManagerWin::TreeHasExtraAnnouncementNodes() const {
+  return ax_tree()->extra_announcement_nodes();
+}
+
+size_t BrowserAccessibilityManagerWin::TreeExtraAnnouncementNodesCount() const {
+  CHECK(TreeHasExtraAnnouncementNodes());
+  return ax_tree()->extra_announcement_nodes()->Count();
 }
 
 void BrowserAccessibilityManagerWin::FireFocusEvent(AXNode* node) {
@@ -832,7 +877,7 @@ void BrowserAccessibilityManagerWin::OnAtomicUpdateFinished(
   // done in a single pass that must complete before the next step starts.
   // The nodes that need to be updated are all of the nodes that were changed,
   // plus some parents.
-  std::set<AXPlatformNode*> objs_to_update;
+  absl::flat_hash_set<AXPlatformNode*> objs_to_update;
   CollectChangedNodesAndParentsForAtomicUpdate(tree, changes, &objs_to_update);
 
   // The first step moves win_attributes_ to old_win_attributes_ and then
@@ -1033,7 +1078,7 @@ gfx::Rect BrowserAccessibilityManagerWin::GetViewBoundsInScreenCoordinates()
   // This is because Chromium transforms the screen physical coordinates it
   // receives from Windows into an internal representation of screen physical
   // coordinates adjusted for multiple displays of different resolutions.
-  return display::win::ScreenWin::DIPToScreenRect(GetParentHWND(), bounds);
+  return display::win::GetScreenWin()->DIPToScreenRect(GetParentHWND(), bounds);
 }
 
 void BrowserAccessibilityManagerWin::BeforeAccessibilityEvents() {

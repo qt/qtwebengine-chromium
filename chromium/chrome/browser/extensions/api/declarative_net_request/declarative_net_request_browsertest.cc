@@ -44,12 +44,12 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "chrome/browser/extensions/extension_action_runner.h"
+#include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/extension_util.h"
 #include "chrome/browser/extensions/load_error_reporter.h"
 #include "chrome/browser/extensions/permissions/active_tab_permission_granter.h"
 #include "chrome/browser/extensions/permissions/scripting_permissions_modifier.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/test_extension_action_dispatcher_observer.h"
 #include "chrome/browser/net/profile_network_context_service.h"
 #include "chrome/browser/net/profile_network_context_service_factory.h"
@@ -123,7 +123,6 @@
 #include "extensions/common/url_pattern_set.h"
 #include "extensions/test/extension_background_page_waiter.h"
 #include "extensions/test/extension_test_message_listener.h"
-#include "ipc/ipc_message.h"
 #include "net/base/net_errors.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/http/http_request_headers.h"
@@ -134,7 +133,6 @@
 #include "net/test/embedded_test_server/http_request.h"
 #include "net/test/embedded_test_server/http_response.h"
 #include "net/test/embedded_test_server/install_default_websocket_handlers.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/test/test_data_directory.h"
 #include "net/traffic_annotation/network_traffic_annotation_test_helper.h"
 #include "services/network/public/cpp/features.h"
@@ -144,10 +142,7 @@
 #include "third_party/blink/public/common/features.h"
 #include "ui/webui/untrusted_web_ui_browsertest_util.h"
 
-#if BUILDFLAG(IS_ANDROID)
-#include "chrome/browser/extensions/extension_platform_browsertest.h"
-#else
-#include "chrome/browser/extensions/extension_browsertest.h"
+#if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -253,14 +248,8 @@ class RulesetLoaderThrottle {
   base::OnceClosure quit_closure_;
 };
 
-#if BUILDFLAG(IS_ANDROID)
-using ExtensionBrowserTestBase = ExtensionPlatformBrowserTest;
-#else
-using ExtensionBrowserTestBase = ExtensionBrowserTest;
-#endif
-
 class DeclarativeNetRequestBrowserTest
-    : public ExtensionBrowserTestBase,
+    : public ExtensionBrowserTest,
       public ::testing::WithParamInterface<
           ::testing::tuple<ExtensionLoadType, bool>> {
  public:
@@ -296,7 +285,7 @@ class DeclarativeNetRequestBrowserTest
   }
 
   void SetUpCommandLine(base::CommandLine* command_line) override {
-    ExtensionBrowserTestBase::SetUpCommandLine(command_line);
+    ExtensionBrowserTest::SetUpCommandLine(command_line);
 
     if (GetAllowChromeURLs()) {
       command_line->AppendSwitch(switches::kExtensionsOnChromeURLs);
@@ -307,13 +296,17 @@ class DeclarativeNetRequestBrowserTest
 
   // ExtensionBrowserTest overrides:
   void SetUpOnMainThread() override {
-    ExtensionBrowserTestBase::SetUpOnMainThread();
+    ExtensionBrowserTest::SetUpOnMainThread();
 
     embedded_test_server()->ServeFilesFromDirectory(GetHttpServerPath());
 
     embedded_test_server()->RegisterRequestMonitor(
         base::BindRepeating(&DeclarativeNetRequestBrowserTest::MonitorRequest,
                             base::Unretained(this)));
+
+    // Set up WebSockets for any test that needs it. This does not interfere
+    // with non-WebSocket requests.
+    net::test_server::InstallDefaultWebSocketHandlers(embedded_test_server());
 
     content::SetupCrossSiteRedirector(embedded_test_server());
 
@@ -330,7 +323,7 @@ class DeclarativeNetRequestBrowserTest
     // Ensure |ruleset_manager_observer_| gets destructed on the UI thread.
     ruleset_manager_observer_.reset();
 
-    ExtensionBrowserTestBase::TearDownOnMainThread();
+    ExtensionBrowserTest::TearDownOnMainThread();
   }
 
   // Handler to monitor the requests which reach the EmbeddedTestServer. This
@@ -992,7 +985,7 @@ class DeclarativeNetRequestBrowserTest
             // Force a reload of the extension to complete the delayed update.
             // This invalidates the existing `extension` pointer so it needs to
             // be set again after the reload.
-            extension_service()->ReloadExtension(extension_id);
+            extension_registrar()->ReloadExtension(extension_id);
             extension =
                 ExtensionRegistry::Get(profile())->enabled_extensions().GetByID(
                     extension_id);
@@ -1859,7 +1852,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
     // Don't use ExtensionBrowserTest::ReloadExtension since it waits for the
     // extension to be loaded again. But we need to use our custom waiting logic
     // below.
-    extension_service()->ReloadExtension(extension_id);
+    extension_registrar()->ReloadExtension(extension_id);
     WaitForExtensionsWithRulesetsCount(0);
     WaitForExtensionsWithRulesetsCount(1);
     test_extension_enabled(true);
@@ -3556,8 +3549,8 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest, Redirect) {
 #if !BUILDFLAG(IS_ANDROID)
 // Test that the badge text for an extension will update to reflect the number
 // of actions taken on requests matching the extension's ruleset.
-// TODO(crbug.com/371298229): Port to desktop Android when extension badges are
-// supported.
+// TODO(crbug.com/371298229): Fix a dependency_manager.cc DCHECK that this
+// triggers on Android.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
                        ActionsMatchedCountAsBadgeText) {
   // Load the extension with a background script so scripts can be run from its
@@ -4016,9 +4009,8 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
       embedded_test_server()->GetURL("abc.com", "/page_with_two_frames.html");
   ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(), page_url));
 
-  TabHelper* tab_helper = TabHelper::FromWebContents(web_contents());
   ActiveTabPermissionGranter* active_tab_granter =
-      tab_helper->active_tab_permission_granter();
+      ActiveTabPermissionGranter::FromWebContents(web_contents());
   ASSERT_TRUE(active_tab_granter);
 
   // The preference is initially turned off. Both the visible badge text and the
@@ -5074,12 +5066,9 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
   ASSERT_EQ(2, browser()->tab_strip_model()->count());
   ASSERT_TRUE(browser()->tab_strip_model()->IsTabSelected(1));
 
-  TabHelper* tab_helper = TabHelper::FromWebContents(web_contents());
-  ASSERT_TRUE(tab_helper);
-
   // Get the ActiveTabPermissionGranter for the second tab.
   ActiveTabPermissionGranter* active_tab_granter =
-      tab_helper->active_tab_permission_granter();
+      ActiveTabPermissionGranter::FromWebContents(web_contents());
   ASSERT_TRUE(active_tab_granter);
 
   const Extension* dnr_extension = last_loaded_extension();
@@ -5982,7 +5971,7 @@ class DeclarativeNetRequestSubresourceWebBundlesBrowserTest
  public:
   DeclarativeNetRequestSubresourceWebBundlesBrowserTest() = default;
   void SetUpOnMainThread() override {
-    ExtensionBrowserTestBase::SetUpOnMainThread();
+    ExtensionBrowserTest::SetUpOnMainThread();
     CreateTempDir();
     InitializeRulesetManagerObserver();
   }
@@ -6914,12 +6903,10 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
 
   ASSERT_NO_FATAL_FAILURE(LoadExtensionWithRules(rules));
 
-  // Start a web socket test server.
-  net::SpawnedTestServer websocket_test_server(
-      net::SpawnedTestServer::TYPE_WS, net::GetWebSocketTestDataDirectory());
-  ASSERT_TRUE(websocket_test_server.Start());
   std::string websocket_url =
-      websocket_test_server.GetURL("echo-with-no-extension").spec();
+      net::test_server::GetWebSocketURL(*embedded_test_server(),
+                                        "/echo-with-no-extension")
+          .spec();
 
   static constexpr char kOpenWebSocketsScript[] = R"(
     {
@@ -7173,9 +7160,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
 }
 
 // Tests that Protected Audience requests can be blocked by the
-// declarativeNetRequest API, and that if they try to redirect requests, the
-// request is blocked by the Protected Audience logic, which doesn't allow
-// redirects, instead of being redirected.
+// declarativeNetRequest API.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
                        ProtectedAudienceNetworkRequestsBlockRequests) {
   privacy_sandbox::ScopedPrivacySandboxAttestations scoped_attestations(
@@ -7265,10 +7250,74 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
       FROM_HERE, run_loop.QuitClosure(), TestTimeouts::tiny_timeout());
   run_loop.Run();
   EXPECT_EQ(0u, GetAndResetRequestsToServer().count(bidder_report_url));
+}
 
-  // Load a second extension which redirects requests for the bidding script
-  // (not the report URL, which the first extension blocks) to a URL that serves
-  // an identical bidding script.
+// Tests that if the declarativeNetRequest API tries to redirect Protected
+// Audience requests, the request is blocked by the Protected Audience logic,
+// which doesn't allow redirects, instead of being redirected.
+IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
+                       ProtectedAudienceNetworkRequestsBlockRedirect) {
+  privacy_sandbox::ScopedPrivacySandboxAttestations scoped_attestations(
+      privacy_sandbox::PrivacySandboxAttestations::CreateForTesting());
+  // Mark all Privacy Sandbox APIs as attested since the test case is testing
+  // behaviors not related to attestations.
+  privacy_sandbox::PrivacySandboxAttestations::GetInstance()
+      ->SetAllPrivacySandboxAttestedForTesting(true);
+
+  ASSERT_TRUE(https_server()->Start());
+
+  PrivacySandboxSettingsFactory::GetForProfile(profile())
+      ->SetAllPrivacySandboxAllowedForTesting();
+
+  NavigateToURL(https_server()->GetURL("/interest_group/fenced_frame.html"));
+
+  GURL bidding_logic_url =
+      https_server()->GetURL("/interest_group/bidding_logic.js");
+  GURL decision_logic_url =
+      https_server()->GetURL("/interest_group/decision_logic.js");
+  GURL bidder_report_url = https_server()->GetURL("/echo?bidder_report");
+  GURL decision_report_url = https_server()->GetURL("/echo?decision_report");
+
+  // Add an interest group.
+  EXPECT_EQ("done", content::EvalJs(
+                        web_contents(),
+                        content::JsReplace(
+                            R"(
+          (function() {
+            navigator.joinAdInterestGroup({
+              name: 'cars',
+              owner: $1,
+              biddingLogicURL: $2,
+              userBiddingSignals: [],
+              ads: [{
+                renderURL: 'https://example.com/render',
+                metadata: {ad: 'metadata', here: [1, 2, 3]}
+              }]
+            }, /*joinDurationSec=*/ 300);
+            return 'done';
+          })();
+        )",
+                            url::Origin::Create(bidding_logic_url).Serialize(),
+                            bidding_logic_url)));
+
+  std::string run_auction_command = content::JsReplace(
+      R"(
+             (async function() {
+               let config = await navigator.runAdAuction({
+                 seller: $1,
+                 decisionLogicURL: $2,
+                 interestGroupBuyers: [$1],
+               });
+               document.querySelector('fencedframe').config =
+                  new FencedFrameConfig(config);
+               return config;
+             })()
+          )",
+      url::Origin::Create(decision_logic_url).Serialize(),
+      decision_logic_url.spec());
+
+  // Add an extension which redirects requests for the bidding script to a URL
+  // that serves an identical bidding script.
   TestRule redirect_bidding_logic_rule = CreateGenericRule();
   redirect_bidding_logic_rule.condition->url_filter =
       bidding_logic_url.spec() + "^";
@@ -7285,7 +7334,8 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestBrowserTest,
   // Redirecting a bidder script, even to another bidder script, should cause
   // the request to fail, which causes the entire auction to fail, since there's
   // only one bidder script.
-  EXPECT_EQ(nullptr, content::EvalJs(web_contents(), run_auction_command));
+  EXPECT_EQ(base::Value(),
+            content::EvalJs(web_contents(), run_auction_command));
 }
 
 #if !BUILDFLAG(IS_ANDROID)
@@ -8685,8 +8735,9 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestAllowChromeURLsBrowserTest,
 // --extensions-on-chrome-urls switch is used.
 // TODO(crbug.com/393191910): Port to desktop Android. This test fails with
 // no logging and no stack.
+// TODO(crbug.com/408364840): Re-enable flaky test.
 IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestAllowChromeURLsBrowserTest,
-                       CrossExtensionNavigationRequestBlocking) {
+                       DISABLED_CrossExtensionNavigationRequestBlocking) {
   set_config_flags(ConfigFlag::kConfig_HasBackgroundScript |
                    ConfigFlag::kConfig_HasFeedbackPermission |
                    ConfigFlag::kConfig_HasManifestSandbox);
@@ -8714,7 +8765,7 @@ IN_PROC_BROWSER_TEST_P(DeclarativeNetRequestAllowChromeURLsBrowserTest,
 
   // Initiate main_frame and sub_frame requests via an extension page.
   base::Time start_time = base::Time::Now();
-  GURL extension_page_url = extension_2->GetResourceURL("/manifest.json");
+  GURL extension_page_url = extension_2->GetResourceURL("manifest.json");
   GURL main_frame_url = embedded_test_server()->GetURL("example.com", "/");
   GURL sub_frame_url =
       embedded_test_server()->GetURL("example.com", "/child_frame.html");

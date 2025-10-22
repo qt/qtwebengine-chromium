@@ -16,6 +16,7 @@
 #include "third_party/blink/renderer/core/css/container_state.h"
 #include "third_party/blink/renderer/core/css/css_length_resolver.h"
 #include "third_party/blink/renderer/core/css/css_primitive_value.h"
+#include "third_party/blink/renderer/core/style/position_try_fallbacks.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/text/writing_mode.h"
@@ -141,19 +142,19 @@ class CORE_EXPORT MediaValues : public GarbageCollected<MediaValues>,
     return SnappedFlags() !=
            static_cast<ContainerSnappedFlags>(ContainerSnapped::kNone);
   }
-  // For evaluating scroll-state(overflowing: left/right)
+  // For evaluating scroll-state(scrollable: left/right)
   virtual ContainerScrollableFlags ScrollableHorizontal() const {
     return static_cast<ContainerScrollableFlags>(ContainerScrollable::kNone);
   }
-  // For evaluating scroll-state(overflowing: top/bottom)
+  // For evaluating scroll-state(scrollable: top/bottom)
   virtual ContainerScrollableFlags ScrollableVertical() const {
     return static_cast<ContainerScrollableFlags>(ContainerScrollable::kNone);
   }
-  // For evaluating scroll-state(overflowing: inline-start/inline-end)
+  // For evaluating scroll-state(scrollable: inline-start/inline-end)
   virtual ContainerScrollableFlags ScrollableInline() const {
     return static_cast<ContainerScrollableFlags>(ContainerScrollable::kNone);
   }
-  // For evaluating scroll-state(overflowing: block-start/block-end)
+  // For evaluating scroll-state(scrollable: block-start/block-end)
   virtual ContainerScrollableFlags ScrollableBlock() const {
     return static_cast<ContainerScrollableFlags>(ContainerScrollable::kNone);
   }
@@ -164,6 +165,38 @@ class CORE_EXPORT MediaValues : public GarbageCollected<MediaValues>,
            ScrollableVertical() != static_cast<ContainerScrollableFlags>(
                                        ContainerScrollable::kNone);
   }
+  // For evaluating scroll-state(scroll-direction: left/right)
+  virtual ContainerScrollDirection ScrollDirectionHorizontal() const {
+    return ContainerScrollDirection::kNone;
+  }
+  // For evaluating scroll-state(scroll-direction: up/down)
+  virtual ContainerScrollDirection ScrollDirectionVertical() const {
+    return ContainerScrollDirection::kNone;
+  }
+  // For evaluating scroll-state(scroll-direction: inline-start/inline-end)
+  virtual ContainerScrollDirection ScrollDirectionInline() const {
+    return ContainerScrollDirection::kNone;
+  }
+  // For evaluating scroll-state(scroll-direction: block-start/block-end)
+  virtual ContainerScrollDirection ScrollDirectionBlock() const {
+    return ContainerScrollDirection::kNone;
+  }
+  // For boolean context evaluation
+  bool ScrollDirection() const {
+    return ScrollDirectionHorizontal() != ContainerScrollDirection::kNone ||
+           ScrollDirectionVertical() != ContainerScrollDirection::kNone;
+  }
+  // The writing-mode/direction of a container. Used for anchored(fallback).
+  virtual WritingDirectionMode GetWritingDirection() const { NOTREACHED(); }
+  // The writing-mode/direction of the abspos containing block for an anchored
+  // container. Used for anchored(fallback).
+  virtual WritingDirectionMode AbsContainerWritingDirection() const {
+    NOTREACHED();
+  }
+  // Return the currently applied position-try-fallback for an anchored element.
+  // 0 means no position-try-fallback is applied. Otherwise a 1-based index into
+  // the list of fallbacks of the computed position-try-fallbacks property.
+  virtual const PositionTryFallback& AnchoredFallback() const { NOTREACHED(); }
   // Returns the container element used to retrieve base style and parent style
   // when computing the computed value of a style() container query.
   virtual Element* ContainerElement() const { return nullptr; }

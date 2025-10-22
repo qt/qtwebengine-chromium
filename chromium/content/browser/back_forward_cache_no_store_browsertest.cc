@@ -13,17 +13,21 @@
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/browser/renderer_host/render_frame_host_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test.h"
 #include "content/public/test/browser_test_utils.h"
 #include "content/public/test/content_browser_test_utils.h"
+#include "content/public/test/prerender_test_util.h"
 #include "content/public/test/test_navigation_observer.h"
 #include "content/shell/browser/shell.h"
+#include "net/base/features.h"
 #include "net/device_bound_sessions/test_support.h"
 #include "net/net_buildflags.h"
 #include "net/test/embedded_test_server/controllable_http_response.h"
-#include "net/test/spawned_test_server/spawned_test_server.h"
+#include "net/test/embedded_test_server/install_default_websocket_handlers.h"
 #include "net/test/test_data_directory.h"
 #include "services/network/public/mojom/clear_data_filter.mojom.h"
 #include "third_party/blink/public/common/scheduler/web_scheduler_tracked_feature.h"
@@ -125,9 +129,6 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestDisableCCNS,
 #endif
 IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestDisableCCNS,
                        MAYBE_CCNSAndWebSocketBothRecorded) {
-  net::SpawnedTestServer ws_server(net::SpawnedTestServer::TYPE_WS,
-                                   net::GetWebSocketTestDataDirectory());
-  ASSERT_TRUE(ws_server.Start());
   ASSERT_TRUE(embedded_test_server()->Start());
 
   GURL url_a_no_store(embedded_test_server()->GetURL(
@@ -144,8 +145,9 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestDisableCCNS,
         socket.addEventListener('open', () => resolve(42));
       });)";
   ASSERT_EQ(42, EvalJs(rfh_a.get(),
-                       JsReplace(script,
-                                 ws_server.GetURL("echo-with-no-extension"))));
+                       JsReplace(script, net::test_server::GetWebSocketURL(
+                                             *embedded_test_server(),
+                                             "/echo-with-no-extension"))));
 
   // 2. Navigate away and expect frame to be deleted.
   EXPECT_TRUE(NavigateToURL(shell(), url_b));
@@ -159,41 +161,111 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestDisableCCNS,
                     {}, {}, {}, FROM_HERE);
 }
 
-namespace {
+enum class TestNavigationType {
+  kNonPrerender,
+  kPrerender,
+};
+
+class BackForwardCacheBrowserTestWithPrerendering
+    : public BackForwardCacheBrowserTest,
+      public ::testing::WithParamInterface<TestNavigationType> {
+ public:
+  static std::string DescribeParams(
+      const ::testing::TestParamInfo<ParamType>& info) {
+    switch (info.param) {
+      case TestNavigationType::kNonPrerender:
+        return "NonPrerender";
+      case TestNavigationType::kPrerender:
+        return "Prerender";
+    }
+  }
+
+  void SetUpCommandLine(base::CommandLine* command_line) override {
+    BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
+    // `prerender_helper_` has a ScopedFeatureList so we needed to delay its
+    // creation until the BackForwardCacheBrowserTest finishes setting up the
+    // ScopedFeatureList.
+    prerender_helper_ =
+        std::make_unique<test::PrerenderTestHelper>(base::BindRepeating(
+            &BackForwardCacheBrowserTestWithPrerendering::GetWebContents,
+            base::Unretained(this)));
+    prerender_helper_->RegisterServerRequestMonitor(embedded_test_server());
+  }
+
+  WebContents* GetWebContents() { return web_contents(); }
+
+  test::PrerenderTestHelper& prerender_helper() { return *prerender_helper_; }
+
+ protected:
+  void NavigateToPageWithResponseFromMainWebContents(
+      GURL& url,
+      net::test_server::ControllableHttpResponse& response,
+      const char* response_bytes) {
+    switch (GetParam()) {
+      case TestNavigationType::kNonPrerender: {
+        TestNavigationObserver observer(web_contents());
+        shell()->LoadURL(url);
+        response.WaitForRequest();
+        response.Send(response_bytes);
+        response.Done();
+        observer.Wait();
+        break;
+      }
+      case TestNavigationType::kPrerender: {
+        prerender_helper().AddPrerenderAsync(url);
+        response.WaitForRequest();
+        response.Send(response_bytes);
+        response.Done();
+        TestActivationManager activation_manager(web_contents(), url);
+        ASSERT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                           JsReplace("location = $1", url)));
+        activation_manager.WaitForNavigationFinished();
+        EXPECT_TRUE(activation_manager.was_activated());
+        break;
+      }
+    }
+  }
+
+ private:
+  std::unique_ptr<test::PrerenderTestHelper> prerender_helper_;
+};
 
 class BackForwardCacheBrowserTestAllowCacheControlNoStore
-    : public BackForwardCacheBrowserTest {
+    : public BackForwardCacheBrowserTestWithPrerendering {
  protected:
   void SetUpCommandLine(base::CommandLine* command_line) override {
     EnableFeatureAndSetParams(features::kBackForwardCache, "", "");
     EnableFeatureAndSetParams(
         features::kCacheControlNoStoreEnterBackForwardCache, "level",
         "store-and-evict");
-    BackForwardCacheBrowserTest::SetUpCommandLine(command_line);
+    BackForwardCacheBrowserTestWithPrerendering::SetUpCommandLine(command_line);
   }
 };
 
-}  // namespace
+INSTANTIATE_TEST_SUITE_P(
+    All,
+    BackForwardCacheBrowserTestAllowCacheControlNoStore,
+    ::testing::Values(TestNavigationType::kNonPrerender,
+                      TestNavigationType::kPrerender),
+    &BackForwardCacheBrowserTestAllowCacheControlNoStore::DescribeParams);
 
 // Test that a page with cache-control:no-store enters bfcache with the flag on,
 // but does not get restored and gets evicted.
-IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
+IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestAllowCacheControlNoStore,
                        PagesWithCacheControlNoStoreEnterBfcacheAndEvicted) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
   GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_b(embedded_test_server()->GetURL("b.com", "/title2.html"));
 
   // 1) Load the document and specify no-store for the main resource.
-  TestNavigationObserver observer(web_contents());
-  shell()->LoadURL(url_a);
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCache);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
-  response.WaitForRequest();
-  response.Send(kResponseWithNoCache);
-  response.Done();
-  observer.Wait();
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
 
   // 2) Navigate away. |rfh_a| should enter the bfcache.
@@ -215,12 +287,14 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
 // Test that a page with cache-control:no-store enters bfcache with the flag on,
 // and if a cookie is modified while it is in bfcache via JavaScript, gets
 // evicted with cookie modified marked.
-IN_PROC_BROWSER_TEST_F(
+IN_PROC_BROWSER_TEST_P(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreCookieModifiedThroughJavaScript) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
   GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_a_2(embedded_test_server()->GetURL("a.com", "/title2.html"));
@@ -230,13 +304,9 @@ IN_PROC_BROWSER_TEST_F(
   Shell* tab_to_modify_cookie = CreateBrowser();
 
   // 1) Load the document and specify no-store for the main resource.
-  TestNavigationObserver observer(tab_to_be_bfcached->web_contents());
-  tab_to_be_bfcached->LoadURL(url_a);
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCache);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
-  response.WaitForRequest();
-  response.Send(kResponseWithNoCache);
-  response.Done();
-  observer.Wait();
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
 
   // 2) Set a normal cookie from JavaScript.
@@ -268,24 +338,89 @@ IN_PROC_BROWSER_TEST_F(
                   BlockListedFeatures()));
 }
 
+// Test that a prerendered page with cache-control:no-store enters bfcache with
+// the flag on, and if a cookie is modified before the prerendered page is
+// activated via JavaScript, gets evicted with cookie modified marked.
+IN_PROC_BROWSER_TEST_F(
+    BackForwardCacheBrowserTestAllowCacheControlNoStore,
+    PagesWithCacheControlNoStoreCookieModifiedBeforePrerendererActivationThroughJavaScript) {
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "/title1.html");
+  ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
+
+  GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  GURL url_a_2(embedded_test_server()->GetURL("a.com", "/title2.html"));
+  GURL url_b(embedded_test_server()->GetURL("b.com", "/title3.html"));
+
+  Shell* tab_to_be_bfcached = shell();
+  Shell* tab_to_modify_cookie = CreateBrowser();
+
+  // 1) Prerender the document and specify no-store for the main resource.
+  prerender_helper().AddPrerenderAsync(url_a);
+  response.WaitForRequest();
+  response.Send(kResponseWithNoCache);
+  response.Done();
+  TestActivationManager activation_manager(web_contents(), url_a);
+  ASSERT_TRUE(ExecJs(web_contents()->GetPrimaryMainFrame(),
+                     JsReplace("location = $1", url_a)));
+  ASSERT_TRUE(activation_manager.WaitForAfterChecks());
+
+  // 2) Navigate to a.com in |tab_to_modify_cookie| and modify cookie from
+  // JavaScript before the page is activated.
+  EXPECT_TRUE(NavigateToURL(tab_to_modify_cookie, url_a_2));
+  EXPECT_TRUE(ExecJs(tab_to_modify_cookie, "document.cookie='foo=baz'"));
+  EXPECT_EQ("foo=baz", EvalJs(tab_to_modify_cookie, "document.cookie"));
+
+  // 3) Resume the activation.
+  activation_manager.WaitForNavigationFinished();
+  EXPECT_TRUE(activation_manager.was_activated());
+  RenderFrameHostImplWrapper rfh_a(current_frame_host());
+  rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
+
+  // 4) Navigate away. |rfh_a| should enter bfcache.
+  EXPECT_TRUE(NavigateToURL(tab_to_be_bfcached, url_b));
+  EXPECT_TRUE(rfh_a->IsInBackForwardCache());
+
+  // 5) Go back. |rfh_a| should be evicted upon restoration.
+  ASSERT_TRUE(HistoryGoBack(tab_to_be_bfcached->web_contents()));
+
+  EXPECT_EQ("foo=baz", EvalJs(tab_to_be_bfcached, "document.cookie"));
+  ExpectNotRestored({NotRestoredReason::kCacheControlNoStoreCookieModified}, {},
+                    {}, {}, {}, FROM_HERE);
+  // Make sure that the tree result also has the same reason.
+  EXPECT_THAT(GetTreeResult()->GetDocumentResult(),
+              MatchesDocumentResult(
+                  NotRestoredReasons(
+                      {NotRestoredReason::kCacheControlNoStoreCookieModified}),
+                  BlockListedFeatures()));
+}
+
 // Test that a page with cache-control:no-store enters bfcache with the flag on,
 // and if a cookie is modified, it gets evicted with cookie changed, but if
 // navigated away again and navigated back, it gets evicted without cookie
 // change marked.
-IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
+IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestAllowCacheControlNoStore,
                        PagesWithCacheControlNoStoreCookieModifiedBackTwice) {
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "/title1.html");
+  net::test_server::ControllableHttpResponse response_back(
+      embedded_test_server(), "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
-  GURL url_a(embedded_test_server()->GetURL(
-      "a.com", "/set-header?Cache-Control: no-store"));
-  GURL url_a_2(embedded_test_server()->GetURL("a.com", "/title1.html"));
-  GURL url_b(embedded_test_server()->GetURL("b.com", "/title1.html"));
+  GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
+  GURL url_a_2(embedded_test_server()->GetURL("a.com", "/title2.html"));
+  GURL url_b(embedded_test_server()->GetURL("b.com", "/title2.html"));
 
   Shell* tab_to_be_bfcached = shell();
   Shell* tab_to_modify_cookie = CreateBrowser();
 
   // 1) Load the document and specify no-store for the main resource.
-  EXPECT_TRUE(NavigateToURL(tab_to_be_bfcached, url_a));
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCache);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
 
@@ -305,7 +440,12 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
   EXPECT_EQ("foo=baz", EvalJs(tab_to_modify_cookie, "document.cookie"));
 
   // 5) Go back. |rfh_a| should be evicted upon restoration.
-  ASSERT_TRUE(HistoryGoBack(tab_to_be_bfcached->web_contents()));
+  TestNavigationObserver observer(tab_to_be_bfcached->web_contents());
+  tab_to_be_bfcached->web_contents()->GetController().GoBack();
+  response_back.WaitForRequest();
+  response_back.Send(kResponseWithNoCache);
+  response_back.Done();
+  observer.Wait();
 
   EXPECT_EQ("foo=baz", EvalJs(tab_to_be_bfcached, "document.cookie"));
   ExpectNotRestored({NotRestoredReason::kCacheControlNoStoreCookieModified}, {},
@@ -336,12 +476,14 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
 // Test that a page with cache-control:no-store enters bfcache with the flag on,
 // and even if a cookie is modified on a different domain than the entry, the
 // entry is not marked as cookie modified.
-IN_PROC_BROWSER_TEST_F(
+IN_PROC_BROWSER_TEST_P(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreCookieModifiedThroughJavaScriptOnDifferentDomain) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
   GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_a_2(embedded_test_server()->GetURL("a.com", "/title2.html"));
@@ -351,13 +493,9 @@ IN_PROC_BROWSER_TEST_F(
   Shell* tab_to_modify_cookie = CreateBrowser();
 
   // 1) Load the document and specify no-store for the main resource.
-  TestNavigationObserver observer(tab_to_be_bfcached->web_contents());
-  tab_to_be_bfcached->LoadURL(url_a);
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCache);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
-  response.WaitForRequest();
-  response.Send(kResponseWithNoCache);
-  response.Done();
-  observer.Wait();
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
 
   // 2) Navigate away. |rfh_a| should enter bfcache.
@@ -383,17 +521,21 @@ IN_PROC_BROWSER_TEST_F(
 
 // Test that a page with cache-control:no-store records other not restored
 // reasons along with kCacheControlNoStore when eviction happens.
-IN_PROC_BROWSER_TEST_F(
+IN_PROC_BROWSER_TEST_P(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreRecordOtherReasonsWhenEvictionHappens) {
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
-  GURL url_a(embedded_test_server()->GetURL(
-      "a.com", "/set-header?Cache-Control: no-store"));
+  GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_b(embedded_test_server()->GetURL("b.com", "/title1.html"));
 
   // 1) Load the document and specify no-store for the main resource.
-  EXPECT_TRUE(NavigateToURL(shell(), url_a));
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCache);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
 
@@ -420,6 +562,9 @@ IN_PROC_BROWSER_TEST_F(
 // Test that a page with cache-control:no-store records other not restored
 // reasons along with kCacheControlNoStore when there are other blocking reasons
 // upon entering bfcache.
+// TODO(crbug.com/417215501): this test is not using `embedded_test_server()` so
+// the current set up for prerendering doesn't work, we will only test the
+// normal navigation.
 IN_PROC_BROWSER_TEST_F(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreRecordOtherReasonsUponEntrance) {
@@ -455,17 +600,21 @@ IN_PROC_BROWSER_TEST_F(
 
 // Test that a page with cache-control:no-store records eviction reasons along
 // with kCacheControlNoStore when the entry is evicted for other reasons.
-IN_PROC_BROWSER_TEST_F(
+IN_PROC_BROWSER_TEST_P(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreRecordOtherReasonsForEviction) {
+  net::test_server::ControllableHttpResponse response(embedded_test_server(),
+                                                      "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
-  GURL url_a(embedded_test_server()->GetURL(
-      "a.com", "/set-header?Cache-Control: no-store"));
+  GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_b(embedded_test_server()->GetURL("b.com", "/title1.html"));
 
   // 1) Load the document and specify no-store for the main resource.
-  EXPECT_TRUE(NavigateToURL(shell(), url_a));
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCache);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
 
@@ -526,11 +675,13 @@ const char kResponseWithNoCacheWithRedirectionWithHTTPOnlyCookie[] =
 // Test that a page with cache-control:no-store enters bfcache with the flag on,
 // and if a cookie is modified while it is in bfcache via response header, gets
 // evicted with cookie modified marked.
-IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
+IN_PROC_BROWSER_TEST_P(BackForwardCacheBrowserTestAllowCacheControlNoStore,
                        PagesWithCacheControlNoStoreSetFromResponseHeader) {
   net::test_server::ControllableHttpResponse response(embedded_test_server(),
                                                       "/title1.html");
   ASSERT_TRUE(embedded_test_server()->Start());
+  GURL url_initial(embedded_test_server()->GetURL("a.com", "/title3.html"));
+  EXPECT_TRUE(NavigateToURL(shell(), url_initial));
 
   GURL url_a(embedded_test_server()->GetURL("a.com", "/title1.html"));
   GURL url_a_2(embedded_test_server()->GetURL("a.com", "/title2.html"));
@@ -540,13 +691,9 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
   Shell* tab_to_modify_cookie = CreateBrowser();
 
   // 1) Load the document and specify no-store for the main resource.
-  TestNavigationObserver observer(tab_to_be_bfcached->web_contents());
-  tab_to_be_bfcached->LoadURL(url_a);
+  NavigateToPageWithResponseFromMainWebContents(url_a, response,
+                                                kResponseWithNoCacheWithCookie);
   RenderFrameHostImplWrapper rfh_a(current_frame_host());
-  response.WaitForRequest();
-  response.Send(kResponseWithNoCacheWithCookie);
-  response.Done();
-  observer.Wait();
   rfh_a->GetBackForwardCacheMetrics()->SetObserverForTesting(this);
   EXPECT_EQ("foo=bar", EvalJs(tab_to_be_bfcached, "document.cookie"));
 
@@ -576,6 +723,9 @@ IN_PROC_BROWSER_TEST_F(BackForwardCacheBrowserTestAllowCacheControlNoStore,
 // Test that a page with cache-control:no-store enters bfcache with the flag on,
 // and if HTTPOnly cookie is modified while it is in bfcache, gets evicted with
 // HTTPOnly cookie modified marked.
+// TODO(crbug.com/417215501): this test is not using `embedded_test_server()` so
+// the current set up for prerendering doesn't work, we will only test the
+// normal navigation.
 IN_PROC_BROWSER_TEST_F(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreSetFromResponseHeaderHTTPOnlyCookie) {
@@ -636,6 +786,9 @@ IN_PROC_BROWSER_TEST_F(
 // and if a HTTPOnly cookie is modified, it gets evicted with cookie changed,
 // but if navigated away again and navigated back, it gets evicted without
 // HTTPOnly cookie change marked.
+// TODO(crbug.com/417215501): this test is not using `embedded_test_server()` so
+// the current set up for prerendering doesn't work, we will only test the
+// normal navigation.
 IN_PROC_BROWSER_TEST_F(
     BackForwardCacheBrowserTestAllowCacheControlNoStore,
     PagesWithCacheControlNoStoreHTTPOnlyCookieModifiedBackTwice) {
@@ -1023,12 +1176,12 @@ class CookieDisabledContentBrowserClient
  public:
   void SetIsCookieEnabled(bool new_value) { is_cookie_enabled_ = new_value; }
 
-  bool CanBackForwardCachedPageReceiveCookieChanges(
-      content::BrowserContext& browser_context,
+  bool IsFullCookieAccessAllowed(
+      BrowserContext* browser_context,
+      WebContents* web_contents,
       const GURL& url,
-      const net::SiteForCookies& site_for_cookies,
-      const std::optional<url::Origin>& top_frame_origin,
-      const net::CookieSettingOverrides overrides) override {
+      const blink::StorageKey& storage_key,
+      net::CookieSettingOverrides overrides) override {
     return is_cookie_enabled_;
   }
 
@@ -1935,22 +2088,22 @@ IN_PROC_BROWSER_TEST_F(
 
 #if BUILDFLAG(ENABLE_DEVICE_BOUND_SESSIONS)
 
-class DeviceBoundSessionAccessObserver : public content::WebContentsObserver {
+class DeviceBoundSessionAccessObserver : public WebContentsObserver {
  public:
   DeviceBoundSessionAccessObserver(
-      content::WebContents* web_contents,
+      WebContents* web_contents,
       base::RepeatingCallback<void(
           const net::device_bound_sessions::SessionAccess&)> on_access_callback)
       : WebContentsObserver(web_contents),
         on_access_callback_(std::move(on_access_callback)) {}
 
   void OnDeviceBoundSessionAccessed(
-      content::NavigationHandle* navigation,
+      NavigationHandle* navigation,
       const net::device_bound_sessions::SessionAccess& access) override {
     on_access_callback_.Run(access);
   }
   void OnDeviceBoundSessionAccessed(
-      content::RenderFrameHost* rfh,
+      RenderFrameHost* rfh,
       const net::device_bound_sessions::SessionAccess& access) override {
     on_access_callback_.Run(access);
   }
@@ -2025,6 +2178,7 @@ IN_PROC_BROWSER_TEST_F(
 
   base::RunLoop run_loop;
   device_bound_session_manager->DeleteAllSessions(
+      net::device_bound_sessions::DeletionReason::kClearBrowsingData,
       /*created_after_time=*/std::nullopt,
       /*created_before_time=*/std::nullopt,
       /*filter=*/nullptr, run_loop.QuitClosure());
@@ -2083,10 +2237,12 @@ IN_PROC_BROWSER_TEST_F(
   ASSERT_TRUE(device_bound_session_manager);
 
   base::RunLoop run_loop;
+  cached_rfh->SetDeviceBoundSessionTerminatedCallback(run_loop.QuitClosure());
   device_bound_session_manager->DeleteAllSessions(
+      net::device_bound_sessions::DeletionReason::kClearBrowsingData,
       /*created_after_time=*/std::nullopt,
       /*created_before_time=*/std::nullopt,
-      /*filter=*/nullptr, run_loop.QuitClosure());
+      /*filter=*/nullptr, base::DoNothing());
   run_loop.Run();
 
   // 5) Go back. `cached_rfh` should not be restored from bfcache.
@@ -2165,10 +2321,12 @@ IN_PROC_BROWSER_TEST_F(
   ASSERT_TRUE(device_bound_session_manager);
 
   base::RunLoop run_loop;
+  cached_rfh->SetDeviceBoundSessionTerminatedCallback(run_loop.QuitClosure());
   device_bound_session_manager->DeleteAllSessions(
+      net::device_bound_sessions::DeletionReason::kClearBrowsingData,
       /*created_after_time=*/std::nullopt,
       /*created_before_time=*/std::nullopt,
-      /*filter=*/nullptr, run_loop.QuitClosure());
+      /*filter=*/nullptr, base::DoNothing());
   run_loop.Run();
 
   // 5) Go back. `cached_rfh` should not be restored from bfcache.

@@ -9,6 +9,7 @@
 #include <utility>
 #include <vector>
 
+#include "base/notimplemented.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "ui/accessibility/ax_action_data.h"
@@ -165,13 +166,13 @@ gfx::NativeViewAccessible TestAXNodeWrapper::GetNativeViewAccessible() {
 gfx::NativeViewAccessible TestAXNodeWrapper::GetParent() const {
   if (!node_) {
     // Node may be null if it was just deleted.
-    return nullptr;
+    return gfx::NativeViewAccessible();
   }
   TestAXNodeWrapper* parent_wrapper =
       GetOrCreate(tree_, node_->GetUnignoredParent());
-  return parent_wrapper ?
-      parent_wrapper->ax_platform_node()->GetNativeViewAccessible() :
-      nullptr;
+  return parent_wrapper
+             ? parent_wrapper->ax_platform_node()->GetNativeViewAccessible()
+             : gfx::NativeViewAccessible();
 }
 
 size_t TestAXNodeWrapper::GetChildCount() const {
@@ -180,9 +181,9 @@ size_t TestAXNodeWrapper::GetChildCount() const {
 
 gfx::NativeViewAccessible TestAXNodeWrapper::ChildAtIndex(size_t index) const {
   TestAXNodeWrapper* child_wrapper = InternalGetChild(index);
-  return child_wrapper ?
-      child_wrapper->ax_platform_node()->GetNativeViewAccessible() :
-      nullptr;
+  return child_wrapper
+             ? child_wrapper->ax_platform_node()->GetNativeViewAccessible()
+             : gfx::NativeViewAccessible();
 }
 
 gfx::Rect TestAXNodeWrapper::GetBoundsRect(
@@ -317,7 +318,7 @@ gfx::NativeViewAccessible TestAXNodeWrapper::HitTestSync(
           screen_physical_pixel_x / g_scale_factor,
           screen_physical_pixel_y / g_scale_factor);
   return wrapper ? wrapper->ax_platform_node()->GetNativeViewAccessible()
-                 : nullptr;
+                 : gfx::NativeViewAccessible();
 }
 
 gfx::NativeViewAccessible TestAXNodeWrapper::GetFocus() const {
@@ -328,7 +329,7 @@ gfx::NativeViewAccessible TestAXNodeWrapper::GetFocus() const {
         ->ax_platform_node()
         ->GetNativeViewAccessible();
   }
-  return nullptr;
+  return gfx::NativeViewAccessible();
 }
 
 bool TestAXNodeWrapper::IsMinimized() const {
@@ -396,12 +397,6 @@ void TestAXNodeWrapper::ReplaceIntAttribute(int32_t node_id,
     return;
 
   AXNodeData new_data = node->data();
-  std::vector<std::pair<ax::mojom::IntAttribute, int32_t>>& attributes =
-      new_data.int_attributes;
-
-  std::erase_if(attributes,
-                [attribute](auto& pair) { return pair.first == attribute; });
-
   new_data.AddIntAttribute(attribute, value);
   node->SetData(new_data);
 }
@@ -410,12 +405,6 @@ void TestAXNodeWrapper::ReplaceFloatAttribute(
     ax::mojom::FloatAttribute attribute,
     float value) {
   AXNodeData new_data = GetData();
-  std::vector<std::pair<ax::mojom::FloatAttribute, float>>& attributes =
-      new_data.float_attributes;
-
-  std::erase_if(attributes,
-                [attribute](auto& pair) { return pair.first == attribute; });
-
   new_data.AddFloatAttribute(attribute, value);
   node_->SetData(new_data);
 }
@@ -423,12 +412,6 @@ void TestAXNodeWrapper::ReplaceFloatAttribute(
 void TestAXNodeWrapper::ReplaceBoolAttribute(ax::mojom::BoolAttribute attribute,
                                              bool value) {
   AXNodeData new_data = GetData();
-  std::vector<std::pair<ax::mojom::BoolAttribute, bool>>& attributes =
-      new_data.bool_attributes;
-
-  std::erase_if(attributes,
-                [attribute](auto& pair) { return pair.first == attribute; });
-
   new_data.AddBoolAttribute(attribute, value);
   node_->SetData(new_data);
 }
@@ -437,12 +420,6 @@ void TestAXNodeWrapper::ReplaceStringAttribute(
     ax::mojom::StringAttribute attribute,
     std::string value) {
   AXNodeData new_data = GetData();
-  std::vector<std::pair<ax::mojom::StringAttribute, std::string>>& attributes =
-      new_data.string_attributes;
-
-  std::erase_if(attributes,
-                [attribute](auto& pair) { return pair.first == attribute; });
-
   new_data.AddStringAttribute(attribute, value);
   node_->SetData(new_data);
 }
@@ -892,7 +869,7 @@ TestAXNodeWrapper::TestAXNodeWrapper(AXTree* tree, AXNode* node)
     : tree_(tree),
       node_(node),
       unique_id_(AXUniqueId::Create()),
-      platform_node_(AXPlatformNode::Create(this)) {
+      platform_node_(AXPlatformNode::Create(*this)) {
 #if BUILDFLAG(IS_WIN)
   native_event_target_ = gfx::kMockAcceleratedWidget;
 #else

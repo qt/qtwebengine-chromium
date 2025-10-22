@@ -38,7 +38,7 @@ bool SVGZoomAndPan::ParseAttribute(const QualifiedName& name,
     return false;
   zoom_and_pan_ = kSVGZoomAndPanUnknown;
   if (!value.empty()) {
-    zoom_and_pan_ = WTF::VisitCharacters(value, [&](auto chars) {
+    zoom_and_pan_ = VisitCharacters(value, [&](auto chars) {
       const auto* start = chars.data();
       return Parse(start, start + chars.size());
     });
@@ -49,10 +49,12 @@ bool SVGZoomAndPan::ParseAttribute(const QualifiedName& name,
 template <typename CharType>
 static SVGZoomAndPanType ParseZoomAndPanInternal(const CharType*& start,
                                                  const CharType* end) {
-  if (SkipToken(start, end, "disable"))
+  if (UNSAFE_TODO(SkipToken(start, end, "disable"))) {
     return kSVGZoomAndPanDisable;
-  if (SkipToken(start, end, "magnify"))
+  }
+  if (UNSAFE_TODO(SkipToken(start, end, "magnify"))) {
     return kSVGZoomAndPanMagnify;
+  }
   return kSVGZoomAndPanUnknown;
 }
 

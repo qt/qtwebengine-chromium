@@ -32,14 +32,14 @@ export function getHtml(this: AppearanceElement) {
     label="$i18n{yourSearchedImage}"
     label-description="$i18n{currentTheme}">
 </customize-chrome-hover-button>
-${(!this.isSourceTabFirstPartyNtp_ && !!this.ntpManagedByName_) ? html`
+${this.showManagedButton_ ? html`
   <customize-chrome-hover-button id="thirdPartyManageLinkButton"
       aria-button-label="${this.i18n('newTabPageManagedByA11yLabel',
-                           this.ntpManagedByName_)}"
+                           this.managedByName_)}"
       class="link-out-button theme-button"
       @click="${this.onNewTabPageManageByButtonClicked_}"
-      label-description="${this.i18n('newTabPageManagedBy',
-                           this.ntpManagedByName_)}">
+      label="${this.managedByName_}"
+      label-description="${this.managedByDesc_}">
   </customize-chrome-hover-button>
   `: ''}
 <div id="editButtonsContainer" ?hidden="${!this.showEditTheme_}">

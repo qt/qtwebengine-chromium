@@ -30,10 +30,11 @@
 #include "ink/rendering/skia/native/internal/mesh_specification_cache.h"
 #include "ink/rendering/skia/native/internal/path_drawable.h"
 #include "ink/rendering/skia/native/internal/shader_cache.h"
-#include "ink/rendering/texture_bitmap_store.h"
+#include "ink/rendering/skia/native/texture_bitmap_store.h"
 #include "ink/strokes/in_progress_stroke.h"
 #include "ink/strokes/stroke.h"
 #include "include/core/SkCanvas.h"
+#include "include/core/SkImageFilter.h"
 #include "include/core/SkMesh.h"
 #include "include/gpu/ganesh/GrDirectContext.h"
 
@@ -81,7 +82,7 @@ class SkiaRenderer {
  public:
   class Drawable;
 
-  explicit SkiaRenderer(absl::Nullable<std::shared_ptr<TextureBitmapStore>>
+  explicit SkiaRenderer(absl_nullable std::shared_ptr<TextureBitmapStore>
                             texture_provider = nullptr);
 
   SkiaRenderer(const SkiaRenderer&) = delete;
@@ -144,7 +145,7 @@ class SkiaRenderer {
   // TODO: b/284117747 - Add functions to "update" a `Drawable`.
 
  private:
-  absl::Nullable<std::shared_ptr<TextureBitmapStore>> texture_provider_;
+  absl_nullable std::shared_ptr<TextureBitmapStore> texture_provider_;
   skia_native_internal::ShaderCache shader_cache_;
   skia_native_internal::MeshSpecificationCache specification_cache_;
 
@@ -171,7 +172,7 @@ class SkiaRenderer::Drawable {
   Drawable& operator=(Drawable&&) = default;
   ~Drawable() = default;
 
-  // Returns the complete tranform from "object" coordinates to canvas
+  // Returns the complete transform from "object" coordinates to canvas
   // coordinates.
   const AffineTransform& ObjectToCanvas() const;
 
@@ -198,6 +199,8 @@ class SkiaRenderer::Drawable {
   //
   // CHECK-fails if the drawable does not have the property.
   void SetBrushColor(const Color& color);
+
+  void SetImageFilter(sk_sp<SkImageFilter> image_filter);
 
  private:
   friend SkiaRenderer;

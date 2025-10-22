@@ -83,7 +83,8 @@ class Surface final : public ErrorMonad {
         WaylandSurface,
         WindowsHWND,
         WindowsCoreWindow,
-        WindowsSwapChainPanel,
+        WindowsUWPSwapChainPanel,
+        WindowsWinUISwapChainPanel,
         XlibWindow,
     };
     Type GetType() const;
@@ -107,8 +108,11 @@ class Surface final : public ErrorMonad {
     // Valid to call if the type is WindowsCoreWindow
     IUnknown* GetCoreWindow() const;
 
-    // Valid to call if the type is WindowsSwapChainPanel
-    IUnknown* GetSwapChainPanel() const;
+    // Valid to call if the type is WindowsUWPSwapChainPanel
+    IUnknown* GetUWPSwapChainPanel() const;
+
+    // Valid to call if the type is WindowsWinUISwapChainPanel
+    IUnknown* GetWinUISwapChainPanel() const;
 
     // Valid to call if the type is WindowsXlib
     void* GetXDisplay() const;
@@ -120,7 +124,7 @@ class Surface final : public ErrorMonad {
     void APIConfigure(const SurfaceConfiguration* config);
     wgpu::Status APIGetCapabilities(AdapterBase* adapter, SurfaceCapabilities* capabilities) const;
     void APIGetCurrentTexture(SurfaceTexture* surfaceTexture) const;
-    void APIPresent();
+    wgpu::Status APIPresent();
     void APIUnconfigure();
     void APISetLabel(StringView label);
 
@@ -133,16 +137,16 @@ class Surface final : public ErrorMonad {
 
     MaybeError GetCapabilities(AdapterBase* adapter, SurfaceCapabilities* capabilities) const;
     MaybeError GetCurrentTexture(SurfaceTexture* surfaceTexture) const;
-    MaybeError Present();
 
     Ref<InstanceBase> mInstance;
     Type mType;
     std::string mLabel;
 
-    // The surface has an associated device only when it is configured
+    // The surface has an associated device *if and only if* it is configured.
     Ref<DeviceBase> mCurrentDevice;
 
-    // The swapchain is created when configuring the surface.
+    // The swapchain is created when configuring the surface (but may still be
+    // null even if it's in the "configured" state).
     Ref<SwapChainBase> mSwapChain;
 
     // We keep on storing the previous swap chain after Unconfigure in case we could reuse it
@@ -169,8 +173,11 @@ class Surface final : public ErrorMonad {
     // WindowsCoreWindow
     ComPtr<IUnknown> mCoreWindow;
 
-    // WindowsSwapChainPanel
-    ComPtr<IUnknown> mSwapChainPanel;
+    // WindowsUWPSwapChainPanel
+    ComPtr<IUnknown> mUWPSwapChainPanel;
+
+    // WindowsWinUISwapChainPanel
+    ComPtr<IUnknown> mWinUISwapChainPanel;
 #endif  // defined(DAWN_USE_WINDOWS_UI)
 
     // Xlib

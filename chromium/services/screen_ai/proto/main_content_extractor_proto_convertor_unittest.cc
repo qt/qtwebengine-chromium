@@ -2,16 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/gfx/geometry/rect.h"
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "services/screen_ai/proto/main_content_extractor_proto_convertor.h"
 
+#include <array>
 #include <string_view>
 
+#include "base/compiler_specific.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
 #include "base/path_service.h"
@@ -24,6 +20,7 @@
 #include "ui/accessibility/ax_node_data.h"
 #include "ui/accessibility/ax_tree.h"
 #include "ui/accessibility/ax_tree_update.h"
+#include "ui/gfx/geometry/rect.h"
 
 namespace {
 
@@ -37,7 +34,7 @@ constexpr int kMaxChildInTemplate = 3;
 struct NodeTemplate {
   ui::AXNodeID node_id;
   int child_count;
-  ui::AXNodeID child_ids[kMaxChildInTemplate];
+  std::array<ui::AXNodeID, kMaxChildInTemplate> child_ids;
 };
 
 ui::AXTreeUpdate CreateAXTreeUpdateFromTemplate(int root_id,
@@ -48,9 +45,10 @@ ui::AXTreeUpdate CreateAXTreeUpdateFromTemplate(int root_id,
 
   for (int i = 0; i < nodes_count; i++) {
     ui::AXNodeData node;
-    node.id = nodes_template[i].node_id;
-    for (int j = 0; j < nodes_template[i].child_count; j++)
-      node.child_ids.push_back(nodes_template[i].child_ids[j]);
+    node.id = UNSAFE_TODO(nodes_template[i]).node_id;
+    for (int j = 0; j < UNSAFE_TODO(nodes_template[i]).child_count; j++) {
+      node.child_ids.push_back(UNSAFE_TODO(nodes_template[i]).child_ids[j]);
+    }
     node.relative_bounds.bounds = gfx::RectF(0, 0, 100, 100);
     update.nodes.push_back(node);
   }
@@ -340,7 +338,7 @@ TEST_F(MainContentExtractorProtoConvertorTest, PreOrderTreeGeneration) {
   const int nodes_count = sizeof(input_tree) / sizeof(NodeTemplate);
 
   // Expected order of nodes in the output.
-  int expected_order[] = {1, 2, 7, 8, 3, 4, 5, 6, 9, -20};
+  auto expected_order = std::to_array<int>({1, 2, 7, 8, 3, 4, 5, 6, 9, -20});
 
   // Create the tree, convert it, and decode from proto.
   ui::AXTreeUpdate tree_update =

@@ -1,6 +1,7 @@
 // Copyright 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import './RequestHeaderSection.js';
 
@@ -24,15 +25,11 @@ import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as Sources from '../../sources/sources.js';
 
 import type {RequestHeaderSectionData} from './RequestHeaderSection.js';
-import requestHeadersViewStylesRaw from './RequestHeadersView.css.js';
+import requestHeadersViewStyles from './RequestHeadersView.css.js';
 import {
   RESPONSE_HEADER_SECTION_DATA_KEY,
   type ResponseHeaderSectionData,
 } from './ResponseHeaderSection.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const requestHeadersViewStyles = new CSSStyleSheet();
-requestHeadersViewStyles.replaceSync(requestHeadersViewStylesRaw.cssText);
 
 const RAW_HEADER_CUTOFF = 3000;
 const {render, html} = Lit;
@@ -168,7 +165,6 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [requestHeadersViewStyles];
     this.#workspace.addEventListener(
         Workspace.Workspace.Events.UISourceCodeAdded, this.#uiSourceCodeAddedOrRemoved, this);
     this.#workspace.addEventListener(
@@ -203,6 +199,7 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
       render(html`
+        <style>${requestHeadersViewStyles}</style>
         ${this.#renderGeneralSection()}
         ${this.#renderEarlyHintsHeaders()}
         ${this.#renderResponseHeaders()}
@@ -329,8 +326,8 @@ export class RequestHeadersView extends LegacyWrapper.LegacyWrapper.WrappableCom
             width: '16px',
             height: '16px',
           } as IconButton.Icon.IconData}>
-        </devtools-icon
-      ></x-link>
+        </devtools-icon>
+      </x-link>
       <x-link
           @click=${revealHeadersFile}
           class="link devtools-link"
@@ -543,10 +540,6 @@ export class Category extends HTMLElement {
   #forceOpen: boolean|undefined = undefined;
   #loggingContext = '';
 
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [requestHeadersViewStyles, Input.checkboxStyles];
-  }
-
   set data(data: CategoryData) {
     this.#title = data.title;
     this.#expandedSetting =
@@ -568,6 +561,8 @@ export class Category extends HTMLElement {
     // Disabled until https://crbug.com/1079231 is fixed.
     // clang-format off
     render(html`
+      <style>${requestHeadersViewStyles}</style>
+      <style>${Input.checkboxStyles}</style>
       <details ?open=${isOpen} @toggle=${this.#onToggle}>
         <summary
           class="header"
@@ -583,13 +578,10 @@ export class Category extends HTMLElement {
             </div>
             <div class="hide-when-closed">
               ${this.#checked !== undefined ? html`
-                <label><input
-                    type="checkbox"
-                    .checked=${this.#checked}
-                    @change=${this.#onCheckboxToggle}
-                    jslog=${VisualLogging.toggle('raw-headers').track({change: true})}
-                />${i18nString(UIStrings.raw)}</label>
-              ` : Lit.nothing}
+                <devtools-checkbox .checked=${this.#checked} @change=${this.#onCheckboxToggle}
+                         jslog=${VisualLogging.toggle('raw-headers').track({change: true})}>
+                  ${i18nString(UIStrings.raw)}
+              </devtools-checkbox>` : Lit.nothing}
             </div>
             <div class="hide-when-closed">${this.#additionalContent}</div>
           </div>

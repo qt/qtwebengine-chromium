@@ -28,6 +28,8 @@
 #include "quiche/common/platform/api/quiche_command_line_flags.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/common/platform/api/quiche_system_event_loop.h"
+#include "quiche/oblivious_http/buffers/oblivious_http_request.h"
+#include "quiche/oblivious_http/buffers/oblivious_http_response.h"
 #include "quiche/oblivious_http/common/oblivious_http_header_key_config.h"
 #include "quiche/oblivious_http/oblivious_http_client.h"
 
@@ -126,8 +128,12 @@ class MasqueOhttpClient : public MasqueConnectionPool::Visitor {
           absl::StatusOr<BinaryHttpResponse> binary_response =
               BinaryHttpResponse::Create(ohttp_response->GetPlaintextData());
           if (binary_response.ok()) {
-            QUICHE_LOG(INFO) << "Successfully decoded OHTTP response: "
-                             << binary_response->body();
+            QUICHE_LOG(INFO) << "Successfully decoded OHTTP response:";
+            for (const quiche::BinaryHttpMessage::Field &field :
+                 binary_response->GetHeaderFields()) {
+              QUICHE_LOG(INFO) << field.name << ": " << field.value;
+            }
+            QUICHE_LOG(INFO) << "Body:" << std::endl << binary_response->body();
           } else {
             QUICHE_LOG(ERROR) << "Failed to parse binary response: "
                               << binary_response.status();
@@ -159,7 +165,6 @@ class MasqueOhttpClient : public MasqueConnectionPool::Visitor {
     request.headers[":scheme"] = url.scheme();
     request.headers[":authority"] = url.HostPort();
     request.headers[":path"] = url.path();
-    request.headers["host"] = url.HostPort();
     request.headers["accept"] = "application/ohttp-keys";
     request.headers["content-type"] = "application/ohttp-keys";
     absl::StatusOr<RequestId> request_id =
@@ -262,7 +267,6 @@ class MasqueOhttpClient : public MasqueConnectionPool::Visitor {
     request.headers[":scheme"] = relay_url_.scheme();
     request.headers[":authority"] = relay_url_.HostPort();
     request.headers[":path"] = relay_url_.path();
-    request.headers["host"] = relay_url_.HostPort();
     request.headers["content-type"] = "message/ohttp-req";
     request.body = ohttp_request->EncapsulateAndSerialize();
     absl::StatusOr<RequestId> request_id =

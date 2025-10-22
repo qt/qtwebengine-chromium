@@ -6,7 +6,6 @@
 
 #include "base/containers/contains.h"
 #include "base/no_destructor.h"
-#include "base/not_fatal_until.h"
 #include "ui/accessibility/ax_enums.mojom.h"
 #include "ui/accessibility/ax_event.h"
 #include "ui/accessibility/ax_node.h"
@@ -134,7 +133,7 @@ AXEventGenerator::Iterator& AXEventGenerator::Iterator::operator++() {
   if (map_iter_ == map_end_iter_)
     return *this;
 
-  CHECK(set_iter_ != map_iter_->second.end(), base::NotFatalUntil::M130);
+  CHECK(set_iter_ != map_iter_->second.end());
   set_iter_++;
 
   // The map pointed to by |map_end_iter_| may contain empty sets of events in
@@ -160,7 +159,7 @@ AXEventGenerator::Iterator AXEventGenerator::Iterator::operator++(int) {
 
 AXEventGenerator::TargetedEvent AXEventGenerator::Iterator::operator*() const {
   DCHECK(map_iter_ != map_end_iter_);
-  CHECK(set_iter_ != map_iter_->second.end(), base::NotFatalUntil::M130);
+  CHECK(set_iter_ != map_iter_->second.end());
   return AXEventGenerator::TargetedEvent(map_iter_->first, *set_iter_);
 }
 
@@ -169,11 +168,6 @@ bool operator==(const AXEventGenerator::Iterator& lhs,
   if (lhs.map_iter_ == lhs.map_end_iter_ && rhs.map_iter_ == rhs.map_end_iter_)
     return true;
   return lhs.map_iter_ == rhs.map_iter_ && lhs.set_iter_ == rhs.set_iter_;
-}
-
-bool operator!=(const AXEventGenerator::Iterator& lhs,
-                const AXEventGenerator::Iterator& rhs) {
-  return !(lhs == rhs);
 }
 
 void swap(AXEventGenerator::Iterator& lhs, AXEventGenerator::Iterator& rhs) {
@@ -427,8 +421,9 @@ void AXEventGenerator::OnIgnoredChanged(AXTree* tree,
   const bool was_in_invisible_subtree =
       !base::Contains(nodes_to_suppress_parent_changed_on_, node->id());
   if (was_in_invisible_subtree) {
-    for (auto iter = node->UnignoredChildrenBegin();
-         iter != node->UnignoredChildrenEnd(); ++iter) {
+    for (auto iter = node->UnignoredChildrenBegin(),
+              end = node->UnignoredChildrenEnd();
+         iter != end; ++iter) {
       AddEvent(iter.get(), Event::PARENT_CHANGED);
     }
   }
@@ -921,7 +916,7 @@ void AXEventGenerator::AddEventsForTesting(
 }
 
 bool AXEventGenerator::IsRemovalRelevantInLiveRegion(AXNode* node) {
-  std::string aria_relevant = node->GetStringAttribute(
+  const std::string& aria_relevant = node->GetStringAttribute(
       ax::mojom::StringAttribute::kContainerLiveRelevant);
   if (aria_relevant.empty())
     return false;
@@ -934,7 +929,7 @@ bool AXEventGenerator::IsRemovalRelevantInLiveRegion(AXNode* node) {
 
 void AXEventGenerator::FireLiveRegionEvents(AXNode* node, bool is_removal) {
   AXNode* live_root = node;
-  std::string container_live = node->GetStringAttribute(
+  const std::string& container_live = node->GetStringAttribute(
       ax::mojom::StringAttribute::kContainerLiveStatus);
   // Return early if not in a live region.
   if (container_live.empty() || container_live == "off")

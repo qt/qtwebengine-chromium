@@ -21,11 +21,13 @@
 #include "base/metrics/statistics_recorder.h"
 #include "base/notreached.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "components/download/public/common/download_item.h"
 #include "components/embedder_support/user_agent_utils.h"
 #include "content/browser/devtools/browser_devtools_agent_host.h"
+#include "content/browser/devtools/devtools_agent_host_impl.h"
 #include "content/browser/devtools/devtools_manager.h"
 #include "content/browser/devtools/protocol/devtools_download_manager_delegate.h"
 #include "content/browser/gpu/gpu_process_host.h"
@@ -661,12 +663,24 @@ void BrowserHandler::AddPrivacySandboxCoordinatorKeyConfig(
 
 void BrowserHandler::OnDownloadUpdated(download::DownloadItem* item) {
   std::string state;
+  std::optional<std::string> maybe_file_path;
   switch (item->GetState()) {
     case download::DownloadItem::IN_PROGRESS:
       state = Browser::DownloadProgress::StateEnum::InProgress;
       break;
     case download::DownloadItem::COMPLETE:
       state = Browser::DownloadProgress::StateEnum::Completed;
+      {
+        base::FilePath target_file_path = item->GetTargetFilePath();
+        if (!target_file_path.empty()) {
+#if BUILDFLAG(IS_WIN)
+          // On Windows, the target file path is a wide string.
+          maybe_file_path = base::WideToUTF8(target_file_path.value());
+#else
+          maybe_file_path = target_file_path.value();
+#endif
+        }
+      }
       break;
     case download::DownloadItem::CANCELLED:
     case download::DownloadItem::INTERRUPTED:
@@ -676,7 +690,7 @@ void BrowserHandler::OnDownloadUpdated(download::DownloadItem* item) {
       NOTREACHED();
   }
   frontend_->DownloadProgress(item->GetGuid(), item->GetTotalBytes(),
-                              item->GetReceivedBytes(), state);
+                              item->GetReceivedBytes(), state, maybe_file_path);
   if (state != Browser::DownloadProgress::StateEnum::InProgress) {
     item->RemoveObserver(this);
     pending_downloads_.erase(item);

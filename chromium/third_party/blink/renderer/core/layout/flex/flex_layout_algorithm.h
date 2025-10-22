@@ -31,18 +31,15 @@ class CORE_EXPORT FlexLayoutAlgorithm
   MinMaxSizesResult ComputeMinMaxSizes(const MinMaxSizesFloatInput&);
   const LayoutResult* Layout();
 
-  const GapGeometry* GetGapGeometryForTest() {
-    return container_builder_.GetGapGeometryForTest();
-  }
-
  private:
   const LayoutResult* LayoutInternal();
 
-  void PlaceFlexItems(
-      HeapVector<FlexLine>* flex_lines,
-      HeapVector<Member<LayoutBox>>* oof_children,
-      LayoutUnit* total_intrinsic_block_size,
-      bool is_computing_multiline_column_intrinsic_size = false);
+  enum class Phase { kLayout, kRowIntrinsicSize, kColumnWrapIntrinsicSize };
+
+  void PlaceFlexItems(Phase phase,
+                      FlexLineVector* flex_lines,
+                      HeapVector<Member<LayoutBox>>* oof_children = nullptr,
+                      LayoutUnit* total_intrinsic_block_size_out = nullptr);
 
   bool DoesItemComputedCrossSizeHaveAuto(const BlockNode& child) const;
   bool DoesItemStretch(const BlockNode& child, ItemPosition alignment) const;
@@ -54,93 +51,29 @@ class CORE_EXPORT FlexLayoutAlgorithm
 
   bool IsContainerCrossSizeDefinite() const;
 
-  enum class Phase { kLayout, kRowIntrinsicSize, kColumnWrapIntrinsicSize };
   ConstraintSpace BuildSpaceForIntrinsicInlineSize(
       const BlockNode& flex_item,
       ItemPosition alignment) const;
   ConstraintSpace BuildSpaceForFlexBasis(const BlockNode& flex_item) const;
-  ConstraintSpace BuildSpaceForIntrinsicBlockSize(
-      const BlockNode& flex_item,
+  const ConstraintSpace BuildSpaceForLayout(
+      const BlockNode& node,
       ItemPosition alignment,
-      std::optional<LayoutUnit> override_inline_size) const;
-  // |line_cross_size_for_stretch| should only be set when running the final
-  // layout pass for stretch, when the line cross size is definite.
-  // |block_offset_for_fragmentation| should only be set when running the final
-  // layout pass for fragmentation. Both may be set at the same time.
-  ConstraintSpace BuildSpaceForLayout(
-      const BlockNode& flex_item_node,
-      ItemPosition alignment,
-      LayoutUnit item_main_axis_final_size,
       bool is_initial_block_size_indefinite,
       std::optional<LayoutUnit> override_inline_size = std::nullopt,
-      std::optional<LayoutUnit> line_cross_size_for_stretch = std::nullopt,
+      std::optional<LayoutUnit> main_axis_final_size = std::nullopt,
+      std::optional<LayoutUnit> line_cross_size = std::nullopt,
       std::optional<LayoutUnit> block_offset_for_fragmentation = std::nullopt,
       bool min_block_size_should_encompass_intrinsic_size = false) const;
-
-  // Gap Decorations
-  // These functions are used to compute the gap intersection points for the
-  // flex items. For more information on the implementation details of these,
-  // see the comment in the .cc file.
-  //
-  // More information on gap intersections can be found in the spec:
-  // https://drafts.csswg.org/css-gaps-1/#layout-painting
-  //
-  // For these functions, the out parameters are:
-  // - `main_intersections_after_current_line` is the main axis gap intersection
-  //   points for the main gap after the item.
-  // - `item_cross_intersections_list` is the list of cross axis gap
-  //   intersection points for the cross gap before the item.
-  // - `main_intersections_before_current_line` is the main axis gap
-  //   intersection points for the main gap before the item.
-  // - `item_cross_intersection` is the cross axis gap intersection point being
-  // computed for the current item.
-  // TODO(javiercon): Consider refactoring this code to be able to be reused for
-  // masonry, by abstracting away the flex-specific logic.
-  void BuildGapIntersectionPointsForCurrentItem(
-      const HeapVector<FlexLine>& flex_lines,
-      size_t flex_line_index,
-      wtf_size_t item_index_in_line,
-      LogicalOffset item_offset,
-      Vector<GapIntersection>& main_intersections_before_current_line,
-      Vector<GapIntersection>& main_intersections_after_current_line,
-      Vector<GapIntersectionList>& cross_axis_gaps);
-  void PopulateGapIntersectionsForFirstLine(
-      const FlexLine& flex_line,
-      wtf_size_t num_lines,
-      bool is_last_item_in_line,
-      GapIntersection& item_cross_intersection,
-      Vector<GapIntersection>& main_intersections_after_current_line,
-      Vector<GapIntersection>& item_cross_intersections_list);
-  void PopulateMainAxisGapIntersectionsForFirstItem(
-      const FlexLine& flex_line,
-      wtf_size_t num_lines,
-      Vector<GapIntersection>& main_intersections_after_current_line);
-  void PopulateMainAxisGapIntersectionsForLastItem(
-      LayoutUnit cross_axis_block_offset,
-      Vector<GapIntersection>& main_intersections_after_current_line);
-  void PopulateGapIntersectionsForMiddleItem(
-      const HeapVector<FlexLine>& flex_lines,
-      bool is_last_item_in_line,
-      size_t flex_line_index,
-      GapIntersection& item_cross_intersection,
-      Vector<GapIntersection>& main_intersections_before_current_line,
-      Vector<GapIntersection>& main_intersections_after_current_line,
-      Vector<GapIntersection>& item_cross_intersections_list);
-  void PopulateGapIntersectionsForLastLine(
-      const FlexLine& flex_line,
-      GapIntersection& item_cross_intersection,
-      Vector<GapIntersection>& main_intersections_before_current_line,
-      Vector<GapIntersection>& item_cross_intersections_list);
 
   void ConstructAndAppendFlexItems(
       Phase phase,
       HeapVector<Member<LayoutBox>>* oof_children = nullptr);
-  void ApplyReversals(HeapVector<FlexLine>* flex_lines);
+  void ApplyReversals(FlexLineVector* flex_lines);
   LayoutResult::EStatus GiveItemsFinalPositionAndSize(
-      HeapVector<FlexLine>* flex_lines,
+      FlexLineVector* flex_lines,
       Vector<EBreakBetween>* row_break_between_outputs);
   LayoutResult::EStatus GiveItemsFinalPositionAndSizeForFragmentation(
-      HeapVector<FlexLine>* flex_lines,
+      FlexLineVector* flex_lines,
       Vector<EBreakBetween>* row_break_between_outputs,
       FlexBreakTokenData::FlexBreakBeforeRow* break_before_row,
       LayoutUnit* total_intrinsic_block_size);
@@ -150,6 +83,22 @@ class CORE_EXPORT FlexLayoutAlgorithm
       const PhysicalBoxStrut& physical_margins,
       wtf_size_t flex_line_idx,
       LogicalOffset offset);
+
+  // Computes and updates the adjustment for `flex_line` to account for gap
+  // suppression during fragmentation. In column-based flex containers, `gap`
+  // represents the item gap. In row-based flex containers, it represents the
+  // row gap. The `previous_content_block_end` indicates the end offset of the
+  // previous item (in column flex) or the previous row/line (in row flex). The
+  // previous row block end accounts for any additional space available before a
+  // gap due to alignment.
+  //
+  // When an item or row overflows the current fragmentainer, this function
+  // calculates and suppresses the gap that would otherwise appear at the top of
+  // the next fragmentainer.
+  void UpdateOffsetAdjustmentForSuppressedRowGap(
+      LayoutUnit gap,
+      LayoutUnit previous_content_block_end,
+      FlexLine* flex_line) const;
 
   StyleContentAlignmentData ResolvedJustifyContent() const;
 
@@ -162,6 +111,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
 
   // Returns the position of the baseline, given a physical fragment.
   LayoutUnit BaselineAscent(const FlexItem&, const PhysicalBoxFragment&) const;
+  LayoutUnit SynthesizedBaselineAscent(const FlexItem&, const LayoutUnit) const;
 
   // If we should apply the automatic minimum size, see:
   // See: https://drafts.csswg.org/css-flexbox/#min-size-auto
@@ -172,7 +122,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
       HeapVector<Member<LayoutBox>>& oof_children);
 
   // Set reading flow so they can be accessed by LayoutBox.
-  void SetReadingFlowNodes(const HeapVector<FlexLine>& flex_lines);
+  void SetReadingFlowNodes(const FlexLineVector& flex_lines);
 
   MinMaxSizesResult ComputeMinMaxSizeOfRowContainer();
   MinMaxSizesResult ComputeMinMaxSizeOfMultilineColumnContainer();
@@ -236,7 +186,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
 
   // Add the amount an item expanded by to the item offset adjustment of the
   // flex line at the index directly after |flex_line_idx|, if there is one.
-  void AdjustOffsetForNextLine(HeapVector<FlexLine>* flex_lines,
+  void AdjustOffsetForNextLine(FlexLineVector* flex_lines,
                                wtf_size_t flex_line_idx,
                                LayoutUnit item_expansion) const;
 
@@ -262,6 +212,7 @@ class CORE_EXPORT FlexLayoutAlgorithm
   const bool is_multi_line_;
   const bool is_horizontal_flow_;
   const bool is_cross_size_definite_;
+  const std::optional<wtf_size_t> balance_min_line_count_;
   const LogicalSize child_percentage_size_;
 
   const LayoutUnit gap_between_items_;

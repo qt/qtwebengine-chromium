@@ -13,6 +13,7 @@
 #include "base/task/sequenced_task_runner.h"
 #include "base/threading/sequence_bound.h"
 #include "base/time/time.h"
+#include "media/base/data_source.h"
 #include "media/base/media_export.h"
 #include "media/base/media_log.h"
 #include "media/base/media_track.h"
@@ -183,9 +184,11 @@ class MEDIA_EXPORT HlsManifestDemuxerEngine : public ManifestDemuxer::Engine,
       HlsDataSourceProvider::ReadResult maybe_stream);
 
   // Posted by `::OnRenditionsReselected()`
-  void AdaptationAction(const hls::VariantStream* variant,
-                        const hls::Rendition* audio_override_rendition,
-                        HlsDemuxerStatusCallback status_cb);
+  void AdaptationAction(
+      const hls::VariantStream* variant,
+      std::optional<hls::RenditionGroup::RenditionTrack> video,
+      std::optional<hls::RenditionGroup::RenditionTrack> audio,
+      HlsDemuxerStatusCallback status_cb);
 
   // The `prior_delay` arg represents the time that was previously calculated
   // for delay by another rendition. If it is kNoTimestamp, then the other
@@ -228,16 +231,23 @@ class MEDIA_EXPORT HlsManifestDemuxerEngine : public ManifestDemuxer::Engine,
                      PlaylistParseInfo parse_info,
                      HlsDataSourceProvider::ReadResult m_stream);
 
+  HlsDemuxerStatusCallback BindPlaylistLoader(
+      hls::RenditionGroup::RenditionTrack rendition,
+      std::string rendition_role,
+      HlsDemuxerStatusCallback do_next);
   void OnMultivariantPlaylist(
       HlsDemuxerStatusCallback parse_complete_cb,
       scoped_refptr<hls::MultivariantPlaylist> playlist);
-  void OnRenditionsReselected(hls::AdaptationReason reason,
-                              const hls::VariantStream* variant,
-                              const hls::Rendition* audio_override_rendition);
-
-  void OnRenditionsSelected(HlsDemuxerStatusCallback on_complete,
-                            const hls::VariantStream* variant,
-                            const hls::Rendition* audio_override_rendition);
+  void OnRenditionsReselected(
+      hls::AdaptationReason reason,
+      const hls::VariantStream* variant,
+      std::optional<hls::RenditionGroup::RenditionTrack> video,
+      std::optional<hls::RenditionGroup::RenditionTrack> audio);
+  void OnRenditionsSelected(
+      HlsDemuxerStatusCallback on_complete,
+      const hls::VariantStream* variant,
+      std::optional<hls::RenditionGroup::RenditionTrack> video,
+      std::optional<hls::RenditionGroup::RenditionTrack> audio);
 
   void LoadPlaylist(PlaylistParseInfo parse_info,
                     HlsDemuxerStatusCallback on_complete);

@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Type
 from typing_extensions import override
 
 from crossbench.probes.chromium_probe import ChromiumProbe
-from crossbench.probes.probe import ProbeContext
+from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:

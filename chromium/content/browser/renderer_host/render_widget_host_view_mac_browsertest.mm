@@ -199,8 +199,16 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewMacTest, UpdateInputFlags) {
               blink::kWebTextInputFlagAutocorrectOff);
 }
 
+// TODO(crbug.com/421820726): Enable the test.
+#if BUILDFLAG(IS_MAC)
+#define MAYBE_InputTextPreventedSyncsCursorLocation \
+  DISABLED_InputTextPreventedSyncsCursorLocation
+#else
+#define MAYBE_InputTextPreventedSyncsCursorLocation \
+  InputTextPreventedSyncsCursorLocation
+#endif
 IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewMacTest,
-                       InputTextPreventedSyncsCursorLocation) {
+                       MAYBE_InputTextPreventedSyncsCursorLocation) {
   class InputMethodObserver {};
 
   GURL url("data:text/html,<!doctype html><textarea id=ta></textarea>");
@@ -253,6 +261,10 @@ IN_PROC_BROWSER_TEST_F(RenderWidgetHostViewMacTest,
 
   // No accessibility support enabled at this time.
   EXPECT_EQ(accessibility_state->GetAccessibilityMode(), ui::AXMode());
+
+  // Enable platform activation since that is what is begin tested here.
+  BrowserAccessibilityState::GetInstance()->SetActivationFromPlatformEnabled(
+      /*enabled=*/true);
 
   // An AT descending the AX tree calls -accessibilityRole on the nodes as it
   // goes. Simulate an AT calling -accessibilityRole on the web contents.

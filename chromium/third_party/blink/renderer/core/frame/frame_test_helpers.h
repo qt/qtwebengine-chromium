@@ -221,7 +221,8 @@ class TestWebFrameWidgetHost : public mojom::blink::WidgetHost,
       mojo::PendingRemote<mojom::blink::RenderInputRouterClient> remote);
   void GetWidgetInputHandler(
       mojo::PendingReceiver<mojom::blink::WidgetInputHandler> request,
-      mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host);
+      mojo::PendingRemote<mojom::blink::WidgetInputHandlerHost> host,
+      bool from_viz);
 
  private:
   size_t cursor_set_count_ = 0;
@@ -281,7 +282,8 @@ class TestWebFrameWidget : public WebFrameWidgetImpl {
   }
 
   void RequestDecode(const cc::DrawImage&,
-                     base::OnceCallback<void(bool)>) override;
+                     base::OnceCallback<void(bool)>,
+                     bool speculative) override;
 
   using WebFrameWidgetImpl::GetOriginalScreenInfo;
 

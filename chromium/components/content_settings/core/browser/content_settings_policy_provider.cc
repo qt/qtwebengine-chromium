@@ -24,6 +24,7 @@
 #include "components/content_settings/core/browser/website_settings_info.h"
 #include "components/content_settings/core/browser/website_settings_registry.h"
 #include "components/content_settings/core/common/content_settings_pattern.h"
+#include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/pref_names.h"
 #include "components/pref_registry/pref_registry_syncable.h"
 #include "components/prefs/pref_service.h"
@@ -37,6 +38,11 @@ struct PrefsForManagedContentSettingsMapEntry {
   ContentSetting setting;
 };
 
+// The order of prefs here matter! Namely in cases where different prefs refer
+// to the same content type the  last entry for given origin wins. The order
+// should always be from the least to the most restrictive policy -
+// ALLOW < ASK < BLOCK. When adding new types consider adding a test that
+// verifies this invariant or documents any necessary deviation.
 constexpr PrefsForManagedContentSettingsMapEntry
     kPrefsForManagedContentSettingsMap[] = {
         {prefs::kManagedAutomaticFullscreenAllowedForUrls,
@@ -101,8 +107,6 @@ constexpr PrefsForManagedContentSettingsMapEntry
          CONTENT_SETTING_ALLOW},
         {prefs::kManagedSensorsBlockedForUrls, ContentSettingsType::SENSORS,
          CONTENT_SETTING_BLOCK},
-        {prefs::kManagedInsecurePrivateNetworkAllowedForUrls,
-         ContentSettingsType::INSECURE_PRIVATE_NETWORK, CONTENT_SETTING_ALLOW},
         {prefs::kManagedJavaScriptJitAllowedForSites,
          ContentSettingsType::JAVASCRIPT_JIT, CONTENT_SETTING_ALLOW},
         {prefs::kManagedJavaScriptJitBlockedForSites,
@@ -145,11 +149,20 @@ constexpr PrefsForManagedContentSettingsMapEntry
          ContentSettingsType::SMART_CARD_GUARD, CONTENT_SETTING_ALLOW},
         {prefs::kManagedSmartCardConnectBlockedForUrls,
          ContentSettingsType::SMART_CARD_GUARD, CONTENT_SETTING_BLOCK},
+        {prefs::kManagedDeviceAttributesAllowedForOrigins,
+         ContentSettingsType::DEVICE_ATTRIBUTES, CONTENT_SETTING_ALLOW},
+        {prefs::kManagedDeviceAttributesBlockedForOrigins,
+         ContentSettingsType::DEVICE_ATTRIBUTES, CONTENT_SETTING_BLOCK},
 #endif
         {prefs::kManagedControlledFrameAllowedForUrls,
          ContentSettingsType::CONTROLLED_FRAME, CONTENT_SETTING_ALLOW},
         {prefs::kManagedControlledFrameBlockedForUrls,
          ContentSettingsType::CONTROLLED_FRAME, CONTENT_SETTING_BLOCK},
+        // LocalNetworkAccess: Block takes precedence over Allow
+        {prefs::kManagedLocalNetworkAccessAllowedForUrls,
+         ContentSettingsType::LOCAL_NETWORK_ACCESS, CONTENT_SETTING_ALLOW},
+        {prefs::kManagedLocalNetworkAccessBlockedForUrls,
+         ContentSettingsType::LOCAL_NETWORK_ACCESS, CONTENT_SETTING_BLOCK},
 };
 
 constexpr const char* kManagedPrefs[] = {
@@ -170,7 +183,6 @@ constexpr const char* kManagedPrefs[] = {
     prefs::kManagedImagesBlockedForUrls,
     prefs::kManagedInsecureContentAllowedForUrls,
     prefs::kManagedInsecureContentBlockedForUrls,
-    prefs::kManagedInsecurePrivateNetworkAllowedForUrls,
     prefs::kManagedJavaScriptAllowedForUrls,
     prefs::kManagedJavaScriptBlockedForUrls,
     prefs::kManagedJavaScriptJitAllowedForSites,
@@ -178,6 +190,9 @@ constexpr const char* kManagedPrefs[] = {
     prefs::kManagedJavaScriptOptimizerAllowedForSites,
     prefs::kManagedJavaScriptOptimizerBlockedForSites,
     prefs::kManagedLegacyCookieAccessAllowedForDomains,
+    prefs::kManagedLegacyCookieScopeForDomains,
+    prefs::kManagedLocalNetworkAccessAllowedForUrls,
+    prefs::kManagedLocalNetworkAccessBlockedForUrls,
     prefs::kManagedNotificationsAllowedForUrls,
     prefs::kManagedNotificationsBlockedForUrls,
     prefs::kManagedPopupsAllowedForUrls,
@@ -205,6 +220,8 @@ constexpr const char* kManagedPrefs[] = {
 #if BUILDFLAG(IS_CHROMEOS)
     prefs::kManagedSmartCardConnectAllowedForUrls,
     prefs::kManagedSmartCardConnectBlockedForUrls,
+    prefs::kManagedDeviceAttributesAllowedForOrigins,
+    prefs::kManagedDeviceAttributesBlockedForOrigins,
 #endif
     prefs::kManagedControlledFrameAllowedForUrls,
     prefs::kManagedControlledFrameBlockedForUrls,
@@ -225,11 +242,11 @@ constexpr const char* kManagedDefaultPrefs[] = {
     prefs::kManagedDefaultGeolocationSetting,
     prefs::kManagedDefaultImagesSetting,
     prefs::kManagedDefaultInsecureContentSetting,
-    prefs::kManagedDefaultInsecurePrivateNetworkSetting,
     prefs::kManagedDefaultJavaScriptSetting,
     prefs::kManagedDefaultMediaStreamSetting,
     prefs::kManagedDefaultNotificationsSetting,
     prefs::kManagedDefaultPopupsSetting,
+    prefs::kManagedDefaultLegacyCookieScope,
     prefs::kManagedDefaultSensorsSetting,
     prefs::kManagedDefaultSerialGuardSetting,
     prefs::kManagedDefaultWebBluetoothGuardSetting,
@@ -244,6 +261,10 @@ constexpr const char* kManagedDefaultPrefs[] = {
     prefs::kManagedDefaultDirectSocketsSetting,
     prefs::kManagedDefaultDirectSocketsPrivateNetworkAccessSetting,
     prefs::kManagedDefaultControlledFrameSetting,
+#if BUILDFLAG(IS_CHROMEOS)
+    prefs::kManagedDefaultSmartCardConnectSetting,
+    prefs::kManagedDefaultDeviceAttributesSetting,
+#endif  // BUILDFLAG(IS_CHROMEOS)
 };
 
 void ReportCookiesAllowedForUrlsUsage(
@@ -315,6 +336,8 @@ const PolicyProvider::PrefsForManagedDefaultMapEntry
         {ContentSettingsType::IMAGES, prefs::kManagedDefaultImagesSetting},
         {ContentSettingsType::GEOLOCATION,
          prefs::kManagedDefaultGeolocationSetting},
+        {ContentSettingsType::LEGACY_COOKIE_SCOPE,
+         prefs::kManagedDefaultLegacyCookieScope},
         {ContentSettingsType::JAVASCRIPT,
          prefs::kManagedDefaultJavaScriptSetting},
         {ContentSettingsType::MEDIASTREAM_CAMERA,
@@ -337,8 +360,6 @@ const PolicyProvider::PrefsForManagedDefaultMapEntry
         {ContentSettingsType::SERIAL_GUARD,
          prefs::kManagedDefaultSerialGuardSetting},
         {ContentSettingsType::SENSORS, prefs::kManagedDefaultSensorsSetting},
-        {ContentSettingsType::INSECURE_PRIVATE_NETWORK,
-         prefs::kManagedDefaultInsecurePrivateNetworkSetting},
         {ContentSettingsType::JAVASCRIPT_JIT,
          prefs::kManagedDefaultJavaScriptJitSetting},
         {ContentSettingsType::JAVASCRIPT_OPTIMIZER,
@@ -359,6 +380,12 @@ const PolicyProvider::PrefsForManagedDefaultMapEntry
          prefs::kManagedDefaultDirectSocketsPrivateNetworkAccessSetting},
         {ContentSettingsType::CONTROLLED_FRAME,
          prefs::kManagedDefaultControlledFrameSetting},
+#if BUILDFLAG(IS_CHROMEOS)
+        {ContentSettingsType::SMART_CARD_GUARD,
+         prefs::kManagedDefaultSmartCardConnectSetting},
+        {ContentSettingsType::DEVICE_ATTRIBUTES,
+         prefs::kManagedDefaultDeviceAttributesSetting},
+#endif  // BUILDFLAG(IS_CHROMEOS)
 };
 
 // static
@@ -457,10 +484,9 @@ void PolicyProvider::GetContentSettingsFromPreferences() {
 
 #if BUILDFLAG(IS_CHROMEOS)
       if (entry.content_type == ContentSettingsType::SMART_CARD_GUARD &&
-          entry.setting == CONTENT_SETTING_ALLOW &&
           !pattern_pair.first.MatchesSingleOrigin()) {
-        VLOG(1) << "Smart card reader access cannot be allowed by wildcard, "
-                   "skipping pattern "
+        VLOG(1) << "Smart card reader access cannot be allowed or blocked by "
+                   "wildcard, skipping pattern."
                 << original_pattern_str;
         continue;
       }

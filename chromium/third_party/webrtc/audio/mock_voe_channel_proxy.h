@@ -20,6 +20,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio/audio_mixer.h"
 #include "api/audio_codecs/audio_encoder.h"
@@ -111,18 +112,17 @@ class MockChannelReceive : public voe::ChannelReceiveInterface {
               (override));
   MOCK_METHOD(void, StartPlayout, (), (override));
   MOCK_METHOD(void, StopPlayout, (), (override));
-  MOCK_METHOD(
-      void,
-      SetDepacketizerToDecoderFrameTransformer,
-      (rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer),
-      (override));
+  MOCK_METHOD(void,
+              SetDepacketizerToDecoderFrameTransformer,
+              (webrtc::scoped_refptr<webrtc::FrameTransformerInterface>
+                   frame_transformer),
+              (override));
   MOCK_METHOD(
       void,
       SetFrameDecryptor,
-      (rtc::scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor),
+      (webrtc::scoped_refptr<webrtc::FrameDecryptorInterface> frame_decryptor),
       (override));
   MOCK_METHOD(void, OnLocalSsrcChange, (uint32_t local_ssrc), (override));
-  MOCK_METHOD(uint32_t, GetLocalSsrc, (), (const, override));
 };
 
 class MockChannelSend : public voe::ChannelSendInterface {
@@ -189,18 +189,19 @@ class MockChannelSend : public voe::ChannelSendInterface {
   MOCK_METHOD(void, StopSend, (), (override));
   MOCK_METHOD(void,
               SetFrameEncryptor,
-              (rtc::scoped_refptr<FrameEncryptorInterface> frame_encryptor),
+              (webrtc::scoped_refptr<FrameEncryptorInterface> frame_encryptor),
               (override));
-  MOCK_METHOD(
-      void,
-      SetEncoderToPacketizerFrameTransformer,
-      (rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer),
-      (override));
+  MOCK_METHOD(void,
+              SetEncoderToPacketizerFrameTransformer,
+              (webrtc::scoped_refptr<webrtc::FrameTransformerInterface>
+                   frame_transformer),
+              (override));
   MOCK_METHOD(std::optional<DataRate>, GetUsedRate, (), (const, override));
   MOCK_METHOD(void,
               RegisterPacketOverhead,
               (int packet_byte_overhead),
               (override));
+  MOCK_METHOD(void, SetCsrcs, (ArrayView<const uint32_t> csrcs), (override));
 };
 }  // namespace test
 }  // namespace webrtc

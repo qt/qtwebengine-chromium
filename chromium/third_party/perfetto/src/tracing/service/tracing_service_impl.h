@@ -32,6 +32,7 @@
 #include "perfetto/ext/base/circular_queue.h"
 #include "perfetto/ext/base/clock_snapshots.h"
 #include "perfetto/ext/base/periodic_task.h"
+#include "perfetto/ext/base/scoped_sched_boost.h"
 #include "perfetto/ext/base/uuid.h"
 #include "perfetto/ext/base/weak_ptr.h"
 #include "perfetto/ext/base/weak_runner.h"
@@ -102,6 +103,7 @@ class TracingServiceImpl : public TracingService {
                          base::TaskRunner*,
                          Producer*,
                          const std::string& producer_name,
+                         const std::string& machine_name,
                          const std::string& sdk_version,
                          bool in_process,
                          bool smb_scraping_enabled);
@@ -174,6 +176,7 @@ class TracingServiceImpl : public TracingService {
     size_t shmem_page_size_hint_bytes_ = 0;
     bool is_shmem_provided_by_producer_ = false;
     const std::string name_;
+    const std::string machine_name_;
     std::string sdk_version_;
     bool in_process_;
     bool smb_scraping_enabled_;
@@ -286,6 +289,11 @@ class TracingServiceImpl : public TracingService {
     explicit RelayEndpointImpl(RelayClientID relay_client_id,
                                TracingServiceImpl* service);
     ~RelayEndpointImpl() override;
+
+    void CacheSystemInfo(std::vector<uint8_t> serialized_system_info) override {
+      serialized_system_info_ = serialized_system_info;
+    }
+
     void SyncClocks(SyncMode sync_mode,
                     base::ClockSnapshotVector client_clocks,
                     base::ClockSnapshotVector host_clocks) override;
@@ -297,12 +305,17 @@ class TracingServiceImpl : public TracingService {
       return synced_clocks_;
     }
 
+    std::vector<uint8_t>& serialized_system_info() {
+      return serialized_system_info_;
+    }
+
    private:
     RelayEndpointImpl(const RelayEndpointImpl&) = delete;
     RelayEndpointImpl& operator=(const RelayEndpointImpl&) = delete;
 
     RelayClientID relay_client_id_;
     TracingServiceImpl* const service_;
+    std::vector<uint8_t> serialized_system_info_;
     base::CircularQueue<SyncedClockSnapshots> synced_clocks_;
 
     PERFETTO_THREAD_CHECKER(thread_checker_)
@@ -391,7 +404,8 @@ class TracingServiceImpl : public TracingService {
           ProducerSMBScrapingMode::kDefault,
       size_t shared_memory_page_size_hint_bytes = 0,
       std::unique_ptr<SharedMemory> shm = nullptr,
-      const std::string& sdk_version = {}) override;
+      const std::string& sdk_version = {},
+      const std::string& machine_name = {}) override;
 
   std::unique_ptr<TracingService::ConsumerEndpoint> ConnectConsumer(
       Consumer*,
@@ -478,6 +492,7 @@ class TracingServiceImpl : public TracingService {
     std::string trigger_name;
     std::string producer_name;
     uid_t producer_uid = 0;
+    uint64_t trigger_delay_ms = 0;
   };
 
   struct PendingClone {
@@ -663,7 +678,7 @@ class TracingServiceImpl : public TracingService {
       uint32_t field_id;
 
       // Stores the max size of |timestamps|. Set to 1 by default (in
-      // the constructor) but can be overriden in TraceSession constructor
+      // the constructor) but can be overridden in TraceSession constructor
       // if a larger size is required.
       uint32_t max_size;
 
@@ -736,13 +751,15 @@ class TracingServiceImpl : public TracingService {
     std::vector<uint64_t> filter_bytes_discarded_per_buffer;
 
     // A randomly generated trace identifier. Note that this does NOT always
-    // match the requested TraceConfig.trace_uuid_msb/lsb. Spcifically, it does
+    // match the requested TraceConfig.trace_uuid_msb/lsb. Specifically, it does
     // until a gap-less snapshot is requested. Each snapshot re-generates the
     // uuid to avoid emitting two different traces with the same uuid.
     base::Uuid trace_uuid;
 
     // This is set when the clone operation was caused by a clone trigger.
     std::optional<TriggerInfo> clone_trigger;
+
+    std::optional<base::ScopedSchedBoost> priority_boost;
 
     // NOTE: when adding new fields here consider whether that state should be
     // copied over in DoCloneSession() or not. Ask yourself: is this a
@@ -815,6 +832,7 @@ class TracingServiceImpl : public TracingService {
   void EmitUuid(TracingSession*, std::vector<TracePacket>*);
   void MaybeEmitTraceConfig(TracingSession*, std::vector<TracePacket>*);
   void EmitSystemInfo(std::vector<TracePacket>*);
+  void MaybeEmitRemoteSystemInfo(std::vector<TracePacket>*);
   void MaybeEmitCloneTrigger(TracingSession*, std::vector<TracePacket>*);
   void MaybeEmitReceivedTriggers(TracingSession*, std::vector<TracePacket>*);
   void MaybeEmitRemoteClockSync(TracingSession*, std::vector<TracePacket>*);

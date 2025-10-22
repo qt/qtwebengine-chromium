@@ -85,7 +85,7 @@ bool XrImageTransportBase::ResizeSharedBuffer(WebXrPresentationState* webxr,
                                               WebXrSharedBuffer* buffer) {
   CHECK(IsOnGlThread());
 
-  if (buffer->size == size) {
+  if (buffer->shared_image && buffer->shared_image->size() == size) {
     return false;
   }
 
@@ -128,9 +128,6 @@ bool XrImageTransportBase::ResizeSharedBuffer(WebXrPresentationState* webxr,
   // Create a GMB Handle from AHardwareBuffer handle.
   gfx::GpuMemoryBufferHandle gmb_handle;
   gmb_handle.type = gfx::ANDROID_HARDWARE_BUFFER;
-  // GpuMemoryBufferId is not used in this case and hence hardcoding it to 1
-  // here.
-  gmb_handle.id = gfx::GpuMemoryBufferId(1);
   gmb_handle.android_hardware_buffer = buffer->scoped_ahb_handle.Clone();
 
   buffer->shared_image = mailbox_bridge_->CreateSharedImage(
@@ -140,7 +137,8 @@ bool XrImageTransportBase::ResizeSharedBuffer(WebXrPresentationState* webxr,
 
   DVLOG(2) << ": CreateSharedImage, mailbox="
            << buffer->shared_image->mailbox().ToDebugString()
-           << ", SyncToken=" << buffer->sync_token.ToDebugString();
+           << ", SyncToken=" << buffer->sync_token.ToDebugString()
+           << ", size=" << size.ToString();
 
   // Create an EGLImage for the buffer.
   auto egl_image =
@@ -162,10 +160,6 @@ bool XrImageTransportBase::ResizeSharedBuffer(WebXrPresentationState* webxr,
   glEGLImageTargetTexture2DOES(buffer->local_texture.target, egl_image.get());
   buffer->local_eglimage = std::move(egl_image);
 
-  // Save size to avoid resize next time.
-  DVLOG(1) << __func__ << ": resized to " << size.width() << "x"
-           << size.height();
-  buffer->size = size;
   return true;
 }
 
@@ -195,7 +189,7 @@ WebXrSharedBuffer* XrImageTransportBase::TransferFrame(
   // Sanity check that the lazily created/resized buffer looks valid.
   DCHECK(shared_buffer->shared_image);
   DCHECK(shared_buffer->local_eglimage.is_valid());
-  DCHECK_EQ(shared_buffer->size, frame_size);
+  DCHECK_EQ(shared_buffer->shared_image->size(), frame_size);
 
   // We don't need to create a sync token here. ResizeSharedBuffer has created
   // one on reallocation, including initial buffer creation, and we can use

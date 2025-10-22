@@ -17,6 +17,7 @@
 #include "base/strings/string_split.h"
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/types/zip.h"
 #include "components/autofill/core/browser/autofill_type.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_i18n_api.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_structured_address_format_provider.h"
@@ -25,6 +26,13 @@
 #include "components/autofill/core/common/autofill_features.h"
 
 namespace autofill {
+namespace {
+
+// The list of countries where the fallback parsing is not supported.
+static constexpr auto countries_not_supporting_fallback_parsing =
+    base::MakeFixedFlatSet<AddressCountryCode>({AddressCountryCode("IN")});
+
+}  // namespace
 
 bool IsLessSignificantVerificationStatus(VerificationStatus left,
                                          VerificationStatus right) {
@@ -51,8 +59,9 @@ bool IsLessSignificantVerificationStatus(VerificationStatus left,
 VerificationStatus GetMoreSignificantVerificationStatus(
     VerificationStatus left,
     VerificationStatus right) {
-  if (IsLessSignificantVerificationStatus(left, right))
+  if (IsLessSignificantVerificationStatus(left, right)) {
     return right;
+  }
 
   return left;
 }
@@ -126,25 +135,28 @@ void AddressComponent::CopyFrom(const AddressComponent& other) {
   if (other.IsValueAssigned()) {
     value_ = other.value_;
     value_verification_status_ = other.value_verification_status_;
-    sorted_normalized_tokens_ = other.sorted_normalized_tokens_;
   } else {
     UnsetValue();
   }
 
   CHECK_EQ(other.subcomponents_.size(), subcomponents_.size())
       << GetStorageTypeName();
-  for (size_t i = 0; i < other.subcomponents_.size(); i++)
-    subcomponents_[i]->CopyFrom(*other.subcomponents_[i]);
+  for (auto [subcomponent, other_subcomponent] :
+       base::zip(subcomponents_, other.subcomponents_)) {
+    subcomponent->CopyFrom(*other_subcomponent);
+  }
 
   PostAssignSanitization();
 }
 
 bool AddressComponent::SameAs(const AddressComponent& other) const {
-  if (this == &other)
+  if (this == &other) {
     return true;
+  }
 
-  if (GetStorageType() != other.GetStorageType())
+  if (GetStorageType() != other.GetStorageType()) {
     return false;
+  }
 
   if (GetValue() != other.GetValue() ||
       value_verification_status_ != other.value_verification_status_) {
@@ -154,8 +166,9 @@ bool AddressComponent::SameAs(const AddressComponent& other) const {
   if (subcomponents_.size() != other.subcomponents_.size()) {
     return false;
   }
-  for (size_t i = 0; i < other.subcomponents_.size(); i++) {
-    if (!(subcomponents_[i]->SameAs(*other.subcomponents_[i]))) {
+  for (auto [subcomponent, other_subcomponent] :
+       base::zip(subcomponents_, other.subcomponents_)) {
+    if (!subcomponent->SameAs(*other_subcomponent)) {
       return false;
     }
   }
@@ -170,18 +183,18 @@ bool AddressComponent::IsValueValid() const {
   return true;
 }
 
+// static
 AddressCountryCode AddressComponent::GetCommonCountry(
-    const AddressComponent& other) const {
-  const AddressCountryCode country_a = GetCountryCode();
-  const AddressCountryCode country_b = other.GetCountryCode();
-  if (country_a->empty()) {
-    return country_b;
+    const AddressCountryCode& c1,
+    const AddressCountryCode& c2) {
+  if (c1->empty()) {
+    return c2;
   }
-  if (country_b->empty()) {
-    return country_a;
+  if (c2->empty()) {
+    return c1;
   }
-  return base::EqualsCaseInsensitiveASCII(country_a.value(), country_b.value())
-             ? country_a
+  return base::EqualsCaseInsensitiveASCII(c1.value(), c2.value())
+             ? c1
              : AddressCountryCode("");
 }
 
@@ -217,14 +230,15 @@ VerificationStatus AddressComponent::GetVerificationStatus() const {
 }
 
 const std::u16string& AddressComponent::GetValue() const {
-  if (value_.has_value())
+  if (value_.has_value()) {
     return value_.value();
+  }
   return base::EmptyString16();
 }
 
 std::u16string AddressComponent::GetValueForComparison(
     const std::u16string& value,
-    const AddressComponent& other) const {
+    const AddressCountryCode& common_country_code) const {
   return NormalizeValue(value);
 }
 
@@ -245,7 +259,6 @@ void AddressComponent::SetValue(std::u16string value,
 void AddressComponent::UnsetValue() {
   value_.reset();
   value_verification_status_ = VerificationStatus::kNoStatus;
-  sorted_normalized_tokens_.reset();
 }
 
 bool AddressComponent::IsSupportedType(FieldType field_type) const {
@@ -339,7 +352,8 @@ std::vector<FieldType> AddressComponent::GetSubcomponentTypes() const {
 bool AddressComponent::SetValueForType(
     FieldType field_type,
     const std::u16string& value,
-    const VerificationStatus& verification_status) {
+    const VerificationStatus& verification_status,
+    bool invalidate_child_nodes) {
   AddressComponent* node_for_type = GetNodeForType(field_type);
   if (!node_for_type || node_for_type->IsValueReadOnly()) {
     return false;
@@ -348,22 +362,9 @@ bool AddressComponent::SetValueForType(
       ? node_for_type->SetValue(value, verification_status)
       : node_for_type->SetValueForOtherSupportedType(field_type, value,
                                                      verification_status);
-  return true;
-}
-
-bool AddressComponent::SetValueForTypeAndResetSubstructure(
-    FieldType field_type,
-    const std::u16string& value,
-    const VerificationStatus& verification_status) {
-  AddressComponent* node_for_type = GetNodeForType(field_type);
-  if (!node_for_type) {
-    return false;
+  if (invalidate_child_nodes) {
+    node_for_type->UnsetSubcomponents();
   }
-  node_for_type->GetStorageType() == field_type
-      ? node_for_type->SetValue(value, verification_status)
-      : node_for_type->SetValueForOtherSupportedType(field_type, value,
-                                                     verification_status);
-  node_for_type->UnsetSubcomponents();
   return true;
 }
 
@@ -448,7 +449,7 @@ std::u16string AddressComponent::GetValueForType(FieldType field_type) const {
 
 std::u16string AddressComponent::GetValueForComparisonForType(
     FieldType field_type,
-    const AddressComponent& other) const {
+    const AddressCountryCode& common_country_code) const {
   const AddressComponent* node_for_type = GetNodeForType(field_type);
   if (!node_for_type) {
     return {};
@@ -457,7 +458,7 @@ std::u16string AddressComponent::GetValueForComparisonForType(
       node_for_type->GetStorageType() == field_type
           ? node_for_type->GetValue()
           : node_for_type->GetValueForOtherSupportedType(field_type),
-      other);
+      common_country_code);
 }
 
 VerificationStatus AddressComponent::GetVerificationStatusForType(
@@ -498,7 +499,11 @@ void AddressComponent::ParseValueAndAssignSubcomponents() {
   }
 
   // As a final fallback, parse using the fallback method.
-  ParseValueAndAssignSubcomponentsByFallbackMethod();
+  // In some countries (e.g. India), the parsing cannot be reliably implemented
+  // and the fallback method does more harm than good.
+  if (!countries_not_supporting_fallback_parsing.contains(GetCountryCode())) {
+    ParseValueAndAssignSubcomponentsByFallbackMethod();
+  }
 }
 
 bool AddressComponent::ParseValueAndAssignSubcomponentsByI18nParsingRules() {
@@ -515,11 +520,13 @@ bool AddressComponent::ParseValueAndAssignSubcomponentsByI18nParsingRules() {
 
 bool AddressComponent::ParseValueAndAssignSubcomponentsByRegularExpressions() {
   for (const auto* parse_expression : GetParseRegularExpressionsByRelevance()) {
-    if (!parse_expression)
+    if (!parse_expression) {
       continue;
+    }
     if (ParseValueAndAssignSubcomponentsByRegularExpression(GetValue(),
-                                                            parse_expression))
+                                                            parse_expression)) {
       return true;
+    }
   }
   return false;
 }
@@ -584,12 +591,14 @@ bool AddressComponent::ParseValueAndAssignSubcomponentsByRegularExpression(
 
 void AddressComponent::ParseValueAndAssignSubcomponentsByFallbackMethod() {
   // There is nothing to do for an atomic component.
-  if (IsAtomic())
+  if (IsAtomic()) {
     return;
+  }
 
   // An empty string is trivially parsable.
-  if (GetValue().empty())
+  if (GetValue().empty()) {
     return;
+  }
 
   // Split the string by spaces.
   std::vector<std::u16string> space_separated_tokens = base::SplitString(
@@ -601,8 +610,9 @@ void AddressComponent::ParseValueAndAssignSubcomponentsByFallbackMethod() {
   // Assign one space-separated token each to all but the last subcomponent.
   for (size_t i = 0; (i + 1) < subcomponent_types.size(); i++) {
     // If there are no tokens left, parsing is done.
-    if (token_iterator == space_separated_tokens.end())
+    if (token_iterator == space_separated_tokens.end()) {
       return;
+    }
     // Set the current token to the type and advance the token iterator. By
     // design, this should never fail.
     CHECK(SetValueForType(subcomponent_types[i], *token_iterator,
@@ -855,13 +865,15 @@ void AddressComponent::GenerateTreeSynthesizedNodes() {
 }
 
 void AddressComponent::RecursivelyCompleteTree() {
-  if (IsAtomic())
+  if (IsAtomic()) {
     return;
+  }
 
   // If the value is assigned, parse the subcomponents from the value.
   if (!GetValue().empty() &&
-      MaximumNumberOfAssignedAddressComponentsOnNodeToLeafPaths() == 1)
+      MaximumNumberOfAssignedAddressComponentsOnNodeToLeafPaths() == 1) {
     ParseValueAndAssignSubcomponents();
+  }
 
   // First call completion on all subcomponents.
   for (AddressComponent* subcomponent : subcomponents_) {
@@ -870,8 +882,9 @@ void AddressComponent::RecursivelyCompleteTree() {
 
   // Finally format the value from the subcomponents if it is not already
   // assigned.
-  if (GetValue().empty())
+  if (GetValue().empty()) {
     FormatValueFromSubcomponents();
+  }
 }
 
 int AddressComponent::
@@ -902,8 +915,9 @@ bool AddressComponent::IsTreeCompletable() {
 }
 
 const AddressComponent& AddressComponent::GetRootNode() const {
-  if (!parent_)
+  if (!parent_) {
     return *this;
+  }
   return parent_->GetRootNode();
 }
 
@@ -915,8 +929,9 @@ AddressComponent& AddressComponent::GetRootNode() {
 void AddressComponent::RecursivelyUnsetParsedAndFormattedValues() {
   if (IsValueAssigned() &&
       (GetVerificationStatus() == VerificationStatus::kFormatted ||
-       GetVerificationStatus() == VerificationStatus::kParsed))
+       GetVerificationStatus() == VerificationStatus::kParsed)) {
     UnsetValue();
+  }
 
   for (AddressComponent* component : subcomponents_) {
     component->RecursivelyUnsetParsedAndFormattedValues();
@@ -942,9 +957,9 @@ void AddressComponent::MergeVerificationStatuses(
   }
   CHECK_EQ(newer_component.subcomponents_.size(), subcomponents_.size())
       << GetStorageTypeName();
-  for (size_t i = 0; i < newer_component.subcomponents_.size(); i++) {
-    subcomponents_[i]->MergeVerificationStatuses(
-        *newer_component.subcomponents_.at(i));
+  for (auto [subcomponent, newer_subcomponent] :
+       base::zip(subcomponents_, newer_component.subcomponents_)) {
+    subcomponent->MergeVerificationStatuses(*newer_subcomponent);
   }
 }
 
@@ -960,13 +975,16 @@ const std::vector<AddressToken> AddressComponent::GetSortedTokens() const {
 
 bool AddressComponent::IsMergeableWithComponent(
     const AddressComponent& newer_component) const {
+  const AddressCountryCode common_country_code =
+      GetCommonCountry(GetCountryCode(), newer_component.GetCountryCode());
   const std::u16string older_comparison_value =
-      GetValueForComparison(newer_component);
+      GetValueForComparison(common_country_code);
   const std::u16string newer_comparison_value =
-      newer_component.GetValueForComparison(*this);
+      newer_component.GetValueForComparison(common_country_code);
   // If both components are the same, there is nothing to do.
-  if (SameAs(newer_component))
+  if (SameAs(newer_component)) {
     return true;
+  }
 
   if (merge_mode_ & kUseNewerIfDifferent ||
       merge_mode_ & kUseBetterOrMostRecentIfDifferent) {
@@ -1057,20 +1075,15 @@ bool AddressComponent::IsMergeableWithComponent(
 
   // Checks if all child nodes are mergeable.
   if (merge_mode_ & kMergeChildrenAndReformatIfNeeded) {
-    bool is_mergeable = true;
-
     if (subcomponents_.size() != newer_component.subcomponents_.size()) {
       return false;
     }
-    for (size_t i = 0; i < newer_component.subcomponents_.size(); i++) {
-      if (!subcomponents_[i]->IsMergeableWithComponent(
-              *newer_component.subcomponents_[i])) {
-        is_mergeable = false;
-        break;
-      }
-    }
-    if (is_mergeable)
-      return true;
+    return std::ranges::all_of(
+        base::zip(subcomponents_, newer_component.subcomponents_),
+        [](const auto& p) {
+          auto [subcomponent, newer_subcomponent] = p;
+          return subcomponent->IsMergeableWithComponent(*newer_subcomponent);
+        });
   }
   return false;
 }
@@ -1080,9 +1093,12 @@ bool AddressComponent::MergeWithComponent(
     bool newer_was_more_recently_used) {
   // If both components are the same, there is nothing to do.
 
-  const std::u16string value = GetValueForComparison(newer_component);
+  const AddressCountryCode common_country_code =
+      AddressComponent::GetCommonCountry(newer_component.GetCountryCode(),
+                                         GetCountryCode());
+  const std::u16string value = GetValueForComparison(common_country_code);
   const std::u16string value_newer =
-      newer_component.GetValueForComparison(*this);
+      newer_component.GetValueForComparison(common_country_code);
 
   bool newer_component_has_better_or_equal_status =
       !IsLessSignificantVerificationStatus(
@@ -1093,8 +1109,9 @@ bool AddressComponent::MergeWithComponent(
       newer_component_has_better_or_equal_status &&
       !components_have_the_same_status;
 
-  if (SameAs(newer_component))
+  if (SameAs(newer_component)) {
     return true;
+  }
 
   // Now, it is guaranteed that both values are not identical.
   // Use the non empty one if the corresponding mode is active.
@@ -1263,14 +1280,16 @@ bool AddressComponent::MergeWithComponent(
   // If the corresponding mode is active, ignore this mode and pair-wise merge
   // the child tokens. Reformat this nodes from its children after the merge.
   if (merge_mode_ & kMergeChildrenAndReformatIfNeeded) {
-    CHECK_EQ(newer_component.subcomponents_.size(), subcomponents_.size());
-    for (size_t i = 0; i < newer_component.subcomponents_.size(); i++) {
-      if (!subcomponents_[i]->MergeWithComponent(
-              *newer_component.subcomponents_[i],
-              newer_was_more_recently_used)) {
-        return false;
-      }
+    if (std::ranges::any_of(
+            base::zip(subcomponents_, newer_component.subcomponents_),
+            [&](const auto& p) {
+              auto [subcomponent, newer_subcomponent] = p;
+              return !subcomponent->MergeWithComponent(
+                  *newer_subcomponent, newer_was_more_recently_used);
+            })) {
+      return false;
     }
+
     // If the two values are already token equivalent, use the value of the
     // component with the better verification status, or if both are the same,
     // use the newer one.
@@ -1315,9 +1334,13 @@ bool AddressComponent::HasNewerValuePrecedenceInMerging(
 
 bool AddressComponent::MergeTokenEquivalentComponent(
     const AddressComponent& newer_component) {
+  const AddressCountryCode common_country_code =
+      AddressComponent::GetCommonCountry(newer_component.GetCountryCode(),
+                                         GetCountryCode());
   if (!AreSortedTokensEqual(
-          TokenizeValue(GetValueForComparison(newer_component)),
-          TokenizeValue(newer_component.GetValueForComparison(*this)))) {
+          TokenizeValue(GetValueForComparison(common_country_code)),
+          TokenizeValue(
+              newer_component.GetValueForComparison(common_country_code)))) {
     return false;
   }
 
@@ -1355,8 +1378,9 @@ bool AddressComponent::MergeTokenEquivalentComponent(
   } else if (AllDescendantsAreEmpty()) {
     // Otherwise, replace this subtree with the other one if this subtree is
     // empty.
-    for (size_t i = 0; i < subcomponents_.size(); ++i) {
-      subcomponents_[i]->CopyFrom(*other_subcomponents[i]);
+    for (auto [subcomponent, other_subcomponent] :
+         base::zip(subcomponents_, other_subcomponents)) {
+      subcomponent->CopyFrom(*other_subcomponent);
     }
     return true;
   }
@@ -1511,11 +1535,13 @@ bool AddressComponent::MergeSubsetComponent(
   // component is equal or larger than the score of this component, use its
   // subcomponents including their substructure for all unmerged components.
   if (newer_component_verification_score >= this_component_verification_score) {
-    for (size_t i : unmerged_indices)
+    for (size_t i : unmerged_indices) {
       subcomponents_[i]->CopyFrom(*subset_subcomponents[i]);
+    }
 
-    if (!found_subset_component)
+    if (!found_subset_component) {
       this->ConsumeAdditionalToken(token_to_consume);
+    }
   }
 
   // In the current implementation it is always possible to merge.
@@ -1548,8 +1574,8 @@ int AddressComponent::GetStructureVerificationScore() const {
 }
 
 std::u16string AddressComponent::GetValueForComparison(
-    const AddressComponent& other) const {
-  return GetValueForComparison(GetValue(), other);
+    const AddressCountryCode& common_country_code) const {
+  return GetValueForComparison(GetValue(), common_country_code);
 }
 
 }  // namespace autofill

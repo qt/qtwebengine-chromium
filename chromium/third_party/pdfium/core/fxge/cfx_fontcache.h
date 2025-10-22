@@ -20,14 +20,14 @@ class CFX_FontCache {
   CFX_FontCache();
   ~CFX_FontCache();
 
-  RetainPtr<CFX_GlyphCache> GetGlyphCache(const CFX_Font* pFont);
+  RetainPtr<CFX_GlyphCache> GetGlyphCache(const CFX_Font* font);
 #if defined(PDF_USE_SKIA)
-  CFX_TypeFace* GetDeviceCache(const CFX_Font* pFont);
+  CFX_TypeFace* GetDeviceCache(const CFX_Font* font);
 #endif
 
  private:
-  std::map<CFX_Face*, ObservedPtr<CFX_GlyphCache>> m_GlyphCacheMap;
-  std::map<CFX_Face*, ObservedPtr<CFX_GlyphCache>> m_ExtGlyphCacheMap;
+  std::map<CFX_Face*, ObservedPtr<CFX_GlyphCache>> glyph_cache_map_;
+  std::map<CFX_Face*, ObservedPtr<CFX_GlyphCache>> ext_glyph_cache_map_;
 };
 
 #endif  // CORE_FXGE_CFX_FONTCACHE_H_

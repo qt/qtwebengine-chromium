@@ -1,6 +1,7 @@
 // Copyright (c) 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -139,10 +140,6 @@ const UIStrings = {
   /**
    *@description Text in Service Workers View of the Application panel
    */
-  inspect: 'Inspect',
-  /**
-   *@description Text in Service Workers View of the Application panel
-   */
   startString: 'Start',
   /**
    * @description Text in Service Workers View of the Application panel. Service workers have
@@ -200,7 +197,7 @@ export class ServiceWorkersView extends UI.Widget.VBox implements
       Map<SDK.ServiceWorkerManager.ServiceWorkerManager, Common.EventTarget.EventDescriptor[]>;
 
   constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(serviceWorkersViewStyles);
 
     // TODO(crbug.com/1156978): Replace UI.ReportView.ReportView with ReportView.ts web component.
@@ -491,7 +488,6 @@ export class Section {
   private sourceField: Element;
   private readonly statusField: Element;
   private readonly clientsField: Element;
-  private readonly linkifier: Components.Linkifier.Linkifier;
   private readonly clientInfoCache: Map<string, Protocol.Target.TargetInfo>;
   private readonly throttler: Common.Throttler.Throttler;
   private updateCycleField?: Element;
@@ -551,7 +547,6 @@ export class Section {
     this.createUpdateCycleField();
     this.maybeCreateRouterField();
 
-    this.linkifier = new Components.Linkifier.Linkifier();
     this.clientInfoCache = new Map();
     this.throttler = new Common.Throttler.Throttler(500);
   }
@@ -584,14 +579,6 @@ export class Section {
       return;
     }
     void this.throttler.schedule(this.update.bind(this));
-  }
-
-  private targetForVersionId(versionId: string): SDK.Target.Target|null {
-    const version = this.manager.findVersion(versionId);
-    if (!version?.targetId) {
-      return null;
-    }
-    return SDK.TargetManager.TargetManager.instance().targetById(version.targetId);
   }
 
   private addVersion(versionsStack: Element, icon: string, label: string): Element {
@@ -683,12 +670,6 @@ export class Section {
         const stopButton = UI.UIUtils.createTextButton(
             i18nString(UIStrings.stopString), this.stopButtonClicked.bind(this, active.id), {jslogContext: 'stop'});
         activeEntry.appendChild(stopButton);
-        if (!this.targetForVersionId(active.id)) {
-          const inspectButton = UI.UIUtils.createTextButton(
-              i18nString(UIStrings.inspect), this.inspectButtonClicked.bind(this, active.id),
-              {jslogContext: 'inspect'});
-          activeEntry.appendChild(inspectButton);
-        }
       } else if (active.isStartable()) {
         const startButton = UI.UIUtils.createTextButton(
             i18nString(UIStrings.startString), this.startButtonClicked.bind(this), {jslogContext: 'start'});
@@ -716,14 +697,6 @@ export class Section {
         waitingEntry.createChild('div', 'service-worker-subtitle').textContent =
             i18nString(UIStrings.receivedS, {PH1: new Date(waiting.scriptResponseTime * 1000).toLocaleString()});
       }
-      if (!this.targetForVersionId(waiting.id) && (waiting.isRunning() || waiting.isStarting())) {
-        const inspectButton = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.inspect), this.inspectButtonClicked.bind(this, waiting.id), {
-              title: i18nString(UIStrings.inspect),
-              jslogContext: 'waiting-entry-inspect',
-            });
-        waitingEntry.appendChild(inspectButton);
-      }
     }
     if (installing) {
       const installingEntry = this.addVersion(
@@ -733,14 +706,6 @@ export class Section {
         installingEntry.createChild('div', 'service-worker-subtitle').textContent = i18nString(UIStrings.receivedS, {
           PH1: new Date(installing.scriptResponseTime * 1000).toLocaleString(),
         });
-      }
-      if (!this.targetForVersionId(installing.id) && (installing.isRunning() || installing.isStarting())) {
-        const inspectButton = UI.UIUtils.createTextButton(
-            i18nString(UIStrings.inspect), this.inspectButtonClicked.bind(this, installing.id), {
-              title: i18nString(UIStrings.inspect),
-              jslogContext: 'installing-entry-inspect',
-            });
-        installingEntry.appendChild(inspectButton);
       }
     }
 
@@ -881,10 +846,6 @@ export class Section {
 
   private stopButtonClicked(versionId: string): void {
     void this.manager.stopWorker(versionId);
-  }
-
-  private inspectButtonClicked(versionId: string): void {
-    void this.manager.inspectWorker(versionId);
   }
 
   private wrapWidget(container: Element): Element {

@@ -1,5 +1,5 @@
 project('glib', 'c',
-  version : '2.81.1',
+  version : '2.82.1',
   # NOTE: See the policy in docs/meson-version.md before changing the Meson dependency
   meson_version : '>= 1.2.0',
   default_options : [
@@ -677,7 +677,7 @@ functions = [
   'copy_file_range',
   'endmntent',
   'endservent',
-  'epoll_create',
+  'epoll_create1',
   'fallocate',
   'fchmod',
   'fchown',

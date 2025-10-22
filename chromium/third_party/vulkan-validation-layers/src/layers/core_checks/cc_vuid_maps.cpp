@@ -1,6 +1,6 @@
-/* Copyright (c) 2024 The Khronos Group Inc.
- * Copyright (c) 2024 Valve Corporation
- * Copyright (c) 2024 LunarG, Inc.
+/* Copyright (c) 2024-2025 The Khronos Group Inc.
+ * Copyright (c) 2024-2025 Valve Corporation
+ * Copyright (c) 2024-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,7 @@
  */
 #include "cc_vuid_maps.h"
 #include "error_message/error_location.h"
-#include "utils/vk_layer_utils.h"
+#include "generated/error_location_helper.h"
 #include "state_tracker/pipeline_state.h"
 #include <map>
 
@@ -338,6 +338,12 @@ const std::string &GetCopyImageVUID(const Location &loc, CopyError error) {
              {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-dstImage-00152"},
              {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-07979"},
          }}},
+        {CopyError::DstImage1D_10908,
+         {{
+             {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-srcImage-10908"},
+             {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-srcImage-10908"},
+             {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-07979"},
+         }}},
         {CopyError::SrcImage1D_01785,
          {{
              {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-srcImage-01785"},
@@ -348,6 +354,12 @@ const std::string &GetCopyImageVUID(const Location &loc, CopyError error) {
          {{
              {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-dstImage-01786"},
              {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-dstImage-01786"},
+             {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-07980"},
+         }}},
+        {CopyError::DstImage1D_10907,
+         {{
+             {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-srcImage-10907"},
+             {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-srcImage-10907"},
              {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-07980"},
          }}},
         {CopyError::SrcOffset_01728,
@@ -367,24 +379,6 @@ const std::string &GetCopyImageVUID(const Location &loc, CopyError error) {
              {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-srcImage-01730"},
              {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-srcImage-01730"},
              {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-srcImage-00209"},
-         }}},
-        {CopyError::DstOffset_01732,
-         {{
-             {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-dstImage-01732"},
-             {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-dstImage-01732"},
-             {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-00207"},
-         }}},
-        {CopyError::DstOffset_01733,
-         {{
-             {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-dstImage-01733"},
-             {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-dstImage-01733"},
-             {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-00208"},
-         }}},
-        {CopyError::DstOffset_01734,
-         {{
-             {Key(Func::vkCmdCopyImage), "VUID-vkCmdCopyImage-dstImage-01734"},
-             {Key(Func::vkCmdCopyImage2), "VUID-VkCopyImageInfo2-dstImage-01734"},
-             {Key(Func::vkCopyImageToImage), "VUID-VkCopyImageToImageInfo-dstImage-00209"},
          }}},
         {CopyError::SrcImageContiguous_07966,
          {{
@@ -638,6 +632,33 @@ const std::string &GetSubresourceRangeVUID(const Location &loc, SubresourceRange
              {Key(Func::vkCmdClearColorImage), "VUID-vkCmdClearColorImage-pRanges-01693"},
              {Key(Func::vkCmdClearDepthStencilImage), "VUID-vkCmdClearDepthStencilImage-pRanges-01695"},
              {Key(Func::vkCreateImageView), "VUID-VkImageViewCreateInfo-subresourceRange-06725"},
+         }}},
+        {SubresourceRangeError::BaseLayer_02724_10798,
+         {{
+             {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-maintenance9-10798"},
+             {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-maintenance9-10798"},
+             {Key(Func::vkTransitionImageLayout), "VUID-VkHostImageLayoutTransitionInfo-maintenance9-10798"},
+             {Key(Func::vkCmdClearColorImage), ""},         // Not possible to hit with entrypoint
+             {Key(Func::vkCmdClearDepthStencilImage), ""},  // Not possible to hit with entrypoint
+             {Key(Func::vkCreateImageView), "VUID-VkImageViewCreateInfo-image-02724"},
+         }}},
+        {SubresourceRangeError::LayerCount_02725_10800,
+         {{
+             {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-maintenance9-10800"},
+             {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-maintenance9-10800"},
+             {Key(Func::vkTransitionImageLayout), "VUID-VkHostImageLayoutTransitionInfo-maintenance9-10800"},
+             {Key(Func::vkCmdClearColorImage), ""},         // Not possible to hit with entrypoint
+             {Key(Func::vkCmdClearDepthStencilImage), ""},  // Not possible to hit with entrypoint
+             {Key(Func::vkCreateImageView), "VUID-VkImageViewCreateInfo-subresourceRange-02725"},
+         }}},
+        {SubresourceRangeError::LevelCount_10799,
+         {{
+             {Key(Struct::VkImageMemoryBarrier), "VUID-VkImageMemoryBarrier-maintenance9-10799"},
+             {Key(Struct::VkImageMemoryBarrier2), "VUID-VkImageMemoryBarrier2-maintenance9-10799"},
+             {Key(Func::vkTransitionImageLayout), "VUID-VkHostImageLayoutTransitionInfo-maintenance9-10799"},
+             {Key(Func::vkCmdClearColorImage), ""},         // Not possible to hit with entrypoint
+             {Key(Func::vkCmdClearDepthStencilImage), ""},  // Not possible to hit with entrypoint
+             {Key(Func::vkCreateImageView), ""},            // Not possible to hit with entrypoint
          }}},
     };
 

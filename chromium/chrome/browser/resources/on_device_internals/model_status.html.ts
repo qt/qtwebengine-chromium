@@ -7,14 +7,36 @@ import {html} from '//resources/lit/v3_0/lit.rollup.js';
 import type {OnDeviceInternalsModelStatusElement} from './model_status.js';
 
 export function getHtml(this: OnDeviceInternalsModelStatusElement) {
+  const baseModel = this.pageData_.baseModel;
+  const baseInfo = this.pageData_.baseModel.info;
+  const criteria = this.pageData_.baseModel.registrationCriteria;
   // clang-format off
   return html`<!--_html_template_start_-->
 <div class="cr-centered-card-container">
   <h3>Foundational Model</h3>
   <div class="card">
     <div class="cr-row first">
-      <div class="cr-padded-text">Foundational model state:
-      ${this.pageData_.modelState}</div>
+      <div class="cr-padded-text">
+        <div>
+          Foundational model state:
+          <span class="value">${baseModel.state}</span>
+        </div>
+      ${baseInfo ? html`
+        <div>
+          <div>
+            Model Name:
+            <span class="value">${baseInfo.name}</value>
+          </div>
+          <div>
+            Version:
+            <span class="value">${baseInfo.version}</value>
+          </div>
+          <div>
+            File path:
+            <span class="value">${baseInfo.filePath}</value>
+          </div>
+        </div>` : html``}
+      </div>
     </div>
     <div class="cr-row">
       <div class="cr-padded-text">
@@ -30,7 +52,7 @@ export function getHtml(this: OnDeviceInternalsModelStatusElement) {
     </div>
   </div>
   <h3>Foundational model criteria</h3>
-  ${(Object.keys(this.pageData_.registrationCriteria).length === 0) ?
+  ${(Object.keys(criteria).length === 0) ?
     html`
       <div class="card">
         <div class="cr-row first">
@@ -40,24 +62,63 @@ export function getHtml(this: OnDeviceInternalsModelStatusElement) {
           </div>
         </div>
       </div>` :
-     html`
-       <div>
-         <table id="criteria-table">
-           <thead>
-             <tr>
-               <th>Property</th>
-               <th>Value</th>
-             </tr>
-           </thead>
-           <tbody>
-             ${Object.keys(this.pageData_.registrationCriteria).map(key => html`
-               <tr>
-                 <td>${key}</td>
-                 <td>${this.pageData_.registrationCriteria[key]}</td>
-               </tr>`)}
-           </tbody>
-         </table>
-       </div>`}
+    html`
+      <div>
+        <table id="criteria-table">
+          <thead>
+            <tr>
+              <th>Property</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${Object.keys(criteria).map(key => html`
+              <tr>
+                <td>${key}</td>
+                <td>${criteria[key]}</td>
+              </tr>`)}
+            <tr>
+              <td>Detected VRAM (MiB)</td>
+              <td>${this.pageData_.performanceInfo.vramMb === 0n ?
+                'Not Available' :
+                this.pageData_.performanceInfo.vramMb}</td>
+            </tr>
+            <tr>
+              <td>Minimum VRAM required (MiB)</td>
+              <td>${this.pageData_.minVramMb}</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>`}
+  <h3>Feature Adaptations</h3>
+  <div>
+    <table id="feature-adaptations-table">
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Version</th>
+          <th>Recently Used</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${this.pageData_.featureAdaptations.map(adaptation => html`
+          <tr>
+            <td>${adaptation.featureName}</td>
+            <td>${adaptation.version}</td>
+            <td>${adaptation.isRecentlyUsed}</td>
+            <td>
+              <button @click=${() =>
+                this.onFeatureUsageSetterClick_(adaptation.featureKey, true)
+              }>set to true</button>
+              <button @click=${() =>
+                this.onFeatureUsageSetterClick_(adaptation.featureKey, false)
+              }>set to false</button>
+            </td>
+          </tr>`)}
+      </tbody>
+    </table>
+  </div>
   <h3>Supplementary Models</h3>
   <div>
     <table id="supp-models-table">

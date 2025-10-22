@@ -6,7 +6,10 @@ import("//build/config/android/rules.gni")
 import("//third_party/jni_zero/jni_zero.gni")
 
 generate_jni("site_settings_jni_headers") {
-  sources = [ "java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java" ]
+  sources = [
+    "java/src/org/chromium/components/browser_ui/site_settings/GeolocationSetting.java",
+    "java/src/org/chromium/components/browser_ui/site_settings/WebsitePreferenceBridge.java",
+  ]
 }
 
 source_set("android") {
@@ -26,6 +29,7 @@ source_set("android") {
     "//components/content_settings/core/browser",
     "//components/content_settings/core/browser:cookie_settings",
     "//components/permissions",
+    "//components/site_isolation",
     "//components/subresource_filter/android",
     "//components/user_prefs",
     "//content/public/browser",
@@ -72,6 +76,7 @@ android_library("java") {
     "java/src/org/chromium/components/browser_ui/site_settings/DesktopSiteMetrics.java",
     "java/src/org/chromium/components/browser_ui/site_settings/FileEditingInfo.java",
     "java/src/org/chromium/components/browser_ui/site_settings/ForwardingManagedPreferenceDelegate.java",
+    "java/src/org/chromium/components/browser_ui/site_settings/GeolocationSetting.java",
     "java/src/org/chromium/components/browser_ui/site_settings/GroupedWebsitesSettings.java",
     "java/src/org/chromium/components/browser_ui/site_settings/JavascriptOptimizerCategory.java",
     "java/src/org/chromium/components/browser_ui/site_settings/LocalStorageInfo.java",
@@ -202,37 +207,33 @@ robolectric_library("junit") {
 android_resources("java_resources") {
   sources = [
     "java/res/drawable-hdpi/ic_volume_up_grey600_24dp.png",
-    "java/res/drawable-hdpi/permission_background_sync.png",
     "java/res/drawable-hdpi/permission_popups.png",
     "java/res/drawable-hdpi/permission_protected_media.png",
     "java/res/drawable-hdpi/settings_sensors.png",
     "java/res/drawable-hdpi/web_asset.png",
     "java/res/drawable-mdpi/ic_volume_up_grey600_24dp.png",
-    "java/res/drawable-mdpi/permission_background_sync.png",
     "java/res/drawable-mdpi/permission_popups.png",
     "java/res/drawable-mdpi/permission_protected_media.png",
     "java/res/drawable-mdpi/settings_sensors.png",
     "java/res/drawable-mdpi/web_asset.png",
     "java/res/drawable-xhdpi/ic_volume_up_grey600_24dp.png",
-    "java/res/drawable-xhdpi/permission_background_sync.png",
     "java/res/drawable-xhdpi/permission_popups.png",
     "java/res/drawable-xhdpi/permission_protected_media.png",
     "java/res/drawable-xhdpi/settings_sensors.png",
     "java/res/drawable-xhdpi/web_asset.png",
     "java/res/drawable-xxhdpi/ic_volume_up_grey600_24dp.png",
-    "java/res/drawable-xxhdpi/permission_background_sync.png",
     "java/res/drawable-xxhdpi/permission_popups.png",
     "java/res/drawable-xxhdpi/permission_protected_media.png",
     "java/res/drawable-xxhdpi/settings_sensors.png",
     "java/res/drawable-xxhdpi/web_asset.png",
     "java/res/drawable-xxxhdpi/ic_volume_up_grey600_24dp.png",
-    "java/res/drawable-xxxhdpi/permission_background_sync.png",
     "java/res/drawable-xxxhdpi/permission_popups.png",
     "java/res/drawable-xxxhdpi/permission_protected_media.png",
     "java/res/drawable-xxxhdpi/settings_sensors.png",
     "java/res/drawable-xxxhdpi/web_asset.png",
     "java/res/drawable/broken_24.xml",
     "java/res/drawable/gm_database_24.xml",
+    "java/res/drawable/google.xml",
     "java/res/drawable/ic_account_attention.xml",
     "java/res/drawable/ic_archive.xml",
     "java/res/drawable/ic_background_replace.xml",
@@ -243,6 +244,9 @@ android_resources("java_resources") {
     "java/res/drawable/ic_person_24dp.xml",
     "java/res/drawable/ic_timer.xml",
     "java/res/drawable/incognito_24.xml",
+    "java/res/drawable/network_ping.xml",
+    "java/res/drawable/preview.xml",
+    "java/res/drawable/privacy_screen.xml",
     "java/res/drawable/settings_bluetooth.xml",
     "java/res/drawable/settings_v8.xml",
     "java/res/drawable/web_24.xml",

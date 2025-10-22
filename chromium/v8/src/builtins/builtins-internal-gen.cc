@@ -8,6 +8,7 @@
 #include "src/baseline/baseline.h"
 #include "src/builtins/builtins-inl.h"
 #include "src/builtins/builtins-utils-gen.h"
+#include "src/builtins/js-trampoline-assembler.h"
 #include "src/codegen/code-stub-assembler-inl.h"
 #include "src/codegen/interface-descriptors-inl.h"
 #include "src/codegen/macro-assembler-inl.h"
@@ -984,8 +985,8 @@ class SetOrCopyDataPropertiesAssembler : public CodeStubAssembler {
  protected:
   TNode<JSObject> AllocateJsObjectTarget(TNode<Context> context) {
     const TNode<NativeContext> native_context = LoadNativeContext(context);
-    const TNode<JSFunction> object_function = Cast(
-        LoadContextElement(native_context, Context::OBJECT_FUNCTION_INDEX));
+    const TNode<JSFunction> object_function = Cast(LoadContextElementNoCell(
+        native_context, Context::OBJECT_FUNCTION_INDEX));
     const TNode<Map> map =
         Cast(LoadJSFunctionPrototypeOrInitialMap(object_function));
     const TNode<JSObject> target = AllocateJSObjectFromMap(map);
@@ -1347,8 +1348,7 @@ TF_BUILTIN(AllocateInYoungGeneration, CodeStubAssembler) {
   auto requested_size = UncheckedParameter<IntPtrT>(Descriptor::kRequestedSize);
   CSA_CHECK(this, IsValidPositiveSmi(requested_size));
 
-  TNode<Smi> allocation_flags =
-      SmiConstant(Smi::FromInt(AllocateDoubleAlignFlag::encode(false)));
+  TNode<Smi> allocation_flags = SmiConstant(Smi::FromInt(kTaggedAligned));
   TailCallRuntime(Runtime::kAllocateInYoungGeneration, NoContextConstant(),
                   SmiFromIntPtr(requested_size), allocation_flags);
 }
@@ -1357,8 +1357,7 @@ TF_BUILTIN(AllocateInOldGeneration, CodeStubAssembler) {
   auto requested_size = UncheckedParameter<IntPtrT>(Descriptor::kRequestedSize);
   CSA_CHECK(this, IsValidPositiveSmi(requested_size));
 
-  TNode<Smi> runtime_flags =
-      SmiConstant(Smi::FromInt(AllocateDoubleAlignFlag::encode(false)));
+  TNode<Smi> runtime_flags = SmiConstant(Smi::FromInt(kTaggedAligned));
   TailCallRuntime(Runtime::kAllocateInOldGeneration, NoContextConstant(),
                   SmiFromIntPtr(requested_size), runtime_flags);
 }
@@ -1368,8 +1367,7 @@ TF_BUILTIN(WasmAllocateInYoungGeneration, CodeStubAssembler) {
   auto requested_size = UncheckedParameter<IntPtrT>(Descriptor::kRequestedSize);
   CSA_CHECK(this, IsValidPositiveSmi(requested_size));
 
-  TNode<Smi> allocation_flags =
-      SmiConstant(Smi::FromInt(AllocateDoubleAlignFlag::encode(false)));
+  TNode<Smi> allocation_flags = SmiConstant(Smi::FromInt(kTaggedAligned));
   TailCallRuntime(Runtime::kAllocateInYoungGeneration, NoContextConstant(),
                   SmiFromIntPtr(requested_size), allocation_flags);
 }
@@ -1378,10 +1376,17 @@ TF_BUILTIN(WasmAllocateInOldGeneration, CodeStubAssembler) {
   auto requested_size = UncheckedParameter<IntPtrT>(Descriptor::kRequestedSize);
   CSA_CHECK(this, IsValidPositiveSmi(requested_size));
 
-  TNode<Smi> runtime_flags =
-      SmiConstant(Smi::FromInt(AllocateDoubleAlignFlag::encode(false)));
+  TNode<Smi> runtime_flags = SmiConstant(Smi::FromInt(kTaggedAligned));
   TailCallRuntime(Runtime::kAllocateInOldGeneration, NoContextConstant(),
                   SmiFromIntPtr(requested_size), runtime_flags);
+}
+
+TF_BUILTIN(WasmAllocateInSharedHeap, CodeStubAssembler) {
+  auto requested_size = UncheckedParameter<IntPtrT>(Descriptor::kRequestedSize);
+  auto alignment = Parameter<Smi>(Descriptor::kAlignment);
+  CSA_CHECK(this, IsValidPositiveSmi(requested_size));
+  TailCallRuntime(Runtime::kAllocateInSharedHeap, NoContextConstant(),
+                  SmiFromIntPtr(requested_size), alignment);
 }
 #endif
 
@@ -1639,11 +1644,10 @@ TF_BUILTIN(CreateDataProperty, CodeStubAssembler) {
                                                  key, value);
 }
 
-TF_BUILTIN(InstantiateAsmJs, CodeStubAssembler) {
+TF_BUILTIN(InstantiateAsmJs, JSTrampolineAssembler) {
   Label tailcall_to_function(this);
   auto function = Parameter<JSFunction>(Descriptor::kTarget);
   auto context = Parameter<Context>(Descriptor::kContext);
-  auto new_target = Parameter<Object>(Descriptor::kNewTarget);
   auto arg_count =
       UncheckedParameter<Int32T>(Descriptor::kActualArgumentsCount);
 #ifdef V8_JS_LINKAGE_INCLUDES_DISPATCH_HANDLE
@@ -1676,10 +1680,7 @@ TF_BUILTIN(InstantiateAsmJs, CodeStubAssembler) {
   BIND(&tailcall_to_function);
   // On failure, tail call back to regular JavaScript by re-calling the given
   // function which has been reset to the compile lazy builtin.
-
-  TNode<Code> code = LoadJSFunctionCode(function);
-  TailCallJSCode(code, context, function, new_target, arg_count,
-                 dispatch_handle);
+  TailCallJSFunction(function);
 }
 
 TF_BUILTIN(FindNonDefaultConstructorOrConstruct, CodeStubAssembler) {

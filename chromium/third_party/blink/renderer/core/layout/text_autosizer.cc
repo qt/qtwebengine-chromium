@@ -36,6 +36,7 @@
 
 #include "base/containers/span.h"
 #include "base/memory/ptr_util.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/execution_context/security_context.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
@@ -44,9 +45,11 @@
 #include "third_party/blink/renderer/core/frame/viewport_data.h"
 #include "third_party/blink/renderer/core/frame/visual_viewport.h"
 #include "third_party/blink/renderer/core/html/forms/html_text_area_element.h"
+#include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/layout_block.h"
 #include "third_party/blink/renderer/core/layout/layout_inline.h"
 #include "third_party/blink/renderer/core/layout/layout_multi_column_flow_thread.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_text.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/list/layout_list_item.h"
@@ -275,8 +278,7 @@ static bool BlockSuppressesAutosizing(const LayoutBlock* block) {
   if (BlockHeightConstrained(block))
     return true;
 
-  if (RuntimeEnabledFeatures::TextAutoSizingDisabledOnFlexboxEnabled() &&
-      block->IsFlexItem()) {
+  if (block->IsFlexItem()) {
     block->GetDocument().CountUse(WebFeature::kTextAutoSizingDisabledOnFlexbox);
     return true;
   }
@@ -655,7 +657,8 @@ void TextAutosizer::UpdatePageInfo() {
 
   PageInfo previous_page_info(page_info_);
   page_info_.setting_enabled_ =
-      document_->GetSettings()->GetTextAutosizingEnabled();
+      document_->GetSettings()->GetTextAutosizingEnabled() &&
+      !base::FeatureList::IsEnabled(blink::features::kForceOffTextAutosizing);
 
   if (!page_info_.setting_enabled_ || document_->Printing()) {
     page_info_.page_needs_autosizing_ = false;
@@ -882,7 +885,7 @@ TextAutosizer::Fingerprint TextAutosizer::ComputeFingerprint(
   if (LayoutObject* parent = ParentElementLayoutObject(layout_object))
     data.parent_hash_ = GetFingerprint(parent);
 
-  data.qualified_name_hash_ = WTF::GetHash(element->TagQName());
+  data.qualified_name_hash_ = GetHash(element->TagQName());
 
   if (const ComputedStyle* style = layout_object->Style()) {
     data.packed_style_properties_ = static_cast<unsigned>(style->Direction());
@@ -898,7 +901,7 @@ TextAutosizer::Fingerprint TextAutosizer::ComputeFingerprint(
 
     // TODO(kojii): The width can be computed from style only when it's fixed.
     // consider for adding: writing mode, padding.
-    data.width_ = width.IsFixed() ? WTF::NormalizeSign(width.Pixels()) : 0.0f;
+    data.width_ = width.IsFixed() ? NormalizeSign(width.Pixels()) : 0.0f;
   }
 
   // Use nodeIndex as a rough approximation of column number
@@ -1464,13 +1467,17 @@ TextAutosizer::DeferUpdatePageInfo::DeferUpdatePageInfo(Page* page)
   }
 }
 
-// static
-void TextAutosizer::MaybeRegisterInlineSize(const LayoutBlock& ng_block,
-                                            LayoutUnit inline_size) {
-  if (auto* text_autosizer = ng_block.GetDocument().GetTextAutosizer()) {
-    if (text_autosizer->ShouldHandleLayout())
-      text_autosizer->RegisterInlineSize(ng_block, inline_size);
+void TextAutosizer::ForceInlineSizeForColumn(
+    const BlockNode& multicol_container,
+    LayoutUnit inline_size) {
+  auto* text_autosizer = multicol_container.GetDocument().GetTextAutosizer();
+  if (!text_autosizer || !text_autosizer->ShouldHandleLayout()) {
+    return;
   }
+  auto iter = text_autosizer->inline_size_map_.find(
+      To<LayoutBlock>(multicol_container.GetLayoutBox()));
+  DCHECK(iter != text_autosizer->inline_size_map_.end());
+  iter.Get()->value = inline_size;
 }
 
 TextAutosizer::NGLayoutScope::NGLayoutScope(LayoutBox* box,

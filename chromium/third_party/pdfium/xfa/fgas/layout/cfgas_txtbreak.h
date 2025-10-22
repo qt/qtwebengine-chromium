@@ -57,7 +57,7 @@ class CFGAS_TxtBreak final : public CFGAS_Break {
     // TODO(thestig): These 2 members probably should be size_t.
     int32_t iStart = 0;
     int32_t iLength = 0;
-    RetainPtr<CFGAS_GEFont> pFont;
+    RetainPtr<CFGAS_GEFont> font;
     float fFontSize = 12.0f;
     Mask<LayoutStyle> dwStyles = LayoutStyle::kNone;
     int32_t iHorizontalScale = 100;
@@ -101,8 +101,8 @@ class CFGAS_TxtBreak final : public CFGAS_Break {
                      CFGAS_BreakLine* pNextLine,
                      bool bAllChars);
 
-  int32_t m_iAlignment = CFX_TxtLineAlignment_Left;
-  int32_t m_iCombWidth = 360000;
+  int32_t alignment_ = CFX_TxtLineAlignment_Left;
+  int32_t comb_width_ = 360000;
 };
 
 #endif  // XFA_FGAS_LAYOUT_CFGAS_TXTBREAK_H_

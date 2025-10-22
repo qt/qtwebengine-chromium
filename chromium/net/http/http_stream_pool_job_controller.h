@@ -11,6 +11,8 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/time/time.h"
+#include "base/values.h"
 #include "net/base/load_states.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/request_priority.h"
@@ -42,7 +44,7 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
                 HttpStreamPoolRequestInfo request_info,
                 RequestPriority priority,
                 std::vector<SSLConfig::CertAndStatus> allowed_bad_certs,
-                bool enable_ip_based_pooling,
+                bool enable_ip_based_pooling_for_h2,
                 bool enable_alternative_services);
 
   JobController(const JobController&) = delete;
@@ -50,10 +52,9 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
 
   ~JobController() override;
 
-  // Creates an HttpStreamRequest and starts Job(s) to handle it.
-  std::unique_ptr<HttpStreamRequest> RequestStream(
-      HttpStreamRequest::Delegate* delegate,
-      const NetLogWithSource& net_log);
+  // Takes over the responsibility of processing an already created `request`.
+  void HandleStreamRequest(HttpStreamRequest* stream_request,
+                           HttpStreamRequest::Delegate* delegate);
 
   // Requests that enough connections/sessions for `num_streams` be opened.
   // `callback` is only invoked when the return value is `ERR_IO_PENDING`.
@@ -64,9 +65,9 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   RespectLimits respect_limits() const override;
   const std::vector<SSLConfig::CertAndStatus>& allowed_bad_certs()
       const override;
-  bool enable_ip_based_pooling() const override;
+  bool enable_ip_based_pooling_for_h2() const override;
   bool enable_alternative_services() const override;
-  bool is_http1_allowed() const override;
+  NextProtoSet allowed_alpns() const override;
   const ProxyInfo& proxy_info() const override;
   const NetLogWithSource& net_log() const override;
   void OnStreamReady(Job* job,
@@ -88,6 +89,8 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   int RestartTunnelWithProxyAuth() override;
   void SetPriority(RequestPriority priority) override;
 
+  base::Value::Dict GetInfoAsValue() const;
+
  private:
   // Represents an alternative endpoint for the request.
   struct Alternative {
@@ -96,6 +99,15 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
     quic::ParsedQuicVersion quic_version =
         quic::ParsedQuicVersion::Unsupported();
     QuicSessionAliasKey quic_key;
+  };
+
+  struct StreamWithProtocol {
+    StreamWithProtocol(std::unique_ptr<HttpStream> stream,
+                       NextProto negotiated_protocol);
+    ~StreamWithProtocol();
+
+    std::unique_ptr<HttpStream> stream;
+    NextProto negotiated_protocol;
   };
 
   // Calculate an alternative endpoint for the request.
@@ -108,14 +120,27 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   QuicSessionPool* quic_session_pool();
   SpdySessionPool* spdy_session_pool();
 
+  // Returns an HttpStream and its negotiated protocol if there is an
+  // existing session or an idle stream that can serve the request. Otherwise,
+  // returns std::nullopt.
+  std::optional<StreamWithProtocol> MaybeCreateStreamFromExistingSession();
+
   // When there is a QUIC session that can serve an HttpStream for the request,
   // creates an HttpStream and returns it.
   std::unique_ptr<HttpStream> MaybeCreateStreamFromExistingQuicSession();
   std::unique_ptr<HttpStream> MaybeCreateStreamFromExistingQuicSessionInternal(
       const QuicSessionAliasKey& key);
 
+  // May start an alternative job. Returns true when an alternative job is
+  // started.
+  bool MaybeStartAlternativeJob();
+
   // Returns true when a QUIC session can be used for the request.
   bool CanUseExistingQuicSession();
+
+  // Starts a QUIC preconnect job when an alternative service is advertised via
+  // Alt-Svc but the current request is not using it.
+  void StartAltSvcQuicPreconnect();
 
   // Calls the request's Complete() and tells the delegate that `stream` is
   // ready. Used when there is an existing QUIC/SPDY session that can serve
@@ -133,6 +158,9 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
 
   // Calls the request's client auth callback.
   void CallOnNeedsClientAuth(SSLCertRequestInfo* cert_info);
+
+  // Resets `job` and invokes the preconnect callback.
+  void ResetJobAndInvokePreconnectCallback(Job* job, int status);
 
   // Sets the result of `job`.
   void SetJobResult(Job* job, int status);
@@ -153,10 +181,10 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   const raw_ptr<HttpStreamPool> pool_;
   RequestPriority priority_;
   const std::vector<SSLConfig::CertAndStatus> allowed_bad_certs_;
-  const bool enable_ip_based_pooling_;
+  const bool enable_ip_based_pooling_for_h2_;
   const bool enable_alternative_services_;
   const RespectLimits respect_limits_;
-  const bool is_http1_allowed_;
+  NextProtoSet allowed_alpns_;
   const ProxyInfo proxy_info_;
   const AlternativeServiceInfo alternative_service_info_;
 
@@ -168,6 +196,8 @@ class HttpStreamPool::JobController : public HttpStreamPool::Job::Delegate,
   const std::optional<Alternative> alternative_;
 
   const NetLogWithSource net_log_;
+
+  const base::TimeTicks created_time_;
 
   // Fields specific to stream request.
   raw_ptr<HttpStreamRequest::Delegate> delegate_;

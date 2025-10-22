@@ -19,7 +19,7 @@
 #ifndef AVCODEC_LCEVCDEC_H
 #define AVCODEC_LCEVCDEC_H
 
-#include "config_components.h"
+#include "config.h"
 
 #include <stdint.h>
 #if CONFIG_LIBLCEVC_DEC
@@ -34,6 +34,11 @@ typedef struct FFLCEVCContext {
 } FFLCEVCContext;
 
 struct AVFrame;
+
+typedef struct FFLCEVCFrame {
+    FFLCEVCContext *lcevc;
+    struct AVFrame *frame;
+} FFLCEVCFrame;
 
 int ff_lcevc_alloc(FFLCEVCContext **plcevc);
 int ff_lcevc_process(void *logctx, struct AVFrame *frame);

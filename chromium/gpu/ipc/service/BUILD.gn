@@ -113,43 +113,39 @@ component("service") {
       "image_transport_surface_overlay_mac.h",
       "image_transport_surface_overlay_mac.mm",
     ]
-  }
-  if (is_mac) {
-    sources += [
-      "built_in_shader_cache_loader.cc",
-      "built_in_shader_cache_loader.h",
-      "built_in_shader_cache_writer.cc",
-      "built_in_shader_cache_writer.h",
-      "image_transport_surface_mac.mm",
-    ]
-    deps += [
-      "//ui/accelerated_widget_mac",
-      "//ui/display:display",
-      "//ui/display/types:types",
-    ]
-    lib_dirs = [ "$mac_sdk_path/usr/lib" ]
-    frameworks = [
-      "CoreGraphics.framework",
-      "IOSurface.framework",
-      "OpenGL.framework",
-      "QuartzCore.framework",
-    ]
-    defines += [ "GL_SILENCE_DEPRECATION" ]
-  }
-  if (is_ios) {
-    sources += [ "image_transport_surface_ios.mm" ]
     deps += [ "//ui/accelerated_widget_mac" ]
+    if (is_mac) {
+      sources += [ "image_transport_surface_mac.mm" ]
+      deps += [
+        "//ui/display",
+        "//ui/display/types",
+      ]
+      lib_dirs = [ "$mac_sdk_path/usr/lib" ]
+      frameworks = [
+        "CoreGraphics.framework",
+        "IOSurface.framework",
+        "OpenGL.framework",
+        "QuartzCore.framework",
+      ]
+      defines += [ "GL_SILENCE_DEPRECATION" ]
+    }
+    if (is_ios) {
+      sources += [ "image_transport_surface_ios.mm" ]
+    }
   }
   if (is_android) {
-    sources += [
-      "image_transport_surface_android.cc",
-      "stream_texture_android.cc",
-      "stream_texture_android.h",
-    ]
+    sources += [ "image_transport_surface_android.cc" ]
     libs += [ "android" ]
   }
   if (is_linux || is_chromeos) {
     sources += [ "image_transport_surface_linux.cc" ]
+  }
+  if (is_chromeos) {
+    sources += [
+      "arc_shared_image_interface.cc",
+      "arc_shared_image_interface.h",
+    ]
+    deps += [ "//chromeos/ash/experiences/arc:arc_features" ]
   }
   if (use_ozone) {
     sources += [
@@ -182,11 +178,15 @@ source_set("test_support") {
   sources = [ "gpu_memory_buffer_factory_test_template.h" ]
   public_deps = [
     ":service",
-    "//testing/gtest:gtest",
+    "//testing/gtest",
   ]
   deps = [
     "//base/test:test_support",
     "//gpu/ipc/common",
     "//ui/gl:test_support",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

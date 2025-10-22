@@ -9,11 +9,14 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include <immintrin.h>
 
 #include "src/xnnpack/common.h"
-#include "src/xnnpack/intrinsics-polyfill.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 #include "src/xnnpack/vbinary.h"
 
 
@@ -22,7 +25,7 @@ void xnn_f16_vpreluc_ukernel__avx512fp16_u64(
     const xnn_float16* restrict input_a,
     const xnn_float16* restrict input_b,
     xnn_float16* restrict output,
-    const struct xnn_f16_default_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_default_params* restrict params)
 {
   assert(batch != 0);
   assert(batch % sizeof(uint16_t) == 0);
@@ -72,7 +75,7 @@ void xnn_f16_vpreluc_ukernel__avx512fp16_u64(
 
     __m512h va = _mm512_castsi512_ph(_mm512_maskz_loadu_epi16(vmask, a));
 
-    const __mmask16 vsign = _mm512_cmp_ph_mask(va, vzero, _CMP_LT_OQ);
+    const __mmask32 vsign = _mm512_cmp_ph_mask(va, vzero, _CMP_LT_OQ);
     __m512h vacc = _mm512_mask_mul_ph(va, vsign, va, vb);
 
     _mm512_mask_storeu_epi16(o, vmask, _mm512_castph_si512(vacc));

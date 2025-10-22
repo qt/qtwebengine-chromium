@@ -170,12 +170,17 @@ void DumpSurfaceCapabilities(Printer &p, AppInstance &inst, AppGpu &gpu, AppSurf
     if (inst.CheckExtensionEnabled(VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME)) {
         chain_iterator_surface_capabilities2(p, inst, gpu, surface.surface_capabilities2_khr.pNext);
     }
-    if (inst.CheckExtensionEnabled(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME)) {
+    if (inst.CheckExtensionEnabled(VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME) ||
+        inst.CheckExtensionEnabled(VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME)) {
+        const char *surf_ext_name = VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME;
+        if (!inst.CheckExtensionEnabled(VK_KHR_SURFACE_MAINTENANCE_1_EXTENSION_NAME)) {
+            surf_ext_name = VK_EXT_SURFACE_MAINTENANCE_1_EXTENSION_NAME;
+        }
         p.SetSubHeader();
-        ObjectWrapper obj(p, "VK_EXT_surface_maintenance1");
+        ObjectWrapper obj(p, surf_ext_name);
         for (auto &mode : surface.surf_present_modes) {
-            VkSurfacePresentModeEXT present_mode{};
-            present_mode.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_EXT;
+            VkSurfacePresentModeKHR present_mode{};
+            present_mode.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_KHR;
             present_mode.presentMode = mode;
 
             VkPhysicalDeviceSurfaceInfo2KHR surface_info{};
@@ -183,24 +188,24 @@ void DumpSurfaceCapabilities(Printer &p, AppInstance &inst, AppGpu &gpu, AppSurf
             surface_info.surface = surface.surface_extension.surface;
             surface_info.pNext = &present_mode;
 
-            VkSurfacePresentModeCompatibilityEXT SurfacePresentModeCompatibilityEXT{};
-            SurfacePresentModeCompatibilityEXT.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_EXT;
+            VkSurfacePresentModeCompatibilityKHR SurfacePresentModeCompatibilityKHR{};
+            SurfacePresentModeCompatibilityKHR.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_KHR;
 
-            VkSurfacePresentScalingCapabilitiesEXT SurfacePresentScalingCapabilitiesEXT{};
-            SurfacePresentScalingCapabilitiesEXT.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT;
-            SurfacePresentScalingCapabilitiesEXT.pNext = &SurfacePresentModeCompatibilityEXT;
+            VkSurfacePresentScalingCapabilitiesKHR SurfacePresentScalingCapabilitiesKHR{};
+            SurfacePresentScalingCapabilitiesKHR.sType = VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT;
+            SurfacePresentScalingCapabilitiesKHR.pNext = &SurfacePresentModeCompatibilityKHR;
 
             VkSurfaceCapabilities2KHR surface_caps2{};
             surface_caps2.sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR;
-            surface_caps2.pNext = &SurfacePresentScalingCapabilitiesEXT;
+            surface_caps2.pNext = &SurfacePresentScalingCapabilitiesKHR;
 
             VkResult err = vkGetPhysicalDeviceSurfaceCapabilities2KHR(gpu.phys_device, &surface_info, &surface_caps2);
             if (err != VK_SUCCESS) {
                 continue;
             }
 
-            std::vector<VkPresentModeKHR> compatible_present_modes{SurfacePresentModeCompatibilityEXT.presentModeCount};
-            SurfacePresentModeCompatibilityEXT.pPresentModes = compatible_present_modes.data();
+            std::vector<VkPresentModeKHR> compatible_present_modes{SurfacePresentModeCompatibilityKHR.presentModeCount};
+            SurfacePresentModeCompatibilityKHR.pPresentModes = compatible_present_modes.data();
 
             err = vkGetPhysicalDeviceSurfaceCapabilities2KHR(gpu.phys_device, &surface_info, &surface_caps2);
 
@@ -210,17 +215,32 @@ void DumpSurfaceCapabilities(Printer &p, AppInstance &inst, AppGpu &gpu, AppSurf
                 p.PrintKeyValue("minImageCount", surface_caps2.surfaceCapabilities.minImageCount);
                 p.PrintKeyValue("maxImageCount", surface_caps2.surfaceCapabilities.maxImageCount);
 
-                DumpVkSurfacePresentScalingCapabilitiesEXT(p, "VkSurfacePresentScalingCapabilitiesEXT",
-                                                           SurfacePresentScalingCapabilitiesEXT);
-                DumpVkSurfacePresentModeCompatibilityEXT(p, "VkSurfacePresentModeCompatibilityEXT",
-                                                         SurfacePresentModeCompatibilityEXT);
+                DumpVkSurfacePresentScalingCapabilitiesKHR(p, "VkSurfacePresentScalingCapabilitiesKHR",
+                                                           SurfacePresentScalingCapabilitiesKHR);
+                DumpVkSurfacePresentModeCompatibilityKHR(p, "VkSurfacePresentModeCompatibilityKHR",
+                                                         SurfacePresentModeCompatibilityKHR);
             }
         }
     }
 }
 
 void DumpSurface(Printer &p, AppInstance &inst, AppGpu &gpu, AppSurface &surface, std::set<std::string> surface_types) {
-    ObjectWrapper obj(p, std::string("GPU id : ") + p.DecorateAsValue(std::to_string(gpu.id)) + " (" + gpu.props.deviceName + ")");
+    std::string surface_type_list_str = "";
+    if (surface_types.size() > 0) {
+        surface_type_list_str = " [";
+        bool is_first = true;
+        for (auto &name : surface_types) {
+            if (!is_first) {
+                surface_type_list_str += ", ";
+            } else {
+                is_first = false;
+            }
+            surface_type_list_str += name;
+        }
+        surface_type_list_str += "]";
+    }
+    ObjectWrapper obj(p, std::string("GPU id : ") + p.DecorateAsValue(std::to_string(gpu.id)) + " (" + gpu.props.deviceName + ")" +
+                             surface_type_list_str);
 
     if (surface_types.size() == 0) {
         p.SetAsType().PrintKeyString("Surface type", "No type found");

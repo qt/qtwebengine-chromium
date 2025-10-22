@@ -40,28 +40,28 @@ export function getReleaseNote(): ReleaseNote {
 }
 
 let releaseNote: ReleaseNote = {
-  version: 77,
-  header: 'What\'s new in DevTools 136',
+  version: 81,
+  header: 'What\'s new in DevTools 140',
   markdownLinks: [
     {
-      key: 'perf-insights',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-136/#perf-insights',
+      key: 'ai-insights',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-140/#ai-insights',
     },
     {
-      key: 'click-to-highlight',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-136/#click-to-highlight',
+      key: 'save-data',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-140/#save-data',
     },
     {
-      key: 'cookies-filter',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-136/#cookies-filter',
+      key: 'debug-css',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-138#debug-css-values',
     },
   ],
   videoLinks: [
     {
-      description: 'See the highlights from Chrome 136',
-      link: 'https://developer.chrome.com/blog/new-in-devtools-136' as Platform.DevToolsPath.UrlString,
+      description: 'See past highlights from Chrome 139',
+      link: 'https://developer.chrome.com/blog/new-in-devtools-139' as Platform.DevToolsPath.UrlString,
       type: VideoType.WHATS_NEW,
     },
   ],
-  link: 'https://developer.chrome.com/blog/new-in-devtools-136/',
+  link: 'https://developer.chrome.com/blog/new-in-devtools-140/',
 };

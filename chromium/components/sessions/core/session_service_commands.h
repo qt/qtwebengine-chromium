@@ -8,6 +8,7 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 
 #include "components/sessions/core/command_storage_manager.h"
@@ -53,6 +54,12 @@ CreateTabGroupMetadataUpdateCommand(
     const tab_groups::TabGroupId group,
     const tab_groups::TabGroupVisualData* visual_data,
     const std::optional<std::string> saved_guid = std::nullopt);
+SESSIONS_EXPORT std::unique_ptr<SessionCommand> CreateSplitTabCommand(
+    SessionID tab_id,
+    std::optional<split_tabs::SplitTabId> split_id);
+SESSIONS_EXPORT std::unique_ptr<SessionCommand> CreateSplitTabDataUpdateCommand(
+    const split_tabs::SplitTabId split_id,
+    const split_tabs::SplitTabVisualData* split_tab_visual_data);
 SESSIONS_EXPORT std::unique_ptr<SessionCommand> CreatePinnedStateCommand(
     SessionID tab_id,
     bool is_pinned);
@@ -126,14 +133,18 @@ SESSIONS_EXPORT bool ReplacePendingCommand(
 SESSIONS_EXPORT bool IsClosingCommand(SessionCommand* command);
 
 // Converts a list of commands into SessionWindows. On return any valid
-// windows are added to |valid_windows|. |active_window_id| will be set with the
+// windows are added to `valid_windows`. `active_window_id` will be set with the
 // id of the last active window, but it's only valid when this id corresponds
-// to the id of one of the windows in |valid_windows|.
+// to the id of one of the windows in `valid_windows`. Discarded
+// windows, eg: the ones with no tab or previously closed are inserted
+// into `discarded_window_ids`. If present, `platform_session_id` is set with
+// the window system level session id, on platforms that support it.
 SESSIONS_EXPORT void RestoreSessionFromCommands(
     const std::vector<std::unique_ptr<SessionCommand>>& commands,
     std::vector<std::unique_ptr<SessionWindow>>* valid_windows,
     SessionID* active_window_id,
-    std::string* platform_session_id);
+    std::string* platform_session_id,
+    std::set<SessionID>* discarded_window_ids);
 
 }  // namespace sessions
 

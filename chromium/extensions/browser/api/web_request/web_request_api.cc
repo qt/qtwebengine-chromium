@@ -17,7 +17,6 @@
 #include "base/lazy_instance.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/sequenced_task_runner.h"
@@ -64,6 +63,7 @@
 #include "extensions/common/mojom/context_type.mojom.h"
 #include "extensions/common/permissions/permissions_data.h"
 #include "extensions/common/url_pattern.h"
+#include "ipc/constants.mojom.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "net/base/auth.h"
 #include "net/cookies/site_for_cookies.h"
@@ -90,6 +90,8 @@ namespace extensions {
 namespace web_request = api::web_request;
 
 namespace {
+
+WebRequestAPI::TestObserver* g_test_observer = nullptr;
 
 // These values are persisted to logs. Entries should not be renumbered and
 // numeric values should never be reused.
@@ -231,7 +233,7 @@ void WebRequestAPI::ProxySet::RemoveProxy(Proxy* proxy) {
   }
 
   auto proxy_it = proxies_.find(proxy);
-  CHECK(proxy_it != proxies_.end(), base::NotFatalUntil::M130);
+  CHECK(proxy_it != proxies_.end());
   proxies_.erase(proxy_it);
 }
 
@@ -330,7 +332,7 @@ WebRequestAPI::WebRequestAPI(content::BrowserContext* context)
   // observe the EventRouter for each BrowserContext that has webRequest
   // API event listeners.
   // Observe related events in the EventRouter for the WebRequestEventRouter.
-  for (std::string event_name : WebRequestEventRouter::GetEventNames()) {
+  for (const std::string& event_name : WebRequestEventRouter::GetEventNames()) {
     event_router->RegisterObserver(this, event_name);
   }
   extensions::ExtensionRegistry::Get(browser_context_)->AddObserver(this);
@@ -357,6 +359,15 @@ BrowserContextKeyedAPIFactory<WebRequestAPI>*
 WebRequestAPI::GetFactoryInstance() {
   return g_factory.Pointer();
 }
+
+// static
+void WebRequestAPI::SetObserverForTest(TestObserver* observer) {
+  g_test_observer = observer;
+}
+
+WebRequestAPI::TestObserver::TestObserver() = default;
+
+WebRequestAPI::TestObserver::~TestObserver() = default;
 
 void WebRequestAPI::OnListenerRemoved(const EventListenerInfo& details) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -548,8 +559,9 @@ WebRequestAPI::ProxyDecision WebRequestAPI::MaybeProxyURLLoaderFactoryInternal(
               browser_context_));
   WebRequestProxyingURLLoaderFactory::StartProxying(
       browser_context, is_navigation ? -1 : render_process_id,
-      frame ? frame->GetRoutingID() : MSG_ROUTING_NONE,
-      frame ? frame->GetRenderViewHost()->GetRoutingID() : MSG_ROUTING_NONE,
+      frame ? frame->GetRoutingID() : IPC::mojom::kRoutingIdNone,
+      frame ? frame->GetRenderViewHost()->GetRoutingID()
+            : IPC::mojom::kRoutingIdNone,
       &request_id_generator_, std::move(navigation_ui_data),
       std::move(navigation_id), ukm_source_id, factory_builder,
       std::move(header_client_receiver), proxies_.get(), type,
@@ -643,8 +655,8 @@ void WebRequestAPI::ProxyWebTransport(
   StartWebRequestProxyingWebTransport(
       render_process_host, frame_routing_id, url, initiator_origin,
       std::move(handshake_client),
-      request_id_generator_.Generate(MSG_ROUTING_NONE, 0), *proxies_.get(),
-      std::move(callback));
+      request_id_generator_.Generate(IPC::mojom::kRoutingIdNone, 0),
+      *proxies_.get(), std::move(callback));
 }
 
 void WebRequestAPI::ForceProxyForTesting() {
@@ -700,10 +712,17 @@ bool WebRequestAPI::HasExtraHeadersListenerForTesting() {
       ->HasAnyExtraHeadersListener(browser_context_);
 }
 
+void WebRequestAPI::ResetURLLoaderFactories() {
+  browser_context_->GetDefaultStoragePartition()->ResetURLLoaderFactories();
+  if (g_test_observer) {
+    g_test_observer->OnDidResetURLLoaderFactories();
+  }
+}
+
 void WebRequestAPI::UpdateMayHaveProxies() {
   bool may_have_proxies = MayHaveProxies();
   if (!may_have_proxies_ && may_have_proxies) {
-    browser_context_->GetDefaultStoragePartition()->ResetURLLoaderFactories();
+    ResetURLLoaderFactories();
   }
   may_have_proxies_ = may_have_proxies;
 }

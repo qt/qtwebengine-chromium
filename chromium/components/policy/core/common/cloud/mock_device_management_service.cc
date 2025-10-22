@@ -8,6 +8,7 @@
 #include "base/functional/callback_helpers.h"
 #include "base/notreached.h"
 #include "base/strings/string_util.h"
+#include "base/task/sequenced_task_runner.h"
 #include "base/test/bind.h"
 #include "components/policy/core/common/cloud/dm_auth.h"
 #include "net/base/net_errors.h"
@@ -148,6 +149,15 @@ FakeDeviceManagementService::CaptureTimeout(base::TimeDelta* timeout) {
       auto to = job.GetConfigurationForTesting()->GetTimeoutDuration();
       if (to)
         *timeout = to.value();
+    }
+  };
+}
+
+FakeDeviceManagementService::JobAction
+FakeDeviceManagementService::CaptureSendsCookies(bool* sends_cookies) {
+  return [sends_cookies](DeviceManagementService::JobForTesting job) mutable {
+    if (job.IsActive()) {
+      *sends_cookies = job.GetConfigurationForTesting()->AreCookiesUsed();
     }
   };
 }

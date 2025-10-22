@@ -22,7 +22,7 @@
 #include "ui/base/metadata/metadata_header_macros.h"
 #include "ui/base/metadata/metadata_impl_macros.h"
 #include "ui/base/mojom/menu_source_type.mojom.h"
-#include "ui/base/ui_base_switches_util.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/compositor/layer.h"
 #include "ui/events/event.h"
 #include "ui/events/event_utils.h"
@@ -221,7 +221,7 @@ class PreEventDispatchHandler : public ui::EventHandler {
       v = owner_->GetFocusManager()->GetFocusedView();
     }
     // Special case to handle keyboard-triggered context menus.
-    if (v && v->GetEnabled() &&
+    if (v && v->GetEnabledInViewsSubtree() &&
         ((event->key_code() == ui::VKEY_APPS) ||
          (event->key_code() == ui::VKEY_F10 && event->IsShiftDown()))) {
       // Clamp the menu location within the visible bounds of each ancestor view
@@ -251,7 +251,7 @@ class PreEventDispatchHandler : public ui::EventHandler {
 class PostEventDispatchHandler : public ui::EventHandler {
  public:
   PostEventDispatchHandler()
-      : touch_dnd_enabled_(::switches::IsTouchDragDropEnabled()) {}
+      : touch_dnd_enabled_(::features::IsTouchDragAndDropEnabled()) {}
   PostEventDispatchHandler(const PostEventDispatchHandler&) = delete;
   PostEventDispatchHandler& operator=(const PostEventDispatchHandler&) = delete;
   ~PostEventDispatchHandler() override = default;
@@ -265,6 +265,9 @@ class PostEventDispatchHandler : public ui::EventHandler {
     }
 
     View* target = static_cast<View*>(event->target());
+    if (!target->GetEnabledInViewsSubtree()) {
+      return;
+    }
 
     gfx::Point location = event->location();
     if (touch_dnd_enabled_ &&
@@ -538,7 +541,6 @@ bool RootView::OnMousePressed(const ui::MouseEvent& event) {
        mouse_pressed_handler_ = mouse_pressed_handler_->parent()) {
     DVLOG(1) << "OnMousePressed testing "
              << mouse_pressed_handler_->GetClassName();
-    DCHECK(mouse_pressed_handler_->GetEnabled());
 
     // See if this view wants to handle the mouse press.
     ui::MouseEvent mouse_pressed_event(event, static_cast<View*>(this),
@@ -860,7 +862,7 @@ void RootView::HandleMouseEnteredOrMoved(const ui::MouseEvent& event) {
   // disabled while handling moves, it's wrong to suddenly send
   // EventType::kMouseExited and EventType::kMouseEntered events, because the
   // mouse hasn't actually exited yet.
-  if (mouse_move_handler_ && !mouse_move_handler_->GetEnabled() &&
+  if (mouse_move_handler_ && !mouse_move_handler_->GetEnabledInViewsSubtree() &&
       v->Contains(mouse_move_handler_)) {
     v = mouse_move_handler_;
   }

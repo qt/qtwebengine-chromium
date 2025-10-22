@@ -19,43 +19,38 @@
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
 
-#include "generated/instrumentation_descriptor_indexing_oob_bindless_comp.h"
-#include "generated/instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp.h"
-#include "generated/instrumentation_descriptor_indexing_oob_non_bindless_comp.h"
+#include "generated/gpuav_offline_spirv.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
+#include "utils/hash_util.h"
 
 namespace gpuav {
 namespace spirv {
 
-// This pass has 2 variations of GLSL we can pull in. Non-Bindless is simpler and we want to use when possible
-const static OfflineLinkInfo link_info_bindless = {instrumentation_descriptor_indexing_oob_bindless_comp,
-                                                   instrumentation_descriptor_indexing_oob_bindless_comp_size,
-                                                   "inst_descriptor_indexing_oob_bindless"};
+const static OfflineModule kOfflineModule = {instrumentation_descriptor_indexing_oob_comp,
+                                             instrumentation_descriptor_indexing_oob_comp_size, UseErrorPayloadVariable};
 
-const static OfflineLinkInfo link_info_bindless_combined_image_sampler = {
-    instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp,
-    instrumentation_descriptor_indexing_oob_bindless_combined_image_sampler_comp_size,
-    "inst_descriptor_indexing_oob_bindless_combined_image_sampler"};
+// Non-Bindless is simpler and we want to use when possible
+const static OfflineFunction kOfflineFunctionNonBindless = {"inst_descriptor_indexing_oob_non_bindless",
+                                                            instrumentation_descriptor_indexing_oob_comp_function_0_offset};
+const static OfflineFunction kOfflineFunctionBindless = {"inst_descriptor_indexing_oob_bindless",
+                                                         instrumentation_descriptor_indexing_oob_comp_function_1_offset};
+const static OfflineFunction kOfflineFunctionBindlessCombined = {"inst_descriptor_indexing_oob_bindless_combined_image_sampler",
+                                                                 instrumentation_descriptor_indexing_oob_comp_function_2_offset};
 
-const static OfflineLinkInfo link_info_non_bindless = {instrumentation_descriptor_indexing_oob_non_bindless_comp,
-                                                       instrumentation_descriptor_indexing_oob_non_bindless_comp_size,
-                                                       "inst_descriptor_indexing_oob_non_bindless"};
-
-DescriptorIndexingOOBPass::DescriptorIndexingOOBPass(Module& module) : Pass(module) { module.use_bda_ = true; }
+DescriptorIndexingOOBPass::DescriptorIndexingOOBPass(Module& module) : Pass(module, kOfflineModule) { module.use_bda_ = true; }
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
 uint32_t DescriptorIndexingOOBPass::GetLinkFunctionId(bool is_combined_image_sampler) {
     if (!module_.has_bindless_descriptors_) {
-        return module_.GetLinkFunction(link_non_bindless_id_, link_info_non_bindless);
+        return GetLinkFunction(link_non_bindless_id_, kOfflineFunctionNonBindless);
     } else if (is_combined_image_sampler) {
-        return module_.GetLinkFunction(link_bindless_combined_image_sampler_id_, link_info_bindless_combined_image_sampler);
+        return GetLinkFunction(link_bindless_combined_image_sampler_id_, kOfflineFunctionBindlessCombined);
     } else {
-        return module_.GetLinkFunction(link_bindless_id_, link_info_bindless);
+        return GetLinkFunction(link_bindless_id_, kOfflineFunctionBindless);
     }
 }
 
-uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it,
-                                                       const InjectionData& injection_data, const InstructionMeta& meta) {
+uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     const Constant& set_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_set);
     const Constant& binding_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_binding);
     const uint32_t descriptor_index_id = CastToUint32(meta.descriptor_index_id, block, inst_it);  // might be int32
@@ -92,15 +87,19 @@ uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, Instru
     const Constant& binding_layout_size = module_.type_manager_.GetConstantUInt32(binding_layout.count);
     const Constant& binding_layout_offset = module_.type_manager_.GetConstantUInt32(binding_layout.start);
 
+    const uint32_t inst_position = meta.target_instruction->GetPositionIndex();
+    const uint32_t inst_position_id = module_.type_manager_.CreateConstantUInt32(inst_position).Id();
+
     uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId(meta.is_combined_image_sampler);
     const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
 
-    block.CreateInstruction(
-        spv::OpFunctionCall,
-        {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id, set_constant.Id(),
-         binding_constant.Id(), descriptor_index_id, binding_layout_size.Id(), binding_layout_offset.Id()},
-        inst_it);
+    block.CreateInstruction(spv::OpFunctionCall,
+                            {bool_type, function_result, function_def, inst_position_id, set_constant.Id(), binding_constant.Id(),
+                             descriptor_index_id, binding_layout_size.Id(), binding_layout_offset.Id()},
+                            inst_it);
+
+    module_.need_log_error_ = true;
 
     // If there is a SAMPLER as well, we will inject a second function and combined boolean:
     //     bool valid_image = inst_descriptor_indexing_oob(image);
@@ -120,11 +119,11 @@ uint32_t DescriptorIndexingOOBPass::CreateFunctionCall(BasicBlock& block, Instru
         const Constant& sampler_binding_layout_size = module_.type_manager_.GetConstantUInt32(sampler_binding_layout.count);
         const Constant& sampler_binding_layout_offset = module_.type_manager_.GetConstantUInt32(sampler_binding_layout.start);
 
-        block.CreateInstruction(spv::OpFunctionCall,
-                                {bool_type, valid_sampler, function_def, injection_data.inst_position_id,
-                                 injection_data.stage_info_id, sampler_set_constant.Id(), sampler_binding_constant.Id(),
-                                 sampler_descriptor_index_id, sampler_binding_layout_size.Id(), sampler_binding_layout_offset.Id()},
-                                inst_it);
+        block.CreateInstruction(
+            spv::OpFunctionCall,
+            {bool_type, valid_sampler, function_def, inst_position_id, sampler_set_constant.Id(), sampler_binding_constant.Id(),
+             sampler_descriptor_index_id, sampler_binding_layout_size.Id(), sampler_binding_layout_offset.Id()},
+            inst_it);
 
         function_result = module_.TakeNextId();  // valid_both
         block.CreateInstruction(spv::OpLogicalAnd, {bool_type, function_result, valid_image, valid_sampler}, inst_it);
@@ -179,7 +178,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
         const Variable* variable = nullptr;
         const Instruction* access_chain_inst = function.FindInstruction(inst.Operand(0));
         // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
-        while (access_chain_inst && access_chain_inst->Opcode() == spv::OpAccessChain) {
+        while (access_chain_inst && access_chain_inst->IsNonPtrAccessChain()) {
             const uint32_t access_chain_base_id = access_chain_inst->Operand(0);
             variable = module_.type_manager_.FindVariableById(access_chain_base_id);
             if (variable) {
@@ -257,11 +256,11 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
             const Variable* global_var = module_.type_manager_.FindVariableById(load_inst->Operand(0));
             meta.var_inst = global_var ? &global_var->inst_ : nullptr;
         }
-        if (!meta.var_inst || (meta.var_inst->Opcode() != spv::OpAccessChain && meta.var_inst->Opcode() != spv::OpVariable)) {
+        if (!meta.var_inst || (!meta.var_inst->IsNonPtrAccessChain() && meta.var_inst->Opcode() != spv::OpVariable)) {
             return false;
         }
 
-        if (meta.var_inst->Opcode() == spv::OpAccessChain) {
+        if (meta.var_inst->IsNonPtrAccessChain()) {
             array_found = true;
             meta.descriptor_index_id = meta.var_inst->Operand(1);
 
@@ -303,7 +302,7 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
         return false;
     }
 
-    if (module_.settings_.unsafe_mode) {
+    if (!module_.settings_.safe_mode) {
         auto variable_found_it = block_instrumented_table_.find(variable_id);
         if (variable_found_it == block_instrumented_table_.end()) {
             block_instrumented_table_[variable_id] = {meta.descriptor_index_id};
@@ -327,11 +326,11 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
             meta.sampler_var_inst = global_var ? &global_var->inst_ : nullptr;
         }
         if (!meta.sampler_var_inst ||
-            (meta.sampler_var_inst->Opcode() != spv::OpAccessChain && meta.sampler_var_inst->Opcode() != spv::OpVariable)) {
+            (!meta.sampler_var_inst->IsNonPtrAccessChain() && meta.sampler_var_inst->Opcode() != spv::OpVariable)) {
             return false;
         }
 
-        if (meta.sampler_var_inst->Opcode() == spv::OpAccessChain) {
+        if (meta.sampler_var_inst->IsNonPtrAccessChain()) {
             array_found = true;
             meta.sampler_descriptor_index_id = meta.sampler_var_inst->Operand(1);
 
@@ -371,7 +370,6 @@ bool DescriptorIndexingOOBPass::RequiresInstrumentation(const Function& function
 
     return true;
 }
-
 bool DescriptorIndexingOOBPass::Instrument() {
     if (module_.set_index_to_bindings_layout_lut_.empty()) {
         return false;  // If there is no bindings, nothing to instrument
@@ -384,6 +382,9 @@ bool DescriptorIndexingOOBPass::Instrument() {
     // Can safely loop function list as there is no injecting of new Functions until linking time
     for (const auto& function : module_.functions_) {
         if (function->instrumentation_added_) continue;
+
+        FunctionDuplicateTracker function_duplicate_tracker;
+
         for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
@@ -401,7 +402,15 @@ bool DescriptorIndexingOOBPass::Instrument() {
             }
             is_original_new_block = true;  // Always reset once we start
 
+            // We only need to instrument the set/binding/index combo once per block (in unsafe mode)
+            BlockDuplicateTracker& block_duplicate_tracker = function_duplicate_tracker.GetAndUpdate(current_block);
+            DescriptroIndexPushConstantAccess pc_access;
+
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
+                if (module_.settings_.safe_mode) {
+                    pc_access.Update(module_, inst_it);
+                }
+
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
                 if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) {
@@ -425,16 +434,25 @@ bool DescriptorIndexingOOBPass::Instrument() {
                     continue;
                 }
 
+                if (!module_.settings_.safe_mode) {
+                    const uint32_t hash_descriptor_index_id = pc_access.next_alias_id == meta.descriptor_index_id
+                                                                  ? pc_access.descriptor_index_id
+                                                                  : meta.descriptor_index_id;
+                    uint32_t hash_content[3] = {meta.descriptor_set, meta.descriptor_binding, hash_descriptor_index_id};
+                    const uint32_t hash = hash_util::Hash32(hash_content, sizeof(uint32_t) * 3);
+                    if (function_duplicate_tracker.FindAndUpdate(block_duplicate_tracker, hash)) {
+                        continue;  // duplicate detected
+                    }
+                }
+
                 if (IsMaxInstrumentationsCount()) continue;
                 instrumentations_count_++;
 
-                InjectionData injection_data = GetInjectionData(*function, current_block, inst_it, *meta.target_instruction);
-
-                if (module_.settings_.unsafe_mode) {
-                    CreateFunctionCall(current_block, &inst_it, injection_data, meta);
+                if (!module_.settings_.safe_mode) {
+                    CreateFunctionCall(current_block, &inst_it, meta);
                 } else {
                     InjectConditionalData ic_data = InjectFunctionPre(*function.get(), block_it, inst_it);
-                    ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, injection_data, meta);
+                    ic_data.function_result_id = CreateFunctionCall(current_block, nullptr, meta);
                     InjectFunctionPost(current_block, ic_data);
                     // Skip the newly added valid and invalid block. Start searching again from newly split merge block
                     block_it++;

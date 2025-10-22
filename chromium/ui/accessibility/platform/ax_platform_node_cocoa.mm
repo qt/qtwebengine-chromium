@@ -13,6 +13,7 @@
 #include "base/mac/mac_util.h"
 #include "base/memory/raw_ptr_exclusion.h"
 #include "base/no_destructor.h"
+#include "base/notimplemented.h"
 #include "base/strings/sys_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -537,14 +538,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   return _node != nullptr;
 }
 
-- (BOOL)isIncludedInPlatformTree {
-  // TODO(accessibility): Do we really need to have invisible objects in
-  // the platform tree?
-  return [self instanceActive] &&
-         ![[self AXRole] isEqualToString:NSAccessibilityUnknownRole] &&
-         !_node->IsInvisibleOrIgnored();
-}
-
 - (id)titleUIElement {
   // True only if it's a control, if there's a single label, and the label has
   // nonempty text.
@@ -579,7 +572,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   if (ui::IsRadio(role) || ui::IsCheckBox(role))
     return nil;
 
-  return label->GetNativeViewAccessible();
+  return label->GetNativeViewAccessible().Get();
 }
 
 - (BOOL)isNameFromLabel {
@@ -603,9 +596,9 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 
   // No label for windows or native dialogs.
   ax::mojom::Role role = _node->GetRole();
-  if (ui::IsWindow(role) ||
-      (ui::IsDialog(role) && !_node->GetDelegate()->IsWebContent()))
+  if (ui::IsWindow(role) || (ui::IsDialog(role) && !_node->IsWebContent())) {
     return false;
+  }
 
   // VoiceOver computes the wrong description for a link.
   if (ui::IsLink(role))
@@ -673,7 +666,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   for (auto& attributeValue : attributeValues) {
     ui::AXPlatformNode* node = delegate->GetFromNodeID(attributeValue);
     if (node) {
-      [elements addObject:node->GetNativeViewAccessible()];
+      [elements addObject:node->GetNativeViewAccessible().Get()];
     }
   }
   return elements;
@@ -688,7 +681,9 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
       treeItemIds->push_back(childDelegate->GetId());
     }
     gfx::NativeViewAccessible child = childDelegate->GetNativeViewAccessible();
-    [child getTreeItemDescendantNodeIds:treeItemIds];
+    AXPlatformNodeCocoa* childCocoa =
+        base::apple::ObjCCastStrict<AXPlatformNodeCocoa>(child.Get());
+    [childCocoa getTreeItemDescendantNodeIds:treeItemIds];
   }
 }
 
@@ -833,8 +828,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
       return NSAccessibilityButtonRole;
     case ax::mojom::Role::kCanvas:
       return NSAccessibilityImageRole;
-    case ax::mojom::Role::kCaret:
-      return NSAccessibilityUnknownRole;
     case ax::mojom::Role::kCell:
       return @"AXCell";
     case ax::mojom::Role::kCheckBox:
@@ -891,14 +884,10 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
       return @"AXHeading";
     case ax::mojom::Role::kImage:
       return NSAccessibilityImageRole;
-    case ax::mojom::Role::kImeCandidate:
-      return NSAccessibilityUnknownRole;
     case ax::mojom::Role::kInlineTextBox:
       return NSAccessibilityStaticTextRole;
     case ax::mojom::Role::kInputTime:
       return @"AXTimeField";
-    case ax::mojom::Role::kKeyboard:
-      return NSAccessibilityUnknownRole;
     case ax::mojom::Role::kLink:
       return NSAccessibilityLinkRole;
     case ax::mojom::Role::kList:
@@ -938,13 +927,11 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     case ax::mojom::Role::kRadioGroup:
       return NSAccessibilityRadioGroupRole;
     case ax::mojom::Role::kRootWebArea:
-      return NSAccessibilityWebAreaRole;
+      return CrNSAccessibilityWebAreaRole;
     case ax::mojom::Role::kRow:
       return NSAccessibilityRowRole;
     case ax::mojom::Role::kRowHeader:
       return @"AXCell";
-    case ax::mojom::Role::kRubyAnnotation:
-      return NSAccessibilityUnknownRole;
     case ax::mojom::Role::kScrollBar:
       return NSAccessibilityScrollBarRole;
     case ax::mojom::Role::kScrollView:
@@ -984,19 +971,26 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     case ax::mojom::Role::kTreeItem:
       return NSAccessibilityRowRole;
     case ax::mojom::Role::kUnknown:
-      return NSAccessibilityUnknownRole;
+      // This occurs in the case where a View has no widget, and while this will
+      // not be exposed to users, it allows isAccessibilityElement() to have
+      // fewer rules.
+      return NSAccessibilityGroupRole;
     case ax::mojom::Role::kWindow:
       // Use the group role as the BrowserNativeWidgetWindow already provides
       // a kWindow role, and having extra window roles, which are treated
       // specially by screen readers, can break their ability to find the
       // content window. See http://crbug.com/875843 for more information.
       return NSAccessibilityGroupRole;
+    case ax::mojom::Role::kCaret:
     case ax::mojom::Role::kDescriptionListTermDeprecated:
     case ax::mojom::Role::kDescriptionListDetailDeprecated:
     case ax::mojom::Role::kDirectoryDeprecated:
+    case ax::mojom::Role::kImeCandidate:
+    case ax::mojom::Role::kKeyboard:
     case ax::mojom::Role::kPreDeprecated:
     case ax::mojom::Role::kPortalDeprecated:
-      NOTREACHED();
+    case ax::mojom::Role::kRubyAnnotation:
+      NOTREACHED() << "The following role should not be present: " << role;
   }
 }
 
@@ -1030,8 +1024,9 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 }
 
 - (NSRect)boundsInScreen {
-  if (!_node || !_node->GetDelegate())
+  if (!_node) {
     return NSZeroRect;
+  }
   return gfx::ScreenRectToNSRect(_node->GetDelegate()->GetBoundsRect(
       ui::AXCoordinateSystem::kScreenDIPs, ui::AXClippingBehavior::kClipped));
 }
@@ -1049,19 +1044,15 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 }
 
 - (ax::mojom::Role)internalRole {
-  if ([self instanceActive]) {
-    ax::mojom::Role role = static_cast<ax::mojom::Role>(_node->GetRole());
-    // Make sure to use Role::kPopupButton instead of Role::kButton for all
-    // values of kHasPopup. This is normally already true, but the default
-    // implementation does not use kPopupButton if aria-haspopup="dialog".
-    if (role == ax::mojom::Role::kButton &&
-        _node->HasIntAttribute(ax::mojom::IntAttribute::kHasPopup)) {
-      return ax::mojom::Role::kPopUpButton;
-    }
-    return role;
+  ax::mojom::Role role = static_cast<ax::mojom::Role>(_node->GetRole());
+  // Make sure to use Role::kPopupButton instead of Role::kButton for all
+  // values of kHasPopup. This is normally already true, but the default
+  // implementation does not use kPopupButton if aria-haspopup="dialog".
+  if (role == ax::mojom::Role::kButton &&
+      _node->HasIntAttribute(ax::mojom::IntAttribute::kHasPopup)) {
+    return ax::mojom::Role::kPopUpButton;
   }
-
-  return ax::mojom::Role::kUnknown;
+  return role;
 }
 
 - (BOOL)hasAction:(ax::mojom::Action)action {
@@ -1081,8 +1072,10 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 
 - (AXPlatformNodeCocoa*)fromNodeID:(ui::AXNodeID)id {
   ui::AXPlatformNode* cell = _node->GetDelegate()->GetFromNodeID(id);
-  if (cell)
-    return cell->GetNativeViewAccessible();
+  if (cell) {
+    return base::apple::ObjCCast<AXPlatformNodeCocoa>(
+        cell->GetNativeViewAccessible().Get());
+  }
   return nil;
 }
 
@@ -1090,8 +1083,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   bool has_image_semantics =
       ui::IsImage(_node->GetRole()) &&
       !_node->GetBoolAttribute(ax::mojom::BoolAttribute::kCanvasHasFallback) &&
-      !_node->GetChildCount() &&
-      _node->GetNameFrom() != ax::mojom::NameFrom::kAttributeExplicitlyEmpty;
+      !_node->GetChildCount();
 #if DCHECK_IS_ON()
   bool is_native_image =
       [[self accessibilityRole] isEqualToString:NSAccessibilityImageRole];
@@ -1371,7 +1363,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 }
 
 - (id)accessibilityFocusedUIElement {
-  return _node ? _node->GetDelegate()->GetFocus() : nil;
+  return _node ? _node->GetDelegate()->GetFocus().Get() : nil;
 }
 
 // This function and accessibilityPerformAction:, while deprecated, are a) still
@@ -1497,7 +1489,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 
   // These attributes are required on all accessibility objects.
   NSArray* const kAllRoleAttributes = @[
-    NSAccessibilityBlockQuoteLevelAttribute, NSAccessibilityChildrenAttribute,
+    CrNSAccessibilityBlockQuoteLevelAttribute, NSAccessibilityChildrenAttribute,
     NSAccessibilityDOMClassList, NSAccessibilityDOMIdentifierAttribute,
     NSAccessibilityDescriptionAttribute, NSAccessibilityElementBusyAttribute,
     NSAccessibilityParentAttribute, NSAccessibilityPositionAttribute,
@@ -1510,8 +1502,9 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     // Attributes which are not required, but are general to all roles.
     NSAccessibilityRoleDescriptionAttribute, NSAccessibilityEnabledAttribute,
     NSAccessibilityFocusedAttribute, NSAccessibilityHelpAttribute,
-    NSAccessibilityTopLevelUIElementAttribute, NSAccessibilityVisitedAttribute,
-    NSAccessibilityWindowAttribute, NSAccessibilityChromeAXNodeIdAttribute
+    NSAccessibilityTopLevelUIElementAttribute,
+    CrNSAccessibilityVisitedAttribute, NSAccessibilityWindowAttribute,
+    NSAccessibilityChromeAXNodeIdAttribute
   ];
   // Attributes required for user-editable controls.
   NSArray* const kValueAttributes = @[ NSAccessibilityValueAttribute ];
@@ -1615,7 +1608,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   if (ui::IsSetLike(role))
     [axAttributes addObject:@"AXARIASetSize"];
 
-  if ([[self accessibilityRole] isEqualToString:NSAccessibilityWebAreaRole]) {
+  if ([[self accessibilityRole] isEqualToString:CrNSAccessibilityWebAreaRole]) {
     [axAttributes addObjectsFromArray:@[
       NSAccessibilityLoadedAttribute, NSAccessibilityLoadingProgressAttribute
     ]];
@@ -1731,6 +1724,21 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   TRACE_EVENT1("accessibility",
                "AXPlatformNodeCocoa::accessibilityAttributeNames",
                "role=", ui::ToString([self internalRole]));
+
+  if (![self instanceActive]) {
+    LOG(ERROR) << "Stale object in tree, no AXPlatformNode.";
+    return @[];
+  }
+
+  if (!_node->GetDelegate()) {
+    LOG(ERROR) << "Stale object in tree, no delegate.";
+    return @[];
+  }
+
+  // No need to compute attribute names for ignored nodes.
+  if (![self isAccessibilityElement]) {
+    return @[];
+  }
 
   // Exclude attributes available through the new accessibility API.
   NSMutableArray* attributes = [self internalAccessibilityAttributeNames];
@@ -2066,7 +2074,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   ui::AXPlatformNodeBase* text_field_ancestor =
       _node->GetPlatformTextFieldAncestor();
   if (text_field_ancestor)
-    return text_field_ancestor->GetNativeViewAccessible();
+    return text_field_ancestor->GetNativeViewAccessible().Get();
   return nil;
 }
 
@@ -2170,7 +2178,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   if (!container)
     return nil;
 
-  return @[ container->GetNativeViewAccessible() ];
+  return @[ container->GetNativeViewAccessible().Get() ];
 }
 
 - (NSString*)AXPopupValue {
@@ -2316,13 +2324,13 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   // The assignment to ancestor may be null.
   if (!ancestor)
     return nil;
-  return ancestor->GetNativeViewAccessible();
+  return ancestor->GetNativeViewAccessible().Get();
 }
 
 - (id)AXParent {
   if (!_node)
     return nil;
-  return NSAccessibilityUnignoredAncestor(_node->GetParent());
+  return NSAccessibilityUnignoredAncestor(_node->GetParent().Get());
 }
 
 - (NSArray*)accessibilityChildren {
@@ -2334,14 +2342,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   for (auto child_iterator_ptr = _node->GetDelegate()->ChildrenBegin();
        *child_iterator_ptr != *_node->GetDelegate()->ChildrenEnd();
        ++(*child_iterator_ptr)) {
-    ui::AXPlatformNodeDelegate* child = child_iterator_ptr->get();
-    if (child && child->IsInvisibleOrIgnored()) {
-      [children
-          addObjectsFromArray:[child_iterator_ptr->GetNativeViewAccessible()
-                                  accessibilityChildren]];
-    } else {
-      [children addObject:child_iterator_ptr->GetNativeViewAccessible()];
-    }
+    [children addObject:child_iterator_ptr->GetNativeViewAccessible().Get()];
   }
   return NSAccessibilityUnignoredChildren(children);
 }
@@ -2352,7 +2353,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 }
 
 - (id)AXWindow {
-  return _node->GetDelegate()->GetNSWindow();
+  return _node->GetDelegate()->GetNSWindow().Get();
 }
 
 - (id)AXTopLevelUIElement {
@@ -2428,8 +2429,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 
 // LINT.IfChange
 - (NSString*)AXSelectedText {
-  NSRange selectedTextRange;
-  [[self AXSelectedTextRange] getValue:&selectedTextRange];
+  NSRange selectedTextRange = [[self AXSelectedTextRange] rangeValue];
   return [[self getAXValueAsString] substringWithRange:selectedTextRange];
 }
 // LINT.ThenChange(accessibilitySelectedText)
@@ -2614,12 +2614,27 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 
 // NSAccessibility: Configuring Accessibility.
 - (BOOL)isAccessibilityElement {
-  if (![self instanceActive])
+  if (!_node) {
     return NO;
+  }
+  DCHECK(_node->GetDelegate());
+  DCHECK([self instanceActive]);
 
-  return (![[[self class] nativeRoleFromAXRole:_node->GetRole()]
-              isEqualToString:NSAccessibilityUnknownRole] &&
-          !_node->GetDelegate()->IsIgnored());
+  // After ViewsAX lands, we should be able to add this DCHECK.
+  // DCHECK(!_node->GetDelegate()->IsIgnored())
+  //     << "Ignored nodes should be removed by PlatformGet*() methods:"
+  //     << _node->GetDelegate()->ToString();
+
+  if (_node->GetDelegate()->IsInvisibleOrIgnored()) {
+    return NO;
+  }
+
+  if ([self internalRole] == ax::mojom::Role::kImage &&
+      _node->GetData().GetNameFrom() ==
+          ax::mojom::NameFrom::kAttributeExplicitlyEmpty) {
+    return NO;
+  }
+  return YES;
 }
 
 - (BOOL)isAccessibilityEnabled {
@@ -2699,7 +2714,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
                                 &targetId)) {
     ui::AXPlatformNode* target = delegate->GetFromNodeID(targetId);
     if (target) {
-      [elements addObject:target->GetNativeViewAccessible()];
+      [elements addObject:target->GetNativeViewAccessible().Get()];
     }
   }
 
@@ -2911,7 +2926,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     case ax::mojom::Role::kHeader:  // Default: IDS_AX_ROLE_HEADER
       return l10n_util::GetNSString(IDS_AX_ROLE_BANNER);
     case ax::mojom::Role::kRootWebArea: {
-      if ([role isEqualToString:NSAccessibilityWebAreaRole]) {
+      if ([role isEqualToString:CrNSAccessibilityWebAreaRole]) {
         return l10n_util::GetNSString(IDS_AX_ROLE_WEB_AREA);
       }
       // Preserve platform default of "group" in the case of the child
@@ -2955,7 +2970,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   }
 
   ui::AXPlatformNodeDelegate* delegate = _node->GetDelegate();
-  DCHECK(delegate);
 
   NSMutableArray* ret = [NSMutableArray array];
 
@@ -2988,7 +3002,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   }
 
   ui::AXPlatformNodeDelegate* tableDelegate = table->GetDelegate();
-  DCHECK(tableDelegate);
   for (ui::AXNodeID id : tableDelegate->GetColHeaderNodeIds(*column)) {
     AXPlatformNodeCocoa* colheader = [self fromNodeID:id];
     if (colheader) {
@@ -3006,7 +3019,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
 
   if (ui::IsTableLike(_node->GetRole())) {
     ui::AXPlatformNodeDelegate* delegate = _node->GetDelegate();
-    DCHECK(delegate);
     // The table header container is a special node in the accessibility tree
     // only used on macOS. It has all of the table headers as its children, even
     // though those cells are also children of rows in the table. Internally
@@ -3051,7 +3063,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   }
 
   ui::AXPlatformNodeDelegate* delegate = _node->GetDelegate();
-  DCHECK(delegate);
   std::optional<int> count = delegate->GetTableColCount();
   if (count.has_value()) {
     return *count;
@@ -3070,7 +3081,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   }
 
   ui::AXPlatformNodeDelegate* delegate = _node->GetDelegate();
-  DCHECK(delegate);
   std::optional<int> count = delegate->GetTableRowCount();
   if (count.has_value()) {
     return *count;
@@ -3105,9 +3115,6 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   }
 
   ui::AXPlatformNodeDelegate* tableDelegate = tableNode->GetDelegate();
-  if (!tableDelegate) {
-    return nil;
-  }
 
   // A table with no row headers.
   if (isTableLike && !tableDelegate->GetTableRowCount().has_value()) {
@@ -3134,7 +3141,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     for (int32_t headerId : headerIds) {
       ui::AXPlatformNode* cellNode = tableDelegate->GetFromNodeID(headerId);
       if (cellNode) {
-        [rowHeaders addObject:cellNode->GetNativeViewAccessible()];
+        [rowHeaders addObject:cellNode->GetNativeViewAccessible().Get()];
       }
     }
   } else {
@@ -3142,7 +3149,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     for (int32_t nodeId : delegate->GetRowHeaderNodeIds()) {
       ui::AXPlatformNode* cellNode = delegate->GetFromNodeID(nodeId);
       if (cellNode) {
-        [rowHeaders addObject:cellNode->GetNativeViewAccessible()];
+        [rowHeaders addObject:cellNode->GetNativeViewAccessible().Get()];
       }
     }
   }
@@ -3196,7 +3203,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   for (int32_t nodeId : nodeIds) {
     ui::AXPlatformNode* rowNode = delegate->GetFromNodeID(nodeId);
     if (rowNode) {
-      [rows addObject:rowNode->GetNativeViewAccessible()];
+      [rows addObject:rowNode->GetNativeViewAccessible().Get()];
     }
   }
 
@@ -3513,10 +3520,11 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     return nil;
 
   std::string url;
-  if ([[self accessibilityRole] isEqualToString:NSAccessibilityWebAreaRole])
+  if ([[self accessibilityRole] isEqualToString:CrNSAccessibilityWebAreaRole]) {
     url = _node->GetDelegate()->GetTreeData().url;
-  else
+  } else {
     url = _node->GetStringAttribute(ax::mojom::StringAttribute::kUrl);
+  }
 
   if (url.empty())
     return nil;
@@ -3569,7 +3577,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     if (auto* delegate = target->GetDelegate()) {
       if (delegate->GetRole() == ax::mojom::Role::kScrollBar &&
           delegate->HasState(state)) {
-        return target->GetNativeViewAccessible();
+        return target->GetNativeViewAccessible().Get();
       }
     }
   }
@@ -3613,7 +3621,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
     return nil;
   }
 
-  return cell->GetNativeViewAccessible();
+  return cell->GetNativeViewAccessible().Get();
 }
 // LINT.ThenChange(ui/accessibility/platform/browser_accessibility_cocoa.mm:accessibilityCellForColumn)
 
@@ -3674,7 +3682,7 @@ const ui::CocoaActionList& GetCocoaActionListForTesting() {
   for (int32_t id : table->GetTableUniqueCellIds()) {
     ui::AXPlatformNode* cell = table->GetFromNodeID(id);
     if (cell) {
-      [cells addObject:cell->GetNativeViewAccessible()];
+      [cells addObject:cell->GetNativeViewAccessible().Get()];
     }
   }
   return cells;

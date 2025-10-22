@@ -8,6 +8,8 @@
 
 #include <memory>
 
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/to_string.h"
 #include "base/test/metrics/histogram_enum_reader.h"
 #include "base/test/metrics/histogram_tester.h"
@@ -31,6 +33,7 @@
 #include "content/public/browser/navigation_handle.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/mock_navigation_handle.h"
+#include "content/public/test/mock_navigation_throttle_registry.h"
 #include "content/public/test/test_renderer_host.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -82,6 +85,10 @@ class FPFPageActivationThrottleTest
     RenderViewHostTestHarness::SetUp();
     mock_nav_handle_ = std::make_unique<content::MockNavigationHandle>(
         RenderViewHostTestHarness::web_contents());
+    mock_nav_registry_ =
+        std::make_unique<content::MockNavigationThrottleRegistry>(
+            mock_nav_handle_.get(),
+            content::MockNavigationThrottleRegistry::RegistrationMode::kHold);
   }
 
   void TearDown() override {
@@ -93,6 +100,7 @@ class FPFPageActivationThrottleTest
   base::test::ScopedFeatureList scoped_feature_list_;
   TestSupport test_support_;
   std::unique_ptr<content::MockNavigationHandle> mock_nav_handle_;
+  std::unique_ptr<content::MockNavigationThrottleRegistry> mock_nav_registry_;
 };
 
 MATCHER_P(WithActivationDecision,
@@ -112,7 +120,7 @@ TEST_F(FPFPageActivationThrottleTest, FlagDisabled_IsUnknown) {
   // Use a mock throttle to test GetActivationDecision() by making EXPECT_CALL
   // on public function.
   auto mock_throttle = MockFingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   // Expect that NotifyResult is called with UNKNOWN ActivationDecision.
@@ -125,7 +133,7 @@ TEST_F(FPFPageActivationThrottleTest, FlagDisabled_IsUnknown) {
 
   // Initialize a real throttle to test histograms are emitted as expected.
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   throttle.WillProcessResponse();
@@ -146,7 +154,7 @@ TEST_F(FPFPageActivationThrottleTest,
   // Use a mock throttle to test GetActivationDecision() by making EXPECT_CALL
   // on public function.
   auto mock_throttle = MockFingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   // Expect NotifyResult is called with ACTIVATED ActivationDecision.
@@ -159,7 +167,7 @@ TEST_F(FPFPageActivationThrottleTest,
 
   // Initialize a real throttle to test histograms are emitted as expected.
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   throttle.WillProcessResponse();
@@ -184,7 +192,7 @@ TEST_F(FPFPageActivationThrottleTest, FlagEnabledWithDryRun_IsActivated) {
   // Use a mock throttle to test GetActivationDecision() by making EXPECT_CALL
   // on public function.
   auto mock_throttle = MockFingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   // Expect that NotifyResult is called with ACTIVATED ActivationDecision.
@@ -197,7 +205,7 @@ TEST_F(FPFPageActivationThrottleTest, FlagEnabledWithDryRun_IsActivated) {
 
   // Initialize a real throttle to test histograms are emitted as expected.
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   throttle.WillProcessResponse();
@@ -223,7 +231,7 @@ TEST_F(FPFPageActivationThrottleTest,
   // Use a mock throttle to test GetActivationDecision() by making EXPECT_CALL
   // on public function.
   auto mock_throttle = MockFingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   // Expect that NotifyResult is called with ACTIVATION_DISABLED
@@ -237,7 +245,7 @@ TEST_F(FPFPageActivationThrottleTest,
 
   // Initialize a real throttle to test histograms are emitted as expected.
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   throttle.WillProcessResponse();
@@ -270,7 +278,7 @@ TEST_F(FPFPageActivationThrottleTest,
       GURL("http://cool.things.com"));
 
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   throttle.WillProcessResponse();
@@ -298,7 +306,8 @@ TEST_F(FPFPageActivationThrottleTest,
   ukm::TestAutoSetUkmRecorder test_ukm_recorder;
   scoped_feature_list_.InitWithFeatures(
       {features::kEnableFingerprintingProtectionFilter},
-      {privacy_sandbox::kActUserBypassUx});
+      {privacy_sandbox::kActUserBypassUx,
+       privacy_sandbox::kFingerprintingProtectionUx});
 
   // Initialize a real throttle to test histograms are emitted as expected.
   mock_nav_handle_->set_url(GURL("http://cool.things.com"));
@@ -309,7 +318,7 @@ TEST_F(FPFPageActivationThrottleTest,
       ContentSettingsType::COOKIES, CONTENT_SETTING_ALLOW);
 
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
 
   throttle.WillProcessResponse();
@@ -334,7 +343,8 @@ TEST_F(
   base::HistogramTester histograms;
   scoped_feature_list_.InitWithFeatures(
       {features::kEnableFingerprintingProtectionFilter,
-       privacy_sandbox::kActUserBypassUx},
+       privacy_sandbox::kActUserBypassUx,
+       privacy_sandbox::kFingerprintingProtectionUx},
       {});
 
   mock_nav_handle_->set_url(GURL("http://cool.things.com"));
@@ -344,9 +354,15 @@ TEST_F(
       ContentSettingsPattern::FromURL(GURL("http://cool.things.com")),
       ContentSettingsType::COOKIES, CONTENT_SETTING_ALLOW);
 
+  // Create TrackingProtectionSettings for incognito mode.
+  auto tracking_protection_settings =
+      std::make_unique<privacy_sandbox::TrackingProtectionSettings>(
+          test_support_.prefs(), test_support_.content_settings(),
+          /*management_service=*/nullptr, true);
+
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
-      test_support_.tracking_protection_settings(), test_support_.prefs());
+      *mock_nav_registry_, test_support_.content_settings(),
+      tracking_protection_settings.get(), test_support_.prefs(), true);
 
   throttle.WillProcessResponse();
 
@@ -378,7 +394,7 @@ TEST_F(FPFPageActivationThrottleTest,
       ContentSettingsType::COOKIES, CONTENT_SETTING_ALLOW);
 
   auto throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs(),
       /*is_incognito=*/true);
 
@@ -415,7 +431,7 @@ TEST_F(FPFPageActivationThrottleTest,
   // Use a mock throttle to mock NotifyPageActivationComputed
   auto mock_throttle =
       MockActivationThrottleMockingNotifyPageActivationComputed(
-          mock_nav_handle_.get(), test_support_.content_settings(),
+          *mock_nav_registry_, test_support_.content_settings(),
           test_support_.tracking_protection_settings(), test_support_.prefs());
 
   // Expect that NotifyPageActivationComputed is called with an ActivationState
@@ -439,7 +455,7 @@ TEST_F(FPFPageActivationThrottleTest,
   // Use a mock throttle to mock NotifyPageActivationComputed
   auto mock_throttle =
       MockActivationThrottleMockingNotifyPageActivationComputed(
-          mock_nav_handle_.get(), test_support_.content_settings(),
+          *mock_nav_registry_, test_support_.content_settings(),
           test_support_.tracking_protection_settings(), test_support_.prefs(),
           /*is_incognito=*/true);
 
@@ -464,7 +480,7 @@ TEST_F(
   // Use a mock throttle to mock NotifyPageActivationComputed
   auto mock_throttle =
       MockActivationThrottleMockingNotifyPageActivationComputed(
-          mock_nav_handle_.get(), test_support_.content_settings(),
+          *mock_nav_registry_, test_support_.content_settings(),
           test_support_.tracking_protection_settings(), test_support_.prefs());
 
   // Expect that NotifyPageActivationComputed is called with an ActivationState
@@ -511,11 +527,18 @@ class FPFPageActivationThrottleWithTrackingProtectionSettingTest
     RenderViewHostTestHarness::SetUp();
     mock_nav_handle_ = std::make_unique<content::MockNavigationHandle>(
         RenderViewHostTestHarness::web_contents());
+    mock_nav_registry_ =
+        std::make_unique<content::MockNavigationThrottleRegistry>(
+            mock_nav_handle_.get(),
+            content::MockNavigationThrottleRegistry::RegistrationMode::kHold);
     scoped_feature_list_.InitWithFeatures(
-        // FingerprintingProtectionUx flag isn't used together with
-        // `EnableFingerprintingProtectionFilter(InIncognito)`.
-        {privacy_sandbox::kFingerprintingProtectionUx},
-        /*disabled_features=*/{});
+        // The FingerprintingProtectionUx flag is used together with
+        // `EnableFingerprintingProtectionFilterInIncognito` to enable the FPF
+        // in incognito.
+        {privacy_sandbox::kFingerprintingProtectionUx,
+         features::kEnableFingerprintingProtectionFilterInIncognito},
+        /*disabled_features=*/{
+            features::kEnableFingerprintingProtectionFilter});
   }
 
   void TearDown() override {
@@ -527,7 +550,43 @@ class FPFPageActivationThrottleWithTrackingProtectionSettingTest
   base::test::ScopedFeatureList scoped_feature_list_;
   TestSupport test_support_;
   std::unique_ptr<content::MockNavigationHandle> mock_nav_handle_;
+  std::unique_ptr<content::MockNavigationThrottleRegistry> mock_nav_registry_;
 };
+
+TEST_F(FPFPageActivationThrottleWithTrackingProtectionSettingTest,
+       TrackingProtectionSettingsIgnoredOutsideOfIncognitoMode) {
+  scoped_feature_list_.Reset();
+  // Enable non-incognito as well as incognito features.
+  scoped_feature_list_.InitWithFeatures(
+      /*enabled_features=*/
+      {privacy_sandbox::kFingerprintingProtectionUx,
+       features::kEnableFingerprintingProtectionFilterInIncognito,
+       features::kEnableFingerprintingProtectionFilter},
+      /*disabled_features=*/{});
+
+  // Set FP to disabled in prefs.
+  test_support_.prefs()->SetBoolean(prefs::kFingerprintingProtectionEnabled,
+                                    false);
+
+  // Create TrackingProtectionSettings for regular browsing.
+  auto tracking_protection_settings =
+      std::make_unique<privacy_sandbox::TrackingProtectionSettings>(
+          test_support_.prefs(), test_support_.content_settings(),
+          /*management_service=*/nullptr, /*is_incognito=*/false);
+
+  // Create ActivationThrottle with the TrackingProtectionSettings for regular
+  // browsing.
+  auto test_throttle = FingerprintingProtectionPageActivationThrottle(
+      *mock_nav_registry_, test_support_.content_settings(),
+      tracking_protection_settings.get(), test_support_.prefs(),
+      /*is_incognito=*/false);
+
+  // Activation should default to enabled irrespective of
+  // TrackingProtectionSettings.
+  GetActivationResult activation = test_throttle.GetActivation();
+  EXPECT_EQ(activation.level, ActivationLevel::kEnabled);
+  EXPECT_EQ(activation.decision, ActivationDecision::ACTIVATED);
+}
 
 const FPFGetActivationWithTrackingProtectionSettingTestCase
     kGetActivationWithTrackingProtectionSettingTestCases[] = {
@@ -540,7 +599,7 @@ const FPFGetActivationWithTrackingProtectionSettingTestCase
          .is_incognito = false,
          .tps_fp_setting_enabled = true,
          .expected_level = ActivationLevel::kDisabled,
-         .expected_decision = ActivationDecision::ACTIVATION_DISABLED},
+         .expected_decision = ActivationDecision::UNKNOWN},
         {.test_name = "TPSettingDisabled_Incognito_Disabled",
          .is_incognito = true,
          .tps_fp_setting_enabled = false,
@@ -550,7 +609,7 @@ const FPFGetActivationWithTrackingProtectionSettingTestCase
          .is_incognito = false,
          .tps_fp_setting_enabled = false,
          .expected_level = ActivationLevel::kDisabled,
-         .expected_decision = ActivationDecision::ACTIVATION_DISABLED}};
+         .expected_decision = ActivationDecision::UNKNOWN}};
 
 INSTANTIATE_TEST_SUITE_P(
     FPFPageActivationThrottleWithTrackingProtectionSettingTestSuiteInstantiation,
@@ -574,12 +633,12 @@ TEST_P(FPFPageActivationThrottleWithTrackingProtectionSettingTest,
   auto tracking_protection_settings =
       std::make_unique<privacy_sandbox::TrackingProtectionSettings>(
           test_support_.prefs(), test_support_.content_settings(),
-          test_case.is_incognito);
+          /*management_service=*/nullptr, test_case.is_incognito);
 
   // Create ActivationThrottle with the TrackingProtectionSettings, and
   // specified incognito mode.
   auto test_throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       tracking_protection_settings.get(), test_support_.prefs(),
       test_case.is_incognito);
 
@@ -612,9 +671,14 @@ class FPFPageActivationThrottleTestRefreshHeuristicUmaTest
     content::RenderViewHostTestHarness::SetUp();
     mock_nav_handle_ = std::make_unique<content::MockNavigationHandle>(
         RenderViewHostTestHarness::web_contents());
+    mock_nav_registry_ =
+        std::make_unique<content::MockNavigationThrottleRegistry>(
+            mock_nav_handle_.get(),
+            content::MockNavigationThrottleRegistry::RegistrationMode::kHold);
   }
 
   void TearDown() override {
+    mock_nav_registry_.reset();
     mock_nav_handle_.reset();
     RenderViewHostTestHarness::TearDown();
   }
@@ -636,6 +700,7 @@ class FPFPageActivationThrottleTestRefreshHeuristicUmaTest
  protected:
   TestSupport test_support_;
   std::unique_ptr<content::MockNavigationHandle> mock_nav_handle_;
+  std::unique_ptr<content::MockNavigationThrottleRegistry> mock_nav_registry_;
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
@@ -691,7 +756,7 @@ TEST_P(FPFPageActivationThrottleTestRefreshHeuristicUmaTest,
 
   // Call `GetActivation` on throttle to trigger UMAs.
   auto test_throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
   test_throttle.GetActivation();
 
@@ -731,6 +796,7 @@ struct FPFGetActivationTestCase {
   bool site_has_tp_exception;
   bool site_has_refresh_heuristic_breakage_exception;
   bool only_if_3pc_blocked_param;
+  bool is_localhost;
   content_settings::CookieControlsMode cookie_controls_mode =
       content_settings::CookieControlsMode::kBlockThirdParty;
 
@@ -746,14 +812,20 @@ class FPFPageActivationThrottleTestGetActivationTest
   FPFPageActivationThrottleTestGetActivationTest() = default;
 
   GURL GetTestUrl() { return GURL("http://cool.things.com"); }
+  GURL GetLocalhostUrl() { return GURL("http://localhost:8000"); }
 
   void SetUp() override {
     content::RenderViewHostTestHarness::SetUp();
     mock_nav_handle_ = std::make_unique<content::MockNavigationHandle>(
         RenderViewHostTestHarness::web_contents());
+    mock_nav_registry_ =
+        std::make_unique<content::MockNavigationThrottleRegistry>(
+            mock_nav_handle_.get(),
+            content::MockNavigationThrottleRegistry::RegistrationMode::kHold);
   }
 
   void TearDown() override {
+    mock_nav_registry_.reset();
     mock_nav_handle_.reset();
     RenderViewHostTestHarness::TearDown();
   }
@@ -791,6 +863,7 @@ class FPFPageActivationThrottleTestGetActivationTest
  protected:
   TestSupport test_support_;
   std::unique_ptr<content::MockNavigationHandle> mock_nav_handle_;
+  std::unique_ptr<content::MockNavigationThrottleRegistry> mock_nav_registry_;
   base::test::ScopedFeatureList scoped_feature_list_;
 };
 
@@ -800,6 +873,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kEnabled,
      .site_has_tp_exception = false,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
 
      .expected_level = ActivationLevel::kEnabled,
      .expected_decision = ActivationDecision::ACTIVATED},
@@ -809,6 +883,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kEnabled,
      .site_has_tp_exception = false,
      .only_if_3pc_blocked_param = true,
+     .is_localhost = false,
      .cookie_controls_mode =
          content_settings::CookieControlsMode::kBlockThirdParty,
 
@@ -820,6 +895,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kEnabled,
      .site_has_tp_exception = false,
      .only_if_3pc_blocked_param = true,
+     .is_localhost = false,
      .cookie_controls_mode = content_settings::CookieControlsMode::kOff,
 
      .expected_level = ActivationLevel::kDisabled,
@@ -829,6 +905,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kEnabled,
      .site_has_tp_exception = true,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
 
      .expected_level = ActivationLevel::kDisabled,
      .expected_decision = ActivationDecision::URL_ALLOWLISTED},
@@ -837,6 +914,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kEnabled,
      .site_has_tp_exception = true,
      .only_if_3pc_blocked_param = true,
+     .is_localhost = false,
      .cookie_controls_mode =
          content_settings::CookieControlsMode::kBlockThirdParty,
 
@@ -848,6 +926,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kEnabled,
      .site_has_tp_exception = true,
      .only_if_3pc_blocked_param = true,
+     .is_localhost = false,
      .cookie_controls_mode = content_settings::CookieControlsMode::kOff,
 
      .expected_level = ActivationLevel::kDisabled,
@@ -860,6 +939,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .site_has_tp_exception = false,
      .site_has_refresh_heuristic_breakage_exception = true,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
      .cookie_controls_mode = content_settings::CookieControlsMode::kOff,
 
      .expected_level = ActivationLevel::kEnabled,
@@ -872,6 +952,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .site_has_tp_exception = false,
      .site_has_refresh_heuristic_breakage_exception = true,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
      .cookie_controls_mode = content_settings::CookieControlsMode::kOff,
 
      .expected_level = ActivationLevel::kDisabled,
@@ -884,6 +965,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .site_has_tp_exception = false,
      .site_has_refresh_heuristic_breakage_exception = false,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
      .cookie_controls_mode = content_settings::CookieControlsMode::kOff,
 
      .expected_level = ActivationLevel::kEnabled,
@@ -896,6 +978,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kDisabled,
      .site_has_tp_exception = false,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
 
      .expected_level = ActivationLevel::kDisabled,
      .expected_decision = ActivationDecision::UNKNOWN},
@@ -904,9 +987,19 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kDisabled,
      .site_has_tp_exception = true,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
 
      .expected_level = ActivationLevel::kDisabled,
      .expected_decision = ActivationDecision::UNKNOWN},
+    {.test_name = "FPFDisabled_Localhost",
+     .is_fp_feature_enabled = true,
+     .activation_level_param = ActivationLevel::kEnabled,
+     .site_has_tp_exception = false,
+     .only_if_3pc_blocked_param = false,
+     .is_localhost = true,
+
+     .expected_level = ActivationLevel::kDisabled,
+     .expected_decision = ActivationDecision::ACTIVATION_CONDITIONS_NOT_MET},
     // Not testing all permutations with dry_run because the expected return
     // value is the same.
     {.test_name = "FPFEnabled_ActivationDryRun_NoException",
@@ -914,6 +1007,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kDryRun,
      .site_has_tp_exception = false,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
 
      .expected_level = ActivationLevel::kDryRun,
      .expected_decision = ActivationDecision::ACTIVATED},
@@ -922,6 +1016,7 @@ const FPFGetActivationTestCase kGetActivationTestCases[] = {
      .activation_level_param = ActivationLevel::kDryRun,
      .site_has_tp_exception = true,
      .only_if_3pc_blocked_param = false,
+     .is_localhost = false,
 
      .expected_level = ActivationLevel::kDryRun,
      .expected_decision = ActivationDecision::ACTIVATED},
@@ -958,12 +1053,13 @@ TEST_P(FPFPageActivationThrottleTestGetActivationTest,
         ->AddTrackingProtectionException(GetTestUrl());
   }
 
-  // Navigate to the test url.
-  mock_nav_handle_->set_url(GetTestUrl());
+  // Navigate to the test url, use localhost url when testing localhost.
+  mock_nav_handle_->set_url(test_case.is_localhost ? GetLocalhostUrl()
+                                                   : GetTestUrl());
 
   // Prepare the manager under test and input with initial_decision param.
   auto test_throttle = FingerprintingProtectionPageActivationThrottle(
-      mock_nav_handle_.get(), test_support_.content_settings(),
+      *mock_nav_registry_, test_support_.content_settings(),
       test_support_.tracking_protection_settings(), test_support_.prefs());
   GetActivationResult activation = test_throttle.GetActivation();
 

@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
 #include "api/audio/audio_frame.h"
 #include "api/audio_codecs/audio_encoder.h"
 #include "api/audio_codecs/audio_format.h"
@@ -90,6 +91,10 @@ class ChannelSendInterface {
   virtual void OnBitrateAllocation(BitrateAllocationUpdate update) = 0;
   virtual int GetTargetBitrate() const = 0;
   virtual void SetInputMute(bool muted) = 0;
+  // Sets the list of CSRCs to be included in the RTP header. If more than
+  // kRtpCsrcSize CSRCs are provided, only the first kRtpCsrcSize elements are
+  // kept.
+  virtual void SetCsrcs(ArrayView<const uint32_t> csrcs) = 0;
 
   virtual void ProcessAndEncodeAudio(
       std::unique_ptr<AudioFrame> audio_frame) = 0;
@@ -100,13 +105,12 @@ class ChannelSendInterface {
 
   // E2EE Custom Audio Frame Encryption (Optional)
   virtual void SetFrameEncryptor(
-      rtc::scoped_refptr<FrameEncryptorInterface> frame_encryptor) = 0;
+      scoped_refptr<FrameEncryptorInterface> frame_encryptor) = 0;
 
   // Sets a frame transformer between encoder and packetizer, to transform
   // encoded frames before sending them out the network.
   virtual void SetEncoderToPacketizerFrameTransformer(
-      rtc::scoped_refptr<webrtc::FrameTransformerInterface>
-          frame_transformer) = 0;
+      scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer) = 0;
 
   // Returns payload bitrate actually used.
   virtual std::optional<DataRate> GetUsedRate() const = 0;
@@ -124,7 +128,7 @@ std::unique_ptr<ChannelSendInterface> CreateChannelSend(
     bool extmap_allow_mixed,
     int rtcp_report_interval_ms,
     uint32_t ssrc,
-    rtc::scoped_refptr<FrameTransformerInterface> frame_transformer,
+    scoped_refptr<FrameTransformerInterface> frame_transformer,
     RtpTransportControllerSendInterface* transport_controller);
 
 }  // namespace voe

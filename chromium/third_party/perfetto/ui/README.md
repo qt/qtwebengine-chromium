@@ -3,7 +3,7 @@
 ## Quick Start
 
 ```bash
-$ git clone https://android.googlesource.com/platform/external/perfetto/
+$ git clone https://github.com/google/perfetto/
 $ cd perfetto
 
 # Install build dependencies
@@ -21,7 +21,7 @@ ui/run-dev-server
 
 Then navigate to `http://localhost:10000`.
 
-See also https://perfetto.dev/docs/contributing/build-instructions#ui-development
+See also https://perfetto.dev/docs/contributing/ui-getting-started
 
 ## Unit tests
 

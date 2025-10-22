@@ -19,10 +19,7 @@ cc_library(
         "pcp.h",
         "webrtc_state.h",
     ],
-    visibility = [
-        "//connections:__subpackages__",
-        "//sharing:__subpackages__",
-    ],
+    visibility = ["//connections:__subpackages__"],
 )
 
 cc_library(
@@ -33,13 +30,11 @@ cc_library(
     hdrs = [
         "ble_advertisement.h",
     ],
-    visibility = [
-        "//connections:__subpackages__",
-        "//sharing:__subpackages__",
-    ],
+    visibility = ["//connections:__subpackages__"],
     deps = [
         ":types",
         "//internal/platform:base",
+        "//internal/platform:mac_address",
         "//internal/platform:types",
         "//internal/platform:util",
         "@com_google_absl//absl/status",
@@ -52,6 +47,8 @@ cc_library(
 cc_library(
     name = "internal",
     srcs = [
+        "awdl_bwu_handler.cc",
+        "awdl_endpoint_channel.cc",
         "base_bwu_handler.cc",
         "base_endpoint_channel.cc",
         "base_pcp_handler.cc",
@@ -92,6 +89,8 @@ cc_library(
         "wifi_lan_service_info.cc",
     ],
     hdrs = [
+        "awdl_bwu_handler.h",
+        "awdl_endpoint_channel.h",
         "base_bwu_handler.h",
         "base_endpoint_channel.h",
         "base_pcp_handler.h",
@@ -172,6 +171,7 @@ cc_library(
         "//internal/platform:comm",
         "//internal/platform:connection_info",
         "//internal/platform:error_code_recorder",
+        "//internal/platform:mac_address",
         "//internal/platform:types",
         "//internal/platform:util",
         "//internal/platform/implementation:comm",
@@ -293,7 +293,6 @@ cc_test(
     ],
     shard_count = 8,
     deps = [
-        ":ble_advertisement",
         ":internal",
         ":internal_test",
         ":types",
@@ -332,6 +331,7 @@ cc_test(
         ":internal",
         ":types",
         "//internal/platform:base",
+        "//internal/platform:mac_address",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_absl//absl/status",
@@ -548,6 +548,7 @@ cc_test(
         ":internal",
         "//internal/platform:base",
         "//internal/platform:comm",
+        "//internal/platform:mac_address",
         "//internal/platform/implementation/g3",  # build_cleaner: keep
         "@com_github_protobuf_matchers//protobuf-matchers",
         "@com_google_googletest//:gtest_main",

@@ -18,6 +18,10 @@
 #include "./fuzztest/internal/registry.h"
 #include "./fuzztest/internal/runtime.h"
 
+#ifdef FUZZTEST_USE_CENTIPEDE
+#include "./fuzztest/internal/centipede_adaptor.h"
+#endif
+
 namespace fuzztest::internal {
 
 std::vector<std::string> GTest_TestAdaptor::GetFuzzTestsInCurrentShard() const {
@@ -57,9 +61,16 @@ template <typename T>
 void RegisterSeparateRegressionTestForEachCrashingInput(
     int* argc, char*** argv, FuzzTest& test,
     const Configuration& configuration) {
+  if (!configuration.reproduce_findings_as_separate_tests) return;
+#ifdef FUZZTEST_USE_CENTIPEDE
+  const auto crash_inputs =
+      ListCrashIdsUsingCentipede(configuration, test.full_name());
+#else
   CorpusDatabase corpus_database(configuration);
-  for (const std::string& input :
-       corpus_database.GetCrashingInputsIfAny(test.full_name())) {
+  const auto crash_inputs =
+      corpus_database.GetCrashingInputsIfAny(test.full_name());
+#endif
+  for (const std::string& input : crash_inputs) {
     Configuration updated_configuration = configuration;
     updated_configuration.crashing_input_to_reproduce = input;
     const std::string suffix =
@@ -160,6 +171,9 @@ void SetFuzzTestListingModeValidatorForGoogleTest(bool listing_mode) {
 std::vector<const testing::TestInfo*> GetRegisteredTests() {
   std::vector<const testing::TestInfo*> result;
   auto& unit_test = *testing::UnitTest::GetInstance();
+  // TODO(b/416466508): Remove this call once the bug is fixed. This function is
+  // internal to GoogleTest.
+  unit_test.parameterized_test_registry().RegisterTests();
   for (int i = 0; i < unit_test.total_test_suite_count(); ++i) {
     for (int j = 0; j < unit_test.GetTestSuite(i)->total_test_count(); ++j) {
       result.push_back(unit_test.GetTestSuite(i)->GetTestInfo(j));

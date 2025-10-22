@@ -195,7 +195,7 @@ const char kCalendarReadOnlyOAuth2Scope[] =
 
 // OAuth 2 scope for Google Password Manager passkey enclaves.
 const char kPasskeysEnclaveOAuth2Scope[] =
-  "https://www.googleapis.com/auth/secureidentity.action";
+    "https://www.googleapis.com/auth/secureidentity.action";
 
 // OAuth2 scope for Cloud Search query API.
 const char kCloudSearchQueryOAuth2Scope[] =
@@ -204,6 +204,14 @@ const char kCloudSearchQueryOAuth2Scope[] =
 // OAuth2 scope for Discovery Engine suggestion API.
 const char kDiscoveryEngineCompleteQueryOAuth2Scope[] =
     "https://www.googleapis.com/auth/discoveryengine.complete_query";
+
+// OAuth2 scope for Gemini app.
+const char kGeminiOAuth2Scope[] = "https://www.googleapis.com/auth/gemini";
+
+// OAuth2 scope for Chrome Memex API, used in the Chrome Shopping Insights
+// Side Panel.
+const char kChromeMemexOAuth2Scope[] =
+    "https://www.googleapis.com/auth/chromememex";
 
 // OAuth 2 scopes for Google Tasks API.
 const char kTasksReadOnlyOAuth2Scope[] =

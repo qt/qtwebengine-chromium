@@ -82,7 +82,7 @@ std::string to_hex_str(Printer &p, const T i) {
 # used in the .cpp code
 STRUCTURES_TO_GEN = ['VkExtent3D', 'VkExtent2D', 'VkPhysicalDeviceLimits', 'VkPhysicalDeviceFeatures', 'VkPhysicalDeviceSparseProperties',
                      'VkSurfaceCapabilitiesKHR', 'VkSurfaceFormatKHR', 'VkLayerProperties', 'VkPhysicalDeviceToolProperties', 'VkFormatProperties',
-                     'VkSurfacePresentScalingCapabilitiesEXT', 'VkSurfacePresentModeCompatibilityEXT', 'VkPhysicalDeviceHostImageCopyProperties',
+                     'VkSurfacePresentScalingCapabilitiesKHR', 'VkSurfacePresentModeCompatibilityKHR', 'VkPhysicalDeviceHostImageCopyProperties',
                      'VkVideoProfileInfoKHR', 'VkVideoCapabilitiesKHR', 'VkVideoFormatPropertiesKHR']
 ENUMS_TO_GEN = ['VkResult', 'VkFormat', 'VkPresentModeKHR',
                 'VkPhysicalDeviceType', 'VkImageTiling']
@@ -138,7 +138,7 @@ EXTENSION_CATEGORIES = OrderedDict((
          'holder_type': 'VkSurfaceCapabilities2KHR',
          'print_iterator': True,
          'can_show_promoted_structs': False,
-         'exclude': ['VkSurfacePresentScalingCapabilitiesEXT', 'VkSurfacePresentModeCompatibilityEXT']}),
+         'exclude': ['VkSurfacePresentScalingCapabilitiesKHR', 'VkSurfacePresentModeCompatibilityKHR']}),
     ('format_properties2',
         {'extends': 'VkFormatProperties2',
          'type': EXTENSION_TYPE_DEVICE,
@@ -1145,7 +1145,7 @@ def PrintStructure(struct):
             out += f'    p.PrintKeyBool("{v.name}", static_cast<bool>(obj.{v.name}));\n'
         elif v.typeID == 'uint8_t':
             out += f'    p.PrintKeyValue("{v.name}", static_cast<uint32_t>(obj.{v.name}));\n'
-        elif v.typeID == 'VkDeviceSize':
+        elif v.typeID == 'VkDeviceSize' or (v.typeID == 'uint32_t' and v.name in ['vendorID', 'deviceID']):
             out += f'    p.PrintKeyValue("{v.name}", to_hex_str(p, obj.{v.name}));\n'
         elif v.typeID in PREDEFINED_TYPES:
             out += f'    p.PrintKeyValue("{v.name}", obj.{v.name});\n'

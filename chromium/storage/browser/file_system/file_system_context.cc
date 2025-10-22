@@ -12,6 +12,7 @@
 
 #include "base/containers/contains.h"
 #include "base/containers/flat_set.h"
+#include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
@@ -41,7 +42,6 @@
 #include "storage/browser/file_system/file_system_quota_client.h"
 #include "storage/browser/file_system/file_system_request_info.h"
 #include "storage/browser/file_system/file_system_url.h"
-#include "storage/browser/file_system/file_system_util.h"
 #include "storage/browser/file_system/isolated_context.h"
 #include "storage/browser/file_system/isolated_file_system_backend.h"
 #include "storage/browser/file_system/mount_points.h"
@@ -329,6 +329,7 @@ FileSystemBackend* FileSystemContext::GetFileSystemBackend(
   if (found != backend_map_.end()) {
     return found->second;
   }
+  SCOPED_CRASH_KEY_NUMBER("398002857", "file_system_type", type);
   NOTREACHED() << "Unknown filesystem type: " << type;
 }
 

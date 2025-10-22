@@ -110,7 +110,7 @@ public class CafMessageHandlerTest {
     }
 
     void setUpForAppMessageTest() throws JSONException {
-        List<String> namespaces = new ArrayList<String>();
+        List<String> namespaces = new ArrayList<>();
         namespaces.add(NAMESPACE1);
         doReturn(namespaces).when(mSessionController).getNamespaces();
         doReturn(true)
@@ -415,12 +415,9 @@ public class CafMessageHandlerTest {
         JSONObject innerMessage =
                 new JSONObject()
                         .put("type", "SET_VOLUME")
-                        .put(
-                                "volume",
-                                new JSONObject().put("level", (double) 1).put("muted", false));
+                        .put("volume", new JSONObject().put("level", 1.0).put("muted", false));
         JSONObject message = buildCastV2Message(CLIENT_ID1, innerMessage);
         assertTrue(mMessageHandler.handleMessageFromClient(message.toString()));
-        JSONObject volumeMessage = innerMessage.getJSONObject("volume");
         verify(mSession).setMute(false);
         verify(mSession).setVolume(1.0);
         verify(mMessageHandler)
@@ -438,12 +435,9 @@ public class CafMessageHandlerTest {
         JSONObject innerMessage =
                 new JSONObject()
                         .put("type", "SET_VOLUME")
-                        .put(
-                                "volume",
-                                new JSONObject().put("level", (double) 1).put("muted", false));
+                        .put("volume", new JSONObject().put("level", 1.0).put("muted", false));
         JSONObject message = buildCastV2Message(CLIENT_ID1, innerMessage);
         assertTrue(mMessageHandler.handleMessageFromClient(message.toString()));
-        JSONObject volumeMessage = innerMessage.getJSONObject("volume");
         verify(mSession, never()).setMute(anyBoolean());
         verify(mSession, never()).setVolume(anyDouble());
         verify(mMessageHandler)
@@ -906,7 +900,7 @@ public class CafMessageHandlerTest {
                 .when(mMessageHandler)
                 .sendEnclosedMessageToClient(anyString(), anyString(), anyString(), anyInt());
         assertEquals(0, mMessageHandler.getStopRequestsForTest().size());
-        mMessageHandler.getStopRequestsForTest().put(CLIENT_ID1, new ArrayDeque<Integer>());
+        mMessageHandler.getStopRequestsForTest().put(CLIENT_ID1, new ArrayDeque<>());
         mMessageHandler.getStopRequestsForTest().get(CLIENT_ID1).add(SEQUENCE_NUMBER1);
         mMessageHandler.getStopRequestsForTest().get(CLIENT_ID1).add(SEQUENCE_NUMBER2);
         assertEquals(1, mMessageHandler.getStopRequestsForTest().size());

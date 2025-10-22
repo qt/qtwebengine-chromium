@@ -10,12 +10,9 @@ from typing_extensions import override
 
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
-from crossbench.probes.results import EmptyProbeResult
 
 if TYPE_CHECKING:
-  from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
-  from crossbench.runner.groups.repetitions import RepetitionsRunGroup
   from crossbench.types import Json
 
 
@@ -24,10 +21,7 @@ class SystemDetailsProbe(InternalJsonResultProbe):
   Runner-internal meta-probe: Collects the browser's system/platform details.
   """
   NAME = "cb.system.details"
-
-  @override
-  def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
-    return EmptyProbeResult()
+  AUTO_MERGE_REPETITIONS = False
 
   @override
   def get_context_cls(self) -> Type[InternalJsonResultProbeContext]:

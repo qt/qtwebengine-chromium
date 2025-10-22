@@ -232,8 +232,7 @@ int AXComputedNodeData::GetOrComputeTextContentLengthUTF16() const {
 bool AXComputedNodeData::CanInferNameAttribute() const {
   // The name may be suppressed when serializing an AXInlineTextBox if it
   // can be inferred from the parent.
-  return ::features::IsAccessibilityPruneRedundantInlineTextEnabled() &&
-         owner_->data().role == ax::mojom::Role::kInlineTextBox &&
+  return owner_->data().role == ax::mojom::Role::kInlineTextBox &&
          owner_->data().GetNameFrom() == ax::mojom::NameFrom::kContents &&
          owner_->GetParent()->data().GetNameFrom() ==
              ax::mojom::NameFrom::kContents &&
@@ -256,12 +255,11 @@ void AXComputedNodeData::ComputeUnignoredValues(
     unignored_parent_id_for_child = owner_->id();
   int unignored_child_count = 0;
   std::vector<AXNodeID> unignored_child_ids;
-  for (auto iter = owner_->AllChildrenBegin(); iter != owner_->AllChildrenEnd();
-       ++iter) {
-    const AXComputedNodeData& computed_data = iter->GetComputedNodeData();
+  for (AXNode* child : owner_->GetAllChildren()) {
+    const AXComputedNodeData& computed_data = child->GetComputedNodeData();
     int new_index_in_parent = starting_index_in_parent + unignored_child_count;
 
-    if (iter->IsIgnored()) {
+    if (child->IsIgnored()) {
       // Skip the ignored node and recursively look at its children.
       computed_data.ComputeUnignoredValues(unignored_parent_id_for_child,
                                            new_index_in_parent);
@@ -282,7 +280,7 @@ void AXComputedNodeData::ComputeUnignoredValues(
         computed_data.unignored_parent_id_ = unignored_parent_id_for_child;
 
       ++unignored_child_count;
-      unignored_child_ids.push_back(iter->id());
+      unignored_child_ids.push_back(child->id());
     }
   }
 
@@ -419,12 +417,10 @@ std::string AXComputedNodeData::ComputeTextContentUTF8() const {
   // the same as the parent. We can differentiate this case from a specified
   // but empty name based on the name from attribute, which is kFromContent if
   // set and kNone if the text content is to be inferred from the parent.
-  if (::features::IsAccessibilityPruneRedundantInlineTextEnabled()) {
-    if (owner_->data().role == ax::mojom::Role::kInlineTextBox &&
-        !owner_->data().HasStringAttribute(ax::mojom::StringAttribute::kName)) {
-      return owner_->GetParent()->data().GetStringAttribute(
-          ax::mojom::StringAttribute::kName);
-    }
+  if (owner_->data().role == ax::mojom::Role::kInlineTextBox &&
+      !owner_->data().HasStringAttribute(ax::mojom::StringAttribute::kName)) {
+    return owner_->GetParent()->data().GetStringAttribute(
+        ax::mojom::StringAttribute::kName);
   }
 
   // If a text field has no descendants, then we compute its text content from
@@ -476,7 +472,7 @@ std::string AXComputedNodeData::ComputeTextContentUTF8() const {
       // visible via e.g. a tooltip.
       case ax::mojom::NameFrom::kTitle:
       case ax::mojom::NameFrom::kPopoverTarget:
-      case ax::mojom::NameFrom::kInterestTarget:
+      case ax::mojom::NameFrom::kInterestFor:
         return std::string();
 
       case ax::mojom::NameFrom::kContents:
@@ -492,8 +488,9 @@ std::string AXComputedNodeData::ComputeTextContentUTF8() const {
   }
 
   std::string text_content;
-  for (auto it = owner_->UnignoredChildrenCrossingTreeBoundaryBegin();
-       it != owner_->UnignoredChildrenCrossingTreeBoundaryEnd(); ++it) {
+  for (auto it = owner_->UnignoredChildrenCrossingTreeBoundaryBegin(),
+            end = owner_->UnignoredChildrenCrossingTreeBoundaryEnd();
+       it != end; ++it) {
     text_content += it->GetTextContentUTF8();
   }
   return text_content;

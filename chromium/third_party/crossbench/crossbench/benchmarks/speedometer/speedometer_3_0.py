@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Tuple, Type
+from typing import TYPE_CHECKING, Type
 
 from typing_extensions import override
 
@@ -38,6 +38,7 @@ class Speedometer30Story(Speedometer3Story):
   NAME: str = "speedometer_3.0"
   URL: str = "https://chromium-workloads.web.app/speedometer/v3.0/"
   URL_OFFICIAL: str = "https://browserbench.org/Speedometer3.0/"
+  URL_CHROME_FORK: str = "https://chromium-workloads.web.app/speedometer/v3.0-custom/"
 
 
 class Speedometer30Benchmark(Speedometer3Benchmark):
@@ -52,8 +53,3 @@ class Speedometer30Benchmark(Speedometer3Benchmark):
   @override
   def version(cls) -> VersionParts:
     return (3, 0)
-
-  @classmethod
-  @override
-  def aliases(cls) -> Tuple[str, ...]:
-    return ("sp3", "speedometer_3") + super().aliases()

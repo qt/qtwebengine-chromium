@@ -14,12 +14,14 @@
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
 #include "base/no_destructor.h"
+#include "base/notimplemented.h"
 #include "base/observer_list.h"
 #include "base/sequence_checker.h"
 #include "base/strings/string_util.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
 #include "base/timer/timer.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "net/base/network_change_notifier_factory.h"
 #include "net/base/network_interfaces.h"
@@ -845,7 +847,8 @@ NetworkChangeNotifier::NetworkChangeNotifier(
     /*= NetworkChangeCalculatorParams()*/,
     SystemDnsConfigChangeNotifier* system_dns_config_notifier /*= nullptr */,
     bool omit_observers_in_constructor_for_testing /*= false */)
-    : system_dns_config_notifier_(system_dns_config_notifier),
+    : track_("NetworkChangeNotifier"),
+      system_dns_config_notifier_(system_dns_config_notifier),
       system_dns_config_observer_(std::make_unique<SystemDnsConfigObserver>()) {
   {
     base::AutoLock auto_lock(NetworkChangeNotifierCreationLock());
@@ -1019,23 +1022,29 @@ void NetworkChangeNotifier::StopSystemDnsConfigNotifier() {
 }
 
 void NetworkChangeNotifier::NotifyObserversOfIPAddressChangeImpl() {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::IPAddressChange", track_);
   GetObserverList().ip_address_observer_list_->Notify(
       FROM_HERE, &IPAddressObserver::OnIPAddressChanged);
 }
 
 void NetworkChangeNotifier::NotifyObserversOfConnectionTypeChangeImpl(
     ConnectionType type) {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::ConnectionTypeChange",
+                      track_, "type", type);
   GetObserverList().connection_type_observer_list_->Notify(
       FROM_HERE, &ConnectionTypeObserver::OnConnectionTypeChanged, type);
 }
 
 void NetworkChangeNotifier::NotifyObserversOfNetworkChangeImpl(
     ConnectionType type) {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::NetworkChange", track_,
+                      "type", type);
   GetObserverList().network_change_observer_list_->Notify(
       FROM_HERE, &NetworkChangeObserver::OnNetworkChanged, type);
 }
 
 void NetworkChangeNotifier::NotifyObserversOfDNSChangeImpl() {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::DnsChange", track_);
   GetObserverList().resolver_state_observer_list_->Notify(
       FROM_HERE, &DNSObserver::OnDNSChanged);
 }
@@ -1043,6 +1052,8 @@ void NetworkChangeNotifier::NotifyObserversOfDNSChangeImpl() {
 void NetworkChangeNotifier::NotifyObserversOfMaxBandwidthChangeImpl(
     double max_bandwidth_mbps,
     ConnectionType type) {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::MaxBandwidthChange",
+                      track_, "bandwidth", max_bandwidth_mbps, "type", type);
   GetObserverList().max_bandwidth_observer_list_->Notify(
       FROM_HERE, &MaxBandwidthObserver::OnMaxBandwidthChanged,
       max_bandwidth_mbps, type);
@@ -1051,6 +1062,8 @@ void NetworkChangeNotifier::NotifyObserversOfMaxBandwidthChangeImpl(
 void NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChangeImpl(
     NetworkChangeType type,
     handles::NetworkHandle network) {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::SpecificNetworkChange",
+                      track_, "type", type, "network", network);
   switch (type) {
     case NetworkChangeType::kConnected:
       GetObserverList().network_observer_list_->Notify(
@@ -1073,11 +1086,15 @@ void NetworkChangeNotifier::NotifyObserversOfSpecificNetworkChangeImpl(
 
 void NetworkChangeNotifier::NotifyObserversOfConnectionCostChangeImpl(
     ConnectionCost cost) {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::ConnectionCostChange",
+                      track_, "cost", cost);
   GetObserverList().connection_cost_observer_list_->Notify(
       FROM_HERE, &ConnectionCostObserver::OnConnectionCostChanged, cost);
 }
 
 void NetworkChangeNotifier::NotifyObserversOfDefaultNetworkActiveImpl() {
+  TRACE_EVENT_INSTANT("net", "NetworkChangeNotifier::DefaultNetworkActive",
+                      track_);
   GetObserverList().default_network_active_observer_list_->Notify(
       FROM_HERE, &DefaultNetworkActiveObserver::OnDefaultNetworkActive);
 }

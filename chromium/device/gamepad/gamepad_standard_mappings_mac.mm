@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "device/gamepad/gamepad_standard_mappings.h"
 
@@ -137,6 +133,12 @@ void MapperXboxSeriesXBluetooth(const Gamepad& input, Gamepad* mapped) {
   mapped->buttons[XBOX_SERIES_X_BUTTON_SHARE] = input.buttons[15];
   mapped->buttons_length = XBOX_SERIES_X_BUTTON_COUNT;
   mapped->axes_length = AXIS_INDEX_COUNT;
+}
+
+void Mapper8BitDoBluetooth(const Gamepad& input, Gamepad* mapped) {
+  MapperXboxBluetooth(input, mapped);
+  mapped->buttons[BUTTON_INDEX_LEFT_TRIGGER] = AxisToButton(input.axes[4]);
+  mapped->buttons[BUTTON_INDEX_RIGHT_TRIGGER] = AxisToButton(input.axes[3]);
 }
 
 void MapperPlaystationSixAxis(const Gamepad& input, Gamepad* mapped) {
@@ -782,6 +784,10 @@ constexpr struct MappingData {
 } kAvailableMappings[] = {
     // PowerA Wireless Controller - Nintendo GameCube style
     {GamepadId::kPowerALicPro, MapperSwitchPro},
+    // 8BitDo Ultimate Wireless 2C (Bluetooth)
+    {GamepadId::k8BitDoProduct301b, Mapper8BitDoBluetooth},
+    // 8BitDo Ultimate Wireless 2C 81HE (Bluetooth)
+    {GamepadId::k8BitDoProduct6012, Mapper8BitDoBluetooth},
     // Snakebyte iDroid:con
     {GamepadId::kBroadcomProduct8502, MapperSnakebyteIDroidCon},
     // DragonRise Generic USB

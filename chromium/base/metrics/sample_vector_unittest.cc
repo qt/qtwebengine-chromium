@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "base/metrics/sample_vector.h"
 
 #include <limits.h>
@@ -16,8 +11,10 @@
 #include <memory>
 #include <vector>
 
+#include "base/compiler_specific.h"
 #include "base/metrics/bucket_ranges.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/metrics_hashes.h"
 #include "base/metrics/persistent_memory_allocator.h"
 #include "base/test/gtest_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -424,7 +421,7 @@ TEST_F(SampleVectorTest, PersistentSampleVector) {
   std::atomic<PersistentMemoryAllocator::Reference> samples_ref;
   samples_ref.store(0, std::memory_order_relaxed);
   HistogramSamples::Metadata samples_meta;
-  memset(&samples_meta, 0, sizeof(samples_meta));
+  UNSAFE_TODO(memset(&samples_meta, 0, sizeof(samples_meta)));
 
   // Custom buckets: [1, 5) [5, 10)
   BucketRanges ranges(3);
@@ -433,12 +430,14 @@ TEST_F(SampleVectorTest, PersistentSampleVector) {
   ranges.set_range(2, 10);
 
   // Persistent allocation.
+  const auto name = std::string_view("histogram_name");
+  const auto id = HashMetricName(name);
   const size_t counts_bytes =
       sizeof(HistogramBase::AtomicCount) * ranges.bucket_count();
   const DelayedPersistentAllocation allocation(&allocator, &samples_ref, 1,
                                                counts_bytes, false);
 
-  PersistentSampleVector samples1(0, &ranges, &samples_meta, allocation);
+  PersistentSampleVector samples1(name, id, &ranges, &samples_meta, allocation);
   EXPECT_FALSE(HasSamplesCounts(samples1));
   samples1.Accumulate(3, 200);
   EXPECT_EQ(200, samples1.GetCount(3));
@@ -446,7 +445,7 @@ TEST_F(SampleVectorTest, PersistentSampleVector) {
   EXPECT_EQ(0, samples1.GetCount(8));
   EXPECT_FALSE(HasSamplesCounts(samples1));
 
-  PersistentSampleVector samples2(0, &ranges, &samples_meta, allocation);
+  PersistentSampleVector samples2(name, id, &ranges, &samples_meta, allocation);
   EXPECT_EQ(200, samples2.GetCount(3));
   EXPECT_FALSE(HasSamplesCounts(samples2));
 
@@ -488,7 +487,7 @@ TEST_F(SampleVectorTest, PersistentSampleVector) {
   it->Next();
   EXPECT_TRUE(it->Done());
 
-  PersistentSampleVector samples3(0, &ranges, &samples_meta, allocation);
+  PersistentSampleVector samples3(name, id, &ranges, &samples_meta, allocation);
   EXPECT_TRUE(HasSamplesCounts(samples2));
   EXPECT_EQ(200, samples3.GetCount(3));
   EXPECT_EQ(100, samples3.GetCount(8));
@@ -517,7 +516,7 @@ TEST_F(SampleVectorTest, PersistentSampleVectorTestWithOutsideAlloc) {
   std::atomic<PersistentMemoryAllocator::Reference> samples_ref;
   samples_ref.store(0, std::memory_order_relaxed);
   HistogramSamples::Metadata samples_meta;
-  memset(&samples_meta, 0, sizeof(samples_meta));
+  UNSAFE_TODO(memset(&samples_meta, 0, sizeof(samples_meta)));
 
   // Custom buckets: [1, 5) [5, 10)
   BucketRanges ranges(3);
@@ -526,12 +525,14 @@ TEST_F(SampleVectorTest, PersistentSampleVectorTestWithOutsideAlloc) {
   ranges.set_range(2, 10);
 
   // Persistent allocation.
+  const auto name = std::string_view("histogram_name");
+  const auto id = HashMetricName(name);
   const size_t counts_bytes =
       sizeof(HistogramBase::AtomicCount) * ranges.bucket_count();
   const DelayedPersistentAllocation allocation(&allocator, &samples_ref, 1,
                                                counts_bytes, false);
 
-  PersistentSampleVector samples1(0, &ranges, &samples_meta, allocation);
+  PersistentSampleVector samples1(name, id, &ranges, &samples_meta, allocation);
   EXPECT_FALSE(HasSamplesCounts(samples1));
   samples1.Accumulate(3, 200);
   EXPECT_EQ(200, samples1.GetCount(3));
@@ -559,7 +560,7 @@ TEST_F(SampleVectorTest, PersistentSampleVectorTestWithOutsideAlloc) {
 
   // A duplicate samples object should still see the single-sample entry even
   // when storage is available.
-  PersistentSampleVector samples2(0, &ranges, &samples_meta, allocation);
+  PersistentSampleVector samples2(name, id, &ranges, &samples_meta, allocation);
   EXPECT_EQ(200, samples2.GetCount(3));
 
   // New accumulations, in both directions, of the existing value should work.

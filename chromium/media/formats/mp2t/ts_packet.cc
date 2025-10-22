@@ -55,7 +55,7 @@ TsPacket* TsPacket::Parse(const uint8_t* buf, size_t size) {
   if (size < kPacketSize) {
     DVLOG(1) << "Buffer does not hold one full TS packet:"
              << " buffer_size=" << size;
-    return NULL;
+    return nullptr;
   }
 
   DCHECK_EQ(buf[0], kTsHeaderSyncword);
@@ -63,14 +63,14 @@ TsPacket* TsPacket::Parse(const uint8_t* buf, size_t size) {
     DVLOG(1) << "Not on a TS syncword:"
              << " buf[0]="
              << std::hex << static_cast<int>(buf[0]) << std::dec;
-    return NULL;
+    return nullptr;
   }
 
   std::unique_ptr<TsPacket> ts_packet(new TsPacket());
   bool status = ts_packet->ParseHeader(buf);
   if (!status) {
     DVLOG(1) << "Parsing header failed";
-    return NULL;
+    return nullptr;
   }
   return ts_packet.release();
 }
@@ -143,7 +143,7 @@ bool TsPacket::ParseHeader(const uint8_t* buf) {
 bool TsPacket::ParseAdaptationField(BitReader* bit_reader,
                                     size_t adaptation_field_length) {
   DCHECK_GT(adaptation_field_length, 0u);
-  int adaptation_field_start_marker = bit_reader->bits_available() / 8;
+  size_t adaptation_field_start_marker = bit_reader->bits_available() / 8;
 
   int discontinuity_indicator;
   int random_access_indicator;
@@ -201,8 +201,8 @@ bool TsPacket::ParseAdaptationField(BitReader* bit_reader,
   }
 
   // The rest of the adaptation field should be stuffing bytes.
-  const auto bits_used = base::checked_cast<size_t>(
-      adaptation_field_start_marker - bit_reader->bits_available() / 8);
+  const auto bits_used =
+      adaptation_field_start_marker - bit_reader->bits_available() / 8;
   RCHECK(adaptation_field_length >= bits_used);
   for (size_t k = 0; k < adaptation_field_length - bits_used; ++k) {
     int stuffing_byte;
@@ -221,4 +221,3 @@ bool TsPacket::ParseAdaptationField(BitReader* bit_reader,
 
 }  // namespace mp2t
 }  // namespace media
-

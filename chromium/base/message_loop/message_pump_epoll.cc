@@ -20,6 +20,7 @@
 #include "base/auto_reset.h"
 #include "base/check_op.h"
 #include "base/feature_list.h"
+#include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram_macros.h"
@@ -27,7 +28,8 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/thread_checker.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/heap_profiler.h"
+#include "base/trace_event/trace_event.h"
 
 #if DCHECK_IS_ON()
 #include <iomanip>
@@ -421,12 +423,12 @@ void MessagePumpEpoll::UnregisterInterest(
 
   const int fd = interest->params().fd;
   auto entry_it = entries_.find(fd);
-  CHECK(entry_it != entries_.end(), base::NotFatalUntil::M125);
+  CHECK(entry_it != entries_.end());
 
   EpollEventEntry& entry = entry_it->second;
   auto& interests = entry.interests;
   auto* it = std::ranges::find(interests, interest);
-  CHECK(it != interests.end(), base::NotFatalUntil::M125);
+  CHECK(it != interests.end());
   interests.erase(it);
 
   if (interests.empty()) {

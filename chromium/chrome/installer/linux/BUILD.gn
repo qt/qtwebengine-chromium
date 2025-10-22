@@ -36,10 +36,14 @@ packaging_files_executables = [
   "$root_out_dir/chrome_sandbox",
 ]
 
-packaging_files_shlibs = [
-  "$root_out_dir/libEGL.so",
-  "$root_out_dir/libGLESv2.so",
-]
+packaging_files_shlibs = []
+
+if (!use_static_angle) {
+  packaging_files_shlibs += [
+    "$root_out_dir/libEGL.so",
+    "$root_out_dir/libGLESv2.so",
+  ]
+}
 
 if (bundle_widevine_cdm) {
   packaging_files_shlibs +=
@@ -94,6 +98,7 @@ action_foreach("calculate_deb_dependencies") {
     "debian/deb_version.py",
     "debian/dist_package_versions.json",
     "debian/package_version_interval.py",
+    "//build/action_helpers.py",
     "//third_party/dpkg-shlibdeps/dpkg-shlibdeps.pl",
   ]
   outputs = [ "$root_out_dir/deb_{{source_name_part}}.deps" ]
@@ -116,6 +121,7 @@ action("merge_deb_dependencies") {
     additional_deps,
     "debian/deb_version.py",
     "debian/package_version_interval.py",
+    "//build/action_helpers.py",
   ]
   outputs = [ "$root_out_dir/deb_common.deps" ]
   args = [
@@ -130,7 +136,10 @@ action_foreach("calculate_rpm_dependencies") {
   deps = [ ":installer_deps" ]
   script = "rpm/calculate_package_deps.py"
   sources = packaging_files_binaries
-  inputs = [ "rpm/dist_package_provides.json" ]
+  inputs = [
+    "rpm/dist_package_provides.json",
+    "//build/action_helpers.py",
+  ]
   outputs = [ "$root_out_dir/rpm_{{source_name_part}}.deps" ]
   args = [
     "{{source}}",
@@ -146,7 +155,10 @@ action("merge_rpm_dependencies") {
   deps = [ ":calculate_rpm_dependencies" ]
   script = "rpm/merge_package_deps.py"
   additional_deps = "rpm/additional_deps"
-  inputs = [ additional_deps ]
+  inputs = [
+    additional_deps,
+    "//build/action_helpers.py",
+  ]
   outputs = [ "$root_out_dir/rpm_common.deps" ]
   args = [
     "rpm_common.deps",
@@ -262,8 +274,6 @@ copy("common_packaging_files") {
     sources += [ "common/chromium-browser.info" ]
   }
 
-  sources += [ "//buildtools/third_party/eu-strip/bin/eu-strip" ]
-
   outputs = [ "$root_out_dir/installer/common/{{source_file_part}}" ]
 }
 
@@ -362,8 +372,6 @@ group("installer_deps") {
     ":strip_chrome_crashpad_handler",
     ":strip_chrome_management_service",
     ":strip_chrome_sandbox",
-    ":strip_libEGL_shlib",
-    ":strip_libGLESv2_shlib",
     ":theme_files",
     "//chrome",
     "//chrome:packed_resources",
@@ -372,11 +380,17 @@ group("installer_deps") {
     "//components/crash/core/app:chrome_crashpad_handler",
     "//components/privacy_sandbox/privacy_sandbox_attestations/preload:component",
     "//sandbox/linux:chrome_sandbox",
-    "//third_party/angle:libEGL",
-    "//third_party/angle:libGLESv2",
   ]
   if (bundle_widevine_cdm) {
     public_deps += [ "//third_party/widevine/cdm" ]
+  }
+  if (!use_static_angle) {
+    public_deps += [
+      ":strip_libEGL_shlib",
+      ":strip_libGLESv2_shlib",
+      "//third_party/angle:libEGL",
+      "//third_party/angle:libGLESv2",
+    ]
   }
   if (angle_shared_libvulkan && !is_chromeos) {
     public_deps += [

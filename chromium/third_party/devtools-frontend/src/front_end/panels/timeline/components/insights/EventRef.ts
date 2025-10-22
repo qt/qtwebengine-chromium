@@ -1,21 +1,19 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as i18n from '../../../../core/i18n/i18n.js';
-import * as Platform from '../../../../core/platform/platform.js';
+import type * as Platform from '../../../../core/platform/platform.js';
+import * as SDK from '../../../../core/sdk/sdk.js';
 import * as Trace from '../../../../models/trace/trace.js';
 import * as ComponentHelpers from '../../../../ui/components/helpers/helpers.js';
 import * as Lit from '../../../../ui/lit/lit.js';
 import * as Utils from '../../utils/utils.js';
 
-import baseInsightComponentStylesRaw from './baseInsightComponent.css.js';
+import baseInsightComponentStyles from './baseInsightComponent.css.js';
 
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const baseInsightComponentStyles = new CSSStyleSheet();
-baseInsightComponentStyles.replaceSync(baseInsightComponentStylesRaw.cssText);
-
-const {html} = Lit;
+const {html, Directives: {ifDefined}} = Lit;
 
 export class EventReferenceClick extends Event {
   static readonly eventName = 'eventreferenceclick';
@@ -27,23 +25,17 @@ export class EventReferenceClick extends Event {
 
 class EventRef extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  readonly #boundRender = this.#render.bind(this);
-
   #text: string|null = null;
   #event: Trace.Types.Events.Event|null = null;
 
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [baseInsightComponentStyles];
-  }
-
   set text(text: string) {
     this.#text = text;
-    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
+    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
   set event(event: Trace.Types.Events.Event) {
     this.#event = event;
-    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
+    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
   #render(): void {
@@ -53,6 +45,7 @@ class EventRef extends HTMLElement {
 
     // clang-format off
     Lit.render(html`
+      <style>${baseInsightComponentStyles}</style>
       <button type="button" class="timeline-link" @click=${(e: Event) => {
         e.stopPropagation();
         if (this.#event) {
@@ -64,56 +57,80 @@ class EventRef extends HTMLElement {
   }
 }
 
-type EventRefSupportedEvents = Trace.Types.Events.SyntheticNetworkRequest;
-
 export function eventRef(
-    event: EventRefSupportedEvents, options?: {text?: string, title?: string}): Lit.TemplateResult {
+    event: Trace.Types.Events.Event, options?: {text?: string, title?: string}): Lit.TemplateResult {
   let title = options?.title;
   let text = options?.text;
   if (Trace.Types.Events.isSyntheticNetworkRequest(event)) {
     text = text ?? Utils.Helpers.shortenUrl(new URL(event.args.data.url));
     title = title ?? event.args.data.url;
-  } else {
-    Platform.TypeScriptUtilities.assertNever(
-        event, `unsupported event in eventRef: ${(event as Trace.Types.Events.Event).name}`);
+  } else if (!text) {
+    console.warn('No text given for eventRef');
+    text = event.name;
   }
 
   return html`<devtools-performance-event-ref
     .event=${event as Trace.Types.Events.Event}
     .text=${text}
-    title=${title}
+    title=${ifDefined(title)}
   ></devtools-performance-event-ref>`;
 }
 
 class ImageRef extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  readonly #boundRender = this.#render.bind(this);
 
   #request?: Trace.Types.Events.SyntheticNetworkRequest;
-
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [baseInsightComponentStyles];
-  }
+  #imageDataUrl?: string|null;
 
   set request(request: Trace.Types.Events.SyntheticNetworkRequest) {
     this.#request = request;
-    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#boundRender);
+    this.#imageDataUrl = undefined;
+    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
-  #render(): void {
+  /**
+   * This only returns a data url if the resource is currently present from the active
+   * inspected page.
+   */
+  async #getOrCreateImageDataUrl(): Promise<string|null> {
+    if (!this.#request) {
+      return null;
+    }
+
+    if (this.#imageDataUrl !== undefined) {
+      return this.#imageDataUrl;
+    }
+
+    const originalUrl = this.#request.args.data.url as Platform.DevToolsPath.UrlString;
+    const resource = SDK.ResourceTreeModel.ResourceTreeModel.resourceForURL(originalUrl);
+    if (!resource) {
+      this.#imageDataUrl = null;
+      return this.#imageDataUrl;
+    }
+
+    const content = await resource.requestContentData();
+    if ('error' in content) {
+      this.#imageDataUrl = null;
+      return this.#imageDataUrl;
+    }
+
+    this.#imageDataUrl = content.asDataUrl();
+    return this.#imageDataUrl;
+  }
+
+  async #render(): Promise<void> {
     if (!this.#request) {
       return;
     }
 
+    const url = this.#request.args.data.mimeType.includes('image') ? await this.#getOrCreateImageDataUrl() : null;
+    const img = url ? html`<img src=${url} class="element-img"/>` : Lit.nothing;
+
     // clang-format off
     Lit.render(html`
+      <style>${baseInsightComponentStyles}</style>
       <div class="image-ref">
-        ${this.#request.args.data.mimeType.includes('image') ? html`
-          <img
-            class="element-img"
-            src=${this.#request.args.data.url}
-            @error=${handleBadImage}/>
-        `: Lit.nothing}
+        ${img}
         <span class="element-img-details">
           ${eventRef(this.#request)}
           <span class="element-img-details-size">${
@@ -124,11 +141,6 @@ class ImageRef extends HTMLElement {
     `, this.#shadow, {host: this});
     // clang-format on
   }
-}
-
-function handleBadImage(event: Event): void {
-  const img = event.target as HTMLImageElement;
-  img.style.display = 'none';
 }
 
 export function imageRef(request: Trace.Types.Events.SyntheticNetworkRequest): Lit.TemplateResult {

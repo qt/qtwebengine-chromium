@@ -17,6 +17,8 @@
 #include "api/environment/environment_factory.h"
 #include "media/base/media_constants.h"
 #include "sdk/android/generated_native_unittests_jni/CodecsWrapperTestHelper_jni.h"
+#include "sdk/android/native_api/jni/java_types.h"
+#include "sdk/android/native_api/jni/jvm.h"
 #include "sdk/android/src/jni/video_encoder_wrapper.h"
 #include "test/gtest.h"
 
@@ -31,11 +33,10 @@ TEST(JavaCodecsWrapperTest, JavaToNativeVideoCodecInfo) {
   const SdpVideoFormat video_format =
       JavaToNativeVideoCodecInfo(env, j_video_codec_info.obj());
 
-  EXPECT_EQ(cricket::kH264CodecName, video_format.name);
-  const auto it =
-      video_format.parameters.find(cricket::kH264FmtpProfileLevelId);
+  EXPECT_EQ(webrtc::kH264CodecName, video_format.name);
+  const auto it = video_format.parameters.find(webrtc::kH264FmtpProfileLevelId);
   ASSERT_NE(it, video_format.parameters.end());
-  EXPECT_EQ(cricket::kH264ProfileLevelConstrainedBaseline, it->second);
+  EXPECT_EQ(webrtc::kH264ProfileLevelConstrainedBaseline, it->second);
 }
 
 TEST(JavaCodecsWrapperTest, JavaToNativeResolutionBitrateLimits) {

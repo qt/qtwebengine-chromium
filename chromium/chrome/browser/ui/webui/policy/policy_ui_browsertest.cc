@@ -67,13 +67,12 @@
 
 #if !BUILDFLAG(IS_ANDROID)
 #include "chrome/browser/download/download_prefs.h"
-#include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/install_verifier.h"
-#include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/ui_features.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "components/account_id/account_id.h"
+#include "extensions/browser/extension_registrar.h"
 #include "extensions/common/extension_builder.h"
 #include "extensions/common/features/simple_feature.h"
 #endif  // !BUILDFLAG(IS_ANDROID)
@@ -875,9 +874,6 @@ IN_PROC_BROWSER_TEST_P(ExtensionPolicyUITest,
       extensions::mojom::ManifestLocation::kExternalPolicyDownload);
 
   // Install extension.
-  extensions::ExtensionService* service =
-      extensions::ExtensionSystem::Get(extension_profile())
-          ->extension_service();
   scoped_refptr<const extensions::Extension> extension = builder.Build();
 
   // Bypass "signin_screen" feature only enabled for allowlisted extensions.
@@ -886,7 +882,8 @@ IN_PROC_BROWSER_TEST_P(ExtensionPolicyUITest,
   // Disable extension install verification.
   extensions::ScopedInstallVerifierBypassForTest ignore_install_verification_;
 
-  service->OnExtensionInstalled(extension.get(), syncer::StringOrdinal(), 0);
+  extensions::ExtensionRegistrar::Get(extension_profile())
+      ->OnExtensionInstalled(extension.get(), syncer::StringOrdinal(), 0);
 
   policy::PolicyDomain policy_domain =
       UseSigninProfile() ? policy::POLICY_DOMAIN_SIGNIN_EXTENSIONS
@@ -1003,229 +1000,4 @@ INSTANTIATE_TEST_SUITE_P(All,
 #endif  // BUILDFLAG(IS_CHROMEOS)
 );
 
-#endif  // !BUILDFLAG(IS_ANDROID)
-
-#if !BUILDFLAG(IS_ANDROID)
-
-class PolicyUIManagedStatusTest : public PolicyUITest,
-                                  public ::testing::WithParamInterface<bool> {
- public:
-  PolicyUIManagedStatusTest() {
-    if (GetParam()) {
-      scoped_feature_list_.InitAndEnableFeature(
-          features::kEnablePolicyPromotionBanner);
-    } else {
-      scoped_feature_list_.InitAndDisableFeature(
-          features::kEnablePolicyPromotionBanner);
-    }
-  }
-  bool isFeatureEnabled() { return GetParam(); }
-  PolicyUIManagedStatusTest(const PolicyUIManagedStatusTest&) = delete;
-  PolicyUIManagedStatusTest& operator=(const PolicyUIManagedStatusTest&) =
-      delete;
-
-  ~PolicyUIManagedStatusTest() override = default;
-
-  void SetUpOnMainThread() override { PolicyUITest::SetUpOnMainThread(); }
-
-  static constexpr std::string_view kPromotionBannerVisibilityJavaScript = R"(
-    (function () {
-      const element =
-        document.getElementsByTagName('promotion-banner-section-container')[0];
-      return element ? 'visible' : 'hidden';
-    })();
-  )";
-
-  static constexpr std::string_view kPromotionBannerDismissJavaScript = R"(
-    const promotionContainer =
-      document.getElementsByTagName('promotion-banner-section-container')[0];
-    if (promotionContainer){
-      const dismissButton =
-        promotionContainer.shadowRoot.getElementById('promotion-dismiss-button');
-      dismissButton.click();
-    }
-  )";
-
-  static constexpr std::string_view kPromotionBannerRedirectJavaScript = R"(
-    const promotionContainer =
-      document.getElementsByTagName('promotion-banner-section-container')[0];
-    if (promotionContainer){
-      const redirectButton =
-        promotionContainer.shadowRoot.getElementById(
-          'promotion-redirect-button'
-        );
-      if (redirectButton){
-        redirectButton.click();
-      }
-    }
-  )";
-
-  static constexpr std::string_view kBannerVisible = "visible";
-  static constexpr std::string_view kBannerHidden = "hidden";
-
-  // The browser's locale needs to be "en-US" to be able to see the banner
-  static constexpr std::string_view kValidLocale = "en-US";
-  static constexpr std::string_view kInvalidLocale = "en-AU";
-
- protected:
-  void SetPromotionBannerDismissedPref(bool is_dismissed) {
-    auto* prefs = browser()->profile()->GetPrefs();
-    prefs->SetBoolean(
-        policy::policy_prefs::kHasDismissedPolicyPagePromotionBanner,
-        is_dismissed);
-  }
-
-  void SetBrowserLocale(std::string_view locale) {
-    g_browser_process->SetApplicationLocale(std::string(locale));
-  }
-
- private:
-  base::test::ScopedFeatureList scoped_feature_list_;
-};
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest,
-                       HandleGetShowPromotionTestShown) {
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
-      policy::EnterpriseManagementAuthority::CLOUD);
-
-  SetBrowserLocale(kValidLocale);
-
-  SetPromotionBannerDismissedPref(false);
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
-                                           GURL(chrome::kChromeUIPolicyURL)));
-
-  auto result = EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                       kPromotionBannerVisibilityJavaScript)
-                    .ExtractString();
-
-  if (isFeatureEnabled()) {
-    EXPECT_EQ(result, kBannerHidden);
-  } else {
-    EXPECT_EQ(result, kBannerHidden);
-  }
-}
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest,
-                       HandleGetShowPromotionNotManagedHidden) {
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
-      policy::EnterpriseManagementAuthority::NONE);
-
-  SetBrowserLocale(kValidLocale);
-
-  SetPromotionBannerDismissedPref(false);
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
-                                           GURL(chrome::kChromeUIPolicyURL)));
-  auto result = EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                       kPromotionBannerVisibilityJavaScript)
-                    .ExtractString();
-
-  EXPECT_EQ(result, kBannerHidden);
-}
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest,
-                       HandleGetShowPromotionDismisseddHidden) {
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
-      policy::EnterpriseManagementAuthority::CLOUD);
-
-  SetBrowserLocale(kValidLocale);
-
-  SetPromotionBannerDismissedPref(true);
-
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
-                                           GURL(chrome::kChromeUIPolicyURL)));
-  auto result = EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                       kPromotionBannerVisibilityJavaScript)
-                    .ExtractString();
-
-  EXPECT_EQ(result, kBannerHidden);
-}
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest,
-                       HandleSetBannerDismissedHidden) {
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
-      policy::EnterpriseManagementAuthority::CLOUD);
-
-  SetBrowserLocale(kValidLocale);
-
-  SetPromotionBannerDismissedPref(false);
-
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
-                                           GURL(chrome::kChromeUIPolicyURL)));
-
-  EXPECT_TRUE(ExecJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                     kPromotionBannerDismissJavaScript));
-
-  auto result = EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                       kPromotionBannerVisibilityJavaScript)
-                    .ExtractString();
-  EXPECT_EQ(result, kBannerHidden);
-}
-
-// Test is flaky on macOS. <https://crbug.com/394767577>
-#if BUILDFLAG(IS_MAC)
-#define MAYBE_HandleLocaleNotEnUSHidden DISABLED_HandleLocaleNotEnUSHidden
-#else
-#define MAYBE_HandleLocaleNotEnUSHidden HandleLocaleNotEnUSHidden
-#endif
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest,
-                       MAYBE_HandleLocaleNotEnUSHidden) {
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
-      policy::EnterpriseManagementAuthority::CLOUD);
-
-  SetBrowserLocale(kInvalidLocale);
-
-  SetPromotionBannerDismissedPref(false);
-
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
-                                           GURL(chrome::kChromeUIPolicyURL)));
-
-  auto result = EvalJs(browser()->tab_strip_model()->GetActiveWebContents(),
-                       kPromotionBannerVisibilityJavaScript)
-                    .ExtractString();
-  EXPECT_EQ(result, kBannerHidden);
-}
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest,
-                       HistogramRecordedWhenBannerDisplayed) {
-  policy::ScopedManagementServiceOverrideForTesting browser_management(
-      policy::ManagementServiceFactory::GetForProfile(browser()->profile()),
-      policy::EnterpriseManagementAuthority::CLOUD);
-
-  SetBrowserLocale(kValidLocale);
-
-  SetPromotionBannerDismissedPref(false);
-
-  base::HistogramTester histogram_tester;
-
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(browser(),
-                                           GURL(chrome::kChromeUIPolicyURL)));
-
-    histogram_tester.ExpectBucketCount(
-        "Enterprise.PolicyPromotionBannerDisplayed", false, 1);
-}
-
-IN_PROC_BROWSER_TEST_P(PolicyUIManagedStatusTest, PageLoadedInGuestMode) {
-  // Verifies that the page opens in guest session.
-  Browser* policy_browser = OpenURLOffTheRecord(
-      browser()->profile(), GURL(chrome::kChromeUIPolicyURL));
-  ASSERT_TRUE(policy_browser);
-  ASSERT_TRUE(ui_test_utils::NavigateToURL(policy_browser,
-                               GURL(chrome::kChromeUIPolicyURL)));
-
-  auto result =
-      EvalJs(policy_browser->tab_strip_model()->GetActiveWebContents(),
-             kPromotionBannerVisibilityJavaScript)
-          .ExtractString();
-  EXPECT_EQ(result, kBannerHidden);
-}
-
-INSTANTIATE_TEST_SUITE_P(PolicyManagedUITestInstance,
-                         PolicyUIManagedStatusTest,
-                         ::testing::Values(false, true));
 #endif  // !BUILDFLAG(IS_ANDROID)

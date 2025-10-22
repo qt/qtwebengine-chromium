@@ -18,7 +18,6 @@
 #include "components/viz/common/surfaces/local_surface_id.h"
 #include "components/viz/service/display/display_client.h"
 #include "components/viz/service/display/frame_interval_decider.h"
-#include "components/viz/service/display/frame_rate_decider.h"
 #include "components/viz/service/display/overdraw_tracker.h"
 #include "components/viz/service/frame_sinks/compositor_frame_sink_support.h"
 #include "components/viz/service/viz_service_export.h"
@@ -32,6 +31,10 @@
 #include "services/viz/public/mojom/compositing/compositor_frame_sink.mojom.h"
 #include "ui/base/ozone_buildflags.h"
 #include "ui/gfx/ca_layer_params.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "ui/gfx/android/surface_control_frame_rate.h"
+#endif
 
 namespace viz {
 
@@ -87,13 +90,10 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
                                  base::TimeDelta interval) override;
   void ForceImmediateDrawAndSwapIfPossible() override;
 #if BUILDFLAG(IS_ANDROID)
-  void SetVSyncPaused(bool paused) override;
   void UpdateRefreshRate(float refresh_rate) override;
   void SetAdaptiveRefreshRateInfo(
       bool has_support,
-      float suggested_normal,
       float suggested_high,
-      const std::vector<float>& supported_refresh_rates,
       float device_scale_factor) override;
   void PreserveChildSurfaceControls() override;
   void SetSwapCompletionCallbackEnabled(bool enable) override;
@@ -115,7 +115,6 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
   // mojom::CompositorFrameSink:
   void SetNeedsBeginFrame(bool needs_begin_frame) override;
   void SetWantsAnimateOnlyBeginFrames() override;
-  void SetWantsBeginFrameAcks() override;
   void SetAutoNeedsBeginFrame() override;
   void SubmitCompositorFrame(
       const LocalSurfaceId& local_surface_id,
@@ -123,15 +122,9 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
       std::optional<HitTestRegionList> hit_test_region_list,
       uint64_t submit_time) override;
   void DidNotProduceFrame(const BeginFrameAck& begin_frame_ack) override;
-  void SubmitCompositorFrameSync(
-      const LocalSurfaceId& local_surface_id,
-      CompositorFrame frame,
-      std::optional<HitTestRegionList> hit_test_region_list,
-      uint64_t submit_time,
-      SubmitCompositorFrameSyncCallback callback) override;
-  void InitializeCompositorFrameSinkType(
-      mojom::CompositorFrameSinkType type) override;
-  void BindLayerContext(mojom::PendingLayerContextPtr context) override;
+  void NotifyNewLocalSurfaceIdExpectedWhilePaused() override;
+  void BindLayerContext(mojom::PendingLayerContextPtr context,
+                        mojom::LayerContextSettingsPtr settings) override;
 #if BUILDFLAG(IS_ANDROID)
   void SetThreads(const std::vector<Thread>& threads) override;
 #endif
@@ -179,10 +172,8 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
   void DisplayDidCompleteSwapWithSize(const gfx::Size& pixel_size) override;
   void DisplayAddChildWindowToBrowser(gpu::SurfaceHandle child_window) override;
   void SetWideColorEnabled(bool enabled) override;
-  void SetPreferredFrameInterval(base::TimeDelta interval) override;
-  base::TimeDelta GetPreferredFrameIntervalForFrameSinkId(
-      const FrameSinkId& id,
-      mojom::CompositorFrameSinkType* type) override;
+
+  void SetPreferredFrameInterval(base::TimeDelta interval);
 
   void UpdateVSyncParameters();
   BeginFrameSource* begin_frame_source();
@@ -207,6 +198,10 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
   bool interval_decider_use_fixed_intervals_ = true;
   // The current display frame interval that FrameIntervalDecider decided on.
   base::TimeDelta decided_display_interval_;
+#if BUILDFLAG(IS_ANDROID)
+  gfx::SurfaceControlFrameRateCompatibility decided_display_frame_rate_compat_ =
+      gfx::SurfaceControlFrameRateCompatibility::kFixedSource;
+#endif
 
   // RootCompositorFrameSinkImpl holds a Display and a BeginFrameSource if it
   // was created with a non-null gpu::SurfaceHandle. The source can either be a
@@ -226,8 +221,7 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
   bool use_preferred_interval_ = false;
   base::TimeTicks display_frame_timebase_;
   base::TimeDelta display_frame_interval_ = BeginFrameArgs::DefaultInterval();
-  base::TimeDelta preferred_frame_interval_ =
-      FrameRateDecider::UnspecifiedFrameInterval();
+  base::TimeDelta preferred_frame_interval_;
 
 #if BUILDFLAG(IS_LINUX) && BUILDFLAG(IS_OZONE_X11)
   gfx::Size last_swap_pixel_size_;
@@ -244,6 +238,10 @@ class VIZ_SERVICE_EXPORT RootCompositorFrameSinkImpl
 #if BUILDFLAG(IS_ANDROID)
   // Let client control whether it wants `DidCompleteSwapWithSize`.
   bool enable_swap_completion_callback_ = false;
+
+  bool supports_adaptive_refresh_rate_ = false;
+  base::TimeDelta suggested_frame_interval_high_;
+  float device_scale_factor_ = 1.0f;
 #endif
 
   // Map which retains the exact supported refresh rates, keyed by their

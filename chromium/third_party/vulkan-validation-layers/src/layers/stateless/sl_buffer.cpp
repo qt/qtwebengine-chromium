@@ -18,6 +18,9 @@
 
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
+#include "utils/image_utils.h"
+#include "utils/math_utils.h"
+#include <vulkan/utility/vk_format_utils.h>
 
 namespace stateless {
 
@@ -30,17 +33,13 @@ bool Device::manual_PreCallValidateCreateBuffer(VkDevice device, const VkBufferC
     const Location create_info_loc = error_obj.location.dot(Field::pCreateInfo);
     skip |= context.ValidateNotZero(pCreateInfo->size == 0, "VUID-VkBufferCreateInfo-size-00912", create_info_loc.dot(Field::size));
 
-    // Validation for parameters excluded from the generated validation code due to a 'noautovalidity' tag in vk.xml
     if (pCreateInfo->sharingMode == VK_SHARING_MODE_CONCURRENT) {
-        // If sharingMode is VK_SHARING_MODE_CONCURRENT, queueFamilyIndexCount must be greater than 1
         if (pCreateInfo->queueFamilyIndexCount <= 1) {
             skip |= LogError("VUID-VkBufferCreateInfo-sharingMode-00914", device, create_info_loc.dot(Field::sharingMode),
                              "is VK_SHARING_MODE_CONCURRENT, but queueFamilyIndexCount is %" PRIu32 ".",
                              pCreateInfo->queueFamilyIndexCount);
         }
 
-        // If sharingMode is VK_SHARING_MODE_CONCURRENT, pQueueFamilyIndices must be a pointer to an array of
-        // queueFamilyIndexCount uint32_t values
         if (pCreateInfo->pQueueFamilyIndices == nullptr) {
             skip |= LogError("VUID-VkBufferCreateInfo-sharingMode-00913", device, create_info_loc.dot(Field::sharingMode),
                              "is VK_SHARING_MODE_CONCURRENT, but pQueueFamilyIndices is NULL.");
@@ -53,16 +52,17 @@ bool Device::manual_PreCallValidateCreateBuffer(VkDevice device, const VkBufferC
                                       AllVkBufferUsageFlagBits, pCreateInfo->usage, kRequiredFlags,
                                       "VUID-VkBufferCreateInfo-None-09499", "VUID-VkBufferCreateInfo-None-09500");
     }
-    const VkBufferUsageFlags2KHR usage = usage_flags2 ? usage_flags2->usage : pCreateInfo->usage;
+    const VkBufferUsageFlags2 usage = usage_flags2 ? usage_flags2->usage : pCreateInfo->usage;
 
     if (pCreateInfo->flags & VK_BUFFER_CREATE_PROTECTED_BIT) {
-        const VkBufferUsageFlags invalid =
-            VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT | VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT |
-            VK_BUFFER_USAGE_CONDITIONAL_RENDERING_BIT_EXT | VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-            VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
-            VK_BUFFER_USAGE_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-            VK_BUFFER_USAGE_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_MICROMAP_BUILD_INPUT_READ_ONLY_BIT_EXT |
-            VK_BUFFER_USAGE_MICROMAP_STORAGE_BIT_EXT;
+        const VkBufferUsageFlags2 invalid =
+            VK_BUFFER_USAGE_2_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT |
+            VK_BUFFER_USAGE_2_CONDITIONAL_RENDERING_BIT_EXT |
+            VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+            VK_BUFFER_USAGE_2_ACCELERATION_STRUCTURE_STORAGE_BIT_KHR | VK_BUFFER_USAGE_2_SHADER_BINDING_TABLE_BIT_KHR |
+            VK_BUFFER_USAGE_2_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT | VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+            VK_BUFFER_USAGE_2_PUSH_DESCRIPTORS_DESCRIPTOR_BUFFER_BIT_EXT |
+            VK_BUFFER_USAGE_2_MICROMAP_BUILD_INPUT_READ_ONLY_BIT_EXT | VK_BUFFER_USAGE_2_MICROMAP_STORAGE_BIT_EXT;
         if (usage & invalid) {
             skip |= LogError("VUID-VkBufferCreateInfo-flags-09641", device, create_info_loc.dot(Field::flags),
                              "includes VK_BUFFER_CREATE_PROTECTED_BIT, but the usage is %s.",
@@ -119,7 +119,6 @@ bool Device::manual_PreCallValidateCreateBufferView(VkDevice device, const VkBuf
                          string_VkFormat(format));
     }
 
-    // Buffer view offset must be a multiple of VkPhysicalDeviceLimits::minTexelBufferOffsetAlignment
     if ((pCreateInfo->offset % phys_dev_props.limits.minTexelBufferOffsetAlignment) != 0 &&
         !enabled_features.texelBufferAlignment) {
         skip |= LogError("VUID-VkBufferViewCreateInfo-offset-02749", pCreateInfo->buffer, create_info_loc.dot(Field::offset),
@@ -133,12 +132,11 @@ bool Device::manual_PreCallValidateCreateBufferView(VkDevice device, const VkBuf
         const VkDeviceSize texels_per_block = static_cast<VkDeviceSize>(vkuFormatTexelsPerBlock(format));
         const VkDeviceSize texel_block_size = static_cast<VkDeviceSize>(GetTexelBufferFormatSize(format));
 
-        // Range must be greater than 0
         if (range <= 0) {
             skip |= LogError("VUID-VkBufferViewCreateInfo-range-00928", pCreateInfo->buffer, create_info_loc.dot(Field::range),
                              "(%" PRIuLEAST64 ") does not equal VK_WHOLE_SIZE, range must be greater than 0.", range);
         }
-        // Range must be a multiple of the texel block size of format
+
         if (SafeModulo(range, texel_block_size) != 0) {
             skip |= LogError("VUID-VkBufferViewCreateInfo-range-00929", pCreateInfo->buffer, create_info_loc.dot(Field::range),
                              "(%" PRIuLEAST64
@@ -178,8 +176,6 @@ bool Device::ValidateCreateBufferFlags(const VkBufferCreateFlags flags, const Lo
                          "includes VK_BUFFER_CREATE_SPARSE_ALIASED_BIT, but the sparseResidencyAliased feature is not enabled.");
     };
 
-    // If flags contains VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT or VK_BUFFER_CREATE_SPARSE_ALIASED_BIT, it must also contain
-    // VK_BUFFER_CREATE_SPARSE_BINDING_BIT
     if (((flags & (VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT | VK_BUFFER_CREATE_SPARSE_ALIASED_BIT)) != 0) &&
         ((flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT) != VK_BUFFER_CREATE_SPARSE_BINDING_BIT)) {
         skip |=

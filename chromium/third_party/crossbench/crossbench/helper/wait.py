@@ -8,9 +8,10 @@ import datetime as dt
 import logging
 import math
 import time
-from typing import Iterator, Optional, Tuple
+from typing import TYPE_CHECKING, Iterator, Optional
 
-from crossbench.runner.timing import AnyTime, AnyTimeUnit
+if TYPE_CHECKING:
+  from crossbench.runner.timing import AnyTime, AnyTimeUnit
 
 
 def as_timedelta(value: int | float | dt.timedelta) -> dt.timedelta:
@@ -63,7 +64,7 @@ class WaitRange:
   def timeout(self) -> dt.timedelta:
     return self._timeout
 
-  def __iter__(self) -> Iterator[Tuple[int, dt.timedelta]]:
+  def __iter__(self) -> Iterator[tuple[int, dt.timedelta]]:
     i = 0
     if self._delay:
       yield i, self._delay
@@ -78,7 +79,7 @@ class WaitRange:
       i += 1
 
   def wait_with_backoff(
-      self,) -> Iterator[Tuple[int, dt.timedelta, dt.timedelta]]:
+      self,) -> Iterator[tuple[int, dt.timedelta, dt.timedelta]]:
     start = dt.datetime.now()
     timeout = self._timeout
     for i, sleep_for in self:
@@ -105,7 +106,7 @@ def sleep_f(seconds: float) -> None:
 
 def wait_with_backoff(
     wait_range: AnyTime | WaitRange,
-) -> Iterator[Tuple[int, dt.timedelta, dt.timedelta]]:
+) -> Iterator[tuple[int, dt.timedelta, dt.timedelta]]:
   if not isinstance(wait_range, WaitRange):
     wait_range = WaitRange(timeout=wait_range)
   return wait_range.wait_with_backoff()

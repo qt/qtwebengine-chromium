@@ -11,12 +11,12 @@
 #ifndef SDK_ANDROID_SRC_JNI_PC_OWNED_FACTORY_AND_THREADS_H_
 #define SDK_ANDROID_SRC_JNI_PC_OWNED_FACTORY_AND_THREADS_H_
 
-#include <jni.h>
 
 #include <memory>
-#include <utility>
 
 #include "api/peer_connection_interface.h"
+#include "api/scoped_refptr.h"
+#include "rtc_base/socket_factory.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
@@ -35,7 +35,7 @@ class OwnedFactoryAndThreads {
       std::unique_ptr<Thread> network_thread,
       std::unique_ptr<Thread> worker_thread,
       std::unique_ptr<Thread> signaling_thread,
-      const rtc::scoped_refptr<PeerConnectionFactoryInterface>& factory);
+      const scoped_refptr<PeerConnectionFactoryInterface>& factory);
 
   ~OwnedFactoryAndThreads() = default;
 
@@ -52,7 +52,7 @@ class OwnedFactoryAndThreads {
   const std::unique_ptr<Thread> network_thread_;
   const std::unique_ptr<Thread> worker_thread_;
   const std::unique_ptr<Thread> signaling_thread_;
-  const rtc::scoped_refptr<PeerConnectionFactoryInterface> factory_;
+  const scoped_refptr<PeerConnectionFactoryInterface> factory_;
 };
 
 }  // namespace jni

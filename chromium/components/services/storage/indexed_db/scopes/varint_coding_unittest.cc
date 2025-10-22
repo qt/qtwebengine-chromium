@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "components/services/storage/indexed_db/scopes/varint_coding.h"
 
@@ -88,6 +84,22 @@ TEST(VarIntCoding, SingleByteCases) {
     EXPECT_EQ(a.size(), b.size());
     EXPECT_EQ(*a.begin(), *b.begin());
   }
+}
+
+TEST(VarIntCoding, EmbeddedZeroByte) {
+  auto arr = std::array<char, 3>{'\x81', '\x00', '\x07'};
+  std::string_view input(arr.data(), arr.size());
+  int64_t ignored;
+  EXPECT_FALSE(DecodeVarInt(&input, &ignored));
+}
+
+// When using the max number of bytes (10), the top byte must be exactly 1.
+TEST(VarIntCoding, JunkBitsInTopByte) {
+  auto arr = std::array<char, 10>{'\x80', '\x80', '\x80', '\x80', '\x80',
+                                  '\x80', '\x80', '\x80', '\x80', '\x05'};
+  std::string_view input(arr.data(), arr.size());
+  int64_t ignored;
+  EXPECT_FALSE(DecodeVarInt(&input, &ignored));
 }
 
 }  // namespace

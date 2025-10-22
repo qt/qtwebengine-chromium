@@ -72,8 +72,6 @@ const char* GetVizBreakdownToPresentationName(
     case CompositorFrameReporter::VizBreakdown::kLatchToSwapEnd:
       return "LatchToPresentation";
     default:
-      base::UmaHistogramEnumeration(
-          "Compositing.VizBreakdownToPresentationUnexpected", breakdown);
       return "Unknown";
   }
 }
@@ -249,7 +247,7 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
         bool has_high_latency =
             (termination_time - generated_timestamp) > kHighLatencyThreshold;
         event_latency->set_has_high_latency(has_high_latency);
-        for (auto stage : event_metrics->GetHighLatencyStages()) {
+        for (const auto& stage : event_metrics->GetHighLatencyStages()) {
           // TODO(crbug.com/40228308): Consider changing the high_latency_stage
           // type from a string to enum type in chrome_track_event.proto,
           // similar to event_type.
@@ -411,13 +409,6 @@ void EventLatencyTracingRecorder::RecordEventLatencyTraceEvent(
     TRACE_EVENT_END(kTracingCategory, trace_track, termination_time);
   }
   TRACE_EVENT_END(kTracingCategory, trace_track, termination_time);
-}
-
-// static
-bool EventLatencyTracingRecorder::IsEventLatencyTracingEnabled() {
-  return IsTracingEnabled() ||
-         !base::FeatureList::IsEnabled(
-             ::features::kMetricsTracingCalculationReduction);
 }
 
 }  // namespace cc

@@ -451,8 +451,9 @@ RetainPtr<CFX_CSSValue> CFX_CSSDeclaration::ParseBorderProperty(
           case CFX_CSSPropertyValue::Thin:
           case CFX_CSSPropertyValue::Thick:
           case CFX_CSSPropertyValue::Medium:
-            if (!pWidth)
+            if (!pWidth) {
               pWidth = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+            }
             break;
           default:
             break;
@@ -475,7 +476,7 @@ void CFX_CSSDeclaration::ParseFontProperty(WideStringView value,
   RetainPtr<CFX_CSSValue> pStyle;
   RetainPtr<CFX_CSSValue> pVariant;
   RetainPtr<CFX_CSSValue> pWeight;
-  RetainPtr<CFX_CSSValue> pFontSize;
+  RetainPtr<CFX_CSSValue> font_size;
   RetainPtr<CFX_CSSValue> pLineHeight;
   std::vector<RetainPtr<CFX_CSSValue>> family_list;
   CFX_CSSValueListParser parser(value, '/');
@@ -499,42 +500,47 @@ void CFX_CSSDeclaration::ParseFontProperty(WideStringView value,
             case CFX_CSSPropertyValue::XxLarge:
             case CFX_CSSPropertyValue::Smaller:
             case CFX_CSSPropertyValue::Larger:
-              if (!pFontSize)
-                pFontSize = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              if (!font_size) {
+                font_size = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              }
               continue;
             case CFX_CSSPropertyValue::Bold:
             case CFX_CSSPropertyValue::Bolder:
             case CFX_CSSPropertyValue::Lighter:
-              if (!pWeight)
+              if (!pWeight) {
                 pWeight = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              }
               continue;
             case CFX_CSSPropertyValue::Italic:
             case CFX_CSSPropertyValue::Oblique:
-              if (!pStyle)
+              if (!pStyle) {
                 pStyle = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              }
               continue;
             case CFX_CSSPropertyValue::SmallCaps:
-              if (!pVariant)
+              if (!pVariant) {
                 pVariant = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              }
               continue;
             case CFX_CSSPropertyValue::Normal:
-              if (!pStyle)
+              if (!pStyle) {
                 pStyle = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
-              else if (!pVariant)
+              } else if (!pVariant) {
                 pVariant = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
-              else if (!pWeight)
+              } else if (!pWeight) {
                 pWeight = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
-              else if (!pFontSize)
-                pFontSize = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
-              else if (!pLineHeight)
+              } else if (!font_size) {
+                font_size = pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              } else if (!pLineHeight) {
                 pLineHeight =
                     pdfium::MakeRetain<CFX_CSSEnumValue>(pValue->eName);
+              }
               continue;
             default:
               break;
           }
         }
-        if (pFontSize) {
+        if (font_size) {
           family_list.push_back(pdfium::MakeRetain<CFX_CSSStringValue>(
               maybe_next.value().string_view));
         }
@@ -564,8 +570,8 @@ void CFX_CSSDeclaration::ParseFontProperty(WideStringView value,
               continue;
           }
         }
-        if (!pFontSize) {
-          pFontSize =
+        if (!font_size) {
+          font_size =
               pdfium::MakeRetain<CFX_CSSNumberValue>(maybe_number.value());
         } else if (!pLineHeight) {
           pLineHeight =
@@ -589,8 +595,8 @@ void CFX_CSSDeclaration::ParseFontProperty(WideStringView value,
     pWeight =
         pdfium::MakeRetain<CFX_CSSEnumValue>(CFX_CSSPropertyValue::Normal);
   }
-  if (!pFontSize) {
-    pFontSize =
+  if (!font_size) {
+    font_size =
         pdfium::MakeRetain<CFX_CSSEnumValue>(CFX_CSSPropertyValue::Medium);
   }
   if (!pLineHeight) {
@@ -601,7 +607,7 @@ void CFX_CSSDeclaration::ParseFontProperty(WideStringView value,
   AddPropertyHolder(CFX_CSSProperty::FontStyle, pStyle, bImportant);
   AddPropertyHolder(CFX_CSSProperty::FontVariant, pVariant, bImportant);
   AddPropertyHolder(CFX_CSSProperty::FontWeight, pWeight, bImportant);
-  AddPropertyHolder(CFX_CSSProperty::FontSize, pFontSize, bImportant);
+  AddPropertyHolder(CFX_CSSProperty::FontSize, font_size, bImportant);
   AddPropertyHolder(CFX_CSSProperty::LineHeight, pLineHeight, bImportant);
   if (!family_list.empty()) {
     auto value_list =

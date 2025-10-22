@@ -71,12 +71,6 @@ void LayoutSVGBlock::WillBeRemovedFromTree() {
   LayoutBlockFlow::WillBeRemovedFromTree();
 }
 
-void LayoutSVGBlock::UpdateFromStyle() {
-  NOT_DESTROYED();
-  LayoutBlockFlow::UpdateFromStyle();
-  SetFloating(false);
-}
-
 bool LayoutSVGBlock::CheckForImplicitTransformChange(
     const SVGLayoutInfo& layout_info,
     bool bbox_changed) const {
@@ -156,9 +150,13 @@ void LayoutSVGBlock::StyleDidChange(StyleDifference diff,
                              : kDescendantIsolationNeedsUpdate);
   }
 
-  if (style.HasCurrentTransformRelatedAnimation() &&
-      !old_style->HasCurrentTransformRelatedAnimation()) {
-    Parent()->SetSVGDescendantMayHaveTransformRelatedAnimation();
+  if ((style.HasCurrentTransformRelatedAnimation() &&
+       !old_style->HasCurrentTransformRelatedAnimation()) ||
+      (RuntimeEnabledFeatures::
+           SvgAvoidCullingElementsWithTransformOperationsEnabled() &&
+       style.HasNonIdentityTransformOperation() &&
+       !old_style->HasNonIdentityTransformOperation())) {
+    Parent()->SetSVGDescendantMayHaveTransformRelatedOperations();
   }
 
   if (diff.HasDifference())

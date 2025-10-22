@@ -23,19 +23,15 @@
 #include "base/posix/eintr_wrapper.h"
 #include "base/task/task_features.h"
 #include "base/time/time_override.h"
+#include "build/blink_buildflags.h"
+
+#if BUILDFLAG(IS_IOS) && BUILDFLAG(USE_BLINK)
+#include <BrowserEngineCore/BEkevent.h>
+#endif
 
 namespace base {
 
 namespace {
-
-// Under this feature native work is batched. Remove it once crbug.com/1200141
-// is resolved.
-BASE_FEATURE(kBatchNativeEventsInMessagePumpKqueue,
-             "BatchNativeEventsInMessagePumpKqueue",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Caches the state of the "BatchNativeEventsInMessagePumpKqueue".
-std::atomic_bool g_use_batched_version = false;
 
 // Caches the state of the "TimerSlackMac" feature for efficiency.
 std::atomic_bool g_timer_slack = false;
@@ -56,8 +52,21 @@ bool KqueueTimersSpuriouslyWakeUp() {
 }
 #endif
 
+int platform_kevent64(int kq,
+                      const struct kevent64_s* changelist,
+                      int nchanges,
+                      struct kevent64_s* eventlist,
+                      int nevents,
+                      unsigned int flags) {
+#if BUILDFLAG(IS_IOS) && BUILDFLAG(USE_BLINK)
+  return be_kevent64(kq, changelist, nchanges, eventlist, nevents, flags);
+#else
+  return kevent64(kq, changelist, nchanges, eventlist, nevents, flags, nullptr);
+#endif
+}
+
 int ChangeOneEvent(const ScopedFD& kqueue, kevent64_s* event) {
-  return HANDLE_EINTR(kevent64(kqueue.get(), event, 1, nullptr, 0, 0, nullptr));
+  return HANDLE_EINTR(platform_kevent64(kqueue.get(), event, 1, nullptr, 0, 0));
 }
 
 }  // namespace
@@ -160,82 +169,36 @@ MessagePumpKqueue::MessagePumpKqueue()
 MessagePumpKqueue::~MessagePumpKqueue() = default;
 
 void MessagePumpKqueue::InitializeFeatures() {
-  g_use_batched_version.store(
-      base::FeatureList::IsEnabled(kBatchNativeEventsInMessagePumpKqueue),
-      std::memory_order_relaxed);
   g_timer_slack.store(FeatureList::IsEnabled(kTimerSlackMac),
                       std::memory_order_relaxed);
 }
 
 void MessagePumpKqueue::Run(Delegate* delegate) {
   AutoReset<bool> reset_keep_running(&keep_running_, true);
-
-  if (g_use_batched_version.load(std::memory_order_relaxed)) {
-    RunBatched(delegate);
-  } else {
-    while (keep_running_) {
-      apple::ScopedNSAutoreleasePool pool;
-
-      bool do_more_work = DoInternalWork(delegate, nullptr);
-      if (!keep_running_) {
-        break;
-      }
-
-      Delegate::NextWorkInfo next_work_info = delegate->DoWork();
-      do_more_work |= next_work_info.is_immediate();
-      if (!keep_running_) {
-        break;
-      }
-
-      if (do_more_work) {
-        continue;
-      }
-
-      delegate->DoIdleWork();
-      if (!keep_running_) {
-        break;
-      }
-
-      DoInternalWork(delegate, &next_work_info);
-    }
-  }
-}
-
-void MessagePumpKqueue::RunBatched(Delegate* delegate) {
-  // Look for native work once before the loop starts. Without this call the
-  // loop would break without checking native work even once in cases where
-  // QuitWhenIdle was used. This is sometimes the case in tests.
-  DoInternalWork(delegate, nullptr);
-
   while (keep_running_) {
     apple::ScopedNSAutoreleasePool pool;
 
+    bool do_more_work = DoInternalWork(delegate, nullptr);
+    if (!keep_running_) {
+      break;
+    }
+
     Delegate::NextWorkInfo next_work_info = delegate->DoWork();
+    do_more_work |= next_work_info.is_immediate();
     if (!keep_running_) {
       break;
     }
 
-    if (!next_work_info.is_immediate()) {
-      delegate->DoIdleWork();
+    if (do_more_work) {
+      continue;
     }
+
+    delegate->DoIdleWork();
     if (!keep_running_) {
       break;
     }
 
-    int batch_size = 0;
-    if (DoInternalWork(delegate, &next_work_info)) {
-      // More than one call can be necessary to fully dispatch all available
-      // internal work. Making an effort to dispatch more than the minimum
-      // before moving on to application tasks reduces the overhead of going
-      // through the whole loop. It also more closely mirrors the behavior of
-      // application task execution where tasks are batched. A value of 16 was
-      // chosen via local experimentation showing that is was sufficient to
-      // dispatch all work in roughly 95% of cases.
-      constexpr int kMaxAttempts = 16;
-      while (DoInternalWork(delegate, nullptr) && batch_size < kMaxAttempts) {
-        ++batch_size;
-      }
-    }
+    DoInternalWork(delegate, &next_work_info);
   }
 }
 
@@ -343,9 +306,9 @@ bool MessagePumpKqueue::WatchFileDescriptor(int fd,
     events.push_back(base_event);
   }
 
-  int rv = HANDLE_EINTR(kevent64(kqueue_.get(), events.data(),
-                                 checked_cast<int>(events.size()), nullptr, 0,
-                                 0, nullptr));
+  int rv = HANDLE_EINTR(platform_kevent64(kqueue_.get(), events.data(),
+                                          checked_cast<int>(events.size()),
+                                          nullptr, 0, 0));
   if (rv < 0) {
     DPLOG(ERROR) << "WatchFileDescriptor kevent64";
     return false;
@@ -436,9 +399,9 @@ bool MessagePumpKqueue::StopWatchingFileDescriptor(
     events.push_back(base_event);
   }
 
-  int rv = HANDLE_EINTR(kevent64(kqueue_.get(), events.data(),
-                                 checked_cast<int>(events.size()), nullptr, 0,
-                                 0, nullptr));
+  int rv = HANDLE_EINTR(platform_kevent64(kqueue_.get(), events.data(),
+                                          checked_cast<int>(events.size()),
+                                          nullptr, 0, 0));
   DPLOG_IF(ERROR, rv < 0) << "StopWatchingFileDescriptor kevent64";
 
   // The keys for the IDMap aren't recorded anywhere (they're attached to the
@@ -472,8 +435,8 @@ bool MessagePumpKqueue::DoInternalWork(Delegate* delegate,
   }
 
   int rv =
-      HANDLE_EINTR(kevent64(kqueue_.get(), nullptr, 0, events_.data(),
-                            checked_cast<int>(events_.size()), flags, nullptr));
+      HANDLE_EINTR(platform_kevent64(kqueue_.get(), nullptr, 0, events_.data(),
+                                     checked_cast<int>(events_.size()), flags));
   if (rv == 0) {
     // No events to dispatch so no need to call ProcessEvents().
     return false;

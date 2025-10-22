@@ -23,7 +23,6 @@ import {
 } from 'test/e2e/helpers/sources-helpers.js';
 import {
   $$,
-  assertNotNullOrUndefined,
   click,
   clickElement,
   getBrowserAndPages,
@@ -51,6 +50,7 @@ function pausedReasonText(reason: string) {
     case 'step':
       return 'Debugger paused';
   }
+  return;
 }
 
 describe('CXX Debugging Extension Test Suite', function() {
@@ -229,7 +229,7 @@ async function readScopeView(scope: string, variable: string[]) {
 async function scrollToLine(lineNumber: number): Promise<void> {
   await waitForFunction(async () => {
     const visibleLines = await $$(CODE_LINE_SELECTOR);
-    assertNotNullOrUndefined(visibleLines[0]);
+    assert.exists(visibleLines[0]);
     const lineNumbers = await Promise.all(visibleLines.map(v => v.evaluate(e => Number(e.textContent ?? ''))));
     if (lineNumbers.includes(lineNumber)) {
       return true;
@@ -242,7 +242,7 @@ async function scrollToLine(lineNumber: number): Promise<void> {
 }
 
 async function doActions({actions, reason}: {actions?: Action[], reason: string}) {
-  const {frontend, target} = getBrowserAndPages();
+  const {target} = getBrowserAndPages();
   let continuation;
   if (actions) {
     for (const step of actions) {
@@ -258,7 +258,7 @@ async function doActions({actions, reason}: {actions?: Action[], reason: string}
           }
           await openFileInEditor(file);
           await scrollToLine(Number(breakpoint));
-          await addBreakpointForLine(frontend, breakpoint);
+          await addBreakpointForLine(breakpoint);
           break;
         }
         case 'remove_breakpoint': {
@@ -267,7 +267,7 @@ async function doActions({actions, reason}: {actions?: Action[], reason: string}
             throw new Error('Invalid breakpoint spec: missing `breakpoint`');
           }
           await scrollToLine(Number(breakpoint));
-          await removeBreakpointForLine(frontend, breakpoint);
+          await removeBreakpointForLine(breakpoint);
           break;
         }
         case 'step_over':

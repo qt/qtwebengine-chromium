@@ -35,7 +35,11 @@ import * as Platform from '../../core/platform/platform.js';
 
 import type {FilesChangedData} from './FileSystemWorkspaceBinding.js';
 import {IsolatedFileSystem} from './IsolatedFileSystem.js';
-import {type PlatformFileSystem, PlatformFileSystemType} from './PlatformFileSystem.js';
+import {
+  Events as PlatformFileSystemEvents,
+  type PlatformFileSystem,
+  PlatformFileSystemType
+} from './PlatformFileSystem.js';
 
 const UIStrings = {
   /**
@@ -90,6 +94,7 @@ export class IsolatedFileSystemManager extends Common.ObjectWrapper.ObjectWrappe
       '/\\.svn/',
       '/\\.cache/',
       '/\\.project/',
+      '/\\.next/',
     ];
     const defaultWinExcludedFolders = ['/Thumbs.db$', '/ehthumbs.db$', '/Desktop.ini$', '/\\$RECYCLE.BIN/'];
     const defaultMacExcludedFolders = [
@@ -190,6 +195,7 @@ export class IsolatedFileSystemManager extends Common.ObjectWrapper.ObjectWrappe
         return null;
       }
       this.fileSystemsInternal.set(fileSystemURL, fileSystem);
+      fileSystem.addEventListener(PlatformFileSystemEvents.FILE_SYSTEM_ERROR, this.#onFileSystemError, this);
       if (dispatchEvent) {
         this.dispatchEventToListeners(Events.FileSystemAdded, fileSystem);
       }
@@ -199,6 +205,7 @@ export class IsolatedFileSystemManager extends Common.ObjectWrapper.ObjectWrappe
 
   addPlatformFileSystem(fileSystemURL: Platform.DevToolsPath.UrlString, fileSystem: PlatformFileSystem): void {
     this.fileSystemsInternal.set(fileSystemURL, fileSystem);
+    fileSystem.addEventListener(PlatformFileSystemEvents.FILE_SYSTEM_ERROR, this.#onFileSystemError, this);
     this.dispatchEventToListeners(Events.FileSystemAdded, fileSystem);
   }
 
@@ -206,7 +213,7 @@ export class IsolatedFileSystemManager extends Common.ObjectWrapper.ObjectWrappe
       event: Common.EventTarget.EventTargetEvent<Host.InspectorFrontendHostAPI.FileSystemAddedEvent>): void {
     const {errorMessage, fileSystem} = event.data;
     if (errorMessage) {
-      if (errorMessage !== '<selection cancelled>') {
+      if (errorMessage !== '<selection cancelled>' && errorMessage !== '<permission denied>') {
         Common.Console.Console.instance().error(i18nString(UIStrings.unableToAddFilesystemS, {PH1: errorMessage}));
       }
       if (!this.fileSystemRequestResolve) {
@@ -224,6 +231,10 @@ export class IsolatedFileSystemManager extends Common.ObjectWrapper.ObjectWrappe
     }
   }
 
+  #onFileSystemError(event: Common.EventTarget.EventTargetEvent<string>): void {
+    this.dispatchEventToListeners(Events.FileSystemError, event.data);
+  }
+
   private onFileSystemRemoved(event: Common.EventTarget.EventTargetEvent<Platform.DevToolsPath.RawPathString>): void {
     const embedderPath = event.data;
     const fileSystemPath = Common.ParsedURL.ParsedURL.rawPathToUrlString(embedderPath);
@@ -232,6 +243,7 @@ export class IsolatedFileSystemManager extends Common.ObjectWrapper.ObjectWrappe
       return;
     }
     this.fileSystemsInternal.delete(fileSystemPath);
+    isolatedFileSystem.removeEventListener(PlatformFileSystemEvents.FILE_SYSTEM_ERROR, this.#onFileSystemError, this);
     isolatedFileSystem.fileSystemRemoved();
     this.dispatchEventToListeners(Events.FileSystemRemoved, isolatedFileSystem);
   }
@@ -348,6 +360,7 @@ export enum Events {
   FileSystemFilesChanged = 'FileSystemFilesChanged',
   ExcludedFolderAdded = 'ExcludedFolderAdded',
   ExcludedFolderRemoved = 'ExcludedFolderRemoved',
+  FileSystemError = 'FileSystemError',
   /* eslint-enable @typescript-eslint/naming-convention */
 }
 
@@ -357,6 +370,7 @@ export interface EventTypes {
   [Events.FileSystemFilesChanged]: FilesChangedData;
   [Events.ExcludedFolderAdded]: Platform.DevToolsPath.EncodedPathString;
   [Events.ExcludedFolderRemoved]: Platform.DevToolsPath.EncodedPathString;
+  [Events.FileSystemError]: string;
 }
 
 let lastRequestId = 0;

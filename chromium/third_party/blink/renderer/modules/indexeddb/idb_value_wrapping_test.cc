@@ -2,19 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "third_party/blink/renderer/modules/indexeddb/idb_value_wrapping.h"
 
 #include <algorithm>
 #include <limits>
 #include <memory>
 
+#include "base/compiler_specific.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/strings/strcat.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/blink/public/common/features.h"
@@ -61,41 +58,41 @@ TEST(IDBValueWrapperTest, WriteVarIntMultiByte) {
   IDBValueWrapper::WriteVarInt(0xff, output);
   ASSERT_EQ(2U, output.size());
   EXPECT_EQ('\xff', output.data()[0]);
-  EXPECT_EQ('\x01', output.data()[1]);
+  UNSAFE_TODO(EXPECT_EQ('\x01', output.data()[1]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x100, output);
   ASSERT_EQ(2U, output.size());
   EXPECT_EQ('\x80', output.data()[0]);
-  EXPECT_EQ('\x02', output.data()[1]);
+  UNSAFE_TODO(EXPECT_EQ('\x02', output.data()[1]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x1234, output);
   ASSERT_EQ(2U, output.size());
   EXPECT_EQ('\xb4', output.data()[0]);
-  EXPECT_EQ('\x24', output.data()[1]);
+  UNSAFE_TODO(EXPECT_EQ('\x24', output.data()[1]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0xabcd, output);
   ASSERT_EQ(3U, output.size());
   EXPECT_EQ('\xcd', output.data()[0]);
-  EXPECT_EQ('\xd7', output.data()[1]);
-  EXPECT_EQ('\x2', output.data()[2]);
+  UNSAFE_TODO(EXPECT_EQ('\xd7', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\x2', output.data()[2]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x123456, output);
   ASSERT_EQ(3U, output.size());
   EXPECT_EQ('\xd6', output.data()[0]);
-  EXPECT_EQ('\xe8', output.data()[1]);
-  EXPECT_EQ('\x48', output.data()[2]);
+  UNSAFE_TODO(EXPECT_EQ('\xe8', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\x48', output.data()[2]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0xabcdef, output);
   ASSERT_EQ(4U, output.size());
   EXPECT_EQ('\xef', output.data()[0]);
-  EXPECT_EQ('\x9b', output.data()[1]);
-  EXPECT_EQ('\xaf', output.data()[2]);
-  EXPECT_EQ('\x05', output.data()[3]);
+  UNSAFE_TODO(EXPECT_EQ('\x9b', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\xaf', output.data()[2]));
+  UNSAFE_TODO(EXPECT_EQ('\x05', output.data()[3]));
   output.clear();
 }
 
@@ -105,62 +102,62 @@ TEST(IDBValueWrapperTest, WriteVarIntMultiByteEdgeCases) {
   IDBValueWrapper::WriteVarInt(0x80, output);
   ASSERT_EQ(2U, output.size());
   EXPECT_EQ('\x80', output.data()[0]);
-  EXPECT_EQ('\x01', output.data()[1]);
+  UNSAFE_TODO(EXPECT_EQ('\x01', output.data()[1]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x3fff, output);
   ASSERT_EQ(2U, output.size());
   EXPECT_EQ('\xff', output.data()[0]);
-  EXPECT_EQ('\x7f', output.data()[1]);
+  UNSAFE_TODO(EXPECT_EQ('\x7f', output.data()[1]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x4000, output);
   ASSERT_EQ(3U, output.size());
   EXPECT_EQ('\x80', output.data()[0]);
-  EXPECT_EQ('\x80', output.data()[1]);
-  EXPECT_EQ('\x01', output.data()[2]);
+  UNSAFE_TODO(EXPECT_EQ('\x80', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\x01', output.data()[2]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x1fffff, output);
   ASSERT_EQ(3U, output.size());
   EXPECT_EQ('\xff', output.data()[0]);
-  EXPECT_EQ('\xff', output.data()[1]);
-  EXPECT_EQ('\x7f', output.data()[2]);
+  UNSAFE_TODO(EXPECT_EQ('\xff', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\x7f', output.data()[2]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x200000, output);
   ASSERT_EQ(4U, output.size());
   EXPECT_EQ('\x80', output.data()[0]);
-  EXPECT_EQ('\x80', output.data()[1]);
-  EXPECT_EQ('\x80', output.data()[2]);
-  EXPECT_EQ('\x01', output.data()[3]);
+  UNSAFE_TODO(EXPECT_EQ('\x80', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\x80', output.data()[2]));
+  UNSAFE_TODO(EXPECT_EQ('\x01', output.data()[3]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0xfffffff, output);
   ASSERT_EQ(4U, output.size());
   EXPECT_EQ('\xff', output.data()[0]);
-  EXPECT_EQ('\xff', output.data()[1]);
-  EXPECT_EQ('\xff', output.data()[2]);
-  EXPECT_EQ('\x7f', output.data()[3]);
+  UNSAFE_TODO(EXPECT_EQ('\xff', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\xff', output.data()[2]));
+  UNSAFE_TODO(EXPECT_EQ('\x7f', output.data()[3]));
   output.clear();
 
   IDBValueWrapper::WriteVarInt(0x10000000, output);
   ASSERT_EQ(5U, output.size());
   EXPECT_EQ('\x80', output.data()[0]);
-  EXPECT_EQ('\x80', output.data()[1]);
-  EXPECT_EQ('\x80', output.data()[2]);
-  EXPECT_EQ('\x80', output.data()[3]);
-  EXPECT_EQ('\x01', output.data()[4]);
+  UNSAFE_TODO(EXPECT_EQ('\x80', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\x80', output.data()[2]));
+  UNSAFE_TODO(EXPECT_EQ('\x80', output.data()[3]));
+  UNSAFE_TODO(EXPECT_EQ('\x01', output.data()[4]));
   output.clear();
 
   // Maximum value of unsigned on 32-bit platforms.
   IDBValueWrapper::WriteVarInt(0xffffffff, output);
   ASSERT_EQ(5U, output.size());
   EXPECT_EQ('\xff', output.data()[0]);
-  EXPECT_EQ('\xff', output.data()[1]);
-  EXPECT_EQ('\xff', output.data()[2]);
-  EXPECT_EQ('\xff', output.data()[3]);
-  EXPECT_EQ('\x0f', output.data()[4]);
+  UNSAFE_TODO(EXPECT_EQ('\xff', output.data()[1]));
+  UNSAFE_TODO(EXPECT_EQ('\xff', output.data()[2]));
+  UNSAFE_TODO(EXPECT_EQ('\xff', output.data()[3]));
+  UNSAFE_TODO(EXPECT_EQ('\x0f', output.data()[4]));
   output.clear();
 }
 
@@ -172,32 +169,31 @@ class IDBValueUnwrapperReadTestHelper {
   void ReadVarInt(const char* start, uint32_t buffer_size) {
     IDBValueUnwrapper unwrapper;
 
-    const uint8_t* buffer_start = reinterpret_cast<const uint8_t*>(start);
-    const uint8_t* buffer_end = buffer_start + buffer_size;
-    unwrapper.current_ = buffer_start;
-    unwrapper.end_ = buffer_end;
+    base::span<const uint8_t> UNSAFE_TODO(
+        parse_span(reinterpret_cast<const uint8_t*>(start), buffer_size));
+    unwrapper.parse_span_ = parse_span;
     success_ = unwrapper.ReadVarInt(read_varint_);
 
-    ASSERT_EQ(unwrapper.end_, buffer_end)
-        << "ReadVarInt should not change end_";
-    ASSERT_LE(unwrapper.current_, unwrapper.end_)
-        << "ReadVarInt should not move current_ past end_";
-    consumed_bytes_ = static_cast<uint32_t>(unwrapper.current_ - buffer_start);
+    if (!unwrapper.parse_span_.empty()) {
+      ASSERT_EQ(&unwrapper.parse_span_.back(), &parse_span.back())
+          << "ReadVarInt should not change end of buffer";
+    }
+    consumed_bytes_ = parse_span.size() - unwrapper.parse_span_.size();
   }
 
   void ReadBytes(const char* start, uint32_t buffer_size) {
     IDBValueUnwrapper unwrapper;
 
-    const uint8_t* buffer_start = reinterpret_cast<const uint8_t*>(start);
-    const uint8_t* buffer_end = buffer_start + buffer_size;
-    unwrapper.current_ = buffer_start;
-    unwrapper.end_ = buffer_end;
+    base::span<const uint8_t> UNSAFE_TODO(
+        parse_span(reinterpret_cast<const uint8_t*>(start), buffer_size));
+    unwrapper.parse_span_ = parse_span;
     success_ = unwrapper.ReadBytes(read_bytes_);
 
-    ASSERT_EQ(unwrapper.end_, buffer_end) << "ReadBytes should not change end_";
-    ASSERT_LE(unwrapper.current_, unwrapper.end_)
-        << "ReadBytes should not move current_ past end_";
-    consumed_bytes_ = static_cast<uint32_t>(unwrapper.current_ - buffer_start);
+    if (!unwrapper.parse_span_.empty()) {
+      ASSERT_EQ(&unwrapper.parse_span_.back(), &parse_span.back())
+          << "ReadBytes should not change end of buffer";
+    }
+    consumed_bytes_ = parse_span.size() - unwrapper.parse_span_.size();
   }
 
   bool success() { return success_; }
@@ -421,8 +417,9 @@ TEST(IDBValueUnwrapperTest, ReadBytes) {
   EXPECT_TRUE(helper.success());
   ASSERT_EQ(256U, helper.read_bytes().size());
   ASSERT_EQ(long_output.size() - 1, helper.consumed_bytes());
-  EXPECT_TRUE(std::equal(helper.read_bytes().begin(), helper.read_bytes().end(),
-                         long_output.data() + 2));
+  UNSAFE_TODO(EXPECT_TRUE(std::equal(helper.read_bytes().begin(),
+                                     helper.read_bytes().end(),
+                                     long_output.data() + 2)));
 
   helper.ReadBytes("\x01\x42\x01", 2);
   EXPECT_TRUE(helper.success());
@@ -463,14 +460,12 @@ TEST(IDBValueUnwrapperTest, IsWrapped) {
                           non_throwable_exception_state);
   wrapper.set_wrapping_threshold_for_test(0);
   wrapper.DoneCloning();
-  Vector<WebBlobInfo> blob_infos = wrapper.TakeBlobInfo();
-  Vector<char> wrapped_marker_buffer = wrapper.TakeWireBytes();
   IDBKeyPath key_path(String("primaryKey"));
 
-  const Vector<char> wrapped_marker_bytes = wrapped_marker_buffer;
+  std::unique_ptr<IDBValue> wrapped_value = std::move(wrapper).Build();
 
-  auto wrapped_value = std::make_unique<IDBValue>(
-      std::move(wrapped_marker_buffer), std::move(blob_infos));
+  const Vector<char> wrapped_marker_bytes(wrapped_value->Data());
+
   wrapped_value->SetIsolate(scope.GetIsolate());
   EXPECT_TRUE(IDBValueUnwrapper::IsWrapped(wrapped_value.get()));
 
@@ -479,12 +474,12 @@ TEST(IDBValueUnwrapperTest, IsWrapped) {
   // return false.
   ASSERT_LT(3U, wrapped_marker_bytes.size());
   for (wtf_size_t i = 0; i < 3; ++i) {
-    auto mutant_value = std::make_unique<IDBValue>(
-        Vector<char>(base::span(wrapped_marker_bytes).first(i)),
-        std::move(blob_infos));
-    mutant_value->SetIsolate(scope.GetIsolate());
+    IDBValue mutant_value;
+    mutant_value.SetData(
+        Vector<char>(base::span(wrapped_marker_bytes).first(i)));
+    mutant_value.SetIsolate(scope.GetIsolate());
 
-    EXPECT_FALSE(IDBValueUnwrapper::IsWrapped(mutant_value.get()));
+    EXPECT_FALSE(IDBValueUnwrapper::IsWrapped(&mutant_value));
   }
 
   // IsWrapped() looks at the first 3 bytes in the value. Flipping any bit in
@@ -495,10 +490,10 @@ TEST(IDBValueUnwrapperTest, IsWrapped) {
       char mask = 1 << j;
       Vector<char> copy = wrapped_marker_bytes;
       copy[i] ^= mask;
-      auto mutant_value =
-          std::make_unique<IDBValue>(std::move(copy), std::move(blob_infos));
-      mutant_value->SetIsolate(scope.GetIsolate());
-      EXPECT_FALSE(IDBValueUnwrapper::IsWrapped(mutant_value.get()));
+      IDBValue mutant_value;
+      mutant_value.SetData(std::move(copy));
+      mutant_value.SetIsolate(scope.GetIsolate());
+      EXPECT_FALSE(IDBValueUnwrapper::IsWrapped(&mutant_value));
     }
   }
 }
@@ -548,31 +543,53 @@ TEST(IDBValueUnwrapperTest, Compression) {
     wrapper.set_wrapping_threshold_for_test(test_case.wrapping_threshold);
     wrapper.set_compression_threshold_for_test(test_case.compression_threshold);
     wrapper.DoneCloning();
-    Vector<WebBlobInfo> blob_infos = wrapper.TakeBlobInfo();
-    Vector<char> buffer = wrapper.TakeWireBytes();
+
+    std::unique_ptr<IDBValue> value = std::move(wrapper).Build();
 
     // Verify whether the serialized bytes show the compression marker.
-    base::span<const char> serialized_bytes = base::span(buffer);
+    base::span<const uint8_t> serialized_bytes = value->Data();
     ASSERT_GT(serialized_bytes.size(), 3u);
     if (test_case.should_compress) {
-      EXPECT_EQ(serialized_bytes[0], static_cast<char>(kVersionTag));
+      EXPECT_EQ(serialized_bytes[0], kVersionTag);
       EXPECT_EQ(serialized_bytes[1], 0x11);
       EXPECT_EQ(serialized_bytes[2], 2);
     }
 
-    // Verify whether the decompressed bytes show the standard serialization
-    // marker.
-    Vector<char> decompressed;
-    ASSERT_EQ(test_case.should_compress,
-              IDBValueUnwrapper::Decompress(buffer, &decompressed));
+    {
+      // Verify whether the decompressed bytes show the standard serialization
+      // marker.
+      SerializedScriptValue::DataBufferPtr decompressed;
+      ASSERT_EQ(
+          test_case.should_compress,
+          IDBValueUnwrapper::Decompress(value->Data(), nullptr, &decompressed));
+    }
 
     // Round trip to v8 value.
-    auto value =
-        std::make_unique<IDBValue>(std::move(buffer), std::move(blob_infos));
     value->SetIsolate(scope.GetIsolate());
     auto serialized_string = value->CreateSerializedValue();
     EXPECT_TRUE(serialized_string->Deserialize(scope.GetIsolate())
                     ->StrictEquals(v8_value));
+
+    {
+      // The data in `value` is still compressed after
+      // `CreateSerializedValue()`.
+      SerializedScriptValue::DataBufferPtr decompressed;
+      ASSERT_EQ(
+          test_case.should_compress,
+          IDBValueUnwrapper::Decompress(value->Data(), nullptr, &decompressed));
+
+      // ... but not when decompression output overwrites it.
+      base::test::ScopedFeatureList feature_disabler;
+      feature_disabler.InitAndDisableFeature(kIdbDecompressValuesInPlace);
+      serialized_string = value->CreateSerializedValue();
+      EXPECT_FALSE(
+          IDBValueUnwrapper::Decompress(value->Data(), nullptr, &decompressed));
+
+      // Verify round tripping again for good measure, to make sure the code
+      // still works with IdbDecompressValuesInPlace disabled.
+      EXPECT_TRUE(serialized_string->Deserialize(scope.GetIsolate())
+                      ->StrictEquals(v8_value));
+    }
   }
 }
 
@@ -584,6 +601,7 @@ TEST(IDBValueUnwrapperTest, Decompression) {
   test::TaskEnvironment task_environment;
   Vector<WebBlobInfo> blob_infos;
   Vector<char> buffer;
+  std::unique_ptr<IDBValue> value;
   V8TestingScope scope;
   v8::Local<v8::Value> v8_value;
   {
@@ -598,8 +616,7 @@ TEST(IDBValueUnwrapperTest, Decompression) {
                             SerializedScriptValue::SerializeOptions::kSerialize,
                             non_throwable_exception_state);
     wrapper.DoneCloning();
-    blob_infos = wrapper.TakeBlobInfo();
-    buffer = wrapper.TakeWireBytes();
+    value = std::move(wrapper).Build();
   }
 
   {
@@ -610,8 +627,6 @@ TEST(IDBValueUnwrapperTest, Decompression) {
         features::kIndexedDBCompressValuesWithSnappy));
 
     // Complete round trip to v8 value with compression disabled.
-    auto value =
-        std::make_unique<IDBValue>(std::move(buffer), std::move(blob_infos));
     value->SetIsolate(scope.GetIsolate());
     auto serialized_string = value->CreateSerializedValue();
     EXPECT_TRUE(serialized_string->Deserialize(scope.GetIsolate())

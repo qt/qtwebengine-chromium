@@ -97,9 +97,14 @@ TEST_F(AccessibilityTest, HistogramTest) {
 
   {
     ui::AXTreeUpdate response;
-    ScopedFreezeAXCache freeze(cache);
-    cache.SerializeEntireTree(/* max_node_count */ 1000,
-                              base::TimeDelta::FiniteMax(), &response);
+    // Create a secondary AXObjectCache for a snapshot.
+    Member<blink::AXObjectCache> snapshot_cache =
+        blink::AXObjectCache::CreateSnapshotter(GetDocument(),
+                                                ui::kAXModeBasic);
+    std::set<ui::AXSerializationErrorFlag> out_error;
+    snapshot_cache->SerializeEntireTreeAndDispose(/* max_node_count */ 1000,
+                                                  base::TimeDelta::FiniteMax(),
+                                                  &response, &out_error);
     histogram_tester.ExpectTotalCount(
         "Accessibility.Performance.AXObjectCacheImpl.Snapshot", 1);
     histogram_tester.ExpectTotalCount(
@@ -369,7 +374,7 @@ class AXViewTransitionTest : public testing::Test {
   }
 
   void SetHtmlInnerHTML(const String& content) {
-    GetDocument().body()->setInnerHTML(content);
+    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(content);
     UpdateAllLifecyclePhasesForTest();
   }
 
@@ -438,6 +443,9 @@ TEST_F(AXViewTransitionTest, TransitionPseudoNotRelevant) {
   auto* image_wrapper_pseudo = container_pseudo->GetPseudoElement(
       kPseudoIdViewTransitionImagePair, AtomicString("shared"));
   ASSERT_TRUE(image_wrapper_pseudo);
+  auto* nested_groups_pseudo = container_pseudo->GetPseudoElement(
+      kPseudoIdViewTransitionGroupChildren, AtomicString("shared"));
+  ASSERT_FALSE(nested_groups_pseudo);
   auto* incoming_image_pseudo = image_wrapper_pseudo->GetPseudoElement(
       kPseudoIdViewTransitionNew, AtomicString("shared"));
   ASSERT_TRUE(incoming_image_pseudo);

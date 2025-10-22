@@ -8,7 +8,6 @@
 #include <memory>
 
 #include "base/check_op.h"
-#include "base/debug/crash_logging.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
@@ -81,9 +80,11 @@ class ModalDialogHostObserverViews : public ModalDialogHostObserver {
     }
   }
   void OnHostDestroying() override {
-    dialog_widget_->Close();
+    // Synchronously close the dialog widget to avoid dangling references to the
+    // host.
     modal_dialog_host_observation_.Reset();
     host_ = nullptr;
+    dialog_widget_->CloseNow();
   }
 
  private:
@@ -193,6 +194,28 @@ void ConfigureDesiredBoundsDelegate(views::WidgetDelegate* dialog_delegate,
 
 }  // namespace
 
+class BrowserModalHelper {
+ public:
+  static views::Widget* Show(std::unique_ptr<ui::DialogModel> dialog_model,
+                             gfx::NativeWindow parent) {
+    // TODO(crbug.com/41493925): Remove will_use_custom_frame once native frame
+    // dialogs support autosize.
+    bool will_use_custom_frame = views::DialogDelegate::CanSupportCustomFrame(
+        parent ? CurrentBrowserModalClient()->GetDialogHostView(parent)
+               : gfx::NativeView());
+    auto dialog = views::BubbleDialogModelHost::CreateModal(
+        std::move(dialog_model), ui::mojom::ModalType::kWindow,
+        will_use_custom_frame);
+    dialog->SetOwnedByWidget(views::WidgetDelegate::OwnedByWidgetPassKey());
+    auto* widget = constrained_window::CreateBrowserModalDialogViews(
+        std::move(dialog), parent);
+    CHECK_EQ(widget->widget_delegate()->AsDialogDelegate()->use_custom_frame(),
+             will_use_custom_frame);
+    widget->Show();
+    return widget;
+  }
+};
+
 // static
 void SetConstrainedWindowViewsClient(
     std::unique_ptr<ConstrainedWindowViewsClient> new_client) {
@@ -260,21 +283,15 @@ views::Widget* CreateWebModalDialogViews(views::WidgetDelegate* dialog,
   DCHECK_EQ(ui::mojom::ModalType::kChild, dialog->GetModalType());
   web_modal::WebContentsModalDialogManager* manager =
       web_modal::WebContentsModalDialogManager::FromWebContents(web_contents);
-
-  // TODO(http://crbug/1273287): Drop "if" and DEBUG_ALIAS_FOR_GURL after fix.
-  if (!manager) {
-    const GURL& url = web_contents->GetLastCommittedURL();
-    DEBUG_ALIAS_FOR_GURL(url_alias, url);
-
-    SCOPED_CRASH_KEY_STRING32("WebModal", "scheme", url.scheme_piece());
-    SCOPED_CRASH_KEY_STRING32("WebModal", "host", url.host_piece());
-    LOG_IF(FATAL, !manager)
-        << "CreateWebModalDialogViews without a manager"
-        << ", scheme=" << url.scheme_piece() << ", host=" << url.host_piece();
-  }
-
   web_modal::ModalDialogHost* const dialog_host =
       manager->delegate()->GetWebContentsModalDialogHost();
+  CHECK(dialog_host);
+
+  // Use desktop widget so that it is not constrained by the boundary of the
+  // host window.
+  dialog->set_use_desktop_widget_override(
+      !dialog_host->ShouldDialogBoundsConstrainedByHost());
+
   views::Widget* widget = views::DialogDelegate::CreateDialogWidget(
       dialog, gfx::NativeWindow(), dialog_host->GetHostView());
   std::unique_ptr<ModalDialogHostObserver> observer =
@@ -340,21 +357,7 @@ views::Widget* CreateBrowserModalDialogViews(views::DialogDelegate* dialog,
 
 views::Widget* ShowBrowserModal(std::unique_ptr<ui::DialogModel> dialog_model,
                                 gfx::NativeWindow parent) {
-  // TODO(crbug.com/41493925): Remove will_use_custom_frame once native frame
-  // dialogs support autosize.
-  bool will_use_custom_frame = views::DialogDelegate::CanSupportCustomFrame(
-      parent ? CurrentBrowserModalClient()->GetDialogHostView(parent)
-             : gfx::NativeView());
-  auto dialog = views::BubbleDialogModelHost::CreateModal(
-      std::move(dialog_model), ui::mojom::ModalType::kWindow,
-      will_use_custom_frame);
-  dialog->SetOwnedByWidget(true);
-  auto* widget = constrained_window::CreateBrowserModalDialogViews(
-      std::move(dialog), parent);
-  CHECK_EQ(widget->widget_delegate()->AsDialogDelegate()->use_custom_frame(),
-           will_use_custom_frame);
-  widget->Show();
-  return widget;
+  return BrowserModalHelper::Show(std::move(dialog_model), parent);
 }
 
 views::Widget* ShowWebModal(std::unique_ptr<ui::DialogModel> dialog_model,

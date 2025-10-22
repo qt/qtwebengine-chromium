@@ -20,10 +20,10 @@
 #define xnn_load_tail_safe_impl(x, c) xnn_load_tail_safe_u8(x, c)
 #define xnn_pre_store_impl(x) x
 
-#include "src/xnnpack/simd/u8-scalar.h"
-
 #include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
 #include "src/xnnpack/microparams.h"
+#include "src/xnnpack/simd/u8-scalar.h"
 
 void xnn_u8_maxpool_minmax_ukernel_9p__scalar_u1(
     size_t output_pixels,
@@ -31,10 +31,11 @@ void xnn_u8_maxpool_minmax_ukernel_9p__scalar_u1(
     size_t channels,
     const uint8_t** input,
     size_t input_offset,
+    size_t input_pixel_stride,
     uint8_t* output,
     size_t input_increment,
     size_t output_increment,
-    const struct xnn_u8_minmax_params params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_u8_minmax_params* restrict params)
 {
   assert(output_pixels != 0);
   assert(channels != 0);
@@ -153,6 +154,7 @@ void xnn_u8_maxpool_minmax_ukernel_9p__scalar_u1(
     }
 
     input = (const uint8_t**) ((uintptr_t) input + input_increment);
+    input_offset += input_pixel_stride;
     output = (uint8_t*) ((uintptr_t) output + output_increment);
   } while (--output_pixels != 0);
 }

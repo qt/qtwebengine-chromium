@@ -34,6 +34,7 @@ chromium-metrics-reviews@google.com.
 <enum name="CertificatePrivateKeySource">
   <int value="0" label="Unexportable"/>
   <int value="1" label="Software"/>
+  <int value="2" label="OsSoftware"/>
 </enum>
 
 <enum name="CertificateProvisioningError">
@@ -74,7 +75,6 @@ chromium-metrics-reviews@google.com.
   <int value="0" label="Page UserData"/>
   <int value="1" label="Cached lookup result"/>
   <int value="2" label="Post navigation lookup"/>
-  <int value="3" label="WebContents UserData"/>
 </enum>
 
 <enum name="DeviceIdentifierStatus">
@@ -471,6 +471,8 @@ chromium-metrics-reviews@google.com.
   <int value="33" label="FAILURE_UNEXPECTED_AUTHENTICATOR_ERROR"/>
   <int value="34" label="FAILURE_INVALID_STATE"/>
   <int value="35" label="FAILURE_INVALID_ARGUMENT"/>
+  <int value="36" label="FAILURE_NETWORK_FAILURE"/>
+  <int value="37" label="FAILURE_OPERATION_TIMEOUT"/>
 </enum>
 
 <enum name="EnterpriseDeviceManagementStatus">
@@ -601,6 +603,7 @@ chromium-metrics-reviews@google.com.
   <int value="4" label="Privacy Screen"/>
   <int value="5" label="Screenshare"/>
   <int value="6" label="Files"/>
+  <int value="7" label="File download"/>
 </enum>
 
 <enum name="EnterpriseEnrollmentType">
@@ -1887,7 +1890,7 @@ chromium-metrics-reviews@google.com.
   <int value="1009" label="BatterySaverModeAvailability"/>
   <int value="1010" label="TabDiscardingExceptions"/>
   <int value="1011" label="AssistantWebEnabled"/>
-  <int value="1012" label="(Obsolete) LacrosDataBackwardMigrationMode"/>
+  <int value="1012" label="LacrosDataBackwardMigrationMode"/>
   <int value="1013" label="StrictMimetypeCheckForWorkerScriptsEnabled"/>
   <int value="1014" label="RecoveryFactorBehavior"/>
   <int value="1015" label="CalendarIntegrationEnabled"/>
@@ -2131,7 +2134,6 @@ chromium-metrics-reviews@google.com.
   <int value="1259" label="ExtensibleEnterpriseSSOBlocklist"/>
   <int value="1260" label="CSSCustomStateDeprecatedSyntaxEnabled"/>
   <int value="1261" label="MemorySaverModeSavings"/>
-  <int value="1262" label="KioskVisionTelemetryEnabled"/>
   <int value="1263" label="GenAIWallpaperSettings"/>
   <int value="1264" label="GenAIVcBackgroundSettings"/>
   <int value="1265" label="DynamicCodeSettings"/>
@@ -2183,7 +2185,6 @@ chromium-metrics-reviews@google.com.
   <int value="1312" label="NTPSharepointCardVisible"/>
   <int value="1313" label="SharedWorkerBlobURLFixEnabled"/>
   <int value="1314" label="DeviceNativeClientForceAllowed"/>
-  <int value="1315" label="GenAiLensOverlaySettings"/>
   <int value="1316" label="PasswordManagerPasskeysEnabled"/>
   <int value="1317" label="FilePickerChooseFromDriveSettings"/>
   <int value="1318" label="LiveTranslateEnabled"/>
@@ -2205,11 +2206,10 @@ chromium-metrics-reviews@google.com.
   <int value="1335" label="GeminiSettings"/>
   <int value="1336" label="GenAISmartGroupingSettings"/>
   <int value="1337" label="GenAiChromeOsSmartActionsSettings"/>
-  <int value="1338" label="RelaunchSupersededReleaseAge"/>
+  <int value="1338" label="RelaunchFastIfOutdated"/>
   <int value="1339" label="ClassManagementCaptionsEnabled"/>
   <int value="1340" label="ClassManagementClassroomIntegrationEnabled"/>
   <int value="1341" label="ClassManagementNetworkRestrictionEnabled"/>
-  <int value="1342" label="ClassManagementSendingContentEnabled"/>
   <int value="1343" label="ClassManagementViewScreenEnabled"/>
   <int value="1344" label="KioskChromeAppsForceAllowed"/>
   <int value="1345" label="ReduceAcceptLanguageEnabled"/>
@@ -2217,6 +2217,44 @@ chromium-metrics-reviews@google.com.
   <int value="1347" label="UserSecuritySignalsReporting"/>
   <int value="1348" label="UserSecurityAuthenticatedReporting"/>
   <int value="1349" label="HappyEyeballsV3Enabled"/>
+  <int value="1350" label="FaceGazeEnabled"/>
+  <int value="1351" label="ProvisionalNotificationsAllowed"/>
+  <int value="1352" label="DeviceLoginScreenFaceGazeEnabled"/>
+  <int value="1353" label="EnterpriseLogoUrlForBrowser"/>
+  <int value="1354" label="EnterpriseCustomLabelForBrowser"/>
+  <int value="1355" label="DefaultSmartCardConnectSetting"/>
+  <int value="1356" label="DeviceUserInitiatedFirmwareUpdatesEnabled"/>
+  <int value="1357" label="BuiltInAIAPIsEnabled"/>
+  <int value="1358" label="TabGroupSharingSettings"/>
+  <int value="1359" label="NTPFooterManagementNoticeEnabled"/>
+  <int value="1360" label="NTPFooterExtensionAttributionEnabled"/>
+  <int value="1361" label="ClearWindowNameForNewBrowsingContextGroup"/>
+  <int value="1362" label="PasswordManagerBlocklist"/>
+  <int value="1363" label="TLS13EarlyDataEnabled"/>
+  <int value="1364" label="LocalNetworkAccessRestrictionsEnabled"/>
+  <int value="1365" label="PrefetchWithServiceWorkerEnabled"/>
+  <int value="1367" label="AIModeSettings"/>
+  <int value="1368" label="WatermarkStyle"/>
+  <int value="1369" label="KioskApplicationLogCollectionEnabled"/>
+  <int value="1370" label="EnableUnsafeSwiftShader"/>
+  <int value="1371" label="LocalNetworkAccessAllowedForUrls"/>
+  <int value="1372" label="LocalNetworkAccessBlockedForUrls"/>
+  <int value="1373" label="DeviceBluetoothJustWorksPairingEnabled"/>
+  <int value="1374" label="LiveCaptionEnabled"/>
+  <int value="1375"
+      label="DeviceUserInitiatedFlexSystemFirmwareUpdatesEnabled"/>
+  <int value="1376" label="AutomatedPasswordChangeSettings"/>
+  <int value="1377" label="DefaultDeviceAttributesSetting"/>
+  <int value="1378" label="DeviceAttributesBlockedForOrigins"/>
+  <int value="1379" label="FloatingSsoSessionCookiesIncluded"/>
+  <int value="1380" label="ServiceWorkerAutoPreload"/>
+  <int value="1381" label="ProtectedContentIdentifiersAllowed"/>
+  <int value="1382" label="LegacyCookieScopeEnabled"/>
+  <int value="1383" label="LegacyCookieScopeEnabledForDomainList"/>
+  <int value="1384" label="WebRtcPostQuantumKeyAgreement"/>
+  <int value="1385" label="DeviceLoginScreenSecurityKeyPermitAttestation"/>
+  <int value="1386" label="RestrictCoreSharingOnRenderer"/>
+  <int value="1387" label="OriginKeyedProcessesEnabled"/>
 </enum>
 
 <enum name="EnterprisePoliciesSources">
@@ -2627,6 +2665,9 @@ chromium-metrics-reviews@google.com.
     (Obsolete) A new extension request is added and uploaded with ERP.
   </int>
   <int value="6" label="kTriggerManual">User upload report manually</int>
+  <int value="7" label="kTriggerSecurity">
+    Triggered by a security reporting trigger
+  </int>
 </enum>
 
 <enum name="SecondaryGoogleAccountUsagePolicyFetchStatus">
@@ -2638,6 +2679,21 @@ chromium-metrics-reviews@google.com.
   <int value="5" label="UnsupportedAccountTypeError"/>
   <int value="6" label="GetTokenError"/>
   <int value="7" label="GetUserInfoError"/>
+</enum>
+
+<enum name="SecurityReportTrigger">
+  <int value="0" label="Signals-only report triggered by timer"/>
+  <int value="1" label="Signals-only report triggered by cookie change"/>
+</enum>
+
+<enum name="SecuritySignalsMode">
+  <int value="0"
+      label="No security signals is uploaded, this state is erroneous"/>
+  <int value="1"
+      label="Security signals are uploaded alongside with a status report"/>
+  <int value="2"
+      label="Security signals are uploaded exclusively, in a signals-only
+             report"/>
 </enum>
 
 <enum name="StateDeterminationStatus">

@@ -263,6 +263,11 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpColorAttachmentReadEXT:
         case spv::OpDepthAttachmentReadEXT:
         case spv::OpStencilAttachmentReadEXT:
+        case spv::OpTensorReadARM:
+        case spv::OpTensorQuerySizeARM:
+        case spv::OpGraphConstantARM:
+        case spv::OpGraphARM:
+        case spv::OpGraphInputARM:
         case spv::OpSubgroupBallotKHR:
         case spv::OpSubgroupFirstInvocationKHR:
         case spv::OpSubgroupAllKHR:
@@ -290,10 +295,14 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpImageBoxFilterQCOM:
         case spv::OpImageBlockMatchSSDQCOM:
         case spv::OpImageBlockMatchSADQCOM:
+        case spv::OpBitCastArrayQCOM:
         case spv::OpImageBlockMatchWindowSSDQCOM:
         case spv::OpImageBlockMatchWindowSADQCOM:
         case spv::OpImageBlockMatchGatherSSDQCOM:
         case spv::OpImageBlockMatchGatherSADQCOM:
+        case spv::OpCompositeConstructCoopMatQCOM:
+        case spv::OpCompositeExtractCoopMatQCOM:
+        case spv::OpExtractSubArrayQCOM:
         case spv::OpGroupIAddNonUniformAMD:
         case spv::OpGroupFAddNonUniformAMD:
         case spv::OpGroupFMinNonUniformAMD:
@@ -438,6 +447,13 @@ static constexpr bool OpcodeHasType(uint32_t opcode) {
         case spv::OpFinishWritingNodePayloadAMDX:
         case spv::OpNodePayloadArrayLengthAMDX:
         case spv::OpIsNodePayloadValidAMDX:
+        case spv::OpSpecConstantTargetINTEL:
+        case spv::OpSpecConstantArchitectureINTEL:
+        case spv::OpSpecConstantCapabilitiesINTEL:
+        case spv::OpConditionalCopyObjectINTEL:
+        case spv::OpConvertHandleToImageINTEL:
+        case spv::OpConvertHandleToSamplerINTEL:
+        case spv::OpConvertHandleToSampledImageINTEL:
 #endif
             return true;
         default:
@@ -687,6 +703,13 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpColorAttachmentReadEXT:
         case spv::OpDepthAttachmentReadEXT:
         case spv::OpStencilAttachmentReadEXT:
+        case spv::OpTypeTensorARM:
+        case spv::OpTensorReadARM:
+        case spv::OpTensorQuerySizeARM:
+        case spv::OpGraphConstantARM:
+        case spv::OpGraphARM:
+        case spv::OpGraphInputARM:
+        case spv::OpTypeGraphARM:
         case spv::OpSubgroupBallotKHR:
         case spv::OpSubgroupFirstInvocationKHR:
         case spv::OpSubgroupAllKHR:
@@ -716,10 +739,14 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpImageBoxFilterQCOM:
         case spv::OpImageBlockMatchSSDQCOM:
         case spv::OpImageBlockMatchSADQCOM:
+        case spv::OpBitCastArrayQCOM:
         case spv::OpImageBlockMatchWindowSSDQCOM:
         case spv::OpImageBlockMatchWindowSADQCOM:
         case spv::OpImageBlockMatchGatherSSDQCOM:
         case spv::OpImageBlockMatchGatherSADQCOM:
+        case spv::OpCompositeConstructCoopMatQCOM:
+        case spv::OpCompositeExtractCoopMatQCOM:
+        case spv::OpExtractSubArrayQCOM:
         case spv::OpGroupIAddNonUniformAMD:
         case spv::OpGroupFAddNonUniformAMD:
         case spv::OpGroupFMinNonUniformAMD:
@@ -875,6 +902,13 @@ static constexpr bool OpcodeHasResult(uint32_t opcode) {
         case spv::OpIsNodePayloadValidAMDX:
         case spv::OpConstantStringAMDX:
         case spv::OpSpecConstantStringAMDX:
+        case spv::OpSpecConstantTargetINTEL:
+        case spv::OpSpecConstantArchitectureINTEL:
+        case spv::OpSpecConstantCapabilitiesINTEL:
+        case spv::OpConditionalCopyObjectINTEL:
+        case spv::OpConvertHandleToImageINTEL:
+        case spv::OpConvertHandleToSamplerINTEL:
+        case spv::OpConvertHandleToSampledImageINTEL:
 #endif
             return true;
         default:
@@ -1247,6 +1281,8 @@ enum class SpvType {
     kPointer,
     kFunction,
     kForwardPointer,
+    kTensorARM,
+    kGraphARM,
     kCooperativeMatrixKHR,
     kRayQueryKHR,
     kHitObjectNV,
@@ -1290,6 +1326,10 @@ static constexpr SpvType GetSpvType(uint32_t opcode) {
             return SpvType::kFunction;
         case spv::OpTypeForwardPointer:
             return SpvType::kForwardPointer;
+        case spv::OpTypeTensorARM:
+            return SpvType::kTensorARM;
+        case spv::OpTypeGraphARM:
+            return SpvType::kGraphARM;
         case spv::OpTypeCooperativeMatrixKHR:
             return SpvType::kCooperativeMatrixKHR;
         case spv::OpTypeRayQueryKHR:

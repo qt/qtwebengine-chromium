@@ -14,6 +14,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/field_trial_params.h"
 #include "base/no_destructor.h"
+#include "base/notimplemented.h"
 #include "base/observer_list.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/time/time.h"
@@ -39,7 +40,6 @@
 #include "ui/base/ui_base_features.h"
 #include "ui/base/view_prop.h"
 #include "ui/compositor/compositor.h"
-#include "ui/compositor/compositor_switches.h"
 #include "ui/compositor/layer.h"
 #include "ui/display/display.h"
 #include "ui/display/screen.h"
@@ -550,9 +550,9 @@ void WindowTreeHost::CreateCompositor(bool force_software_compositor,
   compositor_ = std::make_unique<ui::Compositor>(
       context_factory->AllocateFrameSinkId(), context_factory,
       base::SingleThreadTaskRunner::GetCurrentDefault(),
-      ui::IsPixelCanvasRecordingEnabled(), use_external_begin_frame_control,
-      force_software_compositor, enable_compositing_based_throttling,
-      memory_limit_when_visible_mb);
+      features::IsPixelCanvasRecordingEnabled(),
+      use_external_begin_frame_control, force_software_compositor,
+      enable_compositing_based_throttling, memory_limit_when_visible_mb);
   compositor_->AddObserver(this);
   if (!dispatcher()) {
     window()->Init(ui::LAYER_NOT_DRAWN);

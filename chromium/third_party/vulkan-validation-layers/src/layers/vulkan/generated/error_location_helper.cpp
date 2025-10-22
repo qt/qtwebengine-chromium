@@ -49,15 +49,18 @@ const char* String(Func func) {
     {"vkBindBufferMemory", 19},
     {"vkBindBufferMemory2", 20},
     {"vkBindBufferMemory2KHR", 23},
+    {"vkBindDataGraphPipelineSessionMemoryARM", 40},
     {"vkBindImageMemory", 18},
     {"vkBindImageMemory2", 19},
     {"vkBindImageMemory2KHR", 22},
     {"vkBindOpticalFlowSessionImageNV", 32},
+    {"vkBindTensorMemoryARM", 22},
     {"vkBindVideoSessionMemoryKHR", 28},
     {"vkBuildAccelerationStructuresKHR", 33},
     {"vkBuildMicromapsEXT", 20},
     {"vkCmdBeginConditionalRenderingEXT", 34},
     {"vkCmdBeginDebugUtilsLabelEXT", 29},
+    {"vkCmdBeginPerTileExecutionQCOM", 31},
     {"vkCmdBeginQuery", 16},
     {"vkCmdBeginQueryIndexedEXT", 26},
     {"vkCmdBeginRenderPass", 21},
@@ -81,6 +84,7 @@ const char* String(Func func) {
     {"vkCmdBindPipelineShaderGroupNV", 31},
     {"vkCmdBindShadersEXT", 20},
     {"vkCmdBindShadingRateImageNV", 28},
+    {"vkCmdBindTileMemoryQCOM", 24},
     {"vkCmdBindTransformFeedbackBuffersEXT", 37},
     {"vkCmdBindVertexBuffers", 23},
     {"vkCmdBindVertexBuffers2", 24},
@@ -121,6 +125,7 @@ const char* String(Func func) {
     {"vkCmdCopyMicromapEXT", 21},
     {"vkCmdCopyMicromapToMemoryEXT", 29},
     {"vkCmdCopyQueryPoolResults", 26},
+    {"vkCmdCopyTensorARM", 19},
     {"vkCmdCuLaunchKernelNVX", 23},
     {"vkCmdCudaLaunchKernelNV", 24},
     {"vkCmdDebugMarkerBeginEXT", 25},
@@ -132,10 +137,12 @@ const char* String(Func func) {
     {"vkCmdDispatch", 14},
     {"vkCmdDispatchBase", 18},
     {"vkCmdDispatchBaseKHR", 21},
+    {"vkCmdDispatchDataGraphARM", 26},
     {"vkCmdDispatchGraphAMDX", 23},
     {"vkCmdDispatchGraphIndirectAMDX", 31},
     {"vkCmdDispatchGraphIndirectCountAMDX", 36},
     {"vkCmdDispatchIndirect", 22},
+    {"vkCmdDispatchTileQCOM", 22},
     {"vkCmdDraw", 10},
     {"vkCmdDrawClusterHUAWEI", 23},
     {"vkCmdDrawClusterIndirectHUAWEI", 31},
@@ -160,6 +167,7 @@ const char* String(Func func) {
     {"vkCmdEncodeVideoKHR", 20},
     {"vkCmdEndConditionalRenderingEXT", 32},
     {"vkCmdEndDebugUtilsLabelEXT", 27},
+    {"vkCmdEndPerTileExecutionQCOM", 29},
     {"vkCmdEndQuery", 14},
     {"vkCmdEndQueryIndexedEXT", 24},
     {"vkCmdEndRenderPass", 19},
@@ -352,6 +360,8 @@ const char* String(Func func) {
     {"vkCreateCuModuleNVX", 20},
     {"vkCreateCudaFunctionNV", 23},
     {"vkCreateCudaModuleNV", 21},
+    {"vkCreateDataGraphPipelineSessionARM", 36},
+    {"vkCreateDataGraphPipelinesARM", 30},
     {"vkCreateDebugReportCallbackEXT", 31},
     {"vkCreateDebugUtilsMessengerEXT", 31},
     {"vkCreateDeferredOperationKHR", 29},
@@ -365,6 +375,7 @@ const char* String(Func func) {
     {"vkCreateDisplayPlaneSurfaceKHR", 31},
     {"vkCreateEvent", 14},
     {"vkCreateExecutionGraphPipelinesAMDX", 36},
+    {"vkCreateExternalComputeQueueNV", 31},
     {"vkCreateFence", 14},
     {"vkCreateFramebuffer", 20},
     {"vkCreateGraphicsPipelines", 26},
@@ -401,7 +412,10 @@ const char* String(Func func) {
     {"vkCreateShadersEXT", 19},
     {"vkCreateSharedSwapchainsKHR", 28},
     {"vkCreateStreamDescriptorSurfaceGGP", 35},
+    {"vkCreateSurfaceOHOS", 20},
     {"vkCreateSwapchainKHR", 21},
+    {"vkCreateTensorARM", 18},
+    {"vkCreateTensorViewARM", 22},
     {"vkCreateValidationCacheEXT", 27},
     {"vkCreateViSurfaceNN", 20},
     {"vkCreateVideoSessionKHR", 24},
@@ -424,6 +438,7 @@ const char* String(Func func) {
     {"vkDestroyCuModuleNVX", 21},
     {"vkDestroyCudaFunctionNV", 24},
     {"vkDestroyCudaModuleNV", 22},
+    {"vkDestroyDataGraphPipelineSessionARM", 37},
     {"vkDestroyDebugReportCallbackEXT", 32},
     {"vkDestroyDebugUtilsMessengerEXT", 32},
     {"vkDestroyDeferredOperationKHR", 30},
@@ -433,6 +448,7 @@ const char* String(Func func) {
     {"vkDestroyDescriptorUpdateTemplateKHR", 37},
     {"vkDestroyDevice", 16},
     {"vkDestroyEvent", 15},
+    {"vkDestroyExternalComputeQueueNV", 32},
     {"vkDestroyFence", 15},
     {"vkDestroyFramebuffer", 21},
     {"vkDestroyImage", 15},
@@ -459,6 +475,8 @@ const char* String(Func func) {
     {"vkDestroyShaderModule", 22},
     {"vkDestroySurfaceKHR", 20},
     {"vkDestroySwapchainKHR", 22},
+    {"vkDestroyTensorARM", 19},
+    {"vkDestroyTensorViewARM", 23},
     {"vkDestroyValidationCacheEXT", 28},
     {"vkDestroyVideoSessionKHR", 25},
     {"vkDestroyVideoSessionParametersKHR", 35},
@@ -499,6 +517,10 @@ const char* String(Func func) {
     {"vkGetCalibratedTimestampsKHR", 29},
     {"vkGetClusterAccelerationStructureBuildSizesNV", 46},
     {"vkGetCudaModuleCacheNV", 23},
+    {"vkGetDataGraphPipelineAvailablePropertiesARM", 45},
+    {"vkGetDataGraphPipelinePropertiesARM", 36},
+    {"vkGetDataGraphPipelineSessionBindPointRequirementsARM", 54},
+    {"vkGetDataGraphPipelineSessionMemoryRequirementsARM", 51},
     {"vkGetDeferredOperationMaxConcurrencyKHR", 40},
     {"vkGetDeferredOperationResultKHR", 32},
     {"vkGetDescriptorEXT", 19},
@@ -531,6 +553,7 @@ const char* String(Func func) {
     {"vkGetDeviceQueue", 17},
     {"vkGetDeviceQueue2", 18},
     {"vkGetDeviceSubpassShadingMaxWorkgroupSizeHUAWEI", 48},
+    {"vkGetDeviceTensorMemoryRequirementsARM", 39},
     {"vkGetDisplayModeProperties2KHR", 31},
     {"vkGetDisplayModePropertiesKHR", 30},
     {"vkGetDisplayPlaneCapabilities2KHR", 34},
@@ -542,6 +565,7 @@ const char* String(Func func) {
     {"vkGetEventStatus", 17},
     {"vkGetExecutionGraphPipelineNodeIndexAMDX", 41},
     {"vkGetExecutionGraphPipelineScratchSizeAMDX", 43},
+    {"vkGetExternalComputeQueueDataNV", 32},
     {"vkGetFenceFdKHR", 16},
     {"vkGetFenceStatus", 17},
     {"vkGetFenceWin32HandleKHR", 25},
@@ -600,6 +624,7 @@ const char* String(Func func) {
     {"vkGetPhysicalDeviceExternalImageFormatPropertiesNV", 51},
     {"vkGetPhysicalDeviceExternalSemaphoreProperties", 47},
     {"vkGetPhysicalDeviceExternalSemaphorePropertiesKHR", 50},
+    {"vkGetPhysicalDeviceExternalTensorPropertiesARM", 47},
     {"vkGetPhysicalDeviceFeatures", 28},
     {"vkGetPhysicalDeviceFeatures2", 29},
     {"vkGetPhysicalDeviceFeatures2KHR", 32},
@@ -619,6 +644,8 @@ const char* String(Func func) {
     {"vkGetPhysicalDeviceProperties", 30},
     {"vkGetPhysicalDeviceProperties2", 31},
     {"vkGetPhysicalDeviceProperties2KHR", 34},
+    {"vkGetPhysicalDeviceQueueFamilyDataGraphProcessingEnginePropertiesARM", 69},
+    {"vkGetPhysicalDeviceQueueFamilyDataGraphPropertiesARM", 53},
     {"vkGetPhysicalDeviceQueueFamilyPerformanceQueryPassesKHR", 56},
     {"vkGetPhysicalDeviceQueueFamilyProperties", 41},
     {"vkGetPhysicalDeviceQueueFamilyProperties2", 42},
@@ -682,6 +709,9 @@ const char* String(Func func) {
     {"vkGetSwapchainCounterEXT", 25},
     {"vkGetSwapchainImagesKHR", 24},
     {"vkGetSwapchainStatusKHR", 24},
+    {"vkGetTensorMemoryRequirementsARM", 33},
+    {"vkGetTensorOpaqueCaptureDescriptorDataARM", 42},
+    {"vkGetTensorViewOpaqueCaptureDescriptorDataARM", 46},
     {"vkGetValidationCacheDataEXT", 28},
     {"vkGetVideoSessionMemoryRequirementsKHR", 39},
     {"vkGetWinrtDisplayNV", 20},
@@ -717,6 +747,7 @@ const char* String(Func func) {
     {"vkReleasePerformanceConfigurationINTEL", 39},
     {"vkReleaseProfilingLockKHR", 26},
     {"vkReleaseSwapchainImagesEXT", 28},
+    {"vkReleaseSwapchainImagesKHR", 28},
     {"vkResetCommandBuffer", 21},
     {"vkResetCommandPool", 19},
     {"vkResetDescriptorPool", 22},
@@ -754,6 +785,7 @@ const char* String(Func func) {
     {"vkUpdateIndirectExecutionSetShaderEXT", 38},
     {"vkUpdateVideoSessionParametersKHR", 34},
     {"vkWaitForFences", 16},
+    {"vkWaitForPresent2KHR", 21},
     {"vkWaitForPresentKHR", 20},
     {"vkWaitSemaphores", 17},
     {"vkWaitSemaphoresKHR", 20},
@@ -809,6 +841,7 @@ const char* String(Struct structure) {
     {"VkAttachmentDescription", 24},
     {"VkAttachmentDescription2", 25},
     {"VkAttachmentDescriptionStencilLayout", 37},
+    {"VkAttachmentFeedbackLoopInfoEXT", 32},
     {"VkAttachmentReference", 22},
     {"VkAttachmentReference2", 23},
     {"VkAttachmentReferenceStencilLayout", 35},
@@ -819,6 +852,7 @@ const char* String(Struct structure) {
     {"VkBindAccelerationStructureMemoryInfoNV", 40},
     {"VkBindBufferMemoryDeviceGroupInfo", 34},
     {"VkBindBufferMemoryInfo", 23},
+    {"VkBindDataGraphPipelineSessionMemoryInfoARM", 44},
     {"VkBindDescriptorBufferEmbeddedSamplersInfoEXT", 46},
     {"VkBindDescriptorSetsInfo", 25},
     {"VkBindImageMemoryDeviceGroupInfo", 33},
@@ -831,6 +865,7 @@ const char* String(Struct structure) {
     {"VkBindPipelineIndirectCommandNV", 32},
     {"VkBindShaderGroupIndirectCommandNV", 35},
     {"VkBindSparseInfo", 17},
+    {"VkBindTensorMemoryInfoARM", 26},
     {"VkBindVertexBufferIndirectCommandEXT", 37},
     {"VkBindVertexBufferIndirectCommandNV", 36},
     {"VkBindVideoSessionMemoryInfoKHR", 32},
@@ -872,6 +907,7 @@ const char* String(Struct structure) {
     {"VkClusterAccelerationStructureClustersBottomLevelInputNV", 57},
     {"VkClusterAccelerationStructureCommandsInfoNV", 45},
     {"VkClusterAccelerationStructureGeometryIndexAndGeometryFlagsNV", 62},
+    {"VkClusterAccelerationStructureGetTemplateIndicesInfoNV", 55},
     {"VkClusterAccelerationStructureInputInfoNV", 42},
     {"VkClusterAccelerationStructureInstantiateClusterInfoNV", 55},
     {"VkClusterAccelerationStructureMoveObjectsInfoNV", 48},
@@ -918,6 +954,7 @@ const char* String(Struct structure) {
     {"VkCopyMemoryToMicromapInfoEXT", 30},
     {"VkCopyMicromapInfoEXT", 22},
     {"VkCopyMicromapToMemoryInfoEXT", 30},
+    {"VkCopyTensorInfoARM", 20},
     {"VkCuFunctionCreateInfoNVX", 26},
     {"VkCuLaunchInfoNVX", 18},
     {"VkCuModuleCreateInfoNVX", 24},
@@ -926,6 +963,21 @@ const char* String(Struct structure) {
     {"VkCudaLaunchInfoNV", 19},
     {"VkCudaModuleCreateInfoNV", 25},
     {"VkD3D12FenceSubmitInfoKHR", 26},
+    {"VkDataGraphPipelineCompilerControlCreateInfoARM", 48},
+    {"VkDataGraphPipelineConstantARM", 31},
+    {"VkDataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM", 63},
+    {"VkDataGraphPipelineCreateInfoARM", 33},
+    {"VkDataGraphPipelineDispatchInfoARM", 35},
+    {"VkDataGraphPipelineIdentifierCreateInfoARM", 43},
+    {"VkDataGraphPipelineInfoARM", 27},
+    {"VkDataGraphPipelinePropertyQueryResultARM", 42},
+    {"VkDataGraphPipelineResourceInfoARM", 35},
+    {"VkDataGraphPipelineSessionBindPointRequirementARM", 50},
+    {"VkDataGraphPipelineSessionBindPointRequirementsInfoARM", 55},
+    {"VkDataGraphPipelineSessionCreateInfoARM", 40},
+    {"VkDataGraphPipelineSessionMemoryRequirementsInfoARM", 52},
+    {"VkDataGraphPipelineShaderModuleCreateInfoARM", 45},
+    {"VkDataGraphProcessingEngineCreateInfoARM", 41},
     {"VkDebugMarkerMarkerInfoEXT", 27},
     {"VkDebugMarkerObjectNameInfoEXT", 31},
     {"VkDebugMarkerObjectTagInfoEXT", 30},
@@ -949,6 +1001,7 @@ const char* String(Struct structure) {
     {"VkDescriptorBufferInfo", 23},
     {"VkDescriptorDataEXT", 20},
     {"VkDescriptorGetInfoEXT", 23},
+    {"VkDescriptorGetTensorInfoARM", 29},
     {"VkDescriptorImageInfo", 22},
     {"VkDescriptorPoolCreateInfo", 27},
     {"VkDescriptorPoolInlineUniformBlockCreateInfo", 45},
@@ -997,12 +1050,14 @@ const char* String(Struct structure) {
     {"VkDeviceQueueGlobalPriorityCreateInfo", 38},
     {"VkDeviceQueueInfo2", 19},
     {"VkDeviceQueueShaderCoreControlCreateInfoARM", 44},
+    {"VkDeviceTensorMemoryRequirementsARM", 36},
     {"VkDirectDriverLoadingInfoLUNARG", 32},
     {"VkDirectDriverLoadingListLUNARG", 32},
     {"VkDirectFBSurfaceCreateInfoEXT", 31},
     {"VkDispatchGraphCountInfoAMDX", 29},
     {"VkDispatchGraphInfoAMDX", 24},
     {"VkDispatchIndirectCommand", 26},
+    {"VkDispatchTileInfoQCOM", 23},
     {"VkDisplayEventInfoEXT", 22},
     {"VkDisplayModeCreateInfoKHR", 27},
     {"VkDisplayModeParametersKHR", 27},
@@ -1053,6 +1108,9 @@ const char* String(Struct structure) {
     {"VkExtent2D", 11},
     {"VkExtent3D", 11},
     {"VkExternalBufferProperties", 27},
+    {"VkExternalComputeQueueCreateInfoNV", 35},
+    {"VkExternalComputeQueueDataParamsNV", 35},
+    {"VkExternalComputeQueueDeviceCreateInfoNV", 41},
     {"VkExternalFenceProperties", 26},
     {"VkExternalFormatANDROID", 24},
     {"VkExternalFormatQNX", 20},
@@ -1063,7 +1121,9 @@ const char* String(Struct structure) {
     {"VkExternalMemoryImageCreateInfo", 32},
     {"VkExternalMemoryImageCreateInfoNV", 34},
     {"VkExternalMemoryProperties", 27},
+    {"VkExternalMemoryTensorCreateInfoARM", 36},
     {"VkExternalSemaphoreProperties", 30},
+    {"VkExternalTensorPropertiesARM", 30},
     {"VkFenceCreateInfo", 18},
     {"VkFenceGetFdInfoKHR", 20},
     {"VkFenceGetWin32HandleInfoKHR", 29},
@@ -1073,6 +1133,7 @@ const char* String(Struct structure) {
     {"VkFormatProperties3", 20},
     {"VkFragmentShadingRateAttachmentInfoKHR", 39},
     {"VkFrameBoundaryEXT", 19},
+    {"VkFrameBoundaryTensorsARM", 26},
     {"VkFramebufferAttachmentImageInfo", 33},
     {"VkFramebufferAttachmentsCreateInfo", 35},
     {"VkFramebufferCreateInfo", 24},
@@ -1191,6 +1252,7 @@ const char* String(Struct structure) {
     {"VkMemoryBarrier2", 17},
     {"VkMemoryBarrierAccessFlags3KHR", 31},
     {"VkMemoryDedicatedAllocateInfo", 30},
+    {"VkMemoryDedicatedAllocateInfoTensorARM", 39},
     {"VkMemoryDedicatedRequirements", 30},
     {"VkMemoryFdPropertiesKHR", 24},
     {"VkMemoryGetAndroidHardwareBufferInfoANDROID", 44},
@@ -1228,6 +1290,7 @@ const char* String(Struct structure) {
     {"VkMultiviewPerViewRenderAreasRenderPassBeginInfoQCOM", 53},
     {"VkMutableDescriptorTypeCreateInfoEXT", 37},
     {"VkMutableDescriptorTypeListEXT", 31},
+    {"VkOHSurfaceCreateInfoOHOS", 26},
     {"VkOffset2D", 11},
     {"VkOffset3D", 11},
     {"VkOpaqueCaptureDescriptorDataCreateInfoEXT", 43},
@@ -1243,6 +1306,8 @@ const char* String(Struct structure) {
     {"VkPartitionedAccelerationStructureWriteInstanceDataNV", 54},
     {"VkPartitionedAccelerationStructureWritePartitionTranslationDataNV", 66},
     {"VkPastPresentationTimingGOOGLE", 31},
+    {"VkPerTileBeginInfoQCOM", 23},
+    {"VkPerTileEndInfoQCOM", 21},
     {"VkPerformanceConfigurationAcquireInfoINTEL", 43},
     {"VkPerformanceCounterDescriptionKHR", 35},
     {"VkPerformanceCounterKHR", 24},
@@ -1299,6 +1364,9 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceCudaKernelLaunchPropertiesNV", 45},
     {"VkPhysicalDeviceCustomBorderColorFeaturesEXT", 45},
     {"VkPhysicalDeviceCustomBorderColorPropertiesEXT", 47},
+    {"VkPhysicalDeviceDataGraphFeaturesARM", 37},
+    {"VkPhysicalDeviceDataGraphOperationSupportARM", 45},
+    {"VkPhysicalDeviceDataGraphProcessingEngineARM", 45},
     {"VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV", 59},
     {"VkPhysicalDeviceDepthBiasControlFeaturesEXT", 44},
     {"VkPhysicalDeviceDepthClampControlFeaturesEXT", 45},
@@ -1309,6 +1377,8 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceDescriptorBufferDensityMapPropertiesEXT", 56},
     {"VkPhysicalDeviceDescriptorBufferFeaturesEXT", 44},
     {"VkPhysicalDeviceDescriptorBufferPropertiesEXT", 46},
+    {"VkPhysicalDeviceDescriptorBufferTensorFeaturesARM", 50},
+    {"VkPhysicalDeviceDescriptorBufferTensorPropertiesARM", 52},
     {"VkPhysicalDeviceDescriptorIndexingFeatures", 43},
     {"VkPhysicalDeviceDescriptorIndexingProperties", 45},
     {"VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV", 55},
@@ -1336,6 +1406,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV", 53},
     {"VkPhysicalDeviceExtendedSparseAddressSpacePropertiesNV", 55},
     {"VkPhysicalDeviceExternalBufferInfo", 35},
+    {"VkPhysicalDeviceExternalComputeQueuePropertiesNV", 49},
     {"VkPhysicalDeviceExternalFenceInfo", 34},
     {"VkPhysicalDeviceExternalFormatResolveFeaturesANDROID", 53},
     {"VkPhysicalDeviceExternalFormatResolvePropertiesANDROID", 55},
@@ -1344,13 +1415,17 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceExternalMemoryRDMAFeaturesNV", 45},
     {"VkPhysicalDeviceExternalMemoryScreenBufferFeaturesQNX", 54},
     {"VkPhysicalDeviceExternalSemaphoreInfo", 38},
+    {"VkPhysicalDeviceExternalTensorInfoARM", 38},
     {"VkPhysicalDeviceFaultFeaturesEXT", 33},
     {"VkPhysicalDeviceFeatures", 25},
     {"VkPhysicalDeviceFeatures2", 26},
     {"VkPhysicalDeviceFloatControlsProperties", 40},
+    {"VkPhysicalDeviceFormatPackFeaturesARM", 38},
     {"VkPhysicalDeviceFragmentDensityMap2FeaturesEXT", 47},
     {"VkPhysicalDeviceFragmentDensityMap2PropertiesEXT", 49},
     {"VkPhysicalDeviceFragmentDensityMapFeaturesEXT", 46},
+    {"VkPhysicalDeviceFragmentDensityMapLayeredFeaturesVALVE", 55},
+    {"VkPhysicalDeviceFragmentDensityMapLayeredPropertiesVALVE", 57},
     {"VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT", 52},
     {"VkPhysicalDeviceFragmentDensityMapOffsetPropertiesEXT", 54},
     {"VkPhysicalDeviceFragmentDensityMapPropertiesEXT", 48},
@@ -1414,6 +1489,8 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceMaintenance7FeaturesKHR", 40},
     {"VkPhysicalDeviceMaintenance7PropertiesKHR", 42},
     {"VkPhysicalDeviceMaintenance8FeaturesKHR", 40},
+    {"VkPhysicalDeviceMaintenance9FeaturesKHR", 40},
+    {"VkPhysicalDeviceMaintenance9PropertiesKHR", 42},
     {"VkPhysicalDeviceMapMemoryPlacedFeaturesEXT", 43},
     {"VkPhysicalDeviceMapMemoryPlacedPropertiesEXT", 45},
     {"VkPhysicalDeviceMemoryBudgetPropertiesEXT", 42},
@@ -1451,6 +1528,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDevicePerformanceQueryPropertiesKHR", 46},
     {"VkPhysicalDevicePipelineBinaryFeaturesKHR", 42},
     {"VkPhysicalDevicePipelineBinaryPropertiesKHR", 44},
+    {"VkPhysicalDevicePipelineCacheIncrementalModeFeaturesSEC", 56},
     {"VkPhysicalDevicePipelineCreationCacheControlFeatures", 53},
     {"VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR", 56},
     {"VkPhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT", 55},
@@ -1463,9 +1541,11 @@ const char* String(Struct structure) {
     {"VkPhysicalDevicePortabilitySubsetFeaturesKHR", 45},
     {"VkPhysicalDevicePortabilitySubsetPropertiesKHR", 47},
     {"VkPhysicalDevicePresentBarrierFeaturesNV", 41},
+    {"VkPhysicalDevicePresentId2FeaturesKHR", 38},
     {"VkPhysicalDevicePresentIdFeaturesKHR", 37},
     {"VkPhysicalDevicePresentMeteringFeaturesNV", 42},
-    {"VkPhysicalDevicePresentModeFifoLatestReadyFeaturesEXT", 54},
+    {"VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR", 54},
+    {"VkPhysicalDevicePresentWait2FeaturesKHR", 40},
     {"VkPhysicalDevicePresentWaitFeaturesKHR", 39},
     {"VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT", 56},
     {"VkPhysicalDevicePrimitivesGeneratedQueryFeaturesEXT", 52},
@@ -1477,6 +1557,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceProvokingVertexFeaturesEXT", 43},
     {"VkPhysicalDeviceProvokingVertexPropertiesEXT", 45},
     {"VkPhysicalDevicePushDescriptorProperties", 41},
+    {"VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM", 60},
     {"VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT", 43},
     {"VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT", 62},
     {"VkPhysicalDeviceRawAccessChainsFeaturesNV", 42},
@@ -1495,8 +1576,8 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceRenderPassStripedFeaturesARM", 45},
     {"VkPhysicalDeviceRenderPassStripedPropertiesARM", 47},
     {"VkPhysicalDeviceRepresentativeFragmentTestFeaturesNV", 53},
-    {"VkPhysicalDeviceRobustness2FeaturesEXT", 39},
-    {"VkPhysicalDeviceRobustness2PropertiesEXT", 41},
+    {"VkPhysicalDeviceRobustness2FeaturesKHR", 39},
+    {"VkPhysicalDeviceRobustness2PropertiesKHR", 41},
     {"VkPhysicalDeviceSampleLocationsPropertiesEXT", 45},
     {"VkPhysicalDeviceSamplerFilterMinmaxProperties", 46},
     {"VkPhysicalDeviceSamplerYcbcrConversionFeatures", 47},
@@ -1522,6 +1603,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceShaderEnqueuePropertiesAMDX", 44},
     {"VkPhysicalDeviceShaderExpectAssumeFeatures", 43},
     {"VkPhysicalDeviceShaderFloat16Int8Features", 42},
+    {"VkPhysicalDeviceShaderFloat8FeaturesEXT", 40},
     {"VkPhysicalDeviceShaderFloatControls2Features", 45},
     {"VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT", 50},
     {"VkPhysicalDeviceShaderImageFootprintFeaturesNV", 47},
@@ -1555,17 +1637,24 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceSubpassShadingFeaturesHUAWEI", 45},
     {"VkPhysicalDeviceSubpassShadingPropertiesHUAWEI", 47},
     {"VkPhysicalDeviceSurfaceInfo2KHR", 32},
-    {"VkPhysicalDeviceSwapchainMaintenance1FeaturesEXT", 49},
+    {"VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR", 49},
     {"VkPhysicalDeviceSynchronization2Features", 41},
+    {"VkPhysicalDeviceTensorFeaturesARM", 34},
+    {"VkPhysicalDeviceTensorPropertiesARM", 36},
     {"VkPhysicalDeviceTexelBufferAlignmentFeaturesEXT", 48},
     {"VkPhysicalDeviceTexelBufferAlignmentProperties", 47},
     {"VkPhysicalDeviceTextureCompressionASTCHDRFeatures", 50},
+    {"VkPhysicalDeviceTileMemoryHeapFeaturesQCOM", 43},
+    {"VkPhysicalDeviceTileMemoryHeapPropertiesQCOM", 45},
     {"VkPhysicalDeviceTilePropertiesFeaturesQCOM", 43},
+    {"VkPhysicalDeviceTileShadingFeaturesQCOM", 40},
+    {"VkPhysicalDeviceTileShadingPropertiesQCOM", 42},
     {"VkPhysicalDeviceTimelineSemaphoreFeatures", 42},
     {"VkPhysicalDeviceTimelineSemaphoreProperties", 44},
     {"VkPhysicalDeviceToolProperties", 31},
     {"VkPhysicalDeviceTransformFeedbackFeaturesEXT", 45},
     {"VkPhysicalDeviceTransformFeedbackPropertiesEXT", 47},
+    {"VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR", 47},
     {"VkPhysicalDeviceUniformBufferStandardLayoutFeatures", 52},
     {"VkPhysicalDeviceVariablePointersFeatures", 41},
     {"VkPhysicalDeviceVertexAttributeDivisorFeatures", 47},
@@ -1573,7 +1662,9 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT", 52},
     {"VkPhysicalDeviceVertexAttributeRobustnessFeaturesEXT", 53},
     {"VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT", 51},
+    {"VkPhysicalDeviceVideoDecodeVP9FeaturesKHR", 42},
     {"VkPhysicalDeviceVideoEncodeAV1FeaturesKHR", 42},
+    {"VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR", 51},
     {"VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR", 47},
     {"VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR", 54},
     {"VkPhysicalDeviceVideoFormatInfoKHR", 35},
@@ -1592,6 +1683,7 @@ const char* String(Struct structure) {
     {"VkPhysicalDeviceYcbcr2Plane444FormatsFeaturesEXT", 49},
     {"VkPhysicalDeviceYcbcrDegammaFeaturesQCOM", 41},
     {"VkPhysicalDeviceYcbcrImageArraysFeaturesEXT", 44},
+    {"VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT", 54},
     {"VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures", 54},
     {"VkPipelineBinaryCreateInfoKHR", 30},
     {"VkPipelineBinaryDataInfoKHR", 28},
@@ -1622,6 +1714,7 @@ const char* String(Struct structure) {
     {"VkPipelineExecutablePropertiesKHR", 34},
     {"VkPipelineExecutableStatisticKHR", 33},
     {"VkPipelineExecutableStatisticValueKHR", 38},
+    {"VkPipelineFragmentDensityMapLayeredCreateInfoVALVE", 51},
     {"VkPipelineFragmentShadingRateEnumStateCreateInfoNV", 51},
     {"VkPipelineFragmentShadingRateStateCreateInfoKHR", 48},
     {"VkPipelineIndirectDeviceAddressInfoNV", 38},
@@ -1659,12 +1752,14 @@ const char* String(Struct structure) {
     {"VkPipelineViewportSwizzleStateCreateInfoNV", 43},
     {"VkPipelineViewportWScalingStateCreateInfoNV", 44},
     {"VkPresentFrameTokenGGP", 23},
+    {"VkPresentId2KHR", 16},
     {"VkPresentIdKHR", 15},
     {"VkPresentInfoKHR", 17},
     {"VkPresentRegionKHR", 19},
     {"VkPresentRegionsKHR", 20},
     {"VkPresentTimeGOOGLE", 20},
     {"VkPresentTimesInfoGOOGLE", 25},
+    {"VkPresentWait2InfoKHR", 22},
     {"VkPrivateDataSlotCreateInfo", 28},
     {"VkProtectedSubmitInfo", 22},
     {"VkPushConstantRange", 20},
@@ -1678,7 +1773,10 @@ const char* String(Struct structure) {
     {"VkQueryPoolVideoEncodeFeedbackCreateInfoKHR", 44},
     {"VkQueueFamilyCheckpointProperties2NV", 37},
     {"VkQueueFamilyCheckpointPropertiesNV", 36},
+    {"VkQueueFamilyDataGraphProcessingEnginePropertiesARM", 52},
+    {"VkQueueFamilyDataGraphPropertiesARM", 36},
     {"VkQueueFamilyGlobalPriorityProperties", 38},
+    {"VkQueueFamilyOwnershipTransferPropertiesKHR", 44},
     {"VkQueueFamilyProperties", 24},
     {"VkQueueFamilyProperties2", 25},
     {"VkQueueFamilyQueryResultStatusPropertiesKHR", 44},
@@ -1693,7 +1791,7 @@ const char* String(Struct structure) {
     {"VkRectLayerKHR", 15},
     {"VkRefreshCycleDurationGOOGLE", 29},
     {"VkReleaseCapturedPipelineDataInfoKHR", 37},
-    {"VkReleaseSwapchainImagesInfoEXT", 32},
+    {"VkReleaseSwapchainImagesInfoKHR", 32},
     {"VkRenderPassAttachmentBeginInfo", 32},
     {"VkRenderPassBeginInfo", 22},
     {"VkRenderPassCreateInfo", 23},
@@ -1711,6 +1809,7 @@ const char* String(Struct structure) {
     {"VkRenderPassStripeSubmitInfoARM", 32},
     {"VkRenderPassSubpassFeedbackCreateInfoEXT", 41},
     {"VkRenderPassSubpassFeedbackInfoEXT", 35},
+    {"VkRenderPassTileShadingCreateInfoQCOM", 38},
     {"VkRenderPassTransformBeginInfoQCOM", 35},
     {"VkRenderingAreaInfo", 20},
     {"VkRenderingAttachmentInfo", 26},
@@ -1793,25 +1892,40 @@ const char* String(Struct structure) {
     {"VkSurfaceCapabilitiesFullScreenExclusiveEXT", 44},
     {"VkSurfaceCapabilitiesKHR", 25},
     {"VkSurfaceCapabilitiesPresentBarrierNV", 38},
+    {"VkSurfaceCapabilitiesPresentId2KHR", 35},
+    {"VkSurfaceCapabilitiesPresentWait2KHR", 37},
     {"VkSurfaceFormat2KHR", 20},
     {"VkSurfaceFormatKHR", 19},
     {"VkSurfaceFullScreenExclusiveInfoEXT", 36},
     {"VkSurfaceFullScreenExclusiveWin32InfoEXT", 41},
-    {"VkSurfacePresentModeCompatibilityEXT", 37},
-    {"VkSurfacePresentModeEXT", 24},
-    {"VkSurfacePresentScalingCapabilitiesEXT", 39},
+    {"VkSurfacePresentModeCompatibilityKHR", 37},
+    {"VkSurfacePresentModeKHR", 24},
+    {"VkSurfacePresentScalingCapabilitiesKHR", 39},
     {"VkSurfaceProtectedCapabilitiesKHR", 34},
     {"VkSwapchainCounterCreateInfoEXT", 32},
     {"VkSwapchainCreateInfoKHR", 25},
     {"VkSwapchainDisplayNativeHdrCreateInfoAMD", 41},
     {"VkSwapchainLatencyCreateInfoNV", 31},
     {"VkSwapchainPresentBarrierCreateInfoNV", 38},
-    {"VkSwapchainPresentFenceInfoEXT", 31},
-    {"VkSwapchainPresentModeInfoEXT", 30},
-    {"VkSwapchainPresentModesCreateInfoEXT", 37},
-    {"VkSwapchainPresentScalingCreateInfoEXT", 39},
+    {"VkSwapchainPresentFenceInfoKHR", 31},
+    {"VkSwapchainPresentModeInfoKHR", 30},
+    {"VkSwapchainPresentModesCreateInfoKHR", 37},
+    {"VkSwapchainPresentScalingCreateInfoKHR", 39},
     {"VkSysmemColorSpaceFUCHSIA", 26},
+    {"VkTensorCaptureDescriptorDataInfoARM", 37},
+    {"VkTensorCopyARM", 16},
+    {"VkTensorCreateInfoARM", 22},
+    {"VkTensorDependencyInfoARM", 26},
+    {"VkTensorDescriptionARM", 23},
+    {"VkTensorFormatPropertiesARM", 28},
+    {"VkTensorMemoryBarrierARM", 25},
+    {"VkTensorMemoryRequirementsInfoARM", 34},
+    {"VkTensorViewCaptureDescriptorDataInfoARM", 41},
+    {"VkTensorViewCreateInfoARM", 26},
     {"VkTextureLODGatherFormatPropertiesAMD", 38},
+    {"VkTileMemoryBindInfoQCOM", 25},
+    {"VkTileMemoryRequirementsQCOM", 29},
+    {"VkTileMemorySizeInfoQCOM", 25},
     {"VkTilePropertiesQCOM", 21},
     {"VkTimelineSemaphoreSubmitInfo", 30},
     {"VkTraceRaysIndirectCommand2KHR", 31},
@@ -1852,6 +1966,9 @@ const char* String(Struct structure) {
     {"VkVideoDecodeH265SessionParametersCreateInfoKHR", 48},
     {"VkVideoDecodeInfoKHR", 21},
     {"VkVideoDecodeUsageInfoKHR", 26},
+    {"VkVideoDecodeVP9CapabilitiesKHR", 32},
+    {"VkVideoDecodeVP9PictureInfoKHR", 31},
+    {"VkVideoDecodeVP9ProfileInfoKHR", 31},
     {"VkVideoEncodeAV1CapabilitiesKHR", 32},
     {"VkVideoEncodeAV1DpbSlotInfoKHR", 31},
     {"VkVideoEncodeAV1FrameSizeKHR", 29},
@@ -1901,6 +2018,8 @@ const char* String(Struct structure) {
     {"VkVideoEncodeH265SessionParametersFeedbackInfoKHR", 50},
     {"VkVideoEncodeH265SessionParametersGetInfoKHR", 45},
     {"VkVideoEncodeInfoKHR", 21},
+    {"VkVideoEncodeIntraRefreshCapabilitiesKHR", 41},
+    {"VkVideoEncodeIntraRefreshInfoKHR", 33},
     {"VkVideoEncodeQualityLevelInfoKHR", 33},
     {"VkVideoEncodeQualityLevelPropertiesKHR", 39},
     {"VkVideoEncodeQuantizationMapCapabilitiesKHR", 44},
@@ -1908,6 +2027,7 @@ const char* String(Struct structure) {
     {"VkVideoEncodeQuantizationMapSessionParametersCreateInfoKHR", 59},
     {"VkVideoEncodeRateControlInfoKHR", 32},
     {"VkVideoEncodeRateControlLayerInfoKHR", 37},
+    {"VkVideoEncodeSessionIntraRefreshCreateInfoKHR", 46},
     {"VkVideoEncodeSessionParametersFeedbackInfoKHR", 46},
     {"VkVideoEncodeSessionParametersGetInfoKHR", 41},
     {"VkVideoEncodeUsageInfoKHR", 26},
@@ -1920,6 +2040,7 @@ const char* String(Struct structure) {
     {"VkVideoPictureResourceInfoKHR", 30},
     {"VkVideoProfileInfoKHR", 22},
     {"VkVideoProfileListInfoKHR", 26},
+    {"VkVideoReferenceIntraRefreshInfoKHR", 36},
     {"VkVideoReferenceSlotInfoKHR", 28},
     {"VkVideoSessionCreateInfoKHR", 28},
     {"VkVideoSessionMemoryRequirementsKHR", 36},
@@ -1937,6 +2058,7 @@ const char* String(Struct structure) {
     {"VkWriteDescriptorSetAccelerationStructureNV", 44},
     {"VkWriteDescriptorSetInlineUniformBlock", 39},
     {"VkWriteDescriptorSetPartitionedAccelerationStructureNV", 55},
+    {"VkWriteDescriptorSetTensorARM", 30},
     {"VkWriteIndirectExecutionSetPipelineEXT", 39},
     {"VkWriteIndirectExecutionSetShaderEXT", 37},
     {"VkXYColorEXT", 13},
@@ -2014,6 +2136,7 @@ const char* String(Field field) {
     {"apronSize", 10},
     {"argCount", 9},
     {"argData", 8},
+    {"arrayElement", 13},
     {"arrayLayer", 11},
     {"arrayLayers", 12},
     {"arrayOfPointers", 16},
@@ -2048,6 +2171,8 @@ const char* String(Field field) {
     {"binaryCount", 12},
     {"bindCount", 10},
     {"bindInfoCount", 14},
+    {"bindPoint", 10},
+    {"bindPointType", 14},
     {"bindSessionMemoryInfoCount", 27},
     {"binding", 8},
     {"bindingCount", 13},
@@ -2159,6 +2284,7 @@ const char* String(Field field) {
     {"componentMapping", 17},
     {"components", 11},
     {"compositeAlpha", 15},
+    {"compressedHeaderOffset", 23},
     {"compressedSize", 15},
     {"compressionControlPlaneCount", 29},
     {"computeCapabilityMajor", 23},
@@ -2180,6 +2306,7 @@ const char* String(Field field) {
     {"conservativeRasterizationMode", 30},
     {"conservativeRasterizationPostDepthCoverage", 43},
     {"constantAlphaColorBlendFactors", 31},
+    {"constantCount", 14},
     {"constantID", 11},
     {"constantQIndex", 15},
     {"constantQp", 11},
@@ -2248,6 +2375,12 @@ const char* String(Field field) {
     {"customBorderColors", 19},
     {"customSampleOrderCount", 23},
     {"data", 5},
+    {"dataGraph", 10},
+    {"dataGraphDescriptorBuffer", 26},
+    {"dataGraphPipeline", 18},
+    {"dataGraphShaderModule", 22},
+    {"dataGraphSpecializationConstants", 33},
+    {"dataGraphUpdateAfterBind", 25},
     {"dataOffset", 11},
     {"dataSize", 9},
     {"decodeMode", 11},
@@ -2262,6 +2395,7 @@ const char* String(Field field) {
     {"defaultRobustnessStorageBuffers", 32},
     {"defaultRobustnessUniformBuffers", 32},
     {"defaultRobustnessVertexInputs", 30},
+    {"defaultVertexAttributeValue", 28},
     {"deferredOperation", 18},
     {"degenerateLinesRasterized", 26},
     {"degenerateTrianglesRasterized", 30},
@@ -2303,6 +2437,7 @@ const char* String(Field field) {
     {"descriptorBindingSampledImageUpdateAfterBind", 45},
     {"descriptorBindingStorageBufferUpdateAfterBind", 46},
     {"descriptorBindingStorageImageUpdateAfterBind", 45},
+    {"descriptorBindingStorageTensorUpdateAfterBind", 46},
     {"descriptorBindingStorageTexelBufferUpdateAfterBind", 51},
     {"descriptorBindingUniformBufferUpdateAfterBind", 46},
     {"descriptorBindingUniformTexelBufferUpdateAfterBind", 51},
@@ -2314,6 +2449,7 @@ const char* String(Field field) {
     {"descriptorBufferImageLayoutIgnored", 35},
     {"descriptorBufferOffsetAlignment", 32},
     {"descriptorBufferPushDescriptors", 32},
+    {"descriptorBufferTensorDescriptors", 34},
     {"descriptorCopyCount", 20},
     {"descriptorCount", 16},
     {"descriptorIndexing", 19},
@@ -2358,6 +2494,9 @@ const char* String(Field field) {
     {"deviceUUID", 11},
     {"dfb", 4},
     {"diagnosticsConfig", 18},
+    {"dimension", 10},
+    {"dimensionCount", 15},
+    {"dirtyIntraRefreshRegions", 25},
     {"disableInternalCache", 21},
     {"disabledValidationCheckCount", 29},
     {"disabledValidationFeatureCount", 31},
@@ -2439,6 +2578,7 @@ const char* String(Field field) {
     {"dstStride", 10},
     {"dstSubpass", 11},
     {"dstSubresource", 15},
+    {"dstTensor", 10},
     {"dualSrcBlend", 13},
     {"duration", 9},
     {"dwAccess", 9},
@@ -2466,7 +2606,9 @@ const char* String(Field field) {
     {"encodeFeedbackFlags", 20},
     {"encodeInputPictureGranularity", 30},
     {"endCapsMode", 12},
+    {"engine", 7},
     {"engineNameOffset", 17},
+    {"engineType", 11},
     {"engineVersion", 14},
     {"event", 6},
     {"eventCount", 11},
@@ -2523,6 +2665,7 @@ const char* String(Field field) {
     {"extendedSparseImageUsageFlags", 30},
     {"extensionName", 14},
     {"extent", 7},
+    {"externalDataSize", 17},
     {"externalFenceFeatures", 22},
     {"externalFormat", 15},
     {"externalFormatResolve", 22},
@@ -2532,6 +2675,7 @@ const char* String(Field field) {
     {"externalMemoryFeatures", 23},
     {"externalMemoryProperties", 25},
     {"externalMemoryRDMA", 19},
+    {"externalQueue", 14},
     {"externalSemaphoreFeatures", 26},
     {"extraCount", 11},
     {"extraPrimitiveOverestimationSize", 33},
@@ -2541,6 +2685,7 @@ const char* String(Field field) {
     {"failOp", 7},
     {"fd", 3},
     {"features", 9},
+    {"feedbackLoopEnable", 19},
     {"fence", 6},
     {"fenceCount", 11},
     {"fieldOffsetGranularity", 23},
@@ -2576,11 +2721,14 @@ const char* String(Field field) {
     {"flowVectorFormat", 17},
     {"fmaRate", 8},
     {"forceExplicitReconstruction", 28},
+    {"foreignMemoryHandleTypes", 25},
+    {"foreignSemaphoreHandleTypes", 28},
     {"format", 7},
     {"formatA4B4G4R4", 15},
     {"formatA4R4G4B4", 15},
     {"formatConstraintsCount", 23},
     {"formatFeatures", 15},
+    {"formatPack", 11},
     {"formatProperties", 17},
     {"formatRgba10x6WithoutYCbCrSampler", 34},
     {"fragmentDensityInvocations", 27},
@@ -2588,6 +2736,7 @@ const char* String(Field field) {
     {"fragmentDensityMapAttachment", 29},
     {"fragmentDensityMapDeferred", 27},
     {"fragmentDensityMapDynamic", 26},
+    {"fragmentDensityMapLayered", 26},
     {"fragmentDensityMapNonSubsampledImages", 38},
     {"fragmentDensityMapOffset", 25},
     {"fragmentDensityOffsetCount", 27},
@@ -2671,6 +2820,7 @@ const char* String(Field field) {
     {"groupCountZ", 12},
     {"groupIndex", 11},
     {"groupShader", 12},
+    {"groupSize", 10},
     {"handle", 7},
     {"handleType", 11},
     {"handleTypes", 12},
@@ -2711,6 +2861,7 @@ const char* String(Field field) {
     {"idrPeriod", 10},
     {"image", 6},
     {"image2DViewOf3D", 16},
+    {"image2DViewOf3DSparse", 22},
     {"imageAlignmentControl", 22},
     {"imageArrayLayers", 17},
     {"imageBindCount", 15},
@@ -2851,8 +3002,13 @@ const char* String(Field field) {
     {"intersectionShader", 19},
     {"intraFrameSize", 15},
     {"intraQIndex", 12},
+    {"intraRefreshCycleDuration", 26},
+    {"intraRefreshIndex", 18},
+    {"intraRefreshMode", 17},
+    {"intraRefreshModes", 18},
     {"invocationMask", 15},
     {"ioSurface", 10},
+    {"isForeign", 10},
     {"isPreprocessed", 15},
     {"isText", 7},
     {"key", 4},
@@ -2887,6 +3043,7 @@ const char* String(Field field) {
     {"linearColorAttachment", 22},
     {"linearSweptSpheres", 19},
     {"linearTilingFeatures", 21},
+    {"linearTilingTensorFeatures", 27},
     {"loadOp", 7},
     {"localDeviceIndex", 17},
     {"localDimmingEnable", 19},
@@ -2903,6 +3060,7 @@ const char* String(Field field) {
     {"maintenance6", 13},
     {"maintenance7", 13},
     {"maintenance8", 13},
+    {"maintenance9", 13},
     {"major", 6},
     {"mapEntryCount", 14},
     {"marker", 7},
@@ -2913,6 +3071,7 @@ const char* String(Field field) {
     {"maxAccelerationStructureCount", 30},
     {"maxActiveReferencePictures", 27},
     {"maxAnisotropy", 14},
+    {"maxApronSize", 13},
     {"maxArrayLayers", 15},
     {"maxBPictureL0ReferenceCount", 28},
     {"maxBidirectionalCompoundGroup1ReferenceCount", 45},
@@ -2958,6 +3117,7 @@ const char* String(Field field) {
     {"maxDescriptorSetStorageBuffers", 31},
     {"maxDescriptorSetStorageBuffersDynamic", 38},
     {"maxDescriptorSetStorageImages", 30},
+    {"maxDescriptorSetStorageTensors", 31},
     {"maxDescriptorSetSubsampledSamplers", 35},
     {"maxDescriptorSetTotalBuffersDynamic", 36},
     {"maxDescriptorSetTotalStorageBuffersDynamic", 43},
@@ -2972,6 +3132,7 @@ const char* String(Field field) {
     {"maxDescriptorSetUpdateAfterBindStorageBuffers", 46},
     {"maxDescriptorSetUpdateAfterBindStorageBuffersDynamic", 53},
     {"maxDescriptorSetUpdateAfterBindStorageImages", 45},
+    {"maxDescriptorSetUpdateAfterBindStorageTensors", 46},
     {"maxDescriptorSetUpdateAfterBindTotalBuffersDynamic", 51},
     {"maxDescriptorSetUpdateAfterBindTotalStorageBuffersDynamic", 58},
     {"maxDescriptorSetUpdateAfterBindTotalUniformBuffersDynamic", 58},
@@ -2995,9 +3156,11 @@ const char* String(Field field) {
     {"maxExecutionGraphWorkgroupCount", 32},
     {"maxExecutionGraphWorkgroups", 28},
     {"maxExtent", 10},
+    {"maxExternalQueues", 18},
     {"maxExtraPrimitiveOverestimationSize", 36},
     {"maxFPS", 7},
     {"maxFragmentCombinedOutputResources", 35},
+    {"maxFragmentDensityMapLayers", 28},
     {"maxFragmentDensityTexelSize", 28},
     {"maxFragmentDualSrcAttachments", 30},
     {"maxFragmentInputComponents", 27},
@@ -3046,6 +3209,8 @@ const char* String(Field field) {
     {"maxInstancePerPartitionCount", 29},
     {"maxInstances", 13},
     {"maxInterpolationOffset", 23},
+    {"maxIntraRefreshActiveReferencePictures", 39},
+    {"maxIntraRefreshCycleDuration", 29},
     {"maxL1ReferenceCount", 20},
     {"maxLevel", 9},
     {"maxLevelIdc", 12},
@@ -3079,12 +3244,14 @@ const char* String(Field field) {
     {"maxOutputClusterCount", 22},
     {"maxPPictureL0ReferenceCount", 28},
     {"maxPartitionCount", 18},
+    {"maxPerDimensionTensorElements", 30},
     {"maxPerSetDescriptors", 21},
     {"maxPerStageDescriptorAccelerationStructures", 44},
     {"maxPerStageDescriptorInlineUniformBlocks", 41},
     {"maxPerStageDescriptorInputAttachments", 38},
     {"maxPerStageDescriptorSampledImages", 35},
     {"maxPerStageDescriptorSamplers", 30},
+    {"maxPerStageDescriptorSetStorageTensors", 39},
     {"maxPerStageDescriptorStorageBuffers", 36},
     {"maxPerStageDescriptorStorageImages", 35},
     {"maxPerStageDescriptorUniformBuffers", 36},
@@ -3095,6 +3262,7 @@ const char* String(Field field) {
     {"maxPerStageDescriptorUpdateAfterBindSamplers", 45},
     {"maxPerStageDescriptorUpdateAfterBindStorageBuffers", 51},
     {"maxPerStageDescriptorUpdateAfterBindStorageImages", 50},
+    {"maxPerStageDescriptorUpdateAfterBindStorageTensors", 51},
     {"maxPerStageDescriptorUpdateAfterBindUniformBuffers", 51},
     {"maxPerStageResources", 21},
     {"maxPerStageUpdateAfterBindResources", 36},
@@ -3161,6 +3329,12 @@ const char* String(Field field) {
     {"maxTaskWorkGroupSize", 21},
     {"maxTaskWorkGroupTotalCount", 27},
     {"maxTemporalLayerCount", 22},
+    {"maxTensorDimensionCount", 24},
+    {"maxTensorElements", 18},
+    {"maxTensorShaderAccessArrayLength", 33},
+    {"maxTensorShaderAccessSize", 26},
+    {"maxTensorSize", 14},
+    {"maxTensorStride", 16},
     {"maxTessellationControlPerPatchOutputComponents", 47},
     {"maxTessellationControlPerVertexInputComponents", 47},
     {"maxTessellationControlPerVertexOutputComponents", 48},
@@ -3172,6 +3346,7 @@ const char* String(Field field) {
     {"maxTexelBufferElements", 23},
     {"maxTexelGatherOffset", 21},
     {"maxTexelOffset", 15},
+    {"maxTileShadingRate", 19},
     {"maxTileSize", 12},
     {"maxTiles", 9},
     {"maxTimelineSemaphoreValueDifference", 36},
@@ -3354,6 +3529,7 @@ const char* String(Field field) {
     {"noMoveOverlap", 14},
     {"nodeIndex", 10},
     {"nonCoherentAtomSize", 20},
+    {"nonRectangularIntraRefreshRegions", 34},
     {"nonSeamlessCubeMap", 19},
     {"nonStrictSinglePixelWideLinesUseParallelogram", 46},
     {"nonStrictWideLinesUseParallelogram", 35},
@@ -3364,6 +3540,7 @@ const char* String(Field field) {
     {"numAvailableVgprs", 18},
     {"numColumns", 11},
     {"numFramesPerBatch", 18},
+    {"numObjects", 11},
     {"numPhases", 10},
     {"numPhysicalSgprs", 17},
     {"numPhysicalVgprs", 17},
@@ -3373,6 +3550,7 @@ const char* String(Field field) {
     {"object", 7},
     {"objectCount", 12},
     {"objectHandle", 13},
+    {"objectIndex", 12},
     {"objectType", 11},
     {"occlusionQueryEnable", 21},
     {"occlusionQueryPrecise", 22},
@@ -3389,13 +3567,16 @@ const char* String(Field field) {
     {"opaqueCaptureAddress", 21},
     {"opaqueCaptureDescriptorData", 28},
     {"operation", 10},
+    {"operationType", 14},
     {"opticalFlow", 12},
     {"optimal", 8},
     {"optimalBufferCopyOffsetAlignment", 33},
     {"optimalBufferCopyRowPitchAlignment", 35},
     {"optimalDeviceAccess", 20},
+    {"optimalImageTransferToQueueFamilies", 36},
     {"optimalTilingFeatures", 22},
     {"optimalTilingLayoutUUID", 24},
+    {"optimalTilingTensorFeatures", 28},
     {"origin", 7},
     {"osRenderQueueEndTimeUs", 23},
     {"osRenderQueueStartTimeUs", 25},
@@ -3426,6 +3607,8 @@ const char* String(Field field) {
     {"pBindDescriptorSetsInfo", 24},
     {"pBindInfo", 10},
     {"pBindInfos", 11},
+    {"pBindPointRequirementCount", 27},
+    {"pBindPointRequirements", 23},
     {"pBindSessionMemoryInfos", 24},
     {"pBindingFlags", 14},
     {"pBindingInfos", 14},
@@ -3481,6 +3664,8 @@ const char* String(Field field) {
     {"pCompatibility", 15},
     {"pConditionalRenderingBegin", 27},
     {"pConfiguration", 15},
+    {"pConstantData", 14},
+    {"pConstants", 11},
     {"pCopyBufferInfo", 16},
     {"pCopyBufferToImageInfo", 23},
     {"pCopyDstLayouts", 16},
@@ -3490,6 +3675,7 @@ const char* String(Field field) {
     {"pCopyImageToMemoryInfo", 23},
     {"pCopyMemoryToImageInfo", 23},
     {"pCopySrcLayouts", 16},
+    {"pCopyTensorInfo", 16},
     {"pCorrelatedViewMasks", 21},
     {"pCorrelationMasks", 18},
     {"pCountInfo", 11},
@@ -3520,6 +3706,7 @@ const char* String(Field field) {
     {"pDepthStencilAttachment", 24},
     {"pDepthStencilResolveAttachment", 31},
     {"pDepthStencilState", 19},
+    {"pDescription", 13},
     {"pDescriptor", 12},
     {"pDescriptorCopies", 18},
     {"pDescriptorCounts", 18},
@@ -3536,9 +3723,11 @@ const char* String(Field field) {
     {"pDeviceIndices", 15},
     {"pDeviceMasks", 13},
     {"pDeviceRenderAreas", 19},
+    {"pDimensions", 12},
     {"pDisabledValidationChecks", 26},
     {"pDisabledValidationFeatures", 28},
     {"pDiscardRectangles", 19},
+    {"pDispatchTileInfo", 18},
     {"pDisplay", 9},
     {"pDisplayCount", 14},
     {"pDisplayEventInfo", 18},
@@ -3549,6 +3738,7 @@ const char* String(Field field) {
     {"pDrivers", 9},
     {"pDrmFormatModifierProperties", 29},
     {"pDrmFormatModifiers", 20},
+    {"pDstOffset", 11},
     {"pDstSize", 9},
     {"pDynamicMetadata", 17},
     {"pDynamicOffsets", 16},
@@ -3568,13 +3758,17 @@ const char* String(Field field) {
     {"pExecuteInfo", 13},
     {"pExecutionSet", 14},
     {"pExecutionSetWrites", 20},
+    {"pExtent", 8},
     {"pExternalBufferInfo", 20},
     {"pExternalBufferProperties", 26},
     {"pExternalFenceInfo", 19},
     {"pExternalFenceProperties", 25},
     {"pExternalImageFormatProperties", 31},
+    {"pExternalQueue", 15},
     {"pExternalSemaphoreInfo", 23},
     {"pExternalSemaphoreProperties", 29},
+    {"pExternalTensorInfo", 20},
+    {"pExternalTensorProperties", 26},
     {"pExtras", 8},
     {"pFaultCounts", 13},
     {"pFaultInfo", 11},
@@ -3716,6 +3910,8 @@ const char* String(Field field) {
     {"pParametersAddInfo", 19},
     {"pParams", 8},
     {"pPeerMemoryFeatures", 20},
+    {"pPerTileBeginInfo", 18},
+    {"pPerTileEndInfo", 16},
     {"pPerViewRenderAreas", 20},
     {"pPerformanceQueryCreateInfo", 28},
     {"pPhysicalDeviceCount", 21},
@@ -3745,12 +3941,14 @@ const char* String(Field field) {
     {"pPresentInfo", 13},
     {"pPresentModeCount", 18},
     {"pPresentModes", 14},
+    {"pPresentWait2Info", 18},
     {"pPresentationInfo", 18},
     {"pPresentationTimingCount", 25},
     {"pPresentationTimings", 21},
     {"pPreserveAttachments", 21},
     {"pPrivateData", 13},
     {"pPrivateDataSlot", 17},
+    {"pProcessingEngines", 19},
     {"pProfiles", 10},
     {"pProperties", 12},
     {"pPropertiesCount", 17},
@@ -3766,6 +3964,10 @@ const char* String(Field field) {
     {"pQueryPool", 11},
     {"pQueue", 7},
     {"pQueueCreateInfos", 18},
+    {"pQueueFamilyDataGraphProcessingEngineInfo", 42},
+    {"pQueueFamilyDataGraphProcessingEngineProperties", 48},
+    {"pQueueFamilyDataGraphProperties", 32},
+    {"pQueueFamilyDataGraphPropertyCount", 35},
     {"pQueueFamilyIndices", 20},
     {"pQueueFamilyProperties", 23},
     {"pQueueFamilyPropertyCount", 26},
@@ -3792,6 +3994,7 @@ const char* String(Field field) {
     {"pRenderingInfo", 15},
     {"pResolveAttachments", 20},
     {"pResolveImageInfo", 18},
+    {"pResourceInfos", 15},
     {"pResult", 8},
     {"pResults", 9},
     {"pSampleLocations", 17},
@@ -3832,6 +4035,7 @@ const char* String(Field field) {
     {"pSpecializationInfo", 20},
     {"pSplitInstanceBindRegions", 26},
     {"pSrcCaches", 11},
+    {"pSrcOffset", 11},
     {"pStages", 8},
     {"pStatisticCount", 16},
     {"pStatistics", 12},
@@ -3878,8 +4082,13 @@ const char* String(Field field) {
     {"pSwapchains", 12},
     {"pTag", 5},
     {"pTagInfo", 9},
+    {"pTensor", 8},
+    {"pTensorMemoryBarriers", 22},
+    {"pTensorViews", 13},
+    {"pTensors", 9},
     {"pTessellationState", 19},
     {"pTexelBufferView", 17},
+    {"pTileMemoryBindInfo", 20},
     {"pTileOffsets", 13},
     {"pTileSizes", 11},
     {"pTimeDomainCount", 17},
@@ -3903,6 +4112,7 @@ const char* String(Field field) {
     {"pValues", 8},
     {"pVendorBinaryData", 18},
     {"pVendorInfos", 13},
+    {"pVendorOptions", 15},
     {"pVersionData", 13},
     {"pVersionInfo", 13},
     {"pVertexAttributeDescriptions", 29},
@@ -3940,7 +4150,9 @@ const char* String(Field field) {
     {"paramCount", 11},
     {"parameter", 10},
     {"parameters", 11},
+    {"params", 7},
     {"partitionCount", 15},
+    {"partitionIndependentIntraRefreshRegions", 40},
     {"partitionIndex", 15},
     {"partitionTranslation", 21},
     {"partitionedAccelerationStructure", 33},
@@ -3993,6 +4205,7 @@ const char* String(Field field) {
     {"pipelineBinaryPrefersInternalCache", 35},
     {"pipelineBindPoint", 18},
     {"pipelineCache", 14},
+    {"pipelineCacheIncrementalMode", 29},
     {"pipelineCacheUUID", 18},
     {"pipelineCount", 14},
     {"pipelineCreationCacheControl", 29},
@@ -4043,6 +4256,7 @@ const char* String(Field field) {
     {"predictionMode", 15},
     {"predictiveFrameSize", 20},
     {"predictiveQIndex", 17},
+    {"preferNonCoherent", 18},
     {"preferredBidirectionalCompoundReferenceNameMask", 48},
     {"preferredConsecutiveBFrameCount", 32},
     {"preferredConsecutiveBipredictiveFrameCount", 43},
@@ -4059,6 +4273,7 @@ const char* String(Field field) {
     {"preferredMaxSingleReferenceCount", 33},
     {"preferredMaxUnidirectionalCompoundGroup1ReferenceCount", 55},
     {"preferredMaxUnidirectionalCompoundReferenceCount", 49},
+    {"preferredQueue", 15},
     {"preferredRateControlFlags", 26},
     {"preferredRateControlLayerCount", 31},
     {"preferredRateControlMode", 25},
@@ -4086,6 +4301,8 @@ const char* String(Field field) {
     {"presentGravityY", 16},
     {"presentID", 10},
     {"presentId", 10},
+    {"presentId2", 11},
+    {"presentId2Supported", 20},
     {"presentMargin", 14},
     {"presentMask", 12},
     {"presentMetering", 16},
@@ -4094,6 +4311,8 @@ const char* String(Field field) {
     {"presentModeFifoLatestReady", 27},
     {"presentStartTimeUs", 19},
     {"presentWait", 12},
+    {"presentWait2", 13},
+    {"presentWait2Supported", 22},
     {"preserveAttachmentCount", 24},
     {"primaryMajor", 13},
     {"primaryMinor", 13},
@@ -4118,8 +4337,11 @@ const char* String(Field field) {
     {"privateData", 12},
     {"privateDataSlot", 16},
     {"privateDataSlotRequestCount", 28},
+    {"processingEngineCount", 22},
     {"profileCount", 13},
     {"properties", 11},
+    {"propertiesCount", 16},
+    {"property", 9},
     {"propertyFlags", 14},
     {"protectedMemory", 16},
     {"protectedNoFault", 17},
@@ -4161,6 +4383,7 @@ const char* String(Field field) {
     {"queueFlags", 11},
     {"queueIndex", 11},
     {"queueLabelCount", 16},
+    {"queueSubmitBoundary", 20},
     {"queueType", 10},
     {"qw", 3},
     {"qx", 3},
@@ -4234,6 +4457,7 @@ const char* String(Field field) {
     {"requiresDedicatedAllocation", 28},
     {"requiresGopRemainingFrames", 27},
     {"reserved", 9},
+    {"reservedExternalQueues", 23},
     {"residencyAlignedMipSize", 24},
     {"residencyNonResidentStrict", 27},
     {"residencyStandard2DBlockShape", 30},
@@ -4244,6 +4468,7 @@ const char* String(Field field) {
     {"resolveMode", 12},
     {"resourceDescriptorBufferAddressSpaceSize", 41},
     {"resourceDeviceIndex", 20},
+    {"resourceInfoCount", 18},
     {"resourceOffset", 15},
     {"resourceUsage", 14},
     {"resultType", 11},
@@ -4370,6 +4595,8 @@ const char* String(Field field) {
     {"shaderFloat16", 14},
     {"shaderFloat16VectorAtomics", 27},
     {"shaderFloat64", 14},
+    {"shaderFloat8", 13},
+    {"shaderFloat8CooperativeMatrix", 30},
     {"shaderFloatControls2", 21},
     {"shaderGroupBaseAlignment", 25},
     {"shaderGroupHandleAlignment", 27},
@@ -4440,6 +4667,9 @@ const char* String(Field field) {
     {"shaderStorageImageMultisample", 30},
     {"shaderStorageImageReadWithoutFormat", 36},
     {"shaderStorageImageWriteWithoutFormat", 37},
+    {"shaderStorageTensorArrayDynamicIndexing", 40},
+    {"shaderStorageTensorArrayNonUniformIndexing", 43},
+    {"shaderStorageTensorArrayNonUniformIndexingNative", 49},
     {"shaderStorageTexelBufferArrayDynamicIndexing", 45},
     {"shaderStorageTexelBufferArrayNonUniformIndexing", 48},
     {"shaderSubgroupClock", 20},
@@ -4447,6 +4677,8 @@ const char* String(Field field) {
     {"shaderSubgroupRotate", 21},
     {"shaderSubgroupRotateClustered", 30},
     {"shaderSubgroupUniformControlFlow", 33},
+    {"shaderTensorAccess", 19},
+    {"shaderTensorSupportedStages", 28},
     {"shaderTerminateInvocation", 26},
     {"shaderTessellationAndGeometryPointSize", 39},
     {"shaderTileImageCoherentReadAccelerated", 39},
@@ -4544,6 +4776,7 @@ const char* String(Field field) {
     {"srcStride", 10},
     {"srcSubpass", 11},
     {"srcSubresource", 15},
+    {"srcTensor", 10},
     {"srgb", 5},
     {"srtMotionInstance", 18},
     {"stage", 6},
@@ -4681,6 +4914,16 @@ const char* String(Field field) {
     {"taskShader", 11},
     {"templateType", 13},
     {"temporalLayerCount", 19},
+    {"tensor", 7},
+    {"tensorCaptureReplayDescriptorDataSize", 38},
+    {"tensorCount", 12},
+    {"tensorDescriptorSize", 21},
+    {"tensorMemoryBarrierCount", 25},
+    {"tensorNonPacked", 16},
+    {"tensorView", 11},
+    {"tensorViewCaptureReplayDescriptorDataSize", 42},
+    {"tensorViewCount", 16},
+    {"tensors", 8},
     {"tessellationIsolines", 21},
     {"tessellationPointMode", 22},
     {"tessellationShader", 19},
@@ -4694,9 +4937,28 @@ const char* String(Field field) {
     {"textureCompressionBC", 21},
     {"textureCompressionETC2", 23},
     {"textureSampleWeighted", 22},
+    {"tileApronSize", 14},
+    {"tileBufferTransfers", 20},
     {"tileCount", 10},
+    {"tileGranularity", 16},
+    {"tileMemoryHeap", 15},
     {"tileProperties", 15},
+    {"tileShading", 12},
+    {"tileShadingAnisotropicApron", 28},
+    {"tileShadingApron", 17},
+    {"tileShadingAtomicOps", 21},
+    {"tileShadingColorAttachments", 28},
+    {"tileShadingDepthAttachments", 28},
+    {"tileShadingDispatchTile", 24},
+    {"tileShadingFragmentStage", 25},
+    {"tileShadingImageProcessing", 27},
+    {"tileShadingInputAttachments", 28},
+    {"tileShadingPerTileDispatch", 27},
+    {"tileShadingPerTileDraw", 23},
+    {"tileShadingSampledAttachments", 30},
+    {"tileShadingStencilAttachments", 30},
     {"tileSize", 9},
+    {"tilesOffset", 12},
     {"tiling", 7},
     {"timeDomain", 11},
     {"timelineSemaphore", 18},
@@ -4738,8 +5000,11 @@ const char* String(Field field) {
     {"u64", 4},
     {"uint32", 7},
     {"uint64", 7},
+    {"uncompressedHeaderOffset", 25},
     {"underlyingAPI", 14},
     {"unidirectionalCompoundReferenceNameMask", 40},
+    {"unifiedImageLayouts", 20},
+    {"unifiedImageLayoutsVideo", 25},
     {"uniformAndStorageBuffer16BitAccess", 35},
     {"uniformAndStorageBuffer8BitAccess", 34},
     {"uniformBufferDescriptorSize", 28},
@@ -4808,7 +5073,9 @@ const char* String(Field field) {
     {"videoCodecOperation", 20},
     {"videoCodecOperations", 21},
     {"videoContentHints", 18},
+    {"videoDecodeVP9", 15},
     {"videoEncodeAV1", 15},
+    {"videoEncodeIntraRefresh", 24},
     {"videoEncodeQuantizationMap", 27},
     {"videoMaintenance1", 18},
     {"videoMaintenance2", 18},
@@ -4870,6 +5137,8 @@ const char* String(Field field) {
     {"ycbcrRange", 11},
     {"ycoeff", 7},
     {"z", 2},
+    {"zeroCount", 10},
+    {"zeroInitializeDeviceMemory", 27},
     {"zirconHandle", 13},
     };
     return table[(int)field].data();
@@ -4911,7 +5180,11 @@ const char* String(Enum value) {
     {"VkCoverageModulationModeNV", 27},
     {"VkCoverageReductionModeNV", 26},
     {"VkCubicFilterWeightsQCOM", 25},
+    {"VkDataGraphPipelinePropertyARM", 31},
+    {"VkDataGraphPipelineSessionBindPointARM", 39},
+    {"VkDataGraphPipelineSessionBindPointTypeARM", 43},
     {"VkDebugReportObjectTypeEXT", 27},
+    {"VkDefaultVertexAttributeValueKHR", 33},
     {"VkDepthBiasRepresentationEXT", 29},
     {"VkDepthClampModeEXT", 20},
     {"VkDescriptorType", 17},
@@ -4967,6 +5240,8 @@ const char* String(Enum value) {
     {"VkPerformanceOverrideTypeINTEL", 31},
     {"VkPerformanceParameterTypeINTEL", 32},
     {"VkPerformanceValueTypeINTEL", 28},
+    {"VkPhysicalDeviceDataGraphOperationTypeARM", 42},
+    {"VkPhysicalDeviceDataGraphProcessingEngineTypeARM", 49},
     {"VkPhysicalDeviceLayeredApiKHR", 30},
     {"VkPhysicalDeviceType", 21},
     {"VkPipelineBindPoint", 20},
@@ -5007,6 +5282,7 @@ const char* String(Enum value) {
     {"VkSubpassContents", 18},
     {"VkSubpassMergeStatusEXT", 24},
     {"VkSystemAllocationScope", 24},
+    {"VkTensorTilingARM", 18},
     {"VkTessellationDomainOrigin", 27},
     {"VkTimeDomainKHR", 16},
     {"VkValidationCacheHeaderVersionEXT", 34},
@@ -5049,6 +5325,8 @@ const char* String(FlagBitmask value) {
     {"VkCompositeAlphaFlagBitsKHR", 28},
     {"VkConditionalRenderingFlagBitsEXT", 34},
     {"VkCullModeFlagBits", 19},
+    {"VkDataGraphPipelineDispatchFlagBitsARM", 39},
+    {"VkDataGraphPipelineSessionCreateFlagBitsARM", 44},
     {"VkDebugReportFlagBitsEXT", 25},
     {"VkDebugUtilsMessageSeverityFlagBitsEXT", 39},
     {"VkDebugUtilsMessageTypeFlagBitsEXT", 35},
@@ -5119,10 +5397,11 @@ const char* String(FlagBitmask value) {
     {"VkPipelineShaderStageCreateFlagBits", 36},
     {"VkPipelineStageFlagBits", 24},
     {"VkPipelineStageFlagBits2", 25},
-    {"VkPresentGravityFlagBitsEXT", 28},
-    {"VkPresentScalingFlagBitsEXT", 28},
+    {"VkPresentGravityFlagBitsKHR", 28},
+    {"VkPresentScalingFlagBitsKHR", 28},
     {"VkQueryControlFlagBits", 23},
     {"VkQueryPipelineStatisticFlagBits", 33},
+    {"VkQueryPoolCreateFlagBits", 26},
     {"VkQueryResultFlagBits", 22},
     {"VkQueueFlagBits", 16},
     {"VkRenderPassCreateFlagBits", 27},
@@ -5144,6 +5423,10 @@ const char* String(FlagBitmask value) {
     {"VkSurfaceCounterFlagBitsEXT", 28},
     {"VkSurfaceTransformFlagBitsKHR", 30},
     {"VkSwapchainCreateFlagBitsKHR", 29},
+    {"VkTensorCreateFlagBitsARM", 26},
+    {"VkTensorUsageFlagBitsARM", 25},
+    {"VkTensorViewCreateFlagBitsARM", 30},
+    {"VkTileShadingRenderPassFlagBitsQCOM", 36},
     {"VkToolPurposeFlagBits", 22},
     {"VkVideoCapabilityFlagBitsKHR", 29},
     {"VkVideoChromaSubsamplingFlagBitsKHR", 36},
@@ -5169,6 +5452,7 @@ const char* String(FlagBitmask value) {
     {"VkVideoEncodeH265RateControlFlagBitsKHR", 40},
     {"VkVideoEncodeH265StdFlagBitsKHR", 32},
     {"VkVideoEncodeH265TransformBlockSizeFlagBitsKHR", 47},
+    {"VkVideoEncodeIntraRefreshModeFlagBitsKHR", 41},
     {"VkVideoEncodeRateControlModeFlagBitsKHR", 40},
     {"VkVideoEncodeUsageFlagBitsKHR", 30},
     {"VkVideoSessionCreateFlagBitsKHR", 32},
@@ -5206,12 +5490,15 @@ const char* String(Extension extension) {
     {"VK_AMD_texture_gather_bias_lod", 31},
     {"VK_ANDROID_external_format_resolve", 35},
     {"VK_ANDROID_external_memory_android_hardware_buffer", 51},
+    {"VK_ARM_data_graph", 18},
+    {"VK_ARM_format_pack", 19},
     {"VK_ARM_pipeline_opacity_micromap", 33},
     {"VK_ARM_rasterization_order_attachment_access", 45},
     {"VK_ARM_render_pass_striped", 27},
     {"VK_ARM_scheduling_controls", 27},
     {"VK_ARM_shader_core_builtins", 28},
     {"VK_ARM_shader_core_properties", 30},
+    {"VK_ARM_tensors", 15},
     {"VK_EXT_4444_formats", 20},
     {"VK_EXT_acquire_drm_display", 27},
     {"VK_EXT_acquire_xlib_display", 28},
@@ -5320,6 +5607,7 @@ const char* String(Extension extension) {
     {"VK_EXT_shader_atomic_float", 27},
     {"VK_EXT_shader_atomic_float2", 28},
     {"VK_EXT_shader_demote_to_helper_invocation", 42},
+    {"VK_EXT_shader_float8", 21},
     {"VK_EXT_shader_image_atomic_int64", 33},
     {"VK_EXT_shader_module_identifier", 32},
     {"VK_EXT_shader_object", 21},
@@ -5346,6 +5634,7 @@ const char* String(Extension extension) {
     {"VK_EXT_vertex_input_dynamic_state", 34},
     {"VK_EXT_ycbcr_2plane_444_formats", 32},
     {"VK_EXT_ycbcr_image_arrays", 26},
+    {"VK_EXT_zero_initialize_device_memory", 37},
     {"VK_FUCHSIA_buffer_collection", 29},
     {"VK_FUCHSIA_external_memory", 27},
     {"VK_FUCHSIA_external_semaphore", 30},
@@ -5424,6 +5713,7 @@ const char* String(Extension extension) {
     {"VK_KHR_maintenance6", 20},
     {"VK_KHR_maintenance7", 20},
     {"VK_KHR_maintenance8", 20},
+    {"VK_KHR_maintenance9", 20},
     {"VK_KHR_map_memory2", 19},
     {"VK_KHR_multiview", 17},
     {"VK_KHR_performance_query", 25},
@@ -5433,13 +5723,17 @@ const char* String(Extension extension) {
     {"VK_KHR_portability_enumeration", 31},
     {"VK_KHR_portability_subset", 26},
     {"VK_KHR_present_id", 18},
+    {"VK_KHR_present_id2", 19},
+    {"VK_KHR_present_mode_fifo_latest_ready", 38},
     {"VK_KHR_present_wait", 20},
+    {"VK_KHR_present_wait2", 21},
     {"VK_KHR_push_descriptor", 23},
     {"VK_KHR_ray_query", 17},
     {"VK_KHR_ray_tracing_maintenance1", 32},
     {"VK_KHR_ray_tracing_pipeline", 28},
     {"VK_KHR_ray_tracing_position_fetch", 34},
     {"VK_KHR_relaxed_block_layout", 28},
+    {"VK_KHR_robustness2", 19},
     {"VK_KHR_sampler_mirror_clamp_to_edge", 36},
     {"VK_KHR_sampler_ycbcr_conversion", 32},
     {"VK_KHR_separate_depth_stencil_layouts", 38},
@@ -5464,11 +5758,14 @@ const char* String(Extension extension) {
     {"VK_KHR_spirv_1_4", 17},
     {"VK_KHR_storage_buffer_storage_class", 36},
     {"VK_KHR_surface", 15},
+    {"VK_KHR_surface_maintenance1", 28},
     {"VK_KHR_surface_protected_capabilities", 38},
     {"VK_KHR_swapchain", 17},
+    {"VK_KHR_swapchain_maintenance1", 30},
     {"VK_KHR_swapchain_mutable_format", 32},
     {"VK_KHR_synchronization2", 24},
     {"VK_KHR_timeline_semaphore", 26},
+    {"VK_KHR_unified_image_layouts", 29},
     {"VK_KHR_uniform_buffer_standard_layout", 38},
     {"VK_KHR_variable_pointers", 25},
     {"VK_KHR_vertex_attribute_divisor", 32},
@@ -5476,9 +5773,11 @@ const char* String(Extension extension) {
     {"VK_KHR_video_decode_h264", 25},
     {"VK_KHR_video_decode_h265", 25},
     {"VK_KHR_video_decode_queue", 26},
+    {"VK_KHR_video_decode_vp9", 24},
     {"VK_KHR_video_encode_av1", 24},
     {"VK_KHR_video_encode_h264", 25},
     {"VK_KHR_video_encode_h265", 25},
+    {"VK_KHR_video_encode_intra_refresh", 34},
     {"VK_KHR_video_encode_quantization_map", 37},
     {"VK_KHR_video_encode_queue", 26},
     {"VK_KHR_video_maintenance1", 26},
@@ -5523,6 +5822,7 @@ const char* String(Extension extension) {
     {"VK_NV_displacement_micromap", 28},
     {"VK_NV_display_stereo", 21},
     {"VK_NV_extended_sparse_address_space", 36},
+    {"VK_NV_external_compute_queue", 29},
     {"VK_NV_external_memory", 22},
     {"VK_NV_external_memory_capabilities", 35},
     {"VK_NV_external_memory_rdma", 27},
@@ -5562,6 +5862,7 @@ const char* String(Extension extension) {
     {"VK_NV_viewport_array2", 22},
     {"VK_NV_viewport_swizzle", 23},
     {"VK_NV_win32_keyed_mutex", 24},
+    {"VK_OHOS_surface", 16},
     {"VK_QCOM_filter_cubic_clamp", 27},
     {"VK_QCOM_filter_cubic_weights", 29},
     {"VK_QCOM_fragment_density_map_offset", 36},
@@ -5573,12 +5874,16 @@ const char* String(Extension extension) {
     {"VK_QCOM_render_pass_store_ops", 30},
     {"VK_QCOM_render_pass_transform", 30},
     {"VK_QCOM_rotated_copy_commands", 30},
+    {"VK_QCOM_tile_memory_heap", 25},
     {"VK_QCOM_tile_properties", 24},
+    {"VK_QCOM_tile_shading", 21},
     {"VK_QCOM_ycbcr_degamma", 22},
     {"VK_QNX_external_memory_screen_buffer", 37},
     {"VK_QNX_screen_surface", 22},
     {"VK_SEC_amigo_profiling", 23},
+    {"VK_SEC_pipeline_cache_incremental_mode", 39},
     {"VK_VALVE_descriptor_set_host_mapping", 37},
+    {"VK_VALVE_fragment_density_map_layered", 38},
     {"VK_VALVE_mutable_descriptor_type", 33},
     };
     return table[(int)extension].data();
@@ -5619,6 +5924,8 @@ bool IsFieldPointer(Field field) {
     case Field::pBindDescriptorSetsInfo:
     case Field::pBindInfo:
     case Field::pBindInfos:
+    case Field::pBindPointRequirementCount:
+    case Field::pBindPointRequirements:
     case Field::pBindSessionMemoryInfos:
     case Field::pBindingFlags:
     case Field::pBindingInfos:
@@ -5674,6 +5981,8 @@ bool IsFieldPointer(Field field) {
     case Field::pCompatibility:
     case Field::pConditionalRenderingBegin:
     case Field::pConfiguration:
+    case Field::pConstantData:
+    case Field::pConstants:
     case Field::pCopyBufferInfo:
     case Field::pCopyBufferToImageInfo:
     case Field::pCopyDstLayouts:
@@ -5683,6 +5992,7 @@ bool IsFieldPointer(Field field) {
     case Field::pCopyImageToMemoryInfo:
     case Field::pCopyMemoryToImageInfo:
     case Field::pCopySrcLayouts:
+    case Field::pCopyTensorInfo:
     case Field::pCorrelatedViewMasks:
     case Field::pCorrelationMasks:
     case Field::pCountInfo:
@@ -5713,6 +6023,7 @@ bool IsFieldPointer(Field field) {
     case Field::pDepthStencilAttachment:
     case Field::pDepthStencilResolveAttachment:
     case Field::pDepthStencilState:
+    case Field::pDescription:
     case Field::pDescriptor:
     case Field::pDescriptorCopies:
     case Field::pDescriptorCounts:
@@ -5729,9 +6040,11 @@ bool IsFieldPointer(Field field) {
     case Field::pDeviceIndices:
     case Field::pDeviceMasks:
     case Field::pDeviceRenderAreas:
+    case Field::pDimensions:
     case Field::pDisabledValidationChecks:
     case Field::pDisabledValidationFeatures:
     case Field::pDiscardRectangles:
+    case Field::pDispatchTileInfo:
     case Field::pDisplay:
     case Field::pDisplayCount:
     case Field::pDisplayEventInfo:
@@ -5742,6 +6055,7 @@ bool IsFieldPointer(Field field) {
     case Field::pDrivers:
     case Field::pDrmFormatModifierProperties:
     case Field::pDrmFormatModifiers:
+    case Field::pDstOffset:
     case Field::pDstSize:
     case Field::pDynamicMetadata:
     case Field::pDynamicOffsets:
@@ -5761,13 +6075,17 @@ bool IsFieldPointer(Field field) {
     case Field::pExecuteInfo:
     case Field::pExecutionSet:
     case Field::pExecutionSetWrites:
+    case Field::pExtent:
     case Field::pExternalBufferInfo:
     case Field::pExternalBufferProperties:
     case Field::pExternalFenceInfo:
     case Field::pExternalFenceProperties:
     case Field::pExternalImageFormatProperties:
+    case Field::pExternalQueue:
     case Field::pExternalSemaphoreInfo:
     case Field::pExternalSemaphoreProperties:
+    case Field::pExternalTensorInfo:
+    case Field::pExternalTensorProperties:
     case Field::pExtras:
     case Field::pFaultCounts:
     case Field::pFaultInfo:
@@ -5909,6 +6227,8 @@ bool IsFieldPointer(Field field) {
     case Field::pParametersAddInfo:
     case Field::pParams:
     case Field::pPeerMemoryFeatures:
+    case Field::pPerTileBeginInfo:
+    case Field::pPerTileEndInfo:
     case Field::pPerViewRenderAreas:
     case Field::pPerformanceQueryCreateInfo:
     case Field::pPhysicalDeviceCount:
@@ -5938,12 +6258,14 @@ bool IsFieldPointer(Field field) {
     case Field::pPresentInfo:
     case Field::pPresentModeCount:
     case Field::pPresentModes:
+    case Field::pPresentWait2Info:
     case Field::pPresentationInfo:
     case Field::pPresentationTimingCount:
     case Field::pPresentationTimings:
     case Field::pPreserveAttachments:
     case Field::pPrivateData:
     case Field::pPrivateDataSlot:
+    case Field::pProcessingEngines:
     case Field::pProfiles:
     case Field::pProperties:
     case Field::pPropertiesCount:
@@ -5959,6 +6281,10 @@ bool IsFieldPointer(Field field) {
     case Field::pQueryPool:
     case Field::pQueue:
     case Field::pQueueCreateInfos:
+    case Field::pQueueFamilyDataGraphProcessingEngineInfo:
+    case Field::pQueueFamilyDataGraphProcessingEngineProperties:
+    case Field::pQueueFamilyDataGraphProperties:
+    case Field::pQueueFamilyDataGraphPropertyCount:
     case Field::pQueueFamilyIndices:
     case Field::pQueueFamilyProperties:
     case Field::pQueueFamilyPropertyCount:
@@ -5985,6 +6311,7 @@ bool IsFieldPointer(Field field) {
     case Field::pRenderingInfo:
     case Field::pResolveAttachments:
     case Field::pResolveImageInfo:
+    case Field::pResourceInfos:
     case Field::pResult:
     case Field::pResults:
     case Field::pSampleLocations:
@@ -6025,6 +6352,7 @@ bool IsFieldPointer(Field field) {
     case Field::pSpecializationInfo:
     case Field::pSplitInstanceBindRegions:
     case Field::pSrcCaches:
+    case Field::pSrcOffset:
     case Field::pStages:
     case Field::pStatisticCount:
     case Field::pStatistics:
@@ -6071,8 +6399,13 @@ bool IsFieldPointer(Field field) {
     case Field::pSwapchains:
     case Field::pTag:
     case Field::pTagInfo:
+    case Field::pTensor:
+    case Field::pTensorMemoryBarriers:
+    case Field::pTensorViews:
+    case Field::pTensors:
     case Field::pTessellationState:
     case Field::pTexelBufferView:
+    case Field::pTileMemoryBindInfo:
     case Field::pTileOffsets:
     case Field::pTileSizes:
     case Field::pTimeDomainCount:
@@ -6096,6 +6429,7 @@ bool IsFieldPointer(Field field) {
     case Field::pValues:
     case Field::pVendorBinaryData:
     case Field::pVendorInfos:
+    case Field::pVendorOptions:
     case Field::pVersionData:
     case Field::pVersionInfo:
     case Field::pVertexAttributeDescriptions:
@@ -6129,6 +6463,7 @@ bool IsFieldPointer(Field field) {
     case Field::pWaitSemaphores:
     case Field::pYcbcrConversion:
     case Field::pZirconHandle:
+    case Field::params:
     case Field::pfnAllocation:
     case Field::pfnCallback:
     case Field::pfnFree:
@@ -6149,6 +6484,2195 @@ bool IsFieldPointer(Field field) {
     default:
         return false;
     }
+}
+
+Struct StypeToStruct(VkStructureType stype) {
+    switch (stype) {
+    case VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER:
+       return Struct::VkBufferMemoryBarrier;
+    case VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER:
+       return Struct::VkImageMemoryBarrier;
+    case VK_STRUCTURE_TYPE_MEMORY_BARRIER:
+       return Struct::VkMemoryBarrier;
+    case VK_STRUCTURE_TYPE_APPLICATION_INFO:
+       return Struct::VkApplicationInfo;
+    case VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO:
+       return Struct::VkInstanceCreateInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO:
+       return Struct::VkDeviceQueueCreateInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO:
+       return Struct::VkDeviceCreateInfo;
+    case VK_STRUCTURE_TYPE_SUBMIT_INFO:
+       return Struct::VkSubmitInfo;
+    case VK_STRUCTURE_TYPE_MAPPED_MEMORY_RANGE:
+       return Struct::VkMappedMemoryRange;
+    case VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO:
+       return Struct::VkMemoryAllocateInfo;
+    case VK_STRUCTURE_TYPE_BIND_SPARSE_INFO:
+       return Struct::VkBindSparseInfo;
+    case VK_STRUCTURE_TYPE_FENCE_CREATE_INFO:
+       return Struct::VkFenceCreateInfo;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO:
+       return Struct::VkSemaphoreCreateInfo;
+    case VK_STRUCTURE_TYPE_EVENT_CREATE_INFO:
+       return Struct::VkEventCreateInfo;
+    case VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO:
+       return Struct::VkQueryPoolCreateInfo;
+    case VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO:
+       return Struct::VkBufferCreateInfo;
+    case VK_STRUCTURE_TYPE_BUFFER_VIEW_CREATE_INFO:
+       return Struct::VkBufferViewCreateInfo;
+    case VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO:
+       return Struct::VkImageCreateInfo;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO:
+       return Struct::VkImageViewCreateInfo;
+    case VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO:
+       return Struct::VkShaderModuleCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_CACHE_CREATE_INFO:
+       return Struct::VkPipelineCacheCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO:
+       return Struct::VkPipelineShaderStageCreateInfo;
+    case VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO:
+       return Struct::VkComputePipelineCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO:
+       return Struct::VkPipelineVertexInputStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO:
+       return Struct::VkPipelineInputAssemblyStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_STATE_CREATE_INFO:
+       return Struct::VkPipelineTessellationStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_STATE_CREATE_INFO:
+       return Struct::VkPipelineViewportStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO:
+       return Struct::VkPipelineRasterizationStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO:
+       return Struct::VkPipelineMultisampleStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO:
+       return Struct::VkPipelineDepthStencilStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO:
+       return Struct::VkPipelineColorBlendStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO:
+       return Struct::VkPipelineDynamicStateCreateInfo;
+    case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO:
+       return Struct::VkGraphicsPipelineCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO:
+       return Struct::VkPipelineLayoutCreateInfo;
+    case VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO:
+       return Struct::VkSamplerCreateInfo;
+    case VK_STRUCTURE_TYPE_COPY_DESCRIPTOR_SET:
+       return Struct::VkCopyDescriptorSet;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO:
+       return Struct::VkDescriptorPoolCreateInfo;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO:
+       return Struct::VkDescriptorSetAllocateInfo;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO:
+       return Struct::VkDescriptorSetLayoutCreateInfo;
+    case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET:
+       return Struct::VkWriteDescriptorSet;
+    case VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO:
+       return Struct::VkFramebufferCreateInfo;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO:
+       return Struct::VkRenderPassCreateInfo;
+    case VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO:
+       return Struct::VkCommandPoolCreateInfo;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO:
+       return Struct::VkCommandBufferAllocateInfo;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_INFO:
+       return Struct::VkCommandBufferInheritanceInfo;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO:
+       return Struct::VkCommandBufferBeginInfo;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO:
+       return Struct::VkRenderPassBeginInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_PROPERTIES:
+       return Struct::VkPhysicalDeviceSubgroupProperties;
+    case VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_INFO:
+       return Struct::VkBindBufferMemoryInfo;
+    case VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO:
+       return Struct::VkBindImageMemoryInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_16BIT_STORAGE_FEATURES:
+       return Struct::VkPhysicalDevice16BitStorageFeatures;
+    case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS:
+       return Struct::VkMemoryDedicatedRequirements;
+    case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO:
+       return Struct::VkMemoryDedicatedAllocateInfo;
+    case VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO:
+       return Struct::VkMemoryAllocateFlagsInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_RENDER_PASS_BEGIN_INFO:
+       return Struct::VkDeviceGroupRenderPassBeginInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_COMMAND_BUFFER_BEGIN_INFO:
+       return Struct::VkDeviceGroupCommandBufferBeginInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_SUBMIT_INFO:
+       return Struct::VkDeviceGroupSubmitInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_BIND_SPARSE_INFO:
+       return Struct::VkDeviceGroupBindSparseInfo;
+    case VK_STRUCTURE_TYPE_BIND_BUFFER_MEMORY_DEVICE_GROUP_INFO:
+       return Struct::VkBindBufferMemoryDeviceGroupInfo;
+    case VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_DEVICE_GROUP_INFO:
+       return Struct::VkBindImageMemoryDeviceGroupInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GROUP_PROPERTIES:
+       return Struct::VkPhysicalDeviceGroupProperties;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_DEVICE_CREATE_INFO:
+       return Struct::VkDeviceGroupDeviceCreateInfo;
+    case VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2:
+       return Struct::VkBufferMemoryRequirementsInfo2;
+    case VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2:
+       return Struct::VkImageMemoryRequirementsInfo2;
+    case VK_STRUCTURE_TYPE_IMAGE_SPARSE_MEMORY_REQUIREMENTS_INFO_2:
+       return Struct::VkImageSparseMemoryRequirementsInfo2;
+    case VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2:
+       return Struct::VkMemoryRequirements2;
+    case VK_STRUCTURE_TYPE_SPARSE_IMAGE_MEMORY_REQUIREMENTS_2:
+       return Struct::VkSparseImageMemoryRequirements2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2:
+       return Struct::VkPhysicalDeviceFeatures2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2:
+       return Struct::VkPhysicalDeviceProperties2;
+    case VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_2:
+       return Struct::VkFormatProperties2;
+    case VK_STRUCTURE_TYPE_IMAGE_FORMAT_PROPERTIES_2:
+       return Struct::VkImageFormatProperties2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_FORMAT_INFO_2:
+       return Struct::VkPhysicalDeviceImageFormatInfo2;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_PROPERTIES_2:
+       return Struct::VkQueueFamilyProperties2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PROPERTIES_2:
+       return Struct::VkPhysicalDeviceMemoryProperties2;
+    case VK_STRUCTURE_TYPE_SPARSE_IMAGE_FORMAT_PROPERTIES_2:
+       return Struct::VkSparseImageFormatProperties2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SPARSE_IMAGE_FORMAT_INFO_2:
+       return Struct::VkPhysicalDeviceSparseImageFormatInfo2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_POINT_CLIPPING_PROPERTIES:
+       return Struct::VkPhysicalDevicePointClippingProperties;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_INPUT_ATTACHMENT_ASPECT_CREATE_INFO:
+       return Struct::VkRenderPassInputAttachmentAspectCreateInfo;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO:
+       return Struct::VkImageViewUsageCreateInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_TESSELLATION_DOMAIN_ORIGIN_STATE_CREATE_INFO:
+       return Struct::VkPipelineTessellationDomainOriginStateCreateInfo;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_MULTIVIEW_CREATE_INFO:
+       return Struct::VkRenderPassMultiviewCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES:
+       return Struct::VkPhysicalDeviceMultiviewFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PROPERTIES:
+       return Struct::VkPhysicalDeviceMultiviewProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VARIABLE_POINTERS_FEATURES:
+       return Struct::VkPhysicalDeviceVariablePointersFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_FEATURES:
+       return Struct::VkPhysicalDeviceProtectedMemoryFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROTECTED_MEMORY_PROPERTIES:
+       return Struct::VkPhysicalDeviceProtectedMemoryProperties;
+    case VK_STRUCTURE_TYPE_DEVICE_QUEUE_INFO_2:
+       return Struct::VkDeviceQueueInfo2;
+    case VK_STRUCTURE_TYPE_PROTECTED_SUBMIT_INFO:
+       return Struct::VkProtectedSubmitInfo;
+    case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_CREATE_INFO:
+       return Struct::VkSamplerYcbcrConversionCreateInfo;
+    case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_INFO:
+       return Struct::VkSamplerYcbcrConversionInfo;
+    case VK_STRUCTURE_TYPE_BIND_IMAGE_PLANE_MEMORY_INFO:
+       return Struct::VkBindImagePlaneMemoryInfo;
+    case VK_STRUCTURE_TYPE_IMAGE_PLANE_MEMORY_REQUIREMENTS_INFO:
+       return Struct::VkImagePlaneMemoryRequirementsInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_YCBCR_CONVERSION_FEATURES:
+       return Struct::VkPhysicalDeviceSamplerYcbcrConversionFeatures;
+    case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES:
+       return Struct::VkSamplerYcbcrConversionImageFormatProperties;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_UPDATE_TEMPLATE_CREATE_INFO:
+       return Struct::VkDescriptorUpdateTemplateCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_IMAGE_FORMAT_INFO:
+       return Struct::VkPhysicalDeviceExternalImageFormatInfo;
+    case VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES:
+       return Struct::VkExternalImageFormatProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_BUFFER_INFO:
+       return Struct::VkPhysicalDeviceExternalBufferInfo;
+    case VK_STRUCTURE_TYPE_EXTERNAL_BUFFER_PROPERTIES:
+       return Struct::VkExternalBufferProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ID_PROPERTIES:
+       return Struct::VkPhysicalDeviceIDProperties;
+    case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO:
+       return Struct::VkExternalMemoryImageCreateInfo;
+    case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO:
+       return Struct::VkExternalMemoryBufferCreateInfo;
+    case VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO:
+       return Struct::VkExportMemoryAllocateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FENCE_INFO:
+       return Struct::VkPhysicalDeviceExternalFenceInfo;
+    case VK_STRUCTURE_TYPE_EXTERNAL_FENCE_PROPERTIES:
+       return Struct::VkExternalFenceProperties;
+    case VK_STRUCTURE_TYPE_EXPORT_FENCE_CREATE_INFO:
+       return Struct::VkExportFenceCreateInfo;
+    case VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_CREATE_INFO:
+       return Struct::VkExportSemaphoreCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_SEMAPHORE_INFO:
+       return Struct::VkPhysicalDeviceExternalSemaphoreInfo;
+    case VK_STRUCTURE_TYPE_EXTERNAL_SEMAPHORE_PROPERTIES:
+       return Struct::VkExternalSemaphoreProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_3_PROPERTIES:
+       return Struct::VkPhysicalDeviceMaintenance3Properties;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_SUPPORT:
+       return Struct::VkDescriptorSetLayoutSupport;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DRAW_PARAMETERS_FEATURES:
+       return Struct::VkPhysicalDeviceShaderDrawParametersFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES:
+       return Struct::VkPhysicalDeviceVulkan11Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_PROPERTIES:
+       return Struct::VkPhysicalDeviceVulkan11Properties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES:
+       return Struct::VkPhysicalDeviceVulkan12Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_PROPERTIES:
+       return Struct::VkPhysicalDeviceVulkan12Properties;
+    case VK_STRUCTURE_TYPE_IMAGE_FORMAT_LIST_CREATE_INFO:
+       return Struct::VkImageFormatListCreateInfo;
+    case VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_2:
+       return Struct::VkAttachmentDescription2;
+    case VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_2:
+       return Struct::VkAttachmentReference2;
+    case VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_2:
+       return Struct::VkSubpassDescription2;
+    case VK_STRUCTURE_TYPE_SUBPASS_DEPENDENCY_2:
+       return Struct::VkSubpassDependency2;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2:
+       return Struct::VkRenderPassCreateInfo2;
+    case VK_STRUCTURE_TYPE_SUBPASS_BEGIN_INFO:
+       return Struct::VkSubpassBeginInfo;
+    case VK_STRUCTURE_TYPE_SUBPASS_END_INFO:
+       return Struct::VkSubpassEndInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_8BIT_STORAGE_FEATURES:
+       return Struct::VkPhysicalDevice8BitStorageFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRIVER_PROPERTIES:
+       return Struct::VkPhysicalDeviceDriverProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_INT64_FEATURES:
+       return Struct::VkPhysicalDeviceShaderAtomicInt64Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT16_INT8_FEATURES:
+       return Struct::VkPhysicalDeviceShaderFloat16Int8Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FLOAT_CONTROLS_PROPERTIES:
+       return Struct::VkPhysicalDeviceFloatControlsProperties;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_BINDING_FLAGS_CREATE_INFO:
+       return Struct::VkDescriptorSetLayoutBindingFlagsCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES:
+       return Struct::VkPhysicalDeviceDescriptorIndexingFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES:
+       return Struct::VkPhysicalDeviceDescriptorIndexingProperties;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_ALLOCATE_INFO:
+       return Struct::VkDescriptorSetVariableDescriptorCountAllocateInfo;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_VARIABLE_DESCRIPTOR_COUNT_LAYOUT_SUPPORT:
+       return Struct::VkDescriptorSetVariableDescriptorCountLayoutSupport;
+    case VK_STRUCTURE_TYPE_SUBPASS_DESCRIPTION_DEPTH_STENCIL_RESOLVE:
+       return Struct::VkSubpassDescriptionDepthStencilResolve;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_STENCIL_RESOLVE_PROPERTIES:
+       return Struct::VkPhysicalDeviceDepthStencilResolveProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCALAR_BLOCK_LAYOUT_FEATURES:
+       return Struct::VkPhysicalDeviceScalarBlockLayoutFeatures;
+    case VK_STRUCTURE_TYPE_IMAGE_STENCIL_USAGE_CREATE_INFO:
+       return Struct::VkImageStencilUsageCreateInfo;
+    case VK_STRUCTURE_TYPE_SAMPLER_REDUCTION_MODE_CREATE_INFO:
+       return Struct::VkSamplerReductionModeCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLER_FILTER_MINMAX_PROPERTIES:
+       return Struct::VkPhysicalDeviceSamplerFilterMinmaxProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_MEMORY_MODEL_FEATURES:
+       return Struct::VkPhysicalDeviceVulkanMemoryModelFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGELESS_FRAMEBUFFER_FEATURES:
+       return Struct::VkPhysicalDeviceImagelessFramebufferFeatures;
+    case VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENT_IMAGE_INFO:
+       return Struct::VkFramebufferAttachmentImageInfo;
+    case VK_STRUCTURE_TYPE_FRAMEBUFFER_ATTACHMENTS_CREATE_INFO:
+       return Struct::VkFramebufferAttachmentsCreateInfo;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_ATTACHMENT_BEGIN_INFO:
+       return Struct::VkRenderPassAttachmentBeginInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFORM_BUFFER_STANDARD_LAYOUT_FEATURES:
+       return Struct::VkPhysicalDeviceUniformBufferStandardLayoutFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_EXTENDED_TYPES_FEATURES:
+       return Struct::VkPhysicalDeviceShaderSubgroupExtendedTypesFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SEPARATE_DEPTH_STENCIL_LAYOUTS_FEATURES:
+       return Struct::VkPhysicalDeviceSeparateDepthStencilLayoutsFeatures;
+    case VK_STRUCTURE_TYPE_ATTACHMENT_REFERENCE_STENCIL_LAYOUT:
+       return Struct::VkAttachmentReferenceStencilLayout;
+    case VK_STRUCTURE_TYPE_ATTACHMENT_DESCRIPTION_STENCIL_LAYOUT:
+       return Struct::VkAttachmentDescriptionStencilLayout;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_QUERY_RESET_FEATURES:
+       return Struct::VkPhysicalDeviceHostQueryResetFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_FEATURES:
+       return Struct::VkPhysicalDeviceTimelineSemaphoreFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TIMELINE_SEMAPHORE_PROPERTIES:
+       return Struct::VkPhysicalDeviceTimelineSemaphoreProperties;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_TYPE_CREATE_INFO:
+       return Struct::VkSemaphoreTypeCreateInfo;
+    case VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO:
+       return Struct::VkTimelineSemaphoreSubmitInfo;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_WAIT_INFO:
+       return Struct::VkSemaphoreWaitInfo;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_SIGNAL_INFO:
+       return Struct::VkSemaphoreSignalInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES:
+       return Struct::VkPhysicalDeviceBufferDeviceAddressFeatures;
+    case VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO:
+       return Struct::VkBufferDeviceAddressInfo;
+    case VK_STRUCTURE_TYPE_BUFFER_OPAQUE_CAPTURE_ADDRESS_CREATE_INFO:
+       return Struct::VkBufferOpaqueCaptureAddressCreateInfo;
+    case VK_STRUCTURE_TYPE_MEMORY_OPAQUE_CAPTURE_ADDRESS_ALLOCATE_INFO:
+       return Struct::VkMemoryOpaqueCaptureAddressAllocateInfo;
+    case VK_STRUCTURE_TYPE_DEVICE_MEMORY_OPAQUE_CAPTURE_ADDRESS_INFO:
+       return Struct::VkDeviceMemoryOpaqueCaptureAddressInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES:
+       return Struct::VkPhysicalDeviceVulkan13Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_PROPERTIES:
+       return Struct::VkPhysicalDeviceVulkan13Properties;
+    case VK_STRUCTURE_TYPE_PIPELINE_CREATION_FEEDBACK_CREATE_INFO:
+       return Struct::VkPipelineCreationFeedbackCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TERMINATE_INVOCATION_FEATURES:
+       return Struct::VkPhysicalDeviceShaderTerminateInvocationFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TOOL_PROPERTIES:
+       return Struct::VkPhysicalDeviceToolProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_DEMOTE_TO_HELPER_INVOCATION_FEATURES:
+       return Struct::VkPhysicalDeviceShaderDemoteToHelperInvocationFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIVATE_DATA_FEATURES:
+       return Struct::VkPhysicalDevicePrivateDataFeatures;
+    case VK_STRUCTURE_TYPE_DEVICE_PRIVATE_DATA_CREATE_INFO:
+       return Struct::VkDevicePrivateDataCreateInfo;
+    case VK_STRUCTURE_TYPE_PRIVATE_DATA_SLOT_CREATE_INFO:
+       return Struct::VkPrivateDataSlotCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CREATION_CACHE_CONTROL_FEATURES:
+       return Struct::VkPhysicalDevicePipelineCreationCacheControlFeatures;
+    case VK_STRUCTURE_TYPE_MEMORY_BARRIER_2:
+       return Struct::VkMemoryBarrier2;
+    case VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2:
+       return Struct::VkBufferMemoryBarrier2;
+    case VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2:
+       return Struct::VkImageMemoryBarrier2;
+    case VK_STRUCTURE_TYPE_DEPENDENCY_INFO:
+       return Struct::VkDependencyInfo;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_SUBMIT_INFO:
+       return Struct::VkSemaphoreSubmitInfo;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_SUBMIT_INFO:
+       return Struct::VkCommandBufferSubmitInfo;
+    case VK_STRUCTURE_TYPE_SUBMIT_INFO_2:
+       return Struct::VkSubmitInfo2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SYNCHRONIZATION_2_FEATURES:
+       return Struct::VkPhysicalDeviceSynchronization2Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_WORKGROUP_MEMORY_FEATURES:
+       return Struct::VkPhysicalDeviceZeroInitializeWorkgroupMemoryFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ROBUSTNESS_FEATURES:
+       return Struct::VkPhysicalDeviceImageRobustnessFeatures;
+    case VK_STRUCTURE_TYPE_BUFFER_COPY_2:
+       return Struct::VkBufferCopy2;
+    case VK_STRUCTURE_TYPE_COPY_BUFFER_INFO_2:
+       return Struct::VkCopyBufferInfo2;
+    case VK_STRUCTURE_TYPE_IMAGE_COPY_2:
+       return Struct::VkImageCopy2;
+    case VK_STRUCTURE_TYPE_COPY_IMAGE_INFO_2:
+       return Struct::VkCopyImageInfo2;
+    case VK_STRUCTURE_TYPE_BUFFER_IMAGE_COPY_2:
+       return Struct::VkBufferImageCopy2;
+    case VK_STRUCTURE_TYPE_COPY_BUFFER_TO_IMAGE_INFO_2:
+       return Struct::VkCopyBufferToImageInfo2;
+    case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_BUFFER_INFO_2:
+       return Struct::VkCopyImageToBufferInfo2;
+    case VK_STRUCTURE_TYPE_IMAGE_BLIT_2:
+       return Struct::VkImageBlit2;
+    case VK_STRUCTURE_TYPE_BLIT_IMAGE_INFO_2:
+       return Struct::VkBlitImageInfo2;
+    case VK_STRUCTURE_TYPE_IMAGE_RESOLVE_2:
+       return Struct::VkImageResolve2;
+    case VK_STRUCTURE_TYPE_RESOLVE_IMAGE_INFO_2:
+       return Struct::VkResolveImageInfo2;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_FEATURES:
+       return Struct::VkPhysicalDeviceSubgroupSizeControlFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBGROUP_SIZE_CONTROL_PROPERTIES:
+       return Struct::VkPhysicalDeviceSubgroupSizeControlProperties;
+    case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_REQUIRED_SUBGROUP_SIZE_CREATE_INFO:
+       return Struct::VkPipelineShaderStageRequiredSubgroupSizeCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_FEATURES:
+       return Struct::VkPhysicalDeviceInlineUniformBlockFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INLINE_UNIFORM_BLOCK_PROPERTIES:
+       return Struct::VkPhysicalDeviceInlineUniformBlockProperties;
+    case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_INLINE_UNIFORM_BLOCK:
+       return Struct::VkWriteDescriptorSetInlineUniformBlock;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_INLINE_UNIFORM_BLOCK_CREATE_INFO:
+       return Struct::VkDescriptorPoolInlineUniformBlockCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXTURE_COMPRESSION_ASTC_HDR_FEATURES:
+       return Struct::VkPhysicalDeviceTextureCompressionASTCHDRFeatures;
+    case VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO:
+       return Struct::VkRenderingAttachmentInfo;
+    case VK_STRUCTURE_TYPE_RENDERING_INFO:
+       return Struct::VkRenderingInfo;
+    case VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO:
+       return Struct::VkPipelineRenderingCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_FEATURES:
+       return Struct::VkPhysicalDeviceDynamicRenderingFeatures;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDERING_INFO:
+       return Struct::VkCommandBufferInheritanceRenderingInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_FEATURES:
+       return Struct::VkPhysicalDeviceShaderIntegerDotProductFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_DOT_PRODUCT_PROPERTIES:
+       return Struct::VkPhysicalDeviceShaderIntegerDotProductProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_PROPERTIES:
+       return Struct::VkPhysicalDeviceTexelBufferAlignmentProperties;
+    case VK_STRUCTURE_TYPE_FORMAT_PROPERTIES_3:
+       return Struct::VkFormatProperties3;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_FEATURES:
+       return Struct::VkPhysicalDeviceMaintenance4Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_4_PROPERTIES:
+       return Struct::VkPhysicalDeviceMaintenance4Properties;
+    case VK_STRUCTURE_TYPE_DEVICE_BUFFER_MEMORY_REQUIREMENTS:
+       return Struct::VkDeviceBufferMemoryRequirements;
+    case VK_STRUCTURE_TYPE_DEVICE_IMAGE_MEMORY_REQUIREMENTS:
+       return Struct::VkDeviceImageMemoryRequirements;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_FEATURES:
+       return Struct::VkPhysicalDeviceVulkan14Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_4_PROPERTIES:
+       return Struct::VkPhysicalDeviceVulkan14Properties;
+    case VK_STRUCTURE_TYPE_DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO:
+       return Struct::VkDeviceQueueGlobalPriorityCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GLOBAL_PRIORITY_QUERY_FEATURES:
+       return Struct::VkPhysicalDeviceGlobalPriorityQueryFeatures;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES:
+       return Struct::VkQueueFamilyGlobalPriorityProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_ROTATE_FEATURES:
+       return Struct::VkPhysicalDeviceShaderSubgroupRotateFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT_CONTROLS_2_FEATURES:
+       return Struct::VkPhysicalDeviceShaderFloatControls2Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_EXPECT_ASSUME_FEATURES:
+       return Struct::VkPhysicalDeviceShaderExpectAssumeFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_FEATURES:
+       return Struct::VkPhysicalDeviceLineRasterizationFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINE_RASTERIZATION_PROPERTIES:
+       return Struct::VkPhysicalDeviceLineRasterizationProperties;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_LINE_STATE_CREATE_INFO:
+       return Struct::VkPipelineRasterizationLineStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES:
+       return Struct::VkPhysicalDeviceVertexAttributeDivisorProperties;
+    case VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_DIVISOR_STATE_CREATE_INFO:
+       return Struct::VkPipelineVertexInputDivisorStateCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_FEATURES:
+       return Struct::VkPhysicalDeviceVertexAttributeDivisorFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES:
+       return Struct::VkPhysicalDeviceIndexTypeUint8Features;
+    case VK_STRUCTURE_TYPE_MEMORY_MAP_INFO:
+       return Struct::VkMemoryMapInfo;
+    case VK_STRUCTURE_TYPE_MEMORY_UNMAP_INFO:
+       return Struct::VkMemoryUnmapInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_FEATURES:
+       return Struct::VkPhysicalDeviceMaintenance5Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_5_PROPERTIES:
+       return Struct::VkPhysicalDeviceMaintenance5Properties;
+    case VK_STRUCTURE_TYPE_RENDERING_AREA_INFO:
+       return Struct::VkRenderingAreaInfo;
+    case VK_STRUCTURE_TYPE_IMAGE_SUBRESOURCE_2:
+       return Struct::VkImageSubresource2;
+    case VK_STRUCTURE_TYPE_DEVICE_IMAGE_SUBRESOURCE_INFO:
+       return Struct::VkDeviceImageSubresourceInfo;
+    case VK_STRUCTURE_TYPE_SUBRESOURCE_LAYOUT_2:
+       return Struct::VkSubresourceLayout2;
+    case VK_STRUCTURE_TYPE_PIPELINE_CREATE_FLAGS_2_CREATE_INFO:
+       return Struct::VkPipelineCreateFlags2CreateInfo;
+    case VK_STRUCTURE_TYPE_BUFFER_USAGE_FLAGS_2_CREATE_INFO:
+       return Struct::VkBufferUsageFlags2CreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PUSH_DESCRIPTOR_PROPERTIES:
+       return Struct::VkPhysicalDevicePushDescriptorProperties;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_LOCAL_READ_FEATURES:
+       return Struct::VkPhysicalDeviceDynamicRenderingLocalReadFeatures;
+    case VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_LOCATION_INFO:
+       return Struct::VkRenderingAttachmentLocationInfo;
+    case VK_STRUCTURE_TYPE_RENDERING_INPUT_ATTACHMENT_INDEX_INFO:
+       return Struct::VkRenderingInputAttachmentIndexInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_FEATURES:
+       return Struct::VkPhysicalDeviceMaintenance6Features;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_6_PROPERTIES:
+       return Struct::VkPhysicalDeviceMaintenance6Properties;
+    case VK_STRUCTURE_TYPE_BIND_MEMORY_STATUS:
+       return Struct::VkBindMemoryStatus;
+    case VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_SETS_INFO:
+       return Struct::VkBindDescriptorSetsInfo;
+    case VK_STRUCTURE_TYPE_PUSH_CONSTANTS_INFO:
+       return Struct::VkPushConstantsInfo;
+    case VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_INFO:
+       return Struct::VkPushDescriptorSetInfo;
+    case VK_STRUCTURE_TYPE_PUSH_DESCRIPTOR_SET_WITH_TEMPLATE_INFO:
+       return Struct::VkPushDescriptorSetWithTemplateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROTECTED_ACCESS_FEATURES:
+       return Struct::VkPhysicalDevicePipelineProtectedAccessFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_FEATURES:
+       return Struct::VkPhysicalDevicePipelineRobustnessFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_ROBUSTNESS_PROPERTIES:
+       return Struct::VkPhysicalDevicePipelineRobustnessProperties;
+    case VK_STRUCTURE_TYPE_PIPELINE_ROBUSTNESS_CREATE_INFO:
+       return Struct::VkPipelineRobustnessCreateInfo;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_FEATURES:
+       return Struct::VkPhysicalDeviceHostImageCopyFeatures;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HOST_IMAGE_COPY_PROPERTIES:
+       return Struct::VkPhysicalDeviceHostImageCopyProperties;
+    case VK_STRUCTURE_TYPE_MEMORY_TO_IMAGE_COPY:
+       return Struct::VkMemoryToImageCopy;
+    case VK_STRUCTURE_TYPE_IMAGE_TO_MEMORY_COPY:
+       return Struct::VkImageToMemoryCopy;
+    case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_IMAGE_INFO:
+       return Struct::VkCopyMemoryToImageInfo;
+    case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_MEMORY_INFO:
+       return Struct::VkCopyImageToMemoryInfo;
+    case VK_STRUCTURE_TYPE_COPY_IMAGE_TO_IMAGE_INFO:
+       return Struct::VkCopyImageToImageInfo;
+    case VK_STRUCTURE_TYPE_HOST_IMAGE_LAYOUT_TRANSITION_INFO:
+       return Struct::VkHostImageLayoutTransitionInfo;
+    case VK_STRUCTURE_TYPE_SUBRESOURCE_HOST_MEMCPY_SIZE:
+       return Struct::VkSubresourceHostMemcpySize;
+    case VK_STRUCTURE_TYPE_HOST_IMAGE_COPY_DEVICE_PERFORMANCE_QUERY:
+       return Struct::VkHostImageCopyDevicePerformanceQuery;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR:
+       return Struct::VkSwapchainCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PRESENT_INFO_KHR:
+       return Struct::VkPresentInfoKHR;
+    case VK_STRUCTURE_TYPE_IMAGE_SWAPCHAIN_CREATE_INFO_KHR:
+       return Struct::VkImageSwapchainCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_SWAPCHAIN_INFO_KHR:
+       return Struct::VkBindImageMemorySwapchainInfoKHR;
+    case VK_STRUCTURE_TYPE_ACQUIRE_NEXT_IMAGE_INFO_KHR:
+       return Struct::VkAcquireNextImageInfoKHR;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_PRESENT_CAPABILITIES_KHR:
+       return Struct::VkDeviceGroupPresentCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_PRESENT_INFO_KHR:
+       return Struct::VkDeviceGroupPresentInfoKHR;
+    case VK_STRUCTURE_TYPE_DEVICE_GROUP_SWAPCHAIN_CREATE_INFO_KHR:
+       return Struct::VkDeviceGroupSwapchainCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_MODE_CREATE_INFO_KHR:
+       return Struct::VkDisplayModeCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_SURFACE_CREATE_INFO_KHR:
+       return Struct::VkDisplaySurfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_PRESENT_INFO_KHR:
+       return Struct::VkDisplayPresentInfoKHR;
+    case VK_STRUCTURE_TYPE_XLIB_SURFACE_CREATE_INFO_KHR:
+       return Struct::VkXlibSurfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR:
+       return Struct::VkXcbSurfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_WAYLAND_SURFACE_CREATE_INFO_KHR:
+       return Struct::VkWaylandSurfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_ANDROID_SURFACE_CREATE_INFO_KHR:
+       return Struct::VkAndroidSurfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR:
+       return Struct::VkWin32SurfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_QUERY_RESULT_STATUS_PROPERTIES_KHR:
+       return Struct::VkQueueFamilyQueryResultStatusPropertiesKHR;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR:
+       return Struct::VkQueueFamilyVideoPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_PROFILE_INFO_KHR:
+       return Struct::VkVideoProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_PROFILE_LIST_INFO_KHR:
+       return Struct::VkVideoProfileListInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_CAPABILITIES_KHR:
+       return Struct::VkVideoCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR:
+       return Struct::VkPhysicalDeviceVideoFormatInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR:
+       return Struct::VkVideoFormatPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR:
+       return Struct::VkVideoPictureResourceInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_REFERENCE_SLOT_INFO_KHR:
+       return Struct::VkVideoReferenceSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_SESSION_MEMORY_REQUIREMENTS_KHR:
+       return Struct::VkVideoSessionMemoryRequirementsKHR;
+    case VK_STRUCTURE_TYPE_BIND_VIDEO_SESSION_MEMORY_INFO_KHR:
+       return Struct::VkBindVideoSessionMemoryInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_SESSION_CREATE_INFO_KHR:
+       return Struct::VkVideoSessionCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoSessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_SESSION_PARAMETERS_UPDATE_INFO_KHR:
+       return Struct::VkVideoSessionParametersUpdateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR:
+       return Struct::VkVideoBeginCodingInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR:
+       return Struct::VkVideoEndCodingInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_CODING_CONTROL_INFO_KHR:
+       return Struct::VkVideoCodingControlInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_CAPABILITIES_KHR:
+       return Struct::VkVideoDecodeCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_USAGE_INFO_KHR:
+       return Struct::VkVideoDecodeUsageInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_INFO_KHR:
+       return Struct::VkVideoDecodeInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeH264CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUALITY_LEVEL_PROPERTIES_KHR:
+       return Struct::VkVideoEncodeH264QualityLevelPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeH264SessionCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:
+       return Struct::VkVideoEncodeH264SessionParametersAddInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeH264SessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_GET_INFO_KHR:
+       return Struct::VkVideoEncodeH264SessionParametersGetInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:
+       return Struct::VkVideoEncodeH264SessionParametersFeedbackInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_NALU_SLICE_INFO_KHR:
+       return Struct::VkVideoEncodeH264NaluSliceInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PICTURE_INFO_KHR:
+       return Struct::VkVideoEncodeH264PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_DPB_SLOT_INFO_KHR:
+       return Struct::VkVideoEncodeH264DpbSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_PROFILE_INFO_KHR:
+       return Struct::VkVideoEncodeH264ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_INFO_KHR:
+       return Struct::VkVideoEncodeH264RateControlInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_RATE_CONTROL_LAYER_INFO_KHR:
+       return Struct::VkVideoEncodeH264RateControlLayerInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_GOP_REMAINING_FRAME_INFO_KHR:
+       return Struct::VkVideoEncodeH264GopRemainingFrameInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeH265CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeH265SessionCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUALITY_LEVEL_PROPERTIES_KHR:
+       return Struct::VkVideoEncodeH265QualityLevelPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:
+       return Struct::VkVideoEncodeH265SessionParametersAddInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeH265SessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_GET_INFO_KHR:
+       return Struct::VkVideoEncodeH265SessionParametersGetInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:
+       return Struct::VkVideoEncodeH265SessionParametersFeedbackInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_NALU_SLICE_SEGMENT_INFO_KHR:
+       return Struct::VkVideoEncodeH265NaluSliceSegmentInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PICTURE_INFO_KHR:
+       return Struct::VkVideoEncodeH265PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_DPB_SLOT_INFO_KHR:
+       return Struct::VkVideoEncodeH265DpbSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_PROFILE_INFO_KHR:
+       return Struct::VkVideoEncodeH265ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR:
+       return Struct::VkVideoEncodeH265RateControlInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR:
+       return Struct::VkVideoEncodeH265RateControlLayerInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_GOP_REMAINING_FRAME_INFO_KHR:
+       return Struct::VkVideoEncodeH265GopRemainingFrameInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PROFILE_INFO_KHR:
+       return Struct::VkVideoDecodeH264ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_CAPABILITIES_KHR:
+       return Struct::VkVideoDecodeH264CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_ADD_INFO_KHR:
+       return Struct::VkVideoDecodeH264SessionParametersAddInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoDecodeH264SessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_PICTURE_INFO_KHR:
+       return Struct::VkVideoDecodeH264PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR:
+       return Struct::VkVideoDecodeH264DpbSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkImportMemoryWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_EXPORT_MEMORY_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkExportMemoryWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_MEMORY_WIN32_HANDLE_PROPERTIES_KHR:
+       return Struct::VkMemoryWin32HandlePropertiesKHR;
+    case VK_STRUCTURE_TYPE_MEMORY_GET_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkMemoryGetWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR:
+       return Struct::VkImportMemoryFdInfoKHR;
+    case VK_STRUCTURE_TYPE_MEMORY_FD_PROPERTIES_KHR:
+       return Struct::VkMemoryFdPropertiesKHR;
+    case VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR:
+       return Struct::VkMemoryGetFdInfoKHR;
+    case VK_STRUCTURE_TYPE_WIN32_KEYED_MUTEX_ACQUIRE_RELEASE_INFO_KHR:
+       return Struct::VkWin32KeyedMutexAcquireReleaseInfoKHR;
+    case VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkImportSemaphoreWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_EXPORT_SEMAPHORE_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkExportSemaphoreWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_D3D12_FENCE_SUBMIT_INFO_KHR:
+       return Struct::VkD3D12FenceSubmitInfoKHR;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_GET_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkSemaphoreGetWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_FD_INFO_KHR:
+       return Struct::VkImportSemaphoreFdInfoKHR;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_GET_FD_INFO_KHR:
+       return Struct::VkSemaphoreGetFdInfoKHR;
+    case VK_STRUCTURE_TYPE_PRESENT_REGIONS_KHR:
+       return Struct::VkPresentRegionsKHR;
+    case VK_STRUCTURE_TYPE_SHARED_PRESENT_SURFACE_CAPABILITIES_KHR:
+       return Struct::VkSharedPresentSurfaceCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_IMPORT_FENCE_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkImportFenceWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_EXPORT_FENCE_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkExportFenceWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_FENCE_GET_WIN32_HANDLE_INFO_KHR:
+       return Struct::VkFenceGetWin32HandleInfoKHR;
+    case VK_STRUCTURE_TYPE_IMPORT_FENCE_FD_INFO_KHR:
+       return Struct::VkImportFenceFdInfoKHR;
+    case VK_STRUCTURE_TYPE_FENCE_GET_FD_INFO_KHR:
+       return Struct::VkFenceGetFdInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePerformanceQueryFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PERFORMANCE_QUERY_PROPERTIES_KHR:
+       return Struct::VkPhysicalDevicePerformanceQueryPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_KHR:
+       return Struct::VkPerformanceCounterKHR;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_COUNTER_DESCRIPTION_KHR:
+       return Struct::VkPerformanceCounterDescriptionKHR;
+    case VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_CREATE_INFO_KHR:
+       return Struct::VkQueryPoolPerformanceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_ACQUIRE_PROFILING_LOCK_INFO_KHR:
+       return Struct::VkAcquireProfilingLockInfoKHR;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_QUERY_SUBMIT_INFO_KHR:
+       return Struct::VkPerformanceQuerySubmitInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SURFACE_INFO_2_KHR:
+       return Struct::VkPhysicalDeviceSurfaceInfo2KHR;
+    case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR:
+       return Struct::VkSurfaceCapabilities2KHR;
+    case VK_STRUCTURE_TYPE_SURFACE_FORMAT_2_KHR:
+       return Struct::VkSurfaceFormat2KHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_PROPERTIES_2_KHR:
+       return Struct::VkDisplayProperties2KHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_PLANE_PROPERTIES_2_KHR:
+       return Struct::VkDisplayPlaneProperties2KHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_MODE_PROPERTIES_2_KHR:
+       return Struct::VkDisplayModeProperties2KHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_PLANE_INFO_2_KHR:
+       return Struct::VkDisplayPlaneInfo2KHR;
+    case VK_STRUCTURE_TYPE_DISPLAY_PLANE_CAPABILITIES_2_KHR:
+       return Struct::VkDisplayPlaneCapabilities2KHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_BFLOAT16_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceShaderBfloat16FeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePortabilitySubsetFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PORTABILITY_SUBSET_PROPERTIES_KHR:
+       return Struct::VkPhysicalDevicePortabilitySubsetPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CLOCK_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceShaderClockFeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PROFILE_INFO_KHR:
+       return Struct::VkVideoDecodeH265ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_CAPABILITIES_KHR:
+       return Struct::VkVideoDecodeH265CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_ADD_INFO_KHR:
+       return Struct::VkVideoDecodeH265SessionParametersAddInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoDecodeH265SessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_PICTURE_INFO_KHR:
+       return Struct::VkVideoDecodeH265PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR:
+       return Struct::VkVideoDecodeH265DpbSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR:
+       return Struct::VkFragmentShadingRateAttachmentInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_STATE_CREATE_INFO_KHR:
+       return Struct::VkPipelineFragmentShadingRateStateCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceFragmentShadingRateFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceFragmentShadingRatePropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_KHR:
+       return Struct::VkPhysicalDeviceFragmentShadingRateKHR;
+    case VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_INFO_KHR:
+       return Struct::VkRenderingFragmentShadingRateAttachmentInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_QUAD_CONTROL_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceShaderQuadControlFeaturesKHR;
+    case VK_STRUCTURE_TYPE_SURFACE_PROTECTED_CAPABILITIES_KHR:
+       return Struct::VkSurfaceProtectedCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePresentWaitFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_EXECUTABLE_PROPERTIES_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePipelineExecutablePropertiesFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_INFO_KHR:
+       return Struct::VkPipelineInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_PROPERTIES_KHR:
+       return Struct::VkPipelineExecutablePropertiesKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INFO_KHR:
+       return Struct::VkPipelineExecutableInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_STATISTIC_KHR:
+       return Struct::VkPipelineExecutableStatisticKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_EXECUTABLE_INTERNAL_REPRESENTATION_KHR:
+       return Struct::VkPipelineExecutableInternalRepresentationKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_LIBRARY_CREATE_INFO_KHR:
+       return Struct::VkPipelineLibraryCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PRESENT_ID_KHR:
+       return Struct::VkPresentIdKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePresentIdFeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INFO_KHR:
+       return Struct::VkVideoEncodeInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_QUERY_POOL_VIDEO_ENCODE_FEEDBACK_CREATE_INFO_KHR:
+       return Struct::VkQueryPoolVideoEncodeFeedbackCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_USAGE_INFO_KHR:
+       return Struct::VkVideoEncodeUsageInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_LAYER_INFO_KHR:
+       return Struct::VkVideoEncodeRateControlLayerInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_RATE_CONTROL_INFO_KHR:
+       return Struct::VkVideoEncodeRateControlInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR:
+       return Struct::VkPhysicalDeviceVideoEncodeQualityLevelInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_PROPERTIES_KHR:
+       return Struct::VkVideoEncodeQualityLevelPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUALITY_LEVEL_INFO_KHR:
+       return Struct::VkVideoEncodeQualityLevelInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_GET_INFO_KHR:
+       return Struct::VkVideoEncodeSessionParametersGetInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_PARAMETERS_FEEDBACK_INFO_KHR:
+       return Struct::VkVideoEncodeSessionParametersFeedbackInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceFragmentShaderBarycentricFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_BARYCENTRIC_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceFragmentShaderBarycentricPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SUBGROUP_UNIFORM_CONTROL_FLOW_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceShaderSubgroupUniformControlFlowFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_WORKGROUP_MEMORY_EXPLICIT_LAYOUT_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceWorkgroupMemoryExplicitLayoutFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MAINTENANCE_1_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceRayTracingMaintenance1FeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MAXIMAL_RECONVERGENCE_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceShaderMaximalReconvergenceFeaturesKHR;
+    case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_ID_2_KHR:
+       return Struct::VkSurfaceCapabilitiesPresentId2KHR;
+    case VK_STRUCTURE_TYPE_PRESENT_ID_2_KHR:
+       return Struct::VkPresentId2KHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_ID_2_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePresentId2FeaturesKHR;
+    case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_WAIT_2_KHR:
+       return Struct::VkSurfaceCapabilitiesPresentWait2KHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_WAIT_2_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePresentWait2FeaturesKHR;
+    case VK_STRUCTURE_TYPE_PRESENT_WAIT_2_INFO_KHR:
+       return Struct::VkPresentWait2InfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_POSITION_FETCH_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceRayTracingPositionFetchFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePipelineBinaryFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_BINARY_PROPERTIES_KHR:
+       return Struct::VkPhysicalDevicePipelineBinaryPropertiesKHR;
+    case VK_STRUCTURE_TYPE_DEVICE_PIPELINE_BINARY_INTERNAL_CACHE_CONTROL_KHR:
+       return Struct::VkDevicePipelineBinaryInternalCacheControlKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_BINARY_KEY_KHR:
+       return Struct::VkPipelineBinaryKeyKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_CREATE_INFO_KHR:
+       return Struct::VkPipelineCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_BINARY_CREATE_INFO_KHR:
+       return Struct::VkPipelineBinaryCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_BINARY_INFO_KHR:
+       return Struct::VkPipelineBinaryInfoKHR;
+    case VK_STRUCTURE_TYPE_RELEASE_CAPTURED_PIPELINE_DATA_INFO_KHR:
+       return Struct::VkReleaseCapturedPipelineDataInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_BINARY_DATA_INFO_KHR:
+       return Struct::VkPipelineBinaryDataInfoKHR;
+    case VK_STRUCTURE_TYPE_PIPELINE_BINARY_HANDLES_INFO_KHR:
+       return Struct::VkPipelineBinaryHandlesInfoKHR;
+    case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_KHR:
+       return Struct::VkSurfacePresentModeKHR;
+    case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_KHR:
+       return Struct::VkSurfacePresentScalingCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_SURFACE_PRESENT_MODE_COMPATIBILITY_KHR:
+       return Struct::VkSurfacePresentModeCompatibilityKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SWAPCHAIN_MAINTENANCE_1_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceSwapchainMaintenance1FeaturesKHR;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_FENCE_INFO_KHR:
+       return Struct::VkSwapchainPresentFenceInfoKHR;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODES_CREATE_INFO_KHR:
+       return Struct::VkSwapchainPresentModesCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_MODE_INFO_KHR:
+       return Struct::VkSwapchainPresentModeInfoKHR;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_KHR:
+       return Struct::VkSwapchainPresentScalingCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_RELEASE_SWAPCHAIN_IMAGES_INFO_KHR:
+       return Struct::VkReleaseSwapchainImagesInfoKHR;
+    case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_KHR:
+       return Struct::VkCooperativeMatrixPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceCooperativeMatrixFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceCooperativeMatrixPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceComputeShaderDerivativesFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMPUTE_SHADER_DERIVATIVES_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceComputeShaderDerivativesPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PROFILE_INFO_KHR:
+       return Struct::VkVideoDecodeAV1ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_CAPABILITIES_KHR:
+       return Struct::VkVideoDecodeAV1CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoDecodeAV1SessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_PICTURE_INFO_KHR:
+       return Struct::VkVideoDecodeAV1PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_DPB_SLOT_INFO_KHR:
+       return Struct::VkVideoDecodeAV1DpbSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_AV1_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceVideoEncodeAV1FeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeAV1CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUALITY_LEVEL_PROPERTIES_KHR:
+       return Struct::VkVideoEncodeAV1QualityLevelPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_SESSION_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeAV1SessionCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeAV1SessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_PICTURE_INFO_KHR:
+       return Struct::VkVideoEncodeAV1PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_DPB_SLOT_INFO_KHR:
+       return Struct::VkVideoEncodeAV1DpbSlotInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_PROFILE_INFO_KHR:
+       return Struct::VkVideoEncodeAV1ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_GOP_REMAINING_FRAME_INFO_KHR:
+       return Struct::VkVideoEncodeAV1GopRemainingFrameInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR:
+       return Struct::VkVideoEncodeAV1RateControlInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR:
+       return Struct::VkVideoEncodeAV1RateControlLayerInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_DECODE_VP9_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceVideoDecodeVP9FeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PROFILE_INFO_KHR:
+       return Struct::VkVideoDecodeVP9ProfileInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_CAPABILITIES_KHR:
+       return Struct::VkVideoDecodeVP9CapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_VP9_PICTURE_INFO_KHR:
+       return Struct::VkVideoDecodeVP9PictureInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_1_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceVideoMaintenance1FeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_INLINE_QUERY_INFO_KHR:
+       return Struct::VkVideoInlineQueryInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_UNIFIED_IMAGE_LAYOUTS_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceUnifiedImageLayoutsFeaturesKHR;
+    case VK_STRUCTURE_TYPE_ATTACHMENT_FEEDBACK_LOOP_INFO_EXT:
+       return Struct::VkAttachmentFeedbackLoopInfoEXT;
+    case VK_STRUCTURE_TYPE_CALIBRATED_TIMESTAMP_INFO_KHR:
+       return Struct::VkCalibratedTimestampInfoKHR;
+    case VK_STRUCTURE_TYPE_SET_DESCRIPTOR_BUFFER_OFFSETS_INFO_EXT:
+       return Struct::VkSetDescriptorBufferOffsetsInfoEXT;
+    case VK_STRUCTURE_TYPE_BIND_DESCRIPTOR_BUFFER_EMBEDDED_SAMPLERS_INFO_EXT:
+       return Struct::VkBindDescriptorBufferEmbeddedSamplersInfoEXT;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeIntraRefreshCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_SESSION_INTRA_REFRESH_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeSessionIntraRefreshCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_INTRA_REFRESH_INFO_KHR:
+       return Struct::VkVideoEncodeIntraRefreshInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_REFERENCE_INTRA_REFRESH_INFO_KHR:
+       return Struct::VkVideoReferenceIntraRefreshInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_INTRA_REFRESH_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceVideoEncodeIntraRefreshFeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeQuantizationMapCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_FORMAT_QUANTIZATION_MAP_PROPERTIES_KHR:
+       return Struct::VkVideoFormatQuantizationMapPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_INFO_KHR:
+       return Struct::VkVideoEncodeQuantizationMapInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_QUANTIZATION_MAP_SESSION_PARAMETERS_CREATE_INFO_KHR:
+       return Struct::VkVideoEncodeQuantizationMapSessionParametersCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_ENCODE_QUANTIZATION_MAP_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceVideoEncodeQuantizationMapFeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H264_QUANTIZATION_MAP_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeH264QuantizationMapCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_H265_QUANTIZATION_MAP_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeH265QuantizationMapCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_FORMAT_H265_QUANTIZATION_MAP_PROPERTIES_KHR:
+       return Struct::VkVideoFormatH265QuantizationMapPropertiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_ENCODE_AV1_QUANTIZATION_MAP_CAPABILITIES_KHR:
+       return Struct::VkVideoEncodeAV1QuantizationMapCapabilitiesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_FORMAT_AV1_QUANTIZATION_MAP_PROPERTIES_KHR:
+       return Struct::VkVideoFormatAV1QuantizationMapPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_RELAXED_EXTENDED_INSTRUCTION_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceShaderRelaxedExtendedInstructionFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_7_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceMaintenance7FeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_7_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceMaintenance7PropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceLayeredApiPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_PROPERTIES_LIST_KHR:
+       return Struct::VkPhysicalDeviceLayeredApiPropertiesListKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_API_VULKAN_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceLayeredApiVulkanPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_8_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceMaintenance8FeaturesKHR;
+    case VK_STRUCTURE_TYPE_MEMORY_BARRIER_ACCESS_FLAGS_3_KHR:
+       return Struct::VkMemoryBarrierAccessFlags3KHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_9_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceMaintenance9FeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAINTENANCE_9_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceMaintenance9PropertiesKHR;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_OWNERSHIP_TRANSFER_PROPERTIES_KHR:
+       return Struct::VkQueueFamilyOwnershipTransferPropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_MAINTENANCE_2_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceVideoMaintenance2FeaturesKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H264_INLINE_SESSION_PARAMETERS_INFO_KHR:
+       return Struct::VkVideoDecodeH264InlineSessionParametersInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_H265_INLINE_SESSION_PARAMETERS_INFO_KHR:
+       return Struct::VkVideoDecodeH265InlineSessionParametersInfoKHR;
+    case VK_STRUCTURE_TYPE_VIDEO_DECODE_AV1_INLINE_SESSION_PARAMETERS_INFO_KHR:
+       return Struct::VkVideoDecodeAV1InlineSessionParametersInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_ZERO_ONE_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceDepthClampZeroOneFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceRobustness2FeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ROBUSTNESS_2_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceRobustness2PropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_MODE_FIFO_LATEST_READY_FEATURES_KHR:
+       return Struct::VkPhysicalDevicePresentModeFifoLatestReadyFeaturesKHR;
+    case VK_STRUCTURE_TYPE_DEBUG_REPORT_CALLBACK_CREATE_INFO_EXT:
+       return Struct::VkDebugReportCallbackCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_RASTERIZATION_ORDER_AMD:
+       return Struct::VkPipelineRasterizationStateRasterizationOrderAMD;
+    case VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_NAME_INFO_EXT:
+       return Struct::VkDebugMarkerObjectNameInfoEXT;
+    case VK_STRUCTURE_TYPE_DEBUG_MARKER_OBJECT_TAG_INFO_EXT:
+       return Struct::VkDebugMarkerObjectTagInfoEXT;
+    case VK_STRUCTURE_TYPE_DEBUG_MARKER_MARKER_INFO_EXT:
+       return Struct::VkDebugMarkerMarkerInfoEXT;
+    case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_IMAGE_CREATE_INFO_NV:
+       return Struct::VkDedicatedAllocationImageCreateInfoNV;
+    case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_BUFFER_CREATE_INFO_NV:
+       return Struct::VkDedicatedAllocationBufferCreateInfoNV;
+    case VK_STRUCTURE_TYPE_DEDICATED_ALLOCATION_MEMORY_ALLOCATE_INFO_NV:
+       return Struct::VkDedicatedAllocationMemoryAllocateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceTransformFeedbackFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TRANSFORM_FEEDBACK_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceTransformFeedbackPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_STREAM_CREATE_INFO_EXT:
+       return Struct::VkPipelineRasterizationStateStreamCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_CU_MODULE_CREATE_INFO_NVX:
+       return Struct::VkCuModuleCreateInfoNVX;
+    case VK_STRUCTURE_TYPE_CU_MODULE_TEXTURING_MODE_CREATE_INFO_NVX:
+       return Struct::VkCuModuleTexturingModeCreateInfoNVX;
+    case VK_STRUCTURE_TYPE_CU_FUNCTION_CREATE_INFO_NVX:
+       return Struct::VkCuFunctionCreateInfoNVX;
+    case VK_STRUCTURE_TYPE_CU_LAUNCH_INFO_NVX:
+       return Struct::VkCuLaunchInfoNVX;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_HANDLE_INFO_NVX:
+       return Struct::VkImageViewHandleInfoNVX;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_ADDRESS_PROPERTIES_NVX:
+       return Struct::VkImageViewAddressPropertiesNVX;
+    case VK_STRUCTURE_TYPE_TEXTURE_LOD_GATHER_FORMAT_PROPERTIES_AMD:
+       return Struct::VkTextureLODGatherFormatPropertiesAMD;
+    case VK_STRUCTURE_TYPE_STREAM_DESCRIPTOR_SURFACE_CREATE_INFO_GGP:
+       return Struct::VkStreamDescriptorSurfaceCreateInfoGGP;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CORNER_SAMPLED_IMAGE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCornerSampledImageFeaturesNV;
+    case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_IMAGE_CREATE_INFO_NV:
+       return Struct::VkExternalMemoryImageCreateInfoNV;
+    case VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO_NV:
+       return Struct::VkExportMemoryAllocateInfoNV;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_WIN32_HANDLE_INFO_NV:
+       return Struct::VkImportMemoryWin32HandleInfoNV;
+    case VK_STRUCTURE_TYPE_EXPORT_MEMORY_WIN32_HANDLE_INFO_NV:
+       return Struct::VkExportMemoryWin32HandleInfoNV;
+    case VK_STRUCTURE_TYPE_WIN32_KEYED_MUTEX_ACQUIRE_RELEASE_INFO_NV:
+       return Struct::VkWin32KeyedMutexAcquireReleaseInfoNV;
+    case VK_STRUCTURE_TYPE_VALIDATION_FLAGS_EXT:
+       return Struct::VkValidationFlagsEXT;
+    case VK_STRUCTURE_TYPE_VI_SURFACE_CREATE_INFO_NN:
+       return Struct::VkViSurfaceCreateInfoNN;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_ASTC_DECODE_MODE_EXT:
+       return Struct::VkImageViewASTCDecodeModeEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ASTC_DECODE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceASTCDecodeFeaturesEXT;
+    case VK_STRUCTURE_TYPE_CONDITIONAL_RENDERING_BEGIN_INFO_EXT:
+       return Struct::VkConditionalRenderingBeginInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONDITIONAL_RENDERING_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceConditionalRenderingFeaturesEXT;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_CONDITIONAL_RENDERING_INFO_EXT:
+       return Struct::VkCommandBufferInheritanceConditionalRenderingInfoEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_W_SCALING_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineViewportWScalingStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_EXT:
+       return Struct::VkSurfaceCapabilities2EXT;
+    case VK_STRUCTURE_TYPE_DISPLAY_POWER_INFO_EXT:
+       return Struct::VkDisplayPowerInfoEXT;
+    case VK_STRUCTURE_TYPE_DEVICE_EVENT_INFO_EXT:
+       return Struct::VkDeviceEventInfoEXT;
+    case VK_STRUCTURE_TYPE_DISPLAY_EVENT_INFO_EXT:
+       return Struct::VkDisplayEventInfoEXT;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_COUNTER_CREATE_INFO_EXT:
+       return Struct::VkSwapchainCounterCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PRESENT_TIMES_INFO_GOOGLE:
+       return Struct::VkPresentTimesInfoGOOGLE;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_ATTRIBUTES_PROPERTIES_NVX:
+       return Struct::VkPhysicalDeviceMultiviewPerViewAttributesPropertiesNVX;
+    case VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_ATTRIBUTES_INFO_NVX:
+       return Struct::VkMultiviewPerViewAttributesInfoNVX;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_SWIZZLE_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineViewportSwizzleStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DISCARD_RECTANGLE_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceDiscardRectanglePropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_DISCARD_RECTANGLE_STATE_CREATE_INFO_EXT:
+       return Struct::VkPipelineDiscardRectangleStateCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CONSERVATIVE_RASTERIZATION_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceConservativeRasterizationPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_CONSERVATIVE_STATE_CREATE_INFO_EXT:
+       return Struct::VkPipelineRasterizationConservativeStateCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_ENABLE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDepthClipEnableFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_DEPTH_CLIP_STATE_CREATE_INFO_EXT:
+       return Struct::VkPipelineRasterizationDepthClipStateCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_HDR_METADATA_EXT:
+       return Struct::VkHdrMetadataEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RELAXED_LINE_RASTERIZATION_FEATURES_IMG:
+       return Struct::VkPhysicalDeviceRelaxedLineRasterizationFeaturesIMG;
+    case VK_STRUCTURE_TYPE_IOS_SURFACE_CREATE_INFO_MVK:
+       return Struct::VkIOSSurfaceCreateInfoMVK;
+    case VK_STRUCTURE_TYPE_MACOS_SURFACE_CREATE_INFO_MVK:
+       return Struct::VkMacOSSurfaceCreateInfoMVK;
+    case VK_STRUCTURE_TYPE_DEBUG_UTILS_LABEL_EXT:
+       return Struct::VkDebugUtilsLabelEXT;
+    case VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT:
+       return Struct::VkDebugUtilsObjectNameInfoEXT;
+    case VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CALLBACK_DATA_EXT:
+       return Struct::VkDebugUtilsMessengerCallbackDataEXT;
+    case VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT:
+       return Struct::VkDebugUtilsMessengerCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_TAG_INFO_EXT:
+       return Struct::VkDebugUtilsObjectTagInfoEXT;
+    case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID:
+       return Struct::VkAndroidHardwareBufferUsageANDROID;
+    case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_PROPERTIES_ANDROID:
+       return Struct::VkAndroidHardwareBufferPropertiesANDROID;
+    case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_ANDROID:
+       return Struct::VkAndroidHardwareBufferFormatPropertiesANDROID;
+    case VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID:
+       return Struct::VkImportAndroidHardwareBufferInfoANDROID;
+    case VK_STRUCTURE_TYPE_MEMORY_GET_ANDROID_HARDWARE_BUFFER_INFO_ANDROID:
+       return Struct::VkMemoryGetAndroidHardwareBufferInfoANDROID;
+    case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_ANDROID:
+       return Struct::VkExternalFormatANDROID;
+    case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_PROPERTIES_2_ANDROID:
+       return Struct::VkAndroidHardwareBufferFormatProperties2ANDROID;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ENQUEUE_FEATURES_AMDX:
+       return Struct::VkPhysicalDeviceShaderEnqueueFeaturesAMDX;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ENQUEUE_PROPERTIES_AMDX:
+       return Struct::VkPhysicalDeviceShaderEnqueuePropertiesAMDX;
+    case VK_STRUCTURE_TYPE_EXECUTION_GRAPH_PIPELINE_SCRATCH_SIZE_AMDX:
+       return Struct::VkExecutionGraphPipelineScratchSizeAMDX;
+    case VK_STRUCTURE_TYPE_EXECUTION_GRAPH_PIPELINE_CREATE_INFO_AMDX:
+       return Struct::VkExecutionGraphPipelineCreateInfoAMDX;
+    case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_NODE_CREATE_INFO_AMDX:
+       return Struct::VkPipelineShaderStageNodeCreateInfoAMDX;
+    case VK_STRUCTURE_TYPE_ATTACHMENT_SAMPLE_COUNT_INFO_AMD:
+       return Struct::VkAttachmentSampleCountInfoAMD;
+    case VK_STRUCTURE_TYPE_SAMPLE_LOCATIONS_INFO_EXT:
+       return Struct::VkSampleLocationsInfoEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_SAMPLE_LOCATIONS_BEGIN_INFO_EXT:
+       return Struct::VkRenderPassSampleLocationsBeginInfoEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_SAMPLE_LOCATIONS_STATE_CREATE_INFO_EXT:
+       return Struct::VkPipelineSampleLocationsStateCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SAMPLE_LOCATIONS_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceSampleLocationsPropertiesEXT;
+    case VK_STRUCTURE_TYPE_MULTISAMPLE_PROPERTIES_EXT:
+       return Struct::VkMultisamplePropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceBlendOperationAdvancedFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BLEND_OPERATION_ADVANCED_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceBlendOperationAdvancedPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_ADVANCED_STATE_CREATE_INFO_EXT:
+       return Struct::VkPipelineColorBlendAdvancedStateCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_TO_COLOR_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineCoverageToColorStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_MODULATION_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineCoverageModulationStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceShaderSMBuiltinsPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_SM_BUILTINS_FEATURES_NV:
+       return Struct::VkPhysicalDeviceShaderSMBuiltinsFeaturesNV;
+    case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_EXT:
+       return Struct::VkDrmFormatModifierPropertiesListEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_DRM_FORMAT_MODIFIER_INFO_EXT:
+       return Struct::VkPhysicalDeviceImageDrmFormatModifierInfoEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_LIST_CREATE_INFO_EXT:
+       return Struct::VkImageDrmFormatModifierListCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_EXPLICIT_CREATE_INFO_EXT:
+       return Struct::VkImageDrmFormatModifierExplicitCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_DRM_FORMAT_MODIFIER_PROPERTIES_EXT:
+       return Struct::VkImageDrmFormatModifierPropertiesEXT;
+    case VK_STRUCTURE_TYPE_DRM_FORMAT_MODIFIER_PROPERTIES_LIST_2_EXT:
+       return Struct::VkDrmFormatModifierPropertiesList2EXT;
+    case VK_STRUCTURE_TYPE_VALIDATION_CACHE_CREATE_INFO_EXT:
+       return Struct::VkValidationCacheCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_SHADER_MODULE_VALIDATION_CACHE_CREATE_INFO_EXT:
+       return Struct::VkShaderModuleValidationCacheCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_SHADING_RATE_IMAGE_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineViewportShadingRateImageStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADING_RATE_IMAGE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceShadingRateImageFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADING_RATE_IMAGE_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceShadingRateImagePropertiesNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_COARSE_SAMPLE_ORDER_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineViewportCoarseSampleOrderStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_NV:
+       return Struct::VkRayTracingShaderGroupCreateInfoNV;
+    case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_NV:
+       return Struct::VkRayTracingPipelineCreateInfoNV;
+    case VK_STRUCTURE_TYPE_GEOMETRY_TRIANGLES_NV:
+       return Struct::VkGeometryTrianglesNV;
+    case VK_STRUCTURE_TYPE_GEOMETRY_AABB_NV:
+       return Struct::VkGeometryAABBNV;
+    case VK_STRUCTURE_TYPE_GEOMETRY_NV:
+       return Struct::VkGeometryNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_INFO_NV:
+       return Struct::VkAccelerationStructureInfoNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_NV:
+       return Struct::VkAccelerationStructureCreateInfoNV;
+    case VK_STRUCTURE_TYPE_BIND_ACCELERATION_STRUCTURE_MEMORY_INFO_NV:
+       return Struct::VkBindAccelerationStructureMemoryInfoNV;
+    case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_NV:
+       return Struct::VkWriteDescriptorSetAccelerationStructureNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MEMORY_REQUIREMENTS_INFO_NV:
+       return Struct::VkAccelerationStructureMemoryRequirementsInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceRayTracingPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_REPRESENTATIVE_FRAGMENT_TEST_FEATURES_NV:
+       return Struct::VkPhysicalDeviceRepresentativeFragmentTestFeaturesNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_REPRESENTATIVE_FRAGMENT_TEST_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineRepresentativeFragmentTestStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_IMAGE_FORMAT_INFO_EXT:
+       return Struct::VkPhysicalDeviceImageViewImageFormatInfoEXT;
+    case VK_STRUCTURE_TYPE_FILTER_CUBIC_IMAGE_VIEW_IMAGE_FORMAT_PROPERTIES_EXT:
+       return Struct::VkFilterCubicImageViewImageFormatPropertiesEXT;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_HOST_POINTER_INFO_EXT:
+       return Struct::VkImportMemoryHostPointerInfoEXT;
+    case VK_STRUCTURE_TYPE_MEMORY_HOST_POINTER_PROPERTIES_EXT:
+       return Struct::VkMemoryHostPointerPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_HOST_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceExternalMemoryHostPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_COMPILER_CONTROL_CREATE_INFO_AMD:
+       return Struct::VkPipelineCompilerControlCreateInfoAMD;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_AMD:
+       return Struct::VkPhysicalDeviceShaderCorePropertiesAMD;
+    case VK_STRUCTURE_TYPE_DEVICE_MEMORY_OVERALLOCATION_CREATE_INFO_AMD:
+       return Struct::VkDeviceMemoryOverallocationCreateInfoAMD;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_DIVISOR_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceVertexAttributeDivisorPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PRESENT_FRAME_TOKEN_GGP:
+       return Struct::VkPresentFrameTokenGGP;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_NV:
+       return Struct::VkPhysicalDeviceMeshShaderFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceMeshShaderPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_FOOTPRINT_FEATURES_NV:
+       return Struct::VkPhysicalDeviceShaderImageFootprintFeaturesNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_EXCLUSIVE_SCISSOR_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineViewportExclusiveScissorStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXCLUSIVE_SCISSOR_FEATURES_NV:
+       return Struct::VkPhysicalDeviceExclusiveScissorFeaturesNV;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_CHECKPOINT_PROPERTIES_NV:
+       return Struct::VkQueueFamilyCheckpointPropertiesNV;
+    case VK_STRUCTURE_TYPE_CHECKPOINT_DATA_NV:
+       return Struct::VkCheckpointDataNV;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_CHECKPOINT_PROPERTIES_2_NV:
+       return Struct::VkQueueFamilyCheckpointProperties2NV;
+    case VK_STRUCTURE_TYPE_CHECKPOINT_DATA_2_NV:
+       return Struct::VkCheckpointData2NV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_INTEGER_FUNCTIONS_2_FEATURES_INTEL:
+       return Struct::VkPhysicalDeviceShaderIntegerFunctions2FeaturesINTEL;
+    case VK_STRUCTURE_TYPE_INITIALIZE_PERFORMANCE_API_INFO_INTEL:
+       return Struct::VkInitializePerformanceApiInfoINTEL;
+    case VK_STRUCTURE_TYPE_QUERY_POOL_PERFORMANCE_QUERY_CREATE_INFO_INTEL:
+       return Struct::VkQueryPoolPerformanceQueryCreateInfoINTEL;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_MARKER_INFO_INTEL:
+       return Struct::VkPerformanceMarkerInfoINTEL;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_STREAM_MARKER_INFO_INTEL:
+       return Struct::VkPerformanceStreamMarkerInfoINTEL;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_OVERRIDE_INFO_INTEL:
+       return Struct::VkPerformanceOverrideInfoINTEL;
+    case VK_STRUCTURE_TYPE_PERFORMANCE_CONFIGURATION_ACQUIRE_INFO_INTEL:
+       return Struct::VkPerformanceConfigurationAcquireInfoINTEL;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PCI_BUS_INFO_PROPERTIES_EXT:
+       return Struct::VkPhysicalDevicePCIBusInfoPropertiesEXT;
+    case VK_STRUCTURE_TYPE_DISPLAY_NATIVE_HDR_SURFACE_CAPABILITIES_AMD:
+       return Struct::VkDisplayNativeHdrSurfaceCapabilitiesAMD;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_DISPLAY_NATIVE_HDR_CREATE_INFO_AMD:
+       return Struct::VkSwapchainDisplayNativeHdrCreateInfoAMD;
+    case VK_STRUCTURE_TYPE_IMAGEPIPE_SURFACE_CREATE_INFO_FUCHSIA:
+       return Struct::VkImagePipeSurfaceCreateInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT:
+       return Struct::VkMetalSurfaceCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceFragmentDensityMapFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceFragmentDensityMapPropertiesEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_CREATE_INFO_EXT:
+       return Struct::VkRenderPassFragmentDensityMapCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_RENDERING_FRAGMENT_DENSITY_MAP_ATTACHMENT_INFO_EXT:
+       return Struct::VkRenderingFragmentDensityMapAttachmentInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_2_AMD:
+       return Struct::VkPhysicalDeviceShaderCoreProperties2AMD;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COHERENT_MEMORY_FEATURES_AMD:
+       return Struct::VkPhysicalDeviceCoherentMemoryFeaturesAMD;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_IMAGE_ATOMIC_INT64_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderImageAtomicInt64FeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_BUDGET_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceMemoryBudgetPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_PRIORITY_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceMemoryPriorityFeaturesEXT;
+    case VK_STRUCTURE_TYPE_MEMORY_PRIORITY_ALLOCATE_INFO_EXT:
+       return Struct::VkMemoryPriorityAllocateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEDICATED_ALLOCATION_IMAGE_ALIASING_FEATURES_NV:
+       return Struct::VkPhysicalDeviceDedicatedAllocationImageAliasingFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceBufferDeviceAddressFeaturesEXT;
+    case VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_CREATE_INFO_EXT:
+       return Struct::VkBufferDeviceAddressCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_VALIDATION_FEATURES_EXT:
+       return Struct::VkValidationFeaturesEXT;
+    case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_PROPERTIES_NV:
+       return Struct::VkCooperativeMatrixPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCooperativeMatrixFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceCooperativeMatrixPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COVERAGE_REDUCTION_MODE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCoverageReductionModeFeaturesNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_COVERAGE_REDUCTION_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineCoverageReductionStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_FRAMEBUFFER_MIXED_SAMPLES_COMBINATION_NV:
+       return Struct::VkFramebufferMixedSamplesCombinationNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADER_INTERLOCK_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceFragmentShaderInterlockFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_YCBCR_IMAGE_ARRAYS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceYcbcrImageArraysFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceProvokingVertexFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROVOKING_VERTEX_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceProvokingVertexPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_PROVOKING_VERTEX_STATE_CREATE_INFO_EXT:
+       return Struct::VkPipelineRasterizationProvokingVertexStateCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_INFO_EXT:
+       return Struct::VkSurfaceFullScreenExclusiveInfoEXT;
+    case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_FULL_SCREEN_EXCLUSIVE_EXT:
+       return Struct::VkSurfaceCapabilitiesFullScreenExclusiveEXT;
+    case VK_STRUCTURE_TYPE_SURFACE_FULL_SCREEN_EXCLUSIVE_WIN32_INFO_EXT:
+       return Struct::VkSurfaceFullScreenExclusiveWin32InfoEXT;
+    case VK_STRUCTURE_TYPE_HEADLESS_SURFACE_CREATE_INFO_EXT:
+       return Struct::VkHeadlessSurfaceCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderAtomicFloatFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceExtendedDynamicStateFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceMapMemoryPlacedFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MAP_MEMORY_PLACED_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceMapMemoryPlacedPropertiesEXT;
+    case VK_STRUCTURE_TYPE_MEMORY_MAP_PLACED_INFO_EXT:
+       return Struct::VkMemoryMapPlacedInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT_2_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderAtomicFloat2FeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceDeviceGeneratedCommandsPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_NV:
+       return Struct::VkPhysicalDeviceDeviceGeneratedCommandsFeaturesNV;
+    case VK_STRUCTURE_TYPE_GRAPHICS_SHADER_GROUP_CREATE_INFO_NV:
+       return Struct::VkGraphicsShaderGroupCreateInfoNV;
+    case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_SHADER_GROUPS_CREATE_INFO_NV:
+       return Struct::VkGraphicsPipelineShaderGroupsCreateInfoNV;
+    case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_TOKEN_NV:
+       return Struct::VkIndirectCommandsLayoutTokenNV;
+    case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_CREATE_INFO_NV:
+       return Struct::VkIndirectCommandsLayoutCreateInfoNV;
+    case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_INFO_NV:
+       return Struct::VkGeneratedCommandsInfoNV;
+    case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_MEMORY_REQUIREMENTS_INFO_NV:
+       return Struct::VkGeneratedCommandsMemoryRequirementsInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INHERITED_VIEWPORT_SCISSOR_FEATURES_NV:
+       return Struct::VkPhysicalDeviceInheritedViewportScissorFeaturesNV;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_VIEWPORT_SCISSOR_INFO_NV:
+       return Struct::VkCommandBufferInheritanceViewportScissorInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TEXEL_BUFFER_ALIGNMENT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceTexelBufferAlignmentFeaturesEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_TRANSFORM_BEGIN_INFO_QCOM:
+       return Struct::VkRenderPassTransformBeginInfoQCOM;
+    case VK_STRUCTURE_TYPE_COMMAND_BUFFER_INHERITANCE_RENDER_PASS_TRANSFORM_INFO_QCOM:
+       return Struct::VkCommandBufferInheritanceRenderPassTransformInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_BIAS_CONTROL_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDepthBiasControlFeaturesEXT;
+    case VK_STRUCTURE_TYPE_DEPTH_BIAS_INFO_EXT:
+       return Struct::VkDepthBiasInfoEXT;
+    case VK_STRUCTURE_TYPE_DEPTH_BIAS_REPRESENTATION_INFO_EXT:
+       return Struct::VkDepthBiasRepresentationInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_MEMORY_REPORT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDeviceMemoryReportFeaturesEXT;
+    case VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT:
+       return Struct::VkDeviceMemoryReportCallbackDataEXT;
+    case VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT:
+       return Struct::VkDeviceDeviceMemoryReportCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_SAMPLER_CUSTOM_BORDER_COLOR_CREATE_INFO_EXT:
+       return Struct::VkSamplerCustomBorderColorCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceCustomBorderColorPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUSTOM_BORDER_COLOR_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceCustomBorderColorFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_BARRIER_FEATURES_NV:
+       return Struct::VkPhysicalDevicePresentBarrierFeaturesNV;
+    case VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_PRESENT_BARRIER_NV:
+       return Struct::VkSurfaceCapabilitiesPresentBarrierNV;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_PRESENT_BARRIER_CREATE_INFO_NV:
+       return Struct::VkSwapchainPresentBarrierCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DIAGNOSTICS_CONFIG_FEATURES_NV:
+       return Struct::VkPhysicalDeviceDiagnosticsConfigFeaturesNV;
+    case VK_STRUCTURE_TYPE_DEVICE_DIAGNOSTICS_CONFIG_CREATE_INFO_NV:
+       return Struct::VkDeviceDiagnosticsConfigCreateInfoNV;
+    case VK_STRUCTURE_TYPE_CUDA_MODULE_CREATE_INFO_NV:
+       return Struct::VkCudaModuleCreateInfoNV;
+    case VK_STRUCTURE_TYPE_CUDA_FUNCTION_CREATE_INFO_NV:
+       return Struct::VkCudaFunctionCreateInfoNV;
+    case VK_STRUCTURE_TYPE_CUDA_LAUNCH_INFO_NV:
+       return Struct::VkCudaLaunchInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCudaKernelLaunchFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUDA_KERNEL_LAUNCH_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceCudaKernelLaunchPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_SHADING_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceTileShadingFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_SHADING_PROPERTIES_QCOM:
+       return Struct::VkPhysicalDeviceTileShadingPropertiesQCOM;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_TILE_SHADING_CREATE_INFO_QCOM:
+       return Struct::VkRenderPassTileShadingCreateInfoQCOM;
+    case VK_STRUCTURE_TYPE_PER_TILE_BEGIN_INFO_QCOM:
+       return Struct::VkPerTileBeginInfoQCOM;
+    case VK_STRUCTURE_TYPE_PER_TILE_END_INFO_QCOM:
+       return Struct::VkPerTileEndInfoQCOM;
+    case VK_STRUCTURE_TYPE_DISPATCH_TILE_INFO_QCOM:
+       return Struct::VkDispatchTileInfoQCOM;
+    case VK_STRUCTURE_TYPE_QUERY_LOW_LATENCY_SUPPORT_NV:
+       return Struct::VkQueryLowLatencySupportNV;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECT_CREATE_INFO_EXT:
+       return Struct::VkExportMetalObjectCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_OBJECTS_INFO_EXT:
+       return Struct::VkExportMetalObjectsInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_DEVICE_INFO_EXT:
+       return Struct::VkExportMetalDeviceInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_COMMAND_QUEUE_INFO_EXT:
+       return Struct::VkExportMetalCommandQueueInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_BUFFER_INFO_EXT:
+       return Struct::VkExportMetalBufferInfoEXT;
+    case VK_STRUCTURE_TYPE_IMPORT_METAL_BUFFER_INFO_EXT:
+       return Struct::VkImportMetalBufferInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_TEXTURE_INFO_EXT:
+       return Struct::VkExportMetalTextureInfoEXT;
+    case VK_STRUCTURE_TYPE_IMPORT_METAL_TEXTURE_INFO_EXT:
+       return Struct::VkImportMetalTextureInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_IO_SURFACE_INFO_EXT:
+       return Struct::VkExportMetalIOSurfaceInfoEXT;
+    case VK_STRUCTURE_TYPE_IMPORT_METAL_IO_SURFACE_INFO_EXT:
+       return Struct::VkImportMetalIOSurfaceInfoEXT;
+    case VK_STRUCTURE_TYPE_EXPORT_METAL_SHARED_EVENT_INFO_EXT:
+       return Struct::VkExportMetalSharedEventInfoEXT;
+    case VK_STRUCTURE_TYPE_IMPORT_METAL_SHARED_EVENT_INFO_EXT:
+       return Struct::VkImportMetalSharedEventInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceDescriptorBufferPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_DENSITY_MAP_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceDescriptorBufferDensityMapPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDescriptorBufferFeaturesEXT;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT:
+       return Struct::VkDescriptorAddressInfoEXT;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_INFO_EXT:
+       return Struct::VkDescriptorBufferBindingInfoEXT;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_BUFFER_BINDING_PUSH_DESCRIPTOR_BUFFER_HANDLE_EXT:
+       return Struct::VkDescriptorBufferBindingPushDescriptorBufferHandleEXT;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_GET_INFO_EXT:
+       return Struct::VkDescriptorGetInfoEXT;
+    case VK_STRUCTURE_TYPE_BUFFER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:
+       return Struct::VkBufferCaptureDescriptorDataInfoEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:
+       return Struct::VkImageCaptureDescriptorDataInfoEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:
+       return Struct::VkImageViewCaptureDescriptorDataInfoEXT;
+    case VK_STRUCTURE_TYPE_SAMPLER_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:
+       return Struct::VkSamplerCaptureDescriptorDataInfoEXT;
+    case VK_STRUCTURE_TYPE_OPAQUE_CAPTURE_DESCRIPTOR_DATA_CREATE_INFO_EXT:
+       return Struct::VkOpaqueCaptureDescriptorDataCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CAPTURE_DESCRIPTOR_DATA_INFO_EXT:
+       return Struct::VkAccelerationStructureCaptureDescriptorDataInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceGraphicsPipelineLibraryFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_GRAPHICS_PIPELINE_LIBRARY_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceGraphicsPipelineLibraryPropertiesEXT;
+    case VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_LIBRARY_CREATE_INFO_EXT:
+       return Struct::VkGraphicsPipelineLibraryCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_EARLY_AND_LATE_FRAGMENT_TESTS_FEATURES_AMD:
+       return Struct::VkPhysicalDeviceShaderEarlyAndLateFragmentTestsFeaturesAMD;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_ENUMS_FEATURES_NV:
+       return Struct::VkPhysicalDeviceFragmentShadingRateEnumsFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_SHADING_RATE_ENUMS_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceFragmentShadingRateEnumsPropertiesNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_SHADING_RATE_ENUM_STATE_CREATE_INFO_NV:
+       return Struct::VkPipelineFragmentShadingRateEnumStateCreateInfoNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_MOTION_TRIANGLES_DATA_NV:
+       return Struct::VkAccelerationStructureGeometryMotionTrianglesDataNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_MOTION_INFO_NV:
+       return Struct::VkAccelerationStructureMotionInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_MOTION_BLUR_FEATURES_NV:
+       return Struct::VkPhysicalDeviceRayTracingMotionBlurFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_YCBCR_2_PLANE_444_FORMATS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceYcbcr2Plane444FormatsFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_2_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceFragmentDensityMap2FeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_2_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceFragmentDensityMap2PropertiesEXT;
+    case VK_STRUCTURE_TYPE_COPY_COMMAND_TRANSFORM_INFO_QCOM:
+       return Struct::VkCopyCommandTransformInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceImageCompressionControlFeaturesEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_CONTROL_EXT:
+       return Struct::VkImageCompressionControlEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_COMPRESSION_PROPERTIES_EXT:
+       return Struct::VkImageCompressionPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_LAYOUT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceAttachmentFeedbackLoopLayoutFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_4444_FORMATS_FEATURES_EXT:
+       return Struct::VkPhysicalDevice4444FormatsFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FAULT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceFaultFeaturesEXT;
+    case VK_STRUCTURE_TYPE_DEVICE_FAULT_COUNTS_EXT:
+       return Struct::VkDeviceFaultCountsEXT;
+    case VK_STRUCTURE_TYPE_DEVICE_FAULT_INFO_EXT:
+       return Struct::VkDeviceFaultInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RASTERIZATION_ORDER_ATTACHMENT_ACCESS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceRasterizationOrderAttachmentAccessFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RGBA10X6_FORMATS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceRGBA10X6FormatsFeaturesEXT;
+    case VK_STRUCTURE_TYPE_DIRECTFB_SURFACE_CREATE_INFO_EXT:
+       return Struct::VkDirectFBSurfaceCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MUTABLE_DESCRIPTOR_TYPE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceMutableDescriptorTypeFeaturesEXT;
+    case VK_STRUCTURE_TYPE_MUTABLE_DESCRIPTOR_TYPE_CREATE_INFO_EXT:
+       return Struct::VkMutableDescriptorTypeCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_INPUT_DYNAMIC_STATE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceVertexInputDynamicStateFeaturesEXT;
+    case VK_STRUCTURE_TYPE_VERTEX_INPUT_BINDING_DESCRIPTION_2_EXT:
+       return Struct::VkVertexInputBindingDescription2EXT;
+    case VK_STRUCTURE_TYPE_VERTEX_INPUT_ATTRIBUTE_DESCRIPTION_2_EXT:
+       return Struct::VkVertexInputAttributeDescription2EXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DRM_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceDrmPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ADDRESS_BINDING_REPORT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceAddressBindingReportFeaturesEXT;
+    case VK_STRUCTURE_TYPE_DEVICE_ADDRESS_BINDING_CALLBACK_DATA_EXT:
+       return Struct::VkDeviceAddressBindingCallbackDataEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDepthClipControlFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLIP_CONTROL_CREATE_INFO_EXT:
+       return Struct::VkPipelineViewportDepthClipControlCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVE_TOPOLOGY_LIST_RESTART_FEATURES_EXT:
+       return Struct::VkPhysicalDevicePrimitiveTopologyListRestartFeaturesEXT;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_ZIRCON_HANDLE_INFO_FUCHSIA:
+       return Struct::VkImportMemoryZirconHandleInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_MEMORY_ZIRCON_HANDLE_PROPERTIES_FUCHSIA:
+       return Struct::VkMemoryZirconHandlePropertiesFUCHSIA;
+    case VK_STRUCTURE_TYPE_MEMORY_GET_ZIRCON_HANDLE_INFO_FUCHSIA:
+       return Struct::VkMemoryGetZirconHandleInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_IMPORT_SEMAPHORE_ZIRCON_HANDLE_INFO_FUCHSIA:
+       return Struct::VkImportSemaphoreZirconHandleInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_SEMAPHORE_GET_ZIRCON_HANDLE_INFO_FUCHSIA:
+       return Struct::VkSemaphoreGetZirconHandleInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CREATE_INFO_FUCHSIA:
+       return Struct::VkBufferCollectionCreateInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_BUFFER_COLLECTION_FUCHSIA:
+       return Struct::VkImportMemoryBufferCollectionFUCHSIA;
+    case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_IMAGE_CREATE_INFO_FUCHSIA:
+       return Struct::VkBufferCollectionImageCreateInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_CONSTRAINTS_INFO_FUCHSIA:
+       return Struct::VkBufferCollectionConstraintsInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_BUFFER_CONSTRAINTS_INFO_FUCHSIA:
+       return Struct::VkBufferConstraintsInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_BUFFER_CREATE_INFO_FUCHSIA:
+       return Struct::VkBufferCollectionBufferCreateInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_SYSMEM_COLOR_SPACE_FUCHSIA:
+       return Struct::VkSysmemColorSpaceFUCHSIA;
+    case VK_STRUCTURE_TYPE_BUFFER_COLLECTION_PROPERTIES_FUCHSIA:
+       return Struct::VkBufferCollectionPropertiesFUCHSIA;
+    case VK_STRUCTURE_TYPE_IMAGE_FORMAT_CONSTRAINTS_INFO_FUCHSIA:
+       return Struct::VkImageFormatConstraintsInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_IMAGE_CONSTRAINTS_INFO_FUCHSIA:
+       return Struct::VkImageConstraintsInfoFUCHSIA;
+    case VK_STRUCTURE_TYPE_SUBPASS_SHADING_PIPELINE_CREATE_INFO_HUAWEI:
+       return Struct::VkSubpassShadingPipelineCreateInfoHUAWEI;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_FEATURES_HUAWEI:
+       return Struct::VkPhysicalDeviceSubpassShadingFeaturesHUAWEI;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_SHADING_PROPERTIES_HUAWEI:
+       return Struct::VkPhysicalDeviceSubpassShadingPropertiesHUAWEI;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INVOCATION_MASK_FEATURES_HUAWEI:
+       return Struct::VkPhysicalDeviceInvocationMaskFeaturesHUAWEI;
+    case VK_STRUCTURE_TYPE_MEMORY_GET_REMOTE_ADDRESS_INFO_NV:
+       return Struct::VkMemoryGetRemoteAddressInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_RDMA_FEATURES_NV:
+       return Struct::VkPhysicalDeviceExternalMemoryRDMAFeaturesNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_PROPERTIES_IDENTIFIER_EXT:
+       return Struct::VkPipelinePropertiesIdentifierEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_PROPERTIES_FEATURES_EXT:
+       return Struct::VkPhysicalDevicePipelinePropertiesFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAME_BOUNDARY_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceFrameBoundaryFeaturesEXT;
+    case VK_STRUCTURE_TYPE_FRAME_BOUNDARY_EXT:
+       return Struct::VkFrameBoundaryEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceMultisampledRenderToSingleSampledFeaturesEXT;
+    case VK_STRUCTURE_TYPE_SUBPASS_RESOLVE_PERFORMANCE_QUERY_EXT:
+       return Struct::VkSubpassResolvePerformanceQueryEXT;
+    case VK_STRUCTURE_TYPE_MULTISAMPLED_RENDER_TO_SINGLE_SAMPLED_INFO_EXT:
+       return Struct::VkMultisampledRenderToSingleSampledInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_2_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceExtendedDynamicState2FeaturesEXT;
+    case VK_STRUCTURE_TYPE_SCREEN_SURFACE_CREATE_INFO_QNX:
+       return Struct::VkScreenSurfaceCreateInfoQNX;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COLOR_WRITE_ENABLE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceColorWriteEnableFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_COLOR_WRITE_CREATE_INFO_EXT:
+       return Struct::VkPipelineColorWriteCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRIMITIVES_GENERATED_QUERY_FEATURES_EXT:
+       return Struct::VkPhysicalDevicePrimitivesGeneratedQueryFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_VIEW_MIN_LOD_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceImageViewMinLodFeaturesEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_MIN_LOD_CREATE_INFO_EXT:
+       return Struct::VkImageViewMinLodCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceMultiDrawFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTI_DRAW_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceMultiDrawPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_2D_VIEW_OF_3D_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceImage2DViewOf3DFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderTileImageFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_TILE_IMAGE_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceShaderTileImagePropertiesEXT;
+    case VK_STRUCTURE_TYPE_MICROMAP_BUILD_INFO_EXT:
+       return Struct::VkMicromapBuildInfoEXT;
+    case VK_STRUCTURE_TYPE_MICROMAP_CREATE_INFO_EXT:
+       return Struct::VkMicromapCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceOpacityMicromapFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPACITY_MICROMAP_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceOpacityMicromapPropertiesEXT;
+    case VK_STRUCTURE_TYPE_MICROMAP_VERSION_INFO_EXT:
+       return Struct::VkMicromapVersionInfoEXT;
+    case VK_STRUCTURE_TYPE_COPY_MICROMAP_TO_MEMORY_INFO_EXT:
+       return Struct::VkCopyMicromapToMemoryInfoEXT;
+    case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_MICROMAP_INFO_EXT:
+       return Struct::VkCopyMemoryToMicromapInfoEXT;
+    case VK_STRUCTURE_TYPE_COPY_MICROMAP_INFO_EXT:
+       return Struct::VkCopyMicromapInfoEXT;
+    case VK_STRUCTURE_TYPE_MICROMAP_BUILD_SIZES_INFO_EXT:
+       return Struct::VkMicromapBuildSizesInfoEXT;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_OPACITY_MICROMAP_EXT:
+       return Struct::VkAccelerationStructureTrianglesOpacityMicromapEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DISPLACEMENT_MICROMAP_FEATURES_NV:
+       return Struct::VkPhysicalDeviceDisplacementMicromapFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DISPLACEMENT_MICROMAP_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceDisplacementMicromapPropertiesNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_TRIANGLES_DISPLACEMENT_MICROMAP_NV:
+       return Struct::VkAccelerationStructureTrianglesDisplacementMicromapNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_FEATURES_HUAWEI:
+       return Struct::VkPhysicalDeviceClusterCullingShaderFeaturesHUAWEI;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_PROPERTIES_HUAWEI:
+       return Struct::VkPhysicalDeviceClusterCullingShaderPropertiesHUAWEI;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_CULLING_SHADER_VRS_FEATURES_HUAWEI:
+       return Struct::VkPhysicalDeviceClusterCullingShaderVrsFeaturesHUAWEI;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BORDER_COLOR_SWIZZLE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceBorderColorSwizzleFeaturesEXT;
+    case VK_STRUCTURE_TYPE_SAMPLER_BORDER_COLOR_COMPONENT_MAPPING_CREATE_INFO_EXT:
+       return Struct::VkSamplerBorderColorComponentMappingCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PAGEABLE_DEVICE_LOCAL_MEMORY_FEATURES_EXT:
+       return Struct::VkPhysicalDevicePageableDeviceLocalMemoryFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_PROPERTIES_ARM:
+       return Struct::VkPhysicalDeviceShaderCorePropertiesARM;
+    case VK_STRUCTURE_TYPE_DEVICE_QUEUE_SHADER_CORE_CONTROL_CREATE_INFO_ARM:
+       return Struct::VkDeviceQueueShaderCoreControlCreateInfoARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceSchedulingControlsFeaturesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SCHEDULING_CONTROLS_PROPERTIES_ARM:
+       return Struct::VkPhysicalDeviceSchedulingControlsPropertiesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_SLICED_VIEW_OF_3D_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceImageSlicedViewOf3DFeaturesEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_SLICED_CREATE_INFO_EXT:
+       return Struct::VkImageViewSlicedCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_SET_HOST_MAPPING_FEATURES_VALVE:
+       return Struct::VkPhysicalDeviceDescriptorSetHostMappingFeaturesVALVE;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_BINDING_REFERENCE_VALVE:
+       return Struct::VkDescriptorSetBindingReferenceVALVE;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_HOST_MAPPING_INFO_VALVE:
+       return Struct::VkDescriptorSetLayoutHostMappingInfoVALVE;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NON_SEAMLESS_CUBE_MAP_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceNonSeamlessCubeMapFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceRenderPassStripedFeaturesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RENDER_PASS_STRIPED_PROPERTIES_ARM:
+       return Struct::VkPhysicalDeviceRenderPassStripedPropertiesARM;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_INFO_ARM:
+       return Struct::VkRenderPassStripeInfoARM;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_BEGIN_INFO_ARM:
+       return Struct::VkRenderPassStripeBeginInfoARM;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_STRIPE_SUBMIT_INFO_ARM:
+       return Struct::VkRenderPassStripeSubmitInfoARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceFragmentDensityMapOffsetFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_OFFSET_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceFragmentDensityMapOffsetPropertiesEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_FRAGMENT_DENSITY_MAP_OFFSET_END_INFO_EXT:
+       return Struct::VkRenderPassFragmentDensityMapOffsetEndInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCopyMemoryIndirectFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COPY_MEMORY_INDIRECT_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceCopyMemoryIndirectPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_DECOMPRESSION_FEATURES_NV:
+       return Struct::VkPhysicalDeviceMemoryDecompressionFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MEMORY_DECOMPRESSION_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceMemoryDecompressionPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_COMPUTE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceDeviceGeneratedCommandsComputeFeaturesNV;
+    case VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_INDIRECT_BUFFER_INFO_NV:
+       return Struct::VkComputePipelineIndirectBufferInfoNV;
+    case VK_STRUCTURE_TYPE_PIPELINE_INDIRECT_DEVICE_ADDRESS_INFO_NV:
+       return Struct::VkPipelineIndirectDeviceAddressInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_LINEAR_SWEPT_SPHERES_FEATURES_NV:
+       return Struct::VkPhysicalDeviceRayTracingLinearSweptSpheresFeaturesNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_LINEAR_SWEPT_SPHERES_DATA_NV:
+       return Struct::VkAccelerationStructureGeometryLinearSweptSpheresDataNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_SPHERES_DATA_NV:
+       return Struct::VkAccelerationStructureGeometrySpheresDataNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LINEAR_COLOR_ATTACHMENT_FEATURES_NV:
+       return Struct::VkPhysicalDeviceLinearColorAttachmentFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_COMPRESSION_CONTROL_SWAPCHAIN_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceImageCompressionControlSwapchainFeaturesEXT;
+    case VK_STRUCTURE_TYPE_IMAGE_VIEW_SAMPLE_WEIGHT_CREATE_INFO_QCOM:
+       return Struct::VkImageViewSampleWeightCreateInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceImageProcessingFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_PROPERTIES_QCOM:
+       return Struct::VkPhysicalDeviceImageProcessingPropertiesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceNestedCommandBufferFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_NESTED_COMMAND_BUFFER_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceNestedCommandBufferPropertiesEXT;
+    case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_ACQUIRE_UNMODIFIED_EXT:
+       return Struct::VkExternalMemoryAcquireUnmodifiedEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceExtendedDynamicState3FeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_DYNAMIC_STATE_3_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceExtendedDynamicState3PropertiesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SUBPASS_MERGE_FEEDBACK_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceSubpassMergeFeedbackFeaturesEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_CREATION_CONTROL_EXT:
+       return Struct::VkRenderPassCreationControlEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_CREATION_FEEDBACK_CREATE_INFO_EXT:
+       return Struct::VkRenderPassCreationFeedbackCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_RENDER_PASS_SUBPASS_FEEDBACK_CREATE_INFO_EXT:
+       return Struct::VkRenderPassSubpassFeedbackCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_INFO_LUNARG:
+       return Struct::VkDirectDriverLoadingInfoLUNARG;
+    case VK_STRUCTURE_TYPE_DIRECT_DRIVER_LOADING_LIST_LUNARG:
+       return Struct::VkDirectDriverLoadingListLUNARG;
+    case VK_STRUCTURE_TYPE_TENSOR_DESCRIPTION_ARM:
+       return Struct::VkTensorDescriptionARM;
+    case VK_STRUCTURE_TYPE_TENSOR_CREATE_INFO_ARM:
+       return Struct::VkTensorCreateInfoARM;
+    case VK_STRUCTURE_TYPE_TENSOR_VIEW_CREATE_INFO_ARM:
+       return Struct::VkTensorViewCreateInfoARM;
+    case VK_STRUCTURE_TYPE_TENSOR_MEMORY_REQUIREMENTS_INFO_ARM:
+       return Struct::VkTensorMemoryRequirementsInfoARM;
+    case VK_STRUCTURE_TYPE_BIND_TENSOR_MEMORY_INFO_ARM:
+       return Struct::VkBindTensorMemoryInfoARM;
+    case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_TENSOR_ARM:
+       return Struct::VkWriteDescriptorSetTensorARM;
+    case VK_STRUCTURE_TYPE_TENSOR_FORMAT_PROPERTIES_ARM:
+       return Struct::VkTensorFormatPropertiesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_PROPERTIES_ARM:
+       return Struct::VkPhysicalDeviceTensorPropertiesARM;
+    case VK_STRUCTURE_TYPE_TENSOR_MEMORY_BARRIER_ARM:
+       return Struct::VkTensorMemoryBarrierARM;
+    case VK_STRUCTURE_TYPE_TENSOR_DEPENDENCY_INFO_ARM:
+       return Struct::VkTensorDependencyInfoARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceTensorFeaturesARM;
+    case VK_STRUCTURE_TYPE_DEVICE_TENSOR_MEMORY_REQUIREMENTS_ARM:
+       return Struct::VkDeviceTensorMemoryRequirementsARM;
+    case VK_STRUCTURE_TYPE_TENSOR_COPY_ARM:
+       return Struct::VkTensorCopyARM;
+    case VK_STRUCTURE_TYPE_COPY_TENSOR_INFO_ARM:
+       return Struct::VkCopyTensorInfoARM;
+    case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO_TENSOR_ARM:
+       return Struct::VkMemoryDedicatedAllocateInfoTensorARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_TENSOR_INFO_ARM:
+       return Struct::VkPhysicalDeviceExternalTensorInfoARM;
+    case VK_STRUCTURE_TYPE_EXTERNAL_TENSOR_PROPERTIES_ARM:
+       return Struct::VkExternalTensorPropertiesARM;
+    case VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_TENSOR_CREATE_INFO_ARM:
+       return Struct::VkExternalMemoryTensorCreateInfoARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_TENSOR_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceDescriptorBufferTensorFeaturesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_BUFFER_TENSOR_PROPERTIES_ARM:
+       return Struct::VkPhysicalDeviceDescriptorBufferTensorPropertiesARM;
+    case VK_STRUCTURE_TYPE_DESCRIPTOR_GET_TENSOR_INFO_ARM:
+       return Struct::VkDescriptorGetTensorInfoARM;
+    case VK_STRUCTURE_TYPE_TENSOR_CAPTURE_DESCRIPTOR_DATA_INFO_ARM:
+       return Struct::VkTensorCaptureDescriptorDataInfoARM;
+    case VK_STRUCTURE_TYPE_TENSOR_VIEW_CAPTURE_DESCRIPTOR_DATA_INFO_ARM:
+       return Struct::VkTensorViewCaptureDescriptorDataInfoARM;
+    case VK_STRUCTURE_TYPE_FRAME_BOUNDARY_TENSORS_ARM:
+       return Struct::VkFrameBoundaryTensorsARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderModuleIdentifierFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_MODULE_IDENTIFIER_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceShaderModuleIdentifierPropertiesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_MODULE_IDENTIFIER_CREATE_INFO_EXT:
+       return Struct::VkPipelineShaderStageModuleIdentifierCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_SHADER_MODULE_IDENTIFIER_EXT:
+       return Struct::VkShaderModuleIdentifierEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_FEATURES_NV:
+       return Struct::VkPhysicalDeviceOpticalFlowFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_OPTICAL_FLOW_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceOpticalFlowPropertiesNV;
+    case VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_INFO_NV:
+       return Struct::VkOpticalFlowImageFormatInfoNV;
+    case VK_STRUCTURE_TYPE_OPTICAL_FLOW_IMAGE_FORMAT_PROPERTIES_NV:
+       return Struct::VkOpticalFlowImageFormatPropertiesNV;
+    case VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_INFO_NV:
+       return Struct::VkOpticalFlowSessionCreateInfoNV;
+    case VK_STRUCTURE_TYPE_OPTICAL_FLOW_SESSION_CREATE_PRIVATE_DATA_INFO_NV:
+       return Struct::VkOpticalFlowSessionCreatePrivateDataInfoNV;
+    case VK_STRUCTURE_TYPE_OPTICAL_FLOW_EXECUTE_INFO_NV:
+       return Struct::VkOpticalFlowExecuteInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_DITHERING_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceLegacyDitheringFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_FEATURES_ANDROID:
+       return Struct::VkPhysicalDeviceExternalFormatResolveFeaturesANDROID;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_FORMAT_RESOLVE_PROPERTIES_ANDROID:
+       return Struct::VkPhysicalDeviceExternalFormatResolvePropertiesANDROID;
+    case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_FORMAT_RESOLVE_PROPERTIES_ANDROID:
+       return Struct::VkAndroidHardwareBufferFormatResolvePropertiesANDROID;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ANTI_LAG_FEATURES_AMD:
+       return Struct::VkPhysicalDeviceAntiLagFeaturesAMD;
+    case VK_STRUCTURE_TYPE_ANTI_LAG_PRESENTATION_INFO_AMD:
+       return Struct::VkAntiLagPresentationInfoAMD;
+    case VK_STRUCTURE_TYPE_ANTI_LAG_DATA_AMD:
+       return Struct::VkAntiLagDataAMD;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderObjectFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_OBJECT_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceShaderObjectPropertiesEXT;
+    case VK_STRUCTURE_TYPE_SHADER_CREATE_INFO_EXT:
+       return Struct::VkShaderCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_PROPERTIES_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceTilePropertiesFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_TILE_PROPERTIES_QCOM:
+       return Struct::VkTilePropertiesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_AMIGO_PROFILING_FEATURES_SEC:
+       return Struct::VkPhysicalDeviceAmigoProfilingFeaturesSEC;
+    case VK_STRUCTURE_TYPE_AMIGO_PROFILING_SUBMIT_INFO_SEC:
+       return Struct::VkAmigoProfilingSubmitInfoSEC;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_VIEWPORTS_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceMultiviewPerViewViewportsFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceRayTracingInvocationReorderPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_INVOCATION_REORDER_FEATURES_NV:
+       return Struct::VkPhysicalDeviceRayTracingInvocationReorderFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_VECTOR_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceCooperativeVectorPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_VECTOR_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCooperativeVectorFeaturesNV;
+    case VK_STRUCTURE_TYPE_COOPERATIVE_VECTOR_PROPERTIES_NV:
+       return Struct::VkCooperativeVectorPropertiesNV;
+    case VK_STRUCTURE_TYPE_CONVERT_COOPERATIVE_VECTOR_MATRIX_INFO_NV:
+       return Struct::VkConvertCooperativeVectorMatrixInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceExtendedSparseAddressSpaceFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTENDED_SPARSE_ADDRESS_SPACE_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceExtendedSparseAddressSpacePropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceLegacyVertexAttributesFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LEGACY_VERTEX_ATTRIBUTES_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceLegacyVertexAttributesPropertiesEXT;
+    case VK_STRUCTURE_TYPE_LAYER_SETTINGS_CREATE_INFO_EXT:
+       return Struct::VkLayerSettingsCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceShaderCoreBuiltinsFeaturesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_CORE_BUILTINS_PROPERTIES_ARM:
+       return Struct::VkPhysicalDeviceShaderCoreBuiltinsPropertiesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_LIBRARY_GROUP_HANDLES_FEATURES_EXT:
+       return Struct::VkPhysicalDevicePipelineLibraryGroupHandlesFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DYNAMIC_RENDERING_UNUSED_ATTACHMENTS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDynamicRenderingUnusedAttachmentsFeaturesEXT;
+    case VK_STRUCTURE_TYPE_LATENCY_SLEEP_MODE_INFO_NV:
+       return Struct::VkLatencySleepModeInfoNV;
+    case VK_STRUCTURE_TYPE_LATENCY_SLEEP_INFO_NV:
+       return Struct::VkLatencySleepInfoNV;
+    case VK_STRUCTURE_TYPE_SET_LATENCY_MARKER_INFO_NV:
+       return Struct::VkSetLatencyMarkerInfoNV;
+    case VK_STRUCTURE_TYPE_LATENCY_TIMINGS_FRAME_REPORT_NV:
+       return Struct::VkLatencyTimingsFrameReportNV;
+    case VK_STRUCTURE_TYPE_GET_LATENCY_MARKER_INFO_NV:
+       return Struct::VkGetLatencyMarkerInfoNV;
+    case VK_STRUCTURE_TYPE_LATENCY_SUBMISSION_PRESENT_ID_NV:
+       return Struct::VkLatencySubmissionPresentIdNV;
+    case VK_STRUCTURE_TYPE_SWAPCHAIN_LATENCY_CREATE_INFO_NV:
+       return Struct::VkSwapchainLatencyCreateInfoNV;
+    case VK_STRUCTURE_TYPE_OUT_OF_BAND_QUEUE_TYPE_INFO_NV:
+       return Struct::VkOutOfBandQueueTypeInfoNV;
+    case VK_STRUCTURE_TYPE_LATENCY_SURFACE_CAPABILITIES_NV:
+       return Struct::VkLatencySurfaceCapabilitiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DATA_GRAPH_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceDataGraphFeaturesARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_ARM:
+       return Struct::VkDataGraphPipelineConstantARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_RESOURCE_INFO_ARM:
+       return Struct::VkDataGraphPipelineResourceInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_COMPILER_CONTROL_CREATE_INFO_ARM:
+       return Struct::VkDataGraphPipelineCompilerControlCreateInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CREATE_INFO_ARM:
+       return Struct::VkDataGraphPipelineCreateInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SHADER_MODULE_CREATE_INFO_ARM:
+       return Struct::VkDataGraphPipelineShaderModuleCreateInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM:
+       return Struct::VkDataGraphPipelineSessionCreateInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM:
+       return Struct::VkDataGraphPipelineSessionBindPointRequirementsInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM:
+       return Struct::VkDataGraphPipelineSessionBindPointRequirementARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_MEMORY_REQUIREMENTS_INFO_ARM:
+       return Struct::VkDataGraphPipelineSessionMemoryRequirementsInfoARM;
+    case VK_STRUCTURE_TYPE_BIND_DATA_GRAPH_PIPELINE_SESSION_MEMORY_INFO_ARM:
+       return Struct::VkBindDataGraphPipelineSessionMemoryInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_INFO_ARM:
+       return Struct::VkDataGraphPipelineInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_PROPERTY_QUERY_RESULT_ARM:
+       return Struct::VkDataGraphPipelinePropertyQueryResultARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_IDENTIFIER_CREATE_INFO_ARM:
+       return Struct::VkDataGraphPipelineIdentifierCreateInfoARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_DISPATCH_INFO_ARM:
+       return Struct::VkDataGraphPipelineDispatchInfoARM;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROPERTIES_ARM:
+       return Struct::VkQueueFamilyDataGraphPropertiesARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PROCESSING_ENGINE_CREATE_INFO_ARM:
+       return Struct::VkDataGraphProcessingEngineCreateInfoARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_INFO_ARM:
+       return Struct::VkPhysicalDeviceQueueFamilyDataGraphProcessingEngineInfoARM;
+    case VK_STRUCTURE_TYPE_QUEUE_FAMILY_DATA_GRAPH_PROCESSING_ENGINE_PROPERTIES_ARM:
+       return Struct::VkQueueFamilyDataGraphProcessingEnginePropertiesARM;
+    case VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_CONSTANT_TENSOR_SEMI_STRUCTURED_SPARSITY_INFO_ARM:
+       return Struct::VkDataGraphPipelineConstantTensorSemiStructuredSparsityInfoARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_PER_VIEW_RENDER_AREAS_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceMultiviewPerViewRenderAreasFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_MULTIVIEW_PER_VIEW_RENDER_AREAS_RENDER_PASS_BEGIN_INFO_QCOM:
+       return Struct::VkMultiviewPerViewRenderAreasRenderPassBeginInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PER_STAGE_DESCRIPTOR_SET_FEATURES_NV:
+       return Struct::VkPhysicalDevicePerStageDescriptorSetFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceImageProcessing2FeaturesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_PROCESSING_2_PROPERTIES_QCOM:
+       return Struct::VkPhysicalDeviceImageProcessing2PropertiesQCOM;
+    case VK_STRUCTURE_TYPE_SAMPLER_BLOCK_MATCH_WINDOW_CREATE_INFO_QCOM:
+       return Struct::VkSamplerBlockMatchWindowCreateInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUBIC_WEIGHTS_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceCubicWeightsFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_SAMPLER_CUBIC_WEIGHTS_CREATE_INFO_QCOM:
+       return Struct::VkSamplerCubicWeightsCreateInfoQCOM;
+    case VK_STRUCTURE_TYPE_BLIT_IMAGE_CUBIC_WEIGHTS_INFO_QCOM:
+       return Struct::VkBlitImageCubicWeightsInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_YCBCR_DEGAMMA_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceYcbcrDegammaFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_YCBCR_DEGAMMA_CREATE_INFO_QCOM:
+       return Struct::VkSamplerYcbcrConversionYcbcrDegammaCreateInfoQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CUBIC_CLAMP_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceCubicClampFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ATTACHMENT_FEEDBACK_LOOP_DYNAMIC_STATE_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceAttachmentFeedbackLoopDynamicStateFeaturesEXT;
+    case VK_STRUCTURE_TYPE_SCREEN_BUFFER_PROPERTIES_QNX:
+       return Struct::VkScreenBufferPropertiesQNX;
+    case VK_STRUCTURE_TYPE_SCREEN_BUFFER_FORMAT_PROPERTIES_QNX:
+       return Struct::VkScreenBufferFormatPropertiesQNX;
+    case VK_STRUCTURE_TYPE_IMPORT_SCREEN_BUFFER_INFO_QNX:
+       return Struct::VkImportScreenBufferInfoQNX;
+    case VK_STRUCTURE_TYPE_EXTERNAL_FORMAT_QNX:
+       return Struct::VkExternalFormatQNX;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_MEMORY_SCREEN_BUFFER_FEATURES_QNX:
+       return Struct::VkPhysicalDeviceExternalMemoryScreenBufferFeaturesQNX;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_LAYERED_DRIVER_PROPERTIES_MSFT:
+       return Struct::VkPhysicalDeviceLayeredDriverPropertiesMSFT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_POOL_OVERALLOCATION_FEATURES_NV:
+       return Struct::VkPhysicalDeviceDescriptorPoolOverallocationFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_MEMORY_HEAP_FEATURES_QCOM:
+       return Struct::VkPhysicalDeviceTileMemoryHeapFeaturesQCOM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TILE_MEMORY_HEAP_PROPERTIES_QCOM:
+       return Struct::VkPhysicalDeviceTileMemoryHeapPropertiesQCOM;
+    case VK_STRUCTURE_TYPE_TILE_MEMORY_REQUIREMENTS_QCOM:
+       return Struct::VkTileMemoryRequirementsQCOM;
+    case VK_STRUCTURE_TYPE_TILE_MEMORY_BIND_INFO_QCOM:
+       return Struct::VkTileMemoryBindInfoQCOM;
+    case VK_STRUCTURE_TYPE_TILE_MEMORY_SIZE_INFO_QCOM:
+       return Struct::VkTileMemorySizeInfoQCOM;
+    case VK_STRUCTURE_TYPE_DISPLAY_SURFACE_STEREO_CREATE_INFO_NV:
+       return Struct::VkDisplaySurfaceStereoCreateInfoNV;
+    case VK_STRUCTURE_TYPE_DISPLAY_MODE_STEREO_PROPERTIES_NV:
+       return Struct::VkDisplayModeStereoPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAW_ACCESS_CHAINS_FEATURES_NV:
+       return Struct::VkPhysicalDeviceRawAccessChainsFeaturesNV;
+    case VK_STRUCTURE_TYPE_EXTERNAL_COMPUTE_QUEUE_DEVICE_CREATE_INFO_NV:
+       return Struct::VkExternalComputeQueueDeviceCreateInfoNV;
+    case VK_STRUCTURE_TYPE_EXTERNAL_COMPUTE_QUEUE_CREATE_INFO_NV:
+       return Struct::VkExternalComputeQueueCreateInfoNV;
+    case VK_STRUCTURE_TYPE_EXTERNAL_COMPUTE_QUEUE_DATA_PARAMS_NV:
+       return Struct::VkExternalComputeQueueDataParamsNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_EXTERNAL_COMPUTE_QUEUE_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceExternalComputeQueuePropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COMMAND_BUFFER_INHERITANCE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCommandBufferInheritanceFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_ATOMIC_FLOAT16_VECTOR_FEATURES_NV:
+       return Struct::VkPhysicalDeviceShaderAtomicFloat16VectorFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderReplicatedCompositesFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_FLOAT8_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceShaderFloat8FeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_VALIDATION_FEATURES_NV:
+       return Struct::VkPhysicalDeviceRayTracingValidationFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_FEATURES_NV:
+       return Struct::VkPhysicalDeviceClusterAccelerationStructureFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_CLUSTER_ACCELERATION_STRUCTURE_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceClusterAccelerationStructurePropertiesNV;
+    case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_CLUSTERS_BOTTOM_LEVEL_INPUT_NV:
+       return Struct::VkClusterAccelerationStructureClustersBottomLevelInputNV;
+    case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_TRIANGLE_CLUSTER_INPUT_NV:
+       return Struct::VkClusterAccelerationStructureTriangleClusterInputNV;
+    case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_MOVE_OBJECTS_INPUT_NV:
+       return Struct::VkClusterAccelerationStructureMoveObjectsInputNV;
+    case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_INPUT_INFO_NV:
+       return Struct::VkClusterAccelerationStructureInputInfoNV;
+    case VK_STRUCTURE_TYPE_CLUSTER_ACCELERATION_STRUCTURE_COMMANDS_INFO_NV:
+       return Struct::VkClusterAccelerationStructureCommandsInfoNV;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR:
+       return Struct::VkAccelerationStructureBuildSizesInfoKHR;
+    case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CLUSTER_ACCELERATION_STRUCTURE_CREATE_INFO_NV:
+       return Struct::VkRayTracingPipelineClusterAccelerationStructureCreateInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PARTITIONED_ACCELERATION_STRUCTURE_FEATURES_NV:
+       return Struct::VkPhysicalDevicePartitionedAccelerationStructureFeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PARTITIONED_ACCELERATION_STRUCTURE_PROPERTIES_NV:
+       return Struct::VkPhysicalDevicePartitionedAccelerationStructurePropertiesNV;
+    case VK_STRUCTURE_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_FLAGS_NV:
+       return Struct::VkPartitionedAccelerationStructureFlagsNV;
+    case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_PARTITIONED_ACCELERATION_STRUCTURE_NV:
+       return Struct::VkWriteDescriptorSetPartitionedAccelerationStructureNV;
+    case VK_STRUCTURE_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_INSTANCES_INPUT_NV:
+       return Struct::VkPartitionedAccelerationStructureInstancesInputNV;
+    case VK_STRUCTURE_TYPE_BUILD_PARTITIONED_ACCELERATION_STRUCTURE_INFO_NV:
+       return Struct::VkBuildPartitionedAccelerationStructureInfoNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDeviceGeneratedCommandsFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEVICE_GENERATED_COMMANDS_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceDeviceGeneratedCommandsPropertiesEXT;
+    case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_MEMORY_REQUIREMENTS_INFO_EXT:
+       return Struct::VkGeneratedCommandsMemoryRequirementsInfoEXT;
+    case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_PIPELINE_INFO_EXT:
+       return Struct::VkIndirectExecutionSetPipelineInfoEXT;
+    case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_SHADER_LAYOUT_INFO_EXT:
+       return Struct::VkIndirectExecutionSetShaderLayoutInfoEXT;
+    case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_SHADER_INFO_EXT:
+       return Struct::VkIndirectExecutionSetShaderInfoEXT;
+    case VK_STRUCTURE_TYPE_INDIRECT_EXECUTION_SET_CREATE_INFO_EXT:
+       return Struct::VkIndirectExecutionSetCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_INFO_EXT:
+       return Struct::VkGeneratedCommandsInfoEXT;
+    case VK_STRUCTURE_TYPE_WRITE_INDIRECT_EXECUTION_SET_PIPELINE_EXT:
+       return Struct::VkWriteIndirectExecutionSetPipelineEXT;
+    case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_TOKEN_EXT:
+       return Struct::VkIndirectCommandsLayoutTokenEXT;
+    case VK_STRUCTURE_TYPE_INDIRECT_COMMANDS_LAYOUT_CREATE_INFO_EXT:
+       return Struct::VkIndirectCommandsLayoutCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_PIPELINE_INFO_EXT:
+       return Struct::VkGeneratedCommandsPipelineInfoEXT;
+    case VK_STRUCTURE_TYPE_GENERATED_COMMANDS_SHADER_INFO_EXT:
+       return Struct::VkGeneratedCommandsShaderInfoEXT;
+    case VK_STRUCTURE_TYPE_WRITE_INDIRECT_EXECUTION_SET_SHADER_EXT:
+       return Struct::VkWriteIndirectExecutionSetShaderEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_FEATURES_MESA:
+       return Struct::VkPhysicalDeviceImageAlignmentControlFeaturesMESA;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_IMAGE_ALIGNMENT_CONTROL_PROPERTIES_MESA:
+       return Struct::VkPhysicalDeviceImageAlignmentControlPropertiesMESA;
+    case VK_STRUCTURE_TYPE_IMAGE_ALIGNMENT_CONTROL_CREATE_INFO_MESA:
+       return Struct::VkImageAlignmentControlCreateInfoMESA;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLAMP_CONTROL_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceDepthClampControlFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PIPELINE_VIEWPORT_DEPTH_CLAMP_CONTROL_CREATE_INFO_EXT:
+       return Struct::VkPipelineViewportDepthClampControlCreateInfoEXT;
+    case VK_STRUCTURE_TYPE_OH_SURFACE_CREATE_INFO_OHOS:
+       return Struct::VkOHSurfaceCreateInfoOHOS;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_HDR_VIVID_FEATURES_HUAWEI:
+       return Struct::VkPhysicalDeviceHdrVividFeaturesHUAWEI;
+    case VK_STRUCTURE_TYPE_HDR_VIVID_DYNAMIC_METADATA_HUAWEI:
+       return Struct::VkHdrVividDynamicMetadataHUAWEI;
+    case VK_STRUCTURE_TYPE_COOPERATIVE_MATRIX_FLEXIBLE_DIMENSIONS_PROPERTIES_NV:
+       return Struct::VkCooperativeMatrixFlexibleDimensionsPropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_FEATURES_NV:
+       return Struct::VkPhysicalDeviceCooperativeMatrix2FeaturesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_COOPERATIVE_MATRIX_2_PROPERTIES_NV:
+       return Struct::VkPhysicalDeviceCooperativeMatrix2PropertiesNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_OPACITY_MICROMAP_FEATURES_ARM:
+       return Struct::VkPhysicalDevicePipelineOpacityMicromapFeaturesARM;
+    case VK_STRUCTURE_TYPE_IMPORT_MEMORY_METAL_HANDLE_INFO_EXT:
+       return Struct::VkImportMemoryMetalHandleInfoEXT;
+    case VK_STRUCTURE_TYPE_MEMORY_METAL_HANDLE_PROPERTIES_EXT:
+       return Struct::VkMemoryMetalHandlePropertiesEXT;
+    case VK_STRUCTURE_TYPE_MEMORY_GET_METAL_HANDLE_INFO_EXT:
+       return Struct::VkMemoryGetMetalHandleInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VERTEX_ATTRIBUTE_ROBUSTNESS_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceVertexAttributeRobustnessFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FORMAT_PACK_FEATURES_ARM:
+       return Struct::VkPhysicalDeviceFormatPackFeaturesARM;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_LAYERED_FEATURES_VALVE:
+       return Struct::VkPhysicalDeviceFragmentDensityMapLayeredFeaturesVALVE;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FRAGMENT_DENSITY_MAP_LAYERED_PROPERTIES_VALVE:
+       return Struct::VkPhysicalDeviceFragmentDensityMapLayeredPropertiesVALVE;
+    case VK_STRUCTURE_TYPE_PIPELINE_FRAGMENT_DENSITY_MAP_LAYERED_CREATE_INFO_VALVE:
+       return Struct::VkPipelineFragmentDensityMapLayeredCreateInfoVALVE;
+    case VK_STRUCTURE_TYPE_SET_PRESENT_CONFIG_NV:
+       return Struct::VkSetPresentConfigNV;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PRESENT_METERING_FEATURES_NV:
+       return Struct::VkPhysicalDevicePresentMeteringFeaturesNV;
+    case VK_STRUCTURE_TYPE_RENDERING_END_INFO_EXT:
+       return Struct::VkRenderingEndInfoEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ZERO_INITIALIZE_DEVICE_MEMORY_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceZeroInitializeDeviceMemoryFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PIPELINE_CACHE_INCREMENTAL_MODE_FEATURES_SEC:
+       return Struct::VkPhysicalDevicePipelineCacheIncrementalModeFeaturesSEC;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR:
+       return Struct::VkAccelerationStructureGeometryTrianglesDataKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_AABBS_DATA_KHR:
+       return Struct::VkAccelerationStructureGeometryAabbsDataKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR:
+       return Struct::VkAccelerationStructureGeometryInstancesDataKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR:
+       return Struct::VkAccelerationStructureGeometryKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR:
+       return Struct::VkAccelerationStructureBuildGeometryInfoKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_CREATE_INFO_KHR:
+       return Struct::VkAccelerationStructureCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR:
+       return Struct::VkWriteDescriptorSetAccelerationStructureKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceAccelerationStructureFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceAccelerationStructurePropertiesKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR:
+       return Struct::VkAccelerationStructureDeviceAddressInfoKHR;
+    case VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_VERSION_INFO_KHR:
+       return Struct::VkAccelerationStructureVersionInfoKHR;
+    case VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_TO_MEMORY_INFO_KHR:
+       return Struct::VkCopyAccelerationStructureToMemoryInfoKHR;
+    case VK_STRUCTURE_TYPE_COPY_MEMORY_TO_ACCELERATION_STRUCTURE_INFO_KHR:
+       return Struct::VkCopyMemoryToAccelerationStructureInfoKHR;
+    case VK_STRUCTURE_TYPE_COPY_ACCELERATION_STRUCTURE_INFO_KHR:
+       return Struct::VkCopyAccelerationStructureInfoKHR;
+    case VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR:
+       return Struct::VkRayTracingShaderGroupCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_INTERFACE_CREATE_INFO_KHR:
+       return Struct::VkRayTracingPipelineInterfaceCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR:
+       return Struct::VkRayTracingPipelineCreateInfoKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceRayTracingPipelineFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_PROPERTIES_KHR:
+       return Struct::VkPhysicalDeviceRayTracingPipelinePropertiesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR:
+       return Struct::VkPhysicalDeviceRayQueryFeaturesKHR;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_FEATURES_EXT:
+       return Struct::VkPhysicalDeviceMeshShaderFeaturesEXT;
+    case VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MESH_SHADER_PROPERTIES_EXT:
+       return Struct::VkPhysicalDeviceMeshShaderPropertiesEXT;
+
+    default:
+        break;
+    }
+    return Struct::Empty;
 }
 
 Func FindAlias(Func func) {
@@ -6345,6 +8869,8 @@ Func FindAlias(Func func) {
        return Func::vkTransitionImageLayout;
     case Func::vkGetImageSubresourceLayout2EXT:
        return Func::vkGetImageSubresourceLayout2;
+    case Func::vkReleaseSwapchainImagesEXT:
+       return Func::vkReleaseSwapchainImagesKHR;
     case Func::vkCreatePrivateDataSlotEXT:
        return Func::vkCreatePrivateDataSlot;
     case Func::vkDestroyPrivateDataSlotEXT:

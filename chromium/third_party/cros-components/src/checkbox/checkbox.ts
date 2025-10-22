@@ -100,9 +100,9 @@ export class Checkbox extends LitElement {
   } as const;
 
   /** @export */
-  checked: boolean;
+  declare checked: boolean;
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
 
   get mdCheckbox(): MdCheckbox {
     return this.renderRoot.querySelector('md-checkbox') as MdCheckbox;

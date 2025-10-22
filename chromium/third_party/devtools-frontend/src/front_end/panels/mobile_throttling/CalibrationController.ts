@@ -1,6 +1,7 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -23,7 +24,7 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
  *   - 1 to check if device is powerful enough
  *   - up to 9 for each preset (uses bisect, so likely to be fewer)
  *
- * Therefore, the maxium duration for the calibration is 5 seconds.
+ * Therefore, the maximum duration for the calibration is 5 seconds.
  */
 const benchmarkDurationMs = 250;
 
@@ -46,7 +47,7 @@ function truncate(n: number): number {
  *
  * Utilizes a benchmark from Lighthouse (LH BenchmarkIndex) to assess performance. This CPU benchmark serves as
  * a simple alias for device performance - but since results aren't exactly linear with clock speed a "bisect"
- * is run to find the ideal DevTools CPU throttling rate to recieve the same results on the benchmark.
+ * is run to find the ideal DevTools CPU throttling rate to receive the same results on the benchmark.
  *
  * @see go/cpq:adaptive-throttling
  * @see https://github.com/connorjclark/devtools-throttling-benchmarks/blob/main/calibrate.js
@@ -298,7 +299,7 @@ export class CalibrationController {
  *  - 800+ is a high-end Android phone, Galaxy S8, low-end Chromebook, etc
  *  - 125+ is a mid-tier Android phone, Moto G4, etc
  *  - <125 is a budget Android phone, Alcatel Ideal, Galaxy J2, etc
- * @return {number}
+ * @returns
  */
 function computeBenchmarkIndex(duration = 1000): number {
   const halfTime = duration / 2;

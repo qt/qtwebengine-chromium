@@ -1,7 +1,5 @@
 load("@com_google_fuzztest//centipede/testing:build_defs.bzl", "centipede_fuzz_target")
 
-package(default_visibility = [":__subpackages__"])
-
 licenses(["notice"])
 
 ################################################################################
@@ -22,9 +20,9 @@ cc_library(
     srcs = ["customized_centipede.cc"],
     hdrs = ["customized_centipede.h"],
     deps = [
-        "@com_google_absl//absl/log",
-        "@com_google_absl//absl/log:check",
-        "@com_google_absl//absl/strings",
+        "@abseil-cpp//absl/log",
+        "@abseil-cpp//absl/log:check",
+        "@abseil-cpp//absl/strings",
         "@com_google_fuzztest//centipede:centipede_callbacks",
         "@com_google_fuzztest//centipede:command",
         "@com_google_fuzztest//centipede:environment",
@@ -48,7 +46,7 @@ cc_binary(
     linkopts = ["-ldl"],
     linkstatic = False,
     deps = [
-        "@com_google_absl//absl/time",
+        "@abseil-cpp//absl/time",
         "@com_google_fuzztest//centipede:centipede_runner_no_main",  # build-cleaner:keep
     ],
 )
@@ -58,7 +56,7 @@ cc_binary(
     srcs = ["customized_centipede_main.cc"],
     deps = [
         ":customized_centipede_lib",
-        "@com_google_absl//absl/base:nullability",
+        "@abseil-cpp//absl/base:nullability",
         "@com_google_fuzztest//centipede:centipede_callbacks",
         "@com_google_fuzztest//centipede:centipede_interface",
         "@com_google_fuzztest//centipede:config_file",
@@ -81,7 +79,7 @@ cc_test(
         "@com_google_fuzztest//centipede:runner_result",
         "@com_google_fuzztest//common:defs",
         "@com_google_fuzztest//common:test_util",
-        "@com_google_googletest//:gtest_main",
+        "@googletest//:gtest_main",
     ],
 )
 

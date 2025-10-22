@@ -59,20 +59,18 @@ class ScreenAIService : public mojom::ScreenAIServiceFactory,
   void LoadLibrary(const base::FilePath& library_path);
 
   // mojom::ScreenAIAnnotator:
-  void SetClientType(mojom::OcrClientType client) override;
-
-  // mojom::Screen2xMainContentExtractor:
-  void SetClientType(mojom::MceClientType client) override;
-
-  // mojom::ScreenAIAnnotator:
+#if BUILDFLAG(IS_CHROMEOS)
   void PerformOcrAndReturnAXTreeUpdate(
       const SkBitmap& image,
       PerformOcrAndReturnAXTreeUpdateCallback callback) override;
-
-  // mojom::ScreenAIAnnotator:
+#endif
   void PerformOcrAndReturnAnnotation(
       const SkBitmap& image,
       PerformOcrAndReturnAnnotationCallback callback) override;
+  void SetClientType(mojom::OcrClientType client) override;
+  void GetMaxImageDimension(GetMaxImageDimensionCallback callback) override;
+  void SetOCRLightMode(bool enabled) override;
+  void IsOCRBusy(IsOCRBusyCallback callback) override;
 
   // mojom::Screen2xMainContentExtractor:
   void ExtractMainContent(const ui::AXTreeUpdate& snapshot,
@@ -81,14 +79,7 @@ class ScreenAIService : public mojom::ScreenAIServiceFactory,
                        ExtractMainNodeCallback callback) override;
   void IdentifyMainNode(const ui::AXTreeUpdate& snapshot,
                         IdentifyMainNodeCallback callback) override;
-
-  // mojom::ScreenAIServiceFactory:
-  void InitializeMainContentExtraction(
-      const base::FilePath& library_path,
-      base::flat_map<base::FilePath, base::File> model_files,
-      mojo::PendingReceiver<mojom::MainContentExtractionService>
-          main_content_extractor_service_receiver,
-      InitializeMainContentExtractionCallback callback) override;
+  void SetClientType(mojom::MceClientType client) override;
 
   // mojom::ScreenAIServiceFactory:
   void InitializeOCR(
@@ -96,11 +87,12 @@ class ScreenAIService : public mojom::ScreenAIServiceFactory,
       base::flat_map<base::FilePath, base::File> model_files,
       mojo::PendingReceiver<mojom::OCRService> ocr_service_receiver,
       InitializeOCRCallback callback) override;
-
-  // mojom::ScreenAIServiceFactory:
-  void ShutDownIfNoClients() override;
-
-  // mojom::ScreenAIServiceFactory:
+  void InitializeMainContentExtraction(
+      const base::FilePath& library_path,
+      base::flat_map<base::FilePath, base::File> model_files,
+      mojo::PendingReceiver<mojom::MainContentExtractionService>
+          main_content_extractor_service_receiver,
+      InitializeMainContentExtractionCallback callback) override;
   void BindShutdownHandler(
       mojo::PendingRemote<mojom::ScreenAIServiceShutdownHandler>
           shutdown_handler) override;
@@ -128,14 +120,25 @@ class ScreenAIService : public mojom::ScreenAIServiceFactory,
       const SkBitmap& image);
 
   void OcrReceiverDisconnected();
+  void MceReceiverDisconnected();
 
-  // Calls `ShutDownIfNoClients` after a short delay.
-  void CheckIdleStateAfterDelay();
+  // Starts a timer to frequently check if the service is idle. This is only
+  // triggered after the library is initialized for either of the
+  // functionalities.
+  void StartShutDownOnIdleTimer();
+  void ShutDownOnIdle();
+
+  // Max image dimension for OCR that is processed without downsampling.
+  // This value is received via `GetMaxImageDimension` after OCR is initialized,
+  // and since it does not change after that, it is stored to be reused for
+  // subsequent calls.
+  // NOTE: Update here and all callers in case the above assumption changes.
+  uint32_t max_ocr_dimension_ = 0;
 
   // Last time the feature is used. A null value means never, it is set when the
   // feature is initialized, and each time it is used.
   base::TimeTicks ocr_last_used_;
-  base::TimeTicks main_content_extraction_last_used_;
+  base::TimeTicks mce_last_used_;
 
   std::unique_ptr<base::RepeatingTimer> idle_checking_timer_;
 
@@ -149,6 +152,15 @@ class ScreenAIService : public mojom::ScreenAIServiceFactory,
 
   // Client type for each OCR receiver.
   std::map<mojo::ReceiverId, mojom::OcrClientType> ocr_client_types_;
+
+  // Light Mode OCR clients.
+  std::set<mojo::ReceiverId> light_ocr_clients_;
+
+  // OCR last mode across all client.
+  bool last_ocr_light_ = false;
+
+  // The number of times OCR mode was changed before shutting down the service.
+  uint32_t ocr_mode_switch_count_ = 0;
 
   // Client type for each MCE receiver.
   std::map<mojo::ReceiverId, mojom::MceClientType> mce_client_types_;
@@ -164,6 +176,9 @@ class ScreenAIService : public mojom::ScreenAIServiceFactory,
   // extractors.
   mojo::ReceiverSet<mojom::Screen2xMainContentExtractor>
       screen2x_main_content_extractors_;
+
+  // Task runner used to monitor unresponsiveness.
+  scoped_refptr<base::SequencedTaskRunner> background_task_runner_;
 
   base::WeakPtrFactory<ScreenAIService> weak_ptr_factory_{this};
 };

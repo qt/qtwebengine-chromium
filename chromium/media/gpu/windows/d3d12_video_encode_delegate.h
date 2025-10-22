@@ -30,9 +30,10 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeDelegate {
     BitstreamBufferMetadata metadata_;
   };
 
-  // Returns the supported profiles for all available codecs.
+  // Returns the supported profiles for given |codecs|.
   static VideoEncodeAccelerator::SupportedProfiles GetSupportedProfiles(
-      ID3D12VideoDevice3* video_device);
+      ID3D12VideoDevice3* video_device,
+      const std::vector<D3D12_VIDEO_ENCODER_CODEC>& codecs);
 
   explicit D3D12VideoEncodeDelegate(
       Microsoft::WRL::ComPtr<ID3D12VideoDevice3> video_device);
@@ -43,6 +44,7 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeDelegate {
   // Returns whether the delegate supports changing |Bitrate::Mode| using
   // |UpdateRateControl()| during encoding.
   virtual bool SupportsRateControlReconfiguration() const = 0;
+  virtual bool ReportsAverageQp() const;
 
   virtual bool UpdateRateControl(const Bitrate& bitrate, uint32_t framerate);
 
@@ -53,13 +55,14 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeDelegate {
       UINT input_frame_subresource,
       const gfx::ColorSpace& input_frame_color_space,
       const BitstreamBuffer& bitstream_buffer,
-      bool force_keyframe);
+      const VideoEncoder::EncodeOptions& options);
 
   // Do the codec specific encoding.
   virtual EncoderStatus::Or<BitstreamBufferMetadata> EncodeImpl(
       ID3D12Resource* input_frame,
       UINT input_frame_subresource,
-      bool force_keyframe) = 0;
+      const VideoEncoder::EncodeOptions& options,
+      const gfx::ColorSpace& input_color_space) = 0;
 
   void SetFactoriesForTesting(
       base::RepeatingCallback<decltype(CreateD3D12VideoEncoderWrapper)>
@@ -86,17 +89,27 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeDelegate {
  protected:
   class D3D12VideoEncoderRateControl {
    public:
+    enum class FrameType { kIntra, kInterPrev, kInterBiDirectional };
+
+    // Creates an uninitialized rate control.
     D3D12VideoEncoderRateControl();
 
     D3D12VideoEncoderRateControl(const D3D12VideoEncoderRateControl& other);
     D3D12VideoEncoderRateControl& operator=(
         const D3D12VideoEncoderRateControl& other);
 
-    static std::optional<D3D12VideoEncoderRateControl> Create(
+    static D3D12VideoEncoderRateControl CreateCqp(uint32_t i_frame_qp,
+                                                  uint32_t p_frame_qp,
+                                                  uint32_t b_frame_qp);
+    static D3D12VideoEncoderRateControl Create(
         Bitrate bitrate,
-        uint32_t framerate);
+        uint32_t framerate,
+        ID3D12VideoDevice3* video_device,
+        VideoCodecProfile output_profile);
 
     D3D12_VIDEO_ENCODER_RATE_CONTROL_MODE GetMode() const;
+
+    void SetCQP(FrameType frame_type, uint32_t qp);
 
     const D3D12_VIDEO_ENCODER_RATE_CONTROL& GetD3D12VideoEncoderRateControl()
         const {
@@ -119,12 +132,14 @@ class MEDIA_GPU_EXPORT D3D12VideoEncodeDelegate {
   virtual EncoderStatus InitializeVideoEncoder(
       const VideoEncodeAccelerator::Config& config) = 0;
 
+  virtual EncoderStatus::Or<size_t> GetEncodedBitstreamWrittenBytesCount(
+      const ScopedD3D12ResourceMap& metadata);
+
   virtual EncoderStatus::Or<size_t> ReadbackBitstream(
       base::span<uint8_t> bitstream_buffer);
 
   Microsoft::WRL::ComPtr<ID3D12Device> device_;
   Microsoft::WRL::ComPtr<ID3D12VideoDevice3> video_device_;
-  size_t max_num_ref_frames_ = 0;
 
   // The the size and format for the input of the D3D12VideoEncoder. The format
   // may be different to input frame, in which case we do internal conversion.
@@ -174,13 +189,16 @@ struct D3D12PictureBuffer {
 template <size_t maxDpbSize>
 class D3D12VideoEncodeDecodedPictureBuffers {
  public:
-  explicit D3D12VideoEncodeDecodedPictureBuffers(size_t size);
-  ~D3D12VideoEncodeDecodedPictureBuffers();
+  D3D12VideoEncodeDecodedPictureBuffers();
+  virtual ~D3D12VideoEncodeDecodedPictureBuffers();
+
+  size_t size() const { return size_; }
 
   // Initialize the texture array with the given size and format.
   bool InitializeTextureArray(ID3D12Device* device,
                               gfx::Size texture_size,
-                              DXGI_FORMAT format);
+                              DXGI_FORMAT format,
+                              size_t max_num_ref_frames);
 
   // Get the unused buffer for current frame.
   D3D12PictureBuffer GetCurrentFrame() const;
@@ -191,13 +209,16 @@ class D3D12VideoEncodeDecodedPictureBuffers {
   // Replace the picture buffer at |position| with the last picture buffer
   // returned by |GetCurrentFrame()|.
   void ReplaceWithCurrentFrame(size_t position);
+  // Move the picture buffer at |position| to |size() - 1|. And move the
+  // picture buffers with index greater than |position| to the previous index.
+  void EraseFrame(size_t position);
 
   // Return the |D3D12_VIDEO_ENCODE_REFERENCE_FRAMES| structure that D3D12 video
   // encode API expects.
   D3D12_VIDEO_ENCODE_REFERENCE_FRAMES ToD3D12VideoEncodeReferenceFrames();
 
  private:
-  size_t size_;
+  size_t size_ = 0;
   absl::InlinedVector<Microsoft::WRL::ComPtr<ID3D12Resource>, maxDpbSize + 1>
       resources_;
   absl::InlinedVector<ID3D12Resource*, maxDpbSize + 1> raw_resources_;

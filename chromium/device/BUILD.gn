@@ -210,7 +210,7 @@ test("device_unittests") {
     ]
 
     deps += [
-      "//components/sync/protocol:protocol",
+      "//components/sync/protocol",
       "//device/fido:mocks",
       "//services/data_decoder/public/cpp:test_support",
     ]
@@ -222,7 +222,6 @@ test("device_unittests") {
 
   if (is_mac) {
     sources += [
-      "fido/enclave/icloud_recovery_key_mac_unittest.mm",
       "fido/mac/authenticator_unittest.mm",
       "fido/mac/browsing_data_deletion_unittest.mm",
       "fido/mac/credential_metadata_unittest.cc",
@@ -367,7 +366,6 @@ test("device_unittests") {
     ldflags = [ "-ObjC" ]
     frameworks = [
       "CoreBluetooth.framework",
-      "IOKit.framework",
       "Foundation.framework",
     ]
   }
@@ -375,6 +373,7 @@ test("device_unittests") {
   if (is_mac) {
     frameworks += [
       "IOBluetooth.framework",
+      "IOKit.framework",
       "Security.framework",
       "AuthenticationServices.framework",
     ]
@@ -482,6 +481,10 @@ test("device_unittests") {
   if (is_chromeos) {
     deps += [ "//chromeos/dbus/u2f" ]
   }
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }
 
 if (is_android) {

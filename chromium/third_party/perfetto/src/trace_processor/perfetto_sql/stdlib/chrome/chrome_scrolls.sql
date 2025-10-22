@@ -60,6 +60,8 @@ SELECT
   chrome_event_latency.event_type = 'INERTIAL_GESTURE_SCROLL_UPDATE' AS is_inertial,
   chrome_event_latency.event_type = 'FIRST_GESTURE_SCROLL_UPDATE' AS is_first_scroll_update_in_scroll,
   chrome_event_latency.ts AS generation_ts,
+  chrome_android_input.input_reader_processing_end_ts,
+  chrome_android_input.input_dispatcher_processing_end_ts,
   -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
   touch_move_received_step.slice_id AS touch_move_received_slice_id,
   touch_move_received_step.ts AS touch_move_received_ts,
@@ -85,6 +87,11 @@ FROM chrome_scroll_update_refs AS refs
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 LEFT JOIN chrome_gesture_scroll_updates AS chrome_event_latency
   ON chrome_event_latency.scroll_update_id = refs.scroll_update_latency_id
+-- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
+LEFT JOIN chrome_dispatch_android_input_event_to_touch_move
+  ON refs.touch_move_latency_id = chrome_dispatch_android_input_event_to_touch_move.touch_move_latency_id
+LEFT JOIN chrome_android_input
+  ON chrome_android_input.android_input_id = chrome_dispatch_android_input_event_to_touch_move.android_input_id
 -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
 LEFT JOIN chrome_input_pipeline_steps AS touch_move_received_step
   ON refs.touch_move_latency_id = touch_move_received_step.latency_id
@@ -143,6 +150,12 @@ CREATE PERFETTO TABLE chrome_scroll_update_input_pipeline (
   is_first_scroll_update_in_frame BOOL,
   -- Input generation timestamp (from the Android system).
   generation_ts TIMESTAMP,
+  -- End timestamp for the InputReader step (see android_input.sql).
+  -- Only populated when atrace 'input' category is enabled.
+  input_reader_processing_end_ts TIMESTAMP,
+  -- End timestamp for the InputDispatcher step (see android_input.sql).
+  -- Only populated when atrace 'input' category is enabled.
+  input_dispatcher_processing_end_ts TIMESTAMP,
   -- Duration from input generation to when the browser received the input.
   generation_to_browser_main_dur DURATION,
   -- Utid for the browser main thread.
@@ -203,6 +216,8 @@ WITH
       touch_move_received_slice_id,
       -- Timestamps
       generation_ts,
+      input_reader_processing_end_ts,
+      input_dispatcher_processing_end_ts,
       touch_move_received_ts,
       -- TODO(b:385160424): this is a workaround for cases when
       -- generation time is later than the input time.
@@ -249,6 +264,8 @@ SELECT
   -- No applicable utid (duration between two threads).
   -- No applicable slice id (duration between two threads).
   generation_ts,
+  input_reader_processing_end_ts,
+  input_dispatcher_processing_end_ts,
   -- Flings don't have a touch move event so make GenerationToBrowserMain span
   -- all the way to the creation of the gesture scroll update.
   browser_main_received_ts - generation_ts AS generation_to_browser_main_dur,
@@ -651,6 +668,8 @@ GROUP BY
 CREATE PERFETTO TABLE chrome_scroll_update_info (
   -- Id of the `LatencyInfo.Flow` slices corresponding to this scroll event.
   id LONG,
+  -- Id of the scroll this scroll update belongs to.
+  scroll_id LONG,
   -- Id (`LatencyInfo.ID`) of the previous input in this scroll.
   previous_input_id LONG,
   -- Id (`display_trace_id`) of the aggregated frame which this scroll update
@@ -682,7 +701,13 @@ CREATE PERFETTO TABLE chrome_scroll_update_info (
   browser_uptime_dur DURATION,
   -- Input generation timestamp (from the Android system).
   generation_ts TIMESTAMP,
-  -- Duration from the generation timestamp fo the previous input to
+  -- Duration from the generation timestamp to the end of InputReader's work.
+  -- Only populated when atrace 'input' category is enabled.
+  input_reader_dur DURATION,
+  -- Duration of InputDispatcher's work.
+  -- Only populated when atrace 'input' category is enabled.
+  input_dispatcher_dur DURATION,
+  -- Duration from the generation timestamp for the previous input to
   -- this input's generation timestamp.
   since_previous_generation_dur DURATION,
   -- Duration from input generation to when the browser received the input.
@@ -797,6 +822,7 @@ CREATE PERFETTO TABLE chrome_scroll_update_info (
 ) AS
 SELECT
   input.id,
+  input.scroll_id,
   lag(input.id) OVER (PARTITION BY input.scroll_id ORDER BY input.generation_ts) AS previous_input_id,
   frame.display_trace_id AS frame_display_id,
   -- TODO(b:381062412): This is sometimes unexpectedly 0; check/fix this.
@@ -812,6 +838,8 @@ SELECT
   -- No applicable utid (duration between two threads).
   -- No applicable slice id (duration between two threads).
   input.generation_ts,
+  input.input_reader_processing_end_ts - generation_ts AS input_reader_dur,
+  input.input_dispatcher_processing_end_ts - input.input_reader_processing_end_ts AS input_dispatcher_dur,
   input.generation_ts - lag(input.generation_ts) OVER (PARTITION BY input.scroll_id ORDER BY input.generation_ts) AS since_previous_generation_dur,
   input.generation_to_browser_main_dur,
   -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
@@ -930,6 +958,8 @@ iif(
 CREATE PERFETTO TABLE chrome_scroll_frame_info (
   -- Id (frame's display_trace_id) for the given frame.
   id LONG,
+  -- Id of the scroll this scroll update belongs to.
+  scroll_id LONG,
   -- Id (LatencyInfo.ID) of the last input before this frame.
   last_input_before_this_frame_id LONG,
   -- Vsync interval (in milliseconds).
@@ -958,6 +988,12 @@ CREATE PERFETTO TABLE chrome_scroll_frame_info (
   browser_uptime_dur DURATION,
   -- Input generation timestamp (from the Android system) for the first input.
   first_input_generation_ts TIMESTAMP,
+  --  Duration from the generation timestamp to the end of InputReader's work.
+  -- Only populated when atrace 'input' category is enabled.
+  input_reader_dur DURATION,
+  -- Duration of InputDispatcher's work.
+  -- Only populated when atrace 'input' category is enabled.
+  input_dispatcher_dur DURATION,
   -- Duration from the previous input (last input that wasn't part of this frame)
   -- to the first input in this frame.
   previous_last_input_to_first_input_generation_dur DURATION,
@@ -1063,6 +1099,7 @@ CREATE PERFETTO TABLE chrome_scroll_frame_info (
 ) AS
 SELECT
   frame_display_id AS id,
+  info.scroll_id,
   previous_input_id AS last_input_before_this_frame_id,
   vsync_interval_ms,
   cast_int!(vsync_interval_ms * 1e6) AS vsync_interval_dur,
@@ -1081,6 +1118,8 @@ SELECT
   delta.delta_y AS presented_scrolled_delta_y,
   browser_uptime_dur,
   info.generation_ts AS first_input_generation_ts,
+  input_reader_dur,
+  input_dispatcher_dur,
   info.since_previous_generation_dur AS previous_last_input_to_first_input_generation_dur,
   info.browser_utid,
   info.generation_to_browser_main_dur AS first_input_generation_to_browser_main_dur,

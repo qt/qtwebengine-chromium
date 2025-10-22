@@ -139,6 +139,13 @@ enum Destination {
   // devices.
   DESKTOP_USAGE_LOGS = 36;
 
+  // |DESKTOP_INTERMEDIATE_STATUS_REPORT| is for holding a intermediate state of
+  // the desktop status report.
+  DESKTOP_INTERMEDIATE_STATUS_REPORT = 37;
+
+  // |DATA_LOST_ACTIVITY| is for reporting data lost activity.
+  DATA_LOST_ACTIVITY = 38;
+
   reserved 8;
 }
 

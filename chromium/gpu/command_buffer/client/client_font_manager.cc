@@ -2,20 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "gpu/command_buffer/client/client_font_manager.h"
 
 #include <bit>
 #include <type_traits>
 
 #include "base/bits.h"
+#include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 
 namespace gpu {
 namespace raster {
@@ -39,8 +34,8 @@ class Serializer {
     if (bytes == 0)
       return;
 
-    memcpy(memory_, input, bytes);
-    memory_ += bytes;
+    UNSAFE_TODO(memcpy(memory_, input, bytes));
+    UNSAFE_TODO(memory_ += bytes);
     bytes_written_ += bytes;
   }
 
@@ -53,7 +48,7 @@ class Serializer {
     size_t padding = base::bits::AlignUp(memory, alignment) - memory;
     DCHECK_LE(bytes_written_ + size + padding, memory_size_);
 
-    memory_ += padding;
+    UNSAFE_TODO(memory_ += padding);
     bytes_written_ += padding;
   }
 
@@ -167,7 +162,7 @@ void ClientFontManager::Serialize() {
   for (SkDiscardableHandleId handle_id = last_serialized_handle_id_ + 1;
        handle_id <= last_allocated_handle_id_; handle_id++) {
     auto it = discardable_handle_map_.find(handle_id);
-    CHECK(it != discardable_handle_map_.end(), base::NotFatalUntil::M130);
+    CHECK(it != discardable_handle_map_.end());
 
     // We must have a valid |client_handle| here since all new handles are
     // currently in locked state.

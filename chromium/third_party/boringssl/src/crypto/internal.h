@@ -18,7 +18,6 @@
 #include <openssl/crypto.h>
 #include <openssl/ex_data.h>
 #include <openssl/stack.h>
-#include <openssl/thread.h>
 
 #include <assert.h>
 #include <stdlib.h>
@@ -49,6 +48,10 @@
 
 #if defined(OPENSSL_WINDOWS_THREADS)
 #include <windows.h>
+#endif
+
+#if defined(_M_X64) || defined(_M_IX86)
+#include "intrin.h"
 #endif
 
 #if defined(__cplusplus)
@@ -102,12 +105,6 @@ typedef __uint128_t uint128_t;
 #endif
 
 #define OPENSSL_ARRAY_SIZE(array) (sizeof(array) / sizeof((array)[0]))
-
-#if defined(__clang__) && __clang_major__ >= 5
-#if __has_attribute(fallthrough)
-#define OPENSSL_CAN_USE_ATTR_FALLTHROUGH
-#endif
-#endif
 
 // GCC-like compilers indicate SSE2 with |__SSE2__|. MSVC leaves the caller to
 // know that x86_64 has SSE2, and uses _M_IX86_FP to indicate SSE2 on x86.
@@ -534,7 +531,7 @@ OPENSSL_EXPORT void CRYPTO_once(CRYPTO_once_t *once, void (*init)(void));
 
 using CRYPTO_atomic_u32 = std::atomic<uint32_t>;
 
-static_assert(sizeof(CRYPTO_atomic_u32) == sizeof(uint32_t), "");
+static_assert(sizeof(CRYPTO_atomic_u32) == sizeof(uint32_t));
 
 inline uint32_t CRYPTO_atomic_load_u32(const CRYPTO_atomic_u32 *val) {
   return val->load(std::memory_order_seq_cst);
@@ -585,6 +582,8 @@ static_assert(alignof(CRYPTO_atomic_u32) == alignof(uint32_t),
 
 // CRYPTO_REFCOUNT_MAX is the value at which the reference count saturates.
 #define CRYPTO_REFCOUNT_MAX 0xffffffff
+
+using CRYPTO_refcount_t = CRYPTO_atomic_u32;
 
 // CRYPTO_refcount_inc atomically increments the value at |*count| unless the
 // value would overflow. It's safe for multiple threads to concurrently call
@@ -720,6 +719,10 @@ OPENSSL_EXPORT int CRYPTO_set_thread_local(
 
 // ex_data
 
+struct crypto_ex_data_st {
+  STACK_OF(void) *sk;
+} /* CRYPTO_EX_DATA */;
+
 typedef struct crypto_ex_data_func_st CRYPTO_EX_DATA_FUNCS;
 
 // CRYPTO_EX_DATA_CLASS tracks the ex_indices registered for a type which
@@ -761,10 +764,9 @@ OPENSSL_EXPORT void *CRYPTO_get_ex_data(const CRYPTO_EX_DATA *ad, int index);
 // CRYPTO_new_ex_data initialises a newly allocated |CRYPTO_EX_DATA|.
 OPENSSL_EXPORT void CRYPTO_new_ex_data(CRYPTO_EX_DATA *ad);
 
-// CRYPTO_free_ex_data frees |ad|, which is embedded inside |obj|, which is an
-// object of the given class.
+// CRYPTO_free_ex_data frees |ad|, which is an object of the given class.
 OPENSSL_EXPORT void CRYPTO_free_ex_data(CRYPTO_EX_DATA_CLASS *ex_data_class,
-                                        void *obj, CRYPTO_EX_DATA *ad);
+                                        CRYPTO_EX_DATA *ad);
 
 
 // Endianness conversions.
@@ -887,6 +889,16 @@ static inline void *OPENSSL_memset(void *dst, int c, size_t n) {
 // The following functions load and store sized integers with the specified
 // endianness. They use |memcpy|, and so avoid alignment or strict aliasing
 // requirements on the input and output pointers.
+
+static inline uint16_t CRYPTO_load_u16_le(const void *in) {
+  uint16_t v;
+  OPENSSL_memcpy(&v, in, sizeof(v));
+  return v;
+}
+
+static inline void CRYPTO_store_u16_le(void *out, uint16_t v) {
+  OPENSSL_memcpy(out, &v, sizeof(v));
+}
 
 static inline uint16_t CRYPTO_load_u16_be(const void *in) {
   uint16_t v;
@@ -1112,6 +1124,11 @@ extern uint32_t OPENSSL_ia32cap_P[4];
 // calls can be merged by the compiler, at least when indices match.
 OPENSSL_ATTR_CONST uint32_t OPENSSL_get_ia32cap(int idx);
 
+// OPENSSL_adjust_ia32cap adjusts |cap|, which should contain
+// |OPENSSL_ia32cap_P|, based on the environment variable value in |env|. This
+// function is exposed for unit tests.
+void OPENSSL_adjust_ia32cap(uint32_t cap[4], const char *env);
+
 // See Intel manual, volume 2A, table 3-11.
 
 inline int CRYPTO_is_intel_cpu(void) {
@@ -1308,6 +1325,10 @@ inline int CRYPTO_is_VPCLMULQDQ_capable(void) {
 // ARMV8_SHA512 indicates support for hardware SHA-512 instructions.
 #define ARMV8_SHA512 (1 << 6)
 
+#if defined(OPENSSL_STATIC_ARMCAP)
+// We assume |CRYPTO_is_*_capable| already checked static capabilities.
+inline uint32_t OPENSSL_get_armcap(void) { return 0; }
+#else
 // OPENSSL_armcap_P contains ARM CPU capabilities as a bitmask of the above
 // constants. This should only be accessed with |OPENSSL_get_armcap|.
 extern uint32_t OPENSSL_armcap_P;
@@ -1316,6 +1337,7 @@ extern uint32_t OPENSSL_armcap_P;
 // capabilities. It is marked as a const function so duplicate calls can be
 // merged by the compiler.
 OPENSSL_ATTR_CONST uint32_t OPENSSL_get_armcap(void);
+#endif  // OPENSSL_STATIC_ARMCAP
 
 // Normalize some older feature flags to their modern ACLE values.
 // https://developer.arm.com/architectures/system-architectures/software-standards/acle
@@ -1334,10 +1356,9 @@ OPENSSL_ATTR_CONST uint32_t OPENSSL_get_armcap(void);
 // CRYPTO_is_NEON_capable returns true if the current CPU has a NEON unit. If
 // this is known statically, it is a constant inline function.
 inline int CRYPTO_is_NEON_capable(void) {
-#if defined(OPENSSL_STATIC_ARMCAP_NEON) || defined(__ARM_NEON)
+#if (defined(OPENSSL_STATIC_ARMCAP_NEON) || defined(__ARM_NEON)) && \
+    !defined(OPENSSL_NO_STATIC_NEON_FOR_TESTING)
   return 1;
-#elif defined(OPENSSL_STATIC_ARMCAP)
-  return 0;
 #else
   return (OPENSSL_get_armcap() & ARMV7_NEON) != 0;
 #endif
@@ -1346,8 +1367,6 @@ inline int CRYPTO_is_NEON_capable(void) {
 inline int CRYPTO_is_ARMv8_AES_capable(void) {
 #if defined(OPENSSL_STATIC_ARMCAP_AES) || defined(__ARM_FEATURE_AES)
   return 1;
-#elif defined(OPENSSL_STATIC_ARMCAP)
-  return 0;
 #else
   return (OPENSSL_get_armcap() & ARMV8_AES) != 0;
 #endif
@@ -1356,8 +1375,6 @@ inline int CRYPTO_is_ARMv8_AES_capable(void) {
 inline int CRYPTO_is_ARMv8_PMULL_capable(void) {
 #if defined(OPENSSL_STATIC_ARMCAP_PMULL) || defined(__ARM_FEATURE_AES)
   return 1;
-#elif defined(OPENSSL_STATIC_ARMCAP)
-  return 0;
 #else
   return (OPENSSL_get_armcap() & ARMV8_PMULL) != 0;
 #endif
@@ -1368,8 +1385,6 @@ inline int CRYPTO_is_ARMv8_SHA1_capable(void) {
   // are dealt with independently.
 #if defined(OPENSSL_STATIC_ARMCAP_SHA1) || defined(__ARM_FEATURE_SHA2)
   return 1;
-#elif defined(OPENSSL_STATIC_ARMCAP)
-  return 0;
 #else
   return (OPENSSL_get_armcap() & ARMV8_SHA1) != 0;
 #endif
@@ -1380,8 +1395,6 @@ inline int CRYPTO_is_ARMv8_SHA256_capable(void) {
   // are dealt with independently.
 #if defined(OPENSSL_STATIC_ARMCAP_SHA256) || defined(__ARM_FEATURE_SHA2)
   return 1;
-#elif defined(OPENSSL_STATIC_ARMCAP)
-  return 0;
 #else
   return (OPENSSL_get_armcap() & ARMV8_SHA256) != 0;
 #endif
@@ -1391,8 +1404,6 @@ inline int CRYPTO_is_ARMv8_SHA512_capable(void) {
   // There is no |OPENSSL_STATIC_ARMCAP_SHA512|.
 #if defined(__ARM_FEATURE_SHA512)
   return 1;
-#elif defined(OPENSSL_STATIC_ARMCAP)
-  return 0;
 #else
   return (OPENSSL_get_armcap() & ARMV8_SHA512) != 0;
 #endif
@@ -1447,6 +1458,9 @@ inline int CRYPTO_fuzzer_mode_enabled(void) { return 0; }
 
 // CRYPTO_addc_* returns |x + y + carry|, and sets |*out_carry| to the carry
 // bit. |carry| must be zero or one.
+
+// NOTE: Unoptimized GCC builds may compile these builtins to non-constant-time
+// code. For correct constant-time behavior, ensure builds are optimized.
 #if OPENSSL_HAS_BUILTIN(__builtin_addc)
 
 inline unsigned int CRYPTO_addc_impl(unsigned int x, unsigned int y,
@@ -1483,16 +1497,26 @@ inline uint64_t CRYPTO_addc_u64(uint64_t x, uint64_t y, uint64_t carry,
 static inline uint32_t CRYPTO_addc_u32(uint32_t x, uint32_t y, uint32_t carry,
                                        uint32_t *out_carry) {
   declassify_assert(carry <= 1);
+#if defined(_M_IX86)
+  uint32_t sum = 0;
+  *out_carry = _addcarry_u32(carry, x, y, &sum);
+  return sum;
+#else
   uint64_t ret = carry;
   ret += (uint64_t)x + y;
   *out_carry = (uint32_t)(ret >> 32);
   return (uint32_t)ret;
+#endif
 }
 
 static inline uint64_t CRYPTO_addc_u64(uint64_t x, uint64_t y, uint64_t carry,
                                        uint64_t *out_carry) {
   declassify_assert(carry <= 1);
-#if defined(BORINGSSL_HAS_UINT128)
+#if defined(_M_X64)
+  uint64_t sum = 0;
+  *out_carry = _addcarry_u64(carry, x, y, &sum);
+  return sum;
+#elif defined(BORINGSSL_HAS_UINT128)
   uint128_t ret = carry;
   ret += (uint128_t)x + y;
   *out_carry = (uint64_t)(ret >> 64);
@@ -1547,17 +1571,29 @@ inline uint64_t CRYPTO_subc_u64(uint64_t x, uint64_t y, uint64_t borrow,
 static inline uint32_t CRYPTO_subc_u32(uint32_t x, uint32_t y, uint32_t borrow,
                                        uint32_t *out_borrow) {
   declassify_assert(borrow <= 1);
+#if defined(_M_IX86)
+  uint32_t diff = 0;
+  *out_borrow = _subborrow_u32(borrow, x, y, &diff);
+  return diff;
+#else
   uint32_t ret = x - y - borrow;
   *out_borrow = (x < y) | ((x == y) & borrow);
   return ret;
+#endif
 }
 
 static inline uint64_t CRYPTO_subc_u64(uint64_t x, uint64_t y, uint64_t borrow,
                                        uint64_t *out_borrow) {
   declassify_assert(borrow <= 1);
+#if defined(_M_X64)
+  uint64_t diff = 0;
+  *out_borrow = _subborrow_u64(borrow, x, y, &diff);
+  return diff;
+#else
   uint64_t ret = x - y - borrow;
   *out_borrow = (x < y) | ((x == y) & borrow);
   return ret;
+#endif
 }
 #endif
 

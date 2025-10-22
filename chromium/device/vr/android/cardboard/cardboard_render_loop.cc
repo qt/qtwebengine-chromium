@@ -5,9 +5,11 @@
 #include "device/vr/android/cardboard/cardboard_render_loop.h"
 
 #include <time.h>
+
 #include <memory>
 
 #include "base/task/bind_post_task.h"
+#include "base/trace_event/trace_event.h"
 #include "device/vr/android/cardboard/cardboard_image_transport.h"
 #include "device/vr/android/cardboard/cardboard_sdk.h"
 #include "device/vr/public/mojom/isolated_xr_service.mojom.h"
@@ -126,12 +128,14 @@ void CardboardRenderLoop::CreateSession(
       gfx::Rect(texture_size_.width() / 2, 0, texture_size_.width() / 2,
                 texture_size_.height());
 
-  left_eye_->mojo_from_view = gfx::Transform();
-  left_eye_->field_of_view =
+  left_eye_->geometry = mojom::XRViewGeometry::New();
+  left_eye_->geometry->mojo_from_view = gfx::Transform();
+  left_eye_->geometry->field_of_view =
       cardboard_image_transport_->GetFOV(CardboardEye::kLeft);
 
-  right_eye_->mojo_from_view = gfx::Transform();
-  right_eye_->field_of_view =
+  right_eye_->geometry = mojom::XRViewGeometry::New();
+  right_eye_->geometry->mojo_from_view = gfx::Transform();
+  right_eye_->geometry->field_of_view =
       cardboard_image_transport_->GetFOV(CardboardEye::kRight);
 
   head_tracker_ = internal::ScopedCardboardObject<CardboardHeadTracker*>(
@@ -376,9 +380,9 @@ void CardboardRenderLoop::GetFrameData(
   frame_data->render_info->mojo_from_viewer = std::move(pose);
 
   // Get the view transform for each eye
-  left_eye_->mojo_from_view =
+  left_eye_->geometry->mojo_from_view =
       cardboard_image_transport_->GetMojoFromView(kLeft, mojo_from_viewer);
-  right_eye_->mojo_from_view =
+  right_eye_->geometry->mojo_from_view =
       cardboard_image_transport_->GetMojoFromView(kRight, mojo_from_viewer);
 
   frame_data->render_info->views.push_back(left_eye_.Clone());

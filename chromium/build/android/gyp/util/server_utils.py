@@ -24,6 +24,7 @@ QUERY_BUILD = 'query_build'
 POLL_HEARTBEAT = 'poll_heartbeat'
 REGISTER_BUILDER = 'register_builder'
 CANCEL_BUILD = 'cancel_build'
+STOP_SERVER = 'stop_server'
 
 SERVER_SCRIPT = pathlib.Path(
     build_utils.DIR_SOURCE_ROOT
@@ -51,7 +52,8 @@ def MaybeRunCommand(name, argv, stamp_file, use_build_server=False):
   build_id = os.environ.get('AUTONINJA_BUILD_ID')
   if not build_id:
     raise Exception(
-        'AUTONINJA_BUILD_ID is not set. Should have been set by autoninja.')
+        'AUTONINJA_BUILD_ID is not set. android_static_analysis = build_server '
+        'requires autoninja integration.')
   stdout_name = os.environ.get('AUTONINJA_STDOUT_NAME')
   # If we get a bad tty (happens when autoninja is not run from the terminal
   # directly but as part of another script), ignore the build server and build
@@ -68,7 +70,9 @@ def MaybeRunCommand(name, argv, stamp_file, use_build_server=False):
       if e.errno == 111:
         raise RuntimeError(
             '\n\nBuild server is not running and '
-            'android_static_analysis="build_server" is set.\n\n') from None
+            'android_static_analysis="build_server" is set. Look at '
+            'buildserver.log.0 in your output directory to see why the server '
+            'crashed.\n\n') from None
       raise e
 
     SendMessage(

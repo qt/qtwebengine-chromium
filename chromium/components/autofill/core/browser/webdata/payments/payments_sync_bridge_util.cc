@@ -9,7 +9,6 @@
 
 #include "base/base64.h"
 #include "base/check.h"
-#include "base/functional/overloaded.h"
 #include "base/pickle.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
@@ -25,12 +24,15 @@
 #include "components/autofill/core/browser/data_model/payments/iban.h"
 #include "components/autofill/core/browser/data_model/payments/payment_instrument.h"
 #include "components/autofill/core/browser/data_quality/autofill_data_util.h"
+#include "components/autofill/core/browser/payments/constants.h"
 #include "components/autofill/core/browser/payments/payments_customer_data.h"
 #include "components/autofill/core/browser/webdata/payments/payments_autofill_table.h"
+#include "components/autofill/core/browser/webdata/payments/server_cvc.h"
 #include "components/autofill/core/common/autofill_payments_features.h"
 #include "components/autofill/core/common/autofill_util.h"
 #include "components/autofill/core/common/credit_card_network_identifiers.h"
 #include "components/sync/protocol/entity_data.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 
 using ::autofill::data_util::TruncateUTF8;
 using ::sync_pb::AutofillWalletSpecifics;
@@ -52,8 +54,7 @@ sync_pb::WalletMaskedCreditCard::WalletCardType WalletCardTypeFromCardNetwork(
     return sync_pb::WalletMaskedCreditCard::MASTER_CARD;
   if (network == kUnionPay)
     return sync_pb::WalletMaskedCreditCard::UNIONPAY;
-  if (network == kVerveCard &&
-      base::FeatureList::IsEnabled(features::kAutofillEnableVerveCardSupport)) {
+  if (network == kVerveCard) {
     return sync_pb::WalletMaskedCreditCard::VERVE;
   }
   if (network == kVisaCard)
@@ -79,11 +80,7 @@ const char* CardNetworkFromWalletCardType(
     case sync_pb::WalletMaskedCreditCard::UNIONPAY:
       return kUnionPay;
     case sync_pb::WalletMaskedCreditCard::VERVE:
-      if (base::FeatureList::IsEnabled(
-              features::kAutofillEnableVerveCardSupport)) {
-        return kVerveCard;
-      }
-      return kGenericCard;
+      return kVerveCard;
     case sync_pb::WalletMaskedCreditCard::VISA:
       return kVisaCard;
 
@@ -366,6 +363,26 @@ CreditCard CardFromSpecifics(const sync_pb::WalletMaskedCreditCard& card) {
   }
   result.set_card_info_retrieval_enrollment_state(enrollment_state);
 
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableCardBenefitsSourceSync)) {
+    std::string benefit_source;
+    switch (card.card_benefit_source()) {
+      case sync_pb::WalletMaskedCreditCard::SOURCE_UNKNOWN:
+        benefit_source = "";
+        break;
+      case sync_pb::WalletMaskedCreditCard::SOURCE_AMEX:
+        benefit_source = std::string(kAmexCardBenefitSource);
+        break;
+      case sync_pb::WalletMaskedCreditCard::SOURCE_BMO:
+        benefit_source = std::string(kBmoCardBenefitSource);
+        break;
+      case sync_pb::WalletMaskedCreditCard::SOURCE_CURINOS:
+        benefit_source = std::string(kCurinosCardBenefitSource);
+        break;
+    }
+    result.set_benefit_source(benefit_source);
+  }
+
   return result;
 }
 
@@ -588,6 +605,20 @@ void SetAutofillWalletSpecificsFromServerCard(
       break;
   }
   wallet_card->set_card_info_retrieval_enrollment_state(enrollment_state);
+
+  if (base::FeatureList::IsEnabled(
+          features::kAutofillEnableCardBenefitsSourceSync)) {
+    sync_pb::WalletMaskedCreditCard::CardBenefitSource benefit_source =
+        sync_pb::WalletMaskedCreditCard::SOURCE_UNKNOWN;
+    if (card.benefit_source() == kAmexCardBenefitSource) {
+      benefit_source = sync_pb::WalletMaskedCreditCard::SOURCE_AMEX;
+    } else if (card.benefit_source() == kBmoCardBenefitSource) {
+      benefit_source = sync_pb::WalletMaskedCreditCard::SOURCE_BMO;
+    } else if (card.benefit_source() == kCurinosCardBenefitSource) {
+      benefit_source = sync_pb::WalletMaskedCreditCard::SOURCE_CURINOS;
+    }
+    wallet_card->set_card_benefit_source(benefit_source);
+  }
 }
 
 void SetAutofillWalletSpecificsFromPaymentsCustomerData(
@@ -667,7 +698,7 @@ void SetAutofillWalletSpecificsFromCardBenefit(
         benefit_base.expiry_time().InMillisecondsSinceUnixEpoch());
   }
   std::visit(
-      base::Overloaded{
+      absl::Overload{
           [&wallet_benefit](const CreditCardFlatRateBenefit&) {
             wallet_benefit->mutable_flat_rate_benefit();
           },

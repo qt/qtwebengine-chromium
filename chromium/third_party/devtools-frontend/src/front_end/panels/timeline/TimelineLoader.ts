@@ -11,6 +11,7 @@ import type * as Protocol from '../../generated/protocol.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as Trace from '../../models/trace/trace.js';
 
+import * as RecordingMetadata from './RecordingMetadata.js';
 import type {Client} from './TimelineController.js';
 
 const UIStrings = {
@@ -75,10 +76,36 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     return loader;
   }
 
+  static loadFromParsedJsonFile(contents: ParsedJSONFile, client: Client): TimelineLoader {
+    const loader = new TimelineLoader(client);
+
+    window.setTimeout(async () => {
+      client.loadingStarted();
+      try {
+        loader.#processParsedFile(contents);
+        await loader.close();
+      } catch (e: unknown) {
+        await loader.close();
+        const message = e instanceof Error ? e.message : '';
+        return loader.reportErrorAndCancelLoading(i18nString(UIStrings.malformedTimelineDataS, {PH1: message}));
+      }
+    });
+
+    return loader;
+  }
+
   static loadFromEvents(events: Trace.Types.Events.Event[], client: Client): TimelineLoader {
     const loader = new TimelineLoader(client);
     window.setTimeout(async () => {
-      void loader.addEvents(events);
+      void loader.addEvents(events, null);
+    });
+    return loader;
+  }
+
+  static loadFromTraceFile(traceFile: Trace.Types.File.TraceFile, client: Client): TimelineLoader {
+    const loader = new TimelineLoader(client);
+    window.setTimeout(async () => {
+      void loader.addEvents(traceFile.traceEvents, traceFile.metadata);
     });
     return loader;
   }
@@ -92,7 +119,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
           profile, Trace.Types.Events.ThreadID(1));
 
       window.setTimeout(async () => {
-        void loader.addEvents(contents.traceEvents);
+        void loader.addEvents(contents.traceEvents, null);
       });
     } catch (e) {
       console.error(e.stack);
@@ -110,7 +137,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     Host.ResourceLoader.loadAsStream(url, null, stream, finishedCallback, allowRemoteFilePaths);
 
     async function finishedCallback(
-        success: boolean, _headers: {[x: string]: string},
+        success: boolean, _headers: Record<string, string>,
         errorDescription: Host.ResourceLoader.LoadErrorDescription): Promise<void> {
       if (!success) {
         return loader.reportErrorAndCancelLoading(errorDescription.message);
@@ -166,7 +193,9 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
     }
   }
 
-  async addEvents(events: readonly Trace.Types.Events.Event[]): Promise<void> {
+  async addEvents(events: readonly Trace.Types.Events.Event[], metadata: Trace.Types.File.MetaData|null):
+      Promise<void> {
+    this.#metadata = metadata;
     this.client?.loadingStarted();
     /**
      * See the `eventsPerChunk` comment in `models/trace/types/Configuration.ts`.
@@ -248,7 +277,7 @@ export class TimelineLoader implements Common.StringOutputStream.OutputStream {
 
   private async finalizeTrace(): Promise<void> {
     if (!this.#metadata && this.#traceIsCPUProfile) {
-      this.#metadata = {dataOrigin: Trace.Types.File.DataOrigin.CPU_PROFILE};
+      this.#metadata = RecordingMetadata.forCPUProfile();
     }
 
     await (this.client as Client).loadingComplete(this.#collectedEvents, this.filter, this.#metadata);

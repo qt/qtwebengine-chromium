@@ -31,6 +31,7 @@
 #include "absl/time/time.h"
 #include "./common/temp_dir.h"
 #include "./e2e_tests/test_binary_util.h"
+#include "./fuzztest/internal/escaping.h"
 #include "./fuzztest/internal/io.h"
 #include "./fuzztest/internal/logging.h"
 #include "./fuzztest/internal/subprocess.h"
@@ -38,6 +39,7 @@
 namespace fuzztest::internal {
 namespace {
 
+using ::testing::Contains;
 using ::testing::ContainsRegex;
 using ::testing::Eq;
 using ::testing::HasSubstr;
@@ -57,8 +59,9 @@ absl::StatusOr<std::string> FindFile(absl::string_view root_path,
 }
 
 enum class ExecutionModelParam {
-  kSingleBinary,
-  kWithCentipedeBinary,
+  kTestBinary,
+  kTestBinaryInvokingCentipedeBinary,
+  kCentipedeBinary
 };
 
 struct UpdateCorpusDatabaseRun {
@@ -99,9 +102,9 @@ class UpdateCorpusDatabaseTest
 
   static void TearDownTestSuite() { run_map_->clear(); }
 
-  static std::string GetCorpusDatabasePath() {
+  static std::string UpdateCorpusDatabaseAndGetPath() {
     RunUpdateCorpusDatabase();
-    return (*run_map_)[GetParam()].workspace->path() / "corpus_database";
+    return GetCorpusDatabasePath();
   }
 
   static absl::string_view GetUpdateCorpusDatabaseStdErr() {
@@ -110,11 +113,20 @@ class UpdateCorpusDatabaseTest
   }
 
   static RunResults RunBinaryMaybeWithCentipede(absl::string_view binary_path,
-                                                const RunOptions &options) {
+                                                RunOptions options) {
+    // Dumping stack trace in gtest would slow down the execution, causing
+    // test flakiness.
+    options.flags[GTEST_FLAG_PREFIX_ "stack_trace_depth"] = "0";
     switch (GetParam()) {
-      case ExecutionModelParam::kSingleBinary:
+      case ExecutionModelParam::kTestBinary:
         return RunBinary(binary_path, options);
-      case ExecutionModelParam::kWithCentipedeBinary: {
+      case ExecutionModelParam::kTestBinaryInvokingCentipedeBinary: {
+        RunOptions centipede_options = options;
+        centipede_options.fuzztest_flags["internal_centipede_command"] =
+            ShellEscape(CentipedePath());
+        return RunBinary(binary_path, centipede_options);
+      }
+      case ExecutionModelParam::kCentipedeBinary: {
         RunOptions centipede_options;
         centipede_options.env = options.env;
         centipede_options.timeout = options.timeout;
@@ -138,6 +150,10 @@ class UpdateCorpusDatabaseTest
   }
 
  private:
+  static std::string GetCorpusDatabasePath() {
+    return (*run_map_)[GetParam()].workspace->path() / "corpus_database";
+  }
+
   static absl::NoDestructor<
       absl::flat_hash_map<ExecutionModelParam, UpdateCorpusDatabaseRun>>
       run_map_;
@@ -173,7 +189,27 @@ TEST_P(UpdateCorpusDatabaseTest, FindsAllCrashes) {
       << std_err;
 }
 
-TEST_P(UpdateCorpusDatabaseTest, ResumedFuzzTestRunsForRemainingTime) {
+TEST_P(UpdateCorpusDatabaseTest, DeduplicatesCrashes) {
+  EXPECT_THAT(
+      ListDirectoryRecursively(UpdateCorpusDatabaseAndGetPath()),
+      Contains(HasSubstr("FuzzTest.FailsInTwoWays/crashing/")).Times(2));
+}
+
+TEST_P(UpdateCorpusDatabaseTest, ReportsCrashSummary) {
+  EXPECT_THAT(GetUpdateCorpusDatabaseStdErr(),
+              AllOf(ContainsRegex(
+                        R"re((?s)=== Summary of detected crashes ===
+.*?Fuzz test    : FuzzTest.FailsInTwoWays
+.*?Total crashes: 2
+.*?=== End of summary of detected crashes ===)re"),
+                    ContainsRegex(
+                        R"re((?s)=== Summary of detected crashes ===
+.*?Fuzz test    : FuzzTest.FailsWithStackOverflow
+.*?Total crashes: 1
+.*?=== End of summary of detected crashes ===)re")));
+}
+
+TEST_P(UpdateCorpusDatabaseTest, StartsNewFuzzTestRunsWithoutExecutionIds) {
   TempDir corpus_database;
 
   // 1st run that gets interrupted.
@@ -186,13 +222,15 @@ TEST_P(UpdateCorpusDatabaseTest, ResumedFuzzTestRunsForRemainingTime) {
   auto [fst_status, fst_std_out, fst_std_err] = RunBinaryMaybeWithCentipede(
       GetCorpusDatabaseTestingBinaryPath(), fst_run_options);
 
+  EXPECT_THAT(fst_std_err, HasSubstr("Fuzzing FuzzTest.FailsInTwoWays for 5m"));
+
   // Adjust the fuzzing time so that only 1s remains.
   const absl::StatusOr<std::string> fuzzing_time_file =
       FindFile(corpus_database.path().c_str(), "fuzzing_time");
   ASSERT_TRUE(fuzzing_time_file.ok()) << fst_std_err;
   ASSERT_TRUE(WriteFile(*fuzzing_time_file, "299s"));
 
-  // 2nd run that resumes the fuzzing.
+  // 2nd run that does not resume due to no execution ID.
   RunOptions snd_run_options;
   snd_run_options.fuzztest_flags = {
       {"corpus_database", corpus_database.path()},
@@ -202,11 +240,7 @@ TEST_P(UpdateCorpusDatabaseTest, ResumedFuzzTestRunsForRemainingTime) {
   auto [snd_status, snd_std_out, snd_std_err] = RunBinaryMaybeWithCentipede(
       GetCorpusDatabaseTestingBinaryPath(), snd_run_options);
 
-  EXPECT_THAT(
-      snd_std_err,
-      // The resumed fuzz test is the first one defined in the binary.
-      AllOf(HasSubstr("Resuming from the fuzz test FuzzTest.FailsInTwoWays"),
-            HasSubstr("Fuzzing FuzzTest.FailsInTwoWays for 1s")));
+  EXPECT_THAT(snd_std_err, HasSubstr("Fuzzing FuzzTest.FailsInTwoWays for 5m"));
 }
 
 TEST_P(UpdateCorpusDatabaseTest,
@@ -220,7 +254,7 @@ TEST_P(UpdateCorpusDatabaseTest,
       {"fuzz_for", "300s"},
       {"execution_id", "some_execution_id"},
   };
-  fst_run_options.timeout = absl::Seconds(10);
+  fst_run_options.timeout = absl::Seconds(20);
   auto [fst_status_unused, fst_std_out_unused, fst_std_err] =
       RunBinaryMaybeWithCentipede(GetCorpusDatabaseTestingBinaryPath(),
                                   fst_run_options);
@@ -238,7 +272,7 @@ TEST_P(UpdateCorpusDatabaseTest,
       {"fuzz_for", "300s"},
       {"execution_id", "some_execution_id"},
   };
-  snd_run_options.timeout = absl::Seconds(10);
+  snd_run_options.timeout = absl::Seconds(20);
   auto [snd_status_unused, snd_std_out_unused, snd_std_err] =
       RunBinaryMaybeWithCentipede(GetCorpusDatabaseTestingBinaryPath(),
                                   snd_run_options);
@@ -259,7 +293,7 @@ TEST_P(UpdateCorpusDatabaseTest,
       {"fuzz_for", "300s"},
       {"execution_id", "some_execution_id"},
   };
-  thd_run_options.timeout = absl::Seconds(10);
+  thd_run_options.timeout = absl::Seconds(20);
   auto [thd_status_unused, thd_std_out_unused, thd_std_err] =
       RunBinaryMaybeWithCentipede(GetCorpusDatabaseTestingBinaryPath(),
                                   thd_run_options);
@@ -322,9 +356,10 @@ TEST_P(UpdateCorpusDatabaseTest,
 
 TEST_P(UpdateCorpusDatabaseTest, ReplaysFuzzTestsInParallel) {
   RunOptions run_options;
-  run_options.fuzztest_flags = {{"corpus_database", GetCorpusDatabasePath()},
-                                {"replay_corpus_for", "inf"},
-                                {"jobs", "2"}};
+  run_options.fuzztest_flags = {
+      {"corpus_database", UpdateCorpusDatabaseAndGetPath()},
+      {"replay_corpus_for", "inf"},
+      {"jobs", "2"}};
   run_options.timeout = absl::Seconds(30);
   auto [status, std_out, std_err] = RunBinaryMaybeWithCentipede(
       GetCorpusDatabaseTestingBinaryPath(), run_options);
@@ -338,10 +373,11 @@ TEST_P(UpdateCorpusDatabaseTest, ReplaysFuzzTestsInParallel) {
 
 TEST_P(UpdateCorpusDatabaseTest, PrintsErrorsWhenBazelTimeoutIsNotEnough) {
   RunOptions run_options;
-  run_options.fuzztest_flags = {{"corpus_database", GetCorpusDatabasePath()},
-                                {"fuzz_for", "20s"}};
+  run_options.fuzztest_flags = {
+      {"corpus_database", UpdateCorpusDatabaseAndGetPath()},
+      {"fuzz_for", "20s"}};
   run_options.env = {{"TEST_TIMEOUT", "30"}};
-  run_options.timeout = absl::Seconds(40);
+  run_options.timeout = absl::Seconds(60);
   auto [status, std_out, std_err] = RunBinaryMaybeWithCentipede(
       GetCorpusDatabaseTestingBinaryPath(), run_options);
   EXPECT_THAT(std_err, AllOf(HasSubstr("Fuzzing FuzzTest.FailsInTwoWays"),
@@ -352,8 +388,9 @@ TEST_P(UpdateCorpusDatabaseTest, PrintsErrorsWhenBazelTimeoutIsNotEnough) {
 
 INSTANTIATE_TEST_SUITE_P(
     UpdateCorpusDatabaseTestWithExecutionModel, UpdateCorpusDatabaseTest,
-    testing::ValuesIn({ExecutionModelParam::kSingleBinary,
-                       ExecutionModelParam::kWithCentipedeBinary}));
+    testing::ValuesIn({ExecutionModelParam::kTestBinary,
+                       ExecutionModelParam::kTestBinaryInvokingCentipedeBinary,
+                       ExecutionModelParam::kCentipedeBinary}));
 
 }  // namespace
 }  // namespace fuzztest::internal

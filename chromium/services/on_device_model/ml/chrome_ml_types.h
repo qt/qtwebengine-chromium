@@ -10,9 +10,13 @@
 #include <vector>
 
 #include "services/on_device_model/ml/chrome_ml_audio_buffer.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+
+class SkBitmap;
 
 namespace ml {
+
+inline constexpr uint32_t kMinTopK = 1;
+inline constexpr float kMinTemperature = 0.0f;
 
 enum class Token {
   // Prefix for system text.

@@ -51,12 +51,8 @@ class AX_BASE_EXPORT AXTreeID {
   ax::mojom::AXTreeIDType type() const { return type_; }
   const std::optional<base::UnguessableToken>& token() const { return token_; }
 
-  bool operator==(const AXTreeID& rhs) const;
-  bool operator!=(const AXTreeID& rhs) const;
-  bool operator<(const AXTreeID& rhs) const;
-  bool operator<=(const AXTreeID& rhs) const;
-  bool operator>(const AXTreeID& rhs) const;
-  bool operator>=(const AXTreeID& rhs) const;
+  friend bool operator==(const AXTreeID&, const AXTreeID&) = default;
+  friend auto operator<=>(const AXTreeID&, const AXTreeID&) = default;
 
  private:
   explicit AXTreeID(ax::mojom::AXTreeIDType type);
@@ -70,7 +66,7 @@ class AX_BASE_EXPORT AXTreeID {
   std::optional<base::UnguessableToken> token_ = std::nullopt;
 };
 
-// For use in std::unordered_map.
+// Creates a hash of the AXTreeID for use in hash maps.
 struct AX_BASE_EXPORT AXTreeIDHash {
   size_t operator()(const AXTreeID& tree_id) const;
 };

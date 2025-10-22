@@ -19,17 +19,6 @@
 namespace sh
 {
 
-// Creates a variable for a struct type.
-const TVariable &CreateStructTypeVariable(TSymbolTable &symbolTable, const TStructure &structure);
-
-// Creates a variable for a struct instance.
-const TVariable &CreateInstanceVariable(
-    TSymbolTable &symbolTable,
-    const TStructure &structure,
-    const Name &name,
-    TQualifier qualifier                              = TQualifier::EvqTemporary,
-    const angle::Span<const unsigned int> *arraySizes = nullptr);
-
 // The input sequence should be discarded from AST after this is called.
 TIntermSequence &CloneSequenceAndPrepend(const TIntermSequence &seq, TIntermNode &node);
 
@@ -73,18 +62,6 @@ TIntermTyped &GetArg(const TIntermAggregate &call, size_t index);
 
 // Sets the argument of a function call at the given index.
 void SetArg(TIntermAggregate &call, size_t index, TIntermTyped &arg);
-
-// Accesses a field for the given node with the given field name.
-// The node must be a struct instance.
-TIntermBinary &AccessField(const TVariable &structInstanceVar, const Name &field);
-
-// Accesses a field for the given node with the given field name.
-// The node must be a struct instance.
-TIntermBinary &AccessField(TIntermTyped &object, const Name &field);
-
-// Accesses a field for the given node by its field index.
-// The node must be a struct instance.
-TIntermBinary &AccessFieldByIndex(TIntermTyped &object, int index);
 
 // Accesses an element by index for the given node.
 // The node must be an array, vector, or matrix.
@@ -139,14 +116,12 @@ bool HasArrayField(const TStructure &structure);
 // Coerces `fromNode` to `toType` by a constructor call of `toType` if their types differ.
 // Vector and matrix dimensions are retained.
 // Array types are not allowed.
-TIntermTyped &CoerceSimple(TBasicType toBasicType,
-                           TIntermTyped &fromNode,
-                           bool needsExplicitBoolCast);
+TIntermTyped &CoerceSimple(TBasicType toBasicType, TIntermTyped &fromNode);
 
 // Coerces `fromNode` to `toType` by a constructor call of `toType` if their types differ.
 // Vector and matrix dimensions must coincide between to and from.
 // Array types are not allowed.
-TIntermTyped &CoerceSimple(const TType &toType, TIntermTyped &fromNode, bool needsExplicitBoolCast);
+TIntermTyped &CoerceSimple(const TType &toType, TIntermTyped &fromNode);
 
 TIntermTyped &AsType(SymbolEnv &symbolEnv, const TType &toType, TIntermTyped &fromNode);
 

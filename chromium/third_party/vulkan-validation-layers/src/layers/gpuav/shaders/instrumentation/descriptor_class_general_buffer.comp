@@ -19,6 +19,7 @@
 #version 450
 #extension GL_GOOGLE_include_directive : enable
 #include "common_descriptor_sets.h"
+#include "error_payload.h"
 
 layout(buffer_reference, buffer_reference_align = 8, std430) buffer DescriptorSetType {
     // struct glsl::DescriptorState {
@@ -30,10 +31,11 @@ layout(buffer_reference, buffer_reference_align = 8, std430) buffer DescriptorSe
 
 layout(buffer_reference, buffer_reference_align = 8, std430) buffer UnusedInitializedStatus;
 
-layout(set = kInstDefaultDescriptorSet, binding = kBindingInstDescriptorIndexingOOB, std430) buffer DescriptorStateSSBO {
+layout(set = kInstDefaultDescriptorSet, binding = kBindingInstDescriptorIndexingOOB, std430) buffer BoundDescriptorSetsStateSSBO {
     UnusedInitializedStatus unused_initialized_status;
     DescriptorSetType descriptor_set_types[kDebugInputBindlessMaxDescSets];
 } gpuav;
+
 
 // Matches the vvl::DescriptorClass::GeneralBuffer
 //
@@ -47,48 +49,18 @@ layout(set = kInstDefaultDescriptorSet, binding = kBindingInstDescriptorIndexing
 //    }
 //
 // We might have only bound 4 bytes to the buffer, so 'b' is OOB and this function will detect it
-bool inst_descriptor_class_general_buffer(const uint inst_num, const uvec4 stage_info,
-                        const uint desc_set, const uint binding, const uint desc_index, const uint byte_offset, const uint binding_layout_offset) {
-    uint error = 0u;
-    uint param_1 = 0;
-
+void inst_descriptor_class_general_buffer(const uint inst_num, const uint desc_set, const uint desc_index, const uint byte_offset, const uint binding_layout_offset) {
     DescriptorSetType descriptor_set_type = gpuav.descriptor_set_types[desc_set];
-    uint binding_layout_index = binding_layout_offset + desc_index;
+    const uint global_descriptor_index = binding_layout_offset + desc_index;
     // check that the offset is in bounds
-    uint resource_size = descriptor_set_type.data[binding_layout_index].y;
+    uint resource_size = descriptor_set_type.data[global_descriptor_index].y;
     if (byte_offset >= resource_size) {
-        error = kErrorSubCodeDescriptorClassGeneralBufferBounds;
-        param_1 = resource_size;
+        error_payload = ErrorPayload(
+                            inst_num,
+                            SpecConstantLinkShaderId | (kErrorGroupInstDescriptorClass << kErrorGroupShift) | (kErrorSubCodeDescriptorClassGeneralBufferBounds << kErrorSubCodeShift),
+                            (desc_set << kInstDescriptorIndexingSetShift) | global_descriptor_index,
+                            byte_offset,
+                            resource_size
+                        );
     }
-
-    if (0u != error) {
-
-        const uint cmd_id = inst_cmd_resource_index_buffer.index[0];
-        const uint cmd_errors_count = atomicAdd(inst_cmd_errors_count_buffer.errors_count[cmd_id], 1);
-        const bool max_cmd_errors_count_reached = cmd_errors_count >= kMaxErrorsPerCmd;
-
-        if (max_cmd_errors_count_reached) return false;
-
-        uint write_pos = atomicAdd(inst_errors_buffer.written_count, kErrorRecordSize);
-        const bool errors_buffer_not_filled = (write_pos + kErrorRecordSize) <= uint(inst_errors_buffer.data.length());
-
-        if (errors_buffer_not_filled) {
-            inst_errors_buffer.data[write_pos + kHeaderErrorRecordSizeOffset] = kErrorRecordSize;
-            inst_errors_buffer.data[write_pos + kHeaderShaderIdErrorOffset] = SpecConstantLinkShaderId | (kErrorGroupInstDescriptorClass << kErrorGroupShift) | (error << kErrorSubCodeShift);
-            inst_errors_buffer.data[write_pos + kHeaderStageInstructionIdOffset] = inst_num | (stage_info.x << kStageIdShift);
-            inst_errors_buffer.data[write_pos + kHeaderStageInfoOffset_0] = stage_info.y;
-            inst_errors_buffer.data[write_pos + kHeaderStageInfoOffset_1] = stage_info.z;
-            inst_errors_buffer.data[write_pos + kHeaderStageInfoOffset_2] = stage_info.w;
-
-            inst_errors_buffer.data[write_pos + kHeaderActionIdOffset] = (inst_action_index_buffer.index[0] << kActionIdShift) | inst_cmd_resource_index_buffer.index[0];
-
-            inst_errors_buffer.data[write_pos + kInstDescriptorClassDescSetOffset] = desc_set;
-            inst_errors_buffer.data[write_pos + kInstDescriptorClassDescBindingOffset] = binding;
-            inst_errors_buffer.data[write_pos + kInstDescriptorClassDescIndexOffset] = desc_index;
-            inst_errors_buffer.data[write_pos + kInstDescriptorClassParamOffset_0] = byte_offset;
-            inst_errors_buffer.data[write_pos + kInstDescriptorClassParamOffset_1] = param_1;
-        }
-        return false;
-    }
-    return true;
 }

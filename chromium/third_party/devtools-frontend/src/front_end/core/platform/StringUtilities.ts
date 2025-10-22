@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+import type {Brand} from './Brand.js';
+
 export const escapeCharacters = (inputString: string, charsToEscape: string): string => {
   let foundChar = false;
   for (let i = 0; i < charsToEscape.length; ++i) {
@@ -92,8 +94,8 @@ export const formatAsJSLiteral = (content: string): string => {
  * understands the %m$d notation to select the m-th parameter for this substitution,
  * as well as the optional precision for %s, %f, and %d.
  *
- * @param fmt format string.
- * @param args parameters to the format string.
+ * @param fmt - format string.
+ * @param args - parameters to the format string.
  * @returns the formatted output string.
  */
 export const sprintf = (fmt: string, ...args: unknown[]): string => {
@@ -256,8 +258,8 @@ const EXTENDED_KEBAB_CASE_REGEXP = /^([a-z0-9]+(?:-[a-z0-9]+)*\.)*[a-z0-9]+(?:-[
  * For example, it will yield `true` for `'my.amazing-string.literal'`, but `false`
  * for `'Another.AmazingLiteral'` or '`another_amazing_literal'`.
  *
- * @param inputStr the input string to test.
- * @return `true` if the `inputStr` follows the extended Kebab Case convention.
+ * @param inputStr - the input string to test.
+ * @returns `true` if the `inputStr` follows the extended Kebab Case convention.
  */
 export const isExtendedKebabCase = (inputStr: string): boolean => {
   return EXTENDED_KEBAB_CASE_REGEXP.test(inputStr);
@@ -463,8 +465,12 @@ export const findUnclosedCssQuote = function(str: string): string {
 };
 
 export const countUnmatchedLeftParentheses = (str: string): number => {
+  const stringLiteralRegex = /'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*"/g;
+  // Remove all matched string literals from the original string.
+  const strWithoutStrings = str.replace(stringLiteralRegex, '');
+
   let unmatchedCount = 0;
-  for (const c of str) {
+  for (const c of strWithoutStrings) {
     if (c === '(') {
       unmatchedCount++;
     } else if (c === ')' && unmatchedCount > 0) {
@@ -487,11 +493,7 @@ export const createPlainTextSearchRegex = function(query: string, flags?: string
   return new RegExp(regex, flags || '');
 };
 
-class LowerCaseStringTag {
-  private lowerCaseStringTag: (string|undefined);
-}
-
-export type LowerCaseString = string&LowerCaseStringTag;
+export type LowerCaseString = Brand<string, 'lowerCaseStringTag'>;
 
 export const toLowerCaseString = function(input: string): LowerCaseString {
   return input.toLowerCase() as LowerCaseString;
@@ -515,19 +517,9 @@ export const toKebabCase = function(input: string): Lowercase<string> {
       Lowercase<string>;
 };
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-export function toKebabCaseKeys(settingValue: {
-  [x: string]: any,
-}): {[x: string]: any} {
-  const result: {
-    [x: string]: any,
-  } = {};
-  for (const [key, value] of Object.entries(settingValue)) {
-    result[toKebabCase(key)] = value;
-  }
-  return result;
+export function toKebabCaseKeys<T>(settingValue: Record<string, T>): Record<string, T> {
+  return Object.fromEntries(Object.entries(settingValue).map(([key, value]) => [toKebabCase(key), value]));
 }
-/* eslint-enable @typescript-eslint/no-explicit-any */
 
 // Replaces the last ocurrence of parameter `search` with parameter `replacement` in `input`
 export const replaceLast = function(input: string, search: string, replacement: string): string {

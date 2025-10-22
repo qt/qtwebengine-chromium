@@ -5,12 +5,13 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING, Iterable, Type
+from typing import TYPE_CHECKING, Iterable, Self, Type
 
 from typing_extensions import override
 
 from crossbench.probes.internal.base import (InternalJsonResultProbe,
                                              InternalJsonResultProbeContext)
+from crossbench.probes.probe_context import ProbeSessionContext
 from crossbench.probes.results import EmptyProbeResult
 
 if TYPE_CHECKING:
@@ -19,6 +20,7 @@ if TYPE_CHECKING:
   from crossbench.runner.groups.base import RunGroup
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.repetitions import RepetitionsRunGroup
+  from crossbench.runner.groups.session import BrowserSessionRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
   from crossbench.types import Json, JsonList
 
@@ -71,9 +73,36 @@ class ErrorsProbe(InternalJsonResultProbe):
   def get_context_cls(self) -> Type[ErrorsProbeContext]:
     return ErrorsProbeContext
 
+  @override
+  def get_session_context(self: Self, session: BrowserSessionRunGroup):
+    return ErrorProbeSessionContext(self, session)
+
 
 class ErrorsProbeContext(InternalJsonResultProbeContext):
 
   @override
   def to_json(self, actions: Actions) -> Json:
     return self.run.exceptions.to_json()
+
+
+class ErrorProbeSessionContext(ProbeSessionContext):
+
+  @override
+  def start(self) -> None:
+    # Only extract data in the late teardown phase.
+    pass
+
+  @override
+  def stop(self) -> None:
+    # Only extract data in the late teardown phase.
+    pass
+
+  @override
+  def teardown(self) -> ProbeResult:
+    if self.session.is_success:
+      return self.empty_result()
+    # Use custom name for the session to not clash with the run errors.
+    result_path = self.local_result_path.parent / "cb.session.errors.json"
+    with result_path.open("w") as f:
+      json.dump(self.session.exceptions.to_json(), f)
+    return self.local_result(json=(result_path,))

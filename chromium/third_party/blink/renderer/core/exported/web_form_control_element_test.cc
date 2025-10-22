@@ -21,6 +21,8 @@
 #include "third_party/blink/renderer/core/execution_context/execution_context.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_control_element.h"
 #include "third_party/blink/renderer/core/html/forms/html_form_element.h"
+#include "third_party/blink/renderer/core/html/forms/html_input_element.h"
+#include "third_party/blink/renderer/core/input_type_names.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 
 namespace blink {
@@ -67,7 +69,7 @@ class WebFormControlElementTest : public PageTestBase {
 
 // Tests that resetting a form clears the `user_has_edited_the_field_` state.
 TEST_F(WebFormControlElementTest, ResetDocumentClearsEditedState) {
-  GetDocument().documentElement()->setInnerHTML(R"(
+  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(R"(
     <body>
       <form id="f">
         <input id="text_id">
@@ -102,7 +104,8 @@ class WebFormControlElementSetAutofillValueTest
       public testing::WithParamInterface<const char*> {
  protected:
   void InsertHTML() {
-    GetDocument().documentElement()->setInnerHTML(GetParam());
+    GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
+        GetParam());
   }
 
   WebFormControlElement TestElement() {
@@ -139,7 +142,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST_F(WebFormControlElementTest,
        SetAutofillAndSuggestedValueMaxLengthForInput) {
-  GetDocument().documentElement()->setInnerHTML(
+  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
       "<input type='text' id=testElement maxlength='5'>");
 
   auto element = WebFormControlElement(To<HTMLFormControlElement>(
@@ -154,7 +157,7 @@ TEST_F(WebFormControlElementTest,
 
 TEST_F(WebFormControlElementTest,
        SetAutofillAndSuggestedValueMaxLengthForTextarea) {
-  GetDocument().documentElement()->setInnerHTML(
+  GetDocument().documentElement()->SetInnerHTMLWithoutTrustedTypes(
       "<textarea id=testElement maxlength='5'></textarea>");
 
   auto element = WebFormControlElement(To<HTMLFormControlElement>(
@@ -193,7 +196,7 @@ class WebFormControlElementGetOwningFormForAutofillTest
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInLightDom) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <form id=f>
       <input id=t1>
       <input id=t2>
@@ -214,7 +217,7 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInLightDomWithExplicitAssociation) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <div>
       <form id=f1>
         <input id=t1>
@@ -256,7 +259,7 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInShadowDomWithoutFormInShadowDom) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <form id=f1>
       <div id=host1>
         <template shadowrootmode="open">
@@ -290,7 +293,7 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInShadowDomWithFormInShadowDom) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <form id=f1>
       <div id=host1>
         <template shadowrootmode=open>
@@ -329,7 +332,7 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInShadowDomWithFormInShadowDomWithMultipleLevels) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <form id=f1>
       <div id=host1>
         <template shadowrootmode=open>
@@ -373,7 +376,7 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInShadowDomWithFormInShadowDomAndExplicitAssociation) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <form id=f1>
       <div id=host1>
         <template shadowrootmode=open>
@@ -422,7 +425,7 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
 TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
        GetOwningFormInLightDomWithSlots) {
   const Document& document = GetDocument();
-  document.body()->setHTMLUnsafe(R"(
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes(R"(
     <form id=f>
       <div>
         <template shadowrootmode=open>
@@ -436,6 +439,42 @@ TEST_F(WebFormControlElementGetOwningFormForAutofillTest,
   WebFormElement f = GetFormElementById(document, "f");
   WebFormControlElement t1 = GetFormControlElementById(document, "t1");
   EXPECT_EQ(t1.GetOwningFormForAutofill(), f);
+}
+
+// Tests that FormControlTypeForAutofill() == kInputPassword is sticky unless
+// the type changes to a non-text type.
+//
+// That is, once an <input> has become an <input type=password>,
+// FormControlTypeForAutofill() keeps returning kInputPassword, even if it
+// the FormControlType() changes, provided it's a text-type.
+TEST_F(WebFormControlElementTest, FormControlTypeForAutofill) {
+  using enum FormControlType;
+  const Document& document = GetDocument();
+  document.body()->SetHTMLUnsafeWithoutTrustedTypes("<input id=t>");
+  HTMLInputElement* input = To<HTMLInputElement>(GetElementById("t"));
+  WebFormControlElement control = input;
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(control);
+
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputText);
+  input->setType(input_type_names::kPassword);
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputPassword);
+  input->setType(input_type_names::kText);
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputPassword);
+  input->setType(input_type_names::kNumber);
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputPassword);
+  input->setType(input_type_names::kRadio);
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputRadio);
+
+  // MaybeSetHasBeenPasswordField() only has an effect on IsTextType() elements.
+  input->setType(input_type_names::kUrl);
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputUrl);
+  input->MaybeSetHasBeenPasswordField();
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputPassword);
+  input->setType(input_type_names::kRadio);
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputRadio);
+  input->MaybeSetHasBeenPasswordField();
+  EXPECT_EQ(control.FormControlTypeForAutofill(), kInputRadio);
 }
 
 }  // namespace blink

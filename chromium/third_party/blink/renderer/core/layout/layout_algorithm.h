@@ -104,6 +104,10 @@ class CORE_EXPORT LayoutAlgorithm {
     }
   }
 
+  const GapGeometry* GetGapGeometry() const {
+    return container_builder_.GetGapGeometry();
+  }
+
  protected:
   // Protected (non-virtual) destructor, to make sure that the destructor is
   // invoked directly on subclasses.
@@ -113,11 +117,12 @@ class CORE_EXPORT LayoutAlgorithm {
     kNoRelayout = 0,
     kRelayoutForEarlyBreak = 1,
     kRelayoutIgnoringLineClamp = 2,
-    kRelayoutWithLineClampBlockSize = 4,
+    kRelayoutClampingByLines = 4,
     kRelayoutForTextBoxTrim = 8,
     kRelayoutWithoutFragmentation = 16,
     kRelayoutIgnoringChildScrollbarChanges = 32,
     kRelayoutAsLastTableBox = 64,
+    kRelayoutClampingAfterLayoutObject = 128,
   };
   // Bitmask of active relayout types (`RelayoutType`).
   typedef int RelayoutMode;

@@ -87,7 +87,7 @@ base::flat_map<std::string, std::string> BuildUpdateCheckExtraRequestHeaders(
     const std::vector<std::string>& ids,
     bool is_foreground) {
   // This number of extension ids results in an HTTP header length of about 1KB.
-  constexpr size_t maxIdsCount = 30;
+  static constexpr size_t maxIdsCount = 30;
   const std::vector<std::string>& app_ids =
       ids.size() <= maxIdsCount
           ? ids
@@ -131,7 +131,6 @@ protocol_request::Request MakeProtocolRequest(
   request.prodchannel = channel;
   request.operating_system = UpdateQueryParams::GetOS();
   request.arch = UpdateQueryParams::GetArch();
-  request.nacl_arch = UpdateQueryParams::GetNaclArch();
   request.dlpref = download_preference;
   request.domain_joined = domain_joined;
   request.additional_attributes = additional_attributes;

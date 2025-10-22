@@ -7,11 +7,6 @@
 namespace prefs {
 
 #if BUILDFLAG(IS_CHROMEOS)
-// A boolean pref - should unauthenticated user should be logged out
-// automatically. Default value is false.
-const char kForceLogoutUnauthenticatedUserEnabled[] =
-    "profile.force_logout_unauthenticated_user_enabled";
-
 // An integer property indicating the state of account id migration from
 // email to gaia id for the the profile.  See account_tracker_service.h
 // for possible values.
@@ -44,9 +39,9 @@ const char kGaiaCookieHash[] = "gaia_cookie.hash";
 const char kGaiaCookieChangedTime[] = "gaia_cookie.changed_time";
 
 // The last time that periodic reporting occured, to allow us to report as close
-// to once per intended interval as possible, through restarts. Stored as a
-// double that should be converted into base::Time.
-const char kGaiaCookiePeriodicReportTime[] = "gaia_cookie.periodic_report_time";
+// to once per intended interval as possible, through restarts.
+const char kGaiaCookiePeriodicReportTime[] =
+    "gaia_cookie.periodic_report_time_2";
 
 // Typically contains an obfuscated gaiaid. Some platforms may have
 // an email stored in this preference instead. This is transitional and will
@@ -139,6 +134,19 @@ const char kHistorySyncSuccessiveDeclineCount[] =
 // Android, but has a separate implementation there which doesn't use this pref.
 const char kRestrictAccountsToPatterns[] =
     "signin.restrict_accounts_to_patterns";
+
+// Boolean that represent whether signin is allowed by the user. It is also used
+// to synchronize kSigninAllowed across profiles. This is used to
+// ensure that all profiles respect the setting while `kSigninAllowed` only
+// applies to a single profile. This is the UX we want on iOS since there are
+// multi profiles but not exposed to the user, so we should treat this setting
+// as affecting all profiles.
+const char kSigninAllowedOnDevice[] = "signin.allowed_on_device";
+
+// TODO(crbug.com/424385780): Update this comment.
+// Integer that represents the value of BrowserSigninPolicy. Values are defined
+// in ios/chrome/browser/policy/model/policy_util.h.
+const char kBrowserSigninPolicy[] = "signin.browser_signin_policy";
 #endif  // BUILDFLAG(IS_IOS)
 
 // Boolean which indicates if the user is allowed to sign into Chrome on the

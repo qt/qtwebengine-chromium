@@ -1,4 +1,4 @@
-// Copyright 2024 Google LLC
+// Copyright 2024-2025 Google LLC
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,40 +25,40 @@ namespace {
 using ::ink::AffineTransform;
 using ::ink::Angle;
 using ::ink::Quad;
+using ::ink::jni::CreateJImmutableParallelogramOrThrow;
+using ::ink::jni::FillJMutableParallelogramOrThrow;
 
 }  // namespace
 
 extern "C" {
 
-JNI_METHOD(geometry_internal, AffineTransformNative, jobject,
-           createFromApplyParallelogram)
+JNI_METHOD(geometry, AffineTransformNative, jobject,
+           createTransformedParallelogram)
 (JNIEnv* env, jobject object, jfloat affine_transform_A,
  jfloat affine_transform_B, jfloat affine_transform_C,
  jfloat affine_transform_D, jfloat affine_transform_E,
  jfloat affine_transform_F, jfloat quad_center_x, jfloat quad_center_y,
  jfloat quad_width, jfloat quad_height, jfloat quad_rotation,
- jfloat quad_shear_factor, jclass immutable_parallelogram_class,
- jclass immutable_vec_class) {
-  return ink::CreateJImmutableParallelogram(
+ jfloat quad_shear_factor) {
+  return CreateJImmutableParallelogramOrThrow(
       env,
       AffineTransform(affine_transform_A, affine_transform_B,
                       affine_transform_C, affine_transform_D,
                       affine_transform_E, affine_transform_F)
           .Apply(Quad::FromCenterDimensionsRotationAndShear(
               {.x = quad_center_x, .y = quad_center_y}, quad_width, quad_height,
-              Angle::Radians(quad_rotation), quad_shear_factor)),
-      immutable_parallelogram_class, immutable_vec_class);
+              Angle::Radians(quad_rotation), quad_shear_factor)));
 }
 
-JNI_METHOD(geometry_internal, AffineTransformNative, void,
-           populateFromApplyParallelogram)
+JNI_METHOD(geometry, AffineTransformNative, void,
+           populateTransformedParallelogram)
 (JNIEnv* env, jobject object, jfloat affine_transform_A,
  jfloat affine_transform_B, jfloat affine_transform_C,
  jfloat affine_transform_D, jfloat affine_transform_E,
  jfloat affine_transform_F, jfloat quad_center_x, jfloat quad_center_y,
  jfloat quad_width, jfloat quad_height, jfloat quad_rotation,
  jfloat quad_shear_factor, jobject mutable_quad) {
-  ink::FillJMutableParallelogram(
+  FillJMutableParallelogramOrThrow(
       env,
       AffineTransform(affine_transform_A, affine_transform_B,
                       affine_transform_C, affine_transform_D,

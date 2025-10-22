@@ -10,6 +10,7 @@
 #include "media/fuchsia/video/fuchsia_video_decoder.h"
 
 #include <fuchsia/sysmem/cpp/fidl.h>
+#include <inttypes.h>
 #include <lib/zx/eventpair.h>
 #include <vulkan/vulkan.h>
 
@@ -29,7 +30,6 @@
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
-#include "gpu/ipc/common/gpu_memory_buffer_impl_native_pixmap.h"
 #include "media/base/cdm_context.h"
 #include "media/base/media_switches.h"
 #include "media/base/video_aspect_ratio.h"
@@ -173,6 +173,10 @@ class FuchsiaVideoDecoder::OutputMailbox {
 
     // Request a fence we'll wait on before reusing the buffer.
     frame->metadata().read_lock_fences_enabled = true;
+
+    // Set the frame to have same color space as that for underlying shared
+    // image.
+    frame->set_color_space(shared_image_->color_space());
 
     return frame;
   }
@@ -560,19 +564,16 @@ void FuchsiaVideoDecoder::OnStreamProcessorOutputPacket(
   VideoPixelFormat pixel_format;
   // The GMB is either kNV12 or kYV12.
   viz::SharedImageFormat si_format;
-  VkFormat vk_format;
   switch (sysmem_pixel_format) {
     case fuchsia::images2::PixelFormat::NV12:
       pixel_format = PIXEL_FORMAT_NV12;
       si_format = viz::MultiPlaneFormat::kNV12;
-      vk_format = VK_FORMAT_G8_B8R8_2PLANE_420_UNORM;
       break;
 
     case fuchsia::images2::PixelFormat::I420:
     case fuchsia::images2::PixelFormat::YV12:
       pixel_format = PIXEL_FORMAT_I420;
       si_format = viz::MultiPlaneFormat::kYV12;
-      vk_format = VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM;
       break;
 
     default:
@@ -597,17 +598,16 @@ void FuchsiaVideoDecoder::OnStreamProcessorOutputPacket(
   }
 
   if (!output_mailboxes_[buffer_index]) {
-    gfx::GpuMemoryBufferHandle gmb_handle;
-    gmb_handle.type = gfx::NATIVE_PIXMAP;
+    gfx::NativePixmapHandle native_pixmap_handle;
     auto status = output_buffer_collection_handle_.duplicate(
-        ZX_RIGHT_SAME_RIGHTS,
-        &gmb_handle.native_pixmap_handle.buffer_collection_handle);
+        ZX_RIGHT_SAME_RIGHTS, &native_pixmap_handle.buffer_collection_handle);
     ZX_DCHECK(status == ZX_OK, status);
-    gmb_handle.native_pixmap_handle.buffer_index = buffer_index;
+    native_pixmap_handle.buffer_index = buffer_index;
 
     output_mailboxes_[buffer_index] = new OutputMailbox(
-        raster_context_provider_, std::move(gmb_handle), coded_size, si_format,
-        client_native_pixmap_factory_.get(),
+        raster_context_provider_,
+        gfx::GpuMemoryBufferHandle(std::move(native_pixmap_handle)), coded_size,
+        si_format, client_native_pixmap_factory_.get(),
         current_config_.color_space_info().ToGfxColorSpace());
   } else {
     raster_context_provider_->SharedImageInterface()->UpdateSharedImage(
@@ -642,24 +642,6 @@ void FuchsiaVideoDecoder::OnStreamProcessorOutputPacket(
       aspect_ratio.GetNaturalSize(display_rect), timestamp,
       base::BindOnce(&FuchsiaVideoDecoder::ReleaseOutputPacket,
                      base::Unretained(this), std::move(output_packet)));
-
-  VkSamplerYcbcrModelConversion ycbcr_conversion =
-      (current_config_.color_space_info().matrix ==
-       VideoColorSpace::MatrixID::BT709)
-          ? VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_709
-          : VK_SAMPLER_YCBCR_MODEL_CONVERSION_YCBCR_601;
-
-  // Currently sysmem doesn't specify location of chroma samples relative to
-  // luma (see fxbug.dev/13677). Assume they are cosited with luma. YCbCr info
-  // here must match the values passed for the same buffer in
-  // ui::SysmemBufferCollection::CreateVkImage() (see
-  // ui/ozone/platform/flatland/flatland_sysmem_buffer_collection.cc).
-  // |format_features| are resolved later in the GPU process before this info is
-  // passed to Skia.
-  frame->set_ycbcr_info(gpu::VulkanYCbCrInfo(
-      vk_format, /*external_format=*/0, ycbcr_conversion,
-      VK_SAMPLER_YCBCR_RANGE_ITU_NARROW, VK_CHROMA_LOCATION_COSITED_EVEN,
-      VK_CHROMA_LOCATION_COSITED_EVEN, /*format_features=*/0));
 
   // Mark the frame as power-efficient since (software decoders are used only in
   // tests).

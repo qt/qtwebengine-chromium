@@ -1,6 +1,7 @@
 // Copyright 2023 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as i18n from '../../../core/i18n/i18n.js';
 import * as Platform from '../../../core/platform/platform.js';
@@ -11,11 +12,7 @@ import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as Buttons from '../buttons/buttons.js';
 
-import dialogStylesRaw from './dialog.css.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const dialogStyles = new CSSStyleSheet();
-dialogStyles.replaceSync(dialogStylesRaw.cssText);
+import dialogStyles from './dialog.css.js';
 
 const {html} = Lit;
 
@@ -102,6 +99,12 @@ interface DialogData {
    * Specifies a context for the visual element.
    */
   jslogContext: string;
+  /**
+   * By default the dialog will close if any mutations to the DOM outside of it
+   * are detected. By setting this selector, any mutations on elements that
+   * match the selector will not cause the dialog to close.
+   */
+  expectedMutationsSelector?: string;
 }
 
 type DialogAnchor = HTMLElement|DOMRect|DOMPoint;
@@ -111,7 +114,6 @@ export const MODAL = 'MODAL';
 export type DialogOrigin = DialogAnchor|null|(() => DialogAnchor)|typeof MODAL;
 export class Dialog extends HTMLElement {
   readonly #shadow = this.attachShadow({mode: 'open'});
-  readonly #renderBound = this.#render.bind(this);
   readonly #forceDialogCloseInDevToolsBound = this.#forceDialogCloseInDevToolsMutation.bind(this);
   readonly #handleScrollAttemptBound = this.#handleScrollAttempt.bind(this);
   readonly #props: DialogData = {
@@ -135,7 +137,18 @@ export class Dialog extends HTMLElement {
   #dialogClientRect = new DOMRect(0, 0, 0, 0);
   #bestVerticalPositionInternal: DialogVerticalPosition|null = null;
   #bestHorizontalAlignment: DialogHorizontalAlignment|null = null;
-  readonly #devtoolsMutationObserver = new MutationObserver(this.#forceDialogCloseInDevToolsBound);
+  readonly #devtoolsMutationObserver = new MutationObserver(mutations => {
+    if (this.#props.expectedMutationsSelector) {
+      const allExcluded = mutations.every(mutation => {
+        return mutation.target instanceof Element &&
+            mutation.target.matches(this.#props.expectedMutationsSelector ?? '');
+      });
+      if (allExcluded) {
+        return;
+      }
+    }
+    this.#forceDialogCloseInDevToolsBound();
+  });
   readonly #dialogResizeObserver = new ResizeObserver(this.#updateDialogBounds.bind(this));
   #devToolsBoundingElement = this.windowBoundsService.getDevToolsBoundingElement();
 
@@ -152,6 +165,14 @@ export class Dialog extends HTMLElement {
   set origin(origin: DialogOrigin) {
     this.#props.origin = origin;
     this.#onStateChange();
+  }
+
+  set expectedMutationsSelector(mutationSelector: string) {
+    this.#props.expectedMutationsSelector = mutationSelector;
+  }
+
+  get expectedMutationsSelector(): string|undefined {
+    return this.#props.expectedMutationsSelector;
   }
 
   get position(): DialogVerticalPosition {
@@ -241,12 +262,10 @@ export class Dialog extends HTMLElement {
   }
 
   #onStateChange(): void {
-    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#renderBound);
+    void ComponentHelpers.ScheduledRender.scheduleRender(this, this.#render);
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [dialogStyles];
-
     window.addEventListener('resize', this.#forceDialogCloseInDevToolsBound);
     this.#devtoolsMutationObserver.observe(this.#devToolsBoundingElement, {childList: true, subtree: true});
     this.#devToolsBoundingElement.addEventListener('wheel', this.#handleScrollAttemptBound);
@@ -315,6 +334,10 @@ export class Dialog extends HTMLElement {
       return;
     }
     this.dispatchEvent(new ClickOutsideDialogEvent());
+  }
+
+  #animationEndedEvent(): void {
+    this.dispatchEvent(new AnimationEndedEvent());
   }
 
   #mouseEventWasInDialogContent(evt: MouseEvent): boolean {
@@ -422,6 +445,9 @@ export class Dialog extends HTMLElement {
         const dialog = this.#getDialog();
         dialog.style.visibility = 'hidden';
         if (this.#isPendingShowDialog && !dialog.hasAttribute('open')) {
+          if (!dialog.isConnected) {
+            return;
+          }
           dialog.showModal();
           this.setAttribute('open', '');
           this.#isPendingShowDialog = false;
@@ -542,6 +568,9 @@ export class Dialog extends HTMLElement {
     await RenderCoordinator.done();
     this.#isPendingShowDialog = false;
     const dialog = this.#getDialog();
+    if (!dialog.isConnected) {
+      return;
+    }
     // Make the dialog visible now.
     if (!dialog.hasAttribute('open')) {
       dialog.showModal();
@@ -659,7 +688,8 @@ export class Dialog extends HTMLElement {
 
     // clang-format off
     Lit.render(html`
-      <dialog @click=${this.#handlePointerEvent} @pointermove=${this.#handlePointerEvent} @cancel=${this.#onCancel}
+      <style>${dialogStyles}</style>
+      <dialog @click=${this.#handlePointerEvent} @pointermove=${this.#handlePointerEvent} @cancel=${this.#onCancel} @animationend=${this.#animationEndedEvent}
               jslog=${VisualLogging.dialog(this.#props.jslogContext).track({resize: true, keydown: 'Escape'}).parent('mapped')}>
         <div id="content">
           <div class="dialog-header">${this.#renderHeaderRow()}</div>
@@ -695,6 +725,14 @@ export class ClickOutsideDialogEvent extends Event {
 
   constructor() {
     super(ClickOutsideDialogEvent.eventName, {bubbles: true, composed: true});
+  }
+}
+
+export class AnimationEndedEvent extends Event {
+  static readonly eventName = 'animationended';
+
+  constructor() {
+    super(AnimationEndedEvent.eventName, {bubbles: true, composed: true});
   }
 }
 

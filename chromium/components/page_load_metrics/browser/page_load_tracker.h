@@ -22,11 +22,11 @@
 #include "components/page_load_metrics/common/page_load_metrics.mojom.h"
 #include "components/page_load_metrics/common/page_load_timing.h"
 #include "content/public/browser/global_request_id.h"
+#include "content/public/browser/global_routing_id.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "net/cookies/canonical_cookie.h"
 #include "services/metrics/public/cpp/ukm_source.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
-#include "third_party/blink/public/common/performance/performance_timeline_constants.h"
 #include "ui/base/scoped_visibility_tracker.h"
 #include "ui/gfx/geometry/size.h"
 
@@ -56,8 +56,6 @@ enum class PageLoadPrerenderEvent {
   kMaxValue = kPrerenderActivationNavigation,
 };
 
-// These values are persisted to logs. Entries should not be renumbered and
-// numeric values should never be reused.
 enum class PageLoadTrackerPageType {
   kPrimaryPage = 0,
   kPrerenderPage = 1,
@@ -68,7 +66,6 @@ enum class PageLoadTrackerPageType {
 
 extern const char kErrorEvents[];
 extern const char kPageLoadPrerender2Event[];
-extern const char kPageLoadTrackerPageType[];
 
 }  // namespace internal
 
@@ -235,8 +232,7 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
       const gfx::Rect& main_frame_viewport_rect) override;
   void OnMainFrameImageAdRectsChanged(
       const base::flat_map<int, gfx::Rect>& main_frame_image_ad_rects) override;
-  void SetUpSharedMemoryForUkms(
-      base::ReadOnlySharedMemoryRegion smoothness_memory,
+  void SetUpSharedMemoryForDroppedFrames(
       base::ReadOnlySharedMemoryRegion dropped_frames_memory) override;
 
   // PageLoadMetricsObserverDelegate implementation:
@@ -581,11 +577,9 @@ class PageLoadTracker : public PageLoadMetricsUpdateDispatcher::Client,
 
   const raw_ptr<content::WebContents> web_contents_;
 
-  // Holds the RenderFrameHost for the main frame of the page that this tracker
-  // instance is bound. Safe to use raw_ptr as the tracker instance is accessed
-  // via a map that uses the RenderFrameHost as the key while it's valid.
-  raw_ptr<content::RenderFrameHost, AcrossTasksDanglingUntriaged>
-      page_main_frame_;
+  // ID of the RenderFrameHost for the main frame of the page that this tracker
+  // instance is bound.
+  content::GlobalRenderFrameHostId page_main_frame_id_;
 
   const bool is_first_navigation_in_web_contents_;
   const bool is_origin_visit_;

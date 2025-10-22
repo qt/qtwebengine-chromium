@@ -940,6 +940,7 @@
 "accentcolor"
 "accentcolortext"
 "-internal-auto-base-select"
+"-internal-partial-interest-content"
 
 # Math functions (TODO: We're missing a lot of them)
 "calc"
@@ -1442,7 +1443,7 @@
 "z-index"
 "zoom"
 
-# pseudo elements and classes
+# pseudo-elements and classes
 ":hover"
 ":visited"
 ":before"

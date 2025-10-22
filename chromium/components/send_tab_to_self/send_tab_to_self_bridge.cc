@@ -79,7 +79,9 @@ std::optional<syncer::ModelError> ParseLocalEntriesOnBackendSequence(
       (*entries)[specifics->specifics().guid()] =
           SendTabToSelfEntry::FromLocalProto(*specifics, now);
     } else {
-      return syncer::ModelError(FROM_HERE, "Failed to deserialize specifics.");
+      return syncer::ModelError(
+          FROM_HERE,
+          syncer::ModelError::Type::kSendTabToSelfFailedToDeserializeSpecifics);
     }
   }
 
@@ -239,13 +241,21 @@ SendTabToSelfBridge::GetAllDataForDebugging() {
 }
 
 std::string SendTabToSelfBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return GetStorageKey(entity_data);
 }
 
 std::string SendTabToSelfBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   return entity_data.specifics.send_tab_to_self().guid();
+}
+
+bool SendTabToSelfBridge::IsEntityDataValid(
+    const syncer::EntityData& entity_data) const {
+  CHECK(entity_data.specifics.has_send_tab_to_self());
+  sync_pb::SendTabToSelfSpecifics specifics =
+      entity_data.specifics.send_tab_to_self();
+  return !specifics.guid().empty() && GURL(specifics.url()).is_valid();
 }
 
 void SendTabToSelfBridge::ApplyDisableSyncChanges(

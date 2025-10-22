@@ -36,6 +36,8 @@ cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":preferences_repository",
+        "//internal/base:file_path",
+        "//internal/base:files",
         "//internal/platform:base",
         "//internal/platform:test_util",
         "//internal/platform:types",
@@ -62,6 +64,7 @@ cc_library(
     name = "comm",
     testonly = True,
     srcs = [
+        "awdl.cc",
         "ble.cc",
         "ble_v2.cc",
         "bluetooth_adapter.cc",
@@ -72,6 +75,7 @@ cc_library(
         "wifi_lan.cc",
     ],
     hdrs = [
+        "awdl.h",
         "ble.h",
         "ble_v2.h",
         "bluetooth_adapter.h",
@@ -88,13 +92,15 @@ cc_library(
         ":types",
         "//internal/platform:base",
         "//internal/platform:cancellation_flag",
+        "//internal/platform:mac_address",
         "//internal/platform:test_util",
         "//internal/platform:types",
         "//internal/platform:uuid",
         "//internal/platform/implementation:comm",
         "//internal/platform/implementation/shared:count_down_latch",
         "//internal/proto:credential_cc_proto",
-        # TODO: Support WebRTC
+        "//third_party/webrtc/files/stable/webrtc/api:create_modular_peer_connection_factory",
+        "//third_party/webrtc/files/stable/webrtc/api:libjingle_peerconnection_api",
         "//third_party/webrtc/files/stable/webrtc/api:scoped_refptr",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -155,6 +161,7 @@ cc_library(
         ":comm",
         ":crypto",  # build_cleaner: keep
         ":types",
+        "//internal/base:file_path",
         "//internal/base:files",
         "//internal/platform:base",
         "//internal/platform:logging",
@@ -177,6 +184,8 @@ cc_library(
     srcs = ["preferences_repository.cc"],
     hdrs = ["preferences_repository.h"],
     deps = [
+        "//internal/base:file_path",
+        "//internal/base:files",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",

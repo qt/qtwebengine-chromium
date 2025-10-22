@@ -41,13 +41,20 @@ To upload a change, push it to the special `refs/for/main` target:
     git push origin HEAD:refs/for/main
 
 The output will then give you a link to the change. Add `agl@google.com`,
-`davidben@google.com`, and `bbe@google.com` as reviewers.
+`davidben@google.com` as reviewers.
 
 Pushing a commit with the same Change-Id as an existing change will upload a new
 version of it. (Use the `git rebase` or `git commit --amend` commands.)
 
 For more detailed instructions, see the
 [Gerrit User Guide](https://gerrit-review.googlesource.com/Documentation/intro-user.html).
+
+As an alternative to pushing to `refs/for/main`: if you have Chromium's
+`depot_tools` installed, you can simply run `git cl upload` to upload a change.
+This also has the advantage of automatically running any relevant `PRESUBMIT.py`
+checks. See [depot_tools
+documentation](https://commondatastorage.googleapis.com/chrome-infra-docs/flat/depot_tools/docs/html/depot_tools.html)
+for more info.
 
 ### Copyright headers
 New files contributed directly to BoringSSL should use the following copyright
@@ -64,6 +71,23 @@ We started the AUTHORS file after the project began, and after receiving many
 valuable contributions. To avoid being presumptuous, we did not proactively list
 all past contributors. If you previously made a contribution, you are likewise
 welcome to send us a patch to be added, or request that we add you.
+
+After the copyright lines, files should include the license notice described in
+the Apache 2.0 appendix. Thus new files should begin with the following header:
+
+    // Copyright YEAR The BoringSSL Authors
+    //
+    // Licensed under the Apache License, Version 2.0 (the "License");
+    // you may not use this file except in compliance with the License.
+    // You may obtain a copy of the License at
+    //
+    //     https://www.apache.org/licenses/LICENSE-2.0
+    //
+    // Unless required by applicable law or agreed to in writing, software
+    // distributed under the License is distributed on an "AS IS" BASIS,
+    // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+    // See the License for the specific language governing permissions and
+    // limitations under the License.
 
 ### The small print
 Contributions made by corporations are covered by a different agreement than

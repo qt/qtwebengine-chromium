@@ -10,6 +10,7 @@
 #include "base/functional/callback_forward.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/net_errors.h"
 #include "net/log/net_log_capture_mode.h"
@@ -82,7 +83,9 @@ class TestSocketPerformanceWatcherFactory
 class StreamAttemptHelper {
  public:
   StreamAttemptHelper(StreamAttemptParams* params, IPEndPoint ip_endpoint)
-      : attempt_(std::make_unique<TcpStreamAttempt>(params, ip_endpoint)) {}
+      : attempt_(std::make_unique<TcpStreamAttempt>(params,
+                                                    ip_endpoint,
+                                                    perfetto::Track())) {}
 
   int Start() {
     return attempt_->Start(base::BindOnce(&StreamAttemptHelper::OnComplete,

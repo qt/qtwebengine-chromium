@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_DEVELOPER_PRIVATE_DEVELOPER_PRIVATE_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_DEVELOPER_PRIVATE_DEVELOPER_PRIVATE_API_H_
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/extensions/api/developer_private/developer_private_event_router.h"
 #include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/event_router.h"
@@ -44,22 +45,22 @@ class DeveloperPrivateAPI : public BrowserContextKeyedAPI,
   ~DeveloperPrivateAPI() override;
 
   // Adds a path to the list of allowed unpacked paths for the given
-  // |web_contents|. Returns a unique identifier to retry that path. Safe to
+  // `web_contents`. Returns a unique identifier to retry that path. Safe to
   // call multiple times for the same <web_contents, path> pair; each call will
   // return the same identifier.
   UnpackedRetryId AddUnpackedPath(content::WebContents* web_contents,
                                   const base::FilePath& path);
 
-  // Returns the FilePath associated with the given |id| and |web_contents|, if
+  // Returns the FilePath associated with the given `id` and `web_contents`, if
   // one exists.
   base::FilePath GetUnpackedPath(content::WebContents* web_contents,
                                  const UnpackedRetryId& id) const;
 
-  // Sets the dragged file for the given |web_contents|.
+  // Sets the dragged file for the given `web_contents`.
   void SetDraggedFile(content::WebContents* web_contents,
                       const ui::FileInfo& file);
 
-  // Returns the dragged file for the given |web_contents|, if one exists.
+  // Returns the dragged file for the given `web_contents`, if one exists.
   ui::FileInfo GetDraggedFile(content::WebContents* web_contents) const;
 
   // KeyedService implementation
@@ -121,7 +122,7 @@ class DeveloperPrivateAPI : public BrowserContextKeyedAPI,
 
   raw_ptr<Profile> profile_;
 
-  // Used to start the load |load_extension_dialog_| in the last directory that
+  // Used to start the load `load_extension_dialog_` in the last directory that
   // was loaded.
   base::FilePath last_unpacked_directory_;
 

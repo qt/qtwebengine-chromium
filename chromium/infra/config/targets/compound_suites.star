@@ -9,7 +9,7 @@
 # suite is no longer needed in //testing/buildbot, targets.bundle (which does
 # not yet exist) can be used for grouping tests in a more flexible manner.
 
-load("//lib/targets.star", "targets")
+load("@chromium-luci//targets.star", "targets")
 
 targets.legacy_compound_suite(
     name = "chrome_linux_isolated_script_tests",
@@ -48,6 +48,7 @@ targets.legacy_compound_suite(
     basic_suites = [
         "gpu_common_and_optional_telemetry_tests",
         "gpu_passthrough_telemetry_tests",
+        "gpu_webcodecs_telemetry_test",
         "gpu_webgl2_conformance_gl_passthrough_telemetry_tests",
         "gpu_webgl_conformance_gl_passthrough_telemetry_tests",
         "gpu_skia_renderer_vulkan_passthrough_telemetry_tests",
@@ -64,6 +65,9 @@ targets.legacy_compound_suite(
         "gpu_webcodecs_gl_passthrough_ganesh_telemetry_test",
         "gpu_webcodecs_metal_passthrough_ganesh_telemetry_test",
         "gpu_webcodecs_metal_passthrough_graphite_telemetry_test",
+        "gpu_webrtc_gl_passthrough_ganesh_telemetry_test",
+        "gpu_webrtc_metal_passthrough_ganesh_telemetry_test",
+        "gpu_webrtc_metal_passthrough_graphite_telemetry_test",
         "gpu_webgl2_conformance_gl_passthrough_ganesh_telemetry_tests",
         "gpu_webgl2_conformance_metal_passthrough_graphite_telemetry_tests",
         "gpu_webgl_conformance_gl_passthrough_ganesh_telemetry_tests",
@@ -80,6 +84,7 @@ targets.legacy_compound_suite(
         "gpu_passthrough_graphite_telemetry_tests",
         "gpu_passthrough_telemetry_tests",
         "gpu_webcodecs_telemetry_test",
+        "gpu_webrtc_telemetry_test",
         "gpu_webgl2_conformance_d3d11_passthrough_telemetry_tests",
         "gpu_webgl_conformance_d3d11_passthrough_telemetry_tests",
         "gpu_webgl_conformance_d3d9_passthrough_telemetry_tests",

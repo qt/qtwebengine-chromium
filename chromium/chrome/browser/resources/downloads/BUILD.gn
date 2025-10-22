@@ -15,7 +15,7 @@ build_webui("build") {
     "images/no_downloads.svg",
   ]
 
-  non_web_component_files = [
+  ts_files = [
     "browser_proxy.ts",
     "bypass_warning_confirmation_dialog.html.ts",
     "bypass_warning_confirmation_dialog.ts",
@@ -44,8 +44,6 @@ build_webui("build") {
     icons_html_files += [ "internal/icons.html" ]
   }
 
-  html_to_wrapper_template = "detect"
-
   mojo_files_deps =
       [ "//chrome/browser/ui/webui/downloads:mojo_bindings_ts__generator" ]
   mojo_files = [
@@ -53,7 +51,6 @@ build_webui("build") {
   ]
 
   ts_composite = true
-  ts_tsconfig_base = "//tools/typescript/tsconfig_base_lit_389737066.json"
   ts_definitions = [ "//tools/typescript/definitions/chrome_send.d.ts" ]
   ts_deps = [
     "//third_party/lit/v3_0:build_ts",

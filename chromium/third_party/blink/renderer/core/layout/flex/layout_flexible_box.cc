@@ -14,6 +14,7 @@
 #include "third_party/blink/renderer/core/layout/block_node.h"
 #include "third_party/blink/renderer/core/layout/constraint_space.h"
 #include "third_party/blink/renderer/core/layout/flex/flex_layout_algorithm.h"
+#include "third_party/blink/renderer/core/layout/layout_object_inlines.h"
 #include "third_party/blink/renderer/core/layout/layout_result.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/layout/oof_positioned_node.h"
@@ -26,7 +27,7 @@ LayoutFlexibleBox::LayoutFlexibleBox(Element* element) : LayoutBlock(element) {}
 namespace {
 
 LogicalToPhysical<bool> GetOverflowConverter(const ComputedStyle& style) {
-  const bool is_wrap_reverse = style.FlexWrap() == EFlexWrap::kWrapReverse;
+  const bool is_wrap_reverse = style.ResolvedIsFlexWrapReverse();
   const bool is_direction_reverse = style.ResolvedIsReverseFlexDirection();
 
   bool inline_start = false;
@@ -71,11 +72,13 @@ void MergeAnonymousFlexItems(LayoutObject* remove_child) {
   // are text nodes wrapped in anonymous flex items, the adjacent text nodes
   // need to be merged into the same flex item.
   LayoutObject* prev = remove_child->PreviousSibling();
-  if (!prev || !prev->IsAnonymousBlock())
+  if (!prev || !prev->IsAnonymousBlockFlow()) {
     return;
+  }
   LayoutObject* next = remove_child->NextSibling();
-  if (!next || !next->IsAnonymousBlock())
+  if (!next || !next->IsAnonymousBlockFlow()) {
     return;
+  }
   To<LayoutBoxModelObject>(next)->MoveAllChildrenTo(
       To<LayoutBoxModelObject>(prev));
   next->Destroy();
@@ -87,7 +90,7 @@ bool LayoutFlexibleBox::IsChildAllowed(LayoutObject* object,
                                        const ComputedStyle& style) const {
   const auto* select = DynamicTo<HTMLSelectElement>(GetNode());
   if (select && select->UsesMenuList()) [[unlikely]] {
-    if (select->IsAppearanceBaseButton()) {
+    if (select->IsAppearanceBase()) {
       CHECK(HTMLSelectElement::CustomizableSelectEnabled(select));
       if (IsA<HTMLOptionElement>(object->GetNode()) ||
           IsA<HTMLOptGroupElement>(object->GetNode()) ||
@@ -129,9 +132,7 @@ const DevtoolsFlexInfo* LayoutFlexibleBox::FlexLayoutData() const {
 }
 
 void LayoutFlexibleBox::RemoveChild(LayoutObject* child) {
-  if (!DocumentBeingDestroyed() &&
-      (RuntimeEnabledFeatures::LayoutWebkitBoxTreeFixEnabled() ||
-       !StyleRef().IsDeprecatedFlexbox())) {
+  if (!DocumentBeingDestroyed()) {
     MergeAnonymousFlexItems(child);
   }
 

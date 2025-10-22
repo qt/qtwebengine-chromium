@@ -21,7 +21,7 @@
 #include "media/base/test_helpers.h"
 #include "media/base/win/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 
 using base::RunLoop;
 using Microsoft::WRL::ComPtr;
@@ -42,7 +42,7 @@ class StubClientSharedImageInterface : public gpu::ClientSharedImageInterface {
       const gpu::SharedImageInfo& si_info,
       gfx::GpuMemoryBufferHandle handle) override {
     return base::MakeRefCounted<gpu::ClientSharedImage>(
-        gpu::Mailbox::Generate(), si_info.meta, gpu::SyncToken(), holder_,
+        gpu::Mailbox::Generate(), si_info, gpu::SyncToken(), holder_,
         handle.type);
   }
 
@@ -53,9 +53,8 @@ class StubClientSharedImageInterface : public gpu::ClientSharedImageInterface {
       gfx::BufferUsage buffer_usage,
       gfx::GpuMemoryBufferHandle buffer_handle) override {
     return base::MakeRefCounted<gpu::ClientSharedImage>(
-        gpu::Mailbox::Generate(), si_info.meta, gpu::SyncToken(),
+        gpu::Mailbox::Generate(), si_info, gpu::SyncToken(),
         gpu::GpuMemoryBufferHandleInfo(std::move(buffer_handle),
-                                       si_info.meta.format, si_info.meta.size,
                                        buffer_usage),
         holder_);
   }
@@ -114,9 +113,7 @@ class DCOMPTextureWrapperTest : public testing::Test {
 void DCOMPTextureWrapperTest::CreateDXBackedVideoFrameTestTask(
     std::unique_ptr<media::DCOMPTextureWrapper> dcomp_texture_wrapper,
     base::OnceClosure closure) {
-  gfx::GpuMemoryBufferHandle dx_handle;
-  dx_handle.type = gfx::GpuMemoryBufferType::DXGI_SHARED_HANDLE;
-  dx_handle.set_dxgi_handle(gfx::DXGIHandle::CreateFakeForTest());
+  gfx::GpuMemoryBufferHandle dx_handle(gfx::DXGIHandle::CreateFakeForTest());
   gfx::Size frame_size(1920, 1080);
 
   base::WaitableEvent wait_event;

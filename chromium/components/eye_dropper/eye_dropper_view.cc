@@ -13,6 +13,7 @@
 
 #include "base/memory/raw_ptr.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "build/build_config.h"
 #include "components/color/color_id.h"
 #include "components/eye_dropper/features.h"
@@ -100,7 +101,7 @@ class EyeDropperView::ScreenCapturer
 
 EyeDropperView::ScreenCapturer::ScreenCapturer(EyeDropperView* owner)
     : owner_(owner) {
-  static bool allow_wgc_screen_capture =
+  static bool allow_wgc_screen_capturer =
 #if BUILDFLAG(IS_WIN)
       // Allow WGC screen capture if Windows version is greater or equal
       // than 10.0.20348.0, as the following API, which controls if a border is
@@ -110,13 +111,21 @@ EyeDropperView::ScreenCapturer::ScreenCapturer(EyeDropperView* owner)
       base::win::GetVersion() >= base::win::Version::SERVER_2022 &&
 #endif  // BUILDFLAG(IS_WIN)
       base::FeatureList::IsEnabled(features::kAllowEyeDropperWGCScreenCapture);
+  auto options = content::desktop_capture::CreateDesktopCaptureOptions();
+
+#if defined(RTC_ENABLE_WIN_WGC)
+  if (allow_wgc_screen_capturer) {
+    options.set_allow_wgc_screen_capturer(true);
+  }
+#endif  // defined(RTC_ENABLE_WIN_WGC)
+
   // TODO(iopopesc): Update the captured frame after a period of time to match
   // latest content on screen.
-  capturer_ =
-      content::desktop_capture::CreateScreenCapturer(allow_wgc_screen_capture);
+  capturer_ = content::desktop_capture::CreateScreenCapturer(
+      options, /*for_snapshot=*/true);
   if (capturer_) {
     capturer_->Start(this);
-    if (allow_wgc_screen_capture) {
+    if (allow_wgc_screen_capturer) {
       capturer_->SelectSource(webrtc::kFullDesktopScreenId);
     }
   }
@@ -202,11 +211,9 @@ EyeDropperView::EyeDropperView(gfx::NativeView parent,
       view_position_handler_(std::make_unique<ViewPositionHandler>(this)),
       screen_capturer_(std::make_unique<ScreenCapturer>(this)) {
   SetModalType(ui::mojom::ModalType::kWindow);
-  // This is owned as a unique_ptr<EyeDropper> elsewhere.
-  SetOwnedByWidget(false);
   // TODO(pbos): Remove this, perhaps by separating the contents view from the
   // EyeDropper/WidgetDelegate.
-  set_owned_by_client();
+  set_owned_by_client(OwnedByClientPassKey());
   SetPreferredSize(GetSize());
 #if BUILDFLAG(IS_LINUX)
   // Use TYPE_MENU for Linux to ensure that the eye dropper view is displayed

@@ -6,11 +6,13 @@
 
 #include <memory>
 
+#include "base/strings/string_number_conversions.h"
 #include "base/test/metrics/histogram_tester.h"
 #include "base/test/power_monitor_test.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/test_trace_processor.h"
 #include "base/time/time.h"
+#include "components/page_load_metrics/browser/features.h"
 #include "components/page_load_metrics/browser/metrics_web_contents_observer.h"
 #include "components/page_load_metrics/browser/observers/core/largest_contentful_paint_handler.h"
 #include "components/page_load_metrics/browser/observers/page_load_metrics_observer_content_test_harness.h"
@@ -93,7 +95,7 @@ class UmaPageLoadMetricsObserverTest
 
   void SetUp() override {
     scoped_feature_list_.InitAndEnableFeature(
-        features::kV8PerFrameMemoryMonitoring);
+        page_load_metrics::features::kV8PerFrameMemoryMonitoring);
     page_load_metrics::PageLoadMetricsObserverContentTestHarness::SetUp();
     page_load_metrics::LargestContentfulPaintHandler::SetTestMode(true);
     WebContentsObserver::Observe(web_contents());

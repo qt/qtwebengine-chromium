@@ -13,8 +13,8 @@
 #include "base/no_destructor.h"
 #include "base/process/process_handle.h"
 #include "base/synchronization/lock.h"
-#include "base/trace_event/base_tracing.h"
 #include "build/buildflag.h"
+#include "third_party/perfetto/protos/perfetto/trace/track_event/chrome_process_descriptor.pbzero.h"
 
 namespace tracing {
 class TraceEventDataSource;
@@ -25,6 +25,10 @@ class TrackNameRecorder;
 namespace mojo::core {
 class Channel;
 }
+
+namespace network {
+class ContentDecodingInterceptor;
+}  // namespace network
 
 namespace base {
 namespace test {
@@ -78,6 +82,7 @@ class BASE_EXPORT CurrentProcess {
     friend class ::tracing::CustomEventRecorder;
     friend class ::tracing::TrackNameRecorder;
     friend class ::mojo::core::Channel;
+    friend class ::network::ContentDecodingInterceptor;
   };
   // Returns an enum corresponding to the type of the current process (e.g.
   // browser / renderer / utility / etc). It can be used in metrics or tracing

@@ -39,7 +39,8 @@ struct VertexBufferWithOffset
 class VertexArrayWgpu : public VertexArrayImpl
 {
   public:
-    VertexArrayWgpu(const gl::VertexArrayState &data);
+    VertexArrayWgpu(const gl::VertexArrayState &data,
+                    const gl::VertexArrayBuffers &vertexArrayBuffers);
 
     angle::Result syncState(const gl::Context *context,
                             const gl::VertexArray::DirtyBits &dirtyBits,
@@ -76,8 +77,32 @@ class VertexArrayWgpu : public VertexArrayImpl
                                       webgpu::BufferHelper &buffer,
                                       size_t size,
                                       size_t attribIndex,
-                                      wgpu::BufferUsage usage,
+                                      WGPUBufferUsage usage,
                                       BufferType bufferType);
+
+    IndexDataNeedsStreaming determineIndexDataNeedsStreaming(
+        gl::DrawElementsType sourceDrawElementsTypeOrInvalid,
+        GLsizei count,
+        gl::PrimitiveMode mode,
+        gl::DrawElementsType *destDrawElementsTypeOrInvalidOut);
+
+    // Calculates new index count for draw calls that need to be emulated.
+    angle::Result calculateAdjustedIndexCount(gl::PrimitiveMode mode,
+                                              bool primitiveRestartEnabled,
+                                              gl::DrawElementsType destDrawElementsTypeOrInvalid,
+                                              GLsizei count,
+                                              const uint8_t *srcIndexData,
+                                              GLsizei *adjustedCountOut);
+
+    angle::Result calculateStagingBufferSize(bool srcDestDrawElementsTypeEqual,
+                                             bool primitiveRestartEnabled,
+                                             ContextWgpu *contextWgpu,
+                                             IndexDataNeedsStreaming indexDataNeedsStreaming,
+                                             std::optional<size_t> destIndexDataSize,
+                                             gl::AttributesMask clientAttributesToSync,
+                                             GLsizei instanceCount,
+                                             std::optional<gl::IndexRange> indexRange,
+                                             size_t *stagingBufferSizeOut);
 
     gl::AttribArray<webgpu::PackedVertexAttribute> mCurrentAttribs;
     gl::AttribArray<webgpu::BufferHelper> mStreamingArrayBuffers;

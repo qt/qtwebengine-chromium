@@ -78,9 +78,9 @@ static_library("app_mode") {
     "//chromeos/ash/components/dbus/userdataauth",
     "//chromeos/ash/components/disks",
     "//chromeos/ash/components/install_attributes",
-    "//chromeos/ash/components/kiosk/vision",
     "//chromeos/ash/components/login/auth",
     "//chromeos/ash/components/network",
+    "//chromeos/ash/components/policy/device_local_account",
     "//chromeos/ash/components/settings",
     "//chromeos/crosapi/mojom",
     "//chromeos/crosapi/mojom:mojom_shared_cpp_sources",
@@ -102,6 +102,7 @@ static_library("app_mode") {
     "//chrome/app:generated_resources_grit",
     "//chrome/browser:browser_process",
     "//chrome/browser/apps/app_service/app_icon",
+    "//chrome/browser/ash/app_mode/arcvm_app",
     "//chrome/browser/ash/app_mode/auto_sleep",
     "//chrome/browser/ash/app_mode/isolated_web_app",
     "//chrome/browser/ash/app_mode/metrics",
@@ -117,7 +118,6 @@ static_library("app_mode") {
     "//chrome/browser/ash/policy/remote_commands/crd",
     "//chrome/browser/ash/profiles",
     "//chrome/browser/chromeos/app_mode",
-    "//chrome/browser/image_decoder",
     "//chrome/browser/profiles:profile",
     "//chrome/common:constants",
     "//chromeos/ash/components/cryptohome",
@@ -143,6 +143,7 @@ static_library("app_mode") {
   ]
 
   allow_circular_includes_from = [
+    "//chrome/browser/ash/app_mode/arcvm_app",
     "//chrome/browser/ash/app_mode/isolated_web_app",
     "//chrome/browser/ash/app_mode/web_app",
     "//chrome/browser/ash/login",
@@ -191,6 +192,7 @@ static_library("test_support") {
     "//chrome/common:non_code_constants",
     "//chrome/test:test_support_ui",
     "//chrome/test/data/chromeos/app_mode/webstore/itemsnippet",
+    "//chromeos/ash/components/policy/device_local_account",
   ]
   data_deps = [ "//chrome/test/data/chromeos/app_mode/webstore/itemsnippet:generated_protobufs" ]
 }
@@ -228,6 +230,7 @@ source_set("unit_tests") {
     "//chrome/test:test_support_ui",
     "//chromeos/ash/components/login/login_state",
     "//chromeos/ash/components/network:test_support",
+    "//chromeos/ash/components/policy/device_local_account",
     "//chromeos/ash/components/sync_wifi:test_support",
     "//components/prefs:test_support",
     "//components/webapps/browser",
@@ -235,13 +238,14 @@ source_set("unit_tests") {
     "//content/test:test_support",
     "//extensions:test_support",
     "//extensions/browser/updater",
-    "//extensions/common:common",
+    "//extensions/common",
     "//google_apis",
     "//services/data_decoder/public/cpp:test_support",
     "//testing/gmock",
     "//testing/gtest",
 
     # Test from sub-directories
+    "//chrome/browser/ash/app_mode/arcvm_app:unit_tests",
     "//chrome/browser/ash/app_mode/auto_sleep:unit_tests",
     "//chrome/browser/ash/app_mode/isolated_web_app:unit_tests",
     "//chrome/browser/ash/app_mode/metrics:unit_tests",
@@ -280,7 +284,8 @@ source_set("browser_tests") {
     "//chrome/browser/ash/system_web_apps/test_support",
     "//chrome/browser/chromeos/app_mode",
     "//chrome/browser/devtools:test_support",
-    "//chrome/browser/extensions:extensions",
+    "//chrome/browser/extensions",
+    "//chrome/browser/lifetime:termination_notification",
     "//chrome/browser/ui",
     "//chrome/browser/ui/ash/system_web_apps",
     "//chrome/common:constants",
@@ -289,7 +294,9 @@ source_set("browser_tests") {
     "//chromeos/ash/components/cryptohome",
     "//chromeos/ash/components/dbus/session_manager",
     "//chromeos/ash/components/dbus/shill",
-    "//chromeos/ash/components/dbus/update_engine:update_engine",
+    "//chromeos/ash/components/dbus/update_engine",
+    "//chromeos/ash/components/policy/device_local_account",
+    "//chromeos/ash/components/policy/device_policy:test_support",
     "//components/crx_file",
     "//components/ownership",
     "//content/test:test_support",

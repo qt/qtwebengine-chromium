@@ -151,7 +151,6 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
 
 #if BUILDFLAG(IS_LINUX)
   bool IsGpuMemoryBufferNV12Supported();
-  void SetGpuMemoryBufferNV12Supported(bool supported);
 #endif  // BUILDFLAG(IS_LINUX)
 
   void DisableDomainBlockingFor3DAPIsForTesting();
@@ -185,8 +184,8 @@ class CONTENT_EXPORT GpuDataManagerImplPrivate {
                            MultipleTDRsCanBeUnblocked);
 
   // Indicates the reason that access to a given client API (like
-  // WebGL or Pepper 3D) was blocked or not. This state is distinct
-  // from blocklisting of an entire feature.
+  // WebGL) was blocked or not. This state is distinct from blocklisting of an
+  // entire feature.
   enum class DomainBlockStatus {
     kBlocked,
     kAllDomainsBlocked,

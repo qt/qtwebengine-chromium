@@ -27,6 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -165,7 +166,7 @@ export class LayersPanel extends UI.Panel.PanelWithSidebar implements SDK.Target
         const mainFrame = resourceModel.mainFrame;
         if (mainFrame) {
           const url = mainFrame.url;
-          // Add the currently visualized url as an attribute to make it accessibles to e2e tests
+          // Add the currently visualized url as an attribute to make it accessible to e2e tests
           this.element.setAttribute('test-current-url', url);
         }
       }

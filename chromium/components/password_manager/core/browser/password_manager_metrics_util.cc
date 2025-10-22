@@ -4,6 +4,8 @@
 
 #include "components/password_manager/core/browser/password_manager_metrics_util.h"
 
+#include "base/containers/flat_map.h"
+#include "base/containers/flat_set.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/user_metrics.h"
 #include "base/metrics/user_metrics_action.h"
@@ -17,7 +19,9 @@
 #include "components/prefs/pref_service.h"
 #include "services/metrics/public/cpp/ukm_builders.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
+#include "ui/base/l10n/l10n_util.h"
 
+using autofill::SuggestionType;
 using autofill::password_generation::PasswordGenerationType;
 
 namespace ukm::builders {
@@ -36,7 +40,6 @@ struct PasswordAndPasskeyCounts {
 
 PasswordAndPasskeyCounts GetPasswordPasskeyCountsAndUseAnotherDeviceShown(
     const std::vector<autofill::Suggestion>& suggestions) {
-  using autofill::SuggestionType;
   PasswordAndPasskeyCounts counts;
   for (const auto& suggestion : suggestions) {
     switch (suggestion.type) {
@@ -55,6 +58,47 @@ PasswordAndPasskeyCounts GetPasswordPasskeyCountsAndUseAnotherDeviceShown(
     }
   }
   return counts;
+}
+
+base::flat_set<PasswordDropdownDuplicateCredentialsType>
+GetDuplicateCredentialsTypes(
+    const std::vector<autofill::Suggestion>& suggestions) {
+  struct CredentialCountsPerUser {
+    int password_count = 0;
+    int passkey_count = 0;
+  };
+  base::flat_map<std::u16string, CredentialCountsPerUser> username_to_counts;
+
+  for (const auto& suggestion : suggestions) {
+    SuggestionType type = suggestion.type;
+    if (type == SuggestionType::kPasswordEntry ||
+        type == SuggestionType::kAccountStoragePasswordEntry) {
+      username_to_counts[suggestion.main_text.value].password_count++;
+    } else if (type == SuggestionType::kWebauthnCredential) {
+      username_to_counts[suggestion.main_text.value].passkey_count++;
+    }
+  }
+
+  base::flat_set<PasswordDropdownDuplicateCredentialsType> types;
+  for (const auto& entry : username_to_counts) {
+    const auto& counts = entry.second;
+    if (counts.password_count > 0 && counts.passkey_count > 0) {
+      types.emplace(PasswordDropdownDuplicateCredentialsType::
+                        kDuplicatePasswordsAndPasskeys);
+      continue;
+    }
+    if (counts.passkey_count > 1) {
+      types.emplace(
+          PasswordDropdownDuplicateCredentialsType::kDuplicatePasskeys);
+      continue;
+    }
+    if (counts.password_count > 1) {
+      types.emplace(
+          PasswordDropdownDuplicateCredentialsType::kDuplicatePasswords);
+      continue;
+    }
+  }
+  return types;
 }
 
 }  // namespace
@@ -260,7 +304,7 @@ void LogPasswordDropdownShown(
   }
   for (const auto& suggestion : suggestions) {
     switch (suggestion.type) {
-      case autofill::SuggestionType::kGeneratePasswordEntry:
+      case SuggestionType::kGeneratePasswordEntry:
         dropdown_state = PasswordDropdownState::kStandardGenerate;
         break;
       default:
@@ -319,13 +363,6 @@ void LogDownloadedPasswordsCountFromAccountStoreAfterUnlock(
   base::UmaHistogramCounts100(
       "PasswordManager.AccountStoreCredentialsAfterOptIn",
       account_store_passwords_count);
-}
-
-void LogDownloadedBlocklistedEntriesCountFromAccountStoreAfterUnlock(
-    int blocklist_entries_count) {
-  base::UmaHistogramCounts100(
-      "PasswordManager.AccountStoreBlocklistedEntriesAfterOptIn",
-      blocklist_entries_count);
 }
 
 void LogPasswordSettingsReauthResult(device_reauth::ReauthResult result) {
@@ -391,7 +428,7 @@ void LogGenerationDialogChoice(GenerationDialogChoice choice,
       base::UmaHistogramEnumeration(
           "PasswordManager.TouchToFill.PasswordGeneration.UserChoice", choice);
       break;
-  };
+  }
 }  // namespace metrics_util
 
 void LogGaiaPasswordHashChange(GaiaPasswordHashChange event,
@@ -480,14 +517,6 @@ void LogProcessIncomingPasswordSharingInvitationResult(
 }
 
 #if BUILDFLAG(IS_ANDROID)
-void LogLocalPwdMigrationProgressState(
-    LocalPwdMigrationProgressState scheduling_state) {
-  base::UmaHistogramEnumeration(
-      "PasswordManager.UnifiedPasswordManager.MigrationForLocalUsers."
-      "ProgressState",
-      scheduling_state);
-}
-
 void LogSharedPrefCredentialsAccessOutcome(
     SharedPrefCredentialsAccessOutcome outcome) {
   base::UmaHistogramEnumeration(
@@ -578,6 +607,7 @@ void MaybeLogMetricsForPasswordAndWebauthnCounts(
         "PasswordManager.PasswordDropdownShown.NonWebAuthnRequest"));
     // Non-WebAuthn requests cannot have passkeys or use another device options.
   }
+  LogDuplicateCredentialsMetrics(suggestions, is_for_webauthn_request);
 }
 
 void LogPasswordDropdownHidden() {
@@ -589,6 +619,52 @@ void LogFillSuggestionGroupedMatchAccepted(bool grouped_match_accepted) {
   base::UmaHistogramBoolean(
       "PasswordManager.FillSuggestionsGroupedMatchAccepted",
       grouped_match_accepted);
+}
+
+void LogDuplicateCredentialsMetrics(
+    const std::vector<autofill::Suggestion>& suggestions,
+    bool is_for_webauthn_request) {
+  base::flat_set<PasswordDropdownDuplicateCredentialsType> types =
+      GetDuplicateCredentialsTypes(suggestions);
+
+  std::string_view request_type_suffix =
+      is_for_webauthn_request ? "WebAuthnRequest." : "NonWebAuthnRequest.";
+
+  base::UmaHistogramBoolean(
+      base::StrCat({"PasswordManager.PasswordDropdownShown.",
+                    request_type_suffix, "HasAnyDuplicateCredentials"}),
+      !types.empty());
+
+  for (PasswordDropdownDuplicateCredentialsType type : types) {
+    base::UmaHistogramEnumeration(
+        base::StrCat({"PasswordManager.PasswordDropdownShown.",
+                      request_type_suffix,
+                      "DuplicateCredentialsTypesWhenExists"}),
+        type);
+  }
+}
+
+void LogCumulativeGetCredentialsMetrics(
+    password_manager::CredentialManagerError error) {
+  base::UmaHistogramBoolean(
+      "PasswordManager.CredentialRequest.Get.Success",
+      error == password_manager::CredentialManagerError::SUCCESS);
+}
+
+void LogPageContentCaptureFailure(PasswordChangeFlowStep step) {
+  base::UmaHistogramEnumeration(
+      "PasswordManager.PasswordChange.FailedCapturingPageContent", step);
+}
+
+void LogPrimaryPasswordUpdatedWithBackup(ukm::SourceId ukm_source_id) {
+  base::UmaHistogramEnumeration(
+      "PasswordManager.PasswordChangeRecoveryFlow",
+      password_manager::metrics_util::PasswordChangeRecoveryFlowState::
+          kPrimaryPasswordUpdated);
+  ukm::builders::PasswordManager_ChangeRecovery(ukm_source_id)
+      .SetPasswordChangeRecoveryFlow(static_cast<int>(
+          PasswordChangeRecoveryFlowState::kPrimaryPasswordUpdated))
+      .Record(ukm::UkmRecorder::Get());
 }
 
 }  // namespace password_manager::metrics_util

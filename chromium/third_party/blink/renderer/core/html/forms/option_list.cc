@@ -21,19 +21,6 @@ void OptionListIterator::Advance(HTMLOptionElement* previous) {
 
   Element* current;
   if (previous) {
-    if (HTMLSelectElement::SelectParserRelaxationEnabled(&select_) &&
-        !previous->OwnerSelectElement(/*skip_check=*/true)) {
-      // In some cases, an OptionList is created and used for a select element
-      // before its descendant option elements had InsertedInto called on
-      // them, such as constructing fragments in Element::setInnerHTML. When
-      // these options aren't notified like this, they won't have the correct
-      // value for OwnerSelectElement yet. We can update it to the correct
-      // value here.
-      // TODO(crbug.com/398887837): Remove this.
-      previous->SetOwnerSelectElement(const_cast<HTMLSelectElement*>(&select_));
-    } else {
-      DCHECK_EQ(previous->OwnerSelectElement(), select_);
-    }
     current = ElementTraversal::NextSkippingChildren(*previous, &select_);
   } else {
     current = ElementTraversal::FirstChild(select_);
@@ -86,7 +73,7 @@ void OptionListIterator::Retreat(HTMLOptionElement* next) {
   Element* current;
   if (next) {
     DCHECK_EQ(next->OwnerSelectElement(), select_);
-    current = ElementTraversal::PreviousAbsoluteSibling(*next, &select_);
+    current = ElementTraversal::Previous(*next, &select_);
   } else {
     current = ElementTraversal::LastChild(select_);
   }
@@ -102,7 +89,7 @@ void OptionListIterator::Retreat(HTMLOptionElement* next) {
         current = nullptr;
       } else if (IsA<HTMLSelectElement>(current) ||
                  IsA<HTMLHRElement>(current)) {
-        current = ElementTraversal::PreviousAbsoluteSibling(*next, &select_);
+        current = ElementTraversal::PreviousAbsoluteSibling(*current, &select_);
       } else if (auto* optgroup = DynamicTo<HTMLOptGroupElement>(current)) {
         // optgroup->OwnerSelectElement() might be null because this method may
         // be called before InsertedInto is called on the optgroup.
@@ -112,7 +99,8 @@ void OptionListIterator::Retreat(HTMLOptionElement* next) {
           current = ElementTraversal::Previous(*current, &select_);
         } else {
           // Don't track elements inside nested <optgroup>s.
-          current = ElementTraversal::PreviousAbsoluteSibling(*next, &select_);
+          current =
+              ElementTraversal::PreviousAbsoluteSibling(*current, &select_);
         }
       } else {
         current = ElementTraversal::Previous(*current, &select_);
@@ -168,6 +156,18 @@ HTMLOptionElement* OptionList::FindFocusableOption(HTMLOptionElement& option,
       return &*option_list_iterator;
     }
   }
+}
+
+HTMLOptionElement* OptionList::FirstKeyboardFocusableOption() {
+  if (Empty()) {
+    return nullptr;
+  }
+  for (OptionListIterator it = begin(); it; ++it) {
+    if (it->IsKeyboardFocusableSlow(Element::UpdateBehavior::kStyleAndLayout)) {
+      return &*it;
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace blink

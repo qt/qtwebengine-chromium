@@ -22,7 +22,6 @@ IOWatcher* IOWatcher::Get() {
   return CurrentThread::Get()->GetIOWatcher();
 }
 
-#if !BUILDFLAG(IS_NACL)
 #if BUILDFLAG(IS_WIN)
 bool IOWatcher::RegisterIOHandler(HANDLE file,
                                   MessagePumpForIO::IOHandler* handler) {
@@ -44,7 +43,8 @@ std::unique_ptr<IOWatcher::FdWatch> IOWatcher::WatchFileDescriptor(
 }
 #endif
 
-#if BUILDFLAG(IS_MAC) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD))
+#if BUILDFLAG(IS_MAC) || \
+    (BUILDFLAG(IS_IOS) && !BUILDFLAG(CRONET_BUILD) && !BUILDFLAG(IS_IOS_TVOS))
 bool IOWatcher::WatchMachReceivePort(
     mach_port_t port,
     MessagePumpForIO::MachPortWatchController* controller,
@@ -61,6 +61,5 @@ bool IOWatcher::WatchZxHandle(
   return WatchZxHandleImpl(handle, persistent, signals, controller, delegate);
 }
 #endif
-#endif  // !BUILDFLAG(IS_NACL)
 
 }  // namespace base

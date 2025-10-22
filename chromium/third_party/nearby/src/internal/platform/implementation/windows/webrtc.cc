@@ -28,7 +28,6 @@
 #include "internal/platform/logging.h"
 #include "webrtc/api/peer_connection_interface.h"
 #include "webrtc/api/scoped_refptr.h"
-#include "webrtc/api/task_queue/default_task_queue_factory.h"
 #include "webrtc/rtc_base/thread.h"
 
 namespace nearby {
@@ -90,7 +89,7 @@ void WebRtcMedium::CreatePeerConnection(
   ice_server.urls.emplace_back("stun:stun4.l.google.com:19302");
   rtc_config.servers.push_back(ice_server);
 
-  std::unique_ptr<rtc::Thread> signaling_thread = rtc::Thread::Create();
+  std::unique_ptr<webrtc::Thread> signaling_thread = webrtc::Thread::Create();
   signaling_thread->SetName("signaling_thread", nullptr);
   if (!signaling_thread->Start()) {
     LOG(FATAL) << "Failed to start thread";
@@ -98,11 +97,9 @@ void WebRtcMedium::CreatePeerConnection(
 
   webrtc::PeerConnectionDependencies dependencies(observer);
   webrtc::PeerConnectionFactoryDependencies factory_dependencies;
-  factory_dependencies.task_queue_factory =
-      webrtc::CreateDefaultTaskQueueFactory();
   factory_dependencies.signaling_thread = signaling_thread.release();
 
-  rtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
+  webrtc::scoped_refptr<webrtc::PeerConnectionFactoryInterface>
       peer_connection_factory = webrtc::CreateModularPeerConnectionFactory(
           std::move(factory_dependencies));
   if (options.has_value()) {

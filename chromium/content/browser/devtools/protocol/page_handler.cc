@@ -604,13 +604,15 @@ void PageHandler::DidDetachInterstitialPage() {
 }
 
 void PageHandler::DidRunJavaScriptDialog(const GURL& url,
+                                         const base::UnguessableToken& frame_id,
                                          const std::u16string& message,
                                          const std::u16string& default_prompt,
                                          JavaScriptDialogType dialog_type,
                                          bool has_non_devtools_handlers,
                                          JavaScriptDialogCallback callback) {
-  if (!enabled_)
+  if (!enabled_) {
     return;
+  }
   DCHECK(pending_dialog_.is_null());
   pending_dialog_ = std::move(callback);
   std::string type = Page::DialogTypeEnum::Alert;
@@ -618,29 +620,37 @@ void PageHandler::DidRunJavaScriptDialog(const GURL& url,
     type = Page::DialogTypeEnum::Confirm;
   if (dialog_type == JAVASCRIPT_DIALOG_TYPE_PROMPT)
     type = Page::DialogTypeEnum::Prompt;
-  frontend_->JavascriptDialogOpening(url.spec(), base::UTF16ToUTF8(message),
-                                     type, has_non_devtools_handlers,
-                                     base::UTF16ToUTF8(default_prompt));
+  frontend_->JavascriptDialogOpening(
+      url.spec(), frame_id.ToString(), base::UTF16ToUTF8(message), type,
+      has_non_devtools_handlers, base::UTF16ToUTF8(default_prompt));
 }
 
-void PageHandler::DidRunBeforeUnloadConfirm(const GURL& url,
-                                            bool has_non_devtools_handlers,
-                                            JavaScriptDialogCallback callback) {
-  if (!enabled_)
+void PageHandler::DidRunBeforeUnloadConfirm(
+    const GURL& url,
+    const base::UnguessableToken& frame_id,
+    bool has_non_devtools_handlers,
+    JavaScriptDialogCallback callback) {
+  if (!enabled_) {
     return;
+  }
   DCHECK(pending_dialog_.is_null());
   pending_dialog_ = std::move(callback);
-  frontend_->JavascriptDialogOpening(url.spec(), std::string(),
+  frontend_->JavascriptDialogOpening(url.spec(), frame_id.ToString(),
+                                     std::string(),
                                      Page::DialogTypeEnum::Beforeunload,
                                      has_non_devtools_handlers, std::string());
 }
 
-void PageHandler::DidCloseJavaScriptDialog(bool success,
-                                           const std::u16string& user_input) {
-  if (!enabled_)
+void PageHandler::DidCloseJavaScriptDialog(
+    const base::UnguessableToken& frame_id,
+    bool success,
+    const std::u16string& user_input) {
+  if (!enabled_) {
     return;
+  }
   pending_dialog_.Reset();
-  frontend_->JavascriptDialogClosed(success, base::UTF16ToUTF8(user_input));
+  frontend_->JavascriptDialogClosed(frame_id.ToString(), success,
+                                    base::UTF16ToUTF8(user_input));
 }
 
 Response PageHandler::Enable(
@@ -649,7 +659,7 @@ Response PageHandler::Enable(
       host_->frame_tree_node() &&
       host_->frame_tree_node()->navigation_request()) {
     // If the Page domain was not enabled, the page is the top level frame, and
-    // there is a penging navigation, emit `FrameStartedNavigating` event.
+    // there is a pending navigation, emit `FrameStartedNavigating` event.
     FrameTreeNode* frame_tree_node = host_->frame_tree_node();
     NavigationRequest* navigation_request =
         host_->frame_tree_node()->navigation_request();
@@ -769,7 +779,7 @@ void PageHandler::Reload(std::optional<bool> bypassCache,
   }
 }
 
-static network::mojom::ReferrerPolicy ParsePolicyFromString(
+static std::optional<network::mojom::ReferrerPolicy> ParsePolicyFromString(
     const std::string& policy) {
   if (policy == Page::ReferrerPolicyEnum::NoReferrer)
     return network::mojom::ReferrerPolicy::kNever;
@@ -788,9 +798,7 @@ static network::mojom::ReferrerPolicy ParsePolicyFromString(
   }
   if (policy == Page::ReferrerPolicyEnum::UnsafeUrl)
     return network::mojom::ReferrerPolicy::kAlways;
-
-  DCHECK(policy.empty());
-  return network::mojom::ReferrerPolicy::kDefault;
+  return std::nullopt;
 }
 
 namespace {
@@ -807,7 +815,8 @@ void DispatchNavigateCallback(
   // abort to DevTools anyway.
   if (!request->IsNavigationStarted()) {
     callback->sendSuccess(frame_id, std::nullopt,
-                          net::ErrorToString(net::ERR_ABORTED));
+                          net::ErrorToString(net::ERR_ABORTED),
+                          request->IsDownload());
     return;
   }
   std::optional<std::string> opt_error;
@@ -817,7 +826,8 @@ void DispatchNavigateCallback(
       request->IsSameDocument()
           ? std::optional<std::string>()
           : request->devtools_navigation_token().ToString();
-  callback->sendSuccess(frame_id, std::move(loader_id), std::move(opt_error));
+  callback->sendSuccess(frame_id, std::move(loader_id), std::move(opt_error),
+                        request->IsDownload());
 }
 
 }  // namespace
@@ -896,9 +906,18 @@ void PageHandler::Navigate(const std::string& url,
     return;
   }
 
-  NavigationController::LoadURLParams params(gurl);
   network::mojom::ReferrerPolicy policy =
-      ParsePolicyFromString(referrer_policy.value_or(""));
+      network::mojom::ReferrerPolicy::kDefault;
+  if (referrer_policy.has_value()) {
+    const auto& parsed_policy = ParsePolicyFromString(referrer_policy.value());
+    if (!parsed_policy.has_value()) {
+      callback->sendFailure(Response::InvalidParams("Invalid referrerPolicy"));
+      return;
+    }
+    policy = parsed_policy.value();
+  }
+
+  NavigationController::LoadURLParams params(gurl);
   params.referrer = Referrer(GURL(referrer.value_or("")), policy);
   params.transition_type = type;
   params.frame_tree_node_id = frame_tree_node->frame_tree_node_id();
@@ -921,7 +940,7 @@ void PageHandler::Navigate(const std::string& url,
     return;
   if (!navigation_handle) {
     callback->sendSuccess(out_frame_id, std::nullopt,
-                          net::ErrorToString(net::ERR_ABORTED));
+                          net::ErrorToString(net::ERR_ABORTED), std::nullopt);
     return;
   }
   auto* navigation_request =
@@ -1358,6 +1377,17 @@ void PageHandler::CaptureScreenshot(
     }
     pending_request->requested_image_size =
         gfx::ScaleToRoundedSize(requested_image_size, scale);
+  }
+
+  // TODO(crbug.com/377715191): this should check RenderWidgetHostViewBase
+  // instead, but there is no easy way to do this today. Once that's possible,
+  // this check should move inside RenderWidetHostImpl::GetSnapshotFromBrowser.
+  if (base::FeatureList::IsEnabled(features::kCDPScreenshotNewSurface)) {
+    if (auto* wc = WebContentsImpl::FromRenderFrameHostImpl(host_)) {
+      // When view is completely hidden, capturing a surface snapshot
+      // will stall because the surface is never presented.
+      CHECK(wc->GetPageVisibilityState() != PageVisibilityState::kHidden);
+    }
   }
 
   widget_host->GetSnapshotFromBrowser(
@@ -1841,8 +1871,12 @@ Page::BackForwardCacheNotRestoredReason NotRestoredReasonToProtocol(
     case Reason::kWebViewDocumentStartJavascriptChanged:
       return Page::BackForwardCacheNotRestoredReasonEnum::
           WebViewDocumentStartJavascriptChanged;
-    case Reason::kCacheLimitPruned:
-      return Page::BackForwardCacheNotRestoredReasonEnum::CacheLimitPruned;
+    case Reason::kCacheLimitPrunedOnModerateMemoryPressure:
+      return Page::BackForwardCacheNotRestoredReasonEnum::
+          CacheLimitPrunedOnModerateMemoryPressure;
+    case Reason::kCacheLimitPrunedOnCriticalMemoryPressure:
+      return Page::BackForwardCacheNotRestoredReasonEnum::
+          CacheLimitPrunedOnCriticalMemoryPressure;
     case Reason::kBlocklistedFeatures:
       // Blocklisted features should be handled separately and be broken down
       // into sub reasons.
@@ -1852,6 +1886,8 @@ Page::BackForwardCacheNotRestoredReason NotRestoredReasonToProtocol(
     case Reason::kCacheControlNoStoreDeviceBoundSessionTerminated:
       return Page::BackForwardCacheNotRestoredReasonEnum::
           CacheControlNoStoreDeviceBoundSessionTerminated;
+    case Reason::kSharedWorkerMessage:
+      return Page::BackForwardCacheNotRestoredReasonEnum::SharedWorkerMessage;
   }
 }
 
@@ -1930,8 +1966,6 @@ Page::BackForwardCacheNotRestoredReason BlocklistedFeatureToProtocol(
           OutstandingNetworkRequestXHR;
     case WebSchedulerTrackedFeature::kPrinting:
       return Page::BackForwardCacheNotRestoredReasonEnum::Printing;
-    case WebSchedulerTrackedFeature::kWebDatabase:
-      return Page::BackForwardCacheNotRestoredReasonEnum::WebDatabase;
     case WebSchedulerTrackedFeature::kPictureInPicture:
       return Page::BackForwardCacheNotRestoredReasonEnum::PictureInPicture;
     case WebSchedulerTrackedFeature::kSpeechRecognizer:
@@ -1977,6 +2011,8 @@ Page::BackForwardCacheNotRestoredReason BlocklistedFeatureToProtocol(
     case WebSchedulerTrackedFeature::kWebAuthentication:
       return Page::BackForwardCacheNotRestoredReasonEnum::
           ContentWebAuthenticationAPI;
+    case WebSchedulerTrackedFeature::kSharedWorkerMessage:
+      return Page::BackForwardCacheNotRestoredReasonEnum::SharedWorkerMessage;
   }
 }
 
@@ -2066,7 +2102,7 @@ DisableForRenderFrameHostReasonToProtocol(
           return Page::BackForwardCacheNotRestoredReasonEnum::
               EmbedderOfflinePage;
         case back_forward_cache::DisabledReasonId::
-            kChromePasswordManagerClient_BindCredentialManager:
+            kContentCredentialManager_BindCredentialManager:
           return Page::BackForwardCacheNotRestoredReasonEnum::
               EmbedderChromePasswordManagerClientBindCredentialManager;
         case back_forward_cache::DisabledReasonId::kPermissionRequestManager:
@@ -2142,7 +2178,9 @@ Page::BackForwardCacheNotRestoredReasonType MapNotRestoredReasonToType(
     case Reason::kWebViewMessageListenerInjected:
     case Reason::kWebViewSafeBrowsingAllowlistChanged:
     case Reason::kWebViewDocumentStartJavascriptChanged:
-    case Reason::kCacheLimitPruned:
+    case Reason::kCacheLimitPrunedOnModerateMemoryPressure:
+    case Reason::kCacheLimitPrunedOnCriticalMemoryPressure:
+    case Reason::kSharedWorkerMessage:
       return Page::BackForwardCacheNotRestoredReasonTypeEnum::Circumstantial;
     case Reason::kCacheControlNoStore:
     case Reason::kCacheControlNoStoreCookieModified:
@@ -2167,9 +2205,9 @@ Page::BackForwardCacheNotRestoredReasonType MapBlocklistedFeatureToType(
     case WebSchedulerTrackedFeature::kBroadcastChannel:
     case WebSchedulerTrackedFeature::kWebXR:
     case WebSchedulerTrackedFeature::kSharedWorker:
+    case WebSchedulerTrackedFeature::kSharedWorkerMessage:
     case WebSchedulerTrackedFeature::kWebHID:
     case WebSchedulerTrackedFeature::kWebShare:
-    case WebSchedulerTrackedFeature::kWebDatabase:
     case WebSchedulerTrackedFeature::kPaymentManager:
     case WebSchedulerTrackedFeature::kKeyboardLock:
     case WebSchedulerTrackedFeature::kWebOTPService:

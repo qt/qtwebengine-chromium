@@ -6,6 +6,7 @@
 
 #include <memory>
 
+#include "base/notimplemented.h"
 #include "media/audio/apple/audio_input.h"
 #include "media/audio/apple/audio_low_latency_input.h"
 #include "media/audio/apple/audio_manager_apple.h"
@@ -76,7 +77,7 @@ std::string AudioManagerIOS::GetAssociatedOutputDeviceID(
   return std::string();
 }
 
-const char* media::AudioManagerIOS::GetName() {
+const std::string_view media::AudioManagerIOS::GetName() {
   return "iOS";
 }
 

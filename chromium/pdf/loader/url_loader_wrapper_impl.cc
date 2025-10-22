@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "pdf/loader/url_loader_wrapper_impl.h"
 
 #include <stddef.h>
@@ -84,7 +79,7 @@ bool GetByteRangeFromStr(const std::string& content_range_str,
 // response.
 // Returns false if not even a start position could be parsed.
 bool GetByteRangeFromHeaders(const std::string& headers, int* start, int* end) {
-  net::HttpUtil::HeadersIterator it(headers.begin(), headers.end(), "\n");
+  net::HttpUtil::HeadersIterator it(headers, "\n");
   while (it.GetNext()) {
     if (base::EqualsCaseInsensitiveASCII(it.name_piece(), "content-range")) {
       if (GetByteRangeFromStr(it.values().c_str(), start, end))
@@ -205,8 +200,7 @@ void URLLoaderWrapperImpl::ParseHeaders(const std::string& response_headers) {
   if (response_headers.empty())
     return;
 
-  net::HttpUtil::HeadersIterator it(response_headers.begin(),
-                                    response_headers.end(), "\n");
+  net::HttpUtil::HeadersIterator it(response_headers, "\n");
   while (it.GetNext()) {
     std::string_view name = it.name_piece();
     if (base::EqualsCaseInsensitiveASCII(name, "content-length")) {
@@ -226,12 +220,14 @@ void URLLoaderWrapperImpl::ParseHeaders(const std::string& response_headers) {
       // multipart boundary.
       std::string type = base::ToLowerASCII(it.values_piece());
       if (base::StartsWith(type, "multipart/", base::CompareCase::SENSITIVE)) {
-        const char* boundary = strstr(type.c_str(), "boundary=");
-        DCHECK(boundary);
-        if (boundary) {
-          UNSAFE_TODO({ multipart_boundary_ = std::string(boundary + 9); });
-          is_multipart_ = !multipart_boundary_.empty();
-        }
+        UNSAFE_TODO({
+          const char* boundary = strstr(type.c_str(), "boundary=");
+          DCHECK(boundary);
+          if (boundary) {
+            multipart_boundary_ = std::string(boundary + 9);
+            is_multipart_ = !multipart_boundary_.empty();
+          }
+        });
       }
     } else if (base::EqualsCaseInsensitiveASCII(name, "content-disposition")) {
       content_disposition_ = it.values();
@@ -270,29 +266,27 @@ void URLLoaderWrapperImpl::DidRead(base::OnceCallback<void(int)> callback,
     return;
   }
 
-  char* start = buffer_.data();
-  size_t length = result;
+  base::span<char> start = buffer_.subspan(0u, static_cast<size_t>(result));
   multi_part_processed_ = true;
-  for (int i = 2; i < result; ++i) {
+  for (size_t i = 2; i < static_cast<size_t>(result); ++i) {
     if (IsDoubleEndLineAtEnd(buffer_.data(), i)) {
       int start_pos = 0;
       int end_pos = 0;
       if (GetByteRangeFromHeaders(std::string(buffer_.data(), i), &start_pos,
                                   &end_pos)) {
         byte_range_ = gfx::Range(start_pos, end_pos);
-        UNSAFE_TODO({ start += i; });
-        length -= i;
+        start = start.subspan(i);
       }
       break;
     }
   }
-  result = length;
+  result = start.size();
   if (result == 0) {
     // Continue receiving.
     return ReadResponseBodyImpl(std::move(callback));
   }
   DCHECK_GT(result, 0);
-  memmove(buffer_.data(), start, result);
+  UNSAFE_TODO(memmove(buffer_.data(), start.data(), result));
 
   std::move(callback).Run(result);
 }

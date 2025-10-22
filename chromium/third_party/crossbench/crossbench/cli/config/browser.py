@@ -9,26 +9,27 @@ import dataclasses
 import logging
 import os
 import re
-from typing import Any, Optional, Self, TextIO, Tuple, cast
+from typing import Any, Optional, Self, cast
 
-import hjson
 from typing_extensions import override
 
 import crossbench.browsers.all as all_browsers
-from crossbench import exception
 from crossbench import path as pth
 from crossbench import plt
 from crossbench.browsers.chrome.downloader import ChromeDownloader
 from crossbench.browsers.firefox.downloader import FirefoxDownloader
 from crossbench.cli.config.driver import DriverConfig
 from crossbench.cli.config.driver_type import BrowserDriverType
-from crossbench.cli.config.env import ENV_CONFIG_PRESETS, EnvironmentConfig
+from crossbench.cli.config.env import ENV_CONFIG_PRESETS, EnvConfig
+from crossbench.cli.config.extension import ExtensionConfig
 from crossbench.cli.config.network import NetworkConfig
 from crossbench.cli.config.network_speed import NetworkSpeedPreset
 from crossbench.config import ConfigObject, ConfigParser
 from crossbench.parse import NumberParser, ObjectParser, PathParser
 
-SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox")
+SUPPORTED_EMBEDDER = ("googlequicksearchbox",)
+SUPPORTED_BROWSER = ("chromium", "chrome", "safari", "edge", "firefox",
+                     "d8") + SUPPORTED_EMBEDDER
 
 # Split inputs like:
 # - "/out/x64.release/chrome"
@@ -61,10 +62,11 @@ class BrowserConfig(ConfigObject):
   # want to have the option to explicitly specify the default network in a
   # browser config.
   network: NetworkConfig | None = None
-  env: EnvironmentConfig | None = None
+  env: EnvConfig | None = None
 
   cache_dir: pth.AnyPath | None = None
   clear_cache: bool | None = None
+  extensions: tuple[ExtensionConfig, ...] = tuple()
 
   def __post_init__(self) -> None:
     if not self.browser:
@@ -79,33 +81,37 @@ class BrowserConfig(ConfigObject):
 
   @classmethod
   @override
+  def parse_any_path(cls, path: pth.LocalPath, **kwargs) -> Self:
+    if cls.is_supported_browser_path(path):
+      return cls(path)
+    return super().parse_any_path(path, **kwargs)
+
+  @classmethod
+  @override
   def parse_str(cls, value: str) -> Self:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
     path: pth.AnyPathLike | None = None
     driver = DriverConfig.default()
     network: NetworkConfig | None = None
-    env: EnvironmentConfig | None = None
-    if ":" not in value or cls.value_has_path_prefix(value):
-      # Variant 1: $PATH_OR_IDENTIFIER
+    env: EnvConfig | None = None
+    if ":" not in value or cls.is_path_like(value):
+      # Variant: $PATH_OR_IDENTIFIER
       path = cls._parse_path_or_identifier(value)
-    elif value[0] != "{":
-      # Variant 2: ${DRIVER_TYPE}:${PATH_OR_IDENTIFIER}:${NETWORK}
-      driver, path, network, env = cls._parse_inline_short_form(value)
     else:
-      # Variant 3: Full inline hjson
-      return cls.parse_inline_hjson(value)
+      # Variant: ${DRIVER_TYPE}:${PATH_OR_IDENTIFIER}:${NETWORK}
+      driver, path, network, env = cls._parse_inline_short_form(value)
     assert path, "Invalid path"
     return cls(path, driver, network, env)
 
   @classmethod
-  def parse_with_range(cls, value: Any) -> Tuple[Self, ...]:
+  def parse_with_range(cls, value: Any) -> tuple[Self, ...]:
     if isinstance(value, str):
       return cls._parse_with_range(value)
     return (cls.parse(value),)
 
   @classmethod
-  def _parse_with_range(cls, value: str) -> Tuple[Self, ...]:
+  def _parse_with_range(cls, value: str) -> tuple[Self, ...]:
     if not value:
       raise argparse.ArgumentTypeError("Cannot parse empty string")
     parts = value.split("...", maxsplit=1)
@@ -164,14 +170,15 @@ class BrowserConfig(ConfigObject):
         driver_type = BrowserDriverType.default()
     identifier = maybe_path_or_identifier.lower()
     path = None
-    if "/" in maybe_path_or_identifier or "\\" in maybe_path_or_identifier:
+    if cls.is_path_like(maybe_path_or_identifier):
       if cls._is_downloadable_identifier(maybe_path_or_identifier):
         return maybe_path_or_identifier
       # Assume a path since short-names never contain back-/slashes.
       if driver_type.is_remote_browser:
         path = PathParser.path(maybe_path_or_identifier)
       else:
-        path = PathParser.existing_path(maybe_path_or_identifier)
+        path = cls.resolve_path(
+            PathParser.existing_path(maybe_path_or_identifier))
     else:
       if ":" in maybe_path_or_identifier:
         raise argparse.ArgumentTypeError(
@@ -248,7 +255,8 @@ class BrowserConfig(ConfigObject):
       return all_browsers.Edge.canary_path(platform)
     if identifier in ("safari", "sf", "safari-stable", "sf-stable"):
       return all_browsers.Safari.default_path(platform)
-    if identifier in ("safari-technology-preview", "safari-tp", "sf-tp", "tp"):
+    if identifier in ("safari-technology-preview", "safari-tech-preview",
+                      "safari-tp", "sf-tp", "stp", "tp"):
       return all_browsers.Safari.technology_preview_path(platform)
     if identifier in ("firefox", "firefox-stable", "ff", "ff-stable"):
       return all_browsers.Firefox.default_path(platform)
@@ -256,6 +264,8 @@ class BrowserConfig(ConfigObject):
       return all_browsers.Firefox.developer_edition_path(platform)
     if identifier in ("firefox-nightly", "ff-nightly", "ff-trunk"):
       return all_browsers.Firefox.nightly_path(platform)
+    if identifier in ("webview", "org.chromium.webview_shell"):
+      return pth.AnyPosixPath("org.chromium.webview_shell")
     return None
 
   @classmethod
@@ -266,8 +276,8 @@ class BrowserConfig(ConfigObject):
   @classmethod
   def _parse_inline_short_form(
       cls, value: str
-  ) -> Tuple[DriverConfig, pth.AnyPathLike, Optional[NetworkConfig],
-             Optional[EnvironmentConfig]]:
+  ) -> tuple[DriverConfig, pth.AnyPathLike, Optional[NetworkConfig],
+             Optional[EnvConfig]]:
     assert ":" in value, f"Invalid short config {repr(value)} for {cls}"
     match = SHORT_FORM_RE.fullmatch(value)
     if not match:
@@ -289,18 +299,8 @@ class BrowserConfig(ConfigObject):
       network = NetworkConfig.parse_str(network_identifier)
     env = None
     if env_identifier := match.group("env"):
-      env = EnvironmentConfig.parse_str(env_identifier)
+      env = EnvConfig.parse_str(env_identifier)
     return (driver, path, network, env)
-
-  @classmethod
-  def parse_text_io(cls, f: TextIO) -> Self:
-    with exception.annotate(f"Loading browser config file: {f.name}"):
-      config = {}
-      with exception.annotate("Parsing hjson"):
-        config = hjson.load(f)
-      with exception.annotate(f"Parsing config file: {f.name}"):
-        return cls.parse_dict(config)
-    raise argparse.ArgumentTypeError(f"Could not parse : '{f.name}'")
 
   @classmethod
   @override
@@ -326,6 +326,8 @@ class BrowserConfig(ConfigObject):
                  "clear_browser_cache_dir"),
         type=ObjectParser.optional_bool,
         default=None)
+    parser.add_argument(
+        "extensions", type=ExtensionConfig, is_list=True, default=())
     return parser
 
   @property

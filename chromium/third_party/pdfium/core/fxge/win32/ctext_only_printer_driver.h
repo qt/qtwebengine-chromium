@@ -58,7 +58,7 @@ class CTextOnlyPrinterDriver final : public RenderDeviceDriverIface {
                           const FXDIB_ResampleOptions& options,
                           BlendMode blend_type) override;
   bool DrawDeviceText(pdfium::span<const TextCharPos> pCharPos,
-                      CFX_Font* pFont,
+                      CFX_Font* font,
                       const CFX_Matrix& mtObject2Device,
                       float font_size,
                       uint32_t color,
@@ -66,14 +66,14 @@ class CTextOnlyPrinterDriver final : public RenderDeviceDriverIface {
   bool MultiplyAlpha(float alpha) override;
   bool MultiplyAlphaMask(RetainPtr<const CFX_DIBitmap> mask) override;
 
-  HDC m_hDC;
-  const int m_Width;
-  const int m_Height;
-  int m_nBitsPerPixel;
-  const int m_HorzSize;
-  const int m_VertSize;
-  float m_OriginY;
-  bool m_SetOrigin;
+  HDC dc_handle_;
+  const int width_;
+  const int height_;
+  int bits_per_pixel_;
+  const int horz_size_;
+  const int vert_size_;
+  float origin_y_;
+  bool set_origin_;
 };
 
 #endif  // CORE_FXGE_WIN32_CTEXT_ONLY_PRINTER_DRIVER_H_

@@ -77,6 +77,15 @@ class WebViewPermissionHelperDelegate {
       const url::Origin& requesting_origin,
       WebViewPermissionHelper::PermissionResponseCallback callback) {}
 
+  virtual void RequestClipboardReadWritePermission(
+      const GURL& requesting_frame_url,
+      bool user_gesture,
+      base::OnceCallback<void(bool)> callback) {}
+
+  virtual void RequestClipboardSanitizedWritePermission(
+      const GURL& requesting_frame_url,
+      base::OnceCallback<void(bool)> callback) {}
+
   // Called when file system access is requested by the guest content using the
   // asynchronous HTML5 file system API. The request is plumbed through the
   // <webview> permission request API. The request will be:
@@ -85,7 +94,7 @@ class WebViewPermissionHelperDelegate {
   // - Determined by the guest's content settings if the embedder does not
   // perform an explicit action.
   // If access was blocked due to the page's content settings,
-  // |blocked_by_policy| should be true, and this function should invoke
+  // `blocked_by_policy` should be true, and this function should invoke
   // OnContentBlocked.
   virtual void FileSystemAccessedAsync(int render_process_id,
                                        int render_frame_id,
@@ -98,6 +107,8 @@ class WebViewPermissionHelperDelegate {
   virtual bool ForwardEmbeddedMediaPermissionChecksAsEmbedder(
       const url::Origin& embedder_origin);
 
+  // Allows the delegate to override the results of permission requests; useful
+  // when custom handling is needed for specific webviews.
   virtual std::optional<content::PermissionResult> OverridePermissionResult(
       ContentSettingsType type);
 

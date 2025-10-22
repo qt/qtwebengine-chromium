@@ -12,6 +12,7 @@
 #include "base/time/time.h"
 #include "content/browser/scheduler/browser_task_queues.h"
 #include "content/common/content_export.h"
+#include "content/common/scheduler_loop_quarantine_task_observer.h"
 
 namespace base {
 namespace sequence_manager {
@@ -37,6 +38,10 @@ class CONTENT_EXPORT BrowserUIThreadScheduler {
 
   static BrowserUIThreadScheduler* Get();
 
+  // Unlike the default constructor, this assumes a feature list is ready to be
+  // used. `InstallPartitionAllocSchedulerLoopQuarantineTaskObserver()` is
+  // called automatically.
+  static std::unique_ptr<BrowserUIThreadScheduler> CreateForTesting();
   // Setting the DefaultTaskRunner is up to the caller.
   static std::unique_ptr<BrowserUIThreadScheduler> CreateForTesting(
       base::sequence_manager::SequenceManager* sequence_manager);
@@ -57,12 +62,21 @@ class CONTENT_EXPORT BrowserUIThreadScheduler {
   void CommonSequenceManagerSetup(
       base::sequence_manager::SequenceManager* sequence_manager);
 
+  // Reads a feature list; need to be called after its initialization.
+  void InstallPartitionAllocSchedulerLoopQuarantineTaskObserver();
+
+  void OnTaskCompleted(
+      const base::sequence_manager::Task& task,
+      base::sequence_manager::TaskQueue::TaskTiming* task_timing,
+      base::LazyNow* lazy_now);
+
   // In production the BrowserUIThreadScheduler will own its SequenceManager,
   // but in tests it may not.
   std::unique_ptr<base::sequence_manager::SequenceManager>
       owned_sequence_manager_;
 
   BrowserTaskQueues task_queues_;
+  SchedulerLoopQuarantineTaskObserver scheduler_loop_quarantine_task_observer_;
 
   scoped_refptr<Handle> handle_;
 };

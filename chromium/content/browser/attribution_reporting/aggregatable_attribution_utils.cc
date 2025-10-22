@@ -17,7 +17,6 @@
 
 #include "base/check.h"
 #include "base/containers/flat_tree.h"
-#include "base/functional/overloaded.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/numerics/checked_math.h"
 #include "base/numerics/clamped_math.h"
@@ -65,8 +64,8 @@ std::vector<blink::mojom::AggregatableReportHistogramContribution>
 CreateAggregatableHistogram(
     const attribution_reporting::FilterData& source_filter_data,
     attribution_reporting::mojom::SourceType source_type,
-    const base::Time& source_time,
-    const base::Time& trigger_time,
+    base::Time source_time,
+    base::Time trigger_time,
     const attribution_reporting::AggregationKeys& keys,
     const std::vector<attribution_reporting::AggregatableTriggerData>&
         aggregatable_trigger_data,
@@ -165,10 +164,7 @@ std::optional<AggregatableReportRequest> CreateAggregatableReportRequest(
     const AttributionReport& report) {
   const auto* aggregatable_data =
       std::get_if<AttributionReport::AggregatableData>(&report.data());
-  DCHECK(aggregatable_data);
-
-  std::vector<blink::mojom::AggregatableReportHistogramContribution>
-      contributions = aggregatable_data->contributions();
+  CHECK(aggregatable_data);
 
   const AttributionInfo& attribution_info = report.attribution_info();
 
@@ -195,8 +191,7 @@ std::optional<AggregatableReportRequest> CreateAggregatableReportRequest(
   return AggregatableReportRequest::Create(
       AggregationServicePayloadContents(
           AggregationServicePayloadContents::Operation::kHistogram,
-          std::move(contributions),
-          blink::mojom::AggregationServiceMode::kDefault,
+          aggregatable_data->contributions(),
           aggregatable_data->aggregation_coordinator_origin()
               ? std::make_optional(
                     **aggregatable_data->aggregation_coordinator_origin())
@@ -241,7 +236,7 @@ StoredSource::AggregatableNamedBudgets ConvertNamedBudgetsMap(
     // Budget already validated from parsing.
     auto budget_pair = AggregatableNamedBudgetPair::Create(
         original_budget, /*remaining_budget=*/original_budget);
-    DCHECK(budget_pair.has_value());
+    CHECK(budget_pair.has_value());
     named_budgets.emplace_back(name, *std::move(budget_pair));
   };
   return StoredSource::AggregatableNamedBudgets(base::sorted_unique,

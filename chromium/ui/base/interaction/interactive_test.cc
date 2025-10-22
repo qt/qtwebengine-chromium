@@ -6,22 +6,24 @@
 
 #include <functional>
 #include <memory>
+#include <ostream>
 #include <sstream>
 #include <string>
 #include <string_view>
 #include <variant>
 
 #include "base/functional/callback_helpers.h"
-#include "base/functional/overloaded.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/scoped_run_loop_timeout.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "ui/base/interaction/element_identifier.h"
 #include "ui/base/interaction/element_tracker.h"
 #include "ui/base/interaction/interaction_sequence.h"
 #include "ui/base/interaction/interaction_test_util.h"
+#include "ui/base/interaction/interactive_test_definitions.h"
 #include "ui/base/interaction/interactive_test_internal.h"
 
 namespace ui::test {
@@ -67,15 +69,6 @@ InteractionSequence::StepBuilder InteractiveTestApi::SelectMenuItem(
             test->test_util().SelectMenuItem(el, input_type));
       },
       input_type, base::Unretained(this)));
-
-  // TODO(https://crbug.com/359252812): On Linux, sometimes a SelectMenuItem is
-  // interrupted by a spurious focus change, even on tests designed to run
-  // single-thread, single-process. Once the culprit has been tracked down and
-  // eliminated, remove this #if.
-#if BUILDFLAG(IS_LINUX)
-  builder.SetStepStartMode(InteractionSequence::StepStartMode::kImmediate);
-#endif
-
   return builder;
 }
 
@@ -100,18 +93,23 @@ InteractionSequence::StepBuilder InteractiveTestApi::DoDefaultAction(
 InteractionSequence::StepBuilder InteractiveTestApi::SelectTab(
     ElementSpecifier tab_collection,
     size_t tab_index,
-    InputType input_type) {
+    InputType input_type,
+    std::optional<size_t> expected_index_after_selection) {
   StepBuilder builder;
   builder.SetDescription(base::StringPrintf("SelectTab( %zu )", tab_index));
   internal::SpecifyElement(builder, tab_collection);
   builder.SetStartCallback(base::BindOnce(
-      [](size_t index, InputType input_type, InteractiveTestApi* test,
-         InteractionSequence* seq, TrackedElement* el) {
+      [](size_t index, InputType input_type,
+         std::optional<size_t> expected_index_after_selection,
+         InteractiveTestApi* test, InteractionSequence* seq,
+         TrackedElement* el) {
         test->private_test_impl().HandleActionResult(
             seq, el, "SelectTab",
-            test->test_util().SelectTab(el, index, input_type));
+            test->test_util().SelectTab(el, index, input_type,
+                                        expected_index_after_selection));
       },
-      tab_index, input_type, base::Unretained(this)));
+      tab_index, input_type, expected_index_after_selection,
+      base::Unretained(this)));
   return builder;
 }
 
@@ -290,16 +288,6 @@ InteractionSequence::StepBuilder InteractiveTestApi::WaitForHide(
 }
 
 // static
-InteractionSequence::StepBuilder InteractiveTestApi::WaitForActivate(
-    ElementSpecifier element) {
-  StepBuilder step;
-  step.SetDescription("WaitForActivate()");
-  internal::SpecifyElement(step, element);
-  step.SetType(InteractionSequence::StepType::kActivated);
-  return step;
-}
-
-// static
 InteractionSequence::StepBuilder InteractiveTestApi::WaitForEvent(
     ElementSpecifier element,
     CustomElementEventType event) {
@@ -473,7 +461,7 @@ InteractiveTestApi::FindElementCallback
 InteractiveTestApi::GetFindElementCallback(AbsoluteElementSpecifier spec) {
   using ContextCallback = base::OnceCallback<TrackedElement*(ElementContext)>;
   return std::visit(
-      base::Overloaded{
+      absl::Overload{
           [](TrackedElement* el) {
             CHECK(el) << "NameView(TrackedElement*): view must be set.";
             return base::BindOnce(
@@ -534,6 +522,15 @@ void InteractiveTestApi::AddDescriptionPrefix(MultiStep& steps,
   for (auto& step : steps) {
     step.AddDescriptionPrefix(prefix);
   }
+}
+
+std::ostream& operator<<(std::ostream& os, internal::ElementSpecifier element) {
+  if (auto* id = std::get_if<ui::ElementIdentifier>(&element)) {
+    os << *id;
+  } else {
+    os << std::get<std::string_view>(element);
+  }
+  return os;
 }
 
 }  // namespace ui::test

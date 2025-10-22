@@ -87,9 +87,9 @@ RenderFrameHostDelegate::GetGeolocationContext() {
   return nullptr;
 }
 
-#if BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID) || (BUILDFLAG(IS_IOS) && !BUILDFLAG(IS_IOS_TVOS))
 void RenderFrameHostDelegate::GetNFC(
-    RenderFrameHost* render_frame_host,
+    RenderFrameHostImpl* render_frame_host,
     mojo::PendingReceiver<device::mojom::NFC> receiver) {}
 #endif
 
@@ -165,6 +165,12 @@ void RenderFrameHostDelegate::IsClipboardPasteAllowedByPolicy(
   std::move(callback).Run(std::move(clipboard_paste_data));
 }
 
+std::optional<std::vector<std::u16string>>
+RenderFrameHostDelegate::GetClipboardTypesIfPolicyApplied(
+    const ui::ClipboardSequenceNumberToken& seqno) {
+  return std::nullopt;
+}
+
 bool RenderFrameHostDelegate::IsTransientActivationRequiredForHtmlFullscreen() {
   return true;
 }
@@ -185,12 +191,6 @@ RenderWidgetHostImpl* RenderFrameHostDelegate::CreateNewPopupWidget(
 
 std::vector<RenderFrameHostImpl*>
 RenderFrameHostDelegate::GetActiveTopLevelDocumentsInBrowsingContextGroup(
-    RenderFrameHostImpl* render_frame_host) {
-  return std::vector<RenderFrameHostImpl*>();
-}
-
-std::vector<RenderFrameHostImpl*>
-RenderFrameHostDelegate::GetActiveTopLevelDocumentsInCoopRelatedGroup(
     RenderFrameHostImpl* render_frame_host) {
   return std::vector<RenderFrameHostImpl*>();
 }
@@ -238,9 +238,9 @@ gfx::NativeWindow RenderFrameHostDelegate::GetOwnerNativeWindow() {
   return gfx::NativeWindow();
 }
 
-media::PictureInPictureEventsInfo::AutoPipReason
-RenderFrameHostDelegate::GetAutoPipReason() const {
-  return media::PictureInPictureEventsInfo::AutoPipReason::kUnknown;
+media::PictureInPictureEventsInfo::AutoPipInfo
+RenderFrameHostDelegate::GetAutoPipInfo() const {
+  return media::PictureInPictureEventsInfo::AutoPipInfo();
 }
 
 }  // namespace content

@@ -17,6 +17,15 @@ namespace trusted_vault {
 BASE_DECLARE_FEATURE(kSetClientEncryptionKeysJsApi);
 #endif
 
+#if BUILDFLAG(IS_MAC)
+BASE_DECLARE_FEATURE(kEnableICloudKeychainRecoveryFactor);
+#endif
+
+BASE_DECLARE_FEATURE(kEnableRegistrationStateSecurityDomainFiltering);
+
+// TODO(crug.com/425990763): Complete MD5 -> SHA256 migration.
+BASE_DECLARE_FEATURE(kEnableTrustedVaultSHA256);
+
 }  // namespace trusted_vault
 
 #endif  // COMPONENTS_TRUSTED_VAULT_FEATURES_H_

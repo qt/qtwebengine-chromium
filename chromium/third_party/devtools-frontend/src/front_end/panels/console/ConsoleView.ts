@@ -1,6 +1,7 @@
 // Copyright 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 /*
  * Copyright (C) 2007, 2008 Apple Inc.  All rights reserved.
@@ -40,17 +41,20 @@ import * as Platform from '../../core/platform/platform.js';
 import * as Root from '../../core/root/root.js';
 import * as SDK from '../../core/sdk/sdk.js';
 import * as Protocol from '../../generated/protocol.js';
+import type * as AiCodeCompletion from '../../models/ai_code_completion/ai_code_completion.js';
 import * as Bindings from '../../models/bindings/bindings.js';
 import * as IssuesManager from '../../models/issues_manager/issues_manager.js';
 import * as Logs from '../../models/logs/logs.js';
 import * as TextUtils from '../../models/text_utils/text_utils.js';
 import * as CodeHighlighter from '../../ui/components/code_highlighter/code_highlighter.js';
+import * as IconButton from '../../ui/components/icon_button/icon_button.js';
 import * as IssueCounter from '../../ui/components/issue_counter/issue_counter.js';
 // eslint-disable-next-line rulesdir/es-modules-import
 import objectValueStyles from '../../ui/legacy/components/object_ui/objectValue.css.js';
 import * as Components from '../../ui/legacy/components/utils/utils.js';
 import * as UI from '../../ui/legacy/legacy.js';
 import * as VisualLogging from '../../ui/visual_logging/visual_logging.js';
+import {AiCodeCompletionSummaryToolbar} from '../common/common.js';
 
 import {ConsoleContextSelector} from './ConsoleContextSelector.js';
 import {ConsoleFilter, FilterType, type LevelsMask} from './ConsoleFilter.js';
@@ -177,7 +181,7 @@ const UIStrings = {
   /**
    *@description Text to save content as a specific file type
    */
-  saveAs: 'Save as...',
+  saveAs: 'Save as…',
   /**
    *@description Text to copy Console log to clipboard
    */
@@ -219,9 +223,10 @@ const UIStrings = {
    */
   errors: 'Errors',
   /**
-   *@description Title text of a setting in Console View of the Console panel
+   * @description Tooltip text of the info icon shown next to the filter drop down
+   *              in the Console panels main toolbar when the sidebar is active.
    */
-  overriddenByFilterSidebar: 'Overridden by filter sidebar',
+  overriddenByFilterSidebar: 'Log levels are controlled by the console sidebar.',
   /**
    *@description Text in Console View of the Console panel
    */
@@ -264,6 +269,8 @@ const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 let consoleViewInstance: ConsoleView;
 
 const MIN_HISTORY_LENGTH_FOR_DISABLING_SELF_XSS_WARNING = 5;
+const DISCLAIMER_TOOLTIP_ID = 'console-ai-code-completion-disclaimer-tooltip';
+const CITATIONS_TOOLTIP_ID = 'console-ai-code-completion-citations-tooltip';
 
 export class ConsoleView extends UI.Widget.VBox implements
     UI.SearchableView.Searchable, ConsoleViewportProvider,
@@ -325,6 +332,10 @@ export class ConsoleView extends UI.Widget.VBox implements
   private issueResolver = new IssuesManager.IssueResolver.IssueResolver();
   #isDetached = false;
   #onIssuesCountUpdateBound = this.#onIssuesCountUpdate.bind(this);
+  private aiCodeCompletionSetting =
+      Common.Settings.Settings.instance().createSetting('ai-code-completion-fre-completed', false);
+  private aiCodeCompletionSummaryToolbarContainer?: HTMLElement;
+  private aiCodeCompletionSummaryToolbar?: AiCodeCompletionSummaryToolbar;
 
   constructor(viewportThrottlerTimeout: number) {
     super();
@@ -421,6 +432,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     toolbar.appendSeparator();
     toolbar.appendToolbarItem(this.filter.textFilterUI);
     toolbar.appendToolbarItem(this.filter.levelMenuButton);
+    toolbar.appendToolbarItem(this.filter.levelMenuButtonInfo);
     toolbar.appendToolbarItem(this.progressToolbarItem);
     toolbar.appendSeparator();
     this.issueCounter = new IssueCounter.IssueCounter.IssueCounter();
@@ -542,6 +554,17 @@ export class ConsoleView extends UI.Widget.VBox implements
     this.prompt.element.addEventListener('keydown', this.promptKeyDown.bind(this), true);
     this.prompt.addEventListener(ConsolePromptEvents.TEXT_CHANGED, this.promptTextChanged, this);
 
+    if (this.isAiCodeCompletionEnabled()) {
+      this.aiCodeCompletionSetting.addChangeListener(this.onAiCodeCompletionSettingChanged.bind(this));
+      this.onAiCodeCompletionSettingChanged();
+      this.prompt.addEventListener(
+          ConsolePromptEvents.AI_CODE_COMPLETION_SUGGESTION_ACCEPTED, this.#onAiCodeCompletionSuggestionAccepted, this);
+      this.prompt.addEventListener(
+          ConsolePromptEvents.AI_CODE_COMPLETION_REQUEST_TRIGGERED, this.#onAiCodeCompletionRequestTriggered, this);
+      this.prompt.addEventListener(
+          ConsolePromptEvents.AI_CODE_COMPLETION_RESPONSE_RECEIVED, this.#onAiCodeCompletionResponseReceived, this);
+    }
+
     this.messagesElement.addEventListener('keydown', this.messagesKeyDown.bind(this), false);
     this.prompt.element.addEventListener('focusin', () => {
       if (this.isScrolledToBottom()) {
@@ -598,6 +621,36 @@ export class ConsoleView extends UI.Widget.VBox implements
     return consoleViewInstance;
   }
 
+  createAiCodeCompletionSummaryToolbar(): void {
+    this.aiCodeCompletionSummaryToolbar =
+        new AiCodeCompletionSummaryToolbar(DISCLAIMER_TOOLTIP_ID, CITATIONS_TOOLTIP_ID, 'console');
+    this.aiCodeCompletionSummaryToolbarContainer = this.element.createChild('div');
+    this.aiCodeCompletionSummaryToolbar.show(this.aiCodeCompletionSummaryToolbarContainer, undefined, true);
+  }
+
+  #onAiCodeCompletionSuggestionAccepted(
+      event: Common.EventTarget.EventTargetEvent<AiCodeCompletion.AiCodeCompletion.ResponseReceivedEvent>): void {
+    if (!this.aiCodeCompletionSummaryToolbar || !event.data.citations || event.data.citations.length === 0) {
+      return;
+    }
+    const citations: string[] = [];
+    event.data.citations.forEach(citation => {
+      const uri = citation.uri;
+      if (uri) {
+        citations.push(uri);
+      }
+    });
+    this.aiCodeCompletionSummaryToolbar.updateCitations(citations);
+  }
+
+  #onAiCodeCompletionRequestTriggered(): void {
+    this.aiCodeCompletionSummaryToolbar?.setLoading(true);
+  }
+
+  #onAiCodeCompletionResponseReceived(): void {
+    this.aiCodeCompletionSummaryToolbar?.setLoading(false);
+  }
+
   static clearConsole(): void {
     SDK.ConsoleModel.ConsoleModel.requestClearMessages();
   }
@@ -635,7 +688,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     this.buildHiddenCache(0, this.consoleMessages.slice());
   }
 
-  private setImmediatelyFilterMessagesForTest(): void {
+  protected setImmediatelyFilterMessagesForTest(): void {
     this.immediatelyFilterMessagesForTest = true;
   }
 
@@ -996,13 +1049,18 @@ export class ConsoleView extends UI.Widget.VBox implements
       return;
     }
 
-    const currentGroup = viewMessage.consoleGroup();
+    // Track any adjacent messages.
+    const originatingMessage = viewMessage.consoleMessage().originatingMessage();
+    const adjacent = Boolean(originatingMessage && lastMessage?.consoleMessage() === originatingMessage);
+    viewMessage.setAdjacentUserCommandResult(adjacent);
 
-    if (!currentGroup?.messagesHidden()) {
-      const originatingMessage = viewMessage.consoleMessage().originatingMessage();
-      const adjacent = Boolean(originatingMessage && lastMessage?.consoleMessage() === originatingMessage);
-      viewMessage.setAdjacentUserCommandResult(adjacent);
-      showGroup(currentGroup, this.visibleViewMessages);
+    // Ensure any parent groups for this message are shown.
+    const currentGroup = viewMessage.consoleGroup();
+    showGroup(currentGroup, this.visibleViewMessages);
+
+    // Determine whether this message should actually be visible.
+    const shouldShowMessage = !currentGroup?.messagesHidden();
+    if (shouldShowMessage) {
       this.visibleViewMessages.push(viewMessage);
       this.searchMessage(this.visibleViewMessages.length - 1);
     }
@@ -1087,10 +1145,11 @@ export class ConsoleView extends UI.Widget.VBox implements
     this.filter.clear();
     this.requestResolver.clear();
     this.consoleGroupStarts = [];
+    this.aiCodeCompletionSummaryToolbar?.clearCitations();
     if (hadFocus) {
       this.prompt.focus();
     }
-    UI.ARIAUtils.alert(i18nString(UIStrings.consoleCleared));
+    UI.ARIAUtils.LiveAnnouncer.alert(i18nString(UIStrings.consoleCleared));
   }
 
   private handleContextMenuEvent(event: Event): void {
@@ -1259,6 +1318,7 @@ export class ConsoleView extends UI.Widget.VBox implements
     }
     this.updateFilterStatus();
     this.searchableViewInternal.updateSearchMatchesCount(this.regexMatchRanges.length);
+    this.jumpToMatch(this.currentMatchRangeIndex);  // Re-highlight current match.
     this.viewport.invalidate();
     this.messagesCountElement.setAttribute(
         'aria-label', i18nString(UIStrings.filteredMessagesInConsole, {PH1: this.visibleViewMessages.length}));
@@ -1607,6 +1667,20 @@ export class ConsoleView extends UI.Widget.VBox implements
         this.messagesElement.clientHeight - (this.prompt.belowEditorElement() as HTMLElement).offsetHeight;
     return distanceToPromptEditorBottom <= 2;
   }
+
+  private onAiCodeCompletionSettingChanged(): void {
+    if (this.aiCodeCompletionSetting.get() && this.isAiCodeCompletionEnabled()) {
+      this.createAiCodeCompletionSummaryToolbar();
+    } else if (this.aiCodeCompletionSummaryToolbarContainer) {
+      this.aiCodeCompletionSummaryToolbarContainer.remove();
+      this.aiCodeCompletionSummaryToolbarContainer = undefined;
+      this.aiCodeCompletionSummaryToolbar = undefined;
+    }
+  }
+
+  private isAiCodeCompletionEnabled(): boolean {
+    return Boolean(Root.Runtime.hostConfig.devToolsAiCodeCompletion?.enabled);
+  }
 }
 
 // @ts-expect-error exported for Tests.js
@@ -1626,6 +1700,7 @@ export class ConsoleViewFilter {
   currentFilter: ConsoleFilter;
   private levelLabels: Map<Protocol.Log.LogEntryLevel, string>;
   readonly levelMenuButton: UI.Toolbar.ToolbarMenuButton;
+  readonly levelMenuButtonInfo: UI.Toolbar.ToolbarItem;
 
   constructor(filterChangedCallback: () => void) {
     this.filterChanged = filterChangedCallback;
@@ -1666,6 +1741,10 @@ export class ConsoleViewFilter {
 
     this.levelMenuButton =
         new UI.Toolbar.ToolbarMenuButton(this.appendLevelMenuItems.bind(this), undefined, undefined, 'log-level');
+    const levelMenuButtonInfoIcon = IconButton.Icon.create('info', 'console-sidebar-levels-info');
+    levelMenuButtonInfoIcon.title = i18nString(UIStrings.overriddenByFilterSidebar);
+    this.levelMenuButtonInfo = new UI.Toolbar.ToolbarItem(levelMenuButtonInfoIcon);
+    this.levelMenuButtonInfo.setVisible(false);
 
     this.updateLevelMenuButtonText();
     this.messageLevelFiltersSetting.addChangeListener(this.updateLevelMenuButtonText.bind(this));
@@ -1689,8 +1768,9 @@ export class ConsoleViewFilter {
 
   setLevelMenuOverridden(overridden: boolean): void {
     this.levelMenuButton.setEnabled(!overridden);
+    this.levelMenuButtonInfo.setVisible(overridden);
     if (overridden) {
-      this.levelMenuButton.setTitle(i18nString(UIStrings.overriddenByFilterSidebar));
+      this.levelMenuButton.setText(i18nString(UIStrings.customLevels));
     } else {
       this.updateLevelMenuButtonText();
     }

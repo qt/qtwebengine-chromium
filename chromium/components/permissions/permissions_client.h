@@ -14,12 +14,12 @@
 #include "components/favicon/core/favicon_service.h"
 #include "components/permissions/features.h"
 #include "components/permissions/origin_keyed_permission_action_service.h"
+#include "components/permissions/permission_hats_trigger_helper.h"
 #include "components/permissions/permission_prompt.h"
-#include "components/permissions/permission_ui_selector.h"
 #include "components/permissions/permission_uma_util.h"
 #include "components/permissions/permission_util.h"
+#include "components/permissions/prediction_service/permission_ui_selector.h"
 #include "components/permissions/request_type.h"
-#include "content/public/browser/browser_context.h"
 #include "services/metrics/public/cpp/ukm_source_id.h"
 #include "url/origin.h"
 
@@ -42,11 +42,6 @@ class CookieSettings;
 namespace privacy_sandbox {
 class TrackingProtectionSettings;
 }  // namespace privacy_sandbox
-
-namespace infobars {
-class InfoBar;
-class InfoBarManager;
-}  // namespace infobars
 
 namespace permissions {
 class ObjectPermissionContextBase;
@@ -175,16 +170,16 @@ class PermissionsClient {
           permissions::feature_params::PermissionElementPromptPosition>
           pepc_prompt_position,
       ContentSetting initial_permission_status,
-      base::OnceCallback<void()> hats_shown_callback_);
+      base::OnceCallback<void()> hats_shown_callback_,
+      std::optional<PermissionHatsTriggerHelper::PreviewParametersForHats>
+          preview_parameters);
 
   // Called for each request type when a permission prompt is resolved.
   virtual void OnPromptResolved(
-      RequestType request_type,
+      const PermissionRequest* request,
       PermissionAction action,
-      const GURL& origin,
       PermissionPromptDisposition prompt_disposition,
       PermissionPromptDispositionReason prompt_disposition_reason,
-      PermissionRequestGestureType gesture_type,
       std::optional<QuietUiReason> quiet_ui_reason,
       base::TimeDelta prompt_display_duration,
       std::optional<
@@ -248,20 +243,6 @@ class PermissionsClient {
   // engine (DSE) origin.
   virtual bool IsDseOrigin(content::BrowserContext* browser_context,
                            const url::Origin& origin);
-
-  // Retrieves the InfoBarManager for the web contents. The returned
-  // pointer has the same lifetime as |web_contents|.
-  virtual infobars::InfoBarManager* GetInfoBarManager(
-      content::WebContents* web_contents);
-
-  // Allows the embedder to create an info bar to use as the
-  // permission prompt. Might return null based on internal logic
-  // (e.g. |type| does not support infobar permission prompts). The
-  // returned infobar is owned by the info bar manager.
-  virtual infobars::InfoBar* MaybeCreateInfoBar(
-      content::WebContents* web_contents,
-      ContentSettingsType type,
-      base::WeakPtr<PermissionPromptAndroid> prompt);
 
   // Allows the embedder to create a message UI to use as the
   // permission prompt. Returns the pointer to the message UI if the

@@ -54,8 +54,6 @@
 #include "content/public/browser/navigation_ui_data.h"
 #include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
-#include "crypto/secure_hash.h"
-#include "crypto/sha2.h"
 #include "extensions/browser/content_verifier/content_verifier.h"
 #include "extensions/browser/content_verifier/content_verify_job.h"
 #include "extensions/browser/extension_navigation_ui_data.h"
@@ -151,7 +149,7 @@ void GenerateBackgroundPageContents(const Extension* extension,
   *data = "<!DOCTYPE html>\n<body>\n";
   for (const auto& script : BackgroundInfo::GetBackgroundScripts(extension)) {
     *data += "<script src=\"";
-    *data += script;
+    *data += script.relative_path().AsUTF8Unsafe();
     *data += "\"></script>\n";
   }
 }
@@ -367,8 +365,7 @@ bool IsBackgroundServiceWorker(const Extension& extension,
              network::mojom::RequestDestination::kServiceWorker &&
          BackgroundInfo::IsServiceWorkerBased(&extension) &&
          request.url ==
-             extension.GetResourceURL(
-                 BackgroundInfo::GetBackgroundServiceWorkerScript(&extension));
+             BackgroundInfo::GetBackgroundServiceWorkerScriptURL(&extension);
 }
 
 bool IsExtensionDocument(const Extension& extension,
@@ -445,11 +442,9 @@ void AddCacheHeaders(net::HttpResponseHeaders& headers,
   // On Fuchsia, some resources are served from read-only filesystems which
   // don't manage creation timestamps. Cache-control headers should still
   // be generated for those resources.
-#if !BUILDFLAG(IS_FUCHSIA)
   if (last_modified_time.is_null()) {
     return;
   }
-#endif  // !BUILDFLAG(IS_FUCHSIA)
 
   // Hash the time and make an etag to avoid exposing the exact
   // user installation time of the extension.
@@ -759,24 +754,6 @@ class ExtensionURLLoader : public network::mojom::URLLoader {
     bool include_allow_service_worker_header = false;
 
     if (extension) {
-      // Log if loading an extension resource not listed as a web accessible
-      // resource from a sandboxed page.
-      if (request_.request_initiator.has_value() &&
-          request_.request_initiator->opaque() &&
-          request_.request_initiator->GetTupleOrPrecursorTupleIfOpaque()
-                  .scheme() == kExtensionScheme) {
-        // Surface opaque origin for web accessible resource verification.
-        const auto origin = url::Origin::Create(
-            request_.request_initiator->GetTupleOrPrecursorTupleIfOpaque()
-                .GetURL());
-        bool is_web_accessible_resource =
-            WebAccessibleResourcesInfo::IsResourceWebAccessibleRedirect(
-                extension.get(), request_.url, origin, upstream_url_);
-        base::UmaHistogramBoolean(
-            "Extensions.SandboxedPageLoad.IsWebAccessibleResource",
-            is_web_accessible_resource);
-      }
-
       GetSecurityPolicyForURL(
           request_, *extension, is_web_view_request_, &content_security_policy,
           &cross_origin_embedder_policy, &cross_origin_opener_policy,

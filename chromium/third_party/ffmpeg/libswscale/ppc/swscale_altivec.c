@@ -28,6 +28,7 @@
 #include "libswscale/swscale_internal.h"
 #include "libavutil/attributes.h"
 #include "libavutil/cpu.h"
+#include "libavutil/intfloat.h"
 #include "yuv2rgb_altivec.h"
 #include "libavutil/ppc/util_altivec.h"
 
@@ -241,7 +242,7 @@ av_cold void ff_sws_init_swscale_ppc(SwsInternal *c)
     if (c->srcBpc == 8 && c->dstBpc <= 14) {
         c->hyScale = c->hcScale = hScale_real_altivec;
     }
-    if (!is16BPS(dstFormat) && !isNBPS(dstFormat) && !isSemiPlanarYUV(dstFormat) &&
+    if (!is16BPS(dstFormat) && !isNBPS(dstFormat) && !isSemiPlanarYUV(dstFormat) && !isDataInHighBits(dstFormat) &&
         dstFormat != AV_PIX_FMT_GRAYF32BE && dstFormat != AV_PIX_FMT_GRAYF32LE &&
         !c->needAlpha) {
         c->yuv2planeX = yuv2planeX_altivec;

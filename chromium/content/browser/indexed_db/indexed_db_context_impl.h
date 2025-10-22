@@ -100,7 +100,7 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void SetForceKeepSessionState() override;
   void ApplyPolicyUpdates(std::vector<storage::mojom::StoragePolicyUpdatePtr>
                               policy_updates) override;
-  void BindTestInterface(
+  void BindTestInterfaceForTesting(
       mojo::PendingReceiver<storage::mojom::IndexedDBControlTest> receiver)
       override;
   void AddObserver(
@@ -112,26 +112,19 @@ class CONTENT_EXPORT IndexedDBContextImpl
   void GetFilePathForTesting(const storage::BucketLocator& bucket_locator,
                              GetFilePathForTestingCallback callback) override;
   void ResetCachesForTesting(base::OnceClosure callback) override;
-  void WriteToIndexedDBForTesting(const storage::BucketLocator& bucket_locator,
-                                  const std::string& key,
-                                  const std::string& value,
-                                  base::OnceClosure callback) override;
   void GetPathForBlobForTesting(
       const storage::BucketLocator& bucket_locator,
       int64_t database_id,
       int64_t blob_number,
       GetPathForBlobForTestingCallback callback) override;
-  void CompactBackingStoreForTesting(
-      const storage::BucketLocator& bucket_locator,
-      base::OnceClosure callback) override;
+  void FlushBackingStoreForTesting(const storage::BucketLocator& bucket_locator,
+                                   base::OnceClosure callback) override;
   void GetUsageForTesting(GetUsageForTestingCallback) override;
   void GetSchedulingPriorityForTesting(
       GetSchedulingPriorityForTestingCallback callback) override;
   void BindMockFailureSingletonForTesting(
       mojo::PendingReceiver<storage::mojom::MockFailureInjector> receiver)
       override;
-  void GetDatabaseKeysForTesting(
-      GetDatabaseKeysForTestingCallback callback) override;
   void ForceInitializeFromFilesForTesting(
       ForceInitializeFromFilesForTestingCallback callback) override;
 
@@ -190,10 +183,6 @@ class CONTENT_EXPORT IndexedDBContextImpl
   base::FilePath GetDataPath(
       const storage::BucketLocator& bucket_locator) const;
   const base::FilePath GetLegacyDataPath() const;
-  base::FilePath GetBlobStorePath(
-      const storage::BucketLocator& bucket_locator) const;
-  base::FilePath GetLevelDBPath(
-      const storage::BucketLocator& bucket_locator) const;
 
   int64_t ReadUsageFromDisk(const storage::BucketLocator& bucket_locator,
                             bool write_in_progress) const;
@@ -298,10 +287,10 @@ class CONTENT_EXPORT IndexedDBContextImpl
   std::set<storage::BucketLocator> bucket_set_;
 
   // This map is a cache of the size used by a given bucket. It's calculated by
-  // summing the system-reported sizes of all blob and LevelDB files. This cache
-  // is cleared after transactions that can change the size of the database
-  // (i.e. those that are not readonly), and re-populated lazily. There are
-  // three possible states for each bucket in this map:
+  // summing the system-reported sizes of all blob and database files. This
+  // cache is cleared after transactions that can change the size of the
+  // database (i.e. those that are not readonly), and re-populated lazily. There
+  // are three possible states for each bucket in this map:
   //
   // 1) Not present. This indicates that the `ReadUsageFromDisk()` should be
   //    called to calculate usage (and be stored in the map).

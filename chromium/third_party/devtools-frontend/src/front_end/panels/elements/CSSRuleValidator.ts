@@ -14,6 +14,7 @@ import {
   isFlexContainer,
   isGridContainer,
   isInlineElement,
+  isMasonryContainer,
   isMulticolContainer,
   isPossiblyReplacedElement,
 } from './CSSRuleValidatorHelper.js';
@@ -29,7 +30,7 @@ const UIStrings = {
   /**
    *@description The message shown in the Style pane when the user hovers over a property declaration that has no effect due to some other property.
    *@example {flex-wrap} PROPERTY_NAME
-    @example {nowrap} PROPERTY_VALUE
+   * @example {nowrap} PROPERTY_VALUE
    */
   ruleViolatedBySameElementRuleFix: 'Try setting {PROPERTY_NAME} to something other than {PROPERTY_VALUE}.',
   /**
@@ -152,7 +153,8 @@ export class AlignContentValidator extends CSSRuleValidator {
       return;
     }
     const isFlex = isFlexContainer(computedStyles);
-    if (!isFlex && !isBlockContainer(computedStyles) && !isGridContainer(computedStyles)) {
+    if (!isFlex && !isBlockContainer(computedStyles) && !isGridContainer(computedStyles) &&
+        !isMasonryContainer(computedStyles)) {
       const reasonPropertyDeclaration = buildPropertyDefinitionText('display', computedStyles?.get('display'));
       const affectedPropertyDeclarationCode = buildPropertyName('align-content');
 
@@ -200,7 +202,7 @@ export class FlexItemValidator extends CSSRuleValidator {
     return Host.UserMetrics.CSSHintType.FLEX_ITEM;
   }
 
-  getHint(propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
+  getHint(propertyName: string, _computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
       |undefined {
     if (!parentComputedStyles) {
       return;
@@ -276,7 +278,7 @@ export class GridContainerValidator extends CSSRuleValidator {
   }
 
   getHint(propertyName: string, computedStyles?: Map<string, string>): Hint|undefined {
-    if (isGridContainer(computedStyles)) {
+    if (isGridContainer(computedStyles) || isMasonryContainer(computedStyles)) {
       return;
     }
     const reasonPropertyDeclaration = buildPropertyDefinitionText('display', computedStyles?.get('display'));
@@ -311,12 +313,12 @@ export class GridItemValidator extends CSSRuleValidator {
     return Host.UserMetrics.CSSHintType.GRID_ITEM;
   }
 
-  getHint(propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
+  getHint(propertyName: string, _computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
       |undefined {
     if (!parentComputedStyles) {
       return;
     }
-    if (isGridContainer(parentComputedStyles)) {
+    if (isGridContainer(parentComputedStyles) || isMasonryContainer(parentComputedStyles)) {
       return;
     }
     const reasonPropertyDeclaration = buildPropertyDefinitionText('display', parentComputedStyles?.get('display'));
@@ -347,7 +349,7 @@ export class FlexOrGridItemValidator extends CSSRuleValidator {
     return Host.UserMetrics.CSSHintType.FLEX_OR_GRID_ITEM;
   }
 
-  getHint(propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
+  getHint(propertyName: string, _computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>): Hint
       |undefined {
     if (!parentComputedStyles) {
       return;
@@ -389,11 +391,13 @@ export class FlexGridValidator extends CSSRuleValidator {
       return;
     }
 
-    if (isFlexContainer(computedStyles) || isGridContainer(computedStyles)) {
+    if (isFlexContainer(computedStyles) || isGridContainer(computedStyles) || isMasonryContainer(computedStyles)) {
       return;
     }
 
-    if (parentComputedStyles && (isFlexContainer(parentComputedStyles) || isGridContainer(parentComputedStyles))) {
+    if (parentComputedStyles &&
+        (isFlexContainer(parentComputedStyles) || isGridContainer(parentComputedStyles) ||
+         isMasonryContainer(parentComputedStyles))) {
       const reasonContainerDisplayName = buildPropertyValue(parentComputedStyles.get('display') as string);
       const reasonPropertyName = buildPropertyName(propertyName);
       const reasonAlternativePropertyName = buildPropertyName('justify-self');
@@ -433,7 +437,6 @@ export class MulticolFlexGridValidator extends CSSRuleValidator {
       'row-gap',
       'grid-gap',
       'grid-column-gap',
-      'grid-column-end',
       'grid-row-gap',
     ]);
   }
@@ -447,7 +450,8 @@ export class MulticolFlexGridValidator extends CSSRuleValidator {
       return;
     }
 
-    if (isMulticolContainer(computedStyles) || isFlexContainer(computedStyles) || isGridContainer(computedStyles)) {
+    if (isMulticolContainer(computedStyles) || isFlexContainer(computedStyles) || isGridContainer(computedStyles) ||
+        isMasonryContainer(computedStyles)) {
       return;
     }
 
@@ -610,7 +614,7 @@ export class SizingValidator extends CSSRuleValidator {
   }
 
   getHint(
-      propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>,
+      propertyName: string, computedStyles?: Map<string, string>, _parentComputedStyles?: Map<string, string>,
       nodeName?: string): Hint|undefined {
     if (!computedStyles || !nodeName) {
       return;
@@ -654,8 +658,8 @@ export class FontVariationSettingsValidator extends CSSRuleValidator {
   }
 
   getHint(
-      propertyName: string, computedStyles?: Map<string, string>, parentComputedStyles?: Map<string, string>,
-      nodeName?: string, fontFaces?: SDK.CSSFontFace.CSSFontFace[]): Hint|undefined {
+      _propertyName: string, computedStyles?: Map<string, string>, _parentComputedStyles?: Map<string, string>,
+      _nodeName?: string, fontFaces?: SDK.CSSFontFace.CSSFontFace[]): Hint|undefined {
     if (!computedStyles) {
       return;
     }

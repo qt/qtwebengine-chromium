@@ -28,6 +28,8 @@
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -89,11 +91,11 @@ const UIStrings = {
    */
   allocationStack: 'Allocation stack',
   /**
-   *@description Screen reader label for a select box that chooses the perspective in the Memory panel when vieweing a Heap Snapshot
+   *@description Screen reader label for a select box that chooses the perspective in the Memory panel when viewing a Heap Snapshot
    */
   perspective: 'Perspective',
   /**
-   *@description Screen reader label for a select box that chooses the snapshot to use as a base in the Memory panel when vieweing a Heap Snapshot
+   *@description Screen reader label for a select box that chooses the snapshot to use as a base in the Memory panel when viewing a Heap Snapshot
    */
   baseSnapshot: 'Base snapshot',
   /**
@@ -1341,7 +1343,7 @@ export class HeapSnapshotProfileType extends
 
   override setCustomContentEnabled(enable: boolean): void {
     if (this.customContentInternal) {
-      this.customContentInternal.checkboxElement.disabled = !enable;
+      this.customContentInternal.disabled = !enable;
     }
   }
 
@@ -1552,7 +1554,7 @@ export class TrackingHeapSnapshotProfileType extends
 
   override setCustomContentEnabled(enable: boolean): void {
     if (this.customContentInternal) {
-      this.customContentInternal.checkboxElement.disabled = !enable;
+      this.customContentInternal.disabled = !enable;
     }
   }
 

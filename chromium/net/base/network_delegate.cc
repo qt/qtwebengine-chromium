@@ -9,10 +9,10 @@
 
 #include "base/logging.h"
 #include "base/threading/thread_checker.h"
+#include "base/trace_event/trace_event.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
 #include "net/base/trace_constants.h"
-#include "net/base/tracing.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "net/cookies/cookie_util.h"
 #include "net/proxy_resolution/proxy_info.h"
@@ -142,13 +142,6 @@ NetworkDelegate::GetStorageAccessStatus(
     base::optional_ref<const RedirectInfo> redirect_info) const {
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
   return OnGetStorageAccessStatus(request, redirect_info);
-}
-
-bool NetworkDelegate::IsStorageAccessHeaderEnabled(
-    const url::Origin* top_frame_origin,
-    const GURL& url) const {
-  DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
-  return OnIsStorageAccessHeaderEnabled(top_frame_origin, url);
 }
 
 NetworkDelegate::PrivacySetting NetworkDelegate::ForcePrivacyMode(

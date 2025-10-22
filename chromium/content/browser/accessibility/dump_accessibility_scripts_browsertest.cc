@@ -4,6 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/files/file_util.h"
+#include "base/strings/string_util.h"
 #include "build/build_config.h"
 #include "content/browser/accessibility/dump_accessibility_browsertest_base.h"
 #include "content/public/common/content_switches.h"
@@ -98,7 +99,7 @@ class DumpAccessibilityScriptTest : public DumpAccessibilityTestBase {
     property_filters->push_back(AXPropertyFilter(filter, type));
   }
 
-  std::vector<std::string> Dump(ui::AXMode mode) override {
+  std::vector<std::string> Dump() override {
     std::vector<std::string> dump;
     std::unique_ptr<AXTreeFormatter> formatter(CreateFormatter());
     ui::BrowserAccessibility* root =
@@ -136,9 +137,8 @@ class DumpAccessibilityScriptTest : public DumpAccessibilityTestBase {
         auto pair = CaptureEvents(
             base::BindOnce(&DumpAccessibilityScriptTest::EvaluateScript,
                            base::Unretained(this), formatter.get(), root,
-                           scenario_.script_instructions, start_index, index),
-            ui::kAXModeComplete);
-        actual_contents = pair.first.ExtractString();
+                           scenario_.script_instructions, start_index, index));
+        actual_contents = pair.first.GetString();
         for (auto event : pair.second) {
           if (base::StartsWith(event, wait_for)) {
             actual_contents += event + '\n';
@@ -162,7 +162,7 @@ class DumpAccessibilityScriptTest : public DumpAccessibilityTestBase {
 
         // Input presses could create a11y events. Wait for those to clear
         // before procceding.
-        WaitForEndOfTest(mode);
+        WaitForEndOfTest();
       }
       if (printTree) {
         actual_contents += DumpTreeAsString() + '\n';
@@ -178,15 +178,14 @@ class DumpAccessibilityScriptTest : public DumpAccessibilityTestBase {
     return dump;
   }
 
-  EvalJsResult EvaluateScript(
+  base::Value EvaluateScript(
       AXTreeFormatter* formatter,
       ui::BrowserAccessibility* root,
       const std::vector<AXScriptInstruction>& instructions,
       size_t start_index,
       size_t end_index) {
-    return EvalJsResult(/*value=*/base::Value(formatter->EvaluateScript(
-                            root, instructions, start_index, end_index)),
-                        /*error=*/"");
+    return base::Value(
+        formatter->EvaluateScript(root, instructions, start_index, end_index));
   }
 
   RenderWidgetHost* GetWidgetHost() {

@@ -52,10 +52,20 @@ class GroupSuggestionsService : public KeyedService,
     }
   };
 
+  // Returns the cached suggestions for the given `scope`.
+  // Returns empty suggestions if there are no cached suggestions for the
+  // `scope`.
+  virtual std::optional<CachedSuggestions> GetCachedSuggestions(
+      const Scope& scope) = 0;
+
   // Delegate can be registered when the window/activity is running and
   // suggestions can be shown.
   virtual void RegisterDelegate(GroupSuggestionsDelegate*, const Scope&) = 0;
   virtual void UnregisterDelegate(GroupSuggestionsDelegate*) = 0;
+
+  // Set config for testing. `computation_delay` sets the delay to wait between
+  // 2 runs.
+  virtual void SetConfigForTesting(base::TimeDelta computation_delay) = 0;
 };
 
 }  // namespace visited_url_ranking

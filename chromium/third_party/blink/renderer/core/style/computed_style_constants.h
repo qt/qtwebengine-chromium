@@ -59,7 +59,7 @@ enum PseudoId : uint8_t {
   // "PseudoElementStyles" in computed_style_extra_fields.json5 to
   // (kLastTrackedPublicPseudoId - kFirstPublicPseudoId + 1).
   //
-  // The above is necessary because presence of a public pseudo element style
+  // The above is necessary because presence of a public pseudo-element style
   // for an element is tracked on the element's ComputedStyle. This is done for
   // all public IDs until kLastTrackedPublicPseudoId.
   kPseudoIdNone,
@@ -89,16 +89,21 @@ enum PseudoId : uint8_t {
   // The following IDs are public but not tracked.
   kPseudoIdViewTransition,
   kPseudoIdViewTransitionGroup,
+  kPseudoIdViewTransitionGroupChildren,
   kPseudoIdViewTransitionImagePair,
   kPseudoIdViewTransitionOld,
   kPseudoIdViewTransitionNew,
   // Internal IDs follow:
   kPseudoIdFirstLineInherited,
+
+  // These five must be together, due to code in
+  // CollectMatchingRulesInternal().
   kPseudoIdScrollbarThumb,
   kPseudoIdScrollbarButton,
   kPseudoIdScrollbarTrack,
   kPseudoIdScrollbarTrackPiece,
   kPseudoIdScrollbarCorner,
+
   kPseudoIdScrollMarkerGroupAfter,
   kPseudoIdScrollMarkerGroupBefore,
   kPseudoIdResizer,
@@ -107,11 +112,13 @@ enum PseudoId : uint8_t {
   kPseudoIdFileSelectorButton,
   kPseudoIdDetailsContent,
   kPseudoIdPickerSelect,
+  kPseudoIdPermissionIcon,
   // Special values follow:
   kAfterLastInternalPseudoId,
   kPseudoIdInvalid,
   kFirstPublicPseudoId = kPseudoIdFirstLine,
   kLastTrackedPublicPseudoId = kPseudoIdGrammarError,
+  kLastPublicPseudoId = kPseudoIdViewTransitionNew,
   kFirstInternalPseudoId = kPseudoIdFirstLineInherited,
 };
 
@@ -129,22 +136,11 @@ inline bool IsHighlightPseudoElement(PseudoId pseudo_id) {
   }
 }
 
-inline bool UsesHighlightPseudoInheritance(PseudoId pseudo_id) {
-  // ::highlight() pseudos, ::spelling-error, and ::grammar-error use highlight
-  // inheritance rather than originating inheritance, regardless of whether the
-  // highlight inheritance feature is enabled.
-  return ((IsHighlightPseudoElement(pseudo_id) &&
-           RuntimeEnabledFeatures::HighlightInheritanceEnabled()) ||
-          pseudo_id == PseudoId::kPseudoIdSearchText ||
-          pseudo_id == PseudoId::kPseudoIdHighlight ||
-          pseudo_id == PseudoId::kPseudoIdSpellingError ||
-          pseudo_id == PseudoId::kPseudoIdGrammarError);
-}
-
 inline bool IsTransitionPseudoElement(PseudoId pseudo_id) {
   switch (pseudo_id) {
     case kPseudoIdViewTransition:
     case kPseudoIdViewTransitionGroup:
+    case kPseudoIdViewTransitionGroupChildren:
     case kPseudoIdViewTransitionImagePair:
     case kPseudoIdViewTransitionOld:
     case kPseudoIdViewTransitionNew:
@@ -158,6 +154,7 @@ inline bool PseudoElementHasArguments(PseudoId pseudo_id) {
   switch (pseudo_id) {
     case kPseudoIdHighlight:
     case kPseudoIdViewTransitionGroup:
+    case kPseudoIdViewTransitionGroupChildren:
     case kPseudoIdViewTransitionImagePair:
     case kPseudoIdViewTransitionNew:
     case kPseudoIdViewTransitionOld:
@@ -288,7 +285,7 @@ enum GridAutoFlow {
                          int(kInternalAutoFlowDirectionColumn)
 };
 
-static const size_t kContainmentBits = 5;
+static const size_t kContainmentBits = 6;
 enum Containment {
   kContainsNone = 0x0,
   kContainsLayout = 0x1,
@@ -296,6 +293,7 @@ enum Containment {
   kContainsPaint = 0x4,
   kContainsBlockSize = 0x8,
   kContainsInlineSize = 0x10,
+  kContainsViewTransition = 0x20,
   kContainsSize = kContainsBlockSize | kContainsInlineSize,
   kContainsStrict =
       kContainsStyle | kContainsLayout | kContainsPaint | kContainsSize,
@@ -308,12 +306,13 @@ inline Containment& operator|=(Containment& a, Containment b) {
   return a = a | b;
 }
 
-static const size_t kContainerTypeBits = 3;
+static const size_t kContainerTypeBits = 4;
 enum EContainerType {
   kContainerTypeNormal = 0x0,
   kContainerTypeInlineSize = 0x1,
   kContainerTypeBlockSize = 0x2,
   kContainerTypeScrollState = 0x4,
+  kContainerTypeAnchored = 0x8,
   kContainerTypeSize = kContainerTypeInlineSize | kContainerTypeBlockSize,
 };
 inline EContainerType operator|(EContainerType a, EContainerType b) {
@@ -520,7 +519,7 @@ enum class TryTactic : uint8_t {
   kFlipStart,
 };
 
-enum class EAnimationTriggerType : uint8_t {
+enum class EAnimationTriggerBehavior : uint8_t {
   kOnce,
   kRepeat,
   kAlternate,
@@ -542,6 +541,8 @@ inline PositionVisibility& operator|=(PositionVisibility& a,
                                       PositionVisibility b) {
   return a = a | b;
 }
+
+enum class FlexWrapMode : uint8_t { kNowrap, kWrap, kWrapReverse };
 
 }  // namespace blink
 

@@ -201,17 +201,18 @@ class AddressComponent {
   // assigned, an empty string is returned.
   const std::u16string& GetValue() const;
 
-  // Returns the normalized value of this component for comparison. `other` is
-  // the component being compared against and is required for consistent
-  // application of rewriting rules.
-  std::u16string GetValueForComparison(const AddressComponent& other) const;
+  // Returns the normalized value of this component for comparison.
+  // `common_country_code` of this and the component it's being compared against
+  // is required for consistent application of rewriting rules.
+  std::u16string GetValueForComparison(
+      const AddressCountryCode& common_country_code) const;
 
-  // Returns a normalized version of `value` for comparison. `other` is the
-  // component being compared against and is required for consistent application
-  // of rewriting rules.
+  // Returns a normalized version of `value` for comparison.
+  // `common_country_code` of this and the component it's being compared against
+  // is required for consistent application of rewriting rules.
   virtual std::u16string GetValueForComparison(
       const std::u16string& value,
-      const AddressComponent& other) const;
+      const AddressCountryCode& common_country_code) const;
 
   // Returns a canonicalized version of the value or std::nullopt if
   // canonicalization is not possible or not implemented.
@@ -223,18 +224,15 @@ class AddressComponent {
   // Sets the value corresponding to the storage type of this AddressComponent.
   virtual void SetValue(std::u16string value, VerificationStatus status);
 
-  // Wrapper function around
-  // SetValueForTypeIfPossible(/*invalidate_child_nodes=*/false);
+  // Sets the value for the specified field type.
+  // - If `invalidate_child_nodes` is false (default), checks if the node is
+  //   read-only.
+  // - If `invalidate_child_nodes` is true, ignores read-only status and clears
+  //   child nodes after setting.
   bool SetValueForType(FieldType field_type,
                        const std::u16string& value,
-                       const VerificationStatus& status);
-
-  // Wrapper function around
-  // SetValueForTypeIfPossible(/*invalidate_child_nodes=*/true);
-  // TODO(crbug.com/40266145): Remove and merge with SetValueForType.
-  bool SetValueForTypeAndResetSubstructure(FieldType field_type,
-                                           const std::u16string& value,
-                                           const VerificationStatus& status);
+                       const VerificationStatus& status,
+                       bool invalidate_child_nodes = false);
 
   // Sets the value to an empty string, marks it unassigned and sets the
   // verification status to |kNoStatus|.
@@ -245,11 +243,12 @@ class AddressComponent {
   std::u16string GetValueForType(FieldType field_type) const;
 
   // Convenience method to get the value of `field_type` to be used for
-  // comparison with `other`. Returns an empty string if `field_type` is not
-  // supported.
+  // comparison. Returns an empty string if `field_type` is not
+  // supported. `common_country_code` of this and the component it's being
+  // compared against is required for consistent application of rewriting rules.
   std::u16string GetValueForComparisonForType(
       FieldType field_type,
-      const AddressComponent& other) const;
+      const AddressCountryCode& common_country_code) const;
 
   // Convenience method to get the verification status of `field_type`.
   // Returns |VerificationStatus::kNoStatus| if `field_type` is not supported.
@@ -372,8 +371,10 @@ class AddressComponent {
   // While processing two structured addresses, if only one of them has their
   // country set, the other should assume the non-empty one while merging. This
   // is required to do consistent address rewriting.
-  // Returns the common country to be used.
-  AddressCountryCode GetCommonCountry(const AddressComponent& other) const;
+  // Returns the common country to be used. Empty string is returned if both
+  // countries are set and not equal.
+  static AddressCountryCode GetCommonCountry(const AddressCountryCode& c1,
+                                             const AddressCountryCode& c2);
 
   // If this node is a part of a tree that contains country code information,
   // this function retrieves it. Otherwise it returns an empty country code.
@@ -508,11 +509,10 @@ class AddressComponent {
   // |GetAdditionalSupportedFieldTypes()| to add computed field types.
   virtual FieldTypeSet GetTypes(bool storable_only) const;
 
- private:
-  friend class AddressComponentTestApi;
-
   // Unsets the node and all of its children.
   void UnsetAddressComponentAndItsSubcomponents();
+ private:
+  friend class AddressComponentTestApi;
 
   // Unsets the children of a node.
   void UnsetSubcomponents();
@@ -603,12 +603,6 @@ class AddressComponent {
   // constituents are. Synthesized nodes, similarly as normal subcomponents are
   // stored in the AddressComponentsStore.
   SubcomponentsList synthesized_subcomponents_;
-
-  // A vector that contains the tokens of |value_| after normalization,
-  // meaning that it was converted to lower case and diacritics have been
-  // removed. |value_| is tokenized by splitting the string by white spaces and
-  // commas. It is calculated when |value_| is set.
-  std::optional<std::vector<AddressToken>> sorted_normalized_tokens_;
 
   // A pointer to the parent node. It is set to nullptr if the node is the root
   // node of the AddressComponent tree. Similarly to the `subcomponents_`, the

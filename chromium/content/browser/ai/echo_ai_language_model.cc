@@ -6,8 +6,10 @@
 
 #include <optional>
 
+#include "base/containers/to_vector.h"
 #include "base/functional/bind.h"
 #include "base/location.h"
+#include "base/notimplemented.h"
 #include "base/time/time.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "content/browser/ai/echo_ai_manager_impl.h"
@@ -27,8 +29,12 @@ constexpr char kResponsePrefix[] =
 }
 
 EchoAILanguageModel::EchoAILanguageModel(
-    blink::mojom::AILanguageModelSamplingParamsPtr sampling_params)
-    : sampling_params_(std::move(sampling_params)) {}
+    blink::mojom::AILanguageModelSamplingParamsPtr sampling_params,
+    base::flat_set<blink::mojom::AILanguageModelPromptType> input_types,
+    uint32_t initial_tokens_size)
+    : current_tokens_(initial_tokens_size),
+      sampling_params_(std::move(sampling_params)),
+      input_types_(input_types) {}
 
 EchoAILanguageModel::~EchoAILanguageModel() = default;
 
@@ -41,13 +47,14 @@ void EchoAILanguageModel::DoMockExecution(
     return;
   }
 
-  if (input.size() > EchoAIManagerImpl::kMaxContextSizeInTokens) {
+  uint32_t quota = EchoAIManagerImpl::kMaxContextSizeInTokens;
+  if (input.size() > quota) {
     responder->OnError(
-        blink::mojom::ModelStreamingResponseStatus::kErrorInputTooLarge);
+        blink::mojom::ModelStreamingResponseStatus::kErrorInputTooLarge,
+        blink::mojom::QuotaErrorInfo::New(input.size(), quota));
     return;
   }
-  if (current_tokens_ >
-      EchoAIManagerImpl::kMaxContextSizeInTokens - input.size()) {
+  if (current_tokens_ > quota - input.size()) {
     current_tokens_ = input.size();
     responder->OnQuotaOverflow();
   }
@@ -60,26 +67,41 @@ void EchoAILanguageModel::DoMockExecution(
 
 void EchoAILanguageModel::Prompt(
     std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
+    on_device_model::mojom::ResponseConstraintPtr constraint,
     mojo::PendingRemote<blink::mojom::ModelStreamingResponder>
         pending_responder) {
   if (is_destroyed_) {
     mojo::Remote<blink::mojom::ModelStreamingResponder> responder(
         std::move(pending_responder));
     responder->OnError(
-        blink::mojom::ModelStreamingResponseStatus::kErrorSessionDestroyed);
+        blink::mojom::ModelStreamingResponseStatus::kErrorSessionDestroyed,
+        /*quota_error_info=*/nullptr);
     return;
   }
 
   std::string response = "";
   for (const auto& prompt : prompts) {
-    if (prompt->content->is_text()) {
-      response += prompt->content->get_text();
-    } else if (prompt->content->is_bitmap()) {
-      response += "<image>";
-    } else if (prompt->content->is_audio()) {
-      response += "<audio>";
-    } else {
-      NOTIMPLEMENTED_LOG_ONCE();
+    for (auto& content : prompt->content) {
+      if (content->is_text()) {
+        response += content->get_text();
+      } else if (content->is_bitmap()) {
+        if (!input_types_.contains(
+                blink::mojom::AILanguageModelPromptType::kImage)) {
+          mojo::ReportBadMessage("Image input is not supported.");
+          return;
+        }
+        response += "<image>";
+      } else if (content->is_audio()) {
+        if (!input_types_.contains(
+                blink::mojom::AILanguageModelPromptType::kAudio)) {
+          mojo::ReportBadMessage("Audio input is not supported.");
+          return;
+        }
+
+        response += "<audio>";
+      } else {
+        NOTIMPLEMENTED_LOG_ONCE();
+      }
     }
   }
   mojo::RemoteSetElementId responder_id =
@@ -92,6 +114,16 @@ void EchoAILanguageModel::Prompt(
       base::Seconds(1));
 }
 
+void EchoAILanguageModel::Append(
+    std::vector<blink::mojom::AILanguageModelPromptPtr> prompts,
+    mojo::PendingRemote<blink::mojom::ModelStreamingResponder>
+        pending_responder) {
+  mojo::Remote<blink::mojom::ModelStreamingResponder> responder(
+      std::move(pending_responder));
+  responder->OnCompletion(
+      blink::mojom::ModelExecutionContextInfo::New(current_tokens_));
+}
+
 void EchoAILanguageModel::Fork(
     mojo::PendingRemote<blink::mojom::AIManagerCreateLanguageModelClient>
         client) {
@@ -100,12 +132,14 @@ void EchoAILanguageModel::Fork(
   mojo::PendingRemote<blink::mojom::AILanguageModel> language_model;
 
   mojo::MakeSelfOwnedReceiver(
-      std::make_unique<EchoAILanguageModel>(sampling_params_.Clone()),
+      std::make_unique<EchoAILanguageModel>(sampling_params_.Clone(),
+                                            input_types_, current_tokens_),
       language_model.InitWithNewPipeAndPassReceiver());
-  client_remote->OnResult(std::move(language_model),
-                          blink::mojom::AILanguageModelInstanceInfo::New(
-                              EchoAIManagerImpl::kMaxContextSizeInTokens,
-                              current_tokens_, sampling_params_->Clone()));
+  client_remote->OnResult(
+      std::move(language_model),
+      blink::mojom::AILanguageModelInstanceInfo::New(
+          EchoAIManagerImpl::kMaxContextSizeInTokens, current_tokens_,
+          sampling_params_->Clone(), base::ToVector(input_types_)));
 }
 
 void EchoAILanguageModel::Destroy() {
@@ -113,18 +147,26 @@ void EchoAILanguageModel::Destroy() {
 
   for (auto& responder : responder_set_) {
     responder->OnError(
-        blink::mojom::ModelStreamingResponseStatus::kErrorSessionDestroyed);
+        blink::mojom::ModelStreamingResponseStatus::kErrorSessionDestroyed,
+        /*quota_error_info=*/nullptr);
   }
   responder_set_.Clear();
 }
 
 void EchoAILanguageModel::MeasureInputUsage(
-    const std::string& input,
-    mojo::PendingRemote<blink::mojom::AILanguageModelMeasureInputUsageClient>
-        client) {
-  mojo::Remote<blink::mojom::AILanguageModelMeasureInputUsageClient>(
-      std::move(client))
-      ->OnResult(input.size());
+    std::vector<blink::mojom::AILanguageModelPromptPtr> input,
+    MeasureInputUsageCallback callback) {
+  size_t total = 0;
+  for (const auto& prompt : input) {
+    for (const auto& content : prompt->content) {
+      if (content->is_text()) {
+        total += content->get_text().size();
+      } else {
+        total += 100;  // TODO(crbug.com/415304330): Improve estimate.
+      }
+    }
+  }
+  std::move(callback).Run(total);
 }
 
 }  // namespace content

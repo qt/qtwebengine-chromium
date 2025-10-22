@@ -99,7 +99,8 @@ class AutofillDriverIOS final : public AutofillDriver,
       mojom::ActionPersistence action_persistence,
       base::span<const FormFieldData> fields,
       const url::Origin& triggered_origin,
-      const base::flat_map<FieldGlobalId, FieldType>& field_type_map) override;
+      const base::flat_map<FieldGlobalId, FieldType>& field_type_map,
+      const Section& section_for_clear_form_on_ios) override;
   void ApplyFieldAction(mojom::FieldActionType action_type,
                         mojom::ActionPersistence action_persistence,
                         const FieldGlobalId& field_id,
@@ -108,9 +109,8 @@ class AutofillDriverIOS final : public AutofillDriver,
       FormGlobalId form,
       base::OnceCallback<void(AutofillDriver*, const std::optional<FormData>&)>
           response_callback) override;
-  void SendTypePredictionsToRenderer(
-      base::span<const raw_ptr<FormStructure, VectorExperimental>> forms)
-      override;
+  void ExposeDomNodeIDs() override;
+  void SendTypePredictionsToRenderer(const FormStructure& form) override;
   void RendererShouldClearPreviewedForm() override;
   void RendererShouldTriggerSuggestions(
       const FieldGlobalId& field_id,
@@ -141,6 +141,9 @@ class AutofillDriverIOS final : public AutofillDriver,
   bool is_processed() const { return processed_; }
   void set_processed(bool processed) { processed_ = processed; }
   web::WebFrame* web_frame() const;
+  base::WeakPtr<AutofillDriverIOS> GetWeakPtr() {
+    return weak_ptr_factory_.GetWeakPtr();
+  }
 
   // Methods routed by AutofillDriverRouter. These are a subset of the methods
   // in mojom::AutofillDriver; that interface is content-specific, but to

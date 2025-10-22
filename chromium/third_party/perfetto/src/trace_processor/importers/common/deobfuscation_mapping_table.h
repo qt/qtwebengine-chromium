@@ -23,7 +23,6 @@
 #include <vector>
 
 #include "perfetto/ext/base/flat_hash_map.h"
-#include "perfetto/ext/base/hash.h"
 #include "perfetto/ext/base/string_view.h"
 #include "src/trace_processor/storage/trace_storage.h"
 
@@ -73,7 +72,7 @@ class DeobfuscationMappingTable {
   struct PackageIdHash {
     std::size_t operator()(PackageId const& p) const noexcept {
       return static_cast<std::size_t>(
-          base::Hasher::Combine(p.package_name, p.version_code));
+          base::FnvHasher::Combine(p.package_name, p.version_code));
     }
   };
 
@@ -91,7 +90,7 @@ class DeobfuscationMappingTable {
   // To translate entities which don't have a package id, we will use
   // |default_package_id_|. |default_package_id_| is a package id of the first
   // inserted entity with a package id;
-  // We need this because curently TraceProcessor doesn't use the package
+  // We need this because currently TraceProcessor doesn't use the package
   // version of the arguments.
   // TODO(b/244700870): start use the package version of arguments.
   std::optional<PackageId> default_package_id_;

@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import enum
-from typing import Any, Generic, Iterable, Tuple, TypeVar
+from typing import Any, Generic, Iterable, TypeVar
 
 
 class UnexpectedStateError(RuntimeError):
@@ -21,7 +21,7 @@ class UnexpectedStateError(RuntimeError):
     return self._state
 
   @property
-  def expected(self) -> Tuple[BaseState, ...]:
+  def expected(self) -> tuple[BaseState, ...]:
     return self._expected
 
 

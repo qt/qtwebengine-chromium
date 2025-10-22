@@ -60,13 +60,14 @@ String BuildJustificationText(const String& text_content,
           const LineInfo& base_line = item_result.ruby_column->base_line;
           const InlineItemResults& base_results = base_line.Results();
           if (!base_results.empty()) {
+            const unsigned base_end =
+                std::min(base_results.back().EndOffset(), end_offset);
             line_text_builder.Append(BuildJustificationText(
                 text_content, base_results, base_results.front().StartOffset(),
-                base_line.EndOffsetForJustify(),
-                base_line.MayHaveTextCombineOrRubyItem()));
+                base_end, base_line.MayHaveTextCombineOrRubyItem()));
           }
         } else {
-          line_text_builder.Append(kObjectReplacementCharacter);
+          line_text_builder.Append(uchar::kObjectReplacementCharacter);
         }
         continue;
       }
@@ -91,7 +92,7 @@ String BuildJustificationText(const String& text_content,
     // Remove the trailing \n.  See crbug.com/331729346.
     wtf_size_t text_length = line_text_builder.length();
     if (text_length > 0u &&
-        line_text_builder[text_length - 1] == kNewlineCharacter) {
+        line_text_builder[text_length - 1] == uchar::kLineFeed) {
       if (text_length == 1u) {
         return String();
       }
@@ -155,7 +156,8 @@ float JustifyResults(const String& text_content,
         item_result.inline_size += spacing_after;
         item_result.spacing_before = LayoutUnit(spacing_before);
       } else {
-        DCHECK_EQ(kObjectReplacementCharacter, line_text[line_text_offset]);
+        DCHECK_EQ(uchar::kObjectReplacementCharacter,
+                  line_text[line_text_offset]);
         item_result.inline_size += spacing_after;
         // |spacing_before| is non-zero only before CJK characters.
         DCHECK_EQ(spacing_before, 0.0f);

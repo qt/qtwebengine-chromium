@@ -202,7 +202,7 @@ TEST_F(SandboxMacTest, SSLInitTest) {
 MULTIPROCESS_TEST_MAIN(BuiltinAvailable) {
   CheckCreateSeatbeltServer();
 
-  if (__builtin_available(macOS 11, *)) {
+  if (__builtin_available(macOS 12, *)) {
     // Can't negate a __builtin_available condition. But success!
   } else {
     return 15;
@@ -218,7 +218,7 @@ TEST_F(SandboxMacTest, BuiltinAvailable) {
 MULTIPROCESS_TEST_MAIN(NetworkProcessPrefs) {
   CheckCreateSeatbeltServer();
 
-  const std::string kBundleId = base::apple::BaseBundleID();
+  const std::string kBundleId(base::apple::BaseBundleID());
   const std::string kUserName = base::SysNSStringToUTF8(NSUserName());
   const std::vector<std::string> kPaths = {
       "/Library/Managed Preferences/.GlobalPreferences.plist",

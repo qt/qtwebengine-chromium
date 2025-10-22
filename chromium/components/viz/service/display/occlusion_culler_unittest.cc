@@ -7,6 +7,7 @@
 #include <array>
 #include <memory>
 #include <optional>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -27,7 +28,12 @@
 #include "ui/gfx/geometry/mask_filter_info.h"
 #include "ui/gfx/geometry/point_f.h"
 #include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/geometry/rect_conversions.h"
+#include "ui/gfx/geometry/rect_f.h"
+#include "ui/gfx/geometry/rounded_corners_f.h"
+#include "ui/gfx/geometry/rrect_f.h"
 #include "ui/gfx/geometry/size.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 
 namespace viz {
 namespace {
@@ -85,7 +91,6 @@ class OcclusionCullerTest : public testing::Test {
                                        bool is_overlay_candidate) {
     bool nearest_neighbor = false;
     bool needs_blending = false;
-    bool premultiplied_alpha = false;
     gfx::Size resource_size_in_pixels = rect.size();
 
     TestResourceFactory::TestResourceContext resource_context;
@@ -99,10 +104,9 @@ class OcclusionCullerTest : public testing::Test {
         render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
     overlay_quad->SetNew(
         shared_quad_state, rect, rect, needs_blending, resource_id,
-        premultiplied_alpha, /*top_left=*/gfx::PointF(),
+        /*top_left=*/gfx::PointF(),
         /*bottom_right=*/gfx::PointF(), SkColors::kBlack, nearest_neighbor,
         /*secure_output=*/false, gfx::ProtectedVideoType::kClear);
-    overlay_quad->set_resource_size_in_pixels(resource_size_in_pixels);
 
     return overlay_quad;
   }
@@ -167,7 +171,13 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithBlending) {
 // Quads that intersect backdrop filter render pass quads should not be
 // split because splitting may affect how the filter applies to an
 // underlying quad.
+// TODO(b:424284352): Remove the test once the optimization is enabled by
+// default.
 TEST_F(OcclusionCullerTest, OcclusionCullingWithIntersectingBackdropFilter) {
+  if (features::IsBackdropFiltersCullingOptimizationEnabled()) {
+    GTEST_SKIP();
+  }
+
   RendererSettings::OcclusionCullerSettings settings;
   settings.minimum_fragments_reduced = 0;
 
@@ -197,8 +207,8 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithIntersectingBackdropFilter) {
   bd_render_pass->SetAll(
       AggregatedRenderPassId{2}, bd_filter_rect, gfx::Rect(), gfx::Transform(),
       cc::FilterOperations(), backdrop_filters,
-      gfx::RRectF(gfx::RectF(bd_filter_rect), 0), gfx::ContentColorUsage::kSRGB,
-      false, false, false, false);
+      SkPath::Rect(gfx::RectToSkRect(bd_filter_rect)),
+      gfx::ContentColorUsage::kSRGB, false, false, false, false);
 
   // Add quads to root render pass
   for (int i = 0; i < 3; i++) {
@@ -239,6 +249,139 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithIntersectingBackdropFilter) {
   for (int i = 0; i < 3; i++) {
     EXPECT_EQ(rects[i], root_render_pass->quad_list.ElementAt(i)->visible_rect);
   }
+}
+
+TEST_F(OcclusionCullerTest,
+       OcclusionCullingWithIntersectingBackdropFilterWithOptimization) {
+  //
+  // +-----------------------------+
+  // |                             |
+  // |------------+----+-----------+
+  // |            |    |           |
+  // |------------|----|-----------+
+  // |            |    |           |
+  // |            |    |           |
+  // |            |    |           |
+  // |            |    |           |
+  // +------------+----+-----------+
+  //
+  // Note: quad_1 and quad_2 fully overlap each other.
+  // backdrop_render_pass_1 (horizontal strip) and backdrop_render_pass_2
+  // (vertical strip) partially overlap.
+
+  if (!features::IsBackdropFiltersCullingOptimizationEnabled()) {
+    GTEST_SKIP();
+  }
+
+  RendererSettings::OcclusionCullerSettings settings;
+  settings.minimum_fragments_reduced = 0;
+
+  InitOcclusionCuller(settings);
+  AggregatedFrame frame = MakeDefaultAggregatedFrame(/*num_render_passes=*/3);
+
+  bool are_contents_opaque = true;
+  float opacity = 1.f;
+
+  gfx::Rect backdrop_filter_rect_1(0, 200, 1000, 200);
+  gfx::Rect backdrop_filter_rect_2(400, 200, 200, 800);
+
+  gfx::Rect quad_1(0, 0, 1000, 1000);
+  gfx::Rect quad_2(0, 0, 1000, 1000);
+
+  auto& backdrop_render_pass_1 = frame.render_pass_list.at(0);
+  auto& backdrop_render_pass_2 = frame.render_pass_list.at(1);
+  auto& root_render_pass = frame.render_pass_list.at(2);
+
+  cc::FilterOperations backdrop_filters;
+  backdrop_filters.Append(cc::FilterOperation::CreateBlurFilter(5.0));
+  backdrop_render_pass_1->SetAll(
+      AggregatedRenderPassId{1}, backdrop_filter_rect_1, gfx::Rect(),
+      gfx::Transform(), cc::FilterOperations(), backdrop_filters,
+      SkPath::Rect(gfx::RectToSkRect(backdrop_filter_rect_1)),
+      gfx::ContentColorUsage::kSRGB, false, false, false, false);
+  backdrop_render_pass_2->SetAll(
+      AggregatedRenderPassId{2}, backdrop_filter_rect_2, gfx::Rect(),
+      gfx::Transform(), cc::FilterOperations(), backdrop_filters,
+      SkPath::Rect(gfx::RectToSkRect(backdrop_filter_rect_2)),
+      gfx::ContentColorUsage::kSRGB, false, false, false, false);
+
+  {
+    SharedQuadState* shared_quad_state =
+        frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+    shared_quad_state->SetAll(gfx::Transform(), backdrop_filter_rect_1,
+                              backdrop_filter_rect_1, gfx::MaskFilterInfo(),
+                              /*clip=*/std::nullopt, are_contents_opaque,
+                              opacity, SkBlendMode::kSrcOver,
+                              /*sorting_context=*/0,
+                              /*layer_id=*/0u, /*fast_rounded_corner=*/false);
+
+    auto* quad = root_render_pass->quad_list
+                     .AllocateAndConstruct<AggregatedRenderPassDrawQuad>();
+    quad->SetNew(shared_quad_state, backdrop_filter_rect_1,
+                 backdrop_filter_rect_1, backdrop_render_pass_1->id,
+                 ResourceId(2), gfx::RectF(), gfx::Size(), gfx::Vector2dF(1, 1),
+                 gfx::PointF(), gfx::RectF(), false, 1.f);
+  }
+  {
+    SharedQuadState* shared_quad_state =
+        frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+    shared_quad_state->SetAll(gfx::Transform(), backdrop_filter_rect_2,
+                              backdrop_filter_rect_2, gfx::MaskFilterInfo(),
+                              /*clip=*/std::nullopt, are_contents_opaque,
+                              opacity, SkBlendMode::kSrcOver,
+                              /*sorting_context=*/0,
+                              /*layer_id=*/0u, /*fast_rounded_corner=*/false);
+
+    auto* quad = root_render_pass->quad_list
+                     .AllocateAndConstruct<AggregatedRenderPassDrawQuad>();
+    quad->SetNew(shared_quad_state, backdrop_filter_rect_2,
+                 backdrop_filter_rect_2, backdrop_render_pass_2->id,
+                 ResourceId(3), gfx::RectF(), gfx::Size(), gfx::Vector2dF(1, 1),
+                 gfx::PointF(), gfx::RectF(), false, 1.f);
+  }
+  {
+    SharedQuadState* shared_quad_state =
+        frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+    shared_quad_state->SetAll(gfx::Transform(), quad_1, quad_1,
+                              gfx::MaskFilterInfo(),
+                              /*clip=*/std::nullopt, are_contents_opaque,
+                              opacity, SkBlendMode::kSrcOver,
+                              /*sorting_context=*/0,
+                              /*layer_id=*/0u, /*fast_rounded_corner=*/false);
+
+    auto* quad =
+        root_render_pass->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+    quad->SetNew(shared_quad_state, quad_1, quad_1, SkColors::kBlack, false);
+  }
+  {
+    SharedQuadState* shared_quad_state =
+        frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+    shared_quad_state->SetAll(gfx::Transform(), quad_2, quad_2,
+                              gfx::MaskFilterInfo(),
+                              /*clip=*/std::nullopt, are_contents_opaque,
+                              opacity, SkBlendMode::kSrcOver,
+                              /*sorting_context=*/0,
+                              /*layer_id=*/0u, /*fast_rounded_corner=*/false);
+
+    auto* quad =
+        root_render_pass->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+    quad->SetNew(shared_quad_state, quad_2, quad_2, SkColors::kBlack, false);
+  }
+
+  EXPECT_EQ(NumVisibleRects(root_render_pass->quad_list), 4u);
+  occlusion_culler()->RemoveOverdrawQuads(&frame);
+  EXPECT_EQ(NumVisibleRects(root_render_pass->quad_list), 5u);
+
+  // If there were no backdrop filters, quad2 would have been remove since it is
+  // fully occluded by quad1. However, since there are some backdrop filters,
+  // quad2 is now split into two quads that overlap with background filters.
+  auto& quad_list = root_render_pass->quad_list;
+  EXPECT_EQ(quad_list.ElementAt(0)->visible_rect, backdrop_filter_rect_1);
+  EXPECT_EQ(quad_list.ElementAt(1)->visible_rect, backdrop_filter_rect_2);
+  EXPECT_EQ(quad_list.ElementAt(2)->visible_rect, quad_1);
+  EXPECT_EQ(quad_list.ElementAt(3)->visible_rect, gfx::Rect(0, 200, 1000, 200));
+  EXPECT_EQ(quad_list.ElementAt(4)->visible_rect,
+            gfx::Rect(400, 400, 200, 600));
 }
 
 // Check if occlusion culling does not remove any DrawQuads when no quad is
@@ -3058,7 +3201,8 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithLargeDrawQuad) {
   }
 }
 
-TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesNotOcclude) {
+TEST_F(OcclusionCullerTest,
+       OcclusionCullingWithRoundedCornerDoesNotOcclude_SimpleOccluder) {
   InitOcclusionCuller();
 
   AggregatedFrame frame = MakeDefaultAggregatedFrame();
@@ -3113,7 +3257,8 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesNotOcclude) {
   }
 }
 
-TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesNotOccludeY) {
+TEST_F(OcclusionCullerTest,
+       OcclusionCullingWithRoundedCornerDoesNotOccludeY_SimpleOccluder) {
   InitOcclusionCuller();
 
   AggregatedFrame frame = MakeDefaultAggregatedFrame();
@@ -3171,7 +3316,8 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesNotOccludeY) {
   }
 }
 
-TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesNotOccludeX) {
+TEST_F(OcclusionCullerTest,
+       OcclusionCullingWithRoundedCornerDoesNotOccludeX_SimpleOccluder) {
   InitOcclusionCuller();
 
   AggregatedFrame frame = MakeDefaultAggregatedFrame();
@@ -3229,7 +3375,8 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesNotOccludeX) {
   }
 }
 
-TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesOcclude) {
+TEST_F(OcclusionCullerTest,
+       OcclusionCullingWithRoundedCornerDoesOcclude_SimpleOccluder) {
   InitOcclusionCuller();
 
   // The quad with rounded corner completely covers the quad below it.
@@ -3237,7 +3384,7 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesOcclude) {
   gfx::Rect quad_rect(10, 10, 1000, 1000);
   gfx::Rect occluded_quad_rect(13, 13, 994, 994);
   gfx::MaskFilterInfo mask_filter_info(
-      gfx::RRectF(gfx::RectF(quad_rect), 10.f));
+      gfx::RRectF(gfx::RectF(quad_rect), gfx::RoundedCornersF(0, 10, 10, 0)));
 
   bool are_contents_opaque = true;
   float opacity = 1.f;
@@ -3283,7 +3430,8 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesOcclude) {
   }
 }
 
-TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesOccludeXY) {
+TEST_F(OcclusionCullerTest,
+       OcclusionCullingWithRoundedCornerDoesOccludeXY_SimpleOccluder) {
   InitOcclusionCuller();
 
   // The quad with distinct rounded corners completely covers the quad below it.
@@ -3334,6 +3482,215 @@ TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerDoesOccludeXY) {
     EXPECT_EQ(
         quad_rect,
         frame.render_pass_list.front()->quad_list.ElementAt(0)->visible_rect);
+  }
+}
+
+class QuadsWithComplexOccluderTest
+    : public OcclusionCullerTest,
+      public ::testing::WithParamInterface<
+          std::tuple</*occluded_quad_rect=*/gfx::Rect,
+                     /*quad_rrectf_=*/gfx::RRectF,
+                     /*expected_visible_rects=*/std::vector<gfx::Rect>>> {
+ public:
+  QuadsWithComplexOccluderTest()
+      : occluded_quad_rect_(std::get<0>(GetParam())),
+        quad_rrectf_(std::get<1>(GetParam())),
+        expected_visible_region_(std::get<2>(GetParam())) {}
+
+  QuadsWithComplexOccluderTest(const QuadsWithComplexOccluderTest&) = delete;
+  QuadsWithComplexOccluderTest& operator=(const QuadsWithComplexOccluderTest&) =
+      delete;
+
+  ~QuadsWithComplexOccluderTest() override = default;
+
+ protected:
+  gfx::Rect occluded_quad_rect_;
+  gfx::RRectF quad_rrectf_;
+  std::vector<gfx::Rect> expected_visible_region_;
+};
+
+TEST_P(QuadsWithComplexOccluderTest, OcclusionCullingWithRoundedCorner) {
+  RendererSettings::OcclusionCullerSettings settings;
+  settings.generate_complex_occluder_for_rounded_corners = true;
+  settings.minimum_fragments_reduced = 0;
+  settings.quad_split_limit = 10;
+
+  InitOcclusionCuller(settings);
+  AggregatedFrame frame = MakeDefaultAggregatedFrame();
+
+  bool are_contents_opaque = true;
+  float opacity = 1.f;
+  SharedQuadState* shared_quad_state_with_rrect =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+  SharedQuadState* shared_quad_state_occluded =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+
+  auto* rounded_corner_quad =
+      frame.render_pass_list.front()
+          ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+  auto* occluded_quad =
+      frame.render_pass_list.front()
+          ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+
+  gfx::Rect quad_rect = gfx::ToEnclosingRect(quad_rrectf_.rect());
+  gfx::MaskFilterInfo mask_filter_info(quad_rrectf_);
+  {
+    shared_quad_state_occluded->SetAll(
+        gfx::Transform(), occluded_quad_rect_, occluded_quad_rect_,
+        gfx::MaskFilterInfo(), std::nullopt, are_contents_opaque, opacity,
+        SkBlendMode::kSrcOver, /*sorting_context=*/0, /*layer_id=*/0u,
+        /*fast_rounded_corner=*/false);
+    occluded_quad->SetNew(shared_quad_state_occluded, occluded_quad_rect_,
+                          occluded_quad_rect_, SkColors::kRed, false);
+
+    shared_quad_state_with_rrect->SetAll(
+        gfx::Transform(), quad_rect, quad_rect, mask_filter_info,
+        /*clip=*/std::nullopt, are_contents_opaque, opacity,
+        SkBlendMode::kSrcOver, /*sorting_context=*/0, /*layer_id=*/0u,
+        /*fast_rounded_corner=*/false);
+    rounded_corner_quad->SetNew(shared_quad_state_with_rrect, quad_rect,
+                                quad_rect, SkColors::kBlue, false);
+
+    occlusion_culler()->RemoveOverdrawQuads(&frame);
+
+    EXPECT_EQ(expected_visible_region_.size(),
+              NumVisibleRects(frame.render_pass_list.front()->quad_list));
+
+    int index = 0;
+    for (auto* quad : frame.render_pass_list.front()->quad_list) {
+      EXPECT_EQ(quad->visible_rect, expected_visible_region_[index++]);
+    }
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    /* no prefix */,
+    QuadsWithComplexOccluderTest,
+    testing::Values(
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(10, 10, 1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(10, 10, 1000, 1000), 2, 3, 2, 3, 5, 6, 5, 6),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{10, 10, 1000, 1000},
+                                   {10, 10, 2, 3},
+                                   {1008, 10, 2, 3},
+                                   {10, 1004, 5, 6},
+                                   {1005, 1004, 5, 6}}),
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(1000, 1000),
+                        gfx::RoundedCornersF(0, 0, 0, 10)),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{0, 0, 1000, 1000}, {0, 990, 10, 10}}),
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(1000, 1000),
+                        gfx::RoundedCornersF(10, 0, 0, 0)),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{0, 0, 1000, 1000}, {0, 0, 10, 10}}),
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(1000, 1000),
+                        gfx::RoundedCornersF(0, 10, 0, 5)),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{0, 0, 1000, 1000},
+                                   {990, 0, 10, 10},
+                                   {0, 995, 5, 5}}),
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(1000, 1000),
+                        gfx::RoundedCornersF(10, 10, 5, 5)),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{0, 0, 1000, 1000},
+                                   {0, 0, 10, 10},
+                                   {990, 0, 10, 10},
+                                   {0, 995, 5, 5},
+                                   {995, 995, 5, 5}}),
+        // Quads with non-unform radii should fallback to generate simple
+        // occluder.
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(0, 0, 1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(0, 0, 1000, 1000),
+                        gfx::RoundedCornersF(10, 8, 7, 5)),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{0, 0, 1000, 1000},
+                                   {0, 0, 1000, 3},
+                                   {0, 3, 3, 994},
+                                   {997, 3, 3, 994},
+                                   {0, 997, 1000, 3}}),
+        // Quads with non-unform radii should fallback to generate simple
+        // occluder.
+        std::make_tuple(
+            /*occluded_quad_rect=*/gfx::Rect(0, 0, 1000, 1000),
+            /*quad_rrectf_=*/
+            gfx::RRectF(gfx::RectF(0, 0, 1000, 1000), 2, 4, 2, 3, 5, 6, 5, 9),
+            /*expected_visible_rects=*/
+            std::vector<gfx::Rect>{{0, 0, 1000, 1000},
+                                   {0, 0, 1000, 2},
+                                   {0, 2, 2, 995},
+                                   {998, 2, 2, 995},
+                                   {0, 997, 1000, 3}})));
+
+// If a quad with rounded corners is smaller than a certain threshold, a simpler
+// occluder will be generated. This simpler occluder will be the largest
+// inscribed rectangle within the rounded rectangle, rather than a more complex
+// occluder.
+TEST_F(OcclusionCullerTest, OcclusionCullingWithRoundedCornerOnSmallQuads) {
+  RendererSettings::OcclusionCullerSettings settings;
+  settings.generate_complex_occluder_for_rounded_corners = true;
+  settings.quad_split_limit = 10;
+  settings.minimum_fragments_reduced = 0;
+
+  InitOcclusionCuller(settings);
+  AggregatedFrame frame = MakeDefaultAggregatedFrame();
+  gfx::Rect quad_rect(50, 50, 128, 127);
+  gfx::Rect occluded_quad_rect(0, 0, 1000, 1000);
+
+  gfx::MaskFilterInfo mask_filter_info(
+      gfx::RRectF(gfx::RectF(quad_rect), gfx::RoundedCornersF(10)));
+
+  bool are_contents_opaque = true;
+  float opacity = 1.f;
+  SharedQuadState* shared_quad_state_with_rrect =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+  SharedQuadState* shared_quad_state_occluded =
+      frame.render_pass_list.front()->CreateAndAppendSharedQuadState();
+
+  auto* rounded_corner_quad =
+      frame.render_pass_list.front()
+          ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+  auto* occluded_quad =
+      frame.render_pass_list.front()
+          ->quad_list.AllocateAndConstruct<SolidColorDrawQuad>();
+  {
+    shared_quad_state_occluded->SetAll(
+        gfx::Transform(), occluded_quad_rect, occluded_quad_rect,
+        gfx::MaskFilterInfo(), std::nullopt, are_contents_opaque, opacity,
+        SkBlendMode::kSrcOver, /*sorting_context=*/0, /*layer_id=*/0u,
+        /*fast_rounded_corner=*/false);
+    occluded_quad->SetNew(shared_quad_state_occluded, occluded_quad_rect,
+                          occluded_quad_rect, SkColors::kRed, false);
+
+    shared_quad_state_with_rrect->SetAll(
+        gfx::Transform(), quad_rect, quad_rect, mask_filter_info,
+        /*clip=*/std::nullopt, are_contents_opaque, opacity,
+        SkBlendMode::kSrcOver, /*sorting_context=*/0, /*layer_id=*/0u,
+        /*fast_rounded_corner=*/false);
+    rounded_corner_quad->SetNew(shared_quad_state_with_rrect, quad_rect,
+                                quad_rect, SkColors::kBlue, false);
+
+    EXPECT_EQ(2u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
+    occlusion_culler()->RemoveOverdrawQuads(&frame);
+
+    // For a complex occluder, the occluded quad would have been resolved into 8
+    // quads instead of 4 quads in this case.
+    EXPECT_EQ(5u, NumVisibleRects(frame.render_pass_list.front()->quad_list));
   }
 }
 
@@ -3962,10 +4319,6 @@ TEST_F(OcclusionCullerTest, DontSplitOverlayTextureQuad) {
 }
 
 TEST_F(OcclusionCullerTest, SplitNonOverlayTextureQuad) {
-  if (!features::IsOcclusionCullingForTextureQuadsEnabled()) {
-    GTEST_SKIP();
-  }
-
   RendererSettings::OcclusionCullerSettings settings;
   settings.minimum_fragments_reduced = 0;
 

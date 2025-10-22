@@ -89,8 +89,8 @@ class AutofillWebDataService : public WebDataServiceBase {
   // will be used to determine what type of change (permanent remove or update)
   // should happen on the server. Both of them result in the entry being removed
   // from the local database.
-  // Important: `HIDE_IN_AUTOFILL` should only be used
-  // for calls from the deduplication logic for account profiles.
+  // Important: `HIDE_IN_AUTOFILL` should only be used for calls from the
+  // deduplication logic for account profiles or for Home and Work.
   void RemoveAutofillProfile(
       const std::string& guid,
       AutofillProfileChange::Type change_type,
@@ -175,6 +175,9 @@ class AutofillWebDataService : public WebDataServiceBase {
 
   // Method to clear all the local CVCs from the web database.
   void ClearLocalCvcs();
+
+  // Method to clean up for crbug.com/411681430.
+  void CleanupForCrbug411681430();
 
   // Initiates the request for local/server credit cards.  The method
   // OnWebDataServiceRequestDone of |consumer| gets called when the request is

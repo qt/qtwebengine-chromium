@@ -151,13 +151,13 @@ export class Sidenav extends LitElement {
    * Whether double-clicking expands the tree.
    * @export
    */
-  doubleclickExpands: boolean;
+  declare doubleclickExpands: boolean;
 
   /**
    * Whether double-clicking expands the tree.
    * @export
    */
-  allowNoEnabled: boolean;
+  declare allowNoEnabled: boolean;
 
   /**
    * The `selectedItem` is the item that the user navigated to. If the user

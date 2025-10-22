@@ -15,6 +15,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <limits>
 #include <list>
@@ -41,6 +42,8 @@
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/notimplemented.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/numerics/safe_math.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
@@ -66,7 +69,6 @@
 #include "gpu/command_buffer/service/gles2_cmd_copy_texture_chromium.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_passthrough.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
-#include "gpu/command_buffer/service/gles2_external_framebuffer.h"
 #include "gpu/command_buffer/service/gles2_query_manager.h"
 #include "gpu/command_buffer/service/gpu_fence_manager.h"
 #include "gpu/command_buffer/service/gpu_state_tracer.h"
@@ -97,7 +99,7 @@
 #include "ui/gfx/geometry/size.h"
 #include "ui/gfx/geometry/transform.h"
 #include "ui/gfx/gpu_fence.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
 #include "ui/gfx/overlay_plane_data.h"
 #include "ui/gfx/overlay_priority_hint.h"
 #include "ui/gfx/video_types.h"
@@ -195,13 +197,13 @@ bool AnyOtherBitsSet(GLbitfield bits, GLbitfield ref) {
   return ((bits & mask) != 0);
 }
 
-void APIENTRY GLDebugMessageCallback(GLenum source,
-                                     GLenum type,
-                                     GLuint id,
-                                     GLenum severity,
-                                     GLsizei length,
-                                     const GLchar* message,
-                                     const GLvoid* user_param) {
+void GL_APIENTRY GLDebugMessageCallback(GLenum source,
+                                        GLenum type,
+                                        GLuint id,
+                                        GLenum severity,
+                                        GLsizei length,
+                                        const GLchar* message,
+                                        const GLvoid* user_param) {
   Logger* error_logger = static_cast<Logger*>(const_cast<void*>(user_param));
   LogGLDebugMessage(source, type, id, severity, length, message, error_logger);
 }
@@ -570,11 +572,6 @@ class GLES2DecoderImpl : public GLES2Decoder,
   void Destroy(bool have_context) override;
   void SetSurface(const scoped_refptr<gl::GLSurface>& surface) override;
   void ReleaseSurface() override;
-  void SetDefaultFramebufferSharedImage(const Mailbox& mailbox,
-                                        int samples,
-                                        bool preserve,
-                                        bool needs_depth,
-                                        bool needs_stencil) override;
   bool ResizeOffscreenFramebuffer(const gfx::Size& size);
   bool MakeCurrent() override;
   gl::GLApi* api() const { return state_.api(); }
@@ -1100,7 +1097,7 @@ class GLES2DecoderImpl : public GLES2Decoder,
                                           GLint src_y,
                                           GLsizei width,
                                           GLsizei height,
-                                          GLboolean flip_y,
+                                          GLboolean is_dst_origin_top_left,
                                           const volatile GLbyte* src_mailbox);
 
   void DoTraceEndCHROMIUM(void);
@@ -2139,8 +2136,8 @@ class GLES2DecoderImpl : public GLES2Decoder,
         return GL_TEXTURE_CUBE_MAP;
       case GL_SAMPLER_EXTERNAL_OES:
         return GL_TEXTURE_EXTERNAL_OES;
-      case GL_SAMPLER_2D_RECT_ARB:
-        return GL_TEXTURE_RECTANGLE_ARB;
+      case GL_SAMPLER_2D_RECT_ANGLE:
+        return GL_TEXTURE_RECTANGLE_ANGLE;
       case GL_SAMPLER_3D:
       case GL_INT_SAMPLER_3D:
       case GL_UNSIGNED_INT_SAMPLER_3D:
@@ -2160,10 +2157,10 @@ class GLES2DecoderImpl : public GLES2Decoder,
     Framebuffer* framebuffer = nullptr;
     switch (target) {
       case GL_FRAMEBUFFER:
-      case GL_DRAW_FRAMEBUFFER_EXT:
+      case GL_DRAW_FRAMEBUFFER:
         framebuffer = framebuffer_state_.bound_draw_framebuffer.get();
         break;
-      case GL_READ_FRAMEBUFFER_EXT:
+      case GL_READ_FRAMEBUFFER:
         framebuffer = framebuffer_state_.bound_read_framebuffer.get();
         break;
       default:
@@ -2259,11 +2256,6 @@ class GLES2DecoderImpl : public GLES2Decoder,
   bool ClientExposedBackBufferHasAlpha() const {
     if (back_buffer_draw_buffer_ == GL_NONE)
       return false;
-
-    if (external_default_framebuffer_ &&
-        external_default_framebuffer_->IsSharedImageAttached()) {
-      return external_default_framebuffer_->HasAlpha();
-    }
 
     if (offscreen_target_frame_buffer_.get()) {
       return false;
@@ -2395,8 +2387,6 @@ class GLES2DecoderImpl : public GLES2Decoder,
   // The offscreen frame buffer that the client renders to.
   std::unique_ptr<BackFramebuffer> offscreen_target_frame_buffer_;
   std::unique_ptr<BackTexture> offscreen_target_color_texture_;
-
-  std::unique_ptr<GLES2ExternalFramebuffer> external_default_framebuffer_;
 
   // The format of the texture or renderbuffer backing the offscreen
   // framebuffer.
@@ -2648,9 +2638,8 @@ ScopedFramebufferCopyBinder::ScopedFramebufferCopyBinder(
   api->glGenFramebuffersEXTFn(1, &temp_framebuffer_);
   framebuffer_binder_ =
       std::make_unique<ScopedFramebufferBinder>(decoder, temp_framebuffer_);
-  api->glFramebufferTexture2DEXTFn(GL_READ_FRAMEBUFFER_EXT,
-                                   GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
-                                   temp_texture_, 0);
+  api->glFramebufferTexture2DEXTFn(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+                                   GL_TEXTURE_2D, temp_texture_, 0);
   api->glReadBufferFn(GL_COLOR_ATTACHMENT0);
 }
 
@@ -3111,10 +3100,10 @@ gpu::ContextResult GLES2DecoderImpl::Initialize(
                              ref ? ref->service_id() : 0);
     }
     if (features().arb_texture_rectangle) {
-      ref = texture_manager()->GetDefaultTextureInfo(
-          GL_TEXTURE_RECTANGLE_ARB);
+      ref =
+          texture_manager()->GetDefaultTextureInfo(GL_TEXTURE_RECTANGLE_ANGLE);
       state_.texture_units[tt].bound_texture_rectangle_arb = ref;
-      api()->glBindTextureFn(GL_TEXTURE_RECTANGLE_ARB,
+      api()->glBindTextureFn(GL_TEXTURE_RECTANGLE_ANGLE,
                              ref ? ref->service_id() : 0);
     }
     ref = texture_manager()->GetDefaultTextureInfo(GL_TEXTURE_CUBE_MAP);
@@ -3321,13 +3310,6 @@ Capabilities GLES2DecoderImpl::GetCapabilities() {
   caps.texture_format_etc1_npot =
       feature_info_->feature_flags().oes_compressed_etc1_rgb8_texture &&
       !workarounds().etc1_power_of_two_only;
-  // Vulkan currently doesn't support single-component cross-thread shared
-  // images.
-  caps.disable_one_component_textures =
-      group_->shared_image_manager() &&
-      group_->shared_image_manager()->display_context_on_another_thread() &&
-      (workarounds().avoid_one_component_egl_images ||
-       features::IsUsingVulkan());
   caps.sync_query = feature_info_->feature_flags().chromium_sync_query;
 
   // Only query the kEnableMSAAOnNewIntelGPUs feature flag if the host device
@@ -3886,12 +3868,12 @@ void GLES2DecoderImpl::DeleteRenderbuffersHelper(
       // Unbind from current framebuffers.
       if (supports_separate_framebuffer_binds) {
         if (framebuffer_state_.bound_read_framebuffer.get()) {
-          framebuffer_state_.bound_read_framebuffer
-              ->UnbindRenderbuffer(GL_READ_FRAMEBUFFER_EXT, renderbuffer);
+          framebuffer_state_.bound_read_framebuffer->UnbindRenderbuffer(
+              GL_READ_FRAMEBUFFER, renderbuffer);
         }
         if (framebuffer_state_.bound_draw_framebuffer.get()) {
-          framebuffer_state_.bound_draw_framebuffer
-              ->UnbindRenderbuffer(GL_DRAW_FRAMEBUFFER_EXT, renderbuffer);
+          framebuffer_state_.bound_draw_framebuffer->UnbindRenderbuffer(
+              GL_DRAW_FRAMEBUFFER, renderbuffer);
         }
       } else {
         if (framebuffer_state_.bound_draw_framebuffer.get()) {
@@ -4032,10 +4014,10 @@ void GLES2DecoderImpl::RestoreCurrentFramebufferBindings() {
                              framebuffer_state_.bound_draw_framebuffer.get(),
                              GetBackbufferServiceId());
   } else {
-    RebindCurrentFramebuffer(api(), GL_READ_FRAMEBUFFER_EXT,
+    RebindCurrentFramebuffer(api(), GL_READ_FRAMEBUFFER,
                              framebuffer_state_.bound_read_framebuffer.get(),
                              GetBackbufferServiceId());
-    RebindCurrentFramebuffer(api(), GL_DRAW_FRAMEBUFFER_EXT,
+    RebindCurrentFramebuffer(api(), GL_DRAW_FRAMEBUFFER,
                              framebuffer_state_.bound_draw_framebuffer.get(),
                              GetBackbufferServiceId());
   }
@@ -4147,7 +4129,7 @@ void GLES2DecoderImpl::UpdateFramebufferSRGB(Framebuffer* framebuffer) {
   bool enable_framebuffer_srgb = true;
   if (feature_info_->feature_flags().ext_srgb_write_control) {
     needs_enable_disable_framebuffer_srgb = true;
-    enable_framebuffer_srgb &= state_.GetEnabled(GL_FRAMEBUFFER_SRGB);
+    enable_framebuffer_srgb &= state_.GetEnabled(GL_FRAMEBUFFER_SRGB_EXT);
   }
   if (needs_enable_disable_framebuffer_srgb)
     state_.EnableDisableFramebufferSRGB(enable_framebuffer_srgb);
@@ -4189,9 +4171,6 @@ gfx::Size GLES2DecoderImpl::GetBoundReadFramebufferSize() {
   Framebuffer* framebuffer = GetBoundReadFramebuffer();
   if (framebuffer) {
     return framebuffer->GetFramebufferValidSize();
-  } else if (external_default_framebuffer_ &&
-             external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->GetSize();
   } else if (offscreen_target_frame_buffer_.get()) {
     return offscreen_size_;
   } else {
@@ -4203,9 +4182,6 @@ gfx::Size GLES2DecoderImpl::GetBoundDrawFramebufferSize() {
   Framebuffer* framebuffer = GetBoundDrawFramebuffer();
   if (framebuffer) {
     return framebuffer->GetFramebufferValidSize();
-  } else if (external_default_framebuffer_ &&
-             external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->GetSize();
   } else if (offscreen_target_frame_buffer_.get()) {
     return offscreen_size_;
   } else {
@@ -4218,10 +4194,6 @@ GLuint GLES2DecoderImpl::GetBoundReadFramebufferServiceId() {
   if (framebuffer) {
     return framebuffer->service_id();
   }
-  if (external_default_framebuffer_ &&
-      external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->GetFramebufferId();
-  }
   if (surface_.get()) {
     return surface_->GetBackingFramebufferObject();
   }
@@ -4232,10 +4204,6 @@ GLuint GLES2DecoderImpl::GetBoundDrawFramebufferServiceId() const {
   Framebuffer* framebuffer = GetBoundDrawFramebuffer();
   if (framebuffer) {
     return framebuffer->service_id();
-  }
-  if (external_default_framebuffer_ &&
-      external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->GetFramebufferId();
   }
   if (offscreen_target_frame_buffer_.get()) {
     return offscreen_target_frame_buffer_->id();
@@ -4264,10 +4232,6 @@ GLenum GLES2DecoderImpl::GetBoundReadFramebufferInternalFormat() {
   } else {  // Back buffer.
     if (back_buffer_read_buffer_ == GL_NONE)
       return 0;
-    if (external_default_framebuffer_ &&
-        external_default_framebuffer_->IsSharedImageAttached()) {
-      return external_default_framebuffer_->GetColorFormat();
-    }
     if (offscreen_target_frame_buffer_.get()) {
       return offscreen_target_color_format_;
     }
@@ -4323,10 +4287,6 @@ GLsizei GLES2DecoderImpl::GetBoundFramebufferSamples(GLenum target) {
   if (framebuffer) {
     return framebuffer->GetSamples();
   } else {  // Back buffer.
-    if (external_default_framebuffer_ &&
-        external_default_framebuffer_->IsSharedImageAttached()) {
-      return external_default_framebuffer_->GetSamplesCount();
-    }
     return 0;
   }
 }
@@ -4339,10 +4299,6 @@ GLenum GLES2DecoderImpl::GetBoundFramebufferDepthFormat(
   if (framebuffer) {
     return framebuffer->GetDepthFormat();
   } else {  // Back buffer.
-    if (external_default_framebuffer_ &&
-        external_default_framebuffer_->IsSharedImageAttached()) {
-      return external_default_framebuffer_->GetDepthFormat();
-    }
     if (offscreen_target_frame_buffer_.get()) {
       return 0;
     }
@@ -4360,10 +4316,6 @@ GLenum GLES2DecoderImpl::GetBoundFramebufferStencilFormat(
   if (framebuffer) {
     return framebuffer->GetStencilFormat();
   } else {  // Back buffer.
-    if (external_default_framebuffer_ &&
-        external_default_framebuffer_->IsSharedImageAttached()) {
-      return external_default_framebuffer_->GetStencilFormat();
-    }
     if (offscreen_target_frame_buffer_.get()) {
       return 0;
     }
@@ -4461,11 +4413,6 @@ void GLES2DecoderImpl::Destroy(bool have_context) {
     return;
 
   DCHECK(!have_context || context_->IsCurrent(nullptr));
-
-  if (external_default_framebuffer_) {
-    external_default_framebuffer_->Destroy(have_context);
-    external_default_framebuffer_.reset();
-  }
 
   if (have_context) {
     if (copy_tex_image_blit_.get()) {
@@ -4647,24 +4594,6 @@ void GLES2DecoderImpl::ReleaseSurface() {
   }
   context_->ReleaseCurrent(surface_.get());
   surface_ = nullptr;
-}
-
-void GLES2DecoderImpl::SetDefaultFramebufferSharedImage(const Mailbox& mailbox,
-                                                        int samples,
-                                                        bool preserve,
-                                                        bool needs_depth,
-                                                        bool needs_stencil) {
-  if (!external_default_framebuffer_) {
-    external_default_framebuffer_ = std::make_unique<GLES2ExternalFramebuffer>(
-        /*passthrough=*/false, *group_->feature_info(),
-        group_->shared_image_representation_factory());
-  }
-
-  if (!external_default_framebuffer_->AttachSharedImage(
-          mailbox, samples, preserve, needs_depth, needs_stencil)) {
-    return;
-  }
-  RestoreCurrentFramebufferBindings();
 }
 
 error::Error GLES2DecoderImpl::HandleCreateGpuFenceINTERNAL(
@@ -5089,10 +5018,6 @@ bool GLES2DecoderImpl::BoundFramebufferAllowsChangesToAlphaChannel() {
     return framebuffer->HasAlphaMRT();
   if (back_buffer_draw_buffer_ == GL_NONE)
     return false;
-  if (external_default_framebuffer_ &&
-      external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->HasAlpha();
-  }
   if (offscreen_target_frame_buffer_.get()) {
     return false;
   }
@@ -5105,10 +5030,6 @@ bool GLES2DecoderImpl::BoundFramebufferHasDepthAttachment() {
   if (framebuffer) {
     return framebuffer->HasDepthAttachment();
   }
-  if (external_default_framebuffer_ &&
-      external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->HasDepth();
-  }
   if (offscreen_target_frame_buffer_.get()) {
     return false;
   }
@@ -5119,10 +5040,6 @@ bool GLES2DecoderImpl::BoundFramebufferHasStencilAttachment() {
   Framebuffer* framebuffer = GetBoundDrawFramebuffer();
   if (framebuffer) {
     return framebuffer->HasStencilAttachment();
-  }
-  if (external_default_framebuffer_ &&
-      external_default_framebuffer_->IsSharedImageAttached()) {
-    return external_default_framebuffer_->HasStencil();
   }
   if (offscreen_target_frame_buffer_.get()) {
     return false;
@@ -5155,10 +5072,6 @@ void GLES2DecoderImpl::ApplyDirtyState() {
 }
 
 GLuint GLES2DecoderImpl::GetBackbufferServiceId() const {
-  if (external_default_framebuffer_ &&
-      external_default_framebuffer_->IsSharedImageAttached())
-    return external_default_framebuffer_->GetFramebufferId();
-
   return (offscreen_target_frame_buffer_.get())
              ? offscreen_target_frame_buffer_->id()
              : (surface_.get() ? surface_->GetBackingFramebufferObject() : 0);
@@ -5328,13 +5241,13 @@ void GLES2DecoderImpl::DoBindFramebuffer(GLenum target, GLuint client_id) {
   }
   LogClientServiceForInfo(framebuffer, client_id, "glBindFramebuffer");
 
-  if (target == GL_FRAMEBUFFER || target == GL_DRAW_FRAMEBUFFER_EXT) {
+  if (target == GL_FRAMEBUFFER || target == GL_DRAW_FRAMEBUFFER) {
     framebuffer_state_.bound_draw_framebuffer = framebuffer;
     state_.UpdateWindowRectanglesForBoundDrawFramebufferClientID(client_id);
   }
 
   // vmiura: This looks like dup code
-  if (target == GL_FRAMEBUFFER || target == GL_READ_FRAMEBUFFER_EXT) {
+  if (target == GL_FRAMEBUFFER || target == GL_READ_FRAMEBUFFER) {
     framebuffer_state_.bound_read_framebuffer = framebuffer;
   }
 
@@ -5998,7 +5911,7 @@ bool GLES2DecoderImpl::GetHelper(
         params[0] = group_->max_color_attachments();
       }
       return true;
-    case GL_MAX_DRAW_BUFFERS_ARB:
+    case GL_MAX_DRAW_BUFFERS:
       *num_written = 1;
       if (params) {
         params[0] = group_->max_draw_buffers();
@@ -6146,12 +6059,11 @@ bool GLES2DecoderImpl::GetHelper(
             GetFramebufferInfoForTarget(GL_FRAMEBUFFER));
       }
       return true;
-    case GL_READ_FRAMEBUFFER_BINDING_EXT:
+    case GL_READ_FRAMEBUFFER_BINDING:
       *num_written = 1;
       if (params) {
-        *params = GetClientId(
-            framebuffer_manager(),
-            GetFramebufferInfoForTarget(GL_READ_FRAMEBUFFER_EXT));
+        *params = GetClientId(framebuffer_manager(),
+                              GetFramebufferInfoForTarget(GL_READ_FRAMEBUFFER));
       }
       return true;
     case GL_RENDERBUFFER_BINDING:
@@ -6219,7 +6131,7 @@ bool GLES2DecoderImpl::GetHelper(
         }
       }
       return true;
-    case GL_TEXTURE_BINDING_RECTANGLE_ARB:
+    case GL_TEXTURE_BINDING_RECTANGLE_ANGLE:
       *num_written = 1;
       if (params) {
         TextureUnit& unit = state_.texture_units[state_.active_texture_unit];
@@ -6334,19 +6246,20 @@ bool GLES2DecoderImpl::GetHelper(
       *num_written = 0;
       return true;
     default:
-      if (pname >= GL_DRAW_BUFFER0_ARB && pname <= GL_DRAW_BUFFER15_ARB) {
+      if (pname >= GL_DRAW_BUFFER0 && pname <= GL_DRAW_BUFFER15) {
         *num_written = 1;
         if (params) {
-          if (pname < GL_DRAW_BUFFER0_ARB + group_->max_draw_buffers()) {
+          if (pname < GL_DRAW_BUFFER0 + group_->max_draw_buffers()) {
             Framebuffer* framebuffer =
                 GetFramebufferInfoForTarget(GL_FRAMEBUFFER);
             if (framebuffer) {
               *params = framebuffer->GetDrawBuffer(pname);
             } else {  // backbuffer
-              if (pname == GL_DRAW_BUFFER0_ARB)
+              if (pname == GL_DRAW_BUFFER0) {
                 *params = back_buffer_draw_buffer_;
-              else
+              } else {
                 *params = GL_NONE;
+              }
             }
           } else {
             *params = GL_NONE;
@@ -7078,8 +6991,8 @@ void GLES2DecoderImpl::DoDisable(GLenum cap) {
       // DrawElements* for old desktop GL.
       return;
     }
-    if (cap == GL_FRAMEBUFFER_SRGB) {
-      // Enable and Disable GL_FRAMEBUFFER_SRGB is done manually in
+    if (cap == GL_FRAMEBUFFER_SRGB_EXT) {
+      // Enable and Disable GL_FRAMEBUFFER_SRGB_EXT is done manually in
       // CheckBoundDrawFramebufferValid.
       return;
     }
@@ -7099,8 +7012,8 @@ void GLES2DecoderImpl::DoEnable(GLenum cap) {
       // DrawElements* for old desktop GL.
       return;
     }
-    if (cap == GL_FRAMEBUFFER_SRGB) {
-      // Enable and Disable GL_FRAMEBUFFER_SRGB is done manually in
+    if (cap == GL_FRAMEBUFFER_SRGB_EXT) {
+      // Enable and Disable GL_FRAMEBUFFER_SRGB_EXT is done manually in
       // CheckBoundDrawFramebufferValid.
       return;
     }
@@ -7984,11 +7897,11 @@ void GLES2DecoderImpl::UnbindTexture(TextureRef* texture_ref,
   if (supports_separate_framebuffer_binds) {
     if (framebuffer_state_.bound_read_framebuffer.get()) {
       framebuffer_state_.bound_read_framebuffer->UnbindTexture(
-          GL_READ_FRAMEBUFFER_EXT, texture_ref);
+          GL_READ_FRAMEBUFFER, texture_ref);
     }
     if (framebuffer_state_.bound_draw_framebuffer.get()) {
       framebuffer_state_.bound_draw_framebuffer->UnbindTexture(
-          GL_DRAW_FRAMEBUFFER_EXT, texture_ref);
+          GL_DRAW_FRAMEBUFFER, texture_ref);
     }
   } else {
     if (framebuffer_state_.bound_draw_framebuffer.get()) {
@@ -8644,7 +8557,7 @@ void GLES2DecoderImpl::DoUniform1iv(GLint fake_location,
   auto values_copy = std::make_unique<GLint[]>(count);
   GLint* safe_values = values_copy.get();
   std::copy(values, values + count, safe_values);
-  if (type == GL_SAMPLER_2D || type == GL_SAMPLER_2D_RECT_ARB ||
+  if (type == GL_SAMPLER_2D || type == GL_SAMPLER_2D_RECT_ANGLE ||
       type == GL_SAMPLER_CUBE || type == GL_SAMPLER_EXTERNAL_OES) {
     if (!state_.current_program->SetSamplers(
             state_.texture_units.size(), fake_location, count, safe_values)) {
@@ -11243,13 +11156,13 @@ void GLES2DecoderImpl::FinishReadPixels(GLsizei width,
   }
 
   if (buffer != 0) {
-    api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER_ARB, buffer);
+    api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER, buffer);
     void* data;
     if (features().map_buffer_range) {
-      data = api()->glMapBufferRangeFn(GL_PIXEL_PACK_BUFFER_ARB, 0, pixels_size,
+      data = api()->glMapBufferRangeFn(GL_PIXEL_PACK_BUFFER, 0, pixels_size,
                                        GL_MAP_READ_BIT);
     } else {
-      data = api()->glMapBufferFn(GL_PIXEL_PACK_BUFFER_ARB, GL_READ_ONLY);
+      data = api()->glMapBufferFn(GL_PIXEL_PACK_BUFFER, GL_READ_ONLY);
     }
     if (!data) {
       LOCAL_SET_GL_ERROR(GL_OUT_OF_MEMORY, "glMapBuffer",
@@ -11257,8 +11170,8 @@ void GLES2DecoderImpl::FinishReadPixels(GLsizei width,
       return;
     }
     memcpy(pixels, data, pixels_size);
-    api()->glUnmapBufferFn(GL_PIXEL_PACK_BUFFER_ARB);
-    api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER_ARB,
+    api()->glUnmapBufferFn(GL_PIXEL_PACK_BUFFER);
+    api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER,
                           GetServiceId(state_.bound_pixel_pack_buffer.get()));
     api()->glDeleteBuffersARBFn(1, &buffer);
   }
@@ -11561,11 +11474,11 @@ error::Error GLES2DecoderImpl::HandleReadPixels(uint32_t immediate_data_size,
       // should be exposed).
       GLuint buffer_handle = 0;
       api()->glGenBuffersARBFn(1, &buffer_handle);
-      api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER_ARB, buffer_handle);
+      api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER, buffer_handle);
       // For ANGLE client version 2, GL_STREAM_READ is not available.
       const GLenum usage_hint =
           gl_version_info().is_angle ? GL_STATIC_DRAW : GL_STREAM_READ;
-      api()->glBufferDataFn(GL_PIXEL_PACK_BUFFER_ARB, pixels_size, nullptr,
+      api()->glBufferDataFn(GL_PIXEL_PACK_BUFFER, pixels_size, nullptr,
                             usage_hint);
       GLenum error = api()->glGetErrorFn();
       if (error == GL_NO_ERROR) {
@@ -11579,11 +11492,11 @@ error::Error GLES2DecoderImpl::HandleReadPixels(uint32_t immediate_data_size,
             width, height, format, type, pixels_shm_id, pixels_shm_offset,
             result_shm_id, result_shm_offset, state_.pack_alignment,
             read_format, buffer_handle));
-        api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER_ARB, 0);
+        api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER, 0);
         return error::kNoError;
       } else {
         // On error, unbind pack buffer and fall through to sync readpixels
-        api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER_ARB, 0);
+        api()->glBindBufferFn(GL_PIXEL_PACK_BUFFER, 0);
         api()->glDeleteBuffersARBFn(1, &buffer_handle);
       }
     }
@@ -12499,52 +12412,108 @@ struct CompressedFormatInfo {
   GLenum decompressed_type;
 };
 
-const CompressedFormatInfo kCompressedFormatInfoArray[] = {
+const auto kCompressedFormatInfoArray = std::to_array<CompressedFormatInfo>({
     {
-        GL_COMPRESSED_R11_EAC, 4, 8, CheckETCFormatSupport,
-        angle::LoadEACR11ToR8, GL_R8, GL_RED, GL_UNSIGNED_BYTE,
-    },
-    {
-        GL_COMPRESSED_SIGNED_R11_EAC, 4, 8, CheckETCFormatSupport,
-        angle::LoadEACR11SToR8, GL_R8_SNORM, GL_RED, GL_BYTE,
-    },
-    {
-        GL_COMPRESSED_RG11_EAC, 4, 16, CheckETCFormatSupport,
-        angle::LoadEACRG11ToRG8, GL_RG8, GL_RG, GL_UNSIGNED_BYTE,
-    },
-    {
-        GL_COMPRESSED_SIGNED_RG11_EAC, 4, 16, CheckETCFormatSupport,
-        angle::LoadEACRG11SToRG8, GL_RG8_SNORM, GL_RG, GL_BYTE,
-    },
-    {
-        GL_COMPRESSED_RGB8_ETC2, 4, 8, CheckETCFormatSupport,
-        angle::LoadETC2RGB8ToRGBA8, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE,
-    },
-    {
-        GL_COMPRESSED_SRGB8_ETC2, 4, 8, CheckETCFormatSupport,
-        angle::LoadETC2SRGB8ToRGBA8, GL_SRGB8_ALPHA8, GL_SRGB_ALPHA,
+        GL_COMPRESSED_R11_EAC,
+        4,
+        8,
+        CheckETCFormatSupport,
+        angle::LoadEACR11ToR8,
+        GL_R8,
+        GL_RED,
         GL_UNSIGNED_BYTE,
     },
     {
-        GL_COMPRESSED_RGBA8_ETC2_EAC, 4, 16, CheckETCFormatSupport,
-        angle::LoadETC2RGBA8ToRGBA8, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE,
+        GL_COMPRESSED_SIGNED_R11_EAC,
+        4,
+        8,
+        CheckETCFormatSupport,
+        angle::LoadEACR11SToR8,
+        GL_R8_SNORM,
+        GL_RED,
+        GL_BYTE,
     },
     {
-        GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2, 4, 8,
-        CheckETCFormatSupport, angle::LoadETC2RGB8A1ToRGBA8, GL_RGBA8, GL_RGBA,
+        GL_COMPRESSED_RG11_EAC,
+        4,
+        16,
+        CheckETCFormatSupport,
+        angle::LoadEACRG11ToRG8,
+        GL_RG8,
+        GL_RG,
         GL_UNSIGNED_BYTE,
     },
     {
-        GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC, 4, 16, CheckETCFormatSupport,
-        angle::LoadETC2SRGBA8ToSRGBA8, GL_SRGB8_ALPHA8, GL_SRGB_ALPHA,
+        GL_COMPRESSED_SIGNED_RG11_EAC,
+        4,
+        16,
+        CheckETCFormatSupport,
+        angle::LoadEACRG11SToRG8,
+        GL_RG8_SNORM,
+        GL_RG,
+        GL_BYTE,
+    },
+    {
+        GL_COMPRESSED_RGB8_ETC2,
+        4,
+        8,
+        CheckETCFormatSupport,
+        angle::LoadETC2RGB8ToRGBA8,
+        GL_RGBA8,
+        GL_RGBA,
         GL_UNSIGNED_BYTE,
     },
     {
-        GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2, 4, 8,
-        CheckETCFormatSupport, angle::LoadETC2SRGB8A1ToRGBA8, GL_SRGB8_ALPHA8,
-        GL_SRGB_ALPHA, GL_UNSIGNED_BYTE,
+        GL_COMPRESSED_SRGB8_ETC2,
+        4,
+        8,
+        CheckETCFormatSupport,
+        angle::LoadETC2SRGB8ToRGBA8,
+        GL_SRGB8_ALPHA8_EXT,
+        GL_SRGB_ALPHA_EXT,
+        GL_UNSIGNED_BYTE,
     },
-};
+    {
+        GL_COMPRESSED_RGBA8_ETC2_EAC,
+        4,
+        16,
+        CheckETCFormatSupport,
+        angle::LoadETC2RGBA8ToRGBA8,
+        GL_RGBA8,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+    },
+    {
+        GL_COMPRESSED_RGB8_PUNCHTHROUGH_ALPHA1_ETC2,
+        4,
+        8,
+        CheckETCFormatSupport,
+        angle::LoadETC2RGB8A1ToRGBA8,
+        GL_RGBA8,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+    },
+    {
+        GL_COMPRESSED_SRGB8_ALPHA8_ETC2_EAC,
+        4,
+        16,
+        CheckETCFormatSupport,
+        angle::LoadETC2SRGBA8ToSRGBA8,
+        GL_SRGB8_ALPHA8_EXT,
+        GL_SRGB_ALPHA_EXT,
+        GL_UNSIGNED_BYTE,
+    },
+    {
+        GL_COMPRESSED_SRGB8_PUNCHTHROUGH_ALPHA1_ETC2,
+        4,
+        8,
+        CheckETCFormatSupport,
+        angle::LoadETC2SRGB8A1ToRGBA8,
+        GL_SRGB8_ALPHA8_EXT,
+        GL_SRGB_ALPHA_EXT,
+        GL_UNSIGNED_BYTE,
+    },
+});
 
 const CompressedFormatInfo* GetCompressedFormatInfo(GLenum format) {
   for (size_t i = 0; i < std::size(kCompressedFormatInfoArray); i++) {
@@ -12877,7 +12846,7 @@ error::Error GLES2DecoderImpl::DoCompressedTexImage(
     // TODO(ccameron): Add a separate texture from |texture_target| for
     // [Compressed]Tex[Sub]Image2D and related functions.
     // http://crbug.com/536854
-    if (target == GL_TEXTURE_RECTANGLE_ARB) {
+    if (target == GL_TEXTURE_RECTANGLE_ANGLE) {
       LOCAL_SET_GL_ERROR_INVALID_ENUM(func_name, target, "target");
       return error::kNoError;
     }
@@ -14985,13 +14954,13 @@ bool GLES2DecoderImpl::CheckResetStatus() {
              << GLES2Util::GetStringEnum(driver_status);
 
   switch (driver_status) {
-    case GL_GUILTY_CONTEXT_RESET_ARB:
+    case GL_GUILTY_CONTEXT_RESET:
       MarkContextLost(error::kGuilty);
       break;
-    case GL_INNOCENT_CONTEXT_RESET_ARB:
+    case GL_INNOCENT_CONTEXT_RESET:
       MarkContextLost(error::kInnocent);
       break;
-    case GL_UNKNOWN_CONTEXT_RESET_ARB:
+    case GL_UNKNOWN_CONTEXT_RESET:
       MarkContextLost(error::kUnknown);
       break;
     default:
@@ -15175,7 +15144,7 @@ error::Error GLES2DecoderImpl::HandleBeginQueryEXT(
         return error::kNoError;
       }
       break;
-    case GL_TIME_ELAPSED:
+    case GL_TIME_ELAPSED_EXT:
       if (!query_manager_->GPUTimingAvailable()) {
         LOCAL_SET_GL_ERROR(
             GL_INVALID_OPERATION, "glBeginQueryEXT",
@@ -15338,7 +15307,7 @@ error::Error GLES2DecoderImpl::HandleQueryCounterEXT(
   switch (target) {
     case GL_COMMANDS_ISSUED_TIMESTAMP_CHROMIUM:
       break;
-    case GL_TIMESTAMP:
+    case GL_TIMESTAMP_EXT:
       if (!query_manager_->GPUTimingAvailable()) {
         LOCAL_SET_GL_ERROR(
             GL_INVALID_OPERATION, "glQueryCounterEXT",
@@ -15525,7 +15494,7 @@ bool GLES2DecoderImpl::ValidateCopyTextureCHROMIUMTextures(
   switch (dest_texture->target()) {
     case GL_TEXTURE_2D:
     case GL_TEXTURE_CUBE_MAP:
-    case GL_TEXTURE_RECTANGLE_ARB:
+    case GL_TEXTURE_RECTANGLE_ANGLE:
       break;
     default:
     LOCAL_SET_GL_ERROR(GL_INVALID_VALUE, function_name,
@@ -15535,7 +15504,7 @@ bool GLES2DecoderImpl::ValidateCopyTextureCHROMIUMTextures(
 
   switch (source_texture->target()) {
     case GL_TEXTURE_2D:
-    case GL_TEXTURE_RECTANGLE_ARB:
+    case GL_TEXTURE_RECTANGLE_ANGLE:
     case GL_TEXTURE_EXTERNAL_OES:
       break;
     default:
@@ -16263,7 +16232,7 @@ void GLES2DecoderImpl::DoCopySharedImageToTextureINTERNAL(
     GLint src_y,
     GLsizei width,
     GLsizei height,
-    GLboolean flip_y,
+    GLboolean is_dst_origin_top_left,
     const volatile GLbyte* src_mailbox) {
   NOTIMPLEMENTED_LOG_ONCE();
 }
@@ -16336,7 +16305,7 @@ void GLES2DecoderImpl::DoDrawBuffersEXT(GLsizei count,
 
   Framebuffer* framebuffer = GetFramebufferInfoForTarget(GL_FRAMEBUFFER);
   if (framebuffer) {
-    GLenum safe_bufs[16];
+    std::array<GLenum, 16> safe_bufs;
     for (GLsizei i = 0; i < count; ++i) {
       GLenum buf = bufs[i];
       if (buf != static_cast<GLenum>(GL_COLOR_ATTACHMENT0 + i) &&
@@ -16349,8 +16318,9 @@ void GLES2DecoderImpl::DoDrawBuffersEXT(GLsizei count,
       }
       safe_bufs[i] = buf;
     }
-    api()->glDrawBuffersARBFn(count, safe_bufs);
-    framebuffer->SetDrawBuffers(count, safe_bufs);
+    api()->glDrawBuffersARBFn(count, safe_bufs.data());
+    framebuffer->SetDrawBuffers(
+        count, base::span(safe_bufs).first(static_cast<size_t>(count)));
   } else {  // backbuffer
     if (count != 1) {
       LOCAL_SET_GL_ERROR(GL_INVALID_OPERATION, "glDrawBuffersEXT",
@@ -16547,9 +16517,7 @@ GLsizei GLES2DecoderImpl::InternalFormatSampleCountsHelper(
         return conformant == GL_FALSE;
       };
 
-      sample_counts.erase(std::remove_if(sample_counts.begin(),
-                                         sample_counts.end(), is_nonconformant),
-                          sample_counts.end());
+      std::erase_if(sample_counts, is_nonconformant);
       num_sample_counts = sample_counts.size();
     }
 
@@ -16593,19 +16561,19 @@ error::Error GLES2DecoderImpl::HandleGetInternalformativ(
   std::vector<GLint> sample_counts;
 
   GLsizei num_values = 0;
-  GLint* values = nullptr;
+  base::span<GLint> values = {};
   switch (pname) {
     case GL_NUM_SAMPLE_COUNTS:
       num_sample_counts =
           InternalFormatSampleCountsHelper(target, format, nullptr);
       num_values = 1;
-      values = &num_sample_counts;
+      values = base::span_from_ref(num_sample_counts);
       break;
     case GL_SAMPLES:
       num_sample_counts =
           InternalFormatSampleCountsHelper(target, format, &sample_counts);
       num_values = num_sample_counts;
-      values = sample_counts.data();
+      values = sample_counts;
       break;
     default:
       NOTREACHED();
@@ -16627,7 +16595,9 @@ error::Error GLES2DecoderImpl::HandleGetInternalformativ(
     return error::kInvalidArguments;
   }
 
-  std::copy(values, &values[num_values], params);
+  std::copy(values.data(),
+            values.subspan(base::checked_cast<size_t>(num_values)).data(),
+            params);
   result->SetNumResults(num_values);
   return error::kNoError;
 }
@@ -17100,7 +17070,7 @@ void GLES2DecoderImpl::DoWindowRectanglesEXT(GLenum mode,
       return;
     }
   }
-  state_.SetWindowRectangles(mode, n, box_copy.data());
+  state_.SetWindowRectangles(mode, n, box_copy);
   state_.UpdateWindowRectangles();
 }
 

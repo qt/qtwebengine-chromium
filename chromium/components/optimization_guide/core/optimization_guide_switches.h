@@ -13,7 +13,9 @@
 #include "base/component_export.h"
 #include "base/files/file_path.h"
 #include "base/time/time.h"
+#include "components/optimization_guide/core/optimization_guide_constants.h"
 #include "components/optimization_guide/proto/models.pb.h"
+#include "url/gurl.h"
 
 namespace optimization_guide {
 namespace proto {
@@ -141,7 +143,7 @@ bool ShouldValidateModelExecution();
 
 // Returns the path to the on-device base model provided on the command line.
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
-std::optional<std::string> GetOnDeviceModelExecutionOverride();
+std::optional<base::FilePath> GetOnDeviceModelExecutionOverride();
 
 // Returns the file path to the text file to use for the on-device request
 // override.
@@ -165,6 +167,10 @@ bool ShouldGetFreeDiskSpaceWithUserVisiblePriorityTask();
 // Returns true if Google API key configuration check should be skipped.
 COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
 bool ShouldSkipGoogleApiKeyConfigurationCheck();
+
+// Return the URL endpoint used for the model execution service.
+COMPONENT_EXPORT(OPTIMIZATION_GUIDE_FEATURES)
+GURL GetModelExecutionServiceURL();
 
 }  // namespace switches
 }  // namespace optimization_guide

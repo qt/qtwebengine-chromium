@@ -16,7 +16,6 @@
 #include "base/files/file_util.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/metrics/histogram_macros.h"
 #include "base/rand_util.h"
 #include "base/time/time.h"
 #include "build/build_config.h"
@@ -91,12 +90,8 @@ HistoryDatabase::HistoryDatabase(
               // TODO(crbug.com/40159106) Remove this dependency on normal
               // locking mode.
               .set_exclusive_locking(false)
-              .set_preload(base::FeatureList::IsEnabled(
-                  sql::features::kPreOpenPreloadDatabase))
-              // Set the database page size to something a little larger to give
-              // us better performance (we're typically seek rather than
-              // bandwidth limited). Must be a power of 2 and a max of 65536.
-              .set_page_size(4096)
+              // Prime the cache.
+              .set_preload(true)
               // Set the cache size. The page size, plus a little extra, times
               // this value, tells us how much memory the cache will use
               // maximum. 1000 * 4kB = 4MB
@@ -107,8 +102,20 @@ HistoryDatabase::HistoryDatabase(
 HistoryDatabase::~HistoryDatabase() = default;
 
 sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
+  const bool database_exists = base::PathExists(history_name);
+
   if (!db_.Open(history_name))
     return LogInitFailure(InitStep::OPEN);
+
+  if (database_exists) {
+    // TODO(crbug.com/40777743): The history database should always have a meta
+    // table. If it's missing, we either have a corrupted or a very very old
+    // database. The code currently doesn't handle this case. Log an histogram
+    // to know if this represents a problem in the real world. The histogram
+    // can be removed once the bug is fixed.
+    base::UmaHistogramBoolean("History.MetaTableExists",
+                              sql::MetaTable::DoesTableExist(&db_));
+  }
 
   // Wrap the rest of init in a transaction. This will prevent the database from
   // getting corrupted if we crash in the middle of initialization or migration.
@@ -120,11 +127,6 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
   // Exclude the history file from backups.
   base::apple::SetBackupExclusion(history_name);
 #endif
-
-  // Prime the cache.
-  if (!base::FeatureList::IsEnabled(sql::features::kPreOpenPreloadDatabase)) {
-    db_.Preload();
-  }
 
   // Create the tables and indices. If you add something here, also add it to
   // `RecreateAllTablesButURL()`.
@@ -152,40 +154,37 @@ sql::InitStatus HistoryDatabase::Init(const base::FilePath& history_name) {
 
 void HistoryDatabase::ComputeDatabaseMetrics(
     const base::FilePath& history_name) {
-  base::TimeTicks start_time = base::TimeTicks::Now();
   std::optional<int64_t> file_size = base::GetFileSize(history_name);
   if (!file_size.has_value()) {
     return;
   }
   int file_mb = static_cast<int>(file_size.value() / (1024 * 1024));
-  UMA_HISTOGRAM_MEMORY_MB("History.DatabaseFileMB", file_mb);
+  base::UmaHistogramMemoryMB("History.DatabaseFileMB", file_mb);
 
   sql::Statement url_count(db_.GetUniqueStatement("SELECT count(*) FROM urls"));
-  if (!url_count.Step())
+  if (!url_count.Step()) {
     return;
-  UMA_HISTOGRAM_COUNTS_1M("History.URLTableCount", url_count.ColumnInt(0));
+  }
+  base::UmaHistogramCounts1M("History.URLTableCount", url_count.ColumnInt(0));
 
   sql::Statement visit_count(db_.GetUniqueStatement(
       "SELECT count(*) FROM visits"));
-  if (!visit_count.Step())
+  if (!visit_count.Step()) {
     return;
-  UMA_HISTOGRAM_COUNTS_1M("History.VisitTableCount", visit_count.ColumnInt(0));
+  }
+  base::UmaHistogramCounts1M("History.VisitTableCount",
+                             visit_count.ColumnInt(0));
 
   sql::Statement visited_link_count(
       db_.GetUniqueStatement("SELECT count(*) FROM visited_links"));
   if (!visited_link_count.Step()) {
     return;
   }
-  UMA_HISTOGRAM_COUNTS_1M("History.VisitedLinkTableCount",
-                          visited_link_count.ColumnInt(0));
-
-  UMA_HISTOGRAM_TIMES("History.DatabaseBasicMetricsTime",
-                      base::TimeTicks::Now() - start_time);
+  base::UmaHistogramCounts1M("History.VisitedLinkTableCount",
+                             visited_link_count.ColumnInt(0));
 
   // Compute metrics about foreign visits (i.e. visits coming from other
   // devices) in the DB.
-  start_time = base::TimeTicks::Now();
-
   sql::Statement foreign_visits_sql(db_.GetUniqueStatement(
       "SELECT from_visit, opener_visit, originator_cache_guid, "
       "originator_visit_id, originator_from_visit, originator_opener_visit "
@@ -256,14 +255,9 @@ void HistoryDatabase::ComputeDatabaseMetrics(
                                mappable_opener_visits);
   }
 
-  base::UmaHistogramTimes("History.DatabaseForeignVisitMetricsTime",
-                          base::TimeTicks::Now() - start_time);
-
   // Compute the advanced metrics even less often, pending timing data showing
   // that's not necessary.
   if (base::RandInt(1, 3) == 3) {
-    start_time = base::TimeTicks::Now();
-
     // Collect all URLs visited within the last month.
     base::Time one_month_ago = base::Time::Now() - base::Days(30);
     sql::Statement url_sql(db_.GetUniqueStatement(
@@ -287,14 +281,12 @@ void HistoryDatabase::ComputeDatabaseMetrics(
         week_hosts.insert(url.host());
       }
     }
-    UMA_HISTOGRAM_COUNTS_1M("History.WeeklyURLCount", week_url_count);
-    UMA_HISTOGRAM_COUNTS_10000("History.WeeklyHostCount",
-                               static_cast<int>(week_hosts.size()));
-    UMA_HISTOGRAM_COUNTS_1M("History.MonthlyURLCount", month_url_count);
-    UMA_HISTOGRAM_COUNTS_10000("History.MonthlyHostCount",
-                               static_cast<int>(month_hosts.size()));
-    UMA_HISTOGRAM_TIMES("History.DatabaseAdvancedMetricsTime",
-                        base::TimeTicks::Now() - start_time);
+    base::UmaHistogramCounts1M("History.WeeklyURLCount", week_url_count);
+    base::UmaHistogramCounts10000("History.WeeklyHostCount",
+                                  static_cast<int>(week_hosts.size()));
+    base::UmaHistogramCounts1M("History.MonthlyURLCount", month_url_count);
+    base::UmaHistogramCounts10000("History.MonthlyHostCount",
+                                  static_cast<int>(month_hosts.size()));
   }
 }
 
@@ -447,6 +439,9 @@ std::string HistoryDatabase::GetDiagnosticInfo(
     int extended_error,
     sql::Statement* statement,
     sql::DatabaseDiagnostics* diagnostics) {
+  if (!db_.is_open()) {
+    return "Database is not opened.";
+  }
   return db_.GetDiagnosticInfo(extended_error, statement, diagnostics);
 }
 

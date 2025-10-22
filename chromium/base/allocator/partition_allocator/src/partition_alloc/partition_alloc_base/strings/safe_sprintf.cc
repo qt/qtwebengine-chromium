@@ -2,15 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/partition_alloc_base/strings/safe_sprintf.h"
 
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <limits>
 
 #include "partition_alloc/build_config.h"
 #include "partition_alloc/buildflags.h"
+#include "partition_alloc/partition_alloc_base/cxx_wrapper/algorithm.h"
 
 #if PA_BUILDFLAG(IS_DEBUG)
 // In debug builds, we use RAW_CHECK() to print useful error messages, if

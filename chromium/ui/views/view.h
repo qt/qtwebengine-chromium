@@ -30,7 +30,6 @@
 #include "build/build_config.h"
 #include "third_party/skia/include/core/SkPath.h"
 #include "ui/accessibility/ax_enums.mojom.h"
-#include "ui/accessibility/ax_node_data.h"
 #include "ui/base/accelerators/accelerator.h"
 #include "ui/base/class_property.h"
 #include "ui/base/clipboard/clipboard_format_type.h"
@@ -66,6 +65,30 @@
 
 using ui::OSExchangeData;
 
+class BrowserView;
+class InfoBarView;
+class OmniboxPopupPresenter;
+class OmniboxPopupViewViews;
+class SadTabView;
+class StatusIconButtonLinux;
+
+namespace arc {
+class CustomTab;
+}
+
+namespace ash {
+class ArcNotificationContentView;
+class WideFrameView;
+}  // namespace ash
+
+namespace exo {
+class ShellSurfaceBase;
+}
+
+namespace eye_dropper {
+class EyeDropperView;
+}
+
 namespace gfx {
 class Canvas;
 class Insets;
@@ -73,6 +96,7 @@ class Insets;
 
 namespace ui {
 struct AXActionData;
+struct AXNodeData;
 class ColorProvider;
 class Compositor;
 class InputMethod;
@@ -96,11 +120,13 @@ class FocusTraversable;
 class LayoutProvider;
 class ScrollView;
 class SizeBounds;
+class SubmenuView;
 class ViewAccessibility;
 class ViewMaskLayer;
 class ViewObserver;
 class Widget;
 class WordLookupClient;
+FORWARD_DECLARE_TEST(WebViewUnitTest, CrashedOverlayView);
 
 namespace internal {
 class PreEventDispatchHandler;
@@ -296,6 +322,28 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   ADVANCED_MEMORY_SAFETY_CHECKS();
 
  public:
+  class OwnedByClientPassKey {
+   private:
+    // DO NOT ADD TO THIS LIST!
+    // These existing cases are "grandfathered in", but there shouldn't be more.
+    // See comments atop class.
+    friend class ::BrowserView;
+    friend class ::InfoBarView;
+    friend class ::OmniboxPopupPresenter;
+    friend class ::OmniboxPopupViewViews;
+    friend class ::SadTabView;
+    friend class ::StatusIconButtonLinux;
+    friend class ::arc::CustomTab;
+    friend class ::ash::ArcNotificationContentView;
+    friend class ::ash::WideFrameView;
+    friend class ::exo::ShellSurfaceBase;
+    friend class ::eye_dropper::EyeDropperView;
+    friend class SubmenuView;
+    FRIEND_TEST_ALL_PREFIXES(WebViewUnitTest, CrashedOverlayView);
+
+    OwnedByClientPassKey() = default;
+  };
+
   using PassKey = base::NonCopyablePassKey<View>;
   using Views = std::vector<raw_ptr<View, VectorExperimental>>;
 
@@ -417,7 +465,13 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   ~View() override;
 
   // By default a View is owned by its parent unless specified otherwise here.
-  void set_owned_by_client() { owned_by_client_ = true; }
+  //
+  // DEPRECATED: Using this makes it hard to reason about ownership. If this
+  // seems necessary, it's likely because the View in question is a heavyweight
+  // object that carries state; instead make Views lightweight, hold state in
+  // models, and do business logic in controllers.
+  // TODO(crbug.com/40115694): Remove.
+  void set_owned_by_client(OwnedByClientPassKey) { owned_by_client_ = true; }
   bool owned_by_client() const { return owned_by_client_; }
 
   // Tree operations -----------------------------------------------------------
@@ -656,6 +710,16 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // will be invoked whenever the property changes.
   [[nodiscard]] base::CallbackListSubscription AddEnabledChangedCallback(
       PropertyChangedCallback callback);
+
+  // Returns whether the views subtree is enabled.
+  // "true" means: This view AND ALL ancestor views are enabled.
+  // "false" means: This view OR ANY of ancestor views is disabled.
+  bool GetEnabledInViewsSubtree() const;
+
+  // Adds a callback associated with the above |EnabledInViewsSubtree| property.
+  // The callback will be invoked whenever the property changes.
+  [[nodiscard]] base::CallbackListSubscription
+  AddEnabledInViewsSubtreeChangedCallback(PropertyChangedCallback callback);
 
   // Returns the child views ordered in reverse z-order. That is, views later in
   // the returned vector have a higher z-order (are painted later) than those
@@ -1255,6 +1319,7 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   gfx::PointF GetScreenLocationF(const ui::LocatedEvent& event) const override;
 
   // Overridden from ui::EventHandler:
+  void OnEvent(ui::Event* event) override;
   void OnKeyEvent(ui::KeyEvent* event) override;
   void OnMouseEvent(ui::MouseEvent* event) override;
   void OnScrollEvent(ui::ScrollEvent* event) override;
@@ -1284,6 +1349,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // enabled if the containing widget is visible and the view is enabled() and
   // IsDrawn()
   bool CanHandleAccelerators() const override;
+
+  base::span<const ui::Accelerator> GetAccelerators() const;
 
   // Focus ---------------------------------------------------------------------
 
@@ -1782,6 +1849,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // When SetVisible() changes the visibility of a view, this method is
   // invoked for that view as well as all the children recursively.
+  //
+  // If `starting_from` is null, this call is the result of the widget being
+  // shown or hidden. (Note that `Widget::IsVisible()` updates asynchronously
+  // and may not agree with `is_visible`.)
   virtual void VisibilityChanged(View* starting_from, bool is_visible);
 
   // This method is invoked when the view will soon no longer have a focus
@@ -2074,6 +2145,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   // Calls ViewHierarchyChanged() and notifies observers.
   void ViewHierarchyChangedImpl(const ViewHierarchyChangedDetails& details);
 
+  void SetWidget(Widget* widget);
+
   // Size and disposition ------------------------------------------------------
 
   // Call VisibilityChanged() recursively for all children.
@@ -2102,6 +2175,8 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
   void SetLayoutManagerImpl(std::unique_ptr<LayoutManager> layout);
 
   void SetToDefaultFillLayout();
+
+  void UpdateEnabledInViewsSubtreeState();
 
   // Transformations -----------------------------------------------------------
 
@@ -2320,6 +2395,10 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Tree operations -----------------------------------------------------------
 
+  // The widget that this view is attached to. This is null if the view is not
+  // attached to a widget.
+  raw_ptr<Widget> widget_ = nullptr;
+
   // This view's parent.
   raw_ptr<View> parent_ = nullptr;
 
@@ -2346,6 +2425,9 @@ class VIEWS_EXPORT View : public ui::LayerDelegate,
 
   // Whether this view is enabled.
   bool enabled_ = true;
+
+  // Whether this view is enabled in views subtree.
+  bool enabled_in_views_subtree_ = true;
 
   // When this flag is on, a View receives a mouse-enter and mouse-leave event
   // even if a descendant View is the event-recipient for the real mouse

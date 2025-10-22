@@ -12,10 +12,13 @@
 #include <wrl/client.h>
 
 #include <string>
+#include <utility>
 
+#include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/files/file_path.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "base/process/launch.h"
 #include "base/process/process.h"
 #include "base/process/process_handle.h"
@@ -42,30 +45,33 @@ bool IsProcessRunningAtMediumOrLower(ProcessId process_id) {
 
 // Based on
 // https://learn.microsoft.com/en-us/archive/blogs/aaron_margosis/faq-how-do-i-start-a-program-as-the-desktop-user-from-an-elevated-app.
-Process RunDeElevated(const CommandLine& command_line) {
+expected<Process, DWORD> RunDeElevated(const CommandLine& command_line) {
   if (!::IsUserAnAdmin()) {
-    return LaunchProcess(command_line, {});
+    if (auto process = LaunchProcess(command_line, {}); process.IsValid()) {
+      return ok(std::move(process));
+    }
+    return unexpected(::GetLastError());
   }
 
   ProcessId explorer_pid = GetExplorerPid();
   if (!explorer_pid || !IsProcessRunningAtMediumOrLower(explorer_pid)) {
-    return Process();
+    return unexpected(static_cast<DWORD>(ERROR_ACCESS_DENIED));
   }
 
   auto shell_process =
       Process::OpenWithAccess(explorer_pid, PROCESS_QUERY_LIMITED_INFORMATION);
   if (!shell_process.IsValid()) {
-    return Process();
+    return unexpected(::GetLastError());
   }
 
   auto token = AccessToken::FromProcess(
       ::GetCurrentProcess(), /*impersonation=*/false, MAXIMUM_ALLOWED);
   if (!token) {
-    return Process();
+    return unexpected(::GetLastError());
   }
   auto previous_impersonate = token->SetPrivilege(SE_IMPERSONATE_NAME, true);
   if (!previous_impersonate) {
-    return Process();
+    return unexpected(::GetLastError());
   }
   absl::Cleanup restore_previous_privileges = [&] {
     token->SetPrivilege(SE_IMPERSONATE_NAME, *previous_impersonate);
@@ -74,14 +80,14 @@ Process RunDeElevated(const CommandLine& command_line) {
   auto shell_token = AccessToken::FromProcess(
       shell_process.Handle(), /*impersonation=*/false, TOKEN_DUPLICATE);
   if (!shell_token) {
-    return Process();
+    return unexpected(::GetLastError());
   }
 
   auto duplicated_shell_token = shell_token->DuplicatePrimary(
       TOKEN_QUERY | TOKEN_ASSIGN_PRIMARY | TOKEN_DUPLICATE |
       TOKEN_ADJUST_DEFAULT | TOKEN_ADJUST_SESSIONID);
   if (!duplicated_shell_token) {
-    return Process();
+    return unexpected(::GetLastError());
   }
 
   StartupInformation startupinfo;
@@ -91,7 +97,7 @@ Process RunDeElevated(const CommandLine& command_line) {
                                  command_line.GetCommandLineString().data(), 0,
                                  nullptr, nullptr, startupinfo.startup_info(),
                                  &pi)) {
-    return Process();
+    return unexpected(::GetLastError());
   }
   ScopedProcessInformation process_info(pi);
   Process process(process_info.TakeProcessHandle());
@@ -103,7 +109,7 @@ Process RunDeElevated(const CommandLine& command_line) {
     VPLOG(1) << __func__ << ": ::AllowSetForegroundWindow failed";
   }
 
-  return process;
+  return ok(std::move(process));
 }
 
 HRESULT RunDeElevatedNoWait(const CommandLine& command_line) {
@@ -112,7 +118,9 @@ HRESULT RunDeElevatedNoWait(const CommandLine& command_line) {
 }
 
 HRESULT RunDeElevatedNoWait(const std::wstring& path,
-                            const std::wstring& parameters) {
+                            const std::wstring& parameters,
+                            std::optional<std::wstring_view> current_directory,
+                            bool start_hidden) {
   Microsoft::WRL::ComPtr<IShellWindows> shell;
   HRESULT hr = ::CoCreateInstance(CLSID_ShellWindows, nullptr,
                                   CLSCTX_LOCAL_SERVER, IID_PPV_ARGS(&shell));
@@ -169,10 +177,17 @@ HRESULT RunDeElevatedNoWait(const std::wstring& path,
     return hr;
   }
 
+  std::optional<base::FilePath> current_dir;
+  if (!current_directory) {
+    current_dir = base::PathService::CheckedGet(base::DIR_CURRENT);
+    current_directory = current_dir->value();
+  }
+
   return shell_dispatch->ShellExecute(
       ScopedBstr(path.c_str()).Get(), ScopedVariant(parameters.c_str()),
-      ScopedVariant::kEmptyVariant, ScopedVariant::kEmptyVariant,
-      ScopedVariant::kEmptyVariant);
+      ScopedVariant(current_directory->data()),
+      /*vOperation=*/ScopedVariant::kEmptyVariant,
+      ScopedVariant(start_hidden ? SW_HIDE : SW_SHOWDEFAULT));
 }
 
 }  // namespace base::win

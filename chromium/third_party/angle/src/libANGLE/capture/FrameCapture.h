@@ -15,6 +15,7 @@
 
 #include "common/PackedEnums.h"
 #include "common/SimpleMutex.h"
+#include "common/frame_capture_binary_data.h"
 #include "common/frame_capture_utils.h"
 #include "common/string_utils.h"
 #include "common/system_utils.h"
@@ -744,10 +745,14 @@ class FrameCaptureShared final : angle::NonCopyable
 
     void captureCall(gl::Context *context, CallCapture &&call, bool isCallValid);
     void checkForCaptureTrigger();
+    bool checkForCaptureEnd();
     void onEndFrame(gl::Context *context);
     void onDestroyContext(const gl::Context *context);
     bool onEndCLCapture();
-    void onMakeCurrent(const gl::Context *context, const egl::Surface *drawSurface);
+    void onMakeCurrent(const gl::Context *context,
+                       const egl::Surface *drawSurface,
+                       EGLint surfaceWidth,
+                       EGLint surfaceHeight);
     bool enabled() const { return mEnabled; }
 
     bool isCapturing() const;
@@ -974,6 +979,8 @@ class FrameCaptureShared final : angle::NonCopyable
         INFO() << "Capture trigger detected, resetting capture start/end frame.";
     }
 
+    void initalizeTraceStorage();
+
   private:
     void writeJSON(const gl::Context *context);
     void writeJSONCL();
@@ -1036,7 +1043,8 @@ class FrameCaptureShared final : angle::NonCopyable
 
     // We save one large buffer of binary data for the whole CPP replay.
     // This simplifies a lot of file management.
-    std::vector<uint8_t> mBinaryData;
+    FrameCaptureBinaryData mBinaryData;
+    BinaryFileIndexInfo mIndexInfo;
 
     bool mEnabled;
     static bool mRuntimeEnabled;
@@ -1108,6 +1116,9 @@ class FrameCaptureShared final : angle::NonCopyable
     // Initialize it to the number of frames you want to capture, and then clear the value to 0 when
     // you reach the content you want to capture. Currently only available on Android.
     uint32_t mCaptureTrigger;
+
+    // If you want to finish capture early, use the end_capture utility.
+    uint32_t mEndCapture;
 
     bool mCaptureActive;
     std::vector<uint32_t> mActiveFrameIndices;
@@ -1499,7 +1510,10 @@ constexpr char kEnabledVarName[]        = "ANGLE_CAPTURE_ENABLED";
 constexpr char kOutDirectoryVarName[]   = "ANGLE_CAPTURE_OUT_DIR";
 constexpr char kFrameStartVarName[]     = "ANGLE_CAPTURE_FRAME_START";
 constexpr char kFrameEndVarName[]       = "ANGLE_CAPTURE_FRAME_END";
+constexpr char kBinaryDataSizeVarName[] = "ANGLE_CAPTURE_MAX_RESIDENT_BINARY_SIZE";
+constexpr char kBlockSizeVarName[]      = "ANGLE_CAPTURE_BLOCK_SIZE";
 constexpr char kTriggerVarName[]        = "ANGLE_CAPTURE_TRIGGER";
+constexpr char kEndCaptureVarName[]     = "ANGLE_CAPTURE_END_CAPTURE";
 constexpr char kCaptureLabelVarName[]   = "ANGLE_CAPTURE_LABEL";
 constexpr char kCompressionVarName[]    = "ANGLE_CAPTURE_COMPRESSION";
 constexpr char kSerializeStateVarName[] = "ANGLE_CAPTURE_SERIALIZE_STATE";
@@ -1509,7 +1523,6 @@ constexpr char kSourceExtVarName[]      = "ANGLE_CAPTURE_SOURCE_EXT";
 constexpr char kSourceSizeVarName[]     = "ANGLE_CAPTURE_SOURCE_SIZE";
 constexpr char kForceShadowVarName[]    = "ANGLE_CAPTURE_FORCE_SHADOW";
 
-constexpr size_t kBinaryAlignment   = 16;
 constexpr size_t kFunctionSizeLimit = 5000;
 
 // Limit based on MSVC Compiler Error C2026
@@ -1524,7 +1537,10 @@ constexpr char kAndroidEnabled[]        = "debug.angle.capture.enabled";
 constexpr char kAndroidOutDir[]         = "debug.angle.capture.out_dir";
 constexpr char kAndroidFrameStart[]     = "debug.angle.capture.frame_start";
 constexpr char kAndroidFrameEnd[]       = "debug.angle.capture.frame_end";
+constexpr char kAndroidBinaryDataSize[] = "debug.angle.capture.max_resident_binary_size";
+constexpr char kAndroidBlockSize[]      = "debug.angle.capture.block_size";
 constexpr char kAndroidTrigger[]        = "debug.angle.capture.trigger";
+constexpr char kAndroidEndCapture[]     = "debug.angle.capture.end_capture";
 constexpr char kAndroidCaptureLabel[]   = "debug.angle.capture.label";
 constexpr char kAndroidCompression[]    = "debug.angle.capture.compression";
 constexpr char kAndroidValidation[]     = "debug.angle.capture.validation";
@@ -1537,29 +1553,23 @@ void WriteCppReplayForCall(const CallCapture &call,
                            ReplayWriter &replayWriter,
                            std::ostream &out,
                            std::ostream &header,
-                           std::vector<uint8_t> *binaryData,
+                           FrameCaptureBinaryData *binaryData,
                            size_t *maxResourceIDBufferSize);
 
 void WriteCppReplayForCallCL(const CallCapture &call,
                              ReplayWriter &replayWriter,
                              std::ostream &out,
                              std::ostream &header,
-                             std::vector<uint8_t> *binaryData);
+                             FrameCaptureBinaryData *binaryData);
 
 void WriteBinaryParamReplay(ReplayWriter &replayWriter,
                             std::ostream &out,
                             std::ostream &header,
                             const CallCapture &call,
                             const ParamCapture &param,
-                            std::vector<uint8_t> *binaryData);
+                            FrameCaptureBinaryData *binaryData);
 
 std::string GetBinaryDataFilePath(bool compression, const std::string &captureLabel);
-
-void SaveBinaryData(bool compression,
-                    const std::string &outDir,
-                    gl::ContextID contextId,
-                    const std::string &captureLabel,
-                    const std::vector<uint8_t> &binaryData);
 
 void WriteStringPointerParamReplay(ReplayWriter &replayWriter,
                                    std::ostream &out,
@@ -1571,7 +1581,7 @@ void WriteCppReplayFunctionWithParts(const gl::ContextID contextID,
                                      ReplayFunc replayFunc,
                                      ReplayWriter &replayWriter,
                                      uint32_t frameIndex,
-                                     std::vector<uint8_t> *binaryData,
+                                     FrameCaptureBinaryData *binaryData,
                                      const std::vector<CallCapture> &calls,
                                      std::stringstream &header,
                                      std::stringstream &out,
@@ -1602,6 +1612,10 @@ template <>
 void WriteInlineData<GLchar>(const std::vector<uint8_t> &vec, std::ostream &out);
 
 void AddComment(std::vector<CallCapture> *outCalls, const std::string &comment);
+
+std::string GetCaptureTrigger();
+
+std::string GetEndCapture();
 
 }  // namespace angle
 

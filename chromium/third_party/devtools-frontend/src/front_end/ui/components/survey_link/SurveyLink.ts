@@ -1,6 +1,7 @@
 // Copyright (c) 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../icon_button/icon_button.js';
 
@@ -116,14 +117,19 @@ export class SurveyLink extends HTMLElement {
     const ariaDisabled = this.#state !== State.SHOW_LINK;
 
     // clang-format off
-
     const output = html`
-      <style>${surveyLinkStyles.cssText}</style>
-      <button class="link ${linkState}" tabindex=${ariaDisabled ? '-1' : '0'} .disabled=${ariaDisabled} aria-disabled=${ariaDisabled} @click=${this.#sendSurvey}>
-        <devtools-icon class="link-icon" .data=${{iconName: 'review', color: 'var(--sys-color-primary)', width: 'var(--issue-link-icon-size, 16px)', height: 'var(--issue-link-icon-size, 16px)'}}></devtools-icon><!--
-      -->${linkText}
-      </button>
-    `;
+      <style>${surveyLinkStyles}</style>
+      <button
+          class="link ${linkState}" tabindex=${ariaDisabled ? '-1' : '0'}
+          .disabled=${ariaDisabled} aria-disabled=${ariaDisabled} @click=${this.#sendSurvey}>
+        <devtools-icon class="link-icon" .data=${{
+            iconName: 'review',
+            color: 'var(--sys-color-primary)',
+            width: 'var(--issue-link-icon-size, 16px)',
+            height: 'var(--issue-link-icon-size, 16px)'}}>
+        </devtools-icon>
+        ${linkText}
+      </button>`;
     // clang-format on
     render(output, this.#shadow, {host: this});
   }

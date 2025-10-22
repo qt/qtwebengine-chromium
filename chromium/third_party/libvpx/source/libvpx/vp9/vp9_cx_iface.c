@@ -17,6 +17,7 @@
 #include "vpx/vpx_encoder.h"
 #include "vpx/vpx_ext_ratectrl.h"
 #include "vpx_dsp/psnr.h"
+#include "vpx_dsp/vpx_dsp_common.h"
 #include "vpx_ports/static_assert.h"
 #include "vpx_ports/system_state.h"
 #include "vpx_util/vpx_timestamp.h"
@@ -670,7 +671,6 @@ static vpx_codec_err_t set_encoder_config(
   }
 
   if (get_level_index(oxcf->target_level) >= 0) config_target_level(oxcf);
-  oxcf->use_simple_encode_api = 0;
   // vp9_dump_encoder_config(oxcf, stderr);
   return VPX_CODEC_OK;
 }
@@ -913,8 +913,7 @@ static vpx_codec_err_t ctrl_set_cpuused(vpx_codec_alg_priv_t *ctx,
   struct vp9_extracfg extra_cfg = ctx->extra_cfg;
   // Use fastest speed setting (speed 9 or -9) if it's set beyond the range.
   extra_cfg.cpu_used = CAST(VP8E_SET_CPUUSED, args);
-  extra_cfg.cpu_used = VPXMIN(9, extra_cfg.cpu_used);
-  extra_cfg.cpu_used = VPXMAX(-9, extra_cfg.cpu_used);
+  extra_cfg.cpu_used = clamp(extra_cfg.cpu_used, -9, 9);
 #if CONFIG_REALTIME_ONLY
   if (extra_cfg.cpu_used > -5 && extra_cfg.cpu_used < 5)
     extra_cfg.cpu_used = (extra_cfg.cpu_used > 0) ? 5 : -5;
@@ -1981,7 +1980,7 @@ static vpx_codec_err_t ctrl_set_delta_q_uv(vpx_codec_alg_priv_t *ctx,
                                            va_list args) {
   struct vp9_extracfg extra_cfg = ctx->extra_cfg;
   int data = va_arg(args, int);
-  data = VPXMIN(VPXMAX(data, -15), 15);
+  data = clamp(data, -15, 15);
   extra_cfg.delta_q_uv = data;
   return update_extra_cfg(ctx, &extra_cfg);
 }
@@ -2293,7 +2292,8 @@ CODEC_INTERFACE(vpx_codec_vp9_cx) = {
       encoder_set_config,          // vpx_codec_enc_config_set_fn_t
       encoder_get_global_headers,  // vpx_codec_get_global_headers_fn_t
       encoder_get_preview,         // vpx_codec_get_preview_frame_fn_t
-      NULL                         // vpx_codec_enc_mr_get_mem_loc_fn_t
+      NULL,                        // vpx_codec_enc_mr_get_mem_loc_fn_t
+      NULL                         // vpx_codec_enc_mr_free_mem_loc_fn_t
   }
 };
 
@@ -2498,7 +2498,6 @@ void vp9_dump_encoder_config(const VP9EncoderConfig *oxcf, FILE *fp) {
   DUMP_STRUCT_VALUE(fp, oxcf, row_mt);
   DUMP_STRUCT_VALUE(fp, oxcf, motion_vector_unit_test);
   DUMP_STRUCT_VALUE(fp, oxcf, delta_q_uv);
-  DUMP_STRUCT_VALUE(fp, oxcf, use_simple_encode_api);
 }
 
 FRAME_INFO vp9_get_frame_info(const VP9EncoderConfig *oxcf) {

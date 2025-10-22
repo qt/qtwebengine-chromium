@@ -3,1330 +3,1178 @@
 // found in the LICENSE file.
 {
   "elements": {
-    "AE": {  // United Arab Emirates
+    "AE": {
+      // United Arab Emirates
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_ru",
-          "&duckduckgo"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_ru",
+        "&duckduckgo"
       ]
     },
-    "AL": {  // Albania
+    "AL": {
+      // Albania
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_tr",
-          "&duckduckgo"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_tr",
+        "&duckduckgo"
       ]
     },
-    "AR": {  // Armenia
+    "AR": {
+      // Armenia
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo_ar",
-          "&duckduckgo",
-          "&yandex_com"
+        "&google",
+        "&bing",
+        "&yahoo_ar",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "AT": {  // Austria
+    "AT": {
+      // Austria
       "search_engines": [
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&ecosia",
-          "&bing",
-          "&yahoo_at",
-          "&qwant",
-          "&privacywall"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&ecosia",
+        "&bing",
+        "&yahoo_at",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "AU": {  // Australia
+    "AU": {
+      // Australia
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo_au",
-          "&duckduckgo",
-          "&ecosia"
+        "&google",
+        "&bing",
+        "&yahoo_au",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "BA": {  // Bosnia and Herzegovina
+    "BA": {
+      // Bosnia and Herzegovina
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_com",
-          "&duckduckgo"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "BE": {  // Belgium
+    "BE": {
+      // Belgium
       "search_engines": [
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia",
-          "&yahoo_emea",
-          "&qwant",
-          "&privacywall"
-
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
+        "&yahoo_emea",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "BG": {  // Bulgaria
+    "BG": {
+      // Bulgaria
       "search_engines": [
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&yep",
-          "&yahoo_emea",
-          "&ecosia",
-          "&qwant"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&yep",
+        "&yahoo_emea",
+        "&ecosia",
+        "&qwant"
       ]
     },
-    "BH": {  // Bahrain
+    "BH": {
+      // Bahrain
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_com",
-          "&duckduckgo"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "BI": {  // Burundi
+    "BI": {
+      // Burundi
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_ru",
-          "&duckduckgo"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_ru",
+        "&duckduckgo"
       ]
     },
-    "BN": {  // Brunei
+    "BN": {
+      // Brunei
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "BO": {  // Bolivia
+    "BO": {
+      // Bolivia
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_com",
-          "&duckduckgo"
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "BR": {  // Brazil
+    "BR": {
+      // Brazil
       "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo_br",
-          "&duckduckgo",
-          "&yandex_com"
+        "&google",
+        "&bing",
+        "&yahoo_br",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "BY": {  // Belarus
+    "BY": {
+      // Belarus
       "search_engines": [
-          "&google",
-          "&yandex_by",
-          "&bing",
-          "&duckduckgo",
-          "&mail_ru"
+        "&google",
+        "&yandex_by",
+        "&bing",
+        "&duckduckgo",
+        "&mail_ru"
       ]
     },
-    "BZ": {  // Belize
+    "BZ": {
+      // Belize
       "search_engines": [
-          "&google",
-          "&bing",
-          "&duckduckgo",
-          "&yahoo",
-          "&yandex_com"
+        "&google",
+        "&bing",
+        "&duckduckgo",
+        "&yahoo",
+        "&yandex_com"
       ]
     },
-    "CA": {  // Canada
+    "CA": {
+      // Canada
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_ca",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_ca",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "CH": {  // Switzerland
+    "CH": {
+      // Switzerland
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&duckduckgo",
-          "&yahoo_ch",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&duckduckgo",
+        "&yahoo_ch",
+        "&ecosia"
       ]
     },
-    "CL": {  // Chile
+    "CL": {
+      // Chile
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_cl",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_cl",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "CN": {  // China
-      "search_engines": [
-
-          "&baidu",
-          "&bing",
-          "&sogou",
-          "&so_360",
-          "&google"
-
-      ]
+    "CN": {
+      // China
+      "search_engines": ["&baidu", "&bing", "&sogou", "&so_360", "&google"]
     },
-    "CO": {  // Colombia
+    "CO": {
+      // Colombia
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_co",
-          "&duckduckgo",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&yahoo_co",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "CR": {  // Costa Rica
+    "CR": {
+      // Costa Rica
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "CY": {  // Republic of Cyprus
+    "CY": {
+      // Republic of Cyprus
       "search_engines": [
+        "&google",
+        "&brave",
+        "&bing",
+        "&duckduckgo",
+        "&yahoo_emea",
 
-          "&google",
-          "&brave",
-          "&bing",
-          "&duckduckgo",
-          "&yahoo_emea"
-,
-
-          "&ecosia",
-          "&qwant",
-          "&privacywall"
-
+        "&ecosia",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "CZ": {  // Czechia
+    "CZ": {
+      // Czechia
       "search_engines": [
-
-          "&google",
-          "&seznam",
-          "&brave",
-          "&duckduckgo",
-          "&bing"
-,
+        "&google",
+        "&seznam",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
 
-          "&ecosia",
-          "&yahoo_emea",
-          "&privacywall"
-
+        "&ecosia",
+        "&yahoo_emea",
+        "&privacywall"
       ]
     },
-    "DE": {  // Germany
+    "DE": {
+      // Germany
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&ecosia",
-          "&brave",
-          "&bing"
-,
-
-          "&yahoo_de",
-          "&qwant",
-          "&startpage"
+        "&google",
+        "&duckduckgo",
+        "&ecosia",
+        "&brave",
+        "&bing",
 
+        "&yahoo_de",
+        "&qwant",
+        "&startpage"
       ]
     },
-    "DK": {  // Denmark
+    "DK": {
+      // Denmark
       "search_engines": [
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&yahoo_dk",
-          "&privacywall",
-          "&qwant"
-
+        "&yahoo_dk",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "DO": {  // Dominican Republic
+    "DO": {
+      // Dominican Republic
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "DZ": {  // Algeria
+    "DZ": {
+      // Algeria
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_fr",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_fr",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "EC": {  // Ecuador
+    "EC": {
+      // Ecuador
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_es",
-          "&duckduckgo",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&yahoo_es",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "EE": {  // Estonia
+    "EE": {
+      // Estonia
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&yahoo_emea",
-          "&qwant",
-          "&privacywall"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
+        "&yahoo_emea",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "EG": {  // Egypt
+    "EG": {
+      // Egypt
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "ES": {  // Spain
+    "ES": {
+      // Spain
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&bing",
-          "&duckduckgo",
-          "&ecosia"
-,
+        "&google",
+        "&brave",
+        "&bing",
+        "&duckduckgo",
+        "&ecosia",
 
-          "&yahoo_es",
-          "&qwant",
-          "&privacywall"
-
+        "&yahoo_es",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "FI": {  // Finland
+    "FI": {
+      // Finland
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&yahoo_fi",
-          "&privacywall",
-          "&qwant"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
+        "&yahoo_fi",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "FO": {  // Faroe Islands
+    "FO": {
+      // Faroe Islands
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_uk",
-          "&duckduckgo",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&yahoo_uk",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "FR": {  // France
+    "FR": {
+      // France
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&ecosia",
-          "&bing",
-          "&qwant"
-,
+        "&google",
+        "&brave",
+        "&ecosia",
+        "&bing",
+        "&qwant",
 
-          "&duckduckgo",
-          "&lilo",
-          "&yahoo_fr"
-
+        "&duckduckgo",
+        "&lilo",
+        "&yahoo_fr"
       ]
     },
-    "GB": {  // United Kingdom
+    "GB": {
+      // United Kingdom
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_uk",
-          "&duckduckgo",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&yahoo_uk",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "GR": {  // Greece
+    "GR": {
+      // Greece
       "search_engines": [
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&yahoo_emea",
 
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&yahoo_emea"
-,
-
-          "&ecosia",
-          "&yep",
-          "&qwant"
-
+        "&ecosia",
+        "&yep",
+        "&qwant"
       ]
     },
-    "GT": {  // Guatemala
+    "GT": {
+      // Guatemala
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "HK": {  // Hong Kong
-      "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_hk",
-          "&baidu",
-          "&so_360"
-
-      ]
+    "HK": {
+      // Hong Kong
+      "search_engines": ["&google", "&bing", "&yahoo_hk", "&baidu", "&so_360"]
     },
-    "HN": {  // Honduras
+    "HN": {
+      // Honduras
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "HR": {  // Croatia
+    "HR": {
+      // Croatia
       "search_engines": [
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&yahoo_emea",
-          "&yep",
-          "&privacywall"
-
+        "&yahoo_emea",
+        "&yep",
+        "&privacywall"
       ]
     },
-    "HU": {  // Hungary
+    "HU": {
+      // Hungary
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&bing",
-          "&duckduckgo",
-          "&ecosia"
-,
+        "&google",
+        "&brave",
+        "&bing",
+        "&duckduckgo",
+        "&ecosia",
 
-          "&yahoo_emea",
-          "&yep",
-          "&qwant"
-
+        "&yahoo_emea",
+        "&yep",
+        "&qwant"
       ]
     },
-    "ID": {  // Indonesia
+    "ID": {
+      // Indonesia
       "search_engines": [
-
-          "&google",
-          "&yandex_com",
-          "&bing",
-          "&yahoo_id",
-          "&duckduckgo"
-
+        "&google",
+        "&yandex_com",
+        "&bing",
+        "&yahoo_id",
+        "&duckduckgo"
       ]
     },
-    "IE": {  // Ireland
+    "IE": {
+      // Ireland
       "search_engines": [
+        "&google",
+        "&duckduckgo",
+        "&brave",
+        "&bing",
+        "&yahoo_uk",
 
-          "&google",
-          "&duckduckgo",
-          "&brave",
-          "&bing",
-          "&yahoo_uk"
-,
-
-          "&ecosia",
-          "&privacywall",
-          "&qwant"
-
+        "&ecosia",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "IL": {  // Israel
+    "IL": {
+      // Israel
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_ru",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_ru",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "IN": {  // India
+    "IN": {
+      // India
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_in",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_in",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "IQ": {  // Iraq
+    "IQ": {
+      // Iraq
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_tr",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_tr",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "IR": {  // Iran
+    "IR": {
+      // Iran
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "IS": {  // Iceland
+    "IS": {
+      // Iceland
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&brave",
-          "&bing",
-          "&ecosia"
-,
-
-          "&privacywall",
-          "&yahoo_emea",
-          "&qwant"
+        "&google",
+        "&duckduckgo",
+        "&brave",
+        "&bing",
+        "&ecosia",
 
+        "&privacywall",
+        "&yahoo_emea",
+        "&qwant"
       ]
     },
-    "IT": {  // Italy
+    "IT": {
+      // Italy
       "search_engines": [
+        "&google",
+        "&brave",
+        "&bing",
+        "&duckduckgo",
+        "&ecosia",
 
-          "&google",
-          "&brave",
-          "&bing",
-          "&duckduckgo",
-          "&ecosia"
-,
-
-          "&yahoo_it",
-          "&qwant",
-          "&privacywall"
-
+        "&yahoo_it",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "JM": {  // Jamaica
+    "JM": {
+      // Jamaica
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "JO": {  // Jordan
+    "JO": {
+      // Jordan
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "JP": {  // Japan
+    "JP": {
+      // Japan
       "search_engines": [
-
-          "&google",
-          "&yahoo_jp",
-          "&bing",
-          "&duckduckgo",
-          "&coccoc"
-
+        "&google",
+        "&yahoo_jp",
+        "&bing",
+        "&duckduckgo",
+        "&coccoc"
       ]
     },
-    "KE": {  // Kenya
+    "KE": {
+      // Kenya
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "KR": {  // South Korea
-      "search_engines": [
-
-          "&google",
-          "&naver",
-          "&bing",
-          "&daum",
-          "&coccoc"
-
-      ]
+    "KR": {
+      // South Korea
+      "search_engines": ["&google", "&naver", "&bing", "&daum", "&coccoc"]
     },
-    "KW": {  // Kuwait
+    "KW": {
+      // Kuwait
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_tr",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_tr",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "KZ": {  // Kazakhstan
-      "search_engines": [
-
-          "&google",
-          "&yandex_kz",
-          "&bing",
-          "&mail_ru",
-          "&yahoo"
-
-      ]
+    "KZ": {
+      // Kazakhstan
+      "search_engines": ["&google", "&yandex_kz", "&bing", "&mail_ru", "&yahoo"]
     },
-    "LB": {  // Lebanon
+    "LB": {
+      // Lebanon
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "LI": {  // Lichtenstein
+    "LI": {
+      // Lichtenstein
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&brave",
-          "&bing",
-          "&ecosia"
-,
+        "&google",
+        "&duckduckgo",
+        "&brave",
+        "&bing",
+        "&ecosia",
 
-          "&qwant",
-          "&yahoo_emea",
-          "&privacywall"
-
+        "&qwant",
+        "&yahoo_emea",
+        "&privacywall"
       ]
     },
-    "LT": {  // Lithuania
+    "LT": {
+      // Lithuania
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&yahoo_emea"
-,
-
-          "&ecosia",
-          "&qwant",
-          "&yep"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&yahoo_emea",
 
+        "&ecosia",
+        "&qwant",
+        "&yep"
       ]
     },
-    "LU": {  // Luxembourg
+    "LU": {
+      // Luxembourg
       "search_engines": [
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&qwant",
-          "&yahoo_emea",
-          "&privacywall"
-
+        "&qwant",
+        "&yahoo_emea",
+        "&privacywall"
       ]
     },
-    "LV": {  // Latvia
+    "LV": {
+      // Latvia
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&yahoo_emea"
-,
-
-          "&ecosia",
-          "&privacywall",
-          "&qwant"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&yahoo_emea",
 
+        "&ecosia",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "LY": {  // Libya
+    "LY": {
+      // Libya
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_tr",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_tr",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "MA": {  // Morocco
+    "MA": {
+      // Morocco
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_fr",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_fr",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "MC": {  // Monaco
+    "MC": {
+      // Monaco
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_fr",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_fr",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "MD": {  // Moldova
+    "MD": {
+      // Moldova
       "search_engines": [
-
-          "&google",
-          "&yandex_ru",
-          "&bing",
-          "&duckduckgo",
-          "&mail_ru"
-
+        "&google",
+        "&yandex_ru",
+        "&bing",
+        "&duckduckgo",
+        "&mail_ru"
       ]
     },
-    "ME": {  // Montenegro
+    "ME": {
+      // Montenegro
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_ru",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_ru",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "MK": {  // Macedonia
+    "MK": {
+      // Macedonia
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "MT": {  // Malta
+    "MT": {
+      // Malta
       "search_engines": [
+        "&google",
+        "&brave",
+        "&bing",
+        "&duckduckgo",
+        "&ecosia",
 
-          "&google",
-          "&brave",
-          "&bing",
-          "&duckduckgo",
-          "&ecosia"
-,
-
-          "&yahoo_emea",
-          "&qwant",
-          "&privacywall"
-
+        "&yahoo_emea",
+        "&qwant",
+        "&privacywall"
       ]
     },
-    "MX": {  // Mexico
+    "MX": {
+      // Mexico
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_mx",
-          "&duckduckgo",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&yahoo_mx",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "MY": {  // Malaysia
+    "MY": {
+      // Malaysia
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_my",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_my",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "NI": {  // Nicaragua
+    "NI": {
+      // Nicaragua
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "NL": {  // Netherlands
+    "NL": {
+      // Netherlands
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&brave",
-          "&bing",
-          "&ecosia"
-,
+        "&google",
+        "&duckduckgo",
+        "&brave",
+        "&bing",
+        "&ecosia",
 
-          "&yahoo_nl",
-          "&privacywall",
-          "&qwant"
-
+        "&yahoo_nl",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "NO": {  // Norway
+    "NO": {
+      // Norway
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&brave",
-          "&bing",
-          "&yahoo_emea"
-,
+        "&google",
+        "&duckduckgo",
+        "&brave",
+        "&bing",
+        "&yahoo_emea",
 
-          "&ecosia",
-          "&privacywall",
-          "&qwant"
-
+        "&ecosia",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "NZ": {  // New Zealand
+    "NZ": {
+      // New Zealand
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_nz",
-          "&duckduckgo",
-          "&ecosia"
-
+        "&google",
+        "&bing",
+        "&yahoo_nz",
+        "&duckduckgo",
+        "&ecosia"
       ]
     },
-    "OM": {  // Oman
+    "OM": {
+      // Oman
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "PA": {  // Panama
+    "PA": {
+      // Panama
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_es",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_es",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "PE": {  // Peru
+    "PE": {
+      // Peru
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_pe",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_pe",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "PH": {  // Philippines
+    "PH": {
+      // Philippines
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_ph",
-          "&ecosia",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_ph",
+        "&ecosia",
+        "&duckduckgo"
       ]
     },
-    "PK": {  // Pakistan
+    "PK": {
+      // Pakistan
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "PL": {  // Poland
+    "PL": {
+      // Poland
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&yahoo_emea",
-          "&privacywall",
-          "&qwant"
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
+        "&yahoo_emea",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "PR": {  // Puerto Rico
+    "PR": {
+      // Puerto Rico
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "PT": {  // Portugal
+    "PT": {
+      // Portugal
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&bing",
-          "&duckduckgo",
-          "&ecosia"
-,
+        "&google",
+        "&brave",
+        "&bing",
+        "&duckduckgo",
+        "&ecosia",
 
-          "&yep",
-          "&yahoo_emea",
-          "&qwant"
-
+        "&yep",
+        "&yahoo_emea",
+        "&qwant"
       ]
     },
-    "PY": {  // Paraguay
+    "PY": {
+      // Paraguay
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_es",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_es",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "QA": {  // Quatar
+    "QA": {
+      // Quatar
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_tr"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_tr"
       ]
     },
-    "RO": {  // Romania
+    "RO": {
+      // Romania
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&yahoo_emea",
-          "&duckduckgo",
-          "&bing"
-,
+        "&google",
+        "&brave",
+        "&yahoo_emea",
+        "&duckduckgo",
+        "&bing",
 
-          "&yep",
-          "&ecosia",
-          "&qwant"
-
+        "&yep",
+        "&ecosia",
+        "&qwant"
       ]
     },
-    "RS": {  // Serbia
+    "RS": {
+      // Serbia
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&yandex_ru",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&yandex_ru",
+        "&duckduckgo"
       ]
     },
-    "RU": {  // Russia
+    "RU": {
+      // Russia
       "search_engines": [
-
-          "&yandex_ru",
-          "&google",
-          "&bing",
-          "&duckduckgo",
-          "&mail_ru"
-
+        "&yandex_ru",
+        "&google",
+        "&bing",
+        "&duckduckgo",
+        "&mail_ru"
       ]
     },
-    "RW": {  // Rwanda
+    "RW": {
+      // Rwanda
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "SA": {  // Saudi Arabia
+    "SA": {
+      // Saudi Arabia
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_com",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_com",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "SE": {  // Sweden
+    "SE": {
+      // Sweden
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&brave",
-          "&bing",
-          "&ecosia"
-,
+        "&google",
+        "&duckduckgo",
+        "&brave",
+        "&bing",
+        "&ecosia",
 
-          "&yahoo_se",
-          "&privacywall",
-          "&qwant"
-
+        "&yahoo_se",
+        "&privacywall",
+        "&qwant"
       ]
     },
-    "SG": {  // Singapore
+    "SG": {
+      // Singapore
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_sg",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_sg",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "SI": {  // Slovenia
+    "SI": {
+      // Slovenia
       "search_engines": [
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&ecosia",
 
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&ecosia"
-,
-
-          "&yahoo_emea",
-          "&yep",
-          "&qwant"
-
+        "&yahoo_emea",
+        "&yep",
+        "&qwant"
       ]
     },
-    "SK": {  // Slovakia
+    "SK": {
+      // Slovakia
       "search_engines": [
-
-          "&google",
-          "&brave",
-          "&duckduckgo",
-          "&bing",
-          "&seznam"
-,
+        "&google",
+        "&brave",
+        "&duckduckgo",
+        "&bing",
+        "&seznam",
 
-          "&yahoo_emea",
-          "&ecosia",
-          "&privacywall"
-
+        "&yahoo_emea",
+        "&ecosia",
+        "&privacywall"
       ]
     },
-    "SV": {  // El Salvador
+    "SV": {
+      // El Salvador
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_es",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_es",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "SY": {  // Syria
+    "SY": {
+      // Syria
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yandex_ru",
-          "&yahoo",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yandex_ru",
+        "&yahoo",
+        "&duckduckgo"
       ]
     },
-    "TH": {  // Thailand
+    "TH": {
+      // Thailand
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_th",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_th",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "TN": {  // Tunisia
+    "TN": {
+      // Tunisia
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_fr",
-          "&yandex_com",
-          "&duckduckgo"
-
+        "&google",
+        "&bing",
+        "&yahoo_fr",
+        "&yandex_com",
+        "&duckduckgo"
       ]
     },
-    "TR": {  // Turkey
+    "TR": {
+      // Turkey
       "search_engines": [
-
-          "&google",
-          "&yandex_tr",
-          "&yahoo_tr",
-          "&bing",
-          "&duckduckgo"
-
+        "&google",
+        "&yandex_tr",
+        "&yahoo_tr",
+        "&bing",
+        "&duckduckgo"
       ]
     },
-    "TT": {  // Trinidad and Tobago
+    "TT": {
+      // Trinidad and Tobago
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "TW": {  // Taiwan
-      "search_engines": [
-
-          "&google",
-          "&yahoo_tw",
-          "&bing",
-          "&coccoc",
-          "&baidu"
-
-      ]
+    "TW": {
+      // Taiwan
+      "search_engines": ["&google", "&yahoo_tw", "&bing", "&coccoc", "&baidu"]
     },
-    "TZ": {  // Tanzania
+    "TZ": {
+      // Tanzania
       "search_engines": [
-
-          "&google",
-          "&duckduckgo",
-          "&bing",
-          "&yahoo",
-          "&yandex_com"
-
+        "&google",
+        "&duckduckgo",
+        "&bing",
+        "&yahoo",
+        "&yandex_com"
       ]
     },
-    "UA": {  // Ukraine
+    "UA": {
+      // Ukraine
       "search_engines": [
-
-          "&google",
-          "&yandex_ru",
-          "&bing",
-          "&duckduckgo",
-          "&yahoo"
-
+        "&google",
+        "&yandex_ru",
+        "&bing",
+        "&duckduckgo",
+        "&yahoo"
       ]
     },
-    "US": {  // United States
+    "US": {
+      // United States
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "UY": {  // Uruguay
+    "UY": {
+      // Uruguay
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_es",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_es",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "VE": {  // Venezuela
+    "VE": {
+      // Venezuela
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo_es",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo_es",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "VN": {  // Vietnam
-      "search_engines": [
-
-          "&google",
-          "&coccoc",
-          "&yahoo",
-          "&bing",
-          "&duckduckgo"
-
-      ]
+    "VN": {
+      // Vietnam
+      "search_engines": ["&google", "&coccoc", "&yahoo", "&bing", "&duckduckgo"]
     },
-    "YE": {  // Yemen
+    "YE": {
+      // Yemen
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "ZA": {  // South Africa
+    "ZA": {
+      // South Africa
       "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&yandex_com"
-
+        "&google",
+        "&bing",
+        "&yahoo",
+        "&duckduckgo",
+        "&yandex_com"
       ]
     },
-    "ZW": {  // Zimbabwe
-      "search_engines": [
-
-          "&google",
-          "&bing",
-          "&yahoo",
-          "&duckduckgo",
-          "&sogou"
-
-      ]
+    "ZW": {
+      // Zimbabwe
+      "search_engines": ["&google", "&bing", "&yahoo", "&duckduckgo", "&sogou"]
     },
 
     // Fallback / default country. Occupies a user-assignable alpha-2 code,
     // representing unknown or invalid territory.
     // See https://en.wikipedia.org/wiki/ISO_3166-1_alpha-2#ZZ
-    "ZZ": {  // Default
-      "search_engines": [
-          "&google",
-          "&bing",
-          "&yahoo"
-      ]
+    "ZZ": {
+      // Default
+      "search_engines": ["&google", "&bing", "&yahoo"]
     }
   },
 
@@ -1336,146 +1184,146 @@
     "export_items": false,
     "map_key_type": "country_codes::CountryId",
     "map_aliases": {
-      "AD": "ES",  // Andorra
-      "AF": "ZZ",  // Afghanistan
-      "AG": "ZZ",  // Antigua and Barbuda
-      "AI": "ZZ",  // Anguilla
-      "AM": "RU",  // Armenia
-      "AN": "NL",  // Netherlands Antilles
-      "AO": "ZZ",  // Angola
-      "AQ": "ZZ",  // Antarctica
-      "AS": "US",  // American Samoa
-      "AW": "NL",  // Aruba
-      "AX": "FI",  // Aland Islands
-      "AZ": "RU",  // Azerbaijan
-      "BB": "ZZ",  // Barbados
-      "BD": "ZZ",  // Bangladesh
-      "BF": "FR",  // Burkina Faso
-      "BJ": "FR",  // Benin
-      "BL": "FR",  // St. Barthélemy
-      "BM": "GB",  // Bermuda
-      "BS": "ZZ",  // Bahamas
-      "BT": "ZZ",  // Bhutan
-      "BV": "NO",  // Bouvet Island
-      "BW": "ZZ",  // Botswana
-      "CC": "AU",  // Cocos Islands
-      "CD": "FR",  // Congo - Kinshasa
-      "CF": "FR",  // Central African Republic
-      "CG": "FR",  // Congo - Brazzaville
-      "CI": "FR",  // Ivory Coast
-      "CK": "NZ",  // Cook Islands
-      "CM": "FR",  // Cameroon
-      "CQ": "GB",  // Sark
-      "CU": "ZZ",  // Cuba
-      "CV": "PT",  // Cape Verde
-      "CX": "AU",  // Christmas Islands
-      "DJ": "FR",  // Djibouti
-      "DM": "ZZ",  // Dominica
-      "EA": "ES",  // Ceuta and Melila (not in ISO3166-1)
-      "EH": "MA",  // Western Sahara
-      "ER": "ZZ",  // Eritrea
-      "ET": "ZZ",  // Ethiopia
-      "FJ": "ZZ",  // Fiji
-      "FK": "GB",  // Falkland Islands
-      "FM": "ZZ",  // Micronesia
-      "GA": "FR",  // Gabon
-      "GD": "ZZ",  // Grenada
-      "GE": "ZZ",  // Georgia
-      "GF": "FR",  // French Guiana
-      "GG": "GB",  // Gernsey
-      "GH": "ZZ",  // Ghana
-      "GI": "GB",  // Gibraltar
-      "GL": "DK",  // Greenland
-      "GM": "ZZ",  // Gambia
-      "GN": "FR",  // Guinea
-      "GP": "FR",  // Guadeloupe
-      "GQ": "ZZ",  // Equatorial Guinea
-      "GS": "GB",  // South Georgia and the South Sandwich Islands
-      "GU": "US",  // Guam
-      "GW": "PT",  // Guinea-Bissau
-      "GY": "ZZ",  // Guyana
-      "HM": "AU",  // Heard Island and McDonald Islands
-      "HT": "FR",  // Haiti
-      "IC": "ES",  // Canary Islands (not in ISO3166-1)
-      "IM": "GB",  // Isle of Man
-      "IO": "GB",  // British Indian Ocean Territory
-      "JE": "GB",  // Jersey
-      "KG": "RU",  // Kyrgyzstan
-      "KH": "ZZ",  // Cambodia
-      "KI": "ZZ",  // Kiribati
-      "KM": "ZZ",  // Comoros
-      "KN": "ZZ",  // Saint Kitts and Nevis
-      "KP": "ZZ",  // North Korea
-      "KY": "GB",  // Cayman Islands
-      "LA": "ZZ",  // Laos
-      "LC": "ZZ",  // Saint Lucia
-      "LK": "ZZ",  // Sri Lanka
-      "LR": "ZZ",  // Liberia
-      "LS": "ZZ",  // Lesotho
-      "MF": "FR",  // Saint Martin
-      "MG": "ZZ",  // Madagascar
-      "MH": "ZZ",  // Marshall Islands
-      "ML": "FR",  // Mali
-      "MM": "ZZ",  // Myanmar
-      "MN": "ZZ",  // Mongolia
-      "MO": "CN",  // Macao
-      "MP": "US",  // Northern Mariana Islands
-      "MQ": "FR",  // Martinique
-      "MR": "SA",  // Mauritania
-      "MS": "GB",  // Montserrat
-      "MU": "ZZ",  // Mauritius
-      "MV": "ZZ",  // Maldives
-      "MW": "ZZ",  // Malawi
-      "MZ": "PT",  // Mozambique
-      "NA": "ZZ",  // Namibia
-      "NC": "FR",  // New Caledonia
-      "NE": "FR",  // Niger
-      "NF": "AU",  // Norfolk Island
-      "NG": "ZZ",  // Nigeria
-      "NP": "ZZ",  // Nepal
-      "NR": "ZZ",  // Nauru
-      "NU": "NZ",  // Niue
-      "PF": "FR",  // French Polynesia
-      "PG": "ZZ",  // Papua New Guinea
-      "PM": "FR",  // Saint Pierre and Miquelon
-      "PN": "GB",  // Pitcairn Islands
-      "PS": "SA",  // Palestinian Territory
-      "PW": "ZZ",  // Palau
-      "RE": "FR",  // Reunion
-      "SB": "ZZ",  // Solomon Islands
-      "SC": "ZZ",  // Seychelles
-      "SD": "SA",  // Sudan
-      "SH": "GB",  // Saint Helena, Ascension Island, Tristan da Cunha
-      "SJ": "NO",  // Svalbard and Jan Mayen
-      "SL": "ZZ",  // Sierra Leone
-      "SM": "IT",  // San Marino
-      "SN": "FR",  // Senegal
-      "SO": "ZZ",  // Somalia
-      "SR": "ZZ",  // Suriname
-      "ST": "PT",  // Sao Tome and Principe
-      "SZ": "ZZ",  // Swaziland
-      "TC": "GB",  // Turks and Caicos Islands
-      "TD": "FR",  // Chad
-      "TF": "FR",  // French Southern Territories
-      "TG": "FR",  // Togo
-      "TJ": "RU",  // Tajikistan
-      "TK": "NZ",  // Tokelau
-      "TL": "PT",  // Timor-Leste
-      "TM": "RU",  // Turkmenistan
-      "TO": "ZZ",  // Tonga
-      "TV": "ZZ",  // Tuvalu
-      "UG": "ZZ",  // Uganda
-      "UM": "US",  // U.S. Minor Outlying Islands
-      "UZ": "RU",  // Uzbekistan
-      "VA": "IT",  // Vatican
-      "VC": "ZZ",  // Saint Vincent and the Grenadines
-      "VG": "GB",  // British Virgin Islands
-      "VI": "US",  // U.S. Virgin Islands
-      "VU": "ZZ",  // Vanuatu
-      "WF": "FR",  // Wallis and Futuna
-      "WS": "ZZ",  // Samoa
-      "YT": "FR",  // Mayotte
-      "ZM": "ZZ"   // Zambia
+      "AD": "ES", // Andorra
+      "AF": "ZZ", // Afghanistan
+      "AG": "ZZ", // Antigua and Barbuda
+      "AI": "ZZ", // Anguilla
+      "AM": "RU", // Armenia
+      "AN": "NL", // Netherlands Antilles
+      "AO": "ZZ", // Angola
+      "AQ": "ZZ", // Antarctica
+      "AS": "US", // American Samoa
+      "AW": "NL", // Aruba
+      "AX": "FI", // Aland Islands
+      "AZ": "RU", // Azerbaijan
+      "BB": "ZZ", // Barbados
+      "BD": "ZZ", // Bangladesh
+      "BF": "FR", // Burkina Faso
+      "BJ": "FR", // Benin
+      "BL": "FR", // St. Barthélemy
+      "BM": "GB", // Bermuda
+      "BS": "ZZ", // Bahamas
+      "BT": "ZZ", // Bhutan
+      "BV": "NO", // Bouvet Island
+      "BW": "ZZ", // Botswana
+      "CC": "AU", // Cocos Islands
+      "CD": "FR", // Congo - Kinshasa
+      "CF": "FR", // Central African Republic
+      "CG": "FR", // Congo - Brazzaville
+      "CI": "FR", // Ivory Coast
+      "CK": "NZ", // Cook Islands
+      "CM": "FR", // Cameroon
+      "CQ": "GB", // Sark
+      "CU": "ZZ", // Cuba
+      "CV": "PT", // Cape Verde
+      "CX": "AU", // Christmas Islands
+      "DJ": "FR", // Djibouti
+      "DM": "ZZ", // Dominica
+      "EA": "ES", // Ceuta and Melila (not in ISO3166-1)
+      "EH": "MA", // Western Sahara
+      "ER": "ZZ", // Eritrea
+      "ET": "ZZ", // Ethiopia
+      "FJ": "ZZ", // Fiji
+      "FK": "GB", // Falkland Islands
+      "FM": "ZZ", // Micronesia
+      "GA": "FR", // Gabon
+      "GD": "ZZ", // Grenada
+      "GE": "ZZ", // Georgia
+      "GF": "FR", // French Guiana
+      "GG": "GB", // Gernsey
+      "GH": "ZZ", // Ghana
+      "GI": "GB", // Gibraltar
+      "GL": "DK", // Greenland
+      "GM": "ZZ", // Gambia
+      "GN": "FR", // Guinea
+      "GP": "FR", // Guadeloupe
+      "GQ": "ZZ", // Equatorial Guinea
+      "GS": "GB", // South Georgia and the South Sandwich Islands
+      "GU": "US", // Guam
+      "GW": "PT", // Guinea-Bissau
+      "GY": "ZZ", // Guyana
+      "HM": "AU", // Heard Island and McDonald Islands
+      "HT": "FR", // Haiti
+      "IC": "ES", // Canary Islands (not in ISO3166-1)
+      "IM": "GB", // Isle of Man
+      "IO": "GB", // British Indian Ocean Territory
+      "JE": "GB", // Jersey
+      "KG": "RU", // Kyrgyzstan
+      "KH": "ZZ", // Cambodia
+      "KI": "ZZ", // Kiribati
+      "KM": "ZZ", // Comoros
+      "KN": "ZZ", // Saint Kitts and Nevis
+      "KP": "ZZ", // North Korea
+      "KY": "GB", // Cayman Islands
+      "LA": "ZZ", // Laos
+      "LC": "ZZ", // Saint Lucia
+      "LK": "ZZ", // Sri Lanka
+      "LR": "ZZ", // Liberia
+      "LS": "ZZ", // Lesotho
+      "MF": "FR", // Saint Martin
+      "MG": "ZZ", // Madagascar
+      "MH": "ZZ", // Marshall Islands
+      "ML": "FR", // Mali
+      "MM": "ZZ", // Myanmar
+      "MN": "ZZ", // Mongolia
+      "MO": "CN", // Macao
+      "MP": "US", // Northern Mariana Islands
+      "MQ": "FR", // Martinique
+      "MR": "SA", // Mauritania
+      "MS": "GB", // Montserrat
+      "MU": "ZZ", // Mauritius
+      "MV": "ZZ", // Maldives
+      "MW": "ZZ", // Malawi
+      "MZ": "PT", // Mozambique
+      "NA": "ZZ", // Namibia
+      "NC": "FR", // New Caledonia
+      "NE": "FR", // Niger
+      "NF": "AU", // Norfolk Island
+      "NG": "ZZ", // Nigeria
+      "NP": "ZZ", // Nepal
+      "NR": "ZZ", // Nauru
+      "NU": "NZ", // Niue
+      "PF": "FR", // French Polynesia
+      "PG": "ZZ", // Papua New Guinea
+      "PM": "FR", // Saint Pierre and Miquelon
+      "PN": "GB", // Pitcairn Islands
+      "PS": "SA", // Palestinian Territory
+      "PW": "ZZ", // Palau
+      "RE": "FR", // Reunion
+      "SB": "ZZ", // Solomon Islands
+      "SC": "ZZ", // Seychelles
+      "SD": "SA", // Sudan
+      "SH": "GB", // Saint Helena, Ascension Island, Tristan da Cunha
+      "SJ": "NO", // Svalbard and Jan Mayen
+      "SL": "ZZ", // Sierra Leone
+      "SM": "IT", // San Marino
+      "SN": "FR", // Senegal
+      "SO": "ZZ", // Somalia
+      "SR": "ZZ", // Suriname
+      "ST": "PT", // Sao Tome and Principe
+      "SZ": "ZZ", // Swaziland
+      "TC": "GB", // Turks and Caicos Islands
+      "TD": "FR", // Chad
+      "TF": "FR", // French Southern Territories
+      "TG": "FR", // Togo
+      "TJ": "RU", // Tajikistan
+      "TK": "NZ", // Tokelau
+      "TL": "PT", // Timor-Leste
+      "TM": "RU", // Turkmenistan
+      "TO": "ZZ", // Tonga
+      "TV": "ZZ", // Tuvalu
+      "UG": "ZZ", // Uganda
+      "UM": "US", // U.S. Minor Outlying Islands
+      "UZ": "RU", // Uzbekistan
+      "VA": "IT", // Vatican
+      "VC": "ZZ", // Saint Vincent and the Grenadines
+      "VG": "GB", // British Virgin Islands
+      "VI": "US", // U.S. Virgin Islands
+      "VU": "ZZ", // Vanuatu
+      "WF": "FR", // Wallis and Futuna
+      "WS": "ZZ", // Samoa
+      "YT": "FR", // Mayotte
+      "ZM": "ZZ" // Zambia
     }
   }
 }

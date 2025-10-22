@@ -125,20 +125,6 @@ bool IsTransformFeedbackOnly(const gl::State &glState)
     return glState.isTransformFeedbackActiveUnpaused() && glState.isRasterizerDiscardEnabled();
 }
 
-std::string ConvertMarkerToString(GLsizei length, const char *marker)
-{
-    std::string cppString;
-    if (length == 0)
-    {
-        cppString = marker;
-    }
-    else
-    {
-        cppString.assign(marker, length);
-    }
-    return cppString;
-}
-
 // This class constructs line loop's last segment buffer inside begin() method
 // and perform the draw of the line loop's last segment inside destructor
 class LineLoopLastSegmentHelper
@@ -884,8 +870,8 @@ angle::Result ContextMtl::drawElementsBaseVertex(const gl::Context *context,
                                                  const void *indices,
                                                  GLint baseVertex)
 {
-    UNIMPLEMENTED();
-    return angle::Result::Stop;
+    ANGLE_TRY(resyncDrawFramebufferIfNeeded(context));
+    return drawElementsImpl(context, mode, count, type, indices, 0, baseVertex, 0);
 }
 
 angle::Result ContextMtl::drawElementsInstanced(const gl::Context *context,
@@ -955,9 +941,8 @@ angle::Result ContextMtl::drawRangeElementsBaseVertex(const gl::Context *context
                                                       const void *indices,
                                                       GLint baseVertex)
 {
-    // NOTE(hqle): ES 3.2
-    UNIMPLEMENTED();
-    return angle::Result::Stop;
+    ANGLE_TRY(resyncDrawFramebufferIfNeeded(context));
+    return drawElementsImpl(context, mode, count, type, indices, 0, baseVertex, 0);
 }
 
 angle::Result ContextMtl::drawArraysIndirect(const gl::Context *context,
@@ -1077,12 +1062,13 @@ gl::GraphicsResetStatus ContextMtl::getResetStatus()
 // EXT_debug_marker
 angle::Result ContextMtl::insertEventMarker(GLsizei length, const char *marker)
 {
+    mCmdBuffer.insertDebugSignpost(std::string(marker, length));
     return checkCommandBufferError();
 }
 
 angle::Result ContextMtl::pushGroupMarker(GLsizei length, const char *marker)
 {
-    mCmdBuffer.pushDebugGroup(ConvertMarkerToString(length, marker));
+    mCmdBuffer.pushDebugGroup(std::string(marker, length));
     return checkCommandBufferError();
 }
 
@@ -1523,9 +1509,10 @@ BufferImpl *ContextMtl::createBuffer(const gl::BufferState &state)
 }
 
 // Vertex Array creation
-VertexArrayImpl *ContextMtl::createVertexArray(const gl::VertexArrayState &state)
+VertexArrayImpl *ContextMtl::createVertexArray(const gl::VertexArrayState &state,
+                                               const gl::VertexArrayBuffers &vertexArrayBuffers)
 {
-    return new VertexArrayMtl(state, this);
+    return new VertexArrayMtl(state, vertexArrayBuffers, this);
 }
 
 // Query and Fence creation
@@ -1676,7 +1663,7 @@ void ContextMtl::invalidateState(const gl::Context *context)
 {
     mDirtyBits.set();
 
-    invalidateDefaultAttributes(context->getStateCache().getActiveDefaultAttribsMask());
+    invalidateDefaultAttributes(context->getActiveDefaultAttribsMask());
 }
 
 void ContextMtl::invalidateDefaultAttribute(size_t attribIndex)
@@ -1957,13 +1944,22 @@ mtl::RenderCommandEncoder *ContextMtl::getTextureRenderCommandEncoder(
     const mtl::TextureRef &textureTarget,
     const mtl::ImageNativeIndex &index)
 {
+    return getTextureRenderCommandEncoder(textureTarget, index.getNativeLevel(),
+                                          index.hasLayer() ? index.getLayerIndex() : 0);
+}
+
+mtl::RenderCommandEncoder *ContextMtl::getTextureRenderCommandEncoder(
+    const mtl::TextureRef &textureTarget,
+    mtl::MipmapNativeLevel level,
+    uint32_t layer)
+{
     ASSERT(textureTarget && textureTarget->valid());
 
     mtl::RenderPassDesc rpDesc;
 
     rpDesc.colorAttachments[0].texture      = textureTarget;
-    rpDesc.colorAttachments[0].level        = index.getNativeLevel();
-    rpDesc.colorAttachments[0].sliceOrDepth = index.hasLayer() ? index.getLayerIndex() : 0;
+    rpDesc.colorAttachments[0].level        = level;
+    rpDesc.colorAttachments[0].sliceOrDepth = layer;
     rpDesc.numColorAttachments              = 1;
     rpDesc.rasterSampleCount                = textureTarget->samples();
 
@@ -2386,12 +2382,18 @@ void ContextMtl::serverWaitEvent(id<MTLEvent> event, uint64_t value)
     mCmdBuffer.serverWaitEvent(event, value);
 }
 
+void ContextMtl::markResourceWrittenByCommandBuffer(const mtl::ResourceRef &resource)
+{
+    ensureCommandBufferReady();
+    mCmdBuffer.setWriteDependency(resource, /*isRenderCommand=*/false);
+}
+
 void ContextMtl::updateProgramExecutable(const gl::Context *context)
 {
     // Need to rebind textures
     invalidateCurrentTextures();
     // Need to re-upload default attributes
-    invalidateDefaultAttributes(context->getStateCache().getActiveDefaultAttribsMask());
+    invalidateDefaultAttributes(context->getActiveDefaultAttribsMask());
     // Render pipeline need to be re-applied
     invalidateRenderPipeline();
 }
@@ -2400,7 +2402,7 @@ void ContextMtl::updateVertexArray(const gl::Context *context)
 {
     const gl::State &glState = getState();
     mVertexArray             = mtl::GetImpl(glState.getVertexArray());
-    invalidateDefaultAttributes(context->getStateCache().getActiveDefaultAttribsMask());
+    invalidateDefaultAttributes(context->getActiveDefaultAttribsMask());
     invalidateRenderPipeline();
 }
 
@@ -2516,7 +2518,7 @@ angle::Result ContextMtl::setupDrawImpl(const gl::Context *context,
     // instances=0 means no instanced draw.
     GLsizei instanceCount = instances ? instances : 1;
 
-    if (context->getStateCache().hasAnyActiveClientAttrib())
+    if (context->hasAnyActiveClientAttrib())
     {
         ANGLE_TRY(mVertexArray->updateClientAttribs(context, firstVertex, vertexOrIndexCount,
                                                     instanceCount, indexTypeOrNone, indices));

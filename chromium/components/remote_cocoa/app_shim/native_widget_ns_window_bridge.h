@@ -147,6 +147,23 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // being reordered in (or out of) the screen list.
   void OnVisibilityChanged();
 
+  // Called when -[NSWindow isOnActiveSpace] may have changed.
+  //
+  // This value can change in two main scenarios,
+  //   1. The user switches the active space.
+  //      - Detected using NSWorkspaceActiveSpaceDidChangeNotification.
+  //   2. The user moves the window to a different space (e.g., via Mission
+  //   Control).
+  //      - Detected using -windowDidChangeOcclusionState:.
+  //
+  // Relying solely on windowDidChangeOcclusionState: is insufficient. It
+  // appears that during space switch this notification is sent before
+  // isOnActiveSpace is updated.
+  //
+  // Note that although `onActiveSpace` is a property, it cannot be KVO
+  // observed, thus this callback.
+  void OnSpaceActivationMayHaveChanged();
+
   // Called by the NSWindowDelegate when the system colors change.
   void OnSystemColorsChanged();
 
@@ -166,7 +183,7 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   remote_cocoa::mojom::TextInputHost* text_input_host() const {
     return text_input_host_;
   }
-  NSWindow* ns_window();
+  NativeWidgetMacNSWindow* ns_window();
 
   remote_cocoa::DragDropClient* drag_drop_client();
   bool is_translucent_window() const { return is_translucent_window_; }
@@ -332,6 +349,8 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // with the height of the menu bar if it autohides, or 0 if it doesn't.
   void OnAutohidingMenuBarHeightChanged(int menu_bar_height);
 
+  base::WeakPtr<NativeWidgetNSWindowBridge> GetWeakPtr();
+
  private:
   friend class views::test::BridgedNativeWidgetTestApi;
 
@@ -425,6 +444,9 @@ class REMOTE_COCOA_APP_SHIM_EXPORT NativeWidgetNSWindowBridge
   // Stores the value last read from -[NSWindow isVisible], to detect visibility
   // changes.
   bool window_visible_ = false;
+
+  // Stores the value last read from -[NSWindow isOnActiveSpace].
+  bool window_on_active_space_ = false;
 
   // Stores the value last read from -[NSWindow isZoomed], to detect zoomed
   // state changes.

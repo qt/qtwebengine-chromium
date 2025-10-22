@@ -10,6 +10,7 @@
 
 #include "base/containers/queue.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/run_until.h"
 #include "content/browser/speech/fake_speech_recognition_manager_delegate.h"
 #include "content/browser/speech/speech_recognition_engine.h"
@@ -233,7 +234,8 @@ TEST_F(SodaSpeechRecognitionEngineImplTest, SpeechRecognitionResults) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(recognition_ready_);
 
-  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_)).Times(2);
+  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_, _))
+      .Times(2);
 
   client_under_test_->StartRecognition();
   SendDummyAudioChunk();
@@ -261,7 +263,8 @@ TEST_F(SodaSpeechRecognitionEngineImplTest, SpeechRecognitionAudioChunksEnded) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(recognition_ready_);
 
-  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_)).Times(1);
+  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_, _))
+      .Times(1);
 
   client_under_test_->StartRecognition();
   SendDummyAudioChunk();
@@ -287,7 +290,8 @@ TEST_F(SodaSpeechRecognitionEngineImplTest, SpeechRecognitionEndOfUtterance) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(recognition_ready_);
 
-  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_)).Times(1);
+  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_, _))
+      .Times(1);
 
   client_under_test_->StartRecognition();
   SendDummyAudioChunk();
@@ -314,7 +318,8 @@ TEST_F(SodaSpeechRecognitionEngineImplTest, SpeechRecognitionEnd) {
   base::RunLoop().RunUntilIdle();
   ASSERT_TRUE(recognition_ready_);
 
-  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_)).Times(1);
+  EXPECT_CALL(*mock_service_, SendAudioToSpeechRecognitionService(_, _))
+      .Times(1);
 
   client_under_test_->StartRecognition();
   SendDummyAudioChunk();

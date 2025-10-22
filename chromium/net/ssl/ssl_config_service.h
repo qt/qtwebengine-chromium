@@ -12,6 +12,7 @@
 #include "base/observer_list.h"
 #include "net/base/net_export.h"
 #include "net/ssl/ssl_config.h"
+#include "third_party/abseil-cpp/absl/container/flat_hash_set.h"
 
 namespace net {
 
@@ -24,9 +25,6 @@ struct NET_EXPORT SSLContextConfig {
   SSLContextConfig& operator=(SSLContextConfig&&);
 
   bool operator==(const SSLContextConfig&) const;
-
-  // Returns whether post-quantum key agreement is enabled in TLS handshakes.
-  bool PostQuantumKeyAgreementEnabled() const;
 
   // The minimum and maximum protocol versions that are enabled.
   // (Use the SSL_PROTOCOL_VERSION_xxx enumerators defined in ssl_config.h.)
@@ -45,13 +43,15 @@ struct NET_EXPORT SSLContextConfig {
   // disable TLS_ECDH_ECDSA_WITH_RC4_128_SHA, specify 0xC002.
   std::vector<uint16_t> disabled_cipher_suites;
 
-  // If specified, controls whether post-quantum key agreement in TLS
-  // connections is allowed. If `std::nullopt`, this is determined by feature
-  // flags.
-  std::optional<bool> post_quantum_override;
+  // Controls whether post-quantum key agreement in TLS connections is allowed.
+  bool post_quantum_key_agreement_enabled = true;
 
   // Controls whether ECH is enabled.
   bool ech_enabled = true;
+
+  // TLS Trust Anchor IDs that are configured as trusted, as a list of Trust
+  // Anchor IDs in binary representation.
+  absl::flat_hash_set<std::vector<uint8_t>> trust_anchor_ids;
 };
 
 // The interface for retrieving global SSL configuration.  This interface

@@ -66,6 +66,8 @@
 #include "third_party/blink/renderer/platform/web_test_support.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 #include "ui/base/ui_base_features.h"
+#include "ui/color/color_provider.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/native_theme/native_theme.h"
 
 // The methods in this file are shared by all themes on every platform.
@@ -208,8 +210,10 @@ AppearanceValue LayoutTheme::AdjustAppearanceWithElementType(
       }
       bool base_appearance_allowed = false;
       if (auto* select = DynamicTo<HTMLSelectElement>(element)) {
-        base_appearance_allowed = !select->IsMultiple();
-      } else if (HTMLSelectElement::IsPopoverForAppearanceBase(element)) {
+        base_appearance_allowed =
+            !select->IsMultiple() ||
+            RuntimeEnabledFeatures::CustomizableSelectInPageEnabled();
+      } else if (HTMLSelectElement::IsPopoverPickerElement(element)) {
         base_appearance_allowed = true;
       }
       return base_appearance_allowed ? appearance : auto_appearance;
@@ -728,10 +732,8 @@ Color LayoutTheme::SystemColorFromColorProvider(
   SkColor system_theme_color;
   switch (css_value_id) {
     case CSSValueID::kActivetext:
-    case CSSValueID::kLinktext:
-    case CSSValueID::kVisitedtext:
       system_theme_color =
-          color_provider->GetColor(ui::kColorCssSystemHotlight);
+          color_provider->GetColor(ui::kColorCssSystemActiveText);
       break;
     case CSSValueID::kButtonface:
     case CSSValueID::kButtonhighlight:
@@ -767,6 +769,14 @@ Color LayoutTheme::SystemColorFromColorProvider(
     case CSSValueID::kHighlighttext:
       system_theme_color =
           color_provider->GetColor(ui::kColorCssSystemHighlightText);
+      break;
+    case CSSValueID::kLinktext:
+      system_theme_color =
+          color_provider->GetColor(ui::kColorCssSystemLinkText);
+      break;
+    case CSSValueID::kVisitedtext:
+      system_theme_color =
+          color_provider->GetColor(ui::kColorCssSystemVisitedText);
       break;
     case CSSValueID::kCanvas:
     // Deprecated colors, see DefaultSystemColor().

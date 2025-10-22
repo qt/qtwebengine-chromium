@@ -7,11 +7,11 @@ import 'chrome://resources/cr_elements/cr_icon/cr_icon.js';
 import './page_favicon.js';
 import '../icons.html.js';
 
+import {assert} from 'chrome://resources/js/assert.js';
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
-import type {PropertyValues} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {I18nMixinLit, loadTimeData} from '../../../i18n_setup.js';
-import {recordOccurence as recordOccurrence} from '../../../metrics_utils.js';
+import {recordEnumeration, recordOccurrence, recordSmallCount, recordValue} from '../../../metrics_utils.js';
 import {ScoredURLUserAction} from '../../../most_relevant_tab_resumption.mojom-webui.js';
 import type {URLVisit} from '../../../url_visit_types.mojom-webui.js';
 import {FormFactor, VisitSource} from '../../../url_visit_types.mojom-webui.js';
@@ -72,36 +72,18 @@ export class ModuleElement extends I18nMixinLit
 
       showInfoDialog_: {type: Boolean},
 
-      useIsKnownToSync_: {type: Boolean},
+      allowFaviconServerFallback_: {type: Boolean},
     };
   }
 
-  format: string = 'wide';
-  urlVisits: URLVisit[] = [];
-  protected fallbackToHost_: boolean =
+  accessor format: string = 'wide';
+  accessor urlVisits: URLVisit[] = [];
+  protected accessor fallbackToHost_: boolean =
       loadTimeData.getBoolean('mostRelevantTabResumptionModuleFallbackToHost');
-  protected shouldShowDeviceIcon_: boolean =
-    loadTimeData.getBoolean('mostRelevantTabResumptionDeviceIconEnabled');
-  protected showInfoDialog_: boolean = false;
-  protected useIsKnownToSync_:
-    boolean =
-        loadTimeData.getBoolean('mostRelevantTabResumptionUseIsKnownToSync');
-
-  override willUpdate(changedProperties: PropertyValues<this>) {
-    super.willUpdate(changedProperties);
-    if (changedProperties.has('urlVisits') && this.urlVisits.length === 0) {
-      const urlVisit = changedProperties.get('urlVisits')![0];
-      this.fire('dismiss-module-instance', {
-        message: loadTimeData.getString('modulesTabResumptionSingleDismiss'),
-        restoreCallback: () => {
-          MostRelevantTabResumptionProxyImpl.getInstance()
-              .handler.restoreURLVisit(urlVisit);
-          this.urlVisits = [urlVisit];
-        },
-      });
-    }
-  }
-
+  protected accessor showInfoDialog_: boolean = false;
+  protected accessor allowFaviconServerFallback_: boolean =
+      loadTimeData.getBoolean(
+          'mostRelevantTabResumptionAllowFaviconServerFallback');
 
   protected getMenuItemGroups_(): MenuItem[][] {
     return [
@@ -162,30 +144,31 @@ export class ModuleElement extends I18nMixinLit
     const urlVisitElem = (e.target! as HTMLElement).parentElement!;
     const index = Number(urlVisitElem.dataset['index']);
     const urlVisit = this.urlVisits[index];
+    assert(urlVisit);
 
-    chrome.metricsPrivate.recordSmallCount(
-        'NewTabPage.TabResumption.VisitDismissIndex', index);
+    recordSmallCount('NewTabPage.TabResumption.VisitDismissIndex', index);
     MostRelevantTabResumptionProxyImpl.getInstance().handler.dismissURLVisit(
-        this.urlVisits[index]);
+        urlVisit);
 
     this.urlVisits =
-      [...this.urlVisits.slice(0, index), ...this.urlVisits.slice(index + 1)];
-    if (this.urlVisits.length > 0) {
-      this.fire('dismiss-module-element', {
-        message: loadTimeData.getString('modulesTabResumptionSingleDismiss'),
-        restoreCallback: () => {
-          chrome.metricsPrivate.recordSmallCount(
-              'NewTabPage.TabResumption.VisitRestoreIndex', index);
-          this.urlVisits = [
-            ...this.urlVisits.slice(0, index),
-            urlVisit,
-            ...this.urlVisits.slice(index),
-          ];
-          MostRelevantTabResumptionProxyImpl.getInstance()
-              .handler.restoreURLVisit(this.urlVisits[index]);
-        },
-      });
-    }
+        [...this.urlVisits.slice(0, index), ...this.urlVisits.slice(index + 1)];
+    assert(this.urlVisits.length >= 0);
+
+    const eventName = this.urlVisits.length > 0 ? 'dismiss-module-element' :
+                                                  'dismiss-module-instance';
+    this.fire(eventName, {
+      message: loadTimeData.getString('modulesTabResumptionSingleDismiss'),
+      restoreCallback: () => {
+        recordSmallCount('NewTabPage.TabResumption.VisitRestoreIndex', index);
+        this.urlVisits = [
+          ...this.urlVisits.slice(0, index),
+          urlVisit,
+          ...this.urlVisits.slice(index),
+        ];
+        MostRelevantTabResumptionProxyImpl.getInstance()
+            .handler.restoreURLVisit(urlVisit);
+      },
+    });
   }
 
   protected onUrlVisitClick_(e: Event) {
@@ -193,14 +176,15 @@ export class ModuleElement extends I18nMixinLit
     const currentTarget = e.currentTarget as HTMLElement;
     const index = Number(currentTarget.dataset['index']);
     const urlVisit = this.urlVisits[index];
-    chrome.metricsPrivate.recordSmallCount(
-        'NewTabPage.TabResumption.ClickIndex', index);
-    chrome.metricsPrivate.recordEnumerationValue(
+    assert(urlVisit);
+
+    recordSmallCount('NewTabPage.TabResumption.ClickIndex', index);
+    recordEnumeration(
         'NewTabPage.TabResumption.Visit.ClickSource', urlVisit.source,
         VisitSource.MAX_VALUE);
 
     // Calculate the number of milliseconds in the difference. Max is 4 days.
-    chrome.metricsPrivate.recordValue(
+    recordValue(
         {
           metricName: 'NewTabPage.TabResumption.TimeElapsedSinceLastVisit',
           type: chrome.metricsPrivate.MetricTypeType.HISTOGRAM_LOG,
@@ -245,7 +229,7 @@ export class ModuleElement extends I18nMixinLit
   }
 
   protected computeShouldShowDeviceName_(urlVisit: URLVisit): boolean {
-    return !this.shouldShowDeviceIcon_ && !!this.computeDeviceName_(urlVisit);
+    return !!this.computeDeviceName_(urlVisit);
   }
 
   protected getVisibleUrlVisits_(): URLVisit[] {

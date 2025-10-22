@@ -106,6 +106,8 @@ class COMPONENT_EXPORT(VELOCITY_TRACKER) MotionEvent {
   // Get the id of the device which created the event. Currently Aura only.
   virtual int GetSourceDeviceId(size_t pointer_index) const;
 
+  virtual bool IsLatestEventTimeResampled() const;
+
   // Utility accessor methods for convenience.
   int GetPointerId() const { return GetPointerId(0); }
   float GetX() const { return GetX(0); }
@@ -148,7 +150,7 @@ class COMPONENT_EXPORT(VELOCITY_TRACKER) MotionEvent {
   // They guarantee only that the returned type will reflect the same
   // data exposed by the MotionEvent interface; no guarantees are made that the
   // underlying implementation is identical to the source implementation.
-  std::unique_ptr<MotionEvent> Clone() const;
+  std::unique_ptr<MotionEvent> Clone(bool with_history = true) const;
   std::unique_ptr<MotionEvent> Cancel() const;
 };
 

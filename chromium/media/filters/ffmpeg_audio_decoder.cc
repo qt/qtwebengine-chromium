@@ -233,8 +233,8 @@ bool FFmpegAudioDecoder::FFmpegDecode(const DecoderBuffer& buffer) {
   // Even if we didn't decode a frame this loop, we should still send the packet
   // to the discard helper for caching.
   if (!decoded_frame_this_loop && !buffer.end_of_stream()) {
-    const bool result =
-        discard_helper_->ProcessBuffers(buffer.time_info(), nullptr);
+    const bool result = discard_helper_->ProcessBuffers(
+        AudioDiscardHelper::TimeInfo::FromBuffer(buffer), nullptr);
     DCHECK(!result);
   }
 
@@ -302,7 +302,8 @@ bool FFmpegAudioDecoder::OnNewFrame(const DecoderBuffer& buffer,
     output->TrimEnd(unread_frames);
 
   *decoded_frame_this_loop = true;
-  if (discard_helper_->ProcessBuffers(buffer.time_info(), output.get())) {
+  if (discard_helper_->ProcessBuffers(
+          AudioDiscardHelper::TimeInfo::FromBuffer(buffer), output.get())) {
     if (is_config_change &&
         output->sample_rate() != config_.samples_per_second()) {
       // At the boundary of the config change, FFmpeg's AAC decoder gives the
@@ -365,16 +366,6 @@ bool FFmpegAudioDecoder::ConfigureDecoder(const AudioDecoderConfig& config) {
 
   // Success!
   av_sample_format_ = codec_context_->sample_fmt;
-
-  if (codec_context_->ch_layout.nb_channels != config.channels()) {
-    MEDIA_LOG(ERROR, media_log_)
-        << "Audio configuration specified " << config.channels()
-        << " channels, but FFmpeg thinks the file contains "
-        << codec_context_->ch_layout.nb_channels << " channels";
-    ReleaseFFmpegResources();
-    state_ = DecoderState::kUninitialized;
-    return false;
-  }
 
   decoding_loop_ =
       std::make_unique<FFmpegDecodingLoop>(codec_context_.get(), true);

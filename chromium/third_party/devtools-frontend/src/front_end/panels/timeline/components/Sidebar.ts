@@ -1,11 +1,13 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
-import * as Common from '../../../core/common/common.js';
 import type * as Trace from '../../../models/trace/trace.js';
+import * as RenderCoordinator from '../../../ui/components/render_coordinator/render_coordinator.js';
 import * as UI from '../../../ui/legacy/legacy.js';
 
+import {InsightActivated, InsightDeactivated} from './insights/SidebarInsight.js';
 import {SidebarAnnotationsTab} from './SidebarAnnotationsTab.js';
 import {SidebarInsightsTab} from './SidebarInsightsTab.js';
 
@@ -29,10 +31,27 @@ export class RevealAnnotation extends Event {
     super(RevealAnnotation.eventName, {bubbles: true, composed: true});
   }
 }
+export class HoverAnnotation extends Event {
+  static readonly eventName = 'hoverannotation';
+
+  constructor(public annotation: Trace.Types.File.Annotation) {
+    super(HoverAnnotation.eventName, {bubbles: true, composed: true});
+  }
+}
+
+export class AnnotationHoverOut extends Event {
+  static readonly eventName = 'annotationhoverout';
+
+  constructor() {
+    super(AnnotationHoverOut.eventName, {bubbles: true, composed: true});
+  }
+}
 
 declare global {
   interface GlobalEventHandlersEventMap {
     [RevealAnnotation.eventName]: RevealAnnotation;
+    [HoverAnnotation.eventName]: HoverAnnotation;
+    [AnnotationHoverOut.eventName]: AnnotationHoverOut;
   }
 }
 
@@ -50,20 +69,13 @@ export class SidebarWidget extends UI.Widget.VBox {
 
   #insightsView = new InsightsView();
   #annotationsView = new AnnotationsView();
-
   /**
-   * Track if the user has opened the sidebar before. We do this so that the
-   * very first time they record/import a trace after the sidebar ships, we can
-   * automatically pop it open to aid discovery. But, after that, the sidebar
-   * visibility will be persisted based on if the user opens or closes it - the
-   * SplitWidget tracks its state in its own setting.
+   * If the user has an Insight open and then they collapse the sidebar, we
+   * deactivate that Insight to avoid it showing overlays etc - as the user has
+   * hidden the Sidebar & Insight from view. But we store it because when the
+   * user pops the sidebar open, we want to re-activate it.
    */
-  #userHasOpenedSidebarOnce =
-      Common.Settings.Settings.instance().createSetting<boolean>('timeline-user-has-opened-sidebar-once', false);
-
-  userHasOpenedSidebarOnce(): boolean {
-    return this.#userHasOpenedSidebarOnce.get();
-  }
+  #insightToRestoreOnOpen: ActiveInsight|null = null;
 
   constructor() {
     super();
@@ -81,9 +93,16 @@ export class SidebarWidget extends UI.Widget.VBox {
   }
 
   override wasShown(): void {
-    this.#userHasOpenedSidebarOnce.set(true);
     this.#tabbedPane.show(this.element);
     this.#updateAnnotationsCountBadge();
+
+    if (this.#insightToRestoreOnOpen) {
+      this.element.dispatchEvent(new InsightActivated(
+          this.#insightToRestoreOnOpen.model,
+          this.#insightToRestoreOnOpen.insightSetKey,
+          ));
+      this.#insightToRestoreOnOpen = null;
+    }
 
     // Swap to the Annotations tab if:
     // 1. Insights is currently selected.
@@ -91,6 +110,15 @@ export class SidebarWidget extends UI.Widget.VBox {
     if (this.#tabbedPane.selectedTabId === SidebarTabs.INSIGHTS &&
         this.#tabbedPane.tabIsDisabled(SidebarTabs.INSIGHTS)) {
       this.#tabbedPane.selectTab(SidebarTabs.ANNOTATIONS);
+    }
+  }
+
+  override willHide(): void {
+    const currentlyActiveInsight = this.#insightsView.getActiveInsight();
+    this.#insightToRestoreOnOpen = currentlyActiveInsight;
+
+    if (currentlyActiveInsight) {
+      this.element.dispatchEvent(new InsightDeactivated());
     }
   }
 
@@ -115,12 +143,14 @@ export class SidebarWidget extends UI.Widget.VBox {
 
     this.#tabbedPane.setTabEnabled(
         SidebarTabs.INSIGHTS,
-        insights !== null,
+        insights !== null && insights.size > 0,
     );
   }
 
-  setActiveInsight(activeInsight: ActiveInsight|null): void {
-    this.#insightsView.setActiveInsight(activeInsight);
+  setActiveInsight(activeInsight: ActiveInsight|null, opts: {
+    highlight: boolean,
+  }): void {
+    this.#insightsView.setActiveInsight(activeInsight, opts);
 
     if (activeInsight) {
       this.#tabbedPane.selectTab(SidebarTabs.INSIGHTS);
@@ -146,8 +176,20 @@ class InsightsView extends UI.Widget.VBox {
     this.#component.insights = data;
   }
 
-  setActiveInsight(active: ActiveInsight|null): void {
+  getActiveInsight(): ActiveInsight|null {
+    return this.#component.activeInsight;
+  }
+
+  setActiveInsight(active: ActiveInsight|null, opts: {highlight: boolean}): void {
     this.#component.activeInsight = active;
+    if (opts.highlight && active) {
+      // Wait for the rendering of the component to be done, otherwise we
+      // might highlight the wrong insight. The UI needs to be fully
+      // re-rendered before we can highlight the newly-expanded insight.
+      void RenderCoordinator.done().then(() => {
+        this.#component.highlightActiveInsight();
+      });
+    }
   }
 }
 
@@ -157,16 +199,13 @@ class AnnotationsView extends UI.Widget.VBox {
   constructor() {
     super();
     this.element.classList.add('sidebar-annotations');
-    this.element.appendChild(this.#component);
+    this.#component.show(this.element);
   }
 
   setAnnotations(
       annotations: Trace.Types.File.Annotation[],
       annotationEntryToColorMap: Map<Trace.Types.Events.Event, string>): void {
-    // The component will only re-render when set the annotations, so we should
-    // set the `annotationEntryToColorMap` first.
-    this.#component.annotationEntryToColorMap = annotationEntryToColorMap;
-    this.#component.annotations = annotations;
+    this.#component.setData({annotations, annotationEntryToColorMap});
   }
 
   /**

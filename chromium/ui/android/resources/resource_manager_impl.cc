@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "ui/android/resources/resource_manager_impl.h"
 
 #include <inttypes.h>
@@ -18,6 +13,7 @@
 #include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/debug/dump_without_crashing.h"
+#include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/single_thread_task_runner.h"
@@ -27,6 +23,7 @@
 #include "base/trace_event/trace_event.h"
 #include "cc/resources/scoped_ui_resource.h"
 #include "cc/resources/ui_resource_manager.h"
+#include "components/viz/common/features.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
@@ -78,8 +75,7 @@ ResourceManagerImpl::ResourceManagerImpl(gfx::NativeWindow native_window)
   JNIEnv* env = base::android::AttachCurrentThread();
   java_obj_.Reset(
       env, Java_ResourceManager_create(env, native_window->GetJavaObject(),
-                                       reinterpret_cast<intptr_t>(this))
-               .obj());
+                                       reinterpret_cast<intptr_t>(this)));
   DCHECK(!java_obj_.is_null());
   base::trace_event::MemoryDumpManager::GetInstance()->RegisterDumpProvider(
       this, "android::ResourceManagerImpl",
@@ -207,8 +203,7 @@ Resource* ResourceManagerImpl::GetStaticResourceWithTint(
   return (*resource_map)[res_id].get();
 }
 
-void ResourceManagerImpl::ClearTintedResourceCache(JNIEnv* env,
-    const JavaRef<jobject>& jobj) {
+void ResourceManagerImpl::ClearTintedResourceCache(JNIEnv* env) {
   tinted_resources_.clear();
 }
 
@@ -225,7 +220,6 @@ void ResourceManagerImpl::PreloadResource(AndroidResourceType res_type,
 }
 
 void ResourceManagerImpl::OnResourceReady(JNIEnv* env,
-                                          const JavaRef<jobject>& jobj,
                                           jint res_type,
                                           jint res_id,
                                           const JavaRef<jobject>& bitmap,
@@ -253,19 +247,19 @@ void ResourceManagerImpl::OnResourceReady(JNIEnv* env,
 
 void ResourceManagerImpl::RemoveResource(
     JNIEnv* env,
-    const base::android::JavaRef<jobject>& jobj,
     jint res_type,
     jint res_id) {
   resources_[res_type].erase(res_id);
 }
 
-void ResourceManagerImpl::DumpIfNoResource(
-    JNIEnv* env,
-    const base::android::JavaRef<jobject>& jobj,
-    jint res_type,
-    jint res_id) {
+void ResourceManagerImpl::AssertResourceExists(JNIEnv* env,
+                                               jint res_type,
+                                               jint res_id) {
   if (resources_[res_type].find(res_id) == resources_[res_type].end()) {
-    base::debug::DumpWithoutCrashing();  // Investigating crbug.com/388600389.
+    if (base::FeatureList::IsEnabled(
+            features::kAndroidDumpForBadCompositedUiState)) {
+      base::debug::DumpWithoutCrashing();
+    }
   }
 }
 

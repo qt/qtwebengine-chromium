@@ -29,6 +29,7 @@
 #include "base/memory/scoped_refptr.h"
 #include "base/sequence_checker.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/task/task_traits.h"
@@ -46,6 +47,7 @@
 #include "components/attribution_reporting/attribution_scopes_data.h"
 #include "components/attribution_reporting/eligibility.h"
 #include "components/attribution_reporting/event_level_epsilon.h"
+#include "components/attribution_reporting/max_event_level_reports.h"
 #include "components/attribution_reporting/privacy_math.h"
 #include "components/attribution_reporting/registration_eligibility.mojom-forward.h"
 #include "components/attribution_reporting/source_type.mojom-forward.h"
@@ -56,6 +58,7 @@
 #include "content/browser/aggregation_service/public_key.h"
 #include "content/browser/attribution_reporting/attribution_background_registrations_id.h"
 #include "content/browser/attribution_reporting/attribution_data_host_manager.h"
+#include "content/browser/attribution_reporting/attribution_features.h"
 #include "content/browser/attribution_reporting/attribution_manager_impl.h"
 #include "content/browser/attribution_reporting/attribution_os_level_manager.h"
 #include "content/browser/attribution_reporting/attribution_report.h"
@@ -79,6 +82,7 @@
 #include "services/network/public/mojom/attribution.mojom.h"
 #include "services/network/test/test_url_loader_factory.h"
 #include "services/network/test/test_utils.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/gurl.h"
@@ -299,7 +303,9 @@ class ControllableStorageDelegate : public AttributionResolverDelegateImpl {
   // AttributionResolverDelegateImpl:
   GetRandomizedResponseResult GetRandomizedResponse(
       const attribution_reporting::mojom::SourceType source_type,
-      const attribution_reporting::TriggerSpecs& trigger_specs,
+      const attribution_reporting::TriggerDataSet& trigger_data,
+      const attribution_reporting::EventReportWindows& event_report_windows,
+      const attribution_reporting::MaxEventLevelReports max_event_level_reports,
       const attribution_reporting::EventLevelEpsilon epsilon,
       const std::optional<attribution_reporting::AttributionScopesData>&
           scopes_data) override {
@@ -307,7 +313,8 @@ class ControllableStorageDelegate : public AttributionResolverDelegateImpl {
 
     ASSIGN_OR_RETURN(auto response_data,
                      AttributionResolverDelegateImpl::GetRandomizedResponse(
-                         source_type, trigger_specs, epsilon, scopes_data));
+                         source_type, trigger_data, event_report_windows,
+                         max_event_level_reports, epsilon, scopes_data));
 
     auto it = randomized_responses_.find(base::Time::Now());
     if (it == randomized_responses_.end()) {
@@ -316,15 +323,25 @@ class ControllableStorageDelegate : public AttributionResolverDelegateImpl {
 
     // Avoid crashing in `AttributionStorageSql::StoreSource()` by returning an
     // arbitrary error here, which will manifest as unexpected test output.
-    if (!attribution_reporting::IsValid(it->second, trigger_specs)) {
-      LOG(ERROR) << "invalid randomized response with trigger_specs="
-                 << trigger_specs;
+    if (!attribution_reporting::IsValid(it->second, trigger_data,
+                                        event_report_windows,
+                                        max_event_level_reports)) {
+      LOG(ERROR) << "invalid randomized response with trigger_data="
+                 << trigger_data;
       return base::unexpected(attribution_reporting::RandomizedResponseError::
                                   kExceedsChannelCapacityLimit);
     }
 
     response_data.response() = std::exchange(it->second, std::nullopt);
     return response_data;
+  }
+
+  std::optional<AttributionResolverDelegate::OfflineReportDelayConfig>
+  GetOfflineReportDelayConfig() const override {
+    return OfflineReportDelayConfig{
+        .min = base::Minutes(5),
+        .max = base::Minutes(5),
+    };
   }
 
   bool GenerateNullAggregatableReportForLookbackDay(
@@ -351,7 +368,7 @@ class ControllableStorageDelegate : public AttributionResolverDelegateImpl {
 };
 
 void Handle(const AttributionSimulationEvent::StartRequest& event,
-            AttributionDataHostManager& data_host_manager) {
+            AttributionManager& manager) {
   std::optional<RegistrationEligibility> eligibility =
       attribution_reporting::GetRegistrationEligibility(event.eligibility);
   if (!eligibility.has_value()) {
@@ -362,6 +379,7 @@ void Handle(const AttributionSimulationEvent::StartRequest& event,
       event.context_origin, event.fenced, kFrameId,
       /*last_navigation_id=*/kNavigationId);
 
+  auto& data_host_manager = *manager.GetDataHostManager();
   std::optional<blink::AttributionSrcToken> attribution_src_token;
   if (event.eligibility == AttributionReportingEligibility::kNavigationSource) {
     attribution_src_token.emplace();
@@ -375,23 +393,28 @@ void Handle(const AttributionSimulationEvent::StartRequest& event,
         *attribution_src_token);
   }
 
-  data_host_manager.NotifyBackgroundRegistrationStarted(
+  manager.GetDataHostManager()->NotifyBackgroundRegistrationStarted(
       BackgroundRegistrationsId(event.request_id), std::move(suitable_context),
       *eligibility, attribution_src_token,
       /*devtools_request_id=*/"");
 }
 
 void Handle(const AttributionSimulationEvent::Response& event,
-            AttributionDataHostManager& data_host_manager) {
-  data_host_manager.NotifyBackgroundRegistrationData(
+            AttributionManager& manager) {
+  manager.GetDataHostManager()->NotifyBackgroundRegistrationData(
       BackgroundRegistrationsId(event.request_id), event.response_headers.get(),
       event.url);
 }
 
 void Handle(const AttributionSimulationEvent::EndRequest& event,
-            AttributionDataHostManager& data_host_manager) {
-  data_host_manager.NotifyBackgroundRegistrationCompleted(
+            AttributionManager& manager) {
+  manager.GetDataHostManager()->NotifyBackgroundRegistrationCompleted(
       BackgroundRegistrationsId(event.request_id));
+}
+
+void Handle(const AttributionSimulationEvent::Navigation& event,
+            AttributionManager& manager) {
+  manager.UpdateLastNavigationTime(base::Time::Now());
 }
 
 void FastForwardUntilReportsConsumed(AttributionManager& manager,
@@ -414,6 +437,7 @@ void FastForwardUntilReportsConsumed(AttributionManager& manager,
     run_loop.Run();
 
     if (delta.is_negative()) {
+      task_environment.FastForwardBy(base::TimeDelta());
       break;
     }
     task_environment.FastForwardBy(delta);
@@ -433,9 +457,9 @@ RunAttributionInteropSimulation(
   DCHECK(std::ranges::is_sorted(run.events, /*comp=*/{},
                                 &AttributionSimulationEvent::time));
 
-  std::vector<base::test::FeatureRef> enabled_features(
-      {blink::features::kKeepAliveInBrowserMigration,
-       blink::features::kAttributionReportingInBrowserMigration});
+  std::vector<base::test::FeatureRefAndParams> enabled_features(
+      {{blink::features::kKeepAliveInBrowserMigration, {}},
+       {blink::features::kAttributionReportingInBrowserMigration, {}}});
 
   std::optional<AttributionOsLevelManager::ScopedApiStateForTesting>
       scoped_api_state;
@@ -443,9 +467,16 @@ RunAttributionInteropSimulation(
     scoped_api_state.emplace(AttributionOsLevelManager::ApiState::kEnabled);
   }
 
+  if (run.config.needs_retry_after_new_navigation) {
+    enabled_features.push_back(base::test::FeatureRefAndParams(  // IN-TEST
+        kAttributionReportNavigationBasedRetry,
+        {{"navigation_retry_attempt",
+          *run.config.needs_retry_after_new_navigation}}));
+  }
+
   base::test::ScopedFeatureList scoped_feature_list;
-  scoped_feature_list.InitWithFeatures(enabled_features,
-                                       /*disabled_features=*/{});
+  scoped_feature_list.InitWithFeaturesAndParameters(enabled_features,
+                                                    /*disabled_features=*/{});
 
   attribution_reporting::ScopedMaxEventLevelEpsilonForTesting
       scoped_max_event_level_epsilon(run.config.max_event_level_epsilon);
@@ -551,9 +582,34 @@ RunAttributionInteropSimulation(
 
   for (const auto& event : run.events) {
     task_environment.FastForwardBy(event.time - base::Time::Now());
-
     std::visit(
-        [&](const auto& data) { Handle(data, *manager->GetDataHostManager()); },
+        absl::Overload{
+            [&](const AttributionSimulationEvent::Connection& event) {
+              if (!event.connected) {
+                test_url_loader_factory.SetInterceptor(
+                    base::BindLambdaForTesting([&](const network::
+                                                       ResourceRequest& req) {
+                      test_url_loader_factory.AddResponse(
+                          req.url, network::mojom::URLResponseHead::New(),
+                          /*content=*/"",
+                          network::URLLoaderCompletionStatus(
+                              net::ERR_INTERNET_DISCONNECTED),
+                          network::TestURLLoaderFactory::Redirects(),
+                          network::TestURLLoaderFactory::ResponseProduceFlags::
+                              kSendHeadersOnNetworkError);
+                    }));
+              } else {
+                test_url_loader_factory.SetInterceptor(
+                    base::BindLambdaForTesting(
+                        [&](const network::ResourceRequest& req) {
+                          output.reports.emplace_back(
+                              MakeReport(req, time_origin, hpke_key));
+                          test_url_loader_factory.AddResponse(req.url.spec(),
+                                                              /*content=*/"");
+                        }));
+              }
+            },
+            [&](const auto& data) { Handle(data, *manager); }},
         event.data);
   }
 

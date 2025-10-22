@@ -27,6 +27,7 @@
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
@@ -111,11 +112,10 @@ export class RequestCookiesView extends UI.Widget.Widget {
   private readonly malformedResponseCookiesList: HTMLElement;
 
   constructor(request: SDK.NetworkRequest.NetworkRequest) {
-    super();
+    super({jslog: `${VisualLogging.pane('cookies').track({resize: true})}`});
     this.registerRequiredCSS(requestCookiesViewStyles);
 
     this.element.classList.add('request-cookies-view');
-    this.element.setAttribute('jslog', `${VisualLogging.pane('cookies').track({resize: true})}`);
 
     this.request = request;
     this.showFilteredOutCookiesSetting = Common.Settings.Settings.instance().createSetting(
@@ -131,7 +131,7 @@ export class RequestCookiesView extends UI.Widget.Widget {
 
     const requestCookiesCheckbox = UI.SettingsUI.createSettingCheckbox(
         i18nString(UIStrings.showFilteredOutRequestCookies), this.showFilteredOutCookiesSetting);
-    requestCookiesCheckbox.checkboxElement.addEventListener('change', () => {
+    requestCookiesCheckbox.addEventListener('change', () => {
       this.refreshRequestCookiesView();
     });
     this.requestCookiesTitle.appendChild(requestCookiesCheckbox);

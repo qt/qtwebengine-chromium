@@ -28,7 +28,6 @@
 #include "printing/mojom/print.mojom.h"
 #include "printing/print_job_constants_cups.h"
 #include "printing/print_settings_initializer_mac.h"
-#include "printing/printing_features.h"
 #include "printing/units.h"
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING_NO_OOP_BASIC_PRINT_DIALOG)
@@ -395,13 +394,15 @@ mojom::ResultCode ApplySystemPrintDialogData(
 // static
 std::unique_ptr<PrintingContext> PrintingContext::CreateImpl(
     Delegate* delegate,
-    ProcessBehavior process_behavior) {
-  return std::make_unique<PrintingContextMac>(delegate, process_behavior);
+    OutOfProcessBehavior out_of_process_behavior) {
+  return std::make_unique<PrintingContextMac>(delegate,
+                                              out_of_process_behavior);
 }
 
-PrintingContextMac::PrintingContextMac(Delegate* delegate,
-                                       ProcessBehavior process_behavior)
-    : PrintingContext(delegate, process_behavior),
+PrintingContextMac::PrintingContextMac(
+    Delegate* delegate,
+    OutOfProcessBehavior out_of_process_behavior)
+    : PrintingContext(delegate, out_of_process_behavior),
       print_info_([NSPrintInfo.sharedPrintInfo copy]) {}
 
 PrintingContextMac::~PrintingContextMac() {
@@ -457,7 +458,8 @@ void PrintingContextMac::AskUserForSettings(int max_pages,
         InitPrintSettingsFromPrintInfo();
         mojom::ResultCode result = mojom::ResultCode::kSuccess;
 #if BUILDFLAG(ENABLE_OOP_PRINTING_NO_OOP_BASIC_PRINT_DIALOG)
-        if (process_behavior() == ProcessBehavior::kOopEnabledSkipSystemCalls) {
+        if (out_of_process_behavior() ==
+            OutOfProcessBehavior::kEnabledSkipSystemCalls) {
           // This is running in the browser process, where system calls are
           // normally not allowed except for this system dialog exception.
           // Capture the setting here to be transmitted to a PrintBackend
@@ -721,13 +723,6 @@ bool PrintingContextMac::SetDuplexModeInPrintSettings(mojom::DuplexMode mode) {
 bool PrintingContextMac::SetOutputColor(int color_mode) {
   const mojom::ColorModel color_model = ColorModeToColorModel(color_mode);
 
-  if (!base::FeatureList::IsEnabled(features::kCupsIppPrintingBackend)) {
-    std::string color_setting_name;
-    std::string color_value;
-    GetColorModelForModel(color_model, &color_setting_name, &color_value);
-    return SetKeyValue(color_setting_name, color_value);
-  }
-
   // First, set the default CUPS IPP output color.
   if (!SetKeyValue(CUPS_PRINT_COLOR_MODE,
                    GetIppColorModelForModel(color_model))) {
@@ -801,13 +796,15 @@ mojom::ResultCode PrintingContextMac::NewDocument(
   in_print_job_ = true;
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
-  if (process_behavior() == ProcessBehavior::kOopEnabledSkipSystemCalls) {
+  if (out_of_process_behavior() ==
+      OutOfProcessBehavior::kEnabledSkipSystemCalls) {
     return mojom::ResultCode::kSuccess;
   }
 #endif
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING_NO_OOP_BASIC_PRINT_DIALOG)
-  if (process_behavior() == ProcessBehavior::kOopEnabledPerformSystemCalls &&
+  if (out_of_process_behavior() ==
+          OutOfProcessBehavior::kEnabledPerformSystemCalls &&
       !settings_->system_print_dialog_data().empty()) {
     // Settings which the browser process captured from the system dialog now
     // need to be applied to the printing context here which is running in a

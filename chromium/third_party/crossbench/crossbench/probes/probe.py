@@ -5,23 +5,28 @@
 from __future__ import annotations
 
 import abc
-from typing import (TYPE_CHECKING, Dict, Hashable, Optional, Self, Set, Tuple,
-                    Type, TypeVar)
+import logging
+from typing import TYPE_CHECKING, Hashable, Optional, Self, Set, Type, TypeVar
 
 from typing_extensions import override
 
+from crossbench import path as pth
 from crossbench import plt
 from crossbench.config import ConfigParser, UnusedPropertiesMode
-from crossbench.probes.probe_context import ProbeContext, ProbeSessionContext
+# TODO: Keep commonly used classes here.
+from crossbench.probes.probe_context import ProbeContext  # noqa: TC001
 from crossbench.probes.probe_error import ProbeIncompatibleBrowser
 from crossbench.probes.probe_result_key import ProbeResultKey
 from crossbench.probes.result_location import ResultLocation
-from crossbench.probes.results import EmptyProbeResult, ProbeResult
+from crossbench.probes.results import (EmptyProbeResult, LocalProbeResult,
+                                       ProbeResult)
 
 if TYPE_CHECKING:
   from crossbench.browsers.attributes import BrowserAttributes
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
+  from crossbench.probes.probe_context import ProbeSessionContext
+  from crossbench.runner.groups.base import RunGroup
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.cache_temperatures import \
       CacheTemperaturesRunGroup
@@ -37,9 +42,13 @@ ProbeT = TypeVar("ProbeT", bound="Probe")
 class ProbeConfigParser(ConfigParser[ProbeT]):
 
   def __init__(self, probe_cls: Type[ProbeT]) -> None:
+    probe_name: str = probe_cls.NAME
+    if not probe_name:
+      raise ValueError("Missing probe name.")
     super().__init__(
         probe_cls,
-        f"{probe_cls.NAME} probe parser",
+        key=probe_name,
+        title=f"{probe_name} probe parser",
         unused_properties_mode=UnusedPropertiesMode.ERROR)
     self._probe_cls: Type[ProbeT] = probe_cls
 
@@ -49,7 +58,7 @@ class ProbeConfigParser(ConfigParser[ProbeT]):
 
 
 
-ProbeKeyT = Tuple[Tuple[str, Hashable], ...]
+ProbeKeyT = tuple[tuple[str, Hashable], ...]
 
 
 class Probe(ProbeResultKey, abc.ABC):
@@ -84,7 +93,7 @@ class Probe(ProbeResultKey, abc.ABC):
     return ProbeConfigParser(cls)
 
   @classmethod
-  def from_config(cls: Type[ProbeT], config_data: Dict) -> ProbeT:
+  def from_config(cls: Type[ProbeT], config_data: dict) -> ProbeT:
     return cls.config_parser().parse(config_data)
 
   @classmethod
@@ -154,7 +163,7 @@ class Probe(ProbeResultKey, abc.ABC):
         f"Probe={self.name} is attached multiple times to the same browser")
     self._browsers.add(browser)
 
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     """
     Part of the Checklist, make sure everything is set up correctly for a probe
     to run.
@@ -167,7 +176,7 @@ class Probe(ProbeResultKey, abc.ABC):
     for browser in self._browsers:
       self.validate_browser(env, browser)
 
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     """
     Validate that browser is compatible with this Probe.
     - Raise ProbeValidationError for hard-errors,
@@ -190,6 +199,14 @@ class Probe(ProbeResultKey, abc.ABC):
     if not browser.platform.is_macos:
       raise ProbeIncompatibleBrowser(self, browser, "Only supported on macOS")
 
+  def expect_android(self, browser: Browser) -> None:
+    if not browser.platform.is_android:
+      raise ProbeIncompatibleBrowser(self, browser, "Only supported on Android")
+
+  def setup(self, runner) -> None:
+    """Called before any runs or browsers have been started."""
+    pass
+
   def merge_cache_temperatures(self,
                                group: CacheTemperaturesRunGroup) -> ProbeResult:
     """
@@ -197,28 +214,45 @@ class Probe(ProbeResultKey, abc.ABC):
     same repetition, story and browser.
     """
     # Return the first result by default.
-    return tuple(group.runs)[0].results[self]
+    return group.first_run.results[self]
+
+  def symlinked_single_run_result(self, group: RunGroup) -> ProbeResult:
+    runs = tuple(group.runs)
+    if len(runs) != 1:
+      return EmptyProbeResult()
+    first_run = runs[0]
+    if not first_run.create_symlinks:
+      return EmptyProbeResult()
+
+    first_run_results: ProbeResult = first_run.results[self]
+    group_dir: pth.LocalPath = group.path
+    symlinked_files: list[pth.LocalPath] = []
+    for file in first_run_results.all_files():
+      group_result_symlink = group_dir / file.name
+      if group_result_symlink.exists():
+        logging.debug("Skipping symlinking single run results: %s", file)
+        continue
+      group_result_symlink.symlink_to(file.relative_to(group_dir))
+      symlinked_files.append(group_result_symlink)
+    return LocalProbeResult(file=symlinked_files)
 
   def merge_repetitions(self, group: RepetitionsRunGroup) -> ProbeResult:
     """
     For merging probe data from multiple repetitions of the same story.
     """
-    del group
-    return EmptyProbeResult()
+    return self.symlinked_single_run_result(group)
 
   def merge_stories(self, group: StoriesRunGroup) -> ProbeResult:
     """
     For merging multiple stories for the same browser.
     """
-    del group
-    return EmptyProbeResult()
+    return self.symlinked_single_run_result(group)
 
   def merge_browsers(self, group: BrowsersRunGroup) -> ProbeResult:
     """
     For merging all probe data (from multiple stories and browsers.)
     """
-    del group
-    return EmptyProbeResult()
+    return self.symlinked_single_run_result(group)
 
   def get_context(self: Self, run: Run) -> Optional[ProbeContext[Self]]:
     probe_cls: Type[ProbeContext[Self]] = self.get_context_cls()

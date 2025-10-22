@@ -128,6 +128,8 @@ blink_modules_sources("xr") {
     "xr_utils.h",
     "xr_view.cc",
     "xr_view.h",
+    "xr_view_geometry.cc",
+    "xr_view_geometry.h",
     "xr_viewer_pose.cc",
     "xr_viewer_pose.h",
     "xr_viewport.h",
@@ -156,7 +158,7 @@ blink_modules_sources("xr") {
   ]
 
   public_deps = [
-    "//third_party/blink/renderer/modules/gamepad:gamepad",
-    "//third_party/blink/renderer/modules/webgpu:webgpu",
+    "//third_party/blink/renderer/modules/gamepad",
+    "//third_party/blink/renderer/modules/webgpu",
   ]
 }

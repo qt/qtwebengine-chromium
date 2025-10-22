@@ -259,6 +259,16 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
                     return {vvl::Extension::_VK_QCOM_image_processing};
                 }
             }
+            if (value & (VK_IMAGE_USAGE_TENSOR_ALIASING_BIT_ARM)) {
+                if (!IsExtEnabled(extensions.vk_arm_tensors)) {
+                    return {vvl::Extension::_VK_ARM_tensors};
+                }
+            }
+            if (value & (VK_IMAGE_USAGE_TILE_MEMORY_BIT_QCOM)) {
+                if (!IsExtEnabled(extensions.vk_qcom_tile_memory_heap)) {
+                    return {vvl::Extension::_VK_QCOM_tile_memory_heap};
+                }
+            }
             if (value &
                 (VK_IMAGE_USAGE_VIDEO_ENCODE_QUANTIZATION_DELTA_MAP_BIT_KHR | VK_IMAGE_USAGE_VIDEO_ENCODE_EMPHASIS_MAP_BIT_KHR)) {
                 if (!IsExtEnabled(extensions.vk_khr_video_encode_quantization_map)) {
@@ -338,6 +348,13 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             if (value & (VK_QUERY_PIPELINE_STATISTIC_CLUSTER_CULLING_SHADER_INVOCATIONS_BIT_HUAWEI)) {
                 if (!IsExtEnabled(extensions.vk_huawei_cluster_culling_shader)) {
                     return {vvl::Extension::_VK_HUAWEI_cluster_culling_shader};
+                }
+            }
+            return {};
+        case vvl::FlagBitmask::VkQueryPoolCreateFlagBits:
+            if (value & (VK_QUERY_POOL_CREATE_RESET_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_maintenance9)) {
+                    return {vvl::Extension::_VK_KHR_maintenance9};
                 }
             }
             return {};
@@ -421,6 +438,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
                     return {vvl::Extension::_VK_EXT_opacity_micromap};
                 }
             }
+            if (value & (VK_BUFFER_USAGE_TILE_MEMORY_BIT_QCOM)) {
+                if (!IsExtEnabled(extensions.vk_qcom_tile_memory_heap)) {
+                    return {vvl::Extension::_VK_QCOM_tile_memory_heap};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkImageViewCreateFlagBits:
             if (value & (VK_IMAGE_VIEW_CREATE_FRAGMENT_DENSITY_MAP_DYNAMIC_BIT_EXT)) {
@@ -452,7 +474,7 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             }
             return {};
         case vvl::FlagBitmask::VkPipelineCreateFlagBits:
-            if (value & (VK_PIPELINE_CREATE_VIEW_INDEX_FROM_DEVICE_INDEX_BIT)) {
+            if (value & (VK_PIPELINE_CREATE_VIEW_INDEX_FROM_DEVICE_INDEX_BIT | VK_PIPELINE_CREATE_DISPATCH_BASE_BIT)) {
                 if (!IsExtEnabled(extensions.vk_khr_device_group)) {
                     return {vvl::Extension::_VK_KHR_device_group};
                 }
@@ -701,6 +723,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
                     return {vvl::Extension::_VK_KHR_maintenance8};
                 }
             }
+            if (value & (VK_DEPENDENCY_ASYMMETRIC_EVENT_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_maintenance9)) {
+                    return {vvl::Extension::_VK_KHR_maintenance9};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkFramebufferCreateFlagBits:
             if (value & (VK_FRAMEBUFFER_CREATE_IMAGELESS_BIT)) {
@@ -715,6 +742,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
                     return {vvl::Extension::_VK_QCOM_render_pass_transform};
                 }
             }
+            if (value & (VK_RENDER_PASS_CREATE_PER_LAYER_FRAGMENT_DENSITY_BIT_VALVE)) {
+                if (!IsExtEnabled(extensions.vk_valve_fragment_density_map_layered)) {
+                    return {vvl::Extension::_VK_VALVE_fragment_density_map_layered};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkSubpassDescriptionFlagBits:
             if (value &
@@ -726,6 +758,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             if (value & (VK_SUBPASS_DESCRIPTION_FRAGMENT_REGION_BIT_QCOM | VK_SUBPASS_DESCRIPTION_SHADER_RESOLVE_BIT_QCOM)) {
                 if (!IsExtEnabled(extensions.vk_qcom_render_pass_shader_resolve)) {
                     return {vvl::Extension::_VK_QCOM_render_pass_shader_resolve};
+                }
+            }
+            if (value & (VK_SUBPASS_DESCRIPTION_TILE_SHADING_APRON_BIT_QCOM)) {
+                if (!IsExtEnabled(extensions.vk_qcom_tile_shading)) {
+                    return {vvl::Extension::_VK_QCOM_tile_shading};
                 }
             }
             if (value & (VK_SUBPASS_DESCRIPTION_RASTERIZATION_ORDER_ATTACHMENT_COLOR_ACCESS_BIT_EXT |
@@ -747,6 +784,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             if (value & (VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT | VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_CAPTURE_REPLAY_BIT)) {
                 if (!IsExtEnabled(extensions.vk_khr_buffer_device_address)) {
                     return {vvl::Extension::_VK_KHR_buffer_device_address};
+                }
+            }
+            if (value & (VK_MEMORY_ALLOCATE_ZERO_INITIALIZE_BIT_EXT)) {
+                if (!IsExtEnabled(extensions.vk_ext_zero_initialize_device_memory)) {
+                    return {vvl::Extension::_VK_EXT_zero_initialize_device_memory};
                 }
             }
             return {};
@@ -797,7 +839,7 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             }
             return {};
         case vvl::FlagBitmask::VkResolveModeFlagBits:
-            if (value & (VK_RESOLVE_MODE_EXTERNAL_FORMAT_DOWNSAMPLE_ANDROID)) {
+            if (value & (VK_RESOLVE_MODE_EXTERNAL_FORMAT_DOWNSAMPLE_BIT_ANDROID)) {
                 if (!IsExtEnabled(extensions.vk_android_external_format_resolve)) {
                     return {vvl::Extension::_VK_ANDROID_external_format_resolve};
                 }
@@ -812,6 +854,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             if (value & (VK_RENDERING_CONTENTS_INLINE_BIT_KHR)) {
                 if (!IsExtEnabled(extensions.vk_khr_maintenance7) && !IsExtEnabled(extensions.vk_ext_nested_command_buffer)) {
                     return {vvl::Extension::_VK_KHR_maintenance7, vvl::Extension::_VK_EXT_nested_command_buffer};
+                }
+            }
+            if (value & (VK_RENDERING_PER_LAYER_FRAGMENT_DENSITY_BIT_VALVE)) {
+                if (!IsExtEnabled(extensions.vk_valve_fragment_density_map_layered)) {
+                    return {vvl::Extension::_VK_VALVE_fragment_density_map_layered};
                 }
             }
             return {};
@@ -833,9 +880,20 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
                     return {vvl::Extension::_VK_KHR_swapchain_mutable_format};
                 }
             }
-            if (value & (VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_EXT)) {
-                if (!IsExtEnabled(extensions.vk_ext_swapchain_maintenance1)) {
-                    return {vvl::Extension::_VK_EXT_swapchain_maintenance1};
+            if (value & (VK_SWAPCHAIN_CREATE_PRESENT_ID_2_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_present_id2)) {
+                    return {vvl::Extension::_VK_KHR_present_id2};
+                }
+            }
+            if (value & (VK_SWAPCHAIN_CREATE_PRESENT_WAIT_2_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_present_wait2)) {
+                    return {vvl::Extension::_VK_KHR_present_wait2};
+                }
+            }
+            if (value & (VK_SWAPCHAIN_CREATE_DEFERRED_MEMORY_ALLOCATION_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_swapchain_maintenance1) &&
+                    !IsExtEnabled(extensions.vk_ext_swapchain_maintenance1)) {
+                    return {vvl::Extension::_VK_KHR_swapchain_maintenance1, vvl::Extension::_VK_EXT_swapchain_maintenance1};
                 }
             }
             return {};
@@ -878,6 +936,11 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             }
             return {};
         case vvl::FlagBitmask::VkVideoEncodeFlagBitsKHR:
+            if (value & (VK_VIDEO_ENCODE_INTRA_REFRESH_BIT_KHR)) {
+                if (!IsExtEnabled(extensions.vk_khr_video_encode_intra_refresh)) {
+                    return {vvl::Extension::_VK_KHR_video_encode_intra_refresh};
+                }
+            }
             if (value & (VK_VIDEO_ENCODE_WITH_QUANTIZATION_DELTA_MAP_BIT_KHR | VK_VIDEO_ENCODE_WITH_EMPHASIS_MAP_BIT_KHR)) {
                 if (!IsExtEnabled(extensions.vk_khr_video_encode_quantization_map)) {
                     return {vvl::Extension::_VK_KHR_video_encode_quantization_map};
@@ -892,8 +955,8 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
             }
             return {};
         case vvl::FlagBitmask::VkGeometryInstanceFlagBitsKHR:
-            if (value &
-                (VK_GEOMETRY_INSTANCE_FORCE_OPACITY_MICROMAP_2_STATE_EXT | VK_GEOMETRY_INSTANCE_DISABLE_OPACITY_MICROMAPS_EXT)) {
+            if (value & (VK_GEOMETRY_INSTANCE_FORCE_OPACITY_MICROMAP_2_STATE_BIT_EXT |
+                         VK_GEOMETRY_INSTANCE_DISABLE_OPACITY_MICROMAPS_BIT_EXT)) {
                 if (!IsExtEnabled(extensions.vk_ext_opacity_micromap)) {
                     return {vvl::Extension::_VK_EXT_opacity_micromap};
                 }
@@ -905,21 +968,26 @@ vvl::Extensions stateless::Context::IsValidFlagValue(vvl::FlagBitmask flag_bitma
                     return {vvl::Extension::_VK_NV_ray_tracing_motion_blur};
                 }
             }
-            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_OPACITY_MICROMAP_UPDATE_EXT |
-                         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DISABLE_OPACITY_MICROMAPS_EXT |
-                         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_OPACITY_MICROMAP_DATA_UPDATE_EXT)) {
+            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_OPACITY_MICROMAP_UPDATE_BIT_EXT |
+                         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DISABLE_OPACITY_MICROMAPS_BIT_EXT |
+                         VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_OPACITY_MICROMAP_DATA_UPDATE_BIT_EXT)) {
                 if (!IsExtEnabled(extensions.vk_ext_opacity_micromap)) {
                     return {vvl::Extension::_VK_EXT_opacity_micromap};
                 }
             }
-            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DISPLACEMENT_MICROMAP_UPDATE_NV)) {
+            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DISPLACEMENT_MICROMAP_UPDATE_BIT_NV)) {
                 if (!IsExtEnabled(extensions.vk_nv_displacement_micromap)) {
                     return {vvl::Extension::_VK_NV_displacement_micromap};
                 }
             }
-            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DATA_ACCESS_KHR)) {
+            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_DATA_ACCESS_BIT_KHR)) {
                 if (!IsExtEnabled(extensions.vk_khr_ray_tracing_position_fetch)) {
                     return {vvl::Extension::_VK_KHR_ray_tracing_position_fetch};
+                }
+            }
+            if (value & (VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_CLUSTER_OPACITY_MICROMAPS_BIT_NV)) {
+                if (!IsExtEnabled(extensions.vk_nv_cluster_acceleration_structure)) {
+                    return {vvl::Extension::_VK_NV_cluster_acceleration_structure};
                 }
             }
             return {};
@@ -995,6 +1063,11 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
                     return {vvl::Extension::_VK_NV_cooperative_vector};
                 }
             }
+            if (value & (VK_PIPELINE_STAGE_2_DATA_GRAPH_BIT_ARM)) {
+                if (!IsExtEnabled(extensions.vk_arm_data_graph)) {
+                    return {vvl::Extension::_VK_ARM_data_graph};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkAccessFlagBits2:
             if (value & (VK_ACCESS_2_VIDEO_DECODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_DECODE_WRITE_BIT_KHR)) {
@@ -1005,6 +1078,11 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
             if (value & (VK_ACCESS_2_VIDEO_ENCODE_READ_BIT_KHR | VK_ACCESS_2_VIDEO_ENCODE_WRITE_BIT_KHR)) {
                 if (!IsExtEnabled(extensions.vk_khr_video_encode_queue)) {
                     return {vvl::Extension::_VK_KHR_video_encode_queue};
+                }
+            }
+            if (value & (VK_ACCESS_2_SHADER_TILE_ATTACHMENT_READ_BIT_QCOM | VK_ACCESS_2_SHADER_TILE_ATTACHMENT_WRITE_BIT_QCOM)) {
+                if (!IsExtEnabled(extensions.vk_qcom_tile_shading)) {
+                    return {vvl::Extension::_VK_QCOM_tile_shading};
                 }
             }
             if (value & (VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT)) {
@@ -1030,6 +1108,11 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
             if (value & (VK_ACCESS_2_OPTICAL_FLOW_READ_BIT_NV | VK_ACCESS_2_OPTICAL_FLOW_WRITE_BIT_NV)) {
                 if (!IsExtEnabled(extensions.vk_nv_optical_flow)) {
                     return {vvl::Extension::_VK_NV_optical_flow};
+                }
+            }
+            if (value & (VK_ACCESS_2_DATA_GRAPH_READ_BIT_ARM | VK_ACCESS_2_DATA_GRAPH_WRITE_BIT_ARM)) {
+                if (!IsExtEnabled(extensions.vk_arm_data_graph)) {
+                    return {vvl::Extension::_VK_ARM_data_graph};
                 }
             }
             return {};
@@ -1069,6 +1152,11 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
                     return {vvl::Extension::_VK_EXT_device_generated_commands};
                 }
             }
+            if (value & (VK_PIPELINE_CREATE_2_PER_LAYER_FRAGMENT_DENSITY_BIT_VALVE)) {
+                if (!IsExtEnabled(extensions.vk_valve_fragment_density_map_layered)) {
+                    return {vvl::Extension::_VK_VALVE_fragment_density_map_layered};
+                }
+            }
             return {};
         case vvl::FlagBitmask::VkBufferUsageFlagBits2:
             if (value & (VK_BUFFER_USAGE_2_EXECUTION_GRAPH_SCRATCH_BIT_AMDX)) {
@@ -1076,9 +1164,26 @@ vvl::Extensions stateless::Context::IsValidFlag64Value(vvl::FlagBitmask flag_bit
                     return {vvl::Extension::_VK_AMDX_shader_enqueue};
                 }
             }
+            if (value & (VK_BUFFER_USAGE_2_DATA_GRAPH_FOREIGN_DESCRIPTOR_BIT_ARM)) {
+                if (!IsExtEnabled(extensions.vk_arm_data_graph)) {
+                    return {vvl::Extension::_VK_ARM_data_graph};
+                }
+            }
+            if (value & (VK_BUFFER_USAGE_2_TILE_MEMORY_BIT_QCOM)) {
+                if (!IsExtEnabled(extensions.vk_qcom_tile_memory_heap)) {
+                    return {vvl::Extension::_VK_QCOM_tile_memory_heap};
+                }
+            }
             if (value & (VK_BUFFER_USAGE_2_PREPROCESS_BUFFER_BIT_EXT)) {
                 if (!IsExtEnabled(extensions.vk_ext_device_generated_commands)) {
                     return {vvl::Extension::_VK_EXT_device_generated_commands};
+                }
+            }
+            return {};
+        case vvl::FlagBitmask::VkTensorUsageFlagBitsARM:
+            if (value & (VK_TENSOR_USAGE_DATA_GRAPH_BIT_ARM)) {
+                if (!IsExtEnabled(extensions.vk_arm_data_graph)) {
+                    return {vvl::Extension::_VK_ARM_data_graph};
                 }
             }
             return {};
@@ -1115,6 +1220,8 @@ std::string stateless::Context::DescribeFlagBitmaskValue(vvl::FlagBitmask flag_b
             return string_VkEventCreateFlags(value);
         case vvl::FlagBitmask::VkQueryPipelineStatisticFlagBits:
             return string_VkQueryPipelineStatisticFlags(value);
+        case vvl::FlagBitmask::VkQueryPoolCreateFlagBits:
+            return string_VkQueryPoolCreateFlags(value);
         case vvl::FlagBitmask::VkQueryResultFlagBits:
             return string_VkQueryResultFlags(value);
         case vvl::FlagBitmask::VkBufferCreateFlagBits:
@@ -1235,8 +1342,14 @@ std::string stateless::Context::DescribeFlagBitmaskValue(vvl::FlagBitmask flag_b
             return string_VkVideoEncodeUsageFlagsKHR(value);
         case vvl::FlagBitmask::VkVideoEncodeContentFlagBitsKHR:
             return string_VkVideoEncodeContentFlagsKHR(value);
+        case vvl::FlagBitmask::VkPresentScalingFlagBitsKHR:
+            return string_VkPresentScalingFlagsKHR(value);
+        case vvl::FlagBitmask::VkPresentGravityFlagBitsKHR:
+            return string_VkPresentGravityFlagsKHR(value);
         case vvl::FlagBitmask::VkVideoEncodeAV1RateControlFlagBitsKHR:
             return string_VkVideoEncodeAV1RateControlFlagsKHR(value);
+        case vvl::FlagBitmask::VkVideoEncodeIntraRefreshModeFlagBitsKHR:
+            return string_VkVideoEncodeIntraRefreshModeFlagsKHR(value);
         case vvl::FlagBitmask::VkDebugReportFlagBitsEXT:
             return string_VkDebugReportFlagsEXT(value);
         case vvl::FlagBitmask::VkExternalMemoryHandleTypeFlagBitsNV:
@@ -1255,16 +1368,14 @@ std::string stateless::Context::DescribeFlagBitmaskValue(vvl::FlagBitmask flag_b
             return string_VkGeometryInstanceFlagsKHR(value);
         case vvl::FlagBitmask::VkBuildAccelerationStructureFlagBitsKHR:
             return string_VkBuildAccelerationStructureFlagsKHR(value);
-        case vvl::FlagBitmask::VkPresentScalingFlagBitsEXT:
-            return string_VkPresentScalingFlagsEXT(value);
-        case vvl::FlagBitmask::VkPresentGravityFlagBitsEXT:
-            return string_VkPresentGravityFlagsEXT(value);
         case vvl::FlagBitmask::VkIndirectStateFlagBitsNV:
             return string_VkIndirectStateFlagsNV(value);
         case vvl::FlagBitmask::VkIndirectCommandsLayoutUsageFlagBitsNV:
             return string_VkIndirectCommandsLayoutUsageFlagsNV(value);
         case vvl::FlagBitmask::VkDeviceDiagnosticsConfigFlagBitsNV:
             return string_VkDeviceDiagnosticsConfigFlagsNV(value);
+        case vvl::FlagBitmask::VkTileShadingRenderPassFlagBitsQCOM:
+            return string_VkTileShadingRenderPassFlagsQCOM(value);
 #ifdef VK_USE_PLATFORM_METAL_EXT
         case vvl::FlagBitmask::VkExportMetalObjectTypeFlagBitsEXT:
             return string_VkExportMetalObjectTypeFlagsEXT(value);
@@ -1331,6 +1442,14 @@ std::string stateless::Context::DescribeFlagBitmaskValue64(vvl::FlagBitmask flag
             return string_VkAccessFlags3KHR(value);
         case vvl::FlagBitmask::VkMemoryDecompressionMethodFlagBitsNV:
             return string_VkMemoryDecompressionMethodFlagsNV(value);
+        case vvl::FlagBitmask::VkTensorCreateFlagBitsARM:
+            return string_VkTensorCreateFlagsARM(value);
+        case vvl::FlagBitmask::VkTensorViewCreateFlagBitsARM:
+            return string_VkTensorViewCreateFlagsARM(value);
+        case vvl::FlagBitmask::VkTensorUsageFlagBitsARM:
+            return string_VkTensorUsageFlagsARM(value);
+        case vvl::FlagBitmask::VkDataGraphPipelineSessionCreateFlagBitsARM:
+            return string_VkDataGraphPipelineSessionCreateFlagsARM(value);
 
         default:
             std::stringstream ss;

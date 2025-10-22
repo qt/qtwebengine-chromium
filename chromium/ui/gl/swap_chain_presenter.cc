@@ -14,6 +14,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/trace_event/trace_event.h"
 #include "ui/gfx/color_space_win.h"
@@ -48,8 +49,7 @@ BASE_FEATURE(kDisableVPBLTUpscale,
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // This flag attempts to enable MPO for P010 SDR video content. The feature
-// should only enabled when P010 pixel format is detected as displayable
-// surface at the same time.
+// should only be enabled when P010 MPO is detected as supported.
 BASE_FEATURE(kP010MPOForSDR, "P010MPOForSDR", base::FEATURE_ENABLED_BY_DEFAULT);
 
 gfx::ColorSpace GetOutputColorSpace(const gfx::ColorSpace& input_color_space,
@@ -277,8 +277,7 @@ HRESULT ToggleVpSuperResolution(UINT gpu_vendor_id,
     return ToggleIntelVpSuperResolution(video_context, video_processor, enable);
   }
 
-  if (gpu_vendor_id == 0x10de &&
-      base::FeatureList::IsEnabled(features::kNvidiaVpSuperResolution)) {
+  if (gpu_vendor_id == 0x10de) {
     return ToggleNvidiaVpSuperResolution(video_context, video_processor,
                                          enable);
   }
@@ -367,12 +366,7 @@ HRESULT ToggleVpAutoHDR(UINT gpu_vendor_id,
 }
 
 bool IsVpAutoHDREnabled(UINT gpu_vendor_id) {
-  if (gpu_vendor_id == 0x10de &&
-      base::FeatureList::IsEnabled(features::kNvidiaVpTrueHDR)) {
-    return true;
-  }
-
-  return false;
+  return gpu_vendor_id == 0x10de;
 }
 
 bool IsWithinMargin(float i, float j) {
@@ -448,6 +442,25 @@ bool IsCompatibleHDRMetadata(const gfx::HDRMetadata& hdr_metadata) {
 
 }  // namespace
 
+// static
+gfx::Size GetMonitorSizeForWindow(HWND window) {
+  if (GetDirectCompositionNumMonitors() == 1) {
+    // Only one monitor. Return the size of this monitor.
+    return GetDirectCompositionPrimaryMonitorSize();
+  } else {
+    gfx::Size monitor_size;
+    // Get the monitor on which the overlay is displayed.
+    MONITORINFO monitor_info;
+    monitor_info.cbSize = sizeof(monitor_info);
+    if (GetMonitorInfo(MonitorFromWindow(window, MONITOR_DEFAULTTONEAREST),
+                       &monitor_info)) {
+      monitor_size = gfx::Rect(monitor_info.rcMonitor).size();
+    }
+
+    return monitor_size;
+  }
+}
+
 SwapChainPresenter::PresentationHistory::PresentationHistory() = default;
 SwapChainPresenter::PresentationHistory::~PresentationHistory() = default;
 
@@ -481,19 +494,22 @@ int SwapChainPresenter::PresentationHistory::composed_count() const {
 SwapChainPresenter::SwapChainPresenter(
     DCLayerTree* layer_tree,
     Microsoft::WRL::ComPtr<ID3D11Device> d3d11_device,
-    Microsoft::WRL::ComPtr<IDCompositionDevice2> dcomp_device)
+    Microsoft::WRL::ComPtr<IDCompositionDevice3> dcomp_device)
     : layer_tree_(layer_tree),
       swap_chain_buffer_count_(BufferCount(
           layer_tree->force_dcomp_triple_buffer_video_swap_chain())),
       switched_to_BGRA8888_time_tick_(base::TimeTicks::Now()),
       d3d11_device_(d3d11_device),
-      dcomp_device_(dcomp_device),
       is_on_battery_power_(
           base::PowerMonitor::GetInstance()
               ->AddPowerStateObserverAndReturnBatteryPowerStatus(this) ==
-          base::PowerStateObserver::BatteryPowerStatus::kBatteryPower) {}
+          base::PowerStateObserver::BatteryPowerStatus::kBatteryPower) {
+  DVLOG(1) << __func__ << "(" << this << ")";
+  CHECK_EQ(dcomp_device.As(&dcomp_device_), S_OK);
+}
 
 SwapChainPresenter::~SwapChainPresenter() {
+  DVLOG(1) << __func__ << "(" << this << ")";
   base::PowerMonitor::GetInstance()->RemovePowerStateObserver(this);
 }
 
@@ -509,33 +525,31 @@ DXGI_FORMAT SwapChainPresenter::GetSwapChainFormat(
     return DXGI_FORMAT_R10G10B10A2_UNORM;
   }
 
-  // Prefer P010 swapchain when playing P010 SDR content on SDR system with
-  // P010 displayable.
-  if (base::FeatureList::IsEnabled(kP010MPOForSDR) &&
-      use_p010_for_sdr_swap_chain) {
-    return DXGI_FORMAT_P010;
-  }
-
-  DXGI_FORMAT yuv_overlay_format = GetDirectCompositionSDROverlayFormat();
-  // Always prefer YUV swap chain for hardware protected video for now.
-  if (protected_video_type == gfx::ProtectedVideoType::kHardwareProtected)
-    return yuv_overlay_format;
-
   if (failed_to_create_yuv_swapchain_ ||
       !DirectCompositionHardwareOverlaysSupported()) {
     return DXGI_FORMAT_B8G8R8A8_UNORM;
   }
 
-  // Start out as YUV.
-  if (!presentation_history_.Valid())
-    return yuv_overlay_format;
+  DXGI_FORMAT sdr_yuv_overlay_format =
+      use_p010_for_sdr_swap_chain ? DXGI_FORMAT_P010
+                                  : GetDirectCompositionSDROverlayFormat();
+  // Always prefer YUV swap chain for hardware protected video for now.
+  if (protected_video_type == gfx::ProtectedVideoType::kHardwareProtected) {
+    return sdr_yuv_overlay_format;
+  }
+
+  if (!presentation_history_.Valid() || IsSwapChainYuvFormatForced()) {
+    // Prefer P010 swapchain when playing P010 SDR content on SDR system with
+    // P010 MPO supported.
+    return sdr_yuv_overlay_format;
+  }
 
   int composition_count = presentation_history_.composed_count();
 
   // It's more efficient to use a BGRA backbuffer instead of YUV if overlays
   // aren't being used, as otherwise DWM will use the video processor a second
   // time to convert it to BGRA before displaying it on screen.
-  if (swap_chain_format_ == yuv_overlay_format) {
+  if (swap_chain_format_ != DXGI_FORMAT_B8G8R8A8_UNORM) {
     // Switch to BGRA once 3/4 of presents are composed.
     if (composition_count >= (PresentationHistory::kPresentsToStore * 3 / 4)) {
       switched_to_BGRA8888_time_tick_ = base::TimeTicks::Now();
@@ -550,7 +564,7 @@ DXGI_FORMAT SwapChainPresenter::GetSwapChainFormat(
         base::TimeTicks::Now() - switched_to_BGRA8888_time_tick_;
     if (time_delta >= kDelayForRetryingYUVFormat) {
       presentation_history_.Clear();
-      return yuv_overlay_format;
+      return sdr_yuv_overlay_format;
     }
   }
   return swap_chain_format_;
@@ -686,22 +700,7 @@ Microsoft::WRL::ComPtr<ID3D11Texture2D> SwapChainPresenter::UploadVideoImage(
 }
 
 gfx::Size SwapChainPresenter::GetMonitorSize() const {
-  if (GetDirectCompositionNumMonitors() == 1) {
-    // Only one monitor. Return the size of this monitor.
-    return GetDirectCompositionPrimaryMonitorSize();
-  } else {
-    gfx::Size monitor_size;
-    // Get the monitor on which the overlay is displayed.
-    MONITORINFO monitor_info;
-    monitor_info.cbSize = sizeof(monitor_info);
-    if (GetMonitorInfo(
-            MonitorFromWindow(layer_tree_->window(), MONITOR_DEFAULTTONEAREST),
-            &monitor_info)) {
-      monitor_size = gfx::Rect(monitor_info.rcMonitor).size();
-    }
-
-    return monitor_size;
-  }
+  return GetMonitorSizeForWindow(layer_tree_->window());
 }
 
 void SwapChainPresenter::SetTargetToFullScreen(
@@ -749,6 +748,16 @@ void SwapChainPresenter::AdjustTargetToOptimalSizeIfNeeded(
     gfx::RectF* visual_clip_rect,
     std::optional<gfx::SizeF>* dest_size,
     std::optional<gfx::RectF>* target_rect) const {
+  if (base::FeatureList::IsEnabled(
+          features::kEarlyFullScreenVideoOptimization)) {
+    CHECK(!dest_size->has_value());
+    CHECK(!target_rect->has_value());
+    return;
+  }
+
+  // `is_full_screen_video` is only used by `EarlyFullScreenVideoOptimization`.
+  CHECK(!params.video_params.is_full_screen_video);
+
   // First try to adjust the full screen overlay that can fit the whole
   // screen. If it cannot fit the whole screen and we know it's in
   // letterboxing mode, try to center the overlay and adjust only x or only y.
@@ -918,7 +927,8 @@ void SwapChainPresenter::AdjustTargetForFullScreenLetterboxing(
     std::optional<gfx::SizeF>* dest_size,
     std::optional<gfx::RectF>* target_rect) const {
   if (!base::FeatureList::IsEnabled(
-          features::kDirectCompositionLetterboxVideoOptimization)) {
+          features::kDirectCompositionLetterboxVideoOptimization) ||
+      layer_tree_->disable_dc_letterbox_video_optimization()) {
     return;
   }
 
@@ -1416,6 +1426,7 @@ bool SwapChainPresenter::PresentToDecodeSwapChain(
       return false;
     }
     DCHECK(decode_swap_chain_);
+    DVLOG(2) << "Update visual's content. " << __func__ << "(" << this << ")";
     SetSwapChainPresentDuration();
 
     Microsoft::WRL::ComPtr<IDCompositionDesktopDevice> desktop_device;
@@ -1583,11 +1594,13 @@ bool SwapChainPresenter::PresentToSwapChain(DCLayerOverlayParams& params,
       (content_is_pq10 || use_vp_auto_hdr);
 
   // Try to use P010 swapchain when playing 10-bit content on SDR monitor where
-  // P010 pixel format is also detected as displayable surface, due to the
-  // better quality over 8-bit swapchain.
+  // P010 MPO support is detected, due to the better quality over 8-bit
+  // swapchain.
   bool use_p010_for_sdr_swap_chain =
+      base::FeatureList::IsEnabled(kP010MPOForSDR) &&
+      (gl::GetDirectCompositionOverlaySupportFlags(DXGI_FORMAT_P010) != 0) &&
       !DirectCompositionMonitorHDREnabled(layer_tree_->window()) &&
-      CheckDisplayableSupportForP010() && params.video_params.is_p010_content;
+      params.video_params.is_p010_content;
 
   DXGI_FORMAT swap_chain_format =
       GetSwapChainFormat(params.video_params.protected_video_type,
@@ -1680,7 +1693,7 @@ bool SwapChainPresenter::PresentToSwapChain(DCLayerOverlayParams& params,
     return false;
   }
 
-  HRESULT hr, device_removed_reason;
+  HRESULT hr;
   if (first_present_) {
     first_present_ = false;
     UINT flags = DXGI_PRESENT_USE_DURATION;
@@ -1722,27 +1735,9 @@ bool SwapChainPresenter::PresentToSwapChain(DCLayerOverlayParams& params,
     hr = dxgi_device2->EnqueueSetEvent(event.handle());
     if (SUCCEEDED(hr)) {
       event.Wait();
-    } else {
-      device_removed_reason = d3d11_device_->GetDeviceRemovedReason();
-      base::debug::Alias(&hr);
-      base::debug::Alias(&device_removed_reason);
-
-      // Add a crash key. The minidump might be discarded due to large size.
-      static auto* hr_enqueue_set_event_key =
-          base::debug::AllocateCrashKeyString(
-              "hr-EnqueueSetEvent", base::debug::CrashKeySize::Size64);
-      base::debug::ScopedCrashKeyString scoped_crash_key_1(
-          hr_enqueue_set_event_key, base::StringPrintf("0x%x", hr));
-      static auto* hr_device_removed_reason_key =
-          base::debug::AllocateCrashKeyString(
-              "hr-DeviceRemovedReason", base::debug::CrashKeySize::Size64);
-      base::debug::ScopedCrashKeyString scoped_crash_key_2(
-          hr_device_removed_reason_key,
-          base::StringPrintf("0x%x", device_removed_reason));
-
-      base::debug::DumpWithoutCrashing();
     }
   }
+
   UINT flags = DXGI_PRESENT_USE_DURATION;
   UINT interval = 1;
   if (DirectCompositionSwapChainTearingEnabled()) {
@@ -1806,9 +1801,82 @@ bool SwapChainPresenter::PresentToSwapChain(DCLayerOverlayParams& params,
   return true;
 }
 
+bool SwapChainPresenter::TryDisablePrimaryPlane(
+    const gfx::Size& monitor_size,
+    const DCLayerOverlayParams& overlay) {
+  CHECK(overlay.video_params.is_full_screen_video);
+
+  const gfx::RectF target_rect =
+      overlay.transform.MapRect(gfx::RectF(overlay.quad_rect));
+
+  if (swap_chain_) {
+    // Note that QI IDXGIDecodeSwapChain from an RGB swap chain will always
+    // fail.
+    if (Microsoft::WRL::ComPtr<IDXGIDecodeSwapChain> decode_swap_chain;
+        SUCCEEDED(
+            swap_chain_->QueryInterface(IID_PPV_ARGS(&decode_swap_chain)))) {
+      return TryDisableDesktopPlane(decode_swap_chain.Get(), monitor_size,
+                                    gfx::ToRoundedRect(target_rect));
+    }
+    return false;
+  }
+
+  if (IsMediaFoundationSurfaceProxy() &&
+      base::FeatureList::IsEnabled(
+          features::kDesktopPlaneRemovalForMFFullScreenLetterbox)) {
+    // The ideal rect is video size scaled to fit and centered inside
+    // `monitor_size`.
+    gfx::RectF ideal_full_screen_rect = gfx::RectF(overlay.content_rect);
+    ideal_full_screen_rect.Scale(
+        std::min(monitor_size.width() / ideal_full_screen_rect.width(),
+                 monitor_size.height() / ideal_full_screen_rect.height()));
+    ideal_full_screen_rect.Offset(
+        (monitor_size.width() - ideal_full_screen_rect.width()) / 2.0,
+        (monitor_size.height() - ideal_full_screen_rect.height()) / 2.0);
+
+    // Reject videos with non-uniform scaling since `DCOMPSurfaceProxy::SetRect`
+    // always uniformly scales to fit and centers the video within the rect.
+    constexpr float tolerance = 1.0f;
+    if (target_rect.ApproximatelyEqual(ideal_full_screen_rect, tolerance,
+                                       tolerance)) {
+      pending_dcomp_surface_rect_in_window_ = gfx::Rect(monitor_size);
+      return true;
+    }
+
+    return false;
+  }
+
+  return false;
+}
+
+Microsoft::WRL::ComPtr<IUnknown>
+SwapChainPresenter::FinishPresentToSwapChain() {
+  if (IsMediaFoundationSurfaceProxy()) {
+    CHECK(last_overlay_image_->dcomp_surface_proxy());
+    CHECK(pending_dcomp_surface_rect_in_window_);
+    last_overlay_image_->dcomp_surface_proxy()->SetRect(
+        pending_dcomp_surface_rect_in_window_.value());
+    pending_dcomp_surface_rect_in_window_.reset();
+  }
+
+  return content_;
+}
 // static
 bool SwapChainPresenter::CreateSurfaceHandleHelperForTesting(HANDLE* handle) {
   return CreateSurfaceHandleHelper(handle);
+}
+
+SwapChainPresenter::PresentationMode
+SwapChainPresenter::GetLastPresentationMode() const {
+  if (IsMediaFoundationSurfaceProxy()) {
+    return PresentationMode::kMfSurfaceProxy;
+  } else if (decode_swap_chain_) {
+    return PresentationMode::kDecodeSwapChain;
+  } else if (staging_texture_) {
+    return PresentationMode::kVpBltWithStagingTexture;
+  } else {
+    return PresentationMode::kVpBlt;
+  }
 }
 
 void SwapChainPresenter::RecordPresentationStatistics() {
@@ -1912,7 +1980,9 @@ bool SwapChainPresenter::PresentDCOMPSurface(DCLayerOverlayParams& params,
                               kDestSizeTolerance) &&
       params.z_order > 0;
 
-  if (is_fullscreen_letterboxing_overlay_scenario) {
+  if (is_fullscreen_letterboxing_overlay_scenario &&
+      base::FeatureList::IsEnabled(
+          features::kDesktopPlaneRemovalForMFFullScreenLetterbox)) {
     const gfx::Rect monitor_rect =
         gfx::Rect(gfx::ToRoundedSize(dest_size.value()));
     mapped_rect = monitor_rect;
@@ -1938,10 +2008,8 @@ bool SwapChainPresenter::PresentDCOMPSurface(DCLayerOverlayParams& params,
   // in Media Foundation scaling the full video to the clipped region,
   // instead of allowing clipping to a portion of the video.
 
-  dcomp_surface_proxy->SetRect(mapped_rect);
-
-  dcomp_surface_proxy->SetProtectedVideoType(
-      params.video_params.protected_video_type);
+  pending_dcomp_surface_rect_in_window_ = mapped_rect;
+  content_size_ = mapped_rect.size();
 
   // If |dcomp_surface_proxy| size is {1, 1}, the texture was initialized
   // without knowledge of output size; reset |content_| so it's not added to the
@@ -1973,21 +2041,14 @@ bool SwapChainPresenter::PresentDCOMPSurface(DCLayerOverlayParams& params,
     ReleaseSwapChainResources();
 
     Microsoft::WRL::ComPtr<IDCompositionSurface> dcomp_surface;
-    Microsoft::WRL::ComPtr<IDCompositionDevice> dcomp_device1;
-    HRESULT hr = dcomp_device_.As(&dcomp_device1);
-    if (FAILED(hr)) {
-      DLOG(ERROR) << "Failed to get DCOMP device. hr=0x" << std::hex << hr;
-      return false;
-    }
-
-    hr = dcomp_device1->CreateSurfaceFromHandle(surface_handle, &dcomp_surface);
+    const HRESULT hr =
+        dcomp_device_->CreateSurfaceFromHandle(surface_handle, &dcomp_surface);
     if (FAILED(hr)) {
       DLOG(ERROR) << "Failed to create DCOMP surface. hr=0x" << std::hex << hr;
       return false;
     }
 
     content_ = dcomp_surface.Get();
-    content_size_ = content_size;
     // Don't take ownership of handle as the DCOMPSurfaceProxy instance owns it.
     dcomp_surface_handle_ = surface_handle;
   }
@@ -1997,9 +2058,12 @@ bool SwapChainPresenter::PresentDCOMPSurface(DCLayerOverlayParams& params,
 
 void SwapChainPresenter::ReleaseDCOMPSurfaceResourcesIfNeeded() {
   if (dcomp_surface_handle_ != INVALID_HANDLE_VALUE) {
+    DVLOG(2) << __func__ << "(" << this << ")";
     dcomp_surface_handle_ = INVALID_HANDLE_VALUE;
+    pending_dcomp_surface_rect_in_window_.reset();
     last_overlay_image_.reset();
     content_.Reset();
+    content_size_ = gfx::Size();
   }
 }
 
@@ -2256,6 +2320,7 @@ bool SwapChainPresenter::VideoProcessorBlt(
 
 void SwapChainPresenter::ReleaseSwapChainResources() {
   if (swap_chain_ || decode_swap_chain_) {
+    DVLOG(2) << __func__ << "(" << this << ")";
     output_view_.Reset();
     swap_chain_.Reset();
     swap_chain_handle_.Close();
@@ -2360,6 +2425,9 @@ bool SwapChainPresenter::ReallocateSwapChain(
                   << "\nFalling back to BGRA";
       use_yuv_swap_chain = false;
       swap_chain_format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    } else {
+      DVLOG(2) << "Update visual's content (yuv). " << __func__ << "(" << this
+               << ")";
     }
   }
   if (!use_yuv_swap_chain) {
@@ -2400,6 +2468,8 @@ bool SwapChainPresenter::ReallocateSwapChain(
                   << ". Disable overlay swap chains";
       return false;
     }
+
+    DVLOG(2) << "Update visual's content. " << __func__ << "(" << this << ")";
   }
 
   if (DXGIWaitableSwapChainEnabled()) {
@@ -2527,6 +2597,15 @@ bool SwapChainPresenter::RevertSwapChainToSDR(
   }
 
   return true;
+}
+
+bool SwapChainPresenter::IsMediaFoundationSurfaceProxy() const {
+  if (last_overlay_image_ &&
+      last_overlay_image_->type() == DCLayerOverlayType::kDCompSurfaceProxy) {
+    CHECK(last_overlay_image_->dcomp_surface_proxy());
+    return true;
+  }
+  return false;
 }
 
 }  // namespace gl

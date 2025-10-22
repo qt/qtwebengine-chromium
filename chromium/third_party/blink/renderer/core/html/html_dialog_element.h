@@ -56,18 +56,24 @@ class CORE_EXPORT HTMLDialogElement final : public HTMLElement {
   // open_attribute_being_removed should only be true when `close()` is being
   // run from the attribute change steps for the `open` attribute.
   void close(const String& return_value = String(),
+             Element* invoker = nullptr,
              bool open_attribute_being_removed = false);
   void requestClose(ExceptionState& exception_state) {
-    requestClose(String(), exception_state);
+    RequestCloseInternal(/*return_value=*/String(), /*invoker=*/nullptr,
+                         exception_state);
   }
-  void requestClose(const String& return_value, ExceptionState&);
+  void requestClose(const String& return_value,
+                    ExceptionState& exception_state) {
+    RequestCloseInternal(return_value, /*invoker=*/nullptr, exception_state);
+  }
   void show(ExceptionState&);
-  void showModal(ExceptionState&);
+  void showModal(ExceptionState&, Element* invoker = nullptr);
   InsertionNotificationRequest InsertedInto(ContainerNode&) override;
   void RemovedFrom(ContainerNode&) override;
 
   bool IsModal() const { return is_modal_; }
   bool IsOpen() const { return FastHasAttribute(html_names::kOpenAttr); }
+  bool IsOpenAndActive() const { return IsOpen() && InActiveDocument(); }
 
   String returnValue() const { return return_value_; }
   void setReturnValue(const String& return_value) {
@@ -120,8 +126,14 @@ class CORE_EXPORT HTMLDialogElement final : public HTMLElement {
   void SetIsModal(bool is_modal);
   void ScheduleCloseEvent();
 
-  bool DispatchToggleEvents(bool opening, bool asModal = false);
+  bool DispatchToggleEvents(bool opening,
+                            Element* source,
+                            bool asModal = false);
   void DispatchPendingToggleEvent();
+
+  void RequestCloseInternal(const String& return_value,
+                            Element* invoker,
+                            ExceptionState&);
 
   bool is_modal_;
   // is_closing_ is set to true at the beginning of close() and is reset to
@@ -129,6 +141,7 @@ class CORE_EXPORT HTMLDialogElement final : public HTMLElement {
   bool is_closing_ = false;
   String return_value_;
   String request_close_return_value_;
+  WeakMember<Element> request_close_source_element_;
   WeakMember<Element> previously_focused_element_;
 
   Member<CloseWatcher> close_watcher_;

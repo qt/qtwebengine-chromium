@@ -4,23 +4,20 @@
 
 #include "extensions/browser/test_extensions_browser_client.h"
 
+#include "base/command_line.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "build/chromeos_buildflags.h"
 #include "content/public/browser/browser_context.h"
 #include "extensions/browser/extension_host_delegate.h"
+#include "extensions/browser/safe_browsing_delegate.h"
+#include "extensions/browser/test_runtime_api_delegate.h"
 #include "extensions/browser/updater/null_extension_cache.h"
 #include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
+#include "extensions/common/switches.h"
 #include "services/network/public/mojom/url_loader.mojom.h"
 #include "ui/base/l10n/l10n_util.h"
-
-// TODO(https://crbug.com/356905053): The following files don't compile cleanly
-// with desktop-android. Either make them compile, or determine they should
-// not be included and place them under a more appropriate if-block.
-#if BUILDFLAG(ENABLE_EXTENSIONS)
-#include "extensions/browser/test_runtime_api_delegate.h"
-#endif
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chromeos/ash/components/login/login_state/login_state.h"
@@ -32,7 +29,8 @@ namespace extensions {
 
 TestExtensionsBrowserClient::TestExtensionsBrowserClient(
     BrowserContext* main_context)
-    : extension_cache_(std::make_unique<NullExtensionCache>()) {
+    : extension_cache_(std::make_unique<NullExtensionCache>()),
+      safe_browsing_delegate_(std::make_unique<SafeBrowsingDelegate>()) {
   if (main_context) {
     SetMainContext(main_context);
   }
@@ -67,7 +65,7 @@ bool TestExtensionsBrowserClient::IsShuttingDown() { return false; }
 bool TestExtensionsBrowserClient::AreExtensionsDisabled(
     const base::CommandLine& command_line,
     BrowserContext* context) {
-  return false;
+  return command_line.HasSwitch(switches::kDisableExtensions);
 }
 
 bool TestExtensionsBrowserClient::IsValidContext(void* context) {
@@ -258,11 +256,7 @@ void TestExtensionsBrowserClient::RegisterBrowserInterfaceBindersForFrame(
 std::unique_ptr<RuntimeAPIDelegate>
 TestExtensionsBrowserClient::CreateRuntimeAPIDelegate(
     content::BrowserContext* context) const {
-#if BUILDFLAG(ENABLE_EXTENSIONS)
   return std::unique_ptr<RuntimeAPIDelegate>(new TestRuntimeAPIDelegate());
-#else
-  return nullptr;
-#endif
 }
 
 const ComponentExtensionResourceManager*
@@ -300,6 +294,10 @@ TestExtensionsBrowserClient::GetExtensionWebContentsObserver(
 
 KioskDelegate* TestExtensionsBrowserClient::GetKioskDelegate() {
   return nullptr;
+}
+
+SafeBrowsingDelegate* TestExtensionsBrowserClient::GetSafeBrowsingDelegate() {
+  return safe_browsing_delegate_.get();
 }
 
 scoped_refptr<update_client::UpdateClient>

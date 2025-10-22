@@ -5,6 +5,7 @@
 #include "device/vr/openxr/openxr_graphics_binding.h"
 
 #include "components/viz/common/gpu/context_provider.h"
+#include "device/vr/openxr/openxr_extension_helper.h"
 #include "device/vr/openxr/openxr_util.h"
 #include "device/vr/openxr/openxr_view_configuration.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
@@ -13,32 +14,20 @@
 
 namespace device {
 
-#if BUILDFLAG(IS_WIN)
-SwapChainInfo::SwapChainInfo(ID3D11Texture2D* d3d11_texture)
-    : d3d11_texture(d3d11_texture) {}
-#elif BUILDFLAG(IS_ANDROID)
-SwapChainInfo::SwapChainInfo(uint32_t texture) : openxr_texture(texture) {}
-#endif
-
-SwapChainInfo::~SwapChainInfo() {
-  // If shared images are being used, the mailbox holder should have been
-  // cleared before destruction, either due to the context provider being lost
-  // or from normal session ending. If shared images are not being used, these
-  // should not have been initialized in the first place.
-  DCHECK(!shared_image);
-  DCHECK(!sync_token.HasData());
+// static
+std::vector<std::string> OpenXrGraphicsBinding::GetOptionalExtensions() {
+  return {XR_FB_COMPOSITION_LAYER_IMAGE_LAYOUT_EXTENSION_NAME};
 }
-SwapChainInfo::SwapChainInfo(SwapChainInfo&&) = default;
-SwapChainInfo& SwapChainInfo::operator=(SwapChainInfo&&) = default;
 
-void SwapChainInfo::Clear() {
-  shared_image.reset();
-  sync_token.Clear();
-#if BUILDFLAG(IS_ANDROID)
-  // Resetting the SharedBufferSize ensures that we will re-create the Shared
-  // Buffer if it is needed.
-  shared_buffer_size = {0, 0};
-#endif
+OpenXrGraphicsBinding::OpenXrGraphicsBinding(
+    const OpenXrExtensionEnumeration* extension_enum)
+    : fb_composition_layer_ext_enabled_(extension_enum->ExtensionSupported(
+          XR_FB_COMPOSITION_LAYER_IMAGE_LAYOUT_EXTENSION_NAME)) {
+  if (fb_composition_layer_ext_enabled_) {
+    y_flip_layer_layout_.type = XR_TYPE_COMPOSITION_LAYER_IMAGE_LAYOUT_FB;
+    y_flip_layer_layout_.flags =
+        XR_COMPOSITION_LAYER_IMAGE_LAYOUT_VERTICAL_FLIP_BIT_FB;
+  }
 }
 
 void OpenXrGraphicsBinding::PrepareViewConfigForRender(
@@ -77,8 +66,9 @@ void OpenXrGraphicsBinding::PrepareViewConfigForRender(
     // WebGL layers may give us flipped content. We need to instruct OpenXR
     // to flip the content before showing it to the user. Some XR runtimes
     // are able to efficiently do this as part of existing post processing
-    // steps.
-    if (ShouldFlipSubmittedImage()) {
+    // steps. However, if we have the composition layer extension enabled, we
+    // will instruct the runtime to invert the image in a different manner.
+    if (ShouldFlipSubmittedImage() && !fb_composition_layer_ext_enabled_) {
       projection_view.subImage.imageRect.offset.y = 0;
       projection_view.fov.angleUp = -view.fov.angleUp;
       projection_view.fov.angleDown = -view.fov.angleDown;
@@ -86,7 +76,22 @@ void OpenXrGraphicsBinding::PrepareViewConfigForRender(
   }
 }
 
-bool OpenXrGraphicsBinding::IsUsingSharedImages() {
+void OpenXrGraphicsBinding::MaybeFlipLayer(
+    XrCompositionLayerProjection& layer) const {
+  // If we don't need to flip the image, then we have nothing to do here.
+  // If we do need to flip the image and `fb_composition_layer_ext_enabled_`
+  // is false, we have already flipped the image during
+  // `PrepareViewConfigForRender`.
+  if (!ShouldFlipSubmittedImage() || !fb_composition_layer_ext_enabled_) {
+    return;
+  }
+
+  CHECK(layer.next == nullptr);
+
+  layer.next = &y_flip_layer_layout_;
+}
+
+bool OpenXrGraphicsBinding::IsUsingSharedImages() const {
   const auto swapchain_info = GetSwapChainImages();
   return ((swapchain_info.size() > 1) && swapchain_info[0].shared_image);
 }
@@ -116,6 +121,13 @@ void OpenXrGraphicsBinding::SetTransferSize(const gfx::Size& transfer_size) {
   transfer_size_ = transfer_size;
 }
 
+void OpenXrGraphicsBinding::UpdateActiveSwapchainImageSize(
+    gpu::SharedImageInterface* sii) {
+  if (has_active_swapchain_image()) {
+    ResizeSharedBuffer(GetSwapChainImages()[active_swapchain_index()], sii);
+  }
+}
+
 void OpenXrGraphicsBinding::DestroySwapchainImages(
     viz::ContextProvider* context_provider) {
   // As long as we have a context provider we need to destroy any SharedImages
@@ -123,7 +135,7 @@ void OpenXrGraphicsBinding::DestroySwapchainImages(
   if (context_provider) {
     gpu::SharedImageInterface* shared_image_interface =
         context_provider->SharedImageInterface();
-    for (SwapChainInfo& info : GetSwapChainImages()) {
+    for (OpenXrSwapchainInfo& info : GetSwapChainImages()) {
       if (shared_image_interface && info.shared_image &&
           info.sync_token.HasData()) {
         shared_image_interface->DestroySharedImage(

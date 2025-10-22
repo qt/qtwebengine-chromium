@@ -10,12 +10,16 @@
 #include "build/build_config.h"
 #include "components/viz/common/resources/resource_id.h"
 #include "components/viz/common/resources/transferable_resource.h"
-#include "gpu/ipc/common/vulkan_ycbcr_info.h"
-#include "gpu/ipc/common/vulkan_ycbcr_info_mojom_traits.h"
 #include "services/viz/public/cpp/compositing/shared_image_format_mojom_traits.h"
 #include "services/viz/public/mojom/compositing/transferable_resource.mojom-shared.h"
+#include "skia/public/mojom/image_info_mojom_traits.h"
 #include "skia/public/mojom/surface_origin_mojom_traits.h"
 #include "ui/gfx/ipc/color/gfx_param_traits.h"
+
+#if BUILDFLAG(IS_ANDROID)
+#include "gpu/ipc/common/vulkan_ycbcr_info_mojom_traits.h"
+#include "gpu/vulkan/vulkan_ycbcr_info.h"
+#endif
 
 namespace mojo {
 
@@ -27,6 +31,16 @@ struct EnumTraits<viz::mojom::SynchronizationType,
 
   static bool FromMojom(viz::mojom::SynchronizationType input,
                         viz::TransferableResource::SynchronizationType* out);
+};
+
+template <>
+struct EnumTraits<viz::mojom::ResourceSource,
+                  viz::TransferableResource::ResourceSource> {
+  static viz::mojom::ResourceSource ToMojom(
+      viz::TransferableResource::ResourceSource source);
+
+  static bool FromMojom(viz::mojom::ResourceSource input,
+                        viz::TransferableResource::ResourceSource* out);
 };
 
 template <>
@@ -77,26 +91,18 @@ struct StructTraits<viz::mojom::TransferableResourceDataView,
     return resource.is_low_latency_rendering;
   }
 
+#if BUILDFLAG(IS_ANDROID)
   static bool is_backed_by_surface_view(
       const viz::TransferableResource& resource) {
-#if BUILDFLAG(IS_ANDROID)
-    // TransferableResource has this in an #ifdef, but mojo doesn't let us.
-    // TODO(crbug.com/40496893)
     return resource.is_backed_by_surface_view;
-#else
-    return false;
-#endif
   }
+#endif
 
-  static bool wants_promotion_hint(const viz::TransferableResource& resource) {
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_WIN)
-    // TransferableResource has this in an #ifdef, but mojo doesn't let us.
-    // TODO(crbug.com/40496893)
+  static bool wants_promotion_hint(const viz::TransferableResource& resource) {
     return resource.wants_promotion_hint;
-#else
-    return false;
-#endif
   }
+#endif
 
   static const gfx::ColorSpace& color_space(
       const viz::TransferableResource& resource) {
@@ -112,13 +118,24 @@ struct StructTraits<viz::mojom::TransferableResourceDataView,
     return resource.needs_detiling;
   }
 
+#if BUILDFLAG(IS_ANDROID)
   static const std::optional<gpu::VulkanYCbCrInfo>& ycbcr_info(
       const viz::TransferableResource& resource) {
     return resource.ycbcr_info;
   }
+#endif
 
   static GrSurfaceOrigin origin(const viz::TransferableResource& resource) {
     return resource.origin;
+  }
+
+  static SkAlphaType alpha_type(const viz::TransferableResource& resource) {
+    return resource.alpha_type;
+  }
+
+  static viz::TransferableResource::ResourceSource resource_source(
+      const viz::TransferableResource& resource) {
+    return resource.resource_source;
   }
 
   static bool Read(viz::mojom::TransferableResourceDataView data,

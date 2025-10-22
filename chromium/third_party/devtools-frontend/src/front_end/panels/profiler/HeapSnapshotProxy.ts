@@ -246,10 +246,6 @@ export class HeapSnapshotProxyObject {
     this.worker.disposeObject(this.objectId);
   }
 
-  disposeWorker(): void {
-    this.worker.dispose();
-  }
-
   callFactoryMethod<T extends Object>(methodName: string, proxyConstructor: new(...arg1: any[]) => T, ...args: any[]):
       T {
     return this.worker.callFactoryMethod(null, String(this.objectId), methodName, proxyConstructor, [], ...args);
@@ -318,23 +314,20 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
     return this.callMethodPromise('interfaceDefinitions');
   }
 
-  aggregatesWithFilter(filter: HeapSnapshotModel.HeapSnapshotModel.NodeFilter): Promise<{
-    [x: string]: HeapSnapshotModel.HeapSnapshotModel.Aggregate,
-  }> {
+  aggregatesWithFilter(filter: HeapSnapshotModel.HeapSnapshotModel.NodeFilter):
+      Promise<Record<string, HeapSnapshotModel.HeapSnapshotModel.Aggregate>> {
     return this.callMethodPromise('aggregatesWithFilter', filter);
   }
 
-  aggregatesForDiff(interfaceDefinitions: string): Promise<{
-    [x: string]: HeapSnapshotModel.HeapSnapshotModel.AggregateForDiff,
-  }> {
+  aggregatesForDiff(interfaceDefinitions: string):
+      Promise<Record<string, HeapSnapshotModel.HeapSnapshotModel.AggregateForDiff>> {
     return this.callMethodPromise('aggregatesForDiff', interfaceDefinitions);
   }
 
-  calculateSnapshotDiff(baseSnapshotId: string, baseSnapshotAggregates: {
-    [x: string]: HeapSnapshotModel.HeapSnapshotModel.AggregateForDiff,
-  }): Promise<{
-    [x: string]: HeapSnapshotModel.HeapSnapshotModel.Diff,
-  }> {
+  calculateSnapshotDiff(
+      baseSnapshotId: string,
+      baseSnapshotAggregates: Record<string, HeapSnapshotModel.HeapSnapshotModel.AggregateForDiff>,
+      ): Promise<Record<string, HeapSnapshotModel.HeapSnapshotModel.Diff>> {
     return this.callMethodPromise('calculateSnapshotDiff', baseSnapshotId, baseSnapshotAggregates);
   }
 
@@ -453,10 +446,6 @@ export class HeapSnapshotProxy extends HeapSnapshotProxyObject {
 }
 
 export class HeapSnapshotProviderProxy extends HeapSnapshotProxyObject implements ChildrenProvider {
-  constructor(worker: HeapSnapshotWorkerProxy, objectId: number) {
-    super(worker, objectId);
-  }
-
   nodePosition(snapshotObjectId: number): Promise<number> {
     return this.callMethodPromise('nodePosition', snapshotObjectId);
   }

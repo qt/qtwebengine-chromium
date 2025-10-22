@@ -5,10 +5,10 @@
 // https://drafts.csswg.org/web-animations-2/#the-animationtriggeroptions-dictionary
 
 dictionary AnimationTriggerOptions {
-  AnimationTriggerType type = "once";
+  AnimationTriggerBehavior behavior = "once";
   AnimationTimeline? timeline;
   (DOMString or TimelineRangeOffset) rangeStart = "normal";
   (DOMString or TimelineRangeOffset) rangeEnd = "normal";
-  (DOMString or TimelineRangeOffset) exitRangeStart = "normal";
-  (DOMString or TimelineRangeOffset) exitRangeEnd = "normal";
+  (DOMString or TimelineRangeOffset) exitRangeStart = "auto";
+  (DOMString or TimelineRangeOffset) exitRangeEnd = "auto";
 };

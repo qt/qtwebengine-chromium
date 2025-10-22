@@ -80,6 +80,7 @@ class StubPasswordManagerClient : public PasswordManagerClient {
     BUILDFLAG(IS_CHROMEOS)
   void OpenPasswordDetailsBubble(
       const password_manager::PasswordForm& form) override;
+  void MaybeShowSavePasswordPrimingPromo(const GURL& current_url) override;
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC) ||
         // BUILDFLAG(IS_CHROMEOS)
 #if !BUILDFLAG(IS_IOS)
@@ -117,6 +118,8 @@ class StubPasswordManagerClient : public PasswordManagerClient {
   network::mojom::NetworkContext* GetNetworkContext() const override;
   bool IsIsolationForPasswordSitesEnabled() const override;
   bool IsNewTabPage() const override;
+  password_manager::UndoPasswordChangeController*
+  GetUndoPasswordChangeController() override;
 
  private:
   const StubCredentialsFilter credentials_filter_;
@@ -124,6 +127,7 @@ class StubPasswordManagerClient : public PasswordManagerClient {
   autofill::StubLogManager log_manager_;
   ukm::SourceId ukm_source_id_;
   std::optional<PasswordManagerMetricsRecorder> metrics_recorder_;
+  UndoPasswordChangeController undo_password_change_controller_;
 };
 
 }  // namespace password_manager

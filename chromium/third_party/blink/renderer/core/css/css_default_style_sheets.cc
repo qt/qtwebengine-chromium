@@ -54,16 +54,16 @@
 #include "third_party/blink/renderer/platform/wtf/leak_annotations.h"
 #include "third_party/blink/renderer/platform/wtf/text/string_builder.h"
 
+namespace blink {
+
 namespace {
 String MaybeRemoveCSSImportant(String string) {
-  const StringView kImportantSuffix(" !important");
+  const blink::StringView kImportantSuffix(" !important");
   return string.EndsWith(kImportantSuffix)
              ? string.Substring(0, string.length() - kImportantSuffix.length())
              : string;
 }
 }  // namespace
-
-namespace blink {
 
 CSSDefaultStyleSheets& CSSDefaultStyleSheets::Instance() {
   DEFINE_STATIC_LOCAL(Persistent<CSSDefaultStyleSheets>,
@@ -115,8 +115,9 @@ const MediaQueryEvaluator& CSSDefaultStyleSheets::ScreenEval() {
 CSSDefaultStyleSheets::CSSDefaultStyleSheets()
     : media_controls_style_sheet_loader_(nullptr) {
   // Strict-mode rules.
-  String default_rules = UncompressResourceAsASCIIString(IDR_UASTYLE_HTML_CSS) +
-                         LayoutTheme::GetTheme().ExtraDefaultStyleSheet();
+  String default_rules =
+      StrCat({UncompressResourceAsASCIIString(IDR_UASTYLE_HTML_CSS),
+              LayoutTheme::GetTheme().ExtraDefaultStyleSheet()});
 
   default_style_sheet_ = ParseUASheet(default_rules);
 
@@ -143,9 +144,12 @@ void CSSDefaultStyleSheets::Reset() {
   scroll_button_style_sheet_.Clear();
   scroll_marker_style_sheet_.Clear();
   permission_element_style_sheet_.Clear();
+  view_source_style_sheet_.Clear();
+  json_style_sheet_.Clear();
   // Recreate the default style sheet to clean up possible SVG resources.
-  String default_rules = UncompressResourceAsASCIIString(IDR_UASTYLE_HTML_CSS) +
-                         LayoutTheme::GetTheme().ExtraDefaultStyleSheet();
+  String default_rules =
+      StrCat({UncompressResourceAsASCIIString(IDR_UASTYLE_HTML_CSS),
+              LayoutTheme::GetTheme().ExtraDefaultStyleSheet()});
   default_style_sheet_ = ParseUASheet(default_rules);
 
   // Initialize the styles that have the lazily loaded style sheets.
@@ -240,10 +244,10 @@ void CSSDefaultStyleSheets::InitializeDefaultStyles() {
 RuleSet* CSSDefaultStyleSheets::DefaultViewSourceStyle() {
   if (!default_view_source_style_) {
     default_view_source_style_ = MakeGarbageCollected<RuleSet>();
-    // Loaded stylesheet is leaked on purpose.
-    StyleSheetContents* stylesheet = ParseUASheet(
+    view_source_style_sheet_ = ParseUASheet(
         UncompressResourceAsASCIIString(IDR_UASTYLE_VIEW_SOURCE_CSS));
-    default_view_source_style_->AddRulesFromSheet(stylesheet, ScreenEval());
+    default_view_source_style_->AddRulesFromSheet(view_source_style_sheet_,
+                                                  ScreenEval());
     default_view_source_style_->CompactRulesIfNeeded();
   }
   return default_view_source_style_.Get();
@@ -251,10 +255,11 @@ RuleSet* CSSDefaultStyleSheets::DefaultViewSourceStyle() {
 
 RuleSet* CSSDefaultStyleSheets::DefaultJSONDocumentStyle() {
   if (!default_json_document_style_) {
-    StyleSheetContents* stylesheet = ParseUASheet(
+    json_style_sheet_ = ParseUASheet(
         UncompressResourceAsASCIIString(IDR_UASTYLE_JSON_DOCUMENT_CSS));
     default_json_document_style_ = MakeGarbageCollected<RuleSet>();
-    default_json_document_style_->AddRulesFromSheet(stylesheet, ScreenEval());
+    default_json_document_style_->AddRulesFromSheet(json_style_sheet_,
+                                                    ScreenEval());
     default_json_document_style_->CompactRulesIfNeeded();
   }
   return default_json_document_style_.Get();
@@ -485,8 +490,8 @@ void CSSDefaultStyleSheets::EnsureDefaultStyleSheetForFullscreen(
   }
 
   String fullscreen_rules =
-      UncompressResourceAsASCIIString(IDR_UASTYLE_FULLSCREEN_CSS) +
-      LayoutTheme::GetTheme().ExtraFullscreenStyleSheet();
+      StrCat({UncompressResourceAsASCIIString(IDR_UASTYLE_FULLSCREEN_CSS),
+              LayoutTheme::GetTheme().ExtraFullscreenStyleSheet()});
   fullscreen_style_sheet_ = ParseUASheet(fullscreen_rules);
 
   default_fullscreen_style_->AddRulesFromSheet(
@@ -523,9 +528,9 @@ bool CSSDefaultStyleSheets::EnsureDefaultStyleSheetForForcedColors() {
 
   String forced_colors_rules = String();
   if (RuntimeEnabledFeatures::ForcedColorsEnabled()) {
-    forced_colors_rules =
-        forced_colors_rules +
-        UncompressResourceAsASCIIString(IDR_UASTYLE_THEME_FORCED_COLORS_CSS);
+    forced_colors_rules = StrCat(
+        {forced_colors_rules,
+         UncompressResourceAsASCIIString(IDR_UASTYLE_THEME_FORCED_COLORS_CSS)});
   }
   forced_colors_style_sheet_ = ParseUASheet(forced_colors_rules);
 
@@ -556,23 +561,50 @@ bool CSSDefaultStyleSheets::EnsureDefaultStyleSheetForForcedColors() {
 
 void CSSDefaultStyleSheets::CollectFeaturesTo(const Document& document,
                                               RuleFeatureSet& features) {
+  ForEachRuleFeatureSet(document, /*call_for_each_stylesheet=*/false,
+                        WTF::BindRepeating(
+                            [](RuleFeatureSet& target_features,
+                               const RuleFeatureSet& default_style_features,
+                               StyleSheetContents* contents) {
+                              target_features.Merge(default_style_features);
+                            },
+                            std::ref(features)));
+}
+
+void CSSDefaultStyleSheets::ForEachRuleFeatureSet(
+    const Document& document,
+    bool call_for_each_stylesheet,
+    base::RepeatingCallback<void(const RuleFeatureSet&, StyleSheetContents*)>
+        func) {
   if (DefaultHtmlStyle()) {
-    features.Merge(DefaultHtmlStyle()->Features());
+    const RuleFeatureSet& features = DefaultHtmlStyle()->Features();
+    func.Run(features, default_style_sheet_);
+    if (call_for_each_stylesheet && permission_element_style_sheet_) {
+      func.Run(features, permission_element_style_sheet_);
+    }
   }
   if (DefaultMediaControlsStyle()) {
-    features.Merge(DefaultMediaControlsStyle()->Features());
+    const RuleFeatureSet& features = DefaultMediaControlsStyle()->Features();
+    func.Run(features, media_controls_style_sheet_);
+    if (call_for_each_stylesheet && text_track_style_sheet_) {
+      func.Run(features, text_track_style_sheet_);
+    }
   }
   if (DefaultMathMLStyle()) {
-    features.Merge(DefaultMathMLStyle()->Features());
+    const RuleFeatureSet& features = DefaultMathMLStyle()->Features();
+    func.Run(features, mathml_style_sheet_);
   }
   if (DefaultFullscreenStyle()) {
-    features.Merge(DefaultFullscreenStyle()->Features());
+    const RuleFeatureSet& features = DefaultFullscreenStyle()->Features();
+    func.Run(features, fullscreen_style_sheet_);
   }
   if (document.IsViewSource() && DefaultViewSourceStyle()) {
-    features.Merge(DefaultViewSourceStyle()->Features());
+    const RuleFeatureSet& features = DefaultViewSourceStyle()->Features();
+    func.Run(features, view_source_style_sheet_);
   }
   if (document.IsJSONDocument() && DefaultJSONDocumentStyle()) {
-    features.Merge(DefaultJSONDocumentStyle()->Features());
+    const RuleFeatureSet& features = DefaultJSONDocumentStyle()->Features();
+    func.Run(features, json_style_sheet_);
   }
 }
 
@@ -587,6 +619,9 @@ void CSSDefaultStyleSheets::Trace(Visitor* visitor) const {
   visitor->Trace(default_pseudo_element_style_);
   visitor->Trace(default_media_controls_style_);
   visitor->Trace(default_fullscreen_style_);
+  visitor->Trace(default_json_document_style_);
+  visitor->Trace(default_forced_colors_media_controls_style_);
+
   visitor->Trace(default_style_sheet_);
   visitor->Trace(quirks_style_sheet_);
   visitor->Trace(svg_style_sheet_);
@@ -599,8 +634,9 @@ void CSSDefaultStyleSheets::Trace(Visitor* visitor) const {
   visitor->Trace(marker_style_sheet_);
   visitor->Trace(scroll_button_style_sheet_);
   visitor->Trace(scroll_marker_style_sheet_);
-  visitor->Trace(default_json_document_style_);
-  visitor->Trace(default_forced_colors_media_controls_style_);
+  visitor->Trace(view_source_style_sheet_);
+  visitor->Trace(json_style_sheet_);
+
   visitor->Trace(rule_set_group_cache_);
 }
 

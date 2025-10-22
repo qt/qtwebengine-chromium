@@ -17,12 +17,13 @@
 
 #pragma once
 
-#include "vma/vma.h"
+#include "external/vma/vma.h"
 
 #include <typeinfo>
 #include <unordered_map>
 #include <vector>
 #include "containers/custom_containers.h"
+#include "containers/range.h"
 
 struct Location;
 namespace gpuav {
@@ -41,8 +42,6 @@ class DescriptorSetManager {
     void PutBackDescriptorSet(VkDescriptorPool desc_pool, VkDescriptorSet desc_set);
 
   private:
-    std::unique_lock<std::mutex> Lock() const { return std::unique_lock<std::mutex>(lock_); }
-
     struct PoolTracker {
         uint32_t size;
         uint32_t used;
@@ -61,17 +60,17 @@ class Buffer {
     // No error propagation, but if hitting a VMA error, GPU-AV is likely not going to recover anyway.
 
     [[nodiscard]] void *GetMappedPtr() const;
-    void FlushAllocation(const Location &loc, VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
-    void InvalidateAllocation(const Location &loc, VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
+    void FlushAllocation(VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
+    void InvalidateAllocation(VkDeviceSize offset = 0, VkDeviceSize size = VK_WHOLE_SIZE) const;
 
-    [[nodiscard]] bool Create(const Location &loc, const VkBufferCreateInfo *buffer_create_info,
-                              const VmaAllocationCreateInfo *allocation_create_info);
+    [[nodiscard]] bool Create(const VkBufferCreateInfo *buffer_create_info, const VmaAllocationCreateInfo *allocation_create_info);
     void Destroy();
 
     bool IsDestroyed() const { return buffer == VK_NULL_HANDLE; }
     const VkBuffer &VkHandle() const { return buffer; }
     const VmaAllocation &Allocation() const { return allocation; }
-    VkDeviceAddress Address() const { return device_address; };
+    VkDeviceAddress Address() const { return device_address; }
+    VkDeviceSize Size() const { return size; }
     void Clear() const;
 
   private:
@@ -84,26 +83,41 @@ class Buffer {
     void *mapped_ptr = nullptr;
 };
 
+struct BufferRange {
+    VkBuffer buffer = VK_NULL_HANDLE;
+    VkDeviceSize offset = 0;
+    VkDeviceSize size = 0;
+    void *offset_mapped_ptr = nullptr;
+    VkDeviceAddress offset_address = 0;
+    VmaAllocation vma_alloc = VK_NULL_HANDLE;  // Todo: get rid of this once host cached allocation are removed
+
+    void Clear() const;
+};
+
 // Register/Create and register GPU resources, all to be destroyed upon a call to DestroyResources
 class GpuResourcesManager {
   public:
-    explicit GpuResourcesManager(DescriptorSetManager &descriptor_set_manager) : descriptor_set_manager_(descriptor_set_manager) {}
+    explicit GpuResourcesManager(Validator &gpuav);
 
     VkDescriptorSet GetManagedDescriptorSet(VkDescriptorSetLayout desc_set_layout);
-    vko::Buffer GetManagedBuffer(Validator &gpuav, const Location &loc, const VkBufferCreateInfo &ci,
-                                 const VmaAllocationCreateInfo &vma_ci);
+
+    vko::BufferRange GetHostVisibleBufferRange(VkDeviceSize size);
+    vko::BufferRange GetHostCachedBufferRange(VkDeviceSize size);
+    void FlushAllocation(const vko::BufferRange &buffer_range);
+    void InvalidateAllocation(const vko::BufferRange &buffer_range);
+    vko::BufferRange GetDeviceLocalBufferRange(VkDeviceSize size);
+    vko::BufferRange GetDeviceLocalIndirectBufferRange(VkDeviceSize size);
+    vko::BufferRange GetStagingBufferRange(VkDeviceSize size);
 
     void ReturnResources();
     void DestroyResources();
 
+    Validator &gpuav_;
+
   private:
-    DescriptorSetManager &descriptor_set_manager_;
-    enum class CachedStatus { Undefined, InUse, Available };
     struct CachedDescriptor {
-        // VkDescriptorSetLayout desc_set_layout = VK_NULL_HANDLE;
         VkDescriptorPool desc_pool = VK_NULL_HANDLE;
         VkDescriptorSet desc_set = VK_NULL_HANDLE;
-        // CachedStatus status = CachedStatus::Undefined;
     };
     struct LayoutToSets {
         VkDescriptorSetLayout desc_set_layout = VK_NULL_HANDLE;
@@ -111,21 +125,81 @@ class GpuResourcesManager {
         size_t first_available_desc_set = 0;
     };
     std::vector<LayoutToSets> cache_layouts_to_sets_;
-    // std::vector<CachedDescriptor> cached_descriptors_;
 
-    struct CachedBuffer {
-        VkBufferCreateInfo buffer_ci{};
-        VmaAllocationCreateInfo allocation_ci{};
-        vko::Buffer buffer;
+    class BufferCache {
+      public:
+        BufferCache() = default;
+        void Create(VkBufferUsageFlags buffer_usage_flags, const VmaAllocationCreateInfo allocation_ci);
+        vko::BufferRange GetBufferRange(Validator &gpuav, VkDeviceSize byte_size, VkDeviceSize alignment,
+                                        VkDeviceSize min_buffer_block_byte_size = 0);
+        ~BufferCache();
+        void ReturnBufferRange(const vko::BufferRange &buffer_range);
+        void ReturnBuffers();
+        void DestroyBuffers();
 
-        CachedStatus status = CachedStatus::Undefined;
+      private:
+        VkBufferUsageFlags buffer_usage_flags_{};
+        VmaAllocationCreateInfo allocation_ci_{};
+
+        struct CachedBufferBlock {
+            vko::Buffer buffer;
+            vvl::range<VkDeviceSize> total_range;
+            vvl::range<VkDeviceSize> used_range;
+        };
+
+        std::vector<CachedBufferBlock> cached_buffers_blocks_{};
+        VkDeviceSize total_available_byte_size_ = 0;
+        size_t next_avail_buffer_pos_hint_ = 0;
     };
-    std::vector<CachedBuffer> cached_buffers_;
+
+    // One cache per buffer type: having them mixed in just one would worse cache lookups
+    BufferCache host_visible_buffer_cache_;
+    BufferCache host_cached_buffer_cache_;
+    BufferCache device_local_buffer_cache_;
+    BufferCache device_local_indirect_buffer_cache_;
+    BufferCache staging_buffer_cache_;
+};
+
+class StagingBuffer {
+  public:
+    static bool CanDeviceEverStage(Validator &gpuav);
+    StagingBuffer(GpuResourcesManager &gpu_resources_manager, VkDeviceSize size, VkCommandBuffer cb);
+    void CmdCopyDeviceToHost(VkCommandBuffer cb) const;
+    void CmdCopyHostToDevice(VkCommandBuffer cb) const;
+    const BufferRange &GetBufferRange() const { return device_buffer_range; }
+    void *GetHostBufferPtr() {
+        gpu_resources_manager.InvalidateAllocation(host_buffer_range);
+        return host_buffer_range.offset_mapped_ptr;
+    }
+
+  private:
+    BufferRange host_buffer_range = {};
+    BufferRange device_buffer_range = {};
+    GpuResourcesManager &gpu_resources_manager;
+    VkMemoryPropertyFlags device_buffer_mem_prop_flags = {};
+};
+
+// Used to allocate and submit GPU-AV's own command buffers
+class CommandPool {
+  public:
+    CommandPool(Validator &gpuav, uint32_t queue_family_i, const Location &loc);
+    ~CommandPool();
+    // Returned command buffer is ready to be used,
+    // corresponding fence has been waited upon.
+    std::pair<VkCommandBuffer, VkFence> GetCommandBuffer();
+
+  private:
+    Validator &gpuav_;
+    VkCommandPool cmd_pool_ = VK_NULL_HANDLE;
+    std::vector<VkCommandBuffer> cmd_buffers_{};
+    std::vector<VkFence> fences_{};
+    uint32_t cmd_buffer_ring_head_ = 0;
 };
 
 // Cache a single object of type T. Key is *only* based on typeid(T)
 class SharedResourcesCache {
   public:
+    // Try get an object, returns null if not found
     template <typename T>
     T *TryGet() {
         auto entry = shared_validation_resources_map_.find(typeid(T));
@@ -135,13 +209,36 @@ class SharedResourcesCache {
         T *t = reinterpret_cast<T *>(entry->second.first);
         return t;
     }
+    template <typename T>
+    const T *TryGet() const {
+        auto entry = shared_validation_resources_map_.find(typeid(T));
+        if (entry == shared_validation_resources_map_.cend()) {
+            return nullptr;
+        }
+        const T *t = reinterpret_cast<const T *>(entry->second.first);
+        return t;
+    }
 
-    // First call to Get<T> will create the object, subsequent calls will retrieve the cached entry.
+    // Get an object, assuming it has been created
+    template <typename T>
+    T &Get() {
+        T *t = TryGet<T>();
+        assert(t);
+        return *t;
+    }
+    template <typename T>
+    const T &Get() const {
+        const T *t = TryGet<T>();
+        assert(t);
+        return *t;
+    }
+
+    // First call to GetOrCreate<T> will create the object, subsequent calls will retrieve the cached entry.
     // /!\ The cache key is only based on the type T, not on the passed parameters
-    // => Successive calls to Get<T> with different parameters will NOT give different objects,
+    // => Successive calls to GetOrCreate<T> with different parameters will NOT give different objects,
     // only the entry cached upon the first call to Get<T> will be retrieved
     template <typename T, class... ConstructorTypes>
-    T &Get(ConstructorTypes &&...args) {
+    T &GetOrCreate(ConstructorTypes &&...args) {
         T *t = TryGet<T>();
         if (t) return *t;
 

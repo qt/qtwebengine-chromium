@@ -164,7 +164,7 @@ TEST_F(PointerEventManagerTest, HasPointerCapture) {
       GetDocument().body()->hasPointerCapture(PointerEventFactory::kMouseId));
 
   GetDocument().body()->setPointerCapture(PointerEventFactory::kMouseId,
-                                          IGNORE_EXCEPTION_FOR_TESTING);
+                                          IGNORE_EXCEPTION);
   ASSERT_TRUE(
       GetDocument().body()->hasPointerCapture(PointerEventFactory::kMouseId));
 
@@ -177,7 +177,7 @@ TEST_F(PointerEventManagerTest, HasPointerCapture) {
       GetDocument().body()->hasPointerCapture(PointerEventFactory::kMouseId));
 
   GetDocument().body()->releasePointerCapture(PointerEventFactory::kMouseId,
-                                              IGNORE_EXCEPTION_FOR_TESTING);
+                                              IGNORE_EXCEPTION);
   ASSERT_FALSE(
       GetDocument().body()->hasPointerCapture(PointerEventFactory::kMouseId));
 }
@@ -648,7 +648,8 @@ class PanActionPointerEventTest : public PointerEventManagerTest {
  protected:
   // Sets inner HTML and runs document lifecycle.
   void SetBodyInnerHTML(const String& body_content) {
-    GetDocument().body()->setInnerHTML(body_content, ASSERT_NO_EXCEPTION);
+    GetDocument().body()->SetInnerHTMLWithoutTrustedTypes(body_content,
+                                                          ASSERT_NO_EXCEPTION);
     WebView().MainFrameWidget()->UpdateLifecycle(WebLifecycleUpdate::kAll,
                                                  DocumentUpdateReason::kTest);
   }

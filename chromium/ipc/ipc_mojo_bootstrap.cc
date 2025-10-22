@@ -21,10 +21,10 @@
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
+#include "base/hash/hash.h"
 #include "base/memory/ptr_util.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
-#include "base/not_fatal_until.h"
 #include "base/sequence_checker.h"
 #include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
@@ -921,7 +921,7 @@ class ChannelAssociatedGroupController
       return true;
     }
 
-    CHECK(connector_->encountered_error(), base::NotFatalUntil::M135);
+    CHECK(connector_->encountered_error());
     return false;
   }
 

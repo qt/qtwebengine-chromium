@@ -15,169 +15,35 @@
 
 #include "descriptor_class_general_buffer_pass.h"
 #include "generated/spirv_grammar_helper.h"
+#include "containers/container_utils.h"
 #include "state_tracker/shader_instruction.h"
-#include "utils/vk_layer_utils.h"
 #include "module.h"
 #include <spirv/unified1/spirv.hpp>
 #include <iostream>
 #include "generated/device_features.h"
 
-#include "generated/instrumentation_descriptor_class_general_buffer_comp.h"
+#include "generated/gpuav_offline_spirv.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
 
 namespace gpuav {
 namespace spirv {
 
-const static OfflineLinkInfo link_info = {instrumentation_descriptor_class_general_buffer_comp,
-                                          instrumentation_descriptor_class_general_buffer_comp_size,
-                                          "inst_descriptor_class_general_buffer"};
+const static OfflineModule kOfflineModule = {instrumentation_descriptor_class_general_buffer_comp,
+                                             instrumentation_descriptor_class_general_buffer_comp_size, UseErrorPayloadVariable};
 
-DescriptorClassGeneralBufferPass::DescriptorClassGeneralBufferPass(Module& module)
-    : Pass(module), unsafe_mode_(module.settings_.unsafe_mode) {
+const static OfflineFunction kOfflineFunction = {"inst_descriptor_class_general_buffer",
+                                                 instrumentation_descriptor_class_general_buffer_comp_function_0_offset};
+
+DescriptorClassGeneralBufferPass::DescriptorClassGeneralBufferPass(Module& module) : Pass(module, kOfflineModule) {
     module.use_bda_ = true;
 }
 
 // By appending the LinkInfo, it will attempt at linking stage to add the function.
-uint32_t DescriptorClassGeneralBufferPass::GetLinkFunctionId() { return module_.GetLinkFunction(link_function_id_, link_info); }
+uint32_t DescriptorClassGeneralBufferPass::GetLinkFunctionId() { return GetLinkFunction(link_function_id_, kOfflineFunction); }
 
-// Finds the offset into the SSBO/UBO an instruction would access
-// If it is a non-constant value, will return zero to indicate its a runtime value
-//
-// If shader looks for 'a' in a descriptor like
-//
-// struct X {
-//    uint a;
-//    uint b;
-// }
-//
-// it will return `3` because it covers [0, 3] bytes of the descriptor
-// (This matches the GetLastByte() check)
-uint32_t DescriptorClassGeneralBufferPass::FindLastByteOffset(uint32_t descriptor_id, bool is_descriptor_array,
-                                                              const std::vector<const Instruction*>& access_chain_insts) const {
-    assert(!access_chain_insts.empty());
-    uint32_t last_byte_offset = 0;
-    const uint32_t reset_ac_word = 4;  // points to first "Index" operand of an OpAccessChain
-    uint32_t ac_word_index = reset_ac_word;
-
-    if (is_descriptor_array) {
-        ac_word_index++;  // this jumps over the array of descriptors so we first start on the descriptor itself
-    }
-
-    uint32_t matrix_stride = 0;
-    bool col_major = false;
-    bool in_matrix = false;
-
-    auto access_chain_iter = access_chain_insts.rbegin();
-
-    // This occurs in things like Slang where they have a single OpAccessChain for the descriptor
-    // (GLSL/HLSL will combine 2 indexes into the last OpAccessChain)
-    if (ac_word_index >= (*access_chain_iter)->Length()) {
-        ++access_chain_iter;
-        ac_word_index = reset_ac_word;
-    }
-
-    uint32_t current_type_id = descriptor_id;
-    // Walk down access chains to build up the offset
-    while (access_chain_iter != access_chain_insts.rend()) {
-        const uint32_t ac_index_id = (*access_chain_iter)->Word(ac_word_index);
-        const Constant* index_constant = module_.type_manager_.FindConstantById(ac_index_id);
-        if (!index_constant || index_constant->inst_.Opcode() != spv::OpConstant) {
-            return 0;  // Access Chain has dynamic value
-        }
-        const uint32_t constant_value = index_constant->GetValueUint32();
-
-        uint32_t current_offset = 0;
-
-        const Type* current_type = module_.type_manager_.FindTypeById(current_type_id);
-        switch (current_type->spv_type_) {
-            case SpvType::kArray:
-            case SpvType::kRuntimeArray: {
-                // Get array stride and multiply by current index
-                const uint32_t array_stride = GetDecoration(current_type_id, spv::DecorationArrayStride)->Word(3);
-                current_offset = constant_value * array_stride;
-
-                current_type_id = current_type->inst_.Operand(0);  // Get element type for next step
-            } break;
-            case SpvType::kMatrix: {
-                if (matrix_stride == 0) {
-                    module_.InternalError(Name(), "FindLastByteOffset is missing matrix stride");
-                }
-                in_matrix = true;
-                uint32_t vec_type_id = current_type->inst_.Operand(0);
-
-                // If column major, multiply column index by matrix stride, otherwise by vector component size and save matrix
-                // stride for vector (row) index
-                uint32_t col_stride = 0;
-                if (col_major) {
-                    col_stride = matrix_stride;
-                } else {
-                    const uint32_t component_type_id = module_.type_manager_.FindTypeById(vec_type_id)->inst_.Operand(0);
-                    col_stride = FindTypeByteSize(component_type_id);
-                }
-
-                current_offset = constant_value * col_stride;
-
-                current_type_id = vec_type_id;  // Get element type for next step
-            } break;
-            case SpvType::kVector: {
-                // If inside a row major matrix type, multiply index by matrix stride,
-                // else multiply by component size
-                const uint32_t component_type_id = current_type->inst_.Operand(0);
-
-                if (in_matrix && !col_major) {
-                    current_offset = constant_value * matrix_stride;
-                } else {
-                    const uint32_t component_type_size = FindTypeByteSize(component_type_id);
-                    current_offset = constant_value * component_type_size;
-                }
-
-                current_type_id = component_type_id;  // Get element type for next step
-            } break;
-            case SpvType::kStruct: {
-                // Get buffer byte offset for the referenced member
-                current_offset = GetMemberDecoration(current_type_id, constant_value, spv::DecorationOffset)->Word(4);
-
-                // Look for matrix stride for this member if there is one. The matrix
-                // stride is not on the matrix type, but in a OpMemberDecorate on the
-                // enclosing struct type at the member index. If none is found, reset
-                // stride to 0.
-                const Instruction* decoration_matrix_stride =
-                    GetMemberDecoration(current_type_id, constant_value, spv::DecorationMatrixStride);
-                matrix_stride = decoration_matrix_stride ? decoration_matrix_stride->Word(4) : 0;
-
-                const Instruction* decoration_col_major =
-                    GetMemberDecoration(current_type_id, constant_value, spv::DecorationColMajor);
-                col_major = decoration_col_major != nullptr;
-
-                current_type_id = current_type->inst_.Operand(constant_value);  // Get element type for next step
-            } break;
-            default: {
-                module_.InternalError(Name(), "FindLastByteOffset has unexpected non-composite type");
-            } break;
-        }
-
-        last_byte_offset += current_offset;
-
-        ac_word_index++;
-        if (ac_word_index >= (*access_chain_iter)->Length()) {
-            ++access_chain_iter;
-            ac_word_index = reset_ac_word;
-        }
-    }
-
-    // Add in offset of last byte of referenced object
-    const uint32_t accessed_type_size = FindTypeByteSize(current_type_id, matrix_stride, col_major, in_matrix);
-    const uint32_t last_byte_index = accessed_type_size - 1;
-    last_byte_offset += last_byte_index;
-
-    return last_byte_offset;
-}
-
-uint32_t DescriptorClassGeneralBufferPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it,
-                                                              const InjectionData& injection_data, const InstructionMeta& meta) {
+void DescriptorClassGeneralBufferPass::CreateFunctionCall(BasicBlock& block, InstructionIt* inst_it, const InstructionMeta& meta) {
     assert(!meta.access_chain_insts.empty());
     const Constant& set_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_set);
-    const Constant& binding_constant = module_.type_manager_.GetConstantUInt32(meta.descriptor_binding);
     const uint32_t descriptor_index_id = CastToUint32(meta.descriptor_index_id, block, inst_it);  // might be int32
 
     const uint32_t descriptor_offset_id =
@@ -186,21 +52,23 @@ uint32_t DescriptorClassGeneralBufferPass::CreateFunctionCall(BasicBlock& block,
     BindingLayout binding_layout = module_.set_index_to_bindings_layout_lut_[meta.descriptor_set][meta.descriptor_binding];
     const Constant& binding_layout_offset = module_.type_manager_.GetConstantUInt32(binding_layout.start);
 
+    const uint32_t inst_position = meta.target_instruction->GetPositionIndex();
+    const uint32_t inst_position_id = module_.type_manager_.CreateConstantUInt32(inst_position).Id();
+
     const uint32_t function_result = module_.TakeNextId();
     const uint32_t function_def = GetLinkFunctionId();
-    const uint32_t bool_type = module_.type_manager_.GetTypeBool().Id();
+    const uint32_t void_type = module_.type_manager_.GetTypeVoid().Id();
 
-    block.CreateInstruction(
-        spv::OpFunctionCall,
-        {bool_type, function_result, function_def, injection_data.inst_position_id, injection_data.stage_info_id, set_constant.Id(),
-         binding_constant.Id(), descriptor_index_id, descriptor_offset_id, binding_layout_offset.Id()},
-        inst_it);
+    block.CreateInstruction(spv::OpFunctionCall,
+                            {void_type, function_result, function_def, inst_position_id, set_constant.Id(), descriptor_index_id,
+                             descriptor_offset_id, binding_layout_offset.Id()},
+                            inst_it);
 
-    return function_result;
+    module_.need_log_error_ = true;
 }
 
 bool DescriptorClassGeneralBufferPass::RequiresInstrumentation(const Function& function, const Instruction& inst,
-                                                               InstructionMeta& meta, bool pre_pass) {
+                                                               InstructionMeta& meta) {
     const uint32_t opcode = inst.Opcode();
 
     if (!IsValueIn(spv::Op(opcode), {spv::OpLoad, spv::OpStore, spv::OpAtomicStore, spv::OpAtomicLoad, spv::OpAtomicExchange})) {
@@ -208,13 +76,13 @@ bool DescriptorClassGeneralBufferPass::RequiresInstrumentation(const Function& f
     }
 
     const Instruction* next_access_chain = function.FindInstruction(inst.Operand(0));
-    if (!next_access_chain || next_access_chain->Opcode() != spv::OpAccessChain) {
+    if (!next_access_chain || !next_access_chain->IsNonPtrAccessChain()) {
         return false;
     }
 
     const Variable* variable = nullptr;
     // We need to walk down possibly multiple chained OpAccessChains or OpCopyObject to get the variable
-    while (next_access_chain && next_access_chain->Opcode() == spv::OpAccessChain) {
+    while (next_access_chain && next_access_chain->IsNonPtrAccessChain()) {
         meta.access_chain_insts.push_back(next_access_chain);
         const uint32_t access_chain_base_id = next_access_chain->Operand(0);
         variable = module_.type_manager_.FindVariableById(access_chain_base_id);
@@ -238,17 +106,17 @@ bool DescriptorClassGeneralBufferPass::RequiresInstrumentation(const Function& f
     }
 
     const bool is_descriptor_array = meta.descriptor_type->IsArray();
-    const uint32_t descriptor_id = is_descriptor_array ? meta.descriptor_type->inst_.Operand(0) : meta.descriptor_type->Id();
+    meta.descriptor_id = is_descriptor_array ? meta.descriptor_type->inst_.Operand(0) : meta.descriptor_type->Id();
 
     // Check for deprecated storage block form
     if (storage_class == spv::StorageClassUniform) {
-        assert(module_.type_manager_.FindTypeById(descriptor_id)->spv_type_ == SpvType::kStruct && "unexpected block type");
+        assert(module_.type_manager_.FindTypeById(meta.descriptor_id)->spv_type_ == SpvType::kStruct && "unexpected block type");
 
-        const bool block_found = GetDecoration(descriptor_id, spv::DecorationBlock) != nullptr;
+        const bool block_found = GetDecoration(meta.descriptor_id, spv::DecorationBlock) != nullptr;
 
         // If block decoration not found, verify deprecated form of SSBO
         if (!block_found) {
-            assert(GetDecoration(descriptor_id, spv::DecorationBufferBlock) != nullptr && "block decoration not found");
+            assert(GetDecoration(meta.descriptor_id, spv::DecorationBufferBlock) != nullptr && "block decoration not found");
             storage_class = spv::StorageClassStorageBuffer;
         }
     }
@@ -280,25 +148,8 @@ bool DescriptorClassGeneralBufferPass::RequiresInstrumentation(const Function& f
         return false;
     }
 
-    if (unsafe_mode_) {
-        const uint32_t offset = FindLastByteOffset(descriptor_id, is_descriptor_array, meta.access_chain_insts);
-        // If no offset, its dynamic and ignore completly
-        if (offset != 0) {
-            if (pre_pass) {
-                // set offset for the first loop of the block
-                auto map_it = block_highest_offset_map_.find(descriptor_id);
-                if (map_it == block_highest_offset_map_.end()) {
-                    block_highest_offset_map_[descriptor_id] = offset;
-                } else {
-                    map_it->second = std::max(map_it->second, offset);
-                }
-            } else {
-                const uint32_t block_highest_offset = block_highest_offset_map_[descriptor_id];
-                if (offset < block_highest_offset) {
-                    return false;  // skipping because other instruction in block will be a higher offset
-                }
-            }
-        }
+    if (!module_.settings_.safe_mode) {
+        meta.access_offset = FindOffsetInStruct(meta.descriptor_id, is_descriptor_array, meta.access_chain_insts);
     }
 
     // Save information to be used to make the Function
@@ -320,6 +171,7 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
     // Can safely loop function list as there is no injecting of new Functions until linking time
     for (const auto& function : module_.functions_) {
         if (function->instrumentation_added_) continue;
+
         for (auto block_it = function->blocks_.begin(); block_it != function->blocks_.end(); ++block_it) {
             BasicBlock& current_block = **block_it;
 
@@ -328,31 +180,56 @@ bool DescriptorClassGeneralBufferPass::Instrument() {
 
             auto& block_instructions = current_block.instructions_;
 
-            if (unsafe_mode_) {
-                // Loop the Block once to get the highest offset
+            // < Descriptor SSA ID, Highest offset byte that will be accessed >
+            vvl::unordered_map<uint32_t, uint32_t> block_highest_offset_map;
+
+            if (!module_.settings_.safe_mode) {
+                // Pre-pass loop the Block to get the highest offset accessed (statically known)
                 // Do here before we inject instructions into the block list below
                 for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
-                    // dummy object - need to be clear for access_chain_insts vector
                     InstructionMeta meta;
                     // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                    if (!RequiresInstrumentation(*function, *(inst_it->get()), meta, true)) continue;
+                    if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+
+                    if (meta.access_offset != 0) {
+                        // set offset for the first loop of the block
+                        auto map_it = block_highest_offset_map.find(meta.descriptor_id);
+                        if (map_it == block_highest_offset_map.end()) {
+                            block_highest_offset_map[meta.descriptor_id] = meta.access_offset;
+                        } else {
+                            map_it->second = std::max(map_it->second, meta.access_offset);
+                        }
+                    }
                 }
             }
 
             for (auto inst_it = block_instructions.begin(); inst_it != block_instructions.end(); ++inst_it) {
                 InstructionMeta meta;
                 // Every instruction is analyzed by the specific pass and lets us know if we need to inject a function or not
-                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta, false)) continue;
+                if (!RequiresInstrumentation(*function, *(inst_it->get()), meta)) continue;
+
+                if (!module_.settings_.safe_mode && meta.access_offset != 0) {
+                    const uint32_t block_highest_offset = block_highest_offset_map[meta.descriptor_id];
+                    if (meta.access_offset < block_highest_offset) {
+                        continue;  // skipping because other instruction in block will be a higher offset
+                    }
+                }
 
                 if (IsMaxInstrumentationsCount()) continue;
                 instrumentations_count_++;
 
-                InjectionData injection_data = GetInjectionData(*function, current_block, inst_it, *meta.target_instruction);
-
                 // inst_it is updated to the instruction after the new function call, it will not add/remove any Blocks
-                CreateFunctionCall(current_block, &inst_it, injection_data, meta);
+                CreateFunctionCall(current_block, &inst_it, meta);
             }
         }
+    }
+
+    if (instrumentations_count_ > 75) {
+        module_.InternalWarning(
+            "GPUAV-Compile-time-general-buffer",
+            "This shader will be very slow to compile and runtime performance may also be slow. This is due to the number of OOB "
+            "checks for storage/uniform "
+            "buffers. Turn on the |gpuav_force_on_robustness| setting to skip these checks and improve GPU-AV performance.");
     }
 
     return instrumentations_count_ != 0;

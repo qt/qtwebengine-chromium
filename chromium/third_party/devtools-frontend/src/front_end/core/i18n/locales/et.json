@@ -17,6 +17,9 @@
   "core/common/ResourceType.ts | eventsource": {
     "message": "EventSource"
   },
+  "core/common/ResourceType.ts | fedcm": {
+    "message": "FedCM"
+  },
   "core/common/ResourceType.ts | fetch": {
     "message": "Toomine"
   },
@@ -495,7 +498,7 @@
     "message": "Skripti allika toomine nurjus."
   },
   "core/sdk/ServerTiming.ts | deprecatedSyntaxFoundPleaseUse": {
-    "message": "Leiti katkestatud toega süntaks. Kasutage süntaksit: <name>;dur=<duration>;desc=<description>"
+    "message": "Leitud katkestatud toega süntaks mõõdikule „{PH1}“. Kasutage järgmist: <name>;dur=<duration>;desc=<description>"
   },
   "core/sdk/ServerTiming.ts | duplicateParameterSIgnored": {
     "message": "Duplikaatparameetrit „{PH1}“ eirati."
@@ -614,6 +617,9 @@
   "core/sdk/sdk-meta.ts | doNotEmulateCssMediaType": {
     "message": "Ära emuleeri CSS-i meediatüüpi"
   },
+  "core/sdk/sdk-meta.ts | doNotEmulateOsTextScale": {
+    "message": "Ära emuleeri OS-i teksti mastaapi"
+  },
   "core/sdk/sdk-meta.ts | doNotExtendGridLines": {
     "message": "Ära pikenda ruudustiku ridu"
   },
@@ -664,6 +670,9 @@
   },
   "core/sdk/sdk-meta.ts | emulateDeuteranopia": {
     "message": "Deuteranoopia (roheliseta) emuleerimine"
+  },
+  "core/sdk/sdk-meta.ts | emulateOsTextScale": {
+    "message": "Emuleeri OS-i teksti mastaap"
   },
   "core/sdk/sdk-meta.ts | emulateProtanopia": {
     "message": "Protanoopia (punaseta) emuleerimine"
@@ -729,6 +738,30 @@
     "message": "Võrgutaotluse blokeerimine"
   },
   "core/sdk/sdk-meta.ts | noEmulation": {
+    "message": "Emuleerimine puudub"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation100": {
+    "message": "100% (vaikeseade)"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation115": {
+    "message": "115%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation130": {
+    "message": "130%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation150": {
+    "message": "150%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation180": {
+    "message": "180%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation200": {
+    "message": "200%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulation85": {
+    "message": "85%"
+  },
+  "core/sdk/sdk-meta.ts | osTextScaleEmulationNone": {
     "message": "Emuleerimine puudub"
   },
   "core/sdk/sdk-meta.ts | pauseOnExceptions": {
@@ -860,6 +893,9 @@
   "entrypoints/inspector_main/RenderingOptions.ts | forcesMediaTypeForTestingPrint": {
     "message": "Jõustab meedia tüübi printimis- ja ekraanistiilide testimiseks"
   },
+  "entrypoints/inspector_main/RenderingOptions.ts | forcesOsTextScaleEmulation": {
+    "message": "Jõustab OS-i teksti mastaabi emuleerimise"
+  },
   "entrypoints/inspector_main/RenderingOptions.ts | forcesVisionDeficiencyEmulation": {
     "message": "Jõustab nägemispuude emuleerimise"
   },
@@ -971,7 +1007,7 @@
   "entrypoints/main/MainImpl.ts | dockSide": {
     "message": "Dokkimiskülg"
   },
-  "entrypoints/main/MainImpl.ts | dockSideNaviation": {
+  "entrypoints/main/MainImpl.ts | dockSideNavigation": {
     "message": "Kasutage valikute vahel liikumiseks vasak- ja paremnoolt"
   },
   "entrypoints/main/MainImpl.ts | dockToBottom": {
@@ -1130,6 +1166,9 @@
   "entrypoints/main/main-meta.ts | toggleDrawer": {
     "message": "Sahtli sisse-/väljalülitamine"
   },
+  "entrypoints/main/main-meta.ts | toggleDrawerOrientation": {
+    "message": "Lülita sahtli suunda"
+  },
   "entrypoints/main/main-meta.ts | undockIntoSeparateWindow": {
     "message": "Doki lahti ja ava eraldi aknas"
   },
@@ -1229,9 +1268,6 @@
   "generated/Deprecation.ts | CrossOriginWindowConfirm": {
     "message": "Funktsiooni window.confirm käivitamise tugi mitme päritoluga iframe'idest on katkestatud ja see eemaldatakse tulevikus."
   },
-  "generated/Deprecation.ts | DOMMutationEvents": {
-    "message": "DOM-i mutatsioonisündmuste (sh DOMSubtreeModified, DOMNodeInserted, DOMNodeRemoved, DOMNodeRemovedFromDocument, DOMNodeInsertedIntoDocument ja DOMCharacterDataModified) tugi katkestatakse (https://w3c.github.io/uievents/#legacy-event-types) ja need eemaldatakse. Kasutage selle asemel üksust MutationObserver."
-  },
   "generated/Deprecation.ts | DataUrlInSvgUse": {
     "message": "Andmete tugi: SVGUseElementi URL-ide tugi on katkestatud ja see eemaldatakse tulevikus."
   },
@@ -1244,14 +1280,8 @@
   "generated/Deprecation.ts | GetUserMediaInsecureOrigin": {
     "message": "getUserMedia() ei tööta enam ebaturvalistes lähtekohtades. Selle funktsiooni kasutamiseks soovitame teil oma rakenduse ümber lülitada turvalisele lähtekohale, nt HTTPS-ile. Vaadake lisateavet aadressilt https://goo.gle/chrome-insecure-origins."
   },
-  "generated/Deprecation.ts | H1UserAgentFontSizeInSection": {
-    "message": "Kohast <article>, <aside>, <nav> või <section> leiti märgend <h1>, millel pole määratud fondisuurust. Selle pealkirjateksti suurust muudetakse lähitulevikus selles brauseris. Lisateavet leiate lehelt https://developer.mozilla.org/en-US/docs/Web/HTML/Element/Heading_Elements#specifying_a_uniform_font_size_for_h1."
-  },
   "generated/Deprecation.ts | HostCandidateAttributeGetter": {
     "message": "Välja RTCPeerConnectionIceErrorEvent.hostCandidate tugi on katkestatud. Kasutage selle asemel välja RTCPeerConnectionIceErrorEvent.address või RTCPeerConnectionIceErrorEvent.port."
-  },
-  "generated/Deprecation.ts | IdentityDigitalCredentials": {
-    "message": "Selle digitaalse mandaadi päringu navigator.credentials.get() vormingu tugi on katkestatud, värskendage uue vormingu kasutamiseks oma kutset."
   },
   "generated/Deprecation.ts | IdentityInCanMakePaymentEvent": {
     "message": "Teenuse töölise sündmuse canmakepayment müüja lähtekoha ja juhuslike andmete tugi on katkestatud ja need eemaldatakse: topOrigin, paymentRequestOrigin, methodData, modifiers."
@@ -1291,6 +1321,9 @@
   },
   "generated/Deprecation.ts | OverflowVisibleOnReplacedElement": {
     "message": "Kui määrate märgenditele img, video ja canvas atribuudi overflow: visible, võivad need kuvada visuaalset sisu väljaspool elemendi piire. Vaadake veebilehte https://github.com/WICG/shared-element-transitions/blob/main/debugging_overflow_on_images.md."
+  },
+  "generated/Deprecation.ts | OverrideFlashEmbedwithHTML": {
+    "message": "Flash-video manustamine (pärandmeetod) on kirjutatud ümber HTML-i iframe'i. Flash on ammu kasutuselt kõrvaldatud, ümberkirjutamise meetodi tugi on katkestatud ja see võidakse tulevikus kasutuselt kõrvaldada."
   },
   "generated/Deprecation.ts | PaymentInstruments": {
     "message": "API paymentManager.instruments tugi on katkestatud. Kasutage maksetöötlejate jaoks selle asemel vajaduspõhise installimisega funktsiooni Just In Time."
@@ -1367,6 +1400,18 @@
   "generated/Deprecation.ts | XMLHttpRequestSynchronousInNonWorkerOutsideBeforeUnload": {
     "message": "Sünkroonse atribuudi XMLHttpRequest tugi põhilõimes on katkestatud, kuna see mõjub negatiivselt lõppkasutaja kasutuskogemusele. Lisaabi saamiseks külastage saiti https://xhr.spec.whatwg.org/."
   },
+  "models/ai_assistance/AiUtils.ts | ageRestricted": {
+    "message": "See funktsioon on saadaval ainult kasutajatele, kes on vähemalt 18-aastased."
+  },
+  "models/ai_assistance/AiUtils.ts | notAvailableInIncognitoMode": {
+    "message": "AI-abi pole inkognito režiimis ega külalisrežiimis saadaval."
+  },
+  "models/ai_assistance/AiUtils.ts | notLoggedIn": {
+    "message": "See funktsioon on saadaval ainult siis, kui logite Chrome'i sisse oma Google'i kontoga."
+  },
+  "models/ai_assistance/AiUtils.ts | offline": {
+    "message": "See funktsioon on saadaval ainult aktiivse internetiühenduse korral."
+  },
   "models/bindings/ContentProviderBasedProject.ts | unknownErrorLoadingFile": {
     "message": "Tundmatu viga faili laadimisel"
   },
@@ -1389,28 +1434,10 @@
     "message": "[{PH1}] Laaditi faili {PH2} silumissümbolid, leiti {PH3} lähtefail(i)"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadingDebugSymbolsFor": {
-    "message": "[{PH1}] Üksuse {PH2} silumissümbolite laadimine …"
+    "message": "[{PH1}] Üksuse {PH2} silumissümbolite laadimine…"
   },
   "models/bindings/DebuggerLanguagePlugins.ts | loadingDebugSymbolsForVia": {
-    "message": "[{PH1}] Üksuse {PH2} silumissümbolite laadimine (üksuse {PH3} kaudu) …"
-  },
-  "models/bindings/IgnoreListManager.ts | addAllAnonymousScriptsToIgnoreList": {
-    "message": "Kõikide anonüümsete skriptide eiramisloendisse lisamine"
-  },
-  "models/bindings/IgnoreListManager.ts | addAllContentScriptsToIgnoreList": {
-    "message": "Kõikide laiendusskriptide eiramisloendisse lisamine"
-  },
-  "models/bindings/IgnoreListManager.ts | addAllThirdPartyScriptsToIgnoreList": {
-    "message": "Lisa kõik kolmanda osapoole skriptid eiramisloendisse"
-  },
-  "models/bindings/IgnoreListManager.ts | addDirectoryToIgnoreList": {
-    "message": "Lisa kataloog eiramisloendisse"
-  },
-  "models/bindings/IgnoreListManager.ts | addScriptToIgnoreList": {
-    "message": "Lisa skript eiramisloendisse"
-  },
-  "models/bindings/IgnoreListManager.ts | removeFromIgnoreList": {
-    "message": "Eemalda eiramisloendist"
+    "message": "[{PH1}] Üksuse {PH2} silumissümbolite laadimine (üksuse {PH3} kaudu)…"
   },
   "models/bindings/ResourceScriptMapping.ts | liveEditCompileFailed": {
     "message": "Üksuse LiveEdit kompileerimine nurjus: {PH1}"
@@ -1419,7 +1446,7 @@
     "message": "LiveEdit ebaõnnestus: {PH1}"
   },
   "models/crux-manager/CrUXManager.ts | fieldOverrideWarning": {
-    "message": "Välja andmed on konfigureeritud praegusest lehest erineva URL-i jaoks."
+    "message": "Välimõõdikud on seadistatud praegusest lehest erineva URL-i jaoks."
   },
   "models/emulation/DeviceModeModel.ts | devicePixelRatioMustBeANumberOr": {
     "message": "Seadme pikslite suhe peab olema arvväärtus või tühi."
@@ -1491,13 +1518,10 @@
     "message": "Usaldusväärsed tüübid – eeskirjade rikkumine"
   },
   "models/issues_manager/CookieDeprecationMetadataIssue.ts | thirdPartyPhaseoutExplained": {
-    "message": "Kolmanda osapoole küpsisefailide Chrome'i-poolse töötlemise muudatused"
+    "message": "Kolmanda osapoole küpsisefailide Chrome’i-poolse töötlemise muudatused"
   },
   "models/issues_manager/CookieIssue.ts | consoleTpcdErrorMessage": {
     "message": "Kolmanda osapoole küpsisefail on Chrome'is Chrome'i märgistuste või brauseri seadistuse tõttu blokeeritud."
-  },
-  "models/issues_manager/CookieIssue.ts | consoleTpcdWarningMessage": {
-    "message": "Chrome'i eesmärk on liikuda uue kasutuskogemuse suunas, milles kasutajad saavad soovi korral sirvida kolmanda osapoole küpsisteta."
   },
   "models/issues_manager/CookieIssue.ts | fileCrosSiteRedirectBug": {
     "message": "Veast teavitamine"
@@ -1510,9 +1534,6 @@
   },
   "models/issues_manager/CookieIssue.ts | samesiteCookiesExplained": {
     "message": "SameSite'i küpsisefailide selgitus"
-  },
-  "models/issues_manager/CookieIssue.ts | thirdPartyPhaseoutExplained": {
-    "message": "Kolmanda osapoole küpsisefailide Chrome'i-poolse töötlemise muudatused"
   },
   "models/issues_manager/CorsIssue.ts | CORS": {
     "message": "Lähtekohaülene ressursside jagamine (CORS)"
@@ -1637,9 +1658,6 @@
   "models/logs/logs-meta.ts | reset": {
     "message": "lähtesta"
   },
-  "models/persistence/EditFileSystemView.ts | add": {
-    "message": "Kausta lisamine"
-  },
   "models/persistence/EditFileSystemView.ts | enterAPath": {
     "message": "Sisestage tee"
   },
@@ -1649,15 +1667,6 @@
   "models/persistence/EditFileSystemView.ts | excludedFolders": {
     "message": "Välistatud alamkaustad"
   },
-  "models/persistence/EditFileSystemView.ts | folderPath": {
-    "message": "Kausta tee"
-  },
-  "models/persistence/EditFileSystemView.ts | none": {
-    "message": "Puudub"
-  },
-  "models/persistence/EditFileSystemView.ts | sViaDevtools": {
-    "message": "{PH1} (.devtoolsi kaudu)"
-  },
   "models/persistence/EditFileSystemView.ts | url": {
     "message": "URL"
   },
@@ -1666,6 +1675,12 @@
   },
   "models/persistence/IsolatedFileSystem.ts | cantReadFileSS": {
     "message": "Faili ei saa lugeda: {PH1}: {PH2}"
+  },
+  "models/persistence/IsolatedFileSystem.ts | createDirFailed": {
+    "message": "Alistamised: kataloogi ({PH1}) loomine ebaõnnestus. Kas tööruum või alistamised on õigesti seadistatud?"
+  },
+  "models/persistence/IsolatedFileSystem.ts | createDirFailedBecausePathIsFile": {
+    "message": "Alistamised: kataloogi loomine teele {PH1} ebaõnnestus, kuna samasuguse teega fail on juba olemas."
   },
   "models/persistence/IsolatedFileSystem.ts | fileSystemErrorS": {
     "message": "Failisüsteemi viga: {PH1}"
@@ -1689,7 +1704,10 @@
     "message": "Kas alistada selle asemel ‘{PH1}’?"
   },
   "models/persistence/PersistenceActions.ts | saveAs": {
-    "message": "Salvesta nimega …"
+    "message": "Salvesta nimega…"
+  },
+  "models/persistence/PersistenceActions.ts | saveFailed": {
+    "message": "Faili ei saanud kettale salvestada."
   },
   "models/persistence/PersistenceActions.ts | saveImage": {
     "message": "Salvesta pilt"
@@ -1710,7 +1728,7 @@
     "message": "PlatformFileSystem ei saa faile lugeda."
   },
   "models/persistence/WorkspaceSettingsTab.ts | addFolder": {
-    "message": "Kausta lisamine"
+    "message": "Lisage kaust"
   },
   "models/persistence/WorkspaceSettingsTab.ts | folderExcludePattern": {
     "message": "Välista tööruumist"
@@ -1760,9 +1778,6 @@
   "models/trace/insights/CLSCulprits.ts | description": {
     "message": "Paigutuse nihked tekivad, kui elemendid liiguvad ilma kasutaja interaktsioonita. [Uurige paigutuse nihete põhjusi](https://web.dev/articles/optimize-cls), nagu elementide lisamine ja eemaldamine või nende fontide muutumine lehe laadimise ajal."
   },
-  "models/trace/insights/CLSCulprits.ts | fontRequest": {
-    "message": "Fonditaotlus"
-  },
   "models/trace/insights/CLSCulprits.ts | injectedIframe": {
     "message": "Sisestatud iframe"
   },
@@ -1781,8 +1796,11 @@
   "models/trace/insights/CLSCulprits.ts | topCulprits": {
     "message": "Paigutuse nihete peamised põhjused"
   },
-  "models/trace/insights/CLSCulprits.ts | unsizedImages": {
-    "message": "Määramata suurusega pildid"
+  "models/trace/insights/CLSCulprits.ts | unsizedImage": {
+    "message": "Suuruseta pildielement"
+  },
+  "models/trace/insights/CLSCulprits.ts | webFont": {
+    "message": "Veebifont"
   },
   "models/trace/insights/CLSCulprits.ts | worstCluster": {
     "message": "Halvim klaster"
@@ -1811,8 +1829,17 @@
   "models/trace/insights/DOMSize.ts | description": {
     "message": "Suur DOM võib pikendada stiiliarvutuste ja paigutuste taaslaadimiste kestust ning mõjutada sellega lehe reageerimiskiirust. Suur DOM suurendab ka mälukasutust. [Vaadake, kuidas vältida liiga suurt DOM-i](https://developer.chrome.com/docs/lighthouse/performance/dom-size/)."
   },
+  "models/trace/insights/DOMSize.ts | duration": {
+    "message": "Kestus"
+  },
   "models/trace/insights/DOMSize.ts | element": {
     "message": "Element"
+  },
+  "models/trace/insights/DOMSize.ts | largeLayout": {
+    "message": "Paigutus ({PH1} objekti)"
+  },
+  "models/trace/insights/DOMSize.ts | largeStyleRecalc": {
+    "message": "Stiili ümberarvutamine ({PH1} elementi)"
   },
   "models/trace/insights/DOMSize.ts | maxChildren": {
     "message": "Enamik alamelemente"
@@ -1826,6 +1853,9 @@
   "models/trace/insights/DOMSize.ts | title": {
     "message": "DOM-i suuruse optimeerimine"
   },
+  "models/trace/insights/DOMSize.ts | topUpdatesDescription": {
+    "message": "Need on suurimad paigutuse ja stiili ümberarvutamise sündmused. Toimivusele avalduvat mõju saab vähendada DOM-i lihtsustamisega."
+  },
   "models/trace/insights/DOMSize.ts | totalElements": {
     "message": "Elemente kokku"
   },
@@ -1836,10 +1866,10 @@
     "message": "Teie esimene võrgupäring on kõige tähtsam.  Vähendage selle latentsusaega, vältides ümbersuunamisi, tagades serveri kiire vastuse ja lubades teksti tihendamist."
   },
   "models/trace/insights/DocumentLatency.ts | failedRedirects": {
-    "message": "Esines ümbersuunamisi"
+    "message": "Esines ümbersuunamisi ({PH1} ümbersuunamist, +{PH2})"
   },
   "models/trace/insights/DocumentLatency.ts | failedServerResponseTime": {
-    "message": "Server reageeris aeglaselt"
+    "message": "Server vastas aeglaselt (täheldatud {PH1})"
   },
   "models/trace/insights/DocumentLatency.ts | failedTextCompression": {
     "message": "Tihendamist pole rakendatud"
@@ -1848,7 +1878,7 @@
     "message": "Vältige ümbersuunamisi"
   },
   "models/trace/insights/DocumentLatency.ts | passingServerResponseTime": {
-    "message": "Server reageerib kiiresti"
+    "message": "Server reageerib kiiresti (täheldatud {PH1})"
   },
   "models/trace/insights/DocumentLatency.ts | passingTextCompression": {
     "message": "Rakendab teksti tihendamise"
@@ -1889,8 +1919,11 @@
   "models/trace/insights/FontDisplay.ts | wastedTimeColumn": {
     "message": "Kulutatud aeg"
   },
+  "models/trace/insights/ForcedReflow.ts | anonymous": {
+    "message": "(anonüümne)"
+  },
   "models/trace/insights/ForcedReflow.ts | description": {
-    "message": "Paljud API-d (mis tavaliselt loevad paigutuse geomeetriat) sunnivad stiili ja paigutuse arvutamiseks renderdusmootoril skripti käitamise peatama. Vaadake lisateavet [sunnitud taaslaadimise](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) ja selle leevendusmeetmete kohta."
+    "message": "Sunnitud taaslaadimine ilmneb, kui JavaScript esitab geomeetriliste atribuutide (nt offsetWidth) kohta päringu pärast seda, kui stiilid on DOM-i oleku muutmise tõttu kehtetuks muudetud. See võib kaasa tuua kehva toimivuse. Vaadake [sunnitud taaslaadimiste](https://developers.google.com/web/fundamentals/performance/rendering/avoid-large-complex-layouts-and-layout-thrashing#avoid-forced-synchronous-layouts) ja võimalike leevenduste kohta lisateavet."
   },
   "models/trace/insights/ForcedReflow.ts | relatedStackTrace": {
     "message": "Virna jälg"
@@ -1905,7 +1938,31 @@
     "message": "Taaslaadimise aeg kokku"
   },
   "models/trace/insights/ForcedReflow.ts | unattributed": {
-    "message": "Omistamata"
+    "message": "[omistamata]"
+  },
+  "models/trace/insights/INPBreakdown.ts | description": {
+    "message": "Alustage uurimist pikimast alajaost. [Viivitusi saab minimeerida](https://web.dev/articles/optimize-inp#optimize_interactions). Töötlemise kestuse vähendamiseks [optimeerige põhilõime kulusid](https://web.dev/articles/optimize-long-tasks), sageli JS."
+  },
+  "models/trace/insights/INPBreakdown.ts | duration": {
+    "message": "Kestus"
+  },
+  "models/trace/insights/INPBreakdown.ts | inputDelay": {
+    "message": "Sisendi viivitus"
+  },
+  "models/trace/insights/INPBreakdown.ts | noInteractions": {
+    "message": "Interaktsioone ei tuvastatud"
+  },
+  "models/trace/insights/INPBreakdown.ts | presentationDelay": {
+    "message": "Esitamise viiteaeg"
+  },
+  "models/trace/insights/INPBreakdown.ts | processingDuration": {
+    "message": "Töötlemise kestus"
+  },
+  "models/trace/insights/INPBreakdown.ts | subpart": {
+    "message": "Alajagu"
+  },
+  "models/trace/insights/INPBreakdown.ts | title": {
+    "message": "INP osad"
   },
   "models/trace/insights/ImageDelivery.ts | description": {
     "message": "Kujutiste allalaadimisaja lühendamine võib parandada lehe ja LCP tajutavat laadimisaega. [Lisateave piltreklaami suuruse optimeerimise kohta](https://developer.chrome.com/docs/lighthouse/performance/uses-optimized-images/)"
@@ -1937,29 +1994,35 @@
   "models/trace/insights/ImageDelivery.ts | useVideoFormat": {
     "message": "Videovormingute kasutamine GIF-ide asemel võib animeeritud sisu allalaadimismahtu vähendada."
   },
-  "models/trace/insights/InteractionToNextPaint.ts | description": {
-    "message": "Alustage uurimist pikimast faasist. [Viivitusi saab minimeerida](https://web.dev/articles/optimize-inp#optimize_interactions). Töötlemise kestuse vähendamiseks [optimeerige põhilõime kulusid](https://web.dev/articles/optimize-long-tasks), sageli JS."
+  "models/trace/insights/LCPBreakdown.ts | description": {
+    "message": "Igal [alajaol on konkreetsed parandamisstrateegiad](https://web.dev/articles/optimize-lcp#lcp-breakdown). Ideaalis tuleks suurem osa LCP-ajast kulutada allikate laadimisele, mitte viivitustele."
   },
-  "models/trace/insights/InteractionToNextPaint.ts | duration": {
+  "models/trace/insights/LCPBreakdown.ts | duration": {
     "message": "Kestus"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | inputDelay": {
-    "message": "Sisendi viivitus"
+  "models/trace/insights/LCPBreakdown.ts | elementRenderDelay": {
+    "message": "Elemendi renderdamise viivitus"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | noInteractions": {
-    "message": "Interaktsioone ei tuvastatud"
+  "models/trace/insights/LCPBreakdown.ts | fieldDuration": {
+    "message": "Väli p75"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | phase": {
-    "message": "Faas"
+  "models/trace/insights/LCPBreakdown.ts | noLcp": {
+    "message": "LCP-d ei tuvastatud"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | presentationDelay": {
-    "message": "Esitamise viiteaeg"
+  "models/trace/insights/LCPBreakdown.ts | resourceLoadDelay": {
+    "message": "Ressursi laadimise viivitus"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | processingDuration": {
-    "message": "Töötlemise kestus"
+  "models/trace/insights/LCPBreakdown.ts | resourceLoadDuration": {
+    "message": "Allika laadimise kestus"
   },
-  "models/trace/insights/InteractionToNextPaint.ts | title": {
-    "message": "INP faasi järgi"
+  "models/trace/insights/LCPBreakdown.ts | subpart": {
+    "message": "Alajagu"
+  },
+  "models/trace/insights/LCPBreakdown.ts | timeToFirstByte": {
+    "message": "Aeg esimese baidini"
+  },
+  "models/trace/insights/LCPBreakdown.ts | title": {
+    "message": "LCP osad"
   },
   "models/trace/insights/LCPDiscovery.ts | description": {
     "message": "Optimeerige LCP-d, muutes LCP-pildi HTMList kohe [leitavaks](https://web.dev/articles/optimize-lcp#1_eliminate_resource_load_delay) ja [vältides laiska laadimist](https://web.dev/articles/lcp-lazy-loading)"
@@ -1988,36 +2051,6 @@
   "models/trace/insights/LCPDiscovery.ts | title": {
     "message": "Teave LCP taotluse kohta"
   },
-  "models/trace/insights/LCPPhases.ts | description": {
-    "message": "Igal [etapil on konkreetsed parandamisstrateegiad](https://web.dev/articles/optimize-lcp#lcp-breakdown). Ideaalis tuleks suurem osa LCP-ajast kulutada allikate laadimisele, mitte viivitustele."
-  },
-  "models/trace/insights/LCPPhases.ts | duration": {
-    "message": "Kestus"
-  },
-  "models/trace/insights/LCPPhases.ts | elementRenderDelay": {
-    "message": "Elemendi renderdamise viivitus"
-  },
-  "models/trace/insights/LCPPhases.ts | fieldDuration": {
-    "message": "Välja 75-protsentiil"
-  },
-  "models/trace/insights/LCPPhases.ts | noLcp": {
-    "message": "LCP-d ei tuvastatud"
-  },
-  "models/trace/insights/LCPPhases.ts | phase": {
-    "message": "Faas"
-  },
-  "models/trace/insights/LCPPhases.ts | resourceLoadDelay": {
-    "message": "Ressursi laadimise viivitus"
-  },
-  "models/trace/insights/LCPPhases.ts | resourceLoadDuration": {
-    "message": "Allika laadimise kestus"
-  },
-  "models/trace/insights/LCPPhases.ts | timeToFirstByte": {
-    "message": "Aeg esimese baidini"
-  },
-  "models/trace/insights/LCPPhases.ts | title": {
-    "message": "LCP faaside kaupa"
-  },
   "models/trace/insights/LegacyJavaScript.ts | columnScript": {
     "message": "Skript"
   },
@@ -2025,7 +2058,7 @@
     "message": "Kulutatud baidid"
   },
   "models/trace/insights/LegacyJavaScript.ts | description": {
-    "message": "Polütäited ja teisendused võimaldavad pärandbrauseritel kasutada uusi JavaScripti funktsioone. Paljud neist ei ole aga tänapäevaste brauserite jaoks vajalikud. Kaaluge oma JavaScripti arendusprotsessi muutmist selliselt, et mitte transpileerida [võrdlusaluseks olevaid](https://web.dev/articles/baseline-and-polyfills) funktsioone (välja arvatud juhul, kui teate, et peate toetama pärandbrausereid). [Vaadake, miks enamik saite saavad juurutada ES6+ koodi ilma transpileerimata](https://philipwalton.com/articles/the-state-of-es5-on-the-web/)"
+    "message": "Polyfillid ja teisendused võimaldavad vanematel brauseritel kasutada uusi JavaScripti funktsioone. Paljud neist ei ole aga tänapäevaste brauserite jaoks vajalikud. Kaaluge oma JavaScripti arendusprotsessi muutmist selliselt, et mitte transpileerida [võrdlusaluseks olevaid](https://web.dev/articles/baseline-and-polyfills) funktsioone (välja arvatud juhul, kui teate, et peate toetama vanemaid brausereid). [Vaadake, miks enamik saite saavad juurutada ES6+ koodi ilma transpileerimata](https://philipwalton.com/articles/the-state-of-es5-on-the-web/)"
   },
   "models/trace/insights/LegacyJavaScript.ts | title": {
     "message": "Pärand-JavaScript"
@@ -2034,7 +2067,7 @@
     "message": "HTTP/2 ja HTTP/3 pakuvad HTTP/1.1 ees mitmesuguseid eeliseid, nt multipleksimine. [Vaadake lisateavet tänapäevase HTTP kasutamise kohta](https://developer.chrome.com/docs/lighthouse/best-practices/uses-http2/)."
   },
   "models/trace/insights/ModernHTTP.ts | noOldProtocolRequests": {
-    "message": "Ükski päring ei kasutanud HTTP/1.1"
+    "message": "Ükski taotlus ei kasutanud protokolli HTTP/1.1 või on seda praegu kasutanud viisil, mis ei anna võimalust märkimisväärseks optimeerimiseks. HTTP/1.1 päringuid märgistatakse ainult siis, kui kuus või enam staatilist vara pärinevad samast lähtekohast ja neid ei edastata kohalikust arenduskeskkonnast ega kolmanda osapoole allikast."
   },
   "models/trace/insights/ModernHTTP.ts | protocol": {
     "message": "Protokoll"
@@ -2045,8 +2078,32 @@
   "models/trace/insights/ModernHTTP.ts | title": {
     "message": "Tänapäevane HTTP"
   },
+  "models/trace/insights/NetworkDependencyTree.ts | columnOrigin": {
+    "message": "Andmeallikas"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnRequest": {
+    "message": "Taotlus"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnSource": {
+    "message": "Allikas"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnTime": {
+    "message": "Aeg"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | columnWastedMs": {
+    "message": "Est LCP sääst"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | crossoriginWarning": {
+    "message": "Kasutamata eelühendus. Kontrollige, kas atribuuti crossorigin kasutatakse õigesti."
+  },
   "models/trace/insights/NetworkDependencyTree.ts | description": {
     "message": "[Vältige kriitiliste taotluste aheldamist](https://developer.chrome.com/docs/lighthouse/performance/critical-request-chains), vähendades ahelate pikkust ja ressursside allalaadimismahtu või lükates edasi tarbetute ressursside allalaadimist, et lehe laadimist täiustada."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | estSavingTableDescription": {
+    "message": "Lisage [eelühenduse](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) vihjed oma kõige tähtsamatele andmeallikatele, kuid proovige kasutada kuni 4."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | estSavingTableTitle": {
+    "message": "Looge kandidaatidega eelühendus"
   },
   "models/trace/insights/NetworkDependencyTree.ts | maxCriticalPathLatency": {
     "message": "Kriitilise tee maksimaalne latentsusaeg:"
@@ -2054,14 +2111,32 @@
   "models/trace/insights/NetworkDependencyTree.ts | noNetworkDependencyTree": {
     "message": "Võrgust sõltuvaid renderdustoiminguid ei ole"
   },
+  "models/trace/insights/NetworkDependencyTree.ts | noPreconnectCandidates": {
+    "message": "Ükski täiendav andmeallikas ei sobi eelühenduse loomiseks"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | noPreconnectOrigins": {
+    "message": "ükski andmeallikas ei olnud eelühendust loonud"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | preconnectOriginsTableDescription": {
+    "message": "[Eelühenduse](https://developer.chrome.com/docs/lighthouse/performance/uses-rel-preconnect/) vihjed aitavad brauseril ühenduse luua varem lehe laadimise ajal, säästes aega selle andmeallika esimese taotluse tegemisel. Järgmised on andmeallikad, millega leht eelühenduse lõi."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | preconnectOriginsTableTitle": {
+    "message": "Eelühendatud lähtekohad"
+  },
   "models/trace/insights/NetworkDependencyTree.ts | title": {
     "message": "Võrgu sõltuvuspuu"
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | tooManyPreconnectLinksWarning": {
+    "message": "Leiti üle 4 ühenduse preconnect. Neid tuleks kasutada mõõdukalt ja ainult kõige tähtsamate andmeallikate jaoks."
+  },
+  "models/trace/insights/NetworkDependencyTree.ts | unusedWarning": {
+    "message": "Kasutamata eelühendus. Kasutage valikut preconnect ainult andmeallikate jaoks, mida leht tõenäoliselt taotleb."
   },
   "models/trace/insights/NetworkDependencyTree.ts | warningDescription": {
     "message": "Vältige kriitiliste taotluste aheldamist, vähendades ahelate pikkust ja ressursside allalaadimismahtu või lükates edasi tarbetute ressursside allalaadimist, et lehe laadimist täiustada."
   },
   "models/trace/insights/RenderBlocking.ts | description": {
-    "message": "Taotlused blokeerivad lehe algset renderdamist, mis võib LCP-d edasi lükata. [Edasilükkamine või tekstisisene kasutamine](https://web.dev/learn/performance/understanding-the-critical-path#render-blocking_resources/) võib liigutada need võrgutaotlused kriitiliselt teelt välja."
+    "message": "Taotlused blokeerivad lehe algset renderdamist, mis võib LCP-d edasi lükata. [Edasilükkamine või tekstisisene kasutamine](https://web.dev/learn/performance/understanding-the-critical-path#render-blocking_resources) võib liigutada need võrgutaotlused kriitiliselt teelt välja."
   },
   "models/trace/insights/RenderBlocking.ts | duration": {
     "message": "Kestus"
@@ -2093,6 +2168,12 @@
   "models/trace/insights/SlowCSSSelector.ts | title": {
     "message": "CSSi valija kulud"
   },
+  "models/trace/insights/SlowCSSSelector.ts | topSelectorElapsedTime": {
+    "message": "Suurima ajakuluga valija"
+  },
+  "models/trace/insights/SlowCSSSelector.ts | topSelectorMatchAttempt": {
+    "message": "Valija, mille puhul tehti enim vastendusi"
+  },
   "models/trace/insights/SlowCSSSelector.ts | topSelectors": {
     "message": "Enim aega/pingutust nõudnud valijad"
   },
@@ -2109,7 +2190,7 @@
     "message": "Edastuse maht"
   },
   "models/trace/insights/ThirdParties.ts | description": {
-    "message": "Kolmanda osapoole kood võib laadimiskiirust märkimisväärselt mõjutada. Lehe sisu prioriseerimiseks võite [kolmanda osapoole koodi laadimist vähendada ja edasi lükata](https://developers.google.com/web/fundamentals/performance/optimizing-content-efficiency/loading-third-party-javascript/)."
+    "message": "Kolmanda osapoole kood võib laadimiskiirust märkimisväärselt mõjutada. Lehe sisu prioriseerimiseks võite [kolmanda osapoole koodi laadimist vähendada ja edasi lükata](https://web.dev/articles/optimizing-content-efficiency-loading-third-party-javascript/)."
   },
   "models/trace/insights/ThirdParties.ts | noThirdParties": {
     "message": "Kolmandaid osapooli ei leitud"
@@ -2120,8 +2201,29 @@
   "models/trace/insights/Viewport.ts | description": {
     "message": "Kui vaateväli pole mobiili jaoks optimeeritud, võivad puudutusinteraktsioonid [viibida kuni 300 ms](https://developer.chrome.com/blog/300ms-tap-delay-gone-away/)."
   },
+  "models/trace/insights/Viewport.ts | mobileTapDelayLabel": {
+    "message": "Mobiilseadme puudutuse viivitus"
+  },
   "models/trace/insights/Viewport.ts | title": {
     "message": "Mobiili vaatevälja optimeerimine"
+  },
+  "models/workspace/IgnoreListManager.ts | addAllAnonymousScriptsToIgnoreList": {
+    "message": "Kõikide anonüümsete skriptide eiramisloendisse lisamine"
+  },
+  "models/workspace/IgnoreListManager.ts | addAllContentScriptsToIgnoreList": {
+    "message": "Kõikide laiendusskriptide eiramisloendisse lisamine"
+  },
+  "models/workspace/IgnoreListManager.ts | addAllThirdPartyScriptsToIgnoreList": {
+    "message": "Lisa kõik kolmanda osapoole skriptid eiramisloendisse"
+  },
+  "models/workspace/IgnoreListManager.ts | addDirectoryToIgnoreList": {
+    "message": "Lisa kataloog eiramisloendisse"
+  },
+  "models/workspace/IgnoreListManager.ts | addScriptToIgnoreList": {
+    "message": "Lisa skript eiramisloendisse"
+  },
+  "models/workspace/IgnoreListManager.ts | removeFromIgnoreList": {
+    "message": "Eemalda eiramisloendist"
   },
   "models/workspace/UISourceCode.ts | index": {
     "message": "(register)"
@@ -2337,13 +2439,13 @@
     "message": "Näitab, kas ja kuidas seda elementi muuta saab."
   },
   "panels/accessibility/AccessibilityStrings.ts | ifThisElementMayReceiveLive": {
-    "message": "Kui element võib vastu võtta reaalajas värskendusi, näitab see, kas muudatuste puhul tuleb kasutajale esitada terve reaalajas piirkond või ainult muudetud sõlmed."
+    "message": "Kui element võib vastu võtta reaalajas teavitusi, näitab see, kas muudatuste puhul tuleb kasutajale esitada terve reaalajas piirkond või ainult muudetud sõlmed."
   },
   "panels/accessibility/AccessibilityStrings.ts | ifThisElementMayReceiveLiveUpdates": {
-    "message": "Kui element võib sisaldada reaalajas värskendusi, määrab see, millist tüüpi värskendused käivitavad märguande."
+    "message": "Kui element võib sisaldada reaalajas teavitusi, määrab see, millist tüüpi teavitused käivitavad märguande."
   },
   "panels/accessibility/AccessibilityStrings.ts | ifThisElementMayReceiveLiveUpdatesThe": {
-    "message": "Kui see element saab reaalajas värskendusi vastu võtta, on see sisalduva reaalajas piirkonna juurelement."
+    "message": "Kui see element saab reaalajas teavitusi vastu võtta, on see sisalduva reaalajas piirkonna juurelement."
   },
   "panels/accessibility/AccessibilityStrings.ts | ifTrueThisElementCanReceiveFocus": {
     "message": "Kui see on tõene, saab selle elemendi esile tõsta."
@@ -2493,7 +2595,7 @@
     "message": "Näitab, kas kasutaja võib selles vidinas teha mitu valikut."
   },
   "panels/accessibility/AccessibilityStrings.ts | whetherAndWhatPriorityOfLive": {
-    "message": "Näitab, kas selle elemendi jaoks võib oodata reaalajas värskendusi ja millise prioriteediga need on."
+    "message": "Näitab, kas selle elemendi jaoks võib oodata reaalajas teavitusi ja millise prioriteediga need on."
   },
   "panels/accessibility/AccessibilityStrings.ts | whetherAndWhatTypeOfAutocomplete": {
     "message": "Näitab, kas ja milliseid automaatse täitmise soovitusi see element praegu esitab."
@@ -2588,6 +2690,9 @@
   "panels/ai_assistance/ai_assistance-meta.ts | askAi": {
     "message": "Küsige AI-lt"
   },
+  "panels/ai_assistance/ai_assistance-meta.ts | debugWithAi": {
+    "message": "Silu AI-ga"
+  },
   "panels/ai_assistance/ai_assistance-meta.ts | enableAiAssistance": {
     "message": "Luba AI-assistent"
   },
@@ -2603,6 +2708,9 @@
   "panels/ai_assistance/ai_assistance-meta.ts | wrongLocale": {
     "message": "Selle funktsiooni kasutamiseks määrake arendaja tööriistade seadetes keele-eelistuseks inglise keel."
   },
+  "panels/ai_assistance/components/ChatView.ts | inputTextAriaDescription": {
+    "message": "Vestluse alustamiseks võite kasutada ka ühte eespool olevatest soovitatud viipadest."
+  },
   "panels/ai_assistance/components/ChatView.ts | learnAbout": {
     "message": "Lisateave AI kohta DevToolsis"
   },
@@ -2614,6 +2722,9 @@
   },
   "panels/ai_assistance/components/ChatView.ts | offline": {
     "message": "Kontrollige internetiühendust ja proovige uuesti"
+  },
+  "panels/ai_assistance/components/ChatView.ts | revealContextDescription": {
+    "message": "Näita valitud kontekstiüksust arendaja tööriistades"
   },
   "panels/ai_assistance/components/ChatView.ts | settingsLink": {
     "message": "AI-assistent seadetes"
@@ -3144,7 +3255,7 @@
     "message": "Tõukemärguanded"
   },
   "panels/application/BackgroundServiceView.ts | recordingSActivity": {
-    "message": "Teenuse {PH1} tegevuse salvestamine …"
+    "message": "Teenuse {PH1} tegevuse salvestamine…"
   },
   "panels/application/BackgroundServiceView.ts | saveEvents": {
     "message": "Salvesta sündmused"
@@ -3185,9 +3296,6 @@
   "panels/application/CookieItemsView.ts | clearFilteredCookies": {
     "message": "Kustuta filtreeritud küpsisefailid"
   },
-  "panels/application/CookieItemsView.ts | cookies": {
-    "message": "Küpsisefailid"
-  },
   "panels/application/CookieItemsView.ts | noCookieSelected": {
     "message": "Ühtki küpsisefaili ei ole valitud"
   },
@@ -3227,6 +3335,9 @@
   "panels/application/IndexedDBViews.ts | collapse": {
     "message": "Ahenda"
   },
+  "panels/application/IndexedDBViews.ts | confirmClearObjectStore": {
+    "message": "Kas tühjendada objektisalv „{PH1}“?"
+  },
   "panels/application/IndexedDBViews.ts | confirmDeleteDatabase": {
     "message": "Kas soovite andmebaasi „{PH1}“ kustutada?"
   },
@@ -3262,6 +3373,9 @@
   },
   "panels/application/IndexedDBViews.ts | keyString": {
     "message": "Võti"
+  },
+  "panels/application/IndexedDBViews.ts | objectStoreWillBeCleared": {
+    "message": "Valitud objektisalves sisalduvad andmed eemaldatakse."
   },
   "panels/application/IndexedDBViews.ts | objectStores": {
     "message": "Objektisalved"
@@ -3485,9 +3599,6 @@
   "panels/application/ServiceWorkersView.ts | focus": {
     "message": "fookus"
   },
-  "panels/application/ServiceWorkersView.ts | inspect": {
-    "message": "Inspekteeri"
-  },
   "panels/application/ServiceWorkersView.ts | networkRequests": {
     "message": "Võrgutaotlused"
   },
@@ -3614,16 +3725,16 @@
   "panels/application/StorageBucketsTreeElement.ts | storageBucketsDescription": {
     "message": "Sellel lehel saate vaadata ja kustutada salvestuskohti ja nendega seotud Storage APIs-sid."
   },
-  "panels/application/StorageItemsView.ts | clearAll": {
+  "panels/application/StorageItemsToolbar.ts | clearAll": {
     "message": "Kustuta kõik"
   },
-  "panels/application/StorageItemsView.ts | deleteSelected": {
+  "panels/application/StorageItemsToolbar.ts | deleteSelected": {
     "message": "Kustuta valitud"
   },
-  "panels/application/StorageItemsView.ts | refresh": {
+  "panels/application/StorageItemsToolbar.ts | refresh": {
     "message": "Värskenda"
   },
-  "panels/application/StorageItemsView.ts | refreshedStatus": {
+  "panels/application/StorageItemsToolbar.ts | refreshedStatus": {
     "message": "Tabelit värskendati"
   },
   "panels/application/StorageView.ts | SiteDataCleared": {
@@ -3639,7 +3750,7 @@
     "message": "Kustuta saidi andmed"
   },
   "panels/application/StorageView.ts | clearing": {
-    "message": "Kustutamine …"
+    "message": "Kustutamine…"
   },
   "panels/application/StorageView.ts | cookies": {
     "message": "Küpsisefailid"
@@ -3709,9 +3820,6 @@
   },
   "panels/application/StorageView.ts | usage": {
     "message": "Kasutus"
-  },
-  "panels/application/StorageView.ts | webSql": {
-    "message": "Veebipõhine SQL"
   },
   "panels/application/TrustTokensTreeElement.ts | trustTokens": {
     "message": "Privaatse oleku märgid"
@@ -4025,6 +4133,9 @@
   "panels/application/components/BackForwardCacheStrings.ts | sharedWorker": {
     "message": "Liidest SharedWorker kasutavad lehed ei ole praegu tagasi-edasiliikumise vahemälu jaoks sobilikud."
   },
+  "panels/application/components/BackForwardCacheStrings.ts | sharedWorkerMessage": {
+    "message": "Leht eemaldati vahemälust, kuna see sai SharedWorkerilt sõnumi."
+  },
   "panels/application/components/BackForwardCacheStrings.ts | speechRecognizer": {
     "message": "Liidest SpeechRecognizer kasutavad lehed ei ole praegu tagasi-edasiliikumise vahemälu jaoks sobilikud."
   },
@@ -4176,10 +4287,7 @@
     "message": "Võimalike põrkumise jälgimise saitide kontrollimine."
   },
   "panels/application/components/BounceTrackingMitigationsView.ts | featureDisabled": {
-    "message": "Põrkumise jälgimise leevendused on keelatud. Nende lubamiseks seadke asukoha {PH1} lipu olekuks „Lubatud kustutamisega”."
-  },
-  "panels/application/components/BounceTrackingMitigationsView.ts | featureFlag": {
-    "message": "Põrkumise jälgimise leevendamise funktsiooni lipp"
+    "message": "Põrkumise jälgimise leevendused on keelatud."
   },
   "panels/application/components/BounceTrackingMitigationsView.ts | forceRun": {
     "message": "Sundkäivitus"
@@ -4256,8 +4364,8 @@
   "panels/application/components/FrameDetailsView.ts | creationStackTraceExplanation": {
     "message": "See raam loodi programmiliselt. stack trace näitab, kus see toimus."
   },
-  "panels/application/components/FrameDetailsView.ts | creatorAdScript": {
-    "message": "iframe'i loonud reklaami skript"
+  "panels/application/components/FrameDetailsView.ts | creatorAdScriptAncestry": {
+    "message": "Sisulooja reklaamiskripti päritolu"
   },
   "panels/application/components/FrameDetailsView.ts | crossoriginIsolated": {
     "message": "Mitme päritoluga isoleeritud"
@@ -4309,6 +4417,9 @@
   },
   "panels/application/components/FrameDetailsView.ts | rootDescription": {
     "message": "See raam on määratud reklaami juurraamiks"
+  },
+  "panels/application/components/FrameDetailsView.ts | rootScriptFilterlistRule": {
+    "message": "Juurskripti filtriloendi reegel"
   },
   "panels/application/components/FrameDetailsView.ts | secureContext": {
     "message": "Turvaline kontekst"
@@ -4766,6 +4877,9 @@
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsStatus": {
     "message": "Olek"
   },
+  "panels/application/preloading/components/PreloadingDetailsReportView.ts | detailsTargetHint": {
+    "message": "Sihtmärgi vihje"
+  },
   "panels/application/preloading/components/PreloadingDetailsReportView.ts | noElementSelected": {
     "message": "Elementi pole valitud"
   },
@@ -4843,6 +4957,9 @@
   },
   "panels/application/preloading/components/PreloadingMismatchedHeadersGrid.ts | missing": {
     "message": "(puudub)"
+  },
+  "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterBrowsingDataRemoved": {
+    "message": "Eellaadimisest loobuti, kuna sirvimisandmed eemaldati."
   },
   "panels/application/preloading/components/PreloadingString.ts | PrefetchEvictedAfterCandidateRemoved": {
     "message": "Eellaadimisest loobuti, kuna ükski spekuleerimisreegel ei käivita enam algataval lehel selle URL-i eellaadimist."
@@ -4943,6 +5060,9 @@
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusBlockedByClient": {
     "message": "Osa ressursi laadimist blokeeriti."
   },
+  "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusBrowsingDataRemoved": {
+    "message": "Eelrenderdatud leht laaditi maha, kuna sirvimisandmed eemaldati."
+  },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusClientCertRequested": {
     "message": "Eelrenderduse navigeerimiseks oli vaja HTTP kliendisertifikaati."
   },
@@ -4984,9 +5104,6 @@
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusLowEndDevice": {
     "message": "Eelrenderdust ei tehtud, kuna sellel seadmel ei ole eelrenderduse toetamiseks piisavalt süsteemimälu."
-  },
-  "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusMainFrameNavigation": {
-    "message": "Eelrenderdatud leht navigeeris ise teisele URL-ile, mida praegu ei toetata."
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusMaxNumOfRunningEagerPrerendersExceeded": {
     "message": "Eelrenderdust, mille üksuse eagerness tase oli „eager“, ei tehtud, sest algataval lehel on juba liiga palju eelrenderdusi pooleli. Edasise eelrenderduse lubamiseks eemaldage muud spekulatsioonireeglid, mis kasutavad taset „eager“."
@@ -5070,7 +5187,7 @@
     "message": "Algatav leht oli taustal, seega jäeti eelrenderdatud leht kõrvale."
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusUaChangeRequiresReload": {
-    "message": "Kasutaja-agendi muutmine toimus eelrenderdamise navigeerimisel."
+    "message": "Kasutaja-agendi muutmine toimus eelrenderduse navigeerimisel."
   },
   "panels/application/preloading/components/PreloadingString.ts | prerenderFinalStatusWindowClosed": {
     "message": "Eelrenderdatud leht laaditi maha, kuna see kutsus meetodi window.close()."
@@ -5459,56 +5576,41 @@
   "panels/changes/ChangesSidebar.ts | sFromSourceMap": {
     "message": "{PH1} (lähtekoodi kaardist)"
   },
-  "panels/changes/ChangesView.ts | binaryDataDescription": {
-    "message": "Muudatuste vahekaart ei näita binaarandmete muudatusi"
-  },
   "panels/changes/ChangesView.ts | changesViewDescription": {
     "message": "Sellel lehel saate jälgida arendaja tööriistades tehtud koodimuudatusi."
-  },
-  "panels/changes/ChangesView.ts | copy": {
-    "message": "Kopeeri"
   },
   "panels/changes/ChangesView.ts | noChanges": {
     "message": "Muudatusi pole veel"
   },
-  "panels/changes/ChangesView.ts | noTextualDiff": {
-    "message": "Erinevusi tekstis ei ole"
-  },
-  "panels/changes/ChangesView.ts | sDeletions": {
-    "message": "{n,plural, =1{# kustutamine (-)}other{# kustutamist (-)}}"
-  },
-  "panels/changes/ChangesView.ts | sInsertions": {
-    "message": "{n,plural, =1{# sisestus (+)}other{# sisestust (+)}}"
-  },
   "panels/changes/CombinedDiffView.ts | copied": {
     "message": "Lõikelauale kopeeritud"
+  },
+  "panels/changes/CombinedDiffView.ts | copyFile": {
+    "message": "Kopeeri fail {PH1} lõikelauale"
   },
   "panels/changes/changes-meta.ts | changes": {
     "message": "Muudatused"
   },
-  "panels/changes/changes-meta.ts | copyAllChangesFromCurrentFile": {
-    "message": "Kopeeri kõik praeguses failis tehtud muudatused"
-  },
-  "panels/changes/changes-meta.ts | revertAllChangesToCurrentFile": {
-    "message": "Võta kõik praeguse faili muudatused tagasi"
-  },
   "panels/changes/changes-meta.ts | showChanges": {
     "message": "Kuva muudatused"
+  },
+  "panels/common/FreDialog.ts | cancel": {
+    "message": "Tühista"
+  },
+  "panels/common/FreDialog.ts | gotIt": {
+    "message": "Selge"
+  },
+  "panels/common/FreDialog.ts | learnMore": {
+    "message": "Lisateave"
+  },
+  "panels/common/FreDialog.ts | thingsToConsider": {
+    "message": "Olulised aspektid"
   },
   "panels/common/common.ts | allow": {
     "message": "Luba"
   },
   "panels/common/common.ts | cancel": {
     "message": "Tühista"
-  },
-  "panels/common/common.ts | gotIt": {
-    "message": "Selge"
-  },
-  "panels/common/common.ts | learnMore": {
-    "message": "Lisateave"
-  },
-  "panels/common/common.ts | thingsToConsider": {
-    "message": "Olulised aspektid"
   },
   "panels/console/ConsoleContextSelector.ts | extension": {
     "message": "Laiendus"
@@ -5664,7 +5766,7 @@
     "message": "Kuva ainult praeguse konteksti sõnumid (top, iframe, worker, laiendus)"
   },
   "panels/console/ConsoleView.ts | overriddenByFilterSidebar": {
-    "message": "Filtri külgribaga alistatud"
+    "message": "Logitasemeid juhitakse konsooli külgribaga."
   },
   "panels/console/ConsoleView.ts | preserveLog": {
     "message": "Säilita logi"
@@ -5679,7 +5781,7 @@
     "message": "Ainult {PH1}"
   },
   "panels/console/ConsoleView.ts | saveAs": {
-    "message": "Salvesta nimega …"
+    "message": "Salvesta nimega…"
   },
   "panels/console/ConsoleView.ts | searching": {
     "message": "Otsimine …"
@@ -6149,6 +6251,12 @@
   "panels/css_overview/CSSOverviewCompletedView.ts | typeSelectors": {
     "message": "Tüübivalijad"
   },
+  "panels/css_overview/CSSOverviewCompletedView.ts | unableToLink": {
+    "message": "(ei saa linkida)"
+  },
+  "panels/css_overview/CSSOverviewCompletedView.ts | unableToLinkToInlineStyle": {
+    "message": "(ei saa linkida tekstisisese stiiliga)"
+  },
   "panels/css_overview/CSSOverviewCompletedView.ts | universalSelectors": {
     "message": "Universaalsed valijad"
   },
@@ -6163,6 +6271,24 @@
   },
   "panels/css_overview/CSSOverviewSidebarPanel.ts | cssOverviewPanelSidebar": {
     "message": "CSS-i ülevaatepaneeli külgriba"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | captureOverview": {
+    "message": "Jäädvusta ülevaade"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | capturePageCSSOverview": {
+    "message": "Lehe CSS-i ülevaate jäädvustamine"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | identifyCSSImprovements": {
+    "message": "Potentsiaalsete CSS-i täiustuste tuvastamine"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | identifyCSSImprovementsWithExampleIssues": {
+    "message": "Potentsiaalsete CSS-i täiustuste (nt madala kontrastsusega seotud probleemid, kasutamata deklaratsioonid, värvide või fontide sobimatus) tuvastamine"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | locateAffectedElements": {
+    "message": "Mõjutatud elementide leidmine paneelil Elemendid"
+  },
+  "panels/css_overview/CSSOverviewStartView.ts | quickStartWithCSSOverview": {
+    "message": "Lühijuhend: alustage uue CSS-i ülevaate paneeli kasutamist"
   },
   "panels/css_overview/CSSOverviewUnusedDeclarations.ts | bottomAppliedToAStatically": {
     "message": "Bottom rakendati staatilise positsiooniga elemendile"
@@ -6184,24 +6310,6 @@
   },
   "panels/css_overview/CSSOverviewUnusedDeclarations.ts | widthAppliedToAnInlineElement": {
     "message": "Width rakendati tekstisisesele elemendile"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | captureOverview": {
-    "message": "Jäädvusta ülevaade"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | capturePageCSSOverview": {
-    "message": "Lehe CSS-i ülevaate jäädvustamine"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | identifyCSSImprovements": {
-    "message": "Potentsiaalsete CSS-i täiustuste tuvastamine"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | identifyCSSImprovementsWithExampleIssues": {
-    "message": "Potentsiaalsete CSS-i täiustuste (nt madala kontrastsusega seotud probleemid, kasutamata deklaratsioonid, värvide või fontide sobimatus) tuvastamine"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | locateAffectedElements": {
-    "message": "Mõjutatud elementide leidmine paneelil Elemendid"
-  },
-  "panels/css_overview/components/CSSOverviewStartView.ts | quickStartWithCSSOverview": {
-    "message": "Lühijuhend: alustage uue CSS-i ülevaate paneeli kasutamist"
   },
   "panels/css_overview/css_overview-meta.ts | cssOverview": {
     "message": "CSS-i ülevaade"
@@ -6230,6 +6338,12 @@
   "panels/developer_resources/DeveloperResourcesListView.ts | initiator": {
     "message": "Algataja"
   },
+  "panels/developer_resources/DeveloperResourcesListView.ts | noResourceMatches": {
+    "message": "Ressursivasteid pole"
+  },
+  "panels/developer_resources/DeveloperResourcesListView.ts | numberOfResourceMatch": {
+    "message": "{n,plural, =1{# ressursi vaste}other{# ressursi vastet}}"
+  },
   "panels/developer_resources/DeveloperResourcesListView.ts | pending": {
     "message": "ootel"
   },
@@ -6256,12 +6370,6 @@
   },
   "panels/developer_resources/DeveloperResourcesView.ts | loadHttpsDeveloperResources": {
     "message": "Laadige arendaja HTTP(S) ressursse kontrollitud veebisaidi kaudu, mitte arendaja tööriistade kaudu"
-  },
-  "panels/developer_resources/DeveloperResourcesView.ts | noResourceMatches": {
-    "message": "Ressursivasteid pole"
-  },
-  "panels/developer_resources/DeveloperResourcesView.ts | numberOfResourceMatch": {
-    "message": "{n,plural, =1{# ressursi vaste}other{# ressursi vastet}}"
   },
   "panels/developer_resources/DeveloperResourcesView.ts | resources": {
     "message": "{n,plural, =1{# ressurss}other{# ressurssi}}"
@@ -6383,6 +6491,9 @@
   "panels/elements/ElementIssueUtils.ts | interactiveContentOptionChild": {
     "message": "Interaktiivne element <option> elemendi sees"
   },
+  "panels/elements/ElementIssueUtils.ts | interactiveContentSummaryDescendant": {
+    "message": "Interaktiivne element elemendis <summary>"
+  },
   "panels/elements/ElementIssueUtils.ts | nonPhrasingContentOptionChild": {
     "message": "Elemendis <option> kasutatakse fraasivälist sisu"
   },
@@ -6461,8 +6572,23 @@
   "panels/elements/ElementsTreeElement.ts | addAttribute": {
     "message": "Lisa atribuut"
   },
+  "panels/elements/ElementsTreeElement.ts | addPadding": {
+    "message": "Lisa täidis"
+  },
+  "panels/elements/ElementsTreeElement.ts | alignItems": {
+    "message": "Joonda üksuseid"
+  },
+  "panels/elements/ElementsTreeElement.ts | assessVisibility": {
+    "message": "Hinda nähtavust"
+  },
   "panels/elements/ElementsTreeElement.ts | captureNodeScreenshot": {
     "message": "Jäädvusta sõlme ekraanipilt"
+  },
+  "panels/elements/ElementsTreeElement.ts | centerElement": {
+    "message": "Sea element keskele"
+  },
+  "panels/elements/ElementsTreeElement.ts | changeParentProperties": {
+    "message": "Muuda ülematribuute"
   },
   "panels/elements/ElementsTreeElement.ts | children": {
     "message": "Alamelemendid:"
@@ -6509,6 +6635,9 @@
   "panels/elements/ElementsTreeElement.ts | disableScrollSnap": {
     "message": "Keela kerimiskatkestuse ülekate"
   },
+  "panels/elements/ElementsTreeElement.ts | distributeItemsEvenly": {
+    "message": "Jaota üksused ühtlaselt"
+  },
   "panels/elements/ElementsTreeElement.ts | duplicateElement": {
     "message": "Loo elemendi duplikaat"
   },
@@ -6536,8 +6665,35 @@
   "panels/elements/ElementsTreeElement.ts | expandRecursively": {
     "message": "Laienda rekursiivselt"
   },
+  "panels/elements/ElementsTreeElement.ts | explainContainerContext": {
+    "message": "Selgita konteineri sisu"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainContainerQueries": {
+    "message": "Selgita konteineri päringuid"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainContainerTypes": {
+    "message": "Selgita konteineri tüüpe"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainFlexbox": {
+    "message": "Selgita Flexboxi"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainGridLayout": {
+    "message": "Selgita ruudustiku paigutust"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainScrollbars": {
+    "message": "Selgita kerimisribasid"
+  },
+  "panels/elements/ElementsTreeElement.ts | explainSubgrids": {
+    "message": "Selgita alamruudustikke"
+  },
+  "panels/elements/ElementsTreeElement.ts | findGridDefinition": {
+    "message": "Leia ruudustiku määratlus"
+  },
   "panels/elements/ElementsTreeElement.ts | focus": {
     "message": "Esiletõstmine"
+  },
+  "panels/elements/ElementsTreeElement.ts | forceOpenPopover": {
+    "message": "Selle hüpikakna avatuna hoidmine"
   },
   "panels/elements/ElementsTreeElement.ts | forceState": {
     "message": "Jõusta olek"
@@ -6551,17 +6707,32 @@
   "panels/elements/ElementsTreeElement.ts | paste": {
     "message": "Kleebi"
   },
+  "panels/elements/ElementsTreeElement.ts | removeScrollbars": {
+    "message": "Eemalda kerimisribad"
+  },
   "panels/elements/ElementsTreeElement.ts | scrollIntoView": {
     "message": "Keri vaatesse"
+  },
+  "panels/elements/ElementsTreeElement.ts | showCommandForTarget": {
+    "message": "Kuva atribuudiga commandfor seotud element"
   },
   "panels/elements/ElementsTreeElement.ts | showFrameDetails": {
     "message": "Kuva üksuse iframe üksikasjad"
   },
   "panels/elements/ElementsTreeElement.ts | showInterestTarget": {
-    "message": "Kuva sihthuvi"
+    "message": "Kuva atribuudiga interesttarget seotud element"
   },
   "panels/elements/ElementsTreeElement.ts | showPopoverTarget": {
-    "message": "Kuva hõljuva elemendi sihtmärk"
+    "message": "Kuva atribuudiga popovertarget seotud element"
+  },
+  "panels/elements/ElementsTreeElement.ts | startAChat": {
+    "message": "Alusta vestlust"
+  },
+  "panels/elements/ElementsTreeElement.ts | stopForceOpenPopover": {
+    "message": "Hüpikakna sulgemine"
+  },
+  "panels/elements/ElementsTreeElement.ts | styleScrollbars": {
+    "message": "Stiliseeri kerimisribasid"
   },
   "panels/elements/ElementsTreeElement.ts | thisFrameWasIdentifiedAsAnAd": {
     "message": "See raam tuvastati reklaamiraamina"
@@ -6572,11 +6743,11 @@
   "panels/elements/ElementsTreeElement.ts | valueIsTooLargeToEdit": {
     "message": "<väärtus on muutmiseks liiga suur>"
   },
+  "panels/elements/ElementsTreeElement.ts | wrapTheseItems": {
+    "message": "Murra üksuste read"
+  },
   "panels/elements/ElementsTreeOutline.ts | pageDom": {
     "message": "Lehe DOM"
-  },
-  "panels/elements/ElementsTreeOutline.ts | reveal": {
-    "message": "näita"
   },
   "panels/elements/ElementsTreeOutline.ts | showAllNodesDMore": {
     "message": "Kuva kõik sõlmed (veel {PH1})"
@@ -6616,6 +6787,27 @@
   },
   "panels/elements/LayersWidget.ts | toggleCSSLayers": {
     "message": "CSS-i kihtide kuva lüliti"
+  },
+  "panels/elements/LayoutPane.ts | chooseElementOverlayColor": {
+    "message": "Valige selle elemendi ülekatte värv"
+  },
+  "panels/elements/LayoutPane.ts | colorPickerOpened": {
+    "message": "Värvivalija avati."
+  },
+  "panels/elements/LayoutPane.ts | flexbox": {
+    "message": "Flexbox"
+  },
+  "panels/elements/LayoutPane.ts | flexboxOverlays": {
+    "message": "Flexboxi ülekatted"
+  },
+  "panels/elements/LayoutPane.ts | noFlexboxLayoutsFoundOnThisPage": {
+    "message": "Sellelt lehelt ei leitud ühtki Flexboxi paigutust"
+  },
+  "panels/elements/LayoutPane.ts | overlayDisplaySettings": {
+    "message": "Ülekattekuva seaded"
+  },
+  "panels/elements/LayoutPane.ts | showElementInTheElementsPanel": {
+    "message": "Kuva element paneelil Elemendid"
   },
   "panels/elements/MarkerDecorator.ts | domBreakpoint": {
     "message": "DOM-i murdepunkt"
@@ -6662,11 +6854,11 @@
   "panels/elements/PropertyRenderer.ts | cssPropertyValue": {
     "message": "CSS-atribuudi väärtus: {PH1}"
   },
+  "panels/elements/ShortcutTreeElement.ts | reveal": {
+    "message": "näita"
+  },
   "panels/elements/StylePropertiesSection.ts | constructedStylesheet": {
     "message": "koostatud stiilileht"
-  },
-  "panels/elements/StylePropertiesSection.ts | copyAllCSSChanges": {
-    "message": "Kopeeri kõik CSS-i muudatused"
   },
   "panels/elements/StylePropertiesSection.ts | copyAllDeclarations": {
     "message": "Kopeeri kõik deklaratsioonid"
@@ -6704,9 +6896,6 @@
   "panels/elements/StylePropertiesSection.ts | viaInspector": {
     "message": "inspektori kaudu"
   },
-  "panels/elements/StylePropertyTreeElement.ts | copyAllCSSChanges": {
-    "message": "Kopeeri kõik CSS-i muudatused"
-  },
   "panels/elements/StylePropertyTreeElement.ts | copyAllCssDeclarationsAsJs": {
     "message": "Kopeeri kõik deklaratsioonid JS-ina"
   },
@@ -6739,6 +6928,9 @@
   },
   "panels/elements/StylePropertyTreeElement.ts | invalidString": {
     "message": "{PH1}, vara nimi: {PH2}, vara väärtus: {PH3}"
+  },
+  "panels/elements/StylePropertyTreeElement.ts | jumpToAnchorNode": {
+    "message": "Hüppa ankursõlmele"
   },
   "panels/elements/StylePropertyTreeElement.ts | jumpToAnimationsPanel": {
     "message": "Animatsioonide paneelile liikumine"
@@ -6803,20 +6995,32 @@
   "panels/elements/components/AccessibilityTreeNode.ts | ignored": {
     "message": "Eiratud"
   },
-  "panels/elements/components/AnchorFunctionLinkSwatch.ts | jumpToAnchorNode": {
-    "message": "Hüppa ankursõlmele"
-  },
-  "panels/elements/components/AnchorFunctionLinkSwatch.ts | sIsNotDefined": {
-    "message": "{PH1} ei ole määratletud"
-  },
   "panels/elements/components/CSSHintDetailsView.ts | learnMore": {
     "message": "Lisateave"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | browserOnPlatform": {
+    "message": "{PH1} platvormil {PH2}"
   },
   "panels/elements/components/CSSPropertyDocsView.ts | dontShow": {
     "message": "Ära kuva"
   },
   "panels/elements/components/CSSPropertyDocsView.ts | learnMore": {
     "message": "Lisateave"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | limitedAvailability": {
+    "message": "Peamistes brauserites on saadavus piiratud."
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | limitedAvailabilityInBrowsers": {
+    "message": "Piiratud saadavus peamistes brauserites (pole brauserites {PH1} täielikult rakendatud)"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | newlyAvailableSince": {
+    "message": "Nüüd saadaval peamistes brauserites (Baseline alates kuupäevast {PH1})"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | unknownDate": {
+    "message": "tundmatu kuupäev"
+  },
+  "panels/elements/components/CSSPropertyDocsView.ts | widelyAvailableSince": {
+    "message": "Peamistes brauserites ulatuslikult saadaval (Baseline alates kuupäevast {PH1})"
   },
   "panels/elements/components/CSSVariableValueView.ts | invalidPropertyValue": {
     "message": "Sobimatu atribuudi väärtus, eeldatav tüüp on {type}"
@@ -6842,36 +7046,6 @@
   "panels/elements/components/ElementsTreeExpandButton.ts | expand": {
     "message": "Laienda"
   },
-  "panels/elements/components/LayoutPane.ts | chooseElementOverlayColor": {
-    "message": "Valige selle elemendi ülekatte värv"
-  },
-  "panels/elements/components/LayoutPane.ts | colorPickerOpened": {
-    "message": "Värvivalija avati."
-  },
-  "panels/elements/components/LayoutPane.ts | flexbox": {
-    "message": "Flexbox"
-  },
-  "panels/elements/components/LayoutPane.ts | flexboxOverlays": {
-    "message": "Flexboxi ülekatted"
-  },
-  "panels/elements/components/LayoutPane.ts | grid": {
-    "message": "Ruudustik"
-  },
-  "panels/elements/components/LayoutPane.ts | gridOverlays": {
-    "message": "Ruudustiku ülekatted"
-  },
-  "panels/elements/components/LayoutPane.ts | noFlexboxLayoutsFoundOnThisPage": {
-    "message": "Sellelt lehelt ei leitud ühtki Flexboxi paigutust"
-  },
-  "panels/elements/components/LayoutPane.ts | noGridLayoutsFoundOnThisPage": {
-    "message": "Sellelt lehelt ei leitud ühtki ruudustiku paigutust"
-  },
-  "panels/elements/components/LayoutPane.ts | overlayDisplaySettings": {
-    "message": "Ülekattekuva seaded"
-  },
-  "panels/elements/components/LayoutPane.ts | showElementInTheElementsPanel": {
-    "message": "Kuva element paneelil Elemendid"
-  },
   "panels/elements/components/StylePropertyEditor.ts | deselectButton": {
     "message": "Eemalda {propertyName}: {propertyValue}"
   },
@@ -6884,9 +7058,6 @@
   "panels/elements/elements-meta.ts | copyStyles": {
     "message": "Kopeeri stiilid"
   },
-  "panels/elements/elements-meta.ts | disableDomWordWrap": {
-    "message": "Keela DOM-i sõna murdmine"
-  },
   "panels/elements/elements-meta.ts | duplicateElement": {
     "message": "Loo elemendi duplikaat"
   },
@@ -6895,9 +7066,6 @@
   },
   "panels/elements/elements-meta.ts | elements": {
     "message": "Elemendid"
-  },
-  "panels/elements/elements-meta.ts | enableDomWordWrap": {
-    "message": "Luba DOM-i sõna murdmine"
   },
   "panels/elements/elements-meta.ts | eventListeners": {
     "message": "Sündmusekuulajad"
@@ -6965,8 +7133,14 @@
   "panels/elements/elements-meta.ts | stackTrace": {
     "message": "Virna jälg"
   },
+  "panels/elements/elements-meta.ts | toggleA11yTree": {
+    "message": "Juurdepääsetavuspuu vahetamine"
+  },
   "panels/elements/elements-meta.ts | toggleEyeDropper": {
     "message": "Lülita värvipipetti"
+  },
+  "panels/elements/elements-meta.ts | toggleWordWrap": {
+    "message": "Lülita sõna murdmise seade sisse/välja"
   },
   "panels/elements/elements-meta.ts | undo": {
     "message": "Võta tagasi"
@@ -7003,12 +7177,6 @@
   },
   "panels/emulation/DeviceModeToolbar.ts | edit": {
     "message": "Muuda …"
-  },
-  "panels/emulation/DeviceModeToolbar.ts | experimentalWebPlatformFeature": {
-    "message": "Lipp „Experimental Web Platform Feature“ on lubatud. Klõpsake selle keelamiseks."
-  },
-  "panels/emulation/DeviceModeToolbar.ts | experimentalWebPlatformFeatureFlag": {
-    "message": "Lipp „Experimental Web Platform Feature“ on keelatud. Klõpsake selle lubamiseks."
   },
   "panels/emulation/DeviceModeToolbar.ts | fitToWindowF": {
     "message": "Sobita aknasse ({PH1}%)"
@@ -7724,7 +7892,7 @@
   "panels/layer_viewer/LayerDetailsView.ts | slowScrollRegions": {
     "message": "Aeglase kerimise piirkonnad"
   },
-  "panels/layer_viewer/LayerDetailsView.ts | stickyAncenstorLayersS": {
+  "panels/layer_viewer/LayerDetailsView.ts | stickyAncestorLayersS": {
     "message": "{PH1}: {PH2} ({PH3})"
   },
   "panels/layer_viewer/LayerDetailsView.ts | stickyBoxRectangleDimensions": {
@@ -7861,6 +8029,9 @@
   },
   "panels/lighthouse/LighthouseController.ts | accessibility": {
     "message": "Juurdepääsetavus"
+  },
+  "panels/lighthouse/LighthouseController.ts | applyDesktopEmulationDuring": {
+    "message": "Rakenda auditeerimise ajal lauaarvuti emuleerimine"
   },
   "panels/lighthouse/LighthouseController.ts | applyMobileEmulation": {
     "message": "Rakenda mobiilseadme emuleerimine"
@@ -8342,6 +8513,9 @@
   "panels/media/PlayerPropertiesView.ts | hardwareEncoder": {
     "message": "Riistvaraline kooder"
   },
+  "panels/media/PlayerPropertiesView.ts | hlsBufferedRanges": {
+    "message": "Puhverdatud meedia vahemikud"
+  },
   "panels/media/PlayerPropertiesView.ts | noDecoder": {
     "message": "Dekooder puudub"
   },
@@ -8435,12 +8609,6 @@
   "panels/mobile_throttling/NetworkThrottlingSelector.ts | presets": {
     "message": "Eelseaded"
   },
-  "panels/mobile_throttling/ThrottlingManager.ts | add": {
-    "message": "Lisa …"
-  },
-  "panels/mobile_throttling/ThrottlingManager.ts | addS": {
-    "message": "Lisa {PH1}"
-  },
   "panels/mobile_throttling/ThrottlingManager.ts | calibrate": {
     "message": "Kalibreeri…"
   },
@@ -8462,6 +8630,9 @@
   "panels/mobile_throttling/ThrottlingManager.ts | hardwareConcurrencySettingLabel": {
     "message": "Alistage navigator.hardwareConcurrency teatatud väärtus"
   },
+  "panels/mobile_throttling/ThrottlingManager.ts | noSaveDataOverride": {
+    "message": "„Andmete salvestamine“: vaikimisi"
+  },
   "panels/mobile_throttling/ThrottlingManager.ts | offline": {
     "message": "Võrguühenduseta"
   },
@@ -8474,8 +8645,14 @@
   "panels/mobile_throttling/ThrottlingManager.ts | resetConcurrency": {
     "message": "Vaikeväärtusele lähtestamine"
   },
-  "panels/mobile_throttling/ThrottlingManager.ts | sS": {
-    "message": "{PH1}: {PH2}"
+  "panels/mobile_throttling/ThrottlingManager.ts | saveDataOff": {
+    "message": "„Andmete salvestamine“: keelatud"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | saveDataOn": {
+    "message": "„Andmete salvestamine“: lubatud"
+  },
+  "panels/mobile_throttling/ThrottlingManager.ts | saveDataSettingTooltip": {
+    "message": "navigator.connection.saveData teatatud väärtuse alistamine lehel"
   },
   "panels/mobile_throttling/ThrottlingManager.ts | throttling": {
     "message": "Piiramine"
@@ -8596,9 +8773,6 @@
   },
   "panels/mobile_throttling/ThrottlingSettingsTab.ts | packetReordering": {
     "message": "Paketi järjestuse muutmine"
-  },
-  "panels/mobile_throttling/ThrottlingSettingsTab.ts | percent": {
-    "message": "protsent"
   },
   "panels/mobile_throttling/ThrottlingSettingsTab.ts | profileName": {
     "message": "Profiili nimi"
@@ -8733,7 +8907,7 @@
     "message": "Kasutaja-agenti värskendati."
   },
   "panels/network/NetworkConfigView.ts | custom": {
-    "message": "Kohandatud …"
+    "message": "Kohandatud…"
   },
   "panels/network/NetworkConfigView.ts | customUserAgentFieldIsRequired": {
     "message": "Kohandatud kasutaja-agendi väli on nõutav"
@@ -8745,10 +8919,10 @@
     "message": "Sisestage kohandatud kasutaja-agent"
   },
   "panels/network/NetworkConfigView.ts | networkConditionsPanelShown": {
-    "message": "Kuvatakse võrgu tingimusi"
+    "message": "Kuvatud on võrgu tingimused."
   },
   "panels/network/NetworkConfigView.ts | networkThrottling": {
-    "message": "Võrgu piiramine"
+    "message": "Võrk"
   },
   "panels/network/NetworkConfigView.ts | selectAutomatically": {
     "message": "Kasutaja brauseri vaikeseade"
@@ -8773,6 +8947,21 @@
   },
   "panels/network/NetworkDataGridNode.ts | canceled": {
     "message": "(tühistatud)"
+  },
+  "panels/network/NetworkDataGridNode.ts | coepFrameResourceNeedsCoepHeader": {
+    "message": "COEP raamistikku laaditaval allikal peab olema COEP päis."
+  },
+  "panels/network/NetworkDataGridNode.ts | coopSandboxedIframeCannotNavigateToCoopPage": {
+    "message": "Liivakastipõhise iframe'i hüpikaken ei saa navigeerida COOP lehele."
+  },
+  "panels/network/NetworkDataGridNode.ts | corpNotSameOrigin": {
+    "message": "Vastuolu CORP-ga: pole „sama päritolu“."
+  },
+  "panels/network/NetworkDataGridNode.ts | corpNotSameOriginAfterDefaultedToSameOriginByCoep": {
+    "message": "Pärast seda kui COEP vaikevalikuks määrati „sama päritolu“, tekkis vastuolu CORP-ga: päritolu pole sama."
+  },
+  "panels/network/NetworkDataGridNode.ts | corpNotSameSite": {
+    "message": "Vastuolu CORP-ga: pole „sama sait“."
   },
   "panels/network/NetworkDataGridNode.ts | corsError": {
     "message": "CORS-i viga"
@@ -8864,6 +9053,9 @@
   "panels/network/NetworkDataGridNode.ts | redirect": {
     "message": "Suuna ümber"
   },
+  "panels/network/NetworkDataGridNode.ts | responseIsIpProtectedToolTip": {
+    "message": "See taotlus saadeti IP kaitsega puhverserverite kaudu."
+  },
   "panels/network/NetworkDataGridNode.ts | sPreflight": {
     "message": "{PH1} + esituseelne"
   },
@@ -8881,6 +9073,12 @@
   },
   "panels/network/NetworkDataGridNode.ts | servedFromMemoryCacheResource": {
     "message": "Esitatud vahemälust, allika maht: {PH1}"
+  },
+  "panels/network/NetworkDataGridNode.ts | servedFromNetwork": {
+    "message": "{PH1} edastatud võrgu kaudu, allika maht: {PH2}"
+  },
+  "panels/network/NetworkDataGridNode.ts | servedFromNetworkMissingServiceWorkerRoute": {
+    "message": "{PH1} edastatud võrgu kaudu, allika suurus: {PH2}, sobivaid ServiceWorkeri marsruute ei leitud"
   },
   "panels/network/NetworkDataGridNode.ts | servedFromPrefetchCacheResource": {
     "message": "Esitatud eellaadimise vahemälust, ressursi maht: {PH1}"
@@ -8918,11 +9116,17 @@
   "panels/network/NetworkDataGridNode.ts | webBundleInnerRequest": {
     "message": "Esitatud WebBundle'ist"
   },
+  "panels/network/NetworkItemView.ts | connectionInfo": {
+    "message": "Ühenduse teave"
+  },
   "panels/network/NetworkItemView.ts | containsOverriddenHeaders": {
     "message": "See vastus sisaldab päiseid, mille arendaja tööriistad alistavad"
   },
   "panels/network/NetworkItemView.ts | cookies": {
     "message": "Küpsisefailid"
+  },
+  "panels/network/NetworkItemView.ts | directsocketMessages": {
+    "message": "DirectSocketi sõnumid"
   },
   "panels/network/NetworkItemView.ts | eventstream": {
     "message": "EventStream"
@@ -8986,6 +9190,9 @@
   },
   "panels/network/NetworkLogView.ts | areYouSureYouWantToClearBrowserCookies": {
     "message": "Kas soovite kindlasti brauseri küpsisefailid kustutada?"
+  },
+  "panels/network/NetworkLogView.ts | assessSecurityHeaders": {
+    "message": "Hinda turvapäiseid"
   },
   "panels/network/NetworkLogView.ts | blockRequestDomain": {
     "message": "Blokeeri taotluse domeen"
@@ -9101,6 +9308,15 @@
   "panels/network/NetworkLogView.ts | dropHarFilesHere": {
     "message": "Pukseerige HAR-failid siia"
   },
+  "panels/network/NetworkLogView.ts | explainFailures": {
+    "message": "Selgita tõrkeid"
+  },
+  "panels/network/NetworkLogView.ts | explainPurpose": {
+    "message": "Selgita eesmärki"
+  },
+  "panels/network/NetworkLogView.ts | explainSlowness": {
+    "message": "Selgita aeglast taotlust"
+  },
   "panels/network/NetworkLogView.ts | finishS": {
     "message": "Lõpeta: {PH1}"
   },
@@ -9122,6 +9338,9 @@
   "panels/network/NetworkLogView.ts | invertsFilter": {
     "message": "Pöörab otsingufiltri ümber"
   },
+  "panels/network/NetworkLogView.ts | ippRequests": {
+    "message": "IP kaitsega taotlused"
+  },
   "panels/network/NetworkLogView.ts | loadS": {
     "message": "Laadimine: {PH1}"
   },
@@ -9136,6 +9355,9 @@
   },
   "panels/network/NetworkLogView.ts | onlyShowBlockedRequests": {
     "message": "Kuva ainult blokeeritud taotlused"
+  },
+  "panels/network/NetworkLogView.ts | onlyShowIPProtectedRequests": {
+    "message": "(Ainult inkognito) Ainult IP kaitsega puhverserveritesse saadetud taotluste kuvamine"
   },
   "panels/network/NetworkLogView.ts | onlyShowRequestsWithBlockedCookies": {
     "message": "Kuva ainult blokeeritud vastuse küpsisefailidega taotlused"
@@ -9196,6 +9418,9 @@
   },
   "panels/network/NetworkLogView.ts | showOnlyHideRequests": {
     "message": "Kuva ainult/peida taotlused"
+  },
+  "panels/network/NetworkLogView.ts | startAChat": {
+    "message": "Alusta vestlust"
   },
   "panels/network/NetworkLogView.ts | startRecording": {
     "message": "Alusta salvestamist"
@@ -9259,6 +9484,9 @@
   },
   "panels/network/NetworkLogViewColumns.ts | remoteAddressSpace": {
     "message": "Kaugaadressiruum"
+  },
+  "panels/network/NetworkLogViewColumns.ts | requestHeaders": {
+    "message": "Taotluste päised"
   },
   "panels/network/NetworkLogViewColumns.ts | responseHeaders": {
     "message": "Vastuste päised"
@@ -9333,13 +9561,13 @@
     "message": "Ekspordi HAR (kas puhastatud või delikaatsete isikuandmetega)"
   },
   "panels/network/NetworkPanel.ts | exportHarSanitized": {
-    "message": "Eksportige HAR (puhastatud)..."
+    "message": "Eksportige HAR (puhastatud)…"
   },
   "panels/network/NetworkPanel.ts | exportHarWithSensitiveData": {
     "message": "Ekspordi HAR (tundlike andmetega)..."
   },
   "panels/network/NetworkPanel.ts | fetchingFrames": {
-    "message": "Raamide toomine …"
+    "message": "Raamide toomine…"
   },
   "panels/network/NetworkPanel.ts | groupByFrame": {
     "message": "Raami alusel rühmitamine"
@@ -9348,10 +9576,10 @@
     "message": "Rühmita taotlused ülataseme taotluse raami järgi"
   },
   "panels/network/NetworkPanel.ts | hitSToReloadAndCaptureFilmstrip": {
-    "message": "Vajutage klahvikombinatsiooni {PH1} uuesti laadimiseks ja filmiriba jäädvustamiseks."
+    "message": "Vajutage {PH1} videoriba uuesti laadimiseks ja jäädvustamiseks."
   },
   "panels/network/NetworkPanel.ts | importHarFile": {
-    "message": "Impordi HAR-fail …"
+    "message": "Importige HAR-fail…"
   },
   "panels/network/NetworkPanel.ts | moreNetworkConditions": {
     "message": "Rohkem võrgu tingimusi …"
@@ -9369,7 +9597,7 @@
     "message": "Säilita logi"
   },
   "panels/network/NetworkPanel.ts | recordingFrames": {
-    "message": "Raamide salvestamine …"
+    "message": "Raamide salvestamine…"
   },
   "panels/network/NetworkPanel.ts | search": {
     "message": "Otsing"
@@ -9638,17 +9866,68 @@
   "panels/network/RequestTimingView.ts | waterfall": {
     "message": "Juga"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | all": {
+  "panels/network/ResourceChunkView.ts | all": {
     "message": "Kõik"
+  },
+  "panels/network/ResourceChunkView.ts | clearAll": {
+    "message": "Kustuta kõik"
+  },
+  "panels/network/ResourceChunkView.ts | clearAllL": {
+    "message": "Kustuta kõik"
+  },
+  "panels/network/ResourceChunkView.ts | copyMessage": {
+    "message": "Kopeeri sõnum"
+  },
+  "panels/network/ResourceChunkView.ts | copyMessageD": {
+    "message": "Kopeeri sõnum…"
+  },
+  "panels/network/ResourceChunkView.ts | data": {
+    "message": "Andmed"
+  },
+  "panels/network/ResourceChunkView.ts | filter": {
+    "message": "Filtreeri"
+  },
+  "panels/network/ResourceChunkView.ts | length": {
+    "message": "Pikkus"
+  },
+  "panels/network/ResourceChunkView.ts | noMessageSelected": {
+    "message": "Ühtegi sõnumit pole valitud"
+  },
+  "panels/network/ResourceChunkView.ts | receive": {
+    "message": "Vastuvõtmine"
+  },
+  "panels/network/ResourceChunkView.ts | selectMessageToBrowseItsContent": {
+    "message": "Valige sõnum, et selle sisu sirvida."
+  },
+  "panels/network/ResourceChunkView.ts | send": {
+    "message": "Saada"
+  },
+  "panels/network/ResourceChunkView.ts | time": {
+    "message": "Aeg"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | address": {
+    "message": "Aadress"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | data": {
+    "message": "Andmed"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | directSocketChunk": {
+    "message": "Direct Socket Chunk"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | filterUsingRegex": {
+    "message": "Filtreerige regulaaravaldise abil (näide: (direct)?socket)"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | length": {
+    "message": "Pikkus"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | port": {
+    "message": "Port"
+  },
+  "panels/network/ResourceDirectSocketChunkView.ts | time": {
+    "message": "Aeg"
   },
   "panels/network/ResourceWebSocketFrameView.ts | binaryMessage": {
     "message": "Kahendkoodi sõnum"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | clearAll": {
-    "message": "Kustuta kõik"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | clearAllL": {
-    "message": "Kustuta kõik"
   },
   "panels/network/ResourceWebSocketFrameView.ts | connectionCloseMessage": {
     "message": "Ühenduse sulgemise sõnum"
@@ -9656,29 +9935,11 @@
   "panels/network/ResourceWebSocketFrameView.ts | continuationFrame": {
     "message": "Jätkamisraam"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | copyMessage": {
-    "message": "Kopeeri sõnum"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | copyMessageD": {
-    "message": "Kopeeri sõnum …"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | data": {
-    "message": "Andmed"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | filter": {
-    "message": "Filtreeri"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | filterUsingRegex": {
     "message": "Filtreeri regulaaravaldisega (näide: (web)?socket)"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | length": {
-    "message": "Pikkus"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | na": {
     "message": "Puudub"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | noMessageSelected": {
-    "message": "Ühtegi sõnumit pole valitud"
   },
   "panels/network/ResourceWebSocketFrameView.ts | pingMessage": {
     "message": "Ping-sõnum"
@@ -9686,26 +9947,14 @@
   "panels/network/ResourceWebSocketFrameView.ts | pongMessage": {
     "message": "Pong-sõnum"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | receive": {
-    "message": "Vastuvõtmine"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | sOpcodeS": {
     "message": "{PH1} (operatsioonikood {PH2})"
   },
   "panels/network/ResourceWebSocketFrameView.ts | sOpcodeSMask": {
     "message": "{PH1} (operatsioonikood {PH2}, mask)"
   },
-  "panels/network/ResourceWebSocketFrameView.ts | selectMessageToBrowseItsContent": {
-    "message": "Valige sõnum, et selle sisu sirvida."
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | send": {
-    "message": "Saada"
-  },
   "panels/network/ResourceWebSocketFrameView.ts | textMessage": {
     "message": "Tekstsõnum"
-  },
-  "panels/network/ResourceWebSocketFrameView.ts | time": {
-    "message": "Aeg"
   },
   "panels/network/ResourceWebSocketFrameView.ts | webSocketFrame": {
     "message": "WebSocketi raam"
@@ -9772,6 +10021,45 @@
   },
   "panels/network/SignedExchangeInfoView.ts | viewCertificate": {
     "message": "Kuva sertifikaat"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusAborted": {
+    "message": "Katkestatud"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusClosed": {
+    "message": "Suletud"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusOpen": {
+    "message": "Ava"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketStatusOpening": {
+    "message": "Avamine"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketTypeTcp": {
+    "message": "TCP"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketTypeUdpBound": {
+    "message": "UDP (ühendatud)"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | directSocketTypeUdpConnected": {
+    "message": "UDP (ühendatud)"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | errorMessage": {
+    "message": "Veateade"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | general": {
+    "message": "Üldine"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | openInfo": {
+    "message": "Ava teave"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | options": {
+    "message": "Valikud"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | status": {
+    "message": "Olek"
+  },
+  "panels/network/components/DirectSocketConnectionView.ts | type": {
+    "message": "DirectSocketi tüüp"
   },
   "panels/network/components/HeaderSectionRow.ts | activeClientExperimentVariation": {
     "message": "Aktiivne client experiment variation IDs."
@@ -10842,7 +11130,7 @@
     "message": "Eksportimine"
   },
   "panels/recorder/RecorderController.ts | exportRecording": {
-    "message": "Eksportimine"
+    "message": "Salvestise eksportimine"
   },
   "panels/recorder/RecorderController.ts | exportViaExtensions": {
     "message": "Eksportimine laienduste kaudu"
@@ -11387,23 +11675,14 @@
   "panels/security/CookieReportView.ts | gitHubResource": {
     "message": "Vaadake üle kolmanda osapoole saidilt pärinev {PH1}"
   },
-  "panels/security/CookieReportView.ts | gitHubResourceInsightTypeString": {
-    "message": "GitHub"
-  },
   "panels/security/CookieReportView.ts | gracePeriod": {
     "message": "Vaata {PH1} üle. Ajapikenduse erand on aktiivne."
-  },
-  "panels/security/CookieReportView.ts | gracePeriodInsightTypeString": {
-    "message": "Ajapikendus"
   },
   "panels/security/CookieReportView.ts | guidance": {
     "message": "juhised"
   },
   "panels/security/CookieReportView.ts | heuristics": {
     "message": "Toiming on hiljem nõutav. Heuristikapõhine erand on aktiivne."
-  },
-  "panels/security/CookieReportView.ts | heuristicsInisightTypeString": {
-    "message": "Heuristika"
   },
   "panels/security/CookieReportView.ts | hostingCookieTypeString": {
     "message": "Hostimine"
@@ -11421,9 +11700,6 @@
     "message": "Lisateabe saamiseks võtke ühendust kolmanda osapoole saidiga"
   },
   "panels/security/CookieReportView.ts | otherCookieTypeString": {
-    "message": "Muu"
-  },
-  "panels/security/CookieReportView.ts | otherInsightTypeString": {
     "message": "Muu"
   },
   "panels/security/CookieReportView.ts | platform": {
@@ -11807,6 +12083,15 @@
   "panels/security/security-meta.ts | showSecurity": {
     "message": "Kuva turvalisus"
   },
+  "panels/sensors/LocationsSettingsTab.ts | accuracy": {
+    "message": "Täpsus"
+  },
+  "panels/sensors/LocationsSettingsTab.ts | accuracyMustBeANumber": {
+    "message": "Täpsus peab olema numbriline"
+  },
+  "panels/sensors/LocationsSettingsTab.ts | accuracyMustBeGreaterThanOrEqual": {
+    "message": "Täpsus peab olema suurem kui {PH1} või sellega võrdne"
+  },
   "panels/sensors/LocationsSettingsTab.ts | addLocation": {
     "message": "Lisa asukoht"
   },
@@ -11863,6 +12148,9 @@
   },
   "panels/sensors/LocationsSettingsTab.ts | timezoneIdMustContainAlphabetic": {
     "message": "Ajavööndi ID peab sisaldama tähemärke"
+  },
+  "panels/sensors/SensorsView.ts | accuracy": {
+    "message": "Täpsus"
   },
   "panels/sensors/SensorsView.ts | adjustWithMousewheelOrUpdownKeys": {
     "message": "Reguleerige hiireratta või üles-/allanooleklahviga. {PH1}: ±10, tõstuklahv: ±1, Alt: ±0.01"
@@ -12041,11 +12329,17 @@
   "panels/sensors/sensors-meta.ts | userIdleScreenUnlocked": {
     "message": "Kasutaja on tegevusetu, ekraan on lukustamata"
   },
-  "panels/settings/AISettingsTab.ts | ageRestricted": {
-    "message": "See funktsioon on saadaval ainult kasutajatele, kes on vähemalt 18-aastased."
+  "panels/settings/AISettingsTab.ts | asYouTypeCodeSuggestions": {
+    "message": "Konsooli või allikate paneeli koodi sisestades saate koodisoovitusi. Soovitusega nõustumiseks vajutage tabulaatorit."
   },
   "panels/settings/AISettingsTab.ts | boostYourProductivity": {
     "message": "Suurendage AI abil oma produktiivsust"
+  },
+  "panels/settings/AISettingsTab.ts | codeSuggestionsSendData": {
+    "message": "Koodisoovituste genereerimiseks jagatakse Google'iga teie konsooli sisendit, teie praeguse konsooliseansi ajalugu ja praegu avatud faili sisu. Ülevaatajad võivad neid andmeid näha, et seda funktsiooni täiustada."
+  },
+  "panels/settings/AISettingsTab.ts | codeSuggestionsSendDataNoLogging": {
+    "message": "Koodisoovituste genereerimiseks jagatakse Google'iga teie konsooli sisendit, teie praeguse konsooliseansi ajalugu ja praegu avatud faili sisu. Neid andmeid ei kasutata Google'i AI-mudelite täiustamiseks."
   },
   "panels/settings/AISettingsTab.ts | consoleInsightsSendsData": {
     "message": "Konsooli sõnum, seotud virnajälg, seotud lähtekood ja seotud võrgupäised saadetakse Google'ile, et genereerida selgitused. Ülevaatajad võivad neid andmeid näha, et seda funktsiooni täiustada."
@@ -12101,6 +12395,9 @@
   "panels/settings/AISettingsTab.ts | getAIAnnotationsSuggestions": {
     "message": "Hankige jõudluspaneeli märkuste jaoks tehisintellektisoovitusi"
   },
+  "panels/settings/AISettingsTab.ts | helpUnderstandCodeSuggestions": {
+    "message": "Koodi koostamisel abi saamine"
+  },
   "panels/settings/AISettingsTab.ts | helpUnderstandConsole": {
     "message": "Aitab teil mõista ja lahendada konsooliga seotud hoiatusi ja vigu"
   },
@@ -12118,15 +12415,6 @@
   },
   "panels/settings/AISettingsTab.ts | learnMore": {
     "message": "Lisateave"
-  },
-  "panels/settings/AISettingsTab.ts | notAvailableInIncognitoMode": {
-    "message": "AI-abi pole inkognito režiimis ega külalisrežiimis saadaval"
-  },
-  "panels/settings/AISettingsTab.ts | notLoggedIn": {
-    "message": "See funktsioon on saadaval ainult siis, kui logite Chrome'i sisse oma Google'i kontoga."
-  },
-  "panels/settings/AISettingsTab.ts | offline": {
-    "message": "See funktsioon on saadaval ainult aktiivse internetiühenduse korral."
   },
   "panels/settings/AISettingsTab.ts | privacyNotice": {
     "message": "Google'i privaatsuseeskirjad"
@@ -12248,7 +12536,7 @@
   "panels/settings/KeybindsSettingsTab.ts | shortcutChangesApplied": {
     "message": "Otsetee muudatused rakendati"
   },
-  "panels/settings/KeybindsSettingsTab.ts | shortcutChangesDiscared": {
+  "panels/settings/KeybindsSettingsTab.ts | shortcutChangesDiscarded": {
     "message": "Otsetee muudatustest loobuti"
   },
   "panels/settings/KeybindsSettingsTab.ts | shortcutChangesRestored": {
@@ -12398,8 +12686,35 @@
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | deviceProperties": {
     "message": "Seadme atribuudid"
   },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorAutomotive": {
+    "message": "Auto"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorDesktop": {
+    "message": "Lauaarvuti"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorEInk": {
+    "message": "E-Ink"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorMobile": {
+    "message": "Mobiilseade"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorTablet": {
+    "message": "Tahvelarvuti"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorWatch": {
+    "message": "Kell"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorXR": {
+    "message": "XR"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorsGroupAriaLabel": {
+    "message": "Saadaolevad kujutüübid"
+  },
+  "panels/settings/emulation/components/UserAgentClientHintsForm.ts | formFactorsTitle": {
+    "message": "Kujutüübid (Sec-CH-UA-Form-Factors)"
+  },
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | fullBrowserVersion": {
-    "message": "Brauseri täielik versioon (Sec-CH-UA-Full-Browser-Version)"
+    "message": "Brauseri täielik versioon (Sec-CH-UA-Full-Version)"
   },
   "panels/settings/emulation/components/UserAgentClientHintsForm.ts | fullBrowserVersionPlaceholder": {
     "message": "Brauseri täielik versioon (nt 87.0.4280.88)"
@@ -12544,6 +12859,63 @@
   },
   "panels/sources/BreakpointEditDialog.ts | pauseOnlyWhenTheConditionIsTrue": {
     "message": "Peata ainult juhul, kui tingimus on tõene"
+  },
+  "panels/sources/BreakpointsView.ts | breakpointHit": {
+    "message": "{PH1} – jõuti katkestuspunktini"
+  },
+  "panels/sources/BreakpointsView.ts | checked": {
+    "message": "märgitud"
+  },
+  "panels/sources/BreakpointsView.ts | conditionCode": {
+    "message": "Tingimus: {PH1}"
+  },
+  "panels/sources/BreakpointsView.ts | disableAllBreakpoints": {
+    "message": "Keela kõik katkestuspunktid"
+  },
+  "panels/sources/BreakpointsView.ts | disableAllBreakpointsInFile": {
+    "message": "Keela failis kõik katkestuspunktid"
+  },
+  "panels/sources/BreakpointsView.ts | editCondition": {
+    "message": "Tingimuse muutmine"
+  },
+  "panels/sources/BreakpointsView.ts | editLogpoint": {
+    "message": "Logimispunkti muutmine"
+  },
+  "panels/sources/BreakpointsView.ts | enableAllBreakpoints": {
+    "message": "Luba kõik katkestuspunktid"
+  },
+  "panels/sources/BreakpointsView.ts | enableAllBreakpointsInFile": {
+    "message": "Luba failis kõik katkestuspunktid"
+  },
+  "panels/sources/BreakpointsView.ts | indeterminate": {
+    "message": "erinevad"
+  },
+  "panels/sources/BreakpointsView.ts | logpointCode": {
+    "message": "Logimispunkt: {PH1}"
+  },
+  "panels/sources/BreakpointsView.ts | pauseOnCaughtExceptions": {
+    "message": "Peatu tabatud erandite puhul"
+  },
+  "panels/sources/BreakpointsView.ts | pauseOnUncaughtExceptions": {
+    "message": "Peatu tabamata erandite puhul"
+  },
+  "panels/sources/BreakpointsView.ts | removeAllBreakpoints": {
+    "message": "Eemalda kõik murdepunktid"
+  },
+  "panels/sources/BreakpointsView.ts | removeAllBreakpointsInFile": {
+    "message": "Kõikide katkestuspunktide eemaldamine failist"
+  },
+  "panels/sources/BreakpointsView.ts | removeBreakpoint": {
+    "message": "Katkestuspunkti eemaldamine"
+  },
+  "panels/sources/BreakpointsView.ts | removeOtherBreakpoints": {
+    "message": "Eemalda muud katkestuspunktid"
+  },
+  "panels/sources/BreakpointsView.ts | revealLocation": {
+    "message": "Näita asukohta"
+  },
+  "panels/sources/BreakpointsView.ts | unchecked": {
+    "message": "märkimata"
   },
   "panels/sources/CSSPlugin.ts | addSourceMap": {
     "message": "Lisa lähtekoodi kaart …"
@@ -12842,6 +13214,12 @@
   "panels/sources/NavigatorView.ts | authoredTooltip": {
     "message": "Sisaldab algallikaid"
   },
+  "panels/sources/NavigatorView.ts | connect": {
+    "message": "Ühenda"
+  },
+  "panels/sources/NavigatorView.ts | connectFolderToWorkspace": {
+    "message": "Tööruumiga ühendamine"
+  },
   "panels/sources/NavigatorView.ts | delete": {
     "message": "Kustuta"
   },
@@ -12933,7 +13311,7 @@
     "message": "Sulgemine ({PH1})"
   },
   "panels/sources/ScopeChainSidebarPane.ts | loading": {
-    "message": "Laadimine …"
+    "message": "Laadimine…"
   },
   "panels/sources/ScopeChainSidebarPane.ts | noVariables": {
     "message": "Muutujaid ei ole"
@@ -12946,6 +13324,9 @@
   },
   "panels/sources/SnippetsPlugin.ts | enter": {
     "message": "⌘ + sisestusklahv"
+  },
+  "panels/sources/SourcesNavigator.ts | automaticWorkspaceNudge": {
+    "message": "Kasutage funktsiooni {PH1} oma projektikausta automaatseks ühendamiseks"
   },
   "panels/sources/SourcesNavigator.ts | clearConfiguration": {
     "message": "Tühjenda seadistus"
@@ -12990,10 +13371,16 @@
     "message": "Käita"
   },
   "panels/sources/SourcesNavigator.ts | saveAs": {
-    "message": "Salvesta nimega …"
+    "message": "Salvesta nimega…"
+  },
+  "panels/sources/SourcesNavigator.ts | saveAsFailed": {
+    "message": "Faili ei saanud kettale salvestada."
   },
   "panels/sources/SourcesNavigator.ts | selectFolderForOverrides": {
     "message": "Valige alistamiste jaoks kaust"
+  },
+  "panels/sources/SourcesPanel.ts | assessPerformance": {
+    "message": "Hinda toimivust"
   },
   "panels/sources/SourcesPanel.ts | continueToHere": {
     "message": "Jätka siiani"
@@ -13018,6 +13405,12 @@
   },
   "panels/sources/SourcesPanel.ts | dropWorkspaceFolderHere": {
     "message": "Pukseerige tööruumi kaust siia"
+  },
+  "panels/sources/SourcesPanel.ts | explainInputHandling": {
+    "message": "Selgita sisendi töötlemist"
+  },
+  "panels/sources/SourcesPanel.ts | explainThisScript": {
+    "message": "Selgita seda skripti"
   },
   "panels/sources/SourcesPanel.ts | groupByAuthored": {
     "message": "Grupeerimine olekute Autoriga/Juurutatud järgi"
@@ -13064,6 +13457,9 @@
   "panels/sources/SourcesPanel.ts | showNavigator": {
     "message": "Kuva navigeerija"
   },
+  "panels/sources/SourcesPanel.ts | startAChat": {
+    "message": "Alusta vestlust"
+  },
   "panels/sources/SourcesPanel.ts | storeAsGlobalVariable": {
     "message": "Salvesta globaalmuutujana"
   },
@@ -13088,8 +13484,11 @@
   "panels/sources/TabbedEditorContainer.ts | areYouSureYouWantToCloseUnsaved": {
     "message": "Kas soovite kindlasti salvestamata faili {PH1} sulgeda?"
   },
-  "panels/sources/TabbedEditorContainer.ts | changesToThisFileWereNotSavedTo": {
-    "message": "Selle faili muudatusi ei salvestatud failisüsteemi."
+  "panels/sources/TabbedEditorContainer.ts | changesWereNotSavedToFileSystemToSaveAddFolderToWorkspace": {
+    "message": "Muudatusi ei salvestatud failisüsteemi. Salvestamiseks lisage oma Workspace’i {PH1}."
+  },
+  "panels/sources/TabbedEditorContainer.ts | changesWereNotSavedToFileSystemToSaveSetUpYourWorkspace": {
+    "message": "Muudatusi ei salvestatud failisüsteemi. Salvestamiseks seadistage {PH1}."
   },
   "panels/sources/TabbedEditorContainer.ts | unableToLoadThisContent": {
     "message": "Seda sisu ei saa laadida."
@@ -13121,62 +13520,8 @@
   "panels/sources/WatchExpressionsSidebarPane.ts | refreshWatchExpressions": {
     "message": "Värskenda vaatamisavaldisi"
   },
-  "panels/sources/components/BreakpointsView.ts | breakpointHit": {
-    "message": "{PH1} – jõuti katkestuspunktini"
-  },
-  "panels/sources/components/BreakpointsView.ts | checked": {
-    "message": "märgitud"
-  },
-  "panels/sources/components/BreakpointsView.ts | conditionCode": {
-    "message": "Tingimus: {PH1}"
-  },
-  "panels/sources/components/BreakpointsView.ts | disableAllBreakpoints": {
-    "message": "Keela kõik katkestuspunktid"
-  },
-  "panels/sources/components/BreakpointsView.ts | disableAllBreakpointsInFile": {
-    "message": "Keela failis kõik katkestuspunktid"
-  },
-  "panels/sources/components/BreakpointsView.ts | editCondition": {
-    "message": "Tingimuse muutmine"
-  },
-  "panels/sources/components/BreakpointsView.ts | editLogpoint": {
-    "message": "Logimispunkti muutmine"
-  },
-  "panels/sources/components/BreakpointsView.ts | enableAllBreakpoints": {
-    "message": "Luba kõik katkestuspunktid"
-  },
-  "panels/sources/components/BreakpointsView.ts | enableAllBreakpointsInFile": {
-    "message": "Luba failis kõik katkestuspunktid"
-  },
-  "panels/sources/components/BreakpointsView.ts | indeterminate": {
-    "message": "erinevad"
-  },
-  "panels/sources/components/BreakpointsView.ts | logpointCode": {
-    "message": "Logimispunkt: {PH1}"
-  },
-  "panels/sources/components/BreakpointsView.ts | pauseOnCaughtExceptions": {
-    "message": "Peatu tabatud erandite puhul"
-  },
-  "panels/sources/components/BreakpointsView.ts | pauseOnUncaughtExceptions": {
-    "message": "Peatu tabamata erandite puhul"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeAllBreakpoints": {
-    "message": "Eemalda kõik murdepunktid"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeAllBreakpointsInFile": {
-    "message": "Kõikide katkestuspunktide eemaldamine failist"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeBreakpoint": {
-    "message": "Katkestuspunkti eemaldamine"
-  },
-  "panels/sources/components/BreakpointsView.ts | removeOtherBreakpoints": {
-    "message": "Eemalda muud katkestuspunktid"
-  },
-  "panels/sources/components/BreakpointsView.ts | revealLocation": {
-    "message": "Näita asukohta"
-  },
-  "panels/sources/components/BreakpointsView.ts | unchecked": {
-    "message": "märkimata"
+  "panels/sources/WatchExpressionsSidebarPane.ts | watchExpressionDeleted": {
+    "message": "Vaatamisavaldis on kustutatud"
   },
   "panels/sources/components/HeadersView.ts | addHeader": {
     "message": "Lisa päis"
@@ -13201,6 +13546,9 @@
   },
   "panels/sources/sources-meta.ts | activateBreakpoints": {
     "message": "Aktiveeri katkestuspunktid"
+  },
+  "panels/sources/sources-meta.ts | addFolderManually": {
+    "message": "Lisa kaust käsitsi"
   },
   "panels/sources/sources-meta.ts | addFolderToWorkspace": {
     "message": "Lisa kaust tööruumi"
@@ -13502,6 +13850,9 @@
   "panels/sources/sources-meta.ts | toggleNavigatorSidebar": {
     "message": "Lülita navigaatori külgriba"
   },
+  "panels/sources/sources-meta.ts | toggleWordWrap": {
+    "message": "Lülita sõna murdmise seade sisse/välja"
+  },
   "panels/sources/sources-meta.ts | trailing": {
     "message": "Lõpus"
   },
@@ -13509,7 +13860,10 @@
     "message": "WASM-i silumisel silumisteabega ära peatu võimaluse korral WASM-i baidikoodil"
   },
   "panels/sources/sources-meta.ts | watch": {
-    "message": "Vaatamine"
+    "message": "Kell"
+  },
+  "panels/sources/sources-meta.ts | wordWrap": {
+    "message": "Sõna murdmine"
   },
   "panels/sources/sources-meta.ts | workspace": {
     "message": "Workspace"
@@ -13577,11 +13931,8 @@
   "panels/timeline/EventsTimelineTreeView.ts | startTime": {
     "message": "Algusaeg"
   },
-  "panels/timeline/ExtensionTrackAppender.ts | customTrackDescription": {
-    "message": "See on kolmanda osapoole lisatud kohandatud rada."
-  },
-  "panels/timeline/ExtensionTrackAppender.ts | customTrackName": {
-    "message": "{PH1} – kohandatud rada"
+  "panels/timeline/ExtensionTrackAppender.ts | customTrackSubtitle": {
+    "message": "— kohandatud"
   },
   "panels/timeline/GPUTrackAppender.ts | gpu": {
     "message": "GPU"
@@ -13606,6 +13957,21 @@
   },
   "panels/timeline/NetworkTrackAppender.ts | network": {
     "message": "Võrk"
+  },
+  "panels/timeline/StatusDialog.ts | description": {
+    "message": "Kirjeldus"
+  },
+  "panels/timeline/StatusDialog.ts | downloadAfterError": {
+    "message": "Laadi jälg alla"
+  },
+  "panels/timeline/StatusDialog.ts | status": {
+    "message": "Olek"
+  },
+  "panels/timeline/StatusDialog.ts | stop": {
+    "message": "Katkesta"
+  },
+  "panels/timeline/StatusDialog.ts | time": {
+    "message": "Aeg"
   },
   "panels/timeline/ThirdPartyTreeView.ts | firstOrThirdPartyName": {
     "message": "Esimene/kolmas osapool"
@@ -13718,8 +14084,14 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | addScriptToIgnoreList": {
     "message": "Lisa skript eiramisloendisse"
   },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | assessThePurpose": {
+    "message": "Hinda eesmärki"
+  },
   "panels/timeline/TimelineFlameChartDataProvider.ts | droppedFrame": {
     "message": "Vahelejäetud raam"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | findImprovements": {
+    "message": "Leia täiustusi"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | frame": {
     "message": "Kaader"
@@ -13736,8 +14108,14 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | hideRepeatingChildren": {
     "message": "Korduvate alamkirjete peitmine"
   },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | identifyTimeSpent": {
+    "message": "Tuvasta kulutatud aeg"
+  },
   "panels/timeline/TimelineFlameChartDataProvider.ts | idleFrame": {
     "message": "Tegevusetu raam"
+  },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | labelEntry": {
+    "message": "Lisa kirjele silt"
   },
   "panels/timeline/TimelineFlameChartDataProvider.ts | partiallyPresentedFrame": {
     "message": "Osaliselt esitatud raam"
@@ -13751,8 +14129,14 @@
   "panels/timeline/TimelineFlameChartDataProvider.ts | resetTrace": {
     "message": "Jälje lähtestamine"
   },
+  "panels/timeline/TimelineFlameChartDataProvider.ts | startAChat": {
+    "message": "Alusta vestlust"
+  },
   "panels/timeline/TimelineFlameChartView.ts | sAtS": {
     "message": "{PH1} – {PH2}"
+  },
+  "panels/timeline/TimelineHistoryManager.ts | backButtonTooltip": {
+    "message": "Vaadake reaalajas mõõdikute lehte"
   },
   "panels/timeline/TimelineHistoryManager.ts | currentSessionSS": {
     "message": "Praegune seanss: {PH1}. {PH2}"
@@ -13777,9 +14161,6 @@
   },
   "panels/timeline/TimelinePanel.ts | CpuThrottlingIsEnabled": {
     "message": "- Protsessori piiramine on lubatud"
-  },
-  "panels/timeline/TimelinePanel.ts | JavascriptSamplingIsDisabled": {
-    "message": "- JavaScripti diskreetimine on keelatud"
   },
   "panels/timeline/TimelinePanel.ts | NetworkThrottlingIsEnabled": {
     "message": "- Võrgu piiramine on lubatud"
@@ -13817,23 +14198,11 @@
   "panels/timeline/TimelinePanel.ts | cpu": {
     "message": "Protsessor:"
   },
-  "panels/timeline/TimelinePanel.ts | description": {
-    "message": "Kirjeldus"
-  },
   "panels/timeline/TimelinePanel.ts | dimThirdParties": {
     "message": "Kolmandate osapoolte sisu nähtavuse vähendamine"
   },
-  "panels/timeline/TimelinePanel.ts | disableJavascriptSamples": {
-    "message": "Keela JavaScripti näidised"
-  },
-  "panels/timeline/TimelinePanel.ts | disablesJavascriptSampling": {
-    "message": "Keelab JavaScripti diskreetimise, vähendab mobiilseadmetes töötamisel ressursikasutust"
-  },
-  "panels/timeline/TimelinePanel.ts | downloadAfterError": {
-    "message": "Laadi jälg alla"
-  },
   "panels/timeline/TimelinePanel.ts | dropTimelineFileOrUrlHere": {
-    "message": "Pukseerige ajaskaala fail või URL siia"
+    "message": "Pukseerige jälje fail või URL siia."
   },
   "panels/timeline/TimelinePanel.ts | enableAdvancedPaint": {
     "message": "Luba täiustatud värvimise seadmestik (aeglane)"
@@ -13844,14 +14213,11 @@
   "panels/timeline/TimelinePanel.ts | eventSelected": {
     "message": "Sündmus {PH1} on valitud"
   },
-  "panels/timeline/TimelinePanel.ts | exportEnhancedTraces": {
-    "message": "Täiustatud jõudlusjäljed"
+  "panels/timeline/TimelinePanel.ts | exportingFailed": {
+    "message": "Jälje eksportimine ebaõnnestus"
   },
-  "panels/timeline/TimelinePanel.ts | exportNormalTraces": {
-    "message": "Põhilised jõudlusjäljed"
-  },
-  "panels/timeline/TimelinePanel.ts | failedToSaveTimelineSS": {
-    "message": "Ajaskaala salvestamine nurjus: {PH1} ({PH2})"
+  "panels/timeline/TimelinePanel.ts | externalRequestReceived": {
+    "message": "DevTools sai välise taotluse."
   },
   "panels/timeline/TimelinePanel.ts | fixMe": {
     "message": "Paranda mind"
@@ -13862,17 +14228,17 @@
   "panels/timeline/TimelinePanel.ts | hideSidebar": {
     "message": "Peida külgriba"
   },
-  "panels/timeline/TimelinePanel.ts | initializingProfiler": {
-    "message": "Profileerija lähtestamine …"
+  "panels/timeline/TimelinePanel.ts | initializingTracing": {
+    "message": "Jõudlusjälje loomise lähtestamine…"
   },
   "panels/timeline/TimelinePanel.ts | learnMore": {
     "message": "Lisateave"
   },
-  "panels/timeline/TimelinePanel.ts | loadProfile": {
-    "message": "Laadi profiil …"
+  "panels/timeline/TimelinePanel.ts | loadTrace": {
+    "message": "Jälje laadimine…"
   },
-  "panels/timeline/TimelinePanel.ts | loadingProfile": {
-    "message": "Profiili laadimine …"
+  "panels/timeline/TimelinePanel.ts | loadingTrace": {
+    "message": "Jälje laadimine…"
   },
   "panels/timeline/TimelinePanel.ts | memory": {
     "message": "Mälu"
@@ -13886,11 +14252,8 @@
   "panels/timeline/TimelinePanel.ts | processed": {
     "message": "Töödeldud"
   },
-  "panels/timeline/TimelinePanel.ts | processingProfile": {
-    "message": "Profiili töötlemine …"
-  },
-  "panels/timeline/TimelinePanel.ts | profiling": {
-    "message": "Profileerimine …"
+  "panels/timeline/TimelinePanel.ts | processingTrace": {
+    "message": "Jälje töötlemine…"
   },
   "panels/timeline/TimelinePanel.ts | received": {
     "message": "Vastu võetud"
@@ -13898,20 +14261,14 @@
   "panels/timeline/TimelinePanel.ts | recordingFailed": {
     "message": "Salvestamine ebaõnnestus"
   },
-  "panels/timeline/TimelinePanel.ts | saveProfile": {
-    "message": "Salvesta profiil …"
-  },
-  "panels/timeline/TimelinePanel.ts | saveTraceWithAnnotationsMenuOption": {
-    "message": "Salvesta jälg"
-  },
-  "panels/timeline/TimelinePanel.ts | saveTraceWithoutAnnotationsMenuOption": {
-    "message": "Salvesta jälg ilma märkusteta"
-  },
   "panels/timeline/TimelinePanel.ts | screenshots": {
     "message": "Ekraanipildid"
   },
   "panels/timeline/TimelinePanel.ts | selectionCleared": {
     "message": "Valik on tühistatud"
+  },
+  "panels/timeline/TimelinePanel.ts | shortcutsDialogTitle": {
+    "message": "Tulpdiagrammi klaviatuuri otseteed"
   },
   "panels/timeline/TimelinePanel.ts | showCustomtracks": {
     "message": "Kuva kohandatud rajad"
@@ -13931,20 +14288,20 @@
   "panels/timeline/TimelinePanel.ts | sidebarShown": {
     "message": "Toimivuse külgriba on kuvatud"
   },
-  "panels/timeline/TimelinePanel.ts | status": {
-    "message": "Olek"
-  },
-  "panels/timeline/TimelinePanel.ts | stop": {
-    "message": "Katkesta"
-  },
   "panels/timeline/TimelinePanel.ts | stoppingTimeline": {
     "message": "Ajaskaala katkestamine …"
   },
   "panels/timeline/TimelinePanel.ts | thirdPartiesByThirdPartyWeb": {
     "message": "Kolmandad osapooled on liigitatud kolmanda osapoole veebi järgi"
   },
-  "panels/timeline/TimelinePanel.ts | time": {
-    "message": "Aeg"
+  "panels/timeline/TimelinePanel.ts | timelineScrollPan": {
+    "message": "Keri ja paani"
+  },
+  "panels/timeline/TimelinePanel.ts | timelineZoom": {
+    "message": "Suum"
+  },
+  "panels/timeline/TimelinePanel.ts | tracing": {
+    "message": "Jõudlusjälje loomine…"
   },
   "panels/timeline/TimelineSelectorStatsView.ts | copyTable": {
     "message": "Kopeeri tabel"
@@ -13952,29 +14309,50 @@
   "panels/timeline/TimelineSelectorStatsView.ts | elapsed": {
     "message": "Möödunud (ms)"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | elapsedExplanation": {
+    "message": "Aeg, mis kulus valija vastendamiseks DOM-iga (millisekundites)."
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | invalidationCount": {
+    "message": "Kehtetuks muutmiste arv"
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | invalidationCountExplanation": {
+    "message": "See on koguarv, mis näitab, mitu korda selle valijaga vastendatud sõlmede stiilid kehtetuks muudeti ja seejärel uuesti arvutati. Pange tähele, et sõlme saab kehtetuks muuta mitu korda ja seda saavad teha mitu valijat."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | lineNumber": {
     "message": "Rida {PH1}:{PH2}"
   },
   "panels/timeline/TimelineSelectorStatsView.ts | matchAttempts": {
     "message": "Vastete katsed"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | matchAttemptsExplanation": {
+    "message": "Nende sõlmede arv, mida mootor püüdis stiilireegliga vastendada."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | matchCount": {
     "message": "Vastete arv"
   },
-  "panels/timeline/TimelineSelectorStatsView.ts | rejectPercentage": {
-    "message": "% aeglase teega mitte-vastetest"
-  },
-  "panels/timeline/TimelineSelectorStatsView.ts | rejectPercentageExplanation": {
-    "message": "Mittevastendavate sõlmede protsent (vastete katsed – vasteteh arv), mida Bloomi filter ei saanud valija suure keerukuse tõttu kiiresti välistada. Väiksem on parem."
+  "panels/timeline/TimelineSelectorStatsView.ts | matchCountExplanation": {
+    "message": "Stiilireeglile vastavate sõlmede loendamine"
   },
   "panels/timeline/TimelineSelectorStatsView.ts | selector": {
     "message": "Valija"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | selectorExplanation": {
+    "message": "Stiilireegli CSS-i valija tekst"
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | selectorStats": {
     "message": "Valija statistika"
   },
+  "panels/timeline/TimelineSelectorStatsView.ts | slowPathNonMatches": {
+    "message": "% aeglase teega mitte-vastetest"
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | slowPathNonMatchesExplanation": {
+    "message": "Mittevastendavate sõlmede protsent (vastete katsed – vasteteh arv), mida Bloomi filter ei saanud valija suure keerukuse tõttu kiiresti välistada. Väiksem on parem."
+  },
   "panels/timeline/TimelineSelectorStatsView.ts | styleSheetId": {
     "message": "Stiilileht"
+  },
+  "panels/timeline/TimelineSelectorStatsView.ts | styleSheetIdExplanation": {
+    "message": "Suunab stiililehel oleva valija reegli määratluse juurde. Pange tähele, et valija reegel võib olla määratletud stiililehe mitmes kohas või mitmel stiililehel. Brauseri kasutaja-agendi stiililehelt või dünaamilistelt stiililehtedelt pärinevatel valija reeglitel ei ole linki."
   },
   "panels/timeline/TimelineSelectorStatsView.ts | tableCopiedToClipboard": {
     "message": "Tabel kopeeriti lõikelauale"
@@ -14189,9 +14567,6 @@
   "panels/timeline/TimelineUIUtils.ts | details": {
     "message": "Üksikasjad"
   },
-  "panels/timeline/TimelineUIUtils.ts | dimensions": {
-    "message": "Mõõtmed"
-  },
   "panels/timeline/TimelineUIUtils.ts | duration": {
     "message": "Kestus"
   },
@@ -14264,9 +14639,6 @@
   "panels/timeline/TimelineUIUtils.ts | learnMore": {
     "message": "Lisateave"
   },
-  "panels/timeline/TimelineUIUtils.ts | location": {
-    "message": "Asukoht"
-  },
   "panels/timeline/TimelineUIUtils.ts | message": {
     "message": "Sõnum"
   },
@@ -14330,32 +14702,17 @@
   "panels/timeline/TimelineUIUtils.ts | sChildren": {
     "message": "{PH1} (alamad)"
   },
-  "panels/timeline/TimelineUIUtils.ts | sCollected": {
-    "message": "Koguti {PH1}"
-  },
   "panels/timeline/TimelineUIUtils.ts | sOfS": {
     "message": "{PH1}/{PH2}"
   },
   "panels/timeline/TimelineUIUtils.ts | sS": {
     "message": "{PH1}: {PH2}"
   },
-  "panels/timeline/TimelineUIUtils.ts | sSCurlyBrackets": {
-    "message": "({PH1}, {PH2})"
-  },
-  "panels/timeline/TimelineUIUtils.ts | sSDimensions": {
-    "message": "{PH1} × {PH2}"
-  },
-  "panels/timeline/TimelineUIUtils.ts | sSSquareBrackets": {
-    "message": "{PH1} [{PH2}…]"
-  },
   "panels/timeline/TimelineUIUtils.ts | sSelectorStatsInfo": {
     "message": "Valige „{PH1}“, et koguda üksikasjalikku CSS-i valija vastendamise statistikat."
   },
   "panels/timeline/TimelineUIUtils.ts | sSelf": {
     "message": "{PH1} (ise)"
-  },
-  "panels/timeline/TimelineUIUtils.ts | sSs": {
-    "message": "{PH1} [{PH2}…{PH3}]"
   },
   "panels/timeline/TimelineUIUtils.ts | script": {
     "message": "Skript"
@@ -14529,19 +14886,19 @@
     "message": "Seadista"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | configureFieldData": {
-    "message": "Väliandmete toomise seadistamine"
+    "message": "Välimõõdikute toomise seadistamine"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | doesNotHaveSufficientData": {
     "message": "Chrome UX Reportis ei ole selle lehe kohta piisavalt tõelisi kiirusandmeid."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | fetchAggregated": {
-    "message": "Saate allikast {PH1} tuua koondatud väljaandmed, mis aitavad luua kohalike mõõtmiste jaoks konteksti, kuna teate, mida reaalsed kasutajad saidil kogevad."
+    "message": "Saate allikast {PH1} tuua koondatud välimõõdikud mis aitavad luua kohalike mõõtmiste jaoks konteksti, kuna teate, mida reaalsed kasutajad saidil kogevad."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | invalidOrigin": {
     "message": "„{PH1}“ ei ole kehtiv lähtekoht või URL."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | mapDevelopmentOrigins": {
-    "message": "Määrake arendusversiooni lähtekoht, et saada tootmisversiooni lähtekoha kohta automaatselt asjakohaseid välja andmeid."
+    "message": "Määrake arendusversiooni lähtekoht, et saada tootmisversiooni lähtekoha kohta automaatselt asjakohaseid välimõõdikuid."
   },
   "panels/timeline/components/FieldSettingsDialog.ts | new": {
     "message": "Uus"
@@ -14550,7 +14907,7 @@
     "message": "OK"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | onlyFetchFieldData": {
-    "message": "Kuva alloleva URL-i kohta alati välja andmed"
+    "message": "Kuva alloleva URL-i kohta alati välimõõdikud"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | optOut": {
     "message": "Loobu"
@@ -14565,7 +14922,7 @@
     "message": "URL"
   },
   "panels/timeline/components/FieldSettingsDialog.ts | whenPerformanceIsShown": {
-    "message": "Kui arendaja tööriistad on avatud, saadetakse teie külastatud URL-id väliandmete päringu tegemiseks Google'ile. Neid taotlusi ei seota teie Google'i kontoga."
+    "message": "Kui arendaja tööriistad on avatud, saadetakse teie külastatud URL-id välimõõdikute päringu tegemiseks Google'ile. Neid taotlusi ei seota teie Google'i kontoga."
   },
   "panels/timeline/components/IgnoreListSetting.ts | addNewRegex": {
     "message": "Regulaaravaldise reegli lisamine skripti URL-i jaoks"
@@ -14672,8 +15029,8 @@
   "panels/timeline/components/LiveMetricsView.ts | eventLogs": {
     "message": "Interaktsiooni ja küljenduse nihke logide jaotis"
   },
-  "panels/timeline/components/LiveMetricsView.ts | fieldData": {
-    "message": "Välja andmed"
+  "panels/timeline/components/LiveMetricsView.ts | fieldMetricsTitle": {
+    "message": "Välimõõdikud"
   },
   "panels/timeline/components/LiveMetricsView.ts | inpInteraction": {
     "message": "INP interaktsioon on interaktsiooni viivituste 98. protsentiili juures."
@@ -14703,10 +15060,10 @@
     "message": "Kohalikud ja välja mõõdikud"
   },
   "panels/timeline/components/LiveMetricsView.ts | localFieldLearnMoreLink": {
-    "message": "Lisateave kohalike ja välja andmete kohta"
+    "message": "Lisateave kohalike ja välimõõdikute kohta"
   },
   "panels/timeline/components/LiveMetricsView.ts | localFieldLearnMoreTooltip": {
-    "message": "Kohalikud mõõdikud jäädvustatakse praeguselt lehelt, kasutades teie võrguühendust ja seadet. Välja andmeid mõõdavad reaalsed kasutajad, kes kasutavad paljusid eri võrguühendusi ja seadmeid."
+    "message": "Kohalikud mõõdikud jäädvustatakse praeguselt lehelt, kasutades teie võrguühendust ja seadet. Välimõõdikuid mõõdavad reaalsed kasutajad erinevaid võrguühendusi ja seadmeid kasutades."
   },
   "panels/timeline/components/LiveMetricsView.ts | localMetrics": {
     "message": "Kohalikud mõõdikud"
@@ -14769,10 +15126,10 @@
     "message": "Minge halvima küljenduse nihkeklastrisse."
   },
   "panels/timeline/components/LiveMetricsView.ts | showFieldDataForDevice": {
-    "message": "Kuva välja andmed seadme tüübi kohta: {PH1}"
+    "message": "Kuva välimõõdikud seadme tüübi kohta: {PH1}"
   },
   "panels/timeline/components/LiveMetricsView.ts | showFieldDataForPage": {
-    "message": "Kuva saidi {PH1} välja andmed"
+    "message": "Kuva saidi {PH1} välimõõdikud"
   },
   "panels/timeline/components/LiveMetricsView.ts | showInpInteraction": {
     "message": "Avage INP interaktsiooni leht."
@@ -14880,13 +15237,13 @@
     "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea, kuid see on oluliselt parem kui teie kasutajate kogemus."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodGoodDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Lisaks on välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} hea."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Lisaks on välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} hea."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodNeedsImprovementDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} vajab siiski täiustust."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} vajab siiski täiustust."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodPoorDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski kehv."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on hea ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski kehv."
   },
   "panels/timeline/components/MetricCompareStrings.ts | goodSimilarCompare": {
     "message": "Teie kohalik mõõdiku {PH1} väärtus {PH2} on hea ja sarnane teie kasutajate kogemusega."
@@ -14901,13 +15258,13 @@
     "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist, aga see on oluliselt parem kui teie kasutajate kogemus."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementGoodDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja see on hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski hea."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja see on hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski hea."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementNeedsImprovementDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja see on hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Lisaks vajab välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} täiustust."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja see on hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Lisaks vajab välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} täiustust."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementPoorDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja see on hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski kehv."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja see on hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski kehv."
   },
   "panels/timeline/components/MetricCompareStrings.ts | needsImprovementSimilarCompare": {
     "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} vajab täiustamist ja on sarnane teie kasutajate kogemusega."
@@ -14922,13 +15279,13 @@
     "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv, kuid see on oluliselt parem kui teie kasutajate kogemus."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorGoodDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski hea."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} on siiski hea."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorNeedsImprovementDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} vajab siiski täiustust."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} vajab siiski täiustust."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorPoorDetailedCompare": {
-    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Lisaks on välja andmete 75-protsentiili mõõdiku {PH1} väärtus {PH3} kehv."
+    "message": "Teie kohaliku mõõdiku {PH1} väärtus {PH2} on kehv ja hinnanguliselt võrdne {PH4} reaalsete kasutajate mõõdiku {PH1} kogemusega. Lisaks on välimõõdikute 75-protsentiili mõõdiku {PH1} väärtus {PH3} kehv."
   },
   "panels/timeline/components/MetricCompareStrings.ts | poorSimilarCompare": {
     "message": "Teie kohalik mõõdiku {PH1} väärtus {PH2} on kehv ja sarnane teie kasutajate kogemusega."
@@ -15017,6 +15374,9 @@
   "panels/timeline/components/NetworkRequestTooltip.ts | queuingAndConnecting": {
     "message": "Järjekorda lisamine ja ühenduse loomine"
   },
+  "panels/timeline/components/NetworkRequestTooltip.ts | redirects": {
+    "message": "Ümbersuunamised"
+  },
   "panels/timeline/components/NetworkRequestTooltip.ts | renderBlocking": {
     "message": "Renderdamise blokeerimine"
   },
@@ -15087,7 +15447,7 @@
     "message": "Sündmuse „{PH1}“ juurde on lisatud tekst „{PH2}“."
   },
   "panels/timeline/components/SidebarAnnotationsTab.ts | entryLabelTutorialDescription": {
-    "message": "Üksuse sildi loomiseks topeltklikkige üksusel ja tüübil."
+    "message": "Üksuse sildi loomiseks topeltklõpsake üksusel ja tüübil või vajutage sisestusklahvi."
   },
   "panels/timeline/components/SidebarAnnotationsTab.ts | entryLabelTutorialTitle": {
     "message": "Üksusele sildi lisamine"
@@ -15109,12 +15469,6 @@
   },
   "panels/timeline/components/SidebarAnnotationsTab.ts | timeRangeTutorialTitle": {
     "message": "Ajavahemiku määramine"
-  },
-  "panels/timeline/components/SidebarInsightsTab.ts | feedbackButton": {
-    "message": "Tagasiside"
-  },
-  "panels/timeline/components/SidebarInsightsTab.ts | feedbackTooltip": {
-    "message": "Insights on katsejärgus funktsioon. Teie tagasiside aitab meil seda täiustada."
   },
   "panels/timeline/components/SidebarSingleInsightSet.ts | dismissTitle": {
     "message": "Loobu"
@@ -15158,11 +15512,20 @@
   "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavings": {
     "message": "Prognoositav sääst: {PH1}"
   },
+  "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsAriaBytes": {
+    "message": "Selle statistika hinnanguline sääst: {PH1} edastuse maht"
+  },
+  "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsAriaTiming": {
+    "message": "Selle statistika hinnanguline sääst {PH1}"
+  },
   "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsTimingAndBytes": {
     "message": "Hinnanguline sääst: {PH1} & {PH2}"
   },
+  "panels/timeline/components/insights/BaseInsightComponent.ts | estimatedSavingsTimingAndBytesAria": {
+    "message": "Selle statistika hinnanguline sääst: {PH1} ja {PH2} edastuse maht"
+  },
   "panels/timeline/components/insights/BaseInsightComponent.ts | viewDetails": {
-    "message": "Mõõdiku {PH1} üksikasjade kuvamine"
+    "message": "Vaadake funktsiooni {PH1} statistika andmeid."
   },
   "panels/timeline/components/insights/Checklist.ts | failedAriaLabel": {
     "message": "Statistika kontrollimine ebaõnnestus: {PH1}"
@@ -15186,7 +15549,7 @@
     "message": "URL"
   },
   "panels/timeline/overlays/components/EntriesLinkOverlay.ts | diagram": {
-    "message": "Üksuste vahelised ühenduspunktid"
+    "message": "Kirjete vahelised lingid"
   },
   "panels/timeline/overlays/components/EntryLabelOverlay.ts | entryLabel": {
     "message": "Kirje silt"
@@ -15204,7 +15567,7 @@
     "message": "Lisateavet märkuste automaatse lisamise kohta leiate seadetest"
   },
   "panels/timeline/overlays/components/EntryLabelOverlay.ts | moreInfoAriaLabel": {
-    "message": "Lisateave"
+    "message": "Lisateave selle funktsiooni kohta"
   },
   "panels/timeline/overlays/components/TimeRangeOverlay.ts | timeRange": {
     "message": "Ajavahemik"
@@ -15647,33 +16010,6 @@
   "panels/utils/utils.ts | thirdPartyPhaseout": {
     "message": "Selle taotluse küpsisefailid on blokeeritud Chrome'i märgistuse või brauseri seadistuse tõttu. Lisateavet leiate probleemide paneelilt."
   },
-  "panels/web_audio/AudioContextContentBuilder.ts | callbackBufferSize": {
-    "message": "Tagasihelistamise puhvri suurus"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | callbackInterval": {
-    "message": "Tagasihelistamise intervall"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | currentTime": {
-    "message": "Praegune kellaaeg"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | maxOutputChannels": {
-    "message": "Max väljundkanalid"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | renderCapacity": {
-    "message": "Renderdamise maht"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | sampleRate": {
-    "message": "Diskreetimissagedus"
-  },
-  "panels/web_audio/AudioContextContentBuilder.ts | state": {
-    "message": "Olek"
-  },
-  "panels/web_audio/AudioContextSelector.ts | audioContextS": {
-    "message": "Heli kontekst: {PH1}"
-  },
-  "panels/web_audio/AudioContextSelector.ts | noRecordings": {
-    "message": "(salvestisi pole)"
-  },
   "panels/web_audio/WebAudioView.ts | noWebAudio": {
     "message": "Web Audio API kasutamist ei tuvastatud"
   },
@@ -15697,9 +16033,6 @@
   },
   "panels/webauthn/WebauthnPane.ts | add": {
     "message": "Lisa"
-  },
-  "panels/webauthn/WebauthnPane.ts | addAuthenticator": {
-    "message": "Lisa autentimisteenus"
   },
   "panels/webauthn/WebauthnPane.ts | authenticatorS": {
     "message": "Autentija {PH1}"
@@ -15833,6 +16166,9 @@
   "ui/components/diff_view/DiffView.ts | deletions": {
     "message": "Kustutamine:"
   },
+  "ui/components/diff_view/DiffView.ts | noDiff": {
+    "message": "Fail on identne muutmata olekuga"
+  },
   "ui/components/issue_counter/IssueCounter.ts | breakingChanges": {
     "message": "{issueCount,plural, =1{# probleeme põhjustav muudatus}other{# probleeme põhjustavat muudatust}}"
   },
@@ -15898,6 +16234,9 @@
   },
   "ui/components/settings/SettingCheckbox.ts | learnMore": {
     "message": "Lisateave"
+  },
+  "ui/components/snackbars/Snackbar.ts | dismiss": {
+    "message": "Loobu"
   },
   "ui/components/survey_link/SurveyLink.ts | anErrorOccurredWithTheSurvey": {
     "message": "Küsitlusega seoses ilmnes viga"
@@ -16054,6 +16393,9 @@
   },
   "ui/legacy/InspectorView.ts | setToSpecificLanguage": {
     "message": "Lülita DevTools {PH1} keelele"
+  },
+  "ui/legacy/InspectorView.ts | toggleDrawerOrientation": {
+    "message": "Lülita sahtli suunda"
   },
   "ui/legacy/ListWidget.ts | addString": {
     "message": "Lisa"
@@ -16231,6 +16573,9 @@
   },
   "ui/legacy/UIUtils.ts | copyLinkAddress": {
     "message": "Kopeeri lingi aadress"
+  },
+  "ui/legacy/UIUtils.ts | new": {
+    "message": "UUS"
   },
   "ui/legacy/UIUtils.ts | ok": {
     "message": "OK"
@@ -16622,9 +16967,6 @@
   "ui/legacy/components/perf_ui/FilmStripView.ts | screenshotForSSelectToView": {
     "message": "Üksuse {PH1} ekraanipilt – valige eelnevate päringute vaatamiseks."
   },
-  "ui/legacy/components/perf_ui/FlameChart.ts | deleteAnnotations": {
-    "message": "Kustuta ülekatted"
-  },
   "ui/legacy/components/perf_ui/FlameChart.ts | enterTrackConfigurationMode": {
     "message": "Radade seadistamine"
   },
@@ -16638,7 +16980,7 @@
     "message": "Tulpdiagramm"
   },
   "ui/legacy/components/perf_ui/FlameChart.ts | labelEntry": {
-    "message": "Sildi sisestamine"
+    "message": "Lisa kirjele silt"
   },
   "ui/legacy/components/perf_ui/FlameChart.ts | linkEntries": {
     "message": "Lingi kirjed"
@@ -16773,7 +17115,7 @@
     "message": "Ava pilt uuel vahelehel"
   },
   "ui/legacy/components/source_frame/ImageView.ts | saveImageAs": {
-    "message": "Salvesta pilt nimega …"
+    "message": "Salvesta pilt nimega…"
   },
   "ui/legacy/components/source_frame/JSONView.ts | find": {
     "message": "Otsi"

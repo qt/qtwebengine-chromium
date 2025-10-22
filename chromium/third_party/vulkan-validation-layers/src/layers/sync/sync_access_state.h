@@ -63,6 +63,15 @@ enum class SyncOrdering : uint8_t {
     kRaster = 3,
     kNumOrderings = 4,
 };
+
+struct SyncFlag {
+    enum : uint32_t {
+        kLoadOp = 1u << 0,
+        kStoreOp = 1u << 1,
+    };
+};
+using SyncFlags = uint32_t;
+
 const char *string_SyncHazardVUID(SyncHazard hazard);
 
 struct SyncHazardInfo {
@@ -152,32 +161,13 @@ struct SyncBarrier {
     SyncAccessFlags src_access_scope;
     SyncExecScope dst_exec_scope;
     SyncAccessFlags dst_access_scope;
+
     SyncBarrier() = default;
-    SyncBarrier(const SyncBarrier &other) = default;
-    SyncBarrier &operator=(const SyncBarrier &) = default;
-
-    SyncBarrier(const SyncExecScope &src, const SyncExecScope &dst);
-    SyncBarrier(const SyncExecScope &src, const SyncExecScope &dst, const AllAccess &);
-    SyncBarrier(const SyncExecScope &src_exec, const SyncAccessFlags &src_access, const SyncExecScope &dst_exec,
-                const SyncAccessFlags &dst_access)
-        : src_exec_scope(src_exec), src_access_scope(src_access), dst_exec_scope(dst_exec), dst_access_scope(dst_access) {}
-
-    template <typename Barrier>
-    SyncBarrier(const Barrier &barrier, const SyncExecScope &src, const SyncExecScope &dst);
-
+    SyncBarrier(const SyncExecScope &src_exec, const SyncExecScope &dst_exec);
+    SyncBarrier(const SyncExecScope &src_exec, const SyncExecScope &dst_exec, const AllAccess &);
+    SyncBarrier(const SyncExecScope &src_exec, VkAccessFlags2 src_access_mask, const SyncExecScope &dst_exec,
+                VkAccessFlags2 dst_access_mask);
     SyncBarrier(VkQueueFlags queue_flags, const VkSubpassDependency2 &barrier);
-    // template constructor for sync2 barriers
-    template <typename Barrier>
-    SyncBarrier(VkQueueFlags queue_flags, const Barrier &barrier);
-
-    void Merge(const SyncBarrier &other) {
-        // Note that after merge, only the exec_scope and access_scope fields are fully valid
-        // TODO: Do we need to update any of the other fields?  Merging has limited application.
-        src_exec_scope.exec_scope |= other.src_exec_scope.exec_scope;
-        src_access_scope |= other.src_access_scope;
-        dst_exec_scope.exec_scope |= other.dst_exec_scope.exec_scope;
-        dst_access_scope |= other.dst_access_scope;
-    }
     SyncBarrier(const std::vector<SyncBarrier> &barriers);
 };
 
@@ -286,7 +276,7 @@ struct ReadState {
 class WriteState {
   public:
     WriteState() = default;
-    WriteState(const SyncAccessInfo &usage_info, ResourceUsageTagEx tag_ex);
+    WriteState(const SyncAccessInfo &usage_info, ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
 
     bool operator==(const WriteState &rhs) const {
         return (access_ == rhs.access_) && (barriers_ == rhs.barriers_) && (tag_ == rhs.tag_) && (queue_ == rhs.queue_) &&
@@ -310,12 +300,13 @@ class WriteState {
     ResourceUsageTagEx TagEx() const { return {tag_, handle_index_}; }
     bool IsWriteHazard(const SyncAccessInfo &usage_info) const;
     bool IsOrdered(const OrderingBarrier &ordering, QueueId queue_id) const;
+    bool IsLoadOp() const { return flags_ & SyncFlag::kLoadOp; }
 
     bool IsWriteBarrierHazard(QueueId queue_id, VkPipelineStageFlags2 src_exec_scope,
                               const SyncAccessFlags &src_access_scope) const;
 
     void SetQueueId(QueueId id);
-    void Set(const SyncAccessInfo &usage_info, ResourceUsageTagEx tag_ex);
+    void Set(const SyncAccessInfo &usage_info, ResourceUsageTagEx tag_ex, SyncFlags flags);
     void MergeBarriers(const WriteState &other);
     void OffsetTag(ResourceUsageTag offset) { tag_ += offset; }
 
@@ -331,6 +322,7 @@ class WriteState {
     ResourceUsageTag tag_;
     uint32_t handle_index_;
     QueueId queue_;
+    SyncFlags flags_;
     // intially zero, but accumulating the dstStages of barriers if they chain.
     VkPipelineStageFlags2 dependency_chain_;
 
@@ -342,15 +334,15 @@ class WriteState {
     friend ResourceAccessState;
 };
 
-class ResourceAccessState : public SyncStageAccess {
+class ResourceAccessState {
   protected:
     using OrderingBarriers = std::array<OrderingBarrier, static_cast<size_t>(SyncOrdering::kNumOrderings)>;
     using FirstAccesses = small_vector<ResourceFirstAccess, 3>;
 
   public:
     HazardResult DetectHazard(const SyncAccessInfo &usage_info) const;
-    HazardResult DetectHazard(const SyncAccessInfo &usage_info, SyncOrdering ordering_rule, QueueId queue_id) const;
-    HazardResult DetectHazard(const SyncAccessInfo &usage_info, const OrderingBarrier &ordering, QueueId queue_id) const;
+    HazardResult DetectHazard(const SyncAccessInfo &usage_info, const OrderingBarrier &ordering, SyncFlags flags,
+                              QueueId queue_id) const;
     HazardResult DetectHazard(const ResourceAccessState &recorded_use, QueueId queue_id, const ResourceUsageRange &tag_range) const;
 
     HazardResult DetectAsyncHazard(const SyncAccessInfo &usage_info, ResourceUsageTag start_tag, QueueId queue_id) const;
@@ -363,14 +355,14 @@ class ResourceAccessState : public SyncStageAccess {
                                      VkPipelineStageFlags2 source_exec_scope, const SyncAccessFlags &source_access_scope,
                                      QueueId event_queue, ResourceUsageTag event_tag) const;
 
-    void Update(const SyncAccessInfo &usage_info, SyncOrdering ordering_rule, ResourceUsageTagEx tag_ex);
-    void SetWrite(const SyncAccessInfo &usage_info, ResourceUsageTagEx tag_ex);
+    void Update(const SyncAccessInfo &usage_info, SyncOrdering ordering_rule, ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
+    void SetWrite(const SyncAccessInfo &usage_info, ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
     void ClearWrite();
     void ClearRead();
     void ClearFirstUse();
     void Resolve(const ResourceAccessState &other);
     void ApplyBarriers(const std::vector<SyncBarrier> &barriers, bool layout_transition);
-    void ApplyBarriersImmediate(const std::vector<SyncBarrier> &barriers);
+    void ApplyBarriersImmediate(const SyncBarrier &barriers);
     template <typename ScopeOps>
     void ApplyBarrier(ScopeOps &&scope, const SyncBarrier &barrier, bool layout_transition,
                       uint32_t layout_transition_handle_index = vvl::kNoIndex32);
@@ -473,6 +465,10 @@ class ResourceAccessState : public SyncStageAccess {
     void Normalize();
     void GatherReferencedTags(ResourceUsageTagSet &used) const;
 
+    static const OrderingBarrier &GetOrderingRules(SyncOrdering ordering_enum) {
+        return kOrderingRules[static_cast<size_t>(ordering_enum)];
+    }
+
   private:
     static constexpr VkPipelineStageFlags2 kInvalidAttachmentStage = ~VkPipelineStageFlags2(0);
     bool IsRAWHazard(const SyncAccessInfo &usage_info) const;
@@ -491,16 +487,12 @@ class ResourceAccessState : public SyncStageAccess {
     bool IsReadHazard(VkPipelineStageFlags2 stage_mask, const ReadState &read_access) const {
         return IsReadHazard(stage_mask, read_access.barriers);
     }
-    VkPipelineStageFlags2 GetOrderedStages(QueueId queue_id, const OrderingBarrier &ordering) const;
+    VkPipelineStageFlags2 GetOrderedStages(QueueId queue_id, const OrderingBarrier &ordering, SyncFlags flags) const;
 
     void UpdateFirst(ResourceUsageTagEx tag_ex, const SyncAccessInfo &usage_info, SyncOrdering ordering_rule);
     void TouchupFirstForLayoutTransition(ResourceUsageTag tag, const OrderingBarrier &layout_ordering);
     void MergePending(const ResourceAccessState &other);
     void MergeReads(const ResourceAccessState &other);
-
-    static const OrderingBarrier &GetOrderingRules(SyncOrdering ordering_enum) {
-        return kOrderingRules[static_cast<size_t>(ordering_enum)];
-    }
 
     // TODO: Add a NONE (zero) enum to SyncStageAccessFlags for input_attachment_read and last_write
 
@@ -552,7 +544,7 @@ void ResourceAccessState::ApplyBarrier(ScopeOps &&scope, const SyncBarrier &barr
     //       transistion *as* a write and in scope with the barrier (it's before visibility).
     if (layout_transition) {
         if (!last_write.has_value()) {
-            last_write.emplace(AccessInfo(SYNC_ACCESS_INDEX_NONE), ResourceUsageTagEx{0U});
+            last_write.emplace(GetAccessInfo(SYNC_ACCESS_INDEX_NONE), ResourceUsageTagEx{0U});
         }
         last_write->UpdatePendingBarriers(barrier);
         last_write->UpdatePendingLayoutOrdering(barrier);
@@ -649,22 +641,4 @@ bool ResourceAccessState::ApplyPredicatedWait(Predicate &predicate) {
         }
     }
     return all_clear;
-}
-
-template <typename Barrier>
-SyncBarrier::SyncBarrier(const Barrier &barrier, const SyncExecScope &src, const SyncExecScope &dst)
-    : src_exec_scope(src),
-      src_access_scope(SyncStageAccess::AccessScope(src.valid_accesses, barrier.srcAccessMask)),
-      dst_exec_scope(dst),
-      dst_access_scope(SyncStageAccess::AccessScope(dst.valid_accesses, barrier.dstAccessMask)) {}
-
-template <typename Barrier>
-SyncBarrier::SyncBarrier(VkQueueFlags queue_flags, const Barrier &barrier) {
-    auto src = SyncExecScope::MakeSrc(queue_flags, barrier.srcStageMask);
-    src_exec_scope = src.exec_scope;
-    src_access_scope = SyncStageAccess::AccessScope(src.valid_accesses, barrier.srcAccessMask);
-
-    auto dst = SyncExecScope::MakeDst(queue_flags, barrier.dstStageMask);
-    dst_exec_scope = dst.exec_scope;
-    dst_access_scope = SyncStageAccess::AccessScope(dst.valid_accesses, barrier.dstAccessMask);
 }

@@ -18,6 +18,7 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/test/bind.h"
@@ -129,6 +130,7 @@ PasswordForm GenerateExamplePasswordForm() {
   form.sender_email = u"sender@gmail.com";
   form.sender_name = u"Cool Sender";
   form.sender_profile_image_url = GURL("http://www.sender.com/profile_image");
+  form.date_last_filled = base::Time::Now();
   form.date_received = base::Time::Now() - base::Hours(1);
   form.sharing_notification_displayed = true;
   return form;
@@ -268,11 +270,11 @@ MATCHER(IsBasicAuthAccount, "") {
 
 os_crypt_async::Encryptor GetInstanceSync(
     os_crypt_async::OSCryptAsync* factory) {
-  base::test::TestFuture<os_crypt_async::Encryptor, bool> future;
+  base::test::TestFuture<os_crypt_async::Encryptor> future;
 
-  auto sub = factory->GetInstance(future.GetCallback(),
-                                  os_crypt_async::Encryptor::Option::kNone);
-  return std::move(std::get<0>(future.Take()));
+  factory->GetInstance(future.GetCallback(),
+                       os_crypt_async::Encryptor::Option::kNone);
+  return future.Take();
 }
 
 }  // namespace
@@ -1545,7 +1547,7 @@ TEST_P(LoginDatabaseTest, UpdateLoginWithoutPassword) {
 
 TEST_P(LoginDatabaseTest, RemoveWrongForm) {
   PasswordForm form;
-  // |origin| shouldn't be empty.
+  // |url| shouldn't be empty.
   form.url = GURL("http://accounts.google.com/LoginAuth");
   form.signon_realm = "http://accounts.google.com/";
   form.username_value = u"my_username";
@@ -1558,6 +1560,52 @@ TEST_P(LoginDatabaseTest, RemoveWrongForm) {
   EXPECT_EQ(AddChangeForForm(form), db().AddLogin(form));
   EXPECT_TRUE(db().RemoveLogin(form, /*changes=*/nullptr));
   EXPECT_FALSE(db().RemoveLogin(form, /*changes=*/nullptr));
+}
+
+TEST_P(LoginDatabaseTest, RemoveInvalidForm) {
+  const base::FilePath database_path = temp_dir_.GetPath().AppendASCII("t.db");
+  std::unique_ptr<os_crypt_async::OSCryptAsync> test_oscrypt_async =
+      os_crypt_async::GetTestOSCryptAsyncForTesting(
+          /*is_sync_for_unittests = */ true);
+  PasswordForm form;
+  form.url = GURL("http://google.com/");
+  form.signon_realm = "http://accounts.google.com/";
+  form.username_value = u"my_username";
+  form.password_value = u"my_password";
+  form.in_store = PasswordForm::Store::kProfileStore;
+  {
+    LoginDatabase db(database_path, IsAccountStore(false));
+    EXPECT_TRUE(
+        db.Init(/*on_undecryptable_passwords_removed=*/base::NullCallback(),
+                /*encryptor=*/std::make_unique<os_crypt_async::Encryptor>(
+                    GetInstanceSync(test_oscrypt_async.get()))));
+    // Add the valid form first because `AddLogin` checks it.
+    EXPECT_EQ(db.AddLogin(form), AddChangeForForm(form));
+  }
+  {
+    sql::Database db(sql::test::kTestTag);
+    CHECK(db.Open(database_path));
+
+    // Modify the url so it's invalid.
+    sql::Statement s(db.GetCachedStatement(
+        SQL_FROM_HERE,
+        "UPDATE logins SET origin_url = 'http://google.com:foo/'"));
+    ASSERT_TRUE(s.Run());
+  }
+  {
+    LoginDatabase db(database_path, IsAccountStore(false));
+    EXPECT_TRUE(
+        db.Init(/*on_undecryptable_passwords_removed=*/base::NullCallback(),
+                /*encryptor=*/std::make_unique<os_crypt_async::Encryptor>(
+                    GetInstanceSync(test_oscrypt_async.get()))));
+    form.url = GURL("http://google.com:foo/");
+    ASSERT_FALSE(form.url.is_valid());
+    std::vector<PasswordForm> forms;
+    EXPECT_EQ(FormRetrievalResult::kSuccess, db.GetAllLogins(&forms));
+    EXPECT_THAT(forms, ElementsAre(HasPrimaryKeyAndEquals(form)));
+    // Test that deletion works.
+    EXPECT_TRUE(db.RemoveLogin(form, /*changes=*/nullptr));
+  }
 }
 
 namespace {

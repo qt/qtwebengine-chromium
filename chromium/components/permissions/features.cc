@@ -16,15 +16,9 @@ BASE_FEATURE(kBackForwardCacheUnblockPermissionRequest,
              "BackForwardCacheUnblockPermissionRequest",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kOneTimePermission,
-             "OneTimePermission",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-#if !BUILDFLAG(IS_ANDROID)
 BASE_FEATURE(kKeyboardLockPrompt,
              "KeyboardLockPrompt",
              base::FEATURE_DISABLED_BY_DEFAULT);
-#endif  // !BUILDFLAG(IS_ANDROID)
 
 // Enables different positioning of the permission dialog, so that it's placed
 // near the permission element, if possible.
@@ -47,6 +41,18 @@ BASE_FEATURE(kPermissionPredictionsV2,
 
 BASE_FEATURE(kPermissionsAIv1,
              "PermissionsAIv1",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPermissionsAIv3,
+             "PermissionsAIv3",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPermissionsAIv4,
+             "PermissionsAIv4",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kPermissionPromiseLifetimeModulation,
+             "PermissionPromiseLifetimeModulation",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Controls whether to trigger showing a HaTS survey, with the given
@@ -115,7 +121,7 @@ BASE_FEATURE(kCpssQuietChipTextUpdate,
 
 BASE_FEATURE(kCpssUseTfliteSignatureRunner,
              "CpssUseTfliteSignatureRunner",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // When enabled, FederatedIdentityApiEmbargoDurationDismiss will use values from
 // a field trial.
@@ -135,23 +141,6 @@ BASE_FEATURE(kOsAdditionalSecurityPermissionKillSwitch,
 #endif
 }  // namespace features
 namespace feature_params {
-
-const base::FeatureParam<bool> kUseStrongerPromptLanguage{
-    &features::kOneTimePermission, "use_stronger_prompt_language", true};
-
-const base::FeatureParam<bool> kUseWhileVisitingLanguage{
-    &features::kOneTimePermission, "use_while_visiting_language", true};
-
-const base::FeatureParam<bool> kShowAllowAlwaysAsFirstButton{
-    &features::kOneTimePermission, "show_allow_always_as_first_button", true};
-
-const base::FeatureParam<base::TimeDelta> kOneTimePermissionTimeout{
-    &features::kOneTimePermission, "one_time_permission_timeout",
-    base::Minutes(5)};
-
-const base::FeatureParam<base::TimeDelta> kOneTimePermissionLongTimeout{
-    &features::kOneTimePermission, "one_time_permission_long_timeout",
-    base::Hours(16)};
 
 const base::FeatureParam<PermissionElementPromptPosition>::Option
     kPromptPositioningOptions[] = {

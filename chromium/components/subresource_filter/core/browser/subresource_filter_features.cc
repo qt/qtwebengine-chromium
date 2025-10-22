@@ -13,8 +13,8 @@
 #include <utility>
 
 #include "base/containers/contains.h"
-#include "base/lazy_instance.h"
 #include "base/metrics/field_trial_params.h"
+#include "base/no_destructor.h"
 #include "base/rand_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -59,8 +59,9 @@ std::string TakeVariationParamOrReturnEmpty(
     std::map<std::string, std::string>* params,
     const std::string& key) {
   auto it = params->find(key);
-  if (it == params->end())
+  if (it == params->end()) {
     return std::string();
+  }
   std::string value = std::move(it->second);
   params->erase(it);
   return value;
@@ -68,21 +69,23 @@ std::string TakeVariationParamOrReturnEmpty(
 
 mojom::ActivationLevel ParseActivationLevel(std::string_view activation_level) {
   if (base::EqualsCaseInsensitiveASCII(activation_level,
-                                       kActivationLevelEnabled))
+                                       kActivationLevelEnabled)) {
     return mojom::ActivationLevel::kEnabled;
-  else if (base::EqualsCaseInsensitiveASCII(activation_level,
-                                            kActivationLevelDryRun))
+  } else if (base::EqualsCaseInsensitiveASCII(activation_level,
+                                              kActivationLevelDryRun)) {
     return mojom::ActivationLevel::kDryRun;
+  }
   return mojom::ActivationLevel::kDisabled;
 }
 
 ActivationScope ParseActivationScope(std::string_view activation_scope) {
   if (base::EqualsCaseInsensitiveASCII(activation_scope,
-                                       kActivationScopeAllSites))
+                                       kActivationScopeAllSites)) {
     return ActivationScope::ALL_SITES;
-  else if (base::EqualsCaseInsensitiveASCII(activation_scope,
-                                            kActivationScopeActivationList))
+  } else if (base::EqualsCaseInsensitiveASCII(activation_scope,
+                                              kActivationScopeActivationList)) {
     return ActivationScope::ACTIVATION_LIST;
+  }
   return ActivationScope::NO_SITES;
 }
 
@@ -107,8 +110,9 @@ ActivationList ParseActivationList(std::string activation_lists_string) {
 // Will return a value between 0 and 1 inclusive.
 double ParsePerformanceMeasurementRate(const std::string& rate) {
   double value = 0.0;
-  if (!base::StringToDouble(rate, &value) || value < 0)
+  if (!base::StringToDouble(rate, &value) || value < 0) {
     return 0.0;
+  }
   return value < 1 ? value : 1;
 }
 
@@ -186,8 +190,9 @@ std::vector<Configuration> ParseEnabledConfigurations() {
   base::GetFieldTrialParamsByFeature(kSafeBrowsingSubresourceFilter, &params);
 
   std::vector<Configuration> configs;
-  if (base::FeatureList::IsEnabled(kSafeBrowsingSubresourceFilter))
+  if (base::FeatureList::IsEnabled(kSafeBrowsingSubresourceFilter)) {
     configs = FillEnabledPresetConfigurations(&params);
+  }
 
   Configuration experimental_config = ParseExperimentalConfiguration(&params);
   configs.push_back(std::move(experimental_config));
@@ -216,19 +221,24 @@ std::string_view GetLexicographicallyGreatestRulesetFlavor(
   std::string_view greatest_flavor;
   for (const auto& config : configs) {
     std::string_view flavor = config.general_settings.ruleset_flavor;
-    if (flavor > greatest_flavor)
+    if (flavor > greatest_flavor) {
       greatest_flavor = flavor;
+    }
   }
   return greatest_flavor;
 }
 
 // Globals --------------------------------------------------------------------
 
-base::LazyInstance<base::Lock>::Leaky g_active_configurations_lock =
-    LAZY_INSTANCE_INITIALIZER;
+base::Lock& GetActiveConfigurationsLock() {
+  static base::NoDestructor<base::Lock> lock;
+  return *lock;
+}
 
-base::LazyInstance<scoped_refptr<ConfigurationList>>::Leaky
-    g_active_configurations = LAZY_INSTANCE_INITIALIZER;
+scoped_refptr<ConfigurationList>& GetActiveConfigurations() {
+  static base::NoDestructor<scoped_refptr<ConfigurationList>> configurations;
+  return *configurations;
+}
 
 }  // namespace
 
@@ -336,10 +346,6 @@ bool Configuration::operator==(const Configuration& rhs) const {
   return tie(*this) == tie(rhs);
 }
 
-bool Configuration::operator!=(const Configuration& rhs) const {
-  return !(*this == rhs);
-}
-
 std::unique_ptr<base::trace_event::TracedValue>
 Configuration::ActivationConditions::ToTracedValue() const {
   auto value = std::make_unique<base::trace_event::TracedValue>();
@@ -410,12 +416,12 @@ ConfigurationList::ConfigurationList(std::vector<Configuration> configs)
 ConfigurationList::~ConfigurationList() = default;
 
 scoped_refptr<ConfigurationList> GetEnabledConfigurations() {
-  base::AutoLock lock(g_active_configurations_lock.Get());
-  if (!g_active_configurations.Get()) {
-    g_active_configurations.Get() =
+  base::AutoLock lock(GetActiveConfigurationsLock());
+  if (!GetActiveConfigurations()) {
+    GetActiveConfigurations() =
         base::MakeRefCounted<ConfigurationList>(ParseEnabledConfigurations());
   }
-  return g_active_configurations.Get();
+  return GetActiveConfigurations();
 }
 
 bool HasEnabledConfiguration(const Configuration& config) {
@@ -427,9 +433,9 @@ namespace testing {
 
 scoped_refptr<ConfigurationList> GetAndSetActivateConfigurations(
     scoped_refptr<ConfigurationList> new_configs) {
-  base::AutoLock lock(g_active_configurations_lock.Get());
-  auto old_configs = std::move(g_active_configurations.Get());
-  g_active_configurations.Get() = std::move(new_configs);
+  base::AutoLock lock(GetActiveConfigurationsLock());
+  auto old_configs = std::move(GetActiveConfigurations());
+  GetActiveConfigurations() = std::move(new_configs);
   return old_configs;
 }
 

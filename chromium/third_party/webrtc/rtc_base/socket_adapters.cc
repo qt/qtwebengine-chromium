@@ -8,22 +8,20 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#if defined(_MSC_VER) && _MSC_VER < 1300
-#pragma warning(disable : 4786)
-#endif
-
 #include "rtc_base/socket_adapters.h"
 
 #include <algorithm>
+#include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 
-#include "absl/strings/match.h"
-#include "absl/strings/string_view.h"
-#include "rtc_base/buffer.h"
-#include "rtc_base/byte_buffer.h"
+#include "api/array_view.h"
+#include "rtc_base/async_socket.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/strings/string_builder.h"
-#include "rtc_base/zero_memory.h"
+#include "rtc_base/socket.h"
+#include "rtc_base/socket_address.h"
 
 namespace webrtc {
 
@@ -137,7 +135,7 @@ static const uint8_t kSslClientHello[] = {
 };
 
 // static
-rtc::ArrayView<const uint8_t> AsyncSSLSocket::SslClientHello() {
+ArrayView<const uint8_t> AsyncSSLSocket::SslClientHello() {
   // Implicit conversion directly from kSslClientHello to ArrayView fails when
   // built with gcc.
   return {kSslClientHello, sizeof(kSslClientHello)};
@@ -165,7 +163,7 @@ static const uint8_t kSslServerHello[] = {
 };
 
 // static
-rtc::ArrayView<const uint8_t> AsyncSSLSocket::SslServerHello() {
+ArrayView<const uint8_t> AsyncSSLSocket::SslServerHello() {
   return {kSslServerHello, sizeof(kSslServerHello)};
 }
 

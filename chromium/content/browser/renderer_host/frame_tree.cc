@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "base/containers/contains.h"
+#include "base/debug/crash_logging.h"
 #include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
@@ -20,7 +21,6 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/safe_ref.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/not_fatal_until.h"
 #include "base/trace_event/optional_trace_event.h"
 #include "base/trace_event/typed_macros.h"
 #include "base/types/cxx23_from_range.h"
@@ -42,6 +42,7 @@
 #include "content/common/content_navigation_policy.h"
 #include "content/common/content_switches_internal.h"
 #include "content/common/features.h"
+#include "ipc/constants.mojom.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/common/frame/frame_owner_element_type.h"
 #include "third_party/blink/public/common/frame/frame_policy.h"
@@ -212,7 +213,6 @@ FrameTree::FrameTree(
                  navigator_delegate,
                  navigation_controller_delegate),
       type_(type),
-      load_progress_(0.0),
       root_(*this,
             nullptr,
             // The top-level frame must always be in a
@@ -320,7 +320,7 @@ std::vector<FrameTreeNode*> FrameTree::CollectNodesForIsLoading() {
   FrameTree::NodeIterator node_iter = node_range.begin();
   std::vector<FrameTreeNode*> nodes;
 
-  CHECK(node_iter != node_range.end(), base::NotFatalUntil::M130);
+  CHECK(node_iter != node_range.end());
   FrameTree* root_loading_tree = root_.frame_tree().LoadingTree();
   while (node_iter != node_range.end()) {
     // Skip over frame trees and children which belong to inner web contents
@@ -393,7 +393,7 @@ FrameTreeNode* FrameTree::AddFrame(
     bool was_discarded,
     blink::FrameOwnerElementType owner_type,
     bool is_dummy_frame_for_inner_tree) {
-  CHECK_NE(new_routing_id, MSG_ROUTING_NONE);
+  CHECK_NE(new_routing_id, IPC::mojom::kRoutingIdNone);
   // Normally this path is for blink adding a child local frame. But fenced
   // frames add a dummy child frame that never gets a corresponding
   // RenderFrameImpl in any renderer process, and therefore its `frame_remote`
@@ -495,7 +495,8 @@ void FrameTree::CreateProxiesForSiteInstanceGroup(
     FrameTreeNode* source,
     SiteInstanceGroup* site_instance_group,
     const scoped_refptr<BrowsingContextState>&
-        source_new_browsing_context_state) {
+        source_new_browsing_context_state,
+    const std::optional<base::UnguessableToken>& navigation_metrics_token) {
   // Will be instantiated with the root proxy later and passed to
   // `CreateRenderFrameProxy()` to batch create proxies for child frames.
   std::unique_ptr<BatchedProxyIPCSender> batched_proxy_ipc_sender;
@@ -505,7 +506,7 @@ void FrameTree::CreateProxiesForSiteInstanceGroup(
         GetRenderViewHost(site_instance_group).get();
     if (render_view_host) {
       root()->render_manager()->EnsureRenderViewInitialized(
-          render_view_host, site_instance_group);
+          render_view_host, site_instance_group, navigation_metrics_token);
     } else {
       // Due to the check above, we are creating either an opener proxy (when
       // source is null) or a main frame proxy due to a subframe navigation
@@ -524,6 +525,7 @@ void FrameTree::CreateProxiesForSiteInstanceGroup(
       // pass an instance of `BatchedProxyIPCSender` here instead of nullptr.
       root()->render_manager()->CreateRenderFrameProxy(
           site_instance_group, root_browsing_context_state,
+          navigation_metrics_token,
           /*batched_proxy_ipc_sender=*/nullptr);
 
       // We only need to use `BatchedProxyIPCSender` when navigating to a new
@@ -538,8 +540,8 @@ void FrameTree::CreateProxiesForSiteInstanceGroup(
           root_browsing_context_state
               ->GetRenderFrameProxyHost(site_instance_group)
               ->GetSafeRef();
-      batched_proxy_ipc_sender =
-          std::make_unique<BatchedProxyIPCSender>(std::move(root_proxy));
+      batched_proxy_ipc_sender = std::make_unique<BatchedProxyIPCSender>(
+          std::move(root_proxy), navigation_metrics_token);
     }
   }
 
@@ -609,7 +611,7 @@ void FrameTree::CreateProxiesForSiteInstanceGroup(
           site_instance_group,
           node == source ? source_new_browsing_context_state
                          : node->current_frame_host()->browsing_context_state(),
-          batched_proxy_ipc_sender.get());
+          navigation_metrics_token, batched_proxy_ipc_sender.get());
     }
   }
 
@@ -1098,8 +1100,8 @@ void FrameTree::FocusOuterFrameTrees() {
   }
 }
 
-void FrameTree::Discard() {
-  const auto attempt_discard = [this]() {
+void FrameTree::Discard(base::OnceClosure on_discarded_cb) {
+  const auto attempt_discard = [this](base::OnceClosure on_discarded_cb) {
     // A speculative pending-commit rfh should not be cancelled or deleted. In
     // this case ignore the discard request and allow the navigation to complete
     // as normal.
@@ -1110,13 +1112,14 @@ void FrameTree::Discard() {
     }
 
     root()->set_was_discarded();
-    root()->current_frame_host()->DiscardFrame();
+    root()->current_frame_host()->DiscardFrame(std::move(on_discarded_cb));
     NavigationControllerImpl& navigation_controller = controller();
     navigation_controller.SetNeedsReload();
     navigation_controller.GetBackForwardCache().Flush();
     return true;
   };
-  base::UmaHistogramBoolean("Discarding.DiscardFrameTree", attempt_discard());
+  base::UmaHistogramBoolean("Discarding.DiscardFrameTree",
+                            attempt_discard(std::move(on_discarded_cb)));
 }
 
 }  // namespace content

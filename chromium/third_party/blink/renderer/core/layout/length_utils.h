@@ -14,11 +14,11 @@
 #include "third_party/blink/renderer/core/layout/geometry/box_strut.h"
 #include "third_party/blink/renderer/core/layout/geometry/fragment_geometry.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_size.h"
-#include "third_party/blink/renderer/core/layout/geometry/physical_size.h"
 #include "third_party/blink/renderer/core/layout/min_max_sizes.h"
 #include "third_party/blink/renderer/core/layout/table/table_node.h"
 #include "third_party/blink/renderer/core/style/computed_style.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
+#include "third_party/blink/renderer/platform/geometry/physical_size.h"
 #include "third_party/blink/renderer/platform/text/text_direction.h"
 #include "third_party/blink/renderer/platform/text/writing_mode.h"
 
@@ -439,6 +439,15 @@ std::optional<LayoutUnit> ResolveRowGapLength(const ComputedStyle&,
 LayoutUnit ResolveRowGapForMulticol(const ComputedStyle&,
                                     LayoutUnit available_size);
 
+// Return the used value of `item-tolerance` if it is a `<length-percentage>`.
+// Otherwise, if it's `normal`, whose resolution is algorithm-specific,
+// `std::nullopt` is returned.
+std::optional<LayoutUnit> ResolveItemToleranceLength(const ComputedStyle&,
+                                                     LayoutUnit available_size);
+
+LayoutUnit ResolveItemToleranceForMasonry(const ComputedStyle&,
+                                          const LogicalSize& available_size);
+
 CORE_EXPORT LayoutUnit ColumnInlineProgression(const ComputedStyle&,
                                                LayoutUnit available_size);
 
@@ -729,6 +738,14 @@ ComputeMinAndMaxContentContributionForTest(WritingMode writing_mode,
 std::optional<MinMaxSizesResult> CalculateMinMaxSizesIgnoringChildren(
     const BlockNode&,
     const BoxStrut& border_scrollbar_padding);
+
+// NOTE: Ideally we wouldn't have the parameter `children_have_geometry` but
+// when determining the default block-size for a "<select multiple>" we read
+// its "<option>"s size.
+LayoutUnit CalculateIntrinsicBlockSizeIgnoringChildren(
+    const BlockNode&,
+    const BoxStrut& border_scrollbar_padding,
+    bool children_have_geometry = false);
 
 // Determine which scrollbars to freeze in the next layout pass. Scrollbars that
 // appear will be frozen (while scrollbars that disappear will not). Input is

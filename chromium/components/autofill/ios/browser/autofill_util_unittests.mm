@@ -4,9 +4,10 @@
 
 #import "components/autofill/ios/browser/autofill_util.h"
 
-#include <variant>
+#import <variant>
 
 #import "base/memory/scoped_refptr.h"
+#import "base/strings/string_util.h"
 #import "base/strings/utf_string_conversions.h"
 #import "base/values.h"
 #import "components/autofill/core/common/field_data_manager.h"

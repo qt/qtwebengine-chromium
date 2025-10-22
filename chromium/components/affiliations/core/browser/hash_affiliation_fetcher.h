@@ -6,6 +6,7 @@
 #define COMPONENTS_AFFILIATIONS_CORE_BROWSER_HASH_AFFILIATION_FETCHER_H_
 
 #include <string>
+#include <vector>
 
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
@@ -30,9 +31,8 @@ namespace affiliations {
 // including those actually required.
 class HashAffiliationFetcher : public AffiliationFetcherInterface {
  public:
-  HashAffiliationFetcher(
-      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory,
-      AffiliationFetcherDelegate* delegate);
+  explicit HashAffiliationFetcher(
+      scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory);
   ~HashAffiliationFetcher() override;
 
   // AffiliationFetcherInterface
@@ -45,8 +45,6 @@ class HashAffiliationFetcher : public AffiliationFetcherInterface {
   // Builds the URL for the Affiliation API's lookup method.
   static GURL BuildQueryURL();
   static bool IsFetchPossible();
-
-  AffiliationFetcherDelegate* delegate() const;
 
  private:
   // Actually starts the request to retrieve affiliations and optionally
@@ -67,15 +65,15 @@ class HashAffiliationFetcher : public AffiliationFetcherInterface {
   // member of exactly one returned equivalence class.
   // Returns false if the response was gravely ill-formed or self-inconsistent.
   // Unknown kinds of facet URIs and new protocol buffer fields will be ignored.
-  bool ParseResponse(const std::string& serialized_response,
-                     AffiliationFetcherDelegate::Result* result) const;
+  bool ParseResponse(
+      const std::string& serialized_response,
+      AffiliationFetcherInterface::ParsedFetchResponse* result) const;
 
   void OnSimpleLoaderComplete(std::unique_ptr<std::string> response_body);
 
   std::vector<FacetURI> requested_facet_uris_;
   base::OnceCallback<void(FetchResult)> result_callback_;
   scoped_refptr<network::SharedURLLoaderFactory> url_loader_factory_;
-  const raw_ptr<AffiliationFetcherDelegate> delegate_;
   base::ElapsedTimer fetch_timer_;
 
   std::unique_ptr<network::SimpleURLLoader> simple_url_loader_;

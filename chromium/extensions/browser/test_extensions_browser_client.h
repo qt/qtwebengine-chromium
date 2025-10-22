@@ -18,6 +18,7 @@
 #include "build/chromeos_buildflags.h"
 #include "components/update_client/update_client.h"
 #include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/safe_browsing_delegate.h"
 #include "extensions/browser/updater/extension_cache.h"
 #include "extensions/common/extension_id.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
@@ -32,9 +33,9 @@ class KioskDelegate;
 // this class should call ExtensionsBrowserClient::Set() with its instance.
 class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
  public:
-  // If provided, |main_context| must not be an incognito context.
+  // If provided, `main_context` must not be an incognito context.
   explicit TestExtensionsBrowserClient(content::BrowserContext* main_context);
-  // Alternate constructor allowing |main_context_| to be set later.
+  // Alternate constructor allowing `main_context_` to be set later.
   TestExtensionsBrowserClient();
   TestExtensionsBrowserClient(const TestExtensionsBrowserClient&) = delete;
   TestExtensionsBrowserClient& operator=(const TestExtensionsBrowserClient&) =
@@ -59,13 +60,14 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
       base::RepeatingCallback<update_client::UpdateClient*(void)> factory);
 
   // Sets the main browser context. Only call if a BrowserContext was not
-  // already provided. |main_context| must not be an incognito context.
+  // already provided. `main_context` must not be an incognito context.
   void SetMainContext(content::BrowserContext* main_context);
 
-  // Associates an incognito context with |main_context_|.
+  // Associates an incognito context with `main_context_`.
   void SetIncognitoContext(content::BrowserContext* incognito_context);
 
   // ExtensionsBrowserClient overrides:
+  void Init() override {}
   bool IsShuttingDown() override;
   bool AreExtensionsDisabled(const base::CommandLine& command_line,
                              content::BrowserContext* context) override;
@@ -159,6 +161,7 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
   ExtensionWebContentsObserver* GetExtensionWebContentsObserver(
       content::WebContents* web_contents) override;
   KioskDelegate* GetKioskDelegate() override;
+  SafeBrowsingDelegate* GetSafeBrowsingDelegate() override;
   scoped_refptr<update_client::UpdateClient> CreateUpdateClient(
       content::BrowserContext* context) override;
   std::string GetApplicationLocale() override;
@@ -195,6 +198,8 @@ class TestExtensionsBrowserClient : public ExtensionsBrowserClient {
 
   base::RepeatingCallback<update_client::UpdateClient*(void)>
       update_client_factory_;
+
+  std::unique_ptr<SafeBrowsingDelegate> safe_browsing_delegate_;
 };
 
 }  // namespace extensions

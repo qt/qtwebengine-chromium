@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
+#include "base/notimplemented.h"
 #include "base/scoped_observation.h"
 #include "ui/aura/null_window_targeter.h"
 #include "ui/aura/scoped_window_targeter.h"
@@ -335,6 +336,8 @@ void DesktopWindowTreeHostLinux::AddAdditionalInitProperties(
 
   DCHECK(!properties->x11_extension_delegate);
   properties->x11_extension_delegate = this;
+
+  properties->prefer_dark_theme = ui::LinuxUiTheme::GetForProfile(nullptr);
 }
 
 base::flat_map<std::string, std::string>

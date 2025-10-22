@@ -46,42 +46,33 @@ namespace util {
 // Returns true if the extension can be enabled in incognito mode.
 bool CanBeIncognitoEnabled(const Extension* extension);
 
-// Returns true if |extension_id| can run in an incognito window.
+// Returns true if `extension_id` can run in an incognito window.
 bool IsIncognitoEnabled(const ExtensionId& extension_id,
                         content::BrowserContext* context);
 
-// Returns true if |extension| can see events and data from another sub-profile
+// Returns true if `extension` can see events and data from another sub-profile
 // (incognito to original profile, or vice versa).
 bool CanCrossIncognito(const Extension* extension,
                        content::BrowserContext* context);
 
+// Returns true if the extension associated with `extension_id` is idle and it
+// is safe to perform actions such as updating.
+bool IsExtensionIdle(const ExtensionId& extension_id,
+                     content::BrowserContext* browser_context);
+
 // Returns true if prompting for external extensions is enabled.
 bool IsPromptingEnabled();
-
-#if BUILDFLAG(IS_ANDROID)
-// This is a workaround to ensure ExtensionSystem is initialized properly for
-// incognito profile in split mode on Android.
-// Since DesktopAndroidExtensionSystem does not use `shared_` instance (keyed
-// service) to share the states and services between regular and incognito
-// profiles, as a workaround, when an extension runs in split incognito
-// mode, we need to call `InitForRegularProfile` to instantiated these objects
-// (eg quota_service, etc) for incognito DesktopAndroidExtensionSystem
-// instance. Otherwise, it will lead to crash when the objects are accessed.
-// TODO(crbug.com/356905053): Remove this workaround when the proper
-// extension runtime is implemented on Android.
-void InitExtensionSystemForIncognitoSplit(content::BrowserContext* context);
-#endif
 
 // Returns true if this extension can inject scripts into pages with file URLs.
 bool AllowFileAccess(const ExtensionId& extension_id,
                      content::BrowserContext* context);
 
-// Returns the StoragePartition domain for |extension|.
-// Note: The reference returned has the same lifetime as |extension|.
+// Returns the StoragePartition domain for `extension`.
+// Note: The reference returned has the same lifetime as `extension`.
 const std::string& GetPartitionDomainForExtension(const Extension* extension);
 
 // Returns an extension specific StoragePartitionConfig if the extension
-// associated with |extension_id| has isolated storage.
+// associated with `extension_id` has isolated storage.
 // Otherwise, return the default StoragePartitionConfig.
 content::StoragePartitionConfig GetStoragePartitionConfigForExtensionId(
     const ExtensionId& extension_id,
@@ -97,10 +88,10 @@ content::ServiceWorkerContext* GetServiceWorkerContextForExtensionId(
     const ExtensionId& extension_id,
     content::BrowserContext* browser_context);
 
-// Maps a |file_url| to a |file_path| on the local filesystem, including
+// Maps a `file_url` to a `file_path` on the local filesystem, including
 // resources in extensions. Returns true on success. See NaClBrowserDelegate for
-// full details. If |use_blocking_api| is false, only a subset of URLs will be
-// handled. If |use_blocking_api| is true, blocking file operations may be used,
+// full details. If `use_blocking_api` is false, only a subset of URLs will be
+// handled. If `use_blocking_api` is true, blocking file operations may be used,
 // and this must be called on threads that allow blocking. Otherwise this can be
 // called on any thread.
 bool MapUrlToLocalFilePath(const ExtensionSet* extensions,
@@ -123,8 +114,8 @@ bool CanWithholdPermissionsFromExtension(
 // be keyed by strings instead.
 int GetBrowserContextId(content::BrowserContext* context);
 
-// Returns whether the |extension| should be loaded in the given
-// |browser_context|.
+// Returns whether the `extension` should be loaded in the given
+// `browser_context`.
 bool IsExtensionVisibleToContext(const Extension& extension,
                                  content::BrowserContext* browser_context);
 
@@ -178,6 +169,11 @@ bool IsAppLaunchable(const ExtensionId& extension_id,
 // Returns true if `extension_id` can be launched without being enabled first.
 bool IsAppLaunchableWithoutEnabling(const ExtensionId& extension_id,
                                     content::BrowserContext* context);
+
+// Returns `true` if any currently installed extension was installed from the
+// webstore, otherwise false.
+bool AnyCurrentlyInstalledExtensionIsFromWebstore(
+    content::BrowserContext* context);
 
 }  // namespace util
 }  // namespace extensions

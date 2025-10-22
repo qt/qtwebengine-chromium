@@ -15,7 +15,7 @@ from crossbench.probes.probe import ProbeIncompatibleBrowser
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
@@ -33,7 +33,7 @@ class PerformanceEntriesProbe(JsonResultProbe):
   NAME = "performance.entries"
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     if not hasattr(browser, "js"):
       raise ProbeIncompatibleBrowser(self, browser,

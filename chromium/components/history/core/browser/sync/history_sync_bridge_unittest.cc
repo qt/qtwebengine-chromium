@@ -13,6 +13,7 @@
 
 #include "base/notreached.h"
 #include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/task_environment.h"
 #include "base/time/time.h"
 #include "components/history/core/browser/history_types.h"
@@ -28,6 +29,7 @@
 #include "components/sync/protocol/history_specifics.pb.h"
 #include "components/sync/protocol/proto_value_conversions.h"
 #include "components/sync/test/forwarding_data_type_local_change_processor.h"
+#include "google_apis/gaia/gaia_id.h"
 #include "sql/database.h"
 #include "sql/meta_table.h"
 #include "sql/test/test_helpers.h"
@@ -211,11 +213,11 @@ class FakeDataTypeLocalChangeProcessor
 
   bool IsTrackingMetadata() const override { return is_tracking_metadata_; }
 
-  std::string TrackedAccountId() const override {
+  GaiaId TrackedGaiaId() const override {
     if (!IsTrackingMetadata()) {
-      return "";
+      return GaiaId();
     }
-    return "account_id";
+    return GaiaId("gaia_id");
   }
 
   std::string TrackedCacheGuid() const override {
@@ -1900,6 +1902,48 @@ TEST_F(HistorySyncBridgeTest, AddsCluster) {
 
   // Should be called once per visit.
   EXPECT_EQ(backend()->add_visit_to_synced_cluster_count(), 3);
+}
+
+TEST_F(HistorySyncBridgeTest, ActorInitiatedVisitsNotSynced) {
+  // Start syncing (with no data yet).
+  ApplyInitialSyncChanges({});
+
+  // Visit a URL.
+  auto [url_row, visit_row] = AddVisitToBackendAndAdvanceClock(
+      GURL("https://www.url.com"), ui::PAGE_TRANSITION_TYPED);
+  backend()->AddOrReplaceVisitSource(visit_row.visit_id,
+                                     VisitSource::SOURCE_ACTOR);
+
+  // Notify the bridge about the visit - it should be sent to the processor.
+  bridge()->OnURLVisited(
+      /*history_backend=*/nullptr, url_row, visit_row);
+
+  // The data should *not* have been uploaded to Sync.
+  EXPECT_TRUE(processor()->GetEntities().empty());
+}
+
+TEST_F(HistorySyncBridgeTest, NonActorInitiatedVisitsAreSynced) {
+  // Start syncing (with no data yet).
+  ApplyInitialSyncChanges({});
+
+  // Visit a URL with SOURCE_BROWSED.
+  auto [url_row1, visit_row1] = AddVisitToBackendAndAdvanceClock(
+      GURL("https://www.url.com"), ui::PAGE_TRANSITION_TYPED);
+  backend()->AddOrReplaceVisitSource(visit_row1.visit_id,
+                                     VisitSource::SOURCE_BROWSED);
+  bridge()->OnURLVisited(
+      /*history_backend=*/nullptr, url_row1, visit_row1);
+
+  // Visit a second URL, with SOURCE_EXTENSION.
+  auto [url_row2, visit_row2] = AddVisitToBackendAndAdvanceClock(
+      GURL("https://www.url.com"), ui::PAGE_TRANSITION_TYPED);
+  backend()->AddOrReplaceVisitSource(visit_row2.visit_id,
+                                     VisitSource::SOURCE_EXTENSION);
+  bridge()->OnURLVisited(
+      /*history_backend=*/nullptr, url_row2, visit_row2);
+
+  // The data should be uploaded to Sync.
+  EXPECT_EQ(processor()->GetEntities().size(), 2u);
 }
 
 }  // namespace

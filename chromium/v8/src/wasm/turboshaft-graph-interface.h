@@ -40,6 +40,7 @@ struct WasmModule;
 class WireBytesStorage;
 class TurboshaftGraphBuildingInterface;
 struct CompilationEnv;
+class WasmFunctionCoverageData;
 
 V8_EXPORT_PRIVATE void BuildTSGraph(
     compiler::turboshaft::PipelineData* data, AccountingAllocator* allocator,
@@ -47,7 +48,8 @@ V8_EXPORT_PRIVATE void BuildTSGraph(
     compiler::turboshaft::Graph& graph, const FunctionBody& func_body,
     const WireBytesStorage* wire_bytes,
     std::unique_ptr<AssumptionsJournal>* assumptions,
-    ZoneVector<WasmInliningPosition>* inlining_positions, int func_index);
+    ZoneVector<WasmInliningPosition>* inlining_positions, int func_index,
+    WasmFunctionCoverageData* coverage_data);
 
 void BuildWasmWrapper(compiler::turboshaft::PipelineData* data,
                       AccountingAllocator* allocator,
@@ -71,12 +73,7 @@ class V8_EXPORT_PRIVATE WasmGraphBuilderBase {
   template <typename T, typename A>
   friend class compiler::turboshaft::ScopedVar;
 
- public:
   using OpIndex = compiler::turboshaft::OpIndex;
-  void BuildModifyThreadInWasmFlagHelper(Zone* zone,
-                                         OpIndex thread_in_wasm_flag_address,
-                                         bool new_value);
-  void BuildModifyThreadInWasmFlag(Zone* zone, bool new_value);
 
  protected:
   WasmGraphBuilderBase(Zone* zone, Assembler& assembler)
@@ -96,10 +93,6 @@ class V8_EXPORT_PRIVATE WasmGraphBuilderBase {
   template <typename T>
   using ConstOrV = compiler::turboshaft::ConstOrV<T>;
 
-  OpIndex CallRuntime(Zone* zone, Runtime::FunctionId f,
-                      std::initializer_list<const OpIndex> args,
-                      V<Context> context);
-
   OpIndex GetBuiltinPointerTarget(Builtin builtin);
   V<WordPtr> GetTargetForBuiltinCall(Builtin builtin, StubCallMode stub_mode);
   V<BigInt> BuildChangeInt64ToBigInt(V<Word64> input, StubCallMode stub_mode);
@@ -112,8 +105,6 @@ class V8_EXPORT_PRIVATE WasmGraphBuilderBase {
   BuildFunctionTargetAndImplicitArg(V<WasmInternalFunction> internal_function);
 
   RegisterRepresentation RepresentationFor(ValueTypeBase type);
-  V<WasmTrustedInstanceData> LoadTrustedDataFromInstanceObject(
-      V<HeapObject> instance_object);
 
   OpIndex CallC(const MachineSignature* sig, ExternalReference ref,
                 std::initializer_list<OpIndex> args);
@@ -123,6 +114,11 @@ class V8_EXPORT_PRIVATE WasmGraphBuilderBase {
                 OpIndex arg) {
     return CallC(sig, ref, {arg});
   }
+
+  void BuildSetNewStackLimit(V<WordPtr> old_limit, V<WordPtr> new_limit);
+  V<WordPtr> BuildSwitchToTheCentralStack(V<WordPtr> old_limit);
+  std::pair<V<WordPtr>, V<WordPtr>> BuildSwitchToTheCentralStackIfNeeded();
+  void BuildSwitchBackFromCentralStack(V<WordPtr> old_sp, V<WordPtr> old_limit);
 
   Assembler& Asm() { return asm_; }
 

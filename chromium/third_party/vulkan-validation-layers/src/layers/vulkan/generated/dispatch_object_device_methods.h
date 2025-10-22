@@ -483,6 +483,7 @@ void GetRenderingAreaGranularityKHR(VkDevice device, const VkRenderingAreaInfo* 
 void GetDeviceImageSubresourceLayoutKHR(VkDevice device, const VkDeviceImageSubresourceInfo* pInfo, VkSubresourceLayout2* pLayout);
 void GetImageSubresourceLayout2KHR(VkDevice device, VkImage image, const VkImageSubresource2* pSubresource,
                                    VkSubresourceLayout2* pLayout);
+VkResult WaitForPresent2KHR(VkDevice device, VkSwapchainKHR swapchain, const VkPresentWait2InfoKHR* pPresentWait2Info);
 VkResult CreatePipelineBinariesKHR(VkDevice device, const VkPipelineBinaryCreateInfoKHR* pCreateInfo,
                                    const VkAllocationCallbacks* pAllocator, VkPipelineBinaryHandlesInfoKHR* pBinaries);
 void DestroyPipelineBinaryKHR(VkDevice device, VkPipelineBinaryKHR pipelineBinary, const VkAllocationCallbacks* pAllocator);
@@ -493,6 +494,7 @@ VkResult GetPipelineBinaryDataKHR(VkDevice device, const VkPipelineBinaryDataInf
                                   void* pPipelineBinaryData);
 VkResult ReleaseCapturedPipelineDataKHR(VkDevice device, const VkReleaseCapturedPipelineDataInfoKHR* pInfo,
                                         const VkAllocationCallbacks* pAllocator);
+VkResult ReleaseSwapchainImagesKHR(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo);
 void CmdSetLineStippleKHR(VkCommandBuffer commandBuffer, uint32_t lineStippleFactor, uint16_t lineStipplePattern);
 VkResult GetCalibratedTimestampsKHR(VkDevice device, uint32_t timestampCount, const VkCalibratedTimestampInfoKHR* pTimestampInfos,
                                     uint64_t* pTimestamps, uint64_t* pMaxDeviation);
@@ -701,7 +703,7 @@ VkResult CopyImageToImageEXT(VkDevice device, const VkCopyImageToImageInfo* pCop
 VkResult TransitionImageLayoutEXT(VkDevice device, uint32_t transitionCount, const VkHostImageLayoutTransitionInfo* pTransitions);
 void GetImageSubresourceLayout2EXT(VkDevice device, VkImage image, const VkImageSubresource2* pSubresource,
                                    VkSubresourceLayout2* pLayout);
-VkResult ReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoEXT* pReleaseInfo);
+VkResult ReleaseSwapchainImagesEXT(VkDevice device, const VkReleaseSwapchainImagesInfoKHR* pReleaseInfo);
 void GetGeneratedCommandsMemoryRequirementsNV(VkDevice device, const VkGeneratedCommandsMemoryRequirementsInfoNV* pInfo,
                                               VkMemoryRequirements2* pMemoryRequirements);
 void CmdPreprocessGeneratedCommandsNV(VkCommandBuffer commandBuffer, const VkGeneratedCommandsInfoNV* pGeneratedCommandsInfo);
@@ -732,6 +734,9 @@ void DestroyCudaModuleNV(VkDevice device, VkCudaModuleNV module, const VkAllocat
 void DestroyCudaFunctionNV(VkDevice device, VkCudaFunctionNV function, const VkAllocationCallbacks* pAllocator);
 void CmdCudaLaunchKernelNV(VkCommandBuffer commandBuffer, const VkCudaLaunchInfoNV* pLaunchInfo);
 #endif  // VK_ENABLE_BETA_EXTENSIONS
+void CmdDispatchTileQCOM(VkCommandBuffer commandBuffer, const VkDispatchTileInfoQCOM* pDispatchTileInfo);
+void CmdBeginPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileBeginInfoQCOM* pPerTileBeginInfo);
+void CmdEndPerTileExecutionQCOM(VkCommandBuffer commandBuffer, const VkPerTileEndInfoQCOM* pPerTileEndInfo);
 #ifdef VK_USE_PLATFORM_METAL_EXT
 void ExportMetalObjectsEXT(VkDevice device, VkExportMetalObjectsInfoEXT* pMetalObjectsInfo);
 #endif  // VK_USE_PLATFORM_METAL_EXT
@@ -874,6 +879,21 @@ void CmdSetCoverageModulationTableNV(VkCommandBuffer commandBuffer, uint32_t cov
 void CmdSetShadingRateImageEnableNV(VkCommandBuffer commandBuffer, VkBool32 shadingRateImageEnable);
 void CmdSetRepresentativeFragmentTestEnableNV(VkCommandBuffer commandBuffer, VkBool32 representativeFragmentTestEnable);
 void CmdSetCoverageReductionModeNV(VkCommandBuffer commandBuffer, VkCoverageReductionModeNV coverageReductionMode);
+VkResult CreateTensorARM(VkDevice device, const VkTensorCreateInfoARM* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+                         VkTensorARM* pTensor);
+void DestroyTensorARM(VkDevice device, VkTensorARM tensor, const VkAllocationCallbacks* pAllocator);
+VkResult CreateTensorViewARM(VkDevice device, const VkTensorViewCreateInfoARM* pCreateInfo, const VkAllocationCallbacks* pAllocator,
+                             VkTensorViewARM* pView);
+void DestroyTensorViewARM(VkDevice device, VkTensorViewARM tensorView, const VkAllocationCallbacks* pAllocator);
+void GetTensorMemoryRequirementsARM(VkDevice device, const VkTensorMemoryRequirementsInfoARM* pInfo,
+                                    VkMemoryRequirements2* pMemoryRequirements);
+VkResult BindTensorMemoryARM(VkDevice device, uint32_t bindInfoCount, const VkBindTensorMemoryInfoARM* pBindInfos);
+void GetDeviceTensorMemoryRequirementsARM(VkDevice device, const VkDeviceTensorMemoryRequirementsARM* pInfo,
+                                          VkMemoryRequirements2* pMemoryRequirements);
+void CmdCopyTensorARM(VkCommandBuffer commandBuffer, const VkCopyTensorInfoARM* pCopyTensorInfo);
+VkResult GetTensorOpaqueCaptureDescriptorDataARM(VkDevice device, const VkTensorCaptureDescriptorDataInfoARM* pInfo, void* pData);
+VkResult GetTensorViewOpaqueCaptureDescriptorDataARM(VkDevice device, const VkTensorViewCaptureDescriptorDataInfoARM* pInfo,
+                                                     void* pData);
 void GetShaderModuleIdentifierEXT(VkDevice device, VkShaderModule shaderModule, VkShaderModuleIdentifierEXT* pIdentifier);
 void GetShaderModuleCreateInfoIdentifierEXT(VkDevice device, const VkShaderModuleCreateInfo* pCreateInfo,
                                             VkShaderModuleIdentifierEXT* pIdentifier);
@@ -905,11 +925,38 @@ VkResult LatencySleepNV(VkDevice device, VkSwapchainKHR swapchain, const VkLaten
 void SetLatencyMarkerNV(VkDevice device, VkSwapchainKHR swapchain, const VkSetLatencyMarkerInfoNV* pLatencyMarkerInfo);
 void GetLatencyTimingsNV(VkDevice device, VkSwapchainKHR swapchain, VkGetLatencyMarkerInfoNV* pLatencyMarkerInfo);
 void QueueNotifyOutOfBandNV(VkQueue queue, const VkOutOfBandQueueTypeInfoNV* pQueueTypeInfo);
+VkResult CreateDataGraphPipelinesARM(VkDevice device, VkDeferredOperationKHR deferredOperation, VkPipelineCache pipelineCache,
+                                     uint32_t createInfoCount, const VkDataGraphPipelineCreateInfoARM* pCreateInfos,
+                                     const VkAllocationCallbacks* pAllocator, VkPipeline* pPipelines);
+VkResult CreateDataGraphPipelineSessionARM(VkDevice device, const VkDataGraphPipelineSessionCreateInfoARM* pCreateInfo,
+                                           const VkAllocationCallbacks* pAllocator, VkDataGraphPipelineSessionARM* pSession);
+VkResult GetDataGraphPipelineSessionBindPointRequirementsARM(
+    VkDevice device, const VkDataGraphPipelineSessionBindPointRequirementsInfoARM* pInfo, uint32_t* pBindPointRequirementCount,
+    VkDataGraphPipelineSessionBindPointRequirementARM* pBindPointRequirements);
+void GetDataGraphPipelineSessionMemoryRequirementsARM(VkDevice device,
+                                                      const VkDataGraphPipelineSessionMemoryRequirementsInfoARM* pInfo,
+                                                      VkMemoryRequirements2* pMemoryRequirements);
+VkResult BindDataGraphPipelineSessionMemoryARM(VkDevice device, uint32_t bindInfoCount,
+                                               const VkBindDataGraphPipelineSessionMemoryInfoARM* pBindInfos);
+void DestroyDataGraphPipelineSessionARM(VkDevice device, VkDataGraphPipelineSessionARM session,
+                                        const VkAllocationCallbacks* pAllocator);
+void CmdDispatchDataGraphARM(VkCommandBuffer commandBuffer, VkDataGraphPipelineSessionARM session,
+                             const VkDataGraphPipelineDispatchInfoARM* pInfo);
+VkResult GetDataGraphPipelineAvailablePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                                    uint32_t* pPropertiesCount, VkDataGraphPipelinePropertyARM* pProperties);
+VkResult GetDataGraphPipelinePropertiesARM(VkDevice device, const VkDataGraphPipelineInfoARM* pPipelineInfo,
+                                           uint32_t propertiesCount, VkDataGraphPipelinePropertyQueryResultARM* pProperties);
 void CmdSetAttachmentFeedbackLoopEnableEXT(VkCommandBuffer commandBuffer, VkImageAspectFlags aspectMask);
 #ifdef VK_USE_PLATFORM_SCREEN_QNX
 VkResult GetScreenBufferPropertiesQNX(VkDevice device, const struct _screen_buffer* buffer,
                                       VkScreenBufferPropertiesQNX* pProperties);
 #endif  // VK_USE_PLATFORM_SCREEN_QNX
+void CmdBindTileMemoryQCOM(VkCommandBuffer commandBuffer, const VkTileMemoryBindInfoQCOM* pTileMemoryBindInfo);
+VkResult CreateExternalComputeQueueNV(VkDevice device, const VkExternalComputeQueueCreateInfoNV* pCreateInfo,
+                                      const VkAllocationCallbacks* pAllocator, VkExternalComputeQueueNV* pExternalQueue);
+void DestroyExternalComputeQueueNV(VkDevice device, VkExternalComputeQueueNV externalQueue,
+                                   const VkAllocationCallbacks* pAllocator);
+void GetExternalComputeQueueDataNV(VkExternalComputeQueueNV externalQueue, VkExternalComputeQueueDataParamsNV* params, void* pData);
 void GetClusterAccelerationStructureBuildSizesNV(VkDevice device, const VkClusterAccelerationStructureInputInfoNV* pInfo,
                                                  VkAccelerationStructureBuildSizesInfoKHR* pSizeInfo);
 void CmdBuildClusterAccelerationStructureIndirectNV(VkCommandBuffer commandBuffer,

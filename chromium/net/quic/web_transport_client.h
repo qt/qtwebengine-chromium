@@ -22,6 +22,7 @@ namespace net {
 
 class HttpResponseHeaders;
 class URLRequestContext;
+class IPEndPoint;
 
 // Diagram of allowed state transitions:
 //
@@ -75,6 +76,7 @@ class NET_EXPORT WebTransportClientVisitor {
 
   // State change notifiers.
   // CONNECTING -> CONNECTED
+  virtual void OnBeforeConnect(const IPEndPoint& server_address) = 0;
   virtual void OnConnected(
       scoped_refptr<HttpResponseHeaders> response_headers) = 0;
   // CONNECTING -> FAILED
@@ -106,9 +108,13 @@ struct NET_EXPORT WebTransportParameters {
   bool enable_web_transport_http3 = false;
 
   // A vector of fingerprints for expected server certificates, as described in
-  // https://wicg.github.io/web-transport/#dom-quictransportconfiguration-server_certificate_fingerprints
+  // https://w3c.github.io/webtransport/#dom-webtransportoptions-servercertificatehashes
   // When empty, Web PKI is used.
   std::vector<quic::CertificateFingerprint> server_certificate_fingerprints;
+
+  // A vector of strings offered by client as a list of potential subprotocols.
+  // https://w3c.github.io/webtransport/#dom-webtransportoptions-protocols
+  std::vector<std::string> application_protocols;
 };
 
 // An abstract base for a WebTransport client.  Most of the useful operations

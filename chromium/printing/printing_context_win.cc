@@ -15,6 +15,7 @@
 #include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/memory/free_deleter.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/task/current_thread.h"
@@ -79,14 +80,15 @@ void SimpleModifyWorldTransform(HDC context,
 // static
 std::unique_ptr<PrintingContext> PrintingContext::CreateImpl(
     Delegate* delegate,
-    ProcessBehavior process_behavior) {
-  return std::make_unique<PrintingContextSystemDialogWin>(delegate,
-                                                          process_behavior);
+    OutOfProcessBehavior out_of_process_behavior) {
+  return std::make_unique<PrintingContextSystemDialogWin>(
+      delegate, out_of_process_behavior);
 }
 
-PrintingContextWin::PrintingContextWin(Delegate* delegate,
-                                       ProcessBehavior process_behavior)
-    : PrintingContext(delegate, process_behavior), context_(nullptr) {}
+PrintingContextWin::PrintingContextWin(
+    Delegate* delegate,
+    OutOfProcessBehavior out_of_process_behavior)
+    : PrintingContext(delegate, out_of_process_behavior), context_(nullptr) {}
 
 PrintingContextWin::~PrintingContextWin() {
   ReleaseContext();
@@ -328,7 +330,8 @@ mojom::ResultCode PrintingContextWin::NewDocument(
   DCHECK(!in_print_job_);
   if (!context_
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
-      && process_behavior() != ProcessBehavior::kOopEnabledSkipSystemCalls
+      &&
+      out_of_process_behavior() != OutOfProcessBehavior::kEnabledSkipSystemCalls
 #endif
   ) {
     return OnError();
@@ -340,7 +343,8 @@ mojom::ResultCode PrintingContextWin::NewDocument(
   in_print_job_ = true;
 
 #if BUILDFLAG(ENABLE_OOP_PRINTING)
-  if (process_behavior() == ProcessBehavior::kOopEnabledSkipSystemCalls) {
+  if (out_of_process_behavior() ==
+      OutOfProcessBehavior::kEnabledSkipSystemCalls) {
     return mojom::ResultCode::kSuccess;
   }
 #endif

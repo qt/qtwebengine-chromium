@@ -17,18 +17,24 @@
 #include "base/memory/raw_ref.h"
 #include "base/memory/weak_ptr.h"
 #include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
 #include "pdf/buildflags.h"
+#include "pdf/page_orientation.h"
+#include "pdf/pdf_ink_annotation_mode.h"
 #include "pdf/pdf_ink_brush.h"
 #include "pdf/pdf_ink_ids.h"
 #include "pdf/pdf_ink_undo_redo_model.h"
 #include "pdf/ui/thumbnail.h"
+#include "third_party/ink/src/ink/geometry/affine_transform.h"
 #include "third_party/ink/src/ink/geometry/partitioned_mesh.h"
+#include "third_party/ink/src/ink/rendering/skia/native/skia_renderer.h"
 #include "third_party/ink/src/ink/strokes/in_progress_stroke.h"
 #include "third_party/ink/src/ink/strokes/input/stroke_input.h"
 #include "third_party/ink/src/ink/strokes/input/stroke_input_batch.h"
 #include "third_party/ink/src/ink/strokes/stroke.h"
 #include "ui/gfx/geometry/point_f.h"
+#include "ui/gfx/geometry/transform.h"
 
 static_assert(BUILDFLAG(ENABLE_PDF_INK2), "ENABLE_PDF_INK2 not set to true");
 
@@ -45,8 +51,50 @@ namespace chrome_pdf {
 class PdfInkModuleClient;
 
 class PdfInkModule {
+ public:
+  explicit PdfInkModule(PdfInkModuleClient& client);
+  PdfInkModule(const PdfInkModule&) = delete;
+  PdfInkModule& operator=(const PdfInkModule&) = delete;
+  ~PdfInkModule();
+
+  bool enabled() const { return mode_ != InkAnnotationMode::kOff; }
+
+  // Returns whether the text selection change event should be blocked to
+  // prevent modifying the clipboard content.
+  bool ShouldBlockTextSelectionChanged();
+
+  // Determines if there are any in-progress inputs to be drawn.
+  bool HasInputsToDraw() const;
+
+  // Draws any in-progress inputs into `canvas`.  Must either be in text
+  // highlighting state or in drawing stroke state with non-empty
+  // `drawing_stroke_state().inputs`.
+  void Draw(SkCanvas& canvas);
+
+  // Generates a thumbnail of `thumbnail_size` for the page at `page_index`
+  // using DrawThumbnail(). Sends the result to the WebUI if successful.
+  // Otherwise, do not send anything to the WebUI.
+  // `thumbnail_size` must be non-empty.
+  void GenerateAndSendInkThumbnail(int page_index,
+                                   const gfx::Size& thumbnail_size);
+
+  // Returns whether the event was handled or not.
+  bool HandleInputEvent(const blink::WebInputEvent& event);
+
+  // Returns whether the message was handled or not.
+  bool OnMessage(const base::Value::Dict& message);
+
+  // Informs PdfInkModule that the plugin geometry changed.
+  void OnGeometryChanged();
+
+  // For testing only. Returns the current `PdfInkBrush` used to draw strokes,
+  // or nullptr if there is no brush because `PdfInkModule` is not in the
+  // drawing state.
+  const PdfInkBrush* GetPdfInkBrushForTesting() const;
+
  private:
-  // Some initial definitions needed for internal working of public classes.
+  friend class PdfInkModuleStrokeTest;
+  FRIEND_TEST_ALL_PREFIXES(PdfInkModuleTest, HandleSetAnnotationModeMessage);
 
   // A stroke that has been completed, its ID, and whether it should be drawn
   // or not.
@@ -75,113 +123,6 @@ class PdfInkModule {
 
   // Mapping of a 0-based page index to the strokes for that page.
   using DocumentStrokesMap = std::map<int, PageStrokes>;
-
- public:
-  using StrokeInputPoints = std::vector<gfx::PointF>;
-
-  // Each page of a document can have many strokes.  The input points for each
-  // stroke are restricted to just one page.
-  using PageStrokeInputPoints = std::vector<StrokeInputPoints>;
-
-  // Mapping of a 0-based page index to the input points that make up the
-  // strokes for that page.
-  using DocumentStrokeInputPointsMap = std::map<int, PageStrokeInputPoints>;
-
-  struct PageInkStroke {
-    int page_index;
-    raw_ref<const ink::Stroke> stroke;
-  };
-
-  // Iterator to get visible strokes.  Once created, the caller should ensure
-  // that there is no further PdfInkModule interactions until the iterator has
-  // been destroyed.
-  class PageInkStrokeIterator {
-   public:
-    explicit PageInkStrokeIterator(const DocumentStrokesMap& strokes);
-    PageInkStrokeIterator(const PageInkStrokeIterator&) = delete;
-    PageInkStrokeIterator& operator=(const PageInkStrokeIterator&) = delete;
-    ~PageInkStrokeIterator();
-
-    // Gets the next visible stroke if there is one, and advances the internal
-    // iterator to the next visible stroke.
-    std::optional<PageInkStroke> GetNextStrokeAndAdvance();
-
-   private:
-    // Helper to advance to the next page which has visible strokes.  If there
-    // is another page with visible strokes, performs the iterators
-    // initialization to be able to get the visible strokes for it.  Leaves
-    // `pages_iterator_` at end position if there are no more pages with
-    // visible strokes.
-    void AdvanceToNextPageWithVisibleStrokes();
-
-    // Helper to advance to the next visible stroke for the current page, if
-    // there is one.  Leaves `page_strokes_iterator_` at end position if there
-    // are no more visible strokes.
-    void AdvanceForCurrentPage();
-
-    const raw_ref<const DocumentStrokesMap> strokes_;
-
-    // Iterator for getting pages with visible strokes.
-    DocumentStrokesMap::const_iterator pages_iterator_;
-
-    // Iterator for getting visible strokes of a particular page.
-    PageStrokes::const_iterator page_strokes_iterator_;
-  };
-
-  explicit PdfInkModule(PdfInkModuleClient& client);
-  PdfInkModule(const PdfInkModule&) = delete;
-  PdfInkModule& operator=(const PdfInkModule&) = delete;
-  ~PdfInkModule();
-
-  bool enabled() const { return enabled_; }
-
-  // Determines if there are any `drawing_stroke_state().inputs` to be drawn.
-  bool HasInputsToDraw() const;
-
-  // Draws `drawing_stroke_state().inputs` into `canvas`.  Must be in a drawing
-  // stroke state with non-empty `drawing_stroke_state().inputs`.
-  void Draw(SkCanvas& canvas);
-
-  // Generates a thumbnail of `thumbnail_size` for the page at `page_index`
-  // using DrawThumbnail(). Sends the result to the WebUI if successful.
-  // Otherwise, do not send anything to the WebUI.
-  // `thumbnail_size` must be non-empty.
-  void GenerateAndSendInkThumbnail(int page_index,
-                                   const gfx::Size& thumbnail_size);
-
-  // Gets an iterator for the visible strokes across all pages.
-  // Modifying the set of visible strokes while using the iterator is not
-  // supported and can result in undefined behavior.
-  PageInkStrokeIterator GetVisibleStrokesIterator();
-
-  // Returns whether the event was handled or not.
-  bool HandleInputEvent(const blink::WebInputEvent& event);
-
-  // Returns whether the message was handled or not.
-  bool OnMessage(const base::Value::Dict& message);
-
-  // Informs PdfInkModule that the plugin geometry changed.
-  void OnGeometryChanged();
-
-  // For testing only. Returns the current `PdfInkBrush` used to draw strokes,
-  // or nullptr if there is no brush because `PdfInkModule` is erasing.
-  const PdfInkBrush* GetPdfInkBrushForTesting() const;
-
-  // For testing only. Returns the (visible) input positions used for all
-  // strokes in the document.
-  DocumentStrokeInputPointsMap GetStrokesInputPositionsForTesting() const;
-  DocumentStrokeInputPointsMap GetVisibleStrokesInputPositionsForTesting()
-      const;
-
-  // For testing only. Returns the number of stroke inputs of a particular
-  // `tool_type` for a given page at `page_index`. The `page_index` must be
-  // non-negative.
-  int GetInputOfTypeCountForPageForTesting(
-      int page_index,
-      ink::StrokeInput::ToolType tool_type) const;
-
- private:
-  FRIEND_TEST_ALL_PREFIXES(PdfInkModuleTest, HandleSetAnnotationModeMessage);
 
   // A shape that was loaded from a "V2" path from the PDF itself, its ID, and
   // whether it should be drawn or not.
@@ -283,6 +224,29 @@ class PdfInkModule {
     ink::StrokeInput::ToolType tool_type;
   };
 
+  struct TextHighlightState {
+    TextHighlightState();
+    TextHighlightState(const TextHighlightState&) = delete;
+    TextHighlightState& operator=(const TextHighlightState&) = delete;
+    ~TextHighlightState();
+
+    // Tracks whether the current text highlight has finished highlighting a
+    // multi-click text selection, but has not yet exited text highlight state.
+    // For example, the user may click text three times to select the line, but
+    // may not have performed mouseup nor touchend. The user should still be in
+    // text highlight state but should be unable to highlight any additional
+    // text.
+    bool finished_multi_click = false;
+
+    // A mapping of 0-based page indices to a list of strokes on pages that
+    // represent the user's highlighter text selections. Unlike drawing strokes
+    // which are limited to one page, text selection may cover multiple pages.
+    // For example, when the user has the highlighter brush selected, they may
+    // select text from page A to page B. Strokes will be drawn to cover any
+    // selected text and stored in the page index of the page they are on.
+    std::map<int, std::vector<ink::Stroke>> highlight_strokes;
+  };
+
   // Drawing brush state changes that are pending the completion of an
   // in-progress stroke.
   struct PendingDrawingBrushState {
@@ -291,13 +255,33 @@ class PdfInkModule {
     PdfInkBrush::Type type;
   };
 
-  // Returns whether the event was handled or not.
+  // Data used to draw a text highlight stroke. If `first_point` equals
+  // `second_point`, then `second_point` is not used.
+  // `brush_size` should cover the stroke on the smaller dimension of the
+  // highlight rect.
+  struct TextSelectionHighlightStrokeData {
+    gfx::PointF first_point;
+    gfx::PointF second_point;
+    float brush_size;
+  };
+
+  // The transform to and clip page rect needed to render strokes on screen.
+  struct TransformAndClipRect {
+    ink::AffineTransform transform;
+    SkRect clip_rect;
+  };
+
+  // Event handlers. Returns whether the event was handled or not.
   bool OnMouseDown(const blink::WebMouseEvent& event);
   bool OnMouseUp(const blink::WebMouseEvent& event);
   bool OnMouseMove(const blink::WebMouseEvent& event);
   bool OnTouchStart(const blink::WebTouchEvent& event);
   bool OnTouchEnd(const blink::WebTouchEvent& event);
   bool OnTouchMove(const blink::WebTouchEvent& event);
+
+  // Helper for event handlers above that deals with potentially missing events.
+  // Can only be called when is_drawing_stroke() returns true.
+  void MaybeFinishStrokeForMissingMouseUpEvent();
 
   // Return values have the same semantics as On{Mouse,Touch}*() above.
   bool StartStroke(const gfx::PointF& position,
@@ -321,6 +305,39 @@ class PdfInkModule {
   // Shared code for the Erase methods above.
   void EraseHelper(const gfx::PointF& position, int page_index);
 
+  // Return values have the same semantics as On{Mouse,Touch}*() above.
+  bool StartTextHighlight(const gfx::PointF& position,
+                          int click_count,
+                          base::TimeTicks timestamp,
+                          ink::StrokeInput::ToolType tool_type);
+  bool ContinueTextHighlight(const gfx::PointF& position);
+  bool FinishTextHighlight(const gfx::PointF& position,
+                           bool is_multi_click,
+                           ink::StrokeInput::ToolType tool_type);
+
+  // Returns a highlighter stroke that matches the position and size of
+  // `selection_rect`. `selection_rect` must be in screen coordinates.
+  ink::Stroke GetHighlightStrokeFromSelectionRect(
+      const gfx::Rect& selection_rect);
+
+  // Returns the data needed to create a text highlight stroke that covers
+  // `selection_rect`. `selection_rect` is in screen coordinates.
+  TextSelectionHighlightStrokeData GetTextSelectionHighlightStrokeData(
+      const gfx::RectF& selection_rect);
+
+  // Converts PdfInkModuleClient's text selection to strokes and returns a
+  // mapping of 0-based page indices to a list of those strokes. See comments
+  // for `TextHighlightState::highlight_strokes`.
+  std::map<int, std::vector<ink::Stroke>> GetTextSelectionAsStrokes();
+
+  // Starts a timer for text selection multi-clicks that, when fired, will
+  // report text highlight metrics.
+  void StartTextSelectionMultiClickTimer(ink::StrokeInput::ToolType tool_type);
+
+  // Stops the timer from `StartTextSelectionMultiClickTimer()` without
+  // reporting any metrics.
+  void StopTextSelectionMultiClickTimer();
+
   // Sets `using_stylus_instead_of_touch_` to true if `tool_type` is
   // `ink::StrokeInput::ToolType::kStylus`. Otherwise do nothing.
   void MaybeRecordPenInput(ink::StrokeInput::ToolType tool_type);
@@ -331,15 +348,21 @@ class PdfInkModule {
 
   void HandleAnnotationRedoMessage(const base::Value::Dict& message);
   void HandleAnnotationUndoMessage(const base::Value::Dict& message);
+  void HandleFinishTextAnnotationMessage(const base::Value::Dict& message);
+  void HandleGetAllTextAnnotationsMessage(const base::Value::Dict& message);
   void HandleGetAnnotationBrushMessage(const base::Value::Dict& message);
   void HandleSetAnnotationBrushMessage(const base::Value::Dict& message);
   void HandleSetAnnotationModeMessage(const base::Value::Dict& message);
+  void HandleStartTextAnnotationMessage(const base::Value::Dict& message);
 
   bool is_drawing_stroke() const {
     return std::holds_alternative<DrawingStrokeState>(current_tool_state_);
   }
   bool is_erasing_stroke() const {
     return std::holds_alternative<EraserState>(current_tool_state_);
+  }
+  bool is_text_highlighting() const {
+    return std::holds_alternative<TextHighlightState>(current_tool_state_);
   }
   const DrawingStrokeState& drawing_stroke_state() const {
     return std::get<DrawingStrokeState>(current_tool_state_);
@@ -353,6 +376,18 @@ class PdfInkModule {
   EraserState& erasing_stroke_state() {
     return std::get<EraserState>(current_tool_state_);
   }
+  const TextHighlightState& text_highlight_state() const {
+    return std::get<TextHighlightState>(current_tool_state_);
+  }
+  TextHighlightState& text_highlight_state() {
+    return std::get<TextHighlightState>(current_tool_state_);
+  }
+
+  // Returns true when the user is using a highlighter over selectable text at
+  // `position`. Can only be called when is_drawing_stroke() returns true.
+  //
+  // - Only returns true when the text highlighting feature is enabled.
+  bool IsHighlightingTextAtPosition(const gfx::PointF& position) const;
 
   // Returns the current brush. Must be in a drawing stroke state.
   PdfInkBrush& GetDrawingBrush();
@@ -368,16 +403,15 @@ class PdfInkModule {
   std::vector<ink::InProgressStroke> CreateInProgressStrokeSegmentsFromInputs()
       const;
 
-  // Wrapper around EventPositionToCanonicalPosition(). `page_index` is the page
-  // that `position` is on. The page must be visible.
-  gfx::PointF ConvertEventPositionToCanonicalPosition(
-      const gfx::PointF& position,
-      int page_index);
+  // Wrapper around GetEventToCanonicalTransform(). `page_index` is the page
+  // that the to-be-transformed position is on. The page must be visible.
+  gfx::Transform GetEventToCanonicalTransformForPage(int page_index);
 
   // Helper to convert `position` to a canonical position and record it into
   // `current_tool_state_` for the indicated `timestamp` and `tool_type`.
-  // Can only be called when drawing.
-  void RecordStrokePosition(const gfx::PointF& position,
+  // Can only be called when drawing. Returns whether the operation succeeded or
+  // not.
+  bool RecordStrokePosition(const gfx::PointF& position,
                             base::TimeTicks timestamp,
                             ink::StrokeInput::ToolType tool_type);
 
@@ -388,9 +422,30 @@ class PdfInkModule {
   void ApplyUndoRedoDiscards(
       const PdfInkUndoRedoModel::DiscardedDrawCommands& discards);
 
+  // Sets the cursor to a drawing/erasing brush cursor when necessary.
   void MaybeSetCursor();
 
-  void MaybeSetDrawingBrushAndCursor();
+  // Handles setting the cursor only for mousemove events at `position`. This
+  // differs from `MaybeSetCursor()` in that it may also set the cursor to an
+  // I-beam for text highlighting.
+  void MaybeSetCursorOnMouseMove(const gfx::PointF& position);
+
+  // Returns whether the drawing brush was set or not.
+  bool MaybeSetDrawingBrush();
+
+  void DrawStrokeInRenderer(ink::SkiaRenderer& skia_renderer,
+                            SkCanvas& canvas,
+                            int page_index,
+                            const ink::Stroke& stroke);
+
+  void DrawInProgressStrokeInRenderer(ink::SkiaRenderer& skia_renderer,
+                                      SkCanvas& canvas,
+                                      int page_index,
+                                      const ink::InProgressStroke& stroke);
+
+  // Returns the transform and the clip page rect needed to render strokes on
+  // page `page_index`.
+  TransformAndClipRect GetTransformAndClipRect(int page_index);
 
   // Helper that calls GenerateAndSendInkThumbnail() without needing to specify
   // the thumbnail size. This helper determines the size by asking
@@ -414,7 +469,7 @@ class PdfInkModule {
 
   const raw_ref<PdfInkModuleClient> client_;
 
-  bool enabled_ = false;
+  InkAnnotationMode mode_ = InkAnnotationMode::kOff;
 
   bool using_stylus_instead_of_touch_ = false;
 
@@ -438,12 +493,16 @@ class PdfInkModule {
   std::optional<PendingDrawingBrushState> pending_drawing_brush_state_;
 
   // The state of the current tool that is in use.
-  std::variant<DrawingStrokeState, EraserState> current_tool_state_;
+  std::variant<DrawingStrokeState, EraserState, TextHighlightState>
+      current_tool_state_;
 
   // The state of the strokes that have been completed.
   DocumentStrokesMap strokes_;
 
   PdfInkUndoRedoModel undo_redo_model_;
+
+  // A timer used for reporting metrics during multi-click text selection.
+  base::OneShotTimer text_selection_click_timer_;
 
   base::WeakPtrFactory<PdfInkModule> weak_factory_{this};
 };

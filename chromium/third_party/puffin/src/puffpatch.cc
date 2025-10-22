@@ -2,8 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "puffin/src/include/puffin/puffpatch.h"
-
 #include <inttypes.h>
 
 #include <algorithm>
@@ -14,19 +12,20 @@
 
 #include "base/containers/span.h"
 #include "base/numerics/byte_conversions.h"
-#include "zucchini/patch_reader.h"
-#include "zucchini/zucchini.h"
-
+#include "base/strings/string_view_util.h"
 #include "puffin/memory_stream.h"
 #include "puffin/src/include/puffin/brotli_util.h"
 #include "puffin/src/include/puffin/common.h"
 #include "puffin/src/include/puffin/file_stream.h"
 #include "puffin/src/include/puffin/huffer.h"
 #include "puffin/src/include/puffin/puffer.h"
+#include "puffin/src/include/puffin/puffpatch.h"
 #include "puffin/src/include/puffin/stream.h"
 #include "puffin/src/logging.h"
 #include "puffin/src/puffin.pb.h"
 #include "puffin/src/puffin_stream.h"
+#include "zucchini/patch_reader.h"
+#include "zucchini/zucchini.h"
 
 using std::string;
 using std::unique_ptr;
@@ -77,7 +76,7 @@ Status DecodePatch(const uint8_t* patch,
 
   // Read the header size from big-endian mode.
   const auto header_size_span = header_span.first<sizeof header_size>();
-  header_size = base::numerics::U32FromBigEndian(header_size_span);
+  header_size = base::U32FromBigEndian(header_size_span);
   header_span = header_span.subspan<sizeof header_size>();
   TEST_AND_RETURN_VALUE(header_size <= header_span.size(),
                         Status::P_BAD_PUFFIN_HEADER);

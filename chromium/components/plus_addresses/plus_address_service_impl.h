@@ -14,8 +14,8 @@
 #include "base/observer_list.h"
 #include "base/observer_list_types.h"
 #include "base/scoped_observation.h"
-#include "components/autofill/core/browser/integrators/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/integrators/password_form_classification.h"
+#include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/plus_addresses/affiliations/plus_address_affiliation_match_helper.h"
 #include "components/plus_addresses/metrics/plus_address_submission_logger.h"
 #include "components/plus_addresses/plus_address_cache.h"
@@ -73,7 +73,6 @@ class PlusAddressServiceImpl : public PlusAddressService,
   bool IsPlusAddress(const std::string& potential_plus_address) const override;
   bool MatchesPlusAddressFormat(const std::u16string& value) const override;
   bool IsPlusAddressFillingEnabled(const url::Origin& origin) const override;
-  bool IsPlusAddressFullFormFillingEnabled() const override;
   bool IsFieldEligibleForPlusAddress(
       const autofill::AutofillField& field) const override;
   void GetAffiliatedPlusAddresses(
@@ -85,8 +84,8 @@ class PlusAddressServiceImpl : public PlusAddressService,
       bool is_off_the_record,
       const autofill::FormData& focused_form,
       const autofill::FormFieldData& focused_field,
-      const base::flat_map<autofill::FieldGlobalId, autofill::FieldTypeGroup>&
-          form_field_type_groups,
+      const base::flat_map<autofill::FieldGlobalId,
+                           autofill::FieldTypeGroupSet>& form_field_type_groups,
       const autofill::PasswordFormClassification& focused_form_classification,
       autofill::AutofillSuggestionTriggerSource trigger_source) override;
   autofill::Suggestion GetManagePlusAddressSuggestion() const override;
@@ -155,6 +154,9 @@ class PlusAddressServiceImpl : public PlusAddressService,
   bool IsEnabled() const override;
 
  private:
+  // KeyedService.
+  void Shutdown() override;
+
   // signin::IdentityManager::Observer:
   void OnPrimaryAccountChanged(
       const signin::PrimaryAccountChangeEvent& event) override;
@@ -163,6 +165,8 @@ class PlusAddressServiceImpl : public PlusAddressService,
       const GoogleServiceAuthError& error,
       signin_metrics::SourceForRefreshTokenOperation token_operation_source)
       override;
+  void OnIdentityManagerShutdown(
+      signin::IdentityManager* identity_manager) override;
 
   void HandleSignout();
 

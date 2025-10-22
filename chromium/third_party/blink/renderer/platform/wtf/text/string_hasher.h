@@ -19,10 +19,6 @@
  *
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_STRING_HASHER_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_STRING_HASHER_H_
@@ -37,8 +33,7 @@
 #include "third_party/blink/renderer/platform/wtf/text/wtf_uchar.h"
 #include "third_party/rapidhash/rapidhash.h"
 
-namespace WTF {
-
+namespace blink {
 
 class StringHasher {
   DISALLOW_NEW();
@@ -84,10 +79,8 @@ class StringHasher {
   // HashReader.
   template <class Reader = PlainHashReader>
   ALWAYS_INLINE static unsigned ComputeHashAndMaskTop8BitsInline(
-      const char* data,
-      unsigned length) {
-    return MaskTop8Bits(
-        rapidhash<Reader>(reinterpret_cast<const uint8_t*>(data), length));
+      base::span<const uint8_t> data) {
+    return MaskTop8Bits(rapidhash<Reader>(data.data(), data.size()));
   }
 
   static uint64_t HashMemory(base::span<const uint8_t> data) {
@@ -117,8 +110,6 @@ class StringHasher {
   }
 };
 
-}  // namespace WTF
-
-using WTF::StringHasher;
+}  // namespace blink
 
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_STRING_HASHER_H_

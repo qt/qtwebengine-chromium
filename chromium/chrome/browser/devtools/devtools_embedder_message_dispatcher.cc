@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/functional/bind.h"
+#include "base/logging.h"
 #include "base/values.h"
 #include "chrome/browser/devtools/devtools_settings.h"
 #include "chrome/browser/devtools/features.h"
@@ -266,6 +267,23 @@ bool GetValue(const base::Value& value, SettingAccessEvent* event) {
   return true;
 }
 
+bool GetValue(const base::Value& value, FunctionCallEvent* event) {
+  if (!value.is_dict()) {
+    return false;
+  }
+
+  std::optional<int> name = value.GetDict().FindInt("name");
+  if (name) {
+    event->name = *name;
+  }
+
+  std::optional<int> context = value.GetDict().FindInt("context");
+  if (context) {
+    event->context = *context;
+  }
+  return true;
+}
+
 template <typename T>
 struct StorageTraits {
   using StorageType = T;
@@ -450,6 +468,8 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
                      &Delegate::RecordPerformanceHistogramMedium, delegate);
   d->RegisterHandler("recordUserMetricsAction",
                      &Delegate::RecordUserMetricsAction, delegate);
+  d->RegisterHandler("recordNewBadgeUsage", &Delegate::RecordNewBadgeUsage,
+                     delegate);
   d->RegisterHandler("recordImpression", &Delegate::RecordImpression, delegate);
   d->RegisterHandler("recordResize", &Delegate::RecordResize, delegate);
   d->RegisterHandler("recordClick", &Delegate::RecordClick, delegate);
@@ -458,6 +478,8 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
   d->RegisterHandler("recordChange", &Delegate::RecordChange, delegate);
   d->RegisterHandler("recordKeyDown", &Delegate::RecordKeyDown, delegate);
   d->RegisterHandler("recordSettingAccess", &Delegate::RecordSettingAccess,
+                     delegate);
+  d->RegisterHandler("recordFunctionCall", &Delegate::RecordFunctionCall,
                      delegate);
   d->RegisterHandler("registerPreference", &Delegate::RegisterPreference,
                      delegate);
@@ -490,6 +512,8 @@ DevToolsEmbedderMessageDispatcher::CreateForDevToolsFrontend(
 
   d->RegisterHandlerWithCallback("doAidaConversation",
                                  &Delegate::DoAidaConversation, delegate);
+  d->RegisterHandlerWithCallback("aidaCodeComplete",
+                                 &Delegate::AidaCodeComplete, delegate);
   d->RegisterHandlerWithCallback("registerAidaClientEvent",
                                  &Delegate::RegisterAidaClientEvent, delegate);
   return d;

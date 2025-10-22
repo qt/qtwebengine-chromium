@@ -10,6 +10,7 @@
 
 #include "base/command_line.h"
 #include "build/ios_buildflags.h"
+#include "cc/mojom/render_frame_metadata.mojom-shared.h"
 #include "components/input/events_helper.h"
 #include "components/input/render_widget_host_input_event_router.h"
 #include "components/input/switches.h"
@@ -20,7 +21,6 @@
 #include "content/browser/renderer_host/input/synthetic_gesture_target_ios.h"
 #include "content/browser/renderer_host/render_view_host_delegate_view.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
-#include "content/browser/renderer_host/render_widget_host_view_ios_uiview.h"
 #include "content/browser/renderer_host/text_input_manager.h"
 #include "content/common/content_switches_internal.h"
 #include "content/public/browser/browser_task_traits.h"
@@ -32,6 +32,13 @@
 #include "ui/display/screen.h"
 #include "ui/events/gesture_detection/gesture_provider_config_helper.h"
 #include "ui/gfx/geometry/size_conversions.h"
+#include "ui/gfx/native_widget_types.h"
+
+#if BUILDFLAG(IS_IOS_TVOS)
+#include "content/browser/renderer_host/render_widget_host_view_tvos_uiview.h"
+#else
+#include "content/browser/renderer_host/render_widget_host_view_ios_uiview.h"
+#endif
 
 @interface UIApplication (Testing)
 - (BOOL)isRunningTests;
@@ -119,6 +126,10 @@ RenderWidgetHostViewIOS::RenderWidgetHostViewIOS(RenderWidgetHost* widget)
   }
 
   host()->render_frame_metadata_provider()->AddObserver(this);
+  host()
+      ->render_frame_metadata_provider()
+      ->UpdateRootScrollOffsetUpdateFrequency(
+          cc::mojom::RootScrollOffsetUpdateFrequency::kAllUpdates);
   host()->SetView(this);
 }
 
@@ -159,17 +170,18 @@ void RenderWidgetHostViewIOS::CopyFromSurface(
 void RenderWidgetHostViewIOS::InitAsChild(gfx::NativeView parent_view) {}
 void RenderWidgetHostViewIOS::SetSize(const gfx::Size& size) {}
 void RenderWidgetHostViewIOS::SetBounds(const gfx::Rect& rect) {}
+
 gfx::NativeView RenderWidgetHostViewIOS::GetNativeView() {
   return gfx::NativeView(ui_view_->view_);
 }
 
 gfx::NativeViewAccessible RenderWidgetHostViewIOS::GetNativeViewAccessible() {
-  return ui_view_->view_;
+  return gfx::NativeViewAccessible(ui_view_->view_);
 }
 
 gfx::NativeViewAccessible
 RenderWidgetHostViewIOS::AccessibilityGetNativeViewAccessible() {
-  return ui_view_->view_;
+  return gfx::NativeViewAccessible(ui_view_->view_);
 }
 
 void RenderWidgetHostViewIOS::Focus() {
@@ -259,15 +271,6 @@ void RenderWidgetHostViewIOS::RenderProcessGone() {
 void RenderWidgetHostViewIOS::ShowWithVisibility(
     PageVisibilityState page_visibility) {
   if (IsTesting() && !is_visible_) {
-    // There is some circularity in how UpdateScreenInfo works. The base class
-    // sets up some state needed by the browser compositor. The base class also
-    // depends on an update from the browser compositor. In practice this is a
-    // non issue because the function is called many times and values converge,
-    // but this is not necessarily the case in tests. This could be resolved
-    // by rewriting UpdateScreenInfo to interleave the work (see the mac
-    // implementation, eg), but for now we will simply may another call to the
-    // base class.
-    RenderWidgetHostViewBase::UpdateScreenInfo();
     UpdateScreenInfo();
   }
   is_visible_ = true;
@@ -412,12 +415,32 @@ RenderWidgetHostViewIOS::CollectSurfaceIdsForEviction() {
 }
 
 void RenderWidgetHostViewIOS::UpdateScreenInfo() {
-  if (!IsTesting()) {
-    browser_compositor_->UpdateSurfaceFromUIView(
-        gfx::Rect([ui_view_->view_ bounds]).size());
+  if (host()->delegate()) {
+    host()->delegate()->SendScreenRects();
   }
-  RenderWidgetHostViewBase::UpdateScreenInfo();
+
+  auto* display_screen = display::Screen::GetScreen();
+  display::ScreenInfos new_screen_infos =
+      display_screen->GetScreenInfosNearestDisplay(
+          display_screen->GetPrimaryDisplay().id());
+
+  gfx::Rect view_bounds_dips([ui_view_->view_ bounds]);
+  const bool screen_info_changed = screen_infos_ != new_screen_infos;
+  const bool size_changed =
+      view_bounds_dips.size() != browser_compositor_->GetRendererSize();
+  screen_infos_ = std::move(new_screen_infos);
+
+  if (!IsTesting() && (size_changed || screen_info_changed)) {
+    browser_compositor_->UpdateSurfaceFromUIView(view_bounds_dips.size());
+  }
   ComputeDisplayFeature();
+
+  // Notify the associated RenderWidgetHostImpl when screen info has changed.
+  // That will synchronize visual properties needed for frame tree rendering
+  // and for web platform APIs that expose screen and window info and events.
+  if (size_changed || screen_info_changed) {
+    host()->NotifyScreenInfoChanged();
+  }
 }
 
 void RenderWidgetHostViewIOS::OnSynchronizedDisplayPropertiesChanged(
@@ -497,7 +520,7 @@ void RenderWidgetHostViewIOS::ResetFallbackToFirstNavigationSurface() {
       ->ResetFallbackToFirstNavigationSurface();
 }
 
-bool RenderWidgetHostViewIOS::RequestRepaintForTesting() {
+bool RenderWidgetHostViewIOS::RequestRepaintOnNewSurface() {
   return browser_compositor_->ForceNewSurfaceId();
 }
 
@@ -755,6 +778,7 @@ void RenderWidgetHostViewIOS::OnUpdateTextInputStateCalled(
 void RenderWidgetHostViewIOS::OnTextSelectionChanged(
     TextInputManager* text_input_manager,
     RenderWidgetHostViewBase* updated_view) {
+#if !BUILDFLAG(IS_IOS_TVOS)
   DCHECK_EQ(GetTextInputManager(), text_input_manager);
   const TextInputManager::TextSelection* selection =
       text_input_manager->GetTextSelection(updated_view);
@@ -785,12 +809,16 @@ void RenderWidgetHostViewIOS::OnTextSelectionChanged(
     [[ui_view_->view_ textInteraction] textSelectionDisplayInteraction]
         .activated = NO;
   }
+#endif
 }
+
 void RenderWidgetHostViewIOS::OnSelectionBoundsChanged(
     TextInputManager* text_input_manager,
     RenderWidgetHostViewBase* updated_view) {
+#if !BUILDFLAG(IS_IOS_TVOS)
   [[ui_view_->view_ textInteraction]
           .textSelectionDisplayInteraction setNeedsSelectionUpdate];
+#endif
 }
 
 ui::Compositor* RenderWidgetHostViewIOS::GetCompositor() {
@@ -854,17 +882,13 @@ void RenderWidgetHostViewIOS::ChildDidAckGestureEvent(
 }
 
 void RenderWidgetHostViewIOS::UpdateFrameBounds() {
-  // UIScrollView* scrollView = (UIScrollView*)[ui_view_->view_ superview];
-  gfx::PointF scrollOffset;
-  if (last_root_scroll_offset_) {
-    scrollOffset = *last_root_scroll_offset_;
-  }
-  CGRect parentBounds = [[ui_view_->view_ superview] bounds];
-  gfx::SizeF viewportSize(parentBounds.size);
+  const gfx::PointF scrollOffset =
+      last_root_scroll_offset_.value_or(gfx::PointF());
+  const CGRect parentBounds = [[ui_view_->view_ superview] bounds];
 
   CGRect frameBounds;
   frameBounds.origin = scrollOffset.ToCGPoint();
-  frameBounds.size = viewportSize.ToCGSize();
+  frameBounds.size = parentBounds.size;
 
   // If we are scrolling we don't resize the WebView immediately.
   if (!is_scrolling_ && !IsTesting()) {
@@ -899,6 +923,11 @@ void RenderWidgetHostViewIOS::OnRenderFrameMetadataChangedBeforeActivation(
   }
 }
 
+void RenderWidgetHostViewIOS::OnRootScrollOffsetChanged(
+    const gfx::PointF& root_scroll_offset) {
+  ApplyRootScrollOffsetChanged(root_scroll_offset, /*force=*/false);
+}
+
 void RenderWidgetHostViewIOS::ContentInsetChanged() {
   if (last_root_scroll_offset_) {
     ApplyRootScrollOffsetChanged(*last_root_scroll_offset_, /*force=*/true);
@@ -906,6 +935,26 @@ void RenderWidgetHostViewIOS::ContentInsetChanged() {
   if (!is_scrolling_) {
     host()->SynchronizeVisualProperties();
   }
+}
+
+void RenderWidgetHostViewIOS::ExtendSelectionAndDelete(int32_t before,
+                                                       int32_t after) {
+  auto* input_handler = GetFrameWidgetInputHandlerForFocusedWidget();
+  if (!input_handler) {
+    return;
+  }
+  input_handler->ExtendSelectionAndDelete(before, after);
+}
+
+void RenderWidgetHostViewIOS::ExtendSelectionAndReplace(
+    uint32_t before,
+    uint32_t after,
+    const std::u16string& replacement_text) {
+  auto* input_handler = GetFrameWidgetInputHandlerForFocusedWidget();
+  if (!input_handler) {
+    return;
+  }
+  input_handler->ExtendSelectionAndReplace(before, after, replacement_text);
 }
 
 void RenderWidgetHostViewIOS::DeleteSurroundingText(int before, int after) {
@@ -916,6 +965,14 @@ void RenderWidgetHostViewIOS::DeleteSurroundingText(int before, int after) {
     }
     input_handler->DeleteSurroundingTextInCodePoints(before, after);
   }
+}
+
+void RenderWidgetHostViewIOS::ExecuteEditCommand(const std::string& command) {
+  auto* input_handler = GetFrameWidgetInputHandlerForFocusedWidget();
+  if (!input_handler) {
+    return;
+  }
+  input_handler->ExecuteEditCommand(command, std::nullopt);
 }
 
 void RenderWidgetHostViewIOS::SendKeyEvent(

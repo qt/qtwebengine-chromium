@@ -1,6 +1,7 @@
 // Copyright 2018 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import * as Bindings from '../../models/bindings/bindings.js';
@@ -66,7 +67,7 @@ export class ResourceOriginPlugin extends Plugin {
 
     // Handle anonymous scripts with an originStackTrace.
     for (const script of debuggerWorkspaceBinding.scriptsForUISourceCode(this.uiSourceCode)) {
-      if (script.originStackTrace) {
+      if (script.originStackTrace?.callFrames.length) {
         const link = linkifier.linkifyStackTraceTopFrame(script.debuggerModel.target(), script.originStackTrace);
         return [new UI.Toolbar.ToolbarItem(i18n.i18n.getFormatLocalizedString(str_, UIStrings.fromS, {PH1: link}))];
       }

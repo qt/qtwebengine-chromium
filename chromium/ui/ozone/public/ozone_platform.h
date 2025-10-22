@@ -15,7 +15,6 @@
 #include "base/message_loop/message_pump_type.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
-#include "mojo/public/cpp/bindings/binder_map.h"
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/platform_window/platform_window.h"
@@ -24,6 +23,10 @@
 namespace display {
 class NativeDisplayDelegate;
 }
+
+namespace mojo {
+class BinderMap;
+}  // namespace mojo
 
 namespace ui {
 enum class DomCode : uint32_t;
@@ -136,10 +139,6 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // If true, the platform shows and updates the drag image.
     bool platform_shows_drag_image = true;
 
-    // Linux only, but see a TODO in BrowserDesktopWindowTreeHostLinux.
-    // Determines whether the platform supports the global application menu.
-    bool supports_global_application_menus = false;
-
     // Determines if the application modal dialogs should use the event blocker
     // to allow the only browser window receiving UI events.
     bool app_modal_dialogs_use_event_blocker = false;
@@ -155,6 +154,10 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // Whether the platform supports system/shell integrated color picker
     // dialog. An example is XDG Desktop Portal provided PickColor dialog.
     bool supports_color_picker_dialog = true;
+
+    // Whether the platform supports drag and drop as an entrypoint to create
+    // new Split Views.
+    bool supports_split_view_drag_and_drop = true;
   };
 
   // Groups platform properties that can only be known at run time.
@@ -213,6 +216,10 @@ class COMPONENT_EXPORT(OZONE) OzonePlatform {
     // Whether windowing system level session management is supported. If set,
     // GetSessionManager method must return a valid object.
     bool supports_session_management = false;
+
+    // Linux only, but see a TODO in BrowserDesktopWindowTreeHostLinux.
+    // Determines whether the platform supports the global application menu.
+    bool supports_global_application_menus = false;
   };
 
   // Corresponds to chrome_browser_main_extra_parts.h.

@@ -28,6 +28,11 @@ class ExposedTrustedObject;
 class ObjectVisitor;
 class WritableFreeSpace;
 
+// A safe HeapObject size is a uint32_t that's guaranteed to yield in OOB within
+// the sandbox. The alias exists to force appropriate conversions at the
+// callsites when V8 cannot enable stricter compiler flags in general.
+using SafeHeapObjectSize = base::StrongAlias<class HeapObjectSizeTag, uint32_t>;
+
 V8_OBJECT class HeapObjectLayout {
  public:
   HeapObjectLayout() = delete;
@@ -36,6 +41,8 @@ V8_OBJECT class HeapObjectLayout {
   // information.
   inline Tagged<Map> map() const;
   inline Tagged<Map> map(AcquireLoadTag) const;
+
+  inline MapWord map_word(RelaxedLoadTag) const;
 
   inline void set_map(Isolate* isolate, Tagged<Map> value);
   template <typename IsolateT>
@@ -47,6 +54,8 @@ V8_OBJECT class HeapObjectLayout {
   template <typename IsolateT>
   inline void set_map_safe_transition(IsolateT* isolate, Tagged<Map> value,
                                       ReleaseStoreTag);
+
+  inline ObjectSlot map_slot() const;
 
   inline void set_map_safe_transition_no_write_barrier(
       Isolate* isolate, Tagged<Map> value, RelaxedStoreTag = kRelaxedStore);
@@ -90,6 +99,7 @@ V8_OBJECT class HeapObjectLayout {
   // Useful when the map pointer field is used for other purposes.
   // GC internal.
   V8_EXPORT_PRIVATE int SizeFromMap(Tagged<Map> map) const;
+  V8_EXPORT_PRIVATE SafeHeapObjectSize SafeSizeFromMap(Tagged<Map> map) const;
 
   // Return the write barrier mode for this. Callers of this function
   // must be able to present a reference to an DisallowGarbageCollection
@@ -98,6 +108,17 @@ V8_OBJECT class HeapObjectLayout {
   // barrier mode.
   inline WriteBarrierMode GetWriteBarrierMode(
       const DisallowGarbageCollection& promise);
+
+#if V8_ENABLE_SANDBOX
+  //
+  // Indirect pointers.
+  //
+  // These are only available when the sandbox is enabled, in which case they
+  // are the under-the-hood implementation of trusted pointers.
+  inline void InitSelfIndirectPointerField(
+      std::atomic<IndirectPointerHandle>* field, IsolateForSandbox isolate,
+      TrustedPointerPublishingScope* opt_publishing_scope);
+#endif  // V8_ENABLE_SANDBOX
 
 #ifdef OBJECT_PRINT
   void PrintHeader(std::ostream& os, const char* id);
@@ -138,6 +159,8 @@ template <typename T>
 struct ObjectTraits {
   using BodyDescriptor = typename T::BodyDescriptor;
 };
+
+enum InSharedSpace : bool { kInSharedSpace = true, kNotInSharedSpace = false };
 
 // HeapObject is the superclass for all classes describing heap allocated
 // objects.
@@ -232,6 +255,7 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   // Useful when the map pointer field is used for other purposes.
   // GC internal.
   V8_EXPORT_PRIVATE int SizeFromMap(Tagged<Map> map) const;
+  V8_EXPORT_PRIVATE SafeHeapObjectSize SafeSizeFromMap(Tagged<Map> map) const;
 
   template <class T>
   inline T ReadField(size_t offset) const
@@ -323,6 +347,14 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   // the sandbox is disabled, this is equivalent to InitExternalPointerField
   // with a nullptr value.
   inline void SetupLazilyInitializedExternalPointerField(size_t offset);
+
+  // Returns true if the lazily-initializer external pointer field still
+  // contains the initial value. If the sandbox is enabled, returns true if
+  // the field is not equal to kNullExternalPointerHandle (this check will
+  // *not* try to read the actual value from the table). If the sandbox
+  // is disabled, returns true if the field is not equal to kNullAddress.
+  inline bool IsLazilyInitializedExternalPointerFieldInitialized(
+      size_t offset) const;
 
   // Writes and possibly initializes a lazily-initialized external pointer
   // field. When the sandbox is enabled, a lazily initialized external pointer
@@ -459,7 +491,10 @@ class HeapObject : public TaggedImpl<HeapObjectReferenceType::STRONG, Address> {
   static void VerifyCodePointer(Isolate* isolate, Tagged<Object> p);
 #endif
 
-  static inline AllocationAlignment RequiredAlignment(Tagged<Map> map);
+  static inline AllocationAlignment RequiredAlignment(
+      InSharedSpace in_shared_space, Tagged<Map> map);
+  static inline AllocationAlignment RequiredAlignment(
+      AllocationSpace allocation_space, Tagged<Map> map);
   bool inline CheckRequiredAlignment(PtrComprCageBase cage_base) const;
 
   // Whether the object needs rehashing. That is the case if the object's

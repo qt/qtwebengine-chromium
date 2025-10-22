@@ -13,7 +13,7 @@
 #include "base/notreached.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/timer/elapsed_timer.h"
-#include "base/trace_event/base_tracing.h"
+#include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 
 #if BUILDFLAG(IS_POSIX) || BUILDFLAG(IS_FUCHSIA)
@@ -28,11 +28,9 @@ File::Info::~Info() = default;
 
 File::File() = default;
 
-#if !BUILDFLAG(IS_NACL)
 File::File(const FilePath& path, uint32_t flags) : error_details_(FILE_OK) {
   Initialize(path, flags);
 }
-#endif
 
 File::File(ScopedPlatformFile platform_file)
     : File(std::move(platform_file), false) {}
@@ -57,10 +55,15 @@ File::File(Error error_details) : error_details_(error_details) {}
 
 File::File(File&& other)
     : file_(other.TakePlatformFile()),
+#if BUILDFLAG(IS_ANDROID)
+      java_parcel_file_descriptor_(
+          std::move(other.java_parcel_file_descriptor_)),
+#endif
       path_(other.path_),
       error_details_(other.error_details()),
       created_(other.created()),
-      async_(other.async_) {}
+      async_(other.async_) {
+}
 
 File::~File() {
   // Go through the AssertIOAllowed logic.
@@ -70,6 +73,9 @@ File::~File() {
 File& File::operator=(File&& other) {
   Close();
   SetPlatformFile(other.TakePlatformFile());
+#if BUILDFLAG(IS_ANDROID)
+  java_parcel_file_descriptor_ = std::move(other.java_parcel_file_descriptor_);
+#endif
   path_ = other.path_;
   error_details_ = other.error_details();
   created_ = other.created();
@@ -77,7 +83,6 @@ File& File::operator=(File&& other) {
   return *this;
 }
 
-#if !BUILDFLAG(IS_NACL)
 void File::Initialize(const FilePath& path, uint32_t flags) {
   if (path.ReferencesParent()) {
 #if BUILDFLAG(IS_WIN)
@@ -90,17 +95,12 @@ void File::Initialize(const FilePath& path, uint32_t flags) {
     error_details_ = FILE_ERROR_ACCESS_DENIED;
     return;
   }
-  if (FileTracing::IsCategoryEnabled()
-#if BUILDFLAG(IS_ANDROID)
-      || path.IsContentUri()
-#endif
-  ) {
+  if (FileTracing::IsCategoryEnabled()) {
     path_ = path;
   }
   SCOPED_FILE_TRACE("Initialize");
   DoInitialize(path, flags);
 }
-#endif
 
 std::optional<size_t> File::Read(int64_t offset, span<uint8_t> data) {
   span<char> chars = base::as_writable_chars(data);

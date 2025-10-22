@@ -11,7 +11,6 @@
 #include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "build/chromeos_buildflags.h"
 #include "content/browser/service_host/utility_process_host.h"
 #include "content/public/browser/browser_task_traits.h"
 #include "content/public/browser/browser_thread.h"
@@ -20,9 +19,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/test_service.mojom.h"
 #include "content/test/sandbox_status.test-mojom.h"
-#include "media/gpu/buildflags.h"
 #include "mojo/public/cpp/bindings/remote.h"
-#include "ppapi/buildflags/buildflags.h"
 #include "sandbox/policy/linux/sandbox_linux.h"
 #include "sandbox/policy/mojom/sandbox.mojom.h"
 #include "sandbox/policy/sandbox_type.h"
@@ -31,6 +28,11 @@
 #if BUILDFLAG(IS_CHROMEOS)
 #include "chromeos/ash/components/assistant/buildflags.h"
 #endif  // BUILDFLAG(IS_CHROMEOS)
+
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+#include "media/gpu/buildflags.h"
+#include "media/media_buildflags.h"
+#endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
 using sandbox::mojom::Sandbox;
 using sandbox::policy::SandboxLinux;
@@ -77,14 +79,15 @@ class UtilityProcessSandboxBrowserTest
     done_closure_ =
         base::BindOnce(&UtilityProcessSandboxBrowserTest::DoneRunning,
                        base::Unretained(this), run_loop.QuitClosure());
-    UtilityProcessHost* host = new UtilityProcessHost();
-    host->SetSandboxType(GetParam());
-    host->SetName(u"SandboxTestProcess");
-    host->SetMetricsName(kTestProcessName);
-    EXPECT_TRUE(host->Start());
+    EXPECT_TRUE(UtilityProcessHost::Start(
+        UtilityProcessHost::Options()
+            .WithSandboxType(GetParam())
+            .WithName(u"SandboxTestProcess")
+            .WithMetricsName(kTestProcessName)
+            .WithBoundReceiverOnChildProcessForTesting(
+                service_.BindNewPipeAndPassReceiver())
+            .Pass()));
 
-    host->GetChildProcess()->BindReceiver(
-        service_.BindNewPipeAndPassReceiver());
     service_->GetSandboxStatus(
         base::BindOnce(&UtilityProcessSandboxBrowserTest::OnGotSandboxStatus,
                        base::Unretained(this)));
@@ -104,9 +107,6 @@ class UtilityProcessSandboxBrowserTest
         break;
 
       case Sandbox::kCdm:
-#if BUILDFLAG(ENABLE_PPAPI)
-      case Sandbox::kPpapi:
-#endif
       case Sandbox::kOnDeviceModelExecution:
       case Sandbox::kPrintCompositor:
       case Sandbox::kService:
@@ -122,7 +122,13 @@ class UtilityProcessSandboxBrowserTest
 
       case Sandbox::kAudio:
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
+      case Sandbox::kShapeDetection:
+#if BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
       case Sandbox::kHardwareVideoDecoding:
+#endif  // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER)
+#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
+      case Sandbox::kHardwareVideoEncoding:
+#endif  // BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #if BUILDFLAG(IS_CHROMEOS)
       case Sandbox::kIme:
@@ -136,7 +142,6 @@ class UtilityProcessSandboxBrowserTest
       case Sandbox::kVideoEffects:
       case Sandbox::kOnDeviceTranslation:
 #endif
-      case Sandbox::kHardwareVideoEncoding:
       case Sandbox::kNetwork:
       case Sandbox::kPrintBackend:
       case Sandbox::kScreenAI:
@@ -168,25 +173,17 @@ class UtilityProcessSandboxBrowserTest
 };
 
 IN_PROC_BROWSER_TEST_P(UtilityProcessSandboxBrowserTest, VerifySandboxType) {
-#if BUILDFLAG(IS_LINUX) || (BUILDFLAG(IS_CHROMEOS) && !BUILDFLAG(USE_VAAPI) && \
-                            !BUILDFLAG(USE_V4L2_CODEC))
+#if BUILDFLAG(IS_LINUX) && (BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION) || \
+                            BUILDFLAG(ALLOW_OOP_VIDEO_DECODER))
   if (GetParam() == Sandbox::kHardwareVideoDecoding) {
     // TODO(b/195769334): On Linux, this test fails with
     // Sandbox::kHardwareVideoDecoding because the pre-sandbox hook needs Ozone
     // which is not available in the utility process that this test starts. We
     // need to remove the Ozone dependency and re-enable this test.
     //
-    // TODO(b/195769334): this test fails on linux-chromeos-rel because neither
-    // USE_VAAPI nor USE_V4L2_CODEC are set and the sandbox policy doesn't like
-    // that. In ChromeOS builds for real devices, one of the two flags is set,
-    // so this is not a big problem. However, we should consider making
-    // kHardwareVideoDecoding exist only when either USE_VAAPI or USE_V4L2_CODEC
-    // are set.
     GTEST_SKIP();
   }
-#endif
 
-#if BUILDFLAG(IS_LINUX)
   if (GetParam() == Sandbox::kHardwareVideoEncoding) {
     // TODO(b/248540499): On Linux, this test fails with
     // Sandbox::kHardwareVideoEncoding because the pre-sandbox hook needs Ozone
@@ -194,7 +191,8 @@ IN_PROC_BROWSER_TEST_P(UtilityProcessSandboxBrowserTest, VerifySandboxType) {
     // need to remove the Ozone dependency and re-enable this test.
     GTEST_SKIP();
   }
-#endif
+#endif  // BUILDFLAG(IS_LINUX) && (BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION) ||
+        // BUILDFLAG(ALLOW_OOP_VIDEO_DECODER))
   RunUtilityProcess();
 }
 

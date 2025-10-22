@@ -4,7 +4,7 @@
     //   crossbench loading --page-config=config.hjson
   pages: {
         // Example below will result in:
-        // A Scenario named = Google and will perfom the actions listed synchronisly
+        // A Scenario named = Google and will perform the actions listed synchronously
         // Time suffixes accepted:
         //   milliseconds: ["ms", "millis", "milliseconds"]
         //   seconds:      ["s", "sec", "second", "seconds"]
@@ -53,80 +53,78 @@
         //  }
         //
 
-    "Google": [
+    Google: [
       {
-        "action": "get",
-        "url": "https://www.google.de/search?q=magic",
-        "duration": "2s"
-      },
+        action: get
+        url: https://www.google.de/search?q=magic
+        duration: 2s
+      }
             // Click away the cookie banner:
       {
-        "action": "click",
-        "position": {
-          "required": false,
-          "selector": "xpath///button/div[contains(text(),'akzeptieren')]",
-        },
-      },
-      {
-        "action": "click",
-        "position": {
-          "required": false,
-          "selector": "xpath///button/div[contains(text(),'Accept')]",
-        },
-      },
-      {
-        "action": "scroll",
-        "distance": 2000,
-        "duration": "3s"
+        action: click
+        position: {
+          required: false
+          selector: xpath///button/div[contains(text(),'akzeptieren')]
+        }
       }
-    ],
-
-    "Amazon": [
       {
-        "action": "get",
-        "url": "https://www.amazon.com/s?k=v8"
-      },
-      {
-        "action": "wait",
-        "duration": "500ms"
-      },
-      {
-        "action": "scroll",
-        "distance": 2000,
-        "duration": "2s"
-      },
-      {
-        "action": "scroll",
-        "distance": -1000,
-        "duration": "1.5s"
+        action: click
+        position: {
+          required: false
+          selector: xpath///button/div[contains(text(),'Accept')]
+        }
       }
-    ],
-
-    "Youtube": [
       {
-        "action": "get",
-        "url": "https://www.youtube.com",
-        "timeout": "20s",
-        "ready-state": "interactive"
-      },
+        action: scroll
+        distance: 2000
+        duration: 3s
+      }
+    ]
+    Amazon: [
+      {
+        action: get
+        url: https://www.amazon.com/s?k=v8
+      }
+      {
+        action: wait
+        duration: 500ms
+      }
+      {
+        action: scroll
+        distance: 2000
+        duration: 2s
+      }
+      {
+        action: scroll
+        distance: -1000
+        duration: 1.5s
+      }
+    ]
+    Youtube: [
+      {
+        action: get
+        url: https://www.youtube.com
+        timeout: 20s
+        ready-state: interactive
+      }
             // Click away the cookie banner:
       {
-        "action": "click",
-        "position": {
-          "required": false,
-          "selector": "xpath///*/button[contains(@aria-label, 'akzeptieren')]",
-        },
-      },
+        action: click
+        position: {
+          required: false
+          selector: xpath///*/button[contains(@aria-label, 'akzeptieren')]
+        }
+      }
       {
-        "action": "click",
-        "position": {
-          "required": false,
-          "selector": "xpath///*/button[contains(@aria-label, 'Accept')]",
-        },
-      },
+        action: click
+        position: {
+          required: false
+          selector: xpath///*/button[contains(@aria-label, 'Accept')]
+        }
+      }
       {
-        "action": "scroll",
-        "duration": "1s"
+        action: scroll
+        duration: 1s
       }
     ]
   }

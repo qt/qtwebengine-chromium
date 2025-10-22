@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -224,8 +219,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4MovieAndHeader) {
 
   // `written_data` test.
   std::unique_ptr<mp4::BoxReader> reader;
-  mp4::ParseResult result = mp4::BoxReader::ReadTopLevelBox(
-      written_data.data(), written_data.size(), nullptr, &reader);
+  mp4::ParseResult result =
+      mp4::BoxReader::ReadTopLevelBox(written_data, nullptr, &reader);
 
   EXPECT_EQ(result, mp4::ParseResult::kOk);
   EXPECT_TRUE(reader);
@@ -285,8 +280,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4MovieExtends) {
 
   // `written_data` test.
   std::unique_ptr<mp4::BoxReader> reader;
-  mp4::ParseResult result = mp4::BoxReader::ReadTopLevelBox(
-      written_data.data(), written_data.size(), nullptr, &reader);
+  mp4::ParseResult result =
+      mp4::BoxReader::ReadTopLevelBox(written_data, nullptr, &reader);
 
   EXPECT_EQ(result, mp4::ParseResult::kOk);
   EXPECT_TRUE(reader);
@@ -390,8 +385,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4MovieTrackAndMediaHeader) {
 
   // `written_data` test.
   std::unique_ptr<mp4::BoxReader> reader;
-  mp4::ParseResult result = mp4::BoxReader::ReadTopLevelBox(
-      written_data.data(), written_data.size(), nullptr, &reader);
+  mp4::ParseResult result =
+      mp4::BoxReader::ReadTopLevelBox(written_data, nullptr, &reader);
 
   EXPECT_EQ(result, mp4::ParseResult::kOk);
   EXPECT_TRUE(reader);
@@ -711,6 +706,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4MovieAVCDecoderConfigurationRecord) {
   mp4::AVCDecoderConfigurationRecord avc_config_reader;
   EXPECT_TRUE(box_reader->ReadChild(&avc_config_reader));
 
+  EXPECT_EQ(1u, avc_config_reader.version);
+
   EXPECT_EQ(kProfileIndication, avc_config_reader.profile_indication);
   EXPECT_EQ(kProfileCompatibility, avc_config_reader.profile_compatibility);
   EXPECT_EQ(kLevelIndication, avc_config_reader.avc_level);
@@ -1007,9 +1004,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4Fragments) {
       base::TimeTicks base_time_ticks = base::TimeTicks::Now();
       time_ticks.push_back(base_time_ticks);
       base::TimeDelta delta;
-      for (auto* iter = std::begin(kSampleDurations);
-           iter != std::end(kSampleDurations); ++iter) {
-        delta += base::Milliseconds(*iter);
+      for (auto duration : kSampleDurations) {
+        delta += base::Milliseconds(duration);
         time_ticks.push_back(base_time_ticks + delta);
       }
       video_trun.sample_timestamps = std::move(time_ticks);
@@ -1061,9 +1057,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4Fragments) {
       base::TimeTicks base_time_ticks = base::TimeTicks::Now();
       time_ticks.push_back(base_time_ticks);
       base::TimeDelta delta = base::Milliseconds(0);
-      for (auto* iter = std::begin(kSampleDurations);
-           iter != std::end(kSampleDurations); ++iter) {
-        delta += base::Milliseconds(*iter);
+      for (auto duration : kSampleDurations) {
+        delta += base::Milliseconds(duration);
         time_ticks.push_back(base_time_ticks + delta);
       }
       audio_trun.sample_timestamps = std::move(time_ticks);
@@ -1097,8 +1092,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4Fragments) {
 
   // `written_data` test.
   std::unique_ptr<mp4::BoxReader> reader;
-  mp4::ParseResult result = mp4::BoxReader::ReadTopLevelBox(
-      written_data.data(), written_data.size(), nullptr, &reader);
+  mp4::ParseResult result =
+      mp4::BoxReader::ReadTopLevelBox(written_data, nullptr, &reader);
 
   EXPECT_EQ(result, mp4::ParseResult::kOk);
   EXPECT_TRUE(reader);
@@ -1190,9 +1185,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4Fragments) {
   // `mdat` test.
   std::unique_ptr<mp4::BoxReader> mdat_reader;
   mp4::ParseResult result1 = mp4::BoxReader::ReadTopLevelBox(
-      written_data.data() + mdat_video_data_offset - kBoxHeaderSize,
-      written_data.size() - mdat_video_data_offset + kBoxHeaderSize, nullptr,
-      &mdat_reader);
+      base::span(written_data).subspan(mdat_video_data_offset - kBoxHeaderSize),
+      nullptr, &mdat_reader);
 
   EXPECT_EQ(result1, mp4::ParseResult::kOk);
   EXPECT_TRUE(mdat_reader);
@@ -1220,8 +1214,8 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4FtypBox) {
 
   // `written_data` test.
   std::unique_ptr<mp4::BoxReader> reader;
-  mp4::ParseResult result = mp4::BoxReader::ReadTopLevelBox(
-      written_data.data(), written_data.size(), nullptr, &reader);
+  mp4::ParseResult result =
+      mp4::BoxReader::ReadTopLevelBox(written_data, nullptr, &reader);
 
   EXPECT_EQ(result, mp4::ParseResult::kOk);
   EXPECT_TRUE(reader);
@@ -1289,12 +1283,9 @@ TEST_F(Mp4MuxerBoxWriterTest, Mp4MfraBox) {
     mfra_box_size += (written_data[last_index - j] << (j * 8));
   }
 
-  uint8_t* last_offset_of_mp4_file = written_data.data() + written_data.size();
-
-  uint8_t* mfra_start_offset = last_offset_of_mp4_file - mfra_box_size;
   std::unique_ptr<mp4::BoxReader> reader;
   mp4::ParseResult result = mp4::BoxReader::ReadTopLevelBox(
-      mfra_start_offset, mfra_box_size, nullptr, &reader);
+      base::span(written_data).last(mfra_box_size), nullptr, &reader);
 
   EXPECT_EQ(result, mp4::ParseResult::kOk);
   EXPECT_TRUE(reader);

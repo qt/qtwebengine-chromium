@@ -377,22 +377,6 @@ IDNSpoofChecker::Result IDNSpoofChecker::SafeToDisplayAsUnicode(
   icu::UnicodeString label_string(false /* isTerminated */, label.data(),
                                   base::checked_cast<int32_t>(label.size()));
 
-  // A punycode label with 'xn--' prefix is not subject to the URL
-  // canonicalization and is stored as it is in GURL. If it encodes a deviation
-  // character (UTS 46; e.g. U+00DF/sharp-s), it should be still shown in
-  // punycode instead of Unicode. Without this check, xn--fu-hia for
-  // 'fu<sharp-s>' would be converted to 'fu<sharp-s>' for display because
-  // "UTS 46 section 4 Processing step 4" applies validity criteria for
-  // non-transitional processing (i.e. do not map deviation characters) to any
-  // punycode labels regardless of whether transitional or non-transitional is
-  // chosen. On the other hand, 'fu<sharp-s>' typed or copy and pasted
-  // as Unicode would be canonicalized to 'fuss' by GURL and is displayed as
-  // such. See http://crbug.com/595263 .
-  if (!url::IsUsingIDNA2008NonTransitional() &&
-      deviation_characters_.containsSome(label_string)) {
-    return Result::kDeviationCharacters;
-  }
-
   // Disallow Icelandic confusables for domains outside Icelandic and Faroese
   // ccTLD (.is, .fo). Faroese keyboard layout doesn't contain letter ⟨þ⟩, but
   // we don't separate it here to avoid technical complexity, and because
@@ -730,15 +714,6 @@ void IDNSpoofChecker::SetAllowedUnicodeSet(UErrorCode* status) {
   allowed_set.remove(0x1F00u, 0x1FFFu);  // Greek Extended
   allowed_set.remove(0xA640u, 0xA69Fu);  // Cyrillic Extended-B
   allowed_set.remove(0xA720u, 0xA7FFu);  // Latin Extended-D
-
-#if U_ICU_VERSION_MAJOR_NUM < 72
-  // Unicode 15 changes ZWJ and ZWNJ from allowed to restricted. Restrict them
-  // in lower versions too. This only relevant in Non-Transitional Mode as
-  // Transitional Mode maps these characters out.
-  // TODO(crbug.com/40879611): Remove these after ICU 72 is rolled out.
-  allowed_set.remove(0x200Cu);  // Zero Width Non-Joiner
-  allowed_set.remove(0x200Du);  // Zero Width Joiner
-#endif
 
   uspoof_setAllowedUnicodeSet(checker_, &allowed_set, status);
 }

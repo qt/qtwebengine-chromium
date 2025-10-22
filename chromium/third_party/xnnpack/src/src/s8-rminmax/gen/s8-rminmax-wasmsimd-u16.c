@@ -9,11 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
+// Architecture-specific headers.
+#include "src/xnnpack/simd/s8-wasmsimd.h"
+
+// XNNPACK headers.
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/reduce.h"
-
-#include "src/xnnpack/simd/s8-wasmsimd.h"
 
 void xnn_s8_rminmax_ukernel__wasmsimd_u16(
     size_t batch,
@@ -39,8 +43,8 @@ void xnn_s8_rminmax_ukernel__wasmsimd_u16(
     vmax0 = xnn_max_s8(vmax0, vt);
   }
 
-  int8_t min0 = xnn_horizontal_min_s8(vmin0);
-  int8_t max0 = xnn_horizontal_max_s8(vmax0);
+  int8_t min0 = xnn_reduce_min_s8(vmin0);
+  int8_t max0 = xnn_reduce_max_s8(vmax0);
 
   if XNN_UNLIKELY(batch != 0) {
     do {

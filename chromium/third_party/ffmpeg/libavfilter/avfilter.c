@@ -206,22 +206,12 @@ static void link_free(AVFilterLink **link)
     ff_framequeue_free(&li->fifo);
     ff_frame_pool_uninit(&li->frame_pool);
     av_channel_layout_uninit(&(*link)->ch_layout);
+    av_frame_side_data_free(&(*link)->side_data, &(*link)->nb_side_data);
 
     av_buffer_unref(&li->l.hw_frames_ctx);
 
     av_freep(link);
 }
-
-#if FF_API_LINK_PUBLIC
-void avfilter_link_free(AVFilterLink **link)
-{
-    link_free(link);
-}
-int avfilter_config_links(AVFilterContext *filter)
-{
-    return ff_filter_config_links(filter);
-}
-#endif
 
 static void update_link_current_pts(FilterLinkInternal *li, int64_t pts)
 {
@@ -376,7 +366,22 @@ int ff_filter_config_links(AVFilterContext *filter)
                                                     "callbacks on all outputs\n");
                     return AVERROR(EINVAL);
                 }
-            } else if ((ret = config_link(link)) < 0) {
+            }
+
+            /* Copy side data before link->srcpad->config_props() is called, so the filter
+             * may remove it for the next filter in the chain */
+            if (inlink && inlink->nb_side_data && !link->nb_side_data) {
+                for (int j = 0; j < inlink->nb_side_data; j++) {
+                    ret = av_frame_side_data_clone(&link->side_data, &link->nb_side_data,
+                                                   inlink->side_data[j], 0);
+                    if (ret < 0) {
+                        av_frame_side_data_free(&link->side_data, &link->nb_side_data);
+                        return ret;
+                    }
+                }
+            }
+
+            if (config_link && (ret = config_link(link)) < 0) {
                 av_log(link->src, AV_LOG_ERROR,
                        "Failed to configure output pad on %s\n",
                        link->src->name);
@@ -545,9 +550,6 @@ static int request_frame_to_filter(AVFilterLink *link)
 static const char *const var_names[] = {
     "t",
     "n",
-#if FF_API_FRAME_PKT
-    "pos",
-#endif
     "w",
     "h",
     NULL
@@ -556,9 +558,6 @@ static const char *const var_names[] = {
 enum {
     VAR_T,
     VAR_N,
-#if FF_API_FRAME_PKT
-    VAR_POS,
-#endif
     VAR_W,
     VAR_H,
     VAR_VARS_NB
@@ -990,6 +989,15 @@ enum AVMediaType avfilter_pad_get_type(const AVFilterPad *pads, int pad_idx)
     return pads[pad_idx].type;
 }
 
+AVBufferRef *avfilter_link_get_hw_frames_ctx(AVFilterLink *link)
+{
+    FilterLink *plink = ff_filter_link(link);
+    if (plink->hw_frames_ctx)
+        return av_buffer_ref(plink->hw_frames_ctx);
+
+    return NULL;
+}
+
 static int default_filter_frame(AVFilterLink *link, AVFrame *frame)
 {
     return ff_filter_frame(link->dst->outputs[0], frame);
@@ -1007,11 +1015,6 @@ static int evaluate_timeline_at_frame(AVFilterLink *link, const AVFrame *frame)
     AVFilterContext *dstctx = link->dst;
     FFFilterContext *dsti = fffilterctx(dstctx);
     int64_t pts = frame->pts;
-#if FF_API_FRAME_PKT
-FF_DISABLE_DEPRECATION_WARNINGS
-    int64_t pos = frame->pkt_pos;
-FF_ENABLE_DEPRECATION_WARNINGS
-#endif
 
     if (!dstctx->enable_str)
         return 1;
@@ -1020,9 +1023,6 @@ FF_ENABLE_DEPRECATION_WARNINGS
     dsti->var_values[VAR_T] = pts == AV_NOPTS_VALUE ? NAN : pts * av_q2d(link->time_base);
     dsti->var_values[VAR_W] = link->w;
     dsti->var_values[VAR_H] = link->h;
-#if FF_API_FRAME_PKT
-    dsti->var_values[VAR_POS] = pos == -1 ? NAN : pos;
-#endif
 
     return fabs(av_expr_eval(dsti->enable, dsti->var_values, NULL)) >= 0.5;
 }
@@ -1071,7 +1071,8 @@ int ff_filter_frame(AVFilterLink *link, AVFrame *frame)
             strcmp(link->dst->filter->name, "format") &&
             strcmp(link->dst->filter->name, "idet") &&
             strcmp(link->dst->filter->name, "null") &&
-            strcmp(link->dst->filter->name, "scale")) {
+            strcmp(link->dst->filter->name, "scale") &&
+            strcmp(link->dst->filter->name, "libplacebo")) {
             av_assert1(frame->format        == link->format);
             av_assert1(frame->width         == link->w);
             av_assert1(frame->height        == link->h);
@@ -1252,16 +1253,14 @@ static int forward_status_change(AVFilterContext *filter, FilterLinkInternal *li
 static int filter_activate_default(AVFilterContext *filter)
 {
     unsigned i;
+    int nb_eofs = 0;
 
-    for (i = 0; i < filter->nb_outputs; i++) {
-        FilterLinkInternal *li = ff_link_internal(filter->outputs[i]);
-        int ret = li->status_in;
-
-        if (ret) {
-            for (int j = 0; j < filter->nb_inputs; j++)
-                ff_inlink_set_status(filter->inputs[j], ret);
-            return 0;
-        }
+    for (i = 0; i < filter->nb_outputs; i++)
+        nb_eofs += ff_outlink_get_status(filter->outputs[i]) == AVERROR_EOF;
+    if (filter->nb_outputs && nb_eofs == filter->nb_outputs) {
+        for (int j = 0; j < filter->nb_inputs; j++)
+            ff_inlink_set_status(filter->inputs[j], AVERROR_EOF);
+        return 0;
     }
 
     for (i = 0; i < filter->nb_inputs; i++) {
@@ -1283,6 +1282,15 @@ static int filter_activate_default(AVFilterContext *filter)
             !li->frame_blocked_in) {
             return request_frame_to_filter(filter->outputs[i]);
         }
+    }
+    for (i = 0; i < filter->nb_outputs; i++) {
+        FilterLinkInternal * const li = ff_link_internal(filter->outputs[i]);
+        if (li->frame_wanted_out)
+            return request_frame_to_filter(filter->outputs[i]);
+    }
+    if (!filter->nb_outputs) {
+        ff_inlink_request_frame(filter->inputs[0]);
+        return 0;
     }
     return FFERROR_NOT_READY;
 }
@@ -1417,6 +1425,17 @@ static int filter_activate_default(AVFilterContext *filter)
      Rationale: checking frame_blocked_in is necessary to avoid requesting
      repeatedly on a blocked input if another is not blocked (example:
      [buffersrc1][testsrc1][buffersrc2][testsrc2]concat=v=2).
+
+   - If an output has frame_wanted_out > 0 call request_frame().
+
+     Rationale: even if all inputs are blocked an activate callback should
+     request a frame on some if its inputs if a frame is requested on any of
+     its output.
+
+   - Request a frame on the input for sinks.
+
+     Rationale: sinks using the old api have no way to request a frame on their
+     input, so we need to do it for them.
  */
 
 int ff_filter_activate(AVFilterContext *filter)

@@ -16,9 +16,11 @@
  * limitations under the License.
  */
 
+#include "generated/vk_extension_helper.h"
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
 #include "generated/dispatch_functions.h"
+#include "containers/container_utils.h"
 
 namespace stateless {
 // Traits objects to allow string_join to operate on collections of const char *
@@ -80,7 +82,7 @@ bool Instance::ValidateExtensionReqs(const ExtensionState &extensions, const cha
     if (extension == vvl::Extension::Empty) {
         return skip;
     }
-    auto info = ExtensionState::GetInfo(extension);
+    auto info = extensions.GetInfo(extension);
 
     if (!info.state) {
         return skip;  // Unknown extensions cannot be checked so report OK
@@ -103,9 +105,8 @@ bool Instance::ValidateExtensionReqs(const ExtensionState &extensions, const cha
     return skip;
 }
 
-template <typename ExtensionState>
-ExtEnabled ExtensionStateByName(const ExtensionState &extensions, vvl::Extension extension) {
-    auto info = ExtensionState::GetInfo(extension);
+ExtEnabled ExtensionStateByName(const DeviceExtensions &extensions, vvl::Extension extension) {
+    auto info = extensions.GetInfo(extension);
     // unknown extensions can't be enabled in extension struct
     ExtEnabled state = info.state ? extensions.*(info.state) : kNotEnabled;
     return state;
@@ -208,21 +209,26 @@ bool Instance::PreCallValidateCreateInstance(const VkInstanceCreateInfo *pCreate
     // avoid redundant pNext-pNext errors from the cases where we have specific VUs by returning early
     const auto *debug_report_callback = vku::FindStructInPNextChain<VkDebugReportCallbackCreateInfoEXT>(pCreateInfo->pNext);
     if (debug_report_callback && !instance_extensions.vk_ext_debug_report) {
-        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-04925", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-                         "does not include VK_EXT_debug_report, but the pNext chain includes VkDebugReportCallbackCreateInfoEXT.");
+        skip |=
+            LogError("VUID-VkInstanceCreateInfo-pNext-04925", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+                     "does not include VK_EXT_debug_report, but the pNext chain includes VkDebugReportCallbackCreateInfoEXT.\n%s",
+                     PrintPNextChain(Struct::VkInstanceCreateInfo, pCreateInfo->pNext).c_str());
         return skip;
     }
     const auto *debug_utils_messenger = vku::FindStructInPNextChain<VkDebugUtilsMessengerCreateInfoEXT>(pCreateInfo->pNext);
     if (debug_utils_messenger && !instance_extensions.vk_ext_debug_utils) {
-        skip |= LogError("VUID-VkInstanceCreateInfo-pNext-04926", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-                         "does not include VK_EXT_debug_utils, but the pNext chain includes VkDebugUtilsMessengerCreateInfoEXT.");
+        skip |=
+            LogError("VUID-VkInstanceCreateInfo-pNext-04926", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
+                     "does not include VK_EXT_debug_utils, but the pNext chain includes VkDebugUtilsMessengerCreateInfoEXT.\n%s",
+                     PrintPNextChain(Struct::VkInstanceCreateInfo, pCreateInfo->pNext).c_str());
         return skip;
     }
     const auto *direct_driver_loading_list = vku::FindStructInPNextChain<VkDirectDriverLoadingListLUNARG>(pCreateInfo->pNext);
     if (direct_driver_loading_list && !instance_extensions.vk_lunarg_direct_driver_loading) {
         skip |= LogError(
             "VUID-VkInstanceCreateInfo-pNext-09400", instance, create_info_loc.dot(Field::ppEnabledExtensionNames),
-            "does not include VK_LUNARG_direct_driver_loading, but the pNext chain includes VkDirectDriverLoadingListLUNARG.");
+            "does not include VK_LUNARG_direct_driver_loading, but the pNext chain includes VkDirectDriverLoadingListLUNARG.\n%s",
+            PrintPNextChain(Struct::VkInstanceCreateInfo, pCreateInfo->pNext).c_str());
         return skip;
     }
 
@@ -345,6 +351,8 @@ void Device::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Loca
             scissor_exclusive_extension_version = prop.specVersion;
         }
     }
+
+    has_zero_queues = pCreateInfo->queueCreateInfoCount == 0;
 }
 
 bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevice, const VkDeviceCreateInfo *pCreateInfo,
@@ -432,15 +440,16 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
     if (pCreateInfo->pNext != nullptr && pCreateInfo->pEnabledFeatures && features2) {
         // Cannot include VkPhysicalDeviceFeatures2 and have non-null pEnabledFeatures
         skip |= LogError("VUID-VkDeviceCreateInfo-pNext-00373", physicalDevice, create_info_loc.dot(Field::pNext),
-                         "includes a VkPhysicalDeviceFeatures2 struct when pCreateInfo->pEnabledFeatures is not NULL.");
+                         "includes a VkPhysicalDeviceFeatures2 struct when pCreateInfo->pEnabledFeatures is not NULL.\n%s",
+                         PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
     }
 
     const VkPhysicalDeviceFeatures *features = features2 ? &features2->features : pCreateInfo->pEnabledFeatures;
 
     if (const auto *robustness2_features =
-            vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesEXT>(pCreateInfo->pNext)) {
+            vku::FindStructInPNextChain<VkPhysicalDeviceRobustness2FeaturesKHR>(pCreateInfo->pNext)) {
         if (features && robustness2_features->robustBufferAccess2 && !features->robustBufferAccess) {
-            skip |= LogError("VUID-VkPhysicalDeviceRobustness2FeaturesEXT-robustBufferAccess2-04000", physicalDevice,
+            skip |= LogError("VUID-VkPhysicalDeviceRobustness2FeaturesKHR-robustBufferAccess2-04000", physicalDevice,
                              error_obj.location, "If robustBufferAccess2 is enabled then robustBufferAccess must be enabled.");
         }
     }
@@ -480,8 +489,11 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_11)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-02829", physicalDevice, error_obj.location,
                                  "If the pNext chain includes a VkPhysicalDeviceVulkan11Features structure, then "
-                                 "it must not include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "it must not include a %s structure. The features in %s were promoted in Vulkan 1.1 and is also "
+                                 "found in VkPhysicalDeviceVulkan11Features. To prevent one feature setting something to VK_TRUE "
+                                 "and the other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
@@ -517,8 +529,11 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_12)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-02830", physicalDevice, create_info_loc.dot(Field::pNext),
                                  "chain includes a VkPhysicalDeviceVulkan12Features structure, then it must not "
-                                 "include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "include a %s structure. The features in %s were promoted in Vulkan 1.2 and is also found in "
+                                 "VkPhysicalDeviceVulkan12Features. To prevent one feature setting something to VK_TRUE and the "
+                                 "other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
@@ -593,8 +608,11 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_13)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-06532", physicalDevice, create_info_loc.dot(Field::pNext),
                                  "chain includes a VkPhysicalDeviceVulkan13Features structure, then it must not "
-                                 "include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "include a %s structure. The features in %s were promoted in Vulkan 1.3 and is also found in "
+                                 "VkPhysicalDeviceVulkan13Features. To prevent one feature setting something to VK_TRUE and the "
+                                 "other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
@@ -623,11 +641,20 @@ bool Instance::manual_PreCallValidateCreateDevice(VkPhysicalDevice physicalDevic
             if (IsValueIn(current->sType, illegal_feature_structs_with_14)) {
                 skip |= LogError("VUID-VkDeviceCreateInfo-pNext-10360", physicalDevice, create_info_loc.dot(Field::pNext),
                                  "chain includes a VkPhysicalDeviceVulkan14Features structure, then it must not "
-                                 "include a %s structure",
-                                 string_VkStructureType(current->sType));
+                                 "include a %s structure. The features in %s were promoted in Vulkan 1.4 and is also found in "
+                                 "VkPhysicalDeviceVulkan14Features. To prevent one feature setting something to VK_TRUE and the "
+                                 "other to VK_FALSE, only one struct containing the feature is allowed.\n%s",
+                                 string_VkStructureName(current->sType), string_VkStructureName(current->sType),
+                                 PrintPNextChain(Struct::VkDeviceCreateInfo, pCreateInfo->pNext).c_str());
                 break;
             }
             current = reinterpret_cast<const VkBaseOutStructure *>(current->pNext);
+        }
+        if (vulkan_14_features->pushDescriptor == VK_FALSE &&
+            enabled_extensions.find(vvl::Extension::_VK_KHR_push_descriptor) != enabled_extensions.end()) {
+            skip |= LogError("VUID-VkDeviceCreateInfo-ppEnabledExtensionNames-10858", physicalDevice, error_obj.location,
+                             "%s is enabled but VkPhysicalDeviceVulkan14Features::pushDescriptor is not VK_TRUE.",
+                             VK_KHR_PUSH_DESCRIPTOR_EXTENSION_NAME);
         }
     }
 
@@ -876,8 +903,9 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
             if (pImageFormatInfo->tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
                 skip |= LogError("VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249", physicalDevice,
                                  format_info_loc.dot(Field::tiling),
-                                 "(%s) but no VkPhysicalDeviceImageDrmFormatModifierInfoEXT in pNext chain.",
-                                 string_VkImageTiling(pImageFormatInfo->tiling));
+                                 "(%s) but no VkPhysicalDeviceImageDrmFormatModifierInfoEXT in pNext chain.\n%s",
+                                 string_VkImageTiling(pImageFormatInfo->tiling),
+                                 PrintPNextChain(Struct::VkPhysicalDeviceImageFormatInfo2, pImageFormatInfo->pNext).c_str());
             }
             if (image_drm_format->sharingMode == VK_SHARING_MODE_CONCURRENT) {
                 if (image_drm_format->queueFamilyIndexCount <= 1) {
@@ -923,7 +951,8 @@ bool Instance::manual_PreCallValidateGetPhysicalDeviceImageFormatProperties2(
                 skip |= LogError("VUID-VkPhysicalDeviceImageFormatInfo2-tiling-02249", physicalDevice,
                                  format_info_loc.dot(Field::tiling),
                                  "is VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT, but pNext chain not include "
-                                 "VkPhysicalDeviceImageDrmFormatModifierInfoEXT.");
+                                 "VkPhysicalDeviceImageDrmFormatModifierInfoEXT.\n%s",
+                                 PrintPNextChain(Struct::VkPhysicalDeviceImageFormatInfo2, pImageFormatInfo->pNext).c_str());
             }
         }
         if (pImageFormatInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT &&

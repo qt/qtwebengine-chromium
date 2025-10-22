@@ -44,13 +44,35 @@ void free_layer_configuration(const struct loader_instance* inst, loader_setting
     memset(layer_configuration, 0, sizeof(loader_settings_layer_configuration));
 }
 
+void free_driver_configuration(const struct loader_instance* inst, loader_settings_driver_configuration* driver_configuration) {
+    loader_instance_heap_free(inst, driver_configuration->path);
+    memset(driver_configuration, 0, sizeof(loader_settings_driver_configuration));
+}
+
+void free_device_configuration(const struct loader_instance* inst, loader_settings_device_configuration* device_configuration) {
+    (void)inst;
+    memset(device_configuration, 0, sizeof(loader_settings_device_configuration));
+}
+
 void free_loader_settings(const struct loader_instance* inst, loader_settings* settings) {
     if (NULL != settings->layer_configurations) {
         for (uint32_t i = 0; i < settings->layer_configuration_count; i++) {
             free_layer_configuration(inst, &settings->layer_configurations[i]);
         }
+        loader_instance_heap_free(inst, settings->layer_configurations);
     }
-    loader_instance_heap_free(inst, settings->layer_configurations);
+    if (NULL != settings->additional_drivers) {
+        for (uint32_t i = 0; i < settings->additional_driver_count; i++) {
+            free_driver_configuration(inst, &settings->additional_drivers[i]);
+        }
+        loader_instance_heap_free(inst, settings->additional_drivers);
+    }
+    if (NULL != settings->device_configurations) {
+        for (uint32_t i = 0; i < settings->device_configuration_count; i++) {
+            free_device_configuration(inst, &settings->device_configurations[i]);
+        }
+        loader_instance_heap_free(inst, settings->device_configurations);
+    }
     loader_instance_heap_free(inst, settings->settings_file_path);
     memset(settings, 0, sizeof(loader_settings));
 }
@@ -207,45 +229,312 @@ out:
     return res;
 }
 
+VkResult parse_additional_driver(const struct loader_instance* inst, cJSON* additional_driver_json,
+                                 loader_settings_driver_configuration* additional_driver) {
+    VkResult res = VK_SUCCESS;
+    res = loader_parse_json_string(additional_driver_json, "path", &(additional_driver->path));
+    if (res != VK_SUCCESS) {
+        goto out;
+    }
+out:
+    if (res != VK_SUCCESS) {
+        free_driver_configuration(inst, additional_driver);
+    }
+    return res;
+}
+
+VkResult parse_additional_drivers(const struct loader_instance* inst, cJSON* settings_object, loader_settings* loader_settings) {
+    VkResult res = VK_SUCCESS;
+
+    cJSON* additional_drivers_use_exclusively_json =
+        loader_cJSON_GetObjectItem(settings_object, "additional_drivers_use_exclusively");
+    if (additional_drivers_use_exclusively_json && additional_drivers_use_exclusively_json->type == cJSON_True) {
+        loader_settings->additional_drivers_use_exclusively = true;
+    }
+
+    cJSON* additional_drivers_json = loader_cJSON_GetObjectItem(settings_object, "additional_drivers");
+    if (NULL == additional_drivers_json) {
+        return VK_SUCCESS;
+    }
+
+    uint32_t additional_driver_count = loader_cJSON_GetArraySize(additional_drivers_json);
+    if (additional_driver_count == 0) {
+        return VK_SUCCESS;
+    }
+
+    loader_settings->additional_driver_count = additional_driver_count;
+
+    loader_settings->additional_drivers = loader_instance_heap_calloc(
+        inst, sizeof(loader_settings_layer_configuration) * additional_driver_count, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+    if (NULL == loader_settings->additional_drivers) {
+        res = VK_ERROR_OUT_OF_HOST_MEMORY;
+        goto out;
+    }
+
+    cJSON* driver = NULL;
+    size_t i = 0;
+    cJSON_ArrayForEach(driver, additional_drivers_json) {
+        if (driver->type != cJSON_Object) {
+            res = VK_ERROR_INITIALIZATION_FAILED;
+            goto out;
+        }
+        res = parse_additional_driver(inst, driver, &(loader_settings->additional_drivers[i++]));
+        if (VK_SUCCESS != res) {
+            goto out;
+        }
+    }
+out:
+    if (res != VK_SUCCESS) {
+        if (loader_settings->additional_drivers) {
+            for (size_t index = 0; index < loader_settings->additional_driver_count; index++) {
+                free_driver_configuration(inst, &(loader_settings->additional_drivers[index]));
+            }
+            loader_settings->additional_driver_count = 0;
+            loader_instance_heap_free(inst, loader_settings->additional_drivers);
+            loader_settings->additional_drivers = NULL;
+        }
+    }
+    return res;
+}
+
+VkResult parse_device_configuration(const struct loader_instance* inst, cJSON* device_configuration_json,
+                                    loader_settings_device_configuration* device_configuration) {
+    (void)inst;
+    VkResult res = VK_SUCCESS;
+    cJSON* deviceUUID_array = loader_cJSON_GetObjectItem(device_configuration_json, "deviceUUID");
+    if (NULL == deviceUUID_array) {
+        res = VK_ERROR_INITIALIZATION_FAILED;
+        goto out;
+    }
+    if (VK_UUID_SIZE != loader_cJSON_GetArraySize(deviceUUID_array)) {
+        res = VK_ERROR_INITIALIZATION_FAILED;
+        goto out;
+    }
+
+    cJSON* uuid_field = NULL;
+    size_t i = 0;
+    cJSON_ArrayForEach(uuid_field, deviceUUID_array) {
+        if (uuid_field->type != cJSON_Number) {
+            res = VK_ERROR_INITIALIZATION_FAILED;
+            goto out;
+        }
+        if (uuid_field->valueint < 0 || uuid_field->valueint > 255) {
+            res = VK_ERROR_INITIALIZATION_FAILED;
+            goto out;
+        }
+        device_configuration->deviceUUID[i] = (uint8_t)uuid_field->valueint;
+        i++;
+    }
+
+    VkResult deviceNameRes = loader_parse_json_string_to_existing_str(
+        device_configuration_json, "deviceName", VK_MAX_PHYSICAL_DEVICE_NAME_SIZE, device_configuration->deviceName);
+    if (VK_ERROR_OUT_OF_HOST_MEMORY == deviceNameRes) {
+        res = deviceNameRes;
+        goto out;
+    }
+out:
+    if (res != VK_SUCCESS) {
+        memset(device_configuration, 0, sizeof(loader_settings_device_configuration));
+    }
+    return res;
+}
+
+VkResult parse_device_configurations(const struct loader_instance* inst, cJSON* settings_object, loader_settings* loader_settings) {
+    VkResult res = VK_SUCCESS;
+
+    cJSON* device_configurations = loader_cJSON_GetObjectItem(settings_object, "device_configurations");
+    if (NULL == device_configurations) {
+        return VK_SUCCESS;
+    }
+
+    uint32_t device_configuration_count = loader_cJSON_GetArraySize(device_configurations);
+    if (device_configuration_count == 0) {
+        return VK_SUCCESS;
+    }
+
+    loader_settings->device_configuration_count = device_configuration_count;
+
+    loader_settings->device_configurations = loader_instance_heap_calloc(
+        inst, sizeof(loader_settings_device_configuration) * device_configuration_count, VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+    if (NULL == loader_settings->device_configurations) {
+        res = VK_ERROR_OUT_OF_HOST_MEMORY;
+        goto out;
+    }
+
+    cJSON* device = NULL;
+    size_t i = 0;
+    cJSON_ArrayForEach(device, device_configurations) {
+        if (device->type != cJSON_Object) {
+            res = VK_ERROR_INITIALIZATION_FAILED;
+            goto out;
+        }
+        res = parse_device_configuration(inst, device, &(loader_settings->device_configurations[i++]));
+        if (VK_SUCCESS != res) {
+            goto out;
+        }
+    }
+out:
+    if (res != VK_SUCCESS) {
+        if (loader_settings->device_configurations) {
+            for (size_t index = 0; index < loader_settings->device_configuration_count; index++) {
+                free_device_configuration(inst, &(loader_settings->device_configurations[index]));
+            }
+            loader_settings->device_configuration_count = 0;
+            loader_instance_heap_free(inst, loader_settings->device_configurations);
+            loader_settings->device_configurations = NULL;
+        }
+    }
+    return res;
+}
+
+#if COMMON_UNIX_PLATFORMS
+// Given a base and suffix path, determine if a file at that location exists, and if it is return success.
+// Since base may contain multiple paths seperated by PATH_SEPARATOR, we must extract each segment and check segment + suffix
+// individually
 VkResult check_if_settings_path_exists(const struct loader_instance* inst, const char* base, const char* suffix,
                                        char** settings_file_path) {
     if (NULL == base || NULL == suffix) {
         return VK_ERROR_INITIALIZATION_FAILED;
     }
+
     size_t base_len = strlen(base);
     size_t suffix_len = strlen(suffix);
-    size_t path_len = base_len + suffix_len + 1;
-    *settings_file_path = loader_instance_heap_calloc(inst, path_len, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
-    if (NULL == *settings_file_path) {
-        return VK_ERROR_OUT_OF_HOST_MEMORY;
-    }
-    loader_strncpy(*settings_file_path, path_len, base, base_len);
-    loader_strncat(*settings_file_path, path_len, suffix, suffix_len);
 
-    if (!loader_platform_file_exists(*settings_file_path)) {
+    uint32_t start = 0;
+    uint32_t stop = 0;
+    while (base[start] != '\0' && start < base_len && stop < base_len) {
+        start = stop;
+        stop = start + 1;
+        while (base[stop] != PATH_SEPARATOR && base[stop] != '\0' && stop < base_len) {
+            stop++;
+        }
+
+        size_t segment_len = (stop - start);
+        if (segment_len <= 1) {
+            // segment is *just* a PATH_SEPARATOR, skip it
+            continue;
+        }
+        size_t path_len = segment_len + suffix_len + 1;
+        *settings_file_path = loader_instance_heap_calloc(inst, path_len, VK_SYSTEM_ALLOCATION_SCOPE_COMMAND);
+        if (NULL == *settings_file_path) {
+            return VK_ERROR_OUT_OF_HOST_MEMORY;
+        }
+        loader_strncpy(*settings_file_path, path_len, base + start, segment_len);
+        loader_strncat(*settings_file_path, path_len, suffix, suffix_len);
+
+        if (loader_platform_file_exists(*settings_file_path)) {
+            return VK_SUCCESS;
+        }
         loader_instance_heap_free(inst, *settings_file_path);
         *settings_file_path = NULL;
-        return VK_ERROR_INITIALIZATION_FAILED;
     }
-    return VK_SUCCESS;
+
+    return VK_ERROR_INITIALIZATION_FAILED;
 }
+
+// Follow the logic of read_data_files_in_search_paths but only look for "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME
 VkResult get_unix_settings_path(const struct loader_instance* inst, char** settings_file_path) {
-    VkResult res =
-        check_if_settings_path_exists(inst, loader_secure_getenv("HOME", inst),
-                                      "/.local/share/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME, settings_file_path);
+    // First, get XDG env-vars we use. Don't need to worry about free'ing because on linux getenv is non-allocating
+    char* xdg_config_home = loader_secure_getenv("XDG_CONFIG_HOME", inst);
+    char* xdg_config_dirs = loader_secure_getenv("XDG_CONFIG_DIRS", inst);
+    char* xdg_data_home = loader_secure_getenv("XDG_DATA_HOME", inst);
+    char* xdg_data_dirs = loader_secure_getenv("XDG_DATA_DIRS", inst);
+
+    // Use fallback directories for xdg_config_dirs and xdg_data_dirs if they are NULL.
+#if !defined(__Fuchsia__) && !defined(__QNX__)
+    if (NULL == xdg_config_dirs || '\0' == xdg_config_dirs[0]) {
+        xdg_config_dirs = FALLBACK_CONFIG_DIRS;
+    }
+#endif
+
+#if !defined(__Fuchsia__) && !defined(__QNX__)
+    if (NULL == xdg_data_dirs || '\0' == xdg_data_dirs[0]) {
+        xdg_data_dirs = FALLBACK_DATA_DIRS;
+    }
+#endif
+
+    VkResult res = check_if_settings_path_exists(inst, xdg_config_home, "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                                 settings_file_path);
     if (res == VK_SUCCESS) {
         return res;
     }
-    // If HOME isn't set, fallback to XDG_DATA_HOME
-    res = check_if_settings_path_exists(inst, loader_secure_getenv("XDG_DATA_HOME", inst),
-                                        "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME, settings_file_path);
+
+    res = check_if_settings_path_exists(inst, xdg_data_home, "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                        settings_file_path);
     if (res == VK_SUCCESS) {
         return res;
     }
-    // if XDG_DATA_HOME isn't set, fallback to /etc.
-    // note that the settings_fil_path_suffix stays the same since its the same layout as for XDG_DATA_HOME
-    return check_if_settings_path_exists(inst, "/etc", "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
-                                         settings_file_path);
+
+    // Check home if either xdg_config_home or xdg_data_home wasn't set
+    char* home = loader_secure_getenv("HOME", inst);
+    if (home != NULL) {
+        if (NULL == xdg_config_home || '\0' == xdg_config_home[0]) {
+            res = check_if_settings_path_exists(inst, home, "/.config/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                                settings_file_path);
+            if (res == VK_SUCCESS) {
+                return res;
+            }
+        }
+        if (NULL == xdg_data_home || '\0' == xdg_data_home[0]) {
+            res = check_if_settings_path_exists(inst, home, "/.local/share/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                                settings_file_path);
+            if (res == VK_SUCCESS) {
+                return res;
+            }
+        }
+    }
+
+    res = check_if_settings_path_exists(inst, xdg_config_dirs, "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                        settings_file_path);
+    if (res == VK_SUCCESS) {
+        return res;
+    }
+
+    res = check_if_settings_path_exists(inst, SYSCONFDIR, "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                        settings_file_path);
+    if (res == VK_SUCCESS) {
+        return res;
+    }
+#if defined(EXTRASYSCONFDIR)
+
+    res = check_if_settings_path_exists(inst, EXTRASYSCONFDIR, "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                        settings_file_path);
+    if (res == VK_SUCCESS) {
+        return res;
+    }
+#endif
+    res = check_if_settings_path_exists(inst, xdg_data_dirs, "/vulkan/loader_settings.d/" VK_LOADER_SETTINGS_FILENAME,
+                                        settings_file_path);
+    if (res == VK_SUCCESS) {
+        return res;
+    }
+
+    return VK_ERROR_INITIALIZATION_FAILED;
+}
+#endif
+
+bool check_if_layer_configurations_are_equal(loader_settings_layer_configuration* a, loader_settings_layer_configuration* b) {
+    if (!a->name || !b->name || 0 != strcmp(a->name, b->name)) {
+        return false;
+    }
+    if (!a->path || !b->path || 0 != strcmp(a->path, b->path)) {
+        return false;
+    }
+    return a->control == b->control;
+}
+
+bool check_if_driver_configurations_are_equal(loader_settings_driver_configuration* a, loader_settings_driver_configuration* b) {
+    if (!a->path || !b->path || 0 != strcmp(a->path, b->path)) {
+        return false;
+    }
+    return true;
+}
+
+bool check_if_device_configurations_are_equal(loader_settings_device_configuration* a, loader_settings_device_configuration* b) {
+    for (uint32_t i = 0; i < VK_UUID_SIZE; i++) {
+        if (a->deviceUUID[i] != b->deviceUUID[i]) return false;
+    }
+    return true;
 }
 
 bool check_if_settings_are_equal(loader_settings* a, loader_settings* b) {
@@ -256,19 +545,17 @@ bool check_if_settings_are_equal(loader_settings* a, loader_settings* b) {
     are_equal &= a->has_unordered_layer_location == b->has_unordered_layer_location;
     are_equal &= a->debug_level == b->debug_level;
     are_equal &= a->layer_configuration_count == b->layer_configuration_count;
+    are_equal &= a->additional_driver_count == b->additional_driver_count;
+    are_equal &= a->device_configuration_count == b->device_configuration_count;
     if (!are_equal) return false;
     for (uint32_t i = 0; i < a->layer_configuration_count && i < b->layer_configuration_count; i++) {
-        if (a->layer_configurations[i].name && b->layer_configurations[i].name) {
-            are_equal &= 0 == strcmp(a->layer_configurations[i].name, b->layer_configurations[i].name);
-        } else {
-            are_equal = false;
-        }
-        if (a->layer_configurations[i].path && b->layer_configurations[i].path) {
-            are_equal &= 0 == strcmp(a->layer_configurations[i].path, b->layer_configurations[i].path);
-        } else {
-            are_equal = false;
-        }
-        are_equal &= a->layer_configurations[i].control == b->layer_configurations[i].control;
+        are_equal &= check_if_layer_configurations_are_equal(&a->layer_configurations[i], &b->layer_configurations[i]);
+    }
+    for (uint32_t i = 0; i < a->additional_driver_count && i < b->additional_driver_count; i++) {
+        are_equal &= check_if_driver_configurations_are_equal(&a->additional_drivers[i], &b->additional_drivers[i]);
+    }
+    for (uint32_t i = 0; i < a->device_configuration_count && i < b->device_configuration_count; i++) {
+        are_equal &= check_if_device_configurations_are_equal(&a->device_configurations[i], &b->device_configurations[i]);
     }
     return are_equal;
 }
@@ -301,6 +588,27 @@ void log_settings(const struct loader_instance* inst, loader_settings* settings)
         }
         loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "Control: %s",
                    loader_settings_layer_control_to_string(settings->layer_configurations[i].control));
+    }
+    if (settings->additional_driver_count > 0) {
+        loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "----");
+        loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "Use Additional Drivers Exclusively = %s",
+                   settings->additional_drivers_use_exclusively ? "true" : "false");
+        loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "Additional Driver Configurations count = %d",
+                   settings->additional_driver_count);
+        for (uint32_t i = 0; i < settings->additional_driver_count; i++) {
+            loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "---- Driver Configuration [%d] ----", i);
+            loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "Path: %s", settings->additional_drivers[i].path);
+        }
+    }
+    if (settings->device_configuration_count > 0) {
+        loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "----");
+        loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "Device Configurations count = %d", settings->device_configuration_count);
+        for (uint32_t i = 0; i < settings->device_configuration_count; i++) {
+            loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "---- Device Configuration [%d] ----", i);
+            uint8_t* id = settings->device_configurations[i].deviceUUID;
+            loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "deviceUUID: %x%x%x%x-%x%x-%x%x-%x%x-%x%x%x%x%x%x", id[0], id[1], id[2],
+                       id[3], id[4], id[5], id[6], id[7], id[8], id[9], id[10], id[11], id[12], id[13], id[14], id[15]);
+        }
     }
     loader_log(inst, VULKAN_LOADER_DEBUG_BIT, 0, "---------------------------------");
 }
@@ -457,8 +765,9 @@ VkResult get_loader_settings(const struct loader_instance* inst, loader_settings
         }
     }
 
-    res = parse_layer_configurations(inst, settings_to_use, loader_settings);
-    if (res != VK_SUCCESS) {
+    VkResult layer_configurations_res = parse_layer_configurations(inst, settings_to_use, loader_settings);
+    if (VK_ERROR_OUT_OF_HOST_MEMORY == layer_configurations_res) {
+        res = layer_configurations_res;
         goto out;
     }
 
@@ -471,9 +780,29 @@ VkResult get_loader_settings(const struct loader_instance* inst, loader_settings
         }
     }
 
-    loader_settings->settings_file_path = settings_file_path;
-    settings_file_path = NULL;
-    loader_settings->settings_active = true;
+    VkResult additional_drivers_res = parse_additional_drivers(inst, settings_to_use, loader_settings);
+    if (VK_ERROR_OUT_OF_HOST_MEMORY == additional_drivers_res) {
+        res = additional_drivers_res;
+        goto out;
+    }
+
+    VkResult device_configurations_res = parse_device_configurations(inst, settings_to_use, loader_settings);
+    if (VK_ERROR_OUT_OF_HOST_MEMORY == device_configurations_res) {
+        res = device_configurations_res;
+        goto out;
+    }
+
+    // Only consider the settings active if there is at least one "setting" active.
+    // Those are either logging, layers, additional_drivers, or device_configurations.
+    if (loader_settings->debug_level != 0 || loader_settings->layer_configuration_count != 0 ||
+        loader_settings->additional_driver_count != 0 || loader_settings->device_configuration_count != 0) {
+        loader_settings->settings_file_path = settings_file_path;
+        settings_file_path = NULL;
+        loader_settings->settings_active = true;
+    } else {
+        loader_log(inst, VULKAN_LOADER_INFO_BIT, 0,
+                   "vk_loader_settings.json file found at \"%s\" but did not contain any valid settings.", settings_file_path);
+    }
 out:
     if (NULL != json) {
         loader_cJSON_Delete(json);
@@ -865,4 +1194,40 @@ VkResult enable_correct_layers_from_settings(const struct loader_instance* inst,
     }
 out:
     return res;
+}
+
+VkResult loader_settings_get_additional_driver_files(const struct loader_instance* inst, struct loader_string_list* out_files) {
+    VkResult res = VK_SUCCESS;
+
+    const loader_settings* settings = get_current_settings_and_lock(inst);
+
+    if (NULL == settings || !settings->settings_active) {
+        goto out;
+    }
+
+    if (settings->additional_drivers_use_exclusively) {
+        free_string_list(inst, out_files);
+    }
+
+    for (uint32_t i = 0; i < settings->additional_driver_count; i++) {
+        res = prepend_if_manifest_file(inst, settings->additional_drivers[i].path, out_files);
+    }
+
+out:
+    release_current_settings_lock(inst);
+    return res;
+}
+
+bool loader_settings_should_use_driver_environment_variables(const struct loader_instance* inst) {
+    bool should_use = true;
+    const loader_settings* settings = get_current_settings_and_lock(inst);
+    if (NULL == settings || !settings->settings_active) {
+        goto out;
+    }
+    if (settings->device_configuration_count > 0) {
+        should_use = false;
+    }
+out:
+    release_current_settings_lock(inst);
+    return should_use;
 }

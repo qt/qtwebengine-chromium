@@ -7,12 +7,11 @@
 #include "base/check.h"
 #include "base/containers/contains.h"
 #include "base/json/json_writer.h"
+#include "base/strings/escape.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "base/types/optional_util.h"
-#include "chrome/browser/extensions/extension_tab_util.h"
-#include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/common/extensions/api/scripting.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -118,9 +117,9 @@ std::vector<mojom::JSSourcePtr> FileSourcesToJSSources(
   std::vector<mojom::JSSourcePtr> js_sources;
   js_sources.reserve(file_sources.size());
   for (auto& file_source : file_sources) {
-    js_sources.push_back(
-        mojom::JSSource::New(std::move(*file_source.data),
-                             extension.GetResourceURL(file_source.file_name)));
+    js_sources.push_back(mojom::JSSource::New(
+        std::move(*file_source.data),
+        extension.GetResourceURL(base::EscapePath(file_source.file_name))));
   }
 
   return js_sources;
@@ -136,8 +135,8 @@ std::vector<mojom::CSSSourcePtr> FileSourcesToCSSSources(
   for (auto& file_source : file_sources) {
     css_sources.push_back(mojom::CSSSource::New(
         std::move(*file_source.data),
-        InjectionKeyForFile(host_id,
-                            extension.GetResourceURL(file_source.file_name))));
+        InjectionKeyForFile(host_id, extension.GetResourceURL(base::EscapePath(
+                                         file_source.file_name)))));
   }
 
   return css_sources;
@@ -577,7 +576,8 @@ ExtensionFunction::ResponseAction ScriptingRemoveCSSFunction::Run() {
     for (const auto& file : *injection.files) {
       sources.push_back(mojom::CSSSource::New(
           empty_code,
-          InjectionKeyForFile(host_id, extension()->GetResourceURL(file))));
+          InjectionKeyForFile(
+              host_id, extension()->GetResourceURL(base::EscapePath(file)))));
     }
   } else {
     DCHECK(injection.css);

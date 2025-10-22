@@ -1,6 +1,7 @@
 // Copyright (c) 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../../../core/common/common.js';
 import * as VisualLogging from '../../../visual_logging/visual_logging.js';
@@ -28,7 +29,7 @@ export class BezierEditor extends Common.ObjectWrapper.eventMixin<EventTypes, ty
   private debouncedStartPreviewAnimation: () => void;
 
   constructor(model: AnimationTimingModel) {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(bezierEditorStyles);
 
     this.model = model;

@@ -32,14 +32,20 @@
 
 #include "third_party/blink/renderer/core/editing/editing_utilities.h"
 #include "third_party/blink/renderer/core/editing/inline_box_position.h"
+#include "third_party/blink/renderer/core/editing/position_with_affinity.h"
 #include "third_party/blink/renderer/core/editing/visible_position.h"
 #include "third_party/blink/renderer/core/editing/visible_units.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_rect.h"
+#include "third_party/blink/renderer/core/layout/geometry/writing_mode_converter.h"
 #include "third_party/blink/renderer/core/layout/inline/line_utils.h"
 
 namespace blink {
 
 namespace {
+
+static LayoutUnit AbsoluteDifference(LayoutUnit a, LayoutUnit b) {
+  return (a - b).Abs();
+}
 
 // TODO(1229581): Get rid of this.
 class AbstractLineBox {
@@ -60,8 +66,8 @@ class AbstractLineBox {
     if (cursor_.Current().IsEmptyLineBox())
       return false;
     const PhysicalSize physical_size = cursor_.Current().Size();
-    const LogicalSize logical_size = physical_size.ConvertToLogical(
-        cursor_.Current().Style().GetWritingMode());
+    const LogicalSize logical_size = ToLogicalSize(
+        physical_size, cursor_.Current().Style().GetWritingMode());
     if (!logical_size.block_size)
       return false;
     for (InlineCursor cursor(cursor_); cursor; cursor.MoveToNext()) {
@@ -154,9 +160,10 @@ class AbstractLineBox {
     DCHECK(line.Current().IsLineBox());
     const PhysicalSize unit_square(LayoutUnit(1), LayoutUnit(1));
     const LogicalOffset logical_point =
-        point.ConvertToLogical({line.Current().Style().GetWritingMode(),
-                                line.Current().BaseDirection()},
-                               line.Current().Size(), unit_square);
+        WritingModeConverter({line.Current().Style().GetWritingMode(),
+                              line.Current().BaseDirection()},
+                             line.Current().Size())
+            .ToLogical(point, unit_square);
     const LayoutUnit inline_offset = logical_point.inline_offset;
     InlineCursor closest_leaf_child;
     LayoutUnit closest_leaf_distance;
@@ -376,6 +383,27 @@ PositionInFlatTree NextRootInlineBoxCandidatePosition(
 }  // namespace
 
 // static
+bool SelectionModifier::ShouldUseUpstreamPositionForLineNavigation(
+    const PositionInFlatTree& p,
+    LayoutUnit line_direction_point) {
+  const PositionInFlatTreeWithAffinity upstream_position_with_affinity(
+      p, TextAffinity::kUpstream);
+  const VisiblePositionInFlatTree& visible_upstream_position =
+      CreateVisiblePosition(upstream_position_with_affinity);
+  const LayoutUnit x_upstream = LineDirectionPointForBlockDirectionNavigationOf(
+      visible_upstream_position);
+
+  const VisiblePositionInFlatTree& visible_downstream_position =
+      CreateVisiblePosition(p, TextAffinity::kDownstream);
+  const LayoutUnit x_downstream =
+      LineDirectionPointForBlockDirectionNavigationOf(
+          visible_downstream_position);
+
+  return AbsoluteDifference(line_direction_point, x_upstream) <
+         AbsoluteDifference(line_direction_point, x_downstream);
+}
+
+// static
 PositionInFlatTreeWithAffinity SelectionModifier::PreviousLinePosition(
     const PositionInFlatTreeWithAffinity& position,
     LayoutUnit line_direction_point) {
@@ -393,9 +421,23 @@ PositionInFlatTreeWithAffinity SelectionModifier::PreviousLinePosition(
 
   AbstractLineBox line = AbstractLineBox::CreateFor(position);
   if (line) {
+    if (RuntimeEnabledFeatures::
+            ConsiderUpstreamPositionForFindingPreviousLineEnabled()) {
+      if (ShouldUseUpstreamPositionForLineNavigation(p, line_direction_point)) {
+        const PositionInFlatTreeWithAffinity upstream_position(
+            p, TextAffinity::kUpstream);
+        if (upstream_position.IsNotNull()) {
+          if (auto upstream_line =
+                  AbstractLineBox::CreateFor(upstream_position)) {
+            line = upstream_line;
+          }
+        }
+      }
+    }
     line = line.PreviousLine();
-    if (!line || !line.CanBeCaretContainer())
+    if (!line || !line.CanBeCaretContainer()) {
       line = AbstractLineBox();
+    }
   }
 
   if (!line) {
@@ -461,6 +503,18 @@ PositionInFlatTreeWithAffinity SelectionModifier::NextLinePosition(
 
   AbstractLineBox line = AbstractLineBox::CreateFor(position);
   if (line) {
+    if (RuntimeEnabledFeatures::
+            ConsiderUpstreamPositionForFindingNextLineEnabled() &&
+        ShouldUseUpstreamPositionForLineNavigation(p, line_direction_point)) {
+      const PositionInFlatTreeWithAffinity upstream_position(
+          p, TextAffinity::kUpstream);
+      if (upstream_position.IsNotNull()) {
+        if (auto upstream_line =
+                AbstractLineBox::CreateFor(upstream_position)) {
+          line = upstream_line;
+        }
+      }
+    }
     line = line.NextLine();
     if (!line || !line.CanBeCaretContainer())
       line = AbstractLineBox();

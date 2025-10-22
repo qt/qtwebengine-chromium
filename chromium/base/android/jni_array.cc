@@ -10,14 +10,16 @@
 #include "base/containers/extend.h"
 #include "base/containers/heap_array.h"
 #include "base/numerics/safe_conversions.h"
+#include "base/strings/string_view_util.h"
 
 namespace base::android {
 
-UNSAFE_BUFFER_USAGE ScopedJavaLocalRef<jbyteArray>
-ToJavaByteArray(JNIEnv* env, const uint8_t* bytes, size_t len) {
+ScopedJavaLocalRef<jbyteArray> ToJavaByteArray(JNIEnv* env,
+                                               const uint8_t* bytes,
+                                               size_t len) {
   return ToJavaByteArray(
       env,
-      // SAFETY: The caller must provide a valid pointer and length.
+      // SAFETY: required from caller, see UNSAFE_BUFFER_USAGE in header.
       UNSAFE_BUFFERS(base::span(bytes, len)));
 }
 
@@ -35,7 +37,7 @@ ScopedJavaLocalRef<jbyteArray> ToJavaByteArray(
                           reinterpret_cast<const jbyte*>(bytes.data()));
   CheckException(env);
 
-  return ScopedJavaLocalRef<jbyteArray>(env, byte_array);
+  return ScopedJavaLocalRef<jbyteArray>::Adopt(env, byte_array);
 }
 
 ScopedJavaLocalRef<jbyteArray> ToJavaByteArray(JNIEnv* env,
@@ -66,7 +68,7 @@ ScopedJavaLocalRef<jbooleanArray> ToJavaBooleanArray(JNIEnv* env,
                              reinterpret_cast<const jboolean*>(bools.data()));
   CheckException(env);
 
-  return ScopedJavaLocalRef<jbooleanArray>(env, boolean_array);
+  return ScopedJavaLocalRef<jbooleanArray>::Adopt(env, boolean_array);
 }
 
 ScopedJavaLocalRef<jintArray> ToJavaIntArray(JNIEnv* env,
@@ -81,7 +83,7 @@ ScopedJavaLocalRef<jintArray> ToJavaIntArray(JNIEnv* env,
                          reinterpret_cast<const jint*>(ints.data()));
   CheckException(env);
 
-  return ScopedJavaLocalRef<jintArray>(env, int_array);
+  return ScopedJavaLocalRef<jintArray>::Adopt(env, int_array);
 }
 
 // Returns a new Java long array converted from the given int64_t array.
@@ -99,7 +101,7 @@ BASE_EXPORT ScopedJavaLocalRef<jlongArray> ToJavaLongArray(
                           reinterpret_cast<const jlong*>(longs.data()));
   CheckException(env);
 
-  return ScopedJavaLocalRef<jlongArray>(env, long_array);
+  return ScopedJavaLocalRef<jlongArray>::Adopt(env, long_array);
 }
 
 BASE_EXPORT ScopedJavaLocalRef<jfloatArray> ToJavaFloatArray(
@@ -117,7 +119,7 @@ BASE_EXPORT ScopedJavaLocalRef<jfloatArray> ToJavaFloatArray(
                            reinterpret_cast<const jfloat*>(floats.data()));
   CheckException(env);
 
-  return ScopedJavaLocalRef<jfloatArray>(env, float_array);
+  return ScopedJavaLocalRef<jfloatArray>::Adopt(env, float_array);
 }
 
 BASE_EXPORT ScopedJavaLocalRef<jdoubleArray> ToJavaDoubleArray(
@@ -135,7 +137,7 @@ BASE_EXPORT ScopedJavaLocalRef<jdoubleArray> ToJavaDoubleArray(
                             reinterpret_cast<const jdouble*>(doubles.data()));
   CheckException(env);
 
-  return ScopedJavaLocalRef<jdoubleArray>(env, double_array);
+  return ScopedJavaLocalRef<jdoubleArray>::Adopt(env, double_array);
 }
 
 BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfObjects(
@@ -149,7 +151,7 @@ BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfObjects(
   for (size_t i = 0; i < v.size(); ++i) {
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), v[i].obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfObjects(
@@ -168,7 +170,7 @@ BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfObjects(
   for (size_t i = 0; i < v.size(); ++i) {
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), v[i].obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToTypedJavaArrayOfObjects(
@@ -182,7 +184,7 @@ BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToTypedJavaArrayOfObjects(
   for (size_t i = 0; i < v.size(); ++i) {
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), v[i].obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToTypedJavaArrayOfObjects(
@@ -196,7 +198,7 @@ BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToTypedJavaArrayOfObjects(
   for (size_t i = 0; i < v.size(); ++i) {
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), v[i].obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfByteArray(
@@ -211,7 +213,7 @@ ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfByteArray(
     ScopedJavaLocalRef<jbyteArray> byte_array = ToJavaByteArray(env, v[i]);
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), byte_array.obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfByteArray(
@@ -226,7 +228,7 @@ ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfByteArray(
     ScopedJavaLocalRef<jbyteArray> byte_array = ToJavaByteArray(env, v[i]);
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), byte_array.obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStrings(
@@ -240,7 +242,7 @@ ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStrings(
     ScopedJavaLocalRef<jstring> item = ConvertUTF8ToJavaString(env, v[i]);
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), item.obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStringArray(
@@ -259,7 +261,7 @@ ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStringArray(
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), inner.obj());
   }
 
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStringArray(
@@ -278,7 +280,7 @@ ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStringArray(
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), inner.obj());
   }
 
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStrings(
@@ -292,7 +294,7 @@ ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfStrings(
     ScopedJavaLocalRef<jstring> item = ConvertUTF16ToJavaString(env, v[i]);
     env->SetObjectArrayElement(joa, checked_cast<jsize>(i), item.obj());
   }
-  return ScopedJavaLocalRef<jobjectArray>(env, joa);
+  return ScopedJavaLocalRef<jobjectArray>::Adopt(env, joa);
 }
 
 void AppendJavaStringArrayToStringVector(JNIEnv* env,
@@ -309,7 +311,7 @@ void AppendJavaStringArrayToStringVector(JNIEnv* env,
   out->resize(out->size() + len);
   span<std::u16string> back = span(*out).last(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jstring> str(
+    auto str = ScopedJavaLocalRef<jstring>::Adopt(
         env, static_cast<jstring>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
     ConvertJavaStringToUTF16(env, str.obj(), &back[i]);
@@ -330,7 +332,7 @@ void AppendJavaStringArrayToStringVector(JNIEnv* env,
   out->resize(out->size() + len);
   span<std::string> back = span(*out).last(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jstring> str(
+    auto str = ScopedJavaLocalRef<jstring>::Adopt(
         env, static_cast<jstring>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
     ConvertJavaStringToUTF8(env, str.obj(), &back[i]);
@@ -488,7 +490,7 @@ void JavaArrayOfByteArrayToStringVector(JNIEnv* env,
   size_t len = SafeGetArrayLength(env, array);
   out->resize(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jbyteArray> bytes_array(
+    auto bytes_array = ScopedJavaLocalRef<jbyteArray>::Adopt(
         env, static_cast<jbyteArray>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
     size_t bytes_len = SafeGetArrayLength(env, bytes_array);
@@ -515,7 +517,7 @@ void JavaArrayOfByteArrayToBytesVector(JNIEnv* env,
   const size_t len = SafeGetArrayLength(env, array);
   out->resize(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jbyteArray> bytes_array(
+    auto bytes_array = ScopedJavaLocalRef<jbyteArray>::Adopt(
         env, static_cast<jbyteArray>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
     JavaByteArrayToByteVector(env, bytes_array, &(*out)[i]);
@@ -530,7 +532,7 @@ void Java2dStringArrayTo2dStringVector(
   size_t len = SafeGetArrayLength(env, array);
   out->resize(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jobjectArray> strings_array(
+    auto strings_array = ScopedJavaLocalRef<jobjectArray>::Adopt(
         env, static_cast<jobjectArray>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
 
@@ -547,7 +549,7 @@ void Java2dStringArrayTo2dStringVector(
   size_t len = SafeGetArrayLength(env, array);
   out->resize(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jobjectArray> strings_array(
+    auto strings_array = ScopedJavaLocalRef<jobjectArray>::Adopt(
         env, static_cast<jobjectArray>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
 
@@ -563,7 +565,7 @@ void JavaArrayOfIntArrayToIntVector(JNIEnv* env,
   size_t len = SafeGetArrayLength(env, array);
   out->resize(len);
   for (size_t i = 0; i < len; ++i) {
-    ScopedJavaLocalRef<jintArray> int_array(
+    auto int_array = ScopedJavaLocalRef<jintArray>::Adopt(
         env, static_cast<jintArray>(env->GetObjectArrayElement(
                  array.obj(), checked_cast<jsize>(i))));
     JavaIntArrayToIntVector(env, int_array, &(*out)[i]);

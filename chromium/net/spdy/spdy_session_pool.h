@@ -47,6 +47,16 @@ class SpdySession;
 class StreamSocket;
 class TransportSecurityState;
 
+// Represents the initiator of a session.
+// TODO(crbug.com/406932139, crbug.com/406936736): Remove once we identify
+// the cause of bugs.
+enum class SpdySessionInitiator : uint32_t {
+  kUnknown = 0,
+  kHttpStreamFactoryJob = 1,
+  kHttpStreamPoolAttemptManager = 2,
+  kHttpProxyConnectJob = 3,
+};
+
 // This is a very simple pool for open SpdySessions.
 class NET_EXPORT SpdySessionPool
     : public NetworkChangeNotifier::IPAddressObserver,
@@ -92,7 +102,7 @@ class NET_EXPORT SpdySessionPool
 
     // Constructor - this is called by the SpdySessionPool.
     SpdySessionRequest(const SpdySessionKey& key,
-                       bool enable_ip_based_pooling,
+                       bool enable_ip_based_pooling_for_h2,
                        bool is_websocket,
                        bool is_blocking_request_for_session,
                        Delegate* delegate,
@@ -108,7 +118,9 @@ class NET_EXPORT SpdySessionPool
     void OnRemovedFromPool();
 
     const SpdySessionKey& key() const { return key_; }
-    bool enable_ip_based_pooling() const { return enable_ip_based_pooling_; }
+    bool enable_ip_based_pooling_for_h2() const {
+      return enable_ip_based_pooling_for_h2_;
+    }
     bool is_websocket() const { return is_websocket_; }
     bool is_blocking_request_for_session() const {
       return is_blocking_request_for_session_;
@@ -121,7 +133,7 @@ class NET_EXPORT SpdySessionPool
 
    private:
     const SpdySessionKey key_;
-    const bool enable_ip_based_pooling_;
+    const bool enable_ip_based_pooling_for_h2_;
     const bool is_websocket_;
     const bool is_blocking_request_for_session_;
     const raw_ptr<Delegate> delegate_;
@@ -176,7 +188,9 @@ class NET_EXPORT SpdySessionPool
       std::unique_ptr<StreamSocketHandle> stream_socket_handle,
       const NetLogWithSource& net_log,
       const MultiplexedSessionCreationInitiator session_creation_initiator,
-      base::WeakPtr<SpdySession>* session);
+      base::WeakPtr<SpdySession>* session,
+      SpdySessionInitiator spdy_session_initiator =
+          SpdySessionInitiator::kUnknown);
 
   // Just like the above method, except it takes a SocketStream instead of a
   // StreamSocketHandle, and separate connect timing information. When this
@@ -191,18 +205,20 @@ class NET_EXPORT SpdySessionPool
       const SpdySessionKey& key,
       std::unique_ptr<StreamSocket> socket_stream,
       const LoadTimingInfo::ConnectTiming& connect_timing,
-      const NetLogWithSource& net_log);
+      const NetLogWithSource& net_log,
+      SpdySessionInitiator spdy_session_initiator =
+          SpdySessionInitiator::kUnknown);
 
   // If there is an available session for |key|, return it.
   // Otherwise if there is a session to pool to based on IP address:
-  //   * if |enable_ip_based_pooling == true|,
+  //   * if |enable_ip_based_pooling_for_h2 == true|,
   //     then mark it as available for |key| and return it;
-  //   * if |enable_ip_based_pooling == false|,
+  //   * if |enable_ip_based_pooling_for_h2 == false|,
   //     then remove it from the available sessions, and return nullptr.
   // Otherwise return nullptr.
   base::WeakPtr<SpdySession> FindAvailableSession(
       const SpdySessionKey& key,
-      bool enable_ip_based_pooling,
+      bool enable_ip_based_pooling_for_h2,
       bool is_websocket,
       const NetLogWithSource& net_log);
 
@@ -216,9 +232,9 @@ class NET_EXPORT SpdySessionPool
 
   // Returns true if there is an available session for `key`. Otherwise, if
   // there is a session to pool to based on IP address, returns true if
-  // `enable_ip_based_pooling` is true. Otherwise returns false.
+  // `enable_ip_based_pooling_for_h2` is true. Otherwise returns false.
   bool HasAvailableSession(const SpdySessionKey& key,
-                           bool enable_ip_based_pooling,
+                           bool enable_ip_based_pooling_for_h2,
                            bool is_websocket) const;
 
   // Just like FindAvailableSession.
@@ -248,7 +264,7 @@ class NET_EXPORT SpdySessionPool
   // all requests for a session have been successfully responded to.
   base::WeakPtr<SpdySession> RequestSession(
       const SpdySessionKey& key,
-      bool enable_ip_based_pooling,
+      bool enable_ip_based_pooling_for_h2,
       bool is_websocket,
       const NetLogWithSource& net_log,
       base::RepeatingClosure on_blocking_request_destroyed_callback,
@@ -404,7 +420,8 @@ class NET_EXPORT SpdySessionPool
   std::unique_ptr<SpdySession> CreateSession(
       const SpdySessionKey& key,
       NetLog* net_log,
-      const MultiplexedSessionCreationInitiator session_creation_initiator);
+      const MultiplexedSessionCreationInitiator session_creation_initiator,
+      SpdySessionInitiator spdy_session_initiator);
   // Adds a new session previously created with CreateSession to the pool.
   // |source_net_log| is the NetLog for the object that created the session.
   base::expected<base::WeakPtr<SpdySession>, int> InsertSession(

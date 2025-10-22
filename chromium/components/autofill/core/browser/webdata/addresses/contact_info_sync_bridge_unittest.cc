@@ -10,15 +10,18 @@
 #include "base/files/scoped_temp_dir.h"
 #include "base/run_loop.h"
 #include "base/test/bind.h"
+#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile.h"
 #include "components/autofill/core/browser/data_model/addresses/autofill_profile_test_api.h"
+#include "components/autofill/core/browser/test_utils/autofill_test_utils.h"
 #include "components/autofill/core/browser/test_utils/test_autofill_clock.h"
 #include "components/autofill/core/browser/webdata/addresses/address_autofill_table.h"
 #include "components/autofill/core/browser/webdata/addresses/contact_info_sync_util.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
 #include "components/autofill/core/browser/webdata/mock_autofill_webdata_backend.h"
+#include "components/autofill/core/common/autofill_features.h"
 #include "components/sync/base/features.h"
 #include "components/sync/model/data_batch.h"
 #include "components/sync/test/mock_data_type_local_change_processor.h"
@@ -42,7 +45,7 @@ constexpr char kInvalidGUID[] = "1234";
 // Matches `syncer::EntityData*` and expects that the specifics of it match
 // the `expected_profile`.
 MATCHER_P(ContactInfoSpecificsEqualsProfile, expected_profile, "") {
-  AutofillProfile arg_profile = *CreateAutofillProfileFromContactInfoSpecifics(
+  AutofillProfile arg_profile = CreateAutofillProfileFromContactInfoSpecifics(
       arg->specifics.contact_info());
   if (!test_api(arg_profile).EqualsIncludingUsageStats(expected_profile)) {
     *result_listener << "entry\n[" << arg_profile << "]\n"
@@ -69,7 +72,7 @@ std::vector<AutofillProfile> ExtractAutofillProfilesFromDataBatch(
   std::vector<AutofillProfile> profiles;
   while (batch->HasNext()) {
     const syncer::KeyAndData& data_pair = batch->Next();
-    profiles.push_back(*CreateAutofillProfileFromContactInfoSpecifics(
+    profiles.push_back(CreateAutofillProfileFromContactInfoSpecifics(
         data_pair.second->specifics.contact_info()));
   }
   return profiles;
@@ -264,59 +267,35 @@ TEST_F(ContactInfoSyncBridgeTest,
             profile.usage_history().modification_date());
 }
 
-// Tests that `ApplyIncrementalSyncChanges()` ensures that at most one H/W
-// address exists after a profile addition.
+// Tests that incomplete Home and Work addresses are dropped and removed from
+// local storage, if necessary.
 TEST_F(ContactInfoSyncBridgeTest,
-       ApplyIncrementalSyncChanges_DuplicateHomeAndWork_Add) {
-  ASSERT_TRUE(StartSyncing(/*remote_profiles=*/{}));
+       ApplyIncrementalSyncChanges_HomeAndWorkCompleteness) {
+  base::test::ScopedFeatureList feature(
+      features::kAutofillEnableSupportForHomeAndWork);
+  AutofillProfile remote = test::GetFullProfile();
+  test_api(remote).set_record_type(AutofillProfile::RecordType::kAccountHome);
+  base::HistogramTester histogram_tester;
+  ASSERT_TRUE(StartSyncing({remote}));
 
-  // Simulate that a home address exists and that a new home address with a
-  // different storage key is received from sync.
-  AutofillProfile local =
-      TestProfile(kGUID1, AutofillProfile::RecordType::kAccountHome);
-  AddAutofillProfilesToTable({local});
+  // Since `remote` is a complete H/W profile, expect it in local storage.
+  histogram_tester.ExpectUniqueSample("Autofill.HomeAndWork.ProfileFiltered",
+                                      false, 1);
+  EXPECT_THAT(GetAllDataFromTable(), ElementsAre(remote));
 
-  AutofillProfile remote =
-      TestProfile(kGUID2, AutofillProfile::RecordType::kAccountHome);
+  // Receive an update for remote that makes it incomplete.
+  remote.ClearFields({ADDRESS_HOME_CITY});
   syncer::EntityChangeList entity_change_list;
-  entity_change_list.push_back(
-      syncer::EntityChange::CreateAdd(kGUID2, ProfileToEntity(remote)));
-  // `ApplyIncrementalSyncChanges()` returns an error if it fails.
+  entity_change_list.push_back(syncer::EntityChange::CreateUpdate(
+      remote.guid(), ProfileToEntity(remote)));
   EXPECT_FALSE(bridge().ApplyIncrementalSyncChanges(
       bridge().CreateMetadataChangeList(), std::move(entity_change_list)));
 
-  // Expect that `local` still exists, but is no longer kAccountHome.
-  EXPECT_THAT(GetAllDataFromTable(),
-              UnorderedElementsAre(local.DowngradeToAccountProfile(), remote));
-}
-
-// Tests that `ApplyIncrementalSyncChanges()` ensures that at most one H/W
-// address exists after a profile gets updated to H/W.
-TEST_F(ContactInfoSyncBridgeTest,
-       ApplyIncrementalSyncChanges_DuplicateHomeAndWork_Update) {
-  ASSERT_TRUE(StartSyncing(/*remote_profiles=*/{}));
-
-  // Simulate that a home address exists and that an existing regular address
-  // gets upgraded to home.
-  AutofillProfile local_home =
-      TestProfile(kGUID1, AutofillProfile::RecordType::kAccountHome);
-  AutofillProfile local_regular =
-      TestProfile(kGUID2, AutofillProfile::RecordType::kAccountHome);
-  AddAutofillProfilesToTable({local_home, local_regular});
-
-  AutofillProfile remote =
-      TestProfile(kGUID2, AutofillProfile::RecordType::kAccountHome);
-  syncer::EntityChangeList entity_change_list;
-  entity_change_list.push_back(
-      syncer::EntityChange::CreateUpdate(kGUID2, ProfileToEntity(remote)));
-  // `ApplyIncrementalSyncChanges()` returns an error if it fails.
-  EXPECT_FALSE(bridge().ApplyIncrementalSyncChanges(
-      bridge().CreateMetadataChangeList(), std::move(entity_change_list)));
-
-  // Expect that `local_home` still exists, but is no longer kAccountHome.
+  // Expect that the profile was removed locally.
   EXPECT_THAT(
-      GetAllDataFromTable(),
-      UnorderedElementsAre(local_home.DowngradeToAccountProfile(), remote));
+      histogram_tester.GetAllSamples("Autofill.HomeAndWork.ProfileFiltered"),
+      BucketsAre(base::Bucket(false, 1), base::Bucket(true, 1)));
+  EXPECT_THAT(GetAllDataFromTable(), testing::IsEmpty());
 }
 
 // Tests that `GetDataForCommit()` returns all local profiles of matching GUID.
@@ -351,6 +330,16 @@ TEST_F(ContactInfoSyncBridgeTest, AutofillProfileChange_IgnoresLocalProfiles) {
   bridge().AutofillProfileChanged(
       {AutofillProfileChange::ADD, kGUID1,
        TestProfile(kGUID1, AutofillProfile::RecordType::kLocalOrSyncable)});
+}
+
+// Tests that AccountNameEmail profiles are not synced.
+TEST_F(ContactInfoSyncBridgeTest,
+       AutofillProfileChange_IgnoresAccountNameEmailProfiles) {
+  ASSERT_TRUE(StartSyncing(/*remote_profiles=*/{}));
+  EXPECT_CALL(mock_processor(), Put).Times(0);
+  bridge().AutofillProfileChanged(
+      {AutofillProfileChange::ADD, kGUID1,
+       TestProfile(kGUID1, AutofillProfile::RecordType::kAccountNameEmail)});
 }
 
 // Tests that new local profiles are pushed to Sync.
@@ -407,6 +396,25 @@ TEST_F(ContactInfoSyncBridgeTest, AutofillProfileChange_HideInAutofill) {
               Put(kGUID1, HiddenContactInfoSpecificsEqualsProfile(profile), _));
 
   bridge().AutofillProfileChanged(change);
+}
+
+// Tests that no changes for Home and Work addresses are uploaded.
+TEST_F(ContactInfoSyncBridgeTest, AutofillProfileChange_HomeAndWork) {
+  ASSERT_TRUE(StartSyncing(/*remote_profiles=*/{}));
+
+  EXPECT_CALL(mock_processor(), Put).Times(0);
+  EXPECT_CALL(mock_processor(), Delete).Times(0);
+
+  // None of these changes should trigger a write.
+  bridge().AutofillProfileChanged(AutofillProfileChange(
+      AutofillProfileChange::ADD, kGUID1,
+      TestProfile(kGUID1, AutofillProfile::RecordType::kAccountHome)));
+  bridge().AutofillProfileChanged(AutofillProfileChange(
+      AutofillProfileChange::REMOVE, kGUID1,
+      TestProfile(kGUID1, AutofillProfile::RecordType::kAccountHome)));
+  bridge().AutofillProfileChanged(AutofillProfileChange(
+      AutofillProfileChange::UPDATE, kGUID2,
+      TestProfile(kGUID2, AutofillProfile::RecordType::kAccountWork)));
 }
 
 // Tests that `ApplyDisableSyncChanges()` clears all data in AutofillTable when

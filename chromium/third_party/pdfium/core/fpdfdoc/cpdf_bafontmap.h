@@ -22,7 +22,7 @@ class CPDF_BAFontMap final : public IPVT_FontMap {
  public:
   static FX_Charset GetNativeCharset();
 
-  CPDF_BAFontMap(CPDF_Document* pDocument,
+  CPDF_BAFontMap(CPDF_Document* document,
                  RetainPtr<CPDF_Dictionary> pAnnotDict,
                  const ByteString& sAPType);
   ~CPDF_BAFontMap() override;
@@ -42,7 +42,7 @@ class CPDF_BAFontMap final : public IPVT_FontMap {
     ~Data();
 
     FX_Charset nCharset = FX_Charset::kANSI;
-    RetainPtr<CPDF_Font> pFont;
+    RetainPtr<CPDF_Font> font;
     ByteString sFontName;
   };
 
@@ -57,7 +57,7 @@ class CPDF_BAFontMap final : public IPVT_FontMap {
                                               ByteString* sFontAlias,
                                               FX_Charset nCharset);
   RetainPtr<CPDF_Font> GetAnnotDefaultFont(ByteString* sAlias);
-  void AddFontToAnnotDict(const RetainPtr<CPDF_Font>& pFont,
+  void AddFontToAnnotDict(const RetainPtr<CPDF_Font>& font,
                           const ByteString& sAlias);
 
   bool KnowWord(int32_t nFontIndex, uint16_t word);
@@ -65,7 +65,7 @@ class CPDF_BAFontMap final : public IPVT_FontMap {
   int32_t GetFontIndex(const ByteString& sFontName,
                        FX_Charset nCharset,
                        bool bFind);
-  int32_t AddFontData(const RetainPtr<CPDF_Font>& pFont,
+  int32_t AddFontData(const RetainPtr<CPDF_Font>& font,
                       const ByteString& sFontAlias,
                       FX_Charset nCharset);
 
@@ -77,13 +77,13 @@ class CPDF_BAFontMap final : public IPVT_FontMap {
   RetainPtr<CPDF_Font> AddStandardFont(ByteString sFontName);
   RetainPtr<CPDF_Font> AddSystemFont(ByteString sFontName, FX_Charset nCharset);
 
-  std::vector<std::unique_ptr<Data>> m_Data;
-  std::vector<std::unique_ptr<Native>> m_NativeFont;
-  UnownedPtr<CPDF_Document> const m_pDocument;
-  RetainPtr<CPDF_Dictionary> const m_pAnnotDict;
-  RetainPtr<CPDF_Font> m_pDefaultFont;
-  ByteString m_sDefaultFontName;
-  const ByteString m_sAPType;
+  std::vector<std::unique_ptr<Data>> data_;
+  std::vector<std::unique_ptr<Native>> native_font_;
+  UnownedPtr<CPDF_Document> const document_;
+  RetainPtr<CPDF_Dictionary> const annot_dict_;
+  RetainPtr<CPDF_Font> default_font_;
+  ByteString default_font_name_;
+  const ByteString ap_type_;
 };
 
 #endif  // CORE_FPDFDOC_CPDF_BAFONTMAP_H_

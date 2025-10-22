@@ -629,6 +629,10 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
       GattConnectionCallback callback,
       std::optional<BluetoothUUID> service_uuid = std::nullopt);
 
+  // Disconnects GATT connection on platforms that maintain a specific GATT
+  // connection.
+  virtual void DisconnectGatt() = 0;
+
   // Set the gatt services discovery complete flag for this device.
   virtual void SetGattServicesDiscoveryComplete(bool complete);
 
@@ -652,6 +656,9 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   // Returns the time of the last call to UpdateTimestamp(), or base::Time() if
   // it hasn't been called yet.
   virtual base::Time GetLastUpdateTime() const;
+
+  // Update last_update_time_ so that the device appears as expired.
+  void SetAsExpiredForTesting();
 
 #if BUILDFLAG(IS_APPLE)
   // Returns true if this device is a Low Energy device.
@@ -726,8 +733,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   FRIEND_TEST_ALL_PREFIXES(BluetoothTest,
                            BluetoothGattConnection_DisconnectGatt_Cleanup);
   FRIEND_TEST_ALL_PREFIXES(BluetoothTest, GetName_NullName);
-  FRIEND_TEST_ALL_PREFIXES(BluetoothTest, RemoveOutdatedDevices);
-  FRIEND_TEST_ALL_PREFIXES(BluetoothTest, RemoveOutdatedDeviceGattConnect);
 
   FRIEND_TEST_ALL_PREFIXES(
       BluetoothTestWinrt,
@@ -788,10 +793,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   // be called if the subclass sets |supports_service_specific_discovery_|.
   virtual void UpgradeToFullDiscovery();
 
-  // Disconnects GATT connection on platforms that maintain a specific GATT
-  // connection.
-  virtual void DisconnectGatt() = 0;
-
   // Returns a |BluetoothGattConnection| object that represents a reference to a
   // GATT connection to this device.
   virtual std::unique_ptr<BluetoothGattConnection>
@@ -812,9 +813,6 @@ class DEVICE_BLUETOOTH_EXPORT BluetoothDevice {
   // at creation & deletion.
   void AddGattConnection(BluetoothGattConnection*);
   void RemoveGattConnection(BluetoothGattConnection*);
-
-  // Update last_update_time_ so that the device appears as expired.
-  void SetAsExpiredForTesting();
 
   // Raw pointer to adapter owning this device object. Subclasses use platform
   // specific pointers via adapter_.

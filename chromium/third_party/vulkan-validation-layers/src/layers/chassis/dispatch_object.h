@@ -36,6 +36,7 @@
 #include "generated/vk_extension_helper.h"
 #include "generated/vk_layer_dispatch_table.h"
 #include "layer_object_id.h"
+#include "state_tracker/special_supported.h"
 
 // To avoid re-hashing unique ids on each use, we precompute the hash and store the
 // hash's LSBs in the high 24 bits.
@@ -63,6 +64,7 @@ class Device;
 // Device extension properties -- storing properties gathered from VkPhysicalDeviceProperties2::pNext chain
 // TODO: this could be defined and initialized via generated code
 struct DeviceExtensionProperties {
+    VkPhysicalDevicePartitionedAccelerationStructurePropertiesNV partitioned_acceleration_structure_props;
     VkPhysicalDeviceShadingRateImagePropertiesNV shading_rate_image_props;
     VkPhysicalDeviceMeshShaderPropertiesNV mesh_shader_props_nv;
     VkPhysicalDeviceMeshShaderPropertiesEXT mesh_shader_props_ext;
@@ -75,7 +77,8 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceAccelerationStructurePropertiesKHR acc_structure_props;
     VkPhysicalDeviceFragmentDensityMapPropertiesEXT fragment_density_map_props;
     VkPhysicalDeviceFragmentDensityMap2PropertiesEXT fragment_density_map2_props;
-    VkPhysicalDeviceFragmentDensityMapOffsetPropertiesQCOM fragment_density_map_offset_props;
+    VkPhysicalDeviceFragmentDensityMapOffsetPropertiesEXT fragment_density_map_offset_props;
+    VkPhysicalDeviceFragmentDensityMapLayeredPropertiesVALVE fragment_density_map_layered_props;
     VkPhysicalDevicePerformanceQueryPropertiesKHR performance_query_props;
     VkPhysicalDeviceSampleLocationsPropertiesEXT sample_locations_props;
     VkPhysicalDeviceCustomBorderColorPropertiesEXT custom_border_color_props;
@@ -102,6 +105,8 @@ struct DeviceExtensionProperties {
     VkPhysicalDeviceCooperativeVectorPropertiesNV cooperative_vector_props_nv;
     VkPhysicalDeviceRenderPassStripedPropertiesARM renderpass_striped_props;
     VkPhysicalDeviceExternalMemoryHostPropertiesEXT external_memory_host_props;
+    VkPhysicalDeviceMaintenance9PropertiesKHR maintenance9_props;
+    VkPhysicalDeviceTensorPropertiesARM tensor_properties;
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     VkPhysicalDeviceExternalFormatResolvePropertiesANDROID android_format_resolve_props;
 #endif
@@ -130,17 +135,7 @@ class StatelessDeviceData {
     std::vector<VkImageLayout> host_imape_copy_props_copy_dst_layouts{};
     DeviceExtensionProperties phys_dev_ext_props = {};
 
-    // Some extensions/features changes the behavior of the app/layers/spec if present.
-    // So it needs its own special boolean unlike the enabled_fatures.
-    bool has_format_feature2;  // VK_KHR_format_feature_flags2
-    // VK_EXT_pipeline_robustness was designed to be a subset of robustness extensions
-    // Enabling the other robustness features can reduce performance on GPU, so just the
-    // support is needed to check
-    bool has_robust_image_access;  // VK_EXT_image_robustness
-    // Validation requires special handling for VkPhysicalDeviceRobustness2FeaturesEXT, because for some cases robustness features
-    // // need to only be supported, not enabled
-    bool has_robust_image_access2;   // VK_EXT_robustness2
-    bool has_robust_buffer_access2;  // VK_EXT_robustness2
+    SpecialSupported special_supported;
 };
 
 namespace dispatch {
@@ -156,6 +151,7 @@ void SetData(VkDevice dev, std::unique_ptr<Device>&&);
 Device* GetData(VkDevice);
 Device* GetData(VkQueue);
 Device* GetData(VkCommandBuffer);
+Device* GetData(VkExternalComputeQueueNV);
 void FreeData(void* key, VkDevice device);
 
 void FreeAllData();
@@ -174,8 +170,8 @@ struct Settings {
     GpuAVSettings gpuav_settings = {};
     SyncValSettings syncval_settings = {};
 
-    CHECK_DISABLED disabled = {};
-    CHECK_ENABLED enabled = {};
+    ValidationDisabled disabled = {};
+    ValidationEnabled enabled = {};
 };
 
 class HandleWrapper : public Logger {

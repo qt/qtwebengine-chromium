@@ -15,41 +15,43 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from typing import List
+from typing import List, Mapping, Optional
+
+from selenium.types import SubprocessStdAlias
 from selenium.webdriver.chromium import service
 
 
-DEFAULT_EXECUTEABLE_PATH = 'msedgedriver'
-
-
 class Service(service.ChromiumService):
+    """A Service class that is responsible for the starting and stopping of
+    `msedgedriver`.
 
-    def __init__(self, executable_path: str = DEFAULT_EXECUTEABLE_PATH,
-                 port: int = 0, verbose: bool = False, log_path: str = None,
-                 service_args: List[str] = None, env=None):
-        """
-        Creates a new instance of the EdgeDriver service.
-        EdgeDriver provides an interface for Microsoft WebDriver to use
-        with Microsoft Edge.
+    :param executable_path: install path of the msedgedriver executable, defaults to `msedgedriver`.
+    :param port: Port for the service to run on, defaults to 0 where the operating system will decide.
+    :param log_output: (Optional) int representation of STDOUT/DEVNULL, any IO instance or String path to file.
+    :param service_args: (Optional) List of args to be passed to the subprocess when launching the executable.
+    :param env: (Optional) Mapping of environment variables for the new process, defaults to `os.environ`.
+    :param driver_path_env_key: (Optional) Environment variable to use to get the path to the driver executable.
+    """
 
-        :Args:
-         - executable_path : Path to the Microsoft WebDriver binary.
-         - port : Run the remote service on a specified port. Defaults to 0, which binds to a random open port
-           of the system's choosing.
-         - verbose : Whether to make the webdriver more verbose (passes the --verbose option to the binary).
-           Defaults to False.
-         - log_path : Optional path for the webdriver binary to log to. Defaults to None which disables logging.
-         - service_args : List of args to pass to the WebDriver service.
-        """
+    def __init__(
+        self,
+        executable_path: Optional[str] = None,
+        port: int = 0,
+        log_output: Optional[SubprocessStdAlias] = None,
+        service_args: Optional[List[str]] = None,
+        env: Optional[Mapping[str, str]] = None,
+        driver_path_env_key: Optional[str] = None,
+        **kwargs,
+    ) -> None:
         self.service_args = service_args or []
+        driver_path_env_key = driver_path_env_key or "SE_EDGEDRIVER"
 
-        if verbose:
-            self.service_args.append("--verbose")
-
-        super(Service, self).__init__(
-            executable_path,
-            port,
-            service_args,
-            log_path,
-            env,
-            "Please download from https://developer.microsoft.com/en-us/microsoft-edge/tools/webdriver/")
+        super().__init__(
+            executable_path=executable_path,
+            port=port,
+            service_args=service_args,
+            log_output=log_output,
+            env=env,
+            driver_path_env_key=driver_path_env_key,
+            **kwargs,
+        )

@@ -17,7 +17,6 @@
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
 #include "cc/metrics/video_playback_roughness_reporter.h"
-#include "components/viz/common/features.h"
 #include "components/viz/common/resources/resource_id.h"
 #include "components/viz/common/resources/returned_resource.h"
 #include "components/viz/common/surfaces/frame_sink_bundle_id.h"
@@ -68,17 +67,6 @@ cc::FrameInfo CreateFrameInfo(cc::FrameInfo::FrameFinalState final_state) {
   return frame_info;
 }
 
-// Helper method for creating manual ack with damage and prefered frame
-// interval.
-viz::BeginFrameAck CreateManualAckWithDamageAndPreferredFrameInterval(
-    cc::VideoFrameProvider* video_frame_provider) {
-  auto begin_frame_ack = viz::BeginFrameAck::CreateManualAckWithDamage();
-  begin_frame_ack.preferred_frame_interval =
-      video_frame_provider ? video_frame_provider->GetPreferredRenderInterval()
-                           : viz::BeginFrameArgs::MinInterval();
-  return begin_frame_ack;
-}
-
 void RecordUmaPreSubmitBufferingDelay(bool is_media_stream,
                                       base::TimeDelta delay) {
   if (is_media_stream) {
@@ -123,14 +111,6 @@ class VideoFrameSubmitter::FrameSinkBundleProxy
     bundle_->SetNeedsBeginFrame(frame_sink_id_.sink_id(), needs_begin_frame);
   }
 
-  void SetWantsBeginFrameAcks() override {
-    if (!bundle_) {
-      return;
-    }
-
-    bundle_->SetWantsBeginFrameAcks(frame_sink_id_.sink_id());
-  }
-
   // Not used by VideoFrameSubmitter.
   void SetWantsAnimateOnlyBeginFrames() override { NOTREACHED(); }
   void SetAutoNeedsBeginFrame() override { NOTREACHED(); }
@@ -150,14 +130,7 @@ class VideoFrameSubmitter::FrameSinkBundleProxy
   }
 
   // Not used by VideoFrameSubmitter.
-  void SubmitCompositorFrameSync(
-      const viz::LocalSurfaceId& local_surface_id,
-      viz::CompositorFrame frame,
-      std::optional<viz::HitTestRegionList> hit_test_region_list,
-      uint64_t submit_time,
-      SubmitCompositorFrameSyncCallback callback) override {
-    NOTREACHED();
-  }
+  void NotifyNewLocalSurfaceIdExpectedWhilePaused() override { NOTREACHED(); }
 
   void DidNotProduceFrame(const viz::BeginFrameAck& ack) override {
     if (!bundle_) {
@@ -166,16 +139,9 @@ class VideoFrameSubmitter::FrameSinkBundleProxy
     bundle_->DidNotProduceFrame(frame_sink_id_.sink_id(), ack);
   }
 
-  void InitializeCompositorFrameSinkType(
-      viz::mojom::blink::CompositorFrameSinkType type) override {
-    if (!bundle_) {
-      return;
-    }
-    bundle_->InitializeCompositorFrameSinkType(frame_sink_id_.sink_id(), type);
-  }
-
   void BindLayerContext(
-      viz::mojom::blink::PendingLayerContextPtr context) override {}
+      viz::mojom::blink::PendingLayerContextPtr context,
+      viz::mojom::blink::LayerContextSettingsPtr settings) override {}
 
 #if BUILDFLAG(IS_ANDROID)
   void SetThreads(const WTF::Vector<viz::Thread>& threads) override {
@@ -198,10 +164,8 @@ VideoFrameSubmitter::VideoFrameSubmitter(
       resource_provider_(std::move(resource_provider)),
       roughness_reporter_(std::make_unique<cc::VideoPlaybackRoughnessReporter>(
           std::move(roughness_reporting_callback))),
-      frame_trackers_(false, nullptr),
-      frame_sorter_(base::BindRepeating(
-          &cc::FrameSequenceTrackerCollection::AddSortedFrame,
-          base::Unretained(&frame_trackers_))) {
+      frame_trackers_(false) {
+  frame_sorter_.AddObserver(&frame_trackers_);
   DETACH_FROM_THREAD(thread_checker_);
 }
 
@@ -244,7 +208,7 @@ void VideoFrameSubmitter::StopRendering() {
   is_rendering_ = false;
 
   frame_trackers_.StopSequence(cc::FrameSequenceTrackerType::kVideo);
-  frame_sorter_.Reset();
+  frame_sorter_.Reset(/*reset_fcp=*/false);
 
   UpdateSubmissionState();
 }
@@ -394,14 +358,9 @@ void VideoFrameSubmitter::DidReceiveCompositorFrameAck(
 void VideoFrameSubmitter::OnBeginFrame(
     const viz::BeginFrameArgs& args,
     const WTF::HashMap<uint32_t, viz::FrameTimingDetails>& timing_details,
-    bool frame_ack,
     WTF::Vector<viz::ReturnedResource> resources) {
-  if (features::IsOnBeginFrameAcksEnabled()) {
-    if (frame_ack) {
-      DidReceiveCompositorFrameAck(std::move(resources));
-    } else if (!resources.empty()) {
-      ReclaimResources(std::move(resources));
-    }
+  if (!resources.empty()) {
+    ReclaimResources(std::move(resources));
   }
 
   DCHECK_CALLED_ON_VALID_THREAD(thread_checker_);
@@ -522,10 +481,6 @@ void VideoFrameSubmitter::OnBeginFrame(
   // Don't call UpdateCurrentFrame() for MISSED BeginFrames. Also don't call it
   // after StopRendering() has been called (forbidden by API contract).
   viz::BeginFrameAck current_begin_frame_ack(args, false);
-  current_begin_frame_ack.preferred_frame_interval =
-      video_frame_provider_
-          ? video_frame_provider_->GetPreferredRenderInterval()
-          : viz::BeginFrameArgs::MinInterval();
   if (args.type == viz::BeginFrameArgs::MISSED || !is_rendering_) {
     compositor_frame_sink_->DidNotProduceFrame(current_begin_frame_ack);
     frame_sorter_.AddFrameResult(
@@ -669,7 +624,6 @@ void VideoFrameSubmitter::StartSubmitting() {
         remote_frame_sink_.BindNewPipeAndPassReceiver());
     compositor_frame_sink_ = remote_frame_sink_.get();
   }
-  compositor_frame_sink_->SetWantsBeginFrameAcks();
 
   if (!surface_embedder_.is_bound()) {
     provider->ConnectToEmbedder(frame_sink_id_,
@@ -680,10 +634,6 @@ void VideoFrameSubmitter::StartSubmitting() {
 
   remote_frame_sink_.set_disconnect_handler(base::BindOnce(
       &VideoFrameSubmitter::OnContextLost, base::Unretained(this)));
-
-  compositor_frame_sink_->InitializeCompositorFrameSinkType(
-      is_media_stream_ ? viz::mojom::CompositorFrameSinkType::kMediaStream
-                       : viz::mojom::CompositorFrameSinkType::kVideo);
 
 #if BUILDFLAG(IS_ANDROID)
   WTF::Vector<viz::Thread> threads;
@@ -869,8 +819,7 @@ void VideoFrameSubmitter::SubmitEmptyFrame() {
     return;
 
   last_frame_id_.reset();
-  auto begin_frame_ack =
-      CreateManualAckWithDamageAndPreferredFrameInterval(video_frame_provider_);
+  auto begin_frame_ack = viz::BeginFrameAck::CreateManualAckWithDamage();
   auto frame_token = ++next_frame_token_;
   auto compositor_frame = CreateCompositorFrame(
       frame_token, begin_frame_ack, nullptr, media::kNoTransformation);
@@ -900,8 +849,7 @@ void VideoFrameSubmitter::SubmitSingleFrame() {
   if (!video_frame)
     return;
 
-  if (SubmitFrame(CreateManualAckWithDamageAndPreferredFrameInterval(
-                      video_frame_provider_),
+  if (SubmitFrame(viz::BeginFrameAck::CreateManualAckWithDamage(),
                   std::move(video_frame))) {
     video_frame_provider_->PutCurrentFrame();
   }
@@ -964,7 +912,6 @@ viz::CompositorFrame VideoFrameSubmitter::CreateCompositorFrame(
   // definitely emitting a CompositorFrame that damages the entire surface.
   compositor_frame.metadata.begin_frame_ack.has_damage = true;
   compositor_frame.metadata.device_scale_factor = 1;
-  compositor_frame.metadata.may_contain_video = true;
   // If we're submitting frames even if we're not visible, then also turn off
   // throttling.  This is for picture in picture, which can be throttled if the
   // opener window is minimized without this.

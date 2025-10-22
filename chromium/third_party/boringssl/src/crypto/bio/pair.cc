@@ -21,6 +21,7 @@
 #include <openssl/mem.h>
 
 #include "../internal.h"
+#include "internal.h"
 
 
 namespace {
@@ -313,33 +314,32 @@ static int bio_make_pair(BIO *bio1, BIO *bio2, size_t writebuf1_len,
 }
 
 static long bio_ctrl(BIO *bio, int cmd, long num, void *ptr) {
-  long ret;
   struct bio_bio_st *b = reinterpret_cast<bio_bio_st *>(bio->ptr);
-
-  assert(b != NULL);
-
+  assert(b != nullptr);
   switch (cmd) {
     // Specific control codes first:
     case BIO_C_GET_WRITE_BUF_SIZE:
-      ret = (long)b->size;
-      break;
+      // TODO(crbug.com/412584975): This can overflow on 64-bit Windows. Do we
+      // need it? It implements |BIO_get_write_buf_size|, but we don't have the
+      // wrapper.
+      return static_cast<long>(b->size);
 
     case BIO_C_GET_WRITE_GUARANTEE:
       // How many bytes can the caller feed to the next write
       // without having to keep any?
-      if (b->peer == NULL || b->closed) {
-        ret = 0;
-      } else {
-        ret = (long)b->size - b->len;
+      if (b->peer == nullptr || b->closed) {
+        return 0;
       }
-      break;
+      // TODO(crbug.com/412584975): This can overflow on 64-bit Windows.
+      return static_cast<long>(b->size - b->len);
 
     case BIO_C_GET_READ_REQUEST:
       // If the peer unsuccessfully tried to read, how many bytes
       // were requested?  (As with BIO_CTRL_PENDING, that number
       // can usually be treated as boolean.)
-      ret = (long)b->request;
-      break;
+      //
+      // TODO(crbug.com/412584975): This can overflow on 64-bit Windows.
+      return static_cast<long>(b->request);
 
     case BIO_C_RESET_READ_REQUEST:
       // Reset request.  (Can be useful after read attempts
@@ -347,70 +347,65 @@ static long bio_ctrl(BIO *bio, int cmd, long num, void *ptr) {
       // e.g. when probing SSL_read to see if any data is
       // available.)
       b->request = 0;
-      ret = 1;
-      break;
+      return 1;
 
     case BIO_C_SHUTDOWN_WR:
       // similar to shutdown(..., SHUT_WR)
       b->closed = 1;
-      ret = 1;
-      break;
-
+      return 1;
 
     // Standard control codes:
     case BIO_CTRL_GET_CLOSE:
-      ret = bio->shutdown;
-      break;
+      return bio->shutdown;
 
     case BIO_CTRL_SET_CLOSE:
-      bio->shutdown = (int)num;
-      ret = 1;
-      break;
+      bio->shutdown = static_cast<int>(num);
+      return 1;
 
     case BIO_CTRL_PENDING:
-      if (b->peer != NULL) {
+      if (b->peer != nullptr) {
         struct bio_bio_st *peer_b =
             reinterpret_cast<bio_bio_st *>(b->peer->ptr);
-        ret = (long)peer_b->len;
-      } else {
-        ret = 0;
+        // TODO(crbug.com/412584975): This can overflow on 64-bit Windows.
+        return static_cast<long>(peer_b->len);
       }
-      break;
+      return 0;
 
     case BIO_CTRL_WPENDING:
-      ret = 0;
-      if (b->buf != NULL) {
-        ret = (long)b->len;
+      if (b->buf == nullptr) {
+        return 0;
       }
-      break;
+      // TODO(crbug.com/412584975): This can overflow on 64-bit Windows.
+      return static_cast<long>(b->len);
 
     case BIO_CTRL_FLUSH:
-      ret = 1;
-      break;
+      return 1;
 
     case BIO_CTRL_EOF: {
-      BIO *other_bio = reinterpret_cast<BIO *>(ptr);
-
-      if (other_bio) {
-        struct bio_bio_st *other_b =
-            reinterpret_cast<bio_bio_st *>(other_bio->ptr);
-        assert(other_b != NULL);
-        ret = other_b->len == 0 && other_b->closed;
-      } else {
-        ret = 1;
+      if (b->peer) {
+        auto *peer_b = reinterpret_cast<bio_bio_st *>(b->peer->ptr);
+        assert(peer_b != nullptr);
+        return peer_b->len == 0 && peer_b->closed;
       }
-    } break;
+      return 1;
+    }
 
     default:
-      ret = 0;
+      return 0;
   }
-  return ret;
 }
 
 
 static const BIO_METHOD methods_biop = {
-    BIO_TYPE_BIO,    "BIO pair", bio_write, bio_read, NULL /* puts */,
-    NULL /* gets */, bio_ctrl,   bio_new,   bio_free, NULL /* callback_ctrl */,
+    BIO_TYPE_BIO,
+    "BIO pair",
+    bio_write,
+    bio_read,
+    /*gets=*/nullptr,
+    bio_ctrl,
+    bio_new,
+    bio_free,
+    /*callback_ctrl=*/nullptr,
 };
 
 static const BIO_METHOD *bio_s_bio(void) { return &methods_biop; }

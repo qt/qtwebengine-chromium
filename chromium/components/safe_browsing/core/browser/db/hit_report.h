@@ -7,7 +7,9 @@
 #ifndef COMPONENTS_SAFE_BROWSING_CORE_BROWSER_DB_HIT_REPORT_H_
 #define COMPONENTS_SAFE_BROWSING_CORE_BROWSER_DB_HIT_REPORT_H_
 
-#include "components/safe_browsing/core/browser/db/util.h"
+#include <string>
+
+#include "components/safe_browsing/core/browser/db/v4_protocol_manager_util.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "url/gurl.h"
 
@@ -30,6 +32,18 @@ enum class ThreatSource {
   ANDROID_SAFEBROWSING_REAL_TIME,
   // From GmsCore SafeBrowsing API. Android only. Protocol v4 only.
   ANDROID_SAFEBROWSING,
+};
+
+// What subtype that expands more into details on what threat category
+// SBThreatType is targeting.
+enum class ThreatSubtype {
+  UNKNOWN,
+  // Scam experiment verdict 1
+  SCAM_EXPERIMENT_VERDICT_1,
+  // Scam experiment verdict 2
+  SCAM_EXPERIMENT_VERDICT_2,
+  // Scam experiment catch all enforcement
+  SCAM_EXPERIMENT_CATCH_ALL_ENFORCEMENT,
 };
 
 // Data to report about the contents of a particular threat (malware, phishing,

@@ -36,7 +36,6 @@
 import type * as ProtocolProxyApi from '../../generated/protocol-proxy-api.js';
 import * as Protocol from '../../generated/protocol.js';
 import * as Common from '../common/common.js';
-import * as Host from '../host/host.js';
 import * as Platform from '../platform/platform.js';
 import * as Root from '../root/root.js';
 
@@ -234,6 +233,7 @@ export class DOMNode {
     return [
       Protocol.DOM.PseudoType.ViewTransition,
       Protocol.DOM.PseudoType.ViewTransitionGroup,
+      Protocol.DOM.PseudoType.ViewTransitionGroupChildren,
       Protocol.DOM.PseudoType.ViewTransitionImagePair,
       Protocol.DOM.PseudoType.ViewTransitionOld,
       Protocol.DOM.PseudoType.ViewTransitionNew,
@@ -362,6 +362,7 @@ export class DOMNode {
     return [
       ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransition) || [],
       ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionGroup) || [],
+      ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionGroupChildren) || [],
       ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionImagePair) || [],
       ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionOld) || [],
       ...this.#pseudoElements.get(Protocol.DOM.PseudoType.ViewTransitionNew) || [],
@@ -405,7 +406,7 @@ export class DOMNode {
       return null;
     }
 
-    let current: (DOMNode|null) = (this as DOMNode | null);
+    let current: DOMNode|null = this;
     while (current && !current.isShadowRoot()) {
       current = current.parentNode;
     }
@@ -547,8 +548,8 @@ export class DOMNode {
     return response.getError() ? null : this.childrenInternal;
   }
 
-  async getOuterHTML(): Promise<string|null> {
-    const {outerHTML} = await this.#agent.invoke_getOuterHTML({nodeId: this.id});
+  async getOuterHTML(includeShadowDOM = false): Promise<string|null> {
+    const {outerHTML} = await this.#agent.invoke_getOuterHTML({nodeId: this.id, includeShadowDOM});
     return outerHTML;
   }
 
@@ -574,14 +575,6 @@ export class DOMNode {
     });
   }
 
-  async copyNode(): Promise<string|null> {
-    const {outerHTML} = await this.#agent.invoke_getOuterHTML({nodeId: this.id});
-    if (outerHTML !== null) {
-      Host.InspectorFrontendHost.InspectorFrontendHostInstance.copyText(outerHTML);
-    }
-    return outerHTML;
-  }
-
   path(): string {
     function getNodeKey(node: DOMNode): number|'u'|'a'|'d'|null {
       if (!node.#nodeNameInternal.length) {
@@ -603,7 +596,7 @@ export class DOMNode {
     }
 
     const path = [];
-    let node: (DOMNode|null) = (this as DOMNode | null);
+    let node: (DOMNode|null) = this;
     while (node) {
       const key = getNodeKey(node);
       if (key === null) {
@@ -806,8 +799,15 @@ export class DOMNode {
           if (!response.getError()) {
             this.#domModelInternal.markUndoableState();
           }
+          const pastedNode = this.#domModelInternal.nodeForId(response.nodeId);
+          if (pastedNode) {
+            // For every marker in this.#markers, set a marker in the copied node.
+            for (const [name, value] of this.#markers) {
+              pastedNode.setMarker(name, value);
+            }
+          }
           if (callback) {
-            callback(response.getError() || null, this.#domModelInternal.nodeForId(response.nodeId));
+            callback(response.getError() || null, pastedNode);
           }
         });
   }
@@ -838,22 +838,22 @@ export class DOMNode {
       }
 
       this.#markers.delete(name);
-      for (let node: (DOMNode|null) = (this as DOMNode | null); node; node = node.parentNode) {
+      for (let node: (DOMNode|null) = this; node; node = node.parentNode) {
         --node.#subtreeMarkerCount;
       }
-      for (let node: (DOMNode|null) = (this as DOMNode | null); node; node = node.parentNode) {
+      for (let node: (DOMNode|null) = this; node; node = node.parentNode) {
         this.#domModelInternal.dispatchEventToListeners(Events.MarkersChanged, node);
       }
       return;
     }
 
     if (this.parentNode && !this.#markers.has(name)) {
-      for (let node: (DOMNode|null) = (this as DOMNode | null); node; node = node.parentNode) {
+      for (let node: (DOMNode|null) = this; node; node = node.parentNode) {
         ++node.#subtreeMarkerCount;
       }
     }
     this.#markers.set(name, value);
-    for (let node: (DOMNode|null) = (this as DOMNode | null); node; node = node.parentNode) {
+    for (let node: (DOMNode|null) = this; node; node = node.parentNode) {
       this.#domModelInternal.dispatchEventToListeners(Events.MarkersChanged, node);
     }
   }
@@ -888,7 +888,7 @@ export class DOMNode {
     if (!url) {
       return url as Platform.DevToolsPath.UrlString;
     }
-    for (let frameOwnerCandidate: (DOMNode|null) = (this as DOMNode | null); frameOwnerCandidate;
+    for (let frameOwnerCandidate: (DOMNode|null) = this; frameOwnerCandidate;
          frameOwnerCandidate = frameOwnerCandidate.parentNode) {
       if (frameOwnerCandidate instanceof DOMDocument && frameOwnerCandidate.baseURL) {
         return Common.ParsedURL.ParsedURL.completeURL(frameOwnerCandidate.baseURL, url);
@@ -941,7 +941,7 @@ export class DOMNode {
   }
 
   enclosingElementOrSelf(): DOMNode|null {
-    let node: DOMNode|null|(DOMNode | null) = (this as DOMNode | null);
+    let node: DOMNode|null = this;
     if (node && node.nodeType() === Node.TEXT_NODE && node.parentNode) {
       node = node.parentNode;
     }
@@ -1623,9 +1623,10 @@ export class DOMModel extends SDKModel<EventTypes> {
 
   async getContainerForNode(
       nodeId: Protocol.DOM.NodeId, containerName?: string, physicalAxes?: Protocol.DOM.PhysicalAxes,
-      logicalAxes?: Protocol.DOM.LogicalAxes, queriesScrollState?: boolean): Promise<DOMNode|null> {
+      logicalAxes?: Protocol.DOM.LogicalAxes, queriesScrollState?: boolean,
+      queriesAnchored?: boolean): Promise<DOMNode|null> {
     const {nodeId: containerNodeId} = await this.agent.invoke_getContainerForNode(
-        {nodeId, containerName, physicalAxes, logicalAxes, queriesScrollState});
+        {nodeId, containerName, physicalAxes, logicalAxes, queriesScrollState, queriesAnchored});
     if (!containerNodeId) {
       return null;
     }

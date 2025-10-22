@@ -31,7 +31,6 @@ struct DrawDispatchVuid {
     Location loc() const { return Location(function); }
 
     const char* pipeline_bound_08606 = kVUIDUndefined;
-    const char* pipeline_or_shaders_bound_08607 = kVUIDUndefined;
     const char* index_binding_07312 = kVUIDUndefined;
     const char* vertex_binding_04007 = kVUIDUndefined;
     const char* vertex_binding_null_04008 = kVUIDUndefined;
@@ -57,6 +56,8 @@ struct DrawDispatchVuid {
     const char* viewport_scissor_count_03419 = kVUIDUndefined;
     const char* primitive_topology_class_07500 = kVUIDUndefined;
     const char* primitive_topology_patch_list_10286 = kVUIDUndefined;
+    const char* primitive_topology_patch_list_10747 = kVUIDUndefined;
+    const char* primitive_topology_point_size_10748 = kVUIDUndefined;
     const char* corner_sampled_address_mode_02696 = kVUIDUndefined;
     const char* imageview_atomic_02691 = kVUIDUndefined;
     const char* bufferview_atomic_07888 = kVUIDUndefined;
@@ -69,9 +70,10 @@ struct DrawDispatchVuid {
     const char* sampler_bias_offset_08611 = kVUIDUndefined;
     const char* vertex_binding_attribute_02721 = kVUIDUndefined;
     const char* dynamic_state_setting_commands_08608 = kVUIDUndefined;
-    const char* msrtss_rasterization_samples_07284 = kVUIDUndefined;
     const char* unprotected_command_buffer_02707 = kVUIDUndefined;
     const char* protected_command_buffer_02712 = kVUIDUndefined;
+    const char* compute_not_bound_10743 = kVUIDUndefined;
+    const char* compute_inside_rp_10672 = kVUIDUndefined;
     const char* ray_query_protected_cb_03635 = kVUIDUndefined;
     const char* ray_query_04617 = kVUIDUndefined;
     // TODO: Some instance values are in VkBuffer. The validation in those Cmds is skipped.
@@ -86,6 +88,7 @@ struct DrawDispatchVuid {
     const char* logic_op_04878 = kVUIDUndefined;
     const char* primitive_restart_enable_04879 = kVUIDUndefined;
     const char* primitive_restart_list_09637 = kVUIDUndefined;
+    const char* primitive_restart_patch_10909 = kVUIDUndefined;
     const char* vertex_input_binding_stride_04913 = kVUIDUndefined;
     const char* vertex_input_04914 = kVUIDUndefined;
     const char* vertex_input_08734 = kVUIDUndefined;
@@ -149,17 +152,16 @@ struct DrawDispatchVuid {
     const char* dynamic_alpha_to_one_enable_07625 = kVUIDUndefined;
     const char* dynamic_logic_op_enable_07626 = kVUIDUndefined;
     const char* dynamic_color_blend_enable_07476 = kVUIDUndefined;
-    const char* dynamic_color_blend_equation_07477 = kVUIDUndefined;
     const char* dynamic_color_write_mask_07478 = kVUIDUndefined;
+    const char* dynamic_color_blend_equation_10862 = kVUIDUndefined;
+    const char* dynamic_color_blend_equation_10863 = kVUIDUndefined;
+    const char* dynamic_color_blend_equation_10864 = kVUIDUndefined;
     const char* dynamic_rasterization_stream_07630 = kVUIDUndefined;
     const char* dynamic_conservative_rasterization_mode_07631 = kVUIDUndefined;
     const char* dynamic_extra_primitive_overestimation_size_07632 = kVUIDUndefined;
     const char* dynamic_depth_clip_enable_07633 = kVUIDUndefined;
     const char* dynamic_sample_locations_enable_07634 = kVUIDUndefined;
-    const char* dynamic_color_blend_advanced_07479 = kVUIDUndefined;
     const char* dynamic_provoking_vertex_mode_07636 = kVUIDUndefined;
-    const char* dynamic_line_rasterization_mode_07637 = kVUIDUndefined;
-    const char* dynamic_line_stipple_enable_07638 = kVUIDUndefined;
     const char* dynamic_depth_clip_negative_one_to_one_07639 = kVUIDUndefined;
     const char* dynamic_viewport_w_scaling_enable_07640 = kVUIDUndefined;
     const char* dynamic_viewport_swizzle_07641 = kVUIDUndefined;
@@ -175,7 +177,6 @@ struct DrawDispatchVuid {
     const char* dynamic_viewport_07831 = kVUIDUndefined;
     const char* dynamic_scissor_07832 = kVUIDUndefined;
     const char* dynamic_depth_bias_07834 = kVUIDUndefined;
-    const char* dynamic_line_width_07833 = kVUIDUndefined;
     const char* dynamic_line_stipple_ext_07849 = kVUIDUndefined;
     const char* dynamic_blend_constants_07835 = kVUIDUndefined;
     const char* dynamic_depth_bounds_07836 = kVUIDUndefined;
@@ -202,8 +203,6 @@ struct DrawDispatchVuid {
     const char* descriptor_buffer_bit_set_08114 = kVUIDUndefined;
     const char* descriptor_buffer_bit_not_set_08115 = kVUIDUndefined;
     const char* descriptor_buffer_set_offset_missing_08117 = kVUIDUndefined;
-    const char* image_ycbcr_sampled_06550 = kVUIDUndefined;
-    const char* image_ycbcr_offset_06551 = kVUIDUndefined;
     const char* image_view_dim_07752 = kVUIDUndefined;
     const char* image_view_numeric_format_07753 = kVUIDUndefined;
     const char* stippled_rectangular_lines_07495 = kVUIDUndefined;
@@ -213,6 +212,7 @@ struct DrawDispatchVuid {
     const char* viewport_and_scissor_with_count_03419 = kVUIDUndefined;
     const char* viewport_w_scaling_08636 = kVUIDUndefined;
     const char* shading_rate_palette_08637 = kVUIDUndefined;
+    const char* shader_object_multiview_10772 = kVUIDUndefined;
     const char* external_format_resolve_09362 = kVUIDUndefined;
     const char* external_format_resolve_09363 = kVUIDUndefined;
     const char* external_format_resolve_09364 = kVUIDUndefined;
@@ -220,24 +220,10 @@ struct DrawDispatchVuid {
     const char* external_format_resolve_09368 = kVUIDUndefined;
     const char* external_format_resolve_09369 = kVUIDUndefined;
     const char* external_format_resolve_09372 = kVUIDUndefined;
-    const char* external_format_resolve_09366 = kVUIDUndefined;
-    const char* external_format_resolve_09367 = kVUIDUndefined;
-    const char* external_format_resolve_09370 = kVUIDUndefined;
-    const char* external_format_resolve_09371 = kVUIDUndefined;
-    const char* set_color_blend_enable_08643 = kVUIDUndefined;
     const char* set_rasterization_samples_08644 = kVUIDUndefined;
-    const char* set_color_write_enable_08646 = kVUIDUndefined;
-    const char* set_color_write_enable_08647 = kVUIDUndefined;
-    const char* set_color_blend_enable_08657 = kVUIDUndefined;
-    const char* set_color_blend_equation_08658 = kVUIDUndefined;
-    const char* set_color_write_mask_08659 = kVUIDUndefined;
-    const char* set_blend_operation_advance_09416 = kVUIDUndefined;
     const char* set_line_rasterization_mode_08666 = kVUIDUndefined;
-    const char* set_line_rasterization_mode_08667 = kVUIDUndefined;
-    const char* set_line_rasterization_mode_08668 = kVUIDUndefined;
     const char* set_line_stipple_enable_08669 = kVUIDUndefined;
-    const char* set_line_stipple_enable_08670 = kVUIDUndefined;
-    const char* set_line_stipple_enable_08671 = kVUIDUndefined;
+    const char* next_stage_10745 = kVUIDUndefined;
     const char* vertex_shader_08684 = kVUIDUndefined;
     const char* tessellation_control_shader_08685 = kVUIDUndefined;
     const char* tessellation_evaluation_shader_08686 = kVUIDUndefined;
@@ -249,15 +235,13 @@ struct DrawDispatchVuid {
     const char* task_mesh_shader_08694 = kVUIDUndefined;
     const char* task_mesh_shader_08695 = kVUIDUndefined;
     const char* vert_task_mesh_shader_08696 = kVUIDUndefined;
+    const char* bound_non_mesh_10680 = kVUIDUndefined;
     const char* linked_shaders_08698 = kVUIDUndefined;
     const char* linked_shaders_08699 = kVUIDUndefined;
     const char* shaders_push_constants_08878 = kVUIDUndefined;
     const char* shaders_descriptor_layouts_08879 = kVUIDUndefined;
     const char* draw_shaders_no_task_mesh_08885 = kVUIDUndefined;
     const char* set_line_width_08617 = kVUIDUndefined;
-    const char* set_line_width_08618 = kVUIDUndefined;
-    const char* set_blend_constants_08621 = kVUIDUndefined;
-    const char* set_line_width_08619 = kVUIDUndefined;
     const char* set_viewport_with_count_08642 = kVUIDUndefined;
     const char* alpha_component_word_08920 = kVUIDUndefined;
     const char* color_write_mask_09116 = kVUIDUndefined;
@@ -272,8 +256,8 @@ struct DrawDispatchVuid {
     const char* set_fragment_shading_rate_09238 = kVUIDUndefined;
     const char* rasterization_samples_07935 = kVUIDUndefined;
     const char* mesh_shader_queries_07073 = kVUIDUndefined;
+    const char* fdm_layered_10831 = kVUIDUndefined;
     const char* blend_advanced_07480 = kVUIDUndefined;
-    const char* blend_feature_07470 = kVUIDUndefined;
     const char* color_attachment_08963 = kVUIDUndefined;
     const char* depth_attachment_08964 = kVUIDUndefined;
     const char* stencil_attachment_08965 = kVUIDUndefined;
@@ -283,15 +267,13 @@ struct DrawDispatchVuid {
     const char* sample_locations_enable_07936 = kVUIDUndefined;
     const char* sample_locations_enable_07937 = kVUIDUndefined;
     const char* sample_locations_enable_07938 = kVUIDUndefined;
-    const char* set_blend_advanced_09417 = kVUIDUndefined;
-    const char* set_blend_equation_09418 = kVUIDUndefined;
-    const char* set_color_write_09419 = kVUIDUndefined;
     const char* set_coverage_to_color_location_09420 = kVUIDUndefined;
+    const char* set_coverage_to_color_location_07490 = kVUIDUndefined;
     const char* set_viewport_swizzle_09421 = kVUIDUndefined;
+    const char* set_viewport_swizzle_07493 = kVUIDUndefined;
     const char* convervative_rasterization_07499 = kVUIDUndefined;
     const char* sample_mask_07472 = kVUIDUndefined;
     const char* sample_mask_07473 = kVUIDUndefined;
-    const char* rasterization_sampled_07474 = kVUIDUndefined;
     const char* sample_locations_enable_07484 = kVUIDUndefined;
     const char* sample_locations_enable_07485 = kVUIDUndefined;
     const char* sample_locations_enable_07486 = kVUIDUndefined;
@@ -304,9 +286,7 @@ struct DrawDispatchVuid {
     const char* vertex_input_09461 = kVUIDUndefined;
     const char* vertex_input_09462 = kVUIDUndefined;
     const char* color_blend_enable_07627 = kVUIDUndefined;
-    const char* color_blend_equation_07628 = kVUIDUndefined;
     const char* color_write_mask_07629 = kVUIDUndefined;
-    const char* color_blend_advanced_07635 = kVUIDUndefined;
     const char* image_layout_09600 = kVUIDUndefined;
     const char* rendering_contents_10582 = kVUIDUndefined;
     const char* line_rasterization_10608 = kVUIDUndefined;

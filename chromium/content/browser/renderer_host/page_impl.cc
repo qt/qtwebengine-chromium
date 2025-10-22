@@ -375,9 +375,8 @@ void PageImpl::NotifyVirtualKeyboardOverlayRect(
       keyboard_rect);
 }
 
-void PageImpl::NotifyContextMenuInsetsObservers(const gfx::Rect& safe_area) {
-  GetMainDocument().GetAssociatedLocalFrame()->NotifyContextMenuInsetsObservers(
-      safe_area);
+void PageImpl::ShowInterestInElement(int nodeID) {
+  GetMainDocument().GetAssociatedLocalFrame()->ShowInterestInElement(nodeID);
 }
 
 void PageImpl::SetVirtualKeyboardMode(ui::mojom::VirtualKeyboardMode mode) {

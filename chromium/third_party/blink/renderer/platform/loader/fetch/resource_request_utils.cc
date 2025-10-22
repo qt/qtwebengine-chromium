@@ -174,24 +174,38 @@ void UpgradeResourceRequestForLoader(
 
   if (resource_type == ResourceType::kLinkPrefetch) {
     // Add the "Purpose: prefetch" header to requests for prefetch.
-    resource_request.SetPurposeHeader(kSecPurposePrefetchHeaderValue);
+    // Depreciating Purpose prefetch header, see crbug.com/420724819.
+    if (!base::FeatureList::IsEnabled(
+            blink::features::kRemovePurposeHeaderForPrefetch)) {
+      resource_request.SetPurposeHeader(kSecPurposePrefetchHeaderValue);
+    }
+    if (base::FeatureList::IsEnabled(
+            blink::features::kSecPurposePrefetchHeaderRelPrefetch)) {
+      // Add the "Sec-Purpose: prefetch" header to requests for prefetch.
+      resource_request.SetHttpHeaderField(http_names::kSecPurpose,
+                                          AtomicString("prefetch"));
+    }
   } else if (context.IsPrerendering()) {
     // Add the "Sec-Purpose: prefetch;prerender" header to requests issued from
     // prerendered pages. Add "Purpose: prefetch" as well for compatibility
     // concerns (See https://github.com/WICG/nav-speculation/issues/133).
+    // Depreciating Purpose prefetch header, see crbug.com/420724819.
     resource_request.SetHttpHeaderField(
         http_names::kSecPurpose,
         AtomicString(kSecPurposePrefetchPrerenderHeaderValue));
-    resource_request.SetPurposeHeader(kSecPurposePrefetchHeaderValue);
+    if (!base::FeatureList::IsEnabled(
+            blink::features::kRemovePurposeHeaderForPrefetch)) {
+      resource_request.SetPurposeHeader(kSecPurposePrefetchHeaderValue);
+    }
   }
 
   context.AddAdditionalRequestHeaders(resource_request);
 
   resource_request_context.RecordTrace();
 
-  if (context.CalculateIfAdSubresource(resource_request,
-                                       std::nullopt /* alias_url */,
-                                       resource_type, options.initiator_info)) {
+  if (context.CalculateIfAdSubresource(
+          resource_request, /*alias_url=*/std::nullopt, resource_type,
+          options.initiator_info, /*out_rule=*/nullptr)) {
     resource_request.SetIsAdResource();
   }
 
@@ -220,38 +234,35 @@ PrepareResourceRequestForCacheAccess(
   const ReportingDisposition reporting_disposition =
       CalculateReportingDisposition(params);
 
-  if (!RuntimeEnabledFeatures::PreloadLinkRelDataUrlsEnabled() &&
-      !params.IsPreloadedResponseCandidatePresent() &&
-      !RuntimeEnabledFeatures::BypassCSPForPreloadsEnabled()) {
-    // Note that resource_request.GetRedirectInfo() may be non-null here since
-    // e.g. ThreadableLoader may create a new Resource from a ResourceRequest
-    // that originates from the ResourceRequest passed to the redirect handling
-    // callback.
+  // Note that resource_request.GetRedirectInfo() may be non-null here since
+  // e.g. ThreadableLoader may create a new Resource from a ResourceRequest
+  // that originates from the ResourceRequest passed to the redirect handling
+  // callback.
 
-    // Before modifying the request for CSP, evaluate report-only headers. This
-    // allows site owners to learn about requests that are being modified
-    // (e.g. mixed content that is being upgraded by upgrade-insecure-requests).
-    const std::optional<ResourceRequest::RedirectInfo>& redirect_info =
-        resource_request.GetRedirectInfo();
-    const KURL& url_before_redirects =
-        redirect_info ? redirect_info->original_url : params.Url();
-    const ResourceRequestHead::RedirectStatus redirect_status =
-        redirect_info ? ResourceRequestHead::RedirectStatus::kFollowedRedirect
-                      : ResourceRequestHead::RedirectStatus::kNoRedirect;
-    context.CheckCSPForRequest(
-        resource_request.GetRequestContext(),
-        resource_request.GetRequestDestination(), resource_request.GetMode(),
-        MemoryCache::RemoveFragmentIdentifierIfNeeded(
-            bundle_url_for_uuid_resources.IsValid()
-                ? bundle_url_for_uuid_resources
-                : params.Url()),
-        options, reporting_disposition,
-        MemoryCache::RemoveFragmentIdentifierIfNeeded(url_before_redirects),
-        redirect_status);
-  }
+  // Before modifying the request for CSP, evaluate report-only headers. This
+  // allows site owners to learn about requests that are being modified
+  // (e.g. mixed content that is being upgraded by upgrade-insecure-requests).
+  const std::optional<ResourceRequest::RedirectInfo>& redirect_info =
+      resource_request.GetRedirectInfo();
+  const KURL& url_before_redirects =
+      redirect_info ? redirect_info->original_url : params.Url();
+  const ResourceRequestHead::RedirectStatus redirect_status =
+      redirect_info ? ResourceRequestHead::RedirectStatus::kFollowedRedirect
+                    : ResourceRequestHead::RedirectStatus::kNoRedirect;
+  context.CheckCSPForRequest(
+      resource_request.GetRequestContext(),
+      resource_request.GetRequestDestination(), resource_request.GetMode(),
+      MemoryCache::RemoveFragmentIdentifierIfNeeded(
+          bundle_url_for_uuid_resources.IsValid()
+              ? bundle_url_for_uuid_resources
+              : params.Url()),
+      options, reporting_disposition,
+      MemoryCache::RemoveFragmentIdentifierIfNeeded(url_before_redirects),
+      redirect_status);
+  // There's no need to add an integrity policy check here, as CanRequest() will
+  // do that below.
 
-  context.PopulateResourceRequestBeforeCacheAccess(
-      options, resource_request, params.IsPreloadedResponseCandidatePresent());
+  context.PopulateResourceRequestBeforeCacheAccess(options, resource_request);
   if (!resource_request.Url().IsValid()) {
     return ResourceRequestBlockedReason::kOther;
   }
@@ -297,11 +308,11 @@ PrepareResourceRequestForCacheAccess(
                                  ? bundle_url_for_uuid_resources
                                  : params.Url()),
                          options, reporting_disposition,
-                         resource_request.GetRedirectInfo(),
-                         params.IsPreloadedResponseCandidatePresent());
-  if (context.CalculateIfAdSubresource(resource_request,
-                                       std::nullopt /* alias_url */,
-                                       resource_type, options.initiator_info)) {
+                         resource_request.GetRedirectInfo());
+
+  if (context.CalculateIfAdSubresource(
+          resource_request, /*alias_url=*/std::nullopt, resource_type,
+          options.initiator_info, /*out_rule=*/nullptr)) {
     resource_request.SetIsAdResource();
   }
   if (blocked_reason) {

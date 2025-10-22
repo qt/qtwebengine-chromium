@@ -38,6 +38,7 @@
 #include "base/numerics/checked_math.h"
 #include "base/numerics/safe_conversions.h"
 #include "base/types/expected_macros.h"
+#include "base/types/optional_util.h"
 #include "third_party/blink/public/web/web_serialized_script_value_version.h"
 #include "third_party/blink/renderer/bindings/core/v8/idl_types.h"
 #include "third_party/blink/renderer/bindings/core/v8/native_value_traits_impl.h"
@@ -150,7 +151,7 @@ inline static constexpr bool IsV0VersionTag(uint8_t tag) {
 }
 
 // Versions 16 and below (prior to April 2017) used ntohs() to byte-swap SSV
-// data when converting it to the wire format. This was a historical accient.
+// data when converting it to the wire format. This was a historical accident.
 //
 // As IndexedDB stores SSVs to disk indefinitely, we still need to keep around
 // the code needed to deserialize the old format.
@@ -198,7 +199,7 @@ inline static bool IsByteSwappedWiredData(base::span<const uint8_t> data) {
   return IsV0VersionTag(data[1]);
 }
 
-static void SwapWiredDataIfNeeded(base::span<uint8_t> buffer) {
+static void SwapWiredDataByteOrderIfNeeded(base::span<uint8_t> buffer) {
   if (buffer.size() % sizeof(UChar)) {
     return;
   }
@@ -220,8 +221,14 @@ scoped_refptr<SerializedScriptValue> SerializedScriptValue::Create(
 
   DataBufferPtr data_buffer = AllocateBuffer(data.size());
   data_buffer.as_span().copy_from(data);
-  SwapWiredDataIfNeeded(data_buffer.as_span());
+  return Create(std::move(data_buffer));
+}
 
+scoped_refptr<SerializedScriptValue> SerializedScriptValue::Create(
+    DataBufferPtr&& data_buffer) {
+  DCHECK(!data_buffer.empty());
+
+  SwapWiredDataByteOrderIfNeeded(data_buffer.as_span());
   return base::AdoptRef(new SerializedScriptValue(std::move(data_buffer)));
 }
 
@@ -242,9 +249,17 @@ SerializedScriptValue::DataBufferPtr SerializedScriptValue::AllocateBuffer(
   // SAFETY: BufferMalloc() always returns a pointer to at least
   // `buffer_size` bytes.
   return UNSAFE_BUFFERS(DataBufferPtr::FromOwningPointer(
-      static_cast<uint8_t*>(WTF::Partitions::BufferMalloc(
+      static_cast<uint8_t*>(Partitions::BufferMalloc(
           buffer_size, "SerializedScriptValue buffer")),
       buffer_size));
+}
+
+SerializedScriptValue::DataBufferPtr
+SerializedScriptValue::ConsumeAndTakeBuffer() && {
+  CHECK(HasOneRef());
+  auto buffer = std::move(data_buffer_);
+  Release();
+  return buffer;
 }
 
 SerializedScriptValue::~SerializedScriptValue() {
@@ -641,6 +656,11 @@ void SerializedScriptValue::RegisterMemoryAllocatedWithCurrentScriptContext() {
   int64_t diff = static_cast<int64_t>(DataLengthInBytes());
   DCHECK_GE(diff, 0);
   external_memory_accounter_.Increase(isolate_.get(), diff);
+}
+
+const v8::SharedValueConveyor*
+SerializedScriptValue::MaybeGetSharedValueConveyor() const {
+  return base::OptionalToPtr(shared_value_conveyor_);
 }
 
 bool SerializedScriptValue::IsLockedToAgentCluster() const {

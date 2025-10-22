@@ -2,20 +2,17 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "net/dns/record_rdata.h"
 
 #include <algorithm>
+#include <array>
 #include <memory>
 #include <optional>
 #include <string_view>
 #include <utility>
 
 #include "base/big_endian.h"
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "net/dns/dns_response.h"
 #include "net/dns/dns_test_util.h"
@@ -35,21 +32,20 @@ TEST(RecordRdataTest, ParseSrvRecord) {
   // These are just the rdata portions of the DNS records, rather than complete
   // records, but it works well enough for this test.
 
-  const uint8_t
-      record[] =
+  const auto record =
+      std::to_array<uint8_t>(
           {
               0x00, 0x01, 0x00, 0x02, 0x00, 0x50, 0x03, 'w',  'w',
               'w',  0x06, 'g',  'o',  'o',  'g',  'l',  'e',  0x03,
               'c',  'o',  'm',  0x00, 0x01, 0x01, 0x01, 0x02, 0x01,
               0x03, 0x04, 'w',  'w',  'w',  '2',  0xc0, 0x0a,  // Pointer to
                                                                // "google.com"
-          };
+          });
 
   DnsRecordParser parser(record, 0, /*num_records=*/0);
   const unsigned first_record_len = 22;
-  base::span<const uint8_t> record1_span(record, first_record_len);
-  base::span<const uint8_t> record2_span(record + first_record_len,
-                                         sizeof(record) - first_record_len);
+  auto [record1_span, record2_span] =
+      base::span(record).split_at(first_record_len);
   std::unique_ptr<SrvRecordRdata> record1_obj =
       SrvRecordRdata::Create(record1_span, parser);
   ASSERT_TRUE(record1_obj != nullptr);
@@ -168,6 +164,14 @@ TEST(RecordRdataTest, ParseTxtRecord) {
   ASSERT_EQ(expected, record_obj->texts());
 
   ASSERT_TRUE(record_obj->IsEqual(record_obj.get()));
+}
+
+TEST(RecordRdataTest, EmptyTxtRecordIsInvalid) {
+  // Create a record parser for an empty packet. Good enough for this test since
+  // the TXT record parser doesn't make use of `parser`.
+  DnsRecordParser parser(/*packet=*/{}, /*offset=*/0, /*num_records=*/0);
+
+  EXPECT_FALSE(TxtRecordRdata::Create(/*data=*/{}, parser));
 }
 
 TEST(RecordRdataTest, ParseNsecRecord) {

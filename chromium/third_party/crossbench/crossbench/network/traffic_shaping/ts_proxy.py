@@ -15,10 +15,11 @@ import re
 import shlex
 import subprocess
 import sys
-from typing import IO, TYPE_CHECKING, Iterator, List, Optional, Self, TypeVar
+from typing import IO, TYPE_CHECKING, Iterator, Optional, Self, TypeVar
 
 from typing_extensions import override
 
+from crossbench import exception
 from crossbench.flags.base import Flags
 from crossbench.helper import wait
 from crossbench.helper.path_finder import TsProxyFinder
@@ -30,7 +31,8 @@ if TYPE_CHECKING:
   from crossbench.browsers.attributes import BrowserAttributes
   from crossbench.network.base import Network
   from crossbench.path import AnyPath, LocalPath
-  from crossbench.plt.base import ListCmdArgs, Platform
+  from crossbench.plt.base import Platform
+  from crossbench.plt.types import ListCmdArgs
   from crossbench.runner.groups.session import BrowserSessionRunGroup
 
 fcntl = None
@@ -315,7 +317,7 @@ class TsProxyProcess:
     if not success:
       raise TsProxyServerError(f"Failed to execute command: {command}")
 
-  def _wait_for_status_response(self, timeout: int | float) -> List[str]:
+  def _wait_for_status_response(self, timeout: int | float) -> list[str]:
     logging.debug("TsProxy: waiting for status response")
     command_output = []
     for _ in wait.wait_with_backoff(timeout):
@@ -378,8 +380,7 @@ class TsProxyTrafficShaper(TrafficShaper):
                window: Optional[int] = None) -> None:
     super().__init__(browser_platform)
     if not ts_proxy_path:
-      if maybe_ts_proxy_path := TsProxyFinder(self.host_platform).path:
-        ts_proxy_path = self.host_platform.local_path(maybe_ts_proxy_path)
+      ts_proxy_path = TsProxyFinder(self.host_platform).local_path
     if not ts_proxy_path:
       raise RuntimeError(
           f"Could not find ts_proxy script on {self.host_platform}")
@@ -402,14 +403,15 @@ class TsProxyTrafficShaper(TrafficShaper):
   @override
   def open(self: TsProxyTrafficShaperT, network: Network,
            session: BrowserSessionRunGroup) -> Iterator[TsProxyTrafficShaperT]:
-    if not network.is_live:
-      self._ts_proxy = self._create_remapping_ts_proxy(network)
+    with exception.annotate("Starting tsproxy traffic shaping"):
+      if not network.is_live:
+        self._ts_proxy = self._create_remapping_ts_proxy(network)
 
-    with super().open(network, session):
-      logging.debug("Starting TS Proxy")
-      with self._ts_proxy:
-        with self._forward_ports(network, session):
-          yield self
+      with super().open(network, session):
+        logging.debug("Starting TS Proxy")
+        with self._ts_proxy:
+          with self._forward_ports(network, session):
+            yield self
 
   @contextlib.contextmanager
   @override
@@ -450,11 +452,10 @@ class TsProxyTrafficShaper(TrafficShaper):
     ts_proxy_port = self._ts_proxy.socks_proxy_port
     # TODO; remap network port for remote browsers or when ports are occupied
     # already.
-    if browser_platform.is_remote:
-      browser_platform.reverse_port_forward(ts_proxy_port, ts_proxy_port)
-    yield
-    if browser_platform.is_remote:
-      browser_platform.stop_reverse_port_forward(ts_proxy_port)
+    with browser_platform.ports.nested() as ports:
+      if browser_platform.is_remote:
+        ports.reverse_forward(ts_proxy_port, ts_proxy_port)
+      yield
 
   @override
   def extra_flags(self, browser_attributes: BrowserAttributes) -> Flags:

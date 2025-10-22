@@ -156,7 +156,7 @@ void PDFDocumentHelper::SetPluginCanSave(bool can_save) {
 void PDFDocumentHelper::OnSearchifyStarted() {
   if (!searchify_started_) {
     searchify_started_ = true;
-    client_->OnSearchifyStarted(&GetWebContents());
+    client_->OnSearchifyStarted(&render_frame_host());
   }
 }
 #endif
@@ -238,7 +238,7 @@ void PDFDocumentHelper::SelectBetweenCoordinates(const gfx::PointF& base,
 void PDFDocumentHelper::GetPdfBytes(
     uint32_t size_limit,
     pdf::mojom::PdfListener::GetPdfBytesCallback callback) {
-  if (!remote_pdf_client_) {
+  if (!remote_pdf_client_ || !is_document_load_complete_) {
     std::move(callback).Run(pdf::mojom::PdfListener::GetPdfBytesStatus::kFailed,
                             /*bytes=*/{}, /*page_count=*/0);
     return;
@@ -249,7 +249,7 @@ void PDFDocumentHelper::GetPdfBytes(
 void PDFDocumentHelper::GetPageText(
     int32_t page_index,
     pdf::mojom::PdfListener::GetPageTextCallback callback) {
-  if (!remote_pdf_client_) {
+  if (!remote_pdf_client_ || !is_document_load_complete_) {
     std::move(callback).Run(std::u16string());
     return;
   }

@@ -62,7 +62,11 @@ source_set("test_support") {
     "//ios/chrome/app/application_delegate:test_support",
     "//ios/chrome/app/profile",
     "//ios/chrome/browser/authentication/ui_bundled",
+    "//ios/chrome/browser/authentication/ui_bundled:continuation",
     "//ios/chrome/browser/authentication/ui_bundled/authentication_flow",
+    "//ios/chrome/browser/authentication/ui_bundled/authentication_flow:internal",
+    "//ios/chrome/browser/authentication/ui_bundled/authentication_flow:request_helper",
+    "//ios/chrome/browser/authentication/ui_bundled/authentication_flow:test_support",
     "//ios/chrome/browser/authentication/ui_bundled/cells",
     "//ios/chrome/browser/authentication/ui_bundled/history_sync",
     "//ios/chrome/browser/autofill/model",
@@ -79,6 +83,7 @@ source_set("test_support") {
     "//ios/chrome/browser/metrics/model:metrics_browser_agent",
     "//ios/chrome/browser/metrics/model:metrics_internal",
     "//ios/chrome/browser/passwords/ui_bundled/bottom_sheet:common",
+    "//ios/chrome/browser/reader_mode/model",
     "//ios/chrome/browser/sessions/model:session_restoration_service",
     "//ios/chrome/browser/sessions/model:session_restoration_service_factory",
     "//ios/chrome/browser/settings/ui_bundled/password:test_support",
@@ -120,4 +125,8 @@ source_set("test_support") {
     "//third_party/metrics_proto",
     "//url",
   ]
+
+  # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
+  # enable the diagnostic by removing this line.
+  configs += [ "//build/config/compiler:no_exit_time_destructors" ]
 }

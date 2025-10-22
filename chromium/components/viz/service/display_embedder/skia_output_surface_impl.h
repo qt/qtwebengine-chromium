@@ -30,7 +30,7 @@
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/command_buffer/common/sync_token.h"
 #include "gpu/command_buffer/service/task_graph.h"
-#include "gpu/ipc/common/vulkan_ycbcr_info.h"
+#include "gpu/vulkan/vulkan_ycbcr_info.h"
 #include "media/gpu/buildflags.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "third_party/skia/include/core/SkOverdrawCanvas.h"
@@ -179,16 +179,10 @@ class VIZ_SERVICE_EXPORT SkiaOutputSurfaceImpl : public SkiaOutputSurface {
   gpu::SyncToken ReleaseImageContexts(
       std::vector<std::unique_ptr<ImageContext>> image_contexts) override;
   std::unique_ptr<ExternalUseClient::ImageContext> CreateImageContext(
-      const gpu::Mailbox& mailbox,
-      const gpu::SyncToken& sync_token,
-      uint32_t texture_target,
-      const gfx::Size& size,
-      SharedImageFormat format,
+      const TransferableResource& resource,
       bool maybe_concurrent_reads,
-      const std::optional<gpu::VulkanYCbCrInfo>& ycbcr_info,
-      sk_sp<SkColorSpace> color_space,
-      GrSurfaceOrigin origin,
-      bool raw_draw_if_possible) override;
+      bool raw_draw_if_possible,
+      uint32_t client_id) override;
 
   void InitDelegatedInkPointRendererReceiver(
       mojo::PendingReceiver<gfx::mojom::DelegatedInkPointRenderer>

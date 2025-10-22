@@ -15,7 +15,7 @@ class Profile;
 
 std::unique_ptr<CertificateManagerPageHandler::CertSource>
 CreatePlatformClientCertSource(
-    mojo::Remote<certificate_manager_v2::mojom::CertificateManagerPage>*
+    mojo::Remote<certificate_manager::mojom::CertificateManagerPage>*
         remote_client,
     Profile* profile);
 
@@ -61,7 +61,6 @@ class ClientCertManagementAccessControls {
  private:
 #if BUILDFLAG(IS_CHROMEOS)
   const bool is_guest_;
-  const bool is_kiosk_;
   const ClientCertificateManagementPermission client_cert_policy_;
 #endif
 };

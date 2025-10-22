@@ -121,8 +121,7 @@ class BleV2 final {
   // service UUID16 may be used to trigger a GATT connection to retrieve GATT
   // characteristics for the Nearby service
   // These alternate uuids are active until the next call to `StopScanning`.
-  void AddAlternateUuidForService(
-      uint16_t uuid, const std::string& service_id);
+  void AddAlternateUuidForService(uint16_t uuid, const std::string& service_id);
 
   // Enables BLE scanning for a service ID. Will report any discoverable
   // advertisement data through a callback.
@@ -145,6 +144,12 @@ class BleV2 final {
   // Returns true, if the scanning was previously enabled, false otherwise.
   bool StopScanning(const std::string& service_id) ABSL_LOCKS_EXCLUDED(mutex_);
 
+  // Pauses BLE scanning at platform Medium level.
+  bool PauseMediumScanning();
+
+  // Resumes BLE scanning at platform Medium level.
+  bool ResumeMediumScanning();
+
   // Returns true if the scanning for service ID is enabled.
   bool IsScanning(const std::string& service_id) const
       ABSL_LOCKS_EXCLUDED(mutex_);
@@ -157,7 +162,9 @@ class BleV2 final {
 
   // Starts a worker thread, creates a Ble L2CAP socket, associates it with a
   // service id.
-  ErrorOr<bool> StartAcceptingL2capConnections(
+  // Returns the PSM of the L2CAP channel on success, or an error code on
+  // failure.
+  ErrorOr<int> StartAcceptingL2capConnections(
       const std::string& service_id,
       AcceptedL2capConnectionCallback l2cap_callback)
       ABSL_LOCKS_EXCLUDED(mutex_);
@@ -333,14 +340,14 @@ class BleV2 final {
 
   // A map of service_id -> L2capServerSocket. If map is non-empty, we
   // are currently listening for incoming connections.
-  absl::flat_hash_map<std::string, BleL2capServerSocket>
-      l2cap_server_socket_map_ ABSL_GUARDED_BY(mutex_);
+  absl::flat_hash_map<std::string, BleL2capServerSocket> l2cap_server_sockets_
+      ABSL_GUARDED_BY(mutex_);
 
   // A map of service_id -> BleL2capSocket.
   // Tracks currently connected incoming sockets. This lets the device know when
   // it's okay to restart L2CAP server related operations.
   absl::flat_hash_map<std::string, BleL2capSocket>
-      l2cap_incoming_service_id_to_socket_map_ ABSL_GUARDED_BY(mutex_);
+      l2cap_incoming_service_id_to_sockets_ ABSL_GUARDED_BY(mutex_);
 };
 
 }  // namespace connections

@@ -5,6 +5,8 @@
 #ifndef MEDIA_FILTERS_HLS_RENDITION_IMPL_H_
 #define MEDIA_FILTERS_HLS_RENDITION_IMPL_H_
 
+#include <array>
+
 #include "crypto/aes_cbc.h"
 #include "media/filters/hls_rendition.h"
 #include "media/formats/hls/segment_stream.h"
@@ -35,8 +37,9 @@ class MEDIA_EXPORT HlsRenditionImpl : public HlsRendition {
   ManifestDemuxer::SeekResponse Seek(base::TimeDelta seek_time) override;
   void StartWaitingForSeek() override;
   void Stop() override;
-  void UpdatePlaylist(scoped_refptr<hls::MediaPlaylist> playlist,
-                      std::optional<GURL> new_playlist_uri) override;
+  void UpdatePlaylist(scoped_refptr<hls::MediaPlaylist> playlist) override;
+  void UpdatePlaylistURI(const GURL& playlist_uri) override;
+  const GURL& MediaPlaylistUri() const override;
 
  private:
   // A pending segment consists of the stream from which network data is fetched

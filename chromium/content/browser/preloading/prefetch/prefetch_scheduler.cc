@@ -13,6 +13,7 @@
 #include "content/browser/preloading/prefetch/prefetch_params.h"
 #include "content/browser/preloading/prefetch/prefetch_service.h"
 #include "content/browser/preloading/prerender/prerender_features.h"
+#include "content/public/common/content_features.h"
 
 namespace content {
 
@@ -23,6 +24,11 @@ size_t GetActiveSetSizeLimitForBase() {
 
   if (base::FeatureList::IsEnabled(features::kPrefetchSchedulerTesting)) {
     return features::kPrefetchSchedulerTestingActiveSetSizeLimitForBase.Get();
+  }
+
+  if (base::FeatureList::IsEnabled(
+          features::kPrefetchMultipleActiveSetSizeLimitForBase)) {
+    return features::kPrefetchMultipleActiveSetSizeLimitForBaseValue.Get();
   }
 
   return 1;
@@ -45,25 +51,42 @@ size_t GetActiveSetSizeLimitForBurst() {
     return GetActiveSetSizeLimitForBase() + 1;
   }
 
+  if (base::FeatureList::IsEnabled(
+          features::kWebViewPrefetchHighestPrefetchPriority)) {
+    return features::kWebViewPrefetchHighestPrefetchPriorityBurstLimit.Get();
+  }
+
   // No additional room for burst.
   return GetActiveSetSizeLimitForBase();
 }
 
-PrefetchPriority CalculatePriorityImpl(
+PrefetchSchedulerPriority CalculatePriorityImpl(
     const PrefetchContainer& prefetch_container) {
+  if (prefetch_container.GetPrefetchPriority().has_value()) {
+    switch (prefetch_container.GetPrefetchPriority().value()) {
+      case PrefetchPriority::kLow:
+      case PrefetchPriority::kMedium:
+      case PrefetchPriority::kHigh:
+        return PrefetchSchedulerPriority::kBase;
+      case PrefetchPriority::kHighest:
+        return PrefetchSchedulerPriority::kBurstForPrefetchPriority;
+    }
+  }
+
   // Burst/prioritize if ahead of prerender.
+  // TODO(crbug.com/426404355): Migrate to use `PrefetchPriority`.
   if (prefetch_container.IsLikelyAheadOfPrerender()) {
     switch (features::kPrerender2FallbackPrefetchSchedulerPolicy.Get()) {
       case features::Prerender2FallbackPrefetchSchedulerPolicy::kNotUse:
         break;
       case features::Prerender2FallbackPrefetchSchedulerPolicy::kPrioritize:
-        return PrefetchPriority::kHighAheadOfPrerender;
+        return PrefetchSchedulerPriority::kHighAheadOfPrerender;
       case features::Prerender2FallbackPrefetchSchedulerPolicy::kBurst:
-        return PrefetchPriority::kBurstAheadOfPrerender;
+        return PrefetchSchedulerPriority::kBurstAheadOfPrerender;
     }
   }
 
-  return PrefetchPriority::kBase;
+  return PrefetchSchedulerPriority::kBase;
 }
 
 bool IsReadyToStartPrefetch(const PrefetchQueue::Item& item) {
@@ -105,7 +128,7 @@ bool IsReadyToStartPrefetch(const PrefetchQueue::Item& item) {
 }  // namespace
 
 PrefetchQueue::Item::Item(base::WeakPtr<PrefetchContainer> prefetch_container,
-                          PrefetchPriority priority)
+                          PrefetchSchedulerPriority priority)
     : prefetch_container(std::move(prefetch_container)), priority(priority) {}
 
 PrefetchQueue::Item::Item(const PrefetchQueue::Item&& other)
@@ -127,7 +150,7 @@ PrefetchQueue::PrefetchQueue() = default;
 PrefetchQueue::~PrefetchQueue() = default;
 
 void PrefetchQueue::Push(base::WeakPtr<PrefetchContainer> prefetch_container,
-                         PrefetchPriority priority) {
+                         PrefetchSchedulerPriority priority) {
   CHECK(prefetch_container);
   // Postcondition: Pushing registered one is not allowed.
   CHECK(!Remove(prefetch_container));
@@ -153,7 +176,7 @@ bool PrefetchQueue::Remove(
 }
 
 bool PrefetchQueue::MaybeUpdatePriority(PrefetchContainer& prefetch_container,
-                                        PrefetchPriority priority) {
+                                        PrefetchSchedulerPriority priority) {
   for (auto it = queue_.cbegin(); it != queue_.cend(); ++it) {
     if (it->prefetch_container.get() == &prefetch_container) {
       if (it->priority != priority) {
@@ -185,13 +208,27 @@ bool PrefetchScheduler::IsInActiveSet(
   return false;
 }
 
-PrefetchPriority PrefetchScheduler::CalculatePriority(
+PrefetchSchedulerPriority PrefetchScheduler::CalculatePriority(
     const PrefetchContainer& prefetch_container) {
   if (calculate_priority_for_test_) {
     return calculate_priority_for_test_.Run(prefetch_container);
   }
 
   return CalculatePriorityImpl(prefetch_container);
+}
+
+void PrefetchScheduler::PushAndProgress(PrefetchContainer& prefetch_container) {
+  // Precondition: Pushing already registered one is not allowed.
+  for (auto& it : active_set_) {
+    if (it.get() == &prefetch_container) {
+      NOTREACHED();
+    }
+  }
+
+  PrefetchSchedulerPriority priority = CalculatePriority(prefetch_container);
+  queue_.Push(prefetch_container.GetWeakPtr(), priority);
+
+  Progress();
 }
 
 void PrefetchScheduler::PushAndProgressAsync(
@@ -203,14 +240,15 @@ void PrefetchScheduler::PushAndProgressAsync(
     }
   }
 
-  PrefetchPriority priority = CalculatePriority(prefetch_container);
+  PrefetchSchedulerPriority priority = CalculatePriority(prefetch_container);
   queue_.Push(prefetch_container.GetWeakPtr(), priority);
 
   ProgressAsync();
 }
 
 void PrefetchScheduler::RemoveAndProgressAsync(
-    PrefetchContainer& prefetch_container) {
+    PrefetchContainer& prefetch_container,
+    bool should_progress) {
   [&]() {
     for (auto it = active_set_.cbegin(); it != active_set_.cend(); ++it) {
       if (it->get() == &prefetch_container) {
@@ -222,6 +260,10 @@ void PrefetchScheduler::RemoveAndProgressAsync(
     queue_.Remove(prefetch_container.GetWeakPtr());
   }();
 
+  if (!should_progress) {
+    return;
+  }
+
   // This method can be called in `PrefetechService::EvictPrefetch()` called in
   // `ProcessOne()`. Don't call `ProcessAsync()` to prevent infinite loop in
   // that case.
@@ -231,7 +273,12 @@ void PrefetchScheduler::RemoveAndProgressAsync(
 }
 
 void PrefetchScheduler::NotifyAttributeMightChangedAndProgressAsync(
-    PrefetchContainer& prefetch_container) {
+    PrefetchContainer& prefetch_container,
+    bool should_progress) {
+  if (!should_progress) {
+    return;
+  }
+
   const bool is_changed = queue_.MaybeUpdatePriority(
       prefetch_container, CalculatePriority(prefetch_container));
   if (is_changed) {
@@ -282,7 +329,7 @@ void PrefetchScheduler::Progress() {
   // priority. See
   // https://chromium-review.googlesource.com/c/chromium/src/+/6402914/comment/8b5c845f_0b7f6f7e/
 
-  auto internal = [&](PrefetchPriority threshold_priority,
+  auto internal = [&](PrefetchSchedulerPriority threshold_priority,
                       size_t active_limit) {
     // Invariant: `active_set_.size() == 0 && there is a ready prefetch` is
     // false. I.e. doesn't stuck.
@@ -310,8 +357,9 @@ void PrefetchScheduler::Progress() {
     }
   };
 
-  internal(PrefetchPriority::kBurstThreshold, GetActiveSetSizeLimitForBurst());
-  internal(PrefetchPriority::kBase, GetActiveSetSizeLimitForBase());
+  internal(PrefetchSchedulerPriority::kBurstThreshold,
+           GetActiveSetSizeLimitForBurst());
+  internal(PrefetchSchedulerPriority::kBase, GetActiveSetSizeLimitForBase());
 }
 
 void PrefetchScheduler::ProgressOne(
@@ -347,7 +395,7 @@ void PrefetchScheduler::ProgressOne(
 }
 
 void PrefetchScheduler::SetCalculatePriorityForTesting(
-    base::RepeatingCallback<PrefetchPriority(const PrefetchContainer&)>
+    base::RepeatingCallback<PrefetchSchedulerPriority(const PrefetchContainer&)>
         callback) {
   calculate_priority_for_test_ = std::move(callback);
 }

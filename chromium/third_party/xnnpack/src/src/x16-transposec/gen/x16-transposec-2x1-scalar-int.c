@@ -8,10 +8,10 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
-#include "src/xnnpack/common.h"
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/transpose.h"
 
@@ -21,7 +21,7 @@ void xnn_x16_transposec_ukernel__2x1_scalar_int(
     size_t input_stride,
     size_t output_stride,
     size_t block_width,
-    size_t block_height) XNN_OOB_READS
+    size_t block_height)
 {
   assert(block_width == 1 || output_stride >= block_height * sizeof(int16_t));
   assert(block_height == 1 || input_stride >= block_width * sizeof(int16_t));

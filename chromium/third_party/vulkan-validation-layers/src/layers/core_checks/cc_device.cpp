@@ -31,9 +31,12 @@
 #include "state_tracker/image_state.h"
 #include "state_tracker/device_state.h"
 #include "state_tracker/render_pass_state.h"
+#include "state_tracker/cmd_buffer_state.h"
+#include "state_tracker/pipeline_state.h"
 #include <spirv-tools/libspirv.h>
 #include "generated/dispatch_functions.h"
 #include "error_message/error_strings.h"
+#include "utils/file_system_utils.h"
 
 bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location &loc, const char *vuid,
                                            bool optional = false) const {
@@ -41,7 +44,7 @@ bool CoreChecks::ValidateDeviceQueueFamily(uint32_t queue_family, const Location
     if (!optional && queue_family == VK_QUEUE_FAMILY_IGNORED) {
         skip |= LogError(vuid, device, loc,
                          "is VK_QUEUE_FAMILY_IGNORED, but it is required to provide a valid queue family index value.");
-    } else if (queue_family_index_set.find(queue_family) == queue_family_index_set.end()) {
+    } else if (device_state->queue_family_index_set.find(queue_family) == device_state->queue_family_index_set.end()) {
         skip |=
             LogError(vuid, device, loc,
                      "(%" PRIu32
@@ -115,18 +118,18 @@ bool CoreChecks::GetPhysicalDeviceImageFormatProperties(vvl::Image &image_state,
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToPhysicalDeviceCount(uint32_t deviceMask, const LogObjectList &objlist, const Location loc,
+bool CoreChecks::ValidateDeviceMaskToPhysicalDeviceCount(uint32_t deviceMask, const LogObjectList &objlist, const Location &loc,
                                                          const char *vuid) const {
     bool skip = false;
-    uint32_t count = 1 << physical_device_count;
+    uint32_t count = 1 << device_state->physical_device_count;
     if (count <= deviceMask) {
         skip |= LogError(vuid, objlist, loc, "(0x%" PRIx32 ") is invalid, Physical device count is %" PRIu32 ".", deviceMask,
-                         physical_device_count);
+                         device_state->physical_device_count);
     }
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToZero(uint32_t deviceMask, const LogObjectList &objlist, const Location loc,
+bool CoreChecks::ValidateDeviceMaskToZero(uint32_t deviceMask, const LogObjectList &objlist, const Location &loc,
                                           const char *vuid) const {
     bool skip = false;
     if (deviceMask == 0) {
@@ -136,7 +139,7 @@ bool CoreChecks::ValidateDeviceMaskToZero(uint32_t deviceMask, const LogObjectLi
 }
 
 bool CoreChecks::ValidateDeviceMaskToCommandBuffer(const vvl::CommandBuffer &cb_state, uint32_t deviceMask,
-                                                   const LogObjectList &objlist, const Location loc, const char *vuid) const {
+                                                   const LogObjectList &objlist, const Location &loc, const char *vuid) const {
     bool skip = false;
     if ((deviceMask & cb_state.initial_device_mask) != deviceMask) {
         skip |= LogError(vuid, objlist, loc, "(0x%" PRIx32 ") is not a subset of %s initial device mask (0x%" PRIx32 ").",
@@ -145,7 +148,7 @@ bool CoreChecks::ValidateDeviceMaskToCommandBuffer(const vvl::CommandBuffer &cb_
     return skip;
 }
 
-bool CoreChecks::ValidateDeviceMaskToRenderPass(const vvl::CommandBuffer &cb_state, uint32_t deviceMask, const Location loc,
+bool CoreChecks::ValidateDeviceMaskToRenderPass(const vvl::CommandBuffer &cb_state, uint32_t deviceMask, const Location &loc,
                                                 const char *vuid) const {
     bool skip = false;
     if (cb_state.active_render_pass && ((deviceMask & cb_state.render_pass_device_mask) != deviceMask)) {
@@ -328,13 +331,19 @@ bool core::Instance::PreCallValidateCreateDevice(VkPhysicalDevice gpu, const VkD
         return skip;
     }
 
+    if (!pd_state->has_maintenance9 && pCreateInfo->queueCreateInfoCount == 0) {
+        skip |= LogError("VUID-VkDeviceCreateInfo-None-10778", instance,
+                         error_obj.location.dot(Field::pCreateInfo).dot(Field::queueCreateInfoCount),
+                         "is 0 (This is only allowed if your device supports the maintenance9 feature).");
+        return skip;
+    }
+
     skip |= ValidateDeviceQueueCreateInfos(*pd_state, pCreateInfo->queueCreateInfoCount, pCreateInfo->pQueueCreateInfos,
                                            error_obj.location.dot(Field::pCreateInfo));
     return skip;
 }
 
 void CoreChecks::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const Location &loc) {
-    // The state tracker sets up the device state (also if extension and/or features are enabled)
     BaseClass::FinishDeviceSetup(pCreateInfo, loc);
 
     AdjustValidatorOptions(extensions, enabled_features, spirv_val_options, &spirv_val_option_hash);
@@ -417,8 +426,8 @@ bool CoreChecks::PreCallValidateGetDeviceQueue(VkDevice device, uint32_t queueFa
     skip |= ValidateDeviceQueueFamily(queueFamilyIndex, error_obj.location.dot(Field::queueFamilyIndex),
                                       "VUID-vkGetDeviceQueue-queueFamilyIndex-00384");
 
-    for (size_t i = 0; i < device_queue_info_list.size(); i++) {
-        const auto device_queue_info = device_queue_info_list.at(i);
+    for (size_t i = 0; i < device_state->device_queue_info_list.size(); i++) {
+        const auto device_queue_info = device_state->device_queue_info_list.at(i);
         if (device_queue_info.queue_family_index != queueFamilyIndex) {
             continue;
         }
@@ -459,8 +468,8 @@ bool CoreChecks::PreCallValidateGetDeviceQueue2(VkDevice device, const VkDeviceQ
         // ValidateDeviceQueueFamily() already checks if queueFamilyIndex but need to make sure flags match with it
         bool valid_flags = false;
 
-        for (size_t i = 0; i < device_queue_info_list.size(); i++) {
-            const auto device_queue_info = device_queue_info_list.at(i);
+        for (size_t i = 0; i < device_state->device_queue_info_list.size(); i++) {
+            const auto device_queue_info = device_state->device_queue_info_list.at(i);
             // vkGetDeviceQueue2 only checks if both family index AND flags are same as device creation
             // this handle case where the same queueFamilyIndex is used with/without the protected flag
             if ((device_queue_info.queue_family_index != queueFamilyIndex) || (device_queue_info.flags != flags)) {
@@ -503,7 +512,7 @@ bool core::Instance::ValidateGetPhysicalDeviceImageFormatProperties2(VkPhysicalD
                              "pImageFormatProperties includes a chained "
                              "VkHostImageCopyDevicePerformanceQuery struct, but pImageFormatInfo->usage (%s) does not contain "
                              "VK_IMAGE_USAGE_HOST_TRANSFER_BIT",
-                             string_VkBufferUsageFlags(pImageFormatInfo->usage).c_str());
+                             string_VkImageUsageFlags(pImageFormatInfo->usage).c_str());
         }
     }
     return skip;
@@ -532,7 +541,7 @@ VkFormatProperties3KHR CoreChecks::GetPDFormatProperties(const VkFormat format) 
     VkFormatProperties3KHR fmt_props_3 = vku::InitStructHelper();
     VkFormatProperties2 fmt_props_2 = vku::InitStructHelper(&fmt_props_3);
 
-    if (has_format_feature2) {
+    if (device_state->special_supported.vk_khr_format_feature_flags2) {
         DispatchGetPhysicalDeviceFormatProperties2Helper(api_version, physical_device, format, &fmt_props_2);
         fmt_props_3.linearTilingFeatures |= fmt_props_2.formatProperties.linearTilingFeatures;
         fmt_props_3.optimalTilingFeatures |= fmt_props_2.formatProperties.optimalTilingFeatures;
@@ -866,7 +875,7 @@ bool CoreChecks::PreCallValidateCreatePipelineBinariesKHR(VkDevice device, const
                          create_info_loc.dot(Field::pPipelineCreateInfo), "is not NULL, but pipelineBinaryInternalCache is false.");
         }
 
-        if (props->pipelineBinaryInternalCacheControl && disable_internal_pipeline_cache) {
+        if (props->pipelineBinaryInternalCacheControl && device_state->disable_internal_pipeline_cache) {
             skip |= LogError("VUID-VkPipelineBinaryCreateInfoKHR-device-09610", device,
                              create_info_loc.dot(Field::pPipelineCreateInfo), "is not NULL, but disableInternalCache is true.");
         }

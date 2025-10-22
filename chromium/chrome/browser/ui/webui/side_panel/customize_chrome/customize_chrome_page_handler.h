@@ -14,17 +14,19 @@
 #include "base/memory/weak_ptr.h"
 #include "base/scoped_observation.h"
 #include "chrome/browser/new_tab_page/modules/new_tab_page_modules.h"
-#include "chrome/browser/search/background/ntp_background_service.h"
-#include "chrome/browser/search/background/ntp_background_service_observer.h"
 #include "chrome/browser/search/background/ntp_custom_background_service.h"
 #include "chrome/browser/search/background/ntp_custom_background_service_observer.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_observer.h"
+#include "chrome/browser/ui/views/new_tab_footer/footer_controller_observer.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome.mojom.h"
 #include "chrome/browser/ui/webui/side_panel/customize_chrome/customize_chrome_section.h"
 #include "chrome/common/search/ntp_logging_events.h"
+#include "chrome/common/webui_url_constants.h"
 #include "components/prefs/pref_change_registrar.h"
 #include "components/search_engines/template_url_service_observer.h"
+#include "components/themes/ntp_background_service.h"
+#include "components/themes/ntp_background_service_observer.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -35,6 +37,10 @@
 namespace content {
 class WebContents;
 }  // namespace content
+
+namespace new_tab_footer {
+class NewTabFooterController;
+}
 
 class Profile;
 class TemplateURLService;
@@ -62,7 +68,8 @@ class CustomizeChromePageHandler
       public ThemeServiceObserver,
       public NtpCustomBackgroundServiceObserver,
       public TemplateURLServiceObserver,
-      public ui::SelectFileDialog::Listener {
+      public ui::SelectFileDialog::Listener,
+      public new_tab_footer::NewTabFooterControllerObserver {
  public:
   // Returns whether the page handler can be constructed. Used to decide whether
   // the sidepanel should be allowed to show.
@@ -90,7 +97,7 @@ class CustomizeChromePageHandler
   void ScrollToSection(CustomizeChromeSection section);
 
   // Passes AttachedTabStateUpdated calls to the CustomizeChromePage.
-  void AttachedTabStateUpdated(bool is_source_tab_first_party_ntp);
+  void AttachedTabStateUpdated(const GURL& url);
 
   // Helper method to determine if the search engine is overriding the first
   // party NTP.
@@ -128,6 +135,8 @@ class CustomizeChromePageHandler
   void OpenNtpManagedByPage() override;
   void SetMostVisitedSettings(bool custom_links_enabled, bool visible) override;
   void UpdateMostVisitedSettings() override;
+  void SetFooterVisible(bool visible) override;
+  void UpdateFooterSettings() override;
   void SetModulesVisible(bool visible) override;
   void SetModuleDisabled(const std::string& module_id, bool disabled) override;
   void UpdateModulesSettings() override;
@@ -141,7 +150,8 @@ class CustomizeChromePageHandler
   bool IsCustomLinksEnabled() const;
   bool IsShortcutsVisible() const;
 
-  std::u16string GetManagingThirdPartyName() const;
+  // Returns the type of New Tab Page the SidePanel is attached to.
+  side_panel::mojom::NewTabPageType GetNewTabPageType(const GURL& url);
 
   // ui::NativeThemeObserver:
   void OnNativeThemeUpdated(ui::NativeTheme* observed_theme) override;
@@ -166,6 +176,12 @@ class CustomizeChromePageHandler
   void FileSelected(const ui::SelectedFileInfo& file, int index) override;
   void FileSelectionCanceled() override;
 
+  // new_tab_footer::NewTabFooterControllerObserver:
+  void OnFooterVisibilityUpdated(bool visible) override;
+
+  // Called when the embedding BrowserWindowInterface has changed.
+  void OnBrowserWindowInterfaceChanged();
+
   ChooseLocalCustomBackgroundCallback choose_local_custom_background_callback_;
   raw_ptr<NtpCustomBackgroundService> ntp_custom_background_service_;
   raw_ptr<Profile> profile_;
@@ -188,8 +204,11 @@ class CustomizeChromePageHandler
 
   // Caches the attached tab state provided to the handler, in cases where the
   // value needs to be requeried by the page.
-  bool last_is_source_tab_first_party_ntp_ = true;
+  GURL last_source_url_{GURL(chrome::kChromeUINewTabPageURL)};
 
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX)
+  PrefChangeRegistrar browser_pref_change_registrar_;
+#endif
   PrefChangeRegistrar pref_change_registrar_;
   base::ScopedObservation<ui::NativeTheme, ui::NativeThemeObserver>
       native_theme_observation_{this};
@@ -198,6 +217,12 @@ class CustomizeChromePageHandler
   base::ScopedObservation<NtpCustomBackgroundService,
                           NtpCustomBackgroundServiceObserver>
       ntp_custom_background_service_observation_{this};
+  base::ScopedObservation<new_tab_footer::NewTabFooterController,
+                          new_tab_footer::NewTabFooterControllerObserver>
+      footer_controller_observation_{this};
+
+  // Notifies this when the browser window context changes.
+  base::CallbackListSubscription browser_window_changed_subscription_;
 
   mojo::Remote<side_panel::mojom::CustomizeChromePage> page_;
   mojo::Receiver<side_panel::mojom::CustomizeChromePageHandler> receiver_;

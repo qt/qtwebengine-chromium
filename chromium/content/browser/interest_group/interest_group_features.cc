@@ -11,11 +11,21 @@ namespace features {
 
 // Please keep features in alphabetical order.
 
+// Always check for k-anonymity updates whenever we do interest group updates.
+BASE_FEATURE(kAlwaysUpdateKAnon,
+             "AlwaysUpdateKAnon",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Enable detecting inconsistency in the `PageImpl` used in the auction. Abort
 // the auction when detected.
 BASE_FEATURE(kDetectInconsistentPageImpl,
              "DetectInconsistentPageImpl",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enable sending clickiness data in B&A requests.
+BASE_FEATURE(kEnableBandAClickiness,
+             "EnabledBandAClickiness",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enable parsing and using K-Anonymity features for B&A.
 BASE_FEATURE(kEnableBandAKAnonEnforcement,
@@ -58,7 +68,7 @@ BASE_FEATURE(kFledgeBiddingAndAuctionNonceSupport,
 // until the TTL, provided the `kFledgeCacheKAnonHashedKeysTtl` parameter below.
 BASE_FEATURE(kFledgeCacheKAnonHashedKeys,
              "FledgeCacheKAnonHashedKeys",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 // TTL for entries in the k-anon keys cache. This should typically be kept in
 // sync with the KAnonymityServiceQueryInterval parameter, which behaves in much
 // the same way, limiting the frequency of refresh of k-anon keys. Note that
@@ -103,6 +113,13 @@ BASE_FEATURE(kFledgeFacilitatedTestingSignalsHeaders,
 BASE_FEATURE(kFledgeModifyInterestGroupPolicyCheckOnOwner,
              "FledgeModifyInterestGroupPolicyCheckOnOwner",
              base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, Protected Audience fetches (scripts, signals, and updates) use
+// ClientSecurityStates that only contain the IPAddressSpace of the frame
+// running the auction, to prevent leaks.
+BASE_FEATURE(kFledgeOnlyUseIpAddressSpaceInClientSecurityState,
+             "FledgeOnlyUseIpAddressSpaceInClientSecurityState",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Turning on kFledgeQueryKAnonymity loads k-anonymity status at interest group
 // join and update time. kFledgeQueryKAnonymity is enabled by default. It may
@@ -150,7 +167,7 @@ BASE_FEATURE(kFledgeUseKVv2SignalsCache,
 // Enables a non-transient NIK for trusted selling signals.
 BASE_FEATURE(kFledgeUseNonTransientNIKForSeller,
              "FledgeUseNonTransientNIKForSeller",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables preconnecting to interest group owner origins and a bidding signals
 // URL origin at the start of an auction.

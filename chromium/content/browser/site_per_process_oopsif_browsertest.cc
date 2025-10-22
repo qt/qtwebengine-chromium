@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/process_lock.h"
 #include "content/browser/renderer_host/navigation_entry_restore_context_impl.h"
 #include "content/browser/site_per_process_browsertest.h"
@@ -913,7 +915,8 @@ IN_PROC_BROWSER_TEST_P(SitePerProcessPerOriginIsolatedSandboxedIframeTest,
       child->current_frame_host()->GetSiteInstance();
   EXPECT_NE(site_instance_root, site_instance2);
   EXPECT_NE(site_instance1, site_instance2);
-  EXPECT_NE(site_instance1->GetOrCreateProcess(), site_instance2->GetProcess());
+  EXPECT_NE(site_instance1->GetOrCreateProcessForTesting(),
+            site_instance2->GetProcess());
 }
 
 // Test that navigating cross-origin from a non-sandboxed iframe to a CSP

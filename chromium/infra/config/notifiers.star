@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-load("//lib/notifiers.star", "notifiers")
+load("@chromium-luci//notifiers.star", "notifiers")
 
 luci.notifier(
     name = "chromesec-lkgr-failures",
@@ -60,6 +60,16 @@ luci.notifier(
     on_status_change = True,
     notify_emails = [
         "chrome-memory-sheriffs+bots@google.com",
+    ],
+)
+
+luci.notifier(
+    name = "chromium-android-device-flasher",
+    # android-device-flasher runs only once a week. So have it sends
+    # notifications whenever there is an infra failure.
+    on_occurrence = ["INFRA_FAILURE"],
+    notify_emails = [
+        "chromium-infra+failures@google.com",
     ],
 )
 
@@ -352,4 +362,10 @@ luci.notifier(
     notify_emails = [
         "web-windowing-team@google.com",
     ],
+)
+
+luci.builder_health_notifier(
+    owner_email = "chrome-browser-infra-team@google.com",
+    ignore_buckets = ["try"],
+    notify_all_healthy = True,
 )

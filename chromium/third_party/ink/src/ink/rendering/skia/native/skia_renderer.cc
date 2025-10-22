@@ -42,7 +42,7 @@
 #include "ink/rendering/skia/native/internal/mesh_drawable.h"
 #include "ink/rendering/skia/native/internal/mesh_uniform_data.h"
 #include "ink/rendering/skia/native/internal/path_drawable.h"
-#include "ink/rendering/texture_bitmap_store.h"
+#include "ink/rendering/skia/native/texture_bitmap_store.h"
 #include "ink/strokes/in_progress_stroke.h"
 #include "ink/strokes/stroke.h"
 #include "include/core/SkCanvas.h"
@@ -110,7 +110,7 @@ BrushPaint::TextureMapping GetBrushPaintTextureMapping(
 }  // namespace
 
 SkiaRenderer::SkiaRenderer(
-    absl::Nullable<std::shared_ptr<TextureBitmapStore>> texture_provider)
+    absl_nullable std::shared_ptr<TextureBitmapStore> texture_provider)
     : texture_provider_(std::move(texture_provider)),
       shader_cache_(texture_provider_.get()) {}
 
@@ -346,6 +346,19 @@ void SkiaRenderer::Drawable::SetBrushColor(const Color& color) {
                drawable_impl);
   }
   ABSL_CHECK(has_color);
+}
+
+void SkiaRenderer::Drawable::SetImageFilter(sk_sp<SkImageFilter> image_filter) {
+  for (Implementation& drawable_impl : drawable_implementations_) {
+    std::visit(absl::Overload(
+                   [&image_filter](MeshDrawable& drawable) {
+                     drawable.SetImageFilter(image_filter);
+                   },
+                   [&image_filter](PathDrawable& drawable) {
+                     drawable.SetImageFilter(image_filter);
+                   }),
+               drawable_impl);
+  }
 }
 
 }  // namespace ink

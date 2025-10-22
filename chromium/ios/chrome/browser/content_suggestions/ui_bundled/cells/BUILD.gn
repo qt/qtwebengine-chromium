@@ -35,6 +35,7 @@ source_set("cells") {
   deps = [
     ":constants",
     "//base",
+    "//components/favicon_base",
     "//components/ntp_tiles",
     "//ios/chrome/app/strings",
     "//ios/chrome/browser/content_suggestions/ui_bundled:constants",
@@ -43,7 +44,9 @@ source_set("cells") {
     "//ios/chrome/browser/content_suggestions/ui_bundled/cells/resources",
     "//ios/chrome/browser/content_suggestions/ui_bundled/magic_stack:constants",
     "//ios/chrome/browser/content_suggestions/ui_bundled/magic_stack:magic_stack_module_content_view_delegate",
+    "//ios/chrome/browser/favicon/ui_bundled",
     "//ios/chrome/browser/ntp/ui_bundled:constants",
+    "//ios/chrome/browser/ntp/ui_bundled:theme",
     "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/shared/ui/symbols",
     "//ios/chrome/browser/shared/ui/util",
@@ -73,7 +76,6 @@ source_set("most_visited_tiles") {
     "most_visited_tiles_stack_view.h",
     "most_visited_tiles_stack_view.mm",
     "most_visited_tiles_stack_view_consumer.h",
-    "most_visited_tiles_stack_view_consumer_source.h",
   ]
   deps = [
     ":cells",
@@ -92,13 +94,13 @@ source_set("most_visited_tiles") {
     "//ios/chrome/browser/favicon/ui_bundled",
     "//ios/chrome/browser/menu/ui_bundled",
     "//ios/chrome/browser/net/model:crurl",
-    "//ios/chrome/browser/ntp/shared/metrics:utils",
     "//ios/chrome/browser/ntp/ui_bundled",
     "//ios/chrome/browser/ntp_tiles/model",
     "//ios/chrome/browser/policy/model:policy_util",
     "//ios/chrome/browser/shared/model/application_context",
     "//ios/chrome/browser/shared/model/prefs",
     "//ios/chrome/browser/shared/model/prefs:pref_names",
+    "//ios/chrome/browser/shared/model/profile:features",
     "//ios/chrome/browser/shared/model/utils",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/features",
@@ -145,12 +147,11 @@ source_set("shortcuts") {
     "//ios/chrome/browser/content_suggestions/ui_bundled/magic_stack:public",
     "//ios/chrome/browser/feature_engagement/model",
     "//ios/chrome/browser/ntp/ui_bundled",
+    "//ios/chrome/browser/ntp/ui_bundled:theme",
     "//ios/chrome/browser/shared/public/commands",
     "//ios/chrome/browser/shared/public/features",
     "//ios/chrome/browser/shared/ui/symbols",
     "//ios/chrome/browser/shared/ui/util",
-    "//ios/chrome/browser/signin/model:authentication_service",
-    "//ios/chrome/browser/signin/model:authentication_service_factory",
     "//ios/chrome/browser/whats_new/coordinator:util",
     "//ios/chrome/common/ui/colors",
     "//ios/chrome/common/ui/util",
@@ -173,7 +174,7 @@ source_set("constants") {
     "//ios/chrome/browser/shared/ui/symbols",
     "//ios/chrome/browser/shared/ui/util",
     "//ios/chrome/common/ui/util",
-    "//ui/base:base",
+    "//ui/base",
   ]
 }
 

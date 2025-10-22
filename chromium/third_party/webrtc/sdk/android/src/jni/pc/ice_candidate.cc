@@ -12,6 +12,7 @@
 
 #include <string>
 
+#include "api/jsep.h"
 #include "pc/webrtc_sdp.h"
 #include "sdk/android/generated_peerconnection_jni/IceCandidate_jni.h"
 #include "sdk/android/native_api/jni/java_types.h"
@@ -37,17 +38,15 @@ ScopedJavaLocalRef<jobject> CreateJavaIceCandidate(JNIEnv* env,
 
 }  // namespace
 
-Candidate JavaToNativeCandidate(JNIEnv* jni,
-                                const JavaRef<jobject>& j_candidate) {
+std::unique_ptr<IceCandidate> JavaToNativeCandidate(
+    JNIEnv* jni,
+    const JavaRef<jobject>& j_candidate) {
   std::string sdp_mid =
       JavaToStdString(jni, Java_IceCandidate_getSdpMid(jni, j_candidate));
   std::string sdp =
       JavaToStdString(jni, Java_IceCandidate_getSdp(jni, j_candidate));
-  Candidate candidate;
-  if (!SdpDeserializeCandidate(sdp_mid, sdp, &candidate, NULL)) {
-    RTC_LOG(LS_ERROR) << "SdpDescrializeCandidate failed with sdp " << sdp;
-  }
-  return candidate;
+  int sdp_mline_index = Java_IceCandidate_getSdpMLineIndex(jni, j_candidate);
+  return IceCandidate::Create(sdp_mid, sdp_mline_index, sdp, nullptr);
 }
 
 ScopedJavaLocalRef<jobject> NativeToJavaCandidate(JNIEnv* env,
@@ -62,12 +61,10 @@ ScopedJavaLocalRef<jobject> NativeToJavaCandidate(JNIEnv* env,
 
 ScopedJavaLocalRef<jobject> NativeToJavaIceCandidate(
     JNIEnv* env,
-    const IceCandidateInterface& candidate) {
-  std::string sdp;
-  RTC_CHECK(candidate.ToString(&sdp)) << "got so far: " << sdp;
-  return CreateJavaIceCandidate(env, candidate.sdp_mid(),
-                                candidate.sdp_mline_index(), sdp,
-                                candidate.candidate().url(), 0);
+    const IceCandidate& candidate) {
+  return CreateJavaIceCandidate(
+      env, candidate.sdp_mid(), candidate.sdp_mline_index(),
+      candidate.ToString(), candidate.candidate().url(), 0);
 }
 
 ScopedJavaLocalRef<jobjectArray> NativeToJavaCandidateArray(
@@ -164,17 +161,16 @@ JavaToNativeCandidateNetworkPolicy(
   return PeerConnectionInterface::kCandidateNetworkPolicyAll;
 }
 
-rtc::KeyType JavaToNativeKeyType(JNIEnv* jni,
-                                 const JavaRef<jobject>& j_key_type) {
+KeyType JavaToNativeKeyType(JNIEnv* jni, const JavaRef<jobject>& j_key_type) {
   std::string enum_name = GetJavaEnumName(jni, j_key_type);
 
   if (enum_name == "RSA")
-    return rtc::KT_RSA;
+    return KT_RSA;
   if (enum_name == "ECDSA")
-    return rtc::KT_ECDSA;
+    return KT_ECDSA;
 
   RTC_CHECK(false) << "Unexpected KeyType enum_name " << enum_name;
-  return rtc::KT_ECDSA;
+  return KT_ECDSA;
 }
 
 PeerConnectionInterface::ContinualGatheringPolicy
@@ -193,23 +189,23 @@ JavaToNativeContinualGatheringPolicy(
   return PeerConnectionInterface::GATHER_ONCE;
 }
 
-webrtc::PortPrunePolicy JavaToNativePortPrunePolicy(
+PortPrunePolicy JavaToNativePortPrunePolicy(
     JNIEnv* jni,
     const JavaRef<jobject>& j_port_prune_policy) {
   std::string enum_name = GetJavaEnumName(jni, j_port_prune_policy);
   if (enum_name == "NO_PRUNE") {
-    return webrtc::NO_PRUNE;
+    return NO_PRUNE;
   }
   if (enum_name == "PRUNE_BASED_ON_PRIORITY") {
-    return webrtc::PRUNE_BASED_ON_PRIORITY;
+    return PRUNE_BASED_ON_PRIORITY;
   }
   if (enum_name == "KEEP_FIRST_READY") {
-    return webrtc::KEEP_FIRST_READY;
+    return KEEP_FIRST_READY;
   }
 
   RTC_CHECK(false) << " Unexpected PortPrunePolicy enum name " << enum_name;
 
-  return webrtc::NO_PRUNE;
+  return NO_PRUNE;
 }
 
 PeerConnectionInterface::TlsCertPolicy JavaToNativeTlsCertPolicy(

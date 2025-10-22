@@ -7,24 +7,20 @@
 
 #include <stddef.h>
 
-#include <map>
 #include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
-#include "base/gtest_prod_util.h"
-#include "base/time/time.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card_benefit.h"
-#include "components/sync/base/data_type.h"
-#include "components/sync/protocol/autofill_specifics.pb.h"
 #include "components/webdata/common/web_database_table.h"
 
 class WebDatabase;
 
-namespace base {
-class Time;
-}
+namespace sync_pb {
+class PaymentInstrument;
+class PaymentInstrumentCreationOption;
+}  // namespace sync_pb
 
 namespace autofill {
 
@@ -35,19 +31,8 @@ struct CreditCardCloudTokenData;
 class Iban;
 struct PaymentsCustomerData;
 struct PaymentsMetadata;
+struct ServerCvc;
 class VirtualCardUsageData;
-// Helper struct to better group server cvc related variables for better
-// passing last_updated_timestamp, which is needed for sync bridge. Limited
-// scope in autofill table & sync bridge.
-struct ServerCvc {
-  bool operator==(const ServerCvc&) const = default;
-  // A server generated id to identify the corresponding credit card.
-  int64_t instrument_id;
-  // CVC value of the card.
-  std::u16string cvc;
-  // The timestamp of the most recent update to the data entry.
-  base::Time last_updated_timestamp;
-};
 
 // This class manages the various payments Autofill tables within the SQLite
 // database passed to the constructor. It expects the following schemas:
@@ -134,6 +119,11 @@ struct ServerCvc {
 //                      the card is not enrolled and is not eligible for
 //                      enrollment. kRetrievalUnenrolledAndEligible means the
 //                      card is not enrolled but is eligible for enrollment.
+//   card_benefit_source
+//                      The source of the saved benefit for this card. Can be a
+//                      card issuer or a third party platform represented by
+//                      an integer. Converted from CardBenefitSource enum from
+//                      the Chrome Sync response.
 // -----------------------------------------------------------------------------
 // server_card_cloud_token_data
 //                      Stores data related to Cloud Primary Account Number
@@ -457,16 +447,15 @@ class PaymentsAutofillTable : public WebDatabaseTable {
   // This will clear all the local cvcs.
   bool ClearLocalCvcs();
 
+  // Method to clean up for crbug.com/411681430.
+  bool CleanupForCrbug411681430();
+
   // Methods to add, update, remove and get the metadata for server cards and
   // IBANs.
   // For get method, return true if the operations succeeded.
   // For add/update/remove methods, return true if any changes actually
   // occurred.
-  // TODO (crbug.com/1504063): Merge Add/UpdateServerCardMetadata into a single
-  // method AddOrUpdateServerCardMetadata.
-  bool AddServerCardMetadata(const PaymentsMetadata& card_metadata);
-  bool UpdateServerCardMetadata(const CreditCard& credit_card);
-  bool UpdateServerCardMetadata(const PaymentsMetadata& card_metadata);
+  bool AddOrUpdateServerCardMetadata(const PaymentsMetadata& card_metadata);
   bool RemoveServerCardMetadata(const std::string& id);
   bool GetServerCardsMetadata(
       std::vector<PaymentsMetadata>& cards_metadata) const;
@@ -600,6 +589,7 @@ class PaymentsAutofillTable : public WebDatabaseTable {
   bool MigrateToVersion133RemoveLengthColumnFromMaskedIbansTable();
   bool MigrateToVersion135AddCardInfoRetrievalEnrollmentState();
   bool MigrateToVersion136AddPaymentInstrumentCreationOptionsTable();
+  bool MigrateToVersion141AddCardBenefitSourceColumn();
 
  private:
   // Adds to |masked_credit_cards| and updates |server_card_metadata|.

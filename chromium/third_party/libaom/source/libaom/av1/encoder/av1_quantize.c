@@ -803,19 +803,19 @@ void av1_init_plane_quantizers(const AV1_COMP *cpi, MACROBLOCK *x,
   const FRAME_TYPE frame_type = cm->current_frame.frame_type;
   int qindex_rd;
 
-  const int current_qindex = AOMMAX(
-      0,
-      AOMMIN(QINDEX_RANGE - 1, cm->delta_q_info.delta_q_present_flag
-                                   ? quant_params->base_qindex + x->delta_qindex
-                                   : quant_params->base_qindex));
+  const int current_qindex =
+      clamp(cm->delta_q_info.delta_q_present_flag
+                ? quant_params->base_qindex + x->delta_qindex
+                : quant_params->base_qindex,
+            0, QINDEX_RANGE - 1);
   const int qindex = av1_get_qindex(&cm->seg, segment_id, current_qindex);
 
   if (cpi->oxcf.sb_qp_sweep) {
     const int current_rd_qindex =
-        AOMMAX(0, AOMMIN(QINDEX_RANGE - 1, cm->delta_q_info.delta_q_present_flag
-                                               ? quant_params->base_qindex +
-                                                     x->rdmult_delta_qindex
-                                               : quant_params->base_qindex));
+        clamp(cm->delta_q_info.delta_q_present_flag
+                  ? quant_params->base_qindex + x->rdmult_delta_qindex
+                  : quant_params->base_qindex,
+              0, QINDEX_RANGE - 1);
     qindex_rd = av1_get_qindex(&cm->seg, segment_id, current_rd_qindex);
   } else {
     qindex_rd = qindex;
@@ -883,7 +883,8 @@ void av1_set_quantizer(AV1_COMMON *const cm, int min_qmlevel, int max_qmlevel,
   quant_params->base_qindex = AOMMAX(cm->delta_q_info.delta_q_present_flag, q);
   quant_params->y_dc_delta_q = 0;
 
-  if (enable_chroma_deltaq) {
+  // Disable deltaq in lossless mode.
+  if (enable_chroma_deltaq && q) {
     if (is_allintra &&
         (tuning == AOM_TUNE_IQ || tuning == AOM_TUNE_SSIMULACRA2)) {
       int chroma_dc_delta_q = 0;
@@ -964,7 +965,7 @@ void av1_set_quantizer(AV1_COMMON *const cm, int min_qmlevel, int max_qmlevel,
 
   // following section 8.3.2 in T-REC-H.Sup15 document
   // to apply to AV1 qindex in the range of [0, 255]
-  if (enable_hdr_deltaq) {
+  if (enable_hdr_deltaq && q) {
     int dqpCb = adjust_hdr_cb_deltaq(quant_params->base_qindex);
     int dqpCr = adjust_hdr_cr_deltaq(quant_params->base_qindex);
     quant_params->u_dc_delta_q = quant_params->u_ac_delta_q = dqpCb;

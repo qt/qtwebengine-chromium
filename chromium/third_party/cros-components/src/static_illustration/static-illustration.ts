@@ -57,38 +57,38 @@ export class StaticIllustration extends LitElement {
    * A url to a external static illustration.
    * @export
    */
-  url: string|null;
+  declare url: string|null;
   /**
    * Accessible text to inform screenreaders about this asset. If omitted it's
    * assumed the illustration is solely for visual aesthetic and will be aria
    * hidden to not clutter the a11y tree.
    * @export
    */
-  alt: string|null;
+  declare alt: string|null;
   /**
    * A template containing a local SVG file. This will only be rendered if no
    * url to an external asset has been provided.
    * @export
    */
-  template: HTMLTemplateElement;
+  declare template: HTMLTemplateElement;
   /**
    * If and only if `url` points to a SVG file all `fill`s in the svg will be
    * mapped to css variable specified in `fillColor`. Allows for legacy single
    * color svg's to be made dynamic. Pass the variable in as `--cros-name`.
    * @export
    */
-  forceColor: string|null;
+  declare forceColor: string|null;
 
   /**
    * If `url` points at a external svg file from `url` we cache it so we can
    * recolor it without having to repeat the network request.
    */
-  private cachedExternalSVG: string|null;
+  private declare cachedExternalSVG: string|null;
   /**
    * A src for a image tag that contains `url` but with after any necessary
    * dynamic color preprocessing.
    */
-  private imgSrc: string|null;
+  private declare imgSrc: string|null;
   /**
    * Everytime we make a fetch we increment this token. This allows us to
    * gracefully handle the user changing the url multiple times before the first

@@ -313,9 +313,6 @@ _NAMED_TYPE_INFO = {
       # GL_VERTEX_ARRAY_BINDING is the same as GL_VERTEX_ARRAY_BINDING_OES
       # 'GL_VERTEX_ARRAY_BINDING',
     ],
-    'invalid': [
-      'GL_FOG_HINT',
-    ],
   },
   'IndexedGLState': {
     'type': 'GLenum',
@@ -334,9 +331,6 @@ _NAMED_TYPE_INFO = {
       'GL_BLEND_DST_ALPHA',
       'GL_COLOR_WRITEMASK',
     ],
-    'invalid': [
-      'GL_FOG_HINT',
-    ],
   },
   'GetTexParamTarget': {
     'type': 'GLenum',
@@ -348,9 +342,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_2D_ARRAY',
       'GL_TEXTURE_3D',
     ],
-    'invalid': [
-      'GL_PROXY_TEXTURE_CUBE_MAP',
-    ]
   },
   'ReadBuffer': {
     'type': 'GLenum',
@@ -389,9 +380,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_CUBE_MAP_POSITIVE_Z',
       'GL_TEXTURE_CUBE_MAP_NEGATIVE_Z',
     ],
-    'invalid': [
-      'GL_PROXY_TEXTURE_CUBE_MAP',
-    ]
   },
   'TextureFboTarget': {
     'type': 'GLenum',
@@ -404,9 +392,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_CUBE_MAP_POSITIVE_Z',
       'GL_TEXTURE_CUBE_MAP_NEGATIVE_Z',
     ],
-    'invalid': [
-      'GL_PROXY_TEXTURE_CUBE_MAP',
-    ]
   },
   'Texture3DTarget': {
     'type': 'GLenum',
@@ -430,7 +415,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_2D_ARRAY',
     ],
     'invalid': [
-      'GL_TEXTURE_1D',
       'GL_TEXTURE_3D',
     ],
   },
@@ -564,10 +548,6 @@ _NAMED_TYPE_INFO = {
                   for cap in build_cmd_buffer_lib._CAPABILITY_FLAGS
                   if ('es3' in cap and cap['es3'] == True)
                   and 'extension_flag' not in cap],
-    'invalid': [
-      'GL_CLIP_PLANE0',
-      'GL_POINT_SPRITE',
-    ],
   },
   'DrawMode': {
     'type': 'GLenum',
@@ -801,9 +781,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_COMPARE_MODE',
       'GL_TEXTURE_COMPARE_FUNC',
     ],
-    'invalid': [
-      'GL_GENERATE_MIPMAP',
-    ],
   },
   'ShaderParameter': {
     'type': 'GLenum',
@@ -865,9 +842,6 @@ _NAMED_TYPE_INFO = {
       'GL_TEXTURE_MAX_LOD',
       'GL_TEXTURE_MIN_LOD',
       'GL_TEXTURE_WRAP_R',
-    ],
-    'invalid': [
-      'GL_GENERATE_MIPMAP',
     ],
   },
   'TextureWrapMode': {
@@ -979,9 +953,6 @@ _NAMED_TYPE_INFO = {
     ],
     'valid_es3': [
       'GL_FRAGMENT_SHADER_DERIVATIVE_HINT',
-    ],
-    'invalid': [
-      'GL_PERSPECTIVE_CORRECTION_HINT',
     ],
   },
   'HintMode': {
@@ -1516,9 +1487,9 @@ _NAMED_TYPE_INFO = {
     'type': 'GLenum',
     'is_complete': True,
     'valid': [
-      'GL_GUILTY_CONTEXT_RESET_ARB',
-      'GL_INNOCENT_CONTEXT_RESET_ARB',
-      'GL_UNKNOWN_CONTEXT_RESET_ARB',
+      'GL_GUILTY_CONTEXT_RESET',
+      'GL_INNOCENT_CONTEXT_RESET',
+      'GL_UNKNOWN_CONTEXT_RESET',
     ],
   },
   'SyncCondition': {
@@ -2583,12 +2554,14 @@ _FUNCTION_INFO = {
   'GetTexParameterfv': {
     'type': 'GETn',
     'decoder_func': 'DoGetTexParameterfv',
-    'result': ['SizedResult<GLfloat>']
+    'result': ['SizedResult<GLfloat>'],
+    'unit_test': False,
   },
   'GetTexParameteriv': {
     'type': 'GETn',
     'decoder_func': 'DoGetTexParameteriv',
-    'result': ['SizedResult<GLint>']
+    'result': ['SizedResult<GLint>'],
+    'unit_test': False,
   },
   'GetTranslatedShaderSourceANGLE': {
     'type': 'STRn',
@@ -4187,11 +4160,6 @@ def main(argv):
       chromium_root_dir)
   gen.ParseGLH("gpu/command_buffer/gles2_cmd_buffer_functions.txt")
 
-  gen.WritePepperGLES2Interface("ppapi/api/ppb_opengles2.idl", False)
-  gen.WritePepperGLES2Interface("ppapi/api/dev/ppb_opengles2ext_dev.idl", True)
-  gen.WriteGLES2ToPPAPIBridge("ppapi/lib/gl/gles2/gles2.c")
-  gen.WritePepperGLES2Implementation(
-      "ppapi/shared_impl/ppb_opengles2_shared.cc")
   gen.WriteCommandIds("gpu/command_buffer/common/gles2_cmd_ids_autogen.h")
   gen.WriteFormat("gpu/command_buffer/common/gles2_cmd_format_autogen.h")
   gen.WriteFormatTest(

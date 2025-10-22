@@ -34,6 +34,7 @@
 #include <limits>
 #include <memory>
 
+#include "base/containers/flat_set.h"
 #include "base/containers/span.h"
 #include "base/functional/function_ref.h"
 #include "base/memory/raw_ptr.h"
@@ -78,7 +79,6 @@ class GLES2Interface;
 namespace blink {
 class CanvasResource;
 class ExternalCanvasResource;
-class CanvasResourceProvider;
 class Extensions3DUtil;
 class StaticBitmapImage;
 class WebGraphicsContext3DProvider;
@@ -263,34 +263,46 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   scoped_refptr<StaticBitmapImage> TransferToStaticBitmapImage();
 
   // Returns a UnacceleratedStaticBitmapImage backed by a bitmap that will have
-  // a copy of the contents of the front buffer. This is only meant to be used
-  // for unaccelerated canvases as for accelerated contexts there are better
-  // ways to get a copy of the internal contents.
-  scoped_refptr<StaticBitmapImage> GetUnacceleratedStaticBitmapImage();
+  // a copy of the contents of the `source_buffer`. Resulting image will have
+  // N32 format and will have top-left orination and alpha type that matches
+  // `requested_alpha_type` of the drawing buffer.
+  scoped_refptr<StaticBitmapImage> GetRGBAUnacceleratedStaticBitmapImage(
+      SourceDrawingBuffer source_buffer);
 
+  // Returns a UnacceleratedStaticBitmapImage backed by a bitmap that will have
+  // a copy of the contents of the `source_buffer`. This is only meant to be
+  // used for unaccelerated canvases as for accelerated contexts there are
+  // better ways to get a copy of the internal contents. If
+  scoped_refptr<StaticBitmapImage> GetUnacceleratedStaticBitmapImage(
+      SourceDrawingBuffer source_buffer,
+      viz::SharedImageFormat format,
+      SkAlphaType alpha_type,
+      GrSurfaceOrigin origin);
+
+  // `src_rect` is always in top-left coordinate space.
   bool CopyToPlatformTexture(gpu::gles2::GLES2Interface*,
                              GLenum dst_target,
                              GLuint dst_texture,
                              GLint dst_level,
-                             bool premultiply_alpha,
-                             bool flip_y,
+                             SkAlphaType dst_alpha_type,
+                             GrSurfaceOrigin dst_origin,
                              const gfx::Point& dst_texture_offset,
-                             const gfx::Rect& src_sub_rectangle,
+                             const gfx::Rect& src_rect,
                              SourceDrawingBuffer);
 
-  bool CopyToPlatformMailbox(gpu::raster::RasterInterface*,
-                             gpu::Mailbox dst_mailbox,
-                             const gfx::Point& dst_texture_offset,
-                             const gfx::Rect& src_sub_rectangle,
-                             SourceDrawingBuffer src_buffer);
+  std::optional<gpu::SyncToken> CopyToPlatformSharedImage(
+      gpu::raster::RasterInterface*,
+      const scoped_refptr<gpu::ClientSharedImage>& dst_shared_image,
+      const gpu::SyncToken& dst_sync_token,
+      const gfx::Point& dst_texture_offset,
+      const gfx::Rect& src_sub_rectangle,
+      SourceDrawingBuffer src_buffer);
 
   bool CopyToVideoFrame(
       WebGraphicsContext3DVideoFramePool* frame_pool,
       SourceDrawingBuffer src_buffer,
       const gfx::ColorSpace& dst_color_space,
       WebGraphicsContext3DVideoFramePool::FrameReadyCallback callback);
-
-  sk_sp<SkData> PaintRenderingResultsToDataArray(SourceDrawingBuffer);
 
   int SampleCount() const { return sample_count_; }
   bool ExplicitResolveOfMultisampleData() const {
@@ -305,12 +317,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
   bool UsingSwapChain() const { return using_swap_chain_; }
 
-  bool IsOriginTopLeft() const {
-    // If the context has the flip_y extension, it will behave as having the
-    // origin of coordinates on the top left.
-    return opengl_flip_y_extension_;
-  }
-
   // Keep track of low latency buffer status.
   bool low_latency_enabled() const { return low_latency_enabled_; }
   void set_low_latency_enabled(bool low_latency_enabled) {
@@ -319,8 +325,7 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
   scoped_refptr<CanvasResource> ExportCanvasResource();
 
-  scoped_refptr<ExternalCanvasResource> ExportLowLatencyCanvasResource(
-      base::WeakPtr<CanvasResourceProvider> resource_provider);
+  scoped_refptr<ExternalCanvasResource> ExportLowLatencyCanvasResource();
 
   static const size_t kDefaultColorBufferCacheLimit;
 
@@ -413,9 +418,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
 
   struct ColorBuffer : public ThreadSafeRefCounted<ColorBuffer> {
     ColorBuffer(base::WeakPtr<DrawingBuffer> drawing_buffer,
-                const gfx::Size&,
-                viz::SharedImageFormat,
-                SkAlphaType alpha_type,
                 scoped_refptr<gpu::ClientSharedImage> shared_image,
                 std::unique_ptr<gpu::SharedImageTexture> shared_image_texture);
     ColorBuffer(const ColorBuffer&) = delete;
@@ -434,9 +436,6 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
     // by the beginDestruction method, which will eventually drain all of its
     // ColorBuffers.
     base::WeakPtr<DrawingBuffer> drawing_buffer;
-    const gfx::Size size;
-    const viz::SharedImageFormat format;
-    const SkAlphaType alpha_type;
 
     // The shared image used to send this buffer to the compositor.
     scoped_refptr<gpu::ClientSharedImage> shared_image;
@@ -460,12 +459,12 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   using CopyFunctionRef = base::FunctionRef<std::optional<gpu::SyncToken>(
       scoped_refptr<gpu::ClientSharedImage>,
       const gpu::SyncToken&,
-      SkAlphaType alpha_type,
-      const gfx::Size&)>;
-  bool CopyToPlatformInternal(gpu::InterfaceBase* dst_interface,
-                              bool dst_is_unpremul_gl,
-                              SourceDrawingBuffer src_buffer,
-                              CopyFunctionRef copy_function);
+      SkAlphaType alpha_type)>;
+  std::optional<gpu::SyncToken> CopyToPlatformInternal(
+      gpu::InterfaceBase* dst_interface,
+      bool dst_is_unpremul_gl,
+      SourceDrawingBuffer src_buffer,
+      CopyFunctionRef copy_function);
 
   enum ClearOption { kClearOnlyMultisampledFBO, kClearAllFBOs };
 
@@ -562,8 +561,10 @@ class PLATFORM_EXPORT DrawingBuffer : public cc::TextureLayerClient,
   // Helper function which does a readback from the currently-bound
   // framebuffer into a buffer of a certain size with 4-byte pixels.
   void ReadBackFramebuffer(base::span<uint8_t> pixels,
-                           SkColorType,
-                           WebGLImageConversion::AlphaOp);
+                           viz::SharedImageFormat destination_format,
+                           SkAlphaType destination_alpha_type,
+                           GrSurfaceOrigin destination_origin,
+                           SourceDrawingBuffer source_buffer);
 
   // If RGB emulation is required, then the CHROMIUM image's alpha channel
   // must be immediately cleared after it is bound to a texture. Nothing

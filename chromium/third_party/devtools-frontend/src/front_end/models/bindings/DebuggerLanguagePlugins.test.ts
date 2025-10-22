@@ -82,8 +82,13 @@ describe('DebuggerLanguagePlugins', () => {
         const workspace = Workspace.Workspace.WorkspaceImpl.instance();
         const targetManager = target.targetManager();
         const resourceMapping = new Bindings.ResourceMapping.ResourceMapping(targetManager, workspace);
-        const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance(
-            {forceNew: true, resourceMapping, targetManager});
+        const ignoreListManager = Workspace.IgnoreListManager.IgnoreListManager.instance({forceNew: true});
+        const debuggerWorkspaceBinding = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance({
+          forceNew: true,
+          resourceMapping,
+          targetManager,
+          ignoreListManager,
+        });
         pluginManager = debuggerWorkspaceBinding.pluginManager;
       });
 
@@ -92,7 +97,7 @@ describe('DebuggerLanguagePlugins', () => {
         const scriptUrl = urlString`https://script-host/script.js`;
         return debuggerModel.parsedScriptSource(
             '0' as Protocol.Runtime.ScriptId, scriptUrl, 0, 0, 0, 0, 0, '', null, false, undefined, false, false, 0,
-            null, null, null, null, null, null);
+            null, null, null, null, null, null, null);
       }
 
       it('correctly processes missing debug info if available', async () => {

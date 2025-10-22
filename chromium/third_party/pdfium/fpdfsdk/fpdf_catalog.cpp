@@ -12,13 +12,15 @@
 
 FPDF_EXPORT FPDF_BOOL FPDF_CALLCONV
 FPDFCatalog_IsTagged(FPDF_DOCUMENT document) {
-  CPDF_Document* pDoc = CPDFDocumentFromFPDFDocument(document);
-  if (!pDoc)
+  CPDF_Document* doc = CPDFDocumentFromFPDFDocument(document);
+  if (!doc) {
     return false;
+  }
 
-  const CPDF_Dictionary* pCatalog = pDoc->GetRoot();
-  if (!pCatalog)
+  const CPDF_Dictionary* pCatalog = doc->GetRoot();
+  if (!pCatalog) {
     return false;
+  }
 
   RetainPtr<const CPDF_Dictionary> pMarkInfo = pCatalog->GetDictFor("MarkInfo");
   return pMarkInfo && pMarkInfo->GetIntegerFor("Marked") != 0;

@@ -14,7 +14,6 @@
 #include "base/containers/contains.h"
 #include "base/functional/bind.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/time/default_clock.h"
 #include "base/time/time.h"
 #include "base/trace_event/trace_event.h"
@@ -57,6 +56,8 @@ const char
              "all_screens";
 constexpr char kObsoleteFederatedIdentityActiveSesssionExceptionsPref[] =
     "profile.content_settings.exceptions.fedcm_active_session";
+constexpr char kObsoletePrivateNetworkChooserDataPref[] =
+    "profile.content_settings.exceptions.private_network_chooser_data";
 
 #if !BUILDFLAG(IS_IOS)
 // This setting was accidentally bound to a UI surface intended for a different
@@ -64,8 +65,6 @@ constexpr char kObsoleteFederatedIdentityActiveSesssionExceptionsPref[] =
 // except via enterprise policy, so it is temporarily cleaned up here to revert
 // it to its default value.
 // TODO(https://crbug.com/367181093): clean this up.
-constexpr char kBug364820109ExceptionSettingToClear[] =
-    "profile.content_settings.exceptions.javascript_jit";
 constexpr char kBug364820109AlreadyWorkedAroundPref[] =
     "profile.did_work_around_bug_364820109_exceptions";
 #endif  // !BUILDFLAG(IS_IOS)
@@ -106,6 +105,7 @@ void PrefProvider::RegisterProfilePrefs(
       kObsoleteGetDisplayMediaSetAutoSelectAllScreensAllowedForUrlsExceptionsPref);
   registry->RegisterListPref(
       kObsoleteFederatedIdentityActiveSesssionExceptionsPref);
+  registry->RegisterDictionaryPref(kObsoletePrivateNetworkChooserDataPref);
 #if !BUILDFLAG(IS_IOS)
   // TODO(https://crbug.com/367181093): clean this up.
   registry->RegisterBooleanPref(kBug364820109AlreadyWorkedAroundPref, false);
@@ -225,7 +225,8 @@ bool PrefProvider::SetWebsiteSetting(
       store_last_modified_ ? clock_->Now() : base::Time();
 
   DCHECK(!constraints.track_last_visit_for_autoexpiration() ||
-         content_settings::CanTrackLastVisit(content_type));
+         content_settings::CanTrackLastVisit(content_type))
+      << content_type;
   // Last visit timestamps can only be tracked for host-specific pattern.
   DCHECK(!constraints.track_last_visit_for_autoexpiration() ||
          !primary_pattern.GetHost().empty());
@@ -418,7 +419,7 @@ void PrefProvider::ShutdownOnUIThread() {
 
 ContentSettingsPref* PrefProvider::GetPref(ContentSettingsType type) const {
   auto it = content_settings_prefs_.find(type);
-  CHECK(it != content_settings_prefs_.end(), base::NotFatalUntil::M130);
+  CHECK(it != content_settings_prefs_.end());
   return it->second.get();
 }
 
@@ -444,13 +445,11 @@ void PrefProvider::DiscardOrMigrateObsoletePreferences() {
   prefs_->ClearPref(
       kObsoleteGetDisplayMediaSetAutoSelectAllScreensAllowedForUrlsExceptionsPref);
   prefs_->ClearPref(kObsoleteFederatedIdentityActiveSesssionExceptionsPref);
+  prefs_->ClearPref(kObsoletePrivateNetworkChooserDataPref);
 
 #if !BUILDFLAG(IS_IOS)
   // TODO(https://crbug.com/367181093): clean this up.
-  if (!prefs_->GetBoolean(kBug364820109AlreadyWorkedAroundPref)) {
-    prefs_->ClearPref(kBug364820109ExceptionSettingToClear);
-    prefs_->SetBoolean(kBug364820109AlreadyWorkedAroundPref, true);
-  }
+  prefs_->ClearPref(kBug364820109AlreadyWorkedAroundPref);
 #endif  // !BUILDFLAG(IS_IOS)
 }
 

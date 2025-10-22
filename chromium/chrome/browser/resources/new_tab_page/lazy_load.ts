@@ -10,24 +10,30 @@
  * elements (either not visible by default or not as performance critical).
  */
 
+import './ntp_promo/ntp_promo_proxy.js';
+import './ntp_promo/ntp_single_promo.js';
 import './middle_slot_promo.js';
 import './voice_search_overlay.js';
 import './modules/module_descriptors.js';
 import 'chrome://resources/cr_components/most_visited/most_visited.js';
+import 'chrome://resources/cr_components/composebox/composebox.js';
 
+export {CustomizeButtonsElement} from 'chrome://new-tab-page/shared/customize_buttons/customize_buttons.js';
+export {ComposeboxFile} from 'chrome://resources/cr_components/composebox/common.js';
+export {ComposeboxElement} from 'chrome://resources/cr_components/composebox/composebox.js';
+export {ComposeboxProxyImpl} from 'chrome://resources/cr_components/composebox/composebox_proxy.js';
+export {ComposeboxFileCarouselElement} from 'chrome://resources/cr_components/composebox/file_carousel.js';
+export {ComposeboxFileThumbnailElement} from 'chrome://resources/cr_components/composebox/file_thumbnail.js';
 export {PageImageServiceBrowserProxy} from 'chrome://resources/cr_components/page_image_service/browser_proxy.js';
-export {FooterElement} from './footer.js';
 export {LensErrorType, LensFormElement, LensSubmitType} from './lens_form.js';
 export {LensUploadDialogAction, LensUploadDialogElement, LensUploadDialogError} from './lens_upload_dialog.js';
 export {MiddleSlotPromoElement, PromoDismissAction} from './middle_slot_promo.js';
-export {MobilePromoElement} from './mobile_promo.js';
 export {InfoDialogElement} from './modules/info_dialog.js';
 export {ParentTrustedDocumentProxy} from './modules/microsoft_auth_frame_connector.js';
 export {InitializeModuleCallback, Module, ModuleDescriptor} from './modules/module_descriptor.js';
 export {counterfactualLoad} from './modules/module_descriptors.js';
-export {ModuleHeaderElement} from './modules/module_header.js';
 export {ModuleRegistry} from './modules/module_registry.js';
-export {ModuleWrapperElement} from './modules/module_wrapper.js';
+export {ModuleInstance, ModuleWrapperElement} from './modules/module_wrapper.js';
 export {microsoftAuthModuleDescriptor, MicrosoftAuthModuleElement} from './modules/v2/authentication/microsoft_auth_module.js';
 export {MicrosoftAuthProxyImpl} from './modules/v2/authentication/microsoft_auth_module_proxy.js';
 export {CalendarElement} from './modules/v2/calendar/calendar.js';
@@ -47,7 +53,12 @@ export {FileSuggestionElement} from './modules/v2/file_suggestion/file_suggestio
 export {microsoftFilesModuleDescriptor, MicrosoftFilesModuleElement} from './modules/v2/file_suggestion/microsoft_files_module.js';
 export {MicrosoftFilesProxyImpl} from './modules/v2/file_suggestion/microsoft_files_proxy.js';
 export {ModuleHeaderElement as ModuleHeaderElementV2} from './modules/v2/module_header.js';
-export {DisableModuleEvent, DismissModuleElementEvent, DismissModuleInstanceEvent, MODULE_CUSTOMIZE_ELEMENT_ID, ModulesV2Element, NamedWidth, SUPPORTED_MODULE_WIDTHS} from './modules/v2/modules.js';
+export {DisableModuleEvent, DismissModuleElementEvent, DismissModuleInstanceEvent, ModulesElement, NamedWidth, SUPPORTED_MODULE_WIDTHS} from './modules/v2/modules.js';
 export {ModuleElement as MostRelevantTabResumptionModuleElement, mostRelevantTabResumptionDescriptor} from './modules/v2/most_relevant_tab_resumption/module.js';
 export {MostRelevantTabResumptionProxyImpl} from './modules/v2/most_relevant_tab_resumption/most_relevant_tab_resumption_proxy.js';
+export {IconContainerElement} from './modules/v2/tab_groups/icon_container.js';
+export {ModuleElement as TabGroupsModuleElement, tabGroupsDescriptor} from './modules/v2/tab_groups/module.js';
+export {TabGroupsProxyImpl} from './modules/v2/tab_groups/tab_groups_proxy.js';
+export {NtpPromoProxy, NtpPromoProxyImpl} from './ntp_promo/ntp_promo_proxy.js';
+export {NtpSinglePromoElement} from './ntp_promo/ntp_single_promo.js';
 export {VoiceSearchOverlayElement} from './voice_search_overlay.js';

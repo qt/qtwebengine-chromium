@@ -11,6 +11,7 @@
 #include "base/callback_list.h"
 #include "base/check.h"
 #include "base/containers/flat_set.h"
+#include "base/debug/dump_without_crashing.h"
 #include "base/functional/bind.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/rtl.h"
@@ -114,6 +115,7 @@ bool AcceleratorShouldCancelMenu(const ui::Accelerator& accelerator) {
   if (accelerator.key_code() == ui::VKEY_CONTROL ||
       accelerator.key_code() == ui::VKEY_MENU ||  // aka Alt
       accelerator.key_code() == ui::VKEY_COMMAND ||
+      accelerator.key_code() == ui::VKEY_RIGHT_COMMAND ||
       accelerator.key_code() == ui::VKEY_SHIFT) {
     return false;
   }
@@ -349,7 +351,7 @@ static void RepostEventImpl(const ui::LocatedEvent* event,
   }
 
   gfx::Point screen_loc_pixels =
-      display::win::ScreenWin::DIPToScreenPoint(screen_loc);
+      display::win::GetScreenWin()->DIPToScreenPoint(screen_loc);
   HWND target_window = ::WindowFromPoint(screen_loc_pixels.ToPOINT());
   // If we don't find a native window for the HWND at the current location,
   // then attempt to find a native window from its parent if one exists.
@@ -946,11 +948,10 @@ void MenuController::OnMouseReleased(SubmenuView* source,
     return;
   }
 
-  // Mouse releases during DnD are handled differently by platforms. Most will
-  // consume the mouse release to end the DnD, which would subsequently trigger
-  // OnDragComplete. However, Wayland will send a spurious mouse release event
-  // before ending the DnD, which should be ignored by this menu.
-  if (drag_in_progress_) {
+  // The menu should ignore mouse release events and refrain from closing if a
+  // drag operation is in progress or has been recently canceled without
+  // immediate notification.
+  if (drag_in_progress_ || for_drop_) {
     return;
   }
 
@@ -1567,6 +1568,34 @@ void MenuController::OnMenuItemDestroying(MenuItemView* menu_item) {
   }
 #endif
   UnregisterAlertedItem(menu_item);
+
+  bool found_in_pending_state = false;
+  bool found_in_current_state = false;
+  int menu_stack_matches = 0;
+
+  if (pending_state_.item == menu_item) {
+    pending_state_.item = nullptr;
+    found_in_pending_state = true;
+  }
+  if (state_.item == menu_item) {
+    state_.item = nullptr;
+    found_in_current_state = true;
+  }
+
+  for (auto& menu_state_pair : menu_stack_) {
+    if (menu_state_pair.first.item == menu_item) {
+      menu_state_pair.first.item = nullptr;
+      menu_stack_matches++;
+    }
+  }
+
+  if (found_in_pending_state || found_in_current_state ||
+      menu_stack_matches > 0) {
+    // This indicates a lifecycle management issue - MenuItemView destroyed
+    // while still referenced by MenuController.
+    // Remove this DumpWithoutCrashing once we get enough information.
+    base::debug::DumpWithoutCrashing();
+  }
 }
 
 void MenuController::AnimationProgressed(const gfx::Animation* animation) {
@@ -2367,9 +2396,9 @@ void MenuController::OpenMenuImpl(MenuItemView* item, bool show) {
   // Anchor for calculated bounds. Can be alternatively used by a system
   // compositor for better positioning.
   ui::OwnedWindowAnchor anchor;
-  bool calculate_as_bubble_menu =
+  const bool calculate_as_bubble_menu =
       MenuItemView::IsBubble(state_.anchor) ||
-      (menu_config.use_bubble_border && menu_config.CornerRadiusForMenu(this));
+      menu_config.ShouldUseBubbleBorderForMenu(this);
   gfx::Rect bounds =
       calculate_as_bubble_menu
           ? CalculateBubbleMenuBounds(item, preferred_open_direction,
@@ -2759,7 +2788,6 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(
   int y = 0;
   const gfx::Rect& monitor_bounds = state_.monitor_bounds;
   const MenuConfig& menu_config = MenuConfig::instance();
-  const int corner_radius = menu_config.CornerRadiusForMenu(this);
 
   if (!is_child_menu) {
     // This is a top-level menu, position it relative to the anchor bounds.
@@ -2774,7 +2802,7 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(
         // In case of bubbles, the maximum width is limited by the space
         // between the display corner and the target area + the tip size.
         const bool is_bubble_menu =
-            menu_config.use_bubble_border && corner_radius;
+            menu_config.ShouldUseBubbleBorderForMenu(this);
         if (is_anchored_bubble || is_bubble_menu ||
             item->actual_menu_position() == MenuPosition::kAboveBounds) {
           // menu_size is expected to include not just the content size
@@ -2974,6 +3002,8 @@ gfx::Rect MenuController::CalculateBubbleMenuBounds(
     // out the border and shadow at the top and bottom.
     menu_size.set_height(std::min(
         menu_size.height(), monitor_bounds.height() + border_insets.height()));
+
+    const int corner_radius = menu_config.CornerRadiusForMenu(this);
     y = anchor_bounds.y() - border_insets.top() -
         (use_ash_system_ui_layout_
              ? menu_config.vertical_touchable_menu_item_padding
@@ -3221,12 +3251,19 @@ void MenuController::SelectByChar(char16_t character) {
   char16_t char_array[] = {character, 0};
   char16_t key = base::i18n::ToLower(char_array)[0];
   MenuItemView* item = pending_state_.item;
+  if (!item) {
+    return;
+  }
   if (!item->SubmenuIsShowing()) {
     item = item->GetParentMenuItem();
   }
   DCHECK(item);
   DCHECK(item->HasSubmenu());
   DCHECK(item->GetSubmenu());
+
+  if (!item) {
+    return;
+  }
   if (item->GetSubmenu()->GetMenuItems().empty()) {
     return;
   }

@@ -3,6 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "content/browser/child_process_security_policy_impl.h"
@@ -29,7 +30,6 @@
 #include "content/shell/browser/shell.h"
 #include "content/shell/common/shell_switches.h"
 #include "content/test/content_browser_test_utils_internal.h"
-#include "ipc/ipc_security_test_util.h"
 #include "net/dns/mock_host_resolver.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
 #include "ui/webui/untrusted_web_ui_browsertest_util.h"

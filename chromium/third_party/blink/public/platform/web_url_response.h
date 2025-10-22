@@ -50,6 +50,7 @@
 namespace network {
 namespace mojom {
 enum class AlternateProtocolUsage;
+enum class DeviceBoundSessionUsage;
 enum class FetchResponseSource;
 enum class FetchResponseType : int32_t;
 enum class IPAddressSpace : int32_t;
@@ -58,6 +59,7 @@ class URLResponseHead;
 class LoadTimingInfo;
 class ServiceWorkerRouterInfo;
 }  // namespace mojom
+struct IntegrityMetadata;
 }  // namespace network
 
 namespace net {
@@ -119,6 +121,9 @@ class BLINK_PLATFORM_EXPORT WebURLResponse {
   base::Time ResponseTime() const;
   void SetResponseTime(base::Time);
 
+  base::Time OriginalResponseTime() const;
+  void SetOriginalResponseTime(base::Time);
+
   WebString MimeType() const;
   void SetMimeType(const WebString&);
 
@@ -176,6 +181,9 @@ class BLINK_PLATFORM_EXPORT WebURLResponse {
   // See network.mojom.URLResponseHead.was_fetched_via_service_worker.
   bool WasFetchedViaServiceWorker() const;
   void SetWasFetchedViaServiceWorker(bool);
+
+  bool FromSyntheticResponse() const;
+  void SetFromSyntheticResponse(bool);
 
   // Set when this request was loaded via a ServiceWorker.
   // See network.mojom.URLResponseHead.service_worker_response_source.
@@ -293,6 +301,18 @@ class BLINK_PLATFORM_EXPORT WebURLResponse {
   bool ShouldUseSourceHashForJSCodeCache() const;
 
   void SetWasFetchedViaCache(bool);
+
+  void SetDeviceBoundSessionUsage(network::mojom::DeviceBoundSessionUsage);
+  network::mojom::DeviceBoundSessionUsage DeviceBoundSessionUsage() const;
+
+  // Whether the request was actually deferred by any device bound sessions.
+  void SetWasDeferredByDeviceBoundSession(bool);
+  bool WasDeferredByDeviceBoundSession() const;
+
+  void SetIsIpProtectionUsed(bool);
+  bool IsIpProtectionUsed() const;
+
+  void SetUnencodedDigests(std::vector<network::IntegrityMetadata>);
 
 #if INSIDE_BLINK
  protected:

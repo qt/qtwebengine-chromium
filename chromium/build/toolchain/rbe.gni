@@ -70,6 +70,11 @@ if (use_reclient) {
 }
 
 if (use_remoteexec) {
+  assert(use_reclient || use_siso,
+         "Can't enable remoteexec when use_reclient and use_siso are false")
+}
+
+if (use_remoteexec) {
   rbe_logs = [ "use_remoteexec=true" ]
 } else {
   rbe_logs = [ "use_remoteexec=false" ]
@@ -79,6 +84,14 @@ if (use_reclient) {
   rbe_logs += [ "use_reclient=true" ]
 } else {
   rbe_logs += [ "use_reclient=false" ]
+}
+
+if (use_siso && rbe_exec_root != rebase_path("//")) {
+  assert(target_os == "chromeos" && rbe_exec_root == "/",
+         "Can't use non-default rbe_exec_root with siso.")
+
+  # cros chroot ebuild case.
+  rbe_logs += [ "source_root=" + rebase_path("//") ]
 }
 
 # Siso native also uses rewrapper cfg file

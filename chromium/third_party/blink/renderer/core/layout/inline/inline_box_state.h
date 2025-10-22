@@ -10,6 +10,8 @@
 #include "base/dcheck_is_on.h"
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/layout/geometry/logical_rect.h"
+#include "third_party/blink/renderer/core/layout/inline/fit_text_scale.h"
+#include "third_party/blink/renderer/core/layout/inline/inline_item_result.h"
 #include "third_party/blink/renderer/core/layout/inline/line_box_fragment_builder.h"
 #include "third_party/blink/renderer/core/style/computed_style_constants.h"
 #include "third_party/blink/renderer/platform/fonts/font_height.h"
@@ -123,13 +125,15 @@ struct InlineBoxState {
   // The computed metrics is included into the line height of the current box.
   void ComputeTextMetrics(const ComputedStyle&,
                           const Font& fontref,
-                          FontBaseline ifc_baseline);
+                          FontBaseline ifc_baseline,
+                          const FitTextBlockScale* scale);
   void EnsureTextMetrics(const ComputedStyle&,
                          const Font& fontref,
-                         FontBaseline ifc_baseline);
+                         FontBaseline ifc_baseline,
+                         const FitTextBlockScale* scale);
   void ResetTextMetrics();
 
-  void AccumulateUsedFonts(const ShapeResultView*);
+  void AccumulateUsedFonts(const ShapeResultView*, float scale = 1.0f);
 
   // 'text-top' offset for 'vertical-align'.
   LayoutUnit TextTop(FontBaseline baseline_type) const;
@@ -170,8 +174,10 @@ class CORE_EXPORT InlineLayoutStateStack {
   // @return The initial box state for the line.
   InlineBoxState* OnBeginPlaceItems(const InlineNode node,
                                     const ComputedStyle&,
+                                    const InlineItemResults& line_items,
                                     FontBaseline,
                                     bool line_height_quirk,
+                                    bool should_scale_line_height,
                                     LogicalLineItems* line_box);
 
   // Push a box state stack.
@@ -185,6 +191,7 @@ class CORE_EXPORT InlineLayoutStateStack {
                             const InlineItem&,
                             const InlineItemResult&,
                             FontBaseline baseline_type,
+                            const FitTextBlockScale& text_scale,
                             LogicalLineItems* line_box);
 
   // Pop a box state stack.
@@ -250,6 +257,7 @@ class CORE_EXPORT InlineLayoutStateStack {
   // a box tree.
   void CreateBoxFragments(const ConstraintSpace&,
                           LogicalLineItems*,
+                          LayoutUnit line_box_line_height,
                           bool is_opaque);
 
 #if DCHECK_IS_ON()
@@ -265,6 +273,7 @@ class CORE_EXPORT InlineLayoutStateStack {
                    FontBaseline);
 
   void AddBoxFragmentPlaceholder(InlineBoxState*,
+                                 const FitTextBlockScale& text_scale,
                                  LogicalLineItems*,
                                  FontBaseline);
   void AddBoxData(const ConstraintSpace&, InlineBoxState*, LogicalLineItems*);
@@ -321,7 +330,7 @@ class CORE_EXPORT InlineLayoutStateStack {
     unsigned fragment_start;
     unsigned fragment_end;
     // Ruby columns in the above range.
-    Member<HeapVector<Member<LogicalRubyColumn>>> ruby_column_list;
+    Member<GCedHeapVector<Member<LogicalRubyColumn>>> ruby_column_list;
 
     Member<const InlineItem> item;
     LogicalRect rect;
@@ -345,6 +354,7 @@ class CORE_EXPORT InlineLayoutStateStack {
 
     const LayoutResult* CreateBoxFragment(const ConstraintSpace&,
                                           LogicalLineItems*,
+                                          LayoutUnit line_box_line_height,
                                           bool is_opaque = false);
     void Trace(Visitor* visitor) const;
   };

@@ -17,6 +17,7 @@
 #include "base/numerics/safe_conversions.h"
 #include "cc/paint/paint_op_reader.h"
 #include "cc/paint/paint_op_writer.h"
+#include "third_party/skia/include/core/SkCPURecorder.h"
 #include "third_party/skia/include/core/SkColorSpace.h"
 #include "third_party/skia/include/core/SkImage.h"
 #include "third_party/skia/include/core/SkPixmap.h"
@@ -28,7 +29,6 @@
 #include "third_party/skia/include/gpu/ganesh/SkImageGanesh.h"
 #include "third_party/skia/include/gpu/graphite/Image.h"
 #include "third_party/skia/include/gpu/graphite/Recorder.h"
-#include "ui/gfx/color_conversion_sk_filter_cache.h"
 #include "ui/gfx/hdr_metadata.h"
 #include "ui/gfx/mojom/hdr_metadata.mojom.h"
 
@@ -725,7 +725,9 @@ bool ServiceImageTransferCacheEntry::Deserialize(
       // `graphite_recorder` to be nullptr if `image_` is not texture backed.
       // Need to handle this case (currently just goes through gr_context path
       // with nullptr context).
-      image_ = image_->makeColorSpace(gr_context_, target_color_space);
+      image_ = image_->makeColorSpace(
+          gr_context_ ? gr_context_->asRecorder() : skcpu::Recorder::TODO(),
+          target_color_space, {});
       if (needs_mips && gr_context_ && image_ && image_->isTextureBacked()) {
         image_ = SkImages::TextureFromImage(
             gr_context, image_, skgpu::Mipmapped::kYes, skgpu::Budgeted::kNo);

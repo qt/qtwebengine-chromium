@@ -92,8 +92,12 @@ ValidValue stateless::Context::IsValidEnumValue(VkImageLayout value) const {
             return IsExtEnabled(extensions.vk_khr_video_encode_queue) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
             return IsExtEnabled(extensions.vk_ext_attachment_feedback_loop_layout) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM:
+            return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
             return IsExtEnabled(extensions.vk_khr_video_encode_quantization_map) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT:
+            return IsExtEnabled(extensions.vk_ext_zero_initialize_device_memory) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -171,12 +175,19 @@ ValidValue stateless::Context::IsValidEnumValue(VkObjectType value) const {
             return IsExtEnabled(extensions.vk_fuchsia_buffer_collection) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_MICROMAP_EXT:
             return IsExtEnabled(extensions.vk_ext_opacity_micromap) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_OBJECT_TYPE_TENSOR_ARM:
+        case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
+            return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
             return IsExtEnabled(extensions.vk_nv_optical_flow) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_SHADER_EXT:
             return IsExtEnabled(extensions.vk_ext_shader_object) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
             return IsExtEnabled(extensions.vk_khr_pipeline_binary) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM:
+            return IsExtEnabled(extensions.vk_arm_data_graph) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
+            return IsExtEnabled(extensions.vk_nv_external_compute_queue) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
         case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
             return IsExtEnabled(extensions.vk_ext_device_generated_commands) ? ValidValue::Valid : ValidValue::NoExtension;
@@ -444,8 +455,25 @@ ValidValue stateless::Context::IsValidEnumValue(VkFormat value) const {
         case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
             return IsExtEnabled(extensions.vk_img_format_pvrtc) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_FORMAT_R8_BOOL_ARM:
+            return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_FORMAT_R16G16_SFIXED5_NV:
             return IsExtEnabled(extensions.vk_nv_optical_flow) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_FORMAT_R10X6_UINT_PACK16_ARM:
+        case VK_FORMAT_R10X6G10X6_UINT_2PACK16_ARM:
+        case VK_FORMAT_R10X6G10X6B10X6A10X6_UINT_4PACK16_ARM:
+        case VK_FORMAT_R12X4_UINT_PACK16_ARM:
+        case VK_FORMAT_R12X4G12X4_UINT_2PACK16_ARM:
+        case VK_FORMAT_R12X4G12X4B12X4A12X4_UINT_4PACK16_ARM:
+        case VK_FORMAT_R14X2_UINT_PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2_UINT_2PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2B14X2A14X2_UINT_4PACK16_ARM:
+        case VK_FORMAT_R14X2_UNORM_PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2_UNORM_2PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2B14X2A14X2_UNORM_4PACK16_ARM:
+        case VK_FORMAT_G14X2_B14X2R14X2_2PLANE_420_UNORM_3PACK16_ARM:
+        case VK_FORMAT_G14X2_B14X2R14X2_2PLANE_422_UNORM_3PACK16_ARM:
+            return IsExtEnabled(extensions.vk_arm_format_pack) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -943,6 +971,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkDescriptorType value) const {
         case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
         case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
             return IsExtEnabled(extensions.vk_qcom_image_processing) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+            return IsExtEnabled(extensions.vk_arm_tensors) ? ValidValue::Valid : ValidValue::NoExtension;
         case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
             return IsExtEnabled(extensions.vk_valve_mutable_descriptor_type) ||
                            IsExtEnabled(extensions.vk_ext_mutable_descriptor_type)
@@ -1002,6 +1032,8 @@ ValidValue stateless::Context::IsValidEnumValue(VkPipelineBindPoint value) const
                        : ValidValue::NoExtension;
         case VK_PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI:
             return IsExtEnabled(extensions.vk_huawei_subpass_shading) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM:
+            return IsExtEnabled(extensions.vk_arm_data_graph) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1199,8 +1231,11 @@ ValidValue stateless::Context::IsValidEnumValue(VkPresentModeKHR value) const {
         case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
         case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
             return IsExtEnabled(extensions.vk_khr_shared_presentable_image) ? ValidValue::Valid : ValidValue::NoExtension;
-        case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT:
-            return IsExtEnabled(extensions.vk_ext_present_mode_fifo_latest_ready) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_PRESENT_MODE_FIFO_LATEST_READY_KHR:
+            return IsExtEnabled(extensions.vk_khr_present_mode_fifo_latest_ready) ||
+                           IsExtEnabled(extensions.vk_ext_present_mode_fifo_latest_ready)
+                       ? ValidValue::Valid
+                       : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1277,11 +1312,12 @@ ValidValue stateless::Context::IsValidEnumValue(VkComponentTypeKHR value) const 
         case VK_COMPONENT_TYPE_UINT64_KHR:
         case VK_COMPONENT_TYPE_SINT8_PACKED_NV:
         case VK_COMPONENT_TYPE_UINT8_PACKED_NV:
-        case VK_COMPONENT_TYPE_FLOAT_E4M3_NV:
-        case VK_COMPONENT_TYPE_FLOAT_E5M2_NV:
             return ValidValue::Valid;
         case VK_COMPONENT_TYPE_BFLOAT16_KHR:
             return IsExtEnabled(extensions.vk_khr_shader_bfloat16) ? ValidValue::Valid : ValidValue::NoExtension;
+        case VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT:
+        case VK_COMPONENT_TYPE_FLOAT8_E5M2_EXT:
+            return IsExtEnabled(extensions.vk_ext_shader_float8) ? ValidValue::Valid : ValidValue::NoExtension;
         default:
             return ValidValue::NotFound;
     };
@@ -1940,6 +1976,17 @@ ValidValue stateless::Context::IsValidEnumValue(VkDirectDriverLoadingModeLUNARG 
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkTensorTilingARM value) const {
+    switch (value) {
+        case VK_TENSOR_TILING_OPTIMAL_ARM:
+        case VK_TENSOR_TILING_LINEAR_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkOpticalFlowPerformanceLevelNV value) const {
     switch (value) {
         case VK_OPTICAL_FLOW_PERFORMANCE_LEVEL_UNKNOWN_NV:
@@ -2078,6 +2125,57 @@ ValidValue stateless::Context::IsValidEnumValue(VkOutOfBandQueueTypeNV value) co
 }
 
 template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPointARM value) const {
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TRANSIENT_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelineSessionBindPointTypeARM value) const {
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_TYPE_MEMORY_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkDataGraphPipelinePropertyARM value) const {
+    switch (value) {
+        case VK_DATA_GRAPH_PIPELINE_PROPERTY_CREATION_LOG_ARM:
+        case VK_DATA_GRAPH_PIPELINE_PROPERTY_IDENTIFIER_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkPhysicalDeviceDataGraphProcessingEngineTypeARM value) const {
+    switch (value) {
+        case VK_PHYSICAL_DEVICE_DATA_GRAPH_PROCESSING_ENGINE_TYPE_DEFAULT_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
+ValidValue stateless::Context::IsValidEnumValue(VkPhysicalDeviceDataGraphOperationTypeARM value) const {
+    switch (value) {
+        case VK_PHYSICAL_DEVICE_DATA_GRAPH_OPERATION_TYPE_SPIRV_EXTENDED_INSTRUCTION_SET_ARM:
+            return ValidValue::Valid;
+        default:
+            return ValidValue::NotFound;
+    };
+}
+
+template <>
 ValidValue stateless::Context::IsValidEnumValue(VkBlockMatchWindowCompareModeQCOM value) const {
     switch (value) {
         case VK_BLOCK_MATCH_WINDOW_COMPARE_MODE_MIN_QCOM:
@@ -2134,6 +2232,7 @@ ValidValue stateless::Context::IsValidEnumValue(VkClusterAccelerationStructureOp
         case VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_NV:
         case VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_BUILD_TRIANGLE_CLUSTER_TEMPLATE_NV:
         case VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_INSTANTIATE_TRIANGLE_CLUSTER_NV:
+        case VK_CLUSTER_ACCELERATION_STRUCTURE_OP_TYPE_GET_CLUSTER_TEMPLATE_INDICES_NV:
             return ValidValue::Valid;
         default:
             return ValidValue::NotFound;
@@ -2269,8 +2368,12 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkImageLayout value) const
             return {vvl::Extension::_VK_KHR_video_encode_queue};
         case VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT:
             return {vvl::Extension::_VK_EXT_attachment_feedback_loop_layout};
+        case VK_IMAGE_LAYOUT_TENSOR_ALIASING_ARM:
+            return {vvl::Extension::_VK_ARM_tensors};
         case VK_IMAGE_LAYOUT_VIDEO_ENCODE_QUANTIZATION_MAP_KHR:
             return {vvl::Extension::_VK_KHR_video_encode_quantization_map};
+        case VK_IMAGE_LAYOUT_ZERO_INITIALIZED_EXT:
+            return {vvl::Extension::_VK_EXT_zero_initialize_device_memory};
         default:
             return {};
     };
@@ -2325,12 +2428,19 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkObjectType value) const 
             return {vvl::Extension::_VK_FUCHSIA_buffer_collection};
         case VK_OBJECT_TYPE_MICROMAP_EXT:
             return {vvl::Extension::_VK_EXT_opacity_micromap};
+        case VK_OBJECT_TYPE_TENSOR_ARM:
+        case VK_OBJECT_TYPE_TENSOR_VIEW_ARM:
+            return {vvl::Extension::_VK_ARM_tensors};
         case VK_OBJECT_TYPE_OPTICAL_FLOW_SESSION_NV:
             return {vvl::Extension::_VK_NV_optical_flow};
         case VK_OBJECT_TYPE_SHADER_EXT:
             return {vvl::Extension::_VK_EXT_shader_object};
         case VK_OBJECT_TYPE_PIPELINE_BINARY_KHR:
             return {vvl::Extension::_VK_KHR_pipeline_binary};
+        case VK_OBJECT_TYPE_DATA_GRAPH_PIPELINE_SESSION_ARM:
+            return {vvl::Extension::_VK_ARM_data_graph};
+        case VK_OBJECT_TYPE_EXTERNAL_COMPUTE_QUEUE_NV:
+            return {vvl::Extension::_VK_NV_external_compute_queue};
         case VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT:
         case VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT:
             return {vvl::Extension::_VK_EXT_device_generated_commands};
@@ -2416,8 +2526,25 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkFormat value) const {
         case VK_FORMAT_PVRTC2_2BPP_SRGB_BLOCK_IMG:
         case VK_FORMAT_PVRTC2_4BPP_SRGB_BLOCK_IMG:
             return {vvl::Extension::_VK_IMG_format_pvrtc};
+        case VK_FORMAT_R8_BOOL_ARM:
+            return {vvl::Extension::_VK_ARM_tensors};
         case VK_FORMAT_R16G16_SFIXED5_NV:
             return {vvl::Extension::_VK_NV_optical_flow};
+        case VK_FORMAT_R10X6_UINT_PACK16_ARM:
+        case VK_FORMAT_R10X6G10X6_UINT_2PACK16_ARM:
+        case VK_FORMAT_R10X6G10X6B10X6A10X6_UINT_4PACK16_ARM:
+        case VK_FORMAT_R12X4_UINT_PACK16_ARM:
+        case VK_FORMAT_R12X4G12X4_UINT_2PACK16_ARM:
+        case VK_FORMAT_R12X4G12X4B12X4A12X4_UINT_4PACK16_ARM:
+        case VK_FORMAT_R14X2_UINT_PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2_UINT_2PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2B14X2A14X2_UINT_4PACK16_ARM:
+        case VK_FORMAT_R14X2_UNORM_PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2_UNORM_2PACK16_ARM:
+        case VK_FORMAT_R14X2G14X2B14X2A14X2_UNORM_4PACK16_ARM:
+        case VK_FORMAT_G14X2_B14X2R14X2_2PLANE_420_UNORM_3PACK16_ARM:
+        case VK_FORMAT_G14X2_B14X2R14X2_2PLANE_422_UNORM_3PACK16_ARM:
+            return {vvl::Extension::_VK_ARM_format_pack};
         default:
             return {};
     };
@@ -2805,6 +2932,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkDescriptorType value) co
         case VK_DESCRIPTOR_TYPE_SAMPLE_WEIGHT_IMAGE_QCOM:
         case VK_DESCRIPTOR_TYPE_BLOCK_MATCH_IMAGE_QCOM:
             return {vvl::Extension::_VK_QCOM_image_processing};
+        case VK_DESCRIPTOR_TYPE_TENSOR_ARM:
+            return {vvl::Extension::_VK_ARM_tensors};
         case VK_DESCRIPTOR_TYPE_MUTABLE_EXT:
             return {vvl::Extension::_VK_VALVE_mutable_descriptor_type, vvl::Extension::_VK_EXT_mutable_descriptor_type};
         case VK_DESCRIPTOR_TYPE_PARTITIONED_ACCELERATION_STRUCTURE_NV:
@@ -2856,6 +2985,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkPipelineBindPoint value)
             return {vvl::Extension::_VK_NV_ray_tracing, vvl::Extension::_VK_KHR_ray_tracing_pipeline};
         case VK_PIPELINE_BIND_POINT_SUBPASS_SHADING_HUAWEI:
             return {vvl::Extension::_VK_HUAWEI_subpass_shading};
+        case VK_PIPELINE_BIND_POINT_DATA_GRAPH_ARM:
+            return {vvl::Extension::_VK_ARM_data_graph};
         default:
             return {};
     };
@@ -3019,8 +3150,8 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkPresentModeKHR value) co
         case VK_PRESENT_MODE_SHARED_DEMAND_REFRESH_KHR:
         case VK_PRESENT_MODE_SHARED_CONTINUOUS_REFRESH_KHR:
             return {vvl::Extension::_VK_KHR_shared_presentable_image};
-        case VK_PRESENT_MODE_FIFO_LATEST_READY_EXT:
-            return {vvl::Extension::_VK_EXT_present_mode_fifo_latest_ready};
+        case VK_PRESENT_MODE_FIFO_LATEST_READY_KHR:
+            return {vvl::Extension::_VK_KHR_present_mode_fifo_latest_ready, vvl::Extension::_VK_EXT_present_mode_fifo_latest_ready};
         default:
             return {};
     };
@@ -3082,6 +3213,9 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkComponentTypeKHR value) 
     switch (value) {
         case VK_COMPONENT_TYPE_BFLOAT16_KHR:
             return {vvl::Extension::_VK_KHR_shader_bfloat16};
+        case VK_COMPONENT_TYPE_FLOAT8_E4M3_EXT:
+        case VK_COMPONENT_TYPE_FLOAT8_E5M2_EXT:
+            return {vvl::Extension::_VK_EXT_shader_float8};
         default:
             return {};
     };
@@ -3564,6 +3698,15 @@ const char* stateless::Context::DescribeEnum(VkDirectDriverLoadingModeLUNARG val
 }
 
 template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkTensorTilingARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkTensorTilingARM value) const {
+    return nullptr;
+}
+
+template <>
 vvl::Extensions stateless::Context::GetEnumExtensions(VkOpticalFlowPerformanceLevelNV value) const {
     return {};
 }
@@ -3650,6 +3793,51 @@ vvl::Extensions stateless::Context::GetEnumExtensions(VkOutOfBandQueueTypeNV val
 }
 template <>
 const char* stateless::Context::DescribeEnum(VkOutOfBandQueueTypeNV value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelineSessionBindPointARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDataGraphPipelineSessionBindPointARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelineSessionBindPointTypeARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDataGraphPipelineSessionBindPointTypeARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkDataGraphPipelinePropertyARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkDataGraphPipelinePropertyARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkPhysicalDeviceDataGraphProcessingEngineTypeARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkPhysicalDeviceDataGraphProcessingEngineTypeARM value) const {
+    return nullptr;
+}
+
+template <>
+vvl::Extensions stateless::Context::GetEnumExtensions(VkPhysicalDeviceDataGraphOperationTypeARM value) const {
+    return {};
+}
+template <>
+const char* stateless::Context::DescribeEnum(VkPhysicalDeviceDataGraphOperationTypeARM value) const {
     return nullptr;
 }
 

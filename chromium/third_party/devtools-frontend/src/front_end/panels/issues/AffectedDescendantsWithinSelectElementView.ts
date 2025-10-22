@@ -1,6 +1,7 @@
 // Copyright 2025 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as i18n from '../../core/i18n/i18n.js';
 import type * as Platform from '../../core/platform/platform.js';
@@ -36,11 +37,11 @@ export class AffectedDescendantsWithinSelectElementView extends AffectedElements
 
   async #doUpdate(): Promise<void> {
     this.clear();
-    await this.#appendDisallowedSelectDescendants(this.issue.getSelectElementAccessibilityIssues());
+    await this.#appendDisallowedSelectDescendants(this.issue.getElementAccessibilityIssues());
   }
 
-  async #appendDisallowedSelectDescendant(
-      issue: IssuesManager.SelectElementAccessibilityIssue.SelectElementAccessibilityIssue): Promise<void> {
+  async #appendDisallowedSelectDescendant(issue: IssuesManager.ElementAccessibilityIssue.ElementAccessibilityIssue):
+      Promise<void> {
     const row = document.createElement('tr');
     row.classList.add('affected-resource-select-element-descendant');
 
@@ -53,7 +54,7 @@ export class AffectedDescendantsWithinSelectElementView extends AffectedElements
   }
 
   async #appendDisallowedSelectDescendants(
-      issues: Iterable<IssuesManager.SelectElementAccessibilityIssue.SelectElementAccessibilityIssue>): Promise<void> {
+      issues: Iterable<IssuesManager.ElementAccessibilityIssue.ElementAccessibilityIssue>): Promise<void> {
     let count = 0;
     for (const issue of issues) {
       count++;

@@ -6,6 +6,7 @@
 #define THIRD_PARTY_BLINK_RENDERER_CORE_ANIMATION_INTERPOLABLE_VALUE_H_
 
 #include <array>
+#include <concepts>
 #include <memory>
 #include <utility>
 
@@ -53,6 +54,12 @@ class CORE_EXPORT InterpolableValue
   virtual bool IsGridTrackSize() const { return false; }
   virtual bool IsFontPalette() const { return false; }
   virtual bool IsDynamicRangeLimit() const { return false; }
+  virtual bool IsGapLengthRepeater() const { return false; }
+  virtual bool IsGapColorRepeater() const { return false; }
+
+  bool IsGapDataRepeater() const {
+    return IsGapLengthRepeater() || IsGapColorRepeater();
+  }
 
   // TODO(alancutter): Remove Equals().
   virtual bool Equals(const InterpolableValue&) const = 0;
@@ -85,9 +92,8 @@ class CORE_EXPORT InterpolableValue
 };
 
 template <typename T>
-struct ThreadingTrait<
-    T,
-    std::enable_if_t<std::is_base_of_v<InterpolableValue, T>>> {
+  requires(std::derived_from<T, InterpolableValue>)
+struct ThreadingTrait<T> {
   static constexpr ThreadAffinity kAffinity = kMainThreadOnly;
 };
 

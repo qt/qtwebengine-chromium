@@ -22,15 +22,30 @@
 
 #include "third_party/blink/renderer/core/layout/svg/layout_svg_viewport_container.h"
 
+#include "third_party/blink/renderer/core/dom/shadow_root.h"
 #include "third_party/blink/renderer/core/layout/hit_test_location.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_info.h"
 #include "third_party/blink/renderer/core/layout/svg/svg_layout_support.h"
 #include "third_party/blink/renderer/core/layout/svg/transform_helper.h"
+#include "third_party/blink/renderer/core/layout/svg/transformed_hit_test_location.h"
 #include "third_party/blink/renderer/core/svg/svg_animated_length.h"
 #include "third_party/blink/renderer/core/svg/svg_length_context.h"
 #include "third_party/blink/renderer/core/svg/svg_svg_element.h"
 
 namespace blink {
+
+namespace {
+
+float ResolveViewportDimension(const Length& dimension,
+                               const SVGViewportResolver& viewport_resolver,
+                               const ComputedStyle& style,
+                               SVGLengthMode mode) {
+  const Length kOneHundredPercent(100, Length::Type::kPercent);
+  const Length& length = dimension.IsAuto() ? kOneHundredPercent : dimension;
+  return ValueForLength(length, viewport_resolver, style, mode);
+}
+
+}  // namespace
 
 LayoutSVGViewportContainer::LayoutSVGViewportContainer(SVGSVGElement* node)
     : LayoutSVGContainer(node) {}
@@ -47,10 +62,48 @@ SVGLayoutResult LayoutSVGViewportContainer::UpdateSVGLayout(
     const auto* svg = To<SVGSVGElement>(GetElement());
     SVGLengthContext length_context(svg);
     gfx::RectF old_viewport = viewport_;
-    viewport_.SetRect(svg->x()->CurrentValue()->Value(length_context),
-                      svg->y()->CurrentValue()->Value(length_context),
-                      svg->width()->CurrentValue()->Value(length_context),
-                      svg->height()->CurrentValue()->Value(length_context));
+
+    float resolved_x = svg->x()->CurrentValue()->Value(length_context);
+    float resolved_y = svg->y()->CurrentValue()->Value(length_context);
+    float resolved_width;
+    float resolved_height;
+
+    if (RuntimeEnabledFeatures::
+            WidthAndHeightAsPresentationAttributesOnNestedSvgEnabled()) {
+      const SVGViewportResolver viewport_resolver(*this);
+      const ComputedStyle& style = StyleRef();
+
+      resolved_width = ResolveViewportDimension(
+          style.Width(), viewport_resolver, style, SVGLengthMode::kWidth);
+
+      resolved_height = ResolveViewportDimension(
+          style.Height(), viewport_resolver, style, SVGLengthMode::kHeight);
+
+      if (RuntimeEnabledFeatures::
+              WidthAndHeightStylePropertiesOnUseAndSymbolEnabled() &&
+          svg->InUseShadowTree() && IsAtShadowBoundary(svg)) {
+        const ComputedStyle& parent_style = Parent()->StyleRef();
+
+        if (!parent_style.Width().IsAuto()) {
+          resolved_width =
+              ValueForLength(parent_style.Width(), viewport_resolver,
+                             parent_style, SVGLengthMode::kWidth);
+        }
+
+        if (!parent_style.Height().IsAuto()) {
+          resolved_height =
+              ValueForLength(parent_style.Height(), viewport_resolver,
+                             parent_style, SVGLengthMode::kHeight);
+        }
+      }
+
+    } else {
+      resolved_width = svg->width()->CurrentValue()->Value(length_context);
+      resolved_height = svg->height()->CurrentValue()->Value(length_context);
+    }
+
+    viewport_.SetRect(resolved_x, resolved_y, resolved_width, resolved_height);
+
     if (old_viewport != viewport_) {
       // The transform depends on viewport values.
       SetNeedsTransformUpdate();
@@ -63,11 +116,24 @@ SVGLayoutResult LayoutSVGViewportContainer::UpdateSVGLayout(
 SVGTransformChange LayoutSVGViewportContainer::UpdateLocalTransform(
     const gfx::RectF& reference_box) {
   NOT_DESTROYED();
-  const auto* svg = To<SVGSVGElement>(GetElement());
   SVGTransformChangeDetector change_detector(local_to_parent_transform_);
-  local_to_parent_transform_ =
-      AffineTransform::Translation(viewport_.x(), viewport_.y()) *
-      svg->ViewBoxToViewTransform(viewport_.size());
+
+  local_to_parent_transform_ = ComputeViewboxTransform();
+
+  if (RuntimeEnabledFeatures::SvgTransformOnNestedSvgElementEnabled()) {
+    local_transform_ = TransformHelper::ComputeTransformIncludingMotion(
+        *GetElement(), reference_box);
+
+    // If both `transform` and `viewBox` are applied to an element two new
+    // coordinate systems are established. `transform` establishes the first new
+    // coordinate system for the element. `viewBox` establishes a second
+    // coordinate system for all descendants of the element. The first
+    // coordinate system is post-multiplied by the second coordinate system.
+    //
+    // https://svgwg.org/svg2-draft/coords.html#ViewBoxAttribute
+    local_to_parent_transform_ = local_transform_ * local_to_parent_transform_;
+  }
+
   return change_detector.ComputeChange(local_to_parent_transform_);
 }
 
@@ -83,8 +149,13 @@ bool LayoutSVGViewportContainer::NodeAtPoint(
   NOT_DESTROYED();
   // Respect the viewport clip which is in parent coordinates.
   if (SVGLayoutSupport::IsOverflowHidden(*this)) {
-    if (!hit_test_location.Intersects(viewport_))
+    TransformedHitTestLocation local_transformed_hit_location(
+        hit_test_location, LocalSVGTransform());
+
+    if (!local_transformed_hit_location ||
+        !local_transformed_hit_location->Intersects(viewport_)) {
       return false;
+    }
   }
   return LayoutSVGContainer::NodeAtPoint(result, hit_test_location,
                                          accumulated_offset, phase);
@@ -96,16 +167,32 @@ void LayoutSVGViewportContainer::IntersectChildren(
   Content().HitTest(result, location, HitTestPhase::kForeground);
 }
 
+AffineTransform LayoutSVGViewportContainer::ComputeViewboxTransform() const {
+  NOT_DESTROYED();
+  const auto* svg = To<SVGSVGElement>(GetElement());
+
+  return AffineTransform::Translation(viewport_.x(), viewport_.y()) *
+         svg->ViewBoxToViewTransform(viewport_.size());
+}
+
 void LayoutSVGViewportContainer::StyleDidChange(
     StyleDifference diff,
     const ComputedStyle* old_style) {
   NOT_DESTROYED();
   LayoutSVGContainer::StyleDidChange(diff, old_style);
+  const ComputedStyle& style = StyleRef();
 
   if (old_style && (SVGLayoutSupport::IsOverflowHidden(*old_style) !=
-                    SVGLayoutSupport::IsOverflowHidden(StyleRef()))) {
+                    SVGLayoutSupport::IsOverflowHidden(style))) {
     // See NeedsOverflowClip() in PaintPropertyTreeBuilder for the reason.
     SetNeedsPaintPropertyUpdate();
+  }
+
+  // TODO: Inherit `LayoutSVGViewportContainer` from
+  // `LayoutSVGTransformableContainer` so below bits of code can be shared.
+  if (RuntimeEnabledFeatures::SvgTransformOnNestedSvgElementEnabled()) {
+    TransformHelper::UpdateOffsetPath(*GetElement(), old_style);
+    SetTransformUsesReferenceBox(TransformHelper::DependsOnReferenceBox(style));
   }
 }
 

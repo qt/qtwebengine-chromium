@@ -4,6 +4,7 @@
 
 #include "gpu/ipc/service/image_decode_accelerator_stub.h"
 
+#include <inttypes.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -67,6 +68,7 @@
 #include "gpu/ipc/service/gpu_channel_manager.h"
 #include "gpu/ipc/service/gpu_channel_test_common.h"
 #include "gpu/ipc/service/image_decode_accelerator_worker.h"
+#include "ipc/constants.mojom.h"
 #include "skia/ext/skia_memory_dump_provider.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -76,7 +78,8 @@
 #include "ui/gfx/buffer_types.h"
 #include "ui/gfx/color_space.h"
 #include "ui/gfx/geometry/size.h"
-#include "ui/gfx/gpu_memory_buffer.h"
+#include "ui/gfx/gpu_memory_buffer_handle.h"
+#include "ui/gfx/native_pixmap_handle.h"
 #include "ui/gl/gl_bindings.h"
 #include "url/gurl.h"
 
@@ -101,8 +104,8 @@ struct ExpectedCacheEntry {
   SkISize dimensions;
 };
 
-std::unique_ptr<MemoryTracker> CreateMockMemoryTracker() {
-  return std::make_unique<NiceMock<gles2::MockMemoryTracker>>();
+scoped_refptr<MemoryTracker> CreateMockMemoryTracker() {
+  return base::MakeRefCounted<NiceMock<gles2::MockMemoryTracker>>();
 }
 
 scoped_refptr<Buffer> MakeBufferForTesting() {
@@ -234,13 +237,15 @@ class MockImageDecodeAcceleratorWorker : public ImageDecodeAcceleratorWorker {
       // the SharedImage backing in these tests, the only requirement is that
       // the NativePixmapHandle has the right number of planes.
       auto decode_result = std::make_unique<DecodeResult>();
-      decode_result->handle.type = gfx::GpuMemoryBufferType::NATIVE_PIXMAP;
+      gfx::NativePixmapHandle native_pixmap_handle;
       for (size_t plane = 0; plane < gfx::NumberOfPlanesForLinearBufferFormat(
                                          format_for_decodes_);
            plane++) {
-        decode_result->handle.native_pixmap_handle.planes.emplace_back(
+        native_pixmap_handle.planes.emplace_back(
             0 /* stride */, 0 /* offset */, 0 /* size */, base::ScopedFD());
       }
+      decode_result->handle =
+          gfx::GpuMemoryBufferHandle(std::move(native_pixmap_handle));
       decode_result->visible_size = next_decode.output_size;
       decode_result->buffer_format = format_for_decodes_;
       decode_result->buffer_byte_size = kDecodedBufferByteSize;
@@ -350,13 +355,12 @@ class ImageDecodeAcceleratorStubTest
     CommandBufferStub::SetMemoryTrackerFactoryForTesting(
         base::BindRepeating(&CreateMockMemoryTracker));
     auto init_params = mojom::CreateCommandBufferParams::New();
-    init_params->share_group_id = MSG_ROUTING_NONE;
+    init_params->share_group_id = IPC::mojom::kRoutingIdNone;
     init_params->stream_id = 0;
     init_params->stream_priority = SchedulingPriority::kNormal;
     init_params->attribs = ContextCreationAttribs();
     init_params->attribs.enable_gles2_interface = false;
     init_params->attribs.enable_raster_interface = true;
-    init_params->attribs.bind_generates_resource = false;
     init_params->active_url = GURL();
     ContextResult result = ContextResult::kTransientFailure;
     Capabilities capabilities;

@@ -6,18 +6,24 @@
 
 #include <stddef.h>
 
+#include <cstdint>
+#include <memory>
 #include <utility>
 #include <vector>
 
+#include "base/check.h"
 #include "base/check_op.h"
-#include "base/functional/bind.h"
+#include "base/memory/ptr_util.h"
+#include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
-#include "base/trace_event/base_tracing.h"
-#include "components/services/storage/public/cpp/buckets/bucket_locator.h"
+#include "base/trace_event/trace_event.h"
 #include "content/browser/indexed_db/indexed_db_database_error.h"
+#include "content/browser/indexed_db/indexed_db_external_object.h"
 #include "content/browser/indexed_db/indexed_db_value.h"
 #include "content/browser/indexed_db/instance/callback_helpers.h"
 #include "content/browser/indexed_db/instance/transaction.h"
+#include "content/browser/indexed_db/status.h"
+#include "mojo/public/cpp/bindings/pending_associated_remote.h"
 #include "mojo/public/cpp/bindings/self_owned_associated_receiver.h"
 #include "third_party/blink/public/mojom/indexeddb/indexeddb.mojom.h"
 
@@ -66,9 +72,7 @@ Cursor::Cursor(std::unique_ptr<BackingStore::Cursor> cursor,
                indexed_db::CursorType cursor_type,
                blink::mojom::IDBTaskType task_type,
                base::WeakPtr<Transaction> transaction)
-    : bucket_locator_(transaction->BackingStoreTransaction()
-                          ->backing_store()
-                          ->bucket_locator()),
+    : bucket_locator_(transaction->bucket_context()->bucket_locator()),
       task_type_(task_type),
       cursor_type_(cursor_type),
       transaction_(std::move(transaction)),
@@ -111,13 +115,19 @@ Status Cursor::AdvanceOperation(
     blink::mojom::IDBCursor::AdvanceCallback callback,
     Transaction* /*transaction*/) {
   TRACE_EVENT0("IndexedDB", "Cursor::AdvanceOperation");
-  Status s = Status::OK();
-  if (!cursor_ || !cursor_->Advance(count, &s)) {
+
+  if (!cursor_) {
+    std::move(callback).Run(blink::mojom::IDBCursorResult::NewEmpty(true));
+    return Status::OK();
+  }
+
+  if (StatusOr<bool> result = cursor_->Advance(count);
+      !result.has_value() || !*result) {
     cursor_.reset();
 
-    if (s.ok()) {
+    if (result.has_value()) {
       std::move(callback).Run(blink::mojom::IDBCursorResult::NewEmpty(true));
-      return s;
+      return Status::OK();
     }
 
     // CreateError() needs to be called before calling Close() so
@@ -127,33 +137,32 @@ Status Cursor::AdvanceOperation(
     Close();
     std::move(callback).Run(blink::mojom::IDBCursorResult::NewErrorResult(
         blink::mojom::IDBError::New(error.code(), error.message())));
-    return s;
+    return result.error();
   }
 
   blink::mojom::IDBValuePtr mojo_value;
-  std::vector<IndexedDBExternalObject> external_objects;
   IndexedDBValue* value = Value();
   if (value) {
-    mojo_value = IndexedDBValue::ConvertAndEraseValue(value);
-    external_objects.swap(value->external_objects);
-    transaction_->bucket_context()->CreateAllExternalObjects(
-        external_objects, &mojo_value->external_objects);
+    mojo_value = transaction_->BackingStoreTransaction()->BuildMojoValue(
+        std::move(*value));
   } else {
     mojo_value = blink::mojom::IDBValue::New();
   }
 
-  std::vector<IndexedDBKey> keys = {key()};
-  std::vector<IndexedDBKey> primary_keys = {primary_key()};
+  std::vector<IndexedDBKey> keys;
+  keys.emplace_back(key().Clone());
+  std::vector<IndexedDBKey> primary_keys;
+  primary_keys.emplace_back(primary_key().Clone());
   std::vector<blink::mojom::IDBValuePtr> values;
   values.push_back(std::move(mojo_value));
   std::move(callback).Run(blink::mojom::IDBCursorResult::NewValues(
       blink::mojom::IDBCursorValue::New(
           std::move(keys), std::move(primary_keys), std::move(values))));
-  return s;
+  return Status::OK();
 }
 
-void Cursor::Continue(const IndexedDBKey& key,
-                      const IndexedDBKey& primary_key,
+void Cursor::Continue(IndexedDBKey key,
+                      IndexedDBKey primary_key,
                       blink::mojom::IDBCursor::ContinueCallback callback) {
   TRACE_EVENT0("IndexedDB", "Cursor::Continue");
   if (!transaction_) {
@@ -174,28 +183,29 @@ void Cursor::Continue(const IndexedDBKey& key,
   transaction_->ScheduleTask(
       task_type_,
       BindWeakOperation<Cursor>(
-          &Cursor::ContinueOperation, ptr_factory_.GetWeakPtr(),
-          key.IsValid() ? std::make_unique<blink::IndexedDBKey>(key) : nullptr,
-          primary_key.IsValid()
-              ? std::make_unique<blink::IndexedDBKey>(primary_key)
-              : nullptr,
-          std::move(aborting_callback)));
+          &Cursor::ContinueOperation, ptr_factory_.GetWeakPtr(), std::move(key),
+          std::move(primary_key), std::move(aborting_callback)));
 }
 
 Status Cursor::ContinueOperation(
-    std::unique_ptr<IndexedDBKey> key,
-    std::unique_ptr<IndexedDBKey> primary_key,
+    IndexedDBKey key,
+    IndexedDBKey primary_key,
     blink::mojom::IDBCursor::ContinueCallback callback,
     Transaction* /*transaction*/) {
   TRACE_EVENT0("IndexedDB", "Cursor::ContinueOperation");
-  Status s = Status::OK();
-  if (!cursor_ || !cursor_->Continue(key.get(), primary_key.get(),
-                                     BackingStore::Cursor::SEEK, &s)) {
+
+  if (!cursor_) {
+    std::move(callback).Run(blink::mojom::IDBCursorResult::NewEmpty(true));
+    return Status::OK();
+  }
+
+  if (StatusOr<bool> result = cursor_->Continue(key, primary_key);
+      !result.has_value() || !*result) {
     cursor_.reset();
-    if (s.ok()) {
+    if (result.has_value()) {
       // This happens if we reach the end of the iterator and can't continue.
       std::move(callback).Run(blink::mojom::IDBCursorResult::NewEmpty(true));
-      return s;
+      return Status::OK();
     }
 
     // |transaction_| must be valid for CreateError(), so we can't call
@@ -205,29 +215,28 @@ Status Cursor::ContinueOperation(
     Close();
     std::move(callback).Run(blink::mojom::IDBCursorResult::NewErrorResult(
         blink::mojom::IDBError::New(error.code(), error.message())));
-    return s;
+    return result.error();
   }
 
   blink::mojom::IDBValuePtr mojo_value;
-  std::vector<IndexedDBExternalObject> external_objects;
   IndexedDBValue* value = Value();
   if (value) {
-    mojo_value = IndexedDBValue::ConvertAndEraseValue(value);
-    external_objects.swap(value->external_objects);
-    transaction_->bucket_context()->CreateAllExternalObjects(
-        external_objects, &mojo_value->external_objects);
+    mojo_value = transaction_->BackingStoreTransaction()->BuildMojoValue(
+        std::move(*value));
   } else {
     mojo_value = blink::mojom::IDBValue::New();
   }
 
-  std::vector<IndexedDBKey> keys = {this->key()};
-  std::vector<IndexedDBKey> primary_keys = {this->primary_key()};
+  std::vector<IndexedDBKey> keys;
+  keys.emplace_back(this->key().Clone());
+  std::vector<IndexedDBKey> primary_keys;
+  primary_keys.emplace_back(this->primary_key().Clone());
   std::vector<blink::mojom::IDBValuePtr> values;
   values.push_back(std::move(mojo_value));
   std::move(callback).Run(blink::mojom::IDBCursorResult::NewValues(
       blink::mojom::IDBCursorValue::New(
           std::move(keys), std::move(primary_keys), std::move(values))));
-  return s;
+  return Status::OK();
 }
 
 void Cursor::Prefetch(int number_to_fetch,
@@ -267,8 +276,7 @@ Status Cursor::PrefetchIterationOperation(
   std::vector<IndexedDBKey> found_primary_keys;
   std::vector<IndexedDBValue> found_values;
 
-  saved_cursor_.reset();
-  // TODO(cmumford): Use IPC::Channel::kMaximumMessageSize
+  // TODO(cmumford): Use IPC::mojom::kChannelMaximumMessageSize
   const size_t max_size_estimate = 10 * 1024 * 1024;
   size_t size_estimate = 0;
 
@@ -276,12 +284,13 @@ Status Cursor::PrefetchIterationOperation(
   //                 properly fail, caller will not know why, and any corruption
   //                 will be ignored.
   for (int i = 0; i < number_to_fetch; ++i) {
-    if (!cursor_ || !cursor_->Continue(&s)) {
+    if (!cursor_ || reached_end_during_prefetch_) {
+      break;
+    }
+
+    StatusOr<bool> result = cursor_->Continue();
+    if (!result.has_value()) {
       cursor_.reset();
-      if (s.ok()) {
-        // We've reached the end, so just return what we have.
-        break;
-      }
       // |transaction_| must be valid for CreateError(), so we can't call
       // Close() until after calling CreateError().
       DatabaseError error =
@@ -290,34 +299,38 @@ Status Cursor::PrefetchIterationOperation(
       Close();
       std::move(callback).Run(blink::mojom::IDBCursorResult::NewErrorResult(
           blink::mojom::IDBError::New(error.code(), error.message())));
-      return s;
+      return result.error();
+    }
+
+    if (!*result) {
+      // We've reached the end, so just return what we have.
+      reached_end_during_prefetch_ = true;
+      break;
     }
 
     if (i == 0) {
       // First prefetched result is always used, so that's the position
       // a cursor should be reset to if the prefetch is invalidated.
-      saved_cursor_ = cursor_->Clone();
+      cursor_->SavePosition();
     }
 
-    found_keys.push_back(cursor_->key());
-    found_primary_keys.push_back(cursor_->primary_key());
+    found_keys.emplace_back(cursor_->GetKey().Clone());
+    found_primary_keys.emplace_back(cursor_->GetPrimaryKey().Clone());
 
     switch (cursor_type_) {
       case indexed_db::CursorType::kKeyOnly:
         found_values.push_back(IndexedDBValue());
         break;
       case indexed_db::CursorType::kKeyAndValue: {
-        IndexedDBValue value;
-        value.swap(*cursor_->value());
-        size_estimate += value.SizeEstimate();
-        found_values.push_back(value);
+        found_values.push_back(std::move(cursor_->GetValue()));
+        size_estimate += found_values.back().SizeEstimate();
         break;
       }
       default:
         NOTREACHED();
     }
-    size_estimate += cursor_->key().size_estimate();
-    size_estimate += cursor_->primary_key().size_estimate();
+    size_estimate += cursor_->GetKey().size_estimate();
+    size_estimate += cursor_->GetPrimaryKey().size_estimate();
 
     if (size_estimate > max_size_estimate) {
       break;
@@ -326,7 +339,7 @@ Status Cursor::PrefetchIterationOperation(
 
   if (found_keys.empty()) {
     std::move(callback).Run(blink::mojom::IDBCursorResult::NewEmpty(true));
-    return s;
+    return Status::OK();
   }
 
   DCHECK_EQ(found_keys.size(), found_primary_keys.size());
@@ -334,35 +347,36 @@ Status Cursor::PrefetchIterationOperation(
 
   std::vector<blink::mojom::IDBValuePtr> mojo_values;
   mojo_values.reserve(found_values.size());
-  for (size_t i = 0; i < found_values.size(); ++i) {
-    mojo_values.push_back(
-        IndexedDBValue::ConvertAndEraseValue(&found_values[i]));
-    transaction_->bucket_context()->CreateAllExternalObjects(
-        found_values[i].external_objects, &mojo_values[i]->external_objects);
+  for (IndexedDBValue& value : found_values) {
+    mojo_values.emplace_back(
+        transaction_->BackingStoreTransaction()->BuildMojoValue(
+            std::move(value)));
   }
 
   std::move(callback).Run(blink::mojom::IDBCursorResult::NewValues(
       blink::mojom::IDBCursorValue::New(std::move(found_keys),
                                         std::move(found_primary_keys),
                                         std::move(mojo_values))));
-  return s;
+  return Status::OK();
 }
 
 void Cursor::PrefetchReset(int used_prefetches) {
   TRACE_EVENT0("IndexedDB", "Cursor::PrefetchReset");
-  cursor_.swap(saved_cursor_);
-  saved_cursor_.reset();
-
   if (closed_) {
     return;
   }
+
+  reached_end_during_prefetch_ = false;
+  if (!cursor_->TryResetToLastSavedPosition()) {
+    cursor_.reset();
+  }
+
   // First prefetched result is always used.
   if (cursor_) {
     DCHECK_GT(used_prefetches, 0);
-    for (int i = 0; i < used_prefetches - 1; ++i) {
-      Status unused;
-      bool ok = cursor_->Continue(&unused);
-      DCHECK(ok);
+    if (used_prefetches > 1) {
+      auto result = cursor_->Advance(used_prefetches - 1);
+      DCHECK(!result.has_value() || result.value());
     }
   }
 }
@@ -375,7 +389,6 @@ void Cursor::Close() {
   TRACE_EVENT0("IndexedDB", "Cursor::Close");
   closed_ = true;
   cursor_.reset();
-  saved_cursor_.reset();
   if (transaction_) {
     transaction_->UnregisterOpenCursor(this);
   }

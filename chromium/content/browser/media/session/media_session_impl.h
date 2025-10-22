@@ -129,9 +129,6 @@ class MediaSessionImpl : public MediaSession,
   // Returns if the session is currently suspended.
   CONTENT_EXPORT bool IsSuspended() const;
 
-  // Returns whether the session has Pepper instances.
-  CONTENT_EXPORT bool HasPepper() const;
-
   // WebContentsObserver implementation
   void WebContentsDestroyed() override;
   void RenderFrameDeleted(RenderFrameHost* rfh) override;
@@ -181,10 +178,6 @@ class MediaSessionImpl : public MediaSession,
   // Creates a binding between |this| and |request|.
   mojo::PendingRemote<media_session::mojom::MediaSession> AddRemote();
 
-  // Returns information about the MediaSession.
-  CONTENT_EXPORT media_session::mojom::MediaSessionInfoPtr
-  GetMediaSessionInfoSync();
-
   // Returns if the session can be controlled by the user.
   CONTENT_EXPORT bool IsControllable() const;
 
@@ -216,8 +209,21 @@ class MediaSessionImpl : public MediaSession,
       const base::UnguessableToken& group_id) override;
 
   // Returns the `RenderFrameHost` for the currently MediaSession routed
-  // service.
+  // service, if the routed service exists, otherwise returns the top most frame
+  // with an active media player.
   RenderFrameHost* GetRoutedFrame() override;
+
+  // Returns the current media session info synchronously for a one-off request.
+  CONTENT_EXPORT media_session::mojom::MediaSessionInfoPtr
+  GetMediaSessionInfoSync() override;
+
+  // Returns the current media session position for a one-off request.
+  CONTENT_EXPORT std::optional<media_session::MediaPosition>
+  GetMediaSessionPosition() override;
+
+  // Returns the current media session metadata for a one-off request.
+  CONTENT_EXPORT const media_session::MediaMetadata& GetMediaSessionMetadata()
+      override;
 
   // Suspend the media session.
   // |type| represents the origin of the request.
@@ -319,6 +325,10 @@ class MediaSessionImpl : public MediaSession,
       int desired_size_px,
       GetMediaImageBitmapCallback callback) override;
 
+  // Called to report to all players that the auto picture in picture
+  // information changed.
+  void ReportAutoPictureInPictureInfoChanged() override;
+
   const base::UnguessableToken& audio_focus_group_id() const {
     return audio_focus_group_id_;
   }
@@ -343,7 +353,8 @@ class MediaSessionImpl : public MediaSession,
       media_session::mojom::RemotePlaybackMetadataPtr metadata);
 
   // Returns whether the action should be routed to |routed_service_|.
-  bool ShouldRouteAction(media_session::mojom::MediaSessionAction action) const;
+  CONTENT_EXPORT bool ShouldRouteAction(
+      media_session::mojom::MediaSessionAction action) const;
 
   // Returns the source ID which links media sessions on the same browser
   // context together.
@@ -392,9 +403,10 @@ class MediaSessionImpl : public MediaSession,
     PlayerIdentifier& operator=(const PlayerIdentifier&) = default;
     PlayerIdentifier& operator=(PlayerIdentifier&&) = default;
 
-    bool operator==(const PlayerIdentifier& other) const;
-    bool operator!=(const PlayerIdentifier& other) const;
-    bool operator<(const PlayerIdentifier& other) const;
+    friend bool operator==(const PlayerIdentifier&,
+                           const PlayerIdentifier&) = default;
+    friend auto operator<=>(const PlayerIdentifier&,
+                            const PlayerIdentifier&) = default;
     // RAW_PTR_EXCLUSION: #union
     RAW_PTR_EXCLUSION MediaSessionPlayerObserver* observer;
     int player_id;
@@ -444,9 +456,6 @@ class MediaSessionImpl : public MediaSession,
   // ducking.
   double GetVolumeMultiplier() const;
 
-  CONTENT_EXPORT bool AddPepperPlayer(MediaSessionPlayerObserver* observer,
-                                      int player_id);
-
   CONTENT_EXPORT bool AddOneShotPlayer(MediaSessionPlayerObserver* observer,
                                        int player_id);
 
@@ -465,9 +474,12 @@ class MediaSessionImpl : public MediaSession,
   // Returns whether the frame |rfh| uses MediaSession API.
   bool IsServiceActiveForRenderFrameHost(RenderFrameHost* rfh);
 
-  // Compute the MediaSessionService that should be routed, which will be used
-  // to update |routed_service_|.
-  CONTENT_EXPORT MediaSessionServiceImpl* ComputeServiceForRouting();
+  // Compute the frame that should be routed for media session. If
+  // |ensure_service| is true, the routed frame must have an active
+  // MediaSessionService, otherwise it does not, e.g. when no MediaSession API
+  // has been called but there is an active media player. This method can be
+  // used to compute both the routed frame and routed service.
+  CONTENT_EXPORT RenderFrameHost* ComputeFrameForRouting(bool ensure_service);
 
   // Rebuilds |actions_| and notifies observers if they have changed.
   void RebuildAndNotifyActionsChanged();
@@ -533,6 +545,16 @@ class MediaSessionImpl : public MediaSession,
   CONTENT_EXPORT void SetShouldThrottleDurationUpdateForTest(
       bool should_throttle);
 
+  // Returns true if there exists a single normal "playing" player with picture
+  // in picture available, false otherwise.
+  bool CouldEnterBrowserInitiatedAutomaticPictureInPicture() const;
+
+  // Automatically enter picture-in-picture from a non-user source (e.g. in
+  // reaction to content being hidden), if the EnterAutoPictureInPicture action
+  // is registered by the browser (the user did not provide an
+  // `enterpictureinpicture` action handler).
+  void MaybeEnterBrowserInitiatedAutomaticPictureInPicture() const;
+
   // Duration update allowance is inscreasing by 1 every 20 seconds, and
   // capped at 3. Every duration updates will consume 1 allowance, and
   // if updates happen when we have 0 allowance, we consider the media as
@@ -551,9 +573,6 @@ class MediaSessionImpl : public MediaSession,
   // Standard video playback (e.g. WebMediaPlayerImpl players).
   std::map<PlayerIdentifier, media_session::mojom::AudioFocusType>
       normal_players_;
-
-  // Pepper players (PPAPI players).
-  base::flat_set<PlayerIdentifier> pepper_players_;
 
   // Players that are playing in the web contents but we cannot control (e.g.
   // MediaStream).

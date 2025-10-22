@@ -13,7 +13,7 @@
 # limitations under the License.
 
 module(
-    name = "ink-strokes-api",
+    name = "ink",
     version = "0.0.1",
 )
 
@@ -25,8 +25,8 @@ http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "ht
 ## Toolchain setup
 #################################################################################
 
-bazel_dep(name = "platforms", version = "0.0.10")
-bazel_dep(name = "rules_cc", version = "0.0.17")
+bazel_dep(name = "platforms", version = "0.0.11")
+bazel_dep(name = "rules_cc", version = "0.1.1")
 bazel_dep(name = "toolchains_llvm", version = "1.2.0")
 
 # Configure and register the LLVM toolchain for host builds.
@@ -39,8 +39,9 @@ use_repo(llvm, "llvm_toolchain")
 
 register_toolchains("@llvm_toolchain//:all")
 
-# Configure and register the Android NDK toolchain for NDK builds.
-bazel_dep(name = "rules_android_ndk", version = "0.1.2")
+# Configure the Android NDK toolchain for NDK builds. Don't register that here so it's not required
+# for builds that don't need it. Those configs can register those in --extra_toolchains.
+bazel_dep(name = "rules_android_ndk", version = "0.1.3")
 
 android_ndk_repository_extension = use_extension(
     "@rules_android_ndk//:extension.bzl",
@@ -48,37 +49,31 @@ android_ndk_repository_extension = use_extension(
 )
 use_repo(android_ndk_repository_extension, "androidndk")
 
-register_toolchains("@androidndk//:all")
-
 #################################################################################
 ## Direct dependencies
 #################################################################################
 
 bazel_dep(
     name = "abseil-cpp",
-    version = "20240722.0",
+    version = "20250512.0",
     repo_name = "com_google_absl",
 )
 
 git_repository(
     name = "ink_stroke_modeler",
-    commit = "11abc9c18dcc0d6074106fe14b3bd5eddd28559b",
+    commit = "8ce40dc2a847c73a72fb92ff30ca93b2e8ada8b0",
     remote = "https://github.com/google/ink-stroke-modeler.git",
 )
 
 git_repository(
     name = "libtess2",
-    build_file = "third_party/libtess2/BUILD.bazel",
-    commit = "fc52516467dfa124bdd967c15c7cf9faf02a34ca",
+    commit = "446bae6dfb4c3efb43cb2764379574dcb4f0ee6c",
     remote = "https://github.com/memononen/libtess2.git",
 )
 
-bazel_dep(name = "protobuf", version = "29.3")
+bazel_dep(name = "protobuf", version = "31.1")
 bazel_dep(name = "rules_android", version = "0.6.0")
-bazel_dep(
-    name = "rules_jni",
-    version = "0.10.1",
-)
+bazel_dep(name = "rules_jni", version = "0.10.1")
 
 SKIA_COMMIT = "515a23f3cbe1e2f54ffa6821e6da6f4891763f47"
 
@@ -105,7 +100,7 @@ local_repository(
 #################################################################################
 bazel_dep(
     name = "googletest",
-    version = "1.15.2",
+    version = "1.17.0",
     dev_dependency = True,
     repo_name = "com_google_googletest",
 )
@@ -117,9 +112,20 @@ bazel_dep(
 )
 bazel_dep(
     name = "fuzztest",
-    version = "20241028.0",
+    version = "20250214.0",
     dev_dependency = True,
     repo_name = "com_google_fuzztest",
+)
+
+# Depend on a later version of Riegeli than the one in Fuzztest to avoid an
+# incompatibility with the version of Abseil that we use. We don't use this
+# directly, so it can be removed when we upgrade to a version of Fuzztest
+# that depends on a later version (pending upgrade in
+# https://github.com/google/fuzztest/pull/1742).
+bazel_dep(
+    name = "riegeli",
+    version = "0.0.0-20250706-c4d1f27",
+    dev_dependency = True,
 )
 
 #################################################################################
@@ -130,8 +136,4 @@ bazel_dep(
 # See: https://g-issues.skia.org/issues/367315534
 bazel_dep(name = "rules_license", version = "1.0.0")
 bazel_dep(name = "bazel_skylib", version = "1.7.1")
-
-# Silence warnings about duplicate Python toolchain registration by using a
-# newer version of rules_python.  We can remove this when any of our
-# dependencies use a sufficiently newer rules_python.
-bazel_dep(name = "rules_python", version = "0.40.0")
+bazel_dep(name = "libpng", version = "1.6.47")

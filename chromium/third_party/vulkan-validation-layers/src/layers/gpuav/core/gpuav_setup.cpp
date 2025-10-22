@@ -22,43 +22,67 @@
 #if defined(__linux__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__GNU__)
 #include <unistd.h>
 #endif
-#include "gpuav/core/gpuav_constants.h"
-#include "gpuav/core/gpuav.h"
-#include "gpuav/resources/gpuav_state_trackers.h"
 #include "chassis/dispatch_object.h"
+#include "gpuav/core/gpuav.h"
+#include "gpuav/core/gpuav_constants.h"
+#include "gpuav/instrumentation/descriptor_checks.h"
+#include "gpuav/resources/gpuav_state_trackers.h"
 #include "gpuav/shaders/gpuav_error_header.h"
 #include "gpuav/shaders/gpuav_shaders_constants.h"
+#include "utils/dispatch_utils.h"
+
 namespace gpuav {
 
-std::shared_ptr<vvl::DescriptorSet> Validator::CreateDescriptorSet(VkDescriptorSet handle, vvl::DescriptorPool *pool,
-                                                                   const std::shared_ptr<vvl::DescriptorSetLayout const> &layout,
-                                                                   uint32_t variable_count) {
-    auto set = BaseClass::CreateDescriptorSet(handle, pool, layout, variable_count);
-    if (set) {
-        set->SetSubState(container_type, std::make_unique<DescriptorSetSubState>(*set, *this));
-    }
-    return set;
+// Location to add per-queue submit debug info if built with -D DEBUG_CAPTURE_KEYBOARD=ON
+void Validator::DebugCapture() {}
+
+void Validator::Created(vvl::DescriptorSet &set) {
+    set.SetSubState(container_type, std::make_unique<DescriptorSetSubState>(set, *this));
 }
 
-std::shared_ptr<vvl::CommandBuffer> Validator::CreateCmdBufferState(VkCommandBuffer handle,
-                                                                    const VkCommandBufferAllocateInfo *allocate_info,
-                                                                    const vvl::CommandPool *pool) {
-    auto cb = BaseClass::CreateCmdBufferState(handle, allocate_info, pool);
-    if (cb) {
-        cb->SetSubState(container_type, std::make_unique<CommandBufferSubState>(*this, *cb));
-    }
-    return cb;
+void Validator::Created(vvl::CommandBuffer &cb_state) {
+    cb_state.SetSubState(container_type, std::make_unique<CommandBufferSubState>(*this, cb_state));
 }
 
-std::shared_ptr<vvl::Queue> Validator::CreateQueue(VkQueue handle, uint32_t family_index, uint32_t queue_index,
-                                                   VkDeviceQueueCreateFlags flags,
-                                                   const VkQueueFamilyProperties &queueFamilyProperties) {
-    auto queue = BaseClass::CreateQueue(handle, family_index, queue_index, flags, queueFamilyProperties);
-    if (queue) {
-        queue->SetSubState(container_type, std::make_unique<QueueSubState>(*this, *queue));
-    }
-    return queue;
+void Validator::Created(vvl::Queue &queue) { queue.SetSubState(container_type, std::make_unique<QueueSubState>(*this, queue)); }
+
+void Validator::Created(vvl::Image &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<ImageSubState>(obj, desc_heap));
 }
+void Validator::Created(vvl::ImageView &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<ImageViewSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::Buffer &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<BufferSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::BufferView &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<BufferViewSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::Sampler &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<SamplerSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::AccelerationStructureNV &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<AccelerationStructureNVSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::AccelerationStructureKHR &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<AccelerationStructureKHRSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::Tensor &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<TensorSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::TensorView &obj) {
+    DescriptorHeap &desc_heap = shared_resources_manager.Get<DescriptorHeap>();
+    obj.SetSubState(container_type, std::make_unique<TensorViewSubState>(obj, desc_heap));
+}
+void Validator::Created(vvl::ShaderObject &obj) { obj.SetSubState(container_type, std::make_unique<ShaderObjectSubState>(obj)); }
 
 // Trampolines to make VMA call Dispatch for Vulkan calls
 static VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL gpuVkGetInstanceProcAddr(VkInstance inst, const char *name) {
@@ -186,9 +210,6 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         return;
     }
 
-    // Set up a stub implementation of the descriptor heap in case we abort.
-    desc_heap_.emplace(*this, 0, loc);
-
     instrumentation_bindings_ = {
         // DebugPrintf Output buffer
         {glsl::kBindingInstDebugPrintf, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, 1, VK_SHADER_STAGE_ALL, nullptr},
@@ -214,14 +235,16 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
     // better divide what belongs where as it is easy to mess)
     BaseClass::FinishDeviceSetup(pCreateInfo, loc);
     // We might fail in parent class device creation if global requirements are not met
-    if (aborted_) return;
+    if (aborted_) {
+        return;
+    }
 
     // Need the device to be created before we can query features for settings
     InitSettings(loc);
 
     VkResult result = UtilInitializeVma(instance, physical_device, device, &vma_allocator_);
     if (result != VK_SUCCESS) {
-        InternalVmaError(device, loc, "Could not initialize VMA");
+        InternalVmaError(device, result, "Could not initialize VMA");
         return;
     }
 
@@ -235,18 +258,7 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         vk_set_device_loader_data_ = chain_info->u.pfnSetDeviceLoaderData;
     }
 
-    if (gpuav_settings.shader_instrumentation.descriptor_checks) {
-        VkPhysicalDeviceDescriptorIndexingProperties desc_indexing_props = vku::InitStructHelper();
-        VkPhysicalDeviceProperties2 props2 = vku::InitStructHelper(&desc_indexing_props);
-        DispatchGetPhysicalDeviceProperties2Helper(api_version, physical_device, &props2);
-
-        uint32_t num_descs = desc_indexing_props.maxUpdateAfterBindDescriptorsInAllPools;
-        if (num_descs == 0 || num_descs > glsl::kDebugInputBindlessMaxDescriptors) {
-            num_descs = glsl::kDebugInputBindlessMaxDescriptors;
-        }
-
-        desc_heap_.emplace(*this, num_descs, loc);
-    }
+    DescriptorChecksOnFinishDeviceSetup(*this);
 
     // Create error logging buffer allocation pool
     {
@@ -259,7 +271,7 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         uint32_t mem_type_index;
         result = vmaFindMemoryTypeIndexForBufferInfo(vma_allocator_, &error_buffer_ci, &error_buffer_alloc_ci, &mem_type_index);
         if (result != VK_SUCCESS) {
-            InternalVmaError(device, loc, "Unable to find memory type index.");
+            InternalVmaError(device, result, "Unable to find memory type index.");
             return;
         }
     }
@@ -273,7 +285,7 @@ void Validator::FinishDeviceSetup(const VkDeviceCreateInfo *pCreateInfo, const L
         VmaAllocationCreateInfo alloc_info = {};
         alloc_info.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         alloc_info.preferredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        const bool success = indices_buffer_.Create(loc, &buffer_info, &alloc_info);
+        const bool success = indices_buffer_.Create(&buffer_info, &alloc_info);
         if (!success) {
             return;
         }
@@ -318,10 +330,10 @@ struct RayQuery : public Setting {
 struct BufferCopies : public Setting {
     bool IsEnabled(const GpuAVSettings &settings) { return settings.validate_buffer_copies; }
     // copy_buffer_to_image.comp relies on uint8_t buffers to perform validation
-    bool HasRequiredFeatures(const DeviceFeatures &features) { return features.uniformAndStorageBuffer8BitAccess; }
+    bool HasRequiredFeatures(const DeviceFeatures &features) { return features.storageBuffer8BitAccess; }
     void Disable(GpuAVSettings &settings) { settings.validate_buffer_copies = false; }
     std::string DisableMessage() {
-        return "Buffer copies option was enabled, but the uniformAndStorageBuffer8BitAccess feature was not supported [Disabling "
+        return "Buffer copies option was enabled, but the storageBuffer8BitAccess feature was not supported [Disabling "
                "gpuav_buffer_copies]";
     }
 };
@@ -360,15 +372,24 @@ void Validator::InitSettings(const Location &loc) {
         // Because of VUs like VUID-VkPipelineLayoutCreateInfo-pSetLayouts-08008 we currently would need to rework the entire shader
         // instrumentation logic
         gpuav_settings.DisableShaderInstrumentationAndOptions();
+
+        if (gpuav_settings.debug_printf_enabled) {
+            InternalWarning(device, loc,
+                            "VK_EXT_descriptor_buffer is enabled, but DebugPrintf uses a normal descriptor and currently can't "
+                            "exist with descriptor buffers. [Disabling debug_printf]");
+            gpuav_settings.debug_printf_enabled = false;
+        }
     }
 
     // If we have turned off all the possible things to instrument, turn off everything fully
     if (!gpuav_settings.IsShaderInstrumentationEnabled()) {
         gpuav_settings.DisableShaderInstrumentationAndOptions();
     }
+
+    gpuav_settings.TracyLogSettings();
 }
 
-void Validator::InternalVmaError(LogObjectList objlist, const Location &loc, const char *const specific_message) const {
+void Validator::InternalVmaError(LogObjectList objlist, VkResult result, const char *const specific_message) const {
     aborted_ = true;
     std::string error_message = specific_message;
 
@@ -381,12 +402,31 @@ void Validator::InternalVmaError(LogObjectList objlist, const Location &loc, con
     char const *layer_name = gpuav_settings.debug_printf_only ? "DebugPrintf" : "GPU-AV";
     char const *vuid = gpuav_settings.debug_printf_only ? "UNASSIGNED-DEBUG-PRINTF" : "UNASSIGNED-GPU-Assisted-Validation";
 
-    LogError(vuid, objlist, loc, "Internal VMA Error, %s is being disabled. Details:\n%s", layer_name, error_message.c_str());
+    LogError(vuid, objlist, Location(vvl::Func::Empty), "Internal VMA Error (%s), %s is being disabled. Details:\n%s",
+             string_VkResult(result), layer_name, error_message.c_str());
 
     // Once we encounter an internal issue disconnect everything.
     // This prevents need to check "if (aborted)" (which is awful when we easily forget to check somewhere and the user gets spammed
     // with errors making it hard to see the first error with the real source of the problem).
     dispatch_device_->ReleaseValidationObject(LayerObjectTypeGpuAssisted);
+}
+
+// Things like DescriptorHeap are singleton class that lives in GPU-AV, but are used when state tracking adds/destroy new resources
+// we need to track. One issue is on vkDestroyDevice we need to teardown the GPU-AV class, then after we try and destroy leaked
+// state objects (ex. user forgot to call vkDestroySampler).
+void Validator::DestroySubstate() {
+    if (!dispatch_device_ || aborted_) {
+        return;
+    }
+
+    // While this is not ideal, it is more important to keep normal code fast and do extra cleanup on teardown
+    for (auto object_it = dispatch_device_->object_dispatch.begin(); object_it != dispatch_device_->object_dispatch.end();
+         object_it++) {
+        if ((*object_it)->container_type == LayerObjectTypeStateTracker) {
+            auto &state_tracker = dynamic_cast<vvl::DeviceState &>(**object_it);
+            state_tracker.RemoveSubState(LayerObjectTypeGpuAssisted);
+        }
+    }
 }
 
 }  // namespace gpuav

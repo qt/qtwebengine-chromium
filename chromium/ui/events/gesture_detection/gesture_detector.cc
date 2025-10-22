@@ -2,16 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "ui/events/gesture_detection/gesture_detector.h"
 
 #include <stddef.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 #include "base/memory/raw_ptr.h"
@@ -97,9 +94,9 @@ class GestureDetector::TimeoutGestureHandler {
   typedef void (GestureDetector::*ReceiverMethod)();
 
   const raw_ptr<GestureDetector> gesture_detector_;
-  base::OneShotTimer timeout_timers_[TIMEOUT_EVENT_COUNT];
-  ReceiverMethod timeout_callbacks_[TIMEOUT_EVENT_COUNT];
-  base::TimeDelta timeout_delays_[TIMEOUT_EVENT_COUNT];
+  std::array<base::OneShotTimer, TIMEOUT_EVENT_COUNT> timeout_timers_;
+  std::array<ReceiverMethod, TIMEOUT_EVENT_COUNT> timeout_callbacks_;
+  std::array<base::TimeDelta, TIMEOUT_EVENT_COUNT> timeout_delays_;
 };
 
 GestureDetector::GestureDetector(
@@ -596,7 +593,6 @@ bool GestureDetector::IsWithinSlopForTap(const MotionEvent& ev) {
     float dx = source_pointer_down_event->GetX(source_index) - ev.GetX(i);
     float dy = source_pointer_down_event->GetY(source_index) - ev.GetY(i);
     bool is_stylus_slop_effective =
-        base::FeatureList::IsEnabled(features::kStylusSpecificTapSlop) &&
         ev.GetToolType(i) == MotionEvent::ToolType::STYLUS;
     float slop_square =
         is_stylus_slop_effective ? stylus_slop_square_ : touch_slop_square_;

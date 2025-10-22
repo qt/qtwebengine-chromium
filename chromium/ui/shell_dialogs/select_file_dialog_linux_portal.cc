@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "ui/shell_dialogs/select_file_dialog_linux_portal.h"
 
 #include <string_view>
@@ -19,12 +14,14 @@
 #include "base/nix/xdg_util.h"
 #include "base/no_destructor.h"
 #include "base/notreached.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/time/time.h"
 #include "components/dbus/thread_linux/dbus_thread_linux.h"
 #include "components/dbus/utils/check_for_service_and_start.h"
 #include "components/dbus/xdg/request.h"
+#include "components/dbus/xdg/systemd.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
@@ -117,6 +114,12 @@ void OnServiceStarted(std::optional<bool> service_started) {
                      base::BindOnce(&OnGetPropertyReply));
 }
 
+void OnSystemdUnitStarted(dbus_xdg::SystemdUnitStatus) {
+  dbus_utils::CheckForServiceAndStart(dbus_thread_linux::GetSharedSessionBus(),
+                                      kXdgPortalService,
+                                      base::BindOnce(&OnServiceStarted));
+}
+
 DbusByteArray PathToByteArray(const base::FilePath& path) {
   return DbusByteArray(base::MakeRefCounted<base::RefCountedBytes>(
       base::as_bytes(base::span_with_nul_from_cstring_view(
@@ -166,9 +169,9 @@ void SelectFileDialogLinuxPortal::StartAvailabilityTestInBackground() {
 
   GetMainTaskRunner() = base::SequencedTaskRunner::GetCurrentDefault();
 
-  dbus_utils::CheckForServiceAndStart(dbus_thread_linux::GetSharedSessionBus(),
-                                      kXdgPortalService,
-                                      base::BindOnce(&OnServiceStarted));
+  dbus_xdg::SetSystemdScopeUnitNameForXdgPortal(
+      dbus_thread_linux::GetSharedSessionBus().get(),
+      base::BindOnce(&OnSystemdUnitStarted));
 }
 
 // static
@@ -399,7 +402,7 @@ DbusDictionary SelectFileDialogLinuxPortal::BuildOptionsDictionary(
       break;
   }
 
-  if (!default_path.empty()) {
+  if (!default_path.empty() && base::IsStringUTF8(default_path.value())) {
     if (default_path_exists) {
       // If this is an existing directory, navigate to that directory, with no
       // filename.

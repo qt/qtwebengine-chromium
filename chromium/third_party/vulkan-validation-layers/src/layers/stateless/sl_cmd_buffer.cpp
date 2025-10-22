@@ -19,6 +19,7 @@
 #include "stateless/stateless_validation.h"
 #include "generated/enum_flag_bits.h"
 #include "containers/range.h"
+#include "utils/math_utils.h"
 
 namespace stateless {
 ReadLockGuard Device::ReadLock() const { return ReadLockGuard(validation_object_mutex, std::defer_lock); }
@@ -198,7 +199,7 @@ bool Device::manual_PreCallValidateCmdEndTransformFeedbackEXT(VkCommandBuffer co
     }
 
     // pCounterBuffers and pCounterBufferOffsets are optional and may be nullptr.
-    //  Additionaly, pCounterBufferOffsets must be nullptr if pCounterBuffers is nullptr.
+    // Additionally, pCounterBufferOffsets must be nullptr if pCounterBuffers is nullptr.
     if (pCounterBuffers == nullptr && pCounterBufferOffsets != nullptr) {
         skip |= LogError("VUID-vkCmdEndTransformFeedbackEXT-pCounterBuffer-02379", commandBuffer,
                          error_obj.location.dot(Field::pCounterBuffers), "is NULL but pCounterBufferOffsets is not NULL.");
@@ -552,7 +553,7 @@ bool Device::manual_PreCallValidateCmdPushDescriptorSet2(VkCommandBuffer command
         if (!enabled_features.dynamicPipelineLayout) {
             skip |= LogError("VUID-VkPushDescriptorSetInfo-None-09495", commandBuffer,
                              error_obj.location.dot(Field::pPushDescriptorSetInfo).dot(Field::layout), "is VK_NULL_HANDLE.");
-        } else if (vku::FindStructInPNextChain<VkPipelineLayoutCreateInfo>(pPushDescriptorSetInfo->pNext)) {
+        } else if (!vku::FindStructInPNextChain<VkPipelineLayoutCreateInfo>(pPushDescriptorSetInfo->pNext)) {
             skip |= LogError("VUID-VkPushDescriptorSetInfo-layout-09496", commandBuffer,
                              error_obj.location.dot(Field::pPushDescriptorSetInfo).dot(Field::layout),
                              "is VK_NULL_HANDLE and pNext is missing VkPipelineLayoutCreateInfo.");

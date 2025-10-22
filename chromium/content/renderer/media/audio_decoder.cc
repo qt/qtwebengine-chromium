@@ -12,6 +12,7 @@
 #include "base/containers/span_writer.h"
 #include "base/logging.h"
 #include "base/strings/string_util.h"
+#include "base/strings/to_string.h"
 #include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/base/limits.h"
@@ -29,17 +30,15 @@ using blink::WebAudioBus;
 namespace content {
 
 // Decode in-memory audio file data.
-bool DecodeAudioFileData(
-    blink::WebAudioBus* destination_bus,
-    const char* data, size_t data_size) {
+bool DecodeAudioFileData(blink::WebAudioBus* destination_bus,
+                         base::span<const char> data) {
   DCHECK(destination_bus);
   if (!destination_bus)
     return false;
 
 #if BUILDFLAG(ENABLE_FFMPEG)
   // Uses the FFmpeg library for audio file reading.
-  InMemoryUrlProtocol url_protocol(reinterpret_cast<const uint8_t*>(data),
-                                   data_size, false);
+  InMemoryUrlProtocol url_protocol(base::as_byte_span(data), false);
   AudioFileReader reader(&url_protocol);
 
   if (!reader.Open())
@@ -82,7 +81,7 @@ bool DecodeAudioFileData(
   }
 
   DVLOG(1) << "Decoded file data (unknown duration)-"
-           << " data: " << data << " data size: " << data_size
+           << " data: " << base::ToString(data) << " data size: " << data.size()
            << ", decoded duration: " << (number_of_frames / file_sample_rate)
            << ", number of frames: " << number_of_frames
            << ", estimated frames (if available): "

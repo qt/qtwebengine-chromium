@@ -12,11 +12,10 @@
 #include <stddef.h>
 #include <stdint.h>
 
-#include "src/xnnpack/simd/f16-neonfp16arith.h"
-
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/math.h"
 #include "src/xnnpack/microparams.h"
+#include "src/xnnpack/simd/f16-neonfp16arith.h"
 #include "src/xnnpack/vunary.h"
 
 
@@ -24,7 +23,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u8(
     size_t batch,
     const xnn_float16* input,
     xnn_float16* output,
-    const struct xnn_f16_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(xnn_float16) == 0);
@@ -46,7 +45,6 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u8(
   // The monomial coefficients of the numerator polynomial (odd,
   // `valpha_1` = `vone`).
   XNN_SIMD_CONST_F16_FROM_FLOAT(valpha_3, -1.1200523376e-01f);
-
 
   // The monomial coefficients of the denominator polynomial (even,
   // `vbeta_0` = `vone`).
@@ -119,7 +117,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u16(
     size_t batch,
     const xnn_float16* input,
     xnn_float16* output,
-    const struct xnn_f16_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(xnn_float16) == 0);
@@ -142,7 +140,6 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u16(
   // `valpha_1` = `vone`).
   XNN_SIMD_CONST_F16_FROM_FLOAT(valpha_3, -1.1200523376e-01f);
 
-
   // The monomial coefficients of the denominator polynomial (even,
   // `vbeta_0` = `vone`).
   XNN_SIMD_CONST_F16_FROM_FLOAT(vbeta_2, 5.5543992668e-02f);
@@ -151,7 +148,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u16(
   XNN_SIMD_CONST_F16_FROM_FLOAT(vone, 1.0f);
 
   for (; batch >= 16 * sizeof(xnn_float16); batch -= 16 * sizeof(xnn_float16)) {
-    xnn_simd_f16_t vx_0 = xnn_loadu_f16(input);
+    xnn_simd_f16_t vx_0 = xnn_loadu_f16(input + 0 * xnn_simd_size_f16);
     xnn_simd_f16_t vx_1 = xnn_loadu_f16(input + 1 * xnn_simd_size_f16);
     input += 16;
 
@@ -191,7 +188,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u16(
     const xnn_simd_f16_t vy_0 = xnn_div_f16(vp_0, vq_0);
     const xnn_simd_f16_t vy_1 = xnn_div_f16(vp_1, vq_1);
 
-    xnn_storeu_f16(output, vy_0);
+    xnn_storeu_f16(output + 0 * xnn_simd_size_f16, vy_0);
     xnn_storeu_f16(output + 1 * xnn_simd_size_f16, vy_1);
     output += 16;
   }
@@ -259,7 +256,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u32(
     size_t batch,
     const xnn_float16* input,
     xnn_float16* output,
-    const struct xnn_f16_default_params unused_params[restrict XNN_MIN_ELEMENTS(1)])
+    const struct xnn_f16_default_params* unused_params)
 {
   assert(batch != 0);
   assert(batch % sizeof(xnn_float16) == 0);
@@ -282,7 +279,6 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u32(
   // `valpha_1` = `vone`).
   XNN_SIMD_CONST_F16_FROM_FLOAT(valpha_3, -1.1200523376e-01f);
 
-
   // The monomial coefficients of the denominator polynomial (even,
   // `vbeta_0` = `vone`).
   XNN_SIMD_CONST_F16_FROM_FLOAT(vbeta_2, 5.5543992668e-02f);
@@ -291,7 +287,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u32(
   XNN_SIMD_CONST_F16_FROM_FLOAT(vone, 1.0f);
 
   for (; batch >= 32 * sizeof(xnn_float16); batch -= 32 * sizeof(xnn_float16)) {
-    xnn_simd_f16_t vx_0 = xnn_loadu_f16(input);
+    xnn_simd_f16_t vx_0 = xnn_loadu_f16(input + 0 * xnn_simd_size_f16);
     xnn_simd_f16_t vx_1 = xnn_loadu_f16(input + 1 * xnn_simd_size_f16);
     xnn_simd_f16_t vx_2 = xnn_loadu_f16(input + 2 * xnn_simd_size_f16);
     xnn_simd_f16_t vx_3 = xnn_loadu_f16(input + 3 * xnn_simd_size_f16);
@@ -359,7 +355,7 @@ void xnn_f16_vcos_ukernel__neonfp16arith_rational_3_2_div_u32(
     const xnn_simd_f16_t vy_2 = xnn_div_f16(vp_2, vq_2);
     const xnn_simd_f16_t vy_3 = xnn_div_f16(vp_3, vq_3);
 
-    xnn_storeu_f16(output, vy_0);
+    xnn_storeu_f16(output + 0 * xnn_simd_size_f16, vy_0);
     xnn_storeu_f16(output + 1 * xnn_simd_size_f16, vy_1);
     xnn_storeu_f16(output + 2 * xnn_simd_size_f16, vy_2);
     xnn_storeu_f16(output + 3 * xnn_simd_size_f16, vy_3);

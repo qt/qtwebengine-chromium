@@ -2,23 +2,33 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_STACK_STACK_H_
 #define PARTITION_ALLOC_STACK_STACK_H_
 
 #include <cstdint>
 #include <functional>
 #include <mutex>
-#include <unordered_map>
 #include <utility>
 
 #include "partition_alloc/internal_allocator.h"
 #include "partition_alloc/partition_alloc_base/compiler_specific.h"
 #include "partition_alloc/partition_alloc_base/component_export.h"
+#include "partition_alloc/partition_alloc_base/containers/flat_map.h"
 #include "partition_alloc/partition_alloc_base/thread_annotations.h"
 #include "partition_alloc/partition_alloc_base/threading/platform_thread.h"
 #include "partition_alloc/partition_lock.h"
 
 namespace partition_alloc::internal {
+
+namespace base {
+template <typename T>
+class NoDestructor;
+}
 
 // Returns the current stack pointer.
 // TODO(bikineev,1202644): Remove this once base/stack_util.h lands.
@@ -61,13 +71,20 @@ class PA_COMPONENT_EXPORT(PARTITION_ALLOC) StackTopRegistry {
   void* GetCurrentThreadStackTop() const;
 
  private:
-  using StackTops =
-      std::unordered_map<base::PlatformThreadId,
-                         void*,
-                         std::hash<base::PlatformThreadId>,
-                         std::equal_to<>,
-                         internal::InternalAllocator<
-                             std::pair<const base::PlatformThreadId, void*>>>;
+  // std::unordered_map is not available inside PartitionAlloc, because
+  // libc++.dll depends on PartitionAlloc when PartitionAlloc-Everywhere
+  // is enabled on Windows component build, and std::unordered_map needs
+  // a symbol defined inside libc++, i.e. __next_prime. Instead, we should
+  // use base::flat_map. Regarding std::vector, std::set, and so on, these
+  // classes are header-only. They are still available inside
+  // PartitionAlloc with InternalAllocator.
+  using StackTops = base::flat_map<
+      base::PlatformThreadId,
+      void*,
+      std::less<>,
+      std::vector<std::pair<base::PlatformThreadId, void*>,
+                  internal::InternalAllocator<
+                      std::pair<base::PlatformThreadId, void*>>>>;
 
   friend class base::NoDestructor<StackTopRegistry>;
 

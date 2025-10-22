@@ -512,6 +512,7 @@
     //none
     //
     // The order must match the order found in IsDisplayOutside().
+    // "block" also a keyword for caret-shape
     "inline",
     "block",
     // The order must match the order found in IsDisplayInside().
@@ -785,6 +786,9 @@
     "max-content",
     "fit-content",
 
+    // contain-intrinsic-size
+    "from-element",
+
     //
     // text-autospace
     //
@@ -908,6 +912,9 @@
     // <select>. It should be renamed when a standardized name is chosen.
     "base-select",
     "-internal-auto-base",
+    // Used to set the `content` property of the pseudo-element "hint" given to
+    // elements with partial interest (via `interestfor` keyboard activation).
+    "-internal-partial-interest-content",
 
     //
     // background-clip/background-origin
@@ -1211,7 +1218,7 @@
     // "round",
     "scoop",
     "squircle",
-    "straight",
+    // "square",
     "superellipse",
 
     // -webkit-app-region
@@ -1245,11 +1252,6 @@
     // alpha
     // luminance
     "match-source",
-
-    // masonry-auto-tracks
-    // min-content
-    // max-content
-    // auto
 
     // masonry-direction
     // row
@@ -1632,6 +1634,7 @@
     "size",
     "block-size",
     "inline-size",
+    "view-transition",
 
     // @container
     // size
@@ -1645,6 +1648,7 @@
     "block-end",
     // inline-start,
     // inline-end,
+    "anchored",
 
     // grid auto-repeat
     "auto-fill",
@@ -1866,6 +1870,7 @@
     // normal,
     // size,
     // scroll-state,
+    // anchored,
 
     // (scripting:) media feature
     "enabled",
@@ -1970,6 +1975,14 @@
     "context-fill",
     "context-stroke",
 
+    // text-grow / text-shrink
+    "per-line",
+    "consistent",
+    // "scale",
+    "font-size",
+    "scale-inline",
+    "letter-spacing",
+
     // media-progress()
     "media-progress",
 
@@ -1992,6 +2005,9 @@
     "sibling-count",
     "sibling-index",
 
+    // https://drafts.csswg.org/css-values-5/#ident
+    "ident",
+
     // @function
     "returns",
 
@@ -2005,5 +2021,17 @@
     "if",
     "else",
     "media",
+
+    // scroll-marker-group navigation/a11y modes
+    "tabs",
+    "links",
+
+    // caret-shape
+    // block is elsewhere
+    "bar",
+    "underscore",
+
+    // continue
+    "-webkit-legacy",
   ],
 }

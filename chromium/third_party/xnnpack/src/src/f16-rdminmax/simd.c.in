@@ -5,10 +5,12 @@
 
 $assert OP in ["MAX", "MIN"]
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
 #include "src/xnnpack/common.h"
+#include "src/xnnpack/math.h"
 #include "src/xnnpack/reduce.h"
-
 #include "src/xnnpack/simd/f16-${ARCH}.h"
 
 $EMIT_MIN = "MIN" in OP
@@ -22,7 +24,7 @@ void xnn_f16_rd${OP.lower()}_ukernel_${ACCUMULATORS}p${ACCUMULATORS}x__${ARCH}_c
     size_t input_stride,
     const xnn_float16* zero,
     xnn_float16* output,
-    const void* params) XNN_OOB_READS
+    const void* params)
 {
   assert(rows != 0);
   assert(channels != 0);

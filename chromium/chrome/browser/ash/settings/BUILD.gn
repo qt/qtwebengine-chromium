@@ -12,8 +12,6 @@ static_library("settings") {
     "about_flags.h",
     "cros_settings_holder.cc",
     "cros_settings_holder.h",
-    "device_settings_cache.cc",
-    "device_settings_cache.h",
     "device_settings_provider.cc",
     "device_settings_provider.h",
     "device_settings_service.cc",
@@ -34,8 +32,6 @@ static_library("settings") {
     "stub_cros_settings_provider.h",
     "supervised_user_cros_settings_provider.cc",
     "supervised_user_cros_settings_provider.h",
-    "token_encryptor.cc",
-    "token_encryptor.h",
   ]
 
   public_deps = [ "//chrome/browser:browser_public_dependencies" ]
@@ -44,7 +40,7 @@ static_library("settings") {
     "//ash/constants",
     "//ash/public/cpp",
     "//base",
-    "//chrome/browser:browser_process",
+    "//chrome/browser:flags",
     "//chrome/browser/ash/tpm",
     "//chrome/browser/profiles:profile",
     "//chrome/common:constants",
@@ -65,7 +61,7 @@ static_library("settings") {
     "//content/public/browser",
     "//crypto",
     "//net",
-    "//third_party/re2:re2",
+    "//third_party/re2",
 
     # Work around of stub_cros_settings_provider injection.
     # TODO(hidehiko): Move the test support code to test_support target.
@@ -81,6 +77,8 @@ static_library("test_support") {
     "device_settings_test_helper.h",
     "scoped_cros_settings_test_helper.cc",
     "scoped_cros_settings_test_helper.h",
+    "scoped_test_device_settings_service.cc",
+    "scoped_test_device_settings_service.h",
     "scoped_testing_cros_settings.cc",
     "scoped_testing_cros_settings.h",
   ]
@@ -103,6 +101,7 @@ static_library("test_support") {
     "//chromeos/ash/components/dbus/session_manager",
     "//chromeos/ash/components/dbus/userdataauth",
     "//chromeos/ash/components/install_attributes:test_support",
+    "//chromeos/ash/components/policy/device_policy:test_support",
     "//chromeos/ash/components/settings",
     "//chromeos/dbus/power",
     "//chromeos/dbus/tpm_manager",
@@ -120,14 +119,12 @@ source_set("unit_tests") {
 
   sources = [
     "cros_settings_unittest.cc",
-    "device_settings_cache_unittest.cc",
     "device_settings_provider_unittest.cc",
     "device_settings_service_unittest.cc",
     "session_manager_operation_unittest.cc",
     "shutdown_policy_handler_unittest.cc",
     "stats_reporting_controller_unittest.cc",
     "stub_cros_settings_provider_unittest.cc",
-    "token_encryptor_unittest.cc",
   ]
 
   deps = [
@@ -147,6 +144,7 @@ source_set("unit_tests") {
     "//chromeos/ash/components/browser_context_helper",
     "//chromeos/ash/components/install_attributes",
     "//chromeos/ash/components/install_attributes:test_support",
+    "//chromeos/ash/components/policy/device_policy:test_support",
     "//chromeos/ash/components/settings",
     "//components/ownership",
     "//components/policy/core/common",

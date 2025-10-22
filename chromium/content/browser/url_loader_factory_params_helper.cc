@@ -20,7 +20,6 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
-#include "ipc/ipc_message.h"
 #include "net/base/isolation_info.h"
 #include "net/cookies/cookie_setting_override.h"
 #include "services/network/public/cpp/is_potentially_trustworthy.h"
@@ -74,7 +73,8 @@ network::mojom::URLLoaderFactoryParamsPtr CreateParams(
         trust_token_redemption_policy,
     net::CookieSettingOverrides cookie_setting_overrides,
     std::string_view debug_tag,
-    bool require_cross_site_request_for_cookies) {
+    bool require_cross_site_request_for_cookies,
+    bool is_for_service_worker) {
   DCHECK(process);
 
   network::mojom::URLLoaderFactoryParamsPtr params =
@@ -114,7 +114,7 @@ network::mojom::URLLoaderFactoryParamsPtr CreateParams(
 
   GetContentClient()->browser()->OverrideURLLoaderFactoryParams(
       process->GetBrowserContext(), origin, is_for_isolated_world,
-      params.get());
+      is_for_service_worker, params.get());
 
   params->cookie_observer = std::move(cookie_observer);
   params->trust_token_observer = std::move(trust_token_observer);
@@ -172,7 +172,8 @@ URLLoaderFactoryParamsHelper::CreateForFrame(
       NetworkServiceDevToolsObserver::MakeSelfOwned(frame->frame_tree_node()),
       frame->CreateDeviceBoundSessionObserver(), trust_token_issuance_policy,
       trust_token_redemption_policy, cookie_setting_overrides, debug_tag,
-      /*require_cross_site_request_for_cookies=*/false);
+      /*require_cross_site_request_for_cookies=*/false,
+      /*is_for_service_worker=*/false);
 }
 
 // static
@@ -208,7 +209,8 @@ URLLoaderFactoryParamsHelper::CreateForIsolatedWorld(
       frame->CreateDeviceBoundSessionObserver(), trust_token_issuance_policy,
       trust_token_redemption_policy, cookie_setting_overrides,
       "ParamHelper::CreateForIsolatedWorld",
-      /*require_cross_site_request_for_cookies=*/false);
+      /*require_cross_site_request_for_cookies=*/false,
+      /*is_for_service_worker=*/false);
 }
 
 network::mojom::URLLoaderFactoryParamsPtr
@@ -242,7 +244,8 @@ URLLoaderFactoryParamsHelper::CreateForPrefetch(
       network::mojom::TrustTokenOperationPolicyVerdict::kForbid,
       network::mojom::TrustTokenOperationPolicyVerdict::kForbid,
       cookie_setting_overrides, "ParamHelper::CreateForPrefetch",
-      /*require_cross_site_request_for_cookies=*/false);
+      /*require_cross_site_request_for_cookies=*/false,
+      /*is_for_service_worker=*/false);
 }
 
 // static
@@ -264,7 +267,8 @@ URLLoaderFactoryParamsHelper::CreateForWorker(
     mojo::PendingRemote<network::mojom::DevToolsObserver> devtools_observer,
     network::mojom::ClientSecurityStatePtr client_security_state,
     std::string_view debug_tag,
-    bool require_cross_site_request_for_cookies) {
+    bool require_cross_site_request_for_cookies,
+    bool is_for_service_worker) {
   return CreateParams(
       process,
       request_initiator,  // origin
@@ -291,7 +295,7 @@ URLLoaderFactoryParamsHelper::CreateForWorker(
       network::mojom::TrustTokenOperationPolicyVerdict::kPotentiallyPermit,
       network::mojom::TrustTokenOperationPolicyVerdict::kPotentiallyPermit,
       net::CookieSettingOverrides(), debug_tag,
-      require_cross_site_request_for_cookies);
+      require_cross_site_request_for_cookies, is_for_service_worker);
 }
 
 // static
@@ -354,7 +358,8 @@ URLLoaderFactoryParamsHelper::CreateForEarlyHintsPreload(
       network::mojom::TrustTokenOperationPolicyVerdict::kForbid,
       network::mojom::TrustTokenOperationPolicyVerdict::kForbid,
       net::CookieSettingOverrides(), "ParamHelper::CreateForEarlyHintsPreload",
-      /*require_cross_site_request_for_cookies=*/false);
+      /*require_cross_site_request_for_cookies=*/false,
+      /*is_for_service_worker=*/false);
 }
 
 }  // namespace content

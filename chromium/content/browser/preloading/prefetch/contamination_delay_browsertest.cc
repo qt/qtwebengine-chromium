@@ -18,6 +18,7 @@
 #include "content/browser/renderer_host/browsing_context_group_swap.h"
 #include "content/browser/renderer_host/navigation_request.h"
 #include "content/public/browser/prefetch_service_delegate.h"
+#include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/common/content_features.h"
 #include "content/public/common/referrer.h"
@@ -26,6 +27,7 @@
 #include "content/public/test/content_browser_test.h"
 #include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/prefetch_test_util.h"
+#include "content/public/test/preloading_test_util.h"
 #include "content/shell/browser/shell.h"
 #include "net/http/http_status_code.h"
 #include "net/test/embedded_test_server/embedded_test_server.h"
@@ -93,7 +95,7 @@ class ContaminationDelayBrowserTest : public ContentBrowserTest {
     auto candidate = blink::mojom::SpeculationCandidate::New();
     candidate->url = url;
     candidate->action = blink::mojom::SpeculationAction::kPrefetch;
-    candidate->eagerness = blink::mojom::SpeculationEagerness::kEager;
+    candidate->eagerness = blink::mojom::SpeculationEagerness::kImmediate;
     candidate->referrer = Referrer::SanitizeForRequest(
         url, blink::mojom::Referrer(
                  shell()->web_contents()->GetURL(),
@@ -251,11 +253,15 @@ IN_PROC_BROWSER_TEST_F(ContaminationDelayBrowserTest,
 
   auto test_prefetch_watcher = std::make_unique<test::TestPrefetchWatcher>();
   auto handle = shell()->web_contents()->StartPrefetch(
-      prefetch_url, /*use_prefetch_proxy=*/false, blink::mojom::Referrer(),
-      referring_origin, /*no_vary_search_hint=*/std::nullopt,
+      prefetch_url, /*use_prefetch_proxy=*/false,
+      test::kPreloadingEmbedderHistgramSuffixForTesting,
+      blink::mojom::Referrer(), referring_origin,
+      /*no_vary_search_hint=*/std::nullopt,
+      /*priority=*/std::nullopt,
       PreloadPipelineInfo::Create(
           /*planned_max_preloading_type=*/PreloadingType::kPrefetch),
-      /*attempt=*/nullptr, /*holdback_status_override=*/std::nullopt);
+      /*attempt=*/nullptr, /*holdback_status_override=*/std::nullopt,
+      /*ttl=*/std::nullopt);
   test_prefetch_watcher->WaitUntilPrefetchResponseCompleted(std::nullopt,
                                                             prefetch_url);
 

@@ -18,6 +18,10 @@
       Symbol: "kIdDetailsContent",
     },
     {
+      name: "permission-icon",
+      Symbol: "kIdPermissionIcon",
+    },
+    {
       name: "details-summary",
       Symbol: "kIdDetailsSummary",
     },
@@ -40,6 +44,10 @@
     {
       name: "editing-view-port",
       Symbol: "kIdEditingViewPort",
+    },
+    {
+      name: "textarea-placeholder-break",
+      Symbol: "kIdPlaceholderBreak",
     },
     {
       name: "picker",
@@ -88,7 +96,7 @@
 
     //
     // Pseudo names for UA shadow elements.
-    // These are web-exposed as pseudo element selectors.
+    // These are web-exposed as pseudo-element selectors.
     //
     {
       name: "picker(select)",
@@ -159,8 +167,16 @@
       Symbol: "kPseudoInternalDatetimeContainer",
     },
     {
+      name: "-internal-permission-fallback-slot",
+      Symbol: "kPseudoInternalPermissionFallbackSlot",
+    },
+    {
       name: "-internal-permission-text",
       Symbol: "kPseudoInternalPermissionTextSpan",
+    },
+    {
+      name: "-internal-permission-container",
+      Symbol: "kPseudoInternalPermissionContainer",
     },
     {
       name: "-internal-optgroup-label",

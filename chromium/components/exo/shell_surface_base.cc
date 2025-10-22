@@ -6,10 +6,11 @@
 
 #include <stdint.h>
 
+#include <optional>
+
 #include "ash/display/screen_orientation_controller.h"
 #include "ash/frame/non_client_frame_view_ash.h"
 #include "ash/metrics/login_unlock_throughput_recorder.h"
-#include "ash/public/cpp/rounded_corner_utils.h"
 #include "ash/public/cpp/window_properties.h"
 #include "ash/shell.h"
 #include "ash/wm/desks/desks_controller.h"
@@ -24,9 +25,10 @@
 #include "base/containers/flat_set.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
+#include "base/trace_event/trace_event.h"
 #include "base/trace_event/traced_value.h"
 #include "chromeos/constants/chromeos_features.h"
 #include "chromeos/ui/base/chromeos_ui_constants.h"
@@ -146,25 +148,21 @@ class CustomFrameView : public ash::NonClientFrameViewAsh {
 
   // Overridden from views::NonClientFrameView:
   void UpdateWindowRoundedCorners() override {
-    if (!chromeos::features::IsRoundedWindowsEnabled() && GetFrameEnabled()) {
-      header_view_->SetHeaderCornerRadius(
-          chromeos::GetWindowCornerRadius(frame()->GetNativeWindow()));
-    }
-
     if (!GetWidget()) {
       return;
     }
 
-    aura::Window* window = GetWidget()->GetNativeWindow();
-    const ash::WindowState* window_state = ash::WindowState::Get(window);
     std::optional<gfx::RoundedCornersF> window_radii =
         shell_surface_->window_corners_radii();
     std::optional<gfx::RoundedCornersF> shadow_radii =
         shell_surface_->shadow_corner_radii();
 
-    int corner_radius = -1;
+    aura::Window* window = GetWidget()->GetNativeWindow();
+    const ash::WindowState* window_state = ash::WindowState::Get(window);
+
+    std::optional<gfx::RoundedCornersF> rounded_corners;
     if (window_state->IsPip()) {
-      corner_radius = chromeos::kPipRoundedCornerRadius;
+      rounded_corners = gfx::RoundedCornersF(chromeos::kPipRoundedCornerRadius);
     } else if (window_radii || shadow_radii) {
       gfx::RoundedCornersF radii;
 
@@ -178,12 +176,15 @@ class CustomFrameView : public ash::NonClientFrameViewAsh {
           window_radii.value_or(shadow_radii.value_or(gfx::RoundedCornersF()));
 
       // TODO(crbug.com/40256581): Support variable window radii.
-      corner_radius = radii.upper_left();
+      rounded_corners = radii;
     }
 
     // Various window decorations are rounded using `kWindowCornerRadiusKey`
     // property.
-    window->SetProperty(aura::client::kWindowCornerRadiusKey, corner_radius);
+    if (rounded_corners) {
+      window->SetProperty(aura::client::kWindowRoundedCornersKey,
+                          rounded_corners.value());
+    }
 
     // If window_radii is null, skip rounding the window.
     if (!window_radii) {
@@ -191,10 +192,12 @@ class CustomFrameView : public ash::NonClientFrameViewAsh {
     }
 
     if (GetFrameEnabled()) {
-      header_view_->SetHeaderCornerRadius(corner_radius);
+      CHECK_EQ(rounded_corners->upper_left(), rounded_corners->upper_right());
+      header_view_->SetHeaderCornerRadius(rounded_corners->upper_left());
     }
 
-    GetWidget()->client_view()->UpdateWindowRoundedCorners(corner_radius);
+    GetWidget()->client_view()->UpdateWindowRoundedCorners(
+        rounded_corners.value());
   }
 
   gfx::Rect GetWindowBoundsForClientBounds(
@@ -266,7 +269,8 @@ class CustomClientView : public views::ClientView {
   ~CustomClientView() override = default;
 
   // ClientView:
-  void UpdateWindowRoundedCorners(int corner_radius) override {
+  void UpdateWindowRoundedCorners(
+      const gfx::RoundedCornersF& window_radii) override {
     DCHECK(GetWidget());
     const CustomFrameView* custom_frame_view = static_cast<CustomFrameView*>(
         GetWidget()->non_client_view()->frame_view());
@@ -281,11 +285,10 @@ class CustomClientView : public views::ClientView {
         !custom_frame_view->GetFrameEnabled() ||
         custom_frame_view->GetFrameOverlapped();
 
-    const float corner_radius_f = corner_radius;
     const gfx::RoundedCornersF root_surface_radii = {
-        should_round_client_view_upper_corner ? corner_radius_f : 0,
-        should_round_client_view_upper_corner ? corner_radius_f : 0,
-        corner_radius_f, corner_radius_f};
+        should_round_client_view_upper_corner ? window_radii.upper_left() : 0,
+        should_round_client_view_upper_corner ? window_radii.upper_right() : 0,
+        window_radii.lower_right(), window_radii.lower_left()};
 
     const Surface* root_surface = shell_surface_->root_surface();
 
@@ -408,8 +411,7 @@ void CommitSnap(aura::Window* window,
                 float snap_ratio) {
   chromeos::SnapController::Get()->CommitSnap(
       window, snap_direction, snap_ratio,
-      chromeos::SnapController::SnapRequestSource::
-          kFromLacrosSnapButtonOrWindowLayoutMenu);
+      chromeos::SnapController::SnapRequestSource::kWindowLayoutMenu);
 }
 
 }  // namespace
@@ -430,7 +432,7 @@ ShellSurfaceBase::ShellSurfaceBase(Surface* surface,
   surface->AddSurfaceObserver(this);
   SetRootSurface(surface);
   host_window()->Show();
-  set_owned_by_client();
+  set_owned_by_client(OwnedByClientPassKey());
 
   SetCanMinimize(can_minimize_);
   SetCanMaximize(ash::desks_util::IsDeskContainerId(container_));
@@ -1085,7 +1087,8 @@ void ShellSurfaceBase::AddOverlay(OverlayParams&& overlay_params) {
     params.activatable = views::Widget::InitParams::Activatable::kYes;
 
   params.delegate = new views::WidgetDelegate();
-  params.delegate->SetOwnedByWidget(true);
+  params.delegate->SetOwnedByWidget(
+      views::WidgetDelegate::OwnedByWidgetPassKey());
   params.delegate->SetContentsView(std::move(overlay_params.contents_view));
   params.name = "Overlay";
 
@@ -2153,9 +2156,8 @@ void ShellSurfaceBase::UpdateShadowRoundedCorners() {
   const ash::WindowState* window_state = ash::WindowState::Get(window);
   if (window_state && window_state->IsPip()) {
     shadow_radii = gfx::RoundedCornersF(chromeos::kPipRoundedCornerRadius);
-  } else if (chromeos::features::IsRoundedWindowsEnabled() &&
-             (shadow_corners_radii_dp_.has_value() ||
-              window_corners_radii_dp_.has_value())) {
+  } else if (shadow_corners_radii_dp_.has_value() ||
+             window_corners_radii_dp_.has_value()) {
     // For backward version compatibility, fallback to use the window radii if
     // the shadow radii is not specified.
     // TODO(crbug.com/40256581): Revisit once all the clients have migrated.

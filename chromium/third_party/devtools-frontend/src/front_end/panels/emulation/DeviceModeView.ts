@@ -1,6 +1,7 @@
 // Copyright 2015 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as Common from '../../core/common/common.js';
 import * as Host from '../../core/host/host.js';
@@ -94,7 +95,7 @@ export class DeviceModeView extends UI.Widget.VBox {
   private handleHeight?: number;
 
   constructor() {
-    super(true);
+    super({useShadowDom: true});
 
     this.blockElementToWidth = new WeakMap();
 
@@ -473,7 +474,7 @@ export class DeviceModeView extends UI.Widget.VBox {
       // Cap the height to not hit the GPU limit.
       // https://crbug.com/1260828
       canvas.height = Math.min((1 << 14), Math.floor(outlineRect.height));
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', {willReadFrequently: true});
       if (!ctx) {
         throw new Error('Could not get 2d context from canvas.');
       }
@@ -515,7 +516,7 @@ export class DeviceModeView extends UI.Widget.VBox {
       // Cap the height to not hit the GPU limit.
       // https://crbug.com/1260828
       canvas.height = Math.min((1 << 14), Math.floor(pageImage.naturalHeight));
-      const ctx = canvas.getContext('2d');
+      const ctx = canvas.getContext('2d', {willReadFrequently: true});
       if (!ctx) {
         throw new Error('Could not get 2d context for base64 screenshot.');
       }
@@ -573,9 +574,8 @@ export class Ruler extends UI.Widget.VBox {
   private renderedScale!: number|undefined;
   private renderedZoomFactor!: number|undefined;
   constructor(horizontal: boolean, applyCallback: (arg0: number) => void) {
-    super();
+    super({jslog: `${VisualLogging.deviceModeRuler().track({click: true})}`});
     this.element.classList.add('device-mode-ruler');
-    this.element.setAttribute('jslog', `${VisualLogging.deviceModeRuler().track({click: true})}`);
     this.contentElementInternal =
         this.element.createChild('div', 'device-mode-ruler-content').createChild('div', 'device-mode-ruler-inner');
     this.horizontal = horizontal;

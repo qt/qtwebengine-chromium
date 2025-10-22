@@ -12,14 +12,12 @@
 #include "base/component_export.h"
 #include "base/observer_list.h"
 #include "components/input/event_with_latency_info.h"
-#include "components/input/input_router_impl.h"
 #include "components/input/render_input_router.h"
 #include "components/viz/common/hit_test/aggregated_hit_test_region.h"
 #include "components/viz/common/hit_test/hit_test_data_provider.h"
 #include "components/viz/common/surfaces/surface_id.h"
 #include "third_party/blink/public/mojom/input/input_event_result.mojom-shared.h"
 #include "third_party/blink/public/mojom/page/widget.mojom-shared.h"
-#include "ui/events/blink/did_overscroll_params.h"
 #include "ui/events/event.h"
 
 namespace blink {
@@ -80,8 +78,6 @@ class COMPONENT_EXPORT(INPUT) RenderWidgetHostViewInput
   virtual void ProcessAckedTouchEvent(
       const TouchEventWithLatencyInfo& touch,
       blink::mojom::InputEventResultState ack_result);
-
-  virtual void DidOverscroll(const ui::DidOverscrollParams& params) {}
 
   virtual void DidStopFlinging() {}
 

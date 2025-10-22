@@ -14,6 +14,7 @@
 #include "base/json/json_file_value_serializer.h"
 #include "base/memory/ptr_util.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_paths.h"
@@ -826,12 +827,13 @@ TEST(PermissionsTest, PermissionMessages) {
   // experimental AI Data command-line flag, we don't need to warn you further.
   skip.insert(APIPermissionID::kExperimentalAiData);
 
+  // The Experimental Actor API is gated on commandline switches, in
+  // addition to the permission in the manifest. If you've turned on the
+  // experimental Actor command-line flag, we don't need to warn you further.
+  skip.insert(APIPermissionID::kExperimentalActor);
+
   // The Identity API has its own server-driven permission prompts.
   skip.insert(APIPermissionID::kIdentity);
-
-  // This API is still in origin trial so we don't want to show a permission
-  // prompt.
-  skip.insert(APIPermissionID::kAILanguageModelOriginTrial);
 
   // These are private.
   skip.insert(APIPermissionID::kAccessibilityPrivate);

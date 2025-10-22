@@ -37,6 +37,7 @@
 #include "perfetto/ext/tracing/core/tracing_service.h"
 #include "perfetto/ext/tracing/ipc/producer_ipc_client.h"
 #include "perfetto/public/compiler.h"
+#include "perfetto/tracing/buffer_exhausted_policy.h"
 #include "perfetto/tracing/core/data_source_config.h"
 #include "perfetto/tracing/core/data_source_descriptor.h"
 #include "src/profiling/common/callstack_trie.h"
@@ -86,6 +87,11 @@ uint32_t NumberOfCpus() {
 bool IsCpuOnline(uint32_t cpu) {
   base::StackString<128> path("/sys/devices/system/cpu/cpu%" PRIu32 "/online",
                               cpu);
+  // Always-on CPUs do not have an "online" attribute so treat an absent |path|
+  // as online.
+  if (!base::FileExists(path.c_str())) {
+    return true;
+  }
   std::string res;
   if (!base::ReadFile(path.c_str(), &res)) {
     return false;
@@ -109,8 +115,8 @@ std::vector<uint32_t> CreateCpuMask(const protos::gen::PerfEventConfig& cfg) {
     // check explicit mask from cfg, or allow all by default
     if (!target_cpus.empty() && target_cpus.count(cpu) == 0)
       continue;
-    // consider cpu0 to always be online
-    if (cpu > 0 && !IsCpuOnline(cpu))
+
+    if (!IsCpuOnline(cpu))
       continue;
     ret.push_back(cpu);
   }
@@ -439,7 +445,7 @@ void PerfProducer::StartDataSource(DataSourceInstanceID ds_id,
   auto tracepoint_id_lookup = [this](const std::string& group,
                                      const std::string& name) {
     if (!tracefs_)  // lazy init or retry
-      tracefs_ = FtraceProcfs::CreateGuessingMountPoint();
+      tracefs_ = Tracefs::CreateGuessingMountPoint();
     if (!tracefs_)  // still didn't find an accessible tracefs
       return 0u;
     return tracefs_->ReadEventId(group, name);
@@ -489,7 +495,8 @@ void PerfProducer::StartDataSource(DataSourceInstanceID ds_id,
   }
 
   auto buffer_id = static_cast<BufferID>(config.target_buffer());
-  auto writer = endpoint_->CreateTraceWriter(buffer_id);
+  auto writer =
+      endpoint_->CreateTraceWriter(buffer_id, BufferExhaustedPolicy::kStall);
 
   // Construct the data source instance.
   std::map<DataSourceInstanceID, DataSourceState>::iterator ds_it;
@@ -809,7 +816,7 @@ bool PerfProducer::ReadAndParsePerCpuBuffer(EventReader* reader,
       if (is_kthread && !event_config.kernel_frames()) {
         process_state = ProcessTrackingStatus::kRejected;
         EmitSkippedSample(ds_id, std::move(sample.value()),
-                        SampleSkipReason::kRejected);
+                          SampleSkipReason::kRejected);
         continue;
       }
 
@@ -823,7 +830,7 @@ bool PerfProducer::ReadAndParsePerCpuBuffer(EventReader* reader,
               })) {
         process_state = ProcessTrackingStatus::kRejected;
         EmitSkippedSample(ds_id, std::move(sample.value()),
-                        SampleSkipReason::kRejected);
+                          SampleSkipReason::kRejected);
         continue;
       }
 
@@ -1275,7 +1282,8 @@ std::optional<ProcessSharding> PerfProducer::GetOrChooseCallstackProcessShard(
 
 void PerfProducer::StartMetatraceSource(DataSourceInstanceID ds_id,
                                         BufferID target_buffer) {
-  auto writer = endpoint_->CreateTraceWriter(target_buffer);
+  auto writer = endpoint_->CreateTraceWriter(target_buffer,
+                                             BufferExhaustedPolicy::kStall);
 
   auto it_and_inserted = metatrace_writers_.emplace(
       std::piecewise_construct, std::make_tuple(ds_id), std::make_tuple());

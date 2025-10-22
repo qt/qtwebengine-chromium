@@ -8,11 +8,15 @@
 // This source code is licensed under the BSD-style license found in the
 // LICENSE file in the root directory of this source tree.
 
-#include <assert.h>
-
 #include <arm_neon.h>
+#include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
+#include "src/xnnpack/common.h"
 #include "src/xnnpack/dwconv.h"
+#include "src/xnnpack/math.h"
+#include "src/xnnpack/microparams.h"
 
 
 void xnn_f16_dwconv_minmax_ukernel_3p32c__neonfp16arith(
@@ -24,8 +28,9 @@ void xnn_f16_dwconv_minmax_ukernel_3p32c__neonfp16arith(
     intptr_t input_stride,
     size_t output_increment,
     size_t input_offset,
+    size_t input_pixel_stride,
     const xnn_float16* zero,
-    const struct xnn_f16_minmax_params params[restrict XNN_MIN_ELEMENTS(1)]) XNN_OOB_READS
+    const struct xnn_f16_minmax_params* restrict params) XNN_OOB_READS
 {
   assert(channels != 0);
   assert(output_width != 0);
@@ -171,6 +176,7 @@ void xnn_f16_dwconv_minmax_ukernel_3p32c__neonfp16arith(
       }
     }
 
+    input_offset += input_pixel_stride;
     output = (uint16_t*) ((uintptr_t) output + output_increment);
   } while (--output_width != 0);
 }

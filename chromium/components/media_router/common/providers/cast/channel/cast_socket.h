@@ -7,7 +7,7 @@
 
 #include <stdint.h>
 
-#include <queue>
+#include <vector>
 
 #include "base/cancelable_callback.h"
 #include "base/gtest_prod_util.h"
@@ -30,7 +30,6 @@
 #include "net/base/ip_endpoint.h"
 #include "net/log/net_log_source.h"
 #include "services/network/public/cpp/network_context_getter.h"
-#include "services/network/public/mojom/network_context.mojom.h"
 #include "services/network/public/mojom/tcp_socket.mojom.h"
 #include "services/network/public/mojom/tls_socket.mojom.h"
 #include "third_party/openscreen/src/cast/common/channel/proto/cast_channel.pb.h"

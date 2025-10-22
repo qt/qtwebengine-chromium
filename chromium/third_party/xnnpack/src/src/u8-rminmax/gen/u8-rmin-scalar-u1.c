@@ -9,11 +9,15 @@
 // LICENSE file in the root directory of this source tree.
 
 #include <assert.h>
+#include <stddef.h>
+#include <stdint.h>
 
+// Architecture-specific headers.
+#include "src/xnnpack/simd/u8-scalar.h"
+
+// XNNPACK headers.
 #include "src/xnnpack/common.h"
 #include "src/xnnpack/reduce.h"
-
-#include "src/xnnpack/simd/u8-scalar.h"
 
 void xnn_u8_rmin_ukernel__scalar_u1(
     size_t batch,
@@ -37,7 +41,7 @@ void xnn_u8_rmin_ukernel__scalar_u1(
     vmin0 = xnn_min_u8(vmin0, vt);
   }
 
-  uint8_t min0 = xnn_horizontal_min_u8(vmin0);
+  uint8_t min0 = xnn_reduce_min_u8(vmin0);
 
   if XNN_UNLIKELY(batch != 0) {
     do {

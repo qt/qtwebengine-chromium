@@ -25,7 +25,9 @@
 #include "src/objects/js-locale-inl.h"
 #include "src/objects/js-locale.h"
 #include "src/objects/js-number-format-inl.h"
+#ifdef V8_TEMPORAL_SUPPORT
 #include "src/objects/js-temporal-objects.h"
+#endif  // V8_TEMPORAL_SUPPORT
 #include "src/objects/managed-inl.h"
 #include "src/objects/objects-inl.h"
 #include "src/objects/option-utils.h"
@@ -230,7 +232,13 @@ icu::UnicodeString Intl::ToICUUnicodeString(Isolate* isolate,
   // attacker model) and we therefore need to use an unsigned int here when
   // comparing it against the kShortStringSize.
   uint32_t length = string->length();
-  DCHECK_LE(offset, length);
+  // As the length is untrusted, we should also double-check the offset here.
+  // Technically it's fine for the offset to go out-of-bounds since it will
+  // only cause an OOB read (not write) outside the sandbox, but we still want
+  // to avoid these issues. An alternative would be for this function to
+  // allocate temporary buffers inside the sandbox, then there would be no need
+  // for additional bounds checks here (since we're using 32-bit sizes/offsets).
+  SBXCHECK_LE(offset, length);
   if (flat.IsOneByte() && length <= kShortStringSize) {
     CopyChars(short_string_buffer, flat.ToOneByteVector().begin(), length);
     uchar_buffer = short_string_buffer;
@@ -525,7 +533,8 @@ Handle<JSObject> InnerAddElement(Isolate* isolate, DirectHandle<JSArray> array,
   JSObject::AddProperty(isolate, element, factory->value_string(), value, NONE);
   // TODO(victorgomes): Temporarily forcing a fatal error here in case of
   // overflow, until Intl::AddElement can handle exceptions.
-  if (JSObject::AddDataElement(array, index, element, NONE).IsNothing()) {
+  if (JSObject::AddDataElement(isolate, array, index, element, NONE)
+          .IsNothing()) {
     FATAL("Fatal JavaScript invalid size error when adding element");
     UNREACHABLE();
   }
@@ -677,13 +686,13 @@ MaybeDirectHandle<Object> Intl::LegacyUnwrapReceiver(
 
 namespace {
 
-bool IsTwoLetterLanguage(const std::string& locale) {
+bool IsTwoLetterLanguage(std::string_view locale) {
   // Two letters, both in range 'a'-'z'...
   return locale.length() == 2 && IsAsciiLower(locale[0]) &&
          IsAsciiLower(locale[1]);
 }
 
-bool IsDeprecatedOrLegacyLanguage(const std::string& locale) {
+bool IsDeprecatedOrLegacyLanguage(std::string_view locale) {
   //  Check if locale is one of the deprecated language tags:
   return locale == "in" || locale == "iw" || locale == "ji" || locale == "jw" ||
          locale == "mo" ||
@@ -691,26 +700,45 @@ bool IsDeprecatedOrLegacyLanguage(const std::string& locale) {
          locale == "sh" || locale == "tl" || locale == "no";
 }
 
-bool IsStructurallyValidLanguageTag(const std::string& tag) {
+bool IsStructurallyValidLanguageTag(std::string_view tag) {
   return JSLocale::StartsWithUnicodeLanguageId(tag);
 }
 
-// Canonicalize the locale.
-// https://tc39.github.io/ecma402/#sec-canonicalizelanguagetag,
-// including type check and structural validity check.
 Maybe<std::string> CanonicalizeLanguageTag(Isolate* isolate,
-                                           const std::string& locale_in) {
-  std::string locale = locale_in;
+                                           DirectHandle<Object> locale_in) {
+  DirectHandle<String> locale_str;
+  // This does part of the validity checking spec'ed in CanonicalizeLocaleList:
+  // 7c ii. If Type(kValue) is not String or Object, throw a TypeError
+  // exception.
+  // 7c iii. Let tag be ? ToString(kValue).
+  // 7c iv. If IsStructurallyValidLanguageTag(tag) is false, throw a
+  // RangeError exception.
 
-  if (locale.empty() ||
-      !String::IsAscii(locale.data(), static_cast<int>(locale.length()))) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate,
-        NewRangeError(
-            MessageTemplate::kInvalidLanguageTag,
-            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
-        Nothing<std::string>());
+  if (IsString(*locale_in)) {
+    locale_str = Cast<String>(locale_in);
+  } else if (IsJSReceiver(*locale_in)) {
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, locale_str,
+                               Object::ToString(isolate, locale_in));
+  } else {
+    THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kLanguageID));
   }
+  std::string locale = locale_str->ToStdString();
+  return Intl::ValidateAndCanonicalizeUnicodeLocaleId(isolate, locale);
+}
+
+}  // anonymous namespace
+
+// static
+Maybe<std::string> Intl::ValidateAndCanonicalizeUnicodeLocaleId(
+    Isolate* isolate, std::string_view locale_in) {
+  if (!IsStructurallyValidLanguageTag(locale_in)) {
+    THROW_NEW_ERROR(
+        isolate, NewRangeError(
+                     MessageTemplate::kInvalidLanguageTag,
+                     isolate->factory()->NewStringFromAsciiChecked(locale_in)));
+  }
+
+  std::string locale(locale_in);
 
   // Optimize for the most common case: a 2-letter language code in the
   // canonical form/lowercase that is not one of the deprecated codes
@@ -741,70 +769,31 @@ Maybe<std::string> CanonicalizeLanguageTag(Isolate* isolate,
   icu::Locale icu_locale = icu::Locale::forLanguageTag(locale.c_str(), error);
 
   if (U_FAILURE(error) || icu_locale.isBogus()) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate,
-        NewRangeError(
-            MessageTemplate::kInvalidLanguageTag,
-            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
-        Nothing<std::string>());
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kInvalidLanguageTag,
+                                  isolate->factory()->NewStringFromAsciiChecked(
+                                      locale.c_str())));
   }
 
   // Use LocaleBuilder to validate locale.
   icu_locale = icu::LocaleBuilder().setLocale(icu_locale).build(error);
   icu_locale.canonicalize(error);
   if (U_FAILURE(error) || icu_locale.isBogus()) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate,
-        NewRangeError(
-            MessageTemplate::kInvalidLanguageTag,
-            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
-        Nothing<std::string>());
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kInvalidLanguageTag,
+                                  isolate->factory()->NewStringFromAsciiChecked(
+                                      locale.c_str())));
   }
   Maybe<std::string> maybe_to_language_tag = Intl::ToLanguageTag(icu_locale);
   if (maybe_to_language_tag.IsNothing()) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate,
-        NewRangeError(
-            MessageTemplate::kInvalidLanguageTag,
-            isolate->factory()->NewStringFromAsciiChecked(locale.c_str())),
-        Nothing<std::string>());
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kInvalidLanguageTag,
+                                  isolate->factory()->NewStringFromAsciiChecked(
+                                      locale.c_str())));
   }
 
   return maybe_to_language_tag;
 }
-
-Maybe<std::string> CanonicalizeLanguageTag(Isolate* isolate,
-                                           DirectHandle<Object> locale_in) {
-  DirectHandle<String> locale_str;
-  // This does part of the validity checking spec'ed in CanonicalizeLocaleList:
-  // 7c ii. If Type(kValue) is not String or Object, throw a TypeError
-  // exception.
-  // 7c iii. Let tag be ? ToString(kValue).
-  // 7c iv. If IsStructurallyValidLanguageTag(tag) is false, throw a
-  // RangeError exception.
-
-  if (IsString(*locale_in)) {
-    locale_str = Cast<String>(locale_in);
-  } else if (IsJSReceiver(*locale_in)) {
-    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, locale_str,
-                                     Object::ToString(isolate, locale_in),
-                                     Nothing<std::string>());
-  } else {
-    THROW_NEW_ERROR_RETURN_VALUE(isolate,
-                                 NewTypeError(MessageTemplate::kLanguageID),
-                                 Nothing<std::string>());
-  }
-  std::string locale(locale_str->ToCString().get());
-
-  if (!IsStructurallyValidLanguageTag(locale)) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate, NewRangeError(MessageTemplate::kLocaleBadParameters),
-        Nothing<std::string>());
-  }
-  return CanonicalizeLanguageTag(isolate, locale);
-}
-
-}  // anonymous namespace
 
 Maybe<std::vector<std::string>> Intl::CanonicalizeLocaleList(
     Isolate* isolate, DirectHandle<Object> locales,
@@ -839,14 +828,11 @@ Maybe<std::vector<std::string>> Intl::CanonicalizeLocaleList(
   // 4. Else,
   // 4a. Let O be ? ToObject(locales).
   DirectHandle<JSReceiver> o;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, o,
-                                   Object::ToObject(isolate, locales),
-                                   Nothing<std::vector<std::string>>());
+  ASSIGN_RETURN_ON_EXCEPTION(isolate, o, Object::ToObject(isolate, locales));
   // 5. Let len be ? ToLength(? Get(O, "length")).
   DirectHandle<Object> length_obj;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, length_obj,
-                                   Object::GetLengthFromArrayLike(isolate, o),
-                                   Nothing<std::vector<std::string>>());
+  ASSIGN_RETURN_ON_EXCEPTION(isolate, length_obj,
+                             Object::GetLengthFromArrayLike(isolate, o));
   // TODO(jkummerow): Spec violation: strictly speaking, we have to iterate
   // up to 2^53-1 if {length_obj} says so. Since cases above 2^32 probably
   // don't happen in practice (and would be very slow if they do), we'll keep
@@ -866,8 +852,7 @@ Maybe<std::vector<std::string>> Intl::CanonicalizeLocaleList(
     if (!maybe_found.FromJust()) continue;
     // 7c i. Let kValue be ? Get(O, Pk).
     DirectHandle<Object> k_value;
-    ASSIGN_RETURN_ON_EXCEPTION_VALUE(isolate, k_value, Object::GetProperty(&it),
-                                     Nothing<std::vector<std::string>>());
+    ASSIGN_RETURN_ON_EXCEPTION(isolate, k_value, Object::GetProperty(&it));
     // 7c ii. If Type(kValue) is not String or Object, throw a TypeError
     // exception.
     // 7c iii. If Type(kValue) is Object and kValue has an [[InitializedLocale]]
@@ -1595,35 +1580,31 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
 
   // 2. Let mnfd be ? Get(options, "minimumFractionDigits").
   DirectHandle<Object> mnfd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+  ASSIGN_RETURN_ON_EXCEPTION(
       isolate, mnfd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->minimumFractionDigits_string()),
-      Nothing<NumberFormatDigitOptions>());
+                              factory->minimumFractionDigits_string()));
 
   // 3. Let mxfd be ? Get(options, "maximumFractionDigits").
   DirectHandle<Object> mxfd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+  ASSIGN_RETURN_ON_EXCEPTION(
       isolate, mxfd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->maximumFractionDigits_string()),
-      Nothing<NumberFormatDigitOptions>());
+                              factory->maximumFractionDigits_string()));
 
   // 4.  Let mnsd be ? Get(options, "minimumSignificantDigits").
   DirectHandle<Object> mnsd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+  ASSIGN_RETURN_ON_EXCEPTION(
       isolate, mnsd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->minimumSignificantDigits_string()),
-      Nothing<NumberFormatDigitOptions>());
+                              factory->minimumSignificantDigits_string()));
 
   // 5. Let mxsd be ? Get(options, "maximumSignificantDigits").
   DirectHandle<Object> mxsd_obj;
-  ASSIGN_RETURN_ON_EXCEPTION_VALUE(
+  ASSIGN_RETURN_ON_EXCEPTION(
       isolate, mxsd_obj,
       JSReceiver::GetProperty(isolate, options,
-                              factory->maximumSignificantDigits_string()),
-      Nothing<NumberFormatDigitOptions>());
+                              factory->maximumSignificantDigits_string()));
 
   digit_options.rounding_priority = RoundingPriority::kAuto;
   digit_options.minimum_significant_digits = 0;
@@ -1642,24 +1623,24 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
   // 8. If roundingIncrement is not in « 1, 2, 5, 10, 20, 25, 50, 100, 200, 250,
   // 500, 1000, 2000, 2500, 5000 », throw a RangeError exception.
   if (!IsValidRoundingIncrement(digit_options.rounding_increment)) {
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate,
-        NewRangeError(MessageTemplate::kPropertyValueOutOfRange,
-                      factory->roundingIncrement_string()),
-        Nothing<NumberFormatDigitOptions>());
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kPropertyValueOutOfRange,
+                                  factory->roundingIncrement_string()));
   }
 
   // 9. Let roundingMode be ? GetOption(options, "roundingMode", string, «
   // "ceil", "floor", "expand", "trunc", "halfCeil", "halfFloor", "halfExpand",
   // "halfTrunc", "halfEven" », "halfExpand").
   Maybe<RoundingMode> maybe_rounding_mode = GetStringOption<RoundingMode>(
-      isolate, options, "roundingMode", service,
-      {"ceil", "floor", "expand", "trunc", "halfCeil", "halfFloor",
-       "halfExpand", "halfTrunc", "halfEven"},
-      {RoundingMode::kCeil, RoundingMode::kFloor, RoundingMode::kExpand,
-       RoundingMode::kTrunc, RoundingMode::kHalfCeil, RoundingMode::kHalfFloor,
-       RoundingMode::kHalfExpand, RoundingMode::kHalfTrunc,
-       RoundingMode::kHalfEven},
+      isolate, options, isolate->factory()->roundingMode_string(), service,
+      std::to_array<const std::string_view>(
+          {"ceil", "floor", "expand", "trunc", "halfCeil", "halfFloor",
+           "halfExpand", "halfTrunc", "halfEven"}),
+      std::array{RoundingMode::kCeil, RoundingMode::kFloor,
+                 RoundingMode::kExpand, RoundingMode::kTrunc,
+                 RoundingMode::kHalfCeil, RoundingMode::kHalfFloor,
+                 RoundingMode::kHalfExpand, RoundingMode::kHalfTrunc,
+                 RoundingMode::kHalfEven},
       RoundingMode::kHalfExpand);
   MAYBE_RETURN(maybe_rounding_mode, Nothing<NumberFormatDigitOptions>());
   digit_options.rounding_mode = maybe_rounding_mode.FromJust();
@@ -1669,10 +1650,12 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
 
   Maybe<RoundingPriority> maybe_rounding_priority =
       GetStringOption<RoundingPriority>(
-          isolate, options, "roundingPriority", service,
-          {"auto", "morePrecision", "lessPrecision"},
-          {RoundingPriority::kAuto, RoundingPriority::kMorePrecision,
-           RoundingPriority::kLessPrecision},
+          isolate, options, isolate->factory()->roundingPriority_string(),
+          service,
+          std::to_array<const std::string_view>(
+              {"auto", "morePrecision", "lessPrecision"}),
+          std::array{RoundingPriority::kAuto, RoundingPriority::kMorePrecision,
+                     RoundingPriority::kLessPrecision},
           RoundingPriority::kAuto);
   MAYBE_RETURN(maybe_rounding_priority, Nothing<NumberFormatDigitOptions>());
   digit_options.rounding_priority = maybe_rounding_priority.FromJust();
@@ -1681,9 +1664,11 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
   // string, « "auto", "stripIfInteger" », "auto").
   Maybe<TrailingZeroDisplay> maybe_trailing_zero_display =
       GetStringOption<TrailingZeroDisplay>(
-          isolate, options, "trailingZeroDisplay", service,
-          {"auto", "stripIfInteger"},
-          {TrailingZeroDisplay::kAuto, TrailingZeroDisplay::kStripIfInteger},
+          isolate, options, isolate->factory()->trailingZeroDisplay_string(),
+          service,
+          std::to_array<const std::string_view>({"auto", "stripIfInteger"}),
+          std::array{TrailingZeroDisplay::kAuto,
+                     TrailingZeroDisplay::kStripIfInteger},
           TrailingZeroDisplay::kAuto);
   MAYBE_RETURN(maybe_trailing_zero_display,
                Nothing<NumberFormatDigitOptions>());
@@ -1781,10 +1766,9 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
       } else if (mnfd > mxfd) {
         // v. Else if mnfd is greater than mxfd, throw a RangeError
         // exception.
-        THROW_NEW_ERROR_RETURN_VALUE(
+        THROW_NEW_ERROR(
             isolate,
-            NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str),
-            Nothing<NumberFormatDigitOptions>());
+            NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str));
       }
       // vi. Set intlObj.[[MinimumFractionDigits]] to mnfd.
       digit_options.minimum_fraction_digits = mnfd;
@@ -1834,18 +1818,15 @@ Maybe<Intl::NumberFormatDigitOptions> Intl::SetNumberFormatDigitOptions(
     // a. If intlObj.[[RoundingType]] is not fractionDigits, throw a TypeError
     // exception.
     if (digit_options.rounding_type != RoundingType::kFractionDigits) {
-      THROW_NEW_ERROR_RETURN_VALUE(
-          isolate, NewTypeError(MessageTemplate::kBadRoundingType),
-          Nothing<NumberFormatDigitOptions>());
+      THROW_NEW_ERROR(isolate, NewTypeError(MessageTemplate::kBadRoundingType));
     }
     // b. If intlObj.[[MaximumFractionDigits]] is not equal to
     // intlObj.[[MinimumFractionDigits]], throw a RangeError exception.
     if (digit_options.maximum_fraction_digits !=
         digit_options.minimum_fraction_digits) {
-      THROW_NEW_ERROR_RETURN_VALUE(
+      THROW_NEW_ERROR(
           isolate,
-          NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str),
-          Nothing<NumberFormatDigitOptions>());
+          NewRangeError(MessageTemplate::kPropertyValueOutOfRange, mxfd_str));
     }
   }
   return Just(digit_options);
@@ -2105,7 +2086,7 @@ MaybeDirectHandle<JSArray> CreateArrayFromList(
     DirectHandle<String> value =
         factory->NewStringFromUtf8(base::CStrVector(part.c_str()))
             .ToHandleChecked();
-    MAYBE_RETURN(JSObject::AddDataElement(array, i, value, attr), {});
+    MAYBE_RETURN(JSObject::AddDataElement(isolate, array, i, value, attr), {});
   }
   // 5. Return array.
   return array;
@@ -2398,12 +2379,12 @@ bool Intl::IsValidCollation(const icu::Locale& locale,
   return IsValidExtension<icu::Collator>(locale, "collation", value);
 }
 
-bool Intl::IsWellFormedCalendar(const std::string& value) {
+bool Intl::IsWellFormedCalendar(std::string_view value) {
   return JSLocale::Is38AlphaNumList(value);
 }
 
 // ecma402/#sec-iswellformedcurrencycode
-bool Intl::IsWellFormedCurrency(const std::string& currency) {
+bool Intl::IsWellFormedCurrency(std::string_view currency) {
   return JSLocale::Is3Alpha(currency);
 }
 
@@ -2773,28 +2754,28 @@ Maybe<Intl::MatcherOption> Intl::GetLocaleMatcher(
     Isolate* isolate, DirectHandle<JSReceiver> options,
     const char* method_name) {
   return GetStringOption<Intl::MatcherOption>(
-      isolate, options, "localeMatcher", method_name, {"best fit", "lookup"},
-      {Intl::MatcherOption::kBestFit, Intl::MatcherOption::kLookup},
+      isolate, options, isolate->factory()->localeMatcher_string(), method_name,
+      std::to_array<const std::string_view>({"best fit", "lookup"}),
+      std::array{Intl::MatcherOption::kBestFit, Intl::MatcherOption::kLookup},
       Intl::MatcherOption::kBestFit);
 }
 
 Maybe<bool> Intl::GetNumberingSystem(Isolate* isolate,
                                      DirectHandle<JSReceiver> options,
                                      const char* method_name,
-                                     std::unique_ptr<char[]>* result) {
-  const std::vector<const char*> empty_values = {};
-  Maybe<bool> maybe = GetStringOption(isolate, options, "numberingSystem",
-                                      empty_values, method_name, result);
+                                     std::string& result) {
+  DirectHandle<String> output;
+  Maybe<bool> maybe = GetStringOption(
+      isolate, options, isolate->factory()->numberingSystem_string(),
+      method_name, &output);
   MAYBE_RETURN(maybe, Nothing<bool>());
-  if (maybe.FromJust() && *result != nullptr) {
-    if (!IsWellFormedNumberingSystem(result->get())) {
-      THROW_NEW_ERROR_RETURN_VALUE(
+  if (maybe.FromJust()) {
+    result = output->ToStdString();
+    if (!IsWellFormedNumberingSystem(result)) {
+      THROW_NEW_ERROR(
           isolate,
-          NewRangeError(
-              MessageTemplate::kInvalid,
-              isolate->factory()->numberingSystem_string(),
-              isolate->factory()->NewStringFromAsciiChecked(result->get())),
-          Nothing<bool>());
+          NewRangeError(MessageTemplate::kInvalid,
+                        isolate->factory()->numberingSystem_string(), output));
     }
     return Just(true);
   }
@@ -2946,28 +2927,6 @@ bool IsUnicodeStringValidTimeZoneName(const icu::UnicodeString& id) {
 }
 }  // namespace
 
-MaybeHandle<String> Intl::CanonicalizeTimeZoneName(
-    Isolate* isolate, DirectHandle<String> identifier) {
-  UErrorCode status = U_ZERO_ERROR;
-  std::string time_zone =
-      JSDateTimeFormat::CanonicalizeTimeZoneID(identifier->ToCString().get());
-  icu::UnicodeString time_zone_ustring =
-      icu::UnicodeString(time_zone.c_str(), -1, US_INV);
-  icu::UnicodeString canonical;
-  icu::TimeZone::getCanonicalID(time_zone_ustring, canonical, status);
-  CHECK(U_SUCCESS(status));
-
-  return JSDateTimeFormat::TimeZoneIdToString(isolate, canonical);
-}
-
-bool Intl::IsValidTimeZoneName(Isolate* isolate, DirectHandle<String> id) {
-  std::string time_zone =
-      JSDateTimeFormat::CanonicalizeTimeZoneID(id->ToCString().get());
-  icu::UnicodeString time_zone_ustring =
-      icu::UnicodeString(time_zone.c_str(), -1, US_INV);
-  return IsUnicodeStringValidTimeZoneName(time_zone_ustring);
-}
-
 bool Intl::IsValidTimeZoneName(const icu::TimeZone& tz) {
   icu::UnicodeString id;
   tz.getID(id);
@@ -2976,9 +2935,13 @@ bool Intl::IsValidTimeZoneName(const icu::TimeZone& tz) {
 
 // Function to support Temporal
 std::string Intl::TimeZoneIdFromIndex(int32_t index) {
-  if (index == JSTemporalTimeZone::kUTCTimeZoneIndex) {
+#ifdef V8_TEMPORAL_SUPPORT
+  // UTC index is 0
+  // TODO(b/401065166) Potentially store constant somewhere
+  if (index == 0) {
     return "UTC";
   }
+#endif  // V8_TEMPORAL_SUPPORT
   std::unique_ptr<icu::StringEnumeration> enumeration(
       icu::TimeZone::createEnumeration());
   int32_t curr = 0;
@@ -3067,7 +3030,42 @@ DirectHandle<String> Intl::SourceString(Isolate* isolate,
   }
 }
 
-DirectHandle<String> Intl::DefaultTimeZone(Isolate* isolate) {
+MaybeHandle<String> Intl::TimeZoneIdToString(Isolate* isolate,
+                                             const icu::UnicodeString& id) {
+  // In CLDR (http://unicode.org/cldr/trac/ticket/9943), Etc/UTC is made
+  // a separate timezone ID from Etc/GMT even though they're still the same
+  // timezone. We have Etc/UTC because 'UTC', 'Etc/Universal',
+  // 'Etc/Zulu' and others are turned to 'Etc/UTC' by ICU. Etc/GMT comes
+  // from Etc/GMT0, Etc/GMT+0, Etc/GMT-0, Etc/Greenwich.
+  // ecma402#sec-canonicalizetimezonename step 3
+  if (id == UNICODE_STRING_SIMPLE("Etc/UTC") ||
+      id == UNICODE_STRING_SIMPLE("Etc/GMT")) {
+    return isolate->factory()->UTC_string();
+  }
+  // If the id is in the format of GMT[+-]hh:mm, change it to
+  // [+-]hh:mm.
+  if (id.startsWith(u"GMT", 3)) {
+    return Intl::ToString(isolate, id.tempSubString(3));
+  }
+  return Intl::ToString(isolate, id);
+}
+
+// Same logic as above but for std::string
+std::string Intl::TimeZoneIdToString(const icu::UnicodeString& id) {
+  if (id == UNICODE_STRING_SIMPLE("Etc/UTC") ||
+      id == UNICODE_STRING_SIMPLE("Etc/GMT")) {
+    return "UTC";
+  }
+  std::string result;
+  if (id.startsWith(u"GMT", 3)) {
+    return id.tempSubString(3).toUTF8String(result);
+  } else {
+    id.toUTF8String(result);
+  }
+  return result;
+}
+
+std::string Intl::DefaultTimeZone() {
   icu::UnicodeString id;
   {
     std::unique_ptr<icu::TimeZone> tz(icu::TimeZone::createDefault());
@@ -3077,8 +3075,7 @@ DirectHandle<String> Intl::DefaultTimeZone(Isolate* isolate) {
   icu::UnicodeString canonical;
   icu::TimeZone::getCanonicalID(id, canonical, status);
   DCHECK(U_SUCCESS(status));
-  return JSDateTimeFormat::TimeZoneIdToString(isolate, canonical)
-      .ToHandleChecked();
+  return Intl::TimeZoneIdToString(canonical);
 }
 
 namespace {

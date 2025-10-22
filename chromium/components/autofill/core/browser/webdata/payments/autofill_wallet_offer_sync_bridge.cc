@@ -12,7 +12,6 @@
 #include "base/logging.h"
 #include "components/autofill/core/browser/data_model/payments/autofill_offer_data.h"
 #include "components/autofill/core/browser/metrics/autofill_metrics.h"
-#include "components/autofill/core/browser/metrics/payments/offers_metrics.h"
 #include "components/autofill/core/browser/webdata/autofill_sync_metadata_table.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_backend.h"
 #include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
@@ -120,17 +119,28 @@ AutofillWalletOfferSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string AutofillWalletOfferSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(entity_data.specifics.has_autofill_offer());
   return GetClientTagFromSpecifics(entity_data.specifics.autofill_offer());
 }
 
 std::string AutofillWalletOfferSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
   DCHECK(entity_data.specifics.has_autofill_offer());
   return GetStorageKeyFromSpecifics(entity_data.specifics.autofill_offer());
+}
+
+bool AutofillWalletOfferSyncBridge::IsEntityDataValid(
+    const syncer::EntityData& entity_data) const {
+  CHECK(entity_data.specifics.has_autofill_offer());
+  // TODO(crbug.com/40677711): Consider using `IsOfferSpecificsValid` in this
+  // check. Currently, `IsOfferSpecificsValid` is used in `MergeRemoteData`
+  // which also logs a metric for the offer data being valid. Recording the
+  // metric here sounds wrong as this is a const method which should has no side
+  // effects and it is not guaranteed to be called exactly once.
+  return true;
 }
 
 bool AutofillWalletOfferSyncBridge::SupportsIncrementalUpdates() const {
@@ -150,7 +160,8 @@ AutofillWalletOfferSyncBridge::GetAllDataImpl() {
   std::vector<std::unique_ptr<AutofillOfferData>> offers;
   if (!GetAutofillTable()->GetAutofillOffers(&offers)) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load offer data from table."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kAutofillWalletOfferFailedToLoadFromTable});
     return nullptr;
   }
 
@@ -175,14 +186,12 @@ void AutofillWalletOfferSyncBridge::MergeRemoteData(
     const syncer::EntityChangeList& entity_data) {
   std::vector<AutofillOfferData> offer_data;
   for (const std::unique_ptr<syncer::EntityChange>& change : entity_data) {
-    DCHECK(change->data().specifics.has_autofill_offer());
+    CHECK(IsEntityDataValid(change->data()));
     const sync_pb::AutofillOfferSpecifics specifics =
         change->data().specifics.autofill_offer();
-    bool offer_valid = IsOfferSpecificsValid(specifics);
-    if (offer_valid) {
+    if (IsOfferSpecificsValid(specifics)) {
       offer_data.push_back(AutofillOfferDataFromOfferSpecifics(specifics));
     }
-    autofill_metrics::LogSyncedOfferDataBeingValid(offer_valid);
   }
 
   auto transaction = web_data_backend_->GetDatabase()->AcquireTransaction();
@@ -234,7 +243,8 @@ void AutofillWalletOfferSyncBridge::LoadAutofillOfferMetadata() {
   if (!web_data_backend_->GetDatabase() || !GetAutofillTable() ||
       !GetSyncMetadataStore()) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load Autofill table."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kAutofillWalletOfferFailedToLoadTable});
     return;
   }
 
@@ -243,7 +253,7 @@ void AutofillWalletOfferSyncBridge::LoadAutofillOfferMetadata() {
                                                   batch.get())) {
     change_processor()->ReportError(
         {FROM_HERE,
-         "Failed reading autofill offer metadata from WebDatabase."});
+         syncer::ModelError::Type::kAutofillWalletOfferFailedToReadMetadata});
     return;
   }
   change_processor()->ModelReadyToSync(std::move(batch));

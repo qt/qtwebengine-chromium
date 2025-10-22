@@ -2,19 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <utility>
 
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
 #include "base/run_loop.h"
 #include "base/test/gtest_util.h"
 #include "base/test/task_environment.h"
 #include "build/build_config.h"
 #include "components/viz/common/frame_sinks/begin_frame_args.h"
+#include "components/viz/common/frame_sinks/copy_output_result.h"
 #include "components/viz/common/quads/compositor_frame.h"
 #include "components/viz/common/quads/compositor_render_pass.h"
 #include "components/viz/common/quads/debug_border_draw_quad.h"
@@ -326,7 +323,7 @@ TEST_F(StructTraitsTest, CopyOutputRequest_TextureRequest) {
 
   const auto result_format = CopyOutputRequest::ResultFormat::RGBA;
   const auto result_destination =
-      CopyOutputRequest::ResultDestination::kNativeTextures;
+      CopyOutputRequest::ResultDestination::kSharedImage;
 
   const int8_t mailbox_name[GL_MAILBOX_SIZE_CHROMIUM] = {
       0, 9, 8, 7, 6, 5, 4, 3, 2, 1, 9, 7, 5, 3, 1, 3};
@@ -370,10 +367,9 @@ TEST_F(StructTraitsTest, CopyOutputRequest_TextureRequest) {
       },
       run_loop_for_release.QuitClosure(), sync_token));
 
-  output->SendResult(std::make_unique<CopyOutputTextureResult>(
-      result_format, result_rect,
-      CopyOutputResult::TextureResult(mailbox, gfx::ColorSpace::CreateSRGB()),
-      std::move(release_callbacks)));
+  output->SendResult(std::make_unique<CopyOutputSharedImageResult>(
+      result_format, result_rect, mailbox, gfx::ColorSpace::CreateSRGB(),
+      "CopyOutputRequest_TextureRequest", std::move(release_callbacks)));
 
   // Wait for the result to be delivered to the other side: The
   // CopyOutputRequest callback will be called, at which point
@@ -818,8 +814,8 @@ TEST_F(StructTraitsTest, RenderPass) {
   constexpr gfx::Transform kTransformToRoot =
       gfx::Transform::Affine(1.0, 0.5, 0.5, -0.5, -1.0, 0.0);
   constexpr gfx::Rect kDamageRect(56, 123, 19, 43);
-  const std::optional<gfx::RRectF> kBackdropFilterBounds(
-      {10, 20, 130, 140, 1, 2, 3, 4, 5, 6, 7, 8});
+  const std::optional<SkPath> kBackdropFilterBounds = SkPath::RRect(
+      SkRRect(gfx::RRectF{10, 20, 130, 140, 1, 2, 3, 4, 5, 6, 7, 8}));
   constexpr SubtreeCaptureId kSubtreeCaptureId(base::Token(0u, 22u));
   constexpr bool kHasTransparentBackground = true;
   constexpr bool kCacheRenderPass = true;
@@ -985,7 +981,7 @@ TEST_F(StructTraitsTest, RenderPassWithEmptySharedQuadStateList) {
   constexpr gfx::Rect kDamageRect(56, 123, 19, 43);
   constexpr gfx::Transform kTransformToRoot =
       gfx::Transform::Affine(1.0, 0.5, 0.5, -0.5, -1.0, 0.0);
-  const std::optional<gfx::RRectF> kBackdropFilterBounds;
+  const std::optional<SkPath> kBackdropFilterBounds;
   constexpr SubtreeCaptureId kEmptySubtreeCaptureId;
   constexpr bool kHasTransparentBackground = true;
   constexpr bool kCacheRenderPass = false;
@@ -1082,7 +1078,6 @@ TEST_F(StructTraitsTest, QuadListBasic) {
 
   const gfx::Rect rect5(123, 567, 91011, 13141);
   const ResourceId resource_id5(1337);
-  const bool premultiplied_alpha = true;
 
   const gfx::PointF uv_top_left(12.1f, 34.2f);
   const gfx::PointF uv_bottom_right(56.3f, 78.4f);
@@ -1091,41 +1086,27 @@ TEST_F(StructTraitsTest, QuadListBasic) {
   const bool secure_output_only = true;
   const gfx::ProtectedVideoType protected_video_type =
       gfx::ProtectedVideoType::kClear;
-  const gfx::Size resource_size_in_pixels5(1234, 5678);
   TextureDrawQuad* texture_draw_quad =
       render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-  texture_draw_quad->SetAll(
-      sqs, rect5, rect5, needs_blending, resource_id5, resource_size_in_pixels5,
-      premultiplied_alpha, uv_top_left, uv_bottom_right, background_color,
-      nearest_neighbor, secure_output_only, protected_video_type);
-  // Create a stream video TextureDrawQuad.
-  const gfx::Rect rect6(321, 765, 11109, 151413);
-  const bool needs_blending6 = false;
-  const ResourceId resource_id6(1234);
-  const gfx::Size resource_size_in_pixels6(1234, 5678);
-  TextureDrawQuad* stream_video_draw_quad =
-      render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-  stream_video_draw_quad->SetAll(
-      sqs, rect6, rect6, needs_blending6, resource_id6,
-      resource_size_in_pixels6, false, uv_top_left, uv_bottom_right,
-      SkColors::kTransparent, false, false, protected_video_type);
-  stream_video_draw_quad->is_stream_video = true;
+  texture_draw_quad->SetAll(sqs, rect5, rect5, needs_blending, resource_id5,
+                            uv_top_left, uv_bottom_right, background_color,
+                            nearest_neighbor, secure_output_only,
+                            protected_video_type);
 
   // Create a TextureDrawQuad with rounded-display masks.
   const gfx::Rect rect7(421, 865, 11109, 151413);
   const bool needs_blending7 = false;
   const ResourceId resource_id7(4834);
-  const gfx::Size resource_size_in_pixels7(12894, 8878);
   const int origin_rounded_display_mask_radius = 10;
   const int other_rounded_display_mask_radius = 15;
   const bool is_horizontally_positioned = false;
 
   TextureDrawQuad* rounded_display_mask_quad =
       render_pass->CreateAndAppendDrawQuad<TextureDrawQuad>();
-  rounded_display_mask_quad->SetAll(
-      sqs, rect7, rect7, needs_blending7, resource_id7,
-      resource_size_in_pixels7, false, uv_top_left, uv_bottom_right,
-      SkColors::kTransparent, false, false, protected_video_type);
+  rounded_display_mask_quad->SetAll(sqs, rect7, rect7, needs_blending7,
+                                    resource_id7, uv_top_left, uv_bottom_right,
+                                    SkColors::kTransparent, false, false,
+                                    protected_video_type);
   rounded_display_mask_quad->rounded_display_masks_info =
       TextureDrawQuad::RoundedDisplayMasksInfo::CreateRoundedDisplayMasksInfo(
           origin_rounded_display_mask_radius, other_rounded_display_mask_radius,
@@ -1195,36 +1176,18 @@ TEST_F(StructTraitsTest, QuadListBasic) {
   EXPECT_EQ(rect5, out_texture_draw_quad->visible_rect);
   EXPECT_EQ(needs_blending, out_texture_draw_quad->needs_blending);
   EXPECT_EQ(resource_id5, out_texture_draw_quad->resource_id);
-  EXPECT_EQ(resource_size_in_pixels5,
-            out_texture_draw_quad->resource_size_in_pixels());
-  EXPECT_EQ(premultiplied_alpha, out_texture_draw_quad->premultiplied_alpha);
   EXPECT_EQ(uv_top_left, out_texture_draw_quad->uv_top_left);
   EXPECT_EQ(uv_bottom_right, out_texture_draw_quad->uv_bottom_right);
   EXPECT_EQ(background_color, out_texture_draw_quad->background_color);
   EXPECT_EQ(nearest_neighbor, out_texture_draw_quad->nearest_neighbor);
   EXPECT_EQ(secure_output_only, out_texture_draw_quad->secure_output_only);
 
-  const TextureDrawQuad* out_stream_video_draw_quad =
-      TextureDrawQuad::MaterialCast(output->quad_list.ElementAt(5));
-  EXPECT_TRUE(out_stream_video_draw_quad->is_stream_video);
-  EXPECT_EQ(rect6, out_stream_video_draw_quad->rect);
-  EXPECT_EQ(rect6, out_stream_video_draw_quad->visible_rect);
-  EXPECT_EQ(needs_blending6, out_stream_video_draw_quad->needs_blending);
-  EXPECT_EQ(resource_id6, out_stream_video_draw_quad->resource_id);
-  EXPECT_EQ(resource_size_in_pixels6,
-            out_stream_video_draw_quad->resource_size_in_pixels());
-  EXPECT_EQ(uv_top_left, out_stream_video_draw_quad->uv_top_left);
-  EXPECT_EQ(uv_bottom_right, out_stream_video_draw_quad->uv_bottom_right);
-
   const TextureDrawQuad* out_rounded_display_mask_quad =
-      TextureDrawQuad::MaterialCast(output->quad_list.ElementAt(6));
-  EXPECT_FALSE(out_rounded_display_mask_quad->is_stream_video);
+      TextureDrawQuad::MaterialCast(output->quad_list.ElementAt(5));
   EXPECT_EQ(rect7, out_rounded_display_mask_quad->rect);
   EXPECT_EQ(rect7, out_rounded_display_mask_quad->visible_rect);
   EXPECT_EQ(needs_blending7, out_rounded_display_mask_quad->needs_blending);
   EXPECT_EQ(resource_id7, out_rounded_display_mask_quad->resource_id);
-  EXPECT_EQ(resource_size_in_pixels7,
-            out_rounded_display_mask_quad->resource_size_in_pixels());
   EXPECT_EQ(uv_top_left, out_rounded_display_mask_quad->uv_top_left);
   EXPECT_EQ(uv_bottom_right, out_rounded_display_mask_quad->uv_bottom_right);
   EXPECT_EQ(origin_rounded_display_mask_radius,
@@ -1376,7 +1339,7 @@ TEST_F(StructTraitsTest, CopyOutputResult_EmptyBitmap) {
   auto scoped_bitmap = output->ScopedAccessSkBitmap();
   auto bitmap = scoped_bitmap.bitmap();
   EXPECT_FALSE(bitmap.readyToDraw());
-  EXPECT_EQ(output->GetTextureResult(), nullptr);
+  EXPECT_EQ(output->GetSharedImage().get(), nullptr);
 }
 
 TEST_F(StructTraitsTest, CopyOutputResult_EmptyTexture) {
@@ -1384,8 +1347,7 @@ TEST_F(StructTraitsTest, CopyOutputResult_EmptyTexture) {
 
   auto input = std::make_unique<CopyOutputResult>(
       CopyOutputRequest::ResultFormat::RGBA,
-      CopyOutputRequest::ResultDestination::kNativeTextures, gfx::Rect(),
-      false);
+      CopyOutputRequest::ResultDestination::kSharedImage, gfx::Rect(), false);
   EXPECT_TRUE(input->IsEmpty());
 
   std::unique_ptr<CopyOutputResult> output;
@@ -1393,10 +1355,9 @@ TEST_F(StructTraitsTest, CopyOutputResult_EmptyTexture) {
 
   EXPECT_TRUE(output->IsEmpty());
   EXPECT_EQ(output->format(), CopyOutputResult::Format::RGBA);
-  EXPECT_EQ(output->destination(),
-            CopyOutputResult::Destination::kNativeTextures);
+  EXPECT_EQ(output->destination(), CopyOutputResult::Destination::kSharedImage);
   EXPECT_TRUE(output->rect().IsEmpty());
-  EXPECT_EQ(output->GetTextureResult(), nullptr);
+  EXPECT_EQ(output->GetSharedImage().get(), nullptr);
 }
 
 TEST_F(StructTraitsTest, CopyOutputResult_Bitmap) {
@@ -1418,7 +1379,7 @@ TEST_F(StructTraitsTest, CopyOutputResult_Bitmap) {
   EXPECT_EQ(output->destination(),
             CopyOutputResult::Destination::kSystemMemory);
   EXPECT_EQ(output->rect(), result_rect);
-  EXPECT_EQ(output->GetTextureResult(), nullptr);
+  EXPECT_EQ(output->GetSharedImage().get(), nullptr);
 
   auto scoped_bitmap = output->ScopedAccessSkBitmap();
   auto out_bitmap = scoped_bitmap.bitmap();
@@ -1432,8 +1393,9 @@ TEST_F(StructTraitsTest, CopyOutputResult_Bitmap) {
   expected_bitmap.allocPixels(SkImageInfo::MakeN32Premul(7, 8, adobe_rgb));
   expected_bitmap.eraseARGB(123, 213, 77, 33);
   EXPECT_EQ(expected_bitmap.computeByteSize(), out_bitmap.computeByteSize());
-  EXPECT_EQ(0, std::memcmp(expected_bitmap.getPixels(), out_bitmap.getPixels(),
-                           expected_bitmap.computeByteSize()));
+  UNSAFE_TODO(EXPECT_EQ(
+      0, std::memcmp(expected_bitmap.getPixels(), out_bitmap.getPixels(),
+                     expected_bitmap.computeByteSize())));
   EXPECT_TRUE(SkColorSpace::Equals(expected_bitmap.colorSpace(),
                                    out_bitmap.colorSpace()));
 }
@@ -1464,9 +1426,9 @@ TEST_F(StructTraitsTest, CopyOutputResult_Texture) {
   gpu::Mailbox mailbox;
   mailbox.SetName(mailbox_name);
   std::unique_ptr<CopyOutputResult> input =
-      std::make_unique<CopyOutputTextureResult>(
-          CopyOutputResult::Format::RGBA, result_rect,
-          CopyOutputResult::TextureResult(mailbox, result_color_space),
+      std::make_unique<CopyOutputSharedImageResult>(
+          CopyOutputResult::Format::RGBA, result_rect, mailbox,
+          result_color_space, "CopyOutputResult_Texture",
           std::move(release_callbacks));
 
   std::unique_ptr<CopyOutputResult> output;
@@ -1474,15 +1436,14 @@ TEST_F(StructTraitsTest, CopyOutputResult_Texture) {
 
   EXPECT_FALSE(output->IsEmpty());
   EXPECT_EQ(output->format(), CopyOutputResult::Format::RGBA);
-  EXPECT_EQ(output->destination(),
-            CopyOutputResult::Destination::kNativeTextures);
+  EXPECT_EQ(output->destination(), CopyOutputResult::Destination::kSharedImage);
   EXPECT_EQ(output->rect(), result_rect);
-  ASSERT_NE(output->GetTextureResult(), nullptr);
-  EXPECT_EQ(output->GetTextureResult()->mailbox, mailbox);
-  EXPECT_EQ(output->GetTextureResult()->color_space, result_color_space);
+  ASSERT_NE(output->GetSharedImage().get(), nullptr);
+  EXPECT_EQ(output->GetSharedImage()->mailbox(), mailbox);
+  EXPECT_EQ(output->GetSharedImage()->color_space(), result_color_space);
 
   CopyOutputResult::ReleaseCallbacks out_callbacks =
-      output->TakeTextureOwnership();
+      output->TakeSharedImageOwnership();
 
   EXPECT_EQ(1u, out_callbacks.size());
   for (auto& cb : out_callbacks) {

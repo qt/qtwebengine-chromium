@@ -16,6 +16,7 @@
 #include "content/browser/preloading/prefetch/prefetch_status.h"
 #include "content/browser/renderer_host/frame_tree_node.h"
 #include "content/browser/renderer_host/navigation_request.h"
+#include "content/public/browser/browser_context.h"
 #include "content/public/browser/prefetch_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "net/cookies/canonical_cookie.h"
@@ -202,7 +203,7 @@ void StartCookieValidation(std::unique_ptr<OnGotPrefetchToServeState>& state) {
   net::SchemefulSite site(url);
   cookie_manager->GetCookieList(
       url, net::CookieOptions::MakeAllInclusive(),
-      net::CookiePartitionKeyCollection::FromOptional(
+      net::CookiePartitionKeyCollection(
           net::CookiePartitionKey::FromNetworkIsolationKey(
               net::NetworkIsolationKey(site, site), net::SiteForCookies(site),
               site, /*main_frame_navigation=*/true)),

@@ -5,6 +5,7 @@
 #include "content/browser/browsing_topics/browsing_topics_site_data_storage.h"
 
 #include "base/files/file_util.h"
+#include "base/logging.h"
 #include "base/metrics/histogram_functions.h"
 #include "sql/database.h"
 #include "sql/recovery.h"
@@ -236,9 +237,9 @@ bool BrowsingTopicsSiteDataStorage::LazyInit() {
   if (db_init_status_ != InitStatus::kUnattempted)
     return db_init_status_ == InitStatus::kSuccess;
 
-  db_ = std::make_unique<sql::Database>(
-      sql::DatabaseOptions().set_page_size(4096).set_cache_size(32),
-      sql::Database::Tag("BrowsingTopics"));
+  db_ =
+      std::make_unique<sql::Database>(sql::DatabaseOptions().set_cache_size(32),
+                                      sql::Database::Tag("BrowsingTopics"));
 
   // base::Unretained is safe here because this BrowsingTopicsSiteDataStorage
   // owns the sql::Database instance that stores and uses the callback. So,

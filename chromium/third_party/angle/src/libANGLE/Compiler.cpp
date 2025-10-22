@@ -24,17 +24,25 @@ namespace
 // To know when to call sh::Initialize and sh::Finalize.
 size_t gActiveCompilers = 0;
 
+ShShaderOutput GetShaderOutputType(const State &state, const rx::CompilerImpl *impl)
+{
+    if (state.usesPassthroughShaders())
+    {
+        return SH_NULL_OUTPUT;
+    }
+
+    return impl->getTranslatorOutputType();
+}
+
 }  // anonymous namespace
 
 Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Display *display)
     : mImplementation(implFactory->createCompiler()),
       mSpec(SelectShaderSpec(state)),
-      mOutputType(mImplementation->getTranslatorOutputType()),
+      mOutputType(GetShaderOutputType(state, mImplementation.get())),
       mResources()
 {
-    // TODO(http://anglebug.com/42262462): Update for GL version specific validation
-    ASSERT(state.getClientMajorVersion() == 1 || state.getClientMajorVersion() == 2 ||
-           state.getClientMajorVersion() == 3 || state.getClientMajorVersion() == 4);
+    ASSERT(state.getClientVersion() >= ES_1_0 && state.getClientVersion() <= ES_3_2);
 
     {
         std::lock_guard<angle::SimpleMutex> lock(display->getDisplayGlobalMutex());
@@ -88,12 +96,19 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     mResources.FragmentPrecisionHigh = 1;
     mResources.EXT_frag_depth        = extensions.fragDepthEXT;
 
-    // OVR_multiview state
+    // OVR_multiview / OVR_multiview2
     mResources.OVR_multiview = extensions.multiviewOVR;
-
-    // OVR_multiview2 state
     mResources.OVR_multiview2 = extensions.multiview2OVR;
     mResources.MaxViewsOVR    = caps.maxViews;
+
+    // Hashing and prefixing
+    mResources.HashFunction = nullptr;
+    if (mOutputType == SH_NULL_OUTPUT)
+    {
+        // Disable user variable prefixing if using the null output type. The untranslated source
+        // shader is used so make sure the mapped names match the input names.
+        mResources.UserVariableNamePrefix = '\0';
+    }
 
     // EXT_multisampled_render_to_texture and EXT_multisampled_render_to_texture2
     mResources.EXT_multisampled_render_to_texture  = extensions.multisampledRenderToTextureEXT;
@@ -172,6 +187,9 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     mResources.MaxCombinedDrawBuffersAndPixelLocalStoragePlanes =
         caps.maxCombinedDrawBuffersAndPixelLocalStoragePlanes;
 
+    // EXT_fragment_shading_rate
+    mResources.EXT_fragment_shading_rate = extensions.fragmentShadingRateEXT;
+
     // OES_sample_variables
     mResources.OES_sample_variables = extensions.sampleVariablesOES;
     mResources.MaxSamples           = caps.maxSamples;
@@ -224,7 +242,7 @@ Compiler::Compiler(rx::GLImplFactory *implFactory, const State &state, egl::Disp
     mResources.MinPointSize = caps.minAliasedPointSize;
     mResources.MaxPointSize = caps.maxAliasedPointSize;
 
-    if (state.getClientMajorVersion() == 2 && !extensions.drawBuffersEXT)
+    if (state.getClientVersion() == ES_2_0 && !extensions.drawBuffersEXT)
     {
         mResources.MaxDrawBuffers = 1;
     }
@@ -336,8 +354,8 @@ void Compiler::putInstance(ShCompilerInstance &&instance)
 
 ShShaderSpec Compiler::SelectShaderSpec(const State &state)
 {
-    const GLint majorVersion = state.getClientMajorVersion();
-    const GLint minorVersion = state.getClientMinorVersion();
+    const GLint majorVersion = state.getClientVersion().getMajor();
+    const GLint minorVersion = state.getClientVersion().getMinor();
     bool isWebGL             = state.isWebGL();
 
     if (majorVersion >= 3)

@@ -113,10 +113,6 @@ config("debug") {
     "DYNAMIC_ANNOTATIONS_ENABLED=1",
   ]
 
-  if (is_nacl) {
-    defines += [ "DYNAMIC_ANNOTATIONS_PREFIX=NACL_" ]
-  }
-
   if (is_win) {
     if (!enable_iterator_debugging && !use_custom_libcxx) {
       # Iterator debugging is enabled by default by the compiler on debug
@@ -139,12 +135,10 @@ config("release") {
   if (is_tsan) {
     defines += [ "DYNAMIC_ANNOTATIONS_ENABLED=1" ]
   } else {
-    defines += [ "NVALGRIND" ]
-    if (!is_nacl) {
-      # NaCl always enables dynamic annotations. Currently this value is set to
-      # 1 for all .nexes.
-      defines += [ "DYNAMIC_ANNOTATIONS_ENABLED=0" ]
-    }
+    defines += [
+      "NVALGRIND",
+      "DYNAMIC_ANNOTATIONS_ENABLED=0",
+    ]
   }
 
   if (is_ios) {
@@ -296,6 +290,13 @@ group("common_deps") {
 
   if (use_custom_libcxx) {
     public_deps += [ "//buildtools/third_party/libc++" ]
+  }
+
+  if (use_llvm_libatomic) {
+    # Certain C/C++ atomic operations require the separately built "libatomic"
+    # support library, which is not shipped with compiler-rt by default. See
+    # crbug.com/402171653 for context.
+    public_deps += [ "//third_party/compiler-rt:atomic" ]
   }
 }
 

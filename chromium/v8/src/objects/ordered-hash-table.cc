@@ -27,11 +27,9 @@ MaybeHandle<Derived> OrderedHashTable<Derived, entrysize>::Allocate(
       base::bits::RoundUpToPowerOfTwo32(std::max({kInitialCapacity, capacity}));
   if (capacity > MaxCapacity()) {
     // Throw RangeError with a generic message.
-    THROW_NEW_ERROR_RETURN_VALUE(
-        isolate,
-        NewRangeError(MessageTemplate::kCollectionGrowFailed,
-                      isolate->factory()->empty_string()),
-        {});
+    THROW_NEW_ERROR(isolate,
+                    NewRangeError(MessageTemplate::kCollectionGrowFailed,
+                                  isolate->factory()->empty_string()));
   }
   int num_buckets = capacity / kLoadFactor;
   Handle<FixedArray> backing_store = isolate->factory()->NewFixedArrayWithMap(
@@ -241,16 +239,15 @@ Handle<FixedArray> OrderedHashSet::ConvertToKeysArray(
   Handle<FixedArray> result = Cast<FixedArray>(table);
   // From this point on table is no longer a valid OrderedHashSet.
   result->set_map(isolate, ReadOnlyRoots(isolate).fixed_array_map());
-  int const kMaxStringTableEntries =
-      isolate->heap()->MaxNumberToStringCacheSize();
   for (int i = 0; i < length; i++) {
     int index = HashTableStartIndex() + nof_buckets + (i * kEntrySize);
     Tagged<Object> key = table->get(index);
     uint32_t index_value;
     if (convert == GetKeysConversion::kConvertToString) {
       if (Object::ToArrayIndex(key, &index_value)) {
-        // Avoid trashing the Number2String cache if indices get very large.
-        bool use_cache = i < kMaxStringTableEntries;
+        // Avoid trashing the number to string cache with numbers that
+        // are not likely to be needed.
+        bool use_cache = i < SmiStringCache::kMaxCapacity;
         key = *isolate->factory()->Uint32ToString(index_value, use_cache);
       } else {
         CHECK(IsName(key));

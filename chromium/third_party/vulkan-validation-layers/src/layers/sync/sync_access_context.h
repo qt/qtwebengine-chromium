@@ -257,11 +257,11 @@ class AccessContext {
                               const VkImageSubresourceRange &subresource_range, bool is_depth_sliced) const;
     HazardResult DetectHazard(const vvl::ImageView &image_view, SyncAccessIndex current_usage) const;
     HazardResult DetectHazard(const ImageRangeGen &ref_range_gen, SyncAccessIndex current_usage,
-                              SyncOrdering ordering_rule = SyncOrdering::kOrderingNone) const;
+                              SyncOrdering ordering_rule = SyncOrdering::kOrderingNone, SyncFlags flags = 0) const;
     HazardResult DetectHazard(const vvl::ImageView &image_view, const VkOffset3D &offset, const VkExtent3D &extent,
                               SyncAccessIndex current_usage, SyncOrdering ordering_rule) const;
     HazardResult DetectHazard(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type, SyncAccessIndex current_usage,
-                              SyncOrdering ordering_rule) const;
+                              SyncOrdering ordering_rule, SyncFlags flags = 0) const;
     HazardResult DetectHazard(const vvl::VideoSession &vs_state, const vvl::VideoPictureResource &resource,
                               SyncAccessIndex current_usage) const;
     HazardResult DetectHazard(const vvl::Image &image, const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset,
@@ -299,9 +299,10 @@ class AccessContext {
     template <typename ResolveOp>
     void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context,
                             const ResourceAccessState *infill_state = nullptr, bool recur_to_infill = false);
-    template <typename ResolveOp, typename RangeGenerator>
-    void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context, RangeGenerator range_gen,
-                            const ResourceAccessState *infill_state = nullptr, bool recur_to_infill = false);
+    template <typename ResolveOp>
+    void ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context,
+                            subresource_adapter::ImageRangeGenerator range_gen, const ResourceAccessState *infill_state = nullptr,
+                            bool recur_to_infill = false);
 
     void UpdateAccessState(const vvl::Buffer &buffer, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
                            const ResourceAccessRange &range, ResourceUsageTagEx tag_ex);
@@ -311,15 +312,15 @@ class AccessContext {
                            const VkImageSubresourceRange &subresource_range, const VkOffset3D &offset, const VkExtent3D &extent,
                            ResourceUsageTagEx tag_ex);
     void UpdateAccessState(const AttachmentViewGen &view_gen, AttachmentViewGen::Gen gen_type, SyncAccessIndex current_usage,
-                           SyncOrdering ordering_rule, ResourceUsageTag tag);
+                           SyncOrdering ordering_rule, ResourceUsageTag tag, SyncFlags flags = 0);
     void UpdateAccessState(const vvl::ImageView &image_view, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
                            const VkOffset3D &offset, const VkExtent3D &extent, ResourceUsageTagEx tag_ex);
     void UpdateAccessState(const vvl::ImageView &image_view, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
                            ResourceUsageTagEx tag_ex);
     void UpdateAccessState(const ImageRangeGen &range_gen, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
-                           ResourceUsageTagEx tag_ex);
+                           ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
     void UpdateAccessState(ImageRangeGen &range_gen, SyncAccessIndex current_usage, SyncOrdering ordering_rule,
-                           ResourceUsageTagEx tag_ex);
+                           ResourceUsageTagEx tag_ex, SyncFlags flags = 0);
     void UpdateAccessState(const vvl::VideoSession &vs_state, const vvl::VideoPictureResource &resource,
                            SyncAccessIndex current_usage, ResourceUsageTag tag);
     void ResolveChildContexts(const std::vector<AccessContext> &contexts);
@@ -392,12 +393,13 @@ class AccessContext {
         Iterator Infill(ResourceAccessRangeMap *accesses, const Iterator &pos, const ResourceAccessRange &range) const;
         void operator()(const Iterator &pos) const;
         UpdateMemoryAccessStateFunctor(const AccessContext &context_, SyncAccessIndex usage_, SyncOrdering ordering_rule_,
-                                       ResourceUsageTagEx tag_ex)
-            : context(context_), usage_info(SyncStageAccess::AccessInfo(usage_)), ordering_rule(ordering_rule_), tag_ex(tag_ex) {}
+                                       ResourceUsageTagEx tag_ex, SyncFlags flags = 0)
+            : context(context_), usage_info(GetAccessInfo(usage_)), ordering_rule(ordering_rule_), tag_ex(tag_ex), flags(flags) {}
         const AccessContext &context;
         const SyncAccessInfo &usage_info;
         const SyncOrdering ordering_rule;
         const ResourceUsageTagEx tag_ex;
+        const SyncFlags flags;
     };
 
     // Follow the context previous to access the access state, supporting "lazy" import into the context. Not intended for
@@ -702,9 +704,14 @@ void AccessContext::ResolveFromContext(ResolveOp &&resolve_op, const AccessConte
     from_context.ResolveAccessRange(kFullRange, resolve_op, &access_state_map_, infill_state, recur_to_infill);
 }
 
-template <typename ResolveOp, typename RangeGenerator>
-void AccessContext::ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context, RangeGenerator range_gen,
-                                       const ResourceAccessState *infill_state, bool recur_to_infill) {
+// TODO: ImageRangeGenerator is a huge object. Here we make a copy. There is at least one place where it is
+// already constructed on the stack and can be modified directly without copy. In other cases we need
+// to copy. It's important to reduce size of ImageRangeGenerator (potentially for performance, not memory usage,
+// the latter is a bounus).
+template <typename ResolveOp>
+void AccessContext::ResolveFromContext(ResolveOp &&resolve_op, const AccessContext &from_context,
+                                       subresource_adapter::ImageRangeGenerator range_gen, const ResourceAccessState *infill_state,
+                                       bool recur_to_infill) {
     for (; range_gen->non_empty(); ++range_gen) {
         from_context.ResolveAccessRange(*range_gen, resolve_op, &access_state_map_, infill_state, recur_to_infill);
     }

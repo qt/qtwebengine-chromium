@@ -17,6 +17,8 @@ source_set("share") {
     "share_attempt.h",
     "share_history.cc",
     "share_history.h",
+    "share_metrics.cc",
+    "share_metrics.h",
     "share_ranking.cc",
     "share_ranking.h",
   ]
@@ -29,8 +31,8 @@ source_set("share") {
     "//base",
     "//chrome/browser/favicon",
     "//chrome/browser/profiles",
-    "//chrome/browser/share/proto:proto",
-    "//components/leveldb_proto:leveldb_proto",
+    "//chrome/browser/share/proto",
+    "//components/leveldb_proto",
     "//components/qr_code_generator:bitmap_generator",
     "//components/shared_highlighting/core/common",
     "//content/public/browser",
@@ -50,9 +52,9 @@ source_set("share") {
     deps += [
       ":jni_headers",
       "//chrome/android:chrome_jni_headers",
-      "//components/history/core/browser:browser",
+      "//components/history/core/browser",
       "//components/translate/content/browser",
-      "//components/ukm/content:content",
+      "//components/ukm/content",
       "//ui/android",
       "//url",
     ]

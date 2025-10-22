@@ -14,7 +14,7 @@ export class Tag extends LitElement {
   static PADDING = 12;
   static RADIUS = 8;
 
-  onBase: boolean;
+  declare onBase: boolean;
 
   // Required '@nocollapse' defends properties from being removed by Closure.
   /** @nocollapse */

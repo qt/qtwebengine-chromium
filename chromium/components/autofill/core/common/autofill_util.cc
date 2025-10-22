@@ -16,6 +16,7 @@
 #include "base/no_destructor.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/strings/utf_string_conversions.h"
 #include "components/autofill/core/common/autofill_features.h"
 #include "components/autofill/core/common/autofill_switches.h"
@@ -177,13 +178,14 @@ GURL StripAuthAndParams(const GURL& gurl) {
 
 bool IsAutofillManuallyTriggered(
     AutofillSuggestionTriggerSource trigger_source) {
-  return IsPasswordsAutofillManuallyTriggered(trigger_source);
+  return IsPasswordsAutofillManuallyTriggered(trigger_source).value();
 }
 
-bool IsPasswordsAutofillManuallyTriggered(
+IsPasswordRequestManuallyTriggered IsPasswordsAutofillManuallyTriggered(
     AutofillSuggestionTriggerSource trigger_source) {
-  return trigger_source ==
-         AutofillSuggestionTriggerSource::kManualFallbackPasswords;
+  return IsPasswordRequestManuallyTriggered(
+      trigger_source ==
+      AutofillSuggestionTriggerSource::kManualFallbackPasswords);
 }
 
 bool IsPlusAddressesManuallyTriggered(
@@ -192,20 +194,8 @@ bool IsPlusAddressesManuallyTriggered(
          AutofillSuggestionTriggerSource::kManualFallbackPlusAddresses;
 }
 
-bool IsAddressFieldSwappingEnabled() {
-#if BUILDFLAG(IS_IOS)
-  return base::FeatureList::IsEnabled(features::kAutofillAddressFieldSwapping);
-#else
-  return true;
-#endif
-}
-
 bool IsPaymentsFieldSwappingEnabled() {
-#if BUILDFLAG(IS_IOS)
-  return false;
-#else
   return base::FeatureList::IsEnabled(features::kAutofillPaymentsFieldSwapping);
-#endif
 }
 
 std::u16string GetButtonTitlesString(const ButtonTitleList& titles_list) {

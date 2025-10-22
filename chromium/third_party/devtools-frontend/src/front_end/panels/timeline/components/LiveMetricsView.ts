@@ -1,6 +1,8 @@
 // Copyright 2024 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/icon_button/icon_button.js';
 import './CPUThrottlingSelector.js';
@@ -28,18 +30,10 @@ import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 import * as MobileThrottling from '../../mobile_throttling/mobile_throttling.js';
 import {getThrottlingRecommendations, md} from '../utils/Helpers.js';
 
-import liveMetricsViewStylesRaw from './liveMetricsView.css.js';
+import liveMetricsViewStyles from './liveMetricsView.css.js';
 import type {MetricCardData} from './MetricCard.js';
-import metricValueStylesRaw from './metricValueStyles.css.js';
+import metricValueStyles from './metricValueStyles.css.js';
 import {CLS_THRESHOLDS, INP_THRESHOLDS, renderMetricValue} from './Utils.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const liveMetricsViewStyles = new CSSStyleSheet();
-liveMetricsViewStyles.replaceSync(liveMetricsViewStylesRaw.cssText);
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const metricValueStyles = new CSSStyleSheet();
-metricValueStyles.replaceSync(metricValueStylesRaw.cssText);
 
 const {html, nothing} = Lit;
 
@@ -77,16 +71,16 @@ const UIStrings = {
   /**
    * @description Title of a section that shows options for how real user data in the field should be fetched. This should be interpreted as "Real user data".
    */
-  fieldData: 'Field data',
+  fieldMetricsTitle: 'Field metrics',
   /**
    * @description Title of a section that shows settings to control the developers local testing environment.
    */
   environmentSettings: 'Environment settings',
   /**
-   * @description Label for an select box that selects which device type field data be shown for (e.g. desktop/mobile/all devices/etc). "field data" should be interpreted as "real user data".
+   * @description Label for an select box that selects which device type field metrics be shown for (e.g. desktop/mobile/all devices/etc). "field metrics" should be interpreted as "real user data".
    * @example {Mobile} PH1
    */
-  showFieldDataForDevice: 'Show field data for device type: {PH1}',
+  showFieldDataForDevice: 'Show field metrics for device type: {PH1}',
   /**
    * @description Text indicating that there is not enough data to report real user statistics.
    */
@@ -151,10 +145,10 @@ const UIStrings = {
    */
   originOptionWithKey: 'Origin: {PH1}',
   /**
-   * @description Label for an combo-box that indicates if field data should be taken from the page's URL or it's origin/domain. "field data" should be interpreted as "real user data".
+   * @description Label for an combo-box that indicates if field metrics should be taken from the page's URL or it's origin/domain. "field metrics" should be interpreted as "real user data".
    * @example {Origin: https://example.com} PH1
    */
-  showFieldDataForPage: 'Show field data for {PH1}',
+  showFieldDataForPage: 'Show field metrics for {PH1}',
   /**
    * @description Tooltip text explaining that real user connections are similar to a test environment with no throttling. "throttling" is when the network is intentionally slowed down to simulate a slower connection.
    */
@@ -200,7 +194,7 @@ const UIStrings = {
     other {{shiftCount} shifts}
   }`,
   /**
-   * @description Label for a a range of dates that represents the period of time a set of field data is collected from.
+   * @description Label for a a range of dates that represents the period of time a set of field metrics is collected from.
    * @example {Oct 1, 2024 - Nov 1, 2024} PH1
    */
   collectionPeriod: 'Collection period: {PH1}',
@@ -216,14 +210,14 @@ const UIStrings = {
    */
   seeHowYourLocalMetricsCompare: 'See how your local metrics compare to real user data in the {PH1}.',
   /**
-   * @description Text for a link that goes to more documentation about local and field data. "Local" refers to performance metrics measured in the developers local environment. "field data" should be interpreted as "real user data".
+   * @description Text for a link that goes to more documentation about local and field metrics. "Local" refers to performance metrics measured in the developers local environment. "field metrics" should be interpreted as "real user data".
    */
-  localFieldLearnMoreLink: 'Learn more about local and field data',
+  localFieldLearnMoreLink: 'Learn more about local and field metrics',
   /**
-   * @description Tooltip text for a link that goes to documentation explaining the difference between local and field metrics. "Local metrics" are performance metrics measured in the developers local environment. "field data" should be interpreted as "real user data".
+   * @description Tooltip text for a link that goes to documentation explaining the difference between local and field metrics. "Local metrics" are performance metrics measured in the developers local environment. "field metrics" should be interpreted as "real user data".
    */
   localFieldLearnMoreTooltip:
-      'Local metrics are captured from the current page using your network connection and device. Field data is measured by real users using many different network connections and devices.',
+      'Local metrics are captured from the current page using your network connection and device. field metrics is measured by real users using many different network connections and devices.',
   /**
    * @description Tooltip text explaining that this user interaction was ignored when calculating the Interaction to Next Paint (INP) metric because the interaction delay fell beyond the 98th percentile of interaction delays on this page. "INP" is an acronym and should not be translated.
    */
@@ -395,8 +389,6 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
   }
 
   connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [liveMetricsViewStyles, metricValueStyles];
-
     const liveMetrics = LiveMetrics.LiveMetrics.instance();
     liveMetrics.addEventListener(LiveMetrics.Events.STATUS, this.#onMetricStatus, this);
 
@@ -695,6 +687,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     // If there is no data at all we should force users to switch pages or reconfigure CrUX.
     const shouldDisable = !this.#cruxManager.pageResult?.['url-ALL'] && !this.#cruxManager.pageResult?.['origin-ALL'];
 
+    /* eslint-disable rulesdir/no-deprecated-component-usages */
     return html`
       <devtools-select-menu
         id="page-scope-select"
@@ -722,6 +715,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
         </devtools-menu-item>
       </devtools-select-menu>
     `;
+    /* eslint-enable rulesdir/no-deprecated-component-usages */
   }
 
   #getDeviceScopeDisplayName(deviceScope: CrUXManager.DeviceScope): string {
@@ -776,6 +770,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
     const currentDeviceLabel = this.#getLabelForDeviceOption(this.#cruxManager.fieldDeviceOption);
 
     // clang-format off
+    /* eslint-disable rulesdir/no-deprecated-component-usages */
     return html`
       <devtools-select-menu
         id="device-scope-select"
@@ -801,6 +796,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
         })}
       </devtools-select-menu>
     `;
+    /* eslint-enable rulesdir/no-deprecated-component-usages */
     // clang-format on
   }
 
@@ -948,8 +944,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
               <details>
                 <summary>
                   <span class="interaction-type">
-                    ${interaction.interactionType}
-                    ${isInp ?
+                    ${interaction.interactionType} ${isInp ?
                       html`<span class="interaction-inp-chip" title=${i18nString(UIStrings.inpInteraction)}>INP</span>`
                     : nothing}
                   </span>
@@ -1071,6 +1066,8 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
 
   #renderNodeView(): Lit.LitTemplate {
     return html`
+      <style>${liveMetricsViewStyles}</style>
+      <style>${metricValueStyles}</style>
       <div class="node-view">
         <main>
           <h2 class="section-title">${i18nString(UIStrings.nodePerformanceTimeline)}</h2>
@@ -1096,6 +1093,8 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
 
     // clang-format off
     const output = html`
+      <style>${liveMetricsViewStyles}</style>
+      <style>${metricValueStyles}</style>
       <div class="container">
         <div class="live-metrics-view">
           <main class="live-metrics">
@@ -1125,7 +1124,7 @@ export class LiveMetricsView extends LegacyWrapper.LegacyWrapper.WrappableCompon
           <aside class="next-steps" aria-labelledby="next-steps-section-title">
             <h2 id="next-steps-section-title" class="section-title">${i18nString(UIStrings.nextSteps)}</h2>
             <div id="field-setup" class="settings-card">
-              <h3 class="card-title">${i18nString(UIStrings.fieldData)}</h3>
+              <h3 class="card-title">${i18nString(UIStrings.fieldMetricsTitle)}</h3>
               ${this.#renderFieldDataMessage()}
               ${this.#renderPageScopeSetting()}
               ${this.#renderDeviceScopeSetting()}
@@ -1189,7 +1188,7 @@ class LiveMetricsLogs extends UI.Widget.WidgetElement<UI.Widget.Widget> {
     //
     // Any children of the root element `this` will be matched to the slots defined within the container
     // widget's shadow DOM.
-    const containerWidget = new UI.Widget.Widget(true, undefined, this);
+    const containerWidget = new UI.Widget.Widget(this, {useShadowDom: true});
     containerWidget.contentElement.style.display = 'contents';
 
     this.#tabbedPane = new UI.TabbedPane.TabbedPane();

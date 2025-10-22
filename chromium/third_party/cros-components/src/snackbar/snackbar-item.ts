@@ -75,7 +75,7 @@ export class SnackbarItem extends LitElement {
    * TODO b/308729483 - Handle message length and text wrapping.
    * @export
    */
-  message: string;
+  declare message: string;
 
   /** @nocollapse */
   static override properties = {

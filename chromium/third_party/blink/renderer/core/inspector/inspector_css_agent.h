@@ -131,7 +131,6 @@ class CORE_EXPORT InspectorCSSAgent final
   // the rule list, and the CSSFunctionRules that resulted from looking up
   // those function references.
   static void CollectReferencedFunctionRules(
-      Document&,
       const HeapHashSet<Member<CSSStyleSheet>>& document_style_sheets,
       const RuleIndexList&,
       HeapHashMap<Member<const ScopedCSSName>, Member<CSSFunctionRule>>&
@@ -197,6 +196,9 @@ class CORE_EXPORT InspectorCSSAgent final
       std::unique_ptr<protocol::CSS::CSSFontPaletteValuesRule>*,
       std::optional<int>* parent_layout_node_id,
       std::unique_ptr<protocol::Array<protocol::CSS::CSSFunctionRule>>*)
+      override;
+  protocol::Response getEnvironmentVariables(
+      std::unique_ptr<protocol::DictionaryValue>* environment_variables)
       override;
   protocol::Response getInlineStylesForNode(
       int node_id,
@@ -402,7 +404,7 @@ class CORE_EXPORT InspectorCSSAgent final
   std::unique_ptr<protocol::CSS::CSSFontPaletteValuesRule> FontPalettesForNode(
       Element& element);
 
-  // If the |animating_element| is a pseudo element, then |element| is a
+  // If the |animating_element| is a pseudo-element, then |element| is a
   // reference to its originating DOM element.
   std::unique_ptr<protocol::Array<protocol::CSS::CSSKeyframesRule>>
   AnimationsForNode(Element* element, Element* animating_element);
@@ -524,7 +526,8 @@ class CORE_EXPORT InspectorCSSAgent final
   void NotifyComputedStyleUpdatedForNode(int node_id);
   static String ResolvePercentagesValues(Element*,
                                          CSSPropertyName,
-                                         const CSSValue*);
+                                         const CSSValue* parsed_value,
+                                         const String& original_value);
 
   Member<InspectorDOMAgent> dom_agent_;
   Member<InspectedFrames> inspected_frames_;

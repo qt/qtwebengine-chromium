@@ -52,19 +52,11 @@ if (enable_me2me_host) {
         "$root_build_dir/libbase.so",
         "$root_build_dir/libthird_party_boringssl.so",
       ]
-      deps += [ "//base:base" ]
+      deps += [ "//base" ]
       if (use_custom_libcxx) {
         sources += [ "$root_build_dir/libc++.so" ]
         deps += [ "//buildtools/third_party/libc++" ]
       }
-    }
-  }
-
-  if (!is_linux || !enable_chromoting_crashpad) {
-    copy("remoting_me2me_host_copy_crash_uploader") {
-      sources = [ "$root_build_dir/remoting_crash_uploader" ]
-      outputs = [ "$root_build_dir/remoting/crash-uploader" ]
-      deps = [ "//remoting/host/crash:remoting_crash_uploader" ]
     }
   }
 
@@ -101,13 +93,6 @@ if (enable_me2me_host) {
       "//remoting/host/remote_open_url",
       "//remoting/host/webauthn:remote_webauthn",
     ]
-
-    if (!enable_chromoting_crashpad) {
-      deps += [
-        ":remoting_me2me_host_copy_crash_uploader",
-        "//remoting/host/crash:remoting_crash_uploader",
-      ]
-    }
   }
 }
 
@@ -120,7 +105,7 @@ source_set("gvariant") {
   ]
   deps = [
     "//base",
-    "//remoting/host/base:base",
+    "//remoting/host/base",
   ]
 }
 
@@ -135,7 +120,7 @@ source_set("utils") {
   deps = [
     "dbus_interfaces:interface_headers",
     "//base",
-    "//remoting/host/base:base",
+    "//remoting/host/base",
     "//ui/base",
   ]
   configs += [ "//build/linux:gio_config" ]
@@ -151,13 +136,29 @@ source_set("platform_impls") {
     "audio_capturer_linux.h",
     "audio_pipe_reader.cc",
     "audio_pipe_reader.h",
-    "curtain_mode_linux.cc",
+    "curtain_mode_wayland.cc",
+    "curtain_mode_wayland.h",
+    "curtain_mode_x11.cc",
     "desktop_display_info_loader_linux.cc",
     "desktop_display_info_loader_x11.cc",
     "desktop_display_info_loader_x11.h",
     "desktop_resizer_linux.cc",
     "desktop_resizer_x11.cc",
     "desktop_resizer_x11.h",
+    "ei_sender_session.cc",
+    "ei_sender_session.h",
+    "gnome_action_executor.cc",
+    "gnome_action_executor.h",
+    "gnome_desktop_resizer.cc",
+    "gnome_desktop_resizer.h",
+    "gnome_display_info_loader.cc",
+    "gnome_display_info_loader.h",
+    "gnome_input_injector.cc",
+    "gnome_input_injector.h",
+    "gnome_interaction_strategy.cc",
+    "gnome_interaction_strategy.h",
+    "gnome_keyboard_layout_monitor.h",
+    "gnome_local_input_monitor.h",
     "input_injector_constants_linux.h",
     "input_injector_linux.cc",
     "input_injector_x11.cc",
@@ -165,8 +166,16 @@ source_set("platform_impls") {
     "keyboard_layout_monitor_linux.cc",
     "keyboard_layout_monitor_utils.cc",
     "keyboard_layout_monitor_utils.h",
+    "pipewire_capture_stream.cc",
+    "pipewire_capture_stream.h",
+    "pipewire_desktop_capturer.cc",
+    "pipewire_desktop_capturer.h",
+    "pipewire_mouse_cursor_monitor.cc",
+    "pipewire_mouse_cursor_monitor.h",
   ]
   deps = [
+    ":gvariant",
+    ":utils",
     ":x11",
     ":x11_display_utils",
     "//base",
@@ -180,6 +189,7 @@ source_set("platform_impls") {
     "//remoting/host:platform_interfaces",
     "//remoting/host/base",
     "//remoting/host/input_monitor",
+    "//remoting/host/linux/dbus_interfaces:interface_headers",
     "//remoting/proto",
     "//remoting/protocol",
     "//third_party/webrtc_overrides:webrtc_component",
@@ -203,7 +213,6 @@ source_set("x11_display_utils") {
   ]
   deps = [
     ":x11",
-    "//build/config/linux/gtk",
     "//remoting/base:logging",
     "//remoting/host:display_layout",
     "//remoting/host/linux/dbus_interfaces:interface_headers",

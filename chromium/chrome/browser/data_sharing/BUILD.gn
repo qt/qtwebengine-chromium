@@ -50,12 +50,15 @@ if (is_android) {
 
   android_resources("java_resources") {
     sources = [
+      "android/java/res/drawable/ic_person_manage_24dp.xml",
       "android/java/res/drawable/round_image_filled.xml",
       "android/java/res/layout/recent_activity_bottom_sheet.xml",
       "android/java/res/layout/recent_activity_log_item.xml",
       "android/java/res/layout/shared_image_tiles.xml",
       "android/java/res/layout/shared_image_tiles_icon.xml",
+      "android/java/res/values/colors.xml",
       "android/java/res/values/dimens.xml",
+      "android/java/res/values/ids.xml",
       "android/java/res/values/styles.xml",
     ]
     deps = [ "//components/browser_ui/styles/android:java_resources" ]
@@ -64,6 +67,7 @@ if (is_android) {
   android_library("data_sharing_public_java") {
     resources_package = "org.chromium.chrome.browser.data_sharing"
     sources = [
+      "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingIntentUtils.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingMetrics.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingTabGroupUtils.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingTabGroupsDelegate.java",
@@ -86,7 +90,9 @@ if (is_android) {
       "//chrome/browser/share:java",
       "//chrome/browser/tab:java",
       "//chrome/browser/tab_group_sync:factory_java",
+      "//chrome/browser/tab_group_sync:java",
       "//chrome/browser/tabmodel:java",
+      "//chrome/browser/tabwindow:java",
       "//chrome/browser/ui/android/favicon:java",
       "//chrome/browser/ui/android/strings:ui_strings_grd",
       "//components/browser_ui/bottomsheet/android:java",
@@ -127,9 +133,12 @@ if (is_android) {
       "//base:supplier_java",
       "//chrome/browser/ui/android/strings:ui_strings_grd",
       "//components/browser_ui/bottomsheet/android:java",
+      "//components/browser_ui/bottomsheet/android:java_resources",
+      "//components/browser_ui/widget/android:java",
       "//components/browser_ui/widget/android:java_resources",
       "//components/collaboration/public:messaging_java",
       "//components/data_sharing/public:public_java",
+      "//components/saved_tab_groups/public:java",
       "//components/strings:components_strings_grd",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_recyclerview_recyclerview_java",
@@ -188,14 +197,13 @@ if (is_android) {
       "//chrome/test/android:chrome_java_unit_test_support",
       "//components/data_sharing:test_support_java",
       "//components/data_sharing/public:public_java",
-      "//components/data_sharing/public:public_java",
       "//components/saved_tab_groups/public:java",
       "//third_party/android_deps:robolectric_all_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_appcompat_appcompat_java",
       "//third_party/androidx:androidx_test_core_java",
       "//third_party/androidx:androidx_test_ext_junit_java",
-      "//third_party/junit:junit",
+      "//third_party/junit",
       "//third_party/mockito:mockito_java",
       "//ui/android:ui_java_test_support",
       "//ui/android:ui_no_recycler_view_java",
@@ -208,6 +216,7 @@ if (is_android) {
     resources_package = "org.chromium.chrome.browser.data_sharing"
     sources = [
       "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingImplFactory.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/FakeDataSharingUIDelegateImpl.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/NoOpDataSharingSDKDelegateImpl.java",
     ]
 
@@ -220,10 +229,12 @@ if (is_android) {
       "//components/browser_ui/styles/android:java_resources",
       "//components/data_sharing/public:public_java",
       "//components/data_sharing/public/protocol:proto_java",
+      "//google_apis/gaia/android:java",
       "//third_party/android_deps:protobuf_lite_runtime_java",
       "//third_party/android_sdk:android_window_extensions_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/jni_zero:jni_zero_java",
+      "//ui/android:ui_utils_java",
       "//url:url_java",
     ]
   }
@@ -244,10 +255,40 @@ if (is_android) {
       ":java_resources",
       "//base:callback_java",
       "//chrome/browser/ui/android/strings:ui_strings_grd",
+      "//chrome/browser/ui/android/theme:java",
       "//components/browser_ui/styles/android:java",
       "//components/collaboration/public:core_java",
       "//components/data_sharing/public:public_java",
+      "//components/tab_groups:tab_groups_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
+      "//third_party/androidx:androidx_core_core_java",
+      "//ui/android:ui_no_recycler_view_java",
+    ]
+  }
+
+  android_library("versioning_java") {
+    resources_package = "org.chromium.chrome.browser.data_sharing.ui.versioning"
+    sources = [
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersionUpdateIphHandler.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningMessageBanner.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningModalDialog.java",
+    ]
+    deps = [
+      "//base:callback_java",
+      "//base:supplier_java",
+      "//chrome/android:chrome_app_java_resources",
+      "//chrome/browser/preferences:java",
+      "//chrome/browser/profiles/android:java",
+      "//chrome/browser/tab_group_sync:factory_java",
+      "//chrome/browser/user_education:java",
+      "//components/browser_ui/widget/android:java",
+      "//components/feature_engagement/public:public_java",
+      "//components/messages/android:java",
+      "//components/prefs/android:java",
+      "//components/saved_tab_groups/public:java",
+      "//components/user_prefs/android:java",
+      "//content/public/android:content_full_java",
+      "//third_party/androidx:androidx_core_core_java",
       "//ui/android:ui_no_recycler_view_java",
     ]
   }
@@ -265,6 +306,7 @@ if (is_android) {
       ":java",
       ":java_resources",
       "//base:base_java",
+      "//base:holder_java",
       "//base:service_loader_java",
       "//base:supplier_java",
       "//chrome/android:chrome_app_java_resources",
@@ -295,21 +337,27 @@ if (is_android) {
       "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingTabGroupUtilsUnitTest.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/InstantMessageDelegateImplUnitTest.java",
       "android/java/src/org/chromium/chrome/browser/data_sharing/ui/shared_image_tiles/SharedImageTilesCoordinatorUnitTest.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersionUpdateIphHandlerUnitTest.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningMessageBannerUnitTest.java",
+      "android/java/src/org/chromium/chrome/browser/data_sharing/ui/versioning/VersioningModalDialogUnitTest.java",
     ]
     deps = [
       ":data_sharing_public_java",
       ":internal_library_java",
       ":java",
       ":shared_image_tiles_java",
+      ":versioning_java",
       "//base:base_java",
       "//base:base_java_test_support",
       "//base:base_junit_test_support",
       "//chrome/browser/collaboration:messaging_factory_java",
       "//chrome/browser/notifications:java",
+      "//chrome/browser/preferences:java",
       "//chrome/browser/profiles/android:java",
       "//chrome/browser/tab:java",
       "//chrome/browser/tab_group_sync:factory_java",
       "//chrome/browser/tabmodel:java",
+      "//chrome/browser/user_education:java",
       "//chrome/test/android:chrome_java_unit_test_support",
       "//components/browser_ui/notifications/android:java",
       "//components/browser_ui/notifications/android:utils_java",
@@ -320,15 +368,18 @@ if (is_android) {
       "//components/messages/android:factory_java",
       "//components/messages/android:java",
       "//components/messages/android:manager_java",
+      "//components/prefs/android:java",
       "//components/saved_tab_groups/public:java",
       "//components/saved_tab_groups/public:test_support_java",
       "//components/signin/public/android:java",
+      "//components/user_prefs/android:java",
       "//content/public/android:content_full_java",
+      "//google_apis/gaia/android:java",
       "//third_party/android_deps:robolectric_all_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_test_core_java",
       "//third_party/androidx:androidx_test_ext_junit_java",
-      "//third_party/junit:junit",
+      "//third_party/junit",
       "//third_party/mockito:mockito_java",
       "//ui/android:ui_java_test_support",
       "//ui/android:ui_no_recycler_view_java",
@@ -357,11 +408,12 @@ if (is_android) {
       "//components/saved_tab_groups/public:java",
       "//components/signin/public/android:java",
       "//content/public/android:content_full_java",
+      "//google_apis/gaia/android:java",
       "//third_party/android_deps:robolectric_all_java",
       "//third_party/androidx:androidx_annotation_annotation_java",
       "//third_party/androidx:androidx_test_core_java",
       "//third_party/androidx:androidx_test_ext_junit_java",
-      "//third_party/junit:junit",
+      "//third_party/junit",
       "//third_party/mockito:mockito_java",
       "//ui/android:ui_java_test_support",
       "//ui/android:ui_no_recycler_view_java",
@@ -373,9 +425,7 @@ if (is_android) {
   android_library("javatests") {
     testonly = true
 
-    sources = [
-      "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingServiceFactoryTest.java",
-    ]
+    sources = [ "android/java/src/org/chromium/chrome/browser/data_sharing/DataSharingServiceFactoryTest.java" ]
     deps = [
       ":factory_java",
       "//base:base_java",
@@ -383,13 +433,14 @@ if (is_android) {
       "//chrome/browser/flags:java",
       "//chrome/browser/profiles/android:java",
       "//chrome/test/android:chrome_java_integration_test_support",
+      "//chrome/test/android:chrome_java_transit",
       "//components/data_sharing:test_support_java",
       "//components/data_sharing/public:public_java",
       "//content/public/test/android:content_java_test_support",
       "//third_party/androidx:androidx_test_runner_java",
       "//third_party/hamcrest:hamcrest_core_java",
       "//third_party/hamcrest:hamcrest_library_java",
-      "//third_party/junit:junit",
+      "//third_party/junit",
       "//third_party/mockito:mockito_java",
       "//ui/android:ui_java",
       "//ui/android:ui_java_test_support",

@@ -18,13 +18,16 @@
 #include <algorithm>
 
 #include "base/logging.h"
+#include "base/notimplemented.h"
 #include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/trace_event/trace_event.h"
 #include "base/win/scoped_variant.h"
 #include "components/stylus_handwriting/win/features.h"
 #include "ui/base/ime/text_input_client.h"
 #include "ui/base/ime/text_input_flags.h"
 #include "ui/base/ime/win/tsf_input_scope.h"
+#include "ui/base/ui_base_features.h"
 #include "ui/display/win/screen_win.h"
 #include "ui/events/event_dispatcher.h"
 #include "ui/gfx/geometry/rect.h"
@@ -178,7 +181,7 @@ HRESULT TSFTextStore::GetACPFromPoint(TsViewCookie view_cookie,
       index_flags |= IndexFromPointFlags::kNearestToContainedPoint;
     }
     const gfx::Point screen_point_in_dips =
-        gfx::ToFlooredPoint(display::win::ScreenWin::ScreenToDIPPoint(
+        gfx::ToFlooredPoint(display::win::GetScreenWin()->ScreenToDIPPoint(
             gfx::PointF(gfx::Point(*point))));
     const std::optional<size_t> index =
         text_input_client_->GetProximateCharacterIndexFromPoint(
@@ -248,8 +251,8 @@ HRESULT TSFTextStore::GetScreenExt(TsViewCookie view_cookie, RECT* rect) {
                                                             &tmp_rect);
   if (result_rect) {
     // This conversion is required for high dpi monitors.
-    *rect = display::win::ScreenWin::DIPToScreenRect(window_handle_,
-                                                     result_rect.value())
+    *rect = display::win::GetScreenWin()
+                ->DIPToScreenRect(window_handle_, result_rect.value())
                 .ToRECT();
   } else {
     // Default if the layout bounds are not present in text input client.
@@ -454,8 +457,8 @@ HRESULT TSFTextStore::GetTextExt(TsViewCookie view_cookie,
   TRACE_EVENT1("ime", "TSFTextStore::GetTextExt", "DIP rect",
                result_rect->ToString());
 
-  *rect = display::win::ScreenWin::DIPToScreenRect(window_handle_,
-                                                   result_rect.value())
+  *rect = display::win::GetScreenWin()
+              ->DIPToScreenRect(window_handle_, result_rect.value())
               .ToRECT();
   *clipped = FALSE;
   TRACE_EVENT1("ime", "TSFTextStore::GetTextExt", "screen rect",
@@ -650,6 +653,9 @@ HRESULT TSFTextStore::RequestLock(DWORD lock_flags, HRESULT* result) {
   current_lock_type_ = (lock_flags & TS_LF_READWRITE);
 
   edit_flag_ = false;
+  if (features::IsHandleIMESpanChangesOnUpdateCompositionEnabled()) {
+    on_update_composition_called_ = false;
+  }
   // if there is not already some composition text, they we are about to start
   // composition. we need to set last_composition_start to the selection start.
   // Otherwise we are updating an existing composition, we should use the cached
@@ -781,7 +787,9 @@ HRESULT TSFTextStore::RequestLock(DWORD lock_flags, HRESULT* result) {
         previous_composition_string_ != composition_string ||
         !previous_composition_selection_range_.EqualsIgnoringDirection(
             selection_) ||
-        previous_text_spans_ != text_spans_)) ||
+        ((!features::IsHandleIMESpanChangesOnUpdateCompositionEnabled() ||
+          on_update_composition_called_) &&
+         previous_text_spans_ != text_spans_))) ||
       ((wparam_keydown_fired_ != 0) &&
        text_input_client_->HasCompositionText() &&
        composition_string.empty())) {
@@ -957,6 +965,9 @@ HRESULT TSFTextStore::OnStartComposition(ITfCompositionView* composition_view,
 
 HRESULT TSFTextStore::OnUpdateComposition(ITfCompositionView* composition_view,
                                           ITfRange* range) {
+  if (features::IsHandleIMESpanChangesOnUpdateCompositionEnabled()) {
+    on_update_composition_called_ = true;
+  }
   return S_OK;
 }
 

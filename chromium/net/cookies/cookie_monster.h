@@ -236,20 +236,21 @@ class NET_EXPORT CookieMonster : public CookieStore {
   void FlushStore(base::OnceClosure callback) override;
   void SetForceKeepSessionState() override;
   CookieChangeDispatcher& GetChangeDispatcher() override;
-  void SetCookieableSchemes(const std::vector<std::string>& schemes,
+  void SetCookieableSchemes(std::vector<std::string> schemes,
                             SetCookieableSchemesCallback callback) override;
   std::optional<bool> SiteHasCookieInOtherPartition(
       const net::SchemefulSite& site,
-      const std::optional<CookiePartitionKey>& partition_key) const override;
+      const CookiePartitionKey& partition_key) const override;
 
   // Enables writing session cookies into the cookie database. If this this
   // method is called, it must be called before first use of the instance
   // (i.e. as part of the instance initialization process).
   void SetPersistSessionCookies(bool persist_session_cookies);
 
-  // The default list of schemes the cookie monster can handle.
-  static const char* const kDefaultCookieableSchemes[];
-  static const int kDefaultCookieableSchemesCount;
+  // The default list of schemes the cookie monster can handle. Returns a vector
+  // of strings rather than a span of string_views for easy use with
+  // SetCookieableSchemes().
+  static std::vector<std::string> GetDefaultCookieableSchemes();
 
   // Find a key based on the given domain, which will be used to find all
   // cookies potentially relevant to it. This is used for lookup in cookies_ as
@@ -573,8 +574,14 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // is the iterator of the CookieMap in |partitioned_cookies_| we should search
   // for duplicates.
   //
+  // The return value is true if the new equivalent `cookie_being_set` results
+  // in a web-observable change. This can occur when inserting a new cookie or
+  // overwriting an existing cookie with new properties observable to the web
+  // platform. It is false when the new cookie does not result in any changes
+  // that are observable to the web platform.
+  //
   // NOTE: There should never be more than a single matching equivalent cookie.
-  void MaybeDeleteEquivalentCookieAndUpdateStatus(
+  bool MaybeDeleteEquivalentCookieAndUpdateStatus(
       const std::string& key,
       const CanonicalCookie& cookie_being_set,
       bool allowed_to_set_secure_cookie,
@@ -593,7 +600,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
       std::unique_ptr<CanonicalCookie> cc,
       bool sync_to_store,
       const CookieAccessResult& access_result,
-      bool dispatch_change = true);
+      bool dispatch_change = true,
+      bool is_no_change_overwrite = false);
 
   // Returns true if the cookie should be (or is already) synced to the store.
   // Used for cookies during insertion and deletion into the in-memory store.
@@ -606,7 +614,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
       std::unique_ptr<CanonicalCookie> cc,
       bool sync_to_store,
       const CookieAccessResult& access_result,
-      bool dispatch_change = true);
+      bool dispatch_change = true,
+      bool is_no_change_overwrite = false);
 
   // Sets all cookies from |list| after deleting any equivalent cookie.
   // For data gathering purposes, this routine is treated as if it is
@@ -614,7 +623,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   void SetAllCookies(CookieList list, SetCookiesCallback callback);
 
   void InternalUpdateCookieAccessTime(CanonicalCookie& cc,
-                                      const base::Time& current_time);
+                                      base::Time current_time);
 
   // |deletion_cause| argument is used for collecting statistics and choosing
   // the correct CookieChangeCause for OnCookieChange notifications. Guarantee:
@@ -641,7 +650,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // constants for details. Also removes expired cookies.
   //
   // Returns the number of cookies deleted (useful for debugging).
-  size_t GarbageCollect(const base::Time& current, const std::string& key);
+  size_t GarbageCollect(base::Time current, const std::string& key);
 
   // Run garbage collection for PartitionedCookieMap keys |cookie_partition_key|
   // and |key|.
@@ -650,7 +659,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // cookies in order to prevent leaking entropy about user behavior across
   // cookie partitions.
   size_t GarbageCollectPartitionedCookies(
-      const base::Time& current,
+      base::Time current,
       const CookiePartitionKey& cookie_partition_key,
       const std::string& key);
 
@@ -681,7 +690,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
   // non-expired cookies from |itpair| are appended to |cookie_its|.
   //
   // Returns the number of cookies deleted.
-  size_t GarbageCollectExpired(const base::Time& current,
+  size_t GarbageCollectExpired(base::Time current,
                                const CookieMapItPair& itpair,
                                CookieItVector* cookie_its);
 
@@ -692,18 +701,18 @@ class NET_EXPORT CookieMonster : public CookieStore {
   //
   // Returns the number of cookies deleted.
   size_t GarbageCollectExpiredPartitionedCookies(
-      const base::Time& current,
+      base::Time current,
       const PartitionedCookieMap::iterator& cookie_partition_it,
       const CookieMapItPair& itpair,
       CookieItVector* cookie_its);
 
   // Helper function to garbage collect all expired cookies in
   // PartitionedCookieMap.
-  void GarbageCollectAllExpiredPartitionedCookies(const base::Time& current);
+  void GarbageCollectAllExpiredPartitionedCookies(base::Time current);
 
   // Helper for GarbageCollect(). Deletes all cookies in the range specified by
   // [|it_begin|, |it_end|). Returns the number of cookies deleted.
-  size_t GarbageCollectDeleteRange(const base::Time& current,
+  size_t GarbageCollectDeleteRange(base::Time current,
                                    DeletionCause cause,
                                    CookieItVector::iterator cookie_its_begin,
                                    CookieItVector::iterator cookie_its_end);
@@ -714,8 +723,8 @@ class NET_EXPORT CookieMonster : public CookieStore {
   //
   // Sets |earliest_time| to be the earliest last access time of a cookie that
   // was not deleted, or base::Time() if no such cookie exists.
-  size_t GarbageCollectLeastRecentlyAccessed(const base::Time& current,
-                                             const base::Time& safe_date,
+  size_t GarbageCollectLeastRecentlyAccessed(base::Time current,
+                                             base::Time safe_date,
                                              size_t purge_goal,
                                              CookieItVector cookie_its,
                                              base::Time& earliest_time);
@@ -759,7 +768,7 @@ class NET_EXPORT CookieMonster : public CookieStore {
 
   // This function should be called repeatedly, and will record
   // statistics if a sufficient time period has passed.
-  void RecordPeriodicStats(const base::Time& current_time);
+  void RecordPeriodicStats(base::Time current_time);
 
   // Records the aforementioned stats if we have already finished loading all
   // cookies. Returns whether stats were recorded.

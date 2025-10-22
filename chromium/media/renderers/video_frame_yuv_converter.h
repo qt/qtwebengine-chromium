@@ -5,9 +5,14 @@
 #ifndef MEDIA_RENDERERS_VIDEO_FRAME_YUV_CONVERTER_H_
 #define MEDIA_RENDERERS_VIDEO_FRAME_YUV_CONVERTER_H_
 
+#include "base/memory/scoped_refptr.h"
 #include "gpu/command_buffer/common/mailbox_holder.h"
 #include "media/base/media_export.h"
 #include "media/base/video_types.h"
+
+namespace gpu {
+class ClientSharedImage;
+}  // namespace gpu
 
 namespace viz {
 class RasterContextProvider;
@@ -34,10 +39,10 @@ MEDIA_EXPORT bool IsPixelFormatSupportedForYuvSharedImageConversion(
 // (it will ignore the color space of the destination shared image). IMPORTANT:
 // Callers of this function can pass in `shared_image_cache` to prevent repeated
 // creation/deletion of YUV shared images.
-MEDIA_EXPORT void ConvertYuvVideoFrameToRgbSharedImage(
+MEDIA_EXPORT gpu::SyncToken ConvertYuvVideoFrameToRgbSharedImage(
     const VideoFrame* video_frame,
     viz::RasterContextProvider* raster_context_provider,
-    const gpu::Mailbox& dest_mailbox,
+    scoped_refptr<gpu::ClientSharedImage> dest_shared_image,
     const gpu::SyncToken& dest_sync_token,
     bool use_visible_rect,
     VideoFrameSharedImageCache* shared_image_cache);

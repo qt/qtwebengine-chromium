@@ -16,6 +16,7 @@
 #define THIRD_PARTY_CENTIPEDE_WORKDIR_MGR_H_
 
 #include <cstddef>
+#include <optional>
 #include <ostream>
 #include <string>
 #include <string_view>
@@ -24,7 +25,7 @@
 #include "./centipede/environment.h"
 #include "./common/logging.h"
 
-namespace centipede {
+namespace fuzztest::internal {
 
 // The Centipede work directory manager.
 class WorkDir {
@@ -47,6 +48,9 @@ class WorkDir {
     // but `path` must have the exact `base_dir`/`rel_prefix` prefix,
     // including any relative "." and ".." path elements.
     bool IsShard(std::string_view path) const;
+    // Returns the shard index of `path` if it is a shard parth, `nullopt`
+    // otherwise.
+    std::optional<size_t> GetShardIndex(std::string_view path) const;
 
    private:
     friend class WorkDir;
@@ -74,7 +78,7 @@ class WorkDir {
 
   // Constructs an object by recording referenced to the field values in the
   // passed `env` object. NOTE: `env` must outlive this object.
-  explicit WorkDir(const centipede::Environment& env);
+  explicit WorkDir(const fuzztest::internal::Environment &env);
 
   // Not copyable and not assignable due to dual nature of the reference
   // members (that reference either the internal value holders or an external
@@ -165,6 +169,6 @@ class WorkDir {
   const size_t &my_shard_index_;
 };
 
-}  // namespace centipede
+}  // namespace fuzztest::internal
 
 #endif  // THIRD_PARTY_CENTIPEDE_WORKDIR_MGR_H_

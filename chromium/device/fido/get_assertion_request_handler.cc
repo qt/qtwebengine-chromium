@@ -16,12 +16,12 @@
 #include "base/functional/bind.h"
 #include "base/json/json_writer.h"
 #include "base/metrics/histogram_functions.h"
-#include "base/stl_util.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/timer/elapsed_timer.h"
 #include "build/build_config.h"
 #include "components/cbor/diagnostic_writer.h"
 #include "components/device_event_log/device_event_log.h"
+#include "crypto/hash.h"
 #include "device/fido/authenticator_get_assertion_response.h"
 #include "device/fido/ctap_get_assertion_request.h"
 #include "device/fido/discoverable_credential_metadata.h"
@@ -29,7 +29,6 @@
 #include "device/fido/fido_authenticator.h"
 #include "device/fido/fido_constants.h"
 #include "device/fido/fido_discovery_factory.h"
-#include "device/fido/fido_parsing_utils.h"
 #include "device/fido/fido_transport_protocol.h"
 #include "device/fido/fido_types.h"
 #include "device/fido/filter.h"
@@ -119,7 +118,7 @@ bool ResponseValid(
 
     const std::array<uint8_t, kRpIdHashLength>& rp_id_hash =
         response.authenticator_data.application_parameter();
-    if (rp_id_hash != fido_parsing_utils::CreateSHA256Hash(request.rp_id) &&
+    if (rp_id_hash != crypto::hash::Sha256(request.rp_id) &&
         (!request.app_id ||
          rp_id_hash != request.alternative_application_parameter)) {
       return false;
@@ -171,33 +170,6 @@ bool ResponseValid(
   }
 
   return true;
-}
-
-base::flat_set<FidoTransportProtocol> GetTransportsAllowedByRP(
-    const CtapGetAssertionRequest& request) {
-  const base::flat_set<FidoTransportProtocol> kAllTransports = {
-      FidoTransportProtocol::kInternal,
-      FidoTransportProtocol::kNearFieldCommunication,
-      FidoTransportProtocol::kUsbHumanInterfaceDevice,
-      FidoTransportProtocol::kBluetoothLowEnergy,
-      FidoTransportProtocol::kHybrid,
-  };
-
-  const auto& allowed_list = request.allow_list;
-  if (allowed_list.empty()) {
-    return kAllTransports;
-  }
-
-  base::flat_set<FidoTransportProtocol> transports;
-  for (const auto& credential : allowed_list) {
-    if (credential.transports.empty()) {
-      return kAllTransports;
-    }
-    transports.insert(credential.transports.begin(),
-                      credential.transports.end());
-  }
-
-  return transports;
 }
 
 void ReportGetAssertionRequestTransport(FidoAuthenticator* authenticator) {
@@ -325,12 +297,9 @@ GetAssertionRequestHandler::GetAssertionRequestHandler(
     CtapGetAssertionOptions options,
     bool allow_skipping_pin_touch,
     CompletionCallback completion_callback)
-    : FidoRequestHandlerBase(
-          fido_discovery_factory,
-          std::move(additional_discoveries),
-          base::STLSetIntersection<base::flat_set<FidoTransportProtocol>>(
-              supported_transports,
-              GetTransportsAllowedByRP(request))),
+    : FidoRequestHandlerBase(fido_discovery_factory,
+                             std::move(additional_discoveries),
+                             supported_transports),
       completion_callback_(std::move(completion_callback)),
       request_(std::move(request)),
       options_(std::move(options)),

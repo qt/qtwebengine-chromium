@@ -6,23 +6,22 @@ from __future__ import annotations
 
 import argparse
 import enum
-import logging
-import sys
-from typing import FrozenSet, TYPE_CHECKING, Dict, Optional, Self, Sequence, Set, Type
+from typing import (TYPE_CHECKING, FrozenSet, Optional, Self, Sequence, Set,
+                    Type)
 
 from typing_extensions import override
 
+import crossbench.probes.perfetto.traceconv as cb_traceconv
 from crossbench import path as pth
 from crossbench.config import ConfigEnum
 from crossbench.helper.path_finder import TraceconvFinder
-from crossbench.parse import NumberParser, ObjectParser, PathParser
+from crossbench.parse import NumberParser, ObjectParser
 from crossbench.probes.chromium_probe import ChromiumProbe
 from crossbench.probes.probe import ProbeConfigParser, ProbeContext, ProbeKeyT
 from crossbench.probes.result_location import ResultLocation
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.plt.base import ListCmdArgs
   from crossbench.probes.results import ProbeResult
 
 # TODO: go over these again and clean the categories.
@@ -89,7 +88,7 @@ V8_TRACE_CONFIG: FrozenSet[str] = frozenset((
 V8_GC_STATS_TRACE_CONFIG: FrozenSet[str] = V8_TRACE_CONFIG | frozenset(
     ("disabled-by-default-v8.gc_stats",))
 
-TRACE_PRESETS: Dict[str, frozenset[str]] = {
+TRACE_PRESETS: dict[str, frozenset[str]] = {
     "empty": frozenset(),
     "minimal": MINIMAL_CONFIG,
     "devtools": DEVTOOLS_TRACE_CONFIG,
@@ -204,14 +203,7 @@ class TracingProbe(ChromiumProbe):
         help=("Choose between 'json' or the default 'proto' format. "
               "Perfetto proto output is converted automatically to the "
               "legacy json format."))
-    parser.add_argument(
-        "traceconv",
-        default=None,
-        type=PathParser.file_path,
-        help=(
-            "Path to the 'traceconv.py' helper on the runner platofrm "
-            "to convert '.proto' traces to legacy '.json'. "
-            "If not specified, tries to find it in a v8 or chromium checkout."))
+    cb_traceconv.add_argument(parser)
     return parser
 
   def __init__(self,
@@ -240,12 +232,7 @@ class TracingProbe(ChromiumProbe):
     self._record_format: RecordFormat = record_format
     self._traceconv: pth.LocalPath | None = traceconv
     if not traceconv and self._record_format == RecordFormat.PROTO:
-      self._find_traceconv()
-
-  def _find_traceconv(self) -> None:
-    if traceconv := TraceconvFinder(self.host_platform).path:
-      self._traceconv = self.host_platform.local_path(traceconv)
-      logging.debug("Using default traceconv: %s", traceconv)
+      self._traceconv = TraceconvFinder(self.host_platform).local_path
 
   @property
   @override
@@ -263,7 +250,7 @@ class TracingProbe(ChromiumProbe):
     return f"trace.{self._record_format.value}"  # pylint: disable=no-member
 
   @property
-  def traceconv(self) -> Optional[pth.LocalPath]:
+  def traceconv(self) -> pth.LocalPath | None:
     return self._traceconv
 
   @property
@@ -279,7 +266,7 @@ class TracingProbe(ChromiumProbe):
     return set(self._categories)
 
   @property
-  def trace_config_file(self) -> Optional[pth.LocalPath]:
+  def trace_config_file(self) -> pth.LocalPath | None:
     return self._trace_config
 
   @property
@@ -312,7 +299,6 @@ class TracingProbe(ChromiumProbe):
 
 
 class TracingProbeContext(ProbeContext[TracingProbe]):
-  _traceconv: pth.AnyPath | None
   _record_format: RecordFormat
 
   def setup(self) -> None:
@@ -328,28 +314,11 @@ class TracingProbeContext(ProbeContext[TracingProbe]):
   def teardown(self) -> ProbeResult:
     if self._record_format == RecordFormat.JSON:
       return self.browser_result(json=(self.result_path,))
-    traceconv: pth.LocalPath | None = self.probe.traceconv
-    result = self.browser_result(proto=(self.result_path,))
-    if not traceconv:
-      logging.info(
-          "No traceconv binary: skipping converting proto to legacy traces")
-      return result
-    proto_file = result.get("proto")
-    try:
-      legacy_json_file = self._convert_to_json(traceconv, proto_file)
-      return self.local_result(proto=(proto_file,), json=(legacy_json_file,))
-    except Exception as e:  # pylint: disable=broad-exception-caught
-      logging.error("traceconv failure, defaulting to .proto file: %s", e)
-      return self.local_result(proto=(proto_file,))
-
-  def _convert_to_json(self, traceconv: pth.LocalPath,
-                       local_proto: pth.LocalPath) -> pth.LocalPath:
-    logging.info("Converting to legacy .json trace on local machine: %s",
-                 self.result_path)
-    json_trace_file = local_proto.with_suffix(".json")
-    cmd: ListCmdArgs = [traceconv, "json", self.result_path, json_trace_file]
-    if not self.host_platform.is_posix:
-      python_executable: ListCmdArgs = [sys.argv[0]]
-      cmd = python_executable + cmd
-    self.host_platform.sh(*cmd)
-    return json_trace_file
+    # Use intermediate browser result to copy over remote files.
+    result = self.browser_result(trace=(self.result_path,))
+    trace_file = result.get("proto")
+    if legacy_json_file := cb_traceconv.convert_to_json(self.host_platform,
+                                                        self.probe.traceconv,
+                                                        trace_file):
+      return self.local_result(trace=(trace_file,), json=(legacy_json_file,))
+    return result

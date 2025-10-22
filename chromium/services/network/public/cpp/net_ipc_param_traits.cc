@@ -9,6 +9,7 @@
 #include "ipc/ipc_message_utils.h"
 #include "ipc/ipc_mojo_param_traits.h"
 #include "ipc/ipc_platform_file.h"
+#include "net/base/hash_value.h"
 #include "net/cert/cert_verify_result.h"
 #include "net/http/http_util.h"
 
@@ -40,6 +41,8 @@ void ParamTraits<net::AuthCredentials>::Log(const param_type& p,
   l->append("<AuthCredentials>");
 }
 
+// TODO(crbug.com/408018829): convert these to mojom StructTraits
+// LINT.IfChange(CertVerifyResult)
 void ParamTraits<net::CertVerifyResult>::Write(base::Pickle* m,
                                                const param_type& p) {
   WriteParam(m, p.verified_cert);
@@ -50,6 +53,7 @@ void ParamTraits<net::CertVerifyResult>::Write(base::Pickle* m,
   WriteParam(m, p.ocsp_result);
   WriteParam(m, p.scts);
   WriteParam(m, p.policy_compliance);
+  WriteParam(m, p.ct_requirement_status);
 }
 
 bool ParamTraits<net::CertVerifyResult>::Read(const base::Pickle* m,
@@ -61,27 +65,42 @@ bool ParamTraits<net::CertVerifyResult>::Read(const base::Pickle* m,
          ReadParam(m, iter, &r->public_key_hashes) &&
          ReadParam(m, iter, &r->is_issued_by_known_root) &&
          ReadParam(m, iter, &r->ocsp_result) && ReadParam(m, iter, &r->scts) &&
-         ReadParam(m, iter, &r->policy_compliance);
+         ReadParam(m, iter, &r->policy_compliance) &&
+         ReadParam(m, iter, &r->ct_requirement_status);
 }
+// LINT.ThenChange(/net/cert/cert_verify_result.h:CertVerifyResult)
 
 void ParamTraits<net::CertVerifyResult>::Log(const param_type& p,
                                              std::string* l) {
   l->append("<CertVerifyResult>");
 }
 
-void ParamTraits<net::HashValue>::Write(base::Pickle* m, const param_type& p) {
-  WriteParam(m, p.ToString());
+void ParamTraits<net::SHA256HashValue>::Write(base::Pickle* m,
+                                              const param_type& p) {
+  absl::InlinedVector<uint8_t, 32> bytes;
+  for (uint8_t byte : p) {
+    bytes.push_back(byte);
+  }
+  WriteParam(m, bytes);
 }
 
-bool ParamTraits<net::HashValue>::Read(const base::Pickle* m,
-                                       base::PickleIterator* iter,
-                                       param_type* r) {
-  std::string_view encoded;
-  return iter->ReadStringPiece(&encoded) && r->FromString(encoded);
+bool ParamTraits<net::SHA256HashValue>::Read(const base::Pickle* m,
+                                             base::PickleIterator* iter,
+                                             param_type* r) {
+  absl::InlinedVector<uint8_t, 32> bytes;
+  if (!ReadParam(m, iter, &bytes)) {
+    return false;
+  }
+  if (bytes.size() != 32) {
+    return false;
+  }
+  base::span(*r).copy_from(bytes);
+  return true;
 }
 
-void ParamTraits<net::HashValue>::Log(const param_type& p, std::string* l) {
-  l->append("<HashValue>");
+void ParamTraits<net::SHA256HashValue>::Log(const param_type& p,
+                                            std::string* l) {
+  l->append("<SHA256HashValue>");
 }
 
 void ParamTraits<net::IPEndPoint>::Write(base::Pickle* m, const param_type& p) {
@@ -529,11 +548,6 @@ void ParamTraits<net::SchemefulSite>::Log(const net::SchemefulSite& p,
 }  // namespace IPC
 
 // Generation of IPC definitions.
-
-// Generate constructors.
-#undef SERVICES_NETWORK_PUBLIC_CPP_NET_IPC_PARAM_TRAITS_H_
-#include "ipc/struct_constructor_macros.h"
-#include "net_ipc_param_traits.h"
 
 // Generate param traits write methods.
 #undef SERVICES_NETWORK_PUBLIC_CPP_NET_IPC_PARAM_TRAITS_H_

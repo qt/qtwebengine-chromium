@@ -9,7 +9,7 @@ import datetime as dt
 import itertools
 import json
 import logging
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, MutableMapping, Optional, Type
 
 from typing_extensions import override
 
@@ -20,11 +20,11 @@ from crossbench.helper import url_helper
 from crossbench.probes.helper import Flatten
 from crossbench.probes.json import JsonResultProbe, JsonResultProbeContext
 from crossbench.probes.metric import Metric, MetricsMerger
-from crossbench.probes.results import ProbeResult, ProbeResultDict
 from crossbench.stories.press_benchmark import PressBenchmarkStory
 
 if TYPE_CHECKING:
   from crossbench.path import LocalPath
+  from crossbench.probes.results import ProbeResult, ProbeResultDict
   from crossbench.runner.actions import Actions
   from crossbench.runner.groups.browsers import BrowsersRunGroup
   from crossbench.runner.groups.stories import StoriesRunGroup
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
   from crossbench.types import Json
 
 
-def _clean_up_path_segments(path: Tuple[str, ...]) -> Optional[str]:
+def _clean_up_path_segments(path: tuple[str, ...]) -> Optional[str]:
   name = path[-1]
   if name.startswith("segment") or name == "data":
     return None
@@ -92,8 +92,8 @@ class MotionMark1Probe(BenchmarkProbeMixin, JsonResultProbe, abc.ABC):
         self._log_result_metrics(data)
 
   @override
-  def _extract_result_metrics_table(self, metrics: Dict[str, Any],
-                                    table: Dict[str, List[str]]) -> None:
+  def _extract_result_metrics_table(self, metrics: dict[str, Any],
+                                    table: dict[str, list[str]]) -> None:
     for metric_key, metric in metrics.items():
       if not self._valid_metric_key(metric_key):
         continue
@@ -119,7 +119,7 @@ class MotionMark1ProbeContext(JsonResultProbeContext):
     return actions.js(self.JS)
 
   @override
-  def flatten_json_data(self, json_data: List) -> Json:
+  def flatten_json_data(self, json_data: list) -> Json:
     assert isinstance(json_data, list) and len(json_data) == 1, (
         "Motion12MarkProbe requires a results list.")
     return Flatten(json_data[0], key_fn=_clean_up_path_segments).data
@@ -229,7 +229,7 @@ class MotionMark1Story(PressBenchmarkStory):
 
   @classmethod
   @override
-  def default_story_names(cls) -> Tuple[str, ...]:
+  def default_story_names(cls) -> tuple[str, ...]:
     return cls.ALL_STORIES["MotionMark"]
 
   @property
@@ -238,21 +238,23 @@ class MotionMark1Story(PressBenchmarkStory):
     return dt.timedelta(seconds=35)
 
   @property
-  def url_params(self) -> Dict[str, str]:
+  def url_params(self) -> MutableMapping[str, str]:
     return {}
 
-  def prepare_test_url(self) -> str:
+  @override
+  def get_run_url(self, run: Run) -> str:
+    url = super().get_run_url(run)
     if (url_params := self.url_params) or not self.has_default_substories:
-      updated_url = url_helper.update_url_query(f"{self.url}/developer.html",
-                                                url_params)
-      logging.info("CUSTOM URL: %s", updated_url)
-      return updated_url
-    return self.url
+      dev_url: str = f"{url}/developer.html"
+      url = url_helper.update_url_query(dev_url, url_params)
+    if url != self.url:
+      logging.info("CUSTOM URL: %s", url)
+    return url
 
   @override
   def setup(self, run: Run) -> None:
-    test_url = self.prepare_test_url()
-    use_developer_url = test_url != self.url
+    test_url = self.get_run_url(run)
+    use_developer_url = "/developer.html" in test_url
     with run.actions("Setup") as actions:
       actions.show_url(
           url=test_url,
@@ -303,7 +305,7 @@ class MotionMark1Story(PressBenchmarkStory):
           return window.benchmarkRunnerClient.results._results != undefined
           """,
           0.5,
-          self.slow_duration,
+          timeout=self.slow_duration,
           delay=self.substory_duration / 4)
 
 

@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "ui/accessibility/platform/ax_platform_node_base.h"
+
+#include "base/strings/string_number_conversions.h"
 #include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/accessibility/platform/ax_platform_for_test.h"
@@ -559,7 +561,7 @@ TEST_F(AXPlatformNodeTest, CompareTo) {
   // comparable.
   AXPlatformNodeDelegate detached_delegate;
   AXPlatformNode::Pointer detached_node =
-      AXPlatformNode::Create(&detached_delegate);
+      AXPlatformNode::Create(detached_delegate);
   EXPECT_EQ(std::nullopt,
             n1->CompareTo(static_cast<AXPlatformNodeBase&>(*detached_node)));
   detached_node = nullptr;

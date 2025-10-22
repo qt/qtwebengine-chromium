@@ -11,21 +11,13 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/task/single_thread_task_runner.h"
+#include "media/base/media_switches.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/blink/renderer/platform/wtf/functional.h"
 
 namespace blink {
-
-// Forces SuggestProviderState() to only suggest deferring when range requests
-// aren't supported. Will cause us to buffer up to preload then release the
-// loader -- creating a new one to refill beyond the preload amount. Increases
-// the number of network connections used during loading, but may prevent hangs.
-BASE_FEATURE(kMultiBufferNeverDefer,
-             "MultiBufferNeverDefer",
-             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Prune 80 blocks per 30 seconds.
 // This means a full cache will go away in ~5 minutes.
@@ -37,7 +29,7 @@ enum {
 // Returns the block ID closest to (but less or equal than) |pos| from |index|.
 template <class T>
 static MultiBuffer::BlockId ClosestPreviousEntry(
-    const std::map<MultiBuffer::BlockId, T>& index,
+    const base::flat_map<MultiBuffer::BlockId, T>& index,
     MultiBuffer::BlockId pos) {
   auto i = index.upper_bound(pos);
   DCHECK(i == index.end() || i->first > pos);
@@ -53,7 +45,7 @@ static MultiBuffer::BlockId ClosestPreviousEntry(
 // from |index|.
 template <class T>
 static MultiBuffer::BlockId ClosestNextEntry(
-    const std::map<MultiBuffer::BlockId, T>& index,
+    const base::flat_map<MultiBuffer::BlockId, T>& index,
     MultiBuffer::BlockId pos) {
   auto i = index.lower_bound(pos);
   if (i == index.end()) {
@@ -351,7 +343,7 @@ std::unique_ptr<MultiBuffer::DataProvider> MultiBuffer::RemoveProvider(
     DataProvider* provider) {
   BlockId pos = provider->Tell();
   auto iter = writer_index_.find(pos);
-  CHECK(iter != writer_index_.end(), base::NotFatalUntil::M130);
+  CHECK(iter != writer_index_.end());
   DCHECK_EQ(iter->second.get(), provider);
   std::unique_ptr<DataProvider> ret = std::move(iter->second);
   writer_index_.erase(iter);
@@ -379,10 +371,6 @@ MultiBuffer::ProviderState MultiBuffer::SuggestProviderState(
     MultiBufferBlockId previous_writer_pos =
         ClosestPreviousEntry(writer_index_, pos - 1);
     if (previous_writer_pos < previous_reader_pos) {
-      if (base::FeatureList::IsEnabled(kMultiBufferNeverDefer) &&
-          RangeSupported()) {
-        return ProviderStateDead;
-      }
       return ProviderStateDefer;
     }
   }
@@ -465,12 +453,6 @@ void MultiBuffer::OnDataProviderEvent(DataProvider* provider_tmp) {
         RemoveProvider(provider_tmp);
         break;
     }
-  }
-}
-
-void MultiBuffer::StopWriters() {
-  for (auto& entry : writer_index_) {
-    entry.second->Invalidate();
   }
 }
 

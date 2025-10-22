@@ -1089,7 +1089,10 @@ void WhitespaceHeaderTestHelper(
   SCOPED_TRACE(EscapeString(message));
   size_t bytes_consumed = framer.ProcessInput(message.data(), message.size());
   EXPECT_EQ(message.size(), bytes_consumed);
-  if (expected_error_code == BalsaFrameEnums::BALSA_NO_ERROR) {
+  if (expected_error_code == BalsaFrameEnums::BALSA_NO_ERROR ||
+      // Obs fold currently is not treated as an error, but only a warning.
+      expected_error_code == BalsaFrameEnums::OBS_FOLD_IN_HEADERS ||
+      expected_error_code == BalsaFrameEnums::OBS_FOLD_IN_TRAILERS) {
     EXPECT_EQ(false, framer.Error());
   } else {
     EXPECT_EQ(true, framer.Error());
@@ -1119,13 +1122,13 @@ TEST(HTTPBalsaFrame, WhitespaceInRequestsProcessedProperly) {
       "test: test\r\n"
       " continued\r\n"
       "\r\n",
-      true, BalsaFrameEnums::BALSA_NO_ERROR);
+      true, BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
   WhitespaceHeaderTestHelper(
       "GET / HTTP/1.1\r\n"
       "test: test\r\n"
       " \r\n"
       "\r\n",
-      true, BalsaFrameEnums::BALSA_NO_ERROR);
+      true, BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
   SCOPED_TRACE(
       "Test a confusing and ambiguous case: is it a line continuation or a new "
       "header field?");
@@ -1134,7 +1137,7 @@ TEST(HTTPBalsaFrame, WhitespaceInRequestsProcessedProperly) {
       "test: test\r\n"
       "  confusing:continued\r\n"
       "\r\n",
-      true, BalsaFrameEnums::BALSA_NO_ERROR);
+      true, BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
 }
 
 TEST(HTTPBalsaFrame, WhitespaceInResponsesProcessedProperly) {
@@ -1154,14 +1157,14 @@ TEST(HTTPBalsaFrame, WhitespaceInResponsesProcessedProperly) {
       " continued\r\n"
       "Content-Length: 0\r\n"
       "\r\n",
-      false, BalsaFrameEnums::BALSA_NO_ERROR);
+      false, BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
   WhitespaceHeaderTestHelper(
       "HTTP/1.0 200 Reason\r\n"
       "test: test\r\n"
       " \r\n"
       "Content-Length: 0\r\n"
       "\r\n",
-      false, BalsaFrameEnums::BALSA_NO_ERROR);
+      false, BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
   SCOPED_TRACE(
       "Test a confusing and ambiguous case: is it a line continuation or a new "
       "header field?");
@@ -1171,7 +1174,7 @@ TEST(HTTPBalsaFrame, WhitespaceInResponsesProcessedProperly) {
       "   confusing:continued\r\n"
       "Content-Length: 0\r\n"
       "\r\n",
-      false, BalsaFrameEnums::BALSA_NO_ERROR);
+      false, BalsaFrameEnums::OBS_FOLD_IN_HEADERS);
 }
 
 TEST_F(HTTPBalsaFrameTest, VisitorInvokedProperlyForTrivialRequest) {
@@ -2045,6 +2048,82 @@ TEST_F(HTTPBalsaFrameTest,
   EXPECT_EQ(message_body, body_input);
   EXPECT_EQ(message_body_data, body_data);
 }
+
+// Validates that chunked requests terminated by \r\n\n are accepted.
+// Note that this does not comply with
+// https://datatracker.ietf.org/doc/html/rfc9112#name-chunked-transfer-coding
+// which states that both `last-chunk` _and_ `chunked_body` must end with CR_LF.
+TEST_F(HTTPBalsaFrameTest,
+       TransferEncodingChunkedFramesMessagesEndingWithCR_LF_LF) {
+  EXPECT_CALL(visitor_mock_, ProcessHeaders(_));
+  EXPECT_CALL(visitor_mock_, HeaderDone());
+  const std::string message1 =
+      "POST / HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n";
+  EXPECT_EQ(message1.size(),
+            balsa_frame_.ProcessInput(message1.data(), message1.size()));
+  EXPECT_FALSE(balsa_frame_.Error())
+      << BalsaFrameEnums::ErrorCodeToString(balsa_frame_.ErrorCode());
+
+  const std::string chunk_size = "2\r\n";
+  EXPECT_EQ(chunk_size.size(),
+            balsa_frame_.ProcessInput(chunk_size.data(), chunk_size.size()));
+  EXPECT_FALSE(balsa_frame_.Error())
+      << BalsaFrameEnums::ErrorCodeToString(balsa_frame_.ErrorCode());
+
+  EXPECT_CALL(visitor_mock_, OnBodyChunkInput("AA"));
+  EXPECT_CALL(visitor_mock_, MessageDone());
+  const std::string chunks =
+      "AA\r\n"
+      "0\r\n"
+      "\n";
+  ASSERT_EQ(chunks.size(),
+            balsa_frame_.ProcessInput(chunks.data(), chunks.size()));
+
+  EXPECT_EQ(BalsaFrameEnums::BALSA_NO_ERROR, balsa_frame_.ErrorCode());
+  // According to the RFC, this should be false!
+  EXPECT_TRUE(balsa_frame_.MessageFullyRead());
+}
+
+TEST_F(
+    HTTPBalsaFrameTest,
+    TransferEncodingChunkedFramesMessagesEndingWithCR_LF_LFFailsWhenPolicySet) {
+  HttpValidationPolicy http_validation_policy{
+      .require_chunked_body_end_with_crlf_crlf = true};
+  balsa_frame_.set_http_validation_policy(http_validation_policy);
+  EXPECT_CALL(visitor_mock_, ProcessHeaders(_));
+  EXPECT_CALL(visitor_mock_, HeaderDone());
+  const std::string message1 =
+      "POST / HTTP/1.1\r\n"
+      "Host: 1.1.1.1\r\n"
+      "Transfer-Encoding: chunked\r\n"
+      "\r\n";
+  EXPECT_EQ(message1.size(),
+            balsa_frame_.ProcessInput(message1.data(), message1.size()));
+  EXPECT_FALSE(balsa_frame_.Error())
+      << BalsaFrameEnums::ErrorCodeToString(balsa_frame_.ErrorCode());
+
+  const std::string chunk_size = "2\r\n";
+  EXPECT_EQ(chunk_size.size(),
+            balsa_frame_.ProcessInput(chunk_size.data(), chunk_size.size()));
+  EXPECT_FALSE(balsa_frame_.Error())
+      << BalsaFrameEnums::ErrorCodeToString(balsa_frame_.ErrorCode());
+
+  EXPECT_CALL(visitor_mock_, OnBodyChunkInput("AA"));
+  EXPECT_CALL(visitor_mock_, MessageDone()).Times(0);
+  const std::string chunks =
+      "AA\r\n"
+      "0\r\n"
+      "\n";
+  ASSERT_EQ(chunks.size(),
+            balsa_frame_.ProcessInput(chunks.data(), chunks.size()));
+
+  EXPECT_EQ(BalsaFrameEnums::INVALID_CHUNK_FRAMING, balsa_frame_.ErrorCode());
+  EXPECT_FALSE(balsa_frame_.MessageFullyRead());
+}
+
 TEST_F(HTTPBalsaFrameTest,
        VisitorInvokedProperlyForRequestWithTransferEncodingAndTrailers) {
   std::string message_headers =
@@ -2115,7 +2194,7 @@ TEST_F(HTTPBalsaFrameTest,
                                       message.size()));
   EXPECT_TRUE(balsa_frame_.MessageFullyRead());
   EXPECT_FALSE(balsa_frame_.Error());
-  EXPECT_EQ(BalsaFrameEnums::BALSA_NO_ERROR, balsa_frame_.ErrorCode());
+  EXPECT_EQ(BalsaFrameEnums::OBS_FOLD_IN_HEADERS, balsa_frame_.ErrorCode());
 
   EXPECT_EQ(message_body, body_input);
   EXPECT_EQ(message_body_data, body_data);
@@ -4654,6 +4733,7 @@ TEST_F(HTTPBalsaFrameTest, Http09) {
             balsa_frame_.ErrorCode());
 }
 
+// A.k.a., ObsFoldAllowed.
 TEST_F(HTTPBalsaFrameTest, ContinuationAllowed) {
   // See RFC7230 Section 3.2 for the definition of obs-fold:
   // https://httpwg.org/specs/rfc7230.html#header.fields.
@@ -4674,12 +4754,16 @@ TEST_F(HTTPBalsaFrameTest, ContinuationAllowed) {
   fake_headers.AddKeyValue("key2", "value\n includes obs-fold");
   fake_headers.AddKeyValue("key3", "value ends in obs-fold");
   EXPECT_CALL(visitor_mock_, ProcessHeaders(fake_headers));
+  EXPECT_CALL(visitor_mock_,
+              HandleWarning(BalsaFrameEnums::OBS_FOLD_IN_HEADERS))
+      .Times(3);
 
   EXPECT_EQ(message.size(),
             balsa_frame_.ProcessInput(message.data(), message.size()));
   EXPECT_FALSE(balsa_frame_.Error());
 }
 
+// A.k.a., ObsFoldDisallowed.
 TEST_F(HTTPBalsaFrameTest, ContinuationDisallowed) {
   HttpValidationPolicy http_validation_policy;
   http_validation_policy.disallow_header_continuation_lines = true;

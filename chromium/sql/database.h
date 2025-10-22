@@ -20,13 +20,13 @@
 #include "base/check_op.h"
 #include "base/component_export.h"
 #include "base/containers/flat_map.h"
-#include "base/feature_list.h"
 #include "base/files/file_path.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/location.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/notreached.h"
@@ -34,14 +34,13 @@
 #include "base/strings/cstring_view.h"
 #include "base/threading/scoped_blocking_call.h"
 #include "base/time/time.h"
-#include "base/trace_event/base_tracing.h"
 #include "base/types/pass_key.h"
 #include "sql/internal_api_token.h"
-#include "sql/sql_features.h"
 #include "sql/sql_name_variants.h"
 #include "sql/sqlite_result_code.h"
 #include "sql/sqlite_result_code_values.h"
 #include "sql/statement_id.h"
+#include "sql/streaming_blob_handle.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_proto.h"
 
 // Forward declaration for SQLite structures. Headers in the public sql:: API
@@ -53,6 +52,10 @@ struct sqlite3_stmt;
 namespace base::trace_event {
 class ProcessMemoryDump;
 }  // namespace base::trace_event
+
+namespace perfetto {
+class NamedTrack;
+}
 
 namespace perfetto::protos::pbzero {
 class ChromeSqlDiagnostics;
@@ -115,10 +118,6 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
   // to prevent the database files from being opened from any process including
   // being opened a second time by the hosting process.
   //
-  // A side effect of setting this flag is that the database cannot be
-  // preloaded. If you would like to set this flag on a preloaded database,
-  // please reach out to a //sql owner.
-  //
   // This option is experimental and will be merged into the `exclusive_locking`
   // option above if proven to cause no OS compatibility issues.
   // TODO(crbug.com/40262539): Merge into above option, if possible.
@@ -139,6 +138,8 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
   //
   // Note: Changing page size is not supported when in WAL mode. So running
   // 'PRAGMA page_size = <new-size>' will result in no-ops.
+  //
+  // Note: This option is not supported in read-only mode.
   //
   // More details at https://www.sqlite.org/wal.html
   DatabaseOptions& set_wal_mode(bool wal_mode) {
@@ -177,6 +178,8 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
   // until the data is written to the persistent media. This guarantees
   // durability in the event of power loss, which is needed to guarantee the
   // integrity of non-WAL databases.
+  //
+  // Note: This option is not supported in read-only mode.
   DatabaseOptions& set_flush_to_media(bool flush_to_media) {
     flush_to_media_ = flush_to_media;
     return *this;
@@ -208,6 +211,8 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
   //
   // 0 invokes SQLite's default, which is currently to size up the cache to use
   // exactly 2,048,000 bytes of RAM.
+  //
+  // Note: This option is not supported in read-only mode.
   DatabaseOptions& set_cache_size(int cache_size) {
     cache_size_ = cache_size;
     return *this;
@@ -239,6 +244,17 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
     return *this;
   }
 
+  // If true, enables SQL triggers for this database.
+  //
+  // The use of triggers should be thoughtful. See README.md for details.
+  //
+  // If this option is false, CREATE TRIGGER and DROP TRIGGER succeed, but the
+  // triggers won't fire.
+  DatabaseOptions& set_enable_triggers(bool enable_triggers) {
+    enable_triggers_ = enable_triggers;
+    return *this;
+  }
+
   // If non-null, specifies the vfs implementation for the database to look for.
   // Most use-cases do not require the use of a
   // VFS(https://www.sqlite.org/vfs.html). This option should only be used when
@@ -256,6 +272,16 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
     return *this;
   }
 
+  // If true, the database is opened in read-only mode. All operations requiring
+  // write access will fail, including insert statements and some pragmas.
+  // Queries on the database will fail in the presence of a hot journal since
+  // the database file can't be modified to apply it. This must be used in the
+  // VFS returns read-only file descriptors, but not otherwise.
+  DatabaseOptions& set_read_only(bool read_only) {
+    read_only_ = read_only;
+    return *this;
+  }
+
  private:
   friend class Database;
   FRIEND_TEST_ALL_PREFIXES(DatabaseOptionsTest,
@@ -265,8 +291,7 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
 
   bool exclusive_locking_ = true;
   bool exclusive_database_file_lock_ = false;
-  bool wal_mode_ =
-      base::FeatureList::IsEnabled(sql::features::kEnableWALModeByDefault);
+  bool wal_mode_ = false;
   bool flush_to_media_ = false;
   int page_size_ = kDefaultPageSize;
   int cache_size_ = 0;
@@ -275,6 +300,8 @@ struct COMPONENT_EXPORT(SQL) DatabaseOptions {
   bool enable_views_discouraged_ = false;
   const char* vfs_name_discouraged_ = nullptr;
   bool mmap_enabled_ = true;
+  bool read_only_ = false;
+  bool enable_triggers_ = false;
 };
 
 // Holds database diagnostics in a structured format.
@@ -488,19 +515,6 @@ class COMPONENT_EXPORT(SQL) Database {
   // an uninitialized or already-closed database.
   void Close();
 
-  // Hints the file system that the database will be accessed soon.
-  //
-  // This method should be called on databases that are on the critical path to
-  // Chrome startup. Informing the filesystem about our expected access pattern
-  // early on reduces the likelihood that we'll be blocked on disk I/O. This has
-  // a high impact on startup time.
-  //
-  // This method should not be used for non-critical databases. While using it
-  // will likely improve micro-benchmarks involving one specific database,
-  // overuse risks randomizing the disk I/O scheduler, slowing down Chrome
-  // startup.
-  void Preload();
-
   // Release all non-essential memory associated with this database connection.
   void TrimMemory();
 
@@ -691,6 +705,17 @@ class COMPONENT_EXPORT(SQL) Database {
   scoped_refptr<Database::StatementRef> GetReadonlyStatement(
       base::cstring_view sql);
 
+  // Opens a blob for streaming. Returns nullopt on failure. Note that this
+  // should only be called if the given table, column, and row is known to
+  // exist --- everything else is an error. For a list of failure modes, see
+  // https://www.sqlite.org/c3ref/blob_open.html
+  //
+  // See `StreamingBlobHandle` docs for notes on lifetime.
+  std::optional<StreamingBlobHandle> GetStreamingBlob(base::cstring_view table,
+                                                      base::cstring_view column,
+                                                      int64_t row_id,
+                                                      bool readonly);
+
   // Performs a passive checkpoint on the main attached database if it is in
   // WAL mode. Returns true if the checkpoint was successful and false in case
   // of an error. It is a no-op if the database is not in WAL mode.
@@ -817,9 +842,12 @@ class COMPONENT_EXPORT(SQL) Database {
   FRIEND_TEST_ALL_PREFIXES(SQLDatabaseTest, ComputeMmapSizeForOpen);
   FRIEND_TEST_ALL_PREFIXES(SQLDatabaseTest, ComputeMmapSizeForOpenAltStatus);
   FRIEND_TEST_ALL_PREFIXES(SQLDatabaseTest, OnMemoryDump);
+  FRIEND_TEST_ALL_PREFIXES(SQLDatabaseTest,
+                           RazeAndPoison_ComputeMmapSizeForOpen);
   FRIEND_TEST_ALL_PREFIXES(SQLDatabaseTest, RegisterIntentToUpload);
   FRIEND_TEST_ALL_PREFIXES(SQLiteFeaturesTest, WALNoClose);
   FRIEND_TEST_ALL_PREFIXES(SQLEmptyPathDatabaseTest, EmptyPathTest);
+  FRIEND_TEST_ALL_PREFIXES(StreamingBlobHandleTest, Basic);
 
   // A scoped utility to setup error reporting during the `Open()` operation
   class ScopedOpenErrorReporter {
@@ -863,6 +891,11 @@ class COMPONENT_EXPORT(SQL) Database {
   // Internal close function used by Close() and RazeAndPoison().
   // |forced| indicates that orderly-shutdown checks should not apply.
   void CloseInternal(bool forced);
+
+  // Called when a blob opened with `GetStreamingBlob()` is closed. `result` may
+  // or may not be an error; if it is, `error_source` identifies which sqlite3
+  // call caused the error.
+  void OnStreamingBlobClosed(SqliteResultCode result, const char* error_source);
 
   // Construct a ScopedBlockingCall to annotate IO calls, but only if
   // database wasn't open in memory. ScopedBlockingCall uses |from_here| to
@@ -926,6 +959,27 @@ class COMPONENT_EXPORT(SQL) Database {
     // this will return nullptr.
     sqlite3_stmt* stmt() const { return stmt_; }
 
+    // Assumes ownership of `blob`.
+    //
+    // To be called BEFORE the data in `blob` will be bound to a SQLite
+    // statement SQLite. SQLite assumes the pointer will remain valid until the
+    // statement is finalized or the parameter is unbound.
+    //
+    // A span pointing to the newly owned memory is returned --- this is the
+    // pointer that should be passed to sqlite3 functions.
+    base::span<const uint8_t> TakeBlobMemory(
+        int index,
+        scoped_refptr<base::RefCountedMemory> blob);
+
+    // Releases memory passed by `TakeBlobMemory()`, if any. The caller should
+    // also tell SQLite to unbind or rebind the parameter (i.e. update the
+    // binding that was previously set with TakeBlobMemory's output).
+    void ClearBlobMemory(int index);
+
+    // Resets the statement and, if `clear_bound_variables` is true, drops
+    // parameter bindings, including dropping `bound_blobs_`.
+    void Reset(bool clear_bound_variables);
+
     // Destroys the compiled statement and sets it to nullptr. The statement
     // will no longer be active. |forced| is used to indicate if
     // orderly-shutdown checks should apply (see Database::RazeAndPoison()).
@@ -945,6 +999,13 @@ class COMPONENT_EXPORT(SQL) Database {
     friend class base::RefCounted<StatementRef>;
 
     ~StatementRef();
+
+    // Holds onto memory that is to be used by the statement. These blobs have
+    // been bound with `SQLITE_STATIC`, see
+    // https://www.sqlite.org/c3ref/bind_blob.html for docs.
+    // Note that value pointer stability is important, and that's granted by
+    // scoped_refptr.
+    base::flat_map<int, scoped_refptr<base::RefCountedMemory>> bound_blobs_;
 
     raw_ptr<Database> database_;
     raw_ptr<sqlite3_stmt> stmt_;
@@ -974,6 +1035,10 @@ class COMPONENT_EXPORT(SQL) Database {
   void OnSqliteError(SqliteErrorCode sqlite_error_code,
                      Statement* statement,
                      const char* sql_statement);
+
+  // Raze the database to the ground. This is the internal version called by
+  // Raze(...).
+  bool RazeInternal();
 
   // Like Execute(), but returns a SQLite result code.
   //
@@ -1052,12 +1117,6 @@ class COMPONENT_EXPORT(SQL) Database {
   // This method must only be called while the database is successfully opened.
   sqlite3_file* GetSqliteVfsFile();
 
-  // Records a histogram for an integer value. The histogram named `name_prefix`
-  // suffixed with this database's histogram tag.
-  void RecordIntegerHistogram(std::string_view name_prefix,
-                              int value,
-                              int exclusive_max_value) const;
-
   // Records a histogram named `name_prefix` suffixed with this database's
   // histogram tag. For instance, `RecordTimingHistogram("Foo.", ...)` called on
   // a database with the tag "Bar" will record into "Foo.Bar". This function
@@ -1091,6 +1150,12 @@ class COMPONENT_EXPORT(SQL) Database {
   // us when it's created or destroyed. This allows us to potentially close
   // any open statements when we encounter an error.
   std::set<raw_ptr<StatementRef>> open_statements_;
+
+  // The number of blobs open for streaming, tracked for debugging purposes.
+  size_t outstanding_blob_count_ = 0;
+
+  // When non-zero, indicates that `this` is inside `OnSqliteError()`.
+  size_t handling_error_nesting_ = 0;
 
   // Number of currently-nested transactions.
   int transaction_nesting_ = 0;
@@ -1146,6 +1211,11 @@ class COMPONENT_EXPORT(SQL) Database {
   // during `OpenInternal` or `Execute`s triggered from `Open`.
   base::RepeatingCallback<void(SqliteResultCode)>
       open_error_reporting_callback_;
+
+  // Weak factory for tracking lifetime of `this` (as opposed to
+  // `weak_factory_`, which will also invalidate pointers if the database is
+  // closed).
+  base::WeakPtrFactory<Database> weak_factory_lifetime_tracker_{this};
 
   // Vends WeakPtr<Database> for internal scoping helpers.
   base::WeakPtrFactory<Database> weak_factory_{this};

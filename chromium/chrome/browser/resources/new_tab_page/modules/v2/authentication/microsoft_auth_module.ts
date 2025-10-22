@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import '../../module_header.js';
+import '../module_header.js';
 
 import {CrLitElement} from 'chrome://resources/lit/v3_0/lit.rollup.js';
 
 import {I18nMixinLit, loadTimeData} from '../../../i18n_setup.js';
+import {recordEnumeration} from '../../../metrics_utils.js';
 import type {MicrosoftAuthPageHandlerRemote} from '../../../microsoft_auth.mojom-webui.js';
 import {AuthType} from '../../../ntp_microsoft_auth_shared_ui.mojom-webui.js';
 import {ParentTrustedDocumentProxy} from '../../microsoft_auth_frame_connector.js';
@@ -78,6 +79,7 @@ export class MicrosoftAuthModuleElement extends MicrosoftAuthModuleElementBase {
 
   protected onDisableButtonClick_() {
     const disableEvent = new CustomEvent('disable-module', {
+      bubbles: true,
       composed: true,
       detail: {
         message: loadTimeData.getStringF(
@@ -107,7 +109,7 @@ export class MicrosoftAuthModuleElement extends MicrosoftAuthModuleElementBase {
     const proxyInstance = ParentTrustedDocumentProxy.getInstance();
     if (proxyInstance) {
       proxyInstance.getChildDocument().acquireTokenPopup();
-      chrome.metricsPrivate.recordEnumerationValue(
+      recordEnumeration(
           `NewTabPage.MicrosoftAuth.AuthStarted`, AuthType.kPopup,
           AuthType.MAX_VALUE + 1);
     }

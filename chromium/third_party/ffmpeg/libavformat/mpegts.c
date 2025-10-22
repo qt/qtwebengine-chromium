@@ -21,6 +21,7 @@
 
 #include "config_components.h"
 
+#include "libavutil/attributes_internal.h"
 #include "libavutil/buffer.h"
 #include "libavutil/crc.h"
 #include "libavutil/internal.h"
@@ -274,7 +275,7 @@ typedef struct PESContext {
     int merged_st;
 } PESContext;
 
-extern const FFInputFormat ff_mpegts_demuxer;
+EXTERN const FFInputFormat ff_mpegts_demuxer;
 
 static struct Program * get_program(MpegTSContext *ts, unsigned int programid)
 {
@@ -939,6 +940,8 @@ static int mpegts_set_stream_info(AVStream *st, PESContext *pes,
     mpegts_find_stream_type(st, pes->stream_type, ISO_types);
     if (pes->stream_type == STREAM_TYPE_AUDIO_MPEG2 || pes->stream_type == STREAM_TYPE_AUDIO_AAC)
         sti->request_probe = 50;
+    if (pes->stream_type == STREAM_TYPE_PRIVATE_DATA)
+        sti->request_probe = AVPROBE_SCORE_STREAM_RETRY;
     if ((prog_reg_desc == AV_RL32("HDMV") ||
          prog_reg_desc == AV_RL32("HDPR")) &&
         st->codecpar->codec_id == AV_CODEC_ID_NONE) {
@@ -2507,7 +2510,7 @@ static void pmt_cb(MpegTSFilter *filter, const uint8_t *section, int section_len
         if (!st)
             goto out;
 
-        if (pes && !pes->stream_type)
+        if (pes && pes->stream_type != stream_type)
             mpegts_set_stream_info(st, pes, stream_type, prog_reg_desc);
 
         add_pid_to_program(prg, pid);

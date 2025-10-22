@@ -11,10 +11,10 @@
 #ifndef API_TEST_MOCK_SESSION_DESCRIPTION_INTERFACE_H_
 #define API_TEST_MOCK_SESSION_DESCRIPTION_INTERFACE_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
-#include <utility>
-#include <vector>
+#include <type_traits>
 
 #include "api/jsep.h"
 #include "test/gmock.h"
@@ -33,11 +33,8 @@ class MockSessionDescriptionInterface : public SessionDescriptionInterface {
   MOCK_METHOD(std::string, session_version, (), (const, override));
   MOCK_METHOD(SdpType, GetType, (), (const, override));
   MOCK_METHOD(std::string, type, (), (const, override));
-  MOCK_METHOD(bool, AddCandidate, (const IceCandidateInterface*), (override));
-  MOCK_METHOD(size_t,
-              RemoveCandidates,
-              (const std::vector<webrtc::Candidate>&),
-              (override));
+  MOCK_METHOD(bool, AddCandidate, (const IceCandidate*), (override));
+  MOCK_METHOD(bool, RemoveCandidate, (const IceCandidate*), (override));
   MOCK_METHOD(size_t, number_of_mediasections, (), (const, override));
   MOCK_METHOD(const IceCandidateCollection*,
               candidates,

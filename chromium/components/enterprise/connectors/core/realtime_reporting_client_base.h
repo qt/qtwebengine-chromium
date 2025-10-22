@@ -69,6 +69,20 @@ class RealtimeReportingClientBase : public KeyedService,
                                           const base::Time& time,
                                           bool include_profile_user_name);
 
+  // Return the user name associated with the profile.
+  virtual std::string GetProfileUserName() = 0;
+
+  // Sub-methods called by ReportEventWithTimestamp() to provide profile related
+  // information.
+  virtual std::string GetProfileIdentifier() = 0;
+
+  // Sub-methods called by ReportEventWithTimestamp() to provide content area
+  // account email.
+  virtual std::string GetContentAreaAccountEmail(const GURL& url) = 0;
+
+  // Returns whether device info should be reported for browser or profile.
+  virtual bool ShouldIncludeDeviceInfo(bool per_profile) = 0;
+
  protected:
   // Sub-method called by InitRealtimeReportingClient() to make appropriate
   // verifications and initialize the profile reporting client. Returns a policy
@@ -82,11 +96,6 @@ class RealtimeReportingClientBase : public KeyedService,
   // Returns the browser client id required for initializing browser reporting
   // client.
   virtual std::string GetBrowserClientId() = 0;
-
-  // Sub-methods called by ReportEventWithTimestamp() to provide profile related
-  // information.
-  virtual std::string GetProfileIdentifier() = 0;
-  virtual std::string GetProfileUserName() = 0;
 
   // Sub-method called by ReportEventWithTimestamp() to collect device signals
   // on Windows/Mac/Linux platforms. Regardless of collecting device signals or
@@ -105,23 +114,22 @@ class RealtimeReportingClientBase : public KeyedService,
       const ReportingSettings& settings) = 0;
 #endif
 
-  // Returns whether device info should be reported for browser or profile.
-  virtual bool ShouldIncludeDeviceInfo(bool per_profile) = 0;
-
   // Callback used with UploadSecurityEventReport() to upload events to the
   // reporting server.
   virtual void UploadCallbackDeprecated(
       base::Value::Dict event_wrapper,
       bool per_profile,
       policy::CloudPolicyClient* client,
-      EnterpriseReportingEventType eventType,
+      EnterpriseReportingEventType event_type,
+      base::TimeTicks upload_started_at,
       policy::CloudPolicyClient::Result upload_result) = 0;
 
   virtual void UploadCallback(
       ::chrome::cros::reporting::proto::UploadEventsRequest request,
       bool per_profile,
       policy::CloudPolicyClient* client,
-      EnterpriseReportingEventType eventType,
+      EnterpriseReportingEventType event_type,
+      base::TimeTicks upload_started_at,
       policy::CloudPolicyClient::Result upload_result) = 0;
 
   // Returns a dictionary of information added to reporting events,
@@ -139,11 +147,29 @@ class RealtimeReportingClientBase : public KeyedService,
   // with CBCM and the appropriate policies are enabled.
   void InitRealtimeReportingClient(const ReportingSettings& settings);
 
+  void OnIpAddressesFetched(
+      ::chrome::cros::reporting::proto::Event event,
+      policy::CloudPolicyClient* client,
+      const ReportingSettings& settings,
+      std::vector<std::string> ip_addresses);
+
   // Prepares information required by CloudPolicyClient::UploadSecurityEvent()
   // and calls it.
   void UploadSecurityEvent(::chrome::cros::reporting::proto::Event event,
                            policy::CloudPolicyClient* client,
                            const ReportingSettings& settings);
+
+  void FinishUploadSecurityEvent(::chrome::cros::reporting::proto::Event event,
+                                 policy::CloudPolicyClient* client,
+                                 const ReportingSettings& settings);
+
+  void OnIpAddressesFetchedDeprecated(
+      base::Value::Dict event,
+      policy::CloudPolicyClient* client,
+      std::string name,
+      const ReportingSettings& settings,
+      base::Time time,
+      std::vector<std::string> ip_addresses);
 
   // Prepares information required by
   // CloudPolicyClient::UploadSecurityEventReportDeprecated() and calls it.
@@ -153,6 +179,12 @@ class RealtimeReportingClientBase : public KeyedService,
                                            std::string name,
                                            const ReportingSettings& settings,
                                            base::Time time);
+
+  void FinishUploadSecurityEventReportDeprecated(
+      base::Value::Dict event,
+      policy::CloudPolicyClient* client,
+      std::string name,
+      const ReportingSettings& settings);
 
   const std::string GetProfilePolicyClientDescription();
 

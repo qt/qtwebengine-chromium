@@ -1,6 +1,7 @@
 // Copyright (c) 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import '../../../ui/components/icon_button/icon_button.js';
 
@@ -8,23 +9,19 @@ import * as i18n from '../../../core/i18n/i18n.js';
 import * as Lit from '../../../ui/lit/lit.js';
 import * as VisualLogging from '../../../ui/visual_logging/visual_logging.js';
 
-import linearMemoryHighlightChipListStylesRaw from './linearMemoryHighlightChipList.css.js';
+import linearMemoryHighlightChipListStyles from './linearMemoryHighlightChipList.css.js';
 import type {HighlightInfo} from './LinearMemoryViewerUtils.js';
-
-// TODO(crbug.com/391381439): Fully migrate off of constructed style sheets.
-const linearMemoryHighlightChipListStyles = new CSSStyleSheet();
-linearMemoryHighlightChipListStyles.replaceSync(linearMemoryHighlightChipListStylesRaw.cssText);
 
 const UIStrings = {
   /**
    *@description Tooltip text that appears when hovering over an inspected variable's button in the Linear Memory Highlight Chip List.
-  Clicking the button changes the displayed slice of computer memory in the Linear Memory inspector to contain the inspected variable's bytes.
+   * Clicking the button changes the displayed slice of computer memory in the Linear Memory inspector to contain the inspected variable's bytes.
    */
   jumpToAddress: 'Jump to this memory',
   /**
    *@description Tooltip text that appears when hovering over an inspected variable's delete button in the Linear Memory Highlight Chip List.
-   Clicking the delete button stops highlighting the variable's memory in the Linear Memory inspector.
-   'Memory' is a slice of bytes in the computer memory.
+   * Clicking the delete button stops highlighting the variable's memory in the Linear Memory inspector.
+   * 'Memory' is a slice of bytes in the computer memory.
    */
   deleteHighlight: 'Stop highlighting this memory',
 } as const;
@@ -63,10 +60,6 @@ export class LinearMemoryHighlightChipList extends HTMLElement {
   #highlightedAreas: HighlightInfo[] = [];
   #focusedMemoryHighlight?: HighlightInfo;
 
-  connectedCallback(): void {
-    this.#shadow.adoptedStyleSheets = [linearMemoryHighlightChipListStyles];
-  }
-
   set data(data: LinearMemoryHighlightChipListData) {
     this.#highlightedAreas = data.highlightInfos;
     this.#focusedMemoryHighlight = data.focusedMemoryHighlight;
@@ -81,6 +74,7 @@ export class LinearMemoryHighlightChipList extends HTMLElement {
       chips.push(this.#createChip(highlightInfo));
     }
     const result = html`
+            <style>${linearMemoryHighlightChipListStyles}</style>
             <div class="highlight-chip-list">
               ${chips}
             </div>
@@ -105,7 +99,9 @@ export class LinearMemoryHighlightChipList extends HTMLElement {
             jslog=${VisualLogging.action('linear-memory-inspector.jump-to-highlight').track({click:true})}
             @click=${():void => this.#onJumpToHighlightClick(highlightInfo.startAddress)}>
           <span class="source-code">
-            <span class="value">${expressionName}</span><span class="separator">: </span><span>${expressionType}</span>
+            <span class="value">${expressionName}</span>
+            <span class="separator">: </span>
+            <span>${expressionType}</span>
           </span>
         </button>
         <div class="delete-highlight-container">

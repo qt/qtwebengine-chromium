@@ -30,7 +30,8 @@
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/task/bind_post_task.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/task/task_traits.h"
 #include "base/task/thread_pool.h"
@@ -45,7 +46,6 @@
 #include "components/network_session_configurator/common/network_features.h"
 #include "components/os_crypt/sync/os_crypt.h"
 #include "components/privacy_sandbox/masked_domain_list/masked_domain_list.pb.h"
-#include "mojo/public/cpp/base/proto_wrapper.h"
 #include "mojo/public/cpp/bindings/callback_helpers.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/scoped_message_error_crash_key.h"
@@ -70,6 +70,7 @@
 #include "net/dns/public/doh_provider_entry.h"
 #include "net/dns/system_dns_config_change_notifier.h"
 #include "net/dns/test_dns_config_service.h"
+#include "net/filter/filter_source_stream.h"
 #include "net/first_party_sets/global_first_party_sets.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/log/file_net_log_observer.h"
@@ -88,14 +89,17 @@
 #include "services/network/network_context.h"
 #include "services/network/public/cpp/content_decoding_interceptor.h"
 #include "services/network/public/cpp/crash_keys.h"
+#include "services/network/public/cpp/data_pipe_to_source_stream.h"
 #include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/initiator_lock_compatibility.h"
 #include "services/network/public/cpp/network_switches.h"
 #include "services/network/public/cpp/parsed_headers.h"
+#include "services/network/public/cpp/source_stream_to_data_pipe.h"
 #include "services/network/public/mojom/key_pinning.mojom.h"
 #include "services/network/public/mojom/network_service_test.mojom.h"
 #include "services/network/public/mojom/system_dns_resolution.mojom-forward.h"
 #include "services/network/restricted_cookie_manager.h"
+#include "services/network/scheduler/network_service_task_scheduler.h"
 #include "services/network/tpcd/metadata/manager.h"
 #include "services/network/url_loader.h"
 
@@ -380,6 +384,13 @@ NetworkService::NetworkService(
   DCHECK(!g_network_service);
   g_network_service = this;
 
+  if (base::FeatureList::IsEnabled(features::kNetworkServiceTaskScheduler)) {
+    NetworkServiceTaskScheduler::MaybeCreate();
+  }
+
+  ContentDecodingInterceptor::SetIsNetworkServiceRunningInTheCurrentProcess(
+      true, {});
+
   // |registry_| is nullptr when a NetworkService is out-of-process.
   if (registry_) {
     mojo::SetDefaultProcessErrorHandler(base::BindRepeating(&HandleBadMessage));
@@ -507,6 +518,9 @@ void NetworkService::Initialize(mojom::NetworkServiceParamsPtr params,
 NetworkService::~NetworkService() {
   DCHECK_EQ(this, g_network_service);
 
+  ContentDecodingInterceptor::SetIsNetworkServiceRunningInTheCurrentProcess(
+      false, {});
+
   doh_probe_activator_.reset();
 
   g_network_service = nullptr;
@@ -517,12 +531,7 @@ NetworkService::~NetworkService() {
   // point.
   DCHECK(network_contexts_.empty());
 
-  if (file_net_log_observer_) {
-    auto polled_data =
-        std::make_unique<base::Value>(std::move(net_log_polled_data_list_));
-    file_net_log_observer_->StopObserving(std::move(polled_data),
-                                          base::OnceClosure());
-  }
+  StopNetLog();
 
   if (initialized_) {
     trace_net_log_observer_.StopWatchForTraceStart();
@@ -656,15 +665,41 @@ void NetworkService::SetSystemDnsResolver(
 void NetworkService::StartNetLog(base::File file,
                                  uint64_t max_total_size,
                                  net::NetLogCaptureMode capture_mode,
-                                 base::Value::Dict constants) {
+                                 base::Value::Dict constants,
+                                 std::optional<base::TimeDelta> duration) {
   if (max_total_size == net::FileNetLogObserver::kNoLimit) {
     StartNetLogUnbounded(std::move(file), capture_mode, std::move(constants));
   } else {
     StartNetLogBounded(std::move(file), max_total_size, capture_mode,
                        std::move(constants));
   }
+  if (duration.has_value() && !duration->is_zero()) {
+    base::SequencedTaskRunner::GetCurrentDefault()->PostDelayedTask(
+        FROM_HERE,
+        base::BindOnce(&NetworkService::StopNetLog, weak_factory_.GetWeakPtr()),
+        *duration);
+  }
 }
 
+void NetworkService::StopNetLog() {
+  if (!file_net_log_observer_) {
+    return;
+  }
+
+  for (const auto& context_ptr : owned_network_contexts_) {
+    NetworkContext* context = context_ptr.get();
+    base::Value::Dict context_info =
+        net::GetNetInfo(context->url_request_context());
+    CHECK(!context_info.empty());
+    net_log_polled_data_list_.Append(std::move(context_info));
+  }
+  auto polled_data =
+      std::make_unique<base::Value>(std::move(net_log_polled_data_list_));
+
+  file_net_log_observer_->StopObserving(std::move(polled_data),
+                                        base::OnceClosure());
+  file_net_log_observer_.reset();
+}
 void NetworkService::AttachNetLogProxy(
     mojo::PendingRemote<mojom::NetLogProxySource> proxy_source,
     mojo::PendingReceiver<mojom::NetLogProxySink> proxy_sink) {
@@ -957,27 +992,11 @@ void NetworkService::UpdateKeyPinsList(mojom::PinListPtr pin_list,
 }
 
 void NetworkService::UpdateMaskedDomainList(
-    mojo_base::ProtoWrapper masked_domain_list,
-    const std::vector<std::string>& exclusion_list) {
-  const base::Time start_time = base::Time::Now();
-  auto mdl = masked_domain_list.As<masked_domain_list::MaskedDomainList>();
-  if (mdl.has_value()) {
-    ip_protection::Telemetry().MdlSize(mdl->ByteSizeLong());
-    masked_domain_list_manager_->UpdateMaskedDomainList(mdl.value(),
-                                                        exclusion_list);
-  }
-
-  base::UmaHistogramTimes(
-      "NetworkService.IpProtection.ProxyAllowList.UpdateProcessTime",
-      base::Time::Now() - start_time);
-}
-
-void NetworkService::UpdateMaskedDomainListFlatbuffer(
     base::File default_file,
     uint64_t default_file_size,
     base::File regular_browsing_file,
     uint64_t regular_browsing_file_size) {
-  masked_domain_list_manager_->UpdateMaskedDomainListFlatbuffer(
+  masked_domain_list_manager_->UpdateMaskedDomainList(
       std::move(default_file), default_file_size,
       std::move(regular_browsing_file), regular_browsing_file_size);
 }
@@ -1041,6 +1060,45 @@ void NetworkService::InterceptUrlLoaderForBodyDecoding(
       std::move(dest_url_loader), std::move(dest_url_loader_client),
       base::ThreadPool::CreateSequencedTaskRunner(
           {base::TaskPriority::USER_BLOCKING}));
+}
+
+void NetworkService::DecodeContentEncoding(
+    const std::vector<net::SourceStreamType>& content_encoding_types,
+    mojo::ScopedDataPipeConsumerHandle source_body,
+    mojo::ScopedDataPipeProducerHandle dest_body,
+    DecodeContentEncodingCallback callback) {
+  auto worker_task_runner = base::ThreadPool::CreateSequencedTaskRunner(
+      {base::TaskPriority::USER_BLOCKING});
+  worker_task_runner->PostTask(
+      FROM_HERE,
+      base::BindOnce(
+          [](scoped_refptr<base::SequencedTaskRunner> worker_task_runner,
+             const std::vector<net::SourceStreamType>& content_encoding_types,
+             mojo::ScopedDataPipeConsumerHandle source_body,
+             mojo::ScopedDataPipeProducerHandle dest_body,
+             DecodeContentEncodingCallback callback) {
+            auto source_stream_to_data_pipe =
+                std::make_unique<SourceStreamToDataPipe>(
+                    net::FilterSourceStream::CreateDecodingSourceStream(
+                        std::make_unique<DataPipeToSourceStream>(
+                            std::move(source_body), worker_task_runner),
+                        content_encoding_types),
+                    std::move(dest_body), worker_task_runner);
+            auto* source_stream_to_data_pipe_ptr =
+                source_stream_to_data_pipe.get();
+            source_stream_to_data_pipe_ptr->Start(std::move(callback).Then(
+                base::OnceClosure(base::DoNothingWithBoundArgs(
+                    std::move(source_stream_to_data_pipe)))));
+          },
+          worker_task_runner, std::move(content_encoding_types),
+          std::move(source_body), std::move(dest_body),
+          base::BindPostTaskToCurrentDefault(std::move(callback))));
+}
+
+void NetworkService::SetTLS13EarlyDataEnabled(bool enabled) {
+  for (NetworkContext* network_context : network_contexts_) {
+    network_context->SetTLS13EarlyDataEnabled(enabled);
+  }
 }
 
 void NetworkService::StartNetLogBounded(base::File file,
@@ -1138,7 +1196,7 @@ void NetworkService::DestroyNetworkContexts() {
 void NetworkService::OnNetworkContextConnectionClosed(
     NetworkContext* network_context) {
   auto it = owned_network_contexts_.find(network_context);
-  CHECK(it != owned_network_contexts_.end(), base::NotFatalUntil::M130);
+  CHECK(it != owned_network_contexts_.end());
   if (file_net_log_observer_) {
     net_log_polled_data_list_.Append(
         net::GetNetInfo(network_context->url_request_context()));

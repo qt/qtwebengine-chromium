@@ -22,7 +22,6 @@
 #include "base/base_export.h"
 #include "base/functional/callback.h"
 #include "base/gtest_prod_util.h"
-#include "base/lazy_instance.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/metrics/histogram_base.h"
@@ -94,10 +93,12 @@ class BASE_EXPORT StatisticsRecorder {
    public:
     // Constructor. Called with the desired histogram name and the callback to
     // be invoked when a sample is recorded.
-    explicit ScopedHistogramSampleObserver(std::string_view histogram_name,
-                                           OnSampleCallback callback);
-    explicit ScopedHistogramSampleObserver(std::string_view histogram_name,
-                                           OnSampleWithEventCallback callback);
+    ScopedHistogramSampleObserver(std::string_view histogram_name,
+                                  OnSampleCallback callback);
+    ScopedHistogramSampleObserver(std::string_view histogram_name,
+                                  OnSampleWithEventCallback callback);
+    ScopedHistogramSampleObserver(std::string_view histogram_name,
+                                  base::RepeatingClosure callback);
     ~ScopedHistogramSampleObserver();
 
    private:
@@ -194,6 +195,12 @@ class BASE_EXPORT StatisticsRecorder {
   // This method is thread safe.
   static HistogramBase* FindHistogram(std::string_view name);
 
+  // Finds a histogram by hash and name. Matches the exact name. Returns a null
+  // pointer if a matching histogram is not found.
+  //
+  // This method is thread safe.
+  static HistogramBase* FindHistogram(uint64_t hash, std::string_view name);
+
   // Imports histograms from providers. If |async| is true, the providers may do
   // the work asynchronously (though this is not guaranteed and it is up to the
   // providers to decide). If false, the work will be done synchronously.
@@ -271,7 +278,8 @@ class BASE_EXPORT StatisticsRecorder {
   // Checks if the given histogram should be recorded based on the
   // ShouldRecord() method of the record checker. If the record checker is not
   // set, returns true.
-  // |histogram_hash| corresponds to the result of HashMetricNameAs32Bits().
+  // |histogram_hash| corresponds to the result of HashMetricNameAs32Bits() or
+  // ParseMetricHashTo32Bits().
   //
   // This method is thread safe.
   static bool ShouldRecordHistogram(uint32_t histogram_hash);
@@ -311,8 +319,11 @@ class BASE_EXPORT StatisticsRecorder {
   }
 
  private:
-  static Lock& GetLock() { return lock_.Get(); }
-  static void AssertLockHeld() { lock_.Get().AssertAcquired(); }
+  // Global lock for internal synchronization.
+  // Note: Care must be taken to not read or write anything to persistent memory
+  // while holding this lock, as that could cause a file I/O stall.
+  static Lock& GetLock();
+  static void AssertLockHeld();
 
   // Returns the histogram registered with |hash|, if there is one. Returns
   // nullptr otherwise.
@@ -391,11 +402,6 @@ class BASE_EXPORT StatisticsRecorder {
 
   // Previous global recorder that existed when this one was created.
   raw_ptr<StatisticsRecorder> previous_ = nullptr;
-
-  // Global lock for internal synchronization.
-  // Note: Care must be taken to not read or write anything to persistent memory
-  // while holding this lock, as that could cause a file I/O stall.
-  static LazyInstance<Lock>::Leaky lock_;
 
   // Current global recorder. This recorder is used by static methods. When a
   // new global recorder is created by CreateTemporaryForTesting(), then the

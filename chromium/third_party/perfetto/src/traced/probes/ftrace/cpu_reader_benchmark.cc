@@ -828,17 +828,20 @@ ExamplePage g_full_page_atrace_print{
 };
 
 FtraceDataSourceConfig ConfigForTesting(CompactSchedConfig compact_cfg) {
-  return FtraceDataSourceConfig{/*event_filter=*/EventFilter{},
-                                /*syscall_filter=*/EventFilter{},
-                                compact_cfg,
-                                /*print_filter=*/std::nullopt,
-                                /*atrace_apps=*/{},
-                                /*atrace_categories=*/{},
-                                /*atrace_categories_sdk_optout=*/{},
-                                /*symbolize_ksyms=*/false,
-                                /*buffer_percent=*/0u,
-                                /*syscalls_returning_fd=*/{},
-                                /*debug_ftrace_abi=*/false};
+  return FtraceDataSourceConfig{
+      /*event_filter=*/EventFilter{},
+      /*syscall_filter=*/EventFilter{}, compact_cfg,
+      /*print_filter=*/std::nullopt,
+      /*atrace_apps=*/{},
+      /*atrace_categories=*/{},
+      /*atrace_categories_sdk_optout=*/{},
+      /*symbolize_ksyms=*/false,
+      /*buffer_percent=*/0u,
+      /*syscalls_returning_fd=*/{},
+      /*kprobes=*/
+      base::FlatHashMap<uint32_t, protos::pbzero::KprobeEvent::KprobeType>{0},
+      /*debug_ftrace_abi=*/false,
+      /*write_generic_evt_descriptors=*/false};
 }
 
 // Low level benchmark for the CpuReader::ParsePageHeader and
@@ -850,11 +853,12 @@ void DoParse(const ExamplePage& test_case,
   NullTraceWriter writer;
   FtraceMetadata metadata{};
   auto compact_sched_buf = std::make_unique<CompactSchedBuffer>();
+  base::FlatHashMap<uint32_t, std::vector<uint8_t>> generic_pb_descriptors;
   CpuReader::Bundler bundler(
       &writer, &metadata, /*symbolizer=*/nullptr, /*cpu=*/0,
-      /*ftrace_clock_snapshot=*/nullptr,
-      protos::pbzero::FTRACE_CLOCK_UNSPECIFIED, compact_sched_buf.get(),
-      /*compact_sched_enabled=*/false, /*last_read_event_ts=*/0);
+      /*clock_snapshot=*/std::nullopt, compact_sched_buf.get(),
+      /*compact_sched_enabled=*/false, /*previous_bundle_end_ts=*/0,
+      &generic_pb_descriptors);
 
   ProtoTranslationTable* table = GetTable(test_case.name);
   auto page = PageFromXxd(test_case.data);
@@ -976,8 +980,7 @@ void DoProcessPages(const ExamplePage& test_case,
         &writer, &metadata, /*cpu=*/0, &ds_config, &parse_errors,
         &last_read_event_ts, repeated_pages.get(), page_repetition,
         compact_sched_buf.get(), table,
-        /*symbolizer=*/nullptr, /*ftrace_clock_snapshot=*/nullptr,
-        protos::pbzero::FTRACE_CLOCK_UNSPECIFIED);
+        /*symbolizer=*/nullptr, /*clock_snapshot=*/std::nullopt);
 
     metadata.Clear();
   }

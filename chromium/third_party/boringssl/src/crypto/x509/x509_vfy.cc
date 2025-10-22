@@ -22,7 +22,6 @@
 #include <openssl/evp.h>
 #include <openssl/mem.h>
 #include <openssl/obj.h>
-#include <openssl/thread.h>
 #include <openssl/x509.h>
 
 #include "../internal.h"
@@ -1020,6 +1019,8 @@ static int idp_check_dp(DIST_POINT_NAME *a, DIST_POINT_NAME *b) {
 
 // Check CRLDP and IDP
 static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score) {
+  // TODO(bbe): crbug.com/409778435 Make tests for the corner cases we hit
+  // here so that we stay correct for RFC 5280 6.3.3 steps b.1 and b.2
   if (crl->idp_flags & IDP_ONLYATTR) {
     return 0;
   }
@@ -1041,9 +1042,14 @@ static int crl_crldp_check(X509 *x, X509_CRL *crl, int crl_score) {
     //
     // We also do not support indirect CRLs, and a CRL issuer can only match
     // indirect CRLs (RFC 5280, section 6.3.3, step b.1).
-    // support.
-    if (dp->reasons != NULL && dp->CRLissuer != NULL &&
-        (!crl->idp || idp_check_dp(dp->distpoint, crl->idp->distpoint))) {
+    if (dp->reasons != NULL || dp->CRLissuer != NULL) {
+      continue;
+    }
+    // At this point we have already checked that the CRL issuer matches
+    // the certificate issuer (and set CRL_SCORE_ISSUER_NAME);
+
+    // RFC 5280 Section 6.3.3 step b.2
+    if (!crl->idp || idp_check_dp(dp->distpoint, crl->idp->distpoint)){
       return 1;
     }
   }
@@ -1527,12 +1533,7 @@ int X509_STORE_CTX_init(X509_STORE_CTX *ctx, X509_STORE *store, X509 *x509,
   return 1;
 
 err:
-  CRYPTO_free_ex_data(&g_ex_data_class, ctx, &ctx->ex_data);
-  if (ctx->param != NULL) {
-    X509_VERIFY_PARAM_free(ctx->param);
-  }
-
-  OPENSSL_memset(ctx, 0, sizeof(X509_STORE_CTX));
+  X509_STORE_CTX_cleanup(ctx);
   return 0;
 }
 
@@ -1549,7 +1550,7 @@ void X509_STORE_CTX_trusted_stack(X509_STORE_CTX *ctx, STACK_OF(X509) *sk) {
 }
 
 void X509_STORE_CTX_cleanup(X509_STORE_CTX *ctx) {
-  CRYPTO_free_ex_data(&g_ex_data_class, ctx, &(ctx->ex_data));
+  CRYPTO_free_ex_data(&g_ex_data_class, &ctx->ex_data);
   X509_VERIFY_PARAM_free(ctx->param);
   sk_X509_pop_free(ctx->chain, X509_free);
   OPENSSL_memset(ctx, 0, sizeof(X509_STORE_CTX));

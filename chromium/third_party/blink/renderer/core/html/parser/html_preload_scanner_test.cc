@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/core/html/parser/html_preload_scanner.h"
 
 #include <memory>
@@ -377,8 +372,7 @@ class HTMLPreloadScannerTest : public PageTestBase {
                 network::mojom::ReferrerPolicy document_referrer_policy =
                     network::mojom::ReferrerPolicy::kDefault,
                 bool use_secure_document_url = false,
-                Vector<ElementLocator> locators = {},
-                bool disable_preload_scanning = false) {
+                Vector<ElementLocator> locators = {}) {
     HTMLParserOptions options(&GetDocument());
     KURL document_url = KURL("http://whatever.test/");
     if (use_secure_document_url)
@@ -397,8 +391,7 @@ class HTMLPreloadScannerTest : public PageTestBase {
         CreateMediaValuesData(),
         TokenPreloadScanner::ScannerType::kMainDocument,
         /* script_token_scanner=*/nullptr,
-        /* take_preload=*/HTMLPreloadScanner::TakePreloadFn(), locators,
-        disable_preload_scanning);
+        /* take_preload=*/HTMLPreloadScanner::TakePreloadFn(), locators);
   }
 
   void SetUp() override {
@@ -2007,22 +2000,6 @@ TEST_P(HTMLPreloadScannerLCPPLazyLoadImageTest,
         )HTML",
                                       nullptr, false});
       break;
-  }
-}
-
-TEST_F(HTMLPreloadScannerTest, PreloadScanDisabled_NoPreloads) {
-  PreloadScannerTestCase test_cases[] = {
-      {"http://example.test", "<img src='bla.gif'>", /* preloaded_url=*/nullptr,
-       "http://example.test/", ResourceType::kImage, 0},
-      {"http://example.test", "<script src='test.js'></script>",
-       /* preloaded_url=*/nullptr, "http://example.test/",
-       ResourceType::kScript, 0}};
-
-  for (const auto& test_case : test_cases) {
-    RunSetUp(kViewportDisabled, kPreloadEnabled,
-             network::mojom::ReferrerPolicy::kDefault, true, {},
-             /* disable_preload_scanning=*/true);
-    Test(test_case);
   }
 }
 

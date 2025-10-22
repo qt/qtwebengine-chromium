@@ -9,6 +9,7 @@
 
 #include "base/containers/contains.h"
 #include "base/containers/flat_map.h"
+#include "base/containers/span.h"
 #include "base/i18n/char_iterator.h"
 #include "base/metrics/histogram_functions.h"
 #include "components/autofill/core/browser/autofill_field.h"
@@ -37,8 +38,8 @@ void LogPerfectFillingMetric(const FormStructure& form) {
   // last filled with this product (and maybe user/JS edited afterwards).
   const base::flat_map<FillingProduct, bool> filling_product_was_used =
       base::MakeFlatMap<FillingProduct, bool>(
-          std::vector<FillingProduct>{FillingProduct::kAddress,
-                                      FillingProduct::kCreditCard},
+          base::span<const FillingProduct, 2>(
+              {FillingProduct::kAddress, FillingProduct::kCreditCard}),
           {}, [&form](FillingProduct filling_product) {
             return std::make_pair(
                 filling_product,
@@ -82,7 +83,7 @@ void LogDurationMetrics(const FormStructure& form,
       form, [](const auto& field) { return field->is_autofilled(); });
   bool has_observed_one_time_code_field =
       std::ranges::any_of(form, [](const auto& field) {
-        return field->Type().html_type() == HtmlFieldType::kOneTimeCode;
+        return field->html_type() == HtmlFieldType::kOneTimeCode;
       });
   if (num_detected_field_types >= kMinRequiredFieldsForHeuristics ||
       num_detected_field_types >= kMinRequiredFieldsForQuery) {
@@ -148,12 +149,11 @@ void LogSubmittedAlternativeNameCharacterSetValues(const FormStructure& form) {
     return;
   }
   for (const std::unique_ptr<AutofillField>& field : form) {
-    if (IsAlternativeNameType(field->Type().GetStorableType()) &&
-        !field->value(ValueSemantics::kCurrent).empty()) {
+    if (IsAlternativeNameType(field->Type().GetAddressType()) &&
+        !field->value().empty()) {
       base::UmaHistogramEnumeration(
           "Autofill.SubmittedAlternativeNameFieldValueCharacterSet",
-          GetAlternativeNameFieldValueCharacterSet(
-              field->value(ValueSemantics::kCurrent)));
+          GetAlternativeNameFieldValueCharacterSet(field->value()));
     }
   }
 }
@@ -224,7 +224,7 @@ void LogFillingMetrics(const FormStructure& form,
     }
     if (FieldHasMeaningfulPossibleFieldTypes(*field) &&
         field->is_autofilled()) {
-      autofilled_field_types.insert(field->Type().GetStorableType());
+      autofilled_field_types.insert_all(field->Type().GetTypes());
     }
   }
   if (base::Contains(form.GetFormTypes(), FormType::kCreditCardForm)) {

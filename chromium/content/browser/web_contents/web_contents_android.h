@@ -98,7 +98,9 @@ class CONTENT_EXPORT WebContentsAndroid {
 
   void ResumeLoadingCreatedWebContents(JNIEnv* env);
 
-  void SetImportance(JNIEnv* env, jint importance);
+  void SetPrimaryPageImportance(JNIEnv* env,
+                                jint main_frame_importance,
+                                jint subframe_importance);
   void SuspendAllMediaPlayers(JNIEnv* env);
   void SetAudioMuted(JNIEnv* env, jboolean mute);
   jboolean IsAudioMuted(JNIEnv* env);
@@ -202,11 +204,7 @@ class CONTENT_EXPORT WebContentsAndroid {
                                 int bottom,
                                 int right);
 
-  void SetContextMenuInsets(JNIEnv* env,
-                            int top,
-                            int left,
-                            int bottom,
-                            int right);
+  void ShowInterestInElement(JNIEnv* env, int nodeID);
 
   void NotifyRendererPreferenceUpdate(JNIEnv* env);
 
@@ -250,6 +248,10 @@ class CONTENT_EXPORT WebContentsAndroid {
   void SetLongPressLinkSelectText(JNIEnv* env, jboolean enabled);
 
   void SetSupportsForwardTransitionAnimation(JNIEnv* env, jboolean enabled);
+
+  jboolean HasOpener(JNIEnv* env);
+
+  jint GetOriginalWindowOpenDisposition(JNIEnv* env);
 
   // Adds a crash report, like DumpWithoutCrashing(), including the Java stack
   // trace from which `web_contents` was created. This is meant to help debug

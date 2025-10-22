@@ -8,8 +8,8 @@ import json
 import logging
 import statistics
 from math import floor, log10
-from typing import (TYPE_CHECKING, Any, Callable, Dict, Iterable, List,
-                    Optional, Sequence, Set, Tuple)
+from typing import (TYPE_CHECKING, Any, Callable, Iterable, Optional, Sequence,
+                    Set)
 
 from crossbench.probes import helper
 
@@ -57,7 +57,7 @@ class Metric:
 
   def __init__(self, values: Optional[Iterable] = None) -> None:
     if not values:
-      self.values: List[float] = []
+      self.values: list[float] = []
     else:
       self.values = list(values)
     self._is_numeric: bool = all(map(is_number, self.values))
@@ -183,28 +183,28 @@ class MetricsMerger:
     return merger
 
   def __init__(self,
-               *args: Dict | List[Dict],
+               *args: dict | list[dict],
                key_fn: Optional[helper.KeyFnType] = None):
     """Create a new MetricsMerger
 
     Args:
         *args (optional): Optional hierarchical data to be merged.
-        key_fn (optional): Maps property paths (Tuple[str,...]) to strings used
+        key_fn (optional): Maps property paths (tuple[str,...]) to strings used
           as keys to group/merge values, or None to skip property paths.
     """
-    self._data: Dict[str, Metric] = {}
+    self._data: dict[str, Metric] = {}
     self._key_fn: helper.KeyFnType = key_fn or helper._default_flatten_key_fn
     self._ignored_keys: Set[str] = set()
     for data in args:
       self.add(data)
 
   @property
-  def data(self) -> Dict[str, Metric]:
+  def data(self) -> dict[str, Metric]:
     return self._data
 
   def merge_values(self,
-                   data: Dict[str, Dict],
-                   prefix_path: Tuple[str, ...] = (),
+                   data: dict[str, dict],
+                   prefix_path: tuple[str, ...] = (),
                    merge_duplicate_paths: bool = False) -> None:
     """Merge a previously json-serialized MetricsMerger object"""
     for property_name, item in data.items():
@@ -226,7 +226,7 @@ class MetricsMerger:
       else:
         self._data[key] = Metric.from_json(item)
 
-  def add(self, data: Dict | List[Dict]) -> None:
+  def add(self, data: dict | list[dict]) -> None:
     """ Merge "arbitrary" hierarchical data that ends up having primitive leafs.
     Anything that is not a dict is considered a leaf node.
     """
@@ -238,7 +238,7 @@ class MetricsMerger:
       self._merge(data)
 
   def _merge(
-      self, data: Dict | List[Dict], parent_path: Tuple[str, ...] = ()) -> None:
+      self, data: dict | list[dict], parent_path: tuple[str, ...] = ()) -> None:
     assert isinstance(data, dict)
     for property_name, value in data.items():
       path = parent_path + (property_name,)
@@ -301,17 +301,17 @@ class CSVFormatter:
   def __init__(self,
                metrics: MetricsMerger,
                value_fn: Optional[Callable[[Any], Any]] = None,
-               headers: Sequence[Tuple[Any, ...]] = (),
+               headers: Sequence[tuple[Any, ...]] = (),
                include_parts: bool = True,
                sort: bool = True):
-    self._table: List[Sequence[Any]] = []
+    self._table: list[Sequence[Any]] = []
     converted = metrics.to_json(value_fn, sort)
     items = self.format_items(converted, sort=sort)
     max_path_depth: int = self.extract_max_depth(items, include_parts)
     self.append_headers(headers, max_path_depth)
     self.append_body(items, include_parts, max_path_depth)
 
-  def extract_max_depth(self, items: Sequence[Tuple[str, Json]],
+  def extract_max_depth(self, items: Sequence[tuple[str, Json]],
                         include_parts: bool) -> int:
     max_path_depth = 0
     if include_parts:
@@ -329,7 +329,7 @@ class CSVFormatter:
       row = header[:1] + header_padding + header[1:]
       self._table.append(row)
 
-  def append_body(self, items: Sequence[Tuple[str, Json]], include_parts: bool,
+  def append_body(self, items: Sequence[tuple[str, Json]], include_parts: bool,
                   max_path_depth: int) -> None:
     for path, value in items:
       if include_parts:
@@ -340,13 +340,13 @@ class CSVFormatter:
         row = (path, value)
       self._table.append(row)
 
-  def format_items(self, data: Dict[str, Json],
-                   sort: bool) -> Sequence[Tuple[str, Json]]:
+  def format_items(self, data: dict[str, Json],
+                   sort: bool) -> Sequence[tuple[str, Json]]:
     items = tuple(data.items())
     if not sort:
       return items
     return sorted(items)
 
   @property
-  def table(self) -> List[Sequence[Any]]:
+  def table(self) -> list[Sequence[Any]]:
     return self._table

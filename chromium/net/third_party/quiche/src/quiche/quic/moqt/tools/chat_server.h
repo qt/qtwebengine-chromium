@@ -39,15 +39,16 @@ class ChatServer {
    public:
     explicit RemoteTrackVisitor(ChatServer* server);
     void OnReply(const moqt::FullTrackName& full_track_name,
-                 std::optional<FullSequence> largest_id,
+                 std::optional<Location> largest_id,
                  std::optional<absl::string_view> reason_phrase) override;
     void OnCanAckObjects(MoqtObjectAckFunction) override {}
-    void OnObjectFragment(
-        const moqt::FullTrackName& full_track_name, FullSequence sequence,
-        moqt::MoqtPriority /*publisher_priority*/,
-        moqt::MoqtObjectStatus /*status*/,
-        absl::string_view object, bool end_of_message) override;
+    void OnObjectFragment(const moqt::FullTrackName& full_track_name,
+                          const PublishedObjectMetadata& metadata,
+                          absl::string_view object,
+                          bool end_of_message) override;
     void OnSubscribeDone(FullTrackName /*full_track_name*/) override {}
+    // TODO(martinduke): Implement this.
+    void OnMalformedTrack(const FullTrackName& full_track_name) override {}
 
    private:
     ChatServer* server_;
@@ -63,21 +64,24 @@ class ChatServer {
       it_ = it;
     }
 
-    void AnnounceIfSubscribed(FullTrackName track_namespace) {
-      for (const FullTrackName& subscribed_namespace : subscribed_namespaces_) {
+    void AnnounceIfSubscribed(TrackNamespace track_namespace) {
+      for (const TrackNamespace& subscribed_namespace :
+           subscribed_namespaces_) {
         if (track_namespace.InNamespace(subscribed_namespace)) {
           session_->Announce(
               track_namespace,
               absl::bind_front(&ChatServer::ChatServerSessionHandler::
                                    OnOutgoingAnnounceReply,
-                               this));
+                               this),
+              VersionSpecificParameters());
           return;
         }
       }
     }
 
-    void UnannounceIfSubscribed(FullTrackName track_namespace) {
-      for (const FullTrackName& subscribed_namespace : subscribed_namespaces_) {
+    void UnannounceIfSubscribed(TrackNamespace track_namespace) {
+      for (const TrackNamespace& subscribed_namespace :
+           subscribed_namespaces_) {
         if (track_namespace.InNamespace(subscribed_namespace)) {
           session_->Unannounce(track_namespace);
           return;
@@ -88,10 +92,10 @@ class ChatServer {
    private:
     // Callback for incoming announces.
     std::optional<MoqtAnnounceErrorReason> OnIncomingAnnounce(
-        const moqt::FullTrackName& track_namespace,
-        AnnounceEvent announce_type);
+        const moqt::TrackNamespace& track_namespace,
+        std::optional<VersionSpecificParameters> parameters);
     void OnOutgoingAnnounceReply(
-        FullTrackName track_namespace,
+        TrackNamespace track_namespace,
         std::optional<MoqtAnnounceErrorReason> error_message);
 
     MoqtSession* session_;  // Not owned.
@@ -99,7 +103,7 @@ class ChatServer {
     // in theory there could be multiple users on one session.
     std::optional<FullTrackName> track_name_;
     ChatServer* server_;  // Not owned.
-    absl::flat_hash_set<FullTrackName> subscribed_namespaces_;
+    absl::flat_hash_set<TrackNamespace> subscribed_namespaces_;
     // The iterator of this entry in ChatServer::sessions_, so it can destroy
     // itself later.
     std::list<ChatServerSessionHandler>::const_iterator it_;

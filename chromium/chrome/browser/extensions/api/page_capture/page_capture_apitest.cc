@@ -14,6 +14,8 @@
 #include "net/dns/mock_host_resolver.h"
 #include "third_party/blink/public/common/switches.h"
 
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
+
 namespace extensions {
 
 using ContextType = extensions::browser_test_util::ContextType;
@@ -92,12 +94,12 @@ INSTANTIATE_TEST_SUITE_P(ServiceWorker,
                          ExtensionPageCaptureApiTest,
                          ::testing::Values(ContextType::kServiceWorker));
 
-// TODO(crbug.com/326868086, crbug.com/342254075, crbug.com/374409662): Test is
-// flaky on MSan, Windows, and Linux.
-#if defined(MEMORY_SANITIZER) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX)
-#define MAYBE_SaveAsMHTMLWithoutFileAccess DISABLED_SaveAsMHTMLWithoutFileAccess
-#else
+// TODO(crbug.com/402488726) : Enable the api test  for android Desktop after
+// supervised user and openFileURL is supported.
+#if BUILDFLAG(ENABLE_EXTENSIONS)
 #define MAYBE_SaveAsMHTMLWithoutFileAccess SaveAsMHTMLWithoutFileAccess
+#else
+#define MAYBE_SaveAsMHTMLWithoutFileAccess DISABLED_SaveAsMHTMLWithoutFileAccess
 #endif
 IN_PROC_BROWSER_TEST_P(ExtensionPageCaptureApiTest,
                        MAYBE_SaveAsMHTMLWithoutFileAccess) {
@@ -108,9 +110,15 @@ IN_PROC_BROWSER_TEST_P(ExtensionPageCaptureApiTest,
   WaitForFileCleanup(&delegate);
 }
 
-// TODO(crbug.com/326868086): Test is flaky.
+// TODO(crbug.com/402488726) : Enable the api test  for android Desktop after
+// supervised user and openFileURL is supported.
+#if BUILDFLAG(ENABLE_EXTENSIONS)
+#define MAYBE_SaveAsMHTMLWithFileAccess SaveAsMHTMLWithFileAccess
+#else
+#define MAYBE_SaveAsMHTMLWithFileAccess DISABLED_SaveAsMHTMLWithFileAccess
+#endif
 IN_PROC_BROWSER_TEST_P(ExtensionPageCaptureApiTest,
-                       DISABLED_SaveAsMHTMLWithFileAccess) {
+                       MAYBE_SaveAsMHTMLWithFileAccess) {
   ASSERT_TRUE(StartEmbeddedTestServer());
   PageCaptureSaveAsMHTMLDelegate delegate;
   ASSERT_TRUE(RunTest("page_capture", /*custom_arg=*/nullptr,

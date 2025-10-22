@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import enum
 from argparse import ArgumentTypeError
-from typing import Any, Tuple
+from typing import Any
 
 
 @enum.unique
@@ -117,12 +117,12 @@ class Viewport:
     return self._mode == ViewportMode.SIZE
 
   @property
-  def position(self) -> Tuple[int, int]:
+  def position(self) -> tuple[int, int]:
     assert self.has_size, f"Viewport has no explicit size: {self._mode}"
     return (self._x, self._y)
 
   @property
-  def size(self) -> Tuple[int, int]:
+  def size(self) -> tuple[int, int]:
     assert self.has_size, f"Viewport has no explicit size: {self._mode}"
     return (self._width, self._height)
 
@@ -151,7 +151,7 @@ class Viewport:
     return self._mode
 
   @property
-  def key(self) -> Tuple[Tuple, ...]:
+  def key(self) -> tuple[tuple, ...]:
     return (
         ("mode", str(self.mode)),
         ("x", self._x),

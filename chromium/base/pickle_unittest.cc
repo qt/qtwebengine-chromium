@@ -22,6 +22,7 @@
 #include "base/containers/span.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
+#include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
@@ -444,17 +445,16 @@ TEST(PickleTest, GetReadPointerAndAdvance) {
 TEST(PickleTest, Resize) {
   size_t unit = Pickle::kPayloadUnit;
   auto data = base::HeapArray<char>::Uninit(unit);
-  char* data_ptr = data.data();
   for (size_t i = 0; i < unit; i++) {
-    data_ptr[i] = 'G';
+    data[i] = 'G';
   }
 
   // construct a message that will be exactly the size of one payload unit,
   // note that any data will have a 4-byte header indicating the size
   const size_t payload_size_after_header = unit - sizeof(uint32_t);
   Pickle pickle;
-  pickle.WriteData(
-      std::string_view(data_ptr, payload_size_after_header - sizeof(uint32_t)));
+  pickle.WriteData(std::string_view(
+      data.data(), payload_size_after_header - sizeof(uint32_t)));
   size_t cur_payload = payload_size_after_header;
 
   // note: we assume 'unit' is a power of 2
@@ -462,13 +462,13 @@ TEST(PickleTest, Resize) {
   EXPECT_EQ(pickle.payload_size(), payload_size_after_header);
 
   // fill out a full page (noting data header)
-  pickle.WriteData(std::string_view(data_ptr, unit - sizeof(uint32_t)));
+  pickle.WriteData(std::string_view(data.data(), unit - sizeof(uint32_t)));
   cur_payload += unit;
   EXPECT_EQ(unit * 2, pickle.capacity_after_header());
   EXPECT_EQ(cur_payload, pickle.payload_size());
 
   // one more byte should double the capacity
-  pickle.WriteData(std::string_view(data_ptr, 1u));
+  pickle.WriteData(std::string_view(data.data(), 1u));
   cur_payload += 8;
   EXPECT_EQ(unit * 4, pickle.capacity_after_header());
   EXPECT_EQ(cur_payload, pickle.payload_size());
@@ -659,6 +659,34 @@ TEST(PickleTest, NonCanonicalBool) {
   bool b;
   ASSERT_TRUE(iter.ReadBool(&b));
   EXPECT_TRUE(b);
+}
+
+// Tests the ReadData() overload that returns a span.
+TEST(PickleTest, ReadDataAsSpan) {
+  constexpr auto kWriteData =
+      std::to_array<uint8_t>({0x01, 0x02, 0x03, 0x61, 0x62, 0x63});
+
+  Pickle pickle;
+  pickle.WriteData(kWriteData);
+  pickle.WriteData(base::span<const uint8_t>());
+
+  PickleIterator iter(pickle);
+  EXPECT_THAT(iter.ReadData(), testing::Optional(kWriteData));
+  EXPECT_THAT(iter.ReadData(), testing::Optional(base::span<const uint8_t>()));
+  EXPECT_FALSE(iter.ReadData());
+}
+
+// Tests the ReadBytes() overload that returns a span.
+TEST(PickleTest, ReadBytesAsSpan) {
+  constexpr auto kWriteData =
+      std::to_array<uint8_t>({0x01, 0x02, 0x03, 0x61, 0x62, 0x63});
+
+  Pickle pickle;
+  pickle.WriteBytes(kWriteData);
+
+  PickleIterator iter(pickle);
+  EXPECT_THAT(iter.ReadBytes(kWriteData.size()), testing::Optional(kWriteData));
+  EXPECT_FALSE(iter.ReadBytes(kWriteData.size()));
 }
 
 }  // namespace base

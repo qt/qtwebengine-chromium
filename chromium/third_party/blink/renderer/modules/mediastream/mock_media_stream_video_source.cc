@@ -8,6 +8,7 @@
 #include "base/location.h"
 #include "base/task/single_thread_task_runner.h"
 #include "build/build_config.h"
+#include "media/base/video_frame.h"
 #include "third_party/blink/public/mojom/mediastream/media_stream.mojom-blink.h"
 #include "third_party/blink/public/platform/scheduler/test/renderer_scheduler_test_support.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
@@ -79,19 +80,16 @@ void MockMediaStreamVideoSource::DoChangeSource(
 }
 
 void MockMediaStreamVideoSource::StartSourceImpl(
-    VideoCaptureDeliverFrameCB frame_callback,
-    EncodedVideoFrameCB encoded_frame_callback,
-    VideoCaptureSubCaptureTargetVersionCB sub_capture_target_version_callback,
-    VideoCaptureNotifyFrameDroppedCB frame_dropped_callback) {
+    MediaStreamVideoSourceCallbacks media_stream_callbacks) {
   DCHECK(frame_callback_.is_null());
   DCHECK(encoded_frame_callback_.is_null());
   DCHECK(sub_capture_target_version_callback_.is_null());
   attempted_to_start_ = true;
-  frame_callback_ = std::move(frame_callback);
-  encoded_frame_callback_ = std::move(encoded_frame_callback);
+  frame_callback_ = std::move(media_stream_callbacks.deliver_frame_cb);
+  encoded_frame_callback_ = std::move(media_stream_callbacks.encoded_frame_cb);
   sub_capture_target_version_callback_ =
-      std::move(sub_capture_target_version_callback);
-  frame_dropped_callback_ = std::move(frame_dropped_callback);
+      std::move(media_stream_callbacks.sub_capture_target_version_cb);
+  frame_dropped_callback_ = std::move(media_stream_callbacks.frame_dropped_cb);
 }
 
 void MockMediaStreamVideoSource::StopSourceImpl() {}

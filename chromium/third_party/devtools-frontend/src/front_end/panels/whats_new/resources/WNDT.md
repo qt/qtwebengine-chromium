@@ -1,6 +1,8 @@
-### [New performance insights](perf-insights)
-The Performance > Insights tab gets new insights: duplicated JavaScript, modern HTTP, and use efficient cache lifetimes.
-### [Click events to keep them highlighted in Performance](click-to-highlight)
-Click items in Summary, Bottom-up, Call tree, and Event log tables to keep the corresponding events highlighted in the trace and dim the rest.
-### [Filter cookies in Privacy and security](cookies-filter)
-The cookies table in the 'Privacy and security' panel gets a filter, so you can quickly find the cookie you want to inspect.
+### [Ask AI about more insights](ai-insights)
+You can now ask Gemini about more performance insights: image delivery, legacy JavaScript, duplicate JavaScript, and modern HTTP.
+
+### [Emulate the 'Save-Data' header](save-data)
+In 'Network conditions', you can now emulate the 'Save-Data' request header that indicates the client's preference for reduced data usage.
+
+### [Debug complex CSS values easier](debug-css)
+See also, from version 138: The Elements > Styles tab can now show you a tooltip with a breakdown of the definition chain and step-by-step evaluations of complex CSS variables, so you can find bugs quicker and gain a deeper understanding of how a value is computed.

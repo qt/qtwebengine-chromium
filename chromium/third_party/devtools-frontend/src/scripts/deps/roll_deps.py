@@ -11,7 +11,6 @@ import argparse
 import enum
 import json
 import os
-import shutil
 import subprocess
 import sys
 
@@ -101,11 +100,26 @@ def sync_node(options):
 
 def copy_files(options):
     for from_path, to_path in FILE_MAPPINGS.items():
-        from_path = os.path.normpath(from_path)
-        to_path = os.path.normpath(to_path)
-        print('%s => %s' % (from_path, to_path))
-        shutil.copy(os.path.join(options.chromium_dir, from_path),
-                    os.path.join(options.devtools_dir, to_path))
+        from_path_full = os.path.join(options.chromium_dir,
+                                      os.path.normpath(from_path))
+        to_path_full = os.path.join(options.devtools_dir,
+                                    os.path.normpath(to_path))
+        print(f'{os.path.normpath(from_path)} => {os.path.normpath(to_path)}')
+
+        # Create destination directory if it doesn't exist
+        os.makedirs(os.path.dirname(to_path_full), exist_ok=True)
+
+        with open(from_path_full, 'r', encoding='utf-8') as infile:
+            content = infile.read()
+
+        # Replace IFTTT tags with skipped versions.
+        # Escape "L" as "\x4C" to avoid presubmit failures.
+        content = content.replace('\x4CINT.IfChange', '\x4CINT_SKIP.IfChange')
+        content = content.replace('\x4CINT.ThenChange',
+                                  '\x4CINT_SKIP.ThenChange')
+
+        with open(to_path_full, 'w', encoding='utf-8') as outfile:
+            outfile.write(content)
 
 
 def generate_signatures(options):
@@ -144,7 +158,8 @@ def run_eslint(options):
         if line.endswith(b'.js') or line.endswith(b'.ts'):
             generated_source_files.append(line)
     subprocess.check_call([
-        node_path(options),
+        node_path(options), "--experimental-strip-types",
+        "--no-warnings=ExperimentalWarning",
         os.path.join(options.devtools_dir, 'scripts', 'test',
                      'run_lint_check.mjs')
     ] + generated_source_files,
@@ -183,6 +198,34 @@ def update_deps_revision(options):
                 }, f)
 
 
+def update_readme_revision(options):
+    print('updating README.chromium revision')
+    readme_path = os.path.join(options.devtools_dir, 'front_end',
+                               'third_party', 'chromium', 'README.chromium')
+
+    old_content = ""
+    with open(readme_path, 'r', encoding='utf-8') as f:
+        old_content = f.read()
+
+    old_revision = ""
+    for line in old_content.splitlines():
+        if line.startswith('Revision:'):
+            old_revision = line.split(':', 1)[1].strip()
+            break
+
+    new_revision = subprocess.check_output(
+        ['git', 'log', '-1', '--pretty=format:%H'],
+        cwd=options.chromium_dir,
+        text=True).strip()
+
+    # Replace the old revision with the new revision.
+    print(f'-> from {old_revision} to {new_revision}')
+    patched_content = old_content.replace(f'Revision: {old_revision}',
+                                          f'Revision: {new_revision}')
+    with open(readme_path, 'w', encoding='utf-8') as f:
+        f.write(patched_content)
+
+
 if __name__ == '__main__':
     OPTIONS = parse_options(sys.argv[1:])
     if OPTIONS.ref == ReferenceMode.Tot:
@@ -196,3 +239,4 @@ if __name__ == '__main__':
         run_git_cl_format(OPTIONS)
         run_eslint(OPTIONS)
         update_deps_revision(OPTIONS)
+        update_readme_revision(OPTIONS)

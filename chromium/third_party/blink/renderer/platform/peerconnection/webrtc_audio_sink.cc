@@ -16,12 +16,14 @@
 #include "base/strings/to_string.h"
 #include "base/task/single_thread_task_runner.h"
 #include "base/trace_event/trace_event.h"
+#include "media/base/audio_sample_types.h"
 #include "media/base/audio_timestamp_helper.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/modules/webrtc/webrtc_logging.h"
 #include "third_party/blink/renderer/platform/scheduler/public/post_cross_thread_task.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
 #include "third_party/webrtc/rtc_base/ref_counted_object.h"
+#include "third_party/webrtc/rtc_base/time_utils.h"
 
 namespace {
 
@@ -31,7 +33,7 @@ void SendLogMessage(const std::string& message) {
 
 }  // namespace
 
-namespace WTF {
+namespace blink {
 
 template <>
 struct CrossThreadCopier<scoped_refptr<webrtc::AudioProcessorInterface>>
@@ -41,15 +43,11 @@ struct CrossThreadCopier<scoped_refptr<webrtc::AudioProcessorInterface>>
 };
 
 template <>
-struct CrossThreadCopier<scoped_refptr<blink::WebRtcAudioSink::Adapter>>
+struct CrossThreadCopier<scoped_refptr<WebRtcAudioSink::Adapter>>
     : public CrossThreadCopierPassThrough<
-          scoped_refptr<blink::WebRtcAudioSink::Adapter>> {
+          scoped_refptr<WebRtcAudioSink::Adapter>> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 WebRtcAudioSink::WebRtcAudioSink(
     const std::string& label,
@@ -225,12 +223,12 @@ int WebRtcAudioSink::Adapter::DeliverPCMToWebRtcSinks(
   if (base::FeatureList::IsEnabled(
           features::kWebRtcAudioSinkUseTimestampAligner)) {
     // This use |timestamp_aligner_| to transform |estimated_capture_timestamp|
-    // to rtc::TimeMicros(). See the comment at UpdateTimestampAligner() for
+    // to webrtc::TimeMicros(). See the comment at UpdateTimestampAligner() for
     // more details.
     capture_timestamp_ms =
         timestamp_aligner_.TranslateTimestamp(
             estimated_capture_time.since_origin().InMicroseconds()) /
-        rtc::kNumMicrosecsPerMillisec;
+        webrtc::kNumMicrosecsPerMillisec;
   }
 
   int num_preferred_channels = -1;
@@ -299,11 +297,11 @@ bool WebRtcAudioSink::Adapter::GetSignalLevel(int* level) {
   return true;
 }
 
-rtc::scoped_refptr<webrtc::AudioProcessorInterface>
+webrtc::scoped_refptr<webrtc::AudioProcessorInterface>
 WebRtcAudioSink::Adapter::GetAudioProcessor() {
   DCHECK(!signaling_task_runner_ ||
          signaling_task_runner_->RunsTasksInCurrentSequence());
-  return rtc::scoped_refptr<webrtc::AudioProcessorInterface>(
+  return webrtc::scoped_refptr<webrtc::AudioProcessorInterface>(
       audio_processor_.get());
 }
 
@@ -316,13 +314,13 @@ webrtc::AudioSourceInterface* WebRtcAudioSink::Adapter::GetSource() const {
 void WebRtcAudioSink::Adapter::UpdateTimestampAligner(
     base::TimeTicks capture_time) {
   // The |timestamp_aligner_| stamps an audio frame as if it is captured 'now',
-  // taking rtc::TimeMicros as the reference clock. It does not provide the time
-  // that the frame was originally captured, Using |timestamp_aligner_| rather
-  // than calling rtc::TimeMicros is to take the advantage that it aligns its
-  // output timestamps such that the time spacing in the |capture_time| is
-  // maintained.
+  // taking webrtc::TimeMicros as the reference clock. It does not provide the
+  // time that the frame was originally captured, Using |timestamp_aligner_|
+  // rather than calling webrtc::TimeMicros is to take the advantage that it
+  // aligns its output timestamps such that the time spacing in the
+  // |capture_time| is maintained.
   timestamp_aligner_.TranslateTimestamp(
-      capture_time.since_origin().InMicroseconds(), rtc::TimeMicros());
+      capture_time.since_origin().InMicroseconds(), webrtc::TimeMicros());
 }
 
 }  // namespace blink

@@ -3,9 +3,9 @@
  * Copyright 2023 Google Inc.
  * SPDX-License-Identifier: Apache-2.0
  */
-import { mkdtemp } from 'fs/promises';
-import os from 'os';
-import path from 'path';
+import { mkdtemp } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { computeSystemExecutablePath, Browser as SupportedBrowsers, ChromeReleaseChannel as BrowsersChromeReleaseChannel, } from '@puppeteer/browsers';
 import { debugError } from '../common/util.js';
 import { assert } from '../util/assert.js';
@@ -154,7 +154,6 @@ export class ChromeLauncher extends BrowserLauncher {
             '--disable-crash-reporter', // No crash reporting in CfT.
             '--disable-default-apps',
             '--disable-dev-shm-usage',
-            '--disable-extensions',
             '--disable-hang-monitor',
             '--disable-infobars',
             '--disable-ipc-flooding-protection',
@@ -176,7 +175,7 @@ export class ChromeLauncher extends BrowserLauncher {
         ].filter(arg => {
             return arg !== '';
         });
-        const { devtools = false, headless = !devtools, args = [], userDataDir, } = options;
+        const { devtools = false, headless = !devtools, args = [], userDataDir, enableExtensions = false, } = options;
         if (userDataDir) {
             chromeArguments.push(`--user-data-dir=${path.resolve(userDataDir)}`);
         }
@@ -186,6 +185,9 @@ export class ChromeLauncher extends BrowserLauncher {
         if (headless) {
             chromeArguments.push(headless === 'shell' ? '--headless' : '--headless=new', '--hide-scrollbars', '--mute-audio');
         }
+        chromeArguments.push(enableExtensions
+            ? '--enable-unsafe-extension-debugging'
+            : '--disable-extensions');
         if (args.every(arg => {
             return arg.startsWith('-');
         })) {

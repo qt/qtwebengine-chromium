@@ -14,7 +14,7 @@ from crossbench.probes.probe_error import ProbeValidationError
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
 
 
 class SystemStatsProbe(PollingProbe):
@@ -31,7 +31,7 @@ class SystemStatsProbe(PollingProbe):
     super().__init__(self.CMD, interval)
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     if not (browser.platform.is_linux or browser.platform.is_macos):
       raise ProbeValidationError(self, "Only supported on macOS and linux.")

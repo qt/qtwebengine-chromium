@@ -5,12 +5,14 @@
 #ifndef THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_LAYOUT_SHIFT_TRACKER_H_
 #define THIRD_PARTY_BLINK_RENDERER_CORE_LAYOUT_LAYOUT_SHIFT_TRACKER_H_
 
+#include <array>
 #include <vector>
 
 #include "base/check_op.h"
 #include "base/time/time.h"
 #include "cc/base/region.h"
 #include "third_party/blink/renderer/core/core_export.h"
+#include "third_party/blink/renderer/core/layout/geometry/logical_size.h"
 #include "third_party/blink/renderer/core/layout/geometry/physical_rect.h"
 #include "third_party/blink/renderer/core/layout/layout_shift_region.h"
 #include "third_party/blink/renderer/core/scroll/scroll_types.h"

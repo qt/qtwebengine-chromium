@@ -1,6 +1,7 @@
 // Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import * as SDK from '../../core/sdk/sdk.js';
 import type * as Protocol from '../../generated/protocol.js';
@@ -209,7 +210,7 @@ export class TimelinePaintImageView extends UI.Widget.Widget {
   private transformController: LayerViewer.TransformController.TransformController;
   private maskRectangle?: Protocol.DOM.Rect|null;
   constructor() {
-    super(true);
+    super({useShadowDom: true});
     this.registerRequiredCSS(timelinePaintProfilerStyles);
 
     this.contentElement.classList.add('fill', 'paint-profiler-image-view');

@@ -8,7 +8,7 @@ potentially limited native resources.
 import { Fixture } from '../../../../common/framework/fixture.js';
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { getGPU } from '../../../../common/util/navigator_gpu.js';
-import { assert, assertReject, raceWithRejectOnTimeout } from '../../../../common/util/util.js';
+import { assert, assertReject } from '../../../../common/util/util.js';
 import {
   getDefaultLimitsForCTS,
   kFeatureNames,
@@ -69,8 +69,7 @@ g.test('invalid')
     Test that requesting device on an invalid adapter resolves with lost device.
     - Induce invalid adapter via a device lost from a device.destroy()
     - Check the device is lost with reason 'destroyed'
-    - Try creating another device on the now-stale adapter
-    - Check that returns a device lost with 'unknown'
+    - Try creating another device on the now-stale adapter fails.
     `
   )
   .fn(async t => {
@@ -87,12 +86,8 @@ g.test('invalid')
       t.expect(lostInfo.reason === 'destroyed');
     }
 
-    // The adapter should now be invalid since a device was lost. Requesting another device should
-    // return an already lost device.
-    const kTimeoutMS = 1000;
-    const device = await t.requestDeviceTracked(adapter);
-    const lost = await raceWithRejectOnTimeout(device.lost, kTimeoutMS, 'device was not lost');
-    t.expect(lost.reason === 'unknown');
+    // The adapter should now be invalid since a device was lost. Requesting another device is not possible anymore.
+    t.shouldReject('OperationError', t.requestDeviceTracked(adapter));
   });
 
 g.test('stale')
@@ -173,20 +168,8 @@ g.test('stale')
       );
     }
 
-    const kTimeoutMS = 1000;
-    const lostDevice = await t.requestDeviceTracked(adapter);
-    const lost = await raceWithRejectOnTimeout(
-      lostDevice.lost,
-      kTimeoutMS,
-      'adapter was not stale'
-    );
-    t.expect(lost.reason === 'unknown');
-
-    // Make sure to destroy the valid device after trying to get a second one. Otherwise, the second
-    // device may fail because the adapter is put into an invalid state from the destroy.
-    if (device) {
-      device.destroy();
-    }
+    // Since the adapter is consumed now, requesting another device is not possible anymore.
+    t.shouldReject('OperationError', t.requestDeviceTracked(adapter));
   });
 
 g.test('features,unknown')
@@ -513,7 +496,7 @@ g.test('always_returns_device')
     const gpu = getGPU(t.rec);
     const adapter = await gpu.requestAdapter({
       featureLevel,
-    } as GPURequestAdapterOptions);
+    });
     if (adapter) {
       const device = await t.requestDeviceTracked(adapter);
       assert(device instanceof GPUDevice, 'requestDevice must return a device or throw');

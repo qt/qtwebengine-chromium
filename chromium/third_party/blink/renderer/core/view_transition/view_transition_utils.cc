@@ -6,6 +6,8 @@
 
 #include "third_party/blink/renderer/core/css/style_engine.h"
 #include "third_party/blink/renderer/core/dom/document.h"
+#include "third_party/blink/renderer/core/dom/element.h"
+#include "third_party/blink/renderer/core/dom/node.h"
 #include "third_party/blink/renderer/core/dom/pseudo_element.h"
 #include "third_party/blink/renderer/core/layout/layout_view.h"
 #include "third_party/blink/renderer/core/paint/paint_layer.h"
@@ -29,7 +31,8 @@ void ViewTransitionUtils::ForEachTransitionPseudo(Element& element,
   func(transition_pseudo);
 
   for (const auto& view_transition_name :
-       element.GetDocument().GetStyleEngine().ViewTransitionTags()) {
+       To<ViewTransitionPseudoElementBase>(transition_pseudo)
+           ->GetViewTransitionNames()) {
     auto* container_pseudo =
         To<ViewTransitionTransitionElement>(transition_pseudo)
             ->FindViewTransitionGroupPseudoElement(view_transition_name);
@@ -38,6 +41,11 @@ void ViewTransitionUtils::ForEachTransitionPseudo(Element& element,
     }
 
     func(container_pseudo);
+
+    if (auto* nested_groups = container_pseudo->GetPseudoElement(
+            kPseudoIdViewTransitionGroupChildren, view_transition_name)) {
+      func(nested_groups);
+    }
 
     auto* wrapper_pseudo = container_pseudo->GetPseudoElement(
         kPseudoIdViewTransitionImagePair, view_transition_name);
@@ -71,7 +79,8 @@ PseudoElement* ViewTransitionUtils::FindPseudoIf(const Element& element,
   }
 
   for (const auto& view_transition_name :
-       element.GetDocument().GetStyleEngine().ViewTransitionTags()) {
+       To<ViewTransitionPseudoElementBase>(transition_pseudo)
+           ->GetViewTransitionNames()) {
     auto* container_pseudo =
         To<ViewTransitionTransitionElement>(transition_pseudo)
             ->FindViewTransitionGroupPseudoElement(view_transition_name);
@@ -80,6 +89,12 @@ PseudoElement* ViewTransitionUtils::FindPseudoIf(const Element& element,
     }
     if (condition(container_pseudo)) {
       return container_pseudo;
+    }
+
+    if (auto* nested_groups = container_pseudo->GetPseudoElement(
+            kPseudoIdViewTransitionGroupChildren, view_transition_name);
+        nested_groups && condition(nested_groups)) {
+      return nested_groups;
     }
 
     auto* wrapper_pseudo = container_pseudo->GetPseudoElement(
@@ -121,10 +136,12 @@ void ViewTransitionUtils::ForEachDirectTransitionPseudo(const Element* element,
     return;
   }
 
+  const AtomicString& self_name =
+      To<PseudoElement>(element)->view_transition_name();
   switch (element->GetPseudoId()) {
     case kPseudoIdViewTransition:
-      for (auto name :
-           element->GetDocument().GetStyleEngine().ViewTransitionTags()) {
+      for (auto name : To<ViewTransitionPseudoElementBase>(element)
+                           ->GetViewTransitionNames()) {
         if (auto* pseudo =
                 element->GetPseudoElement(kPseudoIdViewTransitionGroup, name)) {
           func(pseudo);
@@ -132,18 +149,34 @@ void ViewTransitionUtils::ForEachDirectTransitionPseudo(const Element* element,
       }
       break;
     case kPseudoIdViewTransitionGroup:
-      if (auto* pseudo =
-              element->GetPseudoElement(kPseudoIdViewTransitionImagePair)) {
+      if (auto* pseudo = element->GetPseudoElement(
+              kPseudoIdViewTransitionImagePair, self_name)) {
+        func(pseudo);
+      }
+      if (auto* pseudo = element->GetPseudoElement(
+              kPseudoIdViewTransitionGroupChildren, self_name)) {
         func(pseudo);
       }
       break;
+    case kPseudoIdViewTransitionGroupChildren: {
+      const Vector<AtomicString>& nested_names =
+          To<ViewTransitionPseudoElementBase>(element)
+              ->GetContainedViewTransitionNames();
+      for (const auto& nested_name : nested_names) {
+        if (auto* pseudo = element->GetPseudoElement(
+                kPseudoIdViewTransitionGroup, nested_name)) {
+          func(pseudo);
+        }
+      }
+      break;
+    }
     case kPseudoIdViewTransitionImagePair:
-      if (auto* pseudo =
-              element->GetPseudoElement(kPseudoIdViewTransitionOld)) {
+      if (auto* pseudo = element->GetPseudoElement(kPseudoIdViewTransitionOld,
+                                                   self_name)) {
         func(pseudo);
       }
-      if (auto* pseudo =
-              element->GetPseudoElement(kPseudoIdViewTransitionNew)) {
+      if (auto* pseudo = element->GetPseudoElement(kPseudoIdViewTransitionNew,
+                                                   self_name)) {
         func(pseudo);
       }
       break;
@@ -180,6 +213,13 @@ ViewTransition* ViewTransitionUtils::GetTransition(const Element& element) {
     return nullptr;
   }
   return transition;
+}
+
+ViewTransition* ViewTransitionUtils::GetTransition(const Node& node) {
+  if (node.IsElementNode()) {
+    return GetTransition(To<Element>(node));
+  }
+  return GetTransition(node.GetDocument());
 }
 
 ViewTransition* ViewTransitionUtils::TransitionForTaggedElement(
@@ -278,6 +318,35 @@ bool ViewTransitionUtils::IsViewTransitionParticipantFromSupplement(
     const LayoutObject& object) {
   ViewTransition* transition = GetTransition(object.GetDocument());
   return transition && transition->IsRepresentedViaPseudoElements(object);
+}
+
+ViewTransitionUtils::GetPropertyCSSValueScope::GetPropertyCSSValueScope(
+    Document& document,
+    PseudoId pseudo_id)
+    : document_(document), pseudo_id_(pseudo_id) {
+  if (!IsTransitionPseudoElement(pseudo_id_)) {
+    return;
+  }
+
+  if (auto* supplement = ViewTransitionSupplement::FromIfExists(document_)) {
+    supplement->WillEnterGetComputedStyleScope();
+  }
+}
+
+ViewTransitionUtils::GetPropertyCSSValueScope::~GetPropertyCSSValueScope() {
+  if (!IsTransitionPseudoElement(pseudo_id_)) {
+    return;
+  }
+
+  if (auto* supplement = ViewTransitionSupplement::FromIfExists(document_)) {
+    supplement->WillExitGetComputedStyleScope();
+  }
+}
+
+void ViewTransitionUtils::WillUpdateStyleAndLayoutTree(Document& document) {
+  if (auto* supplement = ViewTransitionSupplement::FromIfExists(document)) {
+    supplement->WillUpdateStyleAndLayoutTree();
+  }
 }
 
 }  // namespace blink

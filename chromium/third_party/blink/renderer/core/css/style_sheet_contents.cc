@@ -82,6 +82,7 @@ StyleSheetContents::StyleSheetContents(const CSSParserContext* context,
       has_media_queries_(false),
       has_single_owner_document_(true),
       is_used_from_text_cache_(false),
+      is_used_from_resource_cache_(false),
       parser_context_(context) {}
 
 StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
@@ -102,6 +103,7 @@ StyleSheetContents::StyleSheetContents(const StyleSheetContents& o)
       has_media_queries_(o.has_media_queries_),
       has_single_owner_document_(true),
       is_used_from_text_cache_(false),
+      is_used_from_resource_cache_(false),
       parser_context_(o.parser_context_) {
   for (unsigned i = 0; i < pre_import_layer_statement_rules_.size(); ++i) {
     pre_import_layer_statement_rules_[i] = To<StyleRuleLayerStatement>(
@@ -263,10 +265,10 @@ void StyleSheetContents::ClearRules() {
   child_rules_.clear();
 }
 
-static wtf_size_t ReplaceRuleIfExistsInternal(
-    const StyleRuleBase* old_rule,
-    StyleRuleBase* new_rule,
-    HeapVector<Member<StyleRuleBase>>& child_rules) {
+template <typename ChildRulesType>
+static wtf_size_t ReplaceRuleIfExistsInternal(const StyleRuleBase* old_rule,
+                                              StyleRuleBase* new_rule,
+                                              ChildRulesType& child_rules) {
   for (wtf_size_t i = 0; i < child_rules.size(); ++i) {
     StyleRuleBase* rule = child_rules[i].Get();
     if (rule == old_rule) {
@@ -464,7 +466,7 @@ void StyleSheetContents::ParserAddNamespace(const AtomicString& prefix,
 const AtomicString& StyleSheetContents::NamespaceURIFromPrefix(
     const AtomicString& prefix) const {
   auto it = namespaces_.find(prefix);
-  return it != namespaces_.end() ? it->value : WTF::g_null_atom;
+  return it != namespaces_.end() ? it->value : g_null_atom;
 }
 
 void StyleSheetContents::ParseAuthorStyleSheet(
@@ -624,11 +626,12 @@ Document* StyleSheetContents::SingleOwnerDocument() const {
 }
 
 CSSStyleSheet* StyleSheetContents::ClientInTreeScope(
-    TreeScope& tree_scope) const {
+    const TreeScope& tree_scope) const {
   auto is_in_tree_scope = [&](CSSStyleSheet* sheet,
-                              TreeScope& tree_scope) -> bool {
+                              const TreeScope& tree_scope) -> bool {
     return sheet->IsAdoptedByTreeScope(tree_scope) ||
-           sheet->ownerNode()->GetTreeScope() == tree_scope;
+           (sheet->ownerNode() != nullptr &&
+            sheet->ownerNode()->GetTreeScope() == tree_scope);
   };
 
   StyleSheetContents* root = RootStyleSheet();
@@ -650,9 +653,8 @@ Document* StyleSheetContents::AnyOwnerDocument() const {
 }
 
 static bool ChildRulesHaveFailedOrCanceledSubresources(
-    const HeapVector<Member<StyleRuleBase>>& rules) {
-  for (unsigned i = 0; i < rules.size(); ++i) {
-    const StyleRuleBase* rule = rules[i].Get();
+    const base::span<const Member<StyleRuleBase>>& rules) {
+  for (const StyleRuleBase* rule : rules) {
     switch (rule->GetType()) {
       case StyleRuleBase::kStyle:
         if (To<StyleRule>(rule)->PropertiesHaveFailedOrCanceledSubresources()) {
@@ -696,6 +698,7 @@ static bool ChildRulesHaveFailedOrCanceledSubresources(
       case StyleRuleBase::kViewTransition:
       case StyleRuleBase::kFunction:
       case StyleRuleBase::kPositionTry:
+      case StyleRuleBase::kCustomMedia:
         break;
       case StyleRuleBase::kApplyMixin:
         // TODO(sesse): Should we go down into the rules here?

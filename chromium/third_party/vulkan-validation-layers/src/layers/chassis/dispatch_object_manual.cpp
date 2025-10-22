@@ -22,6 +22,7 @@
 #include "state_tracker/pipeline_state.h"
 #include "containers/small_vector.h"
 #include "generated/dispatch_functions.h"
+#include "utils/dispatch_utils.h"
 
 #include <atomic>
 
@@ -356,7 +357,8 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
     }
 
     // Extensions with properties to extract to DeviceExtensionProperties
-
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_partitioned_acceleration_structure,
+        &phys_dev_ext_props.partitioned_acceleration_structure_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_shading_rate_image,
                                              &phys_dev_ext_props.shading_rate_image_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_nv_mesh_shader,
@@ -381,8 +383,10 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                                              &phys_dev_ext_props.fragment_density_map_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_fragment_density_map2,
                                              &phys_dev_ext_props.fragment_density_map2_props);
-    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_qcom_fragment_density_map_offset,
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_fragment_density_map_offset,
                                              &phys_dev_ext_props.fragment_density_map_offset_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_valve_fragment_density_map_layered,
+                                             &phys_dev_ext_props.fragment_density_map_layered_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_performance_query,
                                              &phys_dev_ext_props.performance_query_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_sample_locations,
@@ -434,46 +438,86 @@ StatelessDeviceData::StatelessDeviceData(vvl::dispatch::Instance *instance, VkPh
                                              &phys_dev_ext_props.renderpass_striped_props);
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_ext_external_memory_host,
                                              &phys_dev_ext_props.external_memory_host_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_khr_maintenance9,
+                                             &phys_dev_ext_props.maintenance9_props);
+    instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_arm_tensors, &phys_dev_ext_props.tensor_properties);
 #if defined(VK_USE_PLATFORM_ANDROID_KHR)
     instance->GetPhysicalDeviceExtProperties(physical_device, extensions.vk_android_external_format_resolve,
                                              &phys_dev_ext_props.android_format_resolve_props);
 #endif
 
-    {
+    // None of these "check if supported" features are possible without first having gpdp2 first
+    if (IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) {
         uint32_t n_props = 0;
         std::vector<VkExtensionProperties> props;
         DispatchEnumerateDeviceExtensionProperties(physical_device, NULL, &n_props, NULL);
         props.resize(n_props);
         DispatchEnumerateDeviceExtensionProperties(physical_device, NULL, &n_props, props.data());
 
-        unordered_set<Extension> phys_dev_extensions;
+        vvl::unordered_set<Extension> phys_dev_extensions;
         for (const auto &ext_prop : props) {
             phys_dev_extensions.insert(GetExtension(ext_prop.extensionName));
         }
 
-        // Even if VK_KHR_format_feature_flags2 is available, we need to have
-        // a path to grab that information from the physical device. This
-        // requires to have VK_KHR_get_physical_device_properties2 enabled or
-        // Vulkan 1.1 (which made this core).
-        has_format_feature2 =
-            (api_version >= VK_API_VERSION_1_1 || IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) &&
+        // promoted to 1.3
+        special_supported.vk_khr_format_feature_flags2 =
+            api_version >= VK_API_VERSION_1_3 ||
             phys_dev_extensions.find(Extension::_VK_KHR_format_feature_flags2) != phys_dev_extensions.end();
 
-        // feature is required if 1.3 or extension is supported
-        has_robust_image_access =
-            (api_version >= VK_API_VERSION_1_3 || IsExtEnabled(extensions.vk_khr_get_physical_device_properties2)) &&
+        // robustImageAccess is required if 1.3 or VK_EXT_image_robustness supported
+        special_supported.robust_image_access =
+            api_version >= VK_API_VERSION_1_3 ||
             phys_dev_extensions.find(Extension::_VK_EXT_image_robustness) != phys_dev_extensions.end();
 
-        if (IsExtEnabled(extensions.vk_khr_get_physical_device_properties2) &&
+        if (phys_dev_extensions.find(Extension::_VK_KHR_robustness2) != phys_dev_extensions.end() ||
             phys_dev_extensions.find(Extension::_VK_EXT_robustness2) != phys_dev_extensions.end()) {
-            VkPhysicalDeviceRobustness2FeaturesEXT robustness_2_features = vku::InitStructHelper();
+            VkPhysicalDeviceRobustness2FeaturesKHR robustness_2_features = vku::InitStructHelper();
             VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&robustness_2_features);
             DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
-            has_robust_image_access2 = robustness_2_features.robustImageAccess2;
-            has_robust_buffer_access2 = robustness_2_features.robustBufferAccess2;
-        } else {
-            has_robust_image_access2 = false;
-            has_robust_buffer_access2 = false;
+            special_supported.robust_image_access2 = robustness_2_features.robustImageAccess2;
+            special_supported.robust_buffer_access2 = robustness_2_features.robustBufferAccess2;
+        }
+
+        if (api_version >= VK_API_VERSION_1_2) {
+            VkPhysicalDeviceVulkan12Features vulkan_12_features = vku::InitStructHelper();
+            VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&vulkan_12_features);
+            DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
+            special_supported.descriptor_binding_sampled_image_uab =
+                vulkan_12_features.descriptorBindingSampledImageUpdateAfterBind;
+            special_supported.descriptor_binding_uniform_buffer_uab =
+                vulkan_12_features.descriptorBindingUniformBufferUpdateAfterBind;
+            special_supported.descriptor_binding_storage_buffer_uab =
+                vulkan_12_features.descriptorBindingStorageBufferUpdateAfterBind;
+            special_supported.descriptor_binding_storage_image_uab =
+                vulkan_12_features.descriptorBindingStorageImageUpdateAfterBind;
+        } else if (phys_dev_extensions.find(Extension::_VK_EXT_descriptor_indexing) != phys_dev_extensions.end()) {
+            VkPhysicalDeviceDescriptorIndexingFeatures di_features = vku::InitStructHelper();
+            VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&di_features);
+            DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
+            special_supported.descriptor_binding_sampled_image_uab = di_features.descriptorBindingSampledImageUpdateAfterBind;
+            special_supported.descriptor_binding_uniform_buffer_uab = di_features.descriptorBindingUniformBufferUpdateAfterBind;
+            special_supported.descriptor_binding_storage_buffer_uab = di_features.descriptorBindingStorageBufferUpdateAfterBind;
+            special_supported.descriptor_binding_storage_image_uab = di_features.descriptorBindingStorageImageUpdateAfterBind;
+        }
+
+        if (api_version >= VK_API_VERSION_1_3) {
+            VkPhysicalDeviceVulkan13Features vulkan_13_features = vku::InitStructHelper();
+            VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&vulkan_13_features);
+            DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
+            special_supported.descriptor_binding_inline_uniform_buffer_uab =
+                vulkan_13_features.descriptorBindingInlineUniformBlockUpdateAfterBind;
+        } else if (phys_dev_extensions.find(Extension::_VK_EXT_inline_uniform_block) != phys_dev_extensions.end()) {
+            VkPhysicalDeviceInlineUniformBlockFeatures inline_ubo_features = vku::InitStructHelper();
+            VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&inline_ubo_features);
+            DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
+            special_supported.descriptor_binding_inline_uniform_buffer_uab =
+                inline_ubo_features.descriptorBindingInlineUniformBlockUpdateAfterBind;
+        }
+        if (phys_dev_extensions.find(Extension::_VK_KHR_maintenance9) != phys_dev_extensions.end()) {
+            VkPhysicalDeviceMaintenance9FeaturesKHR maintenance_9_features = vku::InitStructHelper();
+            VkPhysicalDeviceFeatures2 features2 = vku::InitStructHelper(&maintenance_9_features);
+            DispatchGetPhysicalDeviceFeatures2Helper(api_version, physical_device, &features2);
+            special_supported.has_maintenance9 = maintenance_9_features.maintenance9;
         }
     }
 }
@@ -522,6 +566,22 @@ static Device *GetDeviceFromKey(void *key) {
     ReadLockGuard lock(device_mutex);
     last_device = device_data[key].get();
     last_used_device.store(last_device);
+    if (!last_device) {
+        // If this occurs from atexit() using the layer, it would be better to provide a location where this happened, but
+        // everything is tore down and there is not much to do. Also this is the single location where can detect this, so having it
+        // here makes sure we don't miss a spot.
+        const char *error =
+            "\n\nVALIDATION ERROR - The VkDevice dispatch handle was not found and Validation will crash. If you are using exit() "
+            "you need to make sure to not call any Vulkan calls in your atexit() function as the layer static memory will be "
+            "destroyed prior to atexit()\n\n";
+        printf("%s", error);
+#ifdef VK_USE_PLATFORM_WIN32_KHR
+        OutputDebugString(error);
+#endif
+        // last_device is later dereferenced and the user **will** crash soon. We purposefully crash here to ensure that the warning
+        // is printed (and a stacktrace points them here first).
+        std::abort();
+    }
     return last_device;
 }
 
@@ -530,6 +590,8 @@ Device *GetData(VkDevice device) { return GetDeviceFromKey(GetDispatchKey(device
 Device *GetData(VkQueue queue) { return GetDeviceFromKey(GetDispatchKey(queue)); }
 
 Device *GetData(VkCommandBuffer cb) { return GetDeviceFromKey(GetDispatchKey(cb)); }
+
+Device *GetData(VkExternalComputeQueueNV queue) { return GetDeviceFromKey(GetDispatchKey(queue)); }
 
 void SetData(VkDevice device, std::unique_ptr<Device> &&data) {
     void *key = GetDispatchKey(device);
@@ -593,6 +655,11 @@ Instance::Instance(const VkInstanceCreateInfo *pCreateInfo) : HandleWrapper(new 
 }
 
 Instance::~Instance() {
+    // Destroy validation objects in reverse order so that state tracker clients
+    // are destroyed before it is.
+    while (!object_dispatch.empty()) {
+        object_dispatch.pop_back();
+    }
     vku::FreePnextChain(debug_report->instance_pnext_chain);
     delete debug_report;
 }
@@ -753,7 +820,16 @@ Device::Device(Instance *instance, VkPhysicalDevice gpu, const VkDeviceCreateInf
     }
 }
 
-Device::~Device() {}
+Device::~Device() {
+    // Destroy validation objects in reverse order so that state tracker clients
+    // are destroyed before it is.
+    while (!aborted_object_dispatch.empty()) {
+        aborted_object_dispatch.pop_back();
+    }
+    while (!object_dispatch.empty()) {
+        object_dispatch.pop_back();
+    }
+}
 
 base::Device *Device::GetValidationObject(LayerObjectTypeId object_type) const {
     for (auto &validation_object : object_dispatch) {
@@ -772,6 +848,10 @@ void Device::DestroyDevice(VkDevice device, const VkAllocationCallbacks *pAlloca
 // Designed for things like GPU-AV to remove itself while keeping everything else alive
 void Device::ReleaseValidationObject(LayerObjectTypeId type_id) const {
     for (auto object_it = object_dispatch.begin(); object_it != object_dispatch.end(); object_it++) {
+        if ((*object_it)->container_type == LayerObjectTypeStateTracker) {
+            auto &state_tracker = dynamic_cast<vvl::DeviceState &>(**object_it);
+            state_tracker.RemoveProxy(type_id);
+        }
         if ((*object_it)->container_type == type_id) {
             auto object = std::move(*object_it);
 
@@ -1075,7 +1155,7 @@ VkResult Device::CreateRenderPass(VkDevice device, const VkRenderPassCreateInfo 
                                   const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
     VkResult result = device_dispatch_table.CreateRenderPass(device, pCreateInfo, pAllocator, pRenderPass);
     if (!wrap_handles) return result;
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         WriteLockGuard lock(dispatch_lock);
         UpdateCreateRenderPassState(this, pCreateInfo, *pRenderPass);
         *pRenderPass = WrapNew(*pRenderPass);
@@ -1087,7 +1167,7 @@ VkResult Device::CreateRenderPass2KHR(VkDevice device, const VkRenderPassCreateI
                                       const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
     VkResult result = device_dispatch_table.CreateRenderPass2KHR(device, pCreateInfo, pAllocator, pRenderPass);
     if (!wrap_handles) return result;
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         WriteLockGuard lock(dispatch_lock);
         UpdateCreateRenderPassState(this, pCreateInfo, *pRenderPass);
         *pRenderPass = WrapNew(*pRenderPass);
@@ -1099,7 +1179,7 @@ VkResult Device::CreateRenderPass2(VkDevice device, const VkRenderPassCreateInfo
                                    const VkAllocationCallbacks *pAllocator, VkRenderPass *pRenderPass) {
     VkResult result = device_dispatch_table.CreateRenderPass2(device, pCreateInfo, pAllocator, pRenderPass);
     if (!wrap_handles) return result;
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         WriteLockGuard lock(dispatch_lock);
         UpdateCreateRenderPassState(this, pCreateInfo, *pRenderPass);
         *pRenderPass = WrapNew(*pRenderPass);
@@ -1126,7 +1206,7 @@ VkResult Device::GetSwapchainImagesKHR(VkDevice device, VkSwapchainKHR swapchain
         swapchain = Unwrap(swapchain);
     }
     VkResult result = device_dispatch_table.GetSwapchainImagesKHR(device, swapchain, pSwapchainImageCount, pSwapchainImages);
-    if ((VK_SUCCESS == result) || (VK_INCOMPLETE == result)) {
+    if ((result == VK_SUCCESS) || (VK_INCOMPLETE == result)) {
         if ((*pSwapchainImageCount > 0) && pSwapchainImages) {
             WriteLockGuard lock(dispatch_lock);
             auto &wrapped_swapchain_image_handles = swapchain_wrapped_image_handle_map[wrapped_swapchain_handle];
@@ -1209,7 +1289,7 @@ VkResult Device::ResetDescriptorPool(VkDevice device, VkDescriptorPool descripto
     VkDescriptorPool local_descriptor_pool = VK_NULL_HANDLE;
     { local_descriptor_pool = Unwrap(descriptorPool); }
     VkResult result = device_dispatch_table.ResetDescriptorPool(device, local_descriptor_pool, flags);
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         WriteLockGuard lock(dispatch_lock);
         // remove references to implicitly freed descriptor sets
         for (auto descriptor_set : pool_descriptor_sets_map[descriptorPool]) {
@@ -1243,7 +1323,7 @@ VkResult Device::AllocateDescriptorSets(VkDevice device, const VkDescriptorSetAl
     if (local_pAllocateInfo) {
         delete local_pAllocateInfo;
     }
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         WriteLockGuard lock(dispatch_lock);
         auto &pool_descriptor_sets = pool_descriptor_sets_map[pAllocateInfo->descriptorPool];
         for (uint32_t index0 = 0; index0 < pAllocateInfo->descriptorSetCount; index0++) {
@@ -1271,7 +1351,7 @@ VkResult Device::FreeDescriptorSets(VkDevice device, VkDescriptorPool descriptor
     VkResult result = device_dispatch_table.FreeDescriptorSets(device, local_descriptor_pool, descriptorSetCount,
                                                                (const VkDescriptorSet *)local_pDescriptorSets);
     if (local_pDescriptorSets) delete[] local_pDescriptorSets;
-    if ((VK_SUCCESS == result) && (pDescriptorSets)) {
+    if ((result == VK_SUCCESS) && (pDescriptorSets)) {
         WriteLockGuard lock(dispatch_lock);
         auto &pool_descriptor_sets = pool_descriptor_sets_map[descriptorPool];
         for (uint32_t index0 = 0; index0 < descriptorSetCount; index0++) {
@@ -1303,7 +1383,7 @@ VkResult Device::CreateDescriptorUpdateTemplate(VkDevice device, const VkDescrip
     }
     VkResult result = device_dispatch_table.CreateDescriptorUpdateTemplate(device, local_pCreateInfo->ptr(), pAllocator,
                                                                            pDescriptorUpdateTemplate);
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         *pDescriptorUpdateTemplate = WrapNew(*pDescriptorUpdateTemplate);
 
         // Shadow template createInfo for later updates
@@ -1337,7 +1417,7 @@ VkResult Device::CreateDescriptorUpdateTemplateKHR(VkDevice device, const VkDesc
     VkResult result = device_dispatch_table.CreateDescriptorUpdateTemplateKHR(device, local_pCreateInfo->ptr(), pAllocator,
                                                                               pDescriptorUpdateTemplate);
 
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         *pDescriptorUpdateTemplate = WrapNew(*pDescriptorUpdateTemplate);
 
         // Shadow template createInfo for later updates
@@ -2355,7 +2435,7 @@ VkResult Device::CreateIndirectExecutionSetEXT(VkDevice device, const VkIndirect
 
     VkResult result = device_dispatch_table.CreateIndirectExecutionSetEXT(
         device, (const VkIndirectExecutionSetCreateInfoEXT *)&local_pCreateInfo, pAllocator, pIndirectExecutionSet);
-    if (VK_SUCCESS == result) {
+    if (result == VK_SUCCESS) {
         *pIndirectExecutionSet = WrapNew(*pIndirectExecutionSet);
     }
     return result;
@@ -2501,6 +2581,37 @@ VkResult Device::BindImageMemory2KHR(VkDevice device, uint32_t bindInfoCount, co
                 auto *local_bind_memory_status = vku::FindStructInPNextChain<VkBindMemoryStatus>(local_pBindInfos[index0].pNext);
                 *bind_memory_status->pResult = *local_bind_memory_status->pResult;
             }
+        }
+    }
+
+    return result;
+}
+
+VkResult Device::CreateShadersEXT(VkDevice device, uint32_t createInfoCount, const VkShaderCreateInfoEXT *pCreateInfos,
+                                  const VkAllocationCallbacks *pAllocator, VkShaderEXT *pShaders) {
+    if (!wrap_handles) return device_dispatch_table.CreateShadersEXT(device, createInfoCount, pCreateInfos, pAllocator, pShaders);
+    small_vector<vku::safe_VkShaderCreateInfoEXT, DISPATCH_MAX_STACK_ALLOCATIONS> var_local_pCreateInfos;
+    vku::safe_VkShaderCreateInfoEXT *local_pCreateInfos = nullptr;
+    if (pCreateInfos) {
+        var_local_pCreateInfos.resize(createInfoCount);
+        local_pCreateInfos = var_local_pCreateInfos.data();
+        for (uint32_t index0 = 0; index0 < createInfoCount; ++index0) {
+            local_pCreateInfos[index0].initialize(&pCreateInfos[index0]);
+            if (local_pCreateInfos[index0].pSetLayouts) {
+                for (uint32_t index1 = 0; index1 < local_pCreateInfos[index0].setLayoutCount; ++index1) {
+                    local_pCreateInfos[index0].pSetLayouts[index1] = Unwrap(local_pCreateInfos[index0].pSetLayouts[index1]);
+                }
+            }
+        }
+    }
+
+    VkResult result = device_dispatch_table.CreateShadersEXT(
+        device, createInfoCount, (const VkShaderCreateInfoEXT *)local_pCreateInfos, pAllocator, pShaders);
+
+    // Wrap anything created which is known if handles are non-null
+    for (uint32_t index0 = 0; index0 < createInfoCount; index0++) {
+        if (pShaders[index0] != VK_NULL_HANDLE) {
+            pShaders[index0] = WrapNew(pShaders[index0]);
         }
     }
 

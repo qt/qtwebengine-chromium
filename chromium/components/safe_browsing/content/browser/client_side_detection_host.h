@@ -7,6 +7,7 @@
 
 #include <stddef.h>
 
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
@@ -17,7 +18,7 @@
 #include "base/memory/raw_ptr.h"
 #include "base/memory/ref_counted.h"
 #include "base/time/time.h"
-#include "components/optimization_guide/proto/features/scam_detection.pb.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "components/permissions/permission_request_manager.h"
 #include "components/safe_browsing/content/browser/async_check_tracker.h"
 #include "components/safe_browsing/content/browser/base_ui_manager.h"
@@ -28,6 +29,7 @@
 #include "components/safe_browsing/core/browser/verdict_cache_manager.h"
 #include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 #include "content/public/browser/global_routing_id.h"
+#include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "mojo/public/cpp/base/proto_wrapper.h"
 #include "mojo/public/cpp/bindings/associated_remote.h"
@@ -59,9 +61,10 @@ class ClientSideDetectionHost
   // numeric values should never be reused.
   enum class AsyncCheckTriggerForceRequestResult {
     kTriggered = 0,
-    kSkippedTriggerModelsPingNotSkipped = 1,
+    kSkippedTriggerModelsPingNotSkipped = 1,  // DEPRECATED
     kSkippedNotForced = 2,
-    kMaxValue = kSkippedNotForced,
+    kSkippedTriggerModelsPingSentAsForceRequest = 3,
+    kMaxValue = kSkippedTriggerModelsPingSentAsForceRequest,
   };
 
   // A callback via which the client of this component indicates whether the
@@ -96,6 +99,44 @@ class ClientSideDetectionHost
     virtual void GetInnerText(HostInnerTextCallback callback) = 0;
   };
 
+  // Delegate for handling intelligent scanning using on-device models. This
+  // object is responsible for all interactions with the on-device model.
+  class IntelligentScanDelegate : public KeyedService {
+   public:
+    // Represents the result of an intelligent scan.
+    struct IntelligentScanResult {
+      std::string brand;
+      std::string intent;
+      int model_version;
+      bool execution_success;
+    };
+    using InquireOnDeviceModelDoneCallback =
+        base::OnceCallback<void(IntelligentScanResult)>;
+
+    ~IntelligentScanDelegate() override = default;
+
+    // Determines if an intelligent scan should be requested based on the
+    // verdict.
+    virtual bool ShouldRequestIntelligentScan(
+        ClientPhishingRequest* verdict) = 0;
+    // Returns |on_device_model_available_| which indicates the availability of
+    // on-device model session creation. Also logs failed eligibility reason
+    // histograms if |log_failed_eligibility_reason| is true.
+    virtual bool IsOnDeviceModelAvailable(
+        bool log_failed_eligibility_reason) = 0;
+    // Gets the intelligent scan result from the on-device model. The callback
+    // will return an empty optional if the on-device model is not available.
+    // Note: The caller is responsible for calling ResetOnDeviceSession before
+    // calling this function again.
+    virtual void InquireOnDeviceModel(
+        std::string rendered_texts,
+        InquireOnDeviceModelDoneCallback callback) = 0;
+    // Resets the session that's created by the on-device model. Returns true if
+    // the session was reset. Does nothing and returns false if there is no
+    // session.
+    virtual bool ResetOnDeviceSession() = 0;
+  };
+
   // The caller keeps ownership of the tab object and is responsible for
   // ensuring that it stays valid until WebContentsDestroyed is called.
   // The caller also keeps ownership of pref_service. The
@@ -105,6 +146,7 @@ class ClientSideDetectionHost
   static std::unique_ptr<ClientSideDetectionHost> Create(
       content::WebContents* tab,
       std::unique_ptr<Delegate> delegate,
+      IntelligentScanDelegate* intelligent_scan_delegate,
       PrefService* pref_service,
       std::unique_ptr<SafeBrowsingTokenFetcher> token_fetcher,
       bool is_off_the_record,
@@ -121,12 +163,16 @@ class ClientSideDetectionHost
   // pointer or vibrate the page has arrived, we will re-trigger classification.
   // If a request to fullscreen the tab happens, check in preclassification
   // check for allowlist matches for metric collection.
+  void DidFinishNavigation(
+      content::NavigationHandle* navigation_handle) override;
   void PrimaryPageChanged(content::Page& page) override;
   void KeyboardLockRequested() override;
   void PointerLockRequested() override;
   void VibrationRequested() override;
   void DidToggleFullscreenModeForTab(bool entered_fullscreen,
                                      bool will_cause_resize) override;
+  void OnTextCopiedToClipboard(content::RenderFrameHost* render_frame_host,
+                               const std::u16string& copied_text) override;
 
   // permissions::PermissionRequestManager::Observer methods:
   void OnPromptAdded() override;
@@ -144,6 +190,7 @@ class ClientSideDetectionHost
   explicit ClientSideDetectionHost(
       content::WebContents* tab,
       std::unique_ptr<Delegate> delegate,
+      IntelligentScanDelegate* intelligent_scan_delegate,
       PrefService* pref_service,
       std::unique_ptr<SafeBrowsingTokenFetcher> token_fetcher,
       bool is_off_the_record,
@@ -208,6 +255,10 @@ class ClientSideDetectionHost
       AsyncCheckTrackerTriggersClassificationRequestOnAllowlistMatch);
   FRIEND_TEST_ALL_PREFIXES(ClientSideDetectionHostScamDetectionTest,
                            KeyboardLockRequestTriggersOnDeviceLLM);
+  FRIEND_TEST_ALL_PREFIXES(ClientSideDetectionHostClipboardTest,
+                           ClipboardApiTriggersPreclassificationCheck);
+  FRIEND_TEST_ALL_PREFIXES(ClientSideDetectionHostClipboardTest,
+                           ClipboardApiClassificationTriggersCSPPPing);
 
   // Helper function to create preclassification check once requirements are
   // met.
@@ -312,6 +363,11 @@ class ClientSideDetectionHost
     delegate_ = std::move(delegate);
   }
 
+  void set_intelligent_scan_delegate_for_testing(
+      IntelligentScanDelegate* intelligent_scan_delegate) {
+    intelligent_scan_delegate_ = intelligent_scan_delegate;
+  }
+
   // Check if CSD can get an access Token. Should be enabled only for ESB
   // users, who are signed in and not in incognito mode.
   bool CanGetAccessToken();
@@ -337,12 +393,12 @@ class ClientSideDetectionHost
       std::optional<bool> did_match_high_confidence_allowlist,
       std::string inner_text);
 
-  // Callback function when InquireOnDeviceModel from the CSD service is
-  // completed.
+  // Callback function when InquireOnDeviceModel from the intelligent scan
+  // delegate is completed.
   void OnInquireOnDeviceModelDone(
       std::unique_ptr<ClientPhishingRequest> verdict,
       std::optional<bool> did_match_high_confidence_allowlist,
-      std::optional<optimization_guide::proto::ScamDetectionResponse> response);
+      IntelligentScanDelegate::IntelligentScanResult response);
 
   // Returns bool if for a |client_side_detection_Type|, the last URL is the
   // same as the last committed URL on the RenderFrameHost.
@@ -364,6 +420,8 @@ class ClientSideDetectionHost
   GURL current_url_;
   // The current outermost main frame's id.
   content::GlobalRenderFrameHostId current_outermost_main_frame_id_;
+  // The navigation ID that commits the current URL. Used to set UnsafeResource.
+  int64_t current_navigation_id_;
 
   // The last URL that the fullscreen API was called. This is used because the
   // DidToggleFullscreenModeForTab can be called for both entering and exiting
@@ -372,9 +430,14 @@ class ClientSideDetectionHost
 
   // Records the start time of when phishing detection started.
   base::TimeTicks phishing_detection_start_time_;
+  // Records the start time of when image embedding started.
+  base::TimeTicks image_embedding_start_time_;
   raw_ptr<const base::TickClock> tick_clock_;
 
   std::unique_ptr<Delegate> delegate_;
+
+  // A keyed service with profile lifetime.
+  raw_ptr<IntelligentScanDelegate> intelligent_scan_delegate_;
 
   // Unowned object used for getting preference settings.
   raw_ptr<PrefService> pref_service_;
@@ -401,9 +464,10 @@ class ClientSideDetectionHost
                           permissions::PermissionRequestManager::Observer>
       permission_request_observation_{this};
 
-  // A boolean indicates whether TRIGGER_MODELS request is skipped. This is
-  // used to decide whether async check is allowed to trigger FORCE_REQUEST.
-  bool trigger_models_request_skipped_ = false;
+  // A boolean indicates whether TRIGGER_MODELS request is sent via
+  // FORCE_REQUEST. This is used to decide whether async check is allowed to
+  // trigger FORCE_REQUEST.
+  bool trigger_model_request_sent_as_force_request_ = false;
 
   // Modified through tests only. Initial value is set to the const
   // kProbabilityForAcceptingHCAllowlistTrigger.

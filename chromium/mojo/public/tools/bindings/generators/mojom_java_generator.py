@@ -290,6 +290,22 @@ def GetPackage(module):
   return 'org.chromium'
 
 
+def ComputeInterfaceImports(module):
+  imports = []
+
+  def has_result_response(module):
+    for interface in module.interfaces:
+      for method in interface.methods:
+        if method.result_response != None:
+          return True
+    return False
+
+  if has_result_response(module):
+    imports += ['org.chromium.mojo.bindings.Result']
+
+  return imports
+
+
 def GetNameForKind(context, kind, with_nullable=False):
 
   def _GetNameHierachy(kind):
@@ -514,7 +530,8 @@ def EnumCoversContinuousRange(kind):
 class Generator(generator.Generator):
   def _GetJinjaExports(self):
     return {
-      'package': GetPackage(self.module),
+        'interface_imports': ComputeInterfaceImports(self.module),
+        'package': GetPackage(self.module),
     }
 
   @staticmethod
@@ -638,16 +655,17 @@ class Generator(generator.Generator):
     # srcjar in the output directory.
     basename = "%s.srcjar" % self.module.path
     zip_filename = os.path.join(self.output_dir, basename)
-    with TempDir() as temp_java_root:
-      self.output_dir = os.path.join(temp_java_root, package_path)
-      self._DoGenerateFiles();
-      with action_helpers.atomic_output(zip_filename) as f:
-        zip_helpers.zip_directory(f, temp_java_root)
 
     if args.java_output_directory:
       # If requested, generate the java files directly into indicated directory.
       self.output_dir = os.path.join(args.java_output_directory, package_path)
       self._DoGenerateFiles();
+    else:
+      with TempDir() as temp_java_root:
+        self.output_dir = os.path.join(temp_java_root, package_path)
+        self._DoGenerateFiles()
+        with action_helpers.atomic_output(zip_filename) as f:
+          zip_helpers.zip_directory(f, temp_java_root)
 
   def GetJinjaParameters(self):
     return {

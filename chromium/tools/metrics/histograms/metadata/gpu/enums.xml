@@ -74,6 +74,12 @@ chromium-metrics-reviews@google.com.
   <int value="2" label="Missing serial number"/>
 </enum>
 
+<enum name="BooleanANGLECanEmulateGLES3">
+  <summary>Whether ANGLE can emulate GLES3.</summary>
+  <int value="0" label="false"/>
+  <int value="1" label="true"/>
+</enum>
+
 <enum name="BooleanDisplayIdCollision">
   <int value="0" label="No display ID collision"/>
   <int value="1" label="Display ID collision detected"/>
@@ -240,6 +246,16 @@ chromium-metrics-reviews@google.com.
   <int value="8" label="D3D_SHADER_MODEL_6_6"/>
   <int value="9" label="D3D_SHADER_MODEL_6_7"/>
 </enum>
+
+<!-- LINT.IfChange(DawnAdapterFeatureLevel) -->
+
+<enum name="DawnAdapterFeatureLevel">
+  <int value="0" label="Unknown"/>
+  <int value="1" label="Compatibility"/>
+  <int value="2" label="Core"/>
+</enum>
+
+<!-- LINT.ThenChange(//gpu/command_buffer/service/dawn_context_provider.cc:DawnAdapterFeatureLevel) -->
 
 <enum name="DCLayerResult">
   <int value="0" label="Success"/>
@@ -424,6 +440,8 @@ chromium-metrics-reviews@google.com.
   <int value="3" label="kVideoConference"/>
   <int value="4" label="kOnlyAnimatingImage"/>
   <int value="5" label="kOnlyScrollBarFadeOut"/>
+  <int value="6" label="kUserInputBoost"/>
+  <int value="7" label="kSlowScrollThrottle"/>
 </enum>
 
 <enum name="GLImplementation">
@@ -1159,6 +1177,11 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="3" label="GLES3.2"/>
 </enum>
 
+<enum name="MetalFamilyMac">
+  <int value="0" label="Mac1"/>
+  <int value="1" label="Mac2"/>
+</enum>
+
 <enum name="MetalReadWriteTextureSupportTier">
   <int value="0" label="Unknown"/>
   <int value="1" label="Tier0_NoSupport"/>
@@ -1399,6 +1422,7 @@ Called by update_gpu_driver_bug_workaround_entries.py.-->
   <int value="5" label="GraphiteDawnMetal"/>
   <int value="6" label="GraphiteDawnD3D11"/>
   <int value="7" label="GraphiteDawnD3D12"/>
+  <int value="8" label="GraphiteMetal"/>
 </enum>
 
 <enum name="SkiaPipelineCreationRace">

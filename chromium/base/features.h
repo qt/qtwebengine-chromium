@@ -17,7 +17,7 @@ namespace base::features {
 // Alphabetical:
 BASE_EXPORT BASE_DECLARE_FEATURE(kFeatureParamWithCache);
 
-BASE_EXPORT BASE_DECLARE_FEATURE(kUseRustJsonParser);
+BASE_EXPORT BASE_DECLARE_FEATURE(kFastFilePathIsParent);
 
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(bool,
                                        kUseRustJsonParserInCurrentSequence);
@@ -25,6 +25,12 @@ BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(bool,
 BASE_EXPORT BASE_DECLARE_FEATURE(kLowEndMemoryExperiment);
 
 BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(size_t, kLowMemoryDeviceThresholdMB);
+
+// PPM: Poor performance moment.
+//
+// This feature covers fixes to many egregious performance problems and the goal
+// is to measure their aggregated impact.
+BASE_EXPORT BASE_DECLARE_FEATURE(kReducePPMs);
 
 #if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
 BASE_EXPORT BASE_DECLARE_FEATURE(kPartialLowEndModeOn3GbDevices);
@@ -37,11 +43,19 @@ BASE_EXPORT BASE_DECLARE_FEATURE(kCollectAndroidFrameTimelineMetrics);
 BASE_EXPORT BASE_DECLARE_FEATURE(
     kPostPowerMonitorBroadcastReceiverInitToBackground);
 BASE_EXPORT BASE_DECLARE_FEATURE(kPostGetMyMemoryStateToBackground);
+BASE_EXPORT BASE_DECLARE_FEATURE(kUpdateStateBeforeUnbinding);
+BASE_EXPORT BASE_DECLARE_FEATURE(kUseSharedRebindServiceConnection);
+
+BASE_EXPORT BASE_DECLARE_FEATURE(kBackgroundThreadPoolFieldTrial);
+BASE_EXPORT BASE_DECLARE_FEATURE_PARAM(int,
+                                       kBackgroundThreadPoolFieldTrialConfig);
 #endif
 
-#if BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
-BASE_EXPORT BASE_DECLARE_FEATURE(kUsePriorityInheritanceMutex);
-#endif  // BUILDFLAG(ENABLE_MUTEX_PRIORITY_INHERITANCE)
+// Whether the ReducePPMs feature is enabled. Unlike
+// `FeatureList::IsEnabled(base::features::kReducePPMs)`, this can be called
+// racily with initializing the FeatureList (although the return value might not
+// reflect the state of the feature in the FeatureList in that case).
+BASE_EXPORT bool IsReducePPMsEnabled();
 
 // Policy for emitting profiler metadata from `ThreadController`.
 enum class EmitThreadControllerProfilerMetadata {

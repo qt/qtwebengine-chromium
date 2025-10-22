@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Iterable, Self, Tuple, Type, cast
+from typing import TYPE_CHECKING, Iterable, Self, Type, cast
 
 from typing_extensions import override
 
@@ -15,7 +15,7 @@ from crossbench.probes.results import LocalProbeResult, ProbeResult
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.plt.android_adb import AndroidAdbPlatform
   from crossbench.runner.run import Run
 
@@ -45,11 +45,11 @@ class LogcatAndroidProbe(Probe):
     self._filterspec = tuple(filterspec)
 
   @property
-  def filterspec(self) -> Tuple[str, ...]:
+  def filterspec(self) -> tuple[str, ...]:
     return self._filterspec
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     super().validate_browser(env, browser)
     if not browser.platform.is_android:
       raise ProbeIncompatibleBrowser(self, browser, "Only supported on android")

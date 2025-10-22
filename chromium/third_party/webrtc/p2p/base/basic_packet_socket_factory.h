@@ -11,8 +11,7 @@
 #ifndef P2P_BASE_BASIC_PACKET_SOCKET_FACTORY_H_
 #define P2P_BASE_BASIC_PACKET_SOCKET_FACTORY_H_
 
-#include <stdint.h>
-
+#include <cstdint>
 #include <memory>
 
 #include "api/async_dns_resolver.h"
@@ -55,10 +54,5 @@ class RTC_EXPORT BasicPacketSocketFactory : public PacketSocketFactory {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::BasicPacketSocketFactory;
-}  // namespace rtc
 
 #endif  // P2P_BASE_BASIC_PACKET_SOCKET_FACTORY_H_

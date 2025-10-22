@@ -1,6 +1,8 @@
 // Copyright 2022 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
+
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
 import * as SDK from '../../core/sdk/sdk.js';
@@ -9,7 +11,8 @@ import * as UI from '../../ui/legacy/legacy.js';
 
 import * as ElementsComponents from './components/components.js';
 import type {ElementsTreeElement} from './ElementsTreeElement.js';
-import * as ElementsTreeOutline from './ElementsTreeOutline.js';
+import type {ElementsTreeOutline} from './ElementsTreeOutline.js';
+import {ShortcutTreeElement} from './ShortcutTreeElement.js';
 
 const UIStrings = {
   /**
@@ -22,12 +25,12 @@ const str_ = i18n.i18n.registerUIStrings('panels/elements/TopLayerContainer.ts',
 const i18nString = i18n.i18n.getLocalizedString.bind(undefined, str_);
 
 export class TopLayerContainer extends UI.TreeOutline.TreeElement {
-  tree: ElementsTreeOutline.ElementsTreeOutline;
+  tree: ElementsTreeOutline;
   document: SDK.DOMModel.DOMDocument;
   currentTopLayerDOMNodes = new Set<SDK.DOMModel.DOMNode>();
   topLayerUpdateThrottler: Common.Throttler.Throttler;
 
-  constructor(tree: ElementsTreeOutline.ElementsTreeOutline, document: SDK.DOMModel.DOMDocument) {
+  constructor(tree: ElementsTreeOutline, document: SDK.DOMModel.DOMDocument) {
     super('#top-layer');
     this.tree = tree;
     this.document = document;
@@ -58,7 +61,7 @@ export class TopLayerContainer extends UI.TreeOutline.TreeElement {
       if (topLayerDOMNode.nodeName() !== '::backdrop') {
         const topLayerElementShortcut = new SDK.DOMModel.DOMNodeShortcut(
             domModel.target(), topLayerDOMNode.backendNodeId(), 0, topLayerDOMNode.nodeName());
-        const topLayerElementRepresentation = new ElementsTreeOutline.ShortcutTreeElement(topLayerElementShortcut);
+        const topLayerElementRepresentation = new ShortcutTreeElement(topLayerElementShortcut);
         this.appendChild(topLayerElementRepresentation);
         this.currentTopLayerDOMNodes.add(topLayerDOMNode);
 
@@ -67,7 +70,7 @@ export class TopLayerContainer extends UI.TreeOutline.TreeElement {
         if (previousTopLayerDOMNode && previousTopLayerDOMNode.nodeName() === '::backdrop') {
           const backdropElementShortcut = new SDK.DOMModel.DOMNodeShortcut(
               domModel.target(), previousTopLayerDOMNode.backendNodeId(), 0, previousTopLayerDOMNode.nodeName());
-          const backdropElementRepresentation = new ElementsTreeOutline.ShortcutTreeElement(backdropElementShortcut);
+          const backdropElementRepresentation = new ShortcutTreeElement(backdropElementShortcut);
           topLayerElementRepresentation.appendChild(backdropElementRepresentation);
         }
 
@@ -88,7 +91,7 @@ export class TopLayerContainer extends UI.TreeOutline.TreeElement {
   }
 
   private addTopLayerAdorner(
-      element: ElementsTreeElement, topLayerElementRepresentation: ElementsTreeOutline.ShortcutTreeElement,
+      element: ElementsTreeElement, topLayerElementRepresentation: ShortcutTreeElement,
       topLayerElementIndex: number): void {
     const config = ElementsComponents.AdornerManager.getRegisteredAdorner(
         ElementsComponents.AdornerManager.RegisteredAdorners.TOP_LAYER);

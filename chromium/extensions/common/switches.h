@@ -27,6 +27,12 @@ extern const char kDisableAppContentVerification[];
 // into file URLs (ie, always allow it). This is used during automated testing.
 extern const char kDisableExtensionsFileAccessCheck[];
 
+// Disables extensions.
+inline constexpr char kDisableExtensions[] = "disable-extensions";
+
+// Disable extensions except those specified in a comma-separated list.
+inline constexpr char kDisableExtensionsExcept[] = "disable-extensions-except";
+
 // Disable the net::URLRequestThrottlerManager functionality for
 // requests originating from extensions.
 extern const char kDisableExtensionsHttpThrottling[];
@@ -48,6 +54,11 @@ extern const char kExtensionProcess[];
 // Extensions still need to explicitly request access to chrome:// URLs in the
 // manifest.
 extern const char kExtensionsOnChromeURLs[];
+
+// Enables extensions running scripts on chrome-extension:// URLs.
+// Extensions still need to explicitly request access to chrome-extension://
+// URLs in the manifest.
+extern const char kExtensionsOnExtensionURLs[];
 
 // Comma-separated list of paths to apps to load at startup. The first app in
 // the list will be launched.
@@ -90,6 +101,30 @@ extern const char kAllowFutureManifestVersion[];
 // copied from the browser to the renderer in ChromeContentBrowserClient to
 // actually use it in browser tests.
 extern const char kExtensionTestApiOnWebPages[];
+
+// The feature parameter name that controls the variant of IPH shown when the
+// user has no extensions installed.
+extern const char kZeroStatePromoIphVariantParamName[];
+
+// When the user has no extensions installed, display a custom action IPH
+// that upon triggering, opens a new tab to the Chrome Web Store.
+extern const char kZeroStatePromoCustomActionIph[];
+
+// When the user has no extensions installed, display a custom UI IPH that
+// presents the user with different collections of extensions to explore,
+// each in a cr-chip button.
+extern const char kZeroStatePromoCustomUiChipIph[];
+
+// When the user has no extensions installed, display a custom UI IPH that
+// presents the user with different collections of extensions to explore,
+// each in a plain text link.
+extern const char kZeroStatePromoCustomUiPlainLinkIph[];
+
+// Checks if extensions are allowed to run on chrome:// URLs.
+bool AreExtensionsOnChromeURLsAllowed();
+
+// Checks if extensions are allowed to run on chrome-extension:// URLs.
+bool AreExtensionsOnExtensionURLsAllowed();
 
 }  // namespace extensions::switches
 

@@ -214,9 +214,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
           code_cache_host,
       CrossVariantMojoRemote<mojom::blink::CodeCacheHostInterfaceBase>
           code_cache_host_for_background) override;
-  WebString OriginCalculationDebugInfo() const override {
-    return origin_calculation_debug_info_;
-  }
   bool HasLoadedNonInitialEmptyDocument() const override;
   bool IsForDiscard() const override;
 
@@ -244,18 +241,17 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       const JavaScriptFrameworkDetectionResult&);
 
   // https://html.spec.whatwg.org/multipage/history.html#url-and-history-update-steps
-  void RunURLAndHistoryUpdateSteps(const KURL&,
-                                   HistoryItem*,
-                                   mojom::blink::SameDocumentNavigationType,
-                                   scoped_refptr<SerializedScriptValue>,
-                                   WebFrameLoadType,
-                                   FirePopstate,
-                                   bool should_skip_screenshot,
-                                   bool is_browser_initiated = false,
-                                   bool is_synchronously_committed = true,
-                                   std::optional<scheduler::TaskAttributionId>
-                                       soft_navigation_heuristics_task_id =
-                                           std::nullopt);
+  void RunURLAndHistoryUpdateSteps(
+      const KURL&,
+      HistoryItem*,
+      mojom::blink::SameDocumentNavigationType,
+      scoped_refptr<SerializedScriptValue>,
+      WebFrameLoadType,
+      FirePopstate,
+      bool should_skip_screenshot,
+      bool is_browser_initiated = false,
+      bool is_synchronously_committed = true,
+      std::optional<scheduler::TaskAttributionId> task_state_id = std::nullopt);
 
   // |is_synchronously_committed| is described in comment for
   // CommitSameDocumentNavigation.
@@ -269,8 +265,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       const SecurityOrigin* initiator_origin,
       bool is_browser_initiated,
       bool is_synchronously_committed,
-      std::optional<scheduler::TaskAttributionId>
-          soft_navigation_heuristics_task_id,
+      std::optional<scheduler::TaskAttributionId> task_state_id,
       bool has_transient_user_activation,
       bool has_ua_visual_transition,
       bool should_skip_screenshot);
@@ -324,8 +319,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       mojom::blink::TriggeringEventInfo,
       bool is_browser_initiated,
       bool has_ua_visual_transition,
-      std::optional<scheduler::TaskAttributionId>
-          soft_navigation_heuristics_task_id,
+      std::optional<scheduler::TaskAttributionId> task_state_id,
       bool should_skip_screenshot);
 
   void SetDefersLoading(LoaderFreezeMode);
@@ -428,7 +422,8 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
   scoped_refptr<BackgroundCodeCacheHost> CreateBackgroundCodeCacheHost();
   static void DisableCodeCacheForTesting();
 
-  mojo::PendingRemote<mojom::blink::CodeCacheHost> CreateWorkerCodeCacheHost();
+  // This method is used for workers and iframes loaded without navigation.
+  mojo::PendingRemote<mojom::blink::CodeCacheHost> CreateCodeCacheHost();
 
   HashMap<KURL, EarlyHintsPreloadEntry> GetEarlyHintsPreloadedResources();
 
@@ -554,8 +549,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       bool is_browser_initiated,
       bool is_synchronously_committed,
       mojom::blink::TriggeringEventInfo,
-      std::optional<scheduler::TaskAttributionId>
-          soft_navigation_heuristics_task_id,
+      std::optional<scheduler::TaskAttributionId> task_state_id,
       bool has_ua_visual_transition,
       bool should_skip_screenshot);
 
@@ -700,11 +694,6 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
       content_security_notifier_;
 
   const scoped_refptr<SecurityOrigin> origin_to_commit_;
-
-  // Information about how `origin_to_commit_` was calculated, to help debug if
-  // it differs from the origin calculated on the browser side.
-  // TODO(https://crbug.com/1220238): Remove this.
-  AtomicString origin_calculation_debug_info_;
 
   blink::BlinkStorageKey storage_key_;
 
@@ -862,7 +851,7 @@ class CORE_EXPORT DocumentLoader : public GarbageCollected<DocumentLoader>,
 
   // Indicates which browsing context group this frame belongs to. It is only
   // set for a main frame committing in another browsing context group.
-  const std::optional<BrowsingContextGroupInfo> browsing_context_group_info_;
+  const std::optional<base::UnguessableToken> browsing_context_group_token_;
 
   // Runtime feature state override is applied to the document. They are applied
   // before JavaScript context creation (i.e. CreateParserPostCommit).

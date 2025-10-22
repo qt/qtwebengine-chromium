@@ -17,7 +17,6 @@
 
 #include "base/functional/callback_forward.h"
 #include "base/gtest_prod_util.h"
-#include "base/lazy_instance.h"
 #include "components/version_info/channel.h"
 #include "extensions/common/context_data.h"
 #include "extensions/common/extension.h"
@@ -248,7 +247,7 @@ class SimpleFeature : public Feature {
 
   bool MatchesManifestLocation(mojom::ManifestLocation manifest_location) const;
 
-  // Checks if the feature is allowed in a session of type |session_type|
+  // Checks if the feature is allowed in a session of type `session_type`
   // (based on session type feature restrictions).
   bool MatchesSessionTypes(mojom::FeatureSessionType session_type) const;
 

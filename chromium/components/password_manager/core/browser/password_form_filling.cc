@@ -63,6 +63,22 @@ bool IsFillOnAccountSelectFeatureEnabled() {
 }
 #endif
 
+bool ShouldNotifyAboutFillingOnPageload(
+    PasswordManagerClient* client,
+    const std::optional<PasswordForm>& preferred_match) {
+  // Change password url override is provided. Always notify about filling on
+  // page load.
+  if (!GetChangePasswordUrlOverrides().empty()) {
+    return true;
+  }
+  // TODO(crbug.com/392020509): Consider removing check for leak when password
+  // change is launched.
+  return preferred_match && preferred_match->change_password_url.is_valid() &&
+         preferred_match->password_issues.contains(InsecureType::kLeaked) &&
+         client->GetPasswordChangeService() &&
+         client->GetPasswordChangeService()->IsPasswordChangeAvailable();
+}
+
 void Autofill(PasswordManagerClient* client,
               PasswordManagerDriver* driver,
               const PasswordForm& form_for_autofill,
@@ -78,11 +94,8 @@ void Autofill(PasswordManagerClient* client,
     logger->LogMessage(Logger::STRING_PASSWORDMANAGER_AUTOFILL);
   }
 
-  // TODO(crbug.com/394297841): Check password change availability per website.
-  // Finch experiment should not be started without fixing it.
   bool notify_browser_of_successful_filling =
-      client->GetPasswordChangeService() &&
-      client->GetPasswordChangeService()->IsPasswordChangeAvailable();
+      ShouldNotifyAboutFillingOnPageload(client, preferred_match);
 
   PasswordFormFillData fill_data = CreatePasswordFormFillData(
       form_for_autofill, best_matches, std::move(preferred_match),
@@ -98,7 +111,7 @@ void Autofill(PasswordManagerClient* client,
     metrics_util::LogFilledPasswordFromAndroidApp(
         PreferredRealmIsFromAndroid(fill_data));
   }
-  driver->SetPasswordFillData(fill_data);
+  driver->PropagateFillDataOnParsingCompletion(fill_data);
 
   // Matches can be empty when there are only WebAuthn credentials available.
   // In that case there will be no actual fill so the client doesn't need
@@ -163,6 +176,14 @@ LikelyFormFilling SendFillInformationToRenderer(
     }
 
 #endif
+
+#if BUILDFLAG(IS_WIN) || BUILDFLAG(IS_MAC) || BUILDFLAG(IS_LINUX) || \
+    BUILDFLAG(IS_CHROMEOS)
+    if (!should_show_popup_without_passwords) {
+      client->MaybeShowSavePasswordPrimingPromo(observed_form.url);
+    }
+#endif
+
     driver->InformNoSavedCredentials(should_show_popup_without_passwords);
     metrics_recorder->RecordFillEvent(
         PasswordFormMetricsRecorder::kManagerFillEventNoCredential);
@@ -223,9 +244,7 @@ LikelyFormFilling SendFillInformationToRenderer(
     // If the parser did not find a current password element, don't fill.
     wait_for_username_reason = WaitForUsernameReason::kFormNotGoodForFilling;
   } else if (observed_form.HasUsernameElement() &&
-             observed_form.HasNonEmptyPasswordValue() &&
-             observed_form.server_side_classification_successful &&
-             !observed_form.username_may_use_prefilled_placeholder) {
+             observed_form.HasNonEmptyPasswordValue()) {
     // Password is already filled in and we don't think the username is a
     // placeholder, so don't overwrite.
     wait_for_username_reason = WaitForUsernameReason::kPasswordPrefilled;
@@ -300,8 +319,6 @@ PasswordFormFillData CreatePasswordFormFillData(
     // clicking on each password field so no need in any field identifiers.
     result.username_element_renderer_id =
         form_on_page.username_element_renderer_id;
-    result.username_may_use_prefilled_placeholder =
-        form_on_page.username_may_use_prefilled_placeholder;
 
     result.password_element_renderer_id =
         form_on_page.password_element_renderer_id;
@@ -314,7 +331,8 @@ PasswordFormFillData CreatePasswordFormFillData(
         preferred_match.value().username_value;
     result.preferred_login.password_value =
         preferred_match.value().password_value;
-
+    result.preferred_login.backup_password_value =
+        preferred_match->GetPasswordBackup();
     result.preferred_login.uses_account_store =
         preferred_match->IsUsingAccountStore();
     result.preferred_login.is_grouped_affiliation =
@@ -338,6 +356,7 @@ PasswordFormFillData CreatePasswordFormFillData(
     PasswordAndMetadata value;
     value.username_value = match.username_value;
     value.password_value = match.password_value;
+    value.backup_password_value = match.GetPasswordBackup();
     value.uses_account_store = match.IsUsingAccountStore();
     value.is_grouped_affiliation =
         (GetMatchType(match) == GetLoginMatchType::kGrouped);

@@ -72,10 +72,10 @@ channel.port1.onmessage = e => {
       break;
 
     case 'syncScrollToRemote':
-      // TODO(crbug.com/40218278): Implement smooth scrolling correctly.
       window.scrollTo({
         left: e.data.x,
         top: e.data.y,
+        behavior: e.data.isSmooth ? 'smooth' : 'auto',
       });
       channel.port1.postMessage({
         type: 'ackScrollToRemote',
@@ -160,6 +160,21 @@ function relaySwipe(e: Event): void {
 const swipeDetector = new SwipeDetector(plugin);
 swipeDetector.getEventTarget().addEventListener('swipe', relaySwipe);
 
+// <if expr="enable_pdf_ink2">
+document.addEventListener('pointerdown', e => {
+  // Only forward left click.
+  if (e.button !== 0) {
+    return;
+  }
+
+  channel.port1.postMessage({
+    type: 'sendClickEvent',
+    x: e.clientX,
+    y: e.clientY,
+  });
+});
+// </if>
+
 document.addEventListener('keydown', e => {
   // Only forward potential shortcut keys.
   switch (e.key) {
@@ -186,6 +201,10 @@ document.addEventListener('keydown', e => {
       }
       return;
 
+    // <if expr="enable_pdf_ink2">
+    case 'Enter':
+      // Enter is used to create new text annotations.
+    // </if>
     case 'Escape':
     case 'Tab':
       // Print Preview is interested in Escape and Tab.

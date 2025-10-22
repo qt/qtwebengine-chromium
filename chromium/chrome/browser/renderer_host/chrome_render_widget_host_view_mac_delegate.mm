@@ -14,13 +14,15 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/tabs/inactive_window_mouse_event_controller.h"
+#include "chrome/browser/ui/tabs/public/tab_features.h"
 #include "chrome/browser/ui/webui/top_chrome/webui_url_utils.h"
 #include "chrome/common/url_constants.h"
 #include "components/prefs/pref_service.h"
 #include "components/spellcheck/browser/pref_names.h"
 #include "components/spellcheck/browser/spellcheck_platform.h"
 #include "components/spellcheck/common/spellcheck_panel.mojom.h"
-#include "components/tab_collections/public/tab_interface.h"
+#include "components/tabs/public/tab_interface.h"
 #include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/preloading.h"
 #include "content/public/browser/render_frame_host.h"
@@ -34,8 +36,7 @@
 
 #if BUILDFLAG(ENABLE_GLIC)
 #include "chrome/browser/glic/glic_enabling.h"
-#include "chrome/browser/glic/glic_keyed_service.h"
-#include "chrome/browser/glic/glic_keyed_service_factory.h"
+#include "chrome/browser/glic/public/glic_keyed_service.h"
 #endif
 
 @interface ChromeRenderWidgetHostViewMacDelegate () <HistorySwiperDelegate>
@@ -126,14 +127,6 @@
 }
 
 // NSWindow events.
-
-- (void)beginGestureWithEvent:(NSEvent*)event {
-  [_historySwiper beginGestureWithEvent:event];
-}
-
-- (void)endGestureWithEvent:(NSEvent*)event {
-  [_historySwiper endGestureWithEvent:event];
-}
 
 // This is a low level API which provides touches associated with an event.
 // It is used in conjunction with gestures to determine finger placement
@@ -412,18 +405,25 @@
   }
 }
 
-- (AcceptMouseEventsOption)acceptsMouseEventsOption {
+- (AcceptMouseEvents)acceptsMouseEventsOption {
   content::WebContents* webContents = self.webContents;
   if (!webContents) {
-    return kAcceptMouseEventsInActiveWindow;
+    return AcceptMouseEvents::kWhenInActiveWindow;
   }
 
   // If this web contents is in a tab, and the tab wants to accept mouse events
   // while the window is inactive.
-  tabs::TabInterface* tab =
-      tabs::TabInterface::MaybeGetFromContents(self.webContents);
-  if (tab && tab->ShouldAcceptMouseEventsWhileWindowInactive()) {
-    return kAcceptMouseEventsInActiveApp;
+  if (tabs::TabInterface* tab =
+          tabs::TabInterface::MaybeGetFromContents(webContents)) {
+    if (tabs::TabFeatures* features = tab->GetTabFeatures()) {
+      if (tabs::InactiveWindowMouseEventController* inactive_event_controller =
+              features->inactive_window_mouse_event_controller()) {
+        if (inactive_event_controller
+                ->ShouldAcceptMouseEventsWhileWindowInactive()) {
+          return AcceptMouseEvents::kWhenInActiveApp;
+        }
+      }
+    }
   }
 
   // For Top Chrome WebUIs, allows inactive windows to accept
@@ -431,7 +431,7 @@
   // mimics the behavior of views UI.
   if (IsTopChromeWebUIURL(webContents->GetVisibleURL()) ||
       IsTopChromeUntrustedWebUIURL(webContents->GetVisibleURL())) {
-    return kAcceptMouseEventsInActiveApp;
+    return AcceptMouseEvents::kWhenInActiveApp;
   }
 
 #if BUILDFLAG(ENABLE_GLIC)
@@ -439,18 +439,14 @@
   // inactive, aligning with the expected behavior of native chrome dialogs.
   // TODO(crbug.com/399119513): Consider making this a single WebContents
   // scoped setting, allowing this behavior to be configured by feature code.
-  if (Profile* profile =
-          Profile::FromBrowserContext(webContents->GetBrowserContext());
-      glic::GlicEnabling::IsProfileEligible(profile)) {
-    glic::GlicKeyedService* glic_service =
-        glic::GlicKeyedServiceFactory::GetGlicKeyedService(profile);
-    if (glic_service && glic_service->IsActiveWebContents(webContents)) {
-      return kAcceptMouseEventsInActiveApp;
-    }
+  glic::GlicKeyedService* glic_service = glic::GlicKeyedService::Get(
+      Profile::FromBrowserContext(webContents->GetBrowserContext()));
+  if (glic_service && glic_service->IsActiveWebContents(webContents)) {
+    return AcceptMouseEvents::kWhenInActiveApp;
   }
 #endif
 
-  return kAcceptMouseEventsInActiveWindow;
+  return AcceptMouseEvents::kWhenInActiveWindow;
 }
 
 @end

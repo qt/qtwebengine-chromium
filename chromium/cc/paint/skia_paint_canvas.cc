@@ -10,7 +10,7 @@
 
 #include "base/containers/span.h"
 #include "base/functional/bind.h"
-#include "base/notreached.h"
+#include "base/notimplemented.h"
 #include "base/trace_event/trace_event.h"
 #include "cc/paint/display_item_list.h"
 #include "cc/paint/paint_filter.h"
@@ -56,7 +56,10 @@ SkiaPaintCanvas::SkiaPaintCanvas(const SkBitmap& bitmap,
                                  const SkSurfaceProps& props)
     : canvas_(new SkCanvas(bitmap, props)), bitmap_(bitmap), owned_(canvas_) {}
 
-SkiaPaintCanvas::~SkiaPaintCanvas() = default;
+SkiaPaintCanvas::~SkiaPaintCanvas() {
+  canvas_ = nullptr;
+  image_provider_ = nullptr;
+}
 
 SkImageInfo SkiaPaintCanvas::imageInfo() const {
   return canvas_->imageInfo();

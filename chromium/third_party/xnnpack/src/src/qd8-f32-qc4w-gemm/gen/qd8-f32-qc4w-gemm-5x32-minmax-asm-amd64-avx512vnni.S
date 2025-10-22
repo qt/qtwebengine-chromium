@@ -21,10 +21,10 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       push r13
       push r12
 
-      # load params to free up a GP registers
+      # load params to free up GP registers
       mov r13, [rsp + 96] # params
-      vbroadcastss zmm0, DWORD PTR [r13]
-      vbroadcastss zmm1, DWORD PTR [r13 + 4]
+      vbroadcastss zmm0, dword ptr [r13]
+      vbroadcastss zmm1, dword ptr [r13 + 4]
 
       # Load c pointer.
       mov r10, [rsp + 72]
@@ -84,7 +84,6 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       cmp rdi, 4
       cmovle r12, r14
       cmovle r8, rbp
-
       # Load quantization_params pointer from stack
       mov r11, [rsp + 456]
       mov edi, [r11 + 0]
@@ -114,16 +113,16 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       # Initialize accumulators with k_sum * input zero point.
       vmovaps  zmm6, [r9 + 0]
       vmovaps  zmm7, [r9 + 64]
-      vpmulld zmm5, zmm6, ZMMWORD PTR [rsp + 128]
-      vpmulld zmm12, zmm6, ZMMWORD PTR [rsp + 192]
-      vpmulld zmm14, zmm6, ZMMWORD PTR [rsp + 256]
-      vpmulld zmm15, zmm6, ZMMWORD PTR [rsp + 320]
-      vpmulld zmm16, zmm6, ZMMWORD PTR [rsp + 384]
-      vpmulld zmm17, zmm7, ZMMWORD PTR [rsp + 128]
-      vpmulld zmm18, zmm7, ZMMWORD PTR [rsp + 192]
-      vpmulld zmm19, zmm7, ZMMWORD PTR [rsp + 256]
-      vpmulld zmm20, zmm7, ZMMWORD PTR [rsp + 320]
-      vpmulld zmm21, zmm7, ZMMWORD PTR [rsp + 384]
+      vpmulld zmm5, zmm6, zmmword ptr [rsp + 128]
+      vpmulld zmm12, zmm6, zmmword ptr [rsp + 192]
+      vpmulld zmm14, zmm6, zmmword ptr [rsp + 256]
+      vpmulld zmm15, zmm6, zmmword ptr [rsp + 320]
+      vpmulld zmm16, zmm6, zmmword ptr [rsp + 384]
+      vpmulld zmm17, zmm7, zmmword ptr [rsp + 128]
+      vpmulld zmm18, zmm7, zmmword ptr [rsp + 192]
+      vpmulld zmm19, zmm7, zmmword ptr [rsp + 256]
+      vpmulld zmm20, zmm7, zmmword ptr [rsp + 320]
+      vpmulld zmm21, zmm7, zmmword ptr [rsp + 384]
       add r9, 128
 
 .Linner_loop:
@@ -151,6 +150,7 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       add r11, 4
       cmp rdx, r11
       jne .Linner_loop
+
 .Linner_loop_end:
 
       # Convert from int32 to float.
@@ -176,16 +176,16 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       vcvtdq2ps zmm21, zmm21
       # Load quantization_params pointer from stack
       mov r11, [rsp + 456]
-      vmulps zmm5, zmm5, DWORD PTR [r11 + 4]{1to16}
-      vmulps zmm12, zmm12, DWORD PTR [r11 + 12]{1to16}
-      vmulps zmm14, zmm14, DWORD PTR [r11 + 20]{1to16}
-      vmulps zmm15, zmm15, DWORD PTR [r11 + 28]{1to16}
-      vmulps zmm16, zmm16, DWORD PTR [r11 + 36]{1to16}
-      vmulps zmm17, zmm17, DWORD PTR [r11 + 4]{1to16}
-      vmulps zmm18, zmm18, DWORD PTR [r11 + 12]{1to16}
-      vmulps zmm19, zmm19, DWORD PTR [r11 + 20]{1to16}
-      vmulps zmm20, zmm20, DWORD PTR [r11 + 28]{1to16}
-      vmulps zmm21, zmm21, DWORD PTR [r11 + 36]{1to16}
+      vmulps zmm5, zmm5, dword ptr [r11 + 4]{1to16}
+      vmulps zmm12, zmm12, dword ptr [r11 + 12]{1to16}
+      vmulps zmm14, zmm14, dword ptr [r11 + 20]{1to16}
+      vmulps zmm15, zmm15, dword ptr [r11 + 28]{1to16}
+      vmulps zmm16, zmm16, dword ptr [r11 + 36]{1to16}
+      vmulps zmm17, zmm17, dword ptr [r11 + 4]{1to16}
+      vmulps zmm18, zmm18, dword ptr [r11 + 12]{1to16}
+      vmulps zmm19, zmm19, dword ptr [r11 + 20]{1to16}
+      vmulps zmm20, zmm20, dword ptr [r11 + 28]{1to16}
+      vmulps zmm21, zmm21, dword ptr [r11 + 36]{1to16}
       vmovaps zmm10, [r9 + 0]
       vmovaps zmm11, [r9 + 64]
       add r9, 128
@@ -204,24 +204,24 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       vfmadd213ps zmm21, zmm11, zmm7
       # Min/max clamping.
       vminps  zmm5, zmm1, zmm5
-      vminps  zmm12, zmm1, zmm12
       vminps  zmm14, zmm1, zmm14
-      vminps  zmm15, zmm1, zmm15
       vminps  zmm16, zmm1, zmm16
-      vminps  zmm17, zmm1, zmm17
       vminps  zmm18, zmm1, zmm18
-      vminps  zmm19, zmm1, zmm19
       vminps  zmm20, zmm1, zmm20
+      vminps  zmm12, zmm1, zmm12
+      vminps  zmm15, zmm1, zmm15
+      vminps  zmm17, zmm1, zmm17
+      vminps  zmm19, zmm1, zmm19
       vminps  zmm21, zmm1, zmm21
       vmaxps  zmm5, zmm0, zmm5
-      vmaxps  zmm12, zmm0, zmm12
       vmaxps  zmm14, zmm0, zmm14
-      vmaxps  zmm15, zmm0, zmm15
       vmaxps  zmm16, zmm0, zmm16
-      vmaxps  zmm17, zmm0, zmm17
       vmaxps  zmm18, zmm0, zmm18
-      vmaxps  zmm19, zmm0, zmm19
       vmaxps  zmm20, zmm0, zmm20
+      vmaxps  zmm12, zmm0, zmm12
+      vmaxps  zmm15, zmm0, zmm15
+      vmaxps  zmm17, zmm0, zmm17
+      vmaxps  zmm19, zmm0, zmm19
       vmaxps  zmm21, zmm0, zmm21
 
       # Check whether full or partial store.
@@ -255,16 +255,16 @@ BEGIN_FUNCTION xnn_qd8_f32_qc4w_gemm_minmax_ukernel_5x32c4__asm_amd64_avx512vnni
       kmovw k1, r11d
       shr r11d, 16
       kmovw k2, r11d
-      vmovups  ZMMWORD PTR [r10]{k1}, zmm5
-      vmovups  ZMMWORD PTR [r10 + 64]{k2}, zmm17
-      vmovups  ZMMWORD PTR [r13]{k1}, zmm12
-      vmovups  ZMMWORD PTR [r13 + 64]{k2}, zmm18
-      vmovups  ZMMWORD PTR [rbx]{k1}, zmm14
-      vmovups  ZMMWORD PTR [rbx + 64]{k2}, zmm19
-      vmovups  ZMMWORD PTR [rbp]{k1}, zmm15
-      vmovups  ZMMWORD PTR [rbp + 64]{k2}, zmm20
-      vmovups  ZMMWORD PTR [r8]{k1}, zmm16
-      vmovups  ZMMWORD PTR [r8 + 64]{k2}, zmm21
+      vmovups  zmmword ptr [r10]{k1}, zmm5
+      vmovups  zmmword ptr [r10 + 64]{k2}, zmm17
+      vmovups  zmmword ptr [r13]{k1}, zmm12
+      vmovups  zmmword ptr [r13 + 64]{k2}, zmm18
+      vmovups  zmmword ptr [rbx]{k1}, zmm14
+      vmovups  zmmword ptr [rbx + 64]{k2}, zmm19
+      vmovups  zmmword ptr [rbp]{k1}, zmm15
+      vmovups  zmmword ptr [rbp + 64]{k2}, zmm20
+      vmovups  zmmword ptr [r8]{k1}, zmm16
+      vmovups  zmmword ptr [r8 + 64]{k2}, zmm21
 
 .Lreturn:
       add rsp, 448

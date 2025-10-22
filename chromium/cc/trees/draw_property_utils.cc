@@ -510,8 +510,19 @@ bool LayerNeedsUpdate(LayerType* layer,
   if (!layer_is_drawn)
     return false;
 
-  if (!layer->draws_content() || layer->bounds().IsEmpty())
+  if (!layer->draws_content()) {
     return false;
+  }
+
+  if (layer->bounds().IsEmpty()) {
+    // Reference filters can contribute to visual output even if the layer has
+    // no other content.
+    if (!property_trees->effect_tree()
+             .Node(layer->effect_tree_index())
+             ->filters.HasReferenceFilter()) {
+      return false;
+    }
+  }
 
   // The layer should not be drawn if (1) it is not double-sided and (2) the
   // back of the layer is known to be facing the screen.
@@ -798,9 +809,18 @@ std::pair<gfx::MaskFilterInfo, bool> GetMaskFilterInfoPair(
   if (!node || !found_mask_filter_info)
     return kEmptyMaskFilterInfoPair;
 
+  int transform_id = node->transform_id;
+  std::optional<int> clip_id = node->mask_filter_info.clip_id();
+  if (clip_id) {
+    const ClipTree* clip_tree = &property_trees->clip_tree();
+    const ClipNode* clip_node = clip_tree->Node(clip_id.value());
+    transform_id = clip_node->transform_id;
+  }
+
   gfx::Transform to_target;
-  if (!property_trees->GetToTarget(node->transform_id, target_id, &to_target))
+  if (!property_trees->GetToTarget(transform_id, target_id, &to_target)) {
     return kEmptyMaskFilterInfoPair;
+  }
 
   auto result =
       std::make_pair(node->mask_filter_info, node->is_fast_rounded_corner);
@@ -1022,9 +1042,9 @@ void AddSurfaceToRenderSurfaceList(
   const bool allow_skipping_render_pass = base::FeatureList::IsEnabled(
       features::kAllowUndamagedNonrootRenderPassToSkip);
   const FilterOperations& filters = render_surface->Filters();
-  bool is_occlusion_immune =
-      render_surface->CopyOfOutputRequired() || filters.HasReferenceFilter() ||
-      filters.HasFilterThatMovesPixels() || allow_skipping_render_pass;
+  bool is_occlusion_immune = render_surface->CopyOfOutputRequired() ||
+                             filters.HasFilterThatMovesPixels() ||
+                             allow_skipping_render_pass;
 
   // Setting |is_occlusion_immune| leads to an empty
   // |occlusion_from_outside_target| for a non-root render_surface. It does not
@@ -1348,7 +1368,8 @@ void ComputeListOfNonEmptySurfaces(LayerTreeImpl* layer_tree_impl,
   for (RenderSurfaceImpl* surface : *initial_surface_list) {
     bool is_root = surface->EffectTreeIndex() == kContentsRootPropertyNodeId;
     RenderSurfaceImpl* target_surface = surface->render_target();
-    if (!is_root && (surface->content_rect().IsEmpty() ||
+    if (!is_root && ((surface->content_rect().IsEmpty() &&
+                      !surface->Filters().HasReferenceFilter()) ||
                      (!target_surface->is_render_surface_list_member() &&
                       !surface->CopyOfOutputRequired()))) {
       surface->set_is_render_surface_list_member(false);

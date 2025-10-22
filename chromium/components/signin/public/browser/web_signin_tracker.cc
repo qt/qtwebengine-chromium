@@ -40,9 +40,7 @@ WebSigninTracker::WebSigninTracker(
     OnAccountsInCookieUpdated(info, GoogleServiceAuthError::AuthErrorNone());
   }
 
-  if (base::FeatureList::IsEnabled(switches::kDeferWebSigninTrackerCreation)) {
-    OnStateChanged(account_reconcilor->GetState());
-  }
+  OnStateChanged(account_reconcilor->GetState());
 }
 
 WebSigninTracker::~WebSigninTracker() = default;
@@ -57,6 +55,12 @@ void WebSigninTracker::OnAccountsInCookieUpdated(
       return;
     }
   }
+}
+
+void WebSigninTracker::OnIdentityManagerShutdown(
+    IdentityManager* identity_manager) {
+  CHECK_EQ(identity_manager, identity_manager_);
+  identity_manager_observation_.Reset();
 }
 
 void WebSigninTracker::OnStateChanged(

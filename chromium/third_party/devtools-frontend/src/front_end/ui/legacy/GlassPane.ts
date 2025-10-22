@@ -1,18 +1,20 @@
 // Copyright 2017 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-imperative-dom-api */
 import type {Size} from './Geometry.js';
 import glassPaneStyles from './glassPane.css.js';
 import {deepElementFromEvent, measuredScrollbarWidth} from './UIUtils.js';
 import {Widget} from './Widget.js';
 
 export class GlassPane {
-  private readonly widgetInternal = new Widget(true);
+  private readonly widgetInternal = new Widget({useShadowDom: true});
 
   element: typeof Widget.prototype.element;
   contentElement: typeof Widget.prototype.contentElement;
   private readonly onMouseDownBound: (event: Event) => void;
   private onClickOutsideCallback: ((arg0: Event) => void)|null = null;
+  #onHideCallback: (() => void)|null = null;
   private maxSize: Size|null = null;
   private positionX: number|null = null;
   private positionY: number|null = null;
@@ -44,7 +46,7 @@ export class GlassPane {
     return this.widgetInternal.isShowing();
   }
 
-  registerRequiredCSS(...cssFiles: Array<{cssText: string}>): void {
+  registerRequiredCSS(...cssFiles: Array<string&{_tag: 'CSS-in-JS'}>): void {
     this.widgetInternal.registerRequiredCSS(...cssFiles);
   }
 
@@ -65,6 +67,10 @@ export class GlassPane {
 
   setOutsideClickCallback(callback: ((arg0: Event) => void)|null): void {
     this.onClickOutsideCallback = callback;
+  }
+
+  setOnHideCallback(cb: () => void): void {
+    this.#onHideCallback = cb;
   }
 
   setMaxContentSize(size: Size|null): void {
@@ -123,6 +129,9 @@ export class GlassPane {
     this.element.ownerDocument.body.removeEventListener('mousedown', this.onMouseDownBound, true);
     this.element.ownerDocument.body.removeEventListener('pointerdown', this.onMouseDownBound, true);
     this.widgetInternal.detach();
+    if (this.#onHideCallback) {
+      this.#onHideCallback();
+    }
   }
 
   private onMouseDown(event: Event): void {

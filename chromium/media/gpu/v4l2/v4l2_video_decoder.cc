@@ -20,6 +20,8 @@
 #include "base/memory/ptr_util.h"
 #include "base/memory/scoped_refptr.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/notimplemented.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/trace_event/trace_event.h"
 #include "media/base/limits.h"
@@ -332,14 +334,6 @@ void V4L2VideoDecoder::Initialize(const VideoDecoderConfig& config,
   if (profile_ == VIDEO_CODEC_PROFILE_UNKNOWN) {
     VLOGF(1) << "Unknown profile.";
     SetState(State::kError);
-    std::move(init_cb).Run(
-        DecoderStatus(DecoderStatus::Codes::kNotInitialized)
-            .AddCause(V4L2Status(V4L2Status::Codes::kNoProfile)));
-    return;
-  }
-  if (VideoCodecProfileToVideoCodec(profile_) == VideoCodec::kAV1 &&
-      !base::FeatureList::IsEnabled(kChromeOSHWAV1Decoder)) {
-    VLOGF(1) << "AV1 hardware video decoding is disabled";
     std::move(init_cb).Run(
         DecoderStatus(DecoderStatus::Codes::kNotInitialized)
             .AddCause(V4L2Status(V4L2Status::Codes::kNoProfile)));

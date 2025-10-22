@@ -12,6 +12,7 @@
 #include "base/containers/flat_set.h"
 #include "base/feature_list.h"
 #include "base/memory/scoped_refptr.h"
+#include "base/strings/string_util.h"
 #include "net/base/features.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/network_anonymization_key.h"
@@ -202,6 +203,9 @@ ConnectJobParams CreateProxyParams(
                   network_anonymization_key, *common_connect_job_params,
                   proxy_server_ssl_config,
                   /*renego_allowed=*/false);
+    proxy_server_ssl_config.proxy_chain = proxy_chain;
+    proxy_server_ssl_config.proxy_chain_index = proxy_chain_index;
+    proxy_server_ssl_config.session_usage = SessionUsage::kProxy;
   }
 
   // Create the nested parameters over which the connection to the proxy
@@ -304,6 +308,10 @@ ConnectJobParams ConstructConnectJobParams(
     // TODO(crbug.com/41459647): Also enable 0-RTT for TLS proxies.
     ssl_config.early_data_enabled =
         *common_connect_job_params->enable_early_data;
+
+    ssl_config.proxy_chain = proxy_chain;
+    ssl_config.proxy_chain_index = proxy_chain.length();
+    ssl_config.session_usage = SessionUsage::kDestination;
   }
 
   // Create the nested parameters over which the connection to the endpoint

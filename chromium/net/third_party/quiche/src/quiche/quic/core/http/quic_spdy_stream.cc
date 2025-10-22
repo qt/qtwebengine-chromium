@@ -9,8 +9,10 @@
 #include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/base/macros.h"
+#include "absl/status/statusor.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
@@ -39,10 +41,12 @@
 #include "quiche/quic/platform/api/quic_logging.h"
 #include "quiche/quic/platform/api/quic_testvalue.h"
 #include "quiche/common/capsule.h"
+#include "quiche/common/http/http_header_block.h"
 #include "quiche/common/platform/api/quiche_flag_utils.h"
 #include "quiche/common/platform/api/quiche_logging.h"
 #include "quiche/common/quiche_mem_slice_storage.h"
 #include "quiche/common/quiche_text_utils.h"
+#include "quiche/web_transport/web_transport_headers.h"
 
 using ::quiche::Capsule;
 using ::quiche::CapsuleType;
@@ -426,6 +430,8 @@ bool QuicSpdyStream::WriteDataFrameHeader(QuicByteCount data_length,
       send_buffer().stream_offset() + header.size());
   QUIC_DVLOG(1) << ENDPOINT << "Stream " << id()
                 << " is writing DATA frame header of length " << header.size();
+  // TODO: b/417402601 - once we always use inlining send buffer, the code below
+  // should always use WriteOrBufferData.
   if (can_write) {
     // Save one copy and allocation if send buffer can accomodate the header.
     quiche::QuicheMemSlice header_slice(std::move(header));
@@ -1243,6 +1249,11 @@ void QuicSpdyStream::OnWebTransportStreamFrameType(
 
 bool QuicSpdyStream::OnMetadataFrameStart(QuicByteCount header_length,
                                           QuicByteCount payload_length) {
+  if (spdy_session_->debug_visitor()) {
+    spdy_session_->debug_visitor()->OnMetadataFrameStart(header_length,
+                                                         payload_length);
+  }
+
   if (metadata_visitor_ == nullptr) {
     return OnUnknownFrameStart(
         static_cast<uint64_t>(quic::HttpFrameType::METADATA), header_length,
@@ -1262,6 +1273,10 @@ bool QuicSpdyStream::OnMetadataFrameStart(QuicByteCount header_length,
 }
 
 bool QuicSpdyStream::OnMetadataFramePayload(absl::string_view payload) {
+  if (spdy_session_->debug_visitor()) {
+    spdy_session_->debug_visitor()->OnMetadataFramePayload(payload);
+  }
+
   if (metadata_visitor_ == nullptr) {
     return OnUnknownFramePayload(payload);
   }
@@ -1280,6 +1295,10 @@ bool QuicSpdyStream::OnMetadataFramePayload(absl::string_view payload) {
 }
 
 bool QuicSpdyStream::OnMetadataFrameEnd() {
+  if (spdy_session_->debug_visitor()) {
+    spdy_session_->debug_visitor()->OnMetadataFrameEnd();
+  }
+
   if (metadata_visitor_ == nullptr) {
     return OnUnknownFrameEnd();
   }
@@ -1426,6 +1445,9 @@ void QuicSpdyStream::MaybeProcessSentWebTransportHeaders(
     return;
   }
   if (session()->perspective() != Perspective::IS_CLIENT) {
+    if (web_transport_ != nullptr) {
+      web_transport_->MaybeSetSubprotocolFromResponseHeaders(headers);
+    }
     return;
   }
   QUICHE_DCHECK(IsValidWebTransportSessionId(id(), version()));
@@ -1446,6 +1468,23 @@ void QuicSpdyStream::MaybeProcessSentWebTransportHeaders(
 
   web_transport_ =
       std::make_unique<WebTransportHttp3>(spdy_session_, this, id());
+
+  // Store the offered subprotocols so that we can later validate the
+  // server-selected one against those.
+  const auto subprotocol_offer_it =
+      headers.find(webtransport::kSubprotocolRequestHeader);
+  if (subprotocol_offer_it != headers.end()) {
+    absl::StatusOr<std::vector<std::string>> subprotocols_offered =
+        webtransport::ParseSubprotocolRequestHeader(
+            subprotocol_offer_it->second);
+    if (subprotocols_offered.ok()) {
+      web_transport_->set_subprotocols_offered(
+          *std::move(subprotocols_offered));
+    } else {
+      QUIC_DLOG(WARNING) << "Attempting to send WebTransport subprotocols that "
+                            "cannot be parsed.";
+    }
+  }
 }
 
 void QuicSpdyStream::OnCanWriteNewData() {

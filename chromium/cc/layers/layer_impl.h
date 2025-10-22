@@ -155,7 +155,7 @@ class CC_EXPORT LayerImpl {
                                      gfx::Size* resource_size,
                                      gfx::SizeF* resource_uv_size) const;
 
-  virtual void NotifyTileStateChanged(const Tile* tile) {}
+  virtual void NotifyTileStateChanged(const Tile* tile, bool update_damage) {}
 
   virtual bool IsScrollbarLayer() const;
 
@@ -165,6 +165,7 @@ class CC_EXPORT LayerImpl {
   void SetDrawsContent(bool draws_content);
   bool draws_content() const { return draws_content_; }
 
+  HitTestOpaqueness hit_test_opaqueness() const { return hit_test_opaqueness_; }
   void SetHitTestOpaqueness(HitTestOpaqueness opaqueness);
   bool HitTestable() const;
   bool OpaqueToHitTest() const;
@@ -266,6 +267,8 @@ class CC_EXPORT LayerImpl {
     PaintFlags::DynamicRangeLimitMixture dynamic_range_limit{
         PaintFlags::DynamicRangeLimit::kHigh};
   };
+
+  bool HasAnyRarePropertySet() { return !!rare_properties_; }
 
   RareProperties& EnsureRareProperties() {
     if (!rare_properties_)
@@ -433,9 +436,6 @@ class CC_EXPORT LayerImpl {
     return contributes_to_drawn_render_surface_;
   }
 
-  void SetMayContainVideo(bool);
-  bool may_contain_video() const { return may_contain_video_; }
-
   // Layers that share a sorting context id will be sorted together in 3d
   // space.  0 is a special value that means this layer will not be sorted and
   // will be drawn in paint order.
@@ -574,7 +574,6 @@ class CC_EXPORT LayerImpl {
   bool layer_property_changed_not_from_property_trees_ : 1 = false;
   bool layer_property_changed_from_property_trees_ : 1 = false;
 
-  bool may_contain_video_ : 1 = false;
   bool contents_opaque_ : 1 = false;
   bool contents_opaque_for_text_ : 1 = false;
   bool should_check_backface_visibility_ : 1 = false;

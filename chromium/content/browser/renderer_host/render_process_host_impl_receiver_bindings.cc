@@ -18,6 +18,7 @@
 #include "content/browser/file_system/file_system_manager_impl.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/media/media_internals.h"
+#include "content/browser/memory_coordinator/browser_memory_consumer_registry.h"
 #include "content/browser/mime_registry_impl.h"
 #include "content/browser/push_messaging/push_messaging_manager.h"
 #include "content/browser/renderer_host/embedded_frame_sink_provider_impl.h"
@@ -31,6 +32,7 @@
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_features.h"
 #include "media/base/media_switches.h"
+#include "media/gpu/buildflags.h"
 #include "media/mojo/mojom/interface_factory.mojom.h"
 #include "media/mojo/mojom/video_encoder_metrics_provider.mojom.h"
 #include "services/device/public/mojom/power_monitor.mojom.h"
@@ -47,14 +49,15 @@
 #include "content/browser/android/java_interfaces_impl.h"
 #include "content/browser/font_unique_name_lookup/font_unique_name_lookup_service.h"
 #include "content/public/browser/android/java_interfaces.h"
-#include "storage/browser/database/database_tracker.h"
 #include "third_party/blink/public/mojom/android_font_lookup/android_font_lookup.mojom.h"
-#include "third_party/blink/public/mojom/webdatabase/web_database.mojom.h"
 #endif
 
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 #include "components/services/font/public/mojom/font_service.mojom.h"  // nogncheck
 #include "content/browser/font_service.h"  // nogncheck
+#endif
+
+#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
 #include "content/browser/media/video_encode_accelerator_provider_launcher.h"
 #endif
 
@@ -128,6 +131,17 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
   AddUIThreadInterface(
       registry.get(),
       base::BindRepeating(
+          [](ChildProcessId rph_id,
+             mojo::PendingReceiver<mojom::BrowserMemoryConsumerRegistry>
+                 receiver) {
+            BindBrowserMemoryConsumerRegistry(PROCESS_TYPE_RENDERER, rph_id,
+                                              std::move(receiver));
+          },
+          GetID()));
+
+  AddUIThreadInterface(
+      registry.get(),
+      base::BindRepeating(
           [](mojo::PendingReceiver<device::mojom::TimeZoneMonitor> receiver) {
             GetDeviceService().BindTimeZoneMonitor(std::move(receiver));
           }));
@@ -163,15 +177,6 @@ void RenderProcessHostImpl::RegisterMojoInterfaces() {
       registry.get(),
       base::BindRepeating(&RenderProcessHostImpl::CreateDomStorageProvider,
                           instance_weak_factory_.GetWeakPtr()));
-
-#if BUILDFLAG(IS_ANDROID)
-  // TODO(crbug.com/333756088): WebSQL is disabled everywhere except Android
-  // WebView.
-  AddUIThreadInterface(
-      registry.get(),
-      base::BindRepeating(&RenderProcessHostImpl::BindWebDatabaseHostImpl,
-                          instance_weak_factory_.GetWeakPtr()));
-#endif  // BUILDFLAG(IS_ANDROID)
 
   AddUIThreadInterface(
       registry.get(),
@@ -348,7 +353,9 @@ void RenderProcessHostImpl::IOThreadHostImpl::BindHostReceiver(
     ConnectToFontService(std::move(font_receiver));
     return;
   }
+#endif
 
+#if BUILDFLAG(USE_LINUX_VIDEO_ACCELERATION)
   if (base::FeatureList::IsEnabled(media::kUseOutOfProcessVideoEncoding)) {
     if (auto r = receiver.As<media::mojom::VideoEncodeAcceleratorProvider>()) {
       if (!video_encode_accelerator_factory_remote_.is_bound()) {
@@ -367,12 +374,14 @@ void RenderProcessHostImpl::IOThreadHostImpl::BindHostReceiver(
       return;
     }
   }
+#endif
 
+#if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
   if (auto r = receiver.As<mojom::ThreadTypeSwitcher>()) {
     child_thread_type_switcher_.Bind(std::move(r));
     return;
   }
-#endif  // (BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS))
+#endif
 
 #if BUILDFLAG(IS_WIN)
   if (auto r = receiver.As<mojom::FontCacheWin>()) {

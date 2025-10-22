@@ -16,6 +16,9 @@
 #include "third_party/blink/renderer/core/svg_names.h"
 #include "third_party/blink/renderer/platform/graphics/compositing/paint_artifact_compositor.h"
 #include "third_party/blink/renderer/platform/graphics/paint/geometry_mapper.h"
+#include "third_party/skia/include/core/SkRRect.h"
+#include "ui/gfx/geometry/rrect_f.h"
+#include "ui/gfx/geometry/skia_conversions.h"
 
 namespace blink {
 
@@ -2124,15 +2127,16 @@ TEST_P(PaintPropertyTreeUpdateTest, BackdropFilterBounds) {
   auto* properties = PaintPropertiesForElement("target");
   ASSERT_TRUE(properties);
   ASSERT_TRUE(properties->Effect());
-  EXPECT_EQ(gfx::RRectF(0, 0, 100, 100, 0),
-            properties->Effect()->BackdropFilterBounds());
+  SkRect bounds;
+  EXPECT_TRUE(properties->Effect()->BackdropFilterBounds().isRect(&bounds));
+  EXPECT_EQ(SkRect::MakeXYWH(0, 0, 100, 100), bounds);
 
   GetDocument()
       .getElementById(AtomicString("target"))
       ->SetInlineStyleProperty(CSSPropertyID::kWidth, "200px");
   UpdateAllLifecyclePhasesForTest();
-  EXPECT_EQ(gfx::RRectF(0, 0, 200, 100, 0),
-            properties->Effect()->BackdropFilterBounds());
+  EXPECT_TRUE(properties->Effect()->BackdropFilterBounds().isRect(&bounds));
+  EXPECT_EQ(SkRect::MakeXYWH(0, 0, 200, 100), bounds);
 }
 
 TEST_P(PaintPropertyTreeUpdateTest, UpdatesInLockedDisplayHandledCorrectly) {
@@ -2179,7 +2183,7 @@ TEST_P(PaintPropertyTreeUpdateTest, AnchorPositioningScrollUpdate) {
   // Make sure the scrolling coordinator is active.
   ASSERT_TRUE(GetFrame().GetPage()->GetScrollingCoordinator());
 
-  GetFrame().DomWindow()->scrollBy(0, 300);
+  GetFrame().DomWindow()->scrollByForTesting(0, 300);
 
   // Snapshotted scroll offset update requires animation frame.
   SimulateFrame();
@@ -2269,6 +2273,72 @@ TEST_P(PaintPropertyTreeUpdateTest, ElementCaptureUpdate) {
   paint_properties =
       element->GetLayoutObject()->FirstFragment().PaintProperties();
   EXPECT_TRUE(paint_properties && paint_properties->ElementCaptureEffect());
+}
+
+TEST_P(PaintPropertyTreeUpdateTest, BorderShapeChangesUpdateOverflowClip) {
+  SetBodyInnerHTML(R"HTML(
+    <style>
+      body { margin: 0; }
+      #div { overflow:hidden; width: 100px; height: 100px; border-radius: 10px; }
+      .stroke-10 { stroke-width: 10px; stroke: black; }
+    </style>
+    <div id=div></div>
+  )HTML");
+  UpdateAllLifecyclePhasesForTest();
+  auto* div = GetDocument().getElementById(AtomicString("div"));
+  auto* clip_properties = div->GetLayoutObject()
+                              ->FirstFragment()
+                              .PaintProperties()
+                              ->InnerBorderShapeClip();
+  EXPECT_FALSE(clip_properties);
+  EXPECT_TRUE(div->GetLayoutObject()
+                  ->FirstFragment()
+                  .PaintProperties()
+                  ->InnerBorderRadiusClip());
+  div->setAttribute(html_names::kStyleAttr,
+                    AtomicString("border-shape: circle()"));
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_FALSE(div->GetLayoutObject()
+                   ->FirstFragment()
+                   .PaintProperties()
+                   ->InnerBorderRadiusClip());
+  clip_properties = div->GetLayoutObject()
+                        ->FirstFragment()
+                        .PaintProperties()
+                        ->InnerBorderShapeClip();
+  EXPECT_TRUE(clip_properties);
+  EXPECT_TRUE(clip_properties->ClipPath());
+  EXPECT_FALSE(clip_properties->ClipPath()->GetSkPath().isRect(nullptr));
+  div->setAttribute(html_names::kStyleAttr,
+                    AtomicString("border-shape: inset(30px)"));
+  UpdateAllLifecyclePhasesForTest();
+  clip_properties = div->GetLayoutObject()
+                        ->FirstFragment()
+                        .PaintProperties()
+                        ->InnerBorderShapeClip();
+  SkRect rect;
+  EXPECT_TRUE(clip_properties->ClipPath()->GetSkPath().isRect(&rect));
+  EXPECT_EQ(rect, SkRect::MakeLTRB(30, 30, 70, 70))
+      << rect.dumpToString(/*asHex=*/false).c_str();
+  div->classList().Add(AtomicString("stroke-10"));
+  UpdateAllLifecyclePhasesForTest();
+  clip_properties = div->GetLayoutObject()
+                        ->FirstFragment()
+                        .PaintProperties()
+                        ->InnerBorderShapeClip();
+  EXPECT_TRUE(clip_properties->ClipPath()->GetSkPath().isRect(&rect));
+  EXPECT_EQ(rect, SkRect::MakeLTRB(35, 35, 65, 65))
+      << rect.dumpToString(/*asHex=*/false).c_str();
+  div->removeAttribute(html_names::kStyleAttr);
+  UpdateAllLifecyclePhasesForTest();
+  EXPECT_TRUE(div->GetLayoutObject()
+                  ->FirstFragment()
+                  .PaintProperties()
+                  ->InnerBorderRadiusClip());
+  EXPECT_FALSE(div->GetLayoutObject()
+                   ->FirstFragment()
+                   .PaintProperties()
+                   ->InnerBorderShapeClip());
 }
 
 }  // namespace blink

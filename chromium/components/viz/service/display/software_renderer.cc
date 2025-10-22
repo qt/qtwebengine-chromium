@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "base/memory/raw_ptr.h"
-#include "base/not_fatal_until.h"
 #include "base/process/memory.h"
 #include "base/trace_event/trace_event.h"
 #include "build/build_config.h"
@@ -37,6 +36,7 @@
 #include "skia/ext/image_operations.h"
 #include "skia/ext/legacy_display_globals.h"
 #include "skia/ext/opacity_filter_canvas.h"
+#include "third_party/skia/include/core/SkCPURecorder.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkColorFilter.h"
@@ -242,7 +242,7 @@ void SoftwareRenderer::BeginDrawingRenderPass(
     current_framebuffer_canvas_.reset();
   } else {
     auto it = render_pass_bitmaps_.find(render_pass->id);
-    CHECK(it != render_pass_bitmaps_.end(), base::NotFatalUntil::M130);
+    CHECK(it != render_pass_bitmaps_.end());
     SkBitmap& bitmap = it->second.bitmap;
 
     current_framebuffer_canvas_ = std::make_unique<SkCanvas>(
@@ -283,11 +283,8 @@ void SoftwareRenderer::DoDrawQuad(const DrawQuad* quad,
     SetClipRRect(
         quad->shared_quad_state->mask_filter_info.rounded_corner_bounds());
 
-  gfx::Transform quad_rect_matrix;
-  QuadRectTransform(&quad_rect_matrix,
-                    quad->shared_quad_state->quad_to_target_transform,
-                    gfx::RectF(quad->rect));
-  gfx::Transform contents_device_transform = quad_rect_matrix;
+  gfx::Transform contents_device_transform =
+      quad->shared_quad_state->quad_to_target_transform;
   contents_device_transform.PostConcat(
       current_frame()->target_to_device_transform);
   contents_device_transform.Flatten();
@@ -320,15 +317,11 @@ void SoftwareRenderer::DoDrawQuad(const DrawQuad* quad,
   if (draw_region) {
     gfx::QuadF local_draw_region(*draw_region);
     SkPath draw_region_clip_path;
-    local_draw_region -=
-        gfx::Vector2dF(quad->visible_rect.x(), quad->visible_rect.y());
-    local_draw_region.Scale(1.0f / quad->visible_rect.width(),
-                            1.0f / quad->visible_rect.height());
-    local_draw_region -= gfx::Vector2dF(0.5f, 0.5f);
+    local_draw_region -= quad->visible_rect.OffsetFromOrigin();
 
     SkPoint clip_points[4];
     QuadFToSkPoints(local_draw_region, clip_points);
-    draw_region_clip_path.addPoly(clip_points, 4, true);
+    draw_region_clip_path.addPoly(clip_points, true);
 
     current_canvas_->clipPath(draw_region_clip_path);
   }
@@ -382,7 +375,7 @@ void SoftwareRenderer::DrawDebugBorderQuad(const DebugBorderDrawQuad* quad) {
   current_canvas_->resetMatrix();
 
   SkPath path;
-  path.addRect(gfx::RectFToSkRect(QuadVertexRect()));
+  path.addRect(gfx::RectToSkRect(quad->rect));
   path.transform(m);
 
   current_paint_.setColor(quad->color);
@@ -395,9 +388,8 @@ void SoftwareRenderer::DrawDebugBorderQuad(const DebugBorderDrawQuad* quad) {
 }
 
 void SoftwareRenderer::DrawPictureQuad(const PictureDrawQuad* quad) {
-  current_canvas_->concat(
-      SkMatrix::RectToRect(gfx::RectFToSkRect(quad->tex_coord_rect),
-                           gfx::RectFToSkRect(QuadVertexRect())));
+  current_canvas_->concat(SkMatrix::RectToRect(
+      gfx::RectFToSkRect(quad->tex_coord_rect), gfx::RectToSkRect(quad->rect)));
 
   const bool needs_transparency =
       SkScalarRoundToInt(quad->shared_quad_state->opacity * 255) < 255;
@@ -436,11 +428,9 @@ void SoftwareRenderer::DrawPictureQuad(const PictureDrawQuad* quad) {
 }
 
 void SoftwareRenderer::DrawSolidColorQuad(const SolidColorDrawQuad* quad) {
-  gfx::RectF visible_quad_vertex_rect = cc::MathUtil::ScaleRectProportional(
-      QuadVertexRect(), gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
   current_paint_.setColor(quad->color);
   current_paint_.setAlphaf(quad->shared_quad_state->opacity * quad->color.fA);
-  current_canvas_->drawRect(gfx::RectFToSkRect(visible_quad_vertex_rect),
+  current_canvas_->drawRect(gfx::RectToSkRect(quad->visible_rect),
                             current_paint_);
 }
 
@@ -451,8 +441,7 @@ void SoftwareRenderer::DrawTextureQuad(const TextureDrawQuad* quad) {
   }
 
   DisplayResourceProviderSoftware::ScopedReadLockSkImage lock(
-      resource_provider(), quad->resource_id,
-      quad->premultiplied_alpha ? kPremul_SkAlphaType : kUnpremul_SkAlphaType);
+      resource_provider(), quad->resource_id);
 
   if (!lock.valid())
     return;
@@ -463,13 +452,12 @@ void SoftwareRenderer::DrawTextureQuad(const TextureDrawQuad* quad) {
   gfx::RectF visible_uv_rect = cc::MathUtil::ScaleRectProportional(
       uv_rect, gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
   SkRect sk_uv_rect = gfx::RectFToSkRect(visible_uv_rect);
-  gfx::RectF visible_quad_vertex_rect = cc::MathUtil::ScaleRectProportional(
-      QuadVertexRect(), gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
-  SkRect quad_rect = gfx::RectFToSkRect(visible_quad_vertex_rect);
+  SkRect quad_rect = gfx::RectToSkRect(quad->visible_rect);
 
   const bool y_flipped = resource_provider()->GetOrigin(quad->resource_id) ==
                          kBottomLeft_GrSurfaceOrigin;
   if (y_flipped) {
+    current_canvas_->translate(0, quad->rect.height());
     current_canvas_->scale(1, -1);
   }
 
@@ -508,23 +496,19 @@ void SoftwareRenderer::DrawTileQuad(const TileDrawQuad* quad) {
   DCHECK(IsSoftwareResource(quad->resource_id));
 
   DisplayResourceProviderSoftware::ScopedReadLockSkImage lock(
-      resource_provider(), quad->resource_id,
-      quad->is_premultiplied ? kPremul_SkAlphaType : kUnpremul_SkAlphaType);
+      resource_provider(), quad->resource_id);
   if (!lock.valid())
     return;
 
   gfx::RectF visible_tex_coord_rect = cc::MathUtil::ScaleRectProportional(
       quad->tex_coord_rect, gfx::RectF(quad->rect),
       gfx::RectF(quad->visible_rect));
-  gfx::RectF visible_quad_vertex_rect = cc::MathUtil::ScaleRectProportional(
-      QuadVertexRect(), gfx::RectF(quad->rect), gfx::RectF(quad->visible_rect));
-
   SkRect uv_rect = gfx::RectFToSkRect(visible_tex_coord_rect);
   SkSamplingOptions sampling(quad->nearest_neighbor ? SkFilterMode::kNearest
                                                     : SkFilterMode::kLinear);
   current_canvas_->drawImageRect(
-      lock.sk_image(), uv_rect, gfx::RectFToSkRect(visible_quad_vertex_rect),
-      sampling, &current_paint_, SkCanvas::kStrict_SrcRectConstraint);
+      lock.sk_image(), uv_rect, gfx::RectToSkRect(quad->visible_rect), sampling,
+      &current_paint_, SkCanvas::kStrict_SrcRectConstraint);
 
   if (software_toggle_capture()) {
     SkPixmap pixmap;
@@ -551,16 +535,22 @@ void SoftwareRenderer::DrawTileQuad(const TileDrawQuad* quad) {
 void SoftwareRenderer::DrawRenderPassQuad(
     const AggregatedRenderPassDrawQuad* quad) {
   auto it = render_pass_bitmaps_.find(quad->render_pass_id);
-  if (it == render_pass_bitmaps_.end())
-    return;
-  SkBitmap& source_bitmap = it->second.bitmap;
+  // Set to `nullptr` if there is no bitmap (e.g. if the backing has empty
+  // size), in case this RPDQ contains a filter that does not require an input
+  // image (e.g. a solid color fill).
+  const SkBitmap* source_bitmap =
+      it != render_pass_bitmaps_.end() ? &it->second.bitmap : nullptr;
 
-  SkRect dest_rect = gfx::RectFToSkRect(QuadVertexRect());
-  SkRect dest_visible_rect =
-      gfx::RectFToSkRect(cc::MathUtil::ScaleRectProportional(
-          QuadVertexRect(), gfx::RectF(quad->rect),
-          gfx::RectF(quad->visible_rect)));
+  SkRect dest_rect = gfx::RectToSkRect(quad->rect);
+  SkRect dest_visible_rect = gfx::RectToSkRect(quad->visible_rect);
   SkRect content_rect = RectFToSkRect(quad->tex_coord_rect);
+
+  if (source_bitmap && content_rect.isEmpty()) {
+    // In case someone forgets to set it, we're treating an empty
+    // `tex_coord_rect` as "the full image".
+    content_rect = gfx::RectToSkRect(
+        gfx::Rect(source_bitmap->width(), source_bitmap->height()));
+  }
 
   sk_sp<SkImage> filter_image;
   const cc::FilterOperations* filters = FiltersForPass(quad->render_pass_id);
@@ -573,17 +563,14 @@ void SoftwareRenderer::DrawRenderPassQuad(
       SkIRect result_rect;
       // TODO(ajuma): Apply the filter in the same pass as the content where
       // possible (e.g. when there's no origin offset). See crbug.com/308201.
-      filter_image =
-          ApplyImageFilter(image_filter.get(), quad, source_bitmap,
-                           /* offset_expanded_bounds = */ true, &result_rect);
+      filter_image = ApplyImageFilter(
+          image_filter.get(), quad, source_bitmap ? *source_bitmap : SkBitmap(),
+          /*offset_expanded_bounds=*/true, &result_rect);
       if (result_rect.isEmpty()) {
         return;
       }
       if (filter_image) {
-        gfx::RectF rect = gfx::SkRectToRectF(SkRect::Make(result_rect));
-        dest_rect = dest_visible_rect =
-            gfx::RectFToSkRect(cc::MathUtil::ScaleRectProportional(
-                QuadVertexRect(), gfx::RectF(quad->rect), rect));
+        dest_rect = dest_visible_rect = SkRect::Make(result_rect);
         content_rect =
             SkRect::MakeWH(result_rect.width(), result_rect.height());
       }
@@ -594,14 +581,19 @@ void SoftwareRenderer::DrawRenderPassQuad(
 
   sk_sp<SkShader> shader;
   if (!filter_image) {
-    shader = source_bitmap.makeShader(current_sampling_, content_mat);
+    if (!source_bitmap) {
+      // There is no render pass backing bitmap and no filter that can possibly
+      // draw pixels.
+      return;
+    }
+    shader = source_bitmap->makeShader(current_sampling_, content_mat);
   } else {
     shader = filter_image->makeShader(current_sampling_, content_mat);
   }
 
   if (quad->mask_resource_id()) {
     DisplayResourceProviderSoftware::ScopedReadLockSkImage mask_lock(
-        resource_provider(), quad->mask_resource_id(), kPremul_SkAlphaType);
+        resource_provider(), quad->mask_resource_id());
     if (!mask_lock.valid())
       return;
 
@@ -636,8 +628,7 @@ void SoftwareRenderer::DrawUnsupportedQuad(const DrawQuad* quad) {
   current_paint_.setColor(SkColors::kMagenta);
 #endif
   current_paint_.setAlpha(quad->shared_quad_state->opacity * 255);
-  current_canvas_->drawRect(gfx::RectFToSkRect(QuadVertexRect()),
-                            current_paint_);
+  current_canvas_->drawRect(gfx::RectToSkRect(quad->rect), current_paint_);
 }
 
 void SoftwareRenderer::CopyDrawnRenderPass(
@@ -696,15 +687,15 @@ void SoftwareRenderer::CopyDrawnRenderPass(
 
   bitmap.setImmutable();
 
-  // Returning kNativeTextures results is only supported with blit requests, so
+  // Returning kSharedImage results is only supported with blit requests, so
   // we copy to client provided image.
   if (request->result_destination() ==
-          CopyOutputResult::Destination::kNativeTextures &&
+          CopyOutputResult::Destination::kSharedImage &&
       request->has_blit_request()) {
     const auto& blit_request = request->blit_request();
 
     auto representation = resource_provider()->GetSharedImageRepresentation(
-        blit_request.mailbox(), blit_request.sync_token());
+        blit_request.shared_image()->mailbox(), blit_request.sync_token());
 
     if (!representation) {
       DLOG(ERROR) << "BlitRequest: Couldn't create shared image representation";
@@ -757,10 +748,9 @@ void SoftwareRenderer::CopyDrawnRenderPass(
           SkCanvas::kFast_SrcRectConstraint);
     }
 
-    request->SendResult(std::make_unique<CopyOutputTextureResult>(
+    request->SendResult(std::make_unique<CopyOutputSharedImageResult>(
         CopyOutputResult::Format::RGBA, geometry.result_selection,
-        CopyOutputResult::TextureResult(request->blit_request().mailbox(),
-                                        representation->color_space()),
+        request->blit_request().shared_image(),
         CopyOutputResult::ReleaseCallbacks()));
 
     return;
@@ -834,8 +824,16 @@ sk_sp<SkImage> SoftwareRenderer::ApplyImageFilter(
   cc::ScopedSubnormalFloatDisabler disabler;
   paint.setImageFilter(filter->makeWithLocalMatrix(local_matrix));
   surface->getCanvas()->translate(-canvas_offset.x(), -canvas_offset.y());
-  surface->getCanvas()->drawImage(to_filter.asImage(), quad->rect.x(),
-                                  quad->rect.y(), SkSamplingOptions(), &paint);
+  if (!to_filter.drawsNothing()) {
+    surface->getCanvas()->drawImage(to_filter.asImage(), quad->rect.x(),
+                                    quad->rect.y(), SkSamplingOptions(),
+                                    &paint);
+  } else {
+    // It's possible to have filters that don't require an input image. We still
+    // want the filter to paint even if `to_filter` is empty, since `drawImage`
+    // may exit early if its input image draws nothing.
+    surface->getCanvas()->drawRect(SkRect::Make(*result_rect), paint);
+  }
   return surface->makeImageSnapshot();
 }
 
@@ -856,29 +854,16 @@ SkBitmap SoftwareRenderer::GetBackdropBitmap(
 gfx::Rect SoftwareRenderer::GetBackdropBoundingBoxForRenderPassQuad(
     const AggregatedRenderPassDrawQuad* quad,
     const cc::FilterOperations* backdrop_filters,
-    std::optional<gfx::RRectF> backdrop_filter_bounds_input,
     gfx::Transform contents_device_transform,
     gfx::Transform* backdrop_filter_bounds_transform,
-    std::optional<gfx::RRectF>* backdrop_filter_bounds,
     gfx::Rect* unclipped_rect) const {
   DCHECK(backdrop_filter_bounds_transform);
-  DCHECK(backdrop_filter_bounds);
   DCHECK(unclipped_rect);
-
-  // |backdrop_filter_bounds| is a rounded rect in [-0.5,0.5] space that
-  // represents |backdrop_filter_bounds_input| as a fraction of the space
-  // defined by |quad->rect|, not including its offset.
-  *backdrop_filter_bounds = gfx::RRectF();
-  if (!backdrop_filter_bounds_input ||
-      !GetScaledRRectF(quad->rect, backdrop_filter_bounds_input.value(),
-                       &backdrop_filter_bounds->value())) {
-    backdrop_filter_bounds->reset();
-  }
 
   // |backdrop_rect| is now the bounding box of clip_region, in window pixel
   // coordinates, and with flip applied.
   gfx::Rect backdrop_rect = gfx::ToEnclosingRect(cc::MathUtil::MapClippedRect(
-      contents_device_transform, QuadVertexRect()));
+      contents_device_transform, gfx::RectF(quad->rect)));
 
   *unclipped_rect = backdrop_rect;
   backdrop_rect.Intersect(MoveFromDrawToWindowSpace(
@@ -899,30 +884,25 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
       BackdropFiltersForPass(quad->render_pass_id);
   if (!ShouldApplyBackdropFilters(backdrop_filters, quad))
     return nullptr;
-  std::optional<gfx::RRectF> backdrop_filter_bounds_input =
+  std::optional<SkPath> backdrop_filter_bounds =
       BackdropFilterBoundsForPass(quad->render_pass_id);
 
-  if (backdrop_filter_bounds_input.has_value()) {
-    backdrop_filter_bounds_input->Scale(quad->filters_scale.x(),
-                                        quad->filters_scale.y());
+  if (backdrop_filter_bounds.has_value()) {
+    backdrop_filter_bounds->transform(
+        SkMatrix::Scale(quad->filters_scale.x(), quad->filters_scale.y()));
   }
 
-  gfx::Transform quad_rect_matrix;
-  QuadRectTransform(&quad_rect_matrix,
-                    quad->shared_quad_state->quad_to_target_transform,
-                    gfx::RectF(quad->rect));
-  gfx::Transform contents_device_transform = quad_rect_matrix;
+  gfx::Transform contents_device_transform =
+      quad->shared_quad_state->quad_to_target_transform;
   contents_device_transform.PostConcat(
       current_frame()->target_to_device_transform);
   contents_device_transform.Flatten();
 
-  std::optional<gfx::RRectF> backdrop_filter_bounds;
   gfx::Transform backdrop_filter_bounds_transform;
   gfx::Rect unclipped_rect;
   gfx::Rect backdrop_rect = GetBackdropBoundingBoxForRenderPassQuad(
-      quad, backdrop_filters, backdrop_filter_bounds_input,
-      contents_device_transform, &backdrop_filter_bounds_transform,
-      &backdrop_filter_bounds, &unclipped_rect);
+      quad, backdrop_filters, contents_device_transform,
+      &backdrop_filter_bounds_transform, &unclipped_rect);
 
   // Figure out the transformations to move it back to pixel space.
   gfx::Transform contents_device_transform_inverse;
@@ -937,15 +917,16 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
   gfx::Point image_offset = gfx::Point(0, 0);
   if (backdrop_filter_bounds.has_value()) {
     gfx::Rect filter_clip = gfx::ToEnclosingRect(cc::MathUtil::MapClippedRect(
-        backdrop_filter_bounds_transform, backdrop_filter_bounds->rect()));
+        backdrop_filter_bounds_transform,
+        gfx::SkRectToRectF(backdrop_filter_bounds->getBounds())));
     filter_clip.Intersect(
         gfx::Rect(backdrop_bitmap.width(), backdrop_bitmap.height()));
     if (filter_clip.IsEmpty())
       return nullptr;
     // Crop the source image to the backdrop_filter_bounds.
     sk_sp<SkImage> cropped_image = SkImages::RasterFromBitmap(backdrop_bitmap);
-    cropped_image = cropped_image->makeSubset(
-        static_cast<GrDirectContext*>(nullptr), RectToSkIRect(filter_clip));
+    cropped_image = cropped_image->makeSubset(skcpu::Recorder::TODO(),
+                                              RectToSkIRect(filter_clip), {});
     cropped_image->asLegacyBitmap(&backdrop_bitmap);
     image_offset = filter_clip.origin();
   }
@@ -992,8 +973,8 @@ sk_sp<SkShader> SoftwareRenderer::GetBackdropFilterShader(
   if (backdrop_filter_bounds) {
     canvas.setMatrix(
         gfx::TransformToFlattenedSkMatrix(backdrop_filter_bounds_transform));
-    canvas.clipRRect(SkRRect(*backdrop_filter_bounds), SkClipOp::kIntersect,
-                     true /* antialias */);
+    canvas.clipPath(*backdrop_filter_bounds, SkClipOp::kIntersect,
+                    true /* antialias */);
     canvas.resetMatrix();
   }
 

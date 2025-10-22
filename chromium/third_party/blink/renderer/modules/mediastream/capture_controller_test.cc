@@ -7,6 +7,7 @@
 #include <tuple>
 
 #include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/gmock_callback_support.h"
 #include "base/unguessable_token.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -18,6 +19,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_dom_exception.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_wheel_event_init.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_captured_wheel_action.h"
+#include "third_party/blink/renderer/core/dom/document.h"
 #include "third_party/blink/renderer/core/dom/dom_exception.h"
 #include "third_party/blink/renderer/core/dom/events/native_event_listener.h"
 #include "third_party/blink/renderer/core/event_type_names.h"
@@ -885,9 +887,8 @@ TEST_F(CaptureControllerForwardWheelTest, Success) {
   EXPECT_TRUE(promise_tester.IsFulfilled());
 
   base::RunLoop run_loop;
-  EXPECT_CALL(DispatcherHost(), SendWheel(_, _, _))
-      .WillOnce(DoAll(Invoke(&run_loop, &base::RunLoop::Quit),
-                      RunOnceCallback<2>(CscResult::kSuccess)));
+  EXPECT_CALL(DispatcherHost(), SendWheel(_, _))
+      .WillOnce(Invoke(&run_loop, &base::RunLoop::Quit));
   element->DispatchEvent(
       *WheelEvent::Create(event_type_names::kWheel, WheelEventInit::Create()));
   run_loop.Run();
@@ -900,7 +901,7 @@ TEST_F(CaptureControllerForwardWheelTest, Success) {
   auto* mock_listener = MakeGarbageCollected<MockEventListener>();
   element->addEventListener(event_type_names::kWheel, mock_listener);
   base::RunLoop run_loop2;
-  EXPECT_CALL(DispatcherHost(), SendWheel(_, _, _)).Times(0);
+  EXPECT_CALL(DispatcherHost(), SendWheel(_, _)).Times(0);
   EXPECT_CALL(*mock_listener, Invoke)
       .WillOnce(Invoke(&run_loop2, &base::RunLoop::Quit));
   element->DispatchEvent(
@@ -926,7 +927,7 @@ TEST_F(CaptureControllerForwardWheelTest, DropUntrustedEvent) {
                       controller->forwardWheel(script_state, element))
       .WaitUntilSettled();
 
-  EXPECT_CALL(DispatcherHost(), SendWheel(_, _, _)).Times(0);
+  EXPECT_CALL(DispatcherHost(), SendWheel(_, _)).Times(0);
   DummyExceptionStateForTesting exception_state;
   // Events dispatched with dispatchEventForBindings are always untrusted.
   element->dispatchEventForBindings(
@@ -1059,7 +1060,7 @@ TEST_P(CaptureControllerForwardWheelBackendErrorTest, Test) {
   HTMLDivElement* element = MakeGarbageCollected<HTMLDivElement>(GetDocument());
   ScriptState* script_state = ToScriptStateForMainWorld(&GetFrame());
 
-  EXPECT_CALL(DispatcherHost(), SendWheel(_, _, _)).Times(0);
+  EXPECT_CALL(DispatcherHost(), SendWheel(_, _)).Times(0);
 
   ScriptState::Scope scope(script_state);
   EXPECT_CALL(DispatcherHost(), RequestCapturedSurfaceControlPermission(_, _))
@@ -1236,10 +1237,9 @@ TEST_P(CaptureControllerScrollParametersValidationTest, ValidateCoordinates) {
 
   mojom::blink::CapturedWheelAction dispatcher_action;
   base::RunLoop run_loop;
-  EXPECT_CALL(DispatcherHost(), SendWheel(_, _, _))
+  EXPECT_CALL(DispatcherHost(), SendWheel(_, _))
       .WillOnce(DoAll(SaveArgPointee<1>(&dispatcher_action),
-                      Invoke(&run_loop, &base::RunLoop::Quit),
-                      RunOnceCallback<2>(CscResult::kSuccess)));
+                      Invoke(&run_loop, &base::RunLoop::Quit)));
 
   // Deliver the wheel event.
   WheelEventInit* const init = WheelEventInit::Create();

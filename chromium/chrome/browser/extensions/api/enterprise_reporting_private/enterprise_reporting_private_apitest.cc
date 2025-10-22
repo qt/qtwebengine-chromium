@@ -6,6 +6,8 @@
 #include <string>
 #include <utility>
 
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/test/scoped_feature_list.h"
 #include "build/branding_buildflags.h"
 #include "build/build_config.h"
@@ -23,6 +25,7 @@
 #include "chrome/test/base/in_process_browser_test.h"
 #include "components/policy/core/common/management/management_service.h"
 #include "components/safe_browsing/core/common/proto/realtimeapi.pb.h"
+#include "components/signin/public/identity_manager/account_capabilities_test_mutator.h"
 #include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/version_info/version_info.h"
@@ -158,6 +161,8 @@ class EnterpriseReportingPrivateApiTest : public extensions::ExtensionApiTest {
           ->store()
           ->set_policy_data_for_testing(std::move(profile_policy_data));
     }
+    AccountCapabilitiesTestMutator(&account_info.capabilities)
+        .set_is_subject_to_enterprise_features(as_managed);
 
     return account_info;
   }
@@ -666,8 +671,8 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest,
 #endif
 IN_PROC_BROWSER_TEST_F(EnterpriseReportingPrivateApiTest,
                        MAYBE_GetFileSystemInfo_Success) {
-  // Use the test runner process and binary as test parameters, as it will always
-  // be running.
+  // Use the test runner process and binary as test parameters, as it will
+  // always be running.
   auto test_runner_file_path =
       device_signals::GetProcessExePath(base::Process::Current().Pid());
 
@@ -1131,6 +1136,8 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportDataMaskingEventTest,
       api::enterprise_reporting_private::EventResult::kEventResultDataMasked;
   event.url = "https://foo.com";
   event.triggered_rule_info.push_back(std::move(rule_info));
+  base::RunLoop run_loop;
+  event_validator.SetDoneClosure(run_loop.QuitClosure());
   event_validator.ExpectDataMaskingEvent("test-user@chromium.org",
                                          profile()->GetPath().AsUTF8Unsafe(),
                                          std::move(event));
@@ -1141,6 +1148,7 @@ IN_PROC_BROWSER_TEST_F(EnterpriseReportDataMaskingEventTest,
       profile()->GetPrefs(), true, {"sensitiveDataEvent"}, {});
 
   RunTest(kTestJS);
+  run_loop.Run();
 }
 
 class EnterpriseOnDataMaskingRulesTriggeredTest
@@ -1161,8 +1169,29 @@ IN_PROC_BROWSER_TEST_F(EnterpriseOnDataMaskingRulesTriggeredTest,
       async function asyncAssertions() {
         chrome.enterprise.reportingPrivate.onDataMaskingRulesTriggered.addListener(
           rules => {
-            chrome.test.assertEq(rules, []);
-            chrome.test.succeed();
+            if (rules.triggeredRuleInfo.length === 0) {
+              chrome.test.fail(
+                  'There should not be an event when no rules are triggered');
+            } else {
+              chrome.test.assertEq(rules, {
+                  triggeredRuleInfo: [
+                    {
+                      matchedDetectors:[
+                        {
+                          detectorId: "12345",
+                          displayName: "display_name",
+                          maskType:'mask_type',
+                          pattern:'pattern'
+                        }
+                      ],
+                      ruleId:'rule_id',
+                      ruleName:'rule_name'
+                    }
+                  ],
+                  url:'https://foo.bar/'
+                });
+              chrome.test.succeed();
+            }
           }
         );
       }
@@ -1178,10 +1207,28 @@ IN_PROC_BROWSER_TEST_F(EnterpriseOnDataMaskingRulesTriggeredTest,
 
   ResultCatcher result_catcher;
 
-  EnterpriseReportingPrivateEventRouterFactory::GetInstance()
-      ->GetForProfile(profile())
-      ->OnUrlFilteringVerdict(GURL(kTestUrl),
-                              safe_browsing::RTLookupResponse());
+  auto* router = EnterpriseReportingPrivateEventRouterFactory::GetInstance()
+                     ->GetForProfile(profile());
+
+  // This first call should not produce any result as there are no triggered
+  // rules in the response.
+  router->OnUrlFilteringVerdict(GURL(kTestUrl),
+                                safe_browsing::RTLookupResponse());
+
+  safe_browsing::RTLookupResponse response;
+
+  auto* rule =
+      response.add_threat_info()->mutable_matched_url_navigation_rule();
+  rule->set_rule_id("rule_id");
+  rule->set_rule_name("rule_name");
+
+  auto* data_masking = rule->add_data_masking_actions();
+  data_masking->set_display_name("display_name");
+  data_masking->set_mask_type("mask_type");
+  data_masking->set_pattern("pattern");
+  data_masking->set_detector_id("12345");
+
+  router->OnUrlFilteringVerdict(GURL(kTestUrl), response);
 
   ASSERT_TRUE(result_catcher.GetNextResult()) << result_catcher.message();
 }
@@ -1192,37 +1239,41 @@ IN_PROC_BROWSER_TEST_F(EnterpriseOnDataMaskingRulesTriggeredTest, WithRules) {
       async function asyncAssertions() {
         chrome.enterprise.reportingPrivate.onDataMaskingRulesTriggered.addListener(
           rules => {
-            chrome.test.assertEq(rules, [
-              {
-                'level':'mask_type_1',
-                'regex_pattern':'pattern_1',
-                'triggeredRuleInfo':{
-                  'matchedDetectors':[],
-                  'ruleId':'rule_id_1',
-                  'ruleName':'rule_name_1'
+            chrome.test.assertEq(rules, {
+              triggeredRuleInfo: [
+                {
+                  ruleId:'rule_id_1',
+                  ruleName:'rule_name_1',
+                  matchedDetectors:[
+                    {
+                      displayName: "display_name_1",
+                      detectorId: "id_1",
+                      maskType:'mask_type_1',
+                      pattern:'pattern_1'
+                    },
+                    {
+                      displayName: "display_name_2",
+                      detectorId: "id_2",
+                      maskType:'mask_type_2',
+                      pattern:'pattern_2'
+                    }
+                  ],
                 },
-                'url':'https://foo.bar/'
-              },
-              {
-                'level':'mask_type_2',
-                'regex_pattern':'pattern_2',
-                'triggeredRuleInfo':{
-                  'matchedDetectors':[],
-                  'ruleId':'rule_id_1',
-                  'ruleName':'rule_name_1'
-                },
-                'url':'https://foo.bar/'
-              },
-              {
-                'level':'mask_type_3',
-                'regex_pattern':'pattern_3',
-                'triggeredRuleInfo':{
-                  'matchedDetectors':[],
-                  'ruleId':'rule_id_2',
-                  'ruleName':'rule_name_2'
-                },
-                'url':'https://foo.bar/'
-              }]);
+                {
+                  ruleId:'rule_id_2',
+                  ruleName:'rule_name_2',
+                  matchedDetectors:[
+                    {
+                      displayName: "display_name_3",
+                      detectorId: "id_3",
+                      maskType:'mask_type_3',
+                      pattern:'pattern_3'
+                    }
+                  ]
+                }
+              ],
+              url:'https://foo.bar/'
+            });
             chrome.test.succeed();
           }
         );
@@ -1249,11 +1300,13 @@ IN_PROC_BROWSER_TEST_F(EnterpriseOnDataMaskingRulesTriggeredTest, WithRules) {
   data_masking_1->set_display_name("display_name_1");
   data_masking_1->set_mask_type("mask_type_1");
   data_masking_1->set_pattern("pattern_1");
+  data_masking_1->set_detector_id("id_1");
 
   auto* data_masking_2 = rule_1->add_data_masking_actions();
   data_masking_2->set_display_name("display_name_2");
   data_masking_2->set_mask_type("mask_type_2");
   data_masking_2->set_pattern("pattern_2");
+  data_masking_2->set_detector_id("id_2");
 
   auto* rule_2 =
       response.add_threat_info()->mutable_matched_url_navigation_rule();
@@ -1264,6 +1317,7 @@ IN_PROC_BROWSER_TEST_F(EnterpriseOnDataMaskingRulesTriggeredTest, WithRules) {
   data_masking_3->set_display_name("display_name_3");
   data_masking_3->set_mask_type("mask_type_3");
   data_masking_3->set_pattern("pattern_3");
+  data_masking_3->set_detector_id("id_3");
 
   EnterpriseReportingPrivateEventRouterFactory::GetInstance()
       ->GetForProfile(profile())

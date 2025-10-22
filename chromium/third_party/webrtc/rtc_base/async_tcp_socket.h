@@ -38,16 +38,16 @@ class AsyncTCPSocketBase : public AsyncPacketSocket {
   // Pure virtual methods to send and recv data.
   int Send(const void* pv,
            size_t cb,
-           const rtc::PacketOptions& options) override = 0;
+           const AsyncSocketPacketOptions& options) override = 0;
   // Must return the number of bytes processed.
-  virtual size_t ProcessInput(rtc::ArrayView<const uint8_t> data) = 0;
+  virtual size_t ProcessInput(ArrayView<const uint8_t> data) = 0;
 
   SocketAddress GetLocalAddress() const override;
   SocketAddress GetRemoteAddress() const override;
   int SendTo(const void* pv,
              size_t cb,
              const SocketAddress& addr,
-             const rtc::PacketOptions& options) override;
+             const AsyncSocketPacketOptions& options) override;
   int Close() override;
 
   State GetState() const override;
@@ -101,8 +101,8 @@ class AsyncTCPSocket : public AsyncTCPSocketBase {
 
   int Send(const void* pv,
            size_t cb,
-           const rtc::PacketOptions& options) override;
-  size_t ProcessInput(rtc::ArrayView<const uint8_t>) override;
+           const AsyncSocketPacketOptions& options) override;
+  size_t ProcessInput(ArrayView<const uint8_t>) override;
 };
 
 class AsyncTcpListenSocket : public AsyncListenSocket {
@@ -123,12 +123,5 @@ class AsyncTcpListenSocket : public AsyncListenSocket {
 
 }  //  namespace webrtc
 
-// Re-export symbols from the webrtc namespace for backwards compatibility.
-// TODO(bugs.webrtc.org/4222596): Remove once all references are updated.
-namespace rtc {
-using ::webrtc::AsyncTcpListenSocket;
-using ::webrtc::AsyncTCPSocket;
-using ::webrtc::AsyncTCPSocketBase;
-}  // namespace rtc
 
 #endif  // RTC_BASE_ASYNC_TCP_SOCKET_H_

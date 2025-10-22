@@ -32,6 +32,9 @@ if (UPDATE_DEPS)
         list(APPEND update_dep_command "${CMAKE_GENERATOR_PLATFORM}")
     endif()
 
+    list(APPEND update_dep_command "--pointer_size")
+    list(APPEND update_dep_command "${CMAKE_SIZEOF_VOID_P}")
+
     if (NOT CMAKE_BUILD_TYPE)
         message(WARNING "CMAKE_BUILD_TYPE not set. Using Debug for dependency build type")
         set(_build_type Debug)
@@ -98,6 +101,11 @@ if (UPDATE_DEPS)
         list(APPEND cmake_var "--cmake_var" "VUL_MOCK_ANDROID=ON")
     endif()
 
+    # Enable mimalloc statistics level 1. This is useful for release builds.
+    # Default value for release builds is MI_STAT=0, for debug builds it is MI_STAT=2.
+    if (VVL_ENABLE_MI_STAT)
+         list(APPEND cmake_var "--cmake_var" "MI_EXTRA_CPPDEFS=\"MI_STAT=1\"")
+    endif()
 
     if (cmake_var)
         list(APPEND update_dep_command "${cmake_var}")

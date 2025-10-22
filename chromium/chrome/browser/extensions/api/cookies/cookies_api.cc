@@ -16,7 +16,6 @@
 #include "base/lazy_instance.h"
 #include "base/time/time.h"
 #include "chrome/browser/extensions/api/cookies/cookies_helpers.h"
-#include "chrome/browser/extensions/chrome_extension_function_details.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
@@ -138,12 +137,8 @@ void CookiesEventRouter::CookieChangeListener::OnCookieChange(
 
 CookiesEventRouter::CookiesEventRouter(content::BrowserContext* context)
     : profile_(Profile::FromBrowserContext(context)),
-      profile_observation_(this)
-#if !BUILDFLAG(IS_ANDROID)
-      ,
-      otr_profile_observation_(this)
-#endif
-{
+      profile_observation_(this),
+      otr_profile_observation_(this) {
   MaybeStartListening();
   profile_observation_.Observe(profile_);
 }
@@ -161,17 +156,17 @@ void CookiesEventRouter::OnCookieChange(bool otr,
   }
   base::Value::List args;
   base::Value::Dict dict;
-  dict.Set(kRemovedKey, change.cause != net::CookieChangeCause::INSERTED);
+  dict.Set(
+      kRemovedKey,
+      change.cause != net::CookieChangeCause::INSERTED &&
+          change.cause != net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE);
 
   Profile* profile =
       otr ? profile_->GetPrimaryOTRProfile(/*create_if_needed=*/false)
           : profile_->GetOriginalProfile();
-  // TODO(crbug.com/407373848): OTR profile must exist when the cookie change event
-  // arrived. Change this to CHECK once this is merged.
-  DCHECK(profile);
-  if (!profile) {
-    return;
-  }
+  // TODO(407373848): OTR profile must exist when the cookie change event
+  // arrived.
+  CHECK(profile);
 
   api::cookies::Cookie cookie = cookies_helpers::CreateCookie(
       change.cookie, cookies_helpers::GetStoreIdFromProfile(profile));
@@ -184,6 +179,7 @@ void CookiesEventRouter::OnCookieChange(bool otr,
     // only make sense for deletions.
     case net::CookieChangeCause::INSERTED:
     case net::CookieChangeCause::EXPLICIT:
+    case net::CookieChangeCause::INSERTED_NO_CHANGE_OVERWRITE:
       cause_dict_entry = kExplicitChangeCause;
       break;
 
@@ -219,13 +215,17 @@ void CookiesEventRouter::OnOffTheRecordProfileCreated(Profile* off_the_record) {
   // When an off-the-record spinoff of |profile_| is created, start listening
   // for cookie changes there. The OTR receiver should never be bound, since
   // there wasn't previously an OTR profile.
-  if (off_the_record->IsPrimaryOTRProfile()) {
-    DCHECK(!otr_receiver_.is_bound());
-#if !BUILDFLAG(IS_ANDROID)
-    otr_profile_observation_.Observe(off_the_record);
-#endif
-    BindToCookieManager(&otr_receiver_, off_the_record);
+  // TODO(crbug.com/417228685): Clank allows for multiple OTR profiles, unlike
+  // desktop Chrome. Extensions APIs may have built-in assumptions that there
+  // will only be one OTR profile. We need to determine how this will be handled
+  // in Desktop Android.
+  if (!off_the_record->IsPrimaryOTRProfile()) {
+    return;
   }
+
+  DCHECK(!otr_receiver_.is_bound());
+  otr_profile_observation_.Observe(off_the_record);
+  BindToCookieManager(&otr_receiver_, off_the_record);
 }
 
 void CookiesEventRouter::OnProfileWillBeDestroyed(Profile* profile) {
@@ -235,9 +235,7 @@ void CookiesEventRouter::OnProfileWillBeDestroyed(Profile* profile) {
           ? original_profile->GetPrimaryOTRProfile(/*create_if_needed=*/true)
           : nullptr;
   if (profile == otr_profile) {
-#if !BUILDFLAG(IS_ANDROID)
     otr_profile_observation_.Reset();
-#endif
     otr_receiver_.reset();
   }
 }
@@ -257,9 +255,7 @@ void CookiesEventRouter::MaybeStartListening() {
   }
 
   if (!otr_receiver_.is_bound() && otr_profile) {
-#if !BUILDFLAG(IS_ANDROID)
     otr_profile_observation_.Observe(otr_profile);
-#endif
     BindToCookieManager(&otr_receiver_, otr_profile);
   }
 }
@@ -346,7 +342,7 @@ ExtensionFunction::ResponseAction CookiesGetFunction::Run() {
   DCHECK(!url_.is_empty() && url_.is_valid());
   cookies_helpers::GetCookieListFromManager(
       cookie_manager, url_,
-      net::CookiePartitionKeyCollection::FromOptional(partition_key.value()),
+      net::CookiePartitionKeyCollection(std::move(partition_key).value()),
       base::BindOnce(&CookiesGetFunction::GetCookieListCallback, this));
 
   // Extension telemetry signal intercept
@@ -637,8 +633,7 @@ ExtensionFunction::ResponseAction CookiesSetFunction::Run() {
       base::BindOnce(&CookiesSetFunction::SetCanonicalCookieCallback, this));
   cookies_helpers::GetCookieListFromManager(
       cookie_manager, url_,
-      net::CookiePartitionKeyCollection::FromOptional(
-          net_partition_key.value()),
+      net::CookiePartitionKeyCollection(std::move(net_partition_key).value()),
       base::BindOnce(&CookiesSetFunction::GetCookieListCallback, this));
 
   // Will finish asynchronously.
@@ -727,7 +722,7 @@ ExtensionFunction::ResponseAction CookiesRemoveFunction::Run() {
       network::mojom::CookieDeletionFilter::New());
 
   filter->cookie_partition_key_collection =
-      net::CookiePartitionKeyCollection::FromOptional(partition_key.value());
+      net::CookiePartitionKeyCollection(std::move(partition_key).value());
   filter->url = url_;
   filter->cookie_name = parsed_args_->details.name;
   cookie_manager->DeleteCookies(

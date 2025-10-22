@@ -26,9 +26,9 @@ generate_css("css_files") {
     "requestInitiatorViewTree.css",
     "requestPayloadTree.css",
     "requestPayloadView.css",
+    "resourceChunkView.css",
     "signedExchangeInfoTree.css",
     "signedExchangeInfoView.css",
-    "webSocketFrameView.css",
   ]
 }
 
@@ -56,6 +56,8 @@ devtools_module("network") {
     "RequestPreviewView.ts",
     "RequestResponseView.ts",
     "RequestTimingView.ts",
+    "ResourceChunkView.ts",
+    "ResourceDirectSocketChunkView.ts",
     "ResourceWebSocketFrameView.ts",
     "SignedExchangeInfoView.ts",
   ]
@@ -80,9 +82,10 @@ devtools_module("network") {
     "../../panels/search:bundle",
     "../../panels/sources:bundle",
     "../../panels/utils:bundle",
+    "../../services/tracing:bundle",
     "../../third_party/chromium/client-variations:bundle",
+    "../../ui/components/buttons:bundle",
     "../../ui/components/expandable_list:bundle",
-    "../../ui/components/floating_button:bundle",
     "../../ui/components/icon_button:bundle",
     "../../ui/legacy:bundle",
     "../../ui/legacy/components/cookie_table:bundle",
@@ -112,7 +115,7 @@ devtools_entrypoint("bundle") {
     ":*",
     "../../entrypoints/*",
     "../../models/ai_assistance/*",
-    "../../panels/ai_assistance/*",
+    "../../panels/ai_assistance:unittests",
     "../../ui/components/request_link_icon/*",
     "../application/*",
   ]
@@ -157,6 +160,7 @@ ts_library("unittests") {
     "RequestPreviewView.test.ts",
     "RequestResponseView.test.ts",
     "RequestTimingView.test.ts",
+    "ResourceDirectSocketChunkView.test.ts",
   ]
 
   deps = [

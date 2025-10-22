@@ -14,8 +14,7 @@
 namespace blink {
 
 CSSAtRuleID CssAtRuleID(StringView name) {
-  if (RuntimeEnabledFeatures::ViewTransitionOnNavigationEnabled() &&
-      EqualIgnoringASCIICase(name, "view-transition")) {
+  if (EqualIgnoringASCIICase(name, "view-transition")) {
     return CSSAtRuleID::kCSSAtRuleViewTransition;
   }
   if (EqualIgnoringASCIICase(name, "charset")) {
@@ -154,6 +153,12 @@ CSSAtRuleID CssAtRuleID(StringView name) {
     }
   }
 
+  if (RuntimeEnabledFeatures::CSSCustomMediaEnabled()) {
+    if (EqualIgnoringASCIICase(name, "custom-media")) {
+      return CSSAtRuleID::kCSSAtRuleCustomMedia;
+    }
+  }
+
   return CSSAtRuleID::kCSSAtRuleInvalid;
 }
 
@@ -247,6 +252,8 @@ StringView CssAtRuleIDToString(CSSAtRuleID id) {
       return "@mixin";
     case CSSAtRuleID::kCSSAtRuleApplyMixin:
       return "@apply";
+    case CSSAtRuleID::kCSSAtRuleCustomMedia:
+      return "@custom-media";
     case CSSAtRuleID::kCSSAtRuleInvalid:
     case CSSAtRuleID::kCount:
       NOTREACHED();
@@ -329,6 +336,8 @@ std::optional<WebFeature> AtRuleFeature(CSSAtRuleID rule_id) {
     case CSSAtRuleID::kCSSAtRuleMixin:
     case CSSAtRuleID::kCSSAtRuleApplyMixin:
       return WebFeature::kCSSMixins;
+    case CSSAtRuleID::kCSSAtRuleCustomMedia:
+      return WebFeature::kCSSCustomMedia;
     case CSSAtRuleID::kCSSAtRuleInvalid:
     case CSSAtRuleID::kCount:
       NOTREACHED();

@@ -5,6 +5,7 @@
 #include "content/browser/background_fetch/background_fetch_test_base.h"
 
 #include <stdint.h>
+
 #include <map>
 #include <memory>
 #include <utility>
@@ -17,6 +18,7 @@
 #include "base/functional/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/time/time.h"
 #include "content/browser/background_fetch/background_fetch_registration_id.h"
 #include "content/browser/service_worker/service_worker_context_core.h"
@@ -136,7 +138,7 @@ int64_t BackgroundFetchTestBase::RegisterServiceWorkerForOrigin(
 
   {
     base::RunLoop run_loop;
-    embedded_worker_test_helper_.context()->registry()->FindRegistrationForId(
+    embedded_worker_test_helper_.context()->registry().FindRegistrationForId(
         service_worker_registration_id, key,
         base::BindOnce(&DidFindServiceWorkerRegistration,
                        &service_worker_registration, run_loop.QuitClosure()));
@@ -164,7 +166,7 @@ void BackgroundFetchTestBase::UnregisterServiceWorker(
   const GURL scope = GetScopeForId(kTestOrigin, service_worker_registration_id);
   embedded_worker_test_helper_.context()->UnregisterServiceWorker(
       scope, blink::StorageKey::CreateFirstParty(url::Origin::Create(scope)),
-      /*is_immediate=*/false,
+      /*is_immediate=*/false, ServiceWorkerRegistration::DeleteInitiator::kTest,
       base::BindOnce(&DidUnregisterServiceWorker, run_loop.QuitClosure()));
   run_loop.Run();
 }

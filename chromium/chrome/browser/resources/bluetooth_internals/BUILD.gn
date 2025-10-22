@@ -25,9 +25,8 @@ build_webui("build") {
     "snackbar.js",
     "value_control.js",
   ]
-  html_to_wrapper_template = "native"
 
-  non_web_component_files = [
+  ts_files = [
     "adapter_broker.js",
     "adapter_page.js",
     "bluetooth_internals.js",

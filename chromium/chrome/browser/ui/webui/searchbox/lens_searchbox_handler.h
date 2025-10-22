@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_SEARCHBOX_LENS_SEARCHBOX_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_SEARCHBOX_LENS_SEARCHBOX_HANDLER_H_
 
+#include "base/memory/raw_ptr.h"
 #include "chrome/browser/ui/webui/searchbox/searchbox_handler.h"
 #include "components/omnibox/browser/omnibox.mojom.h"
 
@@ -32,8 +33,6 @@ class LensSearchboxHandler : public SearchboxHandler {
   void QueryAutocomplete(const std::u16string& input,
                          bool prevent_inline_autocomplete) override;
   void DeleteAutocompleteMatch(uint8_t line, const GURL& url) override {}
-  void ToggleSuggestionGroupIdVisibility(int32_t suggestion_group_id) override {
-  }
   void ExecuteAction(uint8_t line,
                      uint8_t action_index,
                      const GURL& url,
@@ -46,10 +45,10 @@ class LensSearchboxHandler : public SearchboxHandler {
   void PopupElementSizeChanged(const gfx::Size& size) override {}
   void OnThumbnailRemoved() override;
 
-  // Invoked by LensOverlayController.
+  // Invoked by LensSearchboxController.
   void SetInputText(const std::string& input_text);
-  // Invoked by LensOverlayController.
-  void SetThumbnail(const std::string& thumbnail_url);
+  // Invoked by LensSearchboxController.
+  void SetThumbnail(const std::string& thumbnail_url, bool is_deletable);
 
   // AutocompleteController::Observer:
   void OnAutocompleteStopTimerTriggered(

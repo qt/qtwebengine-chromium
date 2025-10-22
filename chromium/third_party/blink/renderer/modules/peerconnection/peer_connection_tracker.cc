@@ -52,22 +52,20 @@ using webrtc::StatsReport;
 using webrtc::StatsReports;
 
 namespace blink {
-class InternalStandardStatsObserver;
-}
 
-namespace WTF {
+class InternalStandardStatsObserver;
 
 template <>
-struct CrossThreadCopier<scoped_refptr<blink::InternalStandardStatsObserver>>
+struct CrossThreadCopier<scoped_refptr<InternalStandardStatsObserver>>
     : public CrossThreadCopierPassThrough<
-          scoped_refptr<blink::InternalStandardStatsObserver>> {
+          scoped_refptr<InternalStandardStatsObserver>> {
   STATIC_ONLY(CrossThreadCopier);
 };
 
 template <typename T>
-struct CrossThreadCopier<rtc::scoped_refptr<T>> {
+struct CrossThreadCopier<webrtc::scoped_refptr<T>> {
   STATIC_ONLY(CrossThreadCopier);
-  using Type = rtc::scoped_refptr<T>;
+  using Type = webrtc::scoped_refptr<T>;
   static Type Copy(Type pointer) { return pointer; }
 };
 
@@ -76,10 +74,6 @@ struct CrossThreadCopier<base::Value::List>
     : public CrossThreadCopierByValuePassThrough<base::Value::List> {
   STATIC_ONLY(CrossThreadCopier);
 };
-
-}  // namespace WTF
-
-namespace blink {
 
 // TODO(hta): This module should be redesigned to reduce string copies.
 
@@ -447,7 +441,8 @@ class InternalStandardStatsObserver : public webrtc::RTCStatsCollectorCallback {
         completion_callback_(std::move(completion_callback)) {}
 
   void OnStatsDelivered(
-      const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report) override {
+      const webrtc::scoped_refptr<const webrtc::RTCStatsReport>& report)
+      override {
     // We're on the signaling thread.
     DCHECK(!main_thread_->BelongsToCurrentThread());
     PostCrossThreadTask(
@@ -462,12 +457,12 @@ class InternalStandardStatsObserver : public webrtc::RTCStatsCollectorCallback {
 
  private:
   void OnStatsDeliveredOnMainThread(
-      rtc::scoped_refptr<const webrtc::RTCStatsReport> report) {
+      webrtc::scoped_refptr<const webrtc::RTCStatsReport> report) {
     std::move(completion_callback_).Run(lid_, ReportToList(report));
   }
 
   base::Value::List ReportToList(
-      const rtc::scoped_refptr<const webrtc::RTCStatsReport>& report) {
+      const webrtc::scoped_refptr<const webrtc::RTCStatsReport>& report) {
     std::map<std::string, MediaStreamTrackPlatform*> tracks_by_id;
     for (const auto& sender : senders_) {
       MediaStreamComponent* track_component = sender->Track();
@@ -701,14 +696,34 @@ void PeerConnectionTracker::StopEventLog(int peer_connection_local_id) {
   }
 }
 
+void PeerConnectionTracker::StartDataChannelLog(int peer_connection_local_id) {
+  DCHECK_CALLED_ON_VALID_THREAD(main_thread_);
+  for (auto& it : peer_connection_local_id_map_) {
+    if (it.value == peer_connection_local_id) {
+      it.key->StartDataChannelLog();
+      return;
+    }
+  }
+}
+
+void PeerConnectionTracker::StopDataChannelLog(int peer_connection_local_id) {
+  DCHECK_CALLED_ON_VALID_THREAD(main_thread_);
+  for (auto& it : peer_connection_local_id_map_) {
+    if (it.value == peer_connection_local_id) {
+      it.key->StopDataChannelLog();
+      return;
+    }
+  }
+}
+
 void PeerConnectionTracker::GetStandardStats() {
   DCHECK_CALLED_ON_VALID_THREAD(main_thread_);
 
   for (const auto& pair : peer_connection_local_id_map_) {
     Vector<std::unique_ptr<blink::RTCRtpSenderPlatform>> senders =
         pair.key->GetPlatformSenders();
-    rtc::scoped_refptr<InternalStandardStatsObserver> observer(
-        new rtc::RefCountedObject<InternalStandardStatsObserver>(
+    webrtc::scoped_refptr<InternalStandardStatsObserver> observer(
+        new webrtc::RefCountedObject<InternalStandardStatsObserver>(
             pair.key->GetWeakPtr(), pair.value, main_thread_task_runner_,
             std::move(senders),
             CrossThreadBindOnce(&PeerConnectionTracker::AddStandardStats,
@@ -779,8 +794,9 @@ void PeerConnectionTracker::TrackCreateOffer(
   int id = GetLocalIDForHandler(pc_handler);
   if (id == -1)
     return;
-  SendPeerConnectionUpdate(id, "createOffer",
-                           "options: {" + SerializeOfferOptions(options) + "}");
+  SendPeerConnectionUpdate(
+      id, "createOffer",
+      StrCat({"options: {", SerializeOfferOptions(options), "}"}));
 }
 
 void PeerConnectionTracker::TrackCreateAnswer(
@@ -791,7 +807,8 @@ void PeerConnectionTracker::TrackCreateAnswer(
   if (id == -1)
     return;
   SendPeerConnectionUpdate(
-      id, "createAnswer", "options: {" + SerializeAnswerOptions(options) + "}");
+      id, "createAnswer",
+      StrCat({"options: {", SerializeAnswerOptions(options), "}"}));
 }
 
 void PeerConnectionTracker::TrackSetSessionDescription(
@@ -803,7 +820,7 @@ void PeerConnectionTracker::TrackSetSessionDescription(
   int id = GetLocalIDForHandler(pc_handler);
   if (id == -1)
     return;
-  String value = "type: " + type + ", sdp: " + sdp;
+  String value = StrCat({"type: ", type, ", sdp: ", sdp});
   SendPeerConnectionUpdate(
       id,
       source == kSourceLocal ? "setLocalDescription" : "setRemoteDescription",
@@ -843,14 +860,14 @@ void PeerConnectionTracker::TrackAddIceCandidate(
     return;
   String relay_protocol = candidate->RelayProtocol();
   String url = candidate->Url();
-  String value =
-      "sdpMid: " + String(candidate->SdpMid()) + ", " + "sdpMLineIndex: " +
-      (candidate->SdpMLineIndex() ? String::Number(*candidate->SdpMLineIndex())
-                                  : "null") +
-      ", candidate: " + String(candidate->Candidate()) +
-      (!url.IsNull() ? ", url: " + url : String()) +
-      (!relay_protocol.IsNull() ? ", relayProtocol: " + relay_protocol
-                                : String());
+  String value = StrCat(
+      {"sdpMid: ", String(candidate->SdpMid()), ", ", "sdpMLineIndex: ",
+       (candidate->SdpMLineIndex() ? String::Number(*candidate->SdpMLineIndex())
+                                   : "null"),
+       ", candidate: ", String(candidate->Candidate()),
+       (!url.empty() ? ", url: " : ""), (!url.empty() ? url : String()),
+       (!relay_protocol.empty() ? ", relayProtocol: " : ""),
+       (!relay_protocol.empty() ? relay_protocol : String())});
 
   // OnIceCandidate always succeeds as it's a callback from the browser.
   DCHECK(source != kSourceLocal || succeeded);
@@ -875,13 +892,14 @@ void PeerConnectionTracker::TrackIceCandidateError(
   int id = GetLocalIDForHandler(pc_handler);
   if (id == -1)
     return;
-  String address_string = address ? "address: " + address + "\n" : String();
+  String address_string =
+      address ? StrCat({"address: ", address, "\n"}) : String();
   String port_string =
       port.has_value() ? String::Format("port: %d\n", port.value()) : "";
-  String value = "url: " + url + "\n" + address_string + port_string +
-                 "host_candidate: " + host_candidate + "\n" +
-                 "error_text: " + error_text + "\n" +
-                 "error_code: " + String::Number(error_code);
+  String value = StrCat({"url: ", url, "\n", address_string, port_string,
+                         "host_candidate: ", host_candidate, "\n",
+                         "error_text: ", error_text, "\n",
+                         "error_code: ", String::Number(error_code)});
   SendPeerConnectionUpdate(id, "icecandidateerror", value);
 }
 
@@ -912,17 +930,13 @@ void PeerConnectionTracker::TrackTransceiver(
   int id = GetLocalIDForHandler(pc_handler);
   if (id == -1)
     return;
-  String callback_type = "transceiver" + String::FromUTF8(callback_type_ending);
-  StringBuilder result;
-  result.Append("Caused by: ");
-  result.Append(GetTransceiverUpdatedReasonString(reason));
-  result.Append("\n\n");
-  result.Append("getTransceivers()");
-  result.Append("[");
-  result.Append(String::Number(transceiver_index));
-  result.Append("]:");
-  result.Append(SerializeTransceiver(transceiver));
-  SendPeerConnectionUpdate(id, callback_type, result.ToString());
+  String callback_type =
+      StrCat({"transceiver", String::FromUTF8(callback_type_ending)});
+  String result =
+      StrCat({"Caused by: ", GetTransceiverUpdatedReasonString(reason), "\n\n",
+              "getTransceivers()", "[", String::Number(transceiver_index),
+              "]:", SerializeTransceiver(transceiver)});
+  SendPeerConnectionUpdate(id, callback_type, result);
 }
 
 void PeerConnectionTracker::TrackCreateDataChannel(
@@ -1053,7 +1067,7 @@ void PeerConnectionTracker::TrackSessionDescriptionCallback(
     default:
       NOTREACHED();
   }
-  update_type = update_type + callback_type;
+  update_type = StrCat({update_type, callback_type});
 
   SendPeerConnectionUpdate(id, update_type, value);
 }
@@ -1106,13 +1120,13 @@ void PeerConnectionTracker::TrackGetUserMediaSuccess(
   String audio_track_info =
       stream->getAudioTracks().empty()
           ? g_empty_string
-          : String("id:") + stream->getAudioTracks()[0]->id() +
-                String(" label:") + stream->getAudioTracks()[0]->label();
+          : StrCat({"id:", stream->getAudioTracks()[0]->id(),
+                    " label:", stream->getAudioTracks()[0]->label()});
   String video_track_info =
       stream->getVideoTracks().empty()
           ? g_empty_string
-          : String("id:") + stream->getVideoTracks()[0]->id() +
-                String(" label:") + stream->getVideoTracks()[0]->label();
+          : StrCat({"id:", stream->getVideoTracks()[0]->id(),
+                    " label:", stream->getVideoTracks()[0]->label()});
 
   peer_connection_tracker_host_->GetUserMediaSuccess(
       user_media_request->request_id(), stream->id(), audio_track_info,
@@ -1152,13 +1166,13 @@ void PeerConnectionTracker::TrackGetDisplayMediaSuccess(
   String audio_track_info =
       stream->getAudioTracks().empty()
           ? g_empty_string
-          : String("id:") + stream->getAudioTracks()[0]->id() +
-                String(" label:") + stream->getAudioTracks()[0]->label();
+          : StrCat({"id:", stream->getAudioTracks()[0]->id(),
+                    " label:", stream->getAudioTracks()[0]->label()});
   String video_track_info =
       stream->getVideoTracks().empty()
           ? g_empty_string
-          : String("id:") + stream->getVideoTracks()[0]->id() +
-                String(" label:") + stream->getVideoTracks()[0]->label();
+          : StrCat({"id:", stream->getVideoTracks()[0]->id(),
+                    " label:", stream->getVideoTracks()[0]->label()});
 
   peer_connection_tracker_host_->GetDisplayMediaSuccess(
       user_media_request->request_id(), stream->id(), audio_track_info,
@@ -1184,6 +1198,18 @@ void PeerConnectionTracker::TrackRtcEventLogWrite(
     return;
 
   peer_connection_tracker_host_->WebRtcEventLogWrite(id, output);
+}
+
+void PeerConnectionTracker::TrackRtcDataChannelLogWrite(
+    RTCPeerConnectionHandler* pc_handler,
+    const WTF::Vector<uint8_t>& output) {
+  DCHECK_CALLED_ON_VALID_THREAD(main_thread_);
+  int id = GetLocalIDForHandler(pc_handler);
+  if (id == -1) {
+    return;
+  }
+
+  peer_connection_tracker_host_->WebRtcDataChannelLogWrite(id, output);
 }
 
 int PeerConnectionTracker::GetNextLocalID() {

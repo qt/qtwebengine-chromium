@@ -22,6 +22,7 @@
 #include "base/values.h"
 #include "chrome/browser/consent_auditor/consent_auditor_factory.h"
 #include "chrome/browser/consent_auditor/consent_auditor_test_utils.h"
+#include "chrome/browser/enterprise/util/managed_browser_utils.h"
 #include "chrome/browser/profiles/profile_avatar_icon_util.h"
 #include "chrome/browser/signin/identity_manager_factory.h"
 #include "chrome/browser/signin/identity_test_environment_profile_adaptor.h"
@@ -116,6 +117,7 @@ class SyncConfirmationHandlerTest : public BrowserWithTestWindowTest,
         std::make_unique<IdentityTestEnvironmentProfileAdaptor>(profile());
     account_info_ = identity_test_env()->MakePrimaryAccountAvailable(
         "foo@example.com", signin::ConsentLevel::kSync);
+    enterprise_util::SetUserAcceptedAccountManagement(profile(), true);
     login_ui_service_observation_.Observe(
         LoginUIServiceFactory::GetForProfile(profile()));
   }
@@ -201,7 +203,8 @@ class SyncConfirmationHandlerTest : public BrowserWithTestWindowTest,
     const std::optional<bool> show_enterprise_badge =
         dict.FindBool("showEnterpriseBadge");
     EXPECT_TRUE(show_enterprise_badge.has_value());
-    EXPECT_EQ(primary_account.IsManaged(), show_enterprise_badge.value());
+    EXPECT_EQ(primary_account.IsManaged() == signin::Tribool::kTrue,
+              show_enterprise_badge.value());
   }
 
   SyncConfirmationScreenMode GetScreenMode(
@@ -467,7 +470,7 @@ TEST_F(SyncConfirmationHandlerTest, TestHandleConfirm) {
   EXPECT_EQ(expected_confirmation_ids,
             consent_auditor()->recorded_confirmation_ids());
 
-  EXPECT_EQ(account_info_.account_id, consent_auditor()->account_id());
+  EXPECT_EQ(account_info_.gaia, consent_auditor()->gaia_id());
 }
 
 TEST_F(SyncConfirmationHandlerTest, TestHandleConfirmWithAdvancedSyncSettings) {
@@ -505,7 +508,7 @@ TEST_F(SyncConfirmationHandlerTest, TestHandleConfirmWithAdvancedSyncSettings) {
   EXPECT_EQ(expected_confirmation_ids,
             consent_auditor()->recorded_confirmation_ids());
 
-  EXPECT_EQ(account_info_.account_id, consent_auditor()->account_id());
+  EXPECT_EQ(account_info_.gaia, consent_auditor()->gaia_id());
 }
 
 TEST_F(SyncConfirmationHandlerTest, UserVisibleLatencyIsRecordedImmediately) {

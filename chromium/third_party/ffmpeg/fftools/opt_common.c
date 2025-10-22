@@ -60,8 +60,6 @@
 #include "libswresample/swresample.h"
 #include "libswresample/version.h"
 
-#include "libpostproc/postprocess.h"
-#include "libpostproc/version.h"
 
 enum show_muxdemuxers {
     SHOW_DEFAULT,
@@ -191,7 +189,6 @@ static void print_all_libs_info(int flags, int level)
     PRINT_LIB_INFO(avfilter,   AVFILTER,   flags, level);
     PRINT_LIB_INFO(swscale,    SWSCALE,    flags, level);
     PRINT_LIB_INFO(swresample, SWRESAMPLE, flags, level);
-    PRINT_LIB_INFO(postproc,   POSTPROC,   flags, level);
 }
 
 static void print_program_info(int flags, int level)
@@ -1292,6 +1289,18 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
             } else {
                 flags |= AV_LOG_PRINT_LEVEL;
             }
+        } else if (av_strstart(token, "time", &arg)) {
+            if (cmd == '-') {
+                flags &= ~AV_LOG_PRINT_TIME;
+            } else {
+                flags |= AV_LOG_PRINT_TIME;
+            }
+        } else if (av_strstart(token, "datetime", &arg)) {
+            if (cmd == '-') {
+                flags &= ~AV_LOG_PRINT_DATETIME;
+            } else {
+                flags |= AV_LOG_PRINT_DATETIME;
+            }
         } else {
             break;
         }
@@ -1318,6 +1327,11 @@ int opt_loglevel(void *optctx, const char *opt, const char *arg)
                "Possible levels are numbers or:\n", arg);
         for (i = 0; i < FF_ARRAY_ELEMS(log_levels); i++)
             av_log(NULL, AV_LOG_FATAL, "\"%s\"\n", log_levels[i].name);
+        av_log(NULL, AV_LOG_FATAL, "Possible flags are:\n");
+        av_log(NULL, AV_LOG_FATAL, "\"repeat\"\n");
+        av_log(NULL, AV_LOG_FATAL, "\"level\"\n");
+        av_log(NULL, AV_LOG_FATAL, "\"time\"\n");
+        av_log(NULL, AV_LOG_FATAL, "\"datetime\"\n");
         return AVERROR(EINVAL);
     }
 

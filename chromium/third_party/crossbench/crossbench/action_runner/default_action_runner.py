@@ -7,31 +7,34 @@ from __future__ import annotations
 import datetime as dt
 import logging
 import time
-from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, cast
 
 from typing_extensions import override
 
-from crossbench.action_runner.action import all as i_action
-from crossbench.action_runner.action.enums import ReadyState
 from crossbench.action_runner.base import (ActionRunner,
                                            InputSourceNotImplementedError)
 from crossbench.action_runner.default_bond_action_runner import \
     DefaultBondActionRunner
 from crossbench.action_runner.element_not_found_error import \
     ElementNotFoundError
-from crossbench.action_runner.screenshot_annotation import ScreenshotAnnotation
 from crossbench.probes.downloads import DownloadsProbe, DownloadsProbeContext
 from crossbench.probes.dump_html import DumpHtmlProbe, DumpHtmlProbeContext
+from crossbench.probes.meminfo import MeminfoProbe, MeminfoProbeContext
 from crossbench.probes.screenshot import (ScreenshotProbe,
                                           ScreenshotProbeContext)
 
 if TYPE_CHECKING:
+  from crossbench.action_runner.action import all as i_action
   from crossbench.action_runner.bond_base import BondActionRunner
+  from crossbench.action_runner.screenshot_annotation import \
+      ScreenshotAnnotation
   from crossbench.runner.actions import Actions
   from crossbench.runner.run import Run
 
 
 class DefaultActionRunner(ActionRunner):
+  """Default action runner that uses JavaScript for most page interactions."""
+
   XPATH_SELECT_ELEMENT = """
       let elements = [];
       let xpathResult = document.evaluate(arguments[0], document);
@@ -91,7 +94,7 @@ class DefaultActionRunner(ActionRunner):
                           scroll_into_view: bool = False,
                           check_element_rect: bool = False,
                           click: bool = False,
-                          return_on_success: bool = False) -> Tuple[str, str]:
+                          return_on_success: bool = False) -> tuple[str, str]:
     # TODO: support more selector types
 
     script: str = ""
@@ -128,31 +131,16 @@ class DefaultActionRunner(ActionRunner):
     return self._bond
 
   @override
-  def teardown(self, run: Run) -> None:
-    del run
+  def teardown(self) -> None:
     if self._bond:
       self._bond.teardown()
 
   @override
   def get(self, run: Run, action: i_action.GetAction) -> None:
-    # TODO: potentially refactor the timing and logging out to the base class.
-    start_time = time.time()
-    expected_end_time = start_time + action.duration.total_seconds()
-
     with run.actions(f"Get {action.url}", measure=False) as actions:
-      actions.show_url(action.url, str(action.target), action.ready_state,
-                       action.timeout)
-
-      if action.ready_state != ReadyState.ANY:
-        return
-      # Wait for the given duration from the start of the action.
-      wait_time_seconds = expected_end_time - time.time()
-      if wait_time_seconds > 0:
-        actions.wait(wait_time_seconds)
-      elif action.duration:
-        run_duration = dt.timedelta(seconds=time.time() - start_time)
-        logging.info("%s took longer (%s) than expected action duration (%s).",
-                     action, run_duration, action.duration)
+      with actions.wait_until(action.duration):
+        actions.show_url(action.url, str(action.target), action.ready_state,
+                         action.timeout)
 
   @override
   def click_js(self, run: Run, action: i_action.ClickAction) -> None:
@@ -226,6 +214,14 @@ class DefaultActionRunner(ActionRunner):
       scroll_y = initial_scroll_y + distance
       actions.js(do_scroll_script, arguments=[selector, scroll_y])
 
+  def text_input_js(self, run: Run, action: i_action.TextInputAction) -> None:
+    with run.actions("TextInput", measure=False) as actions:
+      if text := action.text:
+        actions.js(
+            "document.activeElement.value = arguments[0]", arguments=[text])
+      else:
+        raise InputSourceNotImplementedError(self, action, action.input_source)
+
   def wait_for_element_impl(self,
                             actions: Actions,
                             selector: str,
@@ -258,11 +254,11 @@ class DefaultActionRunner(ActionRunner):
     try:
       actions.wait_js_condition(
           selector_script,
-          min_wait=0.2,
+          min_interval=0.2,
           timeout=timeout,
           arguments=(selector,),
           success_condition=success_condition)
-    except TimeoutError as e:
+    except (TimeoutError, ValueError) as e:
       if required:
         raise
       logging.debug("Element %s not found: %s", selector, e)
@@ -277,6 +273,13 @@ class DefaultActionRunner(ActionRunner):
           expected_count=action.expected_count,
           or_more=action.or_more,
           timeout=action.timeout)
+
+  @override
+  def wait_for_condition(self, run: Run,
+                         action: i_action.WaitForConditionAction) -> None:
+    with run.actions("WaitForConditionAction", measure=False) as actions:
+      actions.wait_js_condition(
+          action.condition, min_interval=0.1, timeout=action.timeout)
 
   @override
   def wait_for_ready_state(self, run: Run,
@@ -294,13 +297,20 @@ class DefaultActionRunner(ActionRunner):
   def switch_tab(self, run: Run, action: i_action.SwitchTabAction) -> None:
     with run.actions("SwitchTabAction", measure=False):
       run.browser.switch_tab(action.title, action.url, action.tab_index,
-                             action.timeout)
+                             action.relative_tab_index, action.timeout)
 
   @override
   def close_tab(self, run: Run, action: i_action.CloseTabAction) -> None:
     with run.actions("CloseTabAction", measure=False):
       run.browser.close_tab(action.title, action.url, action.tab_index,
-                            action.timeout)
+                            action.relative_tab_index, action.timeout)
+
+  @override
+  def close_all_tabs(self, run: Run,
+                     action: i_action.CloseAllTabsAction) -> None:
+    del action
+    with run.actions("CloseAllTabsAction", measure=False):
+      run.browser.close_all_tabs()
 
   def _get_scroll_field(self, has_selector: bool) -> str:
     if has_selector:
@@ -310,7 +320,8 @@ class DefaultActionRunner(ActionRunner):
   def _rate_limit_keystrokes(
       self, run: Run, action: i_action.TextInputAction,
       do_type_function: Callable[[Run, Actions, str], Any]) -> None:
-    character_delay_s = (action.duration / len(action.text)).total_seconds()
+    action_text = cast(str, action.text)
+    character_delay_s = (action.duration / len(action_text)).total_seconds()
     start_time = time.time()
     action_expected_end_time = start_time + action.duration.total_seconds()
 
@@ -318,12 +329,12 @@ class DefaultActionRunner(ActionRunner):
 
       # When no duration is specified, input the entire text at once.
       if action.duration == dt.timedelta():
-        do_type_function(run, actions, action.text)
+        do_type_function(run, actions, action_text)
         return
 
       character_expected_end_time = start_time
 
-      for character in action.text:
+      for character in action_text:
         character_expected_end_time += character_delay_s
 
         do_type_function(run, actions, character)
@@ -367,6 +378,16 @@ class DefaultActionRunner(ActionRunner):
     assert isinstance(ctx, DumpHtmlProbeContext)
     ctx.dump_html("_".join(self.info_stack) + f"_{suffix}")
 
+  @override
+  def dump_meminfo_impl(self, run: Run, action: i_action.MeminfoAction) -> None:
+    ctx = run.find_probe_context(MeminfoProbe)
+    if not ctx:
+      logging.warning("No meminfo probe for dump on %s", repr(self.info_stack))
+      return
+    assert isinstance(ctx, MeminfoProbeContext)
+    ctx.dump_meminfo(action.timeout, action.browser, action.system,
+                     action.packages, action.title, self.info_stack)
+
   def wait_for_download(self, run: Run,
                         action: i_action.WaitForDownloadAction) -> None:
     with run.actions("WaitForDownload", measure=False):
@@ -376,7 +397,7 @@ class DefaultActionRunner(ActionRunner):
                            f"{repr(self.info_stack)}")
       assert isinstance(ctx, DownloadsProbeContext)
 
-      wait_range = run.wait_range(min_wait=0.2, timeout=action.timeout, delay=0)
+      wait_range = run.wait_range(min_interval=0.2, timeout=action.timeout)
       for _ in wait_range.wait_with_backoff():
         if ctx.download_complete(action.pattern):
           return

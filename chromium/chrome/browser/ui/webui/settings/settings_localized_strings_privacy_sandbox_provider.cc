@@ -285,7 +285,42 @@ void AddPrivacySandboxStrings(content::WebUIDataSource* html_source,
       {"adTopicsPageToggleSubLabel",
        IDS_SETTINGS_AD_TOPICS_PAGE_TOGGLE_SUB_LABEL},
       {"adTopicsPageActiveTopicsDescription",
-       IDS_SETTINGS_AD_TOPICS_PAGE_ACTIVE_TOPICS_DESCRIPTION}};
+       IDS_SETTINGS_AD_TOPICS_PAGE_ACTIVE_TOPICS_DESCRIPTION},
+      // Incognito tracking protections
+      {"incognitoTrackingProtectionsPageTitle",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_PAGE_TITLE},
+      {"incognitoTrackingProtectionsPageEntrypointLabel",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_LINK_ROW_LABEL},
+      {"incognitoTrackingProtectionsPageEntrypointSublabel",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_LINK_ROW_SUBLABEL},
+      {"incognitoTrackingProtectionsPageDescription",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_PAGE_DESCRIPTION},
+      {"incognitoTrackingProtectionsHeader",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_HEADER},
+      {"incognitoTrackingProtectionsBlock3pcsToggleLabel",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_BLOCK_3PCS_TOGGLE_LABEL},
+      {"incognitoTrackingProtectionsBlock3pcsToggleSublabel",
+       IDS_INCOGNITO_TRACKING_PROTECTIONS_BLOCK_3PCS_TOGGLE_SUBLABEL},
+      {"incognitoTrackingProtectionsIpProtectionToggleLabel",
+       IDS_IP_PROTECTION_TOGGLE_LABEL},
+      {"incognitoTrackingProtectionsIpProtectionToggleSublabel",
+       IDS_IP_PROTECTION_TOGGLE_SUBLABEL},
+      {"incognitoTrackingProtectionsFingerprintingProtectionToggleLabel",
+       IDS_FINGERPRINTING_PROTECTION_TOGGLE_LABEL},
+      {"incognitoTrackingProtectionsFingerprintingProtectionToggleSublabel",
+       IDS_FINGERPRINTING_PROTECTION_TOGGLE_SUBLABEL},
+      {"incognitoTrackingProtectionsIpProtectionWhenOn",
+       IDS_IP_PROTECTION_WHEN_ON},
+      {"incognitoTrackingProtectionsIpProtectionThingsToConsiderBulletOne",
+       IDS_IP_PROTECTION_THINGS_TO_CONSIDER_BULLET_ONE},
+      {"incognitoTrackingProtectionsIpProtectionThingsToConsiderBulletTwo",
+       IDS_IP_PROTECTION_THINGS_TO_CONSIDER_BULLET_TWO},
+      {"incognitoTrackingProtectionsIpProtectionThingsToConsiderBulletThree",
+       IDS_IP_PROTECTION_THINGS_TO_CONSIDER_BULLET_THREE},
+      {"incognitoTrackingProtectionsFingerprintingProtectionWhenOn",
+       IDS_FINGERPRINTING_PROTECTION_WHEN_ON},
+      {"incognitoTrackingProtectionsFingerprintingProtectionThingsToConsider",
+       IDS_FINGERPRINTING_PROTECTION_THINGS_TO_CONSIDER}};
   html_source->AddLocalizedStrings(kLocalizedStrings);
 
   html_source->AddString("adPrivacyLearnMoreURL",
@@ -430,6 +465,15 @@ void AddPrivacySandboxStrings(content::WebUIDataSource* html_source,
       l10n_util::GetStringFUTF16(
           IDS_ALL_SITES_RWS_FILTER_VIEW_DESCRIPTION,
           base::ASCIIToUTF16(rws_learn_more_url),
+          l10n_util::GetStringUTF16(IDS_SETTINGS_OPENS_IN_NEW_TAB)));
+  // Incognito tracking protections description
+  const char* incognito_tracking_protections_learn_more_url =
+      chrome::kIncognitoTrackingProtectionsLearnMoreUrl;
+  html_source->AddString(
+      "incognitoTrackingProtectionsDescription",
+      l10n_util::GetStringFUTF16(
+          IDS_INCOGNITO_TRACKING_PROTECTIONS_DESCRIPTION_DESKTOP,
+          base::ASCIIToUTF16(incognito_tracking_protections_learn_more_url),
           l10n_util::GetStringUTF16(IDS_SETTINGS_OPENS_IN_NEW_TAB)));
 }
 

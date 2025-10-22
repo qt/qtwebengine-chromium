@@ -75,16 +75,11 @@ class CookiePolicyBrowserTest : public InProcessBrowserTest {
   CookiePolicyBrowserTest()
       : https_server_(net::EmbeddedTestServer::TYPE_HTTPS) {}
 
-  virtual std::vector<base::test::FeatureRef> EnabledFeatures() {
-    return {blink::features::kWebSQLAccess};
-  }
+  virtual std::vector<base::test::FeatureRef> EnabledFeatures() { return {}; }
 
   virtual std::vector<base::test::FeatureRef> DisabledFeatures() { return {}; }
 
   void SetUp() override {
-    // TODO(crbug.com/333756088): WebSQL is disabled everywhere by default as of
-    // M119 (crbug/695592) except on Android WebView. This is enabled for
-    // Android only to indirectly cover WebSQL deletions on WebView.
     feature_list_.InitWithFeatures(EnabledFeatures(), DisabledFeatures());
     InProcessBrowserTest::SetUp();
   }
@@ -134,7 +129,7 @@ class CookiePolicyBrowserTest : public InProcessBrowserTest {
                       const std::string& cookie) {
     content::EvalJsResult result =
         EvalJs(frame, base::StrCat({"document.cookie = '", cookie, "'"}));
-    ASSERT_TRUE(result.error.empty()) << result.error;
+    ASSERT_TRUE(result.is_ok()) << result;
   }
 
   std::string GetCookieViaJS(content::RenderFrameHost* frame) {
@@ -1000,8 +995,7 @@ class ThirdPartyCookiePhaseoutPolicyStorageBrowserTest
   net::EmbeddedTestServer* https_server() { return &https_server_; }
 
   std::vector<base::test::FeatureRef> EnabledFeatures() override {
-    return {blink::features::kWebSQLAccess,
-            net::features::kForceThirdPartyCookieBlocking,
+    return {net::features::kForceThirdPartyCookieBlocking,
             net::features::kThirdPartyStoragePartitioning};
   }
 };

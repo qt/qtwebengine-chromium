@@ -7,6 +7,7 @@
 #include "core/fxcrt/fx_codepage.h"
 
 #include <algorithm>
+#include <functional>
 #include <iterator>
 #include <utility>
 
@@ -224,11 +225,9 @@ FX_CodePage FX_GetACP() {
 }
 
 FX_CodePage FX_GetCodePageFromCharset(FX_Charset charset) {
-  auto* result = std::lower_bound(
-      std::begin(kFXCharset2CodePageTable), std::end(kFXCharset2CodePageTable),
-      charset, [](const FX_CHARSET_MAP& iter, const FX_Charset& charset) {
-        return iter.charset < charset;
-      });
+  auto* result =
+      std::ranges::lower_bound(kFXCharset2CodePageTable, charset, std::less<>{},
+                               &FX_CHARSET_MAP::charset);
   if (result != std::end(kFXCharset2CodePageTable) &&
       result->charset == charset) {
     return result->codepage;
@@ -238,8 +237,9 @@ FX_CodePage FX_GetCodePageFromCharset(FX_Charset charset) {
 
 FX_Charset FX_GetCharsetFromCodePage(FX_CodePage codepage) {
   for (const auto& it : kFXCharset2CodePageTable) {
-    if (it.codepage == codepage)
+    if (it.codepage == codepage) {
       return it.charset;
+    }
   }
   return FX_Charset::kANSI;
 }
@@ -303,8 +303,9 @@ size_t FX_WideCharToMultiByte(FX_CodePage codepage,
   size_t len = 0;
   for (size_t i = 0; i < wstr.GetLength(); i++) {
     if (wstr[i] < 0x100) {
-      if (len < buf.size())
+      if (len < buf.size()) {
         buf[len] = static_cast<char>(wstr[i]);
+      }
       len++;
     }
   }
@@ -324,8 +325,9 @@ size_t FX_MultiByteToWideChar(FX_CodePage codepage,
 #else
   size_t wlen = 0;
   for (size_t i = 0; i < bstr.GetLength(); i++) {
-    if (wlen < buf.size())
+    if (wlen < buf.size()) {
       buf[wlen] = reinterpret_cast<uint8_t>(bstr[i]);
+    }
     wlen++;
   }
   return wlen;

@@ -43,10 +43,6 @@ BASE_FEATURE(kAlignWakeUps, "AlignWakeUps", FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kTimerSlackMac, "TimerSlackMac", FEATURE_DISABLED_BY_DEFAULT);
 
-BASE_FEATURE(kExplicitHighResolutionTimerWin,
-             "ExplicitHighResolutionTimerWin",
-             FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kUIPumpImprovementsWin,
              "UIPumpImprovementsWin",
              FEATURE_ENABLED_BY_DEFAULT);
@@ -62,11 +58,5 @@ BASE_FEATURE(kRunTasksByBatches,
 #else
              FEATURE_DISABLED_BY_DEFAULT);
 #endif
-
-BASE_FEATURE(kThreadPoolCap2, "ThreadPoolCap2", FEATURE_DISABLED_BY_DEFAULT);
-
-// Note: Do not use the prepared macro as of no need for a local cache.
-constinit const FeatureParam<int> kThreadPoolCapRestrictedCount{
-    &kThreadPoolCap2, "restricted_count", 3};
 
 }  // namespace base

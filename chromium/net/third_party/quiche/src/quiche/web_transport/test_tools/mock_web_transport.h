@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include "absl/status/status.h"
@@ -19,6 +20,7 @@
 #include "quiche/common/platform/api/quiche_export.h"
 #include "quiche/common/platform/api/quiche_test.h"
 #include "quiche/common/quiche_callbacks.h"
+#include "quiche/common/quiche_mem_slice.h"
 #include "quiche/common/quiche_stream.h"
 #include "quiche/web_transport/web_transport.h"
 
@@ -39,7 +41,7 @@ class QUICHE_NO_EXPORT MockStream : public Stream {
   MOCK_METHOD(ReadResult, Read, (absl::Span<char> buffer), (override));
   MOCK_METHOD(ReadResult, Read, (std::string * output), (override));
   MOCK_METHOD(absl::Status, Writev,
-              (absl::Span<const absl::string_view> data,
+              (absl::Span<quiche::QuicheMemSlice> data,
                const quiche::StreamWriteOptions& options),
               (override));
   MOCK_METHOD(PeekResult, PeekNextReadableRegion, (), (const, override));
@@ -94,6 +96,8 @@ class QUICHE_NO_EXPORT MockSession : public Session {
   MOCK_METHOD(void, NotifySessionDraining, (), (override));
   MOCK_METHOD(void, SetOnDraining, (quiche::SingleUseCallback<void()>),
               (override));
+  MOCK_METHOD(std::optional<std::string>, GetNegotiatedSubprotocol, (),
+              (const, override));
 };
 
 }  // namespace test

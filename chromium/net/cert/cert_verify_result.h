@@ -23,6 +23,7 @@ namespace net {
 class X509Certificate;
 
 // The result of certificate verification.
+// LINT.IfChange(CertVerifyResult)
 class NET_EXPORT CertVerifyResult {
  public:
   CertVerifyResult();
@@ -68,9 +69,9 @@ class NET_EXPORT CertVerifyResult {
   // hashes for all of the SubjectPublicKeyInfos of the chain (target,
   // intermediates, and trust anchor)
   //
-  // The ordering of the hashes in this vector is unspecified. Both the SHA1
-  // and SHA256 hash will be present for each certificate.
-  HashValueVector public_key_hashes;
+  // The ordering of the hashes matches the order of the |verified_cert| chain
+  // (leaf to root).
+  std::vector<SHA256HashValue> public_key_hashes;
 
   // is_issued_by_known_root is true if we recognise the root CA as a standard
   // root.  If it isn't then it's probably the case that this certificate was
@@ -90,7 +91,11 @@ class NET_EXPORT CertVerifyResult {
   // The result of evaluating whether the certificate complies with the
   // Certificate Transparency policy.
   ct::CTPolicyCompliance policy_compliance;
+
+  // The result of evaluating CT requirements.
+  ct::CTRequirementsStatus ct_requirement_status;
 };
+// LINT.ThenChange(/services/network/public/cpp/net_ipc_param_traits.cc:CertVerifyResult)
 
 }  // namespace net
 

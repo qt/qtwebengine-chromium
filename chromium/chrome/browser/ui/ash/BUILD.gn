@@ -3,7 +3,6 @@
 # found in the LICENSE file.
 
 import("//build/chromeos/crosier_tests.gni")
-import("//chromeos/ash/components/assistant/assistant.gni")
 
 assert(is_chromeos)
 
@@ -23,6 +22,7 @@ static_library("test_support") {
     "//chrome/browser",
     "//chrome/browser/ash/crosapi:test_support",
     "//chrome/browser/ui",
+    "//chrome/browser/ui/browser_window",
     "//chrome/browser/ui/exclusive_access",
     "//chrome/browser/ui/exclusive_access:test_support",
     "//chrome/browser/ui/views/frame:immersive_mode_controller",
@@ -50,7 +50,6 @@ group("unit_tests") {
     "//chrome/browser/ui/ash/assistant:unit_tests",
     "//chrome/browser/ui/ash/birch:unit_tests",
     "//chrome/browser/ui/ash/boca:unit_tests",
-    "//chrome/browser/ui/ash/clipboard:unit_tests",
     "//chrome/browser/ui/ash/desks:unit_tests",
     "//chrome/browser/ui/ash/device_scheduled_reboot:unit_tests",
     "//chrome/browser/ui/ash/focus_mode:unit_tests",
@@ -116,10 +115,6 @@ group("browser_tests") {
     "//chrome/browser/ui/ash/web_view:browser_tests",
     "//chrome/browser/ui/ash/wm:browser_tests",
   ]
-
-  if (enable_assistant_integration_tests) {
-    deps += [ "//chrome/browser/ui/ash/assistant:browser_tests" ]
-  }
 }
 
 if (is_chromeos_device) {

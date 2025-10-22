@@ -10,7 +10,7 @@ import datetime as dt
 import enum
 import logging
 import subprocess
-from typing import TYPE_CHECKING, Optional, Self, Sequence, Tuple, Type
+from typing import TYPE_CHECKING, Optional, Self, Sequence, Type
 
 from typing_extensions import override
 
@@ -25,7 +25,7 @@ from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.path import AnyPath
   from crossbench.probes.results import ProbeResult
   from crossbench.runner.run import Run
@@ -58,7 +58,7 @@ class PowerSamplerProbe(Probe):
   NAME = "powersampler"
   RESULT_LOCATION = ResultLocation.BROWSER
   BATTERY_ONLY: bool = True
-  SAMPLERS: Tuple[SamplerType,
+  SAMPLERS: tuple[SamplerType,
                   ...] = (SamplerType.SMC, SamplerType.USER_IDLE_LEVEL,
                           SamplerType.MAIN_DISPLAY)
 
@@ -116,7 +116,7 @@ class PowerSamplerProbe(Probe):
     return self._sampling_interval
 
   @property
-  def samplers(self) -> Tuple[SamplerType, ...]:
+  def samplers(self) -> tuple[SamplerType, ...]:
     return self._samplers
 
   @property
@@ -124,7 +124,7 @@ class PowerSamplerProbe(Probe):
     return self._wait_for_battery
 
   @override
-  def validate_browser(self, env: HostEnvironment, browser: Browser) -> None:
+  def validate_browser(self, env: RunnerEnv, browser: Browser) -> None:
     self.expect_macos(browser)
     if not browser.platform.is_battery_powered:
       env.handle_warning("Power Sampler only works on battery power, "

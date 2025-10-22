@@ -22,22 +22,11 @@
  * Boston, MA 02110-1301, USA.
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "third_party/blink/renderer/core/svg/svg_element.h"
 
 #include "base/auto_reset.h"
+#include "base/strings/string_view_util.h"
 #include "third_party/blink/renderer/bindings/core/v8/js_event_handler_for_content_attribute.h"
-#include "third_party/blink/renderer/core/animation/document_animations.h"
-#include "third_party/blink/renderer/core/animation/effect_stack.h"
-#include "third_party/blink/renderer/core/animation/element_animations.h"
-#include "third_party/blink/renderer/core/animation/invalidatable_interpolation.h"
-#include "third_party/blink/renderer/core/animation/keyframe_effect.h"
-#include "third_party/blink/renderer/core/animation/svg_interpolation_environment.h"
-#include "third_party/blink/renderer/core/animation/svg_interpolation_types_map.h"
 #include "third_party/blink/renderer/core/css/css_property_value_set.h"
 #include "third_party/blink/renderer/core/css/parser/css_parser_context.h"
 #include "third_party/blink/renderer/core/css/post_style_update_scope.h"
@@ -79,6 +68,7 @@
 #include "third_party/blink/renderer/core/xml_names.h"
 #include "third_party/blink/renderer/platform/heap/disallow_new_wrapper.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
+#include "third_party/blink/renderer/platform/wtf/hash_map.h"
 #include "third_party/blink/renderer/platform/wtf/threading.h"
 
 namespace blink {
@@ -181,53 +171,11 @@ String SVGElement::title() const {
   return String();
 }
 
-void SVGElement::SetWebAnimationsPending() {
-  GetDocument().AccessSVGExtensions().AddWebAnimationsPendingSVGElement(*this);
-  EnsureSVGRareData()->SetWebAnimatedAttributesDirty(true);
-}
-
-static bool IsSVGAttributeHandle(const PropertyHandle& property_handle) {
-  return property_handle.IsSVGAttribute();
-}
-
-void SVGElement::ApplyActiveWebAnimations() {
-  ActiveInterpolationsMap active_interpolations_map =
-      EffectStack::ActiveInterpolations(
-          &GetElementAnimations()->GetEffectStack(), nullptr, nullptr,
-          KeyframeEffect::kDefaultPriority, IsSVGAttributeHandle);
-  for (auto& entry : active_interpolations_map) {
-    const QualifiedName& attribute = entry.key.SvgAttribute();
-    SVGInterpolationTypesMap map;
-    SVGInterpolationEnvironment environment(
-        map, *this, PropertyFromAttribute(attribute)->BaseValueBase());
-    InvalidatableInterpolation::ApplyStack(*entry.value, environment);
-  }
-  if (!HasSVGRareData())
-    return;
-  SvgRareData()->SetWebAnimatedAttributesDirty(false);
-}
-
 template <typename T>
 static void ForSelfAndInstances(SVGElement* element, T callback) {
   callback(element);
   for (SVGElement* instance : element->InstancesForElement())
     callback(instance);
-}
-
-void SVGElement::SetWebAnimatedAttribute(const QualifiedName& attribute,
-                                         SVGPropertyBase* value) {
-  SetAnimatedAttribute(attribute, value);
-  EnsureSVGRareData()->WebAnimatedAttributes().insert(attribute);
-}
-
-void SVGElement::ClearWebAnimatedAttributes() {
-  if (!HasSVGRareData())
-    return;
-  HashSet<QualifiedName>& animated_attributes =
-      SvgRareData()->WebAnimatedAttributes();
-  for (const QualifiedName& attribute : animated_attributes)
-    ClearAnimatedAttribute(attribute);
-  animated_attributes.clear();
 }
 
 ElementSMILAnimations* SVGElement::GetSMILAnimations() const {
@@ -288,12 +236,8 @@ void SVGElement::ClearAnimatedMotionTransform() {
   SetAnimatedMotionTransform(AffineTransform());
 }
 
-bool SVGElement::HasNonCSSPropertyAnimations() const {
-  if (HasSVGRareData() && !SvgRareData()->WebAnimatedAttributes().empty())
-    return true;
-  if (GetSMILAnimations() && GetSMILAnimations()->HasAnimations())
-    return true;
-  return false;
+bool SVGElement::HasSMILAnimations() const {
+  return GetSMILAnimations() && GetSMILAnimations()->HasAnimations();
 }
 
 AffineTransform SVGElement::LocalCoordinateSpaceTransform(CTMScope) const {
@@ -568,82 +512,6 @@ void SVGElement::ParseAttribute(const AttributeModificationParams& params) {
   Element::ParseAttribute(params);
 }
 
-using AttributeToPropertyTypeMap = HashMap<QualifiedName, AnimatedPropertyType>;
-AnimatedPropertyType SVGElement::AnimatedPropertyTypeForCSSAttribute(
-    const QualifiedName& attribute_name) {
-  DEFINE_STATIC_LOCAL(AttributeToPropertyTypeMap, css_property_map, ());
-
-  if (css_property_map.empty()) {
-    // Fill the map for the first use.
-    struct AttrToTypeEntry {
-      const QualifiedName& attr = g_null_name;
-      const AnimatedPropertyType prop_type;
-    };
-    const auto attr_to_types = std::to_array<const AttrToTypeEntry>({
-        {svg_names::kAlignmentBaselineAttr, kAnimatedString},
-        {svg_names::kBaselineShiftAttr, kAnimatedString},
-        {svg_names::kBufferedRenderingAttr, kAnimatedString},
-        {svg_names::kClipPathAttr, kAnimatedString},
-        {svg_names::kClipRuleAttr, kAnimatedString},
-        {svg_names::kColorAttr, kAnimatedColor},
-        {svg_names::kColorInterpolationAttr, kAnimatedString},
-        {svg_names::kColorInterpolationFiltersAttr, kAnimatedString},
-        {svg_names::kColorRenderingAttr, kAnimatedString},
-        {svg_names::kCursorAttr, kAnimatedString},
-        {svg_names::kDisplayAttr, kAnimatedString},
-        {svg_names::kDominantBaselineAttr, kAnimatedString},
-        {svg_names::kFillAttr, kAnimatedColor},
-        {svg_names::kFillOpacityAttr, kAnimatedNumber},
-        {svg_names::kFillRuleAttr, kAnimatedString},
-        {svg_names::kFilterAttr, kAnimatedString},
-        {svg_names::kFloodColorAttr, kAnimatedColor},
-        {svg_names::kFloodOpacityAttr, kAnimatedNumber},
-        {svg_names::kFontFamilyAttr, kAnimatedString},
-        {svg_names::kFontSizeAttr, kAnimatedLength},
-        {svg_names::kFontStretchAttr, kAnimatedString},
-        {svg_names::kFontStyleAttr, kAnimatedString},
-        {svg_names::kFontVariantAttr, kAnimatedString},
-        {svg_names::kFontWeightAttr, kAnimatedString},
-        {svg_names::kImageRenderingAttr, kAnimatedString},
-        {svg_names::kLetterSpacingAttr, kAnimatedLength},
-        {svg_names::kLightingColorAttr, kAnimatedColor},
-        {svg_names::kMarkerEndAttr, kAnimatedString},
-        {svg_names::kMarkerMidAttr, kAnimatedString},
-        {svg_names::kMarkerStartAttr, kAnimatedString},
-        {svg_names::kMaskAttr, kAnimatedString},
-        {svg_names::kMaskTypeAttr, kAnimatedString},
-        {svg_names::kOpacityAttr, kAnimatedNumber},
-        {svg_names::kOverflowAttr, kAnimatedString},
-        {svg_names::kPaintOrderAttr, kAnimatedString},
-        {svg_names::kPointerEventsAttr, kAnimatedString},
-        {svg_names::kShapeRenderingAttr, kAnimatedString},
-        {svg_names::kStopColorAttr, kAnimatedColor},
-        {svg_names::kStopOpacityAttr, kAnimatedNumber},
-        {svg_names::kStrokeAttr, kAnimatedColor},
-        {svg_names::kStrokeDasharrayAttr, kAnimatedLengthList},
-        {svg_names::kStrokeDashoffsetAttr, kAnimatedLength},
-        {svg_names::kStrokeLinecapAttr, kAnimatedString},
-        {svg_names::kStrokeLinejoinAttr, kAnimatedString},
-        {svg_names::kStrokeMiterlimitAttr, kAnimatedNumber},
-        {svg_names::kStrokeOpacityAttr, kAnimatedNumber},
-        {svg_names::kStrokeWidthAttr, kAnimatedLength},
-        {svg_names::kTextAnchorAttr, kAnimatedString},
-        {svg_names::kTextDecorationAttr, kAnimatedString},
-        {svg_names::kTextRenderingAttr, kAnimatedString},
-        {svg_names::kVectorEffectAttr, kAnimatedString},
-        {svg_names::kVisibilityAttr, kAnimatedString},
-        {svg_names::kWordSpacingAttr, kAnimatedLength},
-    });
-    for (const auto& item : attr_to_types) {
-      css_property_map.Set(item.attr, item.prop_type);
-    }
-  }
-  auto it = css_property_map.find(attribute_name);
-  if (it == css_property_map.end())
-    return kAnimatedUnknown;
-  return it->value;
-}
-
 SVGAnimatedPropertyBase* SVGElement::PropertyFromAttribute(
     const QualifiedName& attribute_name) const {
   if (attribute_name == html_names::kClassAttr) {
@@ -651,10 +519,6 @@ SVGAnimatedPropertyBase* SVGElement::PropertyFromAttribute(
   } else {
     return nullptr;
   }
-}
-
-bool SVGElement::IsAnimatableCSSProperty(const QualifiedName& attr_name) {
-  return AnimatedPropertyTypeForCSSAttribute(attr_name) != kAnimatedUnknown;
 }
 
 bool SVGElement::IsPresentationAttribute(const QualifiedName& name) const {
@@ -665,7 +529,7 @@ namespace {
 
 bool ProbablyUrlFunction(const AtomicString& value) {
   return value.length() > 5 && value.Is8Bit() &&
-         memcmp(value.Characters8(), "url(", 4) == 0;
+         base::as_string_view(value.Span8()).starts_with("url(");
 }
 
 bool UseCSSURIValueCacheForProperty(CSSPropertyID property_id) {
@@ -857,8 +721,7 @@ void SVGElement::AttributeChanged(const AttributeModificationParams& params) {
 
   if (property) {
     SvgAttributeChanged({*property, params.name, params.reason});
-    UpdateWebAnimatedAttributeOnBaseValChange(*property);
-    InvalidateInstances();
+    SynchronizeAttributeInShadowInstances(params.name, params.new_value);
     return;
   }
 
@@ -877,7 +740,7 @@ void SVGElement::AttributeChanged(const AttributeModificationParams& params) {
       CssPropertyIdForSVGAttributeName(GetExecutionContext(), params.name);
   if (prop_id > CSSPropertyID::kInvalid) {
     UpdatePresentationAttributeStyle(prop_id, params.name, params.new_value);
-    InvalidateInstances();
+    SynchronizeAttributeInShadowInstances(params.name, params.new_value);
     return;
   }
 }
@@ -897,35 +760,7 @@ void SVGElement::BaseValueChanged(const SVGAnimatedPropertyBase& property) {
     UpdateClassList(g_null_atom,
                     AtomicString(class_name_->BaseValue()->Value()));
   }
-  UpdateWebAnimatedAttributeOnBaseValChange(property);
   InvalidateInstances();
-}
-
-void SVGElement::UpdateWebAnimatedAttributeOnBaseValChange(
-    const SVGAnimatedPropertyBase& property) {
-  if (!HasSVGRareData())
-    return;
-  const auto& animated_attributes = SvgRareData()->WebAnimatedAttributes();
-  if (animated_attributes.empty() ||
-      !animated_attributes.Contains(property.AttributeName())) {
-    return;
-  }
-  // TODO(alancutter): Only mark attributes as dirty if their animation depends
-  // on the underlying value.
-  SvgRareData()->SetWebAnimatedAttributesDirty(true);
-  EnsureAttributeAnimValUpdated();
-}
-
-void SVGElement::EnsureAttributeAnimValUpdated() {
-  if (!RuntimeEnabledFeatures::WebAnimationsSVGEnabled())
-    return;
-
-  if ((HasSVGRareData() && SvgRareData()->WebAnimatedAttributesDirty()) ||
-      (GetElementAnimations() &&
-       GetDocument().GetDocumentAnimations().NeedsAnimationTimingUpdate())) {
-    GetDocument().GetDocumentAnimations().UpdateAnimationTimingIfNeeded();
-    ApplyActiveWebAnimations();
-  }
 }
 
 void SVGElement::SynchronizeSVGAttribute(const QualifiedName& name) const {
@@ -1365,6 +1200,21 @@ SMILTimeContainer* SVGElement::GetTimeContainer() const {
   }
 
   return ownerSVGElement()->TimeContainer();
+}
+
+// TODO: When implementing <use> scoping rules this may need to be applied more
+// widely. (crbug.com/40550039)
+void SVGElement::SynchronizeAttributeInShadowInstances(
+    const QualifiedName& name,
+    const AtomicString& value) {
+  if (RuntimeEnabledFeatures::SvgUseInstancesAttributeSyncEnabled()) {
+    const HeapHashSet<WeakMember<SVGElement>>& set = InstancesForElement();
+    for (SVGElement* instance : set) {
+      instance->SetAttributeWithoutValidation(name, value);
+    }
+  } else {
+    InvalidateInstances();
+  }
 }
 
 }  // namespace blink

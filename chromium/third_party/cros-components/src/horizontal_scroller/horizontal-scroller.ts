@@ -17,13 +17,17 @@ export class HorizontalScroller extends LitElement {
   `;
 
   /** @export */
-  label = 'I am a horizontal scroller';
+  declare label: string;
 
   /** @nocollapse */
   static override properties = {
     label: {type: String, reflect: true},
   };
 
+  constructor() {
+    super();
+    this.label = 'I am a horizontal scroller';
+  }
 
   override render() {
     return html`

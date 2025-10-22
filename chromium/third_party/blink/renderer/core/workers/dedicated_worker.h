@@ -44,6 +44,7 @@ class ExceptionState;
 class ExecutionContext;
 class PostMessageOptions;
 class ScriptState;
+class V8UnionTrustedScriptURLOrUSVString;
 class WebContentSettingsClient;
 class WorkerClassicScriptLoader;
 struct GlobalScopeCreationParams;
@@ -66,7 +67,7 @@ class CORE_EXPORT DedicatedWorker final
 
  public:
   static DedicatedWorker* Create(ExecutionContext*,
-                                 const String& url,
+                                 const V8UnionTrustedScriptURLOrUSVString* url,
                                  const WorkerOptions*,
                                  ExceptionState&);
 
@@ -141,7 +142,8 @@ class CORE_EXPORT DedicatedWorker final
 
   DEFINE_ATTRIBUTE_EVENT_LISTENER(message, kMessage)
 
-  void ContextLifecycleStateChanged(mojom::FrameLifecycleState state) override;
+  void ContextLifecycleStateChanged(
+      mojom::blink::FrameLifecycleState state) override;
   void Trace(Visitor*) const override;
 
  private:
@@ -156,8 +158,6 @@ class CORE_EXPORT DedicatedWorker final
       network::mojom::ReferrerPolicy,
       Vector<network::mojom::blink::ContentSecurityPolicyPtr>
           response_content_security_policies,
-      const String& source_code,
-      RejectCoepUnsafeNone reject_coep_unsafe_none,
       mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
           back_forward_cache_controller_host,
       mojo::PendingReceiver<mojom::blink::ReportingObserver>
@@ -171,8 +171,6 @@ class CORE_EXPORT DedicatedWorker final
       network::mojom::ReferrerPolicy,
       Vector<network::mojom::blink::ContentSecurityPolicyPtr>
           response_content_security_policies,
-      const String& source_code,
-      RejectCoepUnsafeNone reject_coep_unsafe_none,
       mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>
           back_forward_cache_controller_host,
       mojo::PendingReceiver<mojom::blink::ReportingObserver>
@@ -194,6 +192,8 @@ class CORE_EXPORT DedicatedWorker final
   std::unique_ptr<WebContentSettingsClient> CreateWebContentSettingsClient();
 
   // Callbacks for |classic_script_loader_|.
+  // TODO(crbug.com/400455021): Investigate whether these can be removed now
+  // that PlzDedicatedWorker has shipped.
   void OnResponse();
   void OnFinished(
       mojo::PendingRemote<mojom::blink::BackForwardCacheControllerHost>

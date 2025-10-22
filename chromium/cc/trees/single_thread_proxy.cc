@@ -94,9 +94,7 @@ void SingleThreadProxy::Start() {
     scheduler_settings.commit_to_active_tree = true;
 
     std::unique_ptr<CompositorTimingHistory> compositor_timing_history(
-        new CompositorTimingHistory(
-            CompositorTimingHistory::BROWSER_UMA,
-            layer_tree_host_->rendering_stats_instrumentation()));
+        new CompositorTimingHistory(CompositorTimingHistory::BROWSER_UMA));
     scheduler_on_impl_thread_ = std::make_unique<Scheduler>(
         this, scheduler_settings, layer_tree_host_->GetId(),
         task_runner_provider_->MainThreadTaskRunner(),
@@ -444,13 +442,20 @@ void SingleThreadProxy::Stop() {
     DebugScopedSetMainThreadBlocked main_thread_blocked(task_runner_provider_);
     DebugScopedSetImplThread impl(task_runner_provider_);
 
-    // Prevent the scheduler from performing actions while we're in an
+    // Prevent the scheduler from performing scheduled actions while we're in an
     // inconsistent state.
     if (scheduler_on_impl_thread_)
       scheduler_on_impl_thread_->Stop();
+
     // Take away the LayerTreeFrameSink before destroying things so it doesn't
     // try to call into its client mid-shutdown.
     host_impl_->ReleaseLayerTreeFrameSink();
+
+    // The `Scheduler` has a raw_ptr to the CompositorFrameReportingController
+    // that is owned by the LTHI.
+    if (scheduler_on_impl_thread_) {
+      scheduler_on_impl_thread_->TearDown();
+    }
 
     // It is important to destroy LTHI before the Scheduler since it can make
     // callbacks that access it during destruction cleanup.
@@ -461,10 +466,15 @@ void SingleThreadProxy::Stop() {
 }
 
 void SingleThreadProxy::QueueImageDecode(int request_id,
-                                         const DrawImage& image) {
+                                         const DrawImage& image,
+                                         bool speculative) {
   DCHECK(task_runner_provider_->IsMainThread());
+  if (speculative) {
+    CHECK(!speculative_decode_request_in_flight_);
+    speculative_decode_request_in_flight_ = true;
+  }
   DebugScopedSetImplThread impl(task_runner_provider_);
-  host_impl_->QueueImageDecode(request_id, image);
+  host_impl_->QueueImageDecode(request_id, image, speculative);
 }
 
 void SingleThreadProxy::SetMutator(std::unique_ptr<LayerTreeMutator> mutator) {
@@ -651,9 +661,18 @@ void SingleThreadProxy::SetNeedsImplSideInvalidation(
   }
 }
 
+bool SingleThreadProxy::SpeculativeDecodeRequestInFlight() const {
+  return speculative_decode_request_in_flight_;
+}
+
 void SingleThreadProxy::NotifyImageDecodeRequestFinished(
     int request_id,
+    bool speculative,
     bool decode_succeeded) {
+  if (speculative) {
+    CHECK(speculative_decode_request_in_flight_);
+    speculative_decode_request_in_flight_ = false;
+  }
   DCHECK(!task_runner_provider_->HasImplThread() ||
          task_runner_provider_->IsImplThread());
   if (base::FeatureList::IsEnabled(
@@ -809,7 +828,7 @@ void SingleThreadProxy::CompositeImmediatelyForTest(
     layer_tree_host_->RecordStartOfFrameMetrics();
     DoBeginMainFrame(begin_frame_args);
     commit_requested_ = false;
-    DoPainting(begin_frame_args);
+    DoPainting();
     layer_tree_host_->RecordEndOfFrameMetrics(frame_begin_time,
                                               /* trackers */ 0u);
     DoCommit(begin_frame_args);
@@ -939,11 +958,6 @@ void SingleThreadProxy::SetSourceURL(ukm::SourceId source_id, const GURL& url) {
   // need to record UKM in that case.
 }
 
-void SingleThreadProxy::SetUkmSmoothnessDestination(
-    base::WritableSharedMemoryMapping ukm_smoothness_data) {
-  DCHECK(task_runner_provider_->IsMainThread());
-}
-
 void SingleThreadProxy::SetUkmDroppedFramesDestination(
     base::WritableSharedMemoryMapping ukm_smoothness_data) {
   DCHECK(task_runner_provider_->IsMainThread());
@@ -974,6 +988,15 @@ void SingleThreadProxy::SetWaitingForScrollEvent(
   }
 }
 
+bool SingleThreadProxy::IsRenderingPaused() const {
+  return pause_rendering_;
+}
+
+void SingleThreadProxy::NotifyNewLocalSurfaceIdExpectedWhilePaused() {
+  DebugScopedSetImplThread impl(task_runner_provider_);
+  host_impl_->NotifyNewLocalSurfaceIdExpectedWhilePaused();
+}
+
 size_t SingleThreadProxy::CommitDurationSampleCountForTesting() const {
   DCHECK(scheduler_on_impl_thread_);
   return scheduler_on_impl_thread_
@@ -987,10 +1010,9 @@ void SingleThreadProxy::SetRenderFrameObserver(
   host_impl_->SetRenderFrameObserver(std::move(observer));
 }
 
-double SingleThreadProxy::GetPercentDroppedFrames() const {
+double SingleThreadProxy::GetAverageThroughput() const {
   DebugScopedSetImplThread impl(task_runner_provider_);
-  return host_impl_->dropped_frame_counter()
-      ->sliding_window_current_percent_dropped();
+  return host_impl_->frame_sorter()->GetAverageThroughput();
 }
 
 void SingleThreadProxy::UpdateBrowserControlsState(
@@ -1133,7 +1155,7 @@ void SingleThreadProxy::BeginMainFrame(
     return;
   }
 
-  DoPainting(begin_frame_args);
+  DoPainting();
   layer_tree_host_->RecordEndOfFrameMetrics(frame_start_time,
                                             /* trackers */ 0u);
 }
@@ -1172,14 +1194,13 @@ void SingleThreadProxy::DoBeginMainFrame(
   did_apply_compositor_deltas_ = false;
 }
 
-void SingleThreadProxy::DoPainting(const viz::BeginFrameArgs& commit_args) {
+void SingleThreadProxy::DoPainting() {
   layer_tree_host_->UpdateLayers();
   update_layers_requested_ = false;
 
   std::unique_ptr<BeginMainFrameMetrics> begin_main_frame_metrics =
       layer_tree_host_->TakeBeginMainFrameMetrics();
-  host_impl_->ReadyToCommit(commit_args,
-                            /*scroll_and_viewport_changes_synced=*/true,
+  host_impl_->ReadyToCommit(/*scroll_and_viewport_changes_synced=*/true,
                             begin_main_frame_metrics.get(),
                             /*commit_timeout=*/false);
 

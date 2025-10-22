@@ -10,12 +10,14 @@
 #include "base/functional/callback.h"
 #include "base/memory/raw_ptr.h"
 #include "base/no_destructor.h"
+#include "base/notimplemented.h"
 #include "build/build_config.h"
 #include "components/autofill/core/browser/filling/filling_product.h"
-#include "components/autofill/core/browser/integrators/autofill_ai_delegate.h"
-#include "components/autofill/core/browser/integrators/autofill_compose_delegate.h"
-#include "components/autofill/core/browser/integrators/autofill_plus_address_delegate.h"
-#include "components/autofill/core/browser/integrators/identity_credential_delegate.h"
+#include "components/autofill/core/browser/integrators/autofill_ai/autofill_ai_manager.h"
+#include "components/autofill/core/browser/integrators/compose/autofill_compose_delegate.h"
+#include "components/autofill/core/browser/integrators/identity_credential/identity_credential_delegate.h"
+#include "components/autofill/core/browser/integrators/password_manager/password_manager_delegate.h"
+#include "components/autofill/core/browser/integrators/plus_addresses/autofill_plus_address_delegate.h"
 #include "components/autofill/core/browser/payments/credit_card_access_manager.h"
 #include "components/autofill/core/browser/studies/autofill_ablation_study.h"
 #include "components/autofill/core/browser/suggestions/suggestion.h"
@@ -49,6 +51,31 @@ AutofillClient::PopupOpenArgs& AutofillClient::PopupOpenArgs::operator=(
 AutofillClient::PopupOpenArgs& AutofillClient::PopupOpenArgs::operator=(
     AutofillClient::PopupOpenArgs&&) = default;
 
+AutofillClient::EntitySaveOrUpdatePromptResult::EntitySaveOrUpdatePromptResult(
+    bool did_user_decline,
+    std::optional<EntityInstance> entity)
+    : did_user_decline(did_user_decline), entity(std::move(entity)) {}
+
+AutofillClient::EntitySaveOrUpdatePromptResult::
+    EntitySaveOrUpdatePromptResult() = default;
+
+AutofillClient::EntitySaveOrUpdatePromptResult::EntitySaveOrUpdatePromptResult(
+    const AutofillClient::EntitySaveOrUpdatePromptResult&) = default;
+
+AutofillClient::EntitySaveOrUpdatePromptResult::EntitySaveOrUpdatePromptResult(
+    AutofillClient::EntitySaveOrUpdatePromptResult&&) = default;
+
+AutofillClient::EntitySaveOrUpdatePromptResult&
+AutofillClient::EntitySaveOrUpdatePromptResult::operator=(
+    const AutofillClient::EntitySaveOrUpdatePromptResult&) = default;
+
+AutofillClient::EntitySaveOrUpdatePromptResult&
+AutofillClient::EntitySaveOrUpdatePromptResult::operator=(
+    AutofillClient::EntitySaveOrUpdatePromptResult&&) = default;
+
+AutofillClient::EntitySaveOrUpdatePromptResult::
+    ~EntitySaveOrUpdatePromptResult() = default;
+
 version_info::Channel AutofillClient::GetChannel() const {
   return version_info::Channel::UNKNOWN;
 }
@@ -63,6 +90,10 @@ const EntityDataManager* AutofillClient::GetEntityDataManager() const {
 
 const PersonalDataManager& AutofillClient::GetPersonalDataManager() const {
   return const_cast<AutofillClient*>(this)->GetPersonalDataManager();
+}
+
+const ValuablesDataManager* AutofillClient::GetValuablesDataManager() const {
+  return const_cast<AutofillClient*>(this)->GetValuablesDataManager();
 }
 
 AutofillOptimizationGuide* AutofillClient::GetAutofillOptimizationGuide()
@@ -88,11 +119,20 @@ AutofillPlusAddressDelegate* AutofillClient::GetPlusAddressDelegate() {
   return nullptr;
 }
 
+PasswordManagerDelegate* AutofillClient::GetPasswordManagerDelegate(
+    const FieldGlobalId& field_id) {
+  return nullptr;
+}
+
+OtpSuggestionDelegate* AutofillClient::GetOtpSuggestionDelegate() {
+  return nullptr;
+}
+
 void AutofillClient::GetAiPageContent(GetAiPageContentCallback callback) {
   std::move(callback).Run(std::nullopt);
 }
 
-AutofillAiDelegate* AutofillClient::GetAutofillAiDelegate() {
+AutofillAiManager* AutofillClient::GetAutofillAiManager() {
   return nullptr;
 }
 
@@ -142,10 +182,6 @@ AutofillClient::GetPaymentsAutofillClient() const {
   return const_cast<AutofillClient*>(this)->GetPaymentsAutofillClient();
 }
 
-ValuableManager* AutofillClient::GetValuableManager() {
-  return nullptr;
-}
-
 GeoIpCountryCode AutofillClient::GetVariationConfigCountryCode() const {
   return GeoIpCountryCode(std::string());
 }
@@ -182,6 +218,10 @@ AutofillClient::GetAutofillSnackbarController() {
 void AutofillClient::TriggerUserPerceptionOfAutofillSurvey(
     FillingProduct filling_product,
     const std::map<std::string, std::string>& field_filling_stats_data) {
+  NOTIMPLEMENTED();
+}
+
+void AutofillClient::TriggerDeclinedSaveAddressReasonSurvey() {
   NOTIMPLEMENTED();
 }
 
@@ -248,5 +288,15 @@ const syncer::SyncService* AutofillClient::GetSyncService() const {
   return const_cast<const syncer::SyncService*>(
       const_cast<AutofillClient*>(this)->GetSyncService());
 }
+
+optimization_guide::ModelQualityLogsUploaderService*
+AutofillClient::GetMqlsUploadService() {
+  return nullptr;
+}
+
+void AutofillClient::ShowEntitySaveOrUpdateBubble(
+    EntityInstance new_entity,
+    std::optional<EntityInstance> old_entity,
+    EntitySaveOrUpdatePromptResultCallback save_prompt_acceptance_callback) {}
 
 }  // namespace autofill

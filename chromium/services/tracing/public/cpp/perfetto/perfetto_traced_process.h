@@ -13,6 +13,7 @@
 #include "base/synchronization/lock.h"
 #include "base/task/sequenced_task_runner.h"
 #include "base/thread_annotations.h"
+#include "base/trace_event/trace_config.h"
 #include "base/trace_event/trace_event.h"
 #include "base/tracing/perfetto_task_runner.h"
 #include "services/tracing/public/cpp/perfetto/perfetto_tracing_backend.h"
@@ -97,6 +98,9 @@ class COMPONENT_EXPORT(TRACING_CPP) PerfettoTracedProcess final
     // By default, data source callbacks (e.g., Start/StopTracingImpl) are
     // called on PerfettoTracedProcess::GetTaskRunner()'s sequence. This method
     // allows overriding that task runner.
+    // Note: The task_runner's thread may stop and restart for Linux/ChromeOS
+    // sandboxing so the task_runner can change and delayed tasks posted to it
+    // may be silently dropped.
     virtual base::SequencedTaskRunner* GetTaskRunner();
 
     static void ResetTaskRunner(
@@ -152,16 +156,16 @@ class COMPONENT_EXPORT(TRACING_CPP) PerfettoTracedProcess final
     perfetto::DataSourceConfig data_source_config_;
   };
 
-  // Restart the trace thread and replace the task_runner for tracing.
-  static void RestartThreadInSandbox();
+  // Restarts the trace thread and replaces the task_runner for tracing.
+  void RestartThreadInSandbox();
 
   // Returns the process-wide ptr to the trace thread, returns nullptr if the
   // task_runner for tracing is from the thread-pool.
   static base::Thread* GetTraceThread();
 
   // Creates the process-wide instance of the PerfettoTracedProcess.
-  static PerfettoTracedProcess& MaybeCreateInstance();
-  static PerfettoTracedProcess& MaybeCreateInstanceWithThread();
+  static PerfettoTracedProcess& MaybeCreateInstance(
+      bool will_trace_thread_restart);
   static PerfettoTracedProcess& MaybeCreateInstanceForTesting();
 
   // Returns the process-wide instance of the PerfettoTracedProcess.
@@ -194,7 +198,7 @@ class COMPONENT_EXPORT(TRACING_CPP) PerfettoTracedProcess final
                            bool privacy_filtering_enabled);
 
   // Called on the process's main thread once the thread pool is ready.
-  void OnThreadPoolAvailable(bool enable_consumer);
+  void InitPostFeatureList(bool enable_consumer);
 
   // Set a callback that returns whether a system tracing session is allowed.
   // The callback will be executed on the sequence that set it. Only a single
@@ -219,20 +223,15 @@ class COMPONENT_EXPORT(TRACING_CPP) PerfettoTracedProcess final
     return platform_.get();
   }
 
-  // Indicate that startup tracing will need to start when thread pool becomes
-  // available. This is used in Perfetto client library build, because currently
-  // it requires a threadpool to run tracing tasks.
-  // TODO(khokhlov): Remove this method once startup tracing no longer depends
-  // on threadpool in client library build.
-  void RequestStartupTracing(
-      const perfetto::TraceConfig& config,
-      const perfetto::Tracing::SetupStartupTracingOpts& opts);
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
+  void DeferOrConnectProducerSocket(perfetto::CreateSocketCallback cb);
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
 
  private:
   friend class base::NoDestructor<PerfettoTracedProcess>;
 
   // Default constructor would create a dedicated thread for tracing
-  PerfettoTracedProcess();
+  explicit PerfettoTracedProcess(bool will_trace_thread_restart);
   explicit PerfettoTracedProcess(
       scoped_refptr<base::SequencedTaskRunner> task_runner);
 
@@ -261,14 +260,14 @@ class COMPONENT_EXPORT(TRACING_CPP) PerfettoTracedProcess final
   std::unique_ptr<base::Thread> trace_process_thread_;
   scoped_refptr<base::SequencedTaskRunner> task_runner_;
 
+  bool will_trace_thread_restart_ = false;
+#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
+  base::OnceClosure system_tracing_producer_socket_cb_;
+#endif  // BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_ANDROID)
+
   // Platform implementation for the Perfetto client library.
   std::unique_ptr<base::tracing::PerfettoPlatform> platform_;
   std::unique_ptr<PerfettoTracingBackend> tracing_backend_;
-
-  bool startup_tracing_needed_ = false;
-  bool thread_pool_started_ = false;
-  perfetto::TraceConfig saved_config_;
-  perfetto::Tracing::SetupStartupTracingOpts saved_opts_;
 
   SEQUENCE_CHECKER(sequence_checker_);
 };

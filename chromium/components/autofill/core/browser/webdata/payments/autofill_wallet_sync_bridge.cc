@@ -13,7 +13,9 @@
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/logging.h"
+#include "base/notimplemented.h"
 #include "base/strings/strcat.h"
+#include "base/strings/string_number_conversions.h"
 #include "components/autofill/core/browser/data_model/payments/bank_account.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card.h"
 #include "components/autofill/core/browser/data_model/payments/credit_card_cloud_token_data.h"
@@ -295,7 +297,7 @@ AutofillWalletSyncBridge::GetAllDataForDebugging() {
 }
 
 std::string AutofillWalletSyncBridge::GetClientTag(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK(entity_data.specifics.has_autofill_wallet());
 
   return syncer::GetUnhashedClientTagFromAutofillWalletSpecifics(
@@ -303,11 +305,19 @@ std::string AutofillWalletSyncBridge::GetClientTag(
 }
 
 std::string AutofillWalletSyncBridge::GetStorageKey(
-    const syncer::EntityData& entity_data) {
+    const syncer::EntityData& entity_data) const {
   DCHECK(entity_data.specifics.has_autofill_wallet());
   return GetStorageKeyForWalletDataClientTag(
       syncer::GetUnhashedClientTagFromAutofillWalletSpecifics(
           entity_data.specifics.autofill_wallet()));
+}
+
+bool AutofillWalletSyncBridge::IsEntityDataValid(
+    const syncer::EntityData& entity_data) const {
+  CHECK(entity_data.specifics.has_autofill_wallet());
+  return !syncer::GetUnhashedClientTagFromAutofillWalletSpecifics(
+              entity_data.specifics.autofill_wallet())
+              .empty();
 }
 
 bool AutofillWalletSyncBridge::SupportsIncrementalUpdates() const {
@@ -357,7 +367,8 @@ std::unique_ptr<syncer::DataBatch> AutofillWalletSyncBridge::GetAllDataImpl(
        !GetAutofillTable()->GetPaymentInstrumentCreationOptions(
            payment_instrument_creation_options))) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load entries from table."});
+        {FROM_HERE, syncer::ModelError::Type::
+                        kAutofillWalletFailedToLoadEntriesFromTable});
     return nullptr;
   }
 
@@ -369,7 +380,8 @@ std::unique_ptr<syncer::DataBatch> AutofillWalletSyncBridge::GetAllDataImpl(
     if (!GetAutofillTable()->GetCreditCardBenefitsForInstrumentId(
             entry->instrument_id(), benefits)) {
       change_processor()->ReportError(
-          {FROM_HERE, "Failed to load entries from table."});
+          {FROM_HERE, syncer::ModelError::Type::
+                          kAutofillWalletFailedToLoadBenefitsFromTable});
       return nullptr;
     }
     for (const CreditCardBenefit& benefit : benefits) {
@@ -488,9 +500,10 @@ void AutofillWalletSyncBridge::SetSyncData(
     transaction->Commit();
   }
 
-  if (web_data_backend_ && wallet_data_changed)
+  if (web_data_backend_ && wallet_data_changed) {
     web_data_backend_->NotifyOnAutofillChangedBySync(
         syncer::AUTOFILL_WALLET_DATA);
+  }
 }
 
 bool AutofillWalletSyncBridge::SetWalletCards(
@@ -574,32 +587,32 @@ bool AutofillWalletSyncBridge::SetWalletIbans(std::vector<Iban> wallet_ibans,
 
   GetAutofillTable()->SetServerIbansData(wallet_ibans);
   bool found_diff = false;
-    for (const std::unique_ptr<Iban>& existing_iban : existing_ibans) {
-      bool has_orphan_iban = std::ranges::none_of(
-          wallet_ibans,
-          [&](const Iban& iban) { return iban.Compare(*existing_iban) == 0; });
-      if (has_orphan_iban) {
-        found_diff = true;
-        if (notify_webdata_backend) {
-          web_data_backend_->NotifyOfIbanChanged(
-              IbanChange(IbanChange::REMOVE, existing_iban->instrument_id(),
-                         *existing_iban));
-        }
+  for (const std::unique_ptr<Iban>& existing_iban : existing_ibans) {
+    bool has_orphan_iban = std::ranges::none_of(
+        wallet_ibans,
+        [&](const Iban& iban) { return iban.Compare(*existing_iban) == 0; });
+    if (has_orphan_iban) {
+      found_diff = true;
+      if (notify_webdata_backend) {
+        web_data_backend_->NotifyOfIbanChanged(
+            IbanChange(IbanChange::REMOVE, existing_iban->instrument_id(),
+                       *existing_iban));
       }
     }
-    for (const Iban& wallet_iban : wallet_ibans) {
-      bool has_new_iban = std::ranges::none_of(
-          existing_ibans, [&](const std::unique_ptr<Iban>& iban) {
-            return iban->Compare(wallet_iban) == 0;
-          });
-      if (has_new_iban) {
-        found_diff = true;
-        if (notify_webdata_backend) {
-          web_data_backend_->NotifyOfIbanChanged(IbanChange(
-              IbanChange::ADD, wallet_iban.instrument_id(), wallet_iban));
-        }
+  }
+  for (const Iban& wallet_iban : wallet_ibans) {
+    bool has_new_iban = std::ranges::none_of(
+        existing_ibans, [&](const std::unique_ptr<Iban>& iban) {
+          return iban->Compare(wallet_iban) == 0;
+        });
+    if (has_new_iban) {
+      found_diff = true;
+      if (notify_webdata_backend) {
+        web_data_backend_->NotifyOfIbanChanged(IbanChange(
+            IbanChange::ADD, wallet_iban.instrument_id(), wallet_iban));
       }
     }
+  }
   return found_diff;
 }
 
@@ -696,15 +709,18 @@ void AutofillWalletSyncBridge::LoadMetadata() {
   if (!web_data_backend_ || !web_data_backend_->GetDatabase() ||
       !GetAutofillTable() || !GetSyncMetadataStore()) {
     change_processor()->ReportError(
-        {FROM_HERE, "Failed to load AutofillWebDatabase."});
+        {FROM_HERE,
+         syncer::ModelError::Type::kAutofillWalletFailedToLoadDatabase});
     return;
   }
 
   auto batch = std::make_unique<syncer::MetadataBatch>();
   if (!GetSyncMetadataStore()->GetAllSyncMetadata(syncer::AUTOFILL_WALLET_DATA,
                                                   batch.get())) {
-    change_processor()->ReportError(
-        {FROM_HERE, "Failed reading autofill metadata from WebDatabase."});
+    change_processor()->ReportError({
+        FROM_HERE,
+        syncer::ModelError::Type::kAutofillWalletFailedToReadMetadata,
+    });
     return;
   }
 

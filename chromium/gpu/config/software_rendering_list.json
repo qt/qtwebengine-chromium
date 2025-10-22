@@ -1447,6 +1447,34 @@
       "features": [
         "accelerated_2d_canvas"
       ]
+    },
+    {
+      "id": 184,
+      "cr_bugs": [383521542],
+      "description": "Disable Graphite on very old Intel drivers",
+      "os": {
+        "type": "win"
+      },
+      "vendor_id": "0x8086",
+      "driver_version": {
+        "op": "<=",
+        "value": "10.18.10.5161"
+      },
+      "features": [
+        "skia_graphite"
+      ]
+    },
+    {
+      "id": 185,
+      "cr_bugs": [1354201, 1356906, 1362720],
+      "description": "Disable DrDc on multiple gpus.",
+      "os": {
+        "type": "android"
+      },
+      "gl_renderer": ".*PowerVR Rogue.*|Adreno \\(TM\\) 730|Mali-G57 MC2|Mali-G68 MC4|Mali-G77 MC9",
+      "features": [
+        "direct_rendering_display_compositor"
+      ]
     }
   ]
 }

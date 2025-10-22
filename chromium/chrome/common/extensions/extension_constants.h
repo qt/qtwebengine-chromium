@@ -10,7 +10,6 @@
 #include "base/files/file_path.h"
 #include "build/build_config.h"
 #include "chrome/common/buildflags.h"
-#include "url/gurl.h"
 
 namespace extension_urls {
 
@@ -282,6 +281,8 @@ inline constexpr char kFirstRunDialogId[] = "jdgcneonijmofocbhmijhacgchbihela";
 // Path to preinstalled Google speech synthesis extension.
 inline constexpr char kGoogleSpeechSynthesisExtensionPath[] =
     "/usr/share/chromeos-assets/speech_synthesis/patts";
+inline constexpr char kGoogleSpeechSynthesisManifestV3ExtensionPath[] =
+    "/usr/share/chromeos-assets/speech_synthesis/patts/mv3";
 // The extension id of the Google speech synthesis extension.
 inline constexpr char kGoogleSpeechSynthesisExtensionId[] =
     "gjjabgpgjpampikjhjpfhneeoapjbjaf";
@@ -290,6 +291,8 @@ inline constexpr char kGoogleSpeechSynthesisOptionsPath[] = "/options.html";
 // Path to preinstalled eSpeak-NG speech synthesis extension.
 inline constexpr char kEspeakSpeechSynthesisExtensionPath[] =
     "/usr/share/chromeos-assets/speech_synthesis/espeak-ng";
+inline constexpr char kEspeakManifestV3SpeechSynthesisExtensionPath[] =
+    "/usr/share/chromeos-assets/speech_synthesis/espeak-ng-mv3";
 // The extension id of the eSpeak-NG speech synthesis extension.
 inline constexpr char kEspeakSpeechSynthesisExtensionId[] =
     "dakbfdmgjiabojdgbiljlhgjbokobjpg";
@@ -318,17 +321,6 @@ inline constexpr char kTTSEngineExtensionId[] =
 inline constexpr char kComponentUpdaterTTSEngineExtensionId[] =
     "gjjabgpgjpampikjhjpfhneeoapjbjaf";
 #endif  // BUILDFLAG(IS_WIN) || BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_MAC)
-
-// What causes an extension to be installed? Used in histograms, so don't
-// change existing values.
-enum CrxInstallCause {
-  INSTALL_CAUSE_UNSET = 0,
-  INSTALL_CAUSE_USER_DOWNLOAD,
-  INSTALL_CAUSE_UPDATE,
-  INSTALL_CAUSE_EXTERNAL_FILE,
-  INSTALL_CAUSE_AUTOMATION,
-  NUM_INSTALL_CAUSES
-};
 
 // The states that an app can be in, as reported by chrome.app.installState
 // and chrome.app.runningState.

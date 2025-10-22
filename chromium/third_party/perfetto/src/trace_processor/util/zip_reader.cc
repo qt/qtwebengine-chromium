@@ -29,12 +29,12 @@
 #include "perfetto/base/logging.h"
 #include "perfetto/base/status.h"
 #include "perfetto/base/time.h"
+#include "perfetto/ext/base/status_macros.h"
 #include "perfetto/ext/base/status_or.h"
 #include "perfetto/ext/base/string_view.h"
 #include "perfetto/ext/base/utils.h"
 #include "perfetto/trace_processor/trace_blob_view.h"
 #include "src/trace_processor/util/gzip_utils.h"
-#include "src/trace_processor/util/status_macros.h"
 #include "src/trace_processor/util/streaming_line_reader.h"
 
 #if PERFETTO_BUILDFLAG(PERFETTO_ZLIB)
@@ -434,7 +434,7 @@ base::Status ZipFile::DoDecompressionChecks() const {
 int64_t ZipFile::GetDatetime() const {
   // Date: 7 bits year, 4 bits month, 5 bits day.
   // Time: 5 bits hour, 6 bits minute, 5 bits second.
-  struct tm mdt {};
+  struct tm mdt{};
   // As per man 3 mktime, `tm_year` is relative to 1900 not Epoch. Go figure.
   mdt.tm_year = 1980 + (hdr_.mdate >> (16 - 7)) - 1900;
 

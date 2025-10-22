@@ -25,6 +25,20 @@ class COMPONENT_EXPORT(TAB_GROUPS) TokenId {
   // call on a valid TokenId.
   static T FromRawToken(base::Token token) { return T(TokenId(token)); }
 
+  // Similar restrictions to FromRawToken but takes an optional token and always
+  // returns an optional id.
+  static std::optional<T> FromOptionalToken(
+      const std::optional<base::Token>& token) {
+    return token ? std::optional<T>(FromRawToken(*token)) : std::nullopt;
+  }
+
+  // Converts an optional TokenId to an optional base::Token.
+  static std::optional<base::Token> ToOptionalToken(
+      const std::optional<T>& token_id) {
+    return token_id ? std::optional<base::Token>(token_id->token())
+                    : std::nullopt;
+  }
+
   // Should only be used if intending to populate the TokenId by reference,
   // using a valid existing ID. Primarily needed for the extensions API.
   static T CreateEmpty() { return T(TokenId(base::Token())); }
@@ -33,13 +47,8 @@ class COMPONENT_EXPORT(TAB_GROUPS) TokenId {
 
   TokenId<T>& operator=(const TokenId<T>& other) = default;
 
-  bool operator==(const TokenId<T>& other) const {
-    return token_ == other.token_;
-  }
-  bool operator!=(const TokenId<T>& other) const { return !(*this == other); }
-  bool operator<(const TokenId<T>& other) const {
-    return token_ < other.token_;
-  }
+  friend bool operator==(const TokenId<T>&, const TokenId<T>&) = default;
+  friend auto operator<=>(const TokenId<T>&, const TokenId<T>&) = default;
 
   const base::Token& token() const { return token_; }
 

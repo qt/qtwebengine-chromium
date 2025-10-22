@@ -11,7 +11,7 @@
 #include "base/test/bind.h"
 #include "base/test/test_file_util.h"
 #include "build/build_config.h"
-#include "crypto/secure_hash.h"
+#include "crypto/hash.h"
 #include "net/base/hash_value.h"
 #include "net/base/io_buffer.h"
 #include "net/base/test_completion_callback.h"
@@ -35,15 +35,6 @@ enum class CreateBackendResultType {
   kAsyncSuccess,
   kAsyncFailure,
 };
-
-net::SHA256HashValue GetHash(const std::string& data) {
-  std::unique_ptr<crypto::SecureHash> secure_hash =
-      crypto::SecureHash::Create(crypto::SecureHash::SHA256);
-  secure_hash->Update(data.c_str(), data.size());
-  net::SHA256HashValue sha256;
-  secure_hash->Finish(sha256);
-  return sha256;
-}
 
 class FakeSharedDictionaryDiskCache : public SharedDictionaryDiskCache {
  public:
@@ -189,12 +180,12 @@ void SharedDictionaryWriterOnDiskTest::RunSimpleWriteTest(
                 EXPECT_EQ(SharedDictionaryWriterOnDisk::Result::kSuccess,
                           result);
                 EXPECT_EQ(kTestData.size(), size);
-                EXPECT_EQ(GetHash(kTestData), hash);
+                EXPECT_EQ(crypto::hash::Sha256(kTestData), hash);
                 finish_callback_called = true;
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData.c_str(), kTestData.size());
+  writer->Append(base::as_byte_span(kTestData));
   writer->Finish();
 
   if (!sync_create_backend) {
@@ -257,7 +248,7 @@ void SharedDictionaryWriterOnDiskTest::RunCreateBackendFailureTest(
           disk_cache->GetWeakPtr());
 
   writer->Initialize();
-  writer->Append(kTestData.c_str(), kTestData.size());
+  writer->Append(base::as_byte_span(kTestData));
   writer->Finish();
 
   if (!sync_create_backend) {
@@ -312,7 +303,7 @@ void SharedDictionaryWriterOnDiskTest::RunCreateEntryFailureTest(
           disk_cache->GetWeakPtr());
 
   writer->Initialize();
-  writer->Append(kTestData.c_str(), kTestData.size());
+  writer->Append(base::as_byte_span(kTestData));
   writer->Finish();
 
   if (!sync_create_backend) {
@@ -396,7 +387,7 @@ void SharedDictionaryWriterOnDiskTest::RunWriteDataFailureTest(
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData.c_str(), kTestData.size());
+  writer->Append(base::as_byte_span(kTestData));
   writer->Finish();
 
   if (!sync_create_backend) {
@@ -493,13 +484,13 @@ TEST_F(SharedDictionaryWriterOnDiskTest, MultipleWrite) {
                 EXPECT_EQ(SharedDictionaryWriterOnDisk::Result::kSuccess,
                           result);
                 EXPECT_EQ(kTestData1.size() + kTestData2.size(), size);
-                EXPECT_EQ(GetHash(kTestData1 + kTestData2), hash);
+                EXPECT_EQ(crypto::hash::Sha256(kTestData1 + kTestData2), hash);
                 finish_callback_called = true;
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData1.c_str(), kTestData1.size());
-  writer->Append(kTestData2.c_str(), kTestData2.size());
+  writer->Append(base::as_byte_span(kTestData1));
+  writer->Append(base::as_byte_span(kTestData2));
   writer->Finish();
 
   disk_cache->RunCreateCacheBackendCallback();
@@ -567,13 +558,13 @@ TEST_F(SharedDictionaryWriterOnDiskTest, MultipleWriteSyncWrite) {
                 EXPECT_EQ(SharedDictionaryWriterOnDisk::Result::kSuccess,
                           result);
                 EXPECT_EQ(kTestData1.size() + kTestData2.size(), size);
-                EXPECT_EQ(GetHash(kTestData1 + kTestData2), hash);
+                EXPECT_EQ(crypto::hash::Sha256(kTestData1 + kTestData2), hash);
                 finish_callback_called = true;
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData1.c_str(), kTestData1.size());
-  writer->Append(kTestData2.c_str(), kTestData2.size());
+  writer->Append(base::as_byte_span(kTestData1));
+  writer->Append(base::as_byte_span(kTestData2));
   writer->Finish();
 
   disk_cache->RunCreateCacheBackendCallback();
@@ -645,8 +636,8 @@ TEST_F(SharedDictionaryWriterOnDiskTest, AsyncWriteFailureOnMultipleWrites) {
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData1.c_str(), kTestData1.size());
-  writer->Append(kTestData2.c_str(), kTestData2.size());
+  writer->Append(base::as_byte_span(kTestData1));
+  writer->Append(base::as_byte_span(kTestData2));
   writer->Finish();
 
   disk_cache->RunCreateCacheBackendCallback();
@@ -708,8 +699,8 @@ TEST_F(SharedDictionaryWriterOnDiskTest, SyncWriteFailureOnMultipleWrites) {
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData1.c_str(), kTestData1.size());
-  writer->Append(kTestData2.c_str(), kTestData2.size());
+  writer->Append(base::as_byte_span(kTestData1));
+  writer->Append(base::as_byte_span(kTestData2));
   writer->Finish();
 
   disk_cache->RunCreateCacheBackendCallback();
@@ -805,7 +796,7 @@ TEST_F(SharedDictionaryWriterOnDiskTest, AbortedAfterWrite) {
               }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData.c_str(), kTestData.size());
+  writer->Append(base::as_byte_span(kTestData));
 
   disk_cache->RunCreateCacheBackendCallback();
   std::move(create_entry_callback)
@@ -898,11 +889,11 @@ TEST_F(SharedDictionaryWriterOnDiskTest, ErrorSizeExceedsLimitBeforeOnEntry) {
           }),
           disk_cache->GetWeakPtr());
   writer->Initialize();
-  writer->Append(kTestData1.c_str(), kTestData1.size());
+  writer->Append(base::as_byte_span(kTestData1));
   EXPECT_FALSE(finish_callback_called);
-  writer->Append("x", 1);
+  writer->Append(std::to_array<uint8_t>({'x'}));
   EXPECT_TRUE(finish_callback_called);
-  writer->Append(kTestData2.c_str(), kTestData2.size());
+  writer->Append(base::as_byte_span(kTestData2));
   writer->Finish();
 
   disk_cache->RunCreateCacheBackendCallback();
@@ -971,19 +962,19 @@ TEST_F(SharedDictionaryWriterOnDiskTest, ErrorSizeExceedsLimitAfterOnEntry) {
   std::move(create_entry_callback)
       .Run(disk_cache::EntryResult::MakeCreated(entry.release()));
 
-  writer->Append(kTestData1.c_str(), kTestData1.size());
+  writer->Append(base::as_byte_span(kTestData1));
 
   std::move(write_data_callback)
       .Run(base::checked_cast<int>(kTestData1.size()));
 
   EXPECT_FALSE(finish_callback_called);
   EXPECT_FALSE(entry_doom_called);
-  writer->Append("x", 1);
+  writer->Append(std::to_array<uint8_t>({'x'}));
   EXPECT_TRUE(finish_callback_called);
   EXPECT_TRUE(entry_doom_called);
 
   // Test that calling Append() and Finish() doesn't cause unexpected crash.
-  writer->Append(kTestData2.c_str(), kTestData2.size());
+  writer->Append(base::as_byte_span(kTestData2));
   writer->Finish();
 }
 

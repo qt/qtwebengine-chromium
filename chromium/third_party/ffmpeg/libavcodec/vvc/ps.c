@@ -23,6 +23,8 @@
 #include <stdbool.h>
 
 #include "libavcodec/cbs_h266.h"
+#include "libavcodec/decode.h"
+#include "libavcodec/h2645data.h"
 #include "libavutil/mem.h"
 #include "libavutil/pixdesc.h"
 #include "libavutil/refstruct.h"
@@ -180,12 +182,58 @@ static void sps_ladf(VVCSPS* sps)
     }
 }
 
-static int sps_derive(VVCSPS *sps, void *log_ctx)
+#define EXTENDED_SAR       255
+static void sps_vui(AVCodecContext *c, const H266RawVUI *vui)
+{
+    AVRational sar = (AVRational){ 0, 1 };
+    if (vui->vui_aspect_ratio_info_present_flag) {
+        if (vui->vui_aspect_ratio_idc < FF_ARRAY_ELEMS(ff_h2645_pixel_aspect))
+            sar = ff_h2645_pixel_aspect[vui->vui_aspect_ratio_idc];
+        else if (vui->vui_aspect_ratio_idc == EXTENDED_SAR) {
+            sar = (AVRational){ vui->vui_sar_width, vui->vui_sar_height };
+        } else {
+            av_log(c, AV_LOG_WARNING, "Unknown SAR index: %u.\n", vui->vui_aspect_ratio_idc);
+        }
+    }
+    ff_set_sar(c, sar);
+
+    if (vui->vui_colour_description_present_flag) {
+        c->color_primaries = vui->vui_colour_primaries;
+        c->color_trc       = vui->vui_transfer_characteristics;
+        c->colorspace      = vui->vui_matrix_coeffs;
+        c->color_range     = vui->vui_full_range_flag ? AVCOL_RANGE_JPEG : AVCOL_RANGE_MPEG;
+
+        // Set invalid values to "unspecified"
+        if (!av_color_primaries_name(c->color_primaries))
+            c->color_primaries = AVCOL_PRI_UNSPECIFIED;
+        if (!av_color_transfer_name(c->color_trc))
+            c->color_trc = AVCOL_TRC_UNSPECIFIED;
+        if (!av_color_space_name(c->colorspace))
+            c->colorspace = AVCOL_SPC_UNSPECIFIED;
+    } else {
+        c->color_primaries = AVCOL_PRI_UNSPECIFIED;
+        c->color_trc       = AVCOL_TRC_UNSPECIFIED;
+        c->colorspace      = AVCOL_SPC_UNSPECIFIED;
+        c->color_range     = AVCOL_RANGE_MPEG;
+    }
+}
+
+
+static void sps_export_stream_params(AVCodecContext *c, const VVCSPS *sps)
+{
+    const H266RawSPS *r = sps->r;
+
+    c->has_b_frames = !!r->sps_dpb_params.dpb_max_num_reorder_pics[r->sps_max_sublayers_minus1];
+    if (r->sps_vui_parameters_present_flag)
+        sps_vui(c, &r->vui);
+}
+
+static int sps_derive(VVCSPS *sps, AVCodecContext *c)
 {
     int ret;
     const H266RawSPS *r = sps->r;
 
-    ret = sps_bit_depth(sps, log_ctx);
+    ret = sps_bit_depth(sps, c);
     if (ret < 0)
         return ret;
     sps_poc(sps);
@@ -197,6 +245,7 @@ static int sps_derive(VVCSPS *sps, void *log_ctx)
         if (ret < 0)
             return ret;
     }
+    sps_export_stream_params(c, sps);
 
     return 0;
 }
@@ -207,7 +256,7 @@ static void sps_free(AVRefStructOpaque opaque, void *obj)
     av_refstruct_unref(&sps->r);
 }
 
-static const VVCSPS *sps_alloc(const H266RawSPS *rsps, void *log_ctx)
+static const VVCSPS *sps_alloc(const H266RawSPS *rsps, AVCodecContext *c)
 {
     int ret;
     VVCSPS *sps = av_refstruct_alloc_ext(sizeof(*sps), 0, NULL, sps_free);
@@ -217,7 +266,7 @@ static const VVCSPS *sps_alloc(const H266RawSPS *rsps, void *log_ctx)
 
     av_refstruct_replace(&sps->r, rsps);
 
-    ret = sps_derive(sps, log_ctx);
+    ret = sps_derive(sps, c);
     if (ret < 0)
         goto fail;
 
@@ -228,7 +277,7 @@ fail:
     return NULL;
 }
 
-static int decode_sps(VVCParamSets *ps, const H266RawSPS *rsps, void *log_ctx, int is_clvss)
+static int decode_sps(VVCParamSets *ps, AVCodecContext *c, const H266RawSPS *rsps, int is_clvss)
 {
     const int sps_id        = rsps->sps_seq_parameter_set_id;
     const VVCSPS *old_sps   = ps->sps_list[sps_id];
@@ -245,7 +294,7 @@ static int decode_sps(VVCParamSets *ps, const H266RawSPS *rsps, void *log_ctx, i
             return AVERROR_INVALIDDATA;
     }
 
-    sps = sps_alloc(rsps, log_ctx);
+    sps = sps_alloc(rsps, c);
     if (!sps)
         return AVERROR(ENOMEM);
 
@@ -359,6 +408,8 @@ static int pps_add_ctus(VVCPPS *pps, int *off, const int rx, const int ry,
     int start = *off;
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
+            if (*off >= pps->ctb_count)
+                return AVERROR_INVALIDDATA;
             pps->ctb_addr_in_slice[*off] = ctu_rs(rx + x, ry + y, pps);
             (*off)++;
         }
@@ -366,15 +417,21 @@ static int pps_add_ctus(VVCPPS *pps, int *off, const int rx, const int ry,
     return *off - start;
 }
 
-static void pps_single_slice_picture(VVCPPS *pps, int *off)
+static int pps_single_slice_picture(VVCPPS *pps, int *off)
 {
+    pps->num_ctus_in_slice[0] = 0;
     for (int j = 0; j < pps->r->num_tile_rows; j++) {
         for (int i = 0; i < pps->r->num_tile_columns; i++) {
-            pps->num_ctus_in_slice[0] = pps_add_ctus(pps, off,
+            const int ret = pps_add_ctus(pps, off,
                 pps->col_bd[i], pps->row_bd[j],
                 pps->r->col_width_val[i], pps->r->row_height_val[j]);
+            if (ret < 0)
+                return ret;
+            pps->num_ctus_in_slice[0] += ret;
         }
     }
+
+    return 0;
 }
 
 static void subpic_tiles(int *tile_x, int *tile_y, int *tile_x_end, int *tile_y_end,
@@ -401,25 +458,36 @@ static void subpic_tiles(int *tile_x, int *tile_y, int *tile_x_end, int *tile_y_
         (*tile_y_end)++;
 }
 
-static void pps_subpic_less_than_one_tile_slice(VVCPPS *pps, const VVCSPS *sps, const int i, const int tx, const int ty, int *off)
+static int pps_subpic_less_than_one_tile_slice(VVCPPS *pps, const VVCSPS *sps, const int i, const int tx, const int ty, int *off)
 {
-    pps->num_ctus_in_slice[i] = pps_add_ctus(pps, off,
-        pps->col_bd[tx], pps->row_bd[ty],
-        pps->r->col_width_val[tx], sps->r->sps_subpic_height_minus1[i] + 1);
+    const int ret = pps_add_ctus(pps, off,
+        sps->r->sps_subpic_ctu_top_left_x[i], sps->r->sps_subpic_ctu_top_left_y[i],
+        sps->r->sps_subpic_width_minus1[i] + 1, sps->r->sps_subpic_height_minus1[i] + 1);
+    if (ret < 0)
+        return ret;
+
+    pps->num_ctus_in_slice[i] = ret;
+    return 0;
 }
 
-static void pps_subpic_one_or_more_tiles_slice(VVCPPS *pps, const int tile_x, const int tile_y, const int x_end, const int y_end, const int i, int *off)
+static int pps_subpic_one_or_more_tiles_slice(VVCPPS *pps, const int tile_x, const int tile_y, const int x_end, const int y_end,
+    const int i, int *off)
 {
     for (int ty = tile_y; ty < y_end; ty++) {
         for (int tx = tile_x; tx < x_end; tx++) {
-            pps->num_ctus_in_slice[i] += pps_add_ctus(pps, off,
+            const int ret = pps_add_ctus(pps, off,
                 pps->col_bd[tx], pps->row_bd[ty],
                 pps->r->col_width_val[tx], pps->r->row_height_val[ty]);
+            if (ret < 0)
+                return ret;
+
+            pps->num_ctus_in_slice[i] += ret;
         }
     }
+    return 0;
 }
 
-static void pps_subpic_slice(VVCPPS *pps, const VVCSPS *sps, const int i, int *off)
+static int pps_subpic_slice(VVCPPS *pps, const VVCSPS *sps, const int i, int *off)
 {
     int tx, ty, x_end, y_end;
 
@@ -428,19 +496,27 @@ static void pps_subpic_slice(VVCPPS *pps, const VVCSPS *sps, const int i, int *o
 
     subpic_tiles(&tx, &ty, &x_end, &y_end, sps, pps, i);
     if (ty + 1 == y_end && sps->r->sps_subpic_height_minus1[i] + 1 < pps->r->row_height_val[ty])
-        pps_subpic_less_than_one_tile_slice(pps, sps, i, tx, ty, off);
+        return pps_subpic_less_than_one_tile_slice(pps, sps, i, tx, ty, off);
     else
-        pps_subpic_one_or_more_tiles_slice(pps, tx, ty, x_end, y_end, i, off);
+        return pps_subpic_one_or_more_tiles_slice(pps, tx, ty, x_end, y_end, i, off);
 }
 
-static void pps_single_slice_per_subpic(VVCPPS *pps, const VVCSPS *sps, int *off)
+static int pps_single_slice_per_subpic(VVCPPS *pps, const VVCSPS *sps, int *off)
 {
+    int ret;
+
     if (!sps->r->sps_subpic_info_present_flag) {
-        pps_single_slice_picture(pps, off);
+        ret = pps_single_slice_picture(pps, off);
+        if (ret < 0)
+            return ret;
     } else {
-        for (int i = 0; i < pps->r->pps_num_slices_in_pic_minus1 + 1; i++)
-            pps_subpic_slice(pps, sps, i, off);
+        for (int i = 0; i < pps->r->pps_num_slices_in_pic_minus1 + 1; i++) {
+            const int ret = pps_subpic_slice(pps, sps, i, off);
+            if (ret < 0)
+                return ret;
+        }
     }
+    return 0;
 }
 
 static int pps_one_tile_slices(VVCPPS *pps, const int tile_idx, int i, int *off)
@@ -452,9 +528,13 @@ static int pps_one_tile_slices(VVCPPS *pps, const int tile_idx, int i, int *off)
     ctu_xy(&rx, &ry, tile_x, tile_y, pps);
     ctu_y_end = ry + r->row_height_val[tile_y];
     while (ry < ctu_y_end) {
+        int ret;
         pps->slice_start_offset[i] = *off;
-        pps->num_ctus_in_slice[i] = pps_add_ctus(pps, off, rx, ry,
+        ret = pps_add_ctus(pps, off, rx, ry,
             r->col_width_val[tile_x], r->slice_height_in_ctus[i]);
+        if (ret < 0)
+            return ret;
+        pps->num_ctus_in_slice[i] = ret;
         ry += r->slice_height_in_ctus[i++];
     }
     i--;
@@ -471,13 +551,17 @@ static int pps_multi_tiles_slice(VVCPPS *pps, const int tile_idx, const int i, i
     pps->num_ctus_in_slice[i] = 0;
     for (int ty = tile_y; ty <= tile_y + r->pps_slice_height_in_tiles_minus1[i]; ty++) {
         for (int tx = tile_x; tx <= tile_x + r->pps_slice_width_in_tiles_minus1[i]; tx++) {
+            int ret;
             const int idx = ty * r->num_tile_columns + tx;
             if (tile_in_slice[idx])
                 return AVERROR_INVALIDDATA;
             tile_in_slice[idx] = true;
             ctu_xy(&rx, &ry, tx, ty, pps);
-            pps->num_ctus_in_slice[i] += pps_add_ctus(pps, off, rx, ry,
+            ret = pps_add_ctus(pps, off, rx, ry,
                 r->col_width_val[tx], r->row_height_val[ty]);
+            if (ret < 0)
+                return ret;
+            pps->num_ctus_in_slice[i] += ret;
         }
     }
 
@@ -488,11 +572,10 @@ static int pps_rect_slice(VVCPPS *pps, const VVCSPS *sps)
 {
     const H266RawPPS *r = pps->r;
     bool tile_in_slice[VVC_MAX_TILES_PER_AU] = {false};
-    int tile_idx = 0, off = 0;
+    int tile_idx = 0, off = 0, ret;
 
     if (r->pps_single_slice_per_subpic_flag) {
-        pps_single_slice_per_subpic(pps, sps, &off);
-        return 0;
+        return pps_single_slice_per_subpic(pps, sps, &off);
     }
 
     for (int i = 0; i < r->pps_num_slices_in_pic_minus1 + 1; i++) {
@@ -501,9 +584,12 @@ static int pps_rect_slice(VVCPPS *pps, const VVCSPS *sps)
             if (tile_in_slice[tile_idx])
                 return AVERROR_INVALIDDATA;
             tile_in_slice[tile_idx] = true;
-            i = pps_one_tile_slices(pps, tile_idx, i, &off);
+            ret = pps_one_tile_slices(pps, tile_idx, i, &off);
+            if (ret < 0)
+                return ret;
+            i = ret;
         } else {
-            const int ret = pps_multi_tiles_slice(pps, tile_idx, i, &off, tile_in_slice);
+            ret = pps_multi_tiles_slice(pps, tile_idx, i, &off, tile_in_slice);
             if (ret < 0)
                 return ret;
         }
@@ -518,21 +604,28 @@ static int pps_rect_slice(VVCPPS *pps, const VVCSPS *sps)
     return 0;
 }
 
-static void pps_no_rect_slice(VVCPPS* pps)
+static int pps_no_rect_slice(VVCPPS* pps)
 {
     const H266RawPPS* r = pps->r;
     int rx, ry, off = 0;
 
     for (int tile_y = 0; tile_y < r->num_tile_rows; tile_y++) {
         for (int tile_x = 0; tile_x < r->num_tile_columns; tile_x++) {
+            int ret;
             ctu_xy(&rx, &ry, tile_x, tile_y, pps);
-            pps_add_ctus(pps, &off, rx, ry, r->col_width_val[tile_x], r->row_height_val[tile_y]);
+            ret = pps_add_ctus(pps, &off, rx, ry, r->col_width_val[tile_x], r->row_height_val[tile_y]);
+            if (ret < 0)
+                return ret;
         }
     }
+
+    return 0;
 }
 
 static int pps_slice_map(VVCPPS *pps, const VVCSPS *sps)
 {
+    int ret;
+
     pps->ctb_addr_in_slice = av_calloc(pps->ctb_count, sizeof(*pps->ctb_addr_in_slice));
     if (!pps->ctb_addr_in_slice)
         return AVERROR(ENOMEM);
@@ -540,7 +633,9 @@ static int pps_slice_map(VVCPPS *pps, const VVCSPS *sps)
     if (pps->r->pps_rect_slice_flag)
         return pps_rect_slice(pps, sps);
 
-    pps_no_rect_slice(pps);
+    ret = pps_no_rect_slice(pps);
+    if (ret < 0)
+        return ret;
 
     return 0;
 }
@@ -647,7 +742,7 @@ static int decode_pps(VVCParamSets *ps, const H266RawPPS *rpps)
     return ret;
 }
 
-static int decode_ps(VVCParamSets *ps, const CodedBitstreamH266Context *h266, void *log_ctx, int is_clvss)
+static int decode_ps(VVCParamSets *ps, AVCodecContext *c, const CodedBitstreamH266Context *h266, int is_clvss)
 {
     const H266RawPictureHeader *ph = h266->ph;
     const H266RawPPS *rpps;
@@ -665,13 +760,13 @@ static int decode_ps(VVCParamSets *ps, const CodedBitstreamH266Context *h266, vo
     if (!rsps)
         return AVERROR_INVALIDDATA;
 
-    ret = decode_sps(ps, rsps, log_ctx, is_clvss);
+    ret = decode_sps(ps, c, rsps, is_clvss);
     if (ret < 0)
         return ret;
 
     if (rsps->sps_log2_ctu_size_minus5 > 2) {
         // CTU > 128 are reserved in vvc spec v3
-        av_log(log_ctx, AV_LOG_ERROR, "CTU size > 128. \n");
+        av_log(c, AV_LOG_ERROR, "CTU size > 128. \n");
         return AVERROR_PATCHWELCOME;
     }
 
@@ -754,7 +849,7 @@ static int lmcs_derive_lut(VVCLMCS *lmcs, const H266RawAPS *rlmcs, const H266Raw
     uint16_t input_pivot[LMCS_MAX_BIN_SIZE];
     uint16_t scale_coeff[LMCS_MAX_BIN_SIZE];
     uint16_t inv_scale_coeff[LMCS_MAX_BIN_SIZE];
-    int i, delta_crs;
+    int i, delta_crs, sum_cw = 0;
     if (bit_depth > LMCS_MAX_BIT_DEPTH)
         return AVERROR_PATCHWELCOME;
 
@@ -765,8 +860,12 @@ static int lmcs_derive_lut(VVCLMCS *lmcs, const H266RawAPS *rlmcs, const H266Raw
     lmcs->max_bin_idx = LMCS_MAX_BIN_SIZE - 1 - rlmcs->lmcs_delta_max_bin_idx;
 
     memset(cw, 0, sizeof(cw));
-    for (int i = lmcs->min_bin_idx; i <= lmcs->max_bin_idx; i++)
+    for (int i = lmcs->min_bin_idx; i <= lmcs->max_bin_idx; i++) {
         cw[i] = org_cw + (1 - 2 * rlmcs->lmcs_delta_sign_cw_flag[i]) * rlmcs->lmcs_delta_abs_cw[i];
+        sum_cw += cw[i];
+    }
+    if (sum_cw > (1 << bit_depth) - 1)
+        return AVERROR_INVALIDDATA;
 
     delta_crs = (1 - 2 * rlmcs->lmcs_delta_sign_crs_flag) * rlmcs->lmcs_delta_abs_crs;
 
@@ -774,19 +873,26 @@ static int lmcs_derive_lut(VVCLMCS *lmcs, const H266RawAPS *rlmcs, const H266Raw
     for (i = 0; i < LMCS_MAX_BIN_SIZE; i++) {
         input_pivot[i]        = i * org_cw;
         lmcs->pivot[i + 1] = lmcs->pivot[i] + cw[i];
+        if (i >= lmcs->min_bin_idx && i <= lmcs->max_bin_idx &&
+            lmcs->pivot[i] % (1 << (bit_depth - 5)) != 0 &&
+            lmcs->pivot[i] >> (bit_depth - 5) == lmcs->pivot[i + 1] >> (bit_depth - 5))
+            return AVERROR_INVALIDDATA;
         scale_coeff[i]        = (cw[i] * (1 << 11) +  off) >> shift;
         if (cw[i] == 0) {
             inv_scale_coeff[i] = 0;
             lmcs->chroma_scale_coeff[i] = (1 << 11);
         } else {
+            const int cw_plus_d = cw[i] + delta_crs;
+            if (cw_plus_d < (org_cw >> 3) || cw_plus_d > ((org_cw << 3) - 1))
+                return AVERROR_INVALIDDATA;
             inv_scale_coeff[i] = org_cw * (1 << 11) / cw[i];
-            lmcs->chroma_scale_coeff[i] = org_cw * (1 << 11) / (cw[i] + delta_crs);
+            lmcs->chroma_scale_coeff[i] = org_cw * (1 << 11) / cw_plus_d;
         }
     }
 
     //derive lmcs_fwd_lut
     for (uint16_t sample = 0; sample < max; sample++) {
-        const int idx_y = sample / org_cw;
+        const int idx_y = sample >> shift;
         const uint16_t fwd_sample = lmcs_derive_lut_sample(sample, lmcs->pivot,
             input_pivot, scale_coeff, idx_y, max);
         if (bit_depth > 8)
@@ -802,6 +908,7 @@ static int lmcs_derive_lut(VVCLMCS *lmcs, const H266RawAPS *rlmcs, const H266Raw
         uint16_t inv_sample;
         while (i <= lmcs->max_bin_idx && sample >= lmcs->pivot[i + 1])
             i++;
+        i = FFMIN(i, LMCS_MAX_BIN_SIZE - 1);
 
         inv_sample = lmcs_derive_lut_sample(sample, input_pivot, lmcs->pivot,
             inv_scale_coeff, i, max);
@@ -960,7 +1067,7 @@ int ff_vvc_decode_frame_ps(VVCFrameParamSets *fps, struct VVCContext *s)
     decode_recovery_flag(s);
     is_clvss = IS_CLVSS(s);
 
-    ret = decode_ps(ps, h266, s->avctx, is_clvss);
+    ret = decode_ps(ps, s->avctx, h266, is_clvss);
     if (ret < 0)
         return ret;
 
@@ -1232,7 +1339,7 @@ static int sh_alf_aps(const VVCSH *sh, const VVCFrameParamSets *fps)
     return 0;
 }
 
-static void sh_slice_address(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
+static int sh_slice_address(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps)
 {
     const int slice_address     = sh->r->sh_slice_address;
 
@@ -1256,6 +1363,11 @@ static void sh_slice_address(VVCSH *sh, const H266RawSPS *sps, const VVCPPS *pps
             sh->num_ctus_in_curr_slice += pps->r->row_height_val[tile_y] * pps->r->col_width_val[tile_x];
         }
     }
+
+    if (!sh->num_ctus_in_curr_slice)
+        return  AVERROR_INVALIDDATA;
+
+    return 0;
 }
 
 static void sh_qp_y(VVCSH *sh, const H266RawPPS *pps, const H266RawPictureHeader *ph)
@@ -1352,7 +1464,9 @@ static int sh_derive(VVCSH *sh, const VVCFrameParamSets *fps)
     const H266RawPictureHeader *ph  = fps->ph.r;
     int ret;
 
-    sh_slice_address(sh, sps, fps->pps);
+    ret = sh_slice_address(sh, sps, fps->pps);
+    if (ret < 0)
+        return ret;
     ret = sh_alf_aps(sh, fps);
     if (ret < 0)
         return ret;

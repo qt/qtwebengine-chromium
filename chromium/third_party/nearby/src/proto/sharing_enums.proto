@@ -538,6 +538,8 @@ enum DeviceType {
   TABLET = 2;
   LAPTOP = 3;
   CAR = 4;
+  FOLDABLE = 5;
+  XR = 6;
 }
 
 // TODO(fdi): may eventually include windows, iOS, etc.
@@ -708,6 +710,7 @@ enum AdvertisingMode {
   BACKGROUND_ADVERTISING_MODE = 2;
   MIDGROUND_ADVERTISING_MODE = 3;
   FOREGROUND_ADVERTISING_MODE = 4;
+  SUSPENDED_ADVERTISING_MODE = 5;
 }
 
 // The Nearby Sharing discovery mode.
@@ -717,6 +720,7 @@ enum DiscoveryMode {
   BACKGROUND_DISCOVERY_MODE = 2;
   MIDGROUND_DISCOVERY_MODE = 3;
   FOREGROUND_DISCOVERY_MODE = 4;
+  SUSPENDED_DISCOVERY_MODE = 5;
 }
 
 // The class name of chimera activity.
@@ -836,6 +840,7 @@ enum AttachmentSourceType {
   ATTACHMENT_SOURCE_SELECT_FILES_BUTTON = 3;
   ATTACHMENT_SOURCE_PASTE = 4;
   ATTACHMENT_SOURCE_SELECT_FOLDERS_BUTTON = 5;
+  ATTACHMENT_SOURCE_SHARE_ACTIVATION = 6;
 }
 
 // The action to interact with preferences.

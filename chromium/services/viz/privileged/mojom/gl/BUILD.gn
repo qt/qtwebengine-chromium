@@ -10,19 +10,18 @@ mojom("gl") {
   sources = [
     "context_lost_reason.mojom",
     "gpu_host.mojom",
+    "gpu_logging.mojom",
     "gpu_service.mojom",
   ]
 
   parser_deps = [ "//components/viz/common:buildflags" ]
-
-  deps = [ "//gpu/ipc/common:gmb_interface" ]
 
   public_deps = [
     "//gpu/ipc/common:interfaces",
     "//gpu/ipc/common:surface_handle",
     "//media/mojo/mojom",
     "//services/webnn/public/mojom",
-    "//third_party/blink/public/mojom/tokens:tokens",
+    "//third_party/blink/public/mojom/tokens",
     "//ui/gfx/geometry/mojom",
     "//ui/gfx/mojom",
     "//ui/gl/mojom",
@@ -45,7 +44,7 @@ mojom("gl") {
     enabled_features += [ "use_clang_profiling_inside_sandbox" ]
   }
 
-  if (is_chromeos && (use_vaapi || use_v4l2_codec)) {
+  if (is_chromeos && use_linux_video_acceleration) {
     enabled_features += [ "enable_arc_media" ]
   }
 
@@ -60,17 +59,6 @@ mojom("gl") {
       traits_headers =
           [ "//services/viz/privileged/cpp/context_lost_reason_traits.h" ]
       traits_public_deps = [ "//gpu/command_buffer/common" ]
-    },
-    {
-      types = [
-        {
-          mojom = "viz.mojom.OverlayStrategy"
-          cpp = "::viz::OverlayStrategy"
-        },
-      ]
-      traits_headers =
-          [ "//services/viz/privileged/cpp/overlay_strategy_mojom_traits.h" ]
-      traits_public_deps = [ "//components/viz/common" ]
     },
   ]
 }

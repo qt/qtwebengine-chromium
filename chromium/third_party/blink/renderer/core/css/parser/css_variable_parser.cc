@@ -111,9 +111,23 @@ static bool ConsumeVariableReference(CSSParserTokenStream& stream,
                                      const CSSParserContext& context) {
   CSSParserTokenStream::BlockGuard guard(stream);
   stream.ConsumeWhitespace();
-  if (stream.Peek().GetType() != kIdentToken ||
-      !CSSVariableParser::IsValidVariableName(
-          stream.ConsumeIncludingWhitespace())) {
+  if (stream.Peek().GetType() == kIdentToken) {
+    if (!CSSVariableParser::IsValidVariableName(
+            stream.ConsumeIncludingWhitespace())) {
+      return false;
+    }
+  } else if (stream.Peek().GetType() == kFunctionToken &&
+             RuntimeEnabledFeatures::CSSIdentFunctionEnabled()) {
+    if (!css_parsing_utils::ConsumeIdentFunction(stream, context)) {
+      // It's a bit wasteful to create a CSSCustomIdentValue just to discard it,
+      // but with the new "argument grammar" parsing approach described in
+      // Issue 11500 we will eventually end up accepting any
+      // <declaration-value>, so it should not be for long.
+      //
+      // https://github.com/w3c/csswg-drafts/issues/11500
+      return false;
+    }
+  } else {
     return false;
   }
   if (stream.AtEnd()) {
@@ -522,7 +536,7 @@ static bool ConsumeUnparsedValue(CSSParserTokenStream& stream,
             error = true;
           }
           if (!error) {
-            context.Count(WebDXFeature::kDRAFT_CssIf);
+            context.Count(WebDXFeature::kIf);
           }
           has_references = true;
           continue;
@@ -696,23 +710,59 @@ StringView CSSVariableParser::StripTrailingWhitespaceAndComments(
   }
 
   wtf_size_t string_len = 0;
-  bool in_comment = false;
+  enum {
+    kDefault,
+    kInSingleQuote,
+    kInDoubleQuote,
+    kInComment
+  } state = kDefault;
   for (wtf_size_t i = 0; i < text.length(); ++i) {
-    if (in_comment) {
+    if (state == kInComment) {
       // See if we can end this comment.
       if (text[i] == '*' && i + 1 < text.length() && text[i + 1] == '/') {
         ++i;
-        in_comment = false;
+        state = kDefault;
       }
-    } else {
-      // See if we must start a comment.
-      if (text[i] == '/' && i + 1 < text.length() && text[i + 1] == '*') {
-        ++i;
-        in_comment = true;
-      } else if (!IsHTMLSpace(text[i])) {
-        // A non-space outside a comment, so the string
-        // must go at least to here.
+      continue;
+    }
+    if (state == kDefault && IsHTMLSpace(text[i])) {
+      continue;
+    }
+    if (text[i] == '\\' && i + 1 < text.length()) {
+      // Ignore the next character for purposes of changing states.
+      ++i;
+      if (state == kDefault) {
         string_len = i + 1;
+      }
+      continue;
+    }
+
+    // See if we must start a comment.
+    if (state == kDefault && text[i] == '/' && i + 1 < text.length() &&
+        text[i + 1] == '*') {
+      ++i;
+      state = kInComment;
+      continue;
+    }
+
+    // A non-space outside a comment, so the string
+    // must go at least to here.
+    string_len = i + 1;
+
+    // See if we are entering or leaving quotes.
+    if (state == kDefault) {
+      if (text[i] == '\'') {
+        state = kInSingleQuote;
+      } else if (text[i] == '"') {
+        state = kInDoubleQuote;
+      }
+    } else if (state == kInSingleQuote) {
+      if (text[i] == '\'') {
+        state = kDefault;
+      }
+    } else if (state == kInDoubleQuote) {
+      if (text[i] == '"') {
+        state = kDefault;
       }
     }
   }

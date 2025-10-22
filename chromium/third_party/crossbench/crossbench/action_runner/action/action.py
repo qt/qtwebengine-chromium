@@ -8,7 +8,7 @@ import abc
 import datetime as dt
 import functools
 import json
-from typing import TYPE_CHECKING, Any, Dict, Self, Type, TypeVar
+from typing import TYPE_CHECKING, Any, Self, Type, TypeVar
 
 from typing_extensions import override
 
@@ -18,6 +18,8 @@ from crossbench.config import ConfigObject, ConfigParser, UnusedPropertiesMode
 from crossbench.parse import DurationParser, NumberParser, ObjectParser
 
 if TYPE_CHECKING:
+  import urllib.parse as urlparse
+
   from crossbench.action_runner.base import ActionRunner
   from crossbench.runner.run import Run
   from crossbench.types import JsonDict
@@ -37,7 +39,7 @@ class ActionTypeConfigParser(ConfigParser):
         type=ObjectParser.non_empty_str,
         required=True)
 
-  def new_instance_from_kwargs(self, kwargs: Dict[str, Any]) -> ActionType:
+  def new_instance_from_kwargs(self, kwargs: dict[str, Any]) -> ActionType:
     return ActionType(kwargs["action"])  # type: ignore
 
 
@@ -46,7 +48,7 @@ _ACTION_TYPE_CONFIG_PARSER = ActionTypeConfigParser()
 ACTION_TIMEOUT = dt.timedelta(seconds=20)
 
 # Lazily initialized Action class lookup.
-ACTIONS: Dict[ActionType, Type[Action]] = {}
+ACTIONS: dict[ActionType, Type[Action]] = {}
 
 # TODO: remove once pytype is fixed/replaced since it gets confused with Self
 # annotations on classmethods with decorators.
@@ -62,7 +64,13 @@ class Action(ConfigObject, metaclass=abc.ABCMeta):
 
   @classmethod
   @override
-  def parse_dict(cls, config: Dict[str, Any], **kwargs) -> Self:
+  def parse_any_url(cls, url: urlparse.ParseResult, **kwargs) -> Action:
+    cls.expect_no_extra_kwargs(kwargs)
+    return ACTIONS[ActionType.GET].parse_any_url(url)
+
+  @classmethod
+  @override
+  def parse_dict(cls, config: dict[str, Any], **kwargs) -> Self:
     action_type: ActionType = _ACTION_TYPE_CONFIG_PARSER.parse(config)
     action_cls: Type[Self] = ACTIONS[action_type]  # type: ignore
     # Drop _ACTION_TYPE_CONFIG_PARSER arguments/aliases and avoid warnings
@@ -101,7 +109,7 @@ class Action(ConfigObject, metaclass=abc.ABCMeta):
 
   @property
   def duration(self) -> dt.timedelta:
-    return dt.timedelta(milliseconds=10)
+    return dt.timedelta()
 
   @property
   def timeout(self) -> dt.timedelta:

@@ -1,10 +1,13 @@
 // Copyright (c) 2020 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+/* eslint-disable rulesdir/no-lit-render-outside-of-view */
 
 import * as Platform from '../../../core/platform/platform.js';
+import * as UI from '../../legacy/legacy.js';
 import * as Lit from '../../lit/lit.js';
 import * as VisualLogging from '../../visual_logging/visual_logging.js';
+import * as Buttons from '../buttons/buttons.js';
 import * as CodeHighlighter from '../code_highlighter/code_highlighter.js';
 import * as ComponentHelpers from '../helpers/helpers.js';
 import * as RenderCoordinator from '../render_coordinator/render_coordinator.js';
@@ -129,6 +132,10 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
   }
 
   attributeChangedCallback(name: 'nowrap'|'toplevelbordercolor', oldValue: string|null, newValue: string|null): void {
+    if (oldValue === newValue) {
+      return;
+    }
+
     switch (name) {
       case 'nowrap': {
         this.#setNodeKeyNoWrapCSSVariable(newValue);
@@ -520,9 +527,18 @@ export class TreeOutline<TreeNodeDataType> extends HTMLElement {
     await RenderCoordinator.write('TreeOutline render', () => {
       // Disabled until https://crbug.com/1079231 is fixed.
       // clang-format off
+      // Unfortunately the TreeOutline web component adds the
+      // tree element into its own shadow DOM, so these don't
+      // inherit the surrounding (common) styles. But we need
+      // the common button styles at least (e.g. to fix the
+      // cause of http://crbug.com/435601104). Long-term the
+      // tree elements shouldn't be inside the TreeOutline's
+      // shadow DOM.
       Lit.render(html`
-      <style>${treeOutlineStyles.cssText}</style>
-      <style>${CodeHighlighter.codeHighlighterStyles.cssText}</style>
+      <style>${Buttons.textButtonStyles}</style>
+      <style>${UI.inspectorCommonStyles}</style>
+      <style>${treeOutlineStyles}</style>
+      <style>${CodeHighlighter.codeHighlighterStyles}</style>
       <div class="wrapping-container">
         <ul role="tree" @keydown=${this.#onTreeKeyDown}>
           ${this.#treeData.map((topLevelNode, index) => {

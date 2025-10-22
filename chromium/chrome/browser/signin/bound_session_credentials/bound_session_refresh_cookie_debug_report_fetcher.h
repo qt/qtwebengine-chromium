@@ -11,7 +11,7 @@
 #include "base/containers/flat_set.h"
 #include "base/functional/callback.h"
 #include "base/memory/raw_ref.h"
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_refptr.h"
 #include "chrome/browser/signin/bound_session_credentials/bound_session_refresh_cookie_fetcher.h"
 #include "chrome/browser/signin/bound_session_credentials/rotation_debug_info.pb.h"
 #include "url/gurl.h"
@@ -45,6 +45,7 @@ class BoundSessionRefreshCookieDebugReportFetcher
   bool IsChallengeReceived() const override;
   std::optional<std::string> TakeSecSessionChallengeResponseIfAny() override;
   base::flat_set<std::string> GetNonRefreshedCookieNames() override;
+  Trigger GetTrigger() const override;
 
  private:
   void OnURLLoaderComplete(scoped_refptr<net::HttpResponseHeaders> headers);

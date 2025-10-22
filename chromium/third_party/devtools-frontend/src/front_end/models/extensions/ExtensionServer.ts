@@ -30,6 +30,7 @@
 
 // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
 /* eslint-disable @typescript-eslint/naming-convention */
+/* eslint-disable rulesdir/no-imperative-dom-api */
 
 import type {Chrome} from '../../../extension-api/ExtensionAPI.js';
 import * as Common from '../../core/common/common.js';
@@ -105,6 +106,7 @@ export class HostsPolicy {
 }
 
 class RegisteredExtension {
+  openResourceScheme: null|string = null;
   constructor(readonly name: string, readonly hostsPolicy: HostsPolicy, readonly allowFileAccess: boolean) {
   }
 
@@ -115,6 +117,10 @@ class RegisteredExtension {
 
     if (!inspectedURL) {
       return false;
+    }
+
+    if (this.openResourceScheme && inspectedURL.startsWith(this.openResourceScheme)) {
+      return true;
     }
 
     if (!ExtensionServer.canInspectURL(inspectedURL)) {
@@ -375,7 +381,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
         case 'f64':
           return {type, value: Number(value)};
         case 'i64':
-          return {type, value: BigInt(value)};
+          return {type, value: BigInt(value.replace(/n$/, ''))};
         case 'v128':
           return {type, value};
         default:
@@ -816,11 +822,23 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     if (!extension) {
       throw new Error('Received a message from an unregistered extension');
     }
+    if (message.urlScheme) {
+      extension.openResourceScheme = message.urlScheme;
+    }
+    const extensionOrigin = this.getExtensionOrigin(port);
     const {name} = extension;
+    const registration = {
+      title: name,
+      origin: extensionOrigin,
+      scheme: message.urlScheme,
+      handler: this.handleOpenURL.bind(this, port),
+      shouldHandleOpenResource: (url: Platform.DevToolsPath.UrlString, schemes: Set<string>) =>
+          Components.Linkifier.Linkifier.shouldHandleOpenResource(extension.openResourceScheme, url, schemes),
+    };
     if (message.handlerPresent) {
-      Components.Linkifier.Linkifier.registerLinkHandler(name, this.handleOpenURL.bind(this, port));
+      Components.Linkifier.Linkifier.registerLinkHandler(registration);
     } else {
-      Components.Linkifier.Linkifier.unregisterLinkHandler(name);
+      Components.Linkifier.Linkifier.unregisterLinkHandler(registration);
     }
     return undefined;
   }
@@ -845,10 +863,25 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   private handleOpenURL(
-      port: MessagePort, contentProvider: TextUtils.ContentProvider.ContentProvider, lineNumber: number): void {
-    if (this.extensionAllowedOnURL(contentProvider.contentURL(), port)) {
-      port.postMessage(
-          {command: 'open-resource', resource: this.makeResource(contentProvider), lineNumber: lineNumber + 1});
+      port: MessagePort, contentProviderOrUrl: TextUtils.ContentProvider.ContentProvider|string, lineNumber?: number,
+      columnNumber?: number): void {
+    let url: Platform.DevToolsPath.UrlString;
+    let resource: {url: string, type: string};
+    if (typeof contentProviderOrUrl !== 'string') {
+      url = contentProviderOrUrl.contentURL();
+      resource = this.makeResource(contentProviderOrUrl);
+    } else {
+      url = contentProviderOrUrl as Platform.DevToolsPath.UrlString;
+      resource = {url, type: Common.ResourceType.resourceTypes.Other.name()};
+    }
+
+    if (this.extensionAllowedOnURL(url, port)) {
+      port.postMessage({
+        command: 'open-resource',
+        resource,
+        lineNumber: lineNumber ? lineNumber + 1 : undefined,
+        columnNumber: columnNumber ? columnNumber + 1 : undefined,
+      });
     }
   }
 
@@ -925,8 +958,18 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
     return harLog;
   }
 
-  private makeResource(contentProvider: TextUtils.ContentProvider.ContentProvider): {url: string, type: string} {
-    return {url: contentProvider.contentURL(), type: contentProvider.contentType().name()};
+  private makeResource(contentProvider: TextUtils.ContentProvider.ContentProvider):
+      {url: string, type: string, buildId?: string} {
+    let buildId: string|undefined = undefined;
+    if (contentProvider instanceof Workspace.UISourceCode.UISourceCode) {
+      // We use the first buildId we find searching in all Script objects that correspond to this UISourceCode.
+      buildId = Bindings.DebuggerWorkspaceBinding.DebuggerWorkspaceBinding.instance()
+                    .scriptsForUISourceCode(contentProvider)
+                    .find(script => Boolean(script.buildId))
+                    ?.buildId ??
+          undefined;
+    }
+    return {url: contentProvider.contentURL(), type: contentProvider.contentType().name(), buildId};
   }
 
   private onGetPageResources(_message: unknown, port: MessagePort): Array<{url: string, type: string}> {
@@ -1156,7 +1199,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   private notifyUISourceCodeContentCommitted(
-      event: Common.EventTarget.EventTargetEvent<Workspace.Workspace.WorkingCopyCommitedEvent>): void {
+      event: Common.EventTarget.EventTargetEvent<Workspace.Workspace.WorkingCopyCommittedEvent>): void {
     const {uiSourceCode, content} = event.data;
     this.postNotification(
         PrivateAPI.Events.ResourceContentCommitted, [this.makeResource(uiSourceCode), content],
@@ -1336,7 +1379,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
   }
 
   private registerResourceContentCommittedHandler(
-      handler: (arg0: Common.EventTarget.EventTargetEvent<Workspace.Workspace.WorkingCopyCommitedEvent>) => unknown):
+      handler: (arg0: Common.EventTarget.EventTargetEvent<Workspace.Workspace.WorkingCopyCommittedEvent>) => unknown):
       void {
     function addFirstEventListener(this: ExtensionServer): void {
       Workspace.Workspace.WorkspaceImpl.instance().addEventListener(
@@ -1497,7 +1540,7 @@ export class ExtensionServer extends Common.ObjectWrapper.ObjectWrapper<EventTyp
    * DevTools might not be being run from a native origin and we still want to lock down this specific
    * origin from DevTools extensions.
    *
-   * @param parsedURL The URL to check
+   * @param parsedURL - The URL to check
    * @returns `true` if the URL corresponds to the Chrome web store; otherwise `false`
    */
   static #isUrlFromChromeWebStore(parsedURL: URL): boolean {

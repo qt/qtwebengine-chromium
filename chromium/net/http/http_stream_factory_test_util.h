@@ -90,15 +90,6 @@ class MockHttpStreamRequestDelegate : public HttpStreamRequest::Delegate {
   MOCK_METHOD1(OnNeedsClientAuth, void(SSLCertRequestInfo* cert_info));
 
   MOCK_METHOD0(OnQuicBroken, void());
-
-  // `switching_info` is not copyable and therefore cannot be mocked.
-  MOCK_METHOD1(OnSwitchesToHttpStreamPoolImpl,
-               void(HttpStreamPoolRequestInfo& request_info));
-
-  void OnSwitchesToHttpStreamPool(
-      HttpStreamPoolRequestInfo request_info) override {
-    OnSwitchesToHttpStreamPoolImpl(request_info);
-  }
 };
 
 class MockHttpStreamFactoryJob : public HttpStreamFactory::Job {
@@ -116,7 +107,8 @@ class MockHttpStreamFactoryJob : public HttpStreamFactory::Job {
       NextProto alternative_protocol,
       quic::ParsedQuicVersion quic_version,
       bool is_websocket,
-      bool enable_ip_based_pooling,
+      bool enable_ip_based_pooling_for_h2,
+      std::optional<ConnectionManagementConfig> management_config,
       NetLog* net_log);
 
   ~MockHttpStreamFactoryJob() override;
@@ -145,10 +137,11 @@ class TestJobFactory : public HttpStreamFactory::JobFactory {
       url::SchemeHostPort destination,
       GURL origin_url,
       bool is_websocket,
-      bool enable_ip_based_pooling,
+      bool enable_ip_based_pooling_for_h2,
       NetLog* net_log,
       NextProto alternative_protocol,
-      quic::ParsedQuicVersion quic_version) override;
+      quic::ParsedQuicVersion quic_version,
+      std::optional<ConnectionManagementConfig> management_config) override;
 
   MockHttpStreamFactoryJob* main_job() const { return main_job_; }
   MockHttpStreamFactoryJob* alternative_job() const { return alternative_job_; }

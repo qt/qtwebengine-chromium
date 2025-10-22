@@ -6,14 +6,15 @@
 #define CHROME_BROWSER_EXTENSIONS_API_EXTENSION_ACTION_EXTENSION_ACTION_API_H_
 
 #include "base/memory/raw_ptr.h"
-#include "base/observer_list.h"
 #include "base/scoped_observation.h"
 #include "base/values.h"
-#include "extensions/browser/browser_context_keyed_api_factory.h"
 #include "extensions/browser/extension_event_histogram_value.h"
 #include "extensions/browser/extension_function.h"
 #include "extensions/browser/extension_host_registry.h"
+#include "extensions/buildflags/buildflags.h"
 #include "extensions/common/extension_id.h"
+
+static_assert(BUILDFLAG(ENABLE_EXTENSIONS_CORE));
 
 namespace content {
 class BrowserContext;
@@ -25,12 +26,16 @@ namespace extensions {
 class ExtensionAction;
 class ExtensionHost;
 
-// Implementation of the browserAction and pageAction APIs.
+// Implementation of the action, browserAction and pageAction APIs.
 //
-// Divergent behaviour between the two is minimal (pageAction has required
+// Divergent behaviour between the three is minimal (pageAction has required
 // tabIds while browserAction's are optional, they have different internal
 // browser notification requirements, and not all functions are defined for all
 // APIs).
+//
+// Separate implementations of some functions are provided for Android vs.
+// non-Android platforms. See extension_action_api_android.cc and
+// extension_action_api_non_android.cc.
 class ExtensionActionFunction : public ExtensionFunction {
  protected:
   ExtensionActionFunction();
@@ -45,13 +50,13 @@ class ExtensionActionFunction : public ExtensionFunction {
 
   // All the extension action APIs take a single argument called details that
   // is a dictionary.
-  raw_ptr<base::Value::Dict> details_;
+  raw_ptr<const base::Value::Dict> details_;
 
   // The tab id the extension action function should apply to, if any, or
   // kDefaultTabId if none was specified.
   int tab_id_;
 
-  // WebContents for |tab_id_| if one exists.
+  // WebContents for `tab_id_` if one exists.
   raw_ptr<content::WebContents> contents_;
 
   // The extension action for the current extension.

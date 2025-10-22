@@ -226,56 +226,56 @@ export class IconDropdown extends LitElement {
    * to.
    * @export
    */
-  anchorCorner: Corner;
+  declare anchorCorner: Corner;
 
   /**
    * The value of the first checked option in the dropdown or an empty string
    * if no options are checked.
    * @export
    */
-  value: string;
+  declare value: string;
 
   /**
    * The shape of the dropdown icon button. Used to apply CSS.
    * @export
    */
-  shape: 'circle'|'square';
+  declare shape: 'circle'|'square';
 
   /**
    * The size of the dropdown icon button. Used to apply CSS.
    * @export
    */
-  size: 'default'|'large';
+  declare size: 'default'|'large';
 
   /**
    * Whether the dropdown icon button style is filled or floating button.
    * @export
    */
-  buttonStyle: 'filled'|'floating';
+  declare buttonStyle: 'filled'|'floating';
 
   /**
    * @export
    * The background the icon button sits on. Used to apply CSS.
    */
-  surface: 'base'|'prominent'|'subtle';
+  declare surface: 'base'|'prominent'|'subtle';
 
   /**
    * Whether the dropdown icon button is disabled.
    * @export
    */
-  disabled: boolean;
+  declare disabled: boolean;
 
   /**
    * The corner of the menu that will be anchored to the anchor element.
    * @export
    */
-  menuCorner: Corner;
+  declare menuCorner: Corner;
 
   /**
    * The type of menu to use. Used to ensure correct aria-role is set.
    * @export
    */
-  menuType: MenuType;
+  declare menuType: MenuType;
 
   /**
    * Whether the dropdown menu is open. Used to determine which arrow icon to
@@ -283,7 +283,7 @@ export class IconDropdown extends LitElement {
    * internal event.
    * @export
    */
-  private menuOpen: boolean;
+  private declare menuOpen: boolean;
 
   protected menuRef = createRef<Menu>();
 

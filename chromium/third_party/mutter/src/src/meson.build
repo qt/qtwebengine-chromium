@@ -1129,7 +1129,7 @@ if have_wayland
     ['xdg-shell', 'stable', ],
     ['xdg-toplevel-drag', 'staging', 'v1'],
     ['xwayland-keyboard-grab', 'unstable', 'v1', ],
-    ['ui-controls-unstable-v1', 'private', ],
+    ['ui-controls-unstable-v2', 'private', ],
     ['linux-drm-syncobj-v1', 'private', ],
     ['color-management-v1', 'private', ],
     ['session-management-v1', 'private', ],

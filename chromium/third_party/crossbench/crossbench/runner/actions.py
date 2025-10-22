@@ -4,12 +4,15 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import logging
 import sys
+import time as py_time
 from typing import TYPE_CHECKING, Any, Callable, Optional, Sequence, Type
 
 from crossbench.action_runner.action.enums import ReadyState
+from crossbench.cli import ui
 from crossbench.helper.durations import TimeScope
 from crossbench.parse import ObjectParser
 
@@ -19,6 +22,7 @@ if TYPE_CHECKING:
   from crossbench import plt
   from crossbench.browsers.browser import Browser
   from crossbench.exception import ExceptionAnnotationScope
+  from crossbench.helper.wait import WaitRange
   from crossbench.runner.run import Run
   from crossbench.runner.runner import Runner
   from crossbench.runner.timing import AnyTimeUnit, Timing
@@ -114,14 +118,24 @@ class Actions(TimeScope):
   def wait_js_condition(
       self,
       js_code: str,
-      min_wait: AnyTimeUnit,
+      min_interval: AnyTimeUnit,
       timeout: AnyTimeUnit,
       delay: AnyTimeUnit = 0,
       absolute_time: bool = False,
       arguments: Sequence[object] = (),
       success_condition: Callable[[Any], bool] = _default_success_condition
   ) -> None:
-    wait_range = self._run.wait_range(min_wait, timeout, delay)
+    """
+    Runs the `js_code` at a regular interval until either the `timeout` is
+    reached or the return value is true. The poll interval is exponentially
+    increasing with the WaitRange's default factor:
+    1. sleep for `delay`,                    check `js_code`
+    2. sleep for `min_interval`,             check `js_code`
+    2. sleep for `min_interval * 1.01 ** 1`, check `js_code`
+    ...
+    N. sleep for `min_interval * 1.01 ** N`, check `js_code`
+    """
+    wait_range : WaitRange = self._run.wait_range(min_interval, timeout, delay)
     assert "return" in js_code, (
         f"Missing return statement in js-wait code: {js_code}")
     for _, _, time_left in wait_range.wait_with_backoff():
@@ -142,7 +156,7 @@ class Actions(TimeScope):
         f"""
           let state = document.readyState;
           return state === '{ready_state}' || state === "complete";
-        """, 0.2, timeout.total_seconds())
+        """, 0.2, timeout)
 
   def show_url(
       self,
@@ -163,8 +177,49 @@ class Actions(TimeScope):
     if ready_state != ReadyState.ANY:
       self.wait_for_ready_state(ready_state, timeout)
 
+  def current_url(self) -> str:
+    return self.js("return document.URL;")
+
   def wait(self,
            time: AnyTimeUnit = dt.timedelta(seconds=1),
            absolute_time: bool = False) -> None:
+    """"Wait for a fixed timeout. If you need to wait until a certain
+    timeout passed independent of a previous action, use wait_until(...).
+
+    | action 2s | wait 2s | => total time is 4s
+    | action 4s | wait 2s | => total time is 6s
+    """
+    delta: dt.timedelta = self.timing.timeout_timedelta(time, absolute_time)
+    with ui.countdown(delta):
+      self._assert_is_active()
+      self._runner.wait(time, absolute_time=absolute_time)
+
+  @contextlib.contextmanager
+  def wait_until(self,
+                 timeout: AnyTimeUnit = dt.timedelta(seconds=1),
+                 absolute_time: bool = False):
+    """Wait until the given timeout elapsed.
+    Unlike wait(...), this takes into account the time spent in the the
+    wrapped block.
+
+    | wait_until 6s | action 2s | => total time is 6s
+    | wait_until 6s | action 4s | => total time is 6s
+    """
     self._assert_is_active()
-    self._runner.wait(time, absolute_time)
+    if not timeout:
+      # No wait necessary, don't show a warning.
+      yield
+      return
+    delta: dt.timedelta = self.timing.timeout_timedelta(timeout, absolute_time)
+    start_time: float = py_time.time()
+    end_time: float = start_time + delta.total_seconds()
+    with ui.countdown(delta):
+      yield
+      time_left = end_time - py_time.time()
+      if time_left > 0:
+        self._runner.wait(time_left, absolute_time=True)
+      else:
+        run_duration = dt.timedelta(seconds=py_time.time() - start_time)
+        logging.info(
+            "Action took longer (%s) than expected action duration (%s).",
+            run_duration, delta)

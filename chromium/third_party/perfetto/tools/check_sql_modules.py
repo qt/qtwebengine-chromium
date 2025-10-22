@@ -25,7 +25,7 @@ import re
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(os.path.join(ROOT_DIR))
 
-from python.generators.sql_processing.docs_parse import ParsedModule
+from python.generators.sql_processing.docs_parse import DocParseOptions, ParsedModule
 from python.generators.sql_processing.docs_parse import parse_file
 from python.generators.sql_processing.utils import check_banned_create_table_as
 from python.generators.sql_processing.utils import check_banned_create_view_as
@@ -67,7 +67,11 @@ def main():
       with open(path, 'r') as f:
         sql = f.read()
 
-      parsed = parse_file(rel_path, sql)
+      parsed = parse_file(
+          rel_path,
+          sql,
+          options=DocParseOptions(enforce_every_column_set_is_documented=True),
+      )
 
       # Some modules (i.e. `deprecated`) should not be checked.
       if not parsed:
@@ -78,13 +82,12 @@ def main():
       if args.verbose:
         obj_count = len(parsed.functions) + len(parsed.table_functions) + len(
             parsed.table_views) + len(parsed.macros)
-        print(
-            f"Parsing '{rel_path}' ({obj_count} objects, "
-            f"{len(parsed.errors)} errors) - "
-            f"{len(parsed.functions)} functions, "
-            f"{len(parsed.table_functions)} table functions, "
-            f"{len(parsed.table_views)} tables/views, "
-            f"{len(parsed.macros)} macros.")
+        print(f"Parsing '{rel_path}' ({obj_count} objects, "
+              f"{len(parsed.errors)} errors) - "
+              f"{len(parsed.functions)} functions, "
+              f"{len(parsed.table_functions)} table functions, "
+              f"{len(parsed.table_views)} tables/views, "
+              f"{len(parsed.macros)} macros.")
 
   all_errors = 0
   for path, sql, parsed in modules:

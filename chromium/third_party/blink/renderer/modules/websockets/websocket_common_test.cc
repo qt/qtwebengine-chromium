@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "third_party/blink/renderer/modules/websockets/websocket_common.h"
 
@@ -41,7 +37,7 @@ TEST(WebSocketCommonTest, IsValidSubprotocolString) {
   }
   for (size_t i = 0; i < 256; ++i) {
     LChar to_check = static_cast<LChar>(i);
-    if (valid_characters.find(to_check) != WTF::kNotFound) {
+    if (valid_characters.find(to_check) != kNotFound) {
       continue;
     }
     String s(base::span_from_ref(to_check));

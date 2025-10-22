@@ -99,22 +99,6 @@ BASE_FEATURE(kCoopNoopenerAllowPopups,
              "CoopNoopenerAllowPopups",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-// Introduce a new COOP value: restrict-properties. It restricts window
-// properties that can be accessed by other pages. This also grants
-// crossOriginIsolated if coupled with an appropriate COEP header.
-// This used solely for testing the process model and should not be enabled in
-// any production code. See https://crbug.com/1221127.
-BASE_FEATURE(kCoopRestrictProperties,
-             "CoopRestrictProperties",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-// Enables the origin trial for COOP: restrict-properties. We need a new feature
-// because token validation is not possible in the network process. This also
-// allows us to keep using CoopRestrictProperties to enable COOP: RP for WPTs.
-BASE_FEATURE(kCoopRestrictPropertiesOriginTrial,
-             "CoopRestrictPropertiesOriginTrial",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 // Enables or defaults splittup up server (not proxy) entries in the
 // HttpAuthCache.
 BASE_FEATURE(kSplitAuthCacheByNetworkIsolationKey,
@@ -156,13 +140,6 @@ BASE_FEATURE_PARAM(bool,
                    /*name=*/"SplitMaskedDomainList",
                    /*default_value=*/false);
 
-// When enabled, if the MaskedDomainList is used at all, it will use the
-// flatbuffer implementation (the `MaskedDomainList` class) instead of the
-// `UrlMatcherWithBypass` implementation.
-BASE_FEATURE(kMaskedDomainListFlatbufferImpl,
-             "MaskedDomainListFlatbufferImpl",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
 // If this feature is enabled, the mDNS responder service responds to queries
 // for TXT records associated with
 // "Generated-Names._mdns_name_generator._udp.local" with a list of generated
@@ -182,6 +159,30 @@ BASE_FEATURE(kOpaqueResponseBlockingErrorsForAllFetches,
 // See:
 // https://tools.ietf.org/html/draft-davidben-http-client-hint-reliability-02#section-4.3
 BASE_FEATURE(kAcceptCHFrame, "AcceptCHFrame", base::FEATURE_ENABLED_BY_DEFAULT);
+
+// Enable offloading the network layer to check enabled client hints.
+// See crbug.com/406407746 for details.
+BASE_FEATURE(kOffloadAcceptCHFrameCheck,
+             "OffloadAcceptCHFrameCheck",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// Enable offloading the network layer to check enabled client hints even when
+// cross origin redirect happens.
+// See crbug.com/406407746 for details.
+BASE_FEATURE_PARAM(bool,
+                   kAcceptCHOffloadWithRedirect,
+                   &kOffloadAcceptCHFrameCheck,
+                   "AcceptCHOffloadWithRedirect",
+                   false);
+
+// Enable offloading the network layer to check enabled client hints for
+// subframe requests.
+// See crbug.com/406407746 for details.
+BASE_FEATURE_PARAM(bool,
+                   kAcceptCHOffloadForSubframe,
+                   &kOffloadAcceptCHFrameCheck,
+                   "AcceptCHOffloadForSubframe",
+                   false);
 
 // https://fetch.spec.whatwg.org/#cors-non-wildcard-request-header-name
 BASE_FEATURE(kCorsNonWildcardRequestHeadersSupport,
@@ -216,13 +217,7 @@ BASE_FEATURE(kReduceAcceptLanguageHTTP,
 // See: https://wicg.github.io/private-network-access/#cors-preflight
 BASE_FEATURE(kPrivateNetworkAccessPreflightShortTimeout,
              "PrivateNetworkAccessPreflightShortTimeout",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
-// When kPrivateNetworkAccessPermissionPrompt is enabled, public secure websites
-// are allowed to access private insecure subresources with user's permission.
-BASE_FEATURE(kPrivateNetworkAccessPermissionPrompt,
-             "PrivateNetworkAccessPermissionPrompt",
-             base::FEATURE_ENABLED_BY_DEFAULT);
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // Enables Local Network Access checks.
 // Blocks local network requests without user permission to prevent exploitation
@@ -231,8 +226,7 @@ BASE_FEATURE(kPrivateNetworkAccessPermissionPrompt,
 // This feature is being built as a replacement for Private Network Access
 // (PNA), and if this is on PNA features may stop working.
 //
-// Public explainer:
-// https://github.com/explainers-by-googlers/local-network-access
+// Spec: https://wicg.github.io/local-network-access/
 BASE_FEATURE(kLocalNetworkAccessChecks,
              "LocalNetworkAccessChecks",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -243,6 +237,15 @@ BASE_FEATURE_PARAM(bool,
                    &kLocalNetworkAccessChecks,
                    /*name=*/"LocalNetworkAccessChecksWarn",
                    /*default_value=*/true);
+
+// Enables Local Network Access checks for WebRTC.
+// Blocks local network requests without user permission to prevent exploitation
+// of vulnerable local devices.
+//
+// Spec: https://wicg.github.io/local-network-access/
+BASE_FEATURE(kLocalNetworkAccessChecksWebRTC,
+             "LocalNetworkAccessChecksWebRTC",
+             base::FEATURE_DISABLED_BY_DEFAULT);
 
 // If enabled, then the network service will parse the Cookie-Indices header.
 // This does not currently control changing cache behavior according to the
@@ -292,17 +295,16 @@ BASE_FEATURE(kPreloadedDictionaryConditionalUse,
              "PreloadedDictionaryConditionalUse",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
-// Enables the `require-sri-for` CSP directive, which enables developers to
-// ensure all their external scripts have their integrity enforced.
-BASE_FEATURE(kCSPRequireSRIFor,
-             "CSPRequireSRIFor",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+// Enables support for the `Integrity-Policy` header with script destinations,
+// which enables developers to ensure all their external scripts have their
+// integrity enforced.
+BASE_FEATURE(kIntegrityPolicyScript,
+             "IntegrityPolicyScript",
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kVisibilityAwareResourceScheduler,
              "VisibilityAwareResourceScheduler",
              base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kSharedZstd, "SharedZstd", base::FEATURE_ENABLED_BY_DEFAULT);
 
 // This feature will reduce TransferSizeUpdated IPC from the network service.
 // When enabled, the network service will send the IPC only when DevTools is
@@ -324,6 +326,15 @@ BASE_FEATURE_PARAM(int,
                    &kRendererSideContentDecoding,
                    /*name=*/"RendererSideContentDecodingPipeSize",
                    /*default_value=*/0);
+// For testing purposes only. If set to true, the creation of the Mojo data pipe
+// for the RendererSideContentDecoding feature will be forced to fail,
+// simulating an insufficient resources error (net::ERR_INSUFFICIENT_RESOURCES).
+BASE_FEATURE_PARAM(
+    bool,
+    kRendererSideContentDecodingForceMojoFailureForTesting,
+    &kRendererSideContentDecoding,
+    /*name=*/"RendererSideContentDecodingForceMojoFailureForTesting",
+    /*default_value=*/false);
 
 // This feature allows skipping TPCD mitigation checks when the cookie access
 // is tagged as being used for advertising purposes. This means that cookies
@@ -363,10 +374,16 @@ BASE_FEATURE(kAvoidResourceRequestCopies,
              base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Enables Document-Isolation-Policy (DIP).
-// https://github.com/explainers-by-googlers/document-isolation-policy
+// https://github.com/WICG/document-isolation-policy
 BASE_FEATURE(kDocumentIsolationPolicy,
              "DocumentIsolationPolicy",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+#if BUILDFLAG(IS_MAC) || BUILDFLAG(IS_WIN) || BUILDFLAG(IS_CHROMEOS) || \
+    BUILDFLAG(IS_LINUX)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 // This feature enables the Prefetch() method on the NetworkContext, and makes
 // the PrefetchMatchingURLLoaderFactory check the match quality.
@@ -395,16 +412,8 @@ BASE_FEATURE(kCloneDevToolsConnectionOnlyIfRequested,
              "CloneDevToolsConnectionOnlyIfRequested",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
-BASE_FEATURE(kStorageAccessHeaders,
-             "StorageAccessHeaders",
-             base::FEATURE_ENABLED_BY_DEFAULT);
-
 BASE_FEATURE(kSRIMessageSignatureEnforcement,
              "SRIMessageSignatureEnforcement",
-             base::FEATURE_DISABLED_BY_DEFAULT);
-
-BASE_FEATURE(kCreateURLLoaderPipeAsync,
-             "CreateURLLoaderPipeAsync",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAdAuctionEventRegistration,
@@ -452,8 +461,14 @@ BASE_FEATURE_PARAM(std::string,
                    "");
 // When enabled, a `Sec-Fetch-Frame-Top` header will be emitted on
 // outgoing requests.
-BASE_FEATURE(kFrameAncestorHeaders,
-             "FrameAncestorHeaders",
+BASE_FEATURE(kFrameTopHeader,
+             "FrameTopHeader",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// When enabled, a `Sec-Fetch-Frame-Ancestors` header will be emitted on
+// outgoing requests.
+BASE_FEATURE(kFrameAncestorsHeader,
+             "FrameAncestorsHeader",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
 BASE_FEATURE(kUpdateRequestForCorsRedirect,
@@ -542,7 +557,7 @@ BASE_FEATURE_PARAM(bool,
 // https://wicg.github.io/shared-storage/#batch-update
 BASE_FEATURE(kSharedStorageTransactionalBatchUpdate,
              "SharedStorageTransactionalBatchUpdate",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 // Kill switch for the Interest Group API, i.e. if disabled, the
 // API exposure will be disabled regardless of the OT config.
@@ -580,6 +595,16 @@ BASE_FEATURE(kGetCookiesOnSet,
              "GetCookiesOnSet",
              base::FEATURE_DISABLED_BY_DEFAULT);
 
+BASE_FEATURE(kIncreaseCookieAccessCacheSize,
+             "IncreaseCookieAccessCacheSize",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE_PARAM(int,
+                   kCookieAccessCacheSize,
+                   &kIncreaseCookieAccessCacheSize,
+                   "cookie-access-cache-size",
+                   100);
+
 BASE_FEATURE(kPopulatePermissionsPolicyOnRequest,
              "PopulatePermissionsPolicyOnRequest",
              base::FEATURE_DISABLED_BY_DEFAULT);
@@ -587,5 +612,58 @@ BASE_FEATURE(kPopulatePermissionsPolicyOnRequest,
 BASE_FEATURE(kProtectedAudienceCorsSafelistKVv2Signals,
              "ProtectedAudienceCorsSafelistKVv2Signals",
              base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kStorageAccessHeadersRespectPermissionsPolicy,
+             "StorageAccessHeadersRespectPermissionsPolicy",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
+BASE_FEATURE(kDeviceBoundSessionAccessObserverSharedRemote,
+             "DeviceBoundSessionAccessObserverSharedRemote",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCSPScriptSrcV2, "ScriptSrcV2", base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCSPScriptSrcHashesInV1,
+             "ScriptSrcHashesV1",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+BASE_FEATURE(kCacheSharingForPervasiveScripts,
+             "CacheSharingForPervasiveScripts",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
+// This is a newline-delimited list of pervasive script URL Patterns.
+BASE_FEATURE_PARAM(std::string,
+                   kPervasiveScriptURLPatterns,
+                   &kCacheSharingForPervasiveScripts,
+                   /*name=*/"url_patterns",
+                   /*default_value=*/"");
+
+BASE_FEATURE(kSharedDictionaryCache,
+             "SharedDictionaryCache",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(size_t,
+                   kSharedDictionaryCacheSize,
+                   &kSharedDictionaryCache,
+                   /*name=*/"cache_size",
+                   1);
+BASE_FEATURE_PARAM(size_t,
+                   kSharedDictionaryCacheMaxSizeBytes,
+                   &kSharedDictionaryCache,
+                   /*name=*/"max_size",
+                   1'000'000);
+
+BASE_FEATURE(kNetworkServiceTaskScheduler,
+             "NetworkServiceTaskScheduler",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+BASE_FEATURE_PARAM(bool,
+                   kNetworkServiceTaskSchedulerResourceScheduler,
+                   &kNetworkServiceTaskScheduler,
+                   "resource_scheduler",
+                   false);
+BASE_FEATURE_PARAM(bool,
+                   kNetworkServiceTaskSchedulerURLLoader,
+                   &kNetworkServiceTaskScheduler,
+                   "url_loader",
+                   false);
 
 }  // namespace network::features

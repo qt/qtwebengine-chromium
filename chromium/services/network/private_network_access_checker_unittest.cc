@@ -6,11 +6,14 @@
 
 #include <string_view>
 
+#include "base/metrics/field_trial_params.h"
 #include "base/strings/strcat.h"
 #include "base/test/metrics/histogram_tester.h"
+#include "base/test/scoped_feature_list.h"
 #include "net/base/ip_address.h"
 #include "net/base/ip_endpoint.h"
 #include "net/base/transport_info.h"
+#include "services/network/public/cpp/features.h"
 #include "services/network/public/cpp/resource_request.h"
 #include "services/network/public/mojom/client_security_state.mojom-shared.h"
 #include "services/network/public/mojom/client_security_state.mojom.h"
@@ -36,7 +39,7 @@ constexpr char kNoAcceptChFrame[] = "";
 // For better readability than literal `nullptr`.
 constexpr mojom::ClientSecurityState* kNullClientSecurityState = nullptr;
 
-net::IPEndPoint LocalEndpoint() {
+net::IPEndPoint LoopbackEndpoint() {
   return net::IPEndPoint(net::IPAddress::IPv4Localhost(), 80);
 }
 
@@ -96,19 +99,29 @@ TEST(PrivateNetworkAccessCheckerTest, ClientSecurityStateFromFactory) {
   EXPECT_EQ(checker.ClientAddressSpace(), mojom::IPAddressSpace::kPublic);
 }
 
-TEST(PrivateNetworkAccessCheckerTest, ClientSecurityStateFromRequest) {
-  ResourceRequest request;
-  request.trusted_params.emplace();
-  request.trusted_params->client_security_state =
-      mojom::ClientSecurityState::New();
-  request.trusted_params->client_security_state->ip_address_space =
-      mojom::IPAddressSpace::kPrivate;
+// Check that the ClientSecurityState in the ResourceRequest is ignored. When
+// present, it should match the value passed to the PrivateNetworkAccessChecker,
+// anyways, but safest to make sure of that.
+TEST(PrivateNetworkAccessCheckerTest, ClientSecurityStateFromRequestIgnored) {
+  // Test a case with a TrustedParams but no ClientSecurityState, and also a
+  // case with a TrustedParams and populated ClientSecurityState.
+  for (bool populate_client_security_state : {false, true}) {
+    SCOPED_TRACE(populate_client_security_state);
 
-  PrivateNetworkAccessChecker checker(request, kNullClientSecurityState,
-                                      mojom::kURLLoadOptionNone);
+    ResourceRequest request;
+    request.trusted_params.emplace();
+    if (populate_client_security_state) {
+      request.trusted_params->client_security_state =
+          mojom::ClientSecurityState::New();
+      request.trusted_params->client_security_state->ip_address_space =
+          mojom::IPAddressSpace::kLocal;
+    }
+    PrivateNetworkAccessChecker checker(request, kNullClientSecurityState,
+                                        mojom::kURLLoadOptionNone);
 
-  EXPECT_NE(checker.client_security_state(), nullptr);
-  EXPECT_EQ(checker.ClientAddressSpace(), mojom::IPAddressSpace::kPrivate);
+    EXPECT_EQ(checker.client_security_state(), nullptr);
+    EXPECT_EQ(checker.ClientAddressSpace(), mojom::IPAddressSpace::kUnknown);
+  }
 }
 
 TEST(PrivateNetworkAccessCheckerTest, CheckLoadOptionUnknown) {
@@ -147,14 +160,14 @@ TEST(PrivateNetworkAccessCheckerTest, CheckLoadOptionPrivate) {
                                       Result::kBlockedByLoadOption, 1);
 }
 
-TEST(PrivateNetworkAccessCheckerTest, CheckLoadOptionLocal) {
+TEST(PrivateNetworkAccessCheckerTest, CheckLoadOptionLoopback) {
   base::HistogramTester histogram_tester;
 
   PrivateNetworkAccessChecker checker(ResourceRequest(),
                                       kNullClientSecurityState,
                                       mojom::kURLLoadOptionBlockLocalRequest);
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kBlockedByLoadOption);
 
   histogram_tester.ExpectUniqueSample(kCheckResultHistogramName,
@@ -177,7 +190,7 @@ TEST(PrivateNetworkAccessCheckerTest,
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kAllowedPotentiallyTrustworthySameOrigin);
 
   histogram_tester.ExpectUniqueSample(
@@ -202,7 +215,7 @@ TEST(PrivateNetworkAccessCheckerTest,
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kBlockedByPolicyPreflightBlock);
 
   histogram_tester.ExpectUniqueSample(
@@ -224,7 +237,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckDisallowedUntrustworthySameOrigin) {
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kBlockedByPolicyBlock);
 
   histogram_tester.ExpectUniqueSample(kCheckResultHistogramName,
@@ -248,7 +261,7 @@ TEST(PrivateNetworkAccessCheckerTest,
                                       mojom::kURLLoadOptionNone);
   checker.ResetForRedirect(GURL("https://subdomain.example.com/subresource"));
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kBlockedByPolicyPreflightBlock);
 
   histogram_tester.ExpectUniqueSample(
@@ -273,7 +286,7 @@ TEST(PrivateNetworkAccessCheckerTest,
                                       mojom::kURLLoadOptionNone);
   checker.ResetForRedirect(GURL("https://subdomain.example.com/subresource"));
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kAllowedPotentiallyTrustworthySameOrigin);
 
   histogram_tester.ExpectUniqueSample(
@@ -287,7 +300,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedMissingClientSecurityState) {
   PrivateNetworkAccessChecker checker(
       ResourceRequest(), kNullClientSecurityState, mojom::kURLLoadOptionNone);
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kAllowedMissingClientSecurityState);
 
   histogram_tester.ExpectUniqueSample(
@@ -301,7 +314,7 @@ TEST(PrivateNetworkAccessCheckerTest,
   PrivateNetworkAccessChecker checker(
       ResourceRequest(), kNullClientSecurityState, mojom::kURLLoadOptionNone);
 
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kAllowedMissingClientSecurityState);
 
   // Even though this is inconsistent with the previous IP address space, the
@@ -317,7 +330,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedNoLessPublic) {
   base::HistogramTester histogram_tester;
 
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kBlock;
 
@@ -325,6 +338,54 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedNoLessPublic) {
                                       mojom::kURLLoadOptionNone);
 
   EXPECT_EQ(checker.Check(DirectTransport(PrivateEndpoint())),
+            Result::kAllowedNoLessPublic);
+
+  histogram_tester.ExpectUniqueSample(kCheckResultHistogramName,
+                                      Result::kAllowedNoLessPublic, 1);
+}
+
+// PNA doesn't collapse local and loopback address spaces, so local ->
+// loopback should be blocked.
+TEST(PrivateNetworkAccessCheckerTest,
+     CheckBlockedPNADoesNotCollapseLocalLoopback) {
+  base::HistogramTester histogram_tester;
+
+  mojom::ClientSecurityState client_security_state;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
+  client_security_state.private_network_request_policy =
+      mojom::PrivateNetworkRequestPolicy::kBlock;
+
+  PrivateNetworkAccessChecker checker(ResourceRequest(), &client_security_state,
+                                      mojom::kURLLoadOptionNone);
+
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
+            Result::kBlockedByPolicyBlock);
+
+  histogram_tester.ExpectUniqueSample(kCheckResultHistogramName,
+                                      Result::kBlockedByPolicyBlock, 1);
+}
+
+// LNA collapses local and loopback address spaces so local -> loopback should
+// be allowed.
+TEST(PrivateNetworkAccessCheckerTest,
+     CheckAllowedNoLessPublicCollapseLocalLoopback) {
+  base::test::ScopedFeatureList feature_list;
+  base::FieldTrialParams params;
+  params["LocalNetworkAccessChecksWarn"] = "false";
+  feature_list.InitAndEnableFeatureWithParameters(
+      features::kLocalNetworkAccessChecks, params);
+
+  base::HistogramTester histogram_tester;
+
+  mojom::ClientSecurityState client_security_state;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
+  client_security_state.private_network_request_policy =
+      mojom::PrivateNetworkRequestPolicy::kBlock;
+
+  PrivateNetworkAccessChecker checker(ResourceRequest(), &client_security_state,
+                                      mojom::kURLLoadOptionNone);
+
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kAllowedNoLessPublic);
 
   histogram_tester.ExpectUniqueSample(kCheckResultHistogramName,
@@ -496,7 +557,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedByPolicyPreflightWarn) {
       mojom::PrivateNetworkRequestPolicy::kPreflightWarn;
 
   ResourceRequest request;
-  request.target_ip_address_space = mojom::IPAddressSpace::kLocal;
+  request.target_ip_address_space = mojom::IPAddressSpace::kLoopback;
 
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
@@ -517,7 +578,7 @@ TEST(PrivateNetworkAccessCheckerTest, CheckAllowedByTargetIpAddressSpace) {
       mojom::PrivateNetworkRequestPolicy::kPreflightBlock;
 
   ResourceRequest request;
-  request.target_ip_address_space = mojom::IPAddressSpace::kPrivate;
+  request.target_ip_address_space = mojom::IPAddressSpace::kLocal;
 
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
@@ -553,7 +614,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 TEST(PrivateNetworkAccessCheckerTest,
      CheckBlockedByInconsistentIpAddressSpace) {
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kPreflightBlock;
 
@@ -573,8 +634,16 @@ TEST(PrivateNetworkAccessCheckerTest,
       1);
 }
 
-TEST(PrivateNetworkAccessCheckerTest,
-     CheckBlockedByUnmatchedRequiredAddressSpaceAndResourceAddressSpace) {
+// Disabled because this relies on
+// network::features::kPrivateNetworkAccessPermissionPrompt being enabled; not
+// deleted because we want to keep this test when
+// features::kLocalNetworkAccessChecks is enabled.
+//
+// TODO(crbug.com/394636065): re-enable test when cleaning up PNA and porting
+// over to LNA
+TEST(
+    PrivateNetworkAccessCheckerTest,
+    DISABLED_CheckBlockedByUnmatchedRequiredAddressSpaceAndResourceAddressSpace) {
   mojom::ClientSecurityState client_security_state;
   client_security_state.ip_address_space = mojom::IPAddressSpace::kPublic;
   client_security_state.private_network_request_policy =
@@ -582,7 +651,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 
   ResourceRequest request;
   request.target_ip_address_space = mojom::IPAddressSpace::kUnknown;
-  request.required_ip_address_space = mojom::IPAddressSpace::kPrivate;
+  request.required_ip_address_space = mojom::IPAddressSpace::kLocal;
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
 
@@ -604,7 +673,7 @@ TEST(PrivateNetworkAccessCheckerTest, ResponseAddressSpace) {
   checker.Check(DirectTransport(PrivateEndpoint()));
 
   EXPECT_THAT(checker.ResponseAddressSpace(),
-              Optional(mojom::IPAddressSpace::kPrivate));
+              Optional(mojom::IPAddressSpace::kLocal));
 }
 
 TEST(PrivateNetworkAccessCheckerTest, ProxiedTransportAddressSpaceIsUnknown) {
@@ -614,7 +683,7 @@ TEST(PrivateNetworkAccessCheckerTest, ProxiedTransportAddressSpaceIsUnknown) {
 
   // This succeeds in spite of the load option, because the proxied transport
   // is not considered any less public than `kPublic`.
-  EXPECT_EQ(checker.Check(ProxiedTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(ProxiedTransport(LoopbackEndpoint())),
             Result::kAllowedMissingClientSecurityState);
 
   // In fact, it is considered unknown.
@@ -630,7 +699,7 @@ TEST(PrivateNetworkAccessCheckerTest,
   // This succeeds in spite of the load option, because the cached-from-proxy
   // transport is not considered any less public than `kPublic`.
   EXPECT_EQ(checker.Check(MakeTransport(net::TransportType::kCachedFromProxy,
-                                        LocalEndpoint())),
+                                        LoopbackEndpoint())),
             Result::kAllowedMissingClientSecurityState);
 
   // In fact, it is considered unknown.
@@ -649,16 +718,16 @@ TEST(PrivateNetworkAccessCheckerTest, CachedTransportAddressSpace) {
 
   EXPECT_EQ(checker.ResponseAddressSpace(), mojom::IPAddressSpace::kPublic);
 
-  // When the endpoint is local, the check fails as for a direct transport.
-  EXPECT_EQ(checker.Check(CachedTransport(LocalEndpoint())),
+  // When the endpoint is loopback, the check fails as for a direct transport.
+  EXPECT_EQ(checker.Check(CachedTransport(LoopbackEndpoint())),
             Result::kBlockedByLoadOption);
 
-  EXPECT_EQ(checker.ResponseAddressSpace(), mojom::IPAddressSpace::kLocal);
+  EXPECT_EQ(checker.ResponseAddressSpace(), mojom::IPAddressSpace::kLoopback);
 }
 
 TEST(PrivateNetworkAccessCheckerTest, ResetTargetAddressSpace) {
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kPreflightBlock;
 
@@ -691,7 +760,7 @@ TEST(PrivateNetworkAccessCheckerTest, ResetResponseAddressSpace) {
 
   // This succeeds even though the IP address space does not match that of the
   // previous endpoint passed to `Check()`, thanks to `ResetForRedirect()`.
-  EXPECT_EQ(checker.Check(DirectTransport(LocalEndpoint())),
+  EXPECT_EQ(checker.Check(DirectTransport(LoopbackEndpoint())),
             Result::kAllowedMissingClientSecurityState);
 }
 
@@ -736,7 +805,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 
   ResourceRequest request;
   request.url = GURL("http://192.168.1.1");
-  request.target_ip_address_space = mojom::IPAddressSpace::kPrivate;
+  request.target_ip_address_space = mojom::IPAddressSpace::kLocal;
 
   PrivateNetworkAccessChecker checker(request, &client_security_state,
                                       mojom::kURLLoadOptionNone);
@@ -770,7 +839,7 @@ TEST(PrivateNetworkAccessCheckerTest,
 TEST(PrivateNetworkAccessCheckerTest,
      RecordsPrivateIpInferrableHistogramNoLessPublic) {
   mojom::ClientSecurityState client_security_state;
-  client_security_state.ip_address_space = mojom::IPAddressSpace::kPrivate;
+  client_security_state.ip_address_space = mojom::IPAddressSpace::kLocal;
   client_security_state.private_network_request_policy =
       mojom::PrivateNetworkRequestPolicy::kBlock;
 
@@ -918,7 +987,7 @@ TEST(PrivateNetworkAccessCheckerTest,
   PrivateNetworkAccessChecker checker(request, kNullClientSecurityState,
                                       mojom::kURLLoadOptionNone);
 
-  checker.Check(ProxiedTransport(LocalEndpoint()));
+  checker.Check(ProxiedTransport(LoopbackEndpoint()));
 
   histogram_tester.ExpectTotalCount(
       "Security.PrivateNetworkAccess.PrivateIpResolveMatch", 0);

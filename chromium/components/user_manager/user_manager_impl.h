@@ -103,10 +103,6 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
     // Overrides the home directory path for the `primary_user`.
     virtual void OverrideDirHome(const User& primary_user) = 0;
 
-    // Returns UserType for the DeviceLocalAccount of the given `email`.
-    virtual std::optional<UserType> GetDeviceLocalAccountUserType(
-        std::string_view email) = 0;
-
     // Verifies the Profile's state for the given `user` on login.
     virtual void CheckProfileOnLogin(const User& user) = 0;
 
@@ -119,9 +115,13 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   // Creates UserManagerImpl on UI thread with given `local_state`.
   // `local_state` must outlive this UserManager.
+  UserManagerImpl(std::unique_ptr<Delegate> delegate, PrefService* local_state);
+
+  // DEPRECATED. Kept only for the compatibility with existing tests.
+  // To be removed after tests are cleaned up.
   UserManagerImpl(std::unique_ptr<Delegate> delegate,
                   PrefService* local_state,
-                  ash::CrosSettings* cros_settings);
+                  ash::CrosSettings* /*unused*/);
 
   UserManagerImpl(const UserManagerImpl&) = delete;
   UserManagerImpl& operator=(const UserManagerImpl&) = delete;
@@ -208,9 +208,10 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   bool IsLoggedInAsChildUser() const override;
   bool IsLoggedInAsManagedGuestSession() const override;
   bool IsLoggedInAsGuest() const override;
-  bool IsLoggedInAsKioskApp() const override;
-  bool IsLoggedInAsWebKioskApp() const override;
+  bool IsLoggedInAsKioskChromeApp() const override;
+  bool IsLoggedInAsKioskWebApp() const override;
   bool IsLoggedInAsKioskIWA() const override;
+  bool IsLoggedInAsKioskArcvmApp() const override;
   bool IsLoggedInAsAnyKioskApp() const override;
   bool IsLoggedInAsStub() const override;
   bool IsUserNonCryptohomeDataEphemeral(
@@ -240,6 +241,7 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
                          UserRemovalReason reason) override;
   void NotifyUserNotAllowed(const std::string& user_email) final;
   bool IsGuestSessionAllowed() const override;
+  void SetGuestSessionAllowed(bool value) override;
   bool IsGaiaUserAllowed(const User& user) const override;
   bool IsUserAllowed(const User& user) const override;
   PrefService* GetLocalState() const final;
@@ -265,9 +267,6 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
  protected:
   friend class ash::UserManagerTest;
-
-  ash::CrosSettings* cros_settings() { return cros_settings_; }
-  const ash::CrosSettings* cros_settings() const { return cros_settings_; }
 
   // Add a new regular user with a Gaia account. Returns the created user.
   // `user_type` must be kRegular or kChild, which can hold a Gaia account.
@@ -332,6 +331,9 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   // |RemoveNonOwnerUserInternal|.
   void RemoveUserInternal(const AccountId& account_id,
                           UserRemovalReason reason);
+  void RemoveUserInternalWithOwnerAccountId(const AccountId& account_id,
+                                            UserRemovalReason reason,
+                                            const AccountId& owner_account_id);
 
   // Removes data stored or cached outside the user's cryptohome (wallpaper,
   // avatar, OAuth token status, display name, display email).
@@ -342,6 +344,8 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
   const EphemeralModeConfig& GetEphemeralModeConfig() const;
   void SetEphemeralModeConfig(
       EphemeralModeConfig ephemeral_mode_config) override;
+
+  void SetShowUsersOnSignIn(bool value) override;
 
   virtual void ResetOwnerId();
   void SetOwnerId(const AccountId& owner_account_id) override;
@@ -462,8 +466,11 @@ class USER_MANAGER_EXPORT UserManagerImpl : public UserManager {
 
   const raw_ptr<PrefService, DanglingUntriaged> local_state_;
 
-  // Interface to the signed settings store.
-  const raw_ptr<ash::CrosSettings> cros_settings_;
+  // Whether or not guest session is allowed.
+  bool guest_session_allowed_ = false;
+
+  // Whether or not to show the users on sign-in page.
+  bool show_users_on_sign_in_ = true;
 
   // Cached flag of whether the currently logged-in user existed before this
   // login.

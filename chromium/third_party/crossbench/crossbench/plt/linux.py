@@ -5,11 +5,11 @@
 from __future__ import annotations
 
 import dataclasses
+import datetime as dt
 import functools
 import os
 import re
-from typing import (TYPE_CHECKING, Any, ClassVar, Dict, Iterator, List,
-                    Optional, Tuple, Type)
+from typing import TYPE_CHECKING, Any, ClassVar, Iterator, Optional, Type
 
 from typing_extensions import override
 
@@ -17,12 +17,15 @@ from crossbench import path as pth
 from crossbench.parse import NumberParser
 from crossbench.plt.base import SubprocessError
 from crossbench.plt.posix import PosixPlatform
+from crossbench.plt.process_meminfo import ProcessMeminfo
 from crossbench.plt.remote import RemotePlatformMixin
 from crossbench.plt.signals import LinuxSignals
 
 if TYPE_CHECKING:
   from crossbench.plt.display_info import DisplayInfo
 
+
+SCRIPTS_DIR = pth.LocalPath(__file__).parent / "remote_scripts"
 
 @dataclasses.dataclass
 class XrandrDisplayInfo:
@@ -31,12 +34,12 @@ class XrandrDisplayInfo:
   REFRESH_RATE_RE: ClassVar[re.Pattern] = re.compile(r"(?P<freq>[0-9.]+)\*")
 
   header: str
-  resolutions: List[str] = dataclasses.field(default_factory=list)
+  resolutions: list[str] = dataclasses.field(default_factory=list)
 
   def is_connected(self) -> bool:
     return "disconnected" not in self.header
 
-  def resolution(self) -> Tuple[int, int] | None:
+  def resolution(self) -> tuple[int, int] | None:
     if match := self.RESOLUTION_RE.search(self.header):
       return (NumberParser.positive_int(match.group("resX")),
               NumberParser.positive_int(match.group("resY")))
@@ -62,7 +65,7 @@ def parse_display_xrandr(xrandr_str: str) -> Iterator[DisplayInfo]:
     1600x1200_60  60.00
     ...
   """
-  display_infos: List[XrandrDisplayInfo] = []
+  display_infos: list[XrandrDisplayInfo] = []
   current_info: XrandrDisplayInfo | None = None
   # Group display info and resolution entries:
   for line in xrandr_str.splitlines():
@@ -83,7 +86,7 @@ def parse_display_xrandr(xrandr_str: str) -> Iterator[DisplayInfo]:
 
 
 class LinuxPlatform(PosixPlatform):
-  SEARCH_PATHS: Tuple[pth.AnyPath, ...] = (
+  SEARCH_PATHS: tuple[pth.AnyPath, ...] = (
       pth.AnyPosixPath("."),
       pth.AnyPosixPath("/usr/local/sbin"),
       pth.AnyPosixPath("/usr/local/bin"),
@@ -122,18 +125,6 @@ class LinuxPlatform(PosixPlatform):
     except (FileNotFoundError, SubprocessError):
       return "UNKNOWN"
 
-  @functools.cached_property
-  @override
-  def cpu(self) -> str:  #pylint: disable=invalid-overridden-method
-    cpu_str = "UNKNOWN"
-    for line in self.cat(self.path("/proc/cpuinfo")).splitlines():
-      if line.startswith("model name"):
-        _, cpu_str = line.split(":", maxsplit=2)
-        break
-    if num_cores := self.cpu_cores:
-      cpu_str = f"{cpu_str} {num_cores} cores"
-    return cpu_str
-
   @property
   @override
   def has_display(self) -> bool:
@@ -150,7 +141,7 @@ class LinuxPlatform(PosixPlatform):
 
   @functools.lru_cache(maxsize=1)
   @override
-  def system_details(self) -> Dict[str, Any]:
+  def system_details(self) -> dict[str, Any]:
     details = super().system_details()
     for info_bin in ("lscpu", "inxi"):
       if info_bin_path := self.which(info_bin):
@@ -177,12 +168,55 @@ class LinuxPlatform(PosixPlatform):
     self.sh("gnome-screenshot", "--file", result_path)
 
   @functools.lru_cache(maxsize=1)
-  def display_details(self) -> Tuple[DisplayInfo, ...]:
+  def display_details(self) -> tuple[DisplayInfo, ...]:
     if not self.has_display:
       return tuple()
     if xrandr_str := self.sh_stdout("xrandr"):
       return tuple(parse_display_xrandr(xrandr_str))
     return tuple()
+
+  _MEMINFO_SCRIPT_PROCESS_PATTERN = re.compile(r"==== process (\d+) ====")
+  _MEMINFO_SCRIPT_SMAPS_HEADER_PATTERN = re.compile(r"==== smaps_rollup ====")
+  _SMAPS_ROLLUP_PATTERN = re.compile(
+      r".*Rss:\s+(?P<rss_total>\d+) kB.*"
+      r"Pss:\s+(?P<pss_total>\d+) kB.*"
+      r"Swap:\s+(?P<swap_total>\d+)",
+      flags=re.DOTALL)
+
+  @override
+  def process_meminfo(
+      self, process_name: str, timeout: dt.timedelta = dt.timedelta(seconds=10)
+  ) -> list[ProcessMeminfo]:
+    del timeout
+
+    script = (SCRIPTS_DIR / "meminfo.sh").read_text()
+
+    with self.NamedTemporaryFile() as script_file:
+      self.write_text(script_file, script)
+      # Script outputs the following format repeated per process:
+      # ==== process <pid> ====
+      # <proc/cmdline>
+      # ==== smaps_rollup ====
+      # <proc/smaps_rollup>
+      output = self.sh_stdout("bash", str(script_file), process_name)
+      processes = self._MEMINFO_SCRIPT_PROCESS_PATTERN.split(output)[1:]
+      # processes even indices are pids, the odd indices after is the output for
+      # that pid.
+      meminfos: list[ProcessMeminfo] = []
+      for i in range(0, len(processes), 2):
+        pid = int(processes[i])
+        [cmdline, smaps_rollup
+        ] = self._MEMINFO_SCRIPT_SMAPS_HEADER_PATTERN.split(processes[i + 1])
+        match = self._SMAPS_ROLLUP_PATTERN.search(smaps_rollup)
+        assert match
+        meminfos.append(
+            ProcessMeminfo(
+                pid=pid,
+                name=cmdline.strip(),
+                pss_total=int(match["pss_total"]),
+                rss_total=int(match["rss_total"]),
+                swap_total=int(match["swap_total"])))
+      return meminfos
 
 
 class RemoteLinuxPlatform(RemotePlatformMixin, LinuxPlatform):

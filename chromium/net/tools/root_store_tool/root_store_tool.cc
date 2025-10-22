@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include <inttypes.h>
 
 #include <iostream>
@@ -19,6 +14,7 @@
 #include "base/at_exit.h"
 #include "base/base_paths.h"
 #include "base/command_line.h"
+#include "base/compiler_specific.h"
 #include "base/containers/span.h"
 #include "base/files/file_path.h"
 #include "base/files/file_util.h"
@@ -28,10 +24,11 @@
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_util.h"
+#include "base/strings/string_view_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
-#include "crypto/sha2.h"
+#include "crypto/hash.h"
 #include "net/cert/root_store_proto_full/root_store.pb.h"
 #include "third_party/boringssl/src/include/openssl/bio.h"
 #include "third_party/boringssl/src/include/openssl/err.h"
@@ -74,14 +71,15 @@ std::optional<std::map<std::string, std::string>> DecodeCerts(
     bssl::UniquePtr<char> scoped_name(name);
     bssl::UniquePtr<char> scoped_header(header);
     bssl::UniquePtr<unsigned char> scoped_data(data);
-    if (strcmp(name, "CERTIFICATE") != 0) {
+    if (UNSAFE_TODO(strcmp(name, "CERTIFICATE")) != 0) {
       LOG(ERROR) << "Found PEM block of type " << name
                  << " instead of CERTIFICATE";
       return std::nullopt;
     }
-    std::string sha256_hex = base::ToLowerASCII(base::HexEncode(
-        crypto::SHA256Hash(base::span(data, base::checked_cast<size_t>(len)))));
-    certs[sha256_hex] = std::string(data, data + len);
+    std::string sha256_hex =
+        base::ToLowerASCII(base::HexEncode(crypto::hash::Sha256(
+            UNSAFE_TODO(base::span(data, base::checked_cast<size_t>(len))))));
+    certs[sha256_hex] = std::string(data, UNSAFE_TODO(data + len));
   }
   return std::move(certs);
 }
@@ -197,6 +195,18 @@ void WriteTrustAnchors(
     // End struct
     *string_to_write += "};\n";
 
+    if (!anchor.trust_anchor_id().empty()) {
+      base::StringAppendF(string_to_write,
+                          "constexpr uint8_t k%sTrustAnchorID%d[] = {",
+                          cert_name_prefix, i);
+      // Convert each character to hex representation, escaped.
+      for (auto c : anchor.trust_anchor_id()) {
+        base::StringAppendF(string_to_write, "0x%02xu,",
+                            static_cast<uint8_t>(c));
+      }
+      *string_to_write += "};\n";
+    }
+
     if (anchor.constraints_size() > 0) {
       int constraint_num = 0;
       for (const auto& constraint : anchor.constraints()) {
@@ -275,15 +285,58 @@ bool WriteRootCppFile(const RootStore& root_store,
   WriteTrustAnchors(root_store.additional_certs(), "Additional",
                     &string_to_write);
 
-  // Assemble list of trust anchors
+  // Assemble list of trust anchors.
   string_to_write += "constexpr ChromeRootCertInfo kChromeRootCertList[] = {\n";
   for (int i = 0; i < root_store.trust_anchors_size(); i++) {
     const auto& anchor = root_store.trust_anchors(i);
+    if (anchor.has_tls_trust_anchor()) {
+      // Anchors in |trust_anchors| are not supposed to have |tls_trust_anchor|
+      // set, because they are definitionally TLS trust anchors.
+      return false;
+    }
     base::StringAppendF(&string_to_write, "    {kChromeRootCert%d, ", i);
     if (anchor.constraints_size() > 0) {
       base::StringAppendF(&string_to_write, "kChromeRootConstraints%d", i);
     } else {
       string_to_write += "{}";
+    }
+
+    base::StringAppendF(
+        &string_to_write,
+        ", /*enforce_anchor_expiry=*/%s, /*enforce_anchor_constraints=*/%s",
+        anchor.enforce_anchor_expiry() ? "true" : "false",
+        anchor.enforce_anchor_constraints() ? "true" : "false");
+
+    if (anchor.trust_anchor_id().empty()) {
+      string_to_write += ", {}";
+    } else {
+      base::StringAppendF(&string_to_write, ", kChromeRootTrustAnchorID%d", i);
+    }
+    string_to_write += "},\n";
+  }
+  // Append additional_certs as TLS trust anchors, if they are marked as such.
+  for (int i = 0; i < root_store.additional_certs_size(); i++) {
+    const auto& anchor = root_store.additional_certs(i);
+    if (!anchor.tls_trust_anchor()) {
+      continue;
+    }
+    base::StringAppendF(&string_to_write, "    {kAdditionalCert%d, ", i);
+    if (anchor.constraints_size() > 0) {
+      base::StringAppendF(&string_to_write, "kAdditionalConstraints%d", i);
+    } else {
+      string_to_write += "{}";
+    }
+
+    base::StringAppendF(
+        &string_to_write,
+        ", /*enforce_anchor_expiry=*/%s, /*enforce_anchor_constraints=*/%s",
+        anchor.enforce_anchor_expiry() ? "true" : "false",
+        anchor.enforce_anchor_constraints() ? "true" : "false");
+
+    if (anchor.trust_anchor_id().empty()) {
+      string_to_write += ", {}";
+    } else {
+      base::StringAppendF(&string_to_write, ", kAdditionalTrustAnchorID%d", i);
     }
     string_to_write += "},\n";
   }
@@ -339,7 +392,8 @@ bool WriteEvCppFile(const RootStore& root_store,
       continue;
     }
 
-    std::string sha256_hash = crypto::SHA256HashString(anchor.der());
+    std::string sha256_hash =
+        std::string(base::as_string_view(crypto::hash::Sha256(anchor.der())));
 
     // Begin struct. Assumed type of EVMetadata:
     //

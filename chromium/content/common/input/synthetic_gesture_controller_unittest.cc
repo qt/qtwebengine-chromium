@@ -2,19 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/342213636): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "content/common/input/synthetic_gesture_controller.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
+#include <array>
 #include <memory>
 #include <utility>
 
+#include "base/containers/span.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback_helpers.h"
 #include "base/memory/raw_ptr.h"
@@ -693,7 +690,7 @@ class MockSyntheticPointerTouchActionTarget
   testing::AssertionResult SyntheticTouchActionListDispatchedCorrectly(
       const std::vector<SyntheticPointerActionParams>& params_list,
       int start_index,
-      int index_array[]) {
+      base::span<int> index_array) {
     testing::AssertionResult result = testing::AssertionSuccess();
     for (size_t i = 0; i < params_list.size(); ++i) {
       if (params_list[i].pointer_action_type() !=
@@ -707,9 +704,9 @@ class MockSyntheticPointerTouchActionTarget
   }
 
  private:
-  gfx::PointF positions_[kTouchPointersLength];
-  int indexes_[kTouchPointersLength];
-  WebTouchPoint::State states_[kTouchPointersLength];
+  std::array<gfx::PointF, kTouchPointersLength> positions_;
+  std::array<int, kTouchPointersLength> indexes_;
+  std::array<WebTouchPoint::State, kTouchPointersLength> states_;
 };
 
 class MockSyntheticPointerMouseActionTarget

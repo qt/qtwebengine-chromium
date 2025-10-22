@@ -202,7 +202,6 @@ class DebugReport {
     bool force_default_log_callback{false};
     uint32_t device_created = 0;
     MessageFormatSettings message_format_settings;
-    bool debug_stable_messages{false};
 
     void SetUtilsObjectName(const VkDebugUtilsObjectNameInfoEXT *pNameInfo);
     void SetMarkerObjectName(const VkDebugMarkerObjectNameInfoEXT *pNameInfo);
@@ -243,17 +242,15 @@ class DebugReport {
     void EraseCmdDebugUtilsLabel(VkCommandBuffer command_buffer);
 
   private:
-    bool UpdateLogMsgCounts(int32_t vuid_hash) const;
-    bool LogMsgEnabled(uint32_t vuid_hash, VkDebugUtilsMessageSeverityFlagsEXT msg_severity,
-                       VkDebugUtilsMessageTypeFlagsEXT msg_type);
-    std::string CreateMessageText(const Location &loc, std::string_view vuid_text, const std::string &main_message);
+    std::string CreateMessageText(const Location &loc, std::string_view vuid_text, const std::string &main_message,
+                                  bool at_message_limit);
     std::string CreateMessageJson(VkFlags msg_flags, const Location &loc,
                                   const std::vector<VkDebugUtilsObjectNameInfoEXT> &object_name_infos, const uint32_t vuid_hash,
-                                  std::string_view vuid_text, const std::string &main_message);
+                                  std::string_view vuid_text, const std::string &main_message, bool at_message_limit);
 
     VkDebugUtilsMessageSeverityFlagsEXT active_msg_severities{0};
     VkDebugUtilsMessageTypeFlagsEXT active_msg_types{0};
-    mutable vvl::unordered_map<uint32_t, uint32_t> duplicate_message_count_map{};
+    vvl::unordered_map<uint32_t, uint32_t> duplicate_message_count_map{};
 
     vvl::unordered_map<VkQueue, std::unique_ptr<LoggingLabelState>> debug_utils_queue_labels;
     vvl::unordered_map<VkCommandBuffer, std::unique_ptr<LoggingLabelState>> debug_utils_cmd_buffer_labels;

@@ -6,13 +6,11 @@
 
 #include <string_view>
 
-#include "base/test/metrics/histogram_tester.h"
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/safe_browsing/content/common/safe_browsing.mojom.h"
 #include "components/safe_browsing/core/common/features.h"
 #include "components/safe_browsing/core/common/safe_browsing_url_checker.mojom.h"
-#include "ipc/ipc_message.h"
 #include "mojo/public/cpp/bindings/pending_receiver.h"
 #include "mojo/public/cpp/bindings/receiver.h"
 #include "mojo/public/cpp/bindings/remote.h"
@@ -96,7 +94,6 @@ class SBRendererUrlLoaderThrottleTest : public ::testing::Test {
 };
 
 TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferHttpsImageUrl) {
-  base::HistogramTester histograms;
   safe_browsing_.EnableDelayCallback();
   GURL url("https://example.com/");
   bool defer = false;
@@ -111,7 +108,6 @@ TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferHttpsImageUrl) {
 }
 
 TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferHttpsScriptUrl) {
-  base::HistogramTester histograms;
   safe_browsing_.EnableDelayCallback();
   GURL url("https://example.com/");
   bool defer = false;
@@ -126,7 +122,6 @@ TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferHttpsScriptUrl) {
 }
 
 TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferChromeUrl) {
-  base::HistogramTester histograms;
   GURL url("chrome://settings/");
   bool defer = false;
   network::ResourceRequest request =
@@ -139,7 +134,6 @@ TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferChromeUrl) {
 }
 
 TEST_F(SBRendererUrlLoaderThrottleTest, DoesNotDeferIframeUrl) {
-  base::HistogramTester histograms;
   GURL url("https://example.com/");
   bool defer = false;
   network::ResourceRequest request =

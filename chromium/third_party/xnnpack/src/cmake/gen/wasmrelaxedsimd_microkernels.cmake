@@ -64,7 +64,9 @@ SET(PROD_WASMRELAXEDSIMD_MICROKERNEL_SRCS
   src/f32-raddstoreexpminusmax/gen/f32-raddstoreexpminusmax-wasmrelaxedsimd-rr2-p5-u16-acc2.c
   src/f32-spmm/gen/f32-spmm-32x1-minmax-wasmrelaxedsimd-arm.c
   src/f32-spmm/gen/f32-spmm-32x1-minmax-wasmrelaxedsimd-x86.c
+  src/f32-vclamp/gen/f32-vclamp-wasmrelaxedsimd.c
   src/f32-velu/gen/f32-velu-wasmrelaxedsimd-fma-rr2-p6-u16.c
+  src/f32-vhswish/gen/f32-vhswish-wasmrelaxedsimd.c
   src/f32-vlrelu/gen/f32-vlrelu-wasmrelaxedsimd-iminmax-u4.c
   src/f32-vlrelu/gen/f32-vlrelu-wasmrelaxedsimd-laneselect-u4.c
   src/f32-vmulcaddc/gen/f32-vmulcaddc-c4-minmax-wasmrelaxedsimd-fma-2x.c
@@ -211,36 +213,6 @@ SET(NON_PROD_WASMRELAXEDSIMD_MICROKERNEL_SRCS
   src/f32-gemm/gen/f32-gemm-6x8s4-minmax-wasmrelaxedsimd.c
   src/f32-gemm/gen/f32-gemm-6x8s4-relu-wasmrelaxedsimd-fma.c
   src/f32-gemm/gen/f32-gemm-6x8s4-wasmrelaxedsimd-fma.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-wasmrelaxedsimd-fma-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-wasmrelaxedsimd-fma-splat.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-wasmrelaxedsimd-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-1x8-minmax-wasmrelaxedsimd-splat.c
-  src/f32-gemminc/gen/f32-gemminc-1x8s4-minmax-wasmrelaxedsimd-fma.c
-  src/f32-gemminc/gen/f32-gemminc-1x8s4-minmax-wasmrelaxedsimd.c
-  src/f32-gemminc/gen/f32-gemminc-3x8-minmax-wasmrelaxedsimd-fma-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-3x8-minmax-wasmrelaxedsimd-fma-splat.c
-  src/f32-gemminc/gen/f32-gemminc-3x8-minmax-wasmrelaxedsimd-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-3x8-minmax-wasmrelaxedsimd-splat.c
-  src/f32-gemminc/gen/f32-gemminc-3x8s4-minmax-wasmrelaxedsimd-fma.c
-  src/f32-gemminc/gen/f32-gemminc-3x8s4-minmax-wasmrelaxedsimd.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-wasmrelaxedsimd-fma-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-wasmrelaxedsimd-fma-splat.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-wasmrelaxedsimd-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-4x8-minmax-wasmrelaxedsimd-splat.c
-  src/f32-gemminc/gen/f32-gemminc-4x8s4-minmax-wasmrelaxedsimd-fma.c
-  src/f32-gemminc/gen/f32-gemminc-4x8s4-minmax-wasmrelaxedsimd.c
-  src/f32-gemminc/gen/f32-gemminc-5x8-minmax-wasmrelaxedsimd-fma-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-5x8-minmax-wasmrelaxedsimd-fma-splat.c
-  src/f32-gemminc/gen/f32-gemminc-5x8-minmax-wasmrelaxedsimd-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-5x8-minmax-wasmrelaxedsimd-splat.c
-  src/f32-gemminc/gen/f32-gemminc-5x8s4-minmax-wasmrelaxedsimd-fma.c
-  src/f32-gemminc/gen/f32-gemminc-5x8s4-minmax-wasmrelaxedsimd.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-wasmrelaxedsimd-fma-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-wasmrelaxedsimd-fma-splat.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-wasmrelaxedsimd-loadsplat.c
-  src/f32-gemminc/gen/f32-gemminc-6x8-minmax-wasmrelaxedsimd-splat.c
-  src/f32-gemminc/gen/f32-gemminc-6x8s4-minmax-wasmrelaxedsimd-fma.c
-  src/f32-gemminc/gen/f32-gemminc-6x8s4-minmax-wasmrelaxedsimd.c
   src/f32-ibilinear/gen/f32-ibilinear-wasmrelaxedsimd-c4.c
   src/f32-igemm/gen/f32-igemm-1x8-minmax-wasmrelaxedsimd-loadsplat.c
   src/f32-igemm/gen/f32-igemm-1x8-minmax-wasmrelaxedsimd-splat.c

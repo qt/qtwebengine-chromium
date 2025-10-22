@@ -96,6 +96,8 @@ class BrowserCommandHandler : public CommandUpdaterDelegate,
   virtual void OpenPasswordManager();
   virtual void OpenAISettings();
   virtual void OpenGlic();
+  virtual void OpenGlicSettings();
+  virtual void PrewarmGlicFre();
   void StartTabGroupTutorial();
   void OpenNTPAndStartCustomizeChromeTutorial();
   void StartPasswordManagerTutorial();

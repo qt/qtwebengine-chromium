@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 import re
-from typing import Dict, Final, Optional, Tuple
+from typing import Final, Optional
 
 from typing_extensions import override
 
@@ -22,7 +22,7 @@ class FirefoxVersion(BrowserVersion):
                            r")"
                            r") ?(?P<channel_long>esr|any)?")
   _SPLIT_RE = re.compile(r"[ab.]")
-  _CHANNEL_LOOKUP: Dict[str, BrowserVersionChannel] = {
+  _CHANNEL_LOOKUP: dict[str, BrowserVersionChannel] = {
       "esr": BrowserVersionChannel.LTS,
       ".": BrowserVersionChannel.STABLE,
       # IRL Firefox version numbers do not distinct beta from stable, so we
@@ -31,7 +31,7 @@ class FirefoxVersion(BrowserVersion):
       "a": BrowserVersionChannel.ALPHA,
       "any": BrowserVersionChannel.ANY,
   }
-  _CHANNEL_LONG_LOOKUP: Dict[str, BrowserVersionChannel] = {
+  _CHANNEL_LONG_LOOKUP: dict[str, BrowserVersionChannel] = {
       "developer edition": BrowserVersionChannel.BETA,
       "nightly": BrowserVersionChannel.ALPHA,
   }
@@ -40,7 +40,7 @@ class FirefoxVersion(BrowserVersion):
   @override
   def _parse(
       cls,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     matches = cls._VERSION_RE.fullmatch(full_version.strip())
     if not matches:
       raise cls.parse_error("Could not extract version number", full_version)
@@ -51,7 +51,7 @@ class FirefoxVersion(BrowserVersion):
     version_parts = matches["parts"]
     assert version_parts and version_str
     browser_channel = cls._parse_channel(full_version, matches)
-    parts: Tuple[int, ...] = tuple(map(int, cls._SPLIT_RE.split(version_parts)))
+    parts: tuple[int, ...] = tuple(map(int, cls._SPLIT_RE.split(version_parts)))
     if len(parts) == 2:
       parts += (0,)
     if len(parts) != 3:
@@ -98,5 +98,5 @@ class FirefoxVersion(BrowserVersion):
 
   @property
   @override
-  def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
+  def key(self) -> tuple[tuple[int, ...], BrowserVersionChannel]:
     return (self.comparable_parts(self._PARTS_LEN), self._channel)

@@ -10,12 +10,15 @@
 #include "base/test/scoped_feature_list.h"
 #include "base/test/task_environment.h"
 #include "components/collaboration/internal/collaboration_controller.h"
+#include "components/collaboration/public/pref_names.h"
 #include "components/collaboration/test_support/mock_collaboration_controller_delegate.h"
 #include "components/data_sharing/public/data_sharing_service.h"
 #include "components/data_sharing/public/features.h"
 #include "components/data_sharing/test_support/mock_data_sharing_service.h"
 #include "components/saved_tab_groups/test_support/mock_tab_group_sync_service.h"
+#include "components/saved_tab_groups/test_support/saved_tab_group_test_utils.h"
 #include "components/signin/public/base/signin_pref_names.h"
+#include "components/signin/public/identity_manager/account_info.h"
 #include "components/signin/public/identity_manager/identity_test_environment.h"
 #include "components/sync/base/features.h"
 #include "components/sync/test/test_sync_service.h"
@@ -32,6 +35,7 @@ using data_sharing::GroupData;
 using data_sharing::GroupId;
 using data_sharing::GroupMember;
 using data_sharing::MemberRole;
+using signin::PrimaryAccountChangeEvent;
 using testing::_;
 using testing::Invoke;
 using testing::Return;
@@ -41,7 +45,9 @@ namespace collaboration {
 namespace {
 
 constexpr GaiaId::Literal kUserGaia("gaia_id");
+constexpr GaiaId::Literal kOtherUserGaia("other_gaia_id");
 constexpr char kConsumerUserEmail[] = "test@email.com";
+constexpr char kOtherConsumerUserEmail[] = "other.test@email.com";
 constexpr char kManagedUserEmail[] = "test@google.com";
 constexpr char kGroupId[] = "/?-group_id";
 constexpr char kAccessToken[] = "/?-access_token";
@@ -62,7 +68,15 @@ class CollaborationServiceImplTest : public testing::Test {
     }
 #endif
     test_sync_service_ = std::make_unique<syncer::TestSyncService>();
-    pref_service_.registry()->RegisterBooleanPref(prefs::kSigninAllowed, true);
+    profile_pref_service_.registry()->RegisterIntegerPref(
+        prefs::kSharedTabGroupsManagedAccountSetting, 0 /* enabled */);
+    profile_pref_service_.registry()->RegisterBooleanPref(
+        ::prefs::kSigninAllowed, true);
+#if BUILDFLAG(IS_IOS)
+    local_pref_service_.registry()->RegisterIntegerPref(
+        ::prefs::kBrowserSigninPolicy,
+        static_cast<int>(BrowserSigninMode::kEnabled));
+#endif
     InitService();
   }
 
@@ -71,13 +85,15 @@ class CollaborationServiceImplTest : public testing::Test {
   void InitService() {
     service_ = std::make_unique<CollaborationServiceImpl>(
         &mock_tab_group_sync_service_, &mock_data_sharing_service_,
-        identity_test_env_.identity_manager(), test_sync_service_.get(),
-        &pref_service_);
+        identity_test_env_.identity_manager(), &profile_pref_service_,
+        &local_pref_service_);
+    service_->OnSyncServiceInitialized(test_sync_service_.get());
   }
 
  protected:
   base::test::SingleThreadTaskEnvironment task_environment_;
-  sync_preferences::TestingPrefServiceSyncable pref_service_;
+  sync_preferences::TestingPrefServiceSyncable profile_pref_service_;
+  sync_preferences::TestingPrefServiceSyncable local_pref_service_;
   signin::IdentityTestEnvironment identity_test_env_;
   std::unique_ptr<syncer::TestSyncService> test_sync_service_;
   tab_groups::MockTabGroupSyncService mock_tab_group_sync_service_;
@@ -119,14 +135,20 @@ TEST_F(CollaborationServiceImplTest, GetCurrentUserRoleForGroup) {
 }
 
 TEST_F(CollaborationServiceImplTest, GetServiceStatus_Disabled) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures({},
+                                {data_sharing::features::kDataSharingFeature,
+                                 data_sharing::features::kDataSharingJoinOnly});
+  InitService();
+
   EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
             CollaborationStatus::kDisabled);
 }
 
 TEST_F(CollaborationServiceImplTest, GetServiceStatus_JoinOnly) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      data_sharing::features::kDataSharingJoinOnly);
+  feature_list.InitWithFeatures({data_sharing::features::kDataSharingJoinOnly},
+                                {data_sharing::features::kDataSharingFeature});
   InitService();
 
   EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
@@ -135,8 +157,8 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_JoinOnly) {
 
 TEST_F(CollaborationServiceImplTest, GetServiceStatus_Create) {
   base::test::ScopedFeatureList feature_list;
-  feature_list.InitAndEnableFeature(
-      data_sharing::features::kDataSharingFeature);
+  feature_list.InitWithFeatures({data_sharing::features::kDataSharingFeature},
+                                {data_sharing::features::kDataSharingJoinOnly});
   InitService();
 
   EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
@@ -154,25 +176,29 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_CreateOverridesJoinOnly) {
             CollaborationStatus::kEnabledCreateAndJoin);
 }
 
-TEST_F(CollaborationServiceImplTest, GetServiceStatus_ManagedDevice) {
+TEST_F(CollaborationServiceImplTest, GetServiceStatus_SigninDisabled) {
   base::test::ScopedFeatureList feature_list;
   feature_list.InitAndEnableFeature(
       data_sharing::features::kDataSharingFeature);
 
-  // Set device policy to disable signin.
-  pref_service_.SetBoolean(prefs::kSigninAllowed, false);
+  // Set signin preference to disable signin.
+  profile_pref_service_.SetBoolean(::prefs::kSigninAllowed, false);
+
   InitService();
 
   EXPECT_EQ(service_->GetServiceStatus().signin_status,
-            SigninStatus::kNotSignedIn);
+            SigninStatus::kSigninDisabled);
+  EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
+            CollaborationStatus::kEnabledCreateAndJoin);
+  EXPECT_EQ(service_->GetServiceStatus().IsAllowedToJoin(), true);
+  EXPECT_EQ(service_->GetServiceStatus().IsAllowedToCreate(), false);
+
+#if !BUILDFLAG(IS_IOS)
+  profile_pref_service_.SetManagedPref(::prefs::kSigninAllowed,
+                                       base::Value(false));
   EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
             CollaborationStatus::kDisabledForPolicy);
-  identity_test_env_.MakePrimaryAccountAvailable(kConsumerUserEmail,
-                                                 signin::ConsentLevel::kSignin);
-  EXPECT_EQ(service_->GetServiceStatus().signin_status,
-            SigninStatus::kSignedIn);
-  EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
-            CollaborationStatus::kDisabledForPolicy);
+#endif
 }
 
 TEST_F(CollaborationServiceImplTest, GetServiceStatus_ManagedAccount) {
@@ -180,6 +206,8 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_ManagedAccount) {
   feature_list.InitAndEnableFeature(
       data_sharing::features::kDataSharingFeature);
   InitService();
+  profile_pref_service_.SetInteger(prefs::kSharedTabGroupsManagedAccountSetting,
+                                   1 /* disabled */);
 
   EXPECT_EQ(service_->GetServiceStatus().signin_status,
             SigninStatus::kNotSignedIn);
@@ -203,12 +231,6 @@ TEST_F(CollaborationServiceImplTest, GetServiceStatus_ManagedAccount) {
 
 TEST_F(CollaborationServiceImplTest, StartJoinFlow) {
   GURL url("http://www.example.com/");
-  data_sharing::GroupToken token(data_sharing::GroupId(kGroupId), kAccessToken);
-
-  EXPECT_CALL(mock_data_sharing_service_, ParseDataSharingUrl(url))
-      .WillOnce(Return(
-          base::unexpected(data_sharing::MockDataSharingService::
-                               ParseUrlStatus::kHostOrPathMismatchFailure)));
 
   // Invalid url parsing starts a join flow with empty GroupToken.
   std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate_invalid =
@@ -216,8 +238,7 @@ TEST_F(CollaborationServiceImplTest, StartJoinFlow) {
   MockCollaborationControllerDelegate* delegate_invalid_ptr =
       mock_delegate_invalid.get();
   EXPECT_CALL(*mock_delegate_invalid, OnFlowFinished());
-  service_->StartJoinFlow(std::move(mock_delegate_invalid), url,
-                          CollaborationServiceJoinEntryPoint::kUnknown);
+  service_->StartJoinFlow(std::move(mock_delegate_invalid), url);
   // Wait for post tasks.
   EXPECT_TRUE(base::test::RunUntil(
       [&]() { return service_->GetJoinControllersForTesting().size() == 1; }));
@@ -228,8 +249,8 @@ TEST_F(CollaborationServiceImplTest, StartJoinFlow) {
 
   // New join flow will be appended with a valid url parsing and will stop all
   // conflicting flows.
-  EXPECT_CALL(mock_data_sharing_service_, ParseDataSharingUrl(url))
-      .WillRepeatedly(Return(base::ok(token)));
+  url = GURL(data_sharing::features::kDataSharingURL.Get() + "?g=" + kGroupId +
+             "&t=" + kAccessToken);
   std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
       std::make_unique<MockCollaborationControllerDelegate>();
   MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
@@ -244,8 +265,7 @@ TEST_F(CollaborationServiceImplTest, StartJoinFlow) {
         return true;
       });
 
-  service_->StartJoinFlow(std::move(mock_delegate), url,
-                          CollaborationServiceJoinEntryPoint::kUnknown);
+  service_->StartJoinFlow(std::move(mock_delegate), url);
 
   // Wait for post tasks.
   EXPECT_TRUE(base::test::RunUntil(
@@ -265,8 +285,7 @@ TEST_F(CollaborationServiceImplTest, StartJoinFlow) {
   // Existing join flow will stop all conflicting flows and will be appended
   // similar to a new join flow.
   service_->StartJoinFlow(
-      std::make_unique<MockCollaborationControllerDelegate>(), url,
-      CollaborationServiceJoinEntryPoint::kUnknown);
+      std::make_unique<MockCollaborationControllerDelegate>(), url);
   EXPECT_EQ(service_->GetJoinControllersForTesting().size(), 1u);
   EXPECT_TRUE(cancel_called);
 }
@@ -298,6 +317,52 @@ TEST_F(CollaborationServiceImplTest, SyncStatusChanges) {
     EXPECT_EQ(service_->GetServiceStatus().sync_status,
               SyncStatus::kNotSyncing);
   }
+}
+
+TEST_F(CollaborationServiceImplTest, SyncTypeDisabledByEnterprise) {
+#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
+  // Set up a policy to disable Tabs.
+  test_sync_service_->GetUserSettings()->SetTypeIsManagedByPolicy(
+      syncer::UserSelectableType::kTabs, true);
+  test_sync_service_->FireStateChanged();
+  EXPECT_EQ(service_->GetServiceStatus().sync_status,
+            SyncStatus::kSyncDisabledByEnterprise);
+
+  // Reset the policy.
+  test_sync_service_->GetUserSettings()->SetTypeIsManagedByPolicy(
+      syncer::UserSelectableType::kTabs, false);
+  test_sync_service_->FireStateChanged();
+  EXPECT_EQ(service_->GetServiceStatus().sync_status, SyncStatus::kSyncEnabled);
+
+  // Set up a policy to disable History.
+  test_sync_service_->GetUserSettings()->SetTypeIsManagedByPolicy(
+      syncer::UserSelectableType::kHistory, true);
+  test_sync_service_->FireStateChanged();
+  EXPECT_EQ(service_->GetServiceStatus().sync_status,
+            SyncStatus::kSyncDisabledByEnterprise);
+#endif
+}
+
+TEST_F(CollaborationServiceImplTest, SyncDisabledByEnterprise) {
+#if BUILDFLAG(IS_IOS) || BUILDFLAG(IS_ANDROID)
+  // Disable sync by enterprise policy.
+  test_sync_service_->SetAllowedByEnterprisePolicy(false);
+  test_sync_service_->FireStateChanged();
+  EXPECT_EQ(service_->GetServiceStatus().sync_status,
+            SyncStatus::kSyncDisabledByEnterprise);
+#endif
+}
+
+TEST_F(CollaborationServiceImplTest, SyncStatusChanges_SettingInProgress) {
+  // By default the test sync service is signed in with sync and every DataType
+  // enabled.
+  EXPECT_EQ(service_->GetServiceStatus().sync_status, SyncStatus::kSyncEnabled);
+
+  // Setup in progress does not change sync status.
+  test_sync_service_->SetSetupInProgress();
+  test_sync_service_->SetSignedOut();
+  test_sync_service_->FireStateChanged();
+  EXPECT_EQ(service_->GetServiceStatus().sync_status, SyncStatus::kSyncEnabled);
 }
 
 TEST_F(CollaborationServiceImplTest, ConsumerSigninChanges) {
@@ -364,19 +429,16 @@ TEST_F(CollaborationServiceImplTest, LeaveGroup) {
 }
 
 TEST_F(CollaborationServiceImplTest, CancelAllFlows) {
-  GURL url("http://www.example.com/");
-  data_sharing::GroupToken token(data_sharing::GroupId(kGroupId), kAccessToken);
+  GURL url = GURL(data_sharing::features::kDataSharingURL.Get() +
+                  "?g=" + kGroupId + "&t=" + kAccessToken);
 
   // New join flow will be appended with a valid url parsing and will stop all
   // conflicting flows.
-  EXPECT_CALL(mock_data_sharing_service_, ParseDataSharingUrl(url))
-      .WillRepeatedly(Return(base::ok(token)));
   std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
       std::make_unique<MockCollaborationControllerDelegate>();
   MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
   EXPECT_CALL(*mock_delegate, OnFlowFinished());
-  service_->StartJoinFlow(std::move(mock_delegate), url,
-                          CollaborationServiceJoinEntryPoint::kUnknown);
+  service_->StartJoinFlow(std::move(mock_delegate), url);
 
   // Wait for post tasks.
   EXPECT_TRUE(base::test::RunUntil(
@@ -390,16 +452,279 @@ TEST_F(CollaborationServiceImplTest, CancelAllFlows) {
             CollaborationControllerDelegate::Outcome::kSuccess);
         return true;
       });
-
-  base::RunLoop run_loop;
-  service_->CancelAllFlows(base::BindOnce(
-      [](base::RunLoop* run_loop) { run_loop->Quit(); }, &run_loop));
+  service_->CancelAllFlows();
 
   EXPECT_TRUE(cancel_called);
 
   // Wait for post tasks.
-  EXPECT_TRUE(base::test::RunUntil(
-      [&]() { return service_->GetJoinControllersForTesting().size() == 0; }));
+  EXPECT_TRUE(service_->GetJoinControllersForTesting().size() == 0);
+  EXPECT_TRUE(service_->GetDeletingControllersCountForTesting() == 1);
+  EXPECT_TRUE(base::test::RunUntil([&]() {
+    return service_->GetDeletingControllersCountForTesting() == 0;
+  }));
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_NoChange_DoesntCancelJoin) {
+  // Start a join flow.
+  GURL url = GURL(data_sharing::features::kDataSharingURL.Get() +
+                  "?g=" + kGroupId + "&t=" + kAccessToken);
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartJoinFlow(std::move(mock_delegate), url);
+  EXPECT_CALL(*delegate_ptr, Cancel(_)).Times(0);
+  // Prepare a kNoChange event.
+  PrimaryAccountChangeEvent::State state;
+  PrimaryAccountChangeEvent event_details(
+      state, state, signin_metrics::AccessPoint::kUnknown);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_NoChange_DoesntCancelShare) {
+  // Start a share flow.
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartShareOrManageFlow(
+      std::move(mock_delegate), tab_groups::test::GenerateRandomTabGroupID(),
+      CollaborationServiceShareOrManageEntryPoint::kUnknown);
+  EXPECT_CALL(*delegate_ptr, Cancel(_)).Times(0);
+  // Prepare a kNoChange event.
+  PrimaryAccountChangeEvent::State state;
+  PrimaryAccountChangeEvent event_details(
+      state, state, signin_metrics::AccessPoint::kUnknown);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_SigningInFromUnsignedIn_DoesntCancelJoin) {
+  // Start a join flow.
+  GURL url = GURL(data_sharing::features::kDataSharingURL.Get() +
+                  "?g=" + kGroupId + "&t=" + kAccessToken);
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartJoinFlow(std::move(mock_delegate), url);
+  EXPECT_CALL(*delegate_ptr, Cancel(_)).Times(0);
+  // Prepare a kSet event from unsigned in to signed in.
+  PrimaryAccountChangeEvent::State previous_state;
+  CoreAccountInfo account_info;
+  account_info.gaia = kUserGaia;
+  account_info.account_id = CoreAccountId::FromGaiaId(account_info.gaia);
+  account_info.email = kConsumerUserEmail;
+  PrimaryAccountChangeEvent::State current_state(account_info,
+                                                 signin::ConsentLevel::kSignin);
+  PrimaryAccountChangeEvent event_details(
+      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_SigningInFromUnsignedIn_DoesntCancelShare) {
+  // Start a share flow.
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartShareOrManageFlow(
+      std::move(mock_delegate), tab_groups::test::GenerateRandomTabGroupID(),
+      CollaborationServiceShareOrManageEntryPoint::kUnknown);
+  EXPECT_CALL(*delegate_ptr, Cancel(_)).Times(0);
+  // Prepare a kSet event from unsigned in to signed in.
+  PrimaryAccountChangeEvent::State previous_state;
+  CoreAccountInfo account_info;
+  account_info.gaia = kUserGaia;
+  account_info.account_id = CoreAccountId::FromGaiaId(account_info.gaia);
+  account_info.email = kConsumerUserEmail;
+  PrimaryAccountChangeEvent::State current_state(account_info,
+                                                 signin::ConsentLevel::kSignin);
+  PrimaryAccountChangeEvent event_details(
+      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_SwitchingAccount_CancelsJoin) {
+  // Start a join flow.
+  GURL url = GURL(data_sharing::features::kDataSharingURL.Get() +
+                  "?g=" + kGroupId + "&t=" + kAccessToken);
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartJoinFlow(std::move(mock_delegate), url);
+  bool cancel_called = false;
+  EXPECT_CALL(*delegate_ptr, Cancel(_))
+      .WillOnce([&](CollaborationControllerDelegate::ResultCallback result) {
+        cancel_called = true;
+        std::move(result).Run(
+            CollaborationControllerDelegate::Outcome::kSuccess);
+        return true;
+      });
+  // Prepare a kSet event, switching accounts.
+  CoreAccountInfo account_info_1;
+  account_info_1.gaia = kUserGaia;
+  account_info_1.account_id = CoreAccountId::FromGaiaId(account_info_1.gaia);
+  account_info_1.email = kConsumerUserEmail;
+  PrimaryAccountChangeEvent::State previous_state(
+      account_info_1, signin::ConsentLevel::kSignin);
+  CoreAccountInfo account_info_2;
+  account_info_2.gaia = kOtherUserGaia;
+  account_info_2.account_id = CoreAccountId::FromGaiaId(account_info_2.gaia);
+  account_info_2.email = kOtherConsumerUserEmail;
+  PrimaryAccountChangeEvent::State current_state(account_info_2,
+                                                 signin::ConsentLevel::kSignin);
+  PrimaryAccountChangeEvent event_details(
+      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+
+  EXPECT_TRUE(cancel_called);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_SwitchingAccount_CancelsShare) {
+  // Start a share flow.
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartShareOrManageFlow(
+      std::move(mock_delegate), tab_groups::test::GenerateRandomTabGroupID(),
+      CollaborationServiceShareOrManageEntryPoint::kUnknown);
+  bool cancel_called = false;
+  EXPECT_CALL(*delegate_ptr, Cancel(_))
+      .WillOnce([&](CollaborationControllerDelegate::ResultCallback result) {
+        cancel_called = true;
+        std::move(result).Run(
+            CollaborationControllerDelegate::Outcome::kSuccess);
+        return true;
+      });
+  // Prepare a kSet event, switching accounts.
+  CoreAccountInfo account_info_1;
+  account_info_1.gaia = kUserGaia;
+  account_info_1.account_id = CoreAccountId::FromGaiaId(account_info_1.gaia);
+  account_info_1.email = kConsumerUserEmail;
+  PrimaryAccountChangeEvent::State previous_state(
+      account_info_1, signin::ConsentLevel::kSignin);
+  CoreAccountInfo account_info_2;
+  account_info_2.gaia = kOtherUserGaia;
+  account_info_2.account_id = CoreAccountId::FromGaiaId(account_info_2.gaia);
+  account_info_2.email = kOtherConsumerUserEmail;
+  PrimaryAccountChangeEvent::State current_state(account_info_2,
+                                                 signin::ConsentLevel::kSignin);
+  PrimaryAccountChangeEvent event_details(
+      previous_state, current_state, signin_metrics::AccessPoint::kUnknown);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+
+  EXPECT_TRUE(cancel_called);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_Cleared_CancelsJoin) {
+  // Start a join flow.
+  GURL url = GURL(data_sharing::features::kDataSharingURL.Get() +
+                  "?g=" + kGroupId + "&t=" + kAccessToken);
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartJoinFlow(std::move(mock_delegate), url);
+  bool cancel_called = false;
+  EXPECT_CALL(*delegate_ptr, Cancel(_))
+      .WillOnce([&](CollaborationControllerDelegate::ResultCallback result) {
+        cancel_called = true;
+        std::move(result).Run(
+            CollaborationControllerDelegate::Outcome::kSuccess);
+        return true;
+      });
+  // Prepare a kCleared event.
+  CoreAccountInfo account_info;
+  account_info.gaia = kUserGaia;
+  account_info.account_id = CoreAccountId::FromGaiaId(account_info.gaia);
+  account_info.email = kConsumerUserEmail;
+  PrimaryAccountChangeEvent::State previous_state(
+      account_info, signin::ConsentLevel::kSignin);
+  PrimaryAccountChangeEvent::State current_state;
+  PrimaryAccountChangeEvent event_details(
+      previous_state, current_state, signin_metrics::ProfileSignout::kTest);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+
+  EXPECT_TRUE(cancel_called);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       OnPrimaryAccountChanged_Cleared_CancelsShare) {
+  // Start a share flow.
+  std::unique_ptr<MockCollaborationControllerDelegate> mock_delegate =
+      std::make_unique<MockCollaborationControllerDelegate>();
+  MockCollaborationControllerDelegate* delegate_ptr = mock_delegate.get();
+  service_->StartShareOrManageFlow(
+      std::move(mock_delegate), tab_groups::test::GenerateRandomTabGroupID(),
+      CollaborationServiceShareOrManageEntryPoint::kUnknown);
+  bool cancel_called = false;
+  EXPECT_CALL(*delegate_ptr, Cancel(_))
+      .WillOnce([&](CollaborationControllerDelegate::ResultCallback result) {
+        cancel_called = true;
+        std::move(result).Run(
+            CollaborationControllerDelegate::Outcome::kSuccess);
+        return true;
+      });
+  // Prepare a kCleared event.
+  CoreAccountInfo account_info;
+  account_info.gaia = kUserGaia;
+  account_info.account_id = CoreAccountId::FromGaiaId(account_info.gaia);
+  account_info.email = kConsumerUserEmail;
+  PrimaryAccountChangeEvent::State previous_state(
+      account_info, signin::ConsentLevel::kSignin);
+  PrimaryAccountChangeEvent::State current_state;
+  PrimaryAccountChangeEvent event_details(
+      previous_state, current_state, signin_metrics::ProfileSignout::kTest);
+
+  // Process the event.
+  service_->OnPrimaryAccountChanged(event_details);
+
+  EXPECT_TRUE(cancel_called);
+}
+
+TEST_F(CollaborationServiceImplTest,
+       GetServiceStatus_VersionOutOfDateShowUpdateChromeUi) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures(
+      {data_sharing::features::kDataSharingFeature,
+       data_sharing::features::kDataSharingEnableUpdateChromeUI,
+       data_sharing::features::kSharedDataTypesKillSwitch},
+      {data_sharing::features::kDataSharingJoinOnly});
+  InitService();
+
+  EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
+            CollaborationStatus::kVersionOutOfDateShowUpdateChromeUi);
+}
+
+TEST_F(CollaborationServiceImplTest, GetServiceStatus_VersionOutOfDate) {
+  base::test::ScopedFeatureList feature_list;
+  feature_list.InitWithFeatures(
+      {
+          data_sharing::features::kDataSharingJoinOnly,
+          data_sharing::features::kSharedDataTypesKillSwitch,
+      },
+      {data_sharing::features::kDataSharingFeature,
+       data_sharing::features::kDataSharingEnableUpdateChromeUI});
+  InitService();
+
+  EXPECT_EQ(service_->GetServiceStatus().collaboration_status,
+            CollaborationStatus::kVersionOutOfDate);
 }
 
 }  // namespace collaboration

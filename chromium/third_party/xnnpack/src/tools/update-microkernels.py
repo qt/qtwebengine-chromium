@@ -69,9 +69,9 @@ _ISA_LIST = frozenset({
     'scalar',
     'sse',
     'sse2',
+    'sse2fma',
     'sse41',
     'ssse3',
-    'wasm',
     'wasmblendvps',
     'wasmrelaxedsimd',
     'wasmpshufb',
@@ -103,6 +103,7 @@ _MICROKERNEL_NAME_REGEX = re.compile(
 _VERIFICATION_IGNORE_SUBDIRS = {
     os.path.join('src', 'qs8-requantization'),
     os.path.join('src', 'qu8-requantization'),
+    os.path.join('src', 'reference'),
     os.path.join('src', 'xnnpack', 'simd'),
 }
 
@@ -197,17 +198,27 @@ def main(args):
         continue
       if name.endswith('.h'):
         continue
+      if name.endswith('.inc'):
+        continue
       basename, ext = os.path.splitext(name)
       if ext == '.sollya':
         continue
 
       subdir = os.path.relpath(root, root_dir)
       filepath = os.path.join(subdir, name)
+      if 'pipertmp' in filepath:
+        continue
+
+      # Skip files created by repository tools.
+      if (
+          name.startswith('._')
+          or filepath.endswith('.swp')
+          or filepath.endswith('.orig')
+      ):
+        continue
 
       # Build microkernel name -> microkernel filepath mapping
       with open(os.path.join(root_dir, filepath), 'r', encoding='utf-8') as f:
-        if filepath.endswith('.swp'): continue
-        if filepath.endswith('.orig'): continue
         content = f.read()
         microkernels = re.findall(_MICROKERNEL_NAME_REGEX, content)
         if not microkernels:
@@ -294,6 +305,8 @@ def main(args):
   # Collect filenames of production microkernels as a set
   prod_microkernels = set()
   for configs_filepath in os.listdir(configs_dir):
+    if not configs_filepath.endswith('-config.c'):
+      continue
     with open(
         os.path.join(configs_dir, configs_filepath), 'r', encoding='utf-8'
     ) as config_file:

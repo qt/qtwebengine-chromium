@@ -4,8 +4,6 @@
 
 #include "components/autofill/core/browser/data_manager/payments/payments_data_manager_test_api.h"
 
-#include "components/autofill/core/browser/data_model/payments/credit_card_art_image.h"
-
 namespace autofill {
 
 void PaymentsDataManagerTestApi::AddServerCreditCard(
@@ -67,17 +65,8 @@ void PaymentsDataManagerTestApi::AddBnplIssuer(const BnplIssuer& bnpl_issuer) {
   }
 }
 
-void PaymentsDataManagerTestApi::OnCardArtImagesFetched(
-    std::vector<std::unique_ptr<CreditCardArtImage>> images) {
-  payments_data_manager_->OnCardArtImagesFetched(std::move(images));
-}
-
-bool PaymentsDataManagerTestApi::ShouldBlockCardBenefitSuggestionLabels(
-    const CreditCard& credit_card,
-    const url::Origin& origin,
-    const AutofillOptimizationGuide* optimization_guide) {
-  return payments_data_manager_->ShouldBlockCardBenefitSuggestionLabels(
-      credit_card, origin, std::move(optimization_guide));
+bool PaymentsDataManagerTestApi::ShouldBlockCardBenefitSuggestionLabels() {
+  return payments_data_manager_->ShouldBlockCardBenefitSuggestionLabels();
 }
 
 bool PaymentsDataManagerTestApi::ShouldSuggestServerPaymentMethods() {

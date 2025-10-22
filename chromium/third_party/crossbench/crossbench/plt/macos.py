@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.util
 import functools
 import json
 import logging
@@ -13,7 +14,7 @@ import re
 import socket
 import traceback as tb
 from subprocess import SubprocessError
-from typing import TYPE_CHECKING, Any, Dict, Iterator, Optional, Tuple, Type
+from typing import TYPE_CHECKING, Any, Iterator, Optional, Type
 
 import psutil
 from typing_extensions import override
@@ -31,7 +32,7 @@ DISPLAY_NDRV_RE = re.compile(
     "(?P<resX>[0-9]+) x (?P<resY>[0-9]+) @ (?P<freq>[0-9.]+)Hz")
 
 
-def parse_display_ndrvs(spdisplays_ndrvs: Dict) -> Iterator[DisplayInfo]:
+def parse_display_ndrvs(spdisplays_ndrvs: dict) -> Iterator[DisplayInfo]:
   """
   Parses `system_profiler SPDisplaysDataType` output.
   "SPDisplaysDataType" : [
@@ -69,7 +70,7 @@ def parse_display_ndrvs(spdisplays_ndrvs: Dict) -> Iterator[DisplayInfo]:
 
 
 class MacOSPlatform(PosixPlatform):
-  SEARCH_PATHS: Tuple[pth.AnyPath, ...] = (
+  SEARCH_PATHS: tuple[pth.AnyPath, ...] = (
       pth.AnyPosixPath("."),
       pth.AnyPosixPath("/Applications"),
       # TODO: support remote platforms
@@ -99,7 +100,7 @@ class MacOSPlatform(PosixPlatform):
     return self.sh_stdout("sw_vers", "-productVersion").strip()
 
   @functools.cached_property
-  def version_parts(self) -> Tuple[int, ...]:
+  def version_parts(self) -> tuple[int, ...]:
     return tuple(map(int, self.version.split(".")))
 
   @functools.cached_property
@@ -116,7 +117,7 @@ class MacOSPlatform(PosixPlatform):
 
   @functools.lru_cache(maxsize=2)
   @override
-  def cpu_cores(self, logical: bool = False) -> int:
+  def cpu_cores(self, logical: bool) -> int:
     if self.is_local:
       return super().cpu_cores(logical)
     sysctl_name = "hw.logicalcpu_max" if logical else "hw.physicalcpu_max"
@@ -143,20 +144,23 @@ class MacOSPlatform(PosixPlatform):
 
   @functools.lru_cache(maxsize=1)
   @override
-  def system_details(self) -> Dict[str, Any]:
+  def system_details(self) -> dict[str, Any]:
     details = super().system_details()
-    details.update({
+    details.update(self._macos_system_details())
+    return details
+
+  def _macos_system_details(self) -> dict[str, Any]:
+    return {
         "system_profiler":
             self.sh_stdout("system_profiler", "SPHardwareDataType"),
         "sysctl_machdep_cpu":
             self.sh_stdout("sysctl", "machdep.cpu"),
         "sysctl_hw":
             self.sh_stdout("sysctl", "hw"),
-    })
-    return details
+    }
 
   @functools.lru_cache(maxsize=1)
-  def display_details(self) -> Tuple[DisplayInfo, ...]:
+  def display_details(self) -> tuple[DisplayInfo, ...]:
     display_info_raw = self.sh_stdout("system_profiler", "-json",
                                       "SPDisplaysDataType").strip()
     display_info = json.loads(display_info_raw)
@@ -165,7 +169,7 @@ class MacOSPlatform(PosixPlatform):
         return tuple(parse_display_ndrvs(spdisplays_ndrvs))
     return tuple()
 
-  def display_resolution(self) -> Tuple[int, int]:
+  def display_resolution(self) -> tuple[int, int]:
     return self.display_details()[0]["resolution"]
 
   def _cpu_freq(self) -> Optional[CPUFreqInfo]:
@@ -304,7 +308,7 @@ class MacOSPlatform(PosixPlatform):
       end run"""
     return self.sh_stdout("/usr/bin/osascript", "-e", script, *args)
 
-  def foreground_process(self) -> Optional[Dict[str, Any]]:
+  def foreground_process(self) -> Optional[dict[str, Any]]:
     foreground_process_info = self.sh_stdout("lsappinfo", "front").strip()
     if not foreground_process_info:
       return None
@@ -383,11 +387,15 @@ class MacOSPlatform(PosixPlatform):
     self.sh("sudo", falconctl, "unload")
     return True
 
-  def _get_display_service(self) -> Tuple[ctypes.CDLL, Any]:
+  def _get_main_display(self) -> tuple[ctypes.CDLL, Any]:
     assert self.is_local, "Operation not supported on remote platforms"
     core_graphics = ctypes.CDLL(
         "/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics")
     main_display = core_graphics.CGMainDisplayID()
+    return main_display, core_graphics
+
+  def _get_display_service(self) -> tuple[ctypes.CDLL, Any]:
+    main_display, _ = self._get_main_display()
     display_services = ctypes.CDLL(
         "/System/Library/PrivateFrameworks/DisplayServices.framework"
         "/DisplayServices")
@@ -443,6 +451,130 @@ class MacOSPlatform(PosixPlatform):
     assert ret == 0, f"ret={ret}, display_brightness={display_brightness}"
     return round(display_brightness.value * 100)
 
+  def _core_graphics_types(self, core_graphics) -> None:
+    # https://developer.apple.com/documentation/coregraphics/1455620-cgmaindisplayid?language=objc
+    core_graphics.CGMainDisplayID.argtypes = ()
+    core_graphics.CGMainDisplayID.restype = ctypes.c_uint32
+    # https://developer.apple.com/documentation/coregraphics/1454099-cgdisplaycopydisplaymode?language=objc
+    core_graphics.CGDisplayCopyDisplayMode.argtypes = (ctypes.c_uint32,)
+    core_graphics.CGDisplayCopyDisplayMode.restype = ctypes.c_void_p
+    # https://developer.apple.com/documentation/coregraphics/1455537-cgdisplaycopyalldisplaymodes?language=objc
+    core_graphics.CGDisplayCopyAllDisplayModes.argtypes = (ctypes.c_uint32,
+                                                           ctypes.c_void_p)
+    core_graphics.CGDisplayCopyAllDisplayModes.restype = ctypes.c_void_p
+    # https://developer.apple.com/documentation/coregraphics/1454442-cgdisplaymodegetwidth?language=objc
+    core_graphics.CGDisplayModeGetWidth.argtypes = (ctypes.c_void_p,)
+    core_graphics.CGDisplayModeGetWidth.restype = ctypes.c_size_t
+    # https://developer.apple.com/documentation/coregraphics/1455380-cgdisplaymodegetheight?language=objc
+    core_graphics.CGDisplayModeGetHeight.argtypes = (ctypes.c_void_p,)
+    core_graphics.CGDisplayModeGetHeight.restype = ctypes.c_size_t
+    # https://developer.apple.com/documentation/coregraphics/1454661-cgdisplaymodegetrefreshrate?language=objc
+    core_graphics.CGDisplayModeGetRefreshRate.argtypes = (ctypes.c_void_p,)
+    core_graphics.CGDisplayModeGetRefreshRate.restype = ctypes.c_double
+    # https://developer.apple.com/documentation/coregraphics/1454760-cgdisplaysetdisplaymode?language=objc
+    core_graphics.CGDisplaySetDisplayMode.argtypes = (ctypes.c_uint32,
+                                                      ctypes.c_void_p)
+    core_graphics.CGDisplaySetDisplayMode.restype = ctypes.c_int32
+
+  def _core_foundation_types(self, core_foundation) -> None:
+    # https://developer.apple.com/documentation/corefoundation/1388772-cfarraygetcount?language=objc
+    core_foundation.CFArrayGetCount.argtypes = (ctypes.c_void_p,)
+    core_foundation.CFArrayGetCount.restype = ctypes.c_long
+    # https://developer.apple.com/documentation/corefoundation/1388767-cfarraygetvalueatindex?language=objc
+    core_foundation.CFArrayGetValueAtIndex.argtypes = (ctypes.c_void_p,
+                                                       ctypes.c_long)
+    core_foundation.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
+    # https://developer.apple.com/documentation/corefoundation/cfdictionarycreate(_:_:_:_:_:_:)?language=objc
+    core_foundation.CFDictionaryCreate.argtypes = (
+        ctypes.c_void_p,  # allocator
+        ctypes.c_void_p,  # **keys
+        ctypes.c_void_p,  # **values
+        ctypes.c_long,  # numValues
+        ctypes.c_void_p,  # *keyCallBacks
+        ctypes.c_void_p,  # *valueCallBacks
+    )
+    core_foundation.CFDictionaryCreate.restype = ctypes.c_void_p
+    # https://developer.apple.com/documentation/corefoundation/1521153-cfrelease/
+    core_foundation.CFRelease.argtypes = (ctypes.c_void_p,)
+
+  def set_display_refresh_rate(self,
+                               refresh_rate: int,
+                               retry: int = 3) -> tuple[bool, str]:
+    """Sets the refresh rate if the main display supports it.
+
+    This function uses CoreGraphics and CoreFoundtation libraries:
+    https://developer.apple.com/documentation/coregraphics/
+    https://developer.apple.com/documentation/corefoundation
+    If this function detects a display mode with the same width and height, it
+    sets the refresh rate to the requested rate.
+
+    Args:
+      refresh_rate: Target display refresh rate to set.
+      retry: How many times to try if something goes wrong in setting the rate.
+
+    Returns:
+      A tuple of boolean values to indicate success or failure, and a message.
+    """
+    refresh_rate = NumberParser.int_range(30, 240)(refresh_rate)
+    # Getting the current main display info.
+    main_display, core_graphics = self._get_main_display()
+    self._core_graphics_types(core_graphics)
+
+    # Get the current refresh rate and verify if it needs to be set.
+    display_mode = core_graphics.CGDisplayCopyDisplayMode(main_display)
+    main_refresh_rate = core_graphics.CGDisplayModeGetRefreshRate(display_mode)
+    if main_refresh_rate == refresh_rate:
+      return True, f"The display refresh rate is already {refresh_rate}Hz"
+    main_width = round(core_graphics.CGDisplayModeGetWidth(display_mode))
+    main_height = round(core_graphics.CGDisplayModeGetHeight(display_mode))
+    log_msg = (f"\nMain display: ID={main_display}, "
+               f"width={main_width}, height={main_height}, "
+               f"main_refresh_rate={refresh_rate}, "
+               f"refresh_rate={refresh_rate}")
+
+    core_foundation = ctypes.CDLL(ctypes.util.find_library("CoreFoundation"))
+    self._core_foundation_types(core_foundation)
+
+    # Finding all available display modes.
+    keys = (ctypes.c_void_p * 1)()
+    keys[0] = ctypes.c_void_p.in_dll(
+        core_graphics, "kCGDisplayShowDuplicateLowResolutionModes")
+    values = (ctypes.c_void_p * 1)()
+    values[0] = ctypes.c_void_p.in_dll(core_foundation, "kCFBooleanTrue")
+    options = core_foundation.CFDictionaryCreate(None, keys, values, 1, None,
+                                                 None)
+    display_modes = core_graphics.CGDisplayCopyAllDisplayModes(
+        main_display, options)
+
+    # Finding a display with original size and capable of the refresh rate.
+    set_mode = None
+    for idx in range(core_foundation.CFArrayGetCount(display_modes)):
+      display_mode = core_foundation.CFArrayGetValueAtIndex(display_modes, idx)
+      width = round(core_graphics.CGDisplayModeGetWidth(display_mode))
+      height = round(core_graphics.CGDisplayModeGetHeight(display_mode))
+      rate = int(core_graphics.CGDisplayModeGetRefreshRate(display_mode))
+      log_msg += (f"\nDetected: display_mode={display_mode}, "
+                  f"width={width}, height={height}, "
+                  f"refresh_rate={rate}")
+      if (main_width == width and main_height == height and
+          refresh_rate == rate):
+        set_mode = display_mode
+        break
+
+    # Set the refresh rate if the suitable display mode is found.
+    if set_mode is not None:
+      for _ in range(retry):
+        core_graphics.CGDisplaySetDisplayMode(main_display, set_mode, None)
+        rate = int(core_graphics.CGDisplayModeGetRefreshRate(display_mode))
+        if refresh_rate == rate:
+          return True, f"The refresh rate was successfully set!\n{log_msg}"
+        log_msg += "\nFailed to set the refresh rate!"
+        self.sleep(2)
+    else:
+      log_msg += "\nFailed to find a match for display size and refresh rate!"
+
+    return False, log_msg
+
   def screenshot(self, result_path: pth.AnyPath) -> None:
     self.sh("screencapture", "-x", result_path)
 
@@ -454,3 +586,10 @@ class MacOSPlatform(PosixPlatform):
     # This is a semi-ideal solution as it creates a temporary local server.
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
       return s.connect_ex(("localhost", port)) == 0
+
+  @override
+  def last_modified(self, path: pth.AnyPathLike) -> float:
+    if self.is_local:
+      return super().last_modified(path)
+    # Get seconds since epoch
+    return float(self.sh_stdout("stat", "-f", "%m", self.path(path)))

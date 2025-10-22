@@ -24,7 +24,7 @@
 #include "src/trace_processor/containers/implicit_segment_forest.h"
 #include "src/trace_processor/perfetto_sql/engine/perfetto_sql_engine.h"
 #include "src/trace_processor/sqlite/bindings/sqlite_module.h"
-#include "src/trace_processor/sqlite/module_lifecycle_manager.h"
+#include "src/trace_processor/sqlite/module_state_manager.h"
 
 namespace perfetto::trace_processor {
 
@@ -53,25 +53,26 @@ namespace perfetto::trace_processor {
 struct SliceMipmapOperator : sqlite::Module<SliceMipmapOperator> {
   struct Slice {
     int64_t dur;
-    uint32_t id;
+    uint32_t count;
     uint32_t idx;
   };
   struct Agg {
     Slice operator()(const Slice& a, const Slice& b) {
-      return a.dur < b.dur ? b : a;
+      return a.dur < b.dur ? Slice{b.dur, a.count + b.count, b.idx}
+                           : Slice{a.dur, a.count + b.count, a.idx};
     }
   };
   struct PerDepth {
     ImplicitSegmentForest<Slice, Agg> forest;
+    std::vector<uint32_t> ids;
     std::vector<int64_t> timestamps;
   };
   struct State {
     std::vector<PerDepth> by_depth;
   };
-  struct Context {
+  struct Context : sqlite::ModuleStateManager<SliceMipmapOperator> {
     explicit Context(PerfettoSqlEngine* _engine) : engine(_engine) {}
     PerfettoSqlEngine* engine;
-    sqlite::ModuleStateManager<SliceMipmapOperator> manager;
   };
   struct Vtab : sqlite::Module<SliceMipmapOperator>::Vtab {
     sqlite::ModuleStateManager<SliceMipmapOperator>::PerVtabState* state;
@@ -80,6 +81,7 @@ struct SliceMipmapOperator : sqlite::Module<SliceMipmapOperator> {
     struct Result {
       int64_t timestamp;
       int64_t dur;
+      uint32_t count;
       uint32_t id;
       uint32_t depth;
     };
@@ -121,6 +123,28 @@ struct SliceMipmapOperator : sqlite::Module<SliceMipmapOperator> {
   static int Eof(sqlite3_vtab_cursor*);
   static int Column(sqlite3_vtab_cursor*, sqlite3_context*, int);
   static int Rowid(sqlite3_vtab_cursor*, sqlite_int64*);
+
+  static int Begin(sqlite3_vtab*) { return SQLITE_OK; }
+  static int Sync(sqlite3_vtab*) { return SQLITE_OK; }
+  static int Commit(sqlite3_vtab*) { return SQLITE_OK; }
+  static int Rollback(sqlite3_vtab*) { return SQLITE_OK; }
+  static int Savepoint(sqlite3_vtab* t, int r) {
+    SliceMipmapOperator::Vtab* vtab = GetVtab(t);
+    sqlite::ModuleStateManager<SliceMipmapOperator>::OnSavepoint(vtab->state,
+                                                                 r);
+    return SQLITE_OK;
+  }
+  static int Release(sqlite3_vtab* t, int r) {
+    SliceMipmapOperator::Vtab* vtab = GetVtab(t);
+    sqlite::ModuleStateManager<SliceMipmapOperator>::OnRelease(vtab->state, r);
+    return SQLITE_OK;
+  }
+  static int RollbackTo(sqlite3_vtab* t, int r) {
+    SliceMipmapOperator::Vtab* vtab = GetVtab(t);
+    sqlite::ModuleStateManager<SliceMipmapOperator>::OnRollbackTo(vtab->state,
+                                                                  r);
+    return SQLITE_OK;
+  }
 
   // This needs to happen at the end as it depends on the functions
   // defined above.

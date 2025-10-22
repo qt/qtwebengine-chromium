@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2023-2025 LunarG, Inc.
  * Copyright (c) 2023-2025 Valve Corporation
+ * Copyright (c) 2025 Arm Limited.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -40,7 +41,9 @@ const char* unimplementable_validation[] = {
 
     // these are already taken care in spirv-val for 08737
     "VUID-VkShaderModuleCreateInfo-pCode-08736", "VUID-VkShaderCreateInfoEXT-pCode-08736",
-    "VUID-VkShaderModuleCreateInfo-pCode-08738", "VUID-VkShaderCreateInfoEXT-pCode-08738",
+
+    // is same as VUID-VkShaderModuleCreateInfo-pCode-08738
+    "VUID-VkShaderModuleCreateInfo-pCode-07912",
 
     // We can't detect what user does in their callback
     "VUID-PFN_vkDebugUtilsMessengerCallbackEXT-None-04769",
@@ -71,6 +74,8 @@ const char* unimplementable_validation[] = {
     "VUID-vkGetImageViewOpaqueCaptureDescriptorDataEXT-pData-08081",
     "VUID-vkGetSamplerOpaqueCaptureDescriptorDataEXT-pData-08085",
     "VUID-vkGetAccelerationStructureOpaqueCaptureDescriptorDataEXT-pData-08089",
+    "VUID-vkGetTensorOpaqueCaptureDescriptorDataARM-pData-09703",
+    "VUID-vkGetTensorViewOpaqueCaptureDescriptorDataARM-pData-09707",
 
     // These would need to be checked by the loader as it uses these to call into the layers/drivers
     "VUID-vkEnumerateInstanceVersion-pApiVersion-parameter",
@@ -226,7 +231,7 @@ const char* unimplementable_validation[] = {
     "VUID-VkBindDescriptorSetsInfo-pDynamicOffsets-parameter",
     "VUID-VkPhysicalDeviceHostImageCopyProperties-pCopySrcLayouts-parameter",
     "VUID-VkPhysicalDeviceHostImageCopyProperties-pCopyDstLayouts-parameter",
-    "VUID-VkSurfacePresentModeCompatibilityEXT-pPresentModes-parameter",
+    "VUID-VkSurfacePresentModeCompatibilityKHR-pPresentModes-parameter",
     "VUID-VkFrameBoundaryEXT-pImages-parameter",
     "VUID-VkFrameBoundaryEXT-pBuffers-parameter",
     "VUID-VkFrameBoundaryEXT-pTag-parameter",
@@ -460,7 +465,6 @@ const char* unimplementable_validation[] = {
     "VUID-VkPhysicalDeviceExternalMemoryHostPropertiesEXT-sType-sType",
     "VUID-VkPhysicalDeviceFloatControlsProperties-sType-sType",
     "VUID-VkPhysicalDeviceFragmentDensityMap2PropertiesEXT-sType-sType",
-    "VUID-VkPhysicalDeviceFragmentDensityMapOffsetPropertiesQCOM-sType-sType",
     "VUID-VkPhysicalDeviceFragmentDensityMapPropertiesEXT-sType-sType",
     "VUID-VkPhysicalDeviceFragmentShaderBarycentricPropertiesKHR-sType-sType",
     "VUID-VkPhysicalDeviceFragmentShadingRateEnumsPropertiesNV-sType-sType",
@@ -507,7 +511,7 @@ const char* unimplementable_validation[] = {
     "VUID-VkPhysicalDeviceRayTracingPipelinePropertiesKHR-sType-sType",
     "VUID-VkPhysicalDeviceRayTracingPropertiesNV-sType-sType",
     "VUID-VkPhysicalDeviceRenderPassStripedPropertiesARM-sType-sType",
-    "VUID-VkPhysicalDeviceRobustness2PropertiesEXT-sType-sType",
+    "VUID-VkPhysicalDeviceRobustness2PropertiesKHR-sType-sType",
     "VUID-VkPhysicalDeviceSampleLocationsPropertiesEXT-sType-sType",
     "VUID-VkPhysicalDeviceSamplerFilterMinmaxProperties-sType-sType",
     "VUID-VkPhysicalDeviceSchedulingControlsPropertiesARM-sType-sType",
@@ -553,7 +557,6 @@ const char* unimplementable_validation[] = {
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09488"
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09489"
     "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-09490"
-    "VUID-VkAccelerationStructureCreateInfoKHR-deviceAddress-10393"
 };
 
 // VUs from deprecated extensions that would require complex codegen to get working

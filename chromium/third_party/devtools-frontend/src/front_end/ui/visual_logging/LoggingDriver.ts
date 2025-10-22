@@ -138,7 +138,7 @@ const viewportRectFor = (element: Element): DOMRect => {
   return viewportRect;
 };
 
-async function process(): Promise<void> {
+export async function process(): Promise<void> {
   if (document.hidden) {
     return;
   }
@@ -263,8 +263,11 @@ async function process(): Promise<void> {
   }
   for (let i = 0; i < nonDomRoots.length; ++i) {
     const root = nonDomRoots[i];
-    for (const {loggable, config, parent} of getNonDomLoggables(root)) {
+    for (const {loggable, config, parent, size} of getNonDomLoggables(root)) {
       const loggingState = getOrCreateLoggingState(loggable, config, parent);
+      if (size) {
+        loggingState.size = size;
+      }
       processForDebugging(loggable);
       visibleLoggables.push(loggable);
       loggingState.impressionLogged = true;

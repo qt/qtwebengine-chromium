@@ -3,6 +3,8 @@
 // found in the LICENSE file.
 
 #include "ui/gl/scoped_binders.h"
+
+#include "base/notimplemented.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_state_restorer.h"
@@ -67,8 +69,8 @@ ScopedTextureBinder::ScopedTextureBinder(unsigned int target, unsigned int id)
       case GL_TEXTURE_EXTERNAL_OES:
         target_getter = GL_TEXTURE_BINDING_EXTERNAL_OES;
         break;
-      case GL_TEXTURE_RECTANGLE_ARB:
-        target_getter = GL_TEXTURE_BINDING_RECTANGLE_ARB;
+      case GL_TEXTURE_RECTANGLE_ANGLE:
+        target_getter = GL_TEXTURE_BINDING_RECTANGLE_ANGLE;
         break;
       default:
         NOTIMPLEMENTED() << " Target not supported.";

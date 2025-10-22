@@ -18,7 +18,6 @@
 #include "api/array_view.h"
 #include "net/dcsctp/packet/bounded_byte_reader.h"
 #include "net/dcsctp/packet/bounded_byte_writer.h"
-#include "net/dcsctp/packet/tlv_trait.h"
 #include "rtc_base/strings/str_join.h"
 #include "rtc_base/strings/string_builder.h"
 
@@ -40,7 +39,7 @@ namespace dcsctp {
 constexpr int SupportedExtensionsParameter::kType;
 
 std::optional<SupportedExtensionsParameter> SupportedExtensionsParameter::Parse(
-    rtc::ArrayView<const uint8_t> data) {
+    webrtc::ArrayView<const uint8_t> data) {
   std::optional<BoundedByteReader<kHeaderSize>> reader = ParseTLV(data);
   if (!reader.has_value()) {
     return std::nullopt;

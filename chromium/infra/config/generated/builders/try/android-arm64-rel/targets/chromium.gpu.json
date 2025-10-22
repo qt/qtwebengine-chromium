@@ -17,6 +17,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "context_lost_validating_tests",
         "resultdb": {
           "enable": true,
@@ -25,7 +26,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -60,6 +61,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "expected_color_pixel_validating_test",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -73,7 +75,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -104,6 +106,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "gpu_process_launch_tests",
         "resultdb": {
           "enable": true,
@@ -112,7 +115,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -143,6 +146,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "hardware_accelerated_feature_tests",
         "resultdb": {
           "enable": true,
@@ -151,7 +155,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -186,6 +190,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "info_collection_tests",
         "resultdb": {
           "enable": true,
@@ -194,7 +199,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -229,6 +234,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "pixel_skia_gold_validating_test",
         "precommit_args": [
           "--gerrit-issue=${patch_issue}",
@@ -242,7 +248,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -274,6 +280,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "screenshot_sync_validating_tests",
         "resultdb": {
           "enable": true,
@@ -282,7 +289,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -313,6 +320,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "trace_test",
         "resultdb": {
           "enable": true,
@@ -321,7 +329,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",
@@ -353,6 +361,7 @@
         "merge": {
           "script": "//testing/merge_scripts/standard_isolated_script_merge.py"
         },
+        "module_name": "//chrome/test:telemetry_gpu_integration_test_android_chrome/",
         "name": "webgl_conformance_validating_tests",
         "resultdb": {
           "enable": true,
@@ -361,7 +370,7 @@
         "swarming": {
           "containment_type": "AUTO",
           "dimensions": {
-            "device_os": "PQ3A.190801.002",
+            "device_os": "QQ1A.191205.008",
             "device_os_flavor": "google",
             "device_os_type": "userdebug",
             "device_type": "walleye",

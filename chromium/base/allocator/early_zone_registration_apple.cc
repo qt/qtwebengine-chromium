@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "base/allocator/early_zone_registration_apple.h"
 
 #include <mach/mach.h>
@@ -152,9 +157,11 @@ void EarlyMallocZoneRegistration() {
                                       num_to_be_freed);
   };
 #if PA_TRY_FREE_DEFAULT_IS_AVAILABLE
-  g_delegating_zone.try_free_default = [](malloc_zone_t* zone, void* ptr) {
-    return g_default_zone->try_free_default(g_default_zone, ptr);
-  };
+  if (g_default_zone->version >= 13 && g_default_zone->try_free_default) {
+    g_delegating_zone.try_free_default = [](malloc_zone_t* zone, void* ptr) {
+      return g_default_zone->try_free_default(g_default_zone, ptr);
+    };
+  }
 #endif
 
   // Diagnostics and debugging.

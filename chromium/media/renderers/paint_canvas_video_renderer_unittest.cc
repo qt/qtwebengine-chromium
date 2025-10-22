@@ -80,7 +80,7 @@ scoped_refptr<VideoFrame> CreateTestY16Frame(const gfx::Size& coded_size,
 
   return media::VideoFrame::WrapExternalData(
       media::PIXEL_FORMAT_Y16, coded_size, visible_rect, visible_rect.size(),
-      static_cast<uint8_t*>(external_memory), byte_size, timestamp);
+      base::span(static_cast<uint8_t*>(external_memory), byte_size), timestamp);
 }
 
 // Readback the contents of a RGBA texture into an array of RGBA values.
@@ -381,7 +381,12 @@ TEST_F(PaintCanvasVideoRendererTest, CopyTransparentFrame) {
 
 TEST_F(PaintCanvasVideoRendererTest, ReinterpretAsSRGB) {
   FillFrameWithColor(natural_frame(), kRed);
-  natural_frame()->set_color_space(gfx::ColorSpace::CreateHDR10());
+  // Set to HDR PQ color space but with default 601 matrix and range as I420
+  // formats cannot convert to RGB color spaces with RGB matrix.
+  auto hdr_cs = gfx::ColorSpace(
+      gfx::ColorSpace::PrimaryID::BT2020, gfx::ColorSpace::TransferID::PQ,
+      gfx::ColorSpace::MatrixID::SMPTE170M, gfx::ColorSpace::RangeID::LIMITED);
+  natural_frame()->set_color_space(hdr_cs);
 
   cc::PaintFlags flags;
   flags.setBlendMode(SkBlendMode::kSrcOver);
@@ -649,8 +654,7 @@ TEST_F(PaintCanvasVideoRendererTest, HighBitDepth) {
   struct params {
     int bit_depth;
     VideoPixelFormat format;
-  } kBitDepthAndFormats[] = {{9, PIXEL_FORMAT_YUV420P9},
-                             {10, PIXEL_FORMAT_YUV420P10},
+  } kBitDepthAndFormats[] = {{10, PIXEL_FORMAT_YUV420P10},
                              {12, PIXEL_FORMAT_YUV420P12}};
   for (const auto param : kBitDepthAndFormats) {
     // Copy cropped_frame into a highbit frame.
@@ -734,30 +738,34 @@ TEST_F(PaintCanvasVideoRendererTest, Yuv420P12OddWidth) {
   constexpr int kImgHeight = 3;
   constexpr int kUvWidth = (kImgWidth + 1) / 2;
   constexpr int kUvHeight = (kImgHeight + 1) / 2;
-  auto y_plane = base::HeapArray<uint16_t>::Uninit(kImgWidth * kImgHeight);
-  auto u_plane = base::HeapArray<uint16_t>::Uninit(kUvWidth * kUvHeight);
-  auto v_plane = base::HeapArray<uint16_t>::Uninit(kUvWidth * kUvHeight);
-  // Set all pixels to white.
-  for (int i = 0; i < kImgHeight; ++i) {
-    for (int j = 0; j < kImgWidth; ++j) {
-      y_plane[i * kImgWidth + j] = 4095;
-    }
-  }
-  for (int i = 0; i < kUvHeight; ++i) {
-    for (int j = 0; j < kUvWidth; ++j) {
-      u_plane[i * kUvWidth + j] = 2048;
-      v_plane[i * kUvWidth + j] = 2048;
-    }
-  }
+  auto y_plane = base::HeapArray<uint8_t>::Uninit(kImgWidth * kImgHeight *
+                                                  sizeof(uint16_t));
+  auto u_plane =
+      base::HeapArray<uint8_t>::Uninit(kUvWidth * kUvHeight * sizeof(uint16_t));
+  auto v_plane =
+      base::HeapArray<uint8_t>::Uninit(kUvWidth * kUvHeight * sizeof(uint16_t));
   const int32_t y_stride = sizeof(uint16_t) * kImgWidth;
   const int32_t uv_stride = sizeof(uint16_t) * kUvWidth;
+  // Set all pixels to white.
+  uint16_t* y_plane_ptr = reinterpret_cast<uint16_t*>(y_plane.data());
+  for (int i = 0; i < kImgHeight; ++i) {
+    for (int j = 0; j < kImgWidth; ++j) {
+      y_plane_ptr[i * kImgWidth + j] = 4095;
+    }
+  }
+  uint16_t* u_plane_ptr = reinterpret_cast<uint16_t*>(u_plane.data());
+  uint16_t* v_plane_ptr = reinterpret_cast<uint16_t*>(v_plane.data());
+  for (int i = 0; i < kUvHeight; ++i) {
+    for (int j = 0; j < kUvWidth; ++j) {
+      u_plane_ptr[i * kUvWidth + j] = 2048;
+      v_plane_ptr[i * kUvWidth + j] = 2048;
+    }
+  }
 
   auto size = gfx::Size(kImgWidth, kImgHeight);
   scoped_refptr<VideoFrame> frame = VideoFrame::WrapExternalYuvData(
       PIXEL_FORMAT_YUV420P12, size, gfx::Rect(size), size, y_stride, uv_stride,
-      uv_stride, reinterpret_cast<uint8_t*>(y_plane.data()),
-      reinterpret_cast<uint8_t*>(u_plane.data()),
-      reinterpret_cast<uint8_t*>(v_plane.data()), base::TimeDelta());
+      uv_stride, y_plane, u_plane, v_plane, base::TimeDelta());
 
   auto rgba = base::HeapArray<uint32_t>::Uninit(kImgWidth * kImgHeight);
   PaintCanvasVideoRenderer::ConvertVideoFrameToRGBPixels(
@@ -816,8 +824,7 @@ TEST_F(PaintCanvasVideoRendererTest, I420WithFilters) {
   auto size = gfx::Size(kImgWidth, kImgHeight);
   scoped_refptr<VideoFrame> frame = VideoFrame::WrapExternalYuvData(
       PIXEL_FORMAT_I420, size, gfx::Rect(size), size, kImgWidth, kUvWidth,
-      kUvWidth, y_plane.data(), u_plane.data(), v_plane.data(),
-      base::TimeDelta());
+      kUvWidth, y_plane, u_plane, v_plane, base::TimeDelta());
   frame->set_color_space(gfx::ColorSpace::CreateJpeg());
 
   auto rgba = base::HeapArray<uint32_t>::Uninit(kImgWidth * kImgHeight);
@@ -953,8 +960,17 @@ TEST_F(PaintCanvasVideoRendererTest, ContextLost) {
   cc::SkiaPaintCanvas canvas(AllocBitmap(kWidth, kHeight));
 
   gfx::Size size(kWidth, kHeight);
+  // We try copying the contents of the source VideoFrame *into* the
+  // cached SI over the raster interface.
+  gpu::SharedImageMetadata metadata;
+  metadata.format = viz::SinglePlaneFormat::kRGBA_8888;
+  metadata.size = size;
+  metadata.color_space = gfx::ColorSpace::CreateSRGB();
+  metadata.surface_origin = kTopLeft_GrSurfaceOrigin;
+  metadata.alpha_type = kOpaque_SkAlphaType;
+  metadata.usage = gpu::SHARED_IMAGE_USAGE_RASTER_READ;
   scoped_refptr<gpu::ClientSharedImage> shared_image =
-      gpu::ClientSharedImage::CreateForTesting();
+      gpu::ClientSharedImage::CreateForTesting(metadata);
   auto video_frame = VideoFrame::WrapSharedImage(
       PIXEL_FORMAT_NV12, shared_image, gpu::SyncToken(),
       base::BindOnce(MailboxHoldersReleased), size, gfx::Rect(size), size,
@@ -985,7 +1001,7 @@ TEST_F(PaintCanvasVideoRendererTest, CorrectFrameSizeToVisibleRect) {
 
   auto video_frame = media::VideoFrame::WrapExternalData(
       media::PIXEL_FORMAT_Y16, coded_size, gfx::Rect(visible_size),
-      visible_size, &memory[0], fWidth * fHeight * 2, base::Milliseconds(4));
+      visible_size, memory, base::Milliseconds(4));
 
   cc::PaintFlags flags;
   PaintCanvasVideoRenderer::PaintParams params;
@@ -1043,7 +1059,8 @@ TEST_F(PaintCanvasVideoRendererTest, TexImage2D_Y16_RGBA32F) {
       });
   PaintCanvasVideoRenderer::TexImage2D(
       GL_TEXTURE_2D, 0, &gles2, gpu::Capabilities(), video_frame.get(), 0,
-      GL_RGBA, GL_RGBA, GL_FLOAT, true /*flip_y*/, true);
+      GL_RGBA, GL_RGBA, GL_FLOAT, kBottomLeft_GrSurfaceOrigin,
+      kPremul_SkAlphaType);
 }
 
 TEST_F(PaintCanvasVideoRendererTest, TexSubImage2D_Y16_R32F) {
@@ -1091,7 +1108,8 @@ TEST_F(PaintCanvasVideoRendererTest, TexSubImage2D_Y16_R32F) {
       });
   PaintCanvasVideoRenderer::TexSubImage2D(
       GL_TEXTURE_2D, &gles2, video_frame.get(), 0, GL_RED, GL_FLOAT,
-      2 /*xoffset*/, 1 /*yoffset*/, false /*flip_y*/, true);
+      2 /*xoffset*/, 1 /*yoffset*/, kTopLeft_GrSurfaceOrigin,
+      kPremul_SkAlphaType);
 }
 
 // Fixture for tests that require a GL context as destination.
@@ -1144,8 +1162,8 @@ class PaintCanvasVideoRendererWithGLTest : public testing::Test {
 
     renderer_.CopyVideoFrameTexturesToGLTexture(
         media_context_.get(), destination_gl, frame, target, texture, GL_RGBA,
-        GL_RGBA, GL_UNSIGNED_BYTE, 0, false /* premultiply_alpha */,
-        false /* flip_y */);
+        GL_RGBA, GL_UNSIGNED_BYTE, 0, kUnpremul_SkAlphaType,
+        kTopLeft_GrSurfaceOrigin);
 
     gfx::Size expected_size = frame->visible_rect().size();
 
@@ -1303,8 +1321,8 @@ TEST_F(PaintCanvasVideoRendererWithGLTest, CopyVideoFrameYUVDataToGLTexture) {
 
   renderer_.CopyVideoFrameYUVDataToGLTexture(
       media_context_.get(), destination_gl, cropped_frame(), target, texture,
-      GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 0, false /* premultiply_alpha */,
-      false /* flip_y */);
+      GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 0, kUnpremul_SkAlphaType,
+      kTopLeft_GrSurfaceOrigin);
 
   gfx::Size expected_size = cropped_frame()->visible_rect().size();
 
@@ -1335,8 +1353,8 @@ TEST_F(PaintCanvasVideoRendererWithGLTest,
 
   renderer_.CopyVideoFrameYUVDataToGLTexture(
       media_context_.get(), destination_gl, cropped_frame(), target, texture,
-      GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 0, false /* premultiply_alpha */,
-      true /* flip_y */);
+      GL_RGBA, GL_RGBA, GL_UNSIGNED_BYTE, 0, kUnpremul_SkAlphaType,
+      kBottomLeft_GrSurfaceOrigin);
 
   gfx::Size expected_size = cropped_frame()->visible_rect().size();
 

@@ -7,6 +7,8 @@
 #include <map>
 #include <tuple>
 
+#include "base/check.h"
+#include "base/check_op.h"
 #include "base/containers/fixed_flat_map.h"
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
@@ -125,21 +127,6 @@ credential_provider::UiExitCodes SigninUIError::credential_provider_exit_code()
   return credential_provider_exit_code_;
 }
 #endif
-
-bool SigninUIError::operator==(const SigninUIError& other) const {
-  bool result = std::tie(type_, email_, message_, another_profile_path_) ==
-                std::tie(other.type_, other.email_, other.message_,
-                         other.another_profile_path_);
-#if BUILDFLAG(IS_WIN)
-  result = result && credential_provider_exit_code_ ==
-                         other.credential_provider_exit_code_;
-#endif
-  return result;
-}
-
-bool SigninUIError::operator!=(const SigninUIError& other) const {
-  return !(*this == other);
-}
 
 SigninUIError::SigninUIError(Type type,
                              const std::string& email,

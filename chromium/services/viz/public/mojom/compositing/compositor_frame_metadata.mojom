@@ -4,7 +4,6 @@
 
 module viz.mojom;
 
-import "mojo/public/mojom/base/time.mojom";
 import "services/viz/public/mojom/compositing/begin_frame_args.mojom";
 import "services/viz/public/mojom/compositing/compositor_frame_transition_directive.mojom";
 import "ui/gfx/mojom/delegated_ink_metadata.mojom";
@@ -51,6 +50,8 @@ struct CompositorFrameMetadata {
   float min_page_scale_factor;
 
   gfx.mojom.OverlayTransform display_transform_hint;
+
+  bool is_mobile_optimized;
 
   // Contains the metadata required for drawing a delegated ink trail onto the
   // end of a rendered ink stroke. This should only be present when two

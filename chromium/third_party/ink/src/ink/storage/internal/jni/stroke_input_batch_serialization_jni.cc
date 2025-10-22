@@ -21,15 +21,18 @@
 #include "ink/jni/internal/jni_defines.h"
 #include "ink/jni/internal/jni_proto_util.h"
 #include "ink/jni/internal/jni_throw_util.h"
-#include "ink/storage/proto/coded.pb.h"
+#include "ink/storage/proto/stroke_input_batch.pb.h"
 #include "ink/storage/stroke_input_batch.h"
 #include "ink/strokes/input/stroke_input_batch.h"
+#include "ink/strokes/internal/jni/stroke_input_jni_helper.h"
 
 namespace {
 
 using ::ink::DecodeStrokeInputBatch;
 using ::ink::EncodeStrokeInputBatch;
 using ::ink::StrokeInputBatch;
+using ::ink::jni::CastToStrokeInputBatch;
+using ::ink::jni::NewNativeStrokeInputBatch;
 using ::ink::jni::ParseProtoFromEither;
 using ::ink::jni::SerializeProto;
 using ::ink::jni::ThrowExceptionFromStatus;
@@ -45,28 +48,27 @@ extern "C" {
 // must later be freed by the caller.
 JNI_METHOD(storage, StrokeInputBatchSerializationNative, jlong, newFromProto)
 (JNIEnv* env, jclass klass, jobject direct_byte_buffer, jbyteArray byte_array,
- jint offset, jint length, jboolean throw_on_parse_error) {
+ jint offset, jint length) {
   CodedStrokeInputBatch coded_input;
   if (absl::Status status = ParseProtoFromEither(
           env, direct_byte_buffer, byte_array, offset, length, coded_input);
       !status.ok()) {
-    if (throw_on_parse_error) ThrowExceptionFromStatus(env, status);
+    ThrowExceptionFromStatus(env, status);
     return 0;
   }
   absl::StatusOr<StrokeInputBatch> input = DecodeStrokeInputBatch(coded_input);
   if (!input.ok()) {
-    if (throw_on_parse_error) ThrowExceptionFromStatus(env, input.status());
+    ThrowExceptionFromStatus(env, input.status());
     return 0;
   }
-  return reinterpret_cast<jlong>(new StrokeInputBatch(*std::move(input)));
+  return NewNativeStrokeInputBatch(*std::move(input));
 }
 
 JNI_METHOD(storage, StrokeInputBatchSerializationNative, jbyteArray, serialize)
 (JNIEnv* env, jclass klass, jlong stroke_input_batch_native_pointer) {
-  const auto* input = reinterpret_cast<const StrokeInputBatch*>(
-      stroke_input_batch_native_pointer);
   CodedStrokeInputBatch coded_input;
-  EncodeStrokeInputBatch(*input, coded_input);
+  EncodeStrokeInputBatch(
+      CastToStrokeInputBatch(stroke_input_batch_native_pointer), coded_input);
   return SerializeProto(env, coded_input);
 }
 

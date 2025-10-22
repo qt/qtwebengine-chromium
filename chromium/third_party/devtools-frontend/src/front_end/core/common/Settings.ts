@@ -179,9 +179,9 @@ export class Settings {
 
   /**
    * Get setting via key, and create a new setting if the requested setting does not exist.
-   * @param {string} key kebab-case string ID
-   * @param {T} defaultValue
-   * @param {SettingStorageType=} storageType If not specified, SettingStorageType.GLOBAL is used.
+   * @param key - kebab-case string ID
+   * @param defaultValue
+   * @param storageType - If not specified, SettingStorageType.GLOBAL is used.
    */
   createSetting<T>(key: string, defaultValue: T, storageType?: SettingStorageType): Setting<T> {
     const storage = this.storageFromType(storageType);
@@ -306,11 +306,8 @@ export class SettingsStorage {
 
   dumpSizes(): void {
     Console.instance().log('Ten largest settings: ');
-
-    const sizes: {
-      [x: string]: number,
-      // @ts-expect-error __proto__ optimization
-    } = {__proto__: null};
+    // @ts-expect-error __proto__ optimization
+    const sizes: Record<string, number> = {__proto__: null};
     for (const key in this.object) {
       sizes[key] = this.object[key].length;
     }
@@ -425,7 +422,7 @@ export class Setting<V> {
     return this.#disabled || false;
   }
 
-  disabledReasons(): string[] {
+  disabledReasons(): Platform.UIString.LocalizedString[] {
     if (this.#registration?.disabledCondition) {
       const result = this.#registration.disabledCondition(Root.Runtime.hostConfig);
       if (result.disabled) {
@@ -522,7 +519,7 @@ export class Setting<V> {
       try {
         this.storage.set(this.name, settingString);
       } catch (e) {
-        this.printSettingsSavingError(e.message, this.name, settingString);
+        this.printSettingsSavingError(e.message, settingString);
       }
     } catch (e) {
       Console.instance().error('Cannot stringify setting with name: ' + this.name + ', error: ' + e.message);
@@ -609,7 +606,7 @@ export class Setting<V> {
     return this.#deprecation;
   }
 
-  private printSettingsSavingError(message: string, name: string, value: string): void {
+  private printSettingsSavingError(message: string, value: string): void {
     const errorMessage =
         'Error saving setting with name: ' + this.name + ', value length: ' + value.length + '. Error: ' + message;
     console.error(errorMessage);
@@ -677,7 +674,7 @@ export class VersionController {
   static readonly SYNCED_VERSION_SETTING_NAME = 'syncedInspectorVersion';
   static readonly LOCAL_VERSION_SETTING_NAME = 'localInspectorVersion';
 
-  static readonly CURRENT_VERSION = 38;
+  static readonly CURRENT_VERSION = 40;
 
   readonly #globalVersionSetting: Setting<number>;
   readonly #syncedVersionSetting: Setting<number>;
@@ -734,29 +731,27 @@ export class VersionController {
     return result;
   }
 
-  private updateVersionFrom0To1(): void {
+  updateVersionFrom0To1(): void {
     this.clearBreakpointsWhenTooMany(Settings.instance().createLocalSetting('breakpoints', []), 500000);
   }
 
-  private updateVersionFrom1To2(): void {
+  updateVersionFrom1To2(): void {
     Settings.instance().createSetting('previouslyViewedFiles', []).set([]);
   }
 
-  private updateVersionFrom2To3(): void {
+  updateVersionFrom2To3(): void {
     Settings.instance().createSetting('fileSystemMapping', {}).set({});
     removeSetting(Settings.instance().createSetting('fileMappingEntries', []));
   }
 
-  private updateVersionFrom3To4(): void {
+  updateVersionFrom3To4(): void {
     const advancedMode = Settings.instance().createSetting('showHeaSnapshotObjectsHiddenProperties', false);
     moduleSetting('showAdvancedHeapSnapshotProperties').set(advancedMode.get());
     removeSetting(advancedMode);
   }
 
-  private updateVersionFrom4To5(): void {
-    const settingNames: {
-      [x: string]: string,
-    } = {
+  updateVersionFrom4To5(): void {
+    const settingNames: Record<string, string> = {
       FileSystemViewSidebarWidth: 'fileSystemViewSplitViewState',
       elementsSidebarWidth: 'elementsPanelSplitViewState',
       StylesPaneSplitRatio: 'stylesPaneSplitViewState',
@@ -807,10 +802,8 @@ export class VersionController {
     }
   }
 
-  private updateVersionFrom5To6(): void {
-    const settingNames: {
-      [x: string]: string,
-    } = {
+  updateVersionFrom5To6(): void {
+    const settingNames: Record<string, string> = {
       debuggerSidebarHidden: 'sourcesPanelSplitViewState',
       navigatorHidden: 'sourcesPanelNavigatorSplitViewState',
       'WebInspector.Drawer.showOnLoad': 'Inspector.drawerSplitViewState',
@@ -847,7 +840,7 @@ export class VersionController {
     }
   }
 
-  private updateVersionFrom6To7(): void {
+  updateVersionFrom6To7(): void {
     const settingNames = {
       sourcesPanelNavigatorSplitViewState: 'sourcesPanelNavigatorSplitViewState',
       elementsPanelSplitViewState: 'elementsPanelSplitViewState',
@@ -874,10 +867,10 @@ export class VersionController {
     }
   }
 
-  private updateVersionFrom7To8(): void {
+  updateVersionFrom7To8(): void {
   }
 
-  private updateVersionFrom8To9(): void {
+  updateVersionFrom8To9(): void {
     const settingNames = ['skipStackFramesPattern', 'workspaceFolderExcludePattern'];
 
     for (let i = 0; i < settingNames.length; ++i) {
@@ -898,7 +891,7 @@ export class VersionController {
     }
   }
 
-  private updateVersionFrom9To10(): void {
+  updateVersionFrom9To10(): void {
     // This one is localStorage specific, which is fine.
     if (!window.localStorage) {
       return;
@@ -910,7 +903,7 @@ export class VersionController {
     }
   }
 
-  private updateVersionFrom10To11(): void {
+  updateVersionFrom10To11(): void {
     const oldSettingName = 'customDevicePresets';
     const newSettingName = 'customEmulatedDeviceList';
     const oldSetting = Settings.instance().createSetting<unknown>(oldSettingName, undefined);
@@ -921,11 +914,8 @@ export class VersionController {
     const newList = [];
     for (let i = 0; i < list.length; ++i) {
       const value = list[i];
-      const device: {
-        // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        [x: string]: any,
-      } = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const device: Record<string, any> = {};
       device['title'] = value['title'];
       device['type'] = 'unknown';
       device['user-agent'] = value['userAgent'];
@@ -951,28 +941,26 @@ export class VersionController {
     removeSetting(oldSetting);
   }
 
-  private updateVersionFrom11To12(): void {
+  updateVersionFrom11To12(): void {
     this.migrateSettingsFromLocalStorage();
   }
 
-  private updateVersionFrom12To13(): void {
+  updateVersionFrom12To13(): void {
     this.migrateSettingsFromLocalStorage();
     removeSetting(Settings.instance().createSetting('timelineOverviewMode', ''));
   }
 
-  private updateVersionFrom13To14(): void {
+  updateVersionFrom13To14(): void {
     const defaultValue = {throughput: -1, latency: 0};
     Settings.instance().createSetting('networkConditions', defaultValue).set(defaultValue);
   }
 
-  private updateVersionFrom14To15(): void {
+  updateVersionFrom14To15(): void {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const setting = Settings.instance().createLocalSetting<any>('workspaceExcludedFolders', {});
     const oldValue = setting.get();
-    const newValue: {
-      [x: string]: string[],
-    } = {};
+    const newValue: Record<string, string[]> = {};
     for (const fileSystemPath in oldValue) {
       newValue[fileSystemPath] = [];
       for (const entry of oldValue[fileSystemPath]) {
@@ -982,7 +970,7 @@ export class VersionController {
     setting.set(newValue);
   }
 
-  private updateVersionFrom15To16(): void {
+  updateVersionFrom15To16(): void {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const setting = Settings.instance().createSetting<any>('InspectorView.panelOrder', {});
@@ -993,7 +981,7 @@ export class VersionController {
     setting.set(tabOrders);
   }
 
-  private updateVersionFrom16To17(): void {
+  updateVersionFrom16To17(): void {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const setting = Settings.instance().createSetting<any>('networkConditionsCustomProfiles', []);
@@ -1013,14 +1001,12 @@ export class VersionController {
     setting.set(newValue);
   }
 
-  private updateVersionFrom17To18(): void {
+  updateVersionFrom17To18(): void {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const setting = Settings.instance().createLocalSetting<any>('workspaceExcludedFolders', {});
     const oldValue = setting.get();
-    const newValue: {
-      [x: string]: string,
-    } = {};
+    const newValue: Record<string, string> = {};
     for (const oldKey in oldValue) {
       let newKey = oldKey.replace(/\\/g, '/');
       if (!newKey.startsWith('file://')) {
@@ -1035,7 +1021,7 @@ export class VersionController {
     setting.set(newValue);
   }
 
-  private updateVersionFrom18To19(): void {
+  updateVersionFrom18To19(): void {
     const defaultColumns = {status: true, type: true, initiator: true, size: true, time: true};
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1044,11 +1030,9 @@ export class VersionController {
     visibleColumns.name = true;
     visibleColumns.timeline = true;
 
-    const configs: {
-      [x: string]: {
-        visible: number,
-      },
-    } = {};
+    const configs: Record<string, {
+      visible: number,
+    }> = {};
     for (const columnId in visibleColumns) {
       if (!visibleColumns.hasOwnProperty(columnId)) {
         continue;
@@ -1060,24 +1044,22 @@ export class VersionController {
     removeSetting(visibleColumnSettings);
   }
 
-  private updateVersionFrom19To20(): void {
+  updateVersionFrom19To20(): void {
     const oldSetting = Settings.instance().createSetting('InspectorView.panelOrder', {});
     const newSetting = Settings.instance().createSetting('panel-tabOrder', {});
     newSetting.set(oldSetting.get());
     removeSetting(oldSetting);
   }
 
-  private updateVersionFrom20To21(): void {
+  updateVersionFrom20To21(): void {
     const networkColumns = Settings.instance().createSetting('networkLogColumns', {});
-    const columns = (networkColumns.get() as {
-      [x: string]: string,
-    });
+    const columns = (networkColumns.get() as Record<string, string>);
     delete columns['timeline'];
     delete columns['waterfall'];
     networkColumns.set(columns);
   }
 
-  private updateVersionFrom21To22(): void {
+  updateVersionFrom21To22(): void {
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const breakpointsSetting = Settings.instance().createLocalSetting<any>('breakpoints', []);
@@ -1089,18 +1071,18 @@ export class VersionController {
     breakpointsSetting.set(breakpoints);
   }
 
-  private updateVersionFrom22To23(): void {
+  updateVersionFrom22To23(): void {
     // This update is no-op.
   }
 
-  private updateVersionFrom23To24(): void {
+  updateVersionFrom23To24(): void {
     const oldSetting = Settings.instance().createSetting('searchInContentScripts', false);
     const newSetting = Settings.instance().createSetting('searchInAnonymousAndContentScripts', false);
     newSetting.set(oldSetting.get());
     removeSetting(oldSetting);
   }
 
-  private updateVersionFrom24To25(): void {
+  updateVersionFrom24To25(): void {
     const defaultColumns = {status: true, type: true, initiator: true, size: true, time: true};
     // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1110,7 +1092,7 @@ export class VersionController {
     networkLogColumnsSetting.set(columns);
   }
 
-  private updateVersionFrom25To26(): void {
+  updateVersionFrom25To26(): void {
     const oldSetting = Settings.instance().createSetting('messageURLFilters', {});
     const urls = Object.keys(oldSetting.get());
     const textFilter = urls.map(url => `-url:${url}`).join(' ');
@@ -1124,7 +1106,7 @@ export class VersionController {
     removeSetting(oldSetting);
   }
 
-  private updateVersionFrom26To27(): void {
+  updateVersionFrom26To27(): void {
     function renameKeyInObjectSetting(settingName: string, from: string, to: string): void {
       // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1150,14 +1132,14 @@ export class VersionController {
     renameInStringSetting('panel-selectedTab', 'audits2', 'audits');
   }
 
-  private updateVersionFrom27To28(): void {
+  updateVersionFrom27To28(): void {
     const setting = Settings.instance().createSetting('uiTheme', 'systemPreferred');
     if (setting.get() === 'default') {
       setting.set('systemPreferred');
     }
   }
 
-  private updateVersionFrom28To29(): void {
+  updateVersionFrom28To29(): void {
     function renameKeyInObjectSetting(settingName: string, from: string, to: string): void {
       // TODO(crbug.com/1172300) Ignored during the jsdoc to ts migration
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1183,7 +1165,7 @@ export class VersionController {
     renameInStringSetting('panel-selectedTab', 'audits', 'lighthouse');
   }
 
-  private updateVersionFrom29To30(): void {
+  updateVersionFrom29To30(): void {
     // Create new location agnostic setting
     const closeableTabSetting = Settings.instance().createSetting('closeableTabs', {});
 
@@ -1202,7 +1184,7 @@ export class VersionController {
     removeSetting(drawerCloseableTabSetting);
   }
 
-  private updateVersionFrom30To31(): void {
+  updateVersionFrom30To31(): void {
     // Remove recorder_recordings setting that was used for storing recordings
     // by an old recorder experiment.
     const recordingsSetting = Settings.instance().createSetting('recorder_recordings', []);
@@ -1340,6 +1322,127 @@ export class VersionController {
     }
     if (consoleInsightsEnabled && consoleInsightsEnabled.get() === false) {
       onboardingFinished.set(false);
+    }
+  }
+
+  updateVersionFrom38To39(): void {
+    const PREFERRED_NETWORK_COND = 'preferred-network-condition';
+    // crrev.com/c/5582013 renamed "Slow 3G" to "3G" and "Fast 3G" => "Slow 4G".
+    // Any users with the old values need to have them moved to avoid breaking DevTools.
+    // Note: we load the raw value via the globalStorage here because
+    // `createSetting` creates if it is not present, and we do not want that;
+    // we only want to update existing, old values.
+    const setting = Settings.instance().globalStorage.get(PREFERRED_NETWORK_COND);
+    if (!setting) {
+      return;
+    }
+    try {
+      const networkSetting = JSON.parse(setting) as unknown as {
+        // Can't use SDK type here as it creates a common<>sdk circular
+        // dep. This type is not exhaustive but contains the fields we
+        // need.
+        title: string,
+        i18nTitleKey?: string,
+      };
+      if (networkSetting.title === 'Slow 3G') {
+        networkSetting.title = '3G';
+        networkSetting.i18nTitleKey = '3G';
+        Settings.instance().globalStorage.set(PREFERRED_NETWORK_COND, JSON.stringify(networkSetting));
+      } else if (networkSetting.title === 'Fast 3G') {
+        networkSetting.title = 'Slow 4G';
+        networkSetting.i18nTitleKey = 'Slow 4G';
+        Settings.instance().globalStorage.set(PREFERRED_NETWORK_COND, JSON.stringify(networkSetting));
+      }
+    } catch {
+      // If parsing the setting threw, it's in some invalid state, so remove it.
+      Settings.instance().globalStorage.remove(PREFERRED_NETWORK_COND);
+    }
+  }
+
+  /**
+   * There are two related migrations here for handling network throttling persistence:
+   * 1. Go through all user custom throttling conditions and add a `key` property.
+   * 2. If the user has a 'preferred-network-condition' setting, take the value
+   *    of that and set the right key for the new 'active-network-condition-key'
+   *    setting. Then, remove the now-obsolete 'preferred-network-condition'
+   *    setting.
+   */
+  updateVersionFrom39To40(): void {
+    const hasCustomNetworkConditionsSetting = (): boolean => {
+      try {
+        // this will error if it does not exist
+        moduleSetting('custom-network-conditions');
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    if (hasCustomNetworkConditionsSetting()) {
+      /**
+       * We added keys to custom network throttling conditions in M140, so we
+       * need to go through any existing profiles the user has and add the key to
+       * them.
+       * We can't use the SDK.NetworkManager.Condition here as it would be a
+       * circular dependency. All that matters is that these conditions are
+       * objects, and we need to set the right key on each one. The actual keys &
+       * values in the object are not important.
+       */
+      const conditionsSetting = moduleSetting('custom-network-conditions') as Setting<Array<{key?: string}>>;
+      const customConditions = conditionsSetting.get();
+      if (customConditions?.length > 0) {
+        customConditions.forEach((condition, i) => {
+          // This could be run multiple times, make sure that we don't override any
+          // existing keys.
+          if (condition.key) {
+            return;
+          }
+          // The format of this key is important: see
+          // SDK.NetworkManager.UserDefinedThrottlingConditionKey
+          condition.key = `USER_CUSTOM_SETTING_${i + 1}`;
+        });
+        conditionsSetting.set(customConditions);
+      }
+    }
+
+    // Additionally, we need to make sure we persist the right throttling for
+    // users who have a preferred-network-condition set.
+    const PREFERRED_NETWORK_COND_SETTING = 'preferred-network-condition';
+    // We shipped a change to how we persist network throttling conditions and
+    // added a `key` property rather than rely on any user visible string which
+    // is more likely to change. This migration step tries to update the
+    // setting for users, or removes it if we fail, so they start fresh next
+    // time they load DevTools.
+    const setting = Settings.instance().globalStorage.get(PREFERRED_NETWORK_COND_SETTING);
+    if (!setting) {
+      return;
+    }
+    // The keys here are the UI Strings as of July 2025 (shipped in M139).
+    // This migration shipped in M140. The values are the values of the
+    // `PredefinedThrottlingConditionKey` in SDK.NetworkManager.
+    const UI_STRING_TO_NEW_KEY = {
+      'Fast 4G': 'SPEED_FAST_4G',
+      'Slow 4G': 'SPEED_SLOW_4G',
+      '3G': 'SPEED_3G',
+      'No throttling': 'NO_THROTTLING',
+      Offline: 'OFFLINE'
+    };
+    try {
+      const networkSetting = JSON.parse(setting) as unknown as {
+        // Can't use SDK type here as it creates a common<>sdk circular
+        // dep. We only rely on the i18nTitleKey.
+        i18nTitleKey?: string,
+      };
+      if (networkSetting.i18nTitleKey && UI_STRING_TO_NEW_KEY.hasOwnProperty(networkSetting.i18nTitleKey)) {
+        const key = UI_STRING_TO_NEW_KEY[networkSetting.i18nTitleKey as keyof typeof UI_STRING_TO_NEW_KEY];
+
+        // The second argument is the default value, so it's important that we
+        // set this to the default, and then update it to the new key.
+        const newSetting = Settings.instance().createSetting('active-network-condition-key', 'NO_THROTTLING');
+        newSetting.set(key);
+      }
+    } finally {
+      // This setting is now not used, so we can remove it.
+      Settings.instance().globalStorage.remove(PREFERRED_NETWORK_COND_SETTING);
     }
   }
 

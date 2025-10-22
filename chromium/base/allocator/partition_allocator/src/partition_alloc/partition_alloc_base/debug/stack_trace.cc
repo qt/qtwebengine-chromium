@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #include "partition_alloc/partition_alloc_base/debug/stack_trace.h"
 
 #include <cstdint>
@@ -11,6 +16,10 @@
 #include "partition_alloc/partition_alloc_base/compiler_specific.h"
 #include "partition_alloc/partition_alloc_base/process/process_handle.h"
 #include "partition_alloc/partition_alloc_base/threading/platform_thread.h"
+
+#if PA_BUILDFLAG(CAN_UNWIND_WITH_FRAME_POINTERS)
+#include <algorithm>
+#endif
 
 #if (PA_BUILDFLAG(IS_LINUX) || PA_BUILDFLAG(IS_CHROMEOS)) && defined(__GLIBC__)
 extern "C" void* __libc_stack_end;
@@ -40,7 +49,7 @@ static uintptr_t StripPointerAuthenticationBits(uintptr_t ptr) {
   // with and without pointer authentication). xpaclri is used here because it's
   // in the HINT space and treated as a no-op on older Arm cores (unlike the
   // more generic xpaci which has a new encoding). The downside is that ptr has
-  // to be moved to x30 to use this instruction. TODO(richard.townsend@arm.com):
+  // to be moved to x30 to use this instruction. TODO(ritownsend@google.com):
   // replace with an intrinsic once that is available.
   register uintptr_t x30 __asm("x30") = ptr;
   asm("xpaclri" : "+r"(x30));

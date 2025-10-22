@@ -145,7 +145,41 @@ GetThrottlerParamsForRequestCoverage(
       controller->scope_url().host(), controller->scope_url().path(),
       base::Time());
 }
+
+bool IsNewSessionRegistrationEnabled(const PrefService* profile_prefs,
+                                     bool is_wsbeta) {
+  return switches::IsBoundSessionCredentialsEnabled(profile_prefs) ||
+         (is_wsbeta && base::FeatureList::IsEnabled(
+                           kEnableBoundSessionCredentialsWsbetaBypass));
+}
+
+bool IsSessionInitializationEnabled(const PrefService* profile_prefs,
+                                    bool is_wsbeta) {
+  // It should always be possible to initialize a session if the registration is
+  // enabled.
+  return IsNewSessionRegistrationEnabled(profile_prefs, is_wsbeta) ||
+         base::FeatureList::IsEnabled(kEnableBoundSessionCredentialsContinuity);
+}
+
 }  // namespace
+
+BASE_FEATURE(kEnableBoundSessionCredentialsWsbetaBypass,
+             "EnableBoundSessionCredentialsWsbetaBypass",
+#if BUILDFLAG(IS_WIN)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
+
+BASE_FEATURE(kEnableBoundSessionCredentialsContinuity,
+             "EnableBoundSessionCredentialsContinuity",
+#if BUILDFLAG(IS_WIN)
+             base::FEATURE_ENABLED_BY_DEFAULT
+#else
+             base::FEATURE_DISABLED_BY_DEFAULT
+#endif
+);
 
 BoundSessionCookieRefreshServiceImpl::BoundSessionCookieRefreshServiceImpl(
     unexportable_keys::UnexportableKeyService& key_service,
@@ -184,9 +218,8 @@ void BoundSessionCookieRefreshServiceImpl::Initialize() {
   }
 
   for (const auto& params : bound_session_params) {
-    if (switches::IsBoundSessionCredentialsEnabled(profile_prefs_) ||
-        params.is_wsbeta()) {
-      InitializeBoundSession(params);
+    if (IsSessionInitializationEnabled(profile_prefs_, params.is_wsbeta())) {
+      InitializeBoundSession(params, /*is_new_session=*/false);
     }
   }
   UpdateAllRenderers();
@@ -194,8 +227,7 @@ void BoundSessionCookieRefreshServiceImpl::Initialize() {
 
 void BoundSessionCookieRefreshServiceImpl::RegisterNewBoundSession(
     const bound_session_credentials::BoundSessionParams& params) {
-  CHECK(switches::IsBoundSessionCredentialsEnabled(profile_prefs_) ||
-        params.is_wsbeta());
+  CHECK(IsNewSessionRegistrationEnabled(profile_prefs_, params.is_wsbeta()));
 
   if (!session_params_storage_->SaveParams(params)) {
     DVLOG(1) << "Invalid session params or failed to serialize session params.";
@@ -212,7 +244,7 @@ void BoundSessionCookieRefreshServiceImpl::RegisterNewBoundSession(
     // starting with the same scope.
   }
 
-  InitializeBoundSession(params);
+  InitializeBoundSession(params, /*is_new_session=*/true);
   UpdateAllRenderers();
 }
 
@@ -343,8 +375,8 @@ void BoundSessionCookieRefreshServiceImpl::HandleRequestBlockedOnCookie(
 
 void BoundSessionCookieRefreshServiceImpl::CreateRegistrationRequest(
     BoundSessionRegistrationFetcherParam registration_params) {
-  if (!switches::IsBoundSessionCredentialsEnabled(profile_prefs_) &&
-      !registration_params.is_wsbeta()) {
+  if (!IsNewSessionRegistrationEnabled(profile_prefs_,
+                                       registration_params.is_wsbeta())) {
     return;
   }
 
@@ -493,9 +525,10 @@ BoundSessionCookieRefreshServiceImpl::CreateBoundSessionCookieController(
 }
 
 void BoundSessionCookieRefreshServiceImpl::InitializeBoundSession(
-    const bound_session_credentials::BoundSessionParams& bound_session_params) {
-  CHECK(switches::IsBoundSessionCredentialsEnabled(profile_prefs_) ||
-        bound_session_params.is_wsbeta());
+    const bound_session_credentials::BoundSessionParams& bound_session_params,
+    bool is_new_session) {
+  CHECK(IsSessionInitializationEnabled(profile_prefs_,
+                                       bound_session_params.is_wsbeta()));
   if (bound_session_params.is_wsbeta()) {
     // It's unusual to register a synthetic trial with a single group. The
     // purpose of this trial is to be able to filter out the users having
@@ -511,7 +544,7 @@ void BoundSessionCookieRefreshServiceImpl::InitializeBoundSession(
   auto [it, inserted] =
       cookie_controllers_.emplace(std::move(key), std::move(controller));
   CHECK(inserted);
-  it->second->Initialize();
+  it->second->Initialize(is_new_session);
 }
 
 void BoundSessionCookieRefreshServiceImpl::UpdateAllRenderers() {

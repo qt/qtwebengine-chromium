@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/390223051): Remove C-library calls to fix the errors.
-#pragma allow_unsafe_libc_calls
-#endif
-
 #include "components/dom_distiller/core/url_utils.h"
 
 #include <string>
@@ -70,8 +65,7 @@ GURL GetOriginalUrlFromDistillerUrl(const GURL& url) {
 
   // Make sure kDomDistillerScheme is considered standard scheme for
   // |GURL::host_piece()| to work correctly.
-  DCHECK(url::IsStandard(kDomDistillerScheme,
-                         url::Component(0, strlen(kDomDistillerScheme))));
+  DCHECK(url::IsStandard(kDomDistillerScheme));
   std::vector<std::string_view> pieces =
       base::SplitStringPiece(url.host_piece(), kSeparator,
                              base::TRIM_WHITESPACE, base::SPLIT_WANT_ALL);

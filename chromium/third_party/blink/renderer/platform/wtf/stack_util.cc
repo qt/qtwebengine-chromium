@@ -23,7 +23,11 @@
 extern "C" void* __libc_stack_end;  // NOLINT
 #endif
 
-namespace WTF {
+#if defined(ADDRESS_SANITIZER)
+#include <sanitizer/asan_interface.h>
+#endif
+
+namespace blink {
 
 size_t GetUnderestimatedStackSize() {
 // FIXME: ASAN bot uses a fake stack as a thread stack frame,
@@ -101,7 +105,12 @@ size_t GetUnderestimatedStackSize() {
 #endif
 }
 
-void* GetStackStart() {
+namespace {
+
+// A pointer to current thread's stack beginning.
+thread_local void* thread_stack_start = nullptr;
+
+void* GetStackStartImpl() {
 #if BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(IS_ANDROID) || \
     BUILDFLAG(IS_FREEBSD) || BUILDFLAG(IS_FUCHSIA)
   pthread_attr_t attr;
@@ -157,6 +166,35 @@ void* GetStackStart() {
 #endif
 }
 
+}  // namespace
+
+void* GetStackStart() {
+  if (!thread_stack_start) {
+    thread_stack_start = GetStackStartImpl();
+  }
+  return thread_stack_start;
+}
+
+bool IsOnStack(void* address) {
+#if defined(ADDRESS_SANITIZER)
+  // If the address is part of a fake frame, then it is definitely on the stack.
+  if (__asan_addr_is_in_fake_stack(__asan_get_current_fake_stack(), address,
+                                   nullptr, nullptr)) {
+    return true;
+  }
+  // Fall through as there is still a regular stack present even when running
+  // with ASAN fake stacks.
+#endif  // defined(ADDRESS_SANITIZER)
+#if __has_feature(safe_stack)
+  if (__builtin___get_unsafe_stack_ptr() <= address &&
+      address <= __builtin___get_unsafe_stack_top()) {
+    return true;
+  }
+#endif  // __has_feature(safe_stack)
+  return (GetCurrentStackPosition() <= reinterpret_cast<uintptr_t>(address)) &&
+         (address <= GetStackStart());
+}
+
 uintptr_t GetCurrentStackPosition() {
 #if defined(COMPILER_MSVC)
   return reinterpret_cast<uintptr_t>(_AddressOfReturnAddress());
@@ -196,7 +234,7 @@ size_t ThreadStackSize() {
   DCHECK_GE(result_size, sizeof(MEMORY_BASIC_INFORMATION));
   uint8_t* stack_end = reinterpret_cast<uint8_t*>(stack_info.AllocationBase);
 
-  uint8_t* stack_start = reinterpret_cast<uint8_t*>(WTF::GetStackStart());
+  uint8_t* stack_start = reinterpret_cast<uint8_t*>(GetStackStart());
   CHECK(stack_start);
   CHECK_GT(stack_start, stack_end);
   size_t thread_stack_size = static_cast<size_t>(stack_start - stack_end);
@@ -219,4 +257,4 @@ size_t ThreadStackSize() {
 
 }  // namespace internal
 
-}  // namespace WTF
+}  // namespace blink

@@ -57,14 +57,14 @@ export function getHtml(this: ReadAnythingToolbarElement) {
         </cr-icon-button>
       </span>
     </span>
-    <cr-icon-button class="toolbar-button" id="rate"
+    <cr-button class="toolbar-button" id="rate"
         tabindex="${this.getRateTabIndex_()}"
         aria-label="${this.getVoiceSpeedLabel_()}"
         title="$i18n{voiceSpeedLabel}"
         aria-haspopup="menu"
-        iron-icon="voice-rate:${this.speechRate_}"
         @click="${this.onShowRateMenuClick_}">
-    </cr-icon-button>
+        ${this.getFormattedSpeechRate_()}
+    </cr-button>
     <cr-icon-button class="toolbar-button" id="voice-selection" tabindex="-1"
         aria-label="$i18n{voiceSelectionLabel}"
         title="$i18n{voiceSelectionLabel}"
@@ -77,7 +77,6 @@ export function getHtml(this: ReadAnythingToolbarElement) {
         .availableVoices="${this.availableVoices}"
         .enabledLangs="${this.enabledLangs}"
         .localeToDisplayName="${this.localeToDisplayName}"
-        .isSpeechActive="${this.isSpeechActive}"
         .previewVoicePlaying="${this.previewVoicePlaying}">
     </voice-selection-menu>
     <cr-icon-button class="toolbar-button" id="highlight" tabindex="-1"
@@ -139,10 +138,10 @@ export function getHtml(this: ReadAnythingToolbarElement) {
     </cr-icon-button>
   `)}
   <cr-icon-button id="more" tabindex="-1" aria-label="$i18n{moreOptionsLabel}"
+      class="hidden"
       title="$i18n{moreOptionsLabel}"
       aria-haspopup="menu"
       iron-icon="cr:more-vert"
-      hidden
       @click="${this.onMoreOptionsClick_}">
   </cr-icon-button>
 
@@ -163,24 +162,11 @@ export function getHtml(this: ReadAnythingToolbarElement) {
     </cr-action-menu>
   `}'>
   </cr-lazy-render-lit>
-  <cr-lazy-render-lit id="rateMenu" .template='${() => html`
-    <cr-action-menu accessibility-label="$i18n{voiceSpeedLabel}"
-        role-description="$i18n{menu}">
-      ${this.rateOptions.map((item, index) => html`
-        <button class="dropdown-item"
-            data-index="${index}"
-            @click="${this.onRateClick_}">
-          <cr-icon class="button-image check-mark
-              check-mark-hidden-${!this.isRateItemSelected_(index)}"
-              icon="read-anything-20:check-mark"
-              aria-label="$i18n{selected}">
-          </cr-icon>
-          ${item}x
-        </button>
-      `)}
-    </cr-action-menu>
-  `}'>
-  </cr-lazy-render-lit>
+  <rate-menu
+      id="rateMenu"
+      .settingsPrefs="${this.settingsPrefs}"
+      @rate-change="${this.onRateChange_}">
+  </rate-menu>
   <highlight-menu
       id="highlightMenu"
       .settingsPrefs="${this.settingsPrefs}"
@@ -204,7 +190,10 @@ export function getHtml(this: ReadAnythingToolbarElement) {
           iron-icon="cr:add"
           @click="${this.onFontSizeIncreaseClick_}">
       </cr-icon-button>
-      <cr-button class="text-button" role="menuitem" id="font-size-reset"
+      <cr-button role="menuitem"
+          id="font-size-reset"
+          aria-label="$i18n{fontResetTooltip}"
+          title="$i18n{fontResetTooltip}"
           @click="${this.onFontResetClick_}">
         $i18n{fontResetTitle}
       </cr-button>

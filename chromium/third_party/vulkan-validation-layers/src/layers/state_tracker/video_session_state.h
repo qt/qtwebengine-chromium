@@ -25,7 +25,8 @@
 #include <functional>
 
 namespace vvl {
-class Device;
+class DeviceState;
+class DeviceProxy;
 class Image;
 class ImageView;
 class VideoSession;
@@ -71,6 +72,7 @@ class VideoProfileDesc : public std::enable_shared_from_this<VideoProfileDesc> {
             VkVideoDecodeH264ProfileInfoKHR decode_h264;
             VkVideoDecodeH265ProfileInfoKHR decode_h265;
             VkVideoDecodeAV1ProfileInfoKHR decode_av1;
+            VkVideoDecodeVP9ProfileInfoKHR decode_vp9;
             VkVideoEncodeH264ProfileInfoKHR encode_h264;
             VkVideoEncodeH265ProfileInfoKHR encode_h265;
             VkVideoEncodeAV1ProfileInfoKHR encode_av1;
@@ -88,6 +90,7 @@ class VideoProfileDesc : public std::enable_shared_from_this<VideoProfileDesc> {
             VkVideoDecodeH264CapabilitiesKHR decode_h264;
             VkVideoDecodeH265CapabilitiesKHR decode_h265;
             VkVideoDecodeAV1CapabilitiesKHR decode_av1;
+            VkVideoDecodeVP9CapabilitiesKHR decode_vp9;
             VkVideoEncodeH264CapabilitiesKHR encode_h264;
             VkVideoEncodeH265CapabilitiesKHR encode_h265;
             VkVideoEncodeAV1CapabilitiesKHR encode_av1;
@@ -97,6 +100,7 @@ class VideoProfileDesc : public std::enable_shared_from_this<VideoProfileDesc> {
             } decode_ext;
             struct {
                 VkVideoEncodeQuantizationMapCapabilitiesKHR quantization_map;
+                VkVideoEncodeIntraRefreshCapabilitiesKHR intra_refresh;
             } encode_ext;
         };
     };
@@ -173,6 +177,10 @@ class VideoProfileDesc : public std::enable_shared_from_this<VideoProfileDesc> {
                                 lhs->profile_.decode_av1.filmGrainSupport == rhs->profile_.decode_av1.filmGrainSupport;
                         break;
 
+                    case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR:
+                        match = match && lhs->profile_.decode_vp9.stdProfile == rhs->profile_.decode_vp9.stdProfile;
+                        break;
+
                     case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
                         match = match && lhs->profile_.encode_h264.stdProfileIdc == rhs->profile_.encode_h264.stdProfileIdc;
                         break;
@@ -221,6 +229,10 @@ class VideoProfileDesc : public std::enable_shared_from_this<VideoProfileDesc> {
                 }
                 case VK_VIDEO_CODEC_OPERATION_DECODE_AV1_BIT_KHR: {
                     hc << desc->profile_.decode_av1.stdProfile << desc->profile_.decode_av1.filmGrainSupport;
+                    break;
+                }
+                case VK_VIDEO_CODEC_OPERATION_DECODE_VP9_BIT_KHR: {
+                    hc << desc->profile_.decode_vp9.stdProfile;
                     break;
                 }
                 case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR: {
@@ -288,7 +300,7 @@ class VideoPictureResource {
     VkExtent2D coded_extent;
 
     VideoPictureResource();
-    VideoPictureResource(const Device &dev_data, VkVideoPictureResourceInfoKHR const &res);
+    VideoPictureResource(const DeviceState &dev_data, VkVideoPictureResourceInfoKHR const &res);
 
     operator bool() const { return image_view_state != nullptr; }
 
@@ -378,7 +390,7 @@ struct VideoReferenceSlot {
 
     VideoReferenceSlot() : index(-1), picture_id(), resource() {}
 
-    VideoReferenceSlot(const Device &dev_data, VideoProfileDesc const &profile, VkVideoReferenceSlotInfoKHR const &slot,
+    VideoReferenceSlot(const DeviceState &dev_data, VideoProfileDesc const &profile, VkVideoReferenceSlotInfoKHR const &slot,
                        bool has_picture_id = true)
         : index(slot.slotIndex),
           picture_id(has_picture_id ? VideoPictureID(profile, slot) : VideoPictureID()),
@@ -527,7 +539,7 @@ class VideoSessionDeviceState {
         encode_.rate_control_state = rate_control_state;
     }
 
-    bool ValidateRateControlState(const Device &dev_data, const VideoSession *vs_state,
+    bool ValidateRateControlState(const Logger &log, const VideoSession *vs_state,
                                   const vku::safe_VkVideoBeginCodingInfoKHR &begin_info, const Location &loc) const;
 
   private:
@@ -566,7 +578,7 @@ class VideoSession : public StateObject {
         VideoSessionDeviceState &state_;
     };
 
-    VideoSession(const Device &dev_data, VkVideoSessionKHR handle, VkVideoSessionCreateInfoKHR const *pCreateInfo,
+    VideoSession(const DeviceState &dev_data, VkVideoSessionKHR handle, VkVideoSessionCreateInfoKHR const *pCreateInfo,
                  std::shared_ptr<const VideoProfileDesc> &&profile_desc);
 
     VkVideoSessionKHR VkHandle() const { return handle_.Cast<VkVideoSessionKHR>(); }
@@ -609,11 +621,15 @@ class VideoSession : public StateObject {
     bool ReferenceSetupRequested(VkVideoDecodeInfoKHR const &decode_info) const;
     bool ReferenceSetupRequested(VkVideoEncodeInfoKHR const &encode_info) const;
 
+    VkVideoEncodeIntraRefreshModeFlagBitsKHR GetIntraRefreshMode() const { return intra_refresh_mode_; }
+
   private:
-    MemoryBindingMap GetMemoryBindings(const Device &dev_data, VkVideoSessionKHR vs);
+    MemoryBindingMap GetMemoryBindings(const DeviceState &dev_data, VkVideoSessionKHR vs);
 
     MemoryBindingMap memory_bindings_;
     uint32_t unbound_memory_binding_count_;
+
+    const VkVideoEncodeIntraRefreshModeFlagBitsKHR intra_refresh_mode_;
 
     mutable std::mutex device_state_mutex_;
     VideoSessionDeviceState device_state_;
@@ -789,5 +805,8 @@ class VideoSessionParameters : public StateObject {
 using VideoSessionUpdateList =
     std::vector<std::function<bool(const VideoSession *vs_state, VideoSessionDeviceState &dev_state, bool do_validate)>>;
 using VideoSessionUpdateMap = unordered_map<VkVideoSessionKHR, VideoSessionUpdateList>;
+
+std::string string_VideoProfileDesc(const vvl::VideoProfileDesc &profile);
+std::string string_SupportedVideoProfiles(const SupportedVideoProfiles &profiles);
 
 }  // namespace vvl

@@ -141,8 +141,11 @@ class DiscoveredPeripheralTracker {
     // gatt_advertisements_.
     BleAdvertisementHeader advertisement_header;
 
-    // A proxy BlePeripheral for found/lost disovery callback.
+    // A proxy BlePeripheral for found/lost discovery callback.
     BleV2Peripheral peripheral;
+
+    // Hash for instant on lost.
+    ByteArray instant_on_lost_hash;
   };
 
   // Clears stale data from any previous sessions.
@@ -268,7 +271,6 @@ class DiscoveredPeripheralTracker {
   // 2. Matches a peripheral's advertisement hash that has previously been
   // discovered.
   bool HandleOnLostAdvertisementLocked(
-      BleV2Peripheral peripheral,
       const ::nearby::api::ble_v2::BleAdvertisementData& advertisement_data)
       ABSL_EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 // This code should move into the default Windows shim once the win-specific
 // allocation shim has been removed, and the generic shim has becaome the
 // default.
@@ -13,11 +18,11 @@
 #include <malloc.h>
 #include <new.h>
 
-#include <algorithm>
 #include <climits>
 #include <limits>
 
 #include "partition_alloc/partition_alloc_base/bits.h"
+#include "partition_alloc/partition_alloc_base/cxx_wrapper/algorithm.h"
 #include "partition_alloc/partition_alloc_base/numerics/safe_conversions.h"
 #include "partition_alloc/partition_alloc_check.h"
 

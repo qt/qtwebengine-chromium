@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-@import "theme";
+@import "../theme";
 
 .pf-chip {
   font-family: $pf-font;
@@ -29,12 +29,10 @@
   }
 
   & > .pf-left-icon {
-    float: left;
     margin-right: 6px; // Make some room between the icon and label
   }
 
   & > .pf-right-icon {
-    float: right;
     margin-left: 6px; // Make some room between the icon and label
   }
 

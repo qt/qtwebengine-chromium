@@ -4,12 +4,14 @@
 
 #include "third_party/blink/renderer/modules/webaudio/setsinkid_resolver.h"
 
+#include "base/trace_event/trace_event.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_throw_dom_exception.h"
 #include "third_party/blink/renderer/bindings/modules/v8/v8_union_audiosinkinfo_string.h"
 #include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/modules/webaudio/audio_context.h"
 #include "third_party/blink/renderer/modules/webaudio/realtime_audio_destination_node.h"
 #include "third_party/blink/renderer/platform/audio/audio_utilities.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -129,26 +131,26 @@ void SetSinkIdResolver::HandleOutputDeviceStatus(
     case media::OutputDeviceStatus::OUTPUT_DEVICE_STATUS_ERROR_NOT_FOUND:
       Reject(V8ThrowDOMException::CreateOrEmpty(
           script_state->GetIsolate(), DOMExceptionCode::kNotFoundError,
-          "AudioContext.setSinkId(): failed: the device " +
-              String(sink_descriptor_.SinkId()) + " is not found."));
+          StrCat({"AudioContext.setSinkId(): failed: the device ",
+                  String(sink_descriptor_.SinkId()), " is not found."})));
       return;
     case media::OutputDeviceStatus::OUTPUT_DEVICE_STATUS_ERROR_NOT_AUTHORIZED:
       Reject(V8ThrowDOMException::CreateOrEmpty(
           script_state->GetIsolate(), DOMExceptionCode::kNotAllowedError,
-          "AudioContext.setSinkId() failed: access to the device " +
-              String(sink_descriptor_.SinkId()) + " is not permitted."));
+          StrCat({"AudioContext.setSinkId() failed: access to the device ",
+                  String(sink_descriptor_.SinkId()), " is not permitted."})));
       return;
     case media::OutputDeviceStatus::OUTPUT_DEVICE_STATUS_ERROR_TIMED_OUT:
       Reject(V8ThrowDOMException::CreateOrEmpty(
           script_state->GetIsolate(), DOMExceptionCode::kTimeoutError,
-          "AudioContext.setSinkId() failed: the request for device " +
-              String(sink_descriptor_.SinkId()) + " is timed out."));
+          StrCat({"AudioContext.setSinkId() failed: the request for device ",
+                  String(sink_descriptor_.SinkId()), " is timed out."})));
       return;
     case media::OutputDeviceStatus::OUTPUT_DEVICE_STATUS_ERROR_INTERNAL:
       Reject(V8ThrowDOMException::CreateOrEmpty(
           script_state->GetIsolate(), DOMExceptionCode::kInvalidStateError,
-          "AudioContext.setSinkId() failed: the device " +
-              String(sink_descriptor_.SinkId()) + " is not available."));
+          StrCat({"AudioContext.setSinkId() failed: the device ",
+                  String(sink_descriptor_.SinkId()), " is not available."})));
       return;
   }
   NOTREACHED();

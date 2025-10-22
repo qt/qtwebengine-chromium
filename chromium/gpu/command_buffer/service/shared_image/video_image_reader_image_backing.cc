@@ -9,7 +9,7 @@
 #include "base/android/android_hardware_buffer_compat.h"
 #include "base/android/scoped_hardware_buffer_fence_sync.h"
 #include "base/android/scoped_hardware_buffer_handle.h"
-#include "base/debug/dump_without_crashing.h"
+#include "base/notimplemented.h"
 #include "base/task/bind_post_task.h"
 #include "base/task/single_thread_task_runner.h"
 #include "components/viz/common/gpu/vulkan_context_provider.h"
@@ -50,9 +50,6 @@ namespace {
 void CreateAndBindEglImageFromAHB(AHardwareBuffer* buffer, GLuint service_id) {
   DCHECK(buffer);
 
-  AHardwareBuffer_Desc desc;
-
-  base::AndroidHardwareBufferCompat::GetInstance().Describe(buffer, &desc);
   auto egl_image = CreateEGLImageFromAHardwareBuffer(buffer);
   if (egl_image.is_valid()) {
     // We should never alter gl binding without updating state tracking, which
@@ -440,10 +437,6 @@ class VideoImageReaderImageBacking::SkiaGraphiteDawnImageRepresentation
     if (shared_texture_memory_.BeginAccess(texture_, &begin_access_desc) !=
         wgpu::Status::Success) {
       LOG(ERROR) << "Failed to begin access for texture";
-      // TODO(crbug.com/377489264): Remove after ensuring that all samsung
-      // devices which are failing AHB size vs VkImage size checks have the
-      // check disabled.
-      base::debug::DumpWithoutCrashing();
       ResetStorage();
       return {};
     }
@@ -693,11 +686,10 @@ VideoImageReaderImageBacking::ProduceSkiaGanesh(
   }
 
   DCHECK(context_state->GrContextIsGL());
-  auto* texture_base = stream_texture_sii_->GetTextureBase();
-  DCHECK(texture_base);
-  const bool passthrough =
-      (texture_base->GetType() == gpu::TextureBase::Type::kPassthrough);
 
+  gles2::FeatureInfo* feature_info = context_state->feature_info();
+  const bool passthrough =
+      (feature_info && feature_info->is_passthrough_cmd_decoder());
   auto texture = GenAbstractTexture(passthrough);
   if (!texture)
     return nullptr;

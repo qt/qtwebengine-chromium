@@ -8,6 +8,9 @@
 #include <utility>
 
 #include "base/memory/ptr_util.h"
+#include "third_party/blink/renderer/core/animation/length_units_checker.h"
+#include "third_party/blink/renderer/core/animation/tree_counting_checker.h"
+#include "third_party/blink/renderer/core/animation/underlying_value_owner.h"
 #include "third_party/blink/renderer/core/css/css_font_variation_value.h"
 #include "third_party/blink/renderer/core/css/css_value_list.h"
 #include "third_party/blink/renderer/core/css/resolver/style_builder_converter.h"
@@ -65,7 +68,7 @@ class UnderlyingTagsChecker final
   ~UnderlyingTagsChecker() final = default;
 
  private:
-  bool IsValid(const InterpolationEnvironment&,
+  bool IsValid(const CSSInterpolationEnvironment&,
                const InterpolationValue& underlying) const final {
     return tags_ == GetTags(*underlying.non_interpolable_value);
   }
@@ -142,10 +145,27 @@ CSSFontVariationSettingsInterpolationType::MaybeConvertInherit(
 
 InterpolationValue CSSFontVariationSettingsInterpolationType::MaybeConvertValue(
     const CSSValue& value,
-    const StyleResolverState* state,
-    ConversionCheckers&) const {
+    const StyleResolverState& state,
+    ConversionCheckers& conversion_checkers) const {
+  if (const auto* value_list = DynamicTo<CSSValueList>(value)) {
+    for (const CSSValue* feature : *value_list) {
+      const CSSPrimitiveValue* primitive_value =
+          To<cssvalue::CSSFontVariationValue>(feature)->Value();
+      if (primitive_value->IsElementDependent()) {
+        conversion_checkers.push_back(
+            TreeCountingChecker::Create(state.CssToLengthConversionData()));
+        break;
+      }
+      CSSPrimitiveValue::LengthTypeFlags types;
+      primitive_value->AccumulateLengthUnitTypes(types);
+      if (CSSInterpolationType::ConversionChecker* length_units_checker =
+              LengthUnitsChecker::MaybeCreate(types, state)) {
+        conversion_checkers.push_back(length_units_checker);
+      }
+    }
+  }
   scoped_refptr<FontVariationSettings> settings =
-      StyleBuilderConverter::ConvertFontVariationSettings(*state, value);
+      StyleBuilderConverter::ConvertFontVariationSettings(state, value);
   return ConvertFontVariationSettings(settings.get());
 }
 
@@ -178,7 +198,7 @@ void CSSFontVariationSettingsInterpolationType::Composite(
     underlying_value_owner.MutableValue().interpolable_value->ScaleAndAdd(
         underlying_fraction, *value.interpolable_value);
   } else {
-    underlying_value_owner.Set(*this, value);
+    underlying_value_owner.Set(this, value);
   }
 }
 

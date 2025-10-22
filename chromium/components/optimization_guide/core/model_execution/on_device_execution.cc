@@ -86,41 +86,37 @@ void LogResponseCompleteTokens(ModelBasedCapabilityKey feature,
       tokens);
 }
 
+void LogResponseTimeToNextToken(ModelBasedCapabilityKey feature,
+                                uint32_t tokens,
+                                base::TimeDelta token_time) {
+  if (tokens == 0) {
+    return;
+  }
+  base::UmaHistogramTimes(
+      base::StrCat({"OptimizationGuide.ModelExecution."
+                    "OnDeviceResponseTokensTimeToNextToken.",
+                    GetStringNameForModelExecutionFeature(feature)}),
+      token_time / tokens);
+}
+
 std::string GenerateExecutionId() {
   return "on-device:" + base::Uuid::GenerateRandomV4().AsLowercaseString();
 }
 
-}  // namespace
-
-void InvokeStreamingCallbackWithRemoteResult(
-    OptimizationGuideModelExecutionResultStreamingCallback callback,
-    OptimizationGuideModelExecutionResult result,
-    std::unique_ptr<ModelQualityLogEntry> log_entry) {
-  OptimizationGuideModelStreamingExecutionResult streaming_result;
-  if (log_entry) {
-    // TODO: crbug.com/372535824 - This function should just get execution info.
-    if (log_entry->log_ai_data_request() &&
-        log_entry->log_ai_data_request()->has_model_execution_info()) {
-      streaming_result.execution_info =
-          std::make_unique<proto::ModelExecutionInfo>(
-              log_entry->log_ai_data_request()->model_execution_info());
-    }
-    ModelQualityLogEntry::Drop(std::move(log_entry));
-  }
-  if (result.response.has_value()) {
-    streaming_result.response = base::ok(
-        StreamingResponse{.response = *result.response, .is_complete = true});
-  } else {
-    streaming_result.response = base::unexpected(result.response.error());
-  }
-  callback.Run(std::move(streaming_result));
+bool GetOnDeviceModelWithholdNewlines() {
+  static const base::FeatureParam<bool> kOnDeviceModelWitholdNewlines{
+      &features::kOptimizationGuideOnDeviceModel,
+      "on_device_model_withhold_newlines", true};
+  return kOnDeviceModelWitholdNewlines.Get();
 }
+}  // namespace
 
 OnDeviceExecution::OnDeviceExecution(
     ModelBasedCapabilityKey feature,
     OnDeviceOptions opts,
     ExecuteRemoteFn execute_remote_fn,
     MultimodalMessage message,
+    on_device_model::mojom::ResponseConstraintPtr constraint,
     std::unique_ptr<ResultLogger> logger,
     OptimizationGuideModelExecutionResultStreamingCallback callback,
     base::OnceCallback<void(bool)> cleanup_callback)
@@ -128,6 +124,7 @@ OnDeviceExecution::OnDeviceExecution(
       opts_(std::move(opts)),
       execute_remote_fn_(execute_remote_fn),
       last_message_(std::move(message)),
+      constraint_(std::move(constraint)),
       histogram_logger_(std::move(logger)),
       callback_(std::move(callback)),
       cleanup_callback_(std::move(cleanup_callback)) {
@@ -210,6 +207,8 @@ void OnDeviceExecution::BeginExecution(OnDeviceContext& context) {
 
   auto options = on_device_model::mojom::GenerateOptions::New();
   options->max_output_tokens = opts_.token_limits.max_output_tokens;
+  options->constraint = constraint_ ? std::move(constraint_)
+                                    : opts_.adapter->GetResponseConstraint();
 
   opts_.safety_checker->RunRequestChecks(
       last_message_,
@@ -257,7 +256,8 @@ void OnDeviceExecution::OnResponse(
       MutableLoggedResponse();
 
   if (current_response_.empty()) {
-    base::TimeDelta time_to_first_response = base::TimeTicks::Now() - start_;
+    first_response_time_ = base::TimeTicks::Now();
+    base::TimeDelta time_to_first_response = first_response_time_ - start_;
     base::UmaHistogramMediumTimes(
         base::StrCat(
             {"OptimizationGuide.ModelExecution.OnDeviceFirstResponseTime.",
@@ -267,9 +267,19 @@ void OnDeviceExecution::OnResponse(
         time_to_first_response.InMilliseconds());
   }
 
-  current_response_ += chunk->text;
-  num_unchecked_response_tokens_++;
-  num_response_tokens_++;
+  if (GetOnDeviceModelWithholdNewlines()) {
+    NewlineBuffer::Chunk trimmed_chunk = newline_buffer_.Append(chunk->text);
+    if (trimmed_chunk.text.empty()) {
+      return;
+    }
+    current_response_ += trimmed_chunk.text;
+    num_unchecked_response_tokens_ += trimmed_chunk.num_tokens;
+    num_response_tokens_ += trimmed_chunk.num_tokens;
+  } else {
+    current_response_ += chunk->text;
+    num_unchecked_response_tokens_++;
+    num_response_tokens_++;
+  }
 
   if (HasRepeatingSuffix(current_response_)) {
     // If a repeat is detected, halt the response, and cancel/finish early.
@@ -301,14 +311,17 @@ void OnDeviceExecution::OnResponse(
 
 void OnDeviceExecution::OnComplete(
     on_device_model::mojom::ResponseSummaryPtr summary) {
+  base::TimeTicks completion_time = base::TimeTicks::Now();
+  base::TimeDelta time_to_completion = completion_time - start_;
   receiver_.reset();  // Suppress expected disconnect
 
   bool has_repeats = MutableLoggedResponse()->has_repeats();
 
   LogResponseHasRepeats(feature_, has_repeats);
   LogResponseCompleteTokens(feature_, num_response_tokens_);
-  base::TimeDelta time_to_completion = base::TimeTicks::Now() - start_;
   LogResponseCompleteTime(feature_, time_to_completion);
+  LogResponseTimeToNextToken(feature_, num_response_tokens_,
+                             completion_time - first_response_time_);
   MutableLoggedResponse()->set_time_to_completion_millis(
       time_to_completion.InMilliseconds());
 
@@ -320,6 +333,7 @@ void OnDeviceExecution::OnComplete(
 }
 
 void OnDeviceExecution::OnComplete(uint32_t tokens_processed) {
+  execute_input_token_count_ = tokens_processed;
   MutableLoggedRequest()->set_execution_num_tokens_processed(tokens_processed);
 }
 
@@ -405,6 +419,7 @@ void OnDeviceExecution::OnParsedResponse(
         CancelPendingResponse(Result::kContainedPII,
                               ModelExecutionError::kFiltered);
         return;
+      case ResponseParsingError::kInvalidConfiguration:
       case ResponseParsingError::kFailed:
         CancelPendingResponse(Result::kFailedConstructingResponseMessage,
                               ModelExecutionError::kGenericFailure);
@@ -524,9 +539,11 @@ void OnDeviceExecution::SendSuccessCompletionCallback(
   // Return the execution response.
   auto self = weak_ptr_factory_.GetWeakPtr();
   std::move(callback_).Run(OptimizationGuideModelStreamingExecutionResult(
-      base::ok(StreamingResponse{.response = success_response_metadata,
-                                 .is_complete = true,
-                                 .output_token_count = output_token_count_}),
+      base::ok(
+          StreamingResponse{.response = success_response_metadata,
+                            .is_complete = true,
+                            .input_token_count = execute_input_token_count_,
+                            .output_token_count = output_token_count_}),
       /*provided_by_on_device=*/true, std::move(model_execution_info)));
   if (self) {
     self->Cleanup(/*healthy=*/true);

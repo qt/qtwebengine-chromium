@@ -20,11 +20,6 @@
  *
  */
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #ifndef THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_WTF_STRING_H_
 #define THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_WTF_STRING_H_
 
@@ -47,7 +42,7 @@
 #include "third_party/blink/renderer/platform/wtf/wtf_size_t.h"
 #include "third_party/perfetto/include/perfetto/tracing/traced_value_forward.h"
 
-namespace WTF {
+namespace blink {
 
 class CodePointIterator;
 
@@ -93,7 +88,8 @@ class WTF_EXPORT String {
   explicit String(const LChar* characters)
       : String(reinterpret_cast<const char*>(characters)) {}
   String(const char* characters)  // NOLINT(google-explicit-constructor)
-      : String(base::span(characters, characters ? strlen(characters) : 0)) {}
+      : String(characters ? base::span(std::string_view(characters))
+                          : base::span<const char>()) {}
 
   // Construct a string referencing an existing StringImpl.
   String(StringImpl* impl) : impl_(impl) {}
@@ -144,6 +140,14 @@ class WTF_EXPORT String {
     return impl_->Span16();
   }
 
+  base::span<const uint16_t> SpanUint16() const {
+    if (!impl_) {
+      return {};
+    }
+    DCHECK(!impl_->Is8Bit());
+    return impl_->SpanUint16();
+  }
+
   // This exposes the underlying representation of the string. Use with
   // care. When interpreting the string as a sequence of code units
   // Span8()/Span16() should be used.
@@ -154,29 +158,21 @@ class WTF_EXPORT String {
     return impl_->RawByteSpan();
   }
 
-  const LChar* Characters8() const {
+  // Use Span8() instead.
+  UNSAFE_BUFFER_USAGE const LChar* Characters8() const {
     if (!impl_)
       return nullptr;
     DCHECK(impl_->Is8Bit());
     return impl_->Characters8();
   }
 
-  const UChar* Characters16() const {
+  // Use Span16() instead.
+  UNSAFE_BUFFER_USAGE const UChar* Characters16() const {
     if (!impl_)
       return nullptr;
     DCHECK(!impl_->Is8Bit());
     return impl_->Characters16();
   }
-
-  ALWAYS_INLINE const void* Bytes() const {
-    if (!impl_)
-      return nullptr;
-    return impl_->Bytes();
-  }
-
-  // Return characters8() or characters16() depending on CharacterType.
-  template <typename CharacterType>
-  inline const CharacterType* GetCharacters() const;
 
   bool Is8Bit() const { return impl_->Is8Bit(); }
 
@@ -185,6 +181,15 @@ class WTF_EXPORT String {
   [[nodiscard]] std::string Utf8(
       Utf8ConversionMode mode = Utf8ConversionMode::kLenient) const {
     return StringView(*this).Utf8(mode);
+  }
+  // Returns a std::u16string_view pointing this string.
+  // This should be called only if !Is8Bit().
+  //
+  // This function should be removed after enabling C++23 because
+  // std::u16string_view(Span16()) will work with C++23.
+  std::u16string_view View16() const LIFETIME_BOUND {
+    auto chars = Span16();
+    return std::u16string_view(chars.begin(), chars.end());
   }
 
   UChar operator[](wtf_size_t index) const {
@@ -618,18 +623,6 @@ template <wtf_size_t inlineCapacity>
 String::String(const Vector<UChar, inlineCapacity>& vector)
     : impl_(vector.size() ? StringImpl::Create(vector) : StringImpl::empty_) {}
 
-template <>
-inline const LChar* String::GetCharacters<LChar>() const {
-  DCHECK(Is8Bit());
-  return Characters8();
-}
-
-template <>
-inline const UChar* String::GetCharacters<UChar>() const {
-  DCHECK(!Is8Bit());
-  return Characters16();
-}
-
 inline bool String::ContainsOnlyLatin1OrEmpty() const {
   if (empty())
     return true;
@@ -678,12 +671,6 @@ void String::AppendTo(BufferType& result,
   impl_->AppendTo(result, position, length);
 }
 
-template <typename T>
-struct HashTraits;
-// Defined in string_hash.h.
-template <>
-struct HashTraits<String>;
-
 // Shared global empty string.
 WTF_EXPORT extern const String& g_empty_string;
 WTF_EXPORT extern const String& g_empty_string16_bit;
@@ -723,16 +710,28 @@ inline StringView::StringView(const String& string LIFETIME_BOUND,
 inline StringView::StringView(const String& string LIFETIME_BOUND)
     : StringView(string.Impl()) {}
 
+template <typename T>
+struct HashTraits;
+// Defined in string_hash.h.
+template <>
+struct HashTraits<String>;
+
+}  // namespace blink
+
+namespace WTF {
+
+// TODO(crbug.com/422768753): Remove these`using` directives.
+using blink::CodeUnitCompare;
+using blink::CodeUnitCompareIgnoringASCIICase;
+using blink::CodeUnitCompareLessThan;
+using blink::EqualIgnoringNullity;
+using blink::g_empty_string;
+using blink::g_xmlns_with_colon;
+using blink::NewlineThenWhitespaceStringsTable;
+using blink::String;
 }  // namespace WTF
 
 WTF_ALLOW_MOVE_AND_INIT_WITH_MEM_FUNCTIONS(String)
 
-using WTF::Equal;
-using WTF::Find;
-using WTF::g_empty_string;
-using WTF::g_empty_string16_bit;
-using WTF::String;
-using WTF::Utf8ConversionMode;
-
-#include "third_party/blink/renderer/platform/wtf/text/atomic_string.h"
+#include "third_party/blink/renderer/platform/wtf/text/string_operators.h"
 #endif  // THIRD_PARTY_BLINK_RENDERER_PLATFORM_WTF_TEXT_WTF_STRING_H_

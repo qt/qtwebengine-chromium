@@ -54,12 +54,12 @@
 #include "gpu/command_buffer/client/context_support.h"
 #include "gpu/command_buffer/client/shared_image_interface.h"
 #include "gpu/command_buffer/common/capabilities.h"
-#include "gpu/command_buffer/common/gpu_memory_buffer_support.h"
 #include "gpu/command_buffer/common/shared_image_usage.h"
 #include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/config/gpu_feature_info.h"
 #include "gpu/config/gpu_finch_features.h"
 #include "media/base/video_frame.h"
+#include "skia/ext/skia_utils_base.h"
 #include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/platform/platform.h"
 #include "third_party/blink/public/platform/web_graphics_shared_image_interface_provider.h"
@@ -85,6 +85,14 @@ namespace blink {
 
 namespace {
 
+// Note: The swapchain implementation of low-latency WebGL is actually *used*
+// only on Windows but it's *compiled* on all platforms, so the feature must
+// also be defined on al platforms even though it also will be used only on
+// Windows.
+BASE_FEATURE(kUseSingleSIForLowLatencyWebGLOnWindows,
+             "UseSingleSIForLowLatencyWebGLOnWindows",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 const float kResourceAdjustedRatio = 0.5;
 
 bool g_should_fail_drawing_buffer_creation_for_testing = false;
@@ -101,6 +109,20 @@ void FlipVertically(base::span<uint8_t> framebuffer,
     memcpy(row_b, row_a, row_bytes);
     memcpy(row_a, scanline.data(), row_bytes);
   }
+}
+
+sk_sp<SkData> TryAllocateSkDataForBitmap(viz::SharedImageFormat format,
+                                         gfx::Size size) {
+  CHECK_EQ(format.BitsPerPixel() % 8, 0);
+  base::CheckedNumeric<size_t> data_size = format.BitsPerPixel() / 8;
+  data_size *= size.width();
+  data_size *= size.height();
+
+  if (!data_size.IsValid()) {
+    return nullptr;
+  }
+
+  return TryAllocateSkData(data_size.ValueOrDie());
 }
 
 class ScopedDrawBuffer {
@@ -408,7 +430,9 @@ DrawingBuffer::CreateOrRecycleSoftwareResource() {
   if (!shared_image_interface) {
     return SoftwareResource();
   }
-  // ReadFramebufferIntoBitmapPixels always produced bottom-Left origin.
+  // glReadPixels always read with bottom-Left origin regardless of framebuffer
+  // flip extension, so keep shared image the same so we don't need to flip
+  // here.
   auto shared_image =
       shared_image_interface->CreateSharedImageForSoftwareCompositor(
           {format, size_, color_space, kBottomLeft_GrSurfaceOrigin,
@@ -456,8 +480,10 @@ bool DrawingBuffer::PrepareTransferableResource(
     }
 
     auto mapping = resource.shared_image->Map();
-    ReadFramebufferIntoBitmapPixels(
-        static_cast<uint8_t*>(mapping->GetMemoryForPlane(0).data()));
+
+    ReadBackFramebuffer(mapping->GetMemoryForPlane(0),
+                        resource.shared_image->format(), kPremul_SkAlphaType,
+                        kBottomLeft_GrSurfaceOrigin, kBackBuffer);
 
     *out_resource = viz::TransferableResource::Make(
         resource.shared_image,
@@ -516,46 +542,6 @@ DrawingBuffer::CheckForDestructionAndChangeAndResolveIfNeeded(
   ResolveIfNeeded(discardBehavior);
 
   return kContentsResolvedIfNeeded;
-}
-
-scoped_refptr<StaticBitmapImage>
-DrawingBuffer::GetUnacceleratedStaticBitmapImage() {
-  ScopedStateRestorer scoped_state_restorer(this);
-
-  if (CheckForDestructionAndChangeAndResolveIfNeeded(kDontDiscard) ==
-      kDestroyedOrLost) {
-    return nullptr;
-  }
-
-  SkBitmap bitmap;
-  if (!bitmap.tryAllocN32Pixels(size_.width(), size_.height()))
-    return nullptr;
-  ReadFramebufferIntoBitmapPixels(static_cast<uint8_t*>(bitmap.getPixels()));
-  auto sk_image = SkImages::RasterFromBitmap(bitmap);
-
-  // GL Framebuffer is bottom-left origin by default and the
-  // mesa_framebuffer_flip_y extension doesn't affect glReadPixels, so
-  // `ReadFramebufferIntoBitmapPixels` always returns bottom left images.
-  return sk_image ? UnacceleratedStaticBitmapImage::Create(
-                        sk_image, ImageOrientationEnum::kOriginBottomLeft)
-                  : nullptr;
-}
-
-void DrawingBuffer::ReadFramebufferIntoBitmapPixels(uint8_t* pixels) {
-  DCHECK(pixels);
-  DCHECK(state_restorer_);
-  bool need_premultiply = requested_alpha_type_ == kUnpremul_SkAlphaType;
-  WebGLImageConversion::AlphaOp op =
-      need_premultiply ? WebGLImageConversion::kAlphaDoPremultiply
-                       : WebGLImageConversion::kAlphaDoNothing;
-  state_restorer_->SetFramebufferBindingDirty();
-  gl_->BindFramebuffer(GL_FRAMEBUFFER, fbo_);
-
-  // Readback in Skia native byte order (RGBA or BGRA) with kN32_SkColorType.
-  const size_t buffer_size = viz::ResourceSizes::CheckedSizeInBytes<size_t>(
-      size_, viz::SinglePlaneFormat::kRGBA_8888);
-  ReadBackFramebuffer(base::span<uint8_t>(pixels, buffer_size),
-                      kN32_SkColorType, op);
 }
 
 scoped_refptr<gpu::ClientSharedImage>
@@ -680,8 +666,8 @@ void DrawingBuffer::MailboxReleasedGpu(scoped_refptr<ColorBuffer> color_buffer,
   if (color_buffer == front_color_buffer_)
     front_color_buffer_ = nullptr;
 
-  if (destruction_in_progress_ || color_buffer->size != size_ ||
-      color_buffer->format != color_buffer_format_ ||
+  if (destruction_in_progress_ || color_buffer->shared_image->size() != size_ ||
+      color_buffer->shared_image->format() != color_buffer_format_ ||
       color_buffer->shared_image->color_space() != color_space_ ||
       gl_->GetGraphicsResetStatusKHR() != GL_NO_ERROR || lost_resource ||
       is_hidden_) {
@@ -722,13 +708,42 @@ scoped_refptr<StaticBitmapImage> DrawingBuffer::TransferToStaticBitmapImage() {
 
   if (CheckForDestructionAndChangeAndResolveIfNeeded(kDiscardAllowed) ==
       kContentsResolvedIfNeeded) {
+    // NOTE: GPU compositing is always used on Android and ChromeOS.
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_CHROMEOS)
     shared_image =
         ExportSharedImageFromBackBuffer(sync_token, &release_callback);
+#else
+    if (IsUsingGpuCompositing()) {
+      shared_image =
+          ExportSharedImageFromBackBuffer(sync_token, &release_callback);
+    } else {
+      // Read back the contents of the buffer into an unaccelerated image. It's
+      // necessary to do the readback here via the WebGL context as the image
+      // returned from this method may later be sent to the compositor, and the
+      // shared GPU context is unavailable when software compositing is used.
+      auto image = GetRGBAUnacceleratedStaticBitmapImage(kBackBuffer);
+
+      // transferToImageBitmap() semantically "takes" the image from the back
+      // buffer, analogously to presentation. Hence, mark the buffer as being
+      // unchanged since its last export as well as needing clearing if relevant
+      // (note: for GPU compositing this is done in
+      // ExportSharedImageFromBackBuffer()). This is crucial to ensure correct
+      // semantics of followup operations (e.g., for offscreen canvas it's
+      // needed to ensure that PushFrame() will actually push a frame after a
+      // transferToImageBitmap() call).
+      contents_changed_ = false;
+      if (preserve_drawing_buffer_ == kDiscard) {
+        SetBufferClearNeeded(true);
+      }
+      return image;
+    }
+#endif
   }
 
   if (!shared_image) {
-    // If we couldn't resolve the contents or couldn't produce a SharedImage
-    // out of them, return an transparent black ImageBitmap.
+    // If we couldn't resolve the contents or (for the GPU compositor) couldn't
+    // produce a SharedImage out of them, return an transparent black
+    // ImageBitmap.
     // The only situation in which this could happen is when two or more calls
     // to transferToImageBitmap are made back-to-back, or when the context gets
     // lost. We intentionally leave the transparent black image in legacy color
@@ -748,19 +763,11 @@ scoped_refptr<StaticBitmapImage> DrawingBuffer::TransferToStaticBitmapImage() {
   }
 
   DCHECK(release_callback);
-  DCHECK_EQ(size_.width(), shared_image->size().width());
-  DCHECK_EQ(size_.height(), shared_image->size().height());
 
-  auto format = shared_image->format();
-
-  // TODO(xidachen): Create a small pool of recycled textures from
-  // ImageBitmapRenderingContext's transferFromImageBitmap, and try to use them
-  // in DrawingBuffer.
   return AcceleratedStaticBitmapImage::CreateFromCanvasSharedImage(
       std::move(shared_image), sync_token,
-      /* shared_image_texture_id = */ 0, size_, format, kPremul_SkAlphaType,
-      gfx::ColorSpace::CreateSRGB(), context_provider_->GetWeakPtr(),
-      base::PlatformThread::CurrentRef(),
+      /*shared_image_texture_id=*/0, kPremul_SkAlphaType,
+      context_provider_->GetWeakPtr(), base::PlatformThread::CurrentRef(),
       ThreadScheduler::Current()->CleanupTaskRunner(),
       std::move(release_callback));
 }
@@ -771,7 +778,7 @@ DrawingBuffer::CreateOrRecycleColorBuffer() {
   if (!recycled_color_buffer_queue_.empty()) {
     scoped_refptr<ColorBuffer> recycled =
         recycled_color_buffer_queue_.TakeLast();
-    DCHECK(recycled->size == size_);
+    DCHECK(recycled->shared_image->size() == size_);
     DCHECK(recycled->shared_image->color_space() == color_space_);
     recycled->BeginAccess(recycled->receive_sync_token, /*readonly=*/false);
     return recycled;
@@ -780,15 +787,17 @@ DrawingBuffer::CreateOrRecycleColorBuffer() {
 }
 
 scoped_refptr<ExternalCanvasResource>
-DrawingBuffer::ExportLowLatencyCanvasResource(
-    base::WeakPtr<CanvasResourceProvider> resource_provider) {
+DrawingBuffer::ExportLowLatencyCanvasResource() {
   // Swap chain must be presented before resource is exported.
   ResolveAndPresentSwapChainIfNeeded();
 
+  bool using_two_si_swap_chain_impl =
+      using_swap_chain_ &&
+      !base::FeatureList::IsEnabled(kUseSingleSIForLowLatencyWebGLOnWindows);
   scoped_refptr<ColorBuffer> color_buffer =
-      using_swap_chain_ ? front_color_buffer_ : back_color_buffer_;
+      using_two_si_swap_chain_impl ? front_color_buffer_ : back_color_buffer_;
 
-  if (contents_changed_ && !using_swap_chain_) {
+  if (contents_changed_ && !using_two_si_swap_chain_impl) {
     // Restart SharedImage access on the single SharedImage to ensure a write
     // fence is generated on the shared image to guarantee display reads this
     // frame completely. Display may still read parts of subsequent frames,
@@ -800,8 +809,7 @@ DrawingBuffer::ExportLowLatencyCanvasResource(
   return ExternalCanvasResource::Create(
       color_buffer->shared_image, gpu::SyncToken(),
       viz::TransferableResource::ResourceSource::kDrawingBuffer, hdr_metadata_,
-      viz::ReleaseCallback(), context_provider_->GetWeakPtr(),
-      resource_provider);
+      viz::ReleaseCallback(), context_provider_->GetWeakPtr());
 }
 
 scoped_refptr<CanvasResource> DrawingBuffer::ExportCanvasResource() {
@@ -825,22 +833,15 @@ scoped_refptr<CanvasResource> DrawingBuffer::ExportCanvasResource() {
   return ExternalCanvasResource::Create(
       client_si, sync_token,
       viz::TransferableResource::ResourceSource::kDrawingBuffer, hdr_metadata_,
-      std::move(out_release_callback), context_provider_->GetWeakPtr(),
-      /*resource_provider=*/nullptr);
+      std::move(out_release_callback), context_provider_->GetWeakPtr());
 }
 
 DrawingBuffer::ColorBuffer::ColorBuffer(
     base::WeakPtr<DrawingBuffer> drawing_buffer,
-    const gfx::Size& size,
-    viz::SharedImageFormat format,
-    SkAlphaType alpha_type,
     scoped_refptr<gpu::ClientSharedImage> shared_image,
     std::unique_ptr<gpu::SharedImageTexture> shared_image_texture)
     : owning_thread_ref(base::PlatformThread::CurrentRef()),
       drawing_buffer(std::move(drawing_buffer)),
-      size(size),
-      format(format),
-      alpha_type(alpha_type),
       shared_image(std::move(shared_image)),
       shared_image_texture_(std::move(shared_image_texture)) {
   CHECK(this->shared_image);
@@ -923,6 +924,8 @@ bool DrawingBuffer::Initialize(const gfx::Size& size, bool use_multisampling) {
   auto webgl_preferences = ContextProvider()->GetWebglPreferences();
 
   // We can't use anything other than explicit resolve for swap chain.
+  // TODO(crbug.com/40074896): Determine whether this restriction holds for the
+  // single-SI swapchain impl.
   bool supports_implicit_resolve =
       !using_swap_chain_ && extensions_util_->SupportsExtension(
                                 "GL_EXT_multisampled_render_to_texture");
@@ -1016,7 +1019,7 @@ void DrawingBuffer::CopyStagingTextureToBackColorBufferIfNeeded() {
   // from the requested format to the SharedImage-supported format.
   const GLboolean do_flip_y = GL_FALSE;
   const GLboolean do_premultiply_alpha =
-      back_color_buffer_->alpha_type == kPremul_SkAlphaType &&
+      back_color_buffer_->shared_image->alpha_type() == kPremul_SkAlphaType &&
       requested_alpha_type_ == kUnpremul_SkAlphaType;
   const GLboolean do_unpremultiply_alpha = GL_FALSE;
   gl_->CopySubTextureCHROMIUM(
@@ -1025,10 +1028,11 @@ void DrawingBuffer::CopyStagingTextureToBackColorBufferIfNeeded() {
       size_.height(), do_flip_y, do_premultiply_alpha, do_unpremultiply_alpha);
 }
 
-bool DrawingBuffer::CopyToPlatformInternal(gpu::InterfaceBase* dst_interface,
-                                           bool dst_is_unpremul_gl,
-                                           SourceDrawingBuffer src_buffer,
-                                           CopyFunctionRef copy_function) {
+std::optional<gpu::SyncToken> DrawingBuffer::CopyToPlatformInternal(
+    gpu::InterfaceBase* dst_interface,
+    bool dst_is_unpremul_gl,
+    SourceDrawingBuffer src_buffer,
+    CopyFunctionRef copy_function) {
   ScopedStateRestorer scoped_state_restorer(this);
 
   gpu::gles2::GLES2Interface* src_gl = gl_;
@@ -1046,11 +1050,11 @@ bool DrawingBuffer::CopyToPlatformInternal(gpu::InterfaceBase* dst_interface,
   SkAlphaType src_alpha_type = kUnknown_SkAlphaType;
   if (src_buffer == kFrontBuffer && front_color_buffer_) {
     src_color_buffer = front_color_buffer_;
-    src_alpha_type = src_color_buffer->alpha_type;
+    src_alpha_type = src_color_buffer->shared_image->alpha_type();
     produce_sync_token = src_color_buffer->produce_sync_token;
   } else {
     src_color_buffer = back_color_buffer_;
-    src_alpha_type = src_color_buffer->alpha_type;
+    src_alpha_type = src_color_buffer->shared_image->alpha_type();
     need_restore_access = true;
     if (staging_texture_) {
       // The source for the copy must be a SharedImage that is accessible to
@@ -1081,41 +1085,53 @@ bool DrawingBuffer::CopyToPlatformInternal(gpu::InterfaceBase* dst_interface,
 
   if (!produce_sync_token.HasData()) {
     // This should only happen if the context has been lost.
-    return false;
+    return std::nullopt;
   }
 
-  std::optional<gpu::SyncToken> sync_token =
-      copy_function(src_color_buffer->shared_image, produce_sync_token,
-                    src_alpha_type, src_color_buffer->size);
+  std::optional<gpu::SyncToken> sync_token = copy_function(
+      src_color_buffer->shared_image, produce_sync_token, src_alpha_type);
 
   if (need_restore_access) {
     src_color_buffer->BeginAccess(sync_token.value_or(gpu::SyncToken()),
                                   /*readonly=*/false);
   }
-  return sync_token.has_value();
+  return sync_token;
 }
 
 bool DrawingBuffer::CopyToPlatformTexture(gpu::gles2::GLES2Interface* dst_gl,
                                           GLenum dst_texture_target,
                                           GLuint dst_texture,
                                           GLint dst_level,
-                                          bool premultiply_alpha,
-                                          bool flip_y,
+                                          SkAlphaType dst_alpha_type,
+                                          GrSurfaceOrigin dst_origin,
                                           const gfx::Point& dst_texture_offset,
-                                          const gfx::Rect& src_sub_rectangle,
+                                          const gfx::Rect& src_rect,
                                           SourceDrawingBuffer src_buffer) {
   if (!Extensions3DUtil::CanUseCopyTextureCHROMIUM(dst_texture_target))
     return false;
 
   auto copy_function =
       [&](scoped_refptr<gpu::ClientSharedImage> src_shared_image,
-          const gpu::SyncToken& produce_sync_token, SkAlphaType src_alpha_type,
-          const gfx::Size&) -> std::optional<gpu::SyncToken> {
+          const gpu::SyncToken& produce_sync_token,
+          SkAlphaType src_alpha_type) -> std::optional<gpu::SyncToken> {
+    // If origin doesn't match, we need to flip.
+    bool do_flip_y = src_shared_image->surface_origin() != dst_origin;
+
+    // `src_rect` here is always in top-left coordinate space, but
+    // CopySubTextureCHROMIUM source rect is in texture coordinate space, so we
+    // need to adjust.
+    auto src_sub_rectangle = src_rect;
+    if (src_shared_image->surface_origin() == kBottomLeft_GrSurfaceOrigin) {
+      src_sub_rectangle.set_y(size_.height() - src_sub_rectangle.bottom());
+    }
+
     GLboolean unpack_premultiply_alpha_needed = GL_FALSE;
     GLboolean unpack_unpremultiply_alpha_needed = GL_FALSE;
-    if (src_alpha_type == kPremul_SkAlphaType && !premultiply_alpha) {
+    if (src_alpha_type == kPremul_SkAlphaType &&
+        dst_alpha_type == kUnpremul_SkAlphaType) {
       unpack_unpremultiply_alpha_needed = GL_TRUE;
-    } else if (src_alpha_type == kUnpremul_SkAlphaType && premultiply_alpha) {
+    } else if (src_alpha_type == kUnpremul_SkAlphaType &&
+               dst_alpha_type == kPremul_SkAlphaType) {
       unpack_premultiply_alpha_needed = GL_TRUE;
     }
 
@@ -1126,39 +1142,47 @@ bool DrawingBuffer::CopyToPlatformTexture(gpu::gles2::GLES2Interface* dst_gl,
         src_si_access->texture_id(), 0, dst_texture_target, dst_texture,
         dst_level, dst_texture_offset.x(), dst_texture_offset.y(),
         src_sub_rectangle.x(), src_sub_rectangle.y(), src_sub_rectangle.width(),
-        src_sub_rectangle.height(), flip_y, unpack_premultiply_alpha_needed,
+        src_sub_rectangle.height(), do_flip_y, unpack_premultiply_alpha_needed,
         unpack_unpremultiply_alpha_needed);
     auto sync_token = gpu::SharedImageTexture::ScopedAccess::EndAccess(
         std::move(src_si_access));
     src_si_texture.reset();
     return sync_token;
   };
-  return CopyToPlatformInternal(dst_gl, !premultiply_alpha, src_buffer,
-                                copy_function);
+  return CopyToPlatformInternal(dst_gl, dst_alpha_type == kUnpremul_SkAlphaType,
+                                src_buffer, copy_function)
+      .has_value();
 }
 
-bool DrawingBuffer::CopyToPlatformMailbox(
+std::optional<gpu::SyncToken> DrawingBuffer::CopyToPlatformSharedImage(
     gpu::raster::RasterInterface* dst_raster_interface,
-    gpu::Mailbox dst_mailbox,
+    const scoped_refptr<gpu::ClientSharedImage>& dst_shared_image,
+    const gpu::SyncToken& dst_sync_token,
     const gfx::Point& dst_texture_offset,
     const gfx::Rect& src_sub_rectangle,
     SourceDrawingBuffer src_buffer) {
   auto copy_function =
       [&](scoped_refptr<gpu::ClientSharedImage> src_shared_image,
-          const gpu::SyncToken& produce_sync_token, SkAlphaType src_alpha_type,
-          const gfx::Size&) -> std::optional<gpu::SyncToken> {
-    std::unique_ptr<gpu::RasterScopedAccess> ri_access =
+          const gpu::SyncToken& produce_sync_token,
+          SkAlphaType src_alpha_type) -> std::optional<gpu::SyncToken> {
+    std::unique_ptr<gpu::RasterScopedAccess> dst_access =
+        dst_shared_image->BeginRasterAccess(dst_raster_interface,
+                                            dst_sync_token,
+                                            /*readonly=*/false);
+    std::unique_ptr<gpu::RasterScopedAccess> src_access =
         src_shared_image->BeginRasterAccess(dst_raster_interface,
                                             produce_sync_token,
                                             /*readonly=*/true);
 
     dst_raster_interface->CopySharedImage(
-        src_shared_image->mailbox(), dst_mailbox, dst_texture_offset.x(),
-        dst_texture_offset.y(), src_sub_rectangle.x(), src_sub_rectangle.y(),
-        src_sub_rectangle.width(), src_sub_rectangle.height());
+        src_shared_image->mailbox(), dst_shared_image->mailbox(),
+        dst_texture_offset.x(), dst_texture_offset.y(), src_sub_rectangle.x(),
+        src_sub_rectangle.y(), src_sub_rectangle.width(),
+        src_sub_rectangle.height());
 
     gpu::SyncToken sync_token =
-        gpu::RasterScopedAccess::EndAccess(std::move(ri_access));
+        gpu::RasterScopedAccess::EndAccess(std::move(src_access));
+    sync_token = gpu::RasterScopedAccess::EndAccess(std::move(dst_access));
     return sync_token;
   };
 
@@ -1179,14 +1203,15 @@ bool DrawingBuffer::CopyToVideoFrame(
     return false;
   auto copy_function =
       [&](scoped_refptr<gpu::ClientSharedImage> src_shared_image,
-          const gpu::SyncToken& produce_sync_token, SkAlphaType src_alpha_type,
-          const gfx::Size& src_size) -> std::optional<gpu::SyncToken> {
+          const gpu::SyncToken& produce_sync_token,
+          SkAlphaType src_alpha_type) -> std::optional<gpu::SyncToken> {
     return frame_pool->CopyRGBATextureToVideoFrame(
-        src_size, src_shared_image, produce_sync_token, dst_color_space,
-        std::move(callback));
+        src_shared_image->size(), src_shared_image, produce_sync_token,
+        dst_color_space, std::move(callback));
   };
   return CopyToPlatformInternal(raster_interface, /*dst_is_unpremul_gl=*/false,
-                                src_buffer, copy_function);
+                                src_buffer, copy_function)
+      .has_value();
 }
 
 cc::Layer* DrawingBuffer::CcLayer() {
@@ -1201,15 +1226,6 @@ cc::Layer* DrawingBuffer::CcLayer() {
     layer_->SetContentsOpaque(requested_alpha_type_ == kOpaque_SkAlphaType);
     layer_->SetBlendBackgroundColor(requested_alpha_type_ !=
                                     kOpaque_SkAlphaType);
-    if (staging_texture_) {
-      // If staging_texture_ exists, then premultiplication
-      // has already been handled via CopySubTextureCHROMIUM.
-      DCHECK(requested_alpha_type_ == kUnpremul_SkAlphaType);
-      layer_->SetPremultipliedAlpha(true);
-    } else {
-      layer_->SetPremultipliedAlpha(requested_alpha_type_ !=
-                                    kUnpremul_SkAlphaType);
-    }
   }
 
   return layer_.get();
@@ -1741,31 +1757,58 @@ GLenum DrawingBuffer::StorageFormat() const {
   return requested_format_;
 }
 
-sk_sp<SkData> DrawingBuffer::PaintRenderingResultsToDataArray(
+scoped_refptr<StaticBitmapImage>
+DrawingBuffer::GetRGBAUnacceleratedStaticBitmapImage(
     SourceDrawingBuffer source_buffer) {
+  // Readback in native GL byte order (RGBA).
+  viz::SharedImageFormat format = viz::SinglePlaneFormat::kRGBA_8888;
+  if (RuntimeEnabledFeatures::WebGLDrawingBufferStorageEnabled() &&
+      back_color_buffer_->shared_image->format() ==
+          viz::SinglePlaneFormat::kRGBA_F16) {
+    format = viz::SinglePlaneFormat::kRGBA_F16;
+  }
+
+  return GetUnacceleratedStaticBitmapImage(
+      source_buffer, format, requested_alpha_type_, kTopLeft_GrSurfaceOrigin);
+}
+
+scoped_refptr<StaticBitmapImage>
+DrawingBuffer::GetUnacceleratedStaticBitmapImage(
+    SourceDrawingBuffer source_buffer,
+    viz::SharedImageFormat format,
+    SkAlphaType alpha_type,
+    GrSurfaceOrigin origin) {
   ScopedStateRestorer scoped_state_restorer(this);
 
-  // Readback in native GL byte order (RGBA).
-  SkColorType color_type = kRGBA_8888_SkColorType;
-  base::CheckedNumeric<size_t> row_bytes = 4;
-  if (RuntimeEnabledFeatures::WebGLDrawingBufferStorageEnabled() &&
-      back_color_buffer_->format == viz::SinglePlaneFormat::kRGBA_F16) {
-    color_type = kRGBA_F16_SkColorType;
-    row_bytes *= 2;
-  }
-  row_bytes *= Size().width();
-
-  base::CheckedNumeric<size_t> num_rows = Size().height();
-  base::CheckedNumeric<size_t> data_size = num_rows * row_bytes;
-  if (!data_size.IsValid())
-    return nullptr;
-
-  sk_sp<SkData> dst_buffer = TryAllocateSkData(data_size.ValueOrDie());
+  sk_sp<SkData> dst_buffer = TryAllocateSkDataForBitmap(format, Size());
   if (!dst_buffer)
     return nullptr;
 
+  auto pixels = skia::as_writable_byte_span(*dst_buffer);
+  ReadBackFramebuffer(pixels, format, alpha_type, origin, source_buffer);
+
+  return StaticBitmapImage::Create(
+      std::move(dst_buffer),
+      SkImageInfo::Make(SkISize::Make(Size().width(), Size().height()),
+                        ToClosestSkColorType(format), alpha_type,
+                        color_space_.ToSkColorSpace()),
+      origin == kTopLeft_GrSurfaceOrigin
+          ? ImageOrientationEnum::kOriginTopLeft
+          : ImageOrientationEnum::kOriginBottomLeft);
+}
+
+void DrawingBuffer::ReadBackFramebuffer(
+    base::span<uint8_t> pixels,
+    viz::SharedImageFormat destination_format,
+    SkAlphaType destination_alpha_type,
+    GrSurfaceOrigin destination_origin,
+    SourceDrawingBuffer source_buffer) {
+  DCHECK(state_restorer_);
+
   GLuint fbo = 0;
+
   state_restorer_->SetFramebufferBindingDirty();
+  // Generate new fbo for front buffer if needed.
   if (source_buffer == kFrontBuffer && front_color_buffer_) {
     gl_->GenFramebuffers(1, &fbo);
     gl_->BindFramebuffer(GL_FRAMEBUFFER, fbo);
@@ -1778,30 +1821,6 @@ sk_sp<SkData> DrawingBuffer::PaintRenderingResultsToDataArray(
     gl_->BindFramebuffer(GL_FRAMEBUFFER, fbo_);
   }
 
-  auto pixels = base::span<uint8_t>(
-      static_cast<uint8_t*>(dst_buffer->writable_data()), dst_buffer->size());
-  ReadBackFramebuffer(pixels, color_type,
-                      WebGLImageConversion::kAlphaDoNothing);
-  FlipVertically(pixels, num_rows.ValueOrDie(), row_bytes.ValueOrDie());
-
-  if (fbo) {
-    // The front buffer was used as the source of the pixels via |fbo|; clean up
-    // |fbo| and release access to the front buffer's SharedImage now that the
-    // readback is finished.
-    gl_->FramebufferTexture2D(
-        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-        front_color_buffer_->shared_image->GetTextureTarget(), 0, 0);
-    gl_->DeleteFramebuffers(1, &fbo);
-    front_color_buffer_->EndAccess();
-  }
-
-  return dst_buffer;
-}
-
-void DrawingBuffer::ReadBackFramebuffer(base::span<uint8_t> pixels,
-                                        SkColorType color_type,
-                                        WebGLImageConversion::AlphaOp op) {
-  DCHECK(state_restorer_);
   state_restorer_->SetPixelPackParametersDirty();
   gl_->PixelStorei(GL_PACK_ALIGNMENT, 1);
   if (webgl_version_ > kWebGL1) {
@@ -1815,15 +1834,15 @@ void DrawingBuffer::ReadBackFramebuffer(base::span<uint8_t> pixels,
 
   GLenum data_type = GL_UNSIGNED_BYTE;
 
-  base::CheckedNumeric<size_t> expected_data_size = 4;
-  expected_data_size *= Size().width();
-  expected_data_size *= Size().height();
-
-  if (RuntimeEnabledFeatures::WebGLDrawingBufferStorageEnabled() &&
-      color_type == kRGBA_F16_SkColorType) {
+  base::CheckedNumeric<size_t> row_bytes = 4;
+  if (destination_format == viz::SinglePlaneFormat::kRGBA_F16) {
     data_type = (webgl_version_ > kWebGL1) ? GL_HALF_FLOAT : GL_HALF_FLOAT_OES;
-    expected_data_size *= 2;
+    row_bytes *= 2;
   }
+  row_bytes *= Size().width();
+
+  base::CheckedNumeric<size_t> num_rows = Size().height();
+  base::CheckedNumeric<size_t> expected_data_size = num_rows * row_bytes;
 
   DCHECK_EQ(expected_data_size.ValueOrDie(), pixels.size());
 
@@ -1831,12 +1850,22 @@ void DrawingBuffer::ReadBackFramebuffer(base::span<uint8_t> pixels,
                   pixels.data());
 
   // For half float storage Skia order is RGBA, hence no swizzling is needed.
-  if (color_type == kBGRA_8888_SkColorType) {
+  if (destination_format == viz::SinglePlaneFormat::kBGRA_8888) {
     // Swizzle red and blue channels to match SkBitmap's byte ordering.
     // TODO(kbr): expose GL_BGRA as extension.
     for (size_t i = 0; i < pixels.size(); i += 4) {
       std::swap(pixels[i], pixels[i + 2]);
     }
+  }
+
+  WebGLImageConversion::AlphaOp op = WebGLImageConversion::kAlphaDoNothing;
+  if (requested_alpha_type_ == kUnpremul_SkAlphaType &&
+      destination_alpha_type == kPremul_SkAlphaType) {
+    op = WebGLImageConversion::kAlphaDoPremultiply;
+  } else if (requested_alpha_type_ != kUnpremul_SkAlphaType &&
+             destination_alpha_type == kUnpremul_SkAlphaType) {
+    // We don't support unpremultiplication.
+    NOTREACHED();
   }
 
   if (op == WebGLImageConversion::kAlphaDoPremultiply) {
@@ -1848,6 +1877,23 @@ void DrawingBuffer::ReadBackFramebuffer(base::span<uint8_t> pixels,
   } else if (op != WebGLImageConversion::kAlphaDoNothing) {
     NOTREACHED();
   }
+
+  // ReadPixels always reads with bottom-left origin regardless of the
+  // `opengl_flip_y_extension_`
+  if (destination_origin != kBottomLeft_GrSurfaceOrigin) {
+    FlipVertically(pixels, num_rows.ValueOrDie(), row_bytes.ValueOrDie());
+  }
+
+  if (fbo) {
+    // The front buffer was used as the source of the pixels via |fbo|; clean up
+    // |fbo| and release access to the front buffer's SharedImage now that the
+    // readback is finished.
+    gl_->FramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+        front_color_buffer_->shared_image->GetTextureTarget(), 0, 0);
+    gl_->DeleteFramebuffers(1, &fbo);
+    front_color_buffer_->EndAccess();
+  }
 }
 
 void DrawingBuffer::ResolveAndPresentSwapChainIfNeeded() {
@@ -1857,20 +1903,22 @@ void DrawingBuffer::ResolveAndPresentSwapChainIfNeeded() {
   ScopedStateRestorer scoped_state_restorer(this);
   ResolveIfNeeded(kDiscardAllowed);
 
-  if (!using_swap_chain_) {
+  bool using_two_si_swap_chain_impl =
+      using_swap_chain_ &&
+      !base::FeatureList::IsEnabled(kUseSingleSIForLowLatencyWebGLOnWindows);
+  if (!using_two_si_swap_chain_impl) {
     return;
   }
 
   CopyStagingTextureToBackColorBufferIfNeeded();
-  gpu::SyncToken sync_token;
-  gl_->GenUnverifiedSyncTokenCHROMIUM(sync_token.GetData());
+  gpu::SyncToken sync_token = back_color_buffer_->EndAccess();
 
   auto* sii = ContextProvider()->SharedImageInterface();
   sii->PresentSwapChain(sync_token,
                         back_color_buffer_->shared_image->mailbox());
 
-  sync_token = sii->GenUnverifiedSyncToken();
-  gl_->WaitSyncTokenCHROMIUM(sync_token.GetConstData());
+  back_color_buffer_->BeginAccess(sii->GenUnverifiedSyncToken(),
+                                  /*readonly=*/false);
 
   // If a multisample fbo is used it already preserves the previous contents.
   if (preserve_drawing_buffer_ == kPreserve && !WantExplicitResolve()) {
@@ -1882,7 +1930,7 @@ void DrawingBuffer::ResolveAndPresentSwapChainIfNeeded() {
     GLuint dest_texture_id =
         staging_texture_ ? staging_texture_ : back_color_buffer_->texture_id();
     front_color_buffer_->BeginAccess(gpu::SyncToken(), /*readonly=*/true);
-    ;
+
     gl_->CopySubTextureCHROMIUM(front_color_buffer_->texture_id(), 0,
                                 dest_texture_target, dest_texture_id, 0, 0, 0,
                                 0, 0, size_.width(), size_.height(), GL_FALSE,
@@ -1944,13 +1992,21 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
 
   SkAlphaType back_buffer_alpha_type = kPremul_SkAlphaType;
   if (using_swap_chain_) {
-    gpu::SharedImageInterface::SwapChainSharedImages shared_images =
-        sii->CreateSwapChain(
-            color_buffer_format_, size, color_space_, origin,
-            back_buffer_alpha_type,
-            gpu::SharedImageUsageSet(usage | gpu::SHARED_IMAGE_USAGE_SCANOUT));
-    back_buffer_shared_image = std::move(shared_images.back_buffer);
-    front_buffer_shared_image = std::move(shared_images.front_buffer);
+    usage = usage | gpu::SHARED_IMAGE_USAGE_SCANOUT;
+    usage = usage | gpu::SHARED_IMAGE_USAGE_CONCURRENT_READ_WRITE;
+    if (base::FeatureList::IsEnabled(kUseSingleSIForLowLatencyWebGLOnWindows)) {
+      back_buffer_shared_image = sii->CreateSharedImage(
+          {color_buffer_format_, size, color_space_, origin,
+           back_buffer_alpha_type, usage, "WebGLDrawingBuffer"},
+          gpu::kNullSurfaceHandle);
+    } else {
+      gpu::SharedImageInterface::SwapChainSharedImages shared_images =
+          sii->CreateSwapChain(color_buffer_format_, size, color_space_, origin,
+                               back_buffer_alpha_type, usage,
+                               "WebGLDrawingBuffer");
+      back_buffer_shared_image = std::move(shared_images.back_buffer);
+      front_buffer_shared_image = std::move(shared_images.front_buffer);
+    }
   } else {
     // First see if creating a SharedImage that can be used as an overlay is
     // feasible.
@@ -2028,13 +2084,13 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
   }
 
   if (front_buffer_shared_image) {
-    DCHECK(using_swap_chain_);
+    DCHECK(using_swap_chain_ && !base::FeatureList::IsEnabled(
+                                    kUseSingleSIForLowLatencyWebGLOnWindows));
     // Import frontbuffer of swap chain into GL.
     std::unique_ptr<gpu::SharedImageTexture> si_texture =
         front_buffer_shared_image->CreateGLTexture(gl_);
     front_color_buffer_ = base::MakeRefCounted<ColorBuffer>(
-        weak_factory_.GetWeakPtr(), size, color_buffer_format_,
-        back_buffer_alpha_type, std::move(front_buffer_shared_image),
+        weak_factory_.GetWeakPtr(), std::move(front_buffer_shared_image),
         std::move(si_texture));
   }
 
@@ -2042,10 +2098,9 @@ scoped_refptr<DrawingBuffer::ColorBuffer> DrawingBuffer::CreateColorBuffer(
   std::unique_ptr<gpu::SharedImageTexture> si_texture =
       back_buffer_shared_image->CreateGLTexture(gl_);
   scoped_refptr<DrawingBuffer::ColorBuffer> color_buffer =
-      base::MakeRefCounted<ColorBuffer>(
-          weak_factory_.GetWeakPtr(), size, color_buffer_format_,
-          back_buffer_alpha_type, std::move(back_buffer_shared_image),
-          std::move(si_texture));
+      base::MakeRefCounted<ColorBuffer>(weak_factory_.GetWeakPtr(),
+                                        std::move(back_buffer_shared_image),
+                                        std::move(si_texture));
   color_buffer->BeginAccess(gpu::SyncToken(), /*readonly=*/false);
   gl_->BindTexture(texture_target, color_buffer->texture_id());
 

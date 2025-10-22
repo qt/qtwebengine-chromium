@@ -113,6 +113,7 @@ static int get_frame_internal(AVFilterContext *ctx, AVFrame *frame, int flags, i
     int status, ret;
     AVFrame *cur_frame;
     int64_t pts;
+    int buffersrc_empty = 0;
 
     if (buf->peeked_frame)
         return return_or_keep_frame(buf, frame, buf->peeked_frame, flags);
@@ -131,8 +132,15 @@ static int get_frame_internal(AVFilterContext *ctx, AVFrame *frame, int flags, i
             return AVERROR(EAGAIN);
         } else if (li->frame_wanted_out) {
             ret = ff_filter_graph_run_once(ctx->graph);
-            if (ret < 0)
+            if (ret == FFERROR_BUFFERSRC_EMPTY) {
+                buffersrc_empty = 1;
+            } else if (ret == AVERROR(EAGAIN)) {
+                if (buffersrc_empty)
+                    return ret;
+                ff_inlink_request_frame(inlink);
+            } else if (ret < 0) {
                 return ret;
+            }
         } else {
             ff_inlink_request_frame(inlink);
         }
@@ -362,6 +370,14 @@ int av_buffersink_get_ch_layout(const AVFilterContext *ctx, AVChannelLayout *out
         return ret;
     *out = ch_layout;
     return 0;
+}
+
+const AVFrameSideData *const *av_buffersink_get_side_data(const AVFilterContext *ctx,
+                                                          int *nb_side_data)
+{
+    av_assert0(fffilter(ctx->filter)->activate == activate);
+    *nb_side_data = ctx->inputs[0]->nb_side_data;
+    return (const AVFrameSideData *const *)ctx->inputs[0]->side_data;
 }
 
 #if FF_API_BUFFERSINK_OPTS

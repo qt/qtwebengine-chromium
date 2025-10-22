@@ -41,6 +41,13 @@ class FocusManagerEventHandler;
 class TooltipManagerAura;
 class WindowReorderer;
 
+// NativeWidgetAura is a NativeWidgetPrivate implementation that does not own
+// a platform-specific window (x11::Window, HWND, etc).
+// Such a widget is called a non-desktop widget, as in contrast to a desktop
+// widget that uses DesktopNativeWidgetAura.
+// On non-CrOS platforms, a non-desktop widget must be a descendant of a
+// desktop widget and is clipped to that desktop widget's bounds.
+// On CrOS, everything is a non-desktop widget.
 class VIEWS_EXPORT NativeWidgetAura : public internal::NativeWidgetPrivate,
                                       public aura::WindowDelegate,
                                       public aura::WindowObserver,
@@ -107,7 +114,8 @@ class VIEWS_EXPORT NativeWidgetAura : public internal::NativeWidgetPrivate,
   void SetWindowIcons(const gfx::ImageSkia& window_icon,
                       const gfx::ImageSkia& app_icon) override;
   void InitModalType(ui::mojom::ModalType modal_type) override;
-  void SetColorMode(ui::ColorProviderKey::ColorMode color_mode) override;
+  void OnWidgetThemeChanged(ui::ColorProviderKey::ColorMode color_mode,
+                            std::optional<SkColor> background_color) override;
   gfx::Rect GetWindowBoundsInScreen() const override;
   gfx::Rect GetClientAreaBoundsInScreen() const override;
   gfx::Rect GetRestoredBounds() const override;
@@ -125,6 +133,7 @@ class VIEWS_EXPORT NativeWidgetAura : public internal::NativeWidgetPrivate,
             const gfx::Rect& restore_bounds) override;
   void Hide() override;
   bool IsVisible() const override;
+  bool IsVisibleOnScreen() const override;
   void Activate() override;
   void Deactivate() override;
   bool IsActive() const override;
@@ -173,6 +182,7 @@ class VIEWS_EXPORT NativeWidgetAura : public internal::NativeWidgetPrivate,
   void OnNativeViewHierarchyChanged() override;
   bool SetAllowScreenshots(bool allow) override;
   bool AreScreenshotsAllowed() override;
+  bool IsDesktopNativeWidget() const override;
   std::string GetName() const override;
   base::WeakPtr<internal::NativeWidgetPrivate> GetWeakPtr() override;
 
@@ -204,6 +214,8 @@ class VIEWS_EXPORT NativeWidgetAura : public internal::NativeWidgetPrivate,
                                intptr_t old) override;
   void OnResizeLoopStarted(aura::Window* window) override;
   void OnResizeLoopEnded(aura::Window* window) override;
+  void OnMoveLoopStarted(aura::Window* window) override;
+  void OnMoveLoopEnded(aura::Window* window) override;
   void OnWindowAddedToRootWindow(aura::Window* window) override;
   void OnWindowRemovingFromRootWindow(aura::Window* window,
                                       aura::Window* new_root) override;

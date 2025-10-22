@@ -47,13 +47,13 @@ PolicyContainerPolicies MakeTestPolicies() {
   return PolicyContainerPolicies(
       network::mojom::ReferrerPolicy::kAlways,
       network::mojom::IPAddressSpace::kPublic,
+      /*allow_non_secure_local_network_access*/ true,
       /*is_web_secure_context=*/true, std::move(csp_list),
       network::CrossOriginOpenerPolicy(), network::CrossOriginEmbedderPolicy(),
-      network::DocumentIsolationPolicy(),
-      network::mojom::WebSandboxFlags::kNone,
+      network::DocumentIsolationPolicy(), network::IntegrityPolicy(),
+      network::IntegrityPolicy(), network::mojom::WebSandboxFlags::kNone,
       /*is_credentialless=*/false,
       /*can_navigate_top_without_user_gesture=*/true,
-      /*allow_cross_origin_isolation=*/false,
       /*cross_origin_isolation_enabled_by_dip=*/false);
 }
 
@@ -104,6 +104,20 @@ TEST_F(NavigationPolicyContainerBuilderTest, SetIPAddressSpace) {
 
   PolicyContainerPolicies expected_policies;
   expected_policies.ip_address_space = network::mojom::IPAddressSpace::kPublic;
+
+  EXPECT_EQ(builder.DeliveredPoliciesForTesting(), expected_policies);
+}
+
+// Verifies that SetLocalNetworkAccessNonSecureContextAllowed sets
+// allow_non_secure_local_network_access in the builder's
+// delivered policies.
+TEST_F(NavigationPolicyContainerBuilderTest, SetLNANonSecureContextAllowed) {
+  NavigationPolicyContainerBuilder builder(
+      nullptr, nullptr, kInvalidChildProcessUniqueId, nullptr, nullptr);
+  builder.SetLocalNetworkAccessNonSecureContextAllowed(true);
+
+  PolicyContainerPolicies expected_policies;
+  expected_policies.allow_non_secure_local_network_access = true;
 
   EXPECT_EQ(builder.DeliveredPoliciesForTesting(), expected_policies);
 }
@@ -234,7 +248,7 @@ TEST_F(NavigationPolicyContainerBuilderTest,
 TEST_F(NavigationPolicyContainerBuilderTest, MHTMLSandboxFlags) {
   NavigationPolicyContainerBuilder builder(
       nullptr, nullptr, kInvalidChildProcessUniqueId, nullptr, nullptr);
-  builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kLocal);
+  builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kLoopback);
   MockNavigationHandle navigation_handle(GURL("file:///my/page.mhtml"),
                                          nullptr);
   builder.ComputePolicies(&navigation_handle,
@@ -255,7 +269,7 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   base::test::ScopedFeatureList features(blink::features::kMHTML_Improvements);
   NavigationPolicyContainerBuilder builder(
       nullptr, nullptr, kInvalidChildProcessUniqueId, nullptr, nullptr);
-  builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kLocal);
+  builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kLoopback);
   MockNavigationHandle navigation_handle(GURL("file:///my/page.mhtml"),
                                          nullptr);
   builder.ComputePolicies(&navigation_handle,
@@ -323,9 +337,9 @@ TEST_F(NavigationPolicyContainerBuilderTest,
   NavigationPolicyContainerBuilder builder(
       nullptr, nullptr, kInvalidChildProcessUniqueId, nullptr, nullptr);
 
-  builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kPrivate);
+  builder.SetIPAddressSpace(network::mojom::IPAddressSpace::kLocal);
   PolicyContainerPolicies expected_policies;
-  expected_policies.ip_address_space = network::mojom::IPAddressSpace::kPrivate;
+  expected_policies.ip_address_space = network::mojom::IPAddressSpace::kLocal;
 
   MockNavigationHandle navigation_handle(GURL("https://foo.test"), nullptr);
   builder.ComputePolicies(&navigation_handle, false,

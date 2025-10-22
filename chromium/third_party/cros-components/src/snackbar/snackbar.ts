@@ -42,20 +42,17 @@ export class Snackbar extends LitElement {
    * The visible message on the snackbar surface.
    * @export
    */
-  message: string;
+  declare message: string;
 
   /** @export */
   override role = 'alert';
 
   /** @export */
-  closeOnEscape = false;
+  declare closeOnEscape: boolean;
 
   /** @export */
   /** Timeout between the snackbar showing and hiding, in milliseconds. */
-  timeoutMs = -1;
-
-  /** @export */
-  override popover = 'manual';
+  declare timeoutMs: number;
 
   /** @nocollapse */
   static override properties = {
@@ -73,6 +70,9 @@ export class Snackbar extends LitElement {
   constructor() {
     super();
     this.message = '';
+    this.closeOnEscape = false;
+    this.timeoutMs = -1;
+    this.popover = 'manual';
   }
 
   /** @export */

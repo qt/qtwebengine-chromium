@@ -9,6 +9,7 @@
 
 #include "base/containers/flat_tree.h"
 #include "base/i18n/string_search.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/accessibility/ax_enum_util.h"
 #include "ui/accessibility/ax_enums.mojom-shared.h"
 #include "ui/accessibility/ax_event.h"
@@ -699,8 +700,9 @@ std::vector<int> AutomationTreeManagerOwner::GetChildIDs(
     for (AXNode* child_root : child_roots)
       child_ids.push_back(child_root->id());
   } else {
-    for (auto iter = node->UnignoredChildrenBegin();
-         iter != node->UnignoredChildrenEnd(); ++iter) {
+    for (auto iter = node->UnignoredChildrenBegin(),
+              end = node->UnignoredChildrenEnd();
+         iter != end; ++iter) {
       child_ids.push_back(iter->id());
       *result_tree_id = iter->tree()->GetAXTreeID();
     }
@@ -950,7 +952,7 @@ bool AutomationTreeManagerOwner::CalculateNodeState(const AXTreeID& tree_id,
   if (!node)
     return false;
 
-  *node_state = node->data().state;
+  *node_state = node->data().state.value();
 
   AutomationAXTreeWrapper* top_tree_wrapper = nullptr;
   AutomationAXTreeWrapper* walker = tree_wrapper;
@@ -1061,6 +1063,12 @@ void AutomationTreeManagerOwner::DispatchAccessibilityEvents(
   if (is_new_tree) {
     tree_wrapper = new AutomationAXTreeWrapper(this);
     CacheAutomationTreeWrapperForTreeID(tree_id, tree_wrapper);
+    // A new tree requires at least a root node. This is similar to early
+    // return logic in RenderFrameHostImpl::UpdateAXTreeData() for the case
+    // where needs_ax_root_id_ is true.
+    if (updates.size() == 1 && updates[0].nodes.empty()) {
+      return;
+    }
   }
 
   if (!tree_wrapper->OnAccessibilityEvents(tree_id, updates, events,

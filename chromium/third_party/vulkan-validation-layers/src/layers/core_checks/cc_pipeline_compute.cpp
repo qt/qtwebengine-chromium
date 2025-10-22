@@ -1,7 +1,7 @@
-/* Copyright (c) 2015-2024 The Khronos Group Inc.
- * Copyright (c) 2015-2024 Valve Corporation
- * Copyright (c) 2015-2024 LunarG, Inc.
- * Copyright (C) 2015-2024 Google Inc.
+/* Copyright (c) 2015-2025 The Khronos Group Inc.
+ * Copyright (c) 2015-2025 Valve Corporation
+ * Copyright (c) 2015-2025 LunarG, Inc.
+ * Copyright (C) 2015-2025 Google Inc.
  * Modifications Copyright (C) 2020-2022 Advanced Micro Devices, Inc. All rights reserved.
  * Modifications Copyright (C) 2022 RasterGrid Kft.
  *
@@ -21,14 +21,14 @@
 #include <vulkan/vk_enum_string_helper.h>
 #include "core_validation.h"
 #include "chassis/chassis_modification_state.h"
+#include "state_tracker/pipeline_state.h"
 
 bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipelineCache pipelineCache, uint32_t count,
                                                        const VkComputePipelineCreateInfo *pCreateInfos,
                                                        const VkAllocationCallbacks *pAllocator, VkPipeline *pPipelines,
                                                        const ErrorObject &error_obj, PipelineStates &pipeline_states,
                                                        chassis::CreateComputePipelines &chassis_state) const {
-    bool skip = BaseClass::PreCallValidateCreateComputePipelines(device, pipelineCache, count, pCreateInfos, pAllocator, pPipelines,
-                                                                 error_obj, pipeline_states, chassis_state);
+    bool skip = false;
 
     skip |= ValidateDeviceQueueSupport(error_obj.location);
     for (uint32_t i = 0; i < count; i++) {
@@ -44,9 +44,10 @@ bool CoreChecks::PreCallValidateCreateComputePipelines(VkDevice device, VkPipeli
         }
 
         skip |= ValidateComputePipelineDerivatives(pipeline_states, i, create_info_loc);
-        skip |= ValidatePipelineCacheControlFlags(pipeline->create_flags, create_info_loc.dot(Field::flags),
+        const Location flags_loc = pipeline->GetCreateFlagsLoc(create_info_loc);
+        skip |= ValidatePipelineCacheControlFlags(pipeline->create_flags, flags_loc,
                                                   "VUID-VkComputePipelineCreateInfo-pipelineCreationCacheControl-02875");
-        skip |= ValidatePipelineIndirectBindableFlags(pipeline->create_flags, create_info_loc.dot(Field::flags),
+        skip |= ValidatePipelineIndirectBindableFlags(pipeline->create_flags, flags_loc,
                                                       "VUID-VkComputePipelineCreateInfo-flags-09007");
 
         if (const auto *pipeline_robustness_info =

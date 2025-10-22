@@ -8,12 +8,12 @@
 #include <string>
 
 #include "base/unguessable_token.h"
-#include "gpu/gpu_export.h"
+#include "gpu/command_buffer/common/gpu_command_buffer_common_export.h"
 
 namespace gpu {
 
 // A unique, unguessable identifier for a SharedImagePool.
-class GPU_EXPORT SharedImagePoolId {
+class GPU_COMMAND_BUFFER_COMMON_EXPORT SharedImagePoolId {
  public:
   SharedImagePoolId();
   explicit SharedImagePoolId(const base::UnguessableToken& token);
@@ -30,6 +30,11 @@ class GPU_EXPORT SharedImagePoolId {
 
   std::strong_ordering operator<=>(const SharedImagePoolId& other) const {
     return token_ <=> other.token_;
+  }
+
+  template <typename H>
+  friend H AbslHashValue(H h, const SharedImagePoolId& id) {
+    return H::combine(std::move(h), id.token_);
   }
 
   bool IsValid() const { return !token_.is_empty(); }

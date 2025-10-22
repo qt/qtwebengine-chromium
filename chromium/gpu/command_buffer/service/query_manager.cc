@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40285824): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "gpu/command_buffer/service/query_manager.h"
 
 #include <stddef.h>
@@ -14,8 +9,8 @@
 
 #include "base/atomicops.h"
 #include "base/check_op.h"
+#include "base/compiler_specific.h"
 #include "base/functional/bind.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "base/time/time.h"
 #include "ui/gl/gl_bindings.h"
@@ -344,7 +339,7 @@ QueryManager::Query* QueryManager::CreateQuery(
 void QueryManager::GenQueries(GLsizei n, const GLuint* queries) {
   DCHECK_GE(n, 0);
   for (GLsizei i = 0; i < n; ++i) {
-    generated_query_ids_.insert(queries[i]);
+    generated_query_ids_.insert(UNSAFE_TODO(queries[i]));
   }
 }
 
@@ -515,7 +510,7 @@ void QueryManager::EndQuery(Query* query, base::subtle::Atomic32 submit_count) {
 
   // Remove from active query map if it is active.
   ActiveQueryMap::iterator active_it = active_queries_.find(query->target());
-  CHECK(active_it != active_queries_.end(), base::NotFatalUntil::M130);
+  CHECK(active_it != active_queries_.end());
   DCHECK(query == active_it->second.get());
   active_queries_.erase(active_it);
 

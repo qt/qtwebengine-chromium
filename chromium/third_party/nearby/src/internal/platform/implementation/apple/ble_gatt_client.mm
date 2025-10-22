@@ -23,9 +23,10 @@
 
 #include "internal/platform/implementation/ble_v2.h"
 
+#import "internal/platform/implementation/apple/Flags/GNCFeatureFlags.h"
+#import "internal/platform/implementation/apple/Log/GNCLogger.h"
 #import "internal/platform/implementation/apple/Mediums/BLEv2/GNCBLEGATTClient.h"
 #import "internal/platform/implementation/apple/ble_utils.h"
-#import "GoogleToolboxForMac/GTMLogger.h"
 
 namespace nearby {
 namespace apple {
@@ -48,7 +49,7 @@ bool GattClient::DiscoverServiceAndCharacteristics(const Uuid &service_uuid,
                                completionHandler:^(NSError *error) {
                                  [condition lock];
                                  if (error != nil) {
-                                   GTMLoggerError(@"Error discovering characteristics: %@", error);
+                                   GNCLoggerError(@"Error discovering characteristics: %@", error);
                                  }
                                  blockError = error;
                                  [condition signal];
@@ -73,7 +74,7 @@ std::optional<api::ble_v2::GattCharacteristic> GattClient::GetCharacteristic(
                      completionHandler:^(GNCBLEGATTCharacteristic *characteristic, NSError *error) {
                        [condition lock];
                        if (error != nil) {
-                         GTMLoggerError(@"Error retrieving characteristic: %@", error);
+                         GNCLoggerError(@"Error retrieving characteristic: %@", error);
                        }
                        blockCharacteristic = characteristic;
                        blockError = error;
@@ -98,7 +99,7 @@ std::optional<std::string> GattClient::ReadCharacteristic(
                          completionHandler:^(NSData *value, NSError *error) {
                            [condition lock];
                            if (error != nil) {
-                             GTMLoggerError(@"Error reading characteristic: %@", error);
+                             GNCLoggerError(@"Error reading characteristic: %@", error);
                            }
                            blockValue = value;
                            blockError = error;
@@ -129,9 +130,13 @@ bool GattClient::SetCharacteristicSubscription(
 
 void GattClient::Disconnect() {
   // There seems to be an issue between some iOS<>Android device pairs where the Android device will
-  // not connect to the iOS device if the iOS device disconnects and then attempts to reconnect. 
+  // not connect to the iOS device if the iOS device disconnects and then attempts to reconnect.
   // Because of this, we no-op here instead of calling `[gatt_client_ disconnect]`.
   // See: b/375176623
+  if (GNCFeatureFlags.gattClientDisconnectionEnabled) {
+    // Avoid to impact GTV functionality, so that GATT client can reconnect to the GATT server.
+    [gatt_client_ disconnect];
+  }
 }
 
 }  // namespace apple

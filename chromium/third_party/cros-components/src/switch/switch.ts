@@ -108,9 +108,9 @@ export class Switch extends LitElement {
   } as const;
 
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  selected: boolean;
+  declare selected: boolean;
 
   get mdSwitch(): MdSwitch|undefined|null {
     return this.shadowRoot!.querySelector('md-switch');

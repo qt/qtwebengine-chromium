@@ -229,12 +229,12 @@ export function activeURLForFrameAtTime(
 }
 
 /**
- * @param node the node attached to the profile call. Here a node represents a function in the call tree.
- * @param profileId the profile ID that the sample came from that backs this call.
- * @param sampleIndex the index of the sample in the given profile that this call was created from
- * @param ts the timestamp of the profile call
- * @param pid the process ID of the profile call
- * @param tid the thread ID of the profile call
+ * @param node - the node attached to the profile call. Here a node represents a function in the call tree.
+ * @param profileId - the profile ID that the sample came from that backs this call.
+ * @param sampleIndex - the index of the sample in the given profile that this call was created from
+ * @param ts - the timestamp of the profile call
+ * @param pid - the process ID of the profile call
+ * @param tid - the thread ID of the profile call
  *
  * See `panels/timeline/docs/profile_calls.md` for more context on how these events are created.
  */
@@ -263,7 +263,7 @@ export function makeProfileCall(
  * if provided, though currently only coming from Animations. Traces may contain multiple instant events so we need to
  * account for that.
  *
- * @returns {Map<string, MatchingPairableAsyncEvents>} Map of the animation's ID to it's matching events.
+ * @returns Map of the animation's ID to it's matching events.
  */
 export function matchEvents(unpairedEvents: Types.Events.PairableAsync[]): Map<string, MatchingPairableAsyncEvents> {
   // map to store begin and end of the event
@@ -435,7 +435,7 @@ export function getZeroIndexedLineAndColumnForEvent(event: Types.Events.Event): 
  * stack. If you want to obtain the whole stack trace you might need to
  * use the @see Trace.Extras.StackTraceForEvent util.
  */
-export function getZeroIndexedStackTraceForEvent(event: Types.Events.Event): Types.Events.CallFrame[]|null {
+export function getZeroIndexedStackTraceInEventPayload(event: Types.Events.Event): Types.Events.CallFrame[]|null {
   const stack = stackTraceInEvent(event);
   if (!stack) {
     return null;
@@ -524,13 +524,6 @@ export function frameIDForEvent(event: Types.Events.Event): string|null {
 
 const DevToolsTimelineEventCategory = 'disabled-by-default-devtools.timeline';
 export function isTopLevelEvent(event: Types.Events.Event): boolean {
-  if (event.name === 'JSRoot' && event.cat === 'toplevel') {
-    // This is used in createFakeTraceFromCpuProfile to insert a fake event prior to the
-    // CPU Profile in order to ensure the trace isn't truncated. So if we see
-    // this, we want to treat it as a top level event.
-    // TODO(crbug.com/341234884): do we need this?
-    return true;
-  }
   return event.cat.includes(DevToolsTimelineEventCategory) && event.name === Types.Events.Name.RUN_TASK;
 }
 
@@ -709,38 +702,36 @@ export function extractSampleTraceId(event: Types.Events.Event): number|null {
   return event.args?.sampleTraceId ?? event.args?.data?.sampleTraceId ?? null;
 }
 
+// This exactly matches EntryStyles.visibleTypes. See the runtime verification in maybeInitSylesMap.
+// TODO(crbug.com/410884528)
 export const VISIBLE_TRACE_EVENT_TYPES = new Set<Types.Events.Name>([
   Types.Events.Name.ABORT_POST_TASK_CALLBACK,
   Types.Events.Name.ANIMATION,
   Types.Events.Name.ASYNC_TASK,
   Types.Events.Name.BACKGROUND_DESERIALIZE,
-  Types.Events.Name.BEGIN_FRAME,
-  Types.Events.Name.BEGIN_MAIN_THREAD_FRAME,
   Types.Events.Name.CACHE_MODULE,
   Types.Events.Name.CACHE_SCRIPT,
   Types.Events.Name.CANCEL_ANIMATION_FRAME,
   Types.Events.Name.CANCEL_IDLE_CALLBACK,
-  Types.Events.Name.COMPILE,
+  Types.Events.Name.COMMIT,
   Types.Events.Name.COMPILE_CODE,
   Types.Events.Name.COMPILE_MODULE,
-  Types.Events.Name.COMMIT,
+  Types.Events.Name.COMPILE,
   Types.Events.Name.COMPOSITE_LAYERS,
   Types.Events.Name.COMPUTE_INTERSECTION,
   Types.Events.Name.CONSOLE_TIME,
-  Types.Events.Name.TIME_STAMP,
   Types.Events.Name.CPPGC_SWEEP,
-  Types.Events.Name.CRYPTO_DO_DECRYPT,
   Types.Events.Name.CRYPTO_DO_DECRYPT_REPLY,
-  Types.Events.Name.CRYPTO_DO_DIGEST,
+  Types.Events.Name.CRYPTO_DO_DECRYPT,
   Types.Events.Name.CRYPTO_DO_DIGEST_REPLY,
-  Types.Events.Name.CRYPTO_DO_ENCRYPT,
+  Types.Events.Name.CRYPTO_DO_DIGEST,
   Types.Events.Name.CRYPTO_DO_ENCRYPT_REPLY,
-  Types.Events.Name.CRYPTO_DO_SIGN,
+  Types.Events.Name.CRYPTO_DO_ENCRYPT,
   Types.Events.Name.CRYPTO_DO_SIGN_REPLY,
-  Types.Events.Name.CRYPTO_DO_VERIFY,
+  Types.Events.Name.CRYPTO_DO_SIGN,
   Types.Events.Name.CRYPTO_DO_VERIFY_REPLY,
+  Types.Events.Name.CRYPTO_DO_VERIFY,
   Types.Events.Name.DECODE_IMAGE,
-  Types.Events.Name.DRAW_FRAME,
   Types.Events.Name.EMBEDDER_CALLBACK,
   Types.Events.Name.EVALUATE_MODULE,
   Types.Events.Name.EVALUATE_SCRIPT,
@@ -749,29 +740,20 @@ export const VISIBLE_TRACE_EVENT_TYPES = new Set<Types.Events.Name>([
   Types.Events.Name.FINALIZE_DESERIALIZATION,
   Types.Events.Name.FIRE_ANIMATION_FRAME,
   Types.Events.Name.FIRE_IDLE_CALLBACK,
-  Types.Events.Name.FRAME_STARTED_LOADING,
   Types.Events.Name.FUNCTION_CALL,
-  Types.Events.Name.GC,
   Types.Events.Name.GC_COLLECT_GARBARGE,
+  Types.Events.Name.GC,
   Types.Events.Name.GPU_TASK,
   Types.Events.Name.HANDLE_POST_MESSAGE,
   Types.Events.Name.HIT_TEST,
-  Types.Events.Name.INVALIDATE_LAYOUT,
   Types.Events.Name.JS_SAMPLE,
   Types.Events.Name.LAYERIZE,
   Types.Events.Name.LAYOUT,
-  Types.Events.Name.LAYOUT_SHIFT,
   Types.Events.Name.MAJOR_GC,
-  Types.Events.Name.MARK_DOM_CONTENT,
-  Types.Events.Name.MARK_FIRST_PAINT,
-  Types.Events.Name.MARK_FCP,
-  Types.Events.Name.MARK_LCP_CANDIDATE,
-  Types.Events.Name.MARK_LOAD,
   Types.Events.Name.MINOR_GC,
   Types.Events.Name.OPTIMIZE_CODE,
-  Types.Events.Name.PAINT,
-  Types.Events.Name.PAINT_IMAGE,
   Types.Events.Name.PAINT_SETUP,
+  Types.Events.Name.PAINT,
   Types.Events.Name.PARSE_AUTHOR_STYLE_SHEET,
   Types.Events.Name.PARSE_HTML,
   Types.Events.Name.PRE_PAINT,
@@ -780,7 +762,6 @@ export const VISIBLE_TRACE_EVENT_TYPES = new Set<Types.Events.Name>([
   Types.Events.Name.RASTER_TASK,
   Types.Events.Name.REQUEST_ANIMATION_FRAME,
   Types.Events.Name.REQUEST_IDLE_CALLBACK,
-  Types.Events.Name.REQUEST_MAIN_THREAD_FRAME,
   Types.Events.Name.RESOURCE_FINISH,
   Types.Events.Name.RESOURCE_RECEIVE_DATA,
   Types.Events.Name.RESOURCE_RECEIVE_RESPONSE,
@@ -794,15 +775,15 @@ export const VISIBLE_TRACE_EVENT_TYPES = new Set<Types.Events.Name>([
   Types.Events.Name.SCHEDULE_STYLE_RECALCULATION,
   Types.Events.Name.SCROLL_LAYER,
   Types.Events.Name.START_PROFILING,
-  Types.Events.Name.STREAMING_COMPILE_SCRIPT,
   Types.Events.Name.STREAMING_COMPILE_SCRIPT_PARSING,
   Types.Events.Name.STREAMING_COMPILE_SCRIPT_WAITING,
-  Types.Events.Name.SYNTHETIC_LAYOUT_SHIFT,
+  Types.Events.Name.STREAMING_COMPILE_SCRIPT,
   Types.Events.Name.SYNTHETIC_LAYOUT_SHIFT_CLUSTER,
+  Types.Events.Name.SYNTHETIC_LAYOUT_SHIFT,
+  Types.Events.Name.TIME_STAMP,
   Types.Events.Name.TIMER_FIRE,
   Types.Events.Name.TIMER_INSTALL,
   Types.Events.Name.TIMER_REMOVE,
-  Types.Events.Name.UPDATE_LAYER,
   Types.Events.Name.UPDATE_LAYER_TREE,
   Types.Events.Name.UPDATE_LAYOUT_TREE,
   Types.Events.Name.USER_TIMING,
@@ -814,10 +795,10 @@ export const VISIBLE_TRACE_EVENT_TYPES = new Set<Types.Events.Name>([
   Types.Events.Name.WASM_STREAM_FROM_RESPONSE_CALLBACK,
   Types.Events.Name.WEB_SOCKET_CREATE,
   Types.Events.Name.WEB_SOCKET_DESTROY,
-  Types.Events.Name.WEB_SOCKET_RECEIVE,
   Types.Events.Name.WEB_SOCKET_RECEIVE_HANDSHAKE_REQUEST,
-  Types.Events.Name.WEB_SOCKET_SEND,
+  Types.Events.Name.WEB_SOCKET_RECEIVE,
   Types.Events.Name.WEB_SOCKET_SEND_HANDSHAKE_REQUEST,
+  Types.Events.Name.WEB_SOCKET_SEND,
   Types.Events.Name.XHR_LOAD,
   Types.Events.Name.XHR_READY_STATE_CHANGED,
 ]);

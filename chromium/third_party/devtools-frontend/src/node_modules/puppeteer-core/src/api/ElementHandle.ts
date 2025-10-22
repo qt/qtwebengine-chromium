@@ -90,6 +90,14 @@ export interface ClickOptions extends MouseClickOptions {
    * Offset for the clickable point relative to the top-left corner of the border box.
    */
   offset?: Offset;
+  /**
+   * An experimental debugging feature. If true, inserts an element into the
+   * page to highlight the click location for 10 seconds. Might not work on all
+   * pages and does not persist across navigations.
+   *
+   * @experimental
+   */
+  debugHighlight?: boolean;
 }
 
 /**
@@ -356,7 +364,7 @@ export abstract class ElementHandle<
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-   * allows quering by
+   * allows querying by
    * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
    * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
    * and
@@ -390,7 +398,7 @@ export abstract class ElementHandle<
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-   * allows quering by
+   * allows querying by
    * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
    * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
    * and
@@ -465,7 +473,7 @@ export abstract class ElementHandle<
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-   * allows quering by
+   * allows querying by
    * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
    * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
    * and
@@ -534,7 +542,7 @@ export abstract class ElementHandle<
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
-   * allows quering by
+   * allows querying by
    * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
    * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
    * and
@@ -765,7 +773,50 @@ export abstract class ElementHandle<
   ): Promise<void> {
     await this.scrollIntoViewIfNeeded();
     const {x, y} = await this.clickablePoint(options.offset);
-    await this.frame.page().mouse.click(x, y, options);
+    try {
+      await this.frame.page().mouse.click(x, y, options);
+    } finally {
+      if (options.debugHighlight) {
+        await this.frame.page().evaluate(
+          (x, y) => {
+            const highlight = document.createElement('div');
+            highlight.innerHTML = `<style>
+        @scope {
+          :scope {
+              position: fixed;
+              left: ${x}px;
+              top: ${y}px;
+              width: 10px;
+              height: 10px;
+              border-radius: 50%;
+              animation: colorChange 10s 1 normal;
+              animation-fill-mode: forwards;
+          }
+
+          @keyframes colorChange {
+              from {
+                  background-color: red;
+              }
+              to {
+                  background-color: #FADADD00;
+              }
+          }
+        }
+      </style>`;
+            highlight.addEventListener(
+              'animationend',
+              () => {
+                highlight.remove();
+              },
+              {once: true},
+            );
+            document.body.append(highlight);
+          },
+          x,
+          y,
+        );
+      }
+    }
   }
 
   /**
@@ -1573,8 +1624,10 @@ export abstract class ElementHandle<
  * @public
  */
 export interface AutofillData {
+  /**
+   * See {@link https://chromedevtools.github.io/devtools-protocol/tot/Autofill/#type-CreditCard | Autofill.CreditCard}.
+   */
   creditCard: {
-    // See https://chromedevtools.github.io/devtools-protocol/tot/Autofill/#type-CreditCard.
     number: string;
     name: string;
     expiryMonth: string;
@@ -1600,4 +1653,6 @@ function intersectBoundingBox(
       : Math.min(height, box.height + box.y),
     0,
   );
+  box.x = Math.max(box.x, 0);
+  box.y = Math.max(box.y, 0);
 }

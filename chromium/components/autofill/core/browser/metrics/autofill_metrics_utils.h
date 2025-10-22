@@ -44,7 +44,10 @@ enum class AutofillProfileRecordTypeCategory {
   kLocalOrSyncable = 0,
   kAccountChrome = 1,
   kAccountNonChrome = 2,
-  kMaxValue = kAccountNonChrome
+  kAccountHome = 3,
+  kAccountWork = 4,
+  kAccountNameEmail = 5,
+  kMaxValue = kAccountNameEmail
 };
 
 // Maps the `profile` to its category, depending on the profile's
@@ -75,7 +78,8 @@ enum class SettingsVisibleFieldTypeForMetrics {
   // kHonorificPrefix = 10,  // Deprecated in M123.
   kCompany = 11,
   kAdminLevel2 = 12,
-  kMaxValue = kAdminLevel2
+  kAlternativeName = 13,
+  kMaxValue = kAlternativeName
 };
 
 // Converts a server field type that can be edited in the settings to an enum
@@ -90,6 +94,11 @@ DenseSet<FormTypeNameForLogging> GetFormTypesForLogging(
 // Returns GetFormTypesForLogging() where entries need to correspond to
 // `FormType::kAddressForm`.
 DenseSet<FormTypeNameForLogging> GetAddressFormTypesForLogging(
+    const FormStructure& form);
+
+// Returns GetFormTypesForLogging() where entries need to correspond to
+// `FormType::kLoyaltyCardForm`.
+DenseSet<FormTypeNameForLogging> GetLoyaltyFormTypesForLogging(
     const FormStructure& form);
 
 // Returns GetFormTypesForLogging() where entries need to correspond to

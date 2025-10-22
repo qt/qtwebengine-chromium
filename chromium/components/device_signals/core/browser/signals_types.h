@@ -12,6 +12,8 @@
 #include "base/values.h"
 #include "build/build_config.h"
 #include "components/device_signals/core/common/common_types.h"
+#include "components/enterprise/connectors/core/reporting_constants.h"
+#include "components/safe_browsing/core/common/safe_browsing_prefs.h"
 
 #if BUILDFLAG(IS_WIN)
 #include "components/device_signals/core/common/win/win_types.h"
@@ -22,8 +24,9 @@ namespace device_signals {
 // Possible values for the trigger which generated the device signals.
 enum class Trigger {
   kUnspecified = 0,
-  kBrowserNavigation = 1,
-  kLoginScreen = 2,
+  kBrowserNavigation = 1,  // Ash only
+  kLoginScreen = 2,        // Ash only
+  kSignalsReport = 3,
 };
 
 // Enum of names representing signals bundles that can be aggregated via the
@@ -58,6 +61,13 @@ enum class SignalCollectionError {
   kParsingFailed,
   kUnexpectedValue,
   kMaxValue = kUnexpectedValue
+};
+
+// Enum representing the type of signals the AgentSignalCollector can collect.
+enum class AgentSignalCollectionType {
+  kDetectedAgents,
+  kCrowdstrikeIdentifiers,
+  kMaxValue = kCrowdstrikeIdentifiers
 };
 
 const std::string ErrorToString(SignalCollectionError error);
@@ -229,6 +239,37 @@ struct OsSignalsResponse : BaseSignalResponse {
   std::optional<device_signals::SettingValue> secure_boot_mode = std::nullopt;
   std::optional<std::string> windows_machine_domain = std::nullopt;
   std::optional<std::string> windows_user_domain = std::nullopt;
+
+  // Linux specific
+  std::optional<std::string> distribution_version = std::nullopt;
+};
+
+struct ProfileSignalsResponse : BaseSignalResponse {
+  ProfileSignalsResponse();
+
+  ProfileSignalsResponse(const ProfileSignalsResponse&);
+  ProfileSignalsResponse& operator=(const ProfileSignalsResponse&);
+
+  bool operator==(const ProfileSignalsResponse&) const;
+
+  ~ProfileSignalsResponse() override;
+
+  bool built_in_dns_client_enabled;
+  bool chrome_remote_desktop_app_blocked;
+  std::optional<safe_browsing::PasswordProtectionTrigger>
+      password_protection_warning_trigger = std::nullopt;
+  std::optional<std::string> profile_enrollment_domain = std::nullopt;
+  safe_browsing::SafeBrowsingState safe_browsing_protection_level;
+  bool site_isolation_enabled;
+  std::optional<std::string> profile_id = std::nullopt;
+
+  // Enterprise cloud content analysis exclusives
+  enterprise_connectors::EnterpriseRealTimeUrlCheckMode realtime_url_check_mode;
+  std::vector<std::string> file_downloaded_providers{};
+  std::vector<std::string> file_attached_providers{};
+  std::vector<std::string> bulk_data_entry_providers{};
+  std::vector<std::string> print_providers{};
+  std::vector<std::string> security_event_providers{};
 };
 
 struct FileSystemInfoResponse : BaseSignalResponse {
@@ -255,6 +296,7 @@ struct AgentSignalsResponse : BaseSignalResponse {
   ~AgentSignalsResponse() override;
 
   std::optional<CrowdStrikeSignals> crowdstrike_signals = std::nullopt;
+  std::vector<Agents> detected_agents{};
 };
 
 // Request struct containing properties that will be used by the
@@ -278,9 +320,16 @@ struct SignalsAggregationRequest {
 
   // Parameters required when requesting the collection of signals living on
   // the device's file system.
-  std::vector<GetFileSystemInfoOptions> file_system_signal_parameters{};
+  std::vector<GetFileSystemInfoOptions> file_system_signal_parameters;
 
-  std::vector<GetSettingsOptions> settings_signal_parameters{};
+  // Parameters required when requesting the collection of agent signals.
+  std::unordered_set<AgentSignalCollectionType> agent_signal_parameters;
+
+  std::vector<GetSettingsOptions> settings_signal_parameters;
+
+  // Trigger source of the report, for non-ash platforms the default is
+  // `kUnspecified`.
+  Trigger trigger = Trigger::kUnspecified;
 };
 
 // Response from a signal collection request sent through the SignalsAggregator.
@@ -308,6 +357,7 @@ struct SignalsAggregationResponse {
 #endif  // BUILDFLAG(IS_WIN)
   std::optional<SettingsResponse> settings_response = std::nullopt;
   std::optional<OsSignalsResponse> os_signals_response = std::nullopt;
+  std::optional<ProfileSignalsResponse> profile_signals_response = std::nullopt;
 
   std::optional<FileSystemInfoResponse> file_system_info_response =
       std::nullopt;

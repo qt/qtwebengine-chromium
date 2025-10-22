@@ -19,9 +19,11 @@
 #include "components/content_settings/core/common/content_settings_pattern.h"
 #include "components/content_settings/core/common/content_settings_types.h"
 #include "components/content_settings/core/common/cookie_blocking_3pcd_status.h"
+#include "components/content_settings/core/common/cookie_controls_state.h"
 #include "components/page_info/core/page_info_action.h"
 #include "components/safe_browsing/buildflags.h"
 #include "components/security_state/core/security_state.h"
+#include "content/public/browser/reload_type.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/schemeful_site.h"
 
@@ -176,6 +178,10 @@ class PageInfo : private content_settings::CookieControlsObserver,
   // clicked.
   void OnThirdPartyToggleClicked(bool block_third_party_cookies);
 
+  // Called when the protections button in the privacy and site data subpage
+  // gets clicked.
+  void OnTrackingProtectionButtonPressed();
+
   // Checks whether this permission is currently the factory default, as set by
   // Chrome. Specifically, that the following three conditions are true:
   //   - The current active setting comes from the default or pref provider.
@@ -225,9 +231,16 @@ class PageInfo : private content_settings::CookieControlsObserver,
   // Handles opening the link to show cookies settings and records the event.
   void OpenCookiesSettingsView();
 
+  // Handles opening the link to show Incognito tracking protection settings.
+  void OpenIncognitoSettingsView();
+
   // Handles opening the link to show all sites settings with a filter for
   // current site's fps  and records the event.
   void OpenAllSitesViewFilteredToRws();
+
+  // Handles opening the link to show Chrome Sync settings and records the
+  // event.
+  void OpenSyncSettingsView();
 
   // Handles opening the cookies dialog and records the event.
   void OpenCookiesDialog();
@@ -277,6 +290,8 @@ class PageInfo : private content_settings::CookieControlsObserver,
     return safe_browsing_status_;
   }
 
+  content::WebContents* web_contents() const { return web_contents_.get(); }
+
   // For most sites, this returns a human-friendly string based on site origin,
   // without scheme, the username and password, the path or trivial subdomains.
   //
@@ -309,13 +324,10 @@ class PageInfo : private content_settings::CookieControlsObserver,
                            ShowInfoBarWhenBlockingThirdPartyCookies);
 
   // CookieControlsObserver:
-  void OnStatusChanged(bool controls_visible,
-                       bool protections_on,
+  void OnStatusChanged(CookieControlsState controls_state,
                        CookieControlsEnforcement enforcement,
                        CookieBlocking3pcdStatus blocking_status,
-                       base::Time expiration,
-                       std::vector<content_settings::TrackingProtectionFeature>
-                           features) override;
+                       base::Time expiration) override;
 
   // Populates this object's UI state with provided security context. This
   // function does not update visible UI-- that's part of Present*().
@@ -410,6 +422,9 @@ class PageInfo : private content_settings::CookieControlsObserver,
   // settings UI is closed or not.
   bool show_info_bar_;
 
+  // The type of reload the info bar should trigger when closed.
+  content::ReloadType info_bar_reload_type_ = content::ReloadType::NORMAL;
+
   // The Omnibox URL of the website for which to display site permissions and
   // site information.
   GURL site_url_;
@@ -426,6 +441,9 @@ class PageInfo : private content_settings::CookieControlsObserver,
 
   // For secure connection |certificate_| is set to the server certificate.
   scoped_refptr<net::X509Certificate> certificate_;
+
+  // The 2-QWAC certificate for a website, if it has one.
+  scoped_refptr<net::X509Certificate> two_qwac_;
 
   // Status of the connection to the website.
   SiteConnectionStatus site_connection_status_;
@@ -489,16 +507,13 @@ class PageInfo : private content_settings::CookieControlsObserver,
                           content_settings::CookieControlsObserver>
       observation_{this};
 
-  bool protections_on_ = true;
-  bool controls_visible_ = true;
-
   CookieControlsEnforcement enforcement_ =
       CookieControlsEnforcement::kNoEnforcement;
 
   CookieBlocking3pcdStatus blocking_status_ =
       CookieBlocking3pcdStatus::kNotIn3pcd;
 
-  std::vector<content_settings::TrackingProtectionFeature> features_;
+  CookieControlsState controls_state_ = CookieControlsState::kBlocked3pc;
 
   base::Time cookie_exception_expiration_;
 

@@ -5,6 +5,7 @@
 #include "third_party/blink/renderer/core/frame/csp/source_list_directive.h"
 
 #include "base/feature_list.h"
+#include "services/network/public/mojom/content_security_policy.mojom-blink.h"
 #include "third_party/blink/renderer/core/frame/csp/content_security_policy.h"
 #include "third_party/blink/renderer/core/frame/csp/csp_source.h"
 #include "third_party/blink/renderer/platform/loader/fetch/resource_request.h"
@@ -30,6 +31,7 @@ bool HasSourceMatchInList(
 
 bool IsScriptDirective(CSPDirectiveName directive_type) {
   return (directive_type == CSPDirectiveName::ScriptSrc ||
+          directive_type == CSPDirectiveName::ScriptSrcV2 ||
           directive_type == CSPDirectiveName::ScriptSrcAttr ||
           directive_type == CSPDirectiveName::ScriptSrcElem ||
           directive_type == CSPDirectiveName::DefaultSrc);
@@ -90,11 +92,33 @@ bool CSPSourceListAllowNonce(
 
 bool CSPSourceListAllowHash(
     const network::mojom::blink::CSPSourceList& source_list,
-    const network::mojom::blink::CSPHashSource& hash_value) {
-  for (const network::mojom::blink::CSPHashSourcePtr& hash :
-       source_list.hashes) {
-    if (*hash == hash_value)
+    const network::IntegrityMetadata& hash_value) {
+  for (const network::IntegrityMetadata& hash : source_list.hashes) {
+    if (hash == hash_value) {
       return true;
+    }
+  }
+  return false;
+}
+
+bool CSPSourceListAllowEvalHash(
+    const network::mojom::blink::CSPSourceList& source_list,
+    const network::IntegrityMetadata& hash_value) {
+  for (const network::IntegrityMetadata& hash : source_list.eval_hashes) {
+    if (hash == hash_value) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool CSPSourceListAllowUrlHash(
+    const network::mojom::blink::CSPSourceList& source_list,
+    const network::IntegrityMetadata& url_hash_value) {
+  for (const network::IntegrityMetadata& url_hash : source_list.url_hashes) {
+    if (url_hash == url_hash_value) {
+      return true;
+    }
   }
   return false;
 }
@@ -122,6 +146,11 @@ bool CSPSourceListIsSelf(
 bool CSPSourceListIsHashOrNoncePresent(
     const network::mojom::blink::CSPSourceList& source_list) {
   return !source_list.nonces.empty() || !source_list.hashes.empty();
+}
+
+bool CSPSourceListIsEvalHashPresent(
+    const network::mojom::blink::CSPSourceList& source_list) {
+  return !source_list.eval_hashes.empty();
 }
 
 bool CSPSourceListAllowsURLBasedMatching(

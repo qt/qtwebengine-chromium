@@ -11,12 +11,13 @@ import json
 import logging
 import os
 import threading
-from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Tuple,
-                    Type, TypeVar)
+from typing import (TYPE_CHECKING, Final, Iterator, Mapping, Optional, Type,
+                    TypeVar)
 
 from immutabledict import immutabledict
 from typing_extensions import override
 
+from crossbench import exception
 from crossbench.network.base import Network
 from crossbench.parse import ObjectParser
 
@@ -109,7 +110,7 @@ class LocalFileNetwork(Network):
   def path(self) -> LocalPath:
     return self._path
 
-  def _parse_url(self, url: Optional[str]) -> Tuple[str, int]:
+  def _parse_url(self, url: Optional[str]) -> tuple[str, int]:
     host: str = _DEFAULT_HOST
     port: int = _DEFAULT_PORT
     if not url:
@@ -158,8 +159,10 @@ class LocalFileNetwork(Network):
     # TODO: support  https server using SSLContext.wrap_socket(httpd.socket)
     request_handler_cls = CustomHeadersRequestHandler.bind(
         self._path, self._extra_headers)
-    server = http.server.ThreadingHTTPServer((self._host, self._port),
-                                             request_handler_cls)
+    with exception.annotate(
+        f"Starting fileserver on {self.host}:{self.http_port}"):
+      server = http.server.ThreadingHTTPServer((self._host, self._port),
+                                               request_handler_cls)
     with self._server_thread(server):
       logging.info("%s custom host=%s, port=%s",
                    type(self).__name__, self.host, self.http_port)
@@ -181,15 +184,17 @@ class LocalFileNetwork(Network):
   @contextlib.contextmanager
   def _forward_ports(self, session: BrowserSessionRunGroup) -> Iterator:
     browser_platform = session.browser_platform
+    ports = browser_platform.ports
     if browser_platform.is_remote:
       logging.info("REMOTE PORT FORWARDING: %s <= %s", self.host_platform,
                    browser_platform)
-      # TODO: create port-forwarder service that is shut down properly.
       # TODO: make ports configurable
-      browser_platform.reverse_port_forward(self._port, self._port)
-    yield
-    if browser_platform.is_remote:
-      browser_platform.stop_reverse_port_forward(self._port)
+      ports.reverse_forward(self._port, self._port)
+    try:
+      yield
+    finally:
+      if browser_platform.is_remote:
+        ports.stop_reverse_forward(self._port)
 
   @property
   @override
@@ -212,5 +217,5 @@ class LocalFileNetwork(Network):
     if self._extra_headers:
       formatted_headers = json.dumps(dict(self._extra_headers))
       extra_headers_str = f" extra_headers={formatted_headers}"
-    return ("LOCAL(path={self._path}, "
+    return (f"LOCAL(path={self._path}, "
             f"speed={self.traffic_shaper}{extra_headers_str})")

@@ -11,10 +11,8 @@
 
 #include "base/check_op.h"
 #include "base/containers/contains.h"
-#include "base/functional/overloaded.h"
 #include "base/memory/raw_ptr.h"
 #include "base/metrics/histogram_macros.h"
-#include "base/not_fatal_until.h"
 #include "base/notreached.h"
 #include "components/performance_manager/frame_node_source.h"
 #include "components/performance_manager/graph/frame_node_impl.h"
@@ -23,6 +21,7 @@
 #include "components/performance_manager/public/features.h"
 #include "components/performance_manager/render_process_user_data.h"
 #include "content/public/browser/render_process_host.h"
+#include "third_party/abseil-cpp/absl/functional/overload.h"
 #include "third_party/blink/public/common/tokens/tokens.h"
 #include "url/gurl.h"
 #include "url/origin.h"
@@ -177,7 +176,7 @@ void WorkerWatcher::OnWorkerCreated(
   DCHECK(insertion_result.second);
 
   std::visit(
-      base::Overloaded(
+      absl::Overload(
           [&,
            this](const content::GlobalRenderFrameHostId& render_frame_host_id) {
             AddFrameClientConnection(insertion_result.first->second.get(),
@@ -196,14 +195,14 @@ void WorkerWatcher::OnBeforeWorkerDestroyed(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto it = dedicated_worker_nodes_.find(dedicated_worker_token);
-  CHECK(it != dedicated_worker_nodes_.end(), base::NotFatalUntil::M130);
+  CHECK(it != dedicated_worker_nodes_.end());
 
   auto worker_node = std::move(it->second);
 
   // First disconnect the creator's node from this worker node.
 
   std::visit(
-      base::Overloaded(
+      absl::Overload(
           [&,
            this](const content::GlobalRenderFrameHostId& render_frame_host_id) {
             RemoveFrameClientConnection(worker_node.get(),
@@ -276,7 +275,7 @@ void WorkerWatcher::OnBeforeWorkerDestroyed(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto it = shared_worker_nodes_.find(shared_worker_token);
-  CHECK(it != shared_worker_nodes_.end(), base::NotFatalUntil::M130);
+  CHECK(it != shared_worker_nodes_.end());
 
   auto worker_node = std::move(it->second);
 
@@ -367,7 +366,7 @@ void WorkerWatcher::OnVersionStoppedRunning(int64_t version_id) {
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto it = service_worker_nodes_.find(version_id);
-  CHECK(it != service_worker_nodes_.end(), base::NotFatalUntil::M130);
+  CHECK(it != service_worker_nodes_.end());
 
   auto service_worker_node = std::move(it->second);
 
@@ -392,7 +391,7 @@ void WorkerWatcher::OnControlleeAdded(
     const std::string& client_uuid,
     const content::ServiceWorkerClientInfo& client_info) {
   std::visit(
-      base::Overloaded(
+      absl::Overload(
           [&, this](content::GlobalRenderFrameHostId render_frame_host_id) {
             // For window clients, it is necessary to wait until the navigation
             // has committed to a RenderFrameHost.
@@ -451,13 +450,13 @@ void WorkerWatcher::OnControlleeRemoved(int64_t version_id,
 
   // First get clients for this worker.
   auto it = service_worker_clients_.find(version_id);
-  CHECK(it != service_worker_clients_.end(), base::NotFatalUntil::M130);
+  CHECK(it != service_worker_clients_.end());
 
   base::flat_map<std::string /*client_uuid*/, content::ServiceWorkerClientInfo>&
       clients = it->second;
 
   auto it2 = clients.find(client_uuid);
-  CHECK(it2 != clients.end(), base::NotFatalUntil::M130);
+  CHECK(it2 != clients.end());
   const content::ServiceWorkerClientInfo client = it2->second;
   clients.erase(it2);
 
@@ -470,7 +469,7 @@ void WorkerWatcher::OnControlleeRemoved(int64_t version_id,
     return;
 
   std::visit(
-      base::Overloaded(
+      absl::Overload(
           [&, this](content::GlobalRenderFrameHostId render_frame_host_id) {
             RemoveFrameClientConnection(worker_node, render_frame_host_id);
           },
@@ -586,8 +585,7 @@ void WorkerWatcher::RemoveFrameClientConnection(
     // RemoveFrameClientConnection() call was still expected even though the
     // client frame node no longer exist.
     auto it = detached_frame_count_per_worker_.find(worker_node);
-    CHECK(it != detached_frame_count_per_worker_.end(),
-          base::NotFatalUntil::M130);
+    CHECK(it != detached_frame_count_per_worker_.end());
 
     int& count = it->second;
     DCHECK_GT(count, 0);
@@ -654,8 +652,7 @@ void WorkerWatcher::DisconnectDedicatedWorkerClient(
 #if DCHECK_IS_ON()
     if (IsServiceWorkerNode(worker_node)) {
       auto it = missing_service_worker_clients_.find(worker_node);
-      CHECK(it != missing_service_worker_clients_.end(),
-            base::NotFatalUntil::M130);
+      CHECK(it != missing_service_worker_clients_.end());
       DCHECK_EQ(1u, it->second.erase(content::ServiceWorkerClientInfo(
                         client_dedicated_worker_token)));
       if (it->second.empty()) {
@@ -669,7 +666,7 @@ void WorkerWatcher::DisconnectDedicatedWorkerClient(
   // Remove |worker_node| from the set of child workers of this dedicated
   // worker.
   auto it = dedicated_worker_child_workers_.find(client_dedicated_worker_token);
-  CHECK(it != dedicated_worker_child_workers_.end(), base::NotFatalUntil::M130);
+  CHECK(it != dedicated_worker_child_workers_.end());
   auto& child_workers = it->second;
 
   size_t removed = child_workers.erase(worker_node);
@@ -724,8 +721,7 @@ void WorkerWatcher::DisconnectSharedWorkerClient(
 #if DCHECK_IS_ON()
     DCHECK(IsServiceWorkerNode(worker_node));
     auto it = missing_service_worker_clients_.find(worker_node);
-    CHECK(it != missing_service_worker_clients_.end(),
-          base::NotFatalUntil::M130);
+    CHECK(it != missing_service_worker_clients_.end());
     DCHECK_EQ(1u, it->second.erase(content::ServiceWorkerClientInfo(
                       client_shared_worker_token)));
     if (it->second.empty())
@@ -736,8 +732,7 @@ void WorkerWatcher::DisconnectSharedWorkerClient(
 
   // Remove |worker_node| from the set of child workers of this shared worker.
   auto child_it = shared_worker_child_workers_.find(client_shared_worker_token);
-  CHECK(child_it != shared_worker_child_workers_.end(),
-        base::NotFatalUntil::M130);
+  CHECK(child_it != shared_worker_child_workers_.end());
   auto& child_workers = child_it->second;
 
   size_t removed = child_workers.erase(worker_node);
@@ -760,7 +755,7 @@ void WorkerWatcher::ConnectAllServiceWorkerClients(
 
   for (const auto& kv : it->second) {
     std::visit(
-        base::Overloaded(
+        absl::Overload(
             [&, this](content::GlobalRenderFrameHostId render_frame_host_id) {
               AddFrameClientConnection(service_worker_node,
                                        render_frame_host_id);
@@ -787,7 +782,7 @@ void WorkerWatcher::DisconnectAllServiceWorkerClients(
 
   for (const auto& kv : it->second) {
     std::visit(
-        base::Overloaded(
+        absl::Overload(
             [&, this](
                 const content::GlobalRenderFrameHostId& render_frame_host_id) {
               RemoveFrameClientConnection(service_worker_node,
@@ -812,8 +807,7 @@ void WorkerWatcher::OnBeforeFrameNodeRemoved(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto it = frame_node_child_worker_connections_.find(render_frame_host_id);
-  CHECK(it != frame_node_child_worker_connections_.end(),
-        base::NotFatalUntil::M130);
+  CHECK(it != frame_node_child_worker_connections_.end());
 
   // Clean up all child workers of this frame node.
   WorkerNodeConnections child_worker_connections = std::move(it->second);
@@ -861,8 +855,7 @@ void WorkerWatcher::RemoveChildWorkerConnection(
   DCHECK_CALLED_ON_VALID_SEQUENCE(sequence_checker_);
 
   auto it = frame_node_child_worker_connections_.find(render_frame_host_id);
-  CHECK(it != frame_node_child_worker_connections_.end(),
-        base::NotFatalUntil::M130);
+  CHECK(it != frame_node_child_worker_connections_.end());
   auto& child_worker_connections = it->second;
 
   DCHECK_LE(1u, child_worker_connections[child_worker_node]);

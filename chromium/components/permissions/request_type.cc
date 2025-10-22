@@ -50,6 +50,8 @@ int GetIconIdAndroid(RequestType type) {
       return IDR_ANDROID_INFOBAR_IDENTITY_PROVIDER;
     case RequestType::kIdleDetection:
       return IDR_ANDROID_INFOBAR_IDLE_DETECTION;
+    case RequestType::kLocalNetworkAccess:
+      return IDR_ANDROID_INFOBAR_LOCAL_NETWORK_ACCESS;
     case RequestType::kMicStream:
       return IDR_ANDROID_INFOBAR_MEDIA_STREAM_MIC;
     case RequestType::kMidiSysex:
@@ -65,6 +67,8 @@ int GetIconIdAndroid(RequestType type) {
     case RequestType::kStorageAccess:
     case RequestType::kTopLevelStorageAccess:
       return IDR_ANDROID_STORAGE_ACCESS;
+    case RequestType::kWindowManagement:
+      return IDR_ANDROID_INFOBAR_WINDOW_MANAGEMENT;
   }
   NOTREACHED();
 }
@@ -99,8 +103,7 @@ const gfx::VectorIcon& GetIconIdDesktop(RequestType type) {
     case RequestType::kLocalFonts:
       return vector_icons::kFontDownloadChromeRefreshIcon;
     case RequestType::kLocalNetworkAccess:
-      // TODO(crbug.com/400455013): Replace with final icon.
-      return vector_icons::kDevicesIcon;
+      return vector_icons::kRouterIcon;
     case RequestType::kMicStream:
       return vector_icons::kMicChromeRefreshIcon;
     case RequestType::kMidiSysex:
@@ -162,8 +165,7 @@ const gfx::VectorIcon& GetBlockedIconIdDesktop(RequestType type) {
     case RequestType::kIdleDetection:
       return vector_icons::kDevicesOffIcon;
     case RequestType::kLocalNetworkAccess:
-      // TODO(crbug.com/400455013): Replace with final icon.
-      return vector_icons::kDevicesOffIcon;
+      return vector_icons::kRouterOffIcon;
     case RequestType::kMicStream:
       return vector_icons::kMicOffChromeRefreshIcon;
     case RequestType::kMidiSysex:
@@ -211,6 +213,7 @@ std::optional<RequestType> ContentSettingsTypeToRequestTypeIfExists(
       return RequestType::kLocalFonts;
 #endif
     case ContentSettingsType::GEOLOCATION:
+    case ContentSettingsType::GEOLOCATION_WITH_OPTIONS:
       return RequestType::kGeolocation;
     case ContentSettingsType::HAND_TRACKING:
       return RequestType::kHandTracking;
@@ -242,13 +245,10 @@ std::optional<RequestType> ContentSettingsTypeToRequestTypeIfExists(
       return RequestType::kStorageAccess;
     case ContentSettingsType::VR:
       return RequestType::kVrSession;
-#if !BUILDFLAG(IS_ANDROID)
     case ContentSettingsType::WINDOW_MANAGEMENT:
       return RequestType::kWindowManagement;
-    // TODO(crbug.com/400455013): Enable on Android.
     case ContentSettingsType::LOCAL_NETWORK_ACCESS:
       return RequestType::kLocalNetworkAccess;
-#endif
     case ContentSettingsType::TOP_LEVEL_STORAGE_ACCESS:
       return RequestType::kTopLevelStorageAccess;
     case ContentSettingsType::FILE_SYSTEM_WRITE_GUARD:
@@ -343,10 +343,8 @@ std::optional<ContentSettingsType> RequestTypeToContentSettingsType(
     case RequestType::kWebPrinting:
       return ContentSettingsType::WEB_PRINTING;
 #endif
-#if !BUILDFLAG(IS_ANDROID)
     case RequestType::kWindowManagement:
       return ContentSettingsType::WINDOW_MANAGEMENT;
-#endif
     case RequestType::kTopLevelStorageAccess:
       return ContentSettingsType::TOP_LEVEL_STORAGE_ACCESS;
 #if !BUILDFLAG(IS_ANDROID)
@@ -376,12 +374,14 @@ bool IsConfirmationChipSupported(RequestType for_request_type) {
 IconId GetIconId(RequestType type) {
   IconId override_id = PermissionsClient::Get()->GetOverrideIconId(type);
 #if BUILDFLAG(IS_ANDROID)
-  if (override_id)
+  if (override_id) {
     return override_id;
+  }
   return GetIconIdAndroid(type);
 #else
-  if (!override_id.is_empty())
+  if (!override_id.is_empty()) {
     return override_id;
+  }
   return GetIconIdDesktop(type);
 #endif
 }
@@ -423,9 +423,9 @@ const char* PermissionKeyForRequestType(permissions::RequestType request_type) {
       return "keyboard_lock";
     case permissions::RequestType::kLocalFonts:
       return "local_fonts";
+#endif
     case permissions::RequestType::kLocalNetworkAccess:
       return "local_network_access";
-#endif
     case permissions::RequestType::kMicStream:
       return "mic_stream";
     case permissions::RequestType::kMidiSysex:
@@ -467,9 +467,9 @@ const char* PermissionKeyForRequestType(permissions::RequestType request_type) {
 #if !BUILDFLAG(IS_ANDROID)
     case permissions::RequestType::kWebAppInstallation:
       return "web_app_installation";
+#endif
     case permissions::RequestType::kWindowManagement:
       return "window_management";
-#endif
     case permissions::RequestType::kIdentityProvider:
       return "identity_provider";
   }

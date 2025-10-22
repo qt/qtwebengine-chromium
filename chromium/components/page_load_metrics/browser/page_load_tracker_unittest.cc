@@ -7,6 +7,7 @@
 #include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
 #include "components/page_load_metrics/browser/observers/page_load_metrics_observer_content_test_harness.h"
+#include "content/public/common/content_features.h"
 #include "content/public/test/fenced_frame_test_util.h"
 #include "content/public/test/navigation_simulator.h"
 #include "content/public/test/prerender_test_util.h"
@@ -154,11 +155,6 @@ TEST_F(PageLoadTrackerTest, PrimaryPageType) {
   EXPECT_FALSE(GetEvents().was_prerender_started);
   EXPECT_TRUE(GetEvents().was_committed);
 
-  // Check metrics.
-  tester()->histogram_tester().ExpectUniqueSample(
-      internal::kPageLoadTrackerPageType,
-      internal::PageLoadTrackerPageType::kPrimaryPage, 1);
-
   // Navigate out.
   tester()->NavigateToUntrackedUrl();
 
@@ -251,8 +247,13 @@ TEST_F(PageLoadTrackerTest, EventForwarding) {
   // disabled, the same RenderFrameHost will be reused and not be deleted.
 
 #if BUILDFLAG(IS_ANDROID)
+  // With default SiteInstanceGroup enabled, the navigations are all
+  // cross-SiteInstance, so there will be as many RenderFrameHost deletions as
+  // in the (non-Android) Site Isolation cases, which is possibly more than the
+  // RenderDocument cases. (Applies here and below.)
   if (content::WillSameSiteNavigationChangeRenderFrameHosts(
-          /*is_main_frame=*/true)) {
+          /*is_main_frame=*/true) ||
+      base::FeatureList::IsEnabled(features::kDefaultSiteInstanceGroups)) {
     EXPECT_EQ(1u, GetEvents().render_frame_deleted_count);
   } else {
     EXPECT_EQ(0u, GetEvents().render_frame_deleted_count);
@@ -277,8 +278,10 @@ TEST_F(PageLoadTrackerTest, EventForwarding) {
   }
 
 #if BUILDFLAG(IS_ANDROID)
-  if (content::WillSameSiteNavigationChangeRenderFrameHosts(
-          /*is_main_frame=*/true)) {
+  if (base::FeatureList::IsEnabled(features::kDefaultSiteInstanceGroups)) {
+    EXPECT_EQ(2u, GetEvents().render_frame_deleted_count);
+  } else if (content::WillSameSiteNavigationChangeRenderFrameHosts(
+                 /*is_main_frame=*/true)) {
     EXPECT_EQ(1u, GetEvents().render_frame_deleted_count);
   } else {
     EXPECT_EQ(0u, GetEvents().render_frame_deleted_count);
@@ -293,8 +296,10 @@ TEST_F(PageLoadTrackerTest, EventForwarding) {
   content::RenderFrameHostTester::For(rfh_c)->Detach();
 
 #if BUILDFLAG(IS_ANDROID)
-  if (content::WillSameSiteNavigationChangeRenderFrameHosts(
-          /*is_main_frame=*/true)) {
+  if (base::FeatureList::IsEnabled(features::kDefaultSiteInstanceGroups)) {
+    EXPECT_EQ(3u, GetEvents().render_frame_deleted_count);
+  } else if (content::WillSameSiteNavigationChangeRenderFrameHosts(
+                 /*is_main_frame=*/true)) {
     EXPECT_EQ(2u, GetEvents().render_frame_deleted_count);
   } else {
     EXPECT_EQ(1u, GetEvents().render_frame_deleted_count);
@@ -307,8 +312,10 @@ TEST_F(PageLoadTrackerTest, EventForwarding) {
   content::RenderFrameHostTester::For(rfh_b)->Detach();
 
 #if BUILDFLAG(IS_ANDROID)
-  if (content::WillSameSiteNavigationChangeRenderFrameHosts(
-          /*is_main_frame=*/true)) {
+  if (base::FeatureList::IsEnabled(features::kDefaultSiteInstanceGroups)) {
+    EXPECT_EQ(4u, GetEvents().render_frame_deleted_count);
+  } else if (content::WillSameSiteNavigationChangeRenderFrameHosts(
+                 /*is_main_frame=*/true)) {
     EXPECT_EQ(3u, GetEvents().render_frame_deleted_count);
   } else {
     EXPECT_EQ(2u, GetEvents().render_frame_deleted_count);
@@ -353,14 +360,6 @@ TEST_F(PageLoadTrackerTest, PrerenderPageType) {
   EXPECT_TRUE(GetEvents().was_prerender_started);
   EXPECT_TRUE(GetEvents().was_committed);
 
-  // Check metrics.
-  tester()->histogram_tester().ExpectBucketCount(
-      internal::kPageLoadTrackerPageType,
-      internal::PageLoadTrackerPageType::kPrimaryPage, 1);
-  tester()->histogram_tester().ExpectBucketCount(
-      internal::kPageLoadTrackerPageType,
-      internal::PageLoadTrackerPageType::kPrerenderPage, 1);
-
   // Check ukm::SourceId.
   EXPECT_NE(ukm::kInvalidSourceId, GetObservedUkmSourceIdFor(kTestUrl));
   EXPECT_EQ(ukm::kInvalidSourceId, GetObservedUkmSourceIdFor(kPrerenderingUrl));
@@ -392,14 +391,6 @@ TEST_F(PageLoadTrackerTest, FencedFramesPageType) {
   EXPECT_TRUE(GetEvents().was_fenced_frames_started);
   EXPECT_FALSE(GetEvents().was_prerender_started);
   EXPECT_TRUE(GetEvents().was_committed);
-
-  // Check metrics.
-  tester()->histogram_tester().ExpectBucketCount(
-      internal::kPageLoadTrackerPageType,
-      internal::PageLoadTrackerPageType::kPrimaryPage, 1);
-  tester()->histogram_tester().ExpectBucketCount(
-      internal::kPageLoadTrackerPageType,
-      internal::PageLoadTrackerPageType::kFencedFramesPage, 1);
 
   // Check ukm::SourceId.
   EXPECT_NE(ukm::kInvalidSourceId, GetObservedUkmSourceIdFor(kTestUrl));

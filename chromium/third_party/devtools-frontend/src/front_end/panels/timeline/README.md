@@ -199,7 +199,7 @@ The Summary (ThirdParty), Bottom-Up, Call Tree, and Event Log views primarily us
 - **Lazily built:** trees are lazily built - child nodes are not created until
   they are needed. In most cases, trees are fully built when `.children()` is called from `refreshTree()`
 - **Single Track Focus:** `this.selectedEvents()` only captures events from a _single_ track at a time. Selecting the main track will not include what one would consider
-"relevant events" from other tracks (e.g. a Frame's track).
+  "relevant events" from other tracks (e.g. a Frame's track).
 - **No Synthetic Network Events:** Tree views do not consume `SyntheticNetworkEvents` due to their unique "overlapping" behavior, which differs from standard trace events.
 - **Filters:** Filters can be applied to determine which events are included when building the tree.
 
@@ -210,5 +210,134 @@ The Summary (ThirdParty), Bottom-Up, Call Tree, and Event Log views primarily us
 **Aggregation Logic for BottomUp tree views:**
 
 1.  **Default Aggregation:** By default, aggregation is determined by the `generateEventID()` function, and optionally by `eventGroupIdCallback`.
-2.  **Pre-Grouping (`ungrouppedTopNodes`)**: Before explicit grouping, `ungrouppedTopNodes()` organizes events into a `ChildrenCache` map (`<string, Node>`). Even without explicit `GroupBy` grouping, `ungrouppedTopNodes()` aggregates nodes by event name using `generateEventID()`.
+2.  **Pre-Grouping (`ungroupedTopNodes`)**: Before explicit grouping, `ungroupedTopNodes()` organizes events into a `ChildrenCache` map (`<string, Node>`). Even without explicit `GroupBy` grouping, `ungroupedTopNodes()` aggregates nodes by event name using `generateEventID()`.
 3.  **Third Party Grouping (`forceGroupIdCallback`)**: In `ThirdPartyTreeView`, `forceGroupIdCallback` is used to ensure that `eventGroupIdCallback` is used to generate the node ID. This is crucial because events with the same name can belong to different third parties. Without this, the initial aggregation by event name would lead to incorrect third-party grouping.
+
+## Call stacks
+
+### Source
+Call stacks in the Performance panel are taken from two sources:
+
+1. Samples in CPU profiles. These are taken in two ways:
+
+    1. With automatic periodic samples: when the V8 sampler is enabled during a trace, a separate thread (profiler thread) is started which interrupts the main thread and samples the JS stack every fixed amount of microseconds (see [where the sampling interval is set when tracing]). The sampled stack, which is not symbolized (memory addresses are not yet resolved into source locations) at this point, is added to a buffer. The symbolization of the stack happens asynchronously between samples, where the profiler thread symbolizes samples in the buffer until it needs to take the next sample. When the samples are symbolized they are added to a cache containing the CPU profile to be exported when the profiling is over. [See the V8 CPU profiler implementation] for more details.
+
+    2. With "manual" collections of samples: V8 offers [an API to collect a stack sample "on demand"], called V8::CollectSample. It calls the profiler method that samples the JS stack (without symbolization) and adds it to the buffer to be asynchronously symbolized and cached in the CPU profile to be exported. This API also offers the possibility to pass a `trace_id` which is included in the exported CPU profile as an identifier for the manually collected sample. This is particularly useful in cases where a stack trace wants to be obtained for a trace event, as an id can be created and passed to the sample API and to the trace event payload ([see an example of how to do this]), allowing the frontend to easily match the stack trace with the corresponding trace event. This is considered fast because the stack is symbolized asynchronously in a different thread, not when the sample is taken. Note that at the time of writing, this change is relatively new and thus not widely adopted.
+
+    Stacks in CPU profiles contain frames that point to function declarations, not to function call sites. When sampling is enabled, the frontend receives a CPU profile per thread in the target.
+
+2. Stack traces in trace events: Blink's V8 bindings offer an API to synchronously take and symbolize a stack trace: [CaptureSourceLocation]. For many trace events, this API is called and the resulting stack trace is included in the event's payload. This is slow because the stack trace is symbolized and thus a manual collection of samples (see 1.2) is preferred unless sampling is not an option.
+
+    Stack traces taken with [CaptureSourceLocation] have frames pointing to the call site, not function declarations.
+
+
+### JS flamechart
+
+The JS calls displayed in the flamechart are built from CPU samples in the [SamplesIntegrator.ts](../../models/trace/helpers/SamplesIntegrator.ts). Its output is an array of `SyntheticProfileCall`, each represents the time in which a function was called according to the thread's CPU profile (hence the name) and its duration. This output is then merged with the trace events in the same thread and a single call hierarchy is created in the [RendererHandler.ts]. This hierarchy ends up being drawn as a flamechart in the timeline.
+
+Because the stack trace data in the CPU profile are samples, the output of the SamplesIntegrator is not guaranteed to be correct, as there is no way to know the status of the stack in the time window between samples. For this reason, we leverage different mechanisms to improve the accuracy of the resulting calls. In particular:
+
+1. Incorporating the fact that the stack cannot change within the duration of an event dispatched by the running script. For example, if the script contains a `elem.offsetLeft = val;`, we know the stack from that point cannot change before the end of the `Layout` trace event dispatched by it, so we "lock" the stack at the beginning of the trace event.
+
+2. We collect a stack sample with a trace id using the "manual" collection mechanism described above for some trace events (and include the id in the trace event). In the SamplesIntegrator, when we encounter an event with a matching sample (via an equal trace id) we use the stack in the sample as the event's parent.
+
+### Asynchronous stack traces
+
+Async stacks are tracked using the pair of trace events composed of [v8::Debugger::AsyncTaskScheduled] and [v8::Debugger::AsyncTaskRun]. These events are dispatched for async tasks in Blink and JS, including tasks run with `console.createTask`. They are also dispatched using perfetto's flow API, using the task memory address as flow id. This means that in the frontend we get events tracking the handling of a single async task grouped together (see [FlowsHandler.ts](../../models/trace/handlers/FlowsHandler.ts)).
+
+The main implementation of async call stack parsing is in the [AsyncJSCallsHandler], where the async task flows are used to connect `SyntheticProfileCall`s representing the scheduler and the task being run. These connections are stored as mappings: [async js task scheduler -> async js task run] and its inverse.
+
+There is a caveat to this: Because of the incompleteness of CPU profile data (since it's composed of samples), we don't always find the corresponding `SyntheticProfileCall` at either end of the async task. In these cases we default to using the corresponding trace event representing the JS execution, AKA the JS entrypoint (like `FunctionCall`, `RunMicrotasks`, `EvaluateScript`, etc.) at that end of the task, which is always present.
+
+### Stack traces in entry details (bottom drawer)
+
+Stack traces for individual events are computed by the [StackTraceForEvents.ts](../../models/trace/extras/StackTraceForEvent.ts). Given a trace event it moves up from its corresponding node in the call hierarchy built by the [RendererHandler.ts] (composed of trace events and `SyntheticProfileCall`s) and appends call frames as they are found. In order to track async call stacks, before moving to a node's parent, an asynchronous parent is looked up for the node in the output of the [AsyncJSCallsHandler]. If an async parent is present, it moves there instead, and continues the call frame appending from there.
+
+Note: because this approach uses `SyntheticProfileCalls`, which are built from CPU profile samples, the frames in the resulting stack trace point to the source location of the function declaration, not the call site (see the explanation in the [source](#source) section).
+
+[where the sampling interval is set when tracing]: https://source.chromium.org/chromium/chromium/src/+/1fab167b80daecb09e388ac021861eecd60340f8:v8/src/profiler/tracing-cpu-profiler.cc;l=90;bpv=1;bpt=0
+[See the V8 CPU profiler implementation]: https://source.chromium.org/chromium/chromium/src/+/main:v8/src/profiler/cpu-profiler.cc;l=276;drc=c0883e36f0f65273f002c2ca8b7e9474256e00e4;bpv=0;bpt=1
+[an API to collect a stack sample "on demand"]: https://source.chromium.org/chromium/chromium/src/+/main:v8/src/profiler/cpu-profiler.h;l=356;drc=86fc160bf60f45bddce6a7e37c1f900a8b6fe5a6
+[see an example of how to do this]: https://chromium-review.googlesource.com/c/v8/v8/+/6383360/7/src/inspector/v8-debugger.cc
+[CaptureSourceLocation]: https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/bindings/core/v8/capture_source_location.h;l=35;drc=8bf7a2a5fe85a01019ab5777e5b55a6c50ce72b3
+[v8::Debugger::AsyncTaskScheduled]: https://source.chromium.org/chromium/chromium/src/+/main:v8/src/inspector/v8-debugger.cc;l=1214;drc=ed6ca45bf1ee83042ee0d325fed822302e331e09)
+[v8::Debugger::AsyncTaskRun]: https://source.chromium.org/chromium/chromium/src/+/main:v8/src/inspector/v8-debugger.cc;l=1252;drc=ed6ca45bf1ee83042ee0d325fed822302e331e09)[AsyncJSCallsHandler](../../models/trace/handlers/AsyncJSCallsHandler.ts
+[AsyncJSCallsHandler]: ../../models/trace/handlers/AsyncJSCallsHandler.ts
+
+## Track configuration
+
+We allow the user to edit the visual status and order of tracks in the main flame chart. Initially when we shipped this feature it was not persisted, meaning that if you refreshed or imported another trace, your configuration was lost. This was changed in crrev.com/c/6632596 which added persisting of the track configuration into memory, and added these docs too :)
+
+### How tracks get rendered
+
+Tracks on the timeline are called `Groups` in the code (`PerfUI.FlameChart.Group`). These get constructed in the data providers and pushed onto the `groups` array.
+
+The key thing to note is that **once the groups are created, their order in code does not change**. Even if the user moves Group 1 to the end visually, in the `timelineData.groups` array, it will still be in its original position. The original order is dictated by us in code based on the track appenders and the weights we give them.
+
+The order in which the groups are _drawn_ is determined in the `FlameChart` component. To track the visual order, we use a tree structure. This structure allows us to track the order of groups, including nested groups (side-note: users are not able to re-order nested groups, only top-level ones). This tree **does represent the visual order and is updated as the user modifies the UI**.
+
+If we have the following:
+
+- Group 1
+- Group 2
+  - Group 2.1
+  - Group 2.2
+- Group 3
+
+Then the tree will look like this (we create a fake root node):
+
+```
+       ===Root===
+      /    |    \
+     /     |     \
+    /      |      \
+Group 1  Group 2  Group 3
+           / \
+          /   \
+     Group 2.1 Group 2.2
+```
+
+If the user re-orders the UI to put `Group 3` first then it will look like this:
+
+```
+       ===Root===
+      /    |    \
+     /     |     \
+    /      |      \
+Group 3  Group 2  Group 1
+           / \
+          /   \
+     Group 2.1 Group 2.2
+```
+
+If a user hides a group, it remains in the tree, but is marked as `hidden`.
+
+When rendering, we walk through this tree in DFS to determine the visual order of the groups. If we have 3 groups numbered 1-3, and the user re-orders them to be 3, 1, 2, then our visual order would be represented as `[2, 0, 1]`. This is because we take the original `groups` array (which **does not change at all**), and map the indexes to the array showing their visual position. Read `[2, 0, 1]` as saying "The group originally at index 2 is now at index 0", and so on.
+
+## Persisting this state
+
+We persist the order of the groups and for each group its `hidden` and `expanded` state:
+
+```
+{
+  originalIndex: 0,
+  visualIndex: 2,
+  hidden: false,
+  expanded: true
+}
+```
+
+When the user makes any visual change to the UI, which happens in `FlameChart.ts`, we notify the data provider of that change. It can then choose to persist this data anywhere it likes. In our case, we persist into a DevTools setting which is persisted globally (e.g. it survives restarts).
+
+Because the user can import/record multiple traces over time, we cannot just persist the array of group states, because then we would mistakenly apply it to other traces. To avoid this we persist the list of groups under a key. The key is the `min` time for each trace (e.g. the time the trace started). This is not guaranteed to be unique, but it is pretty likely to be, given that it is monotonic and microsecond precision.
+
+So, what actually gets stored into the setting is:
+
+```
+{
+  12345: [{...group state as above...}],
+  56789: [{...group state as above...}],
+}
+```
+
+When a trace is recorded / imported, we look to read any persisted configuration from disk before applying it.

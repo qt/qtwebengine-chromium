@@ -2,11 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
-#pragma allow_unsafe_buffers
-#endif
-
 #include "base/task/thread_pool/thread_pool_impl.h"
 
 #include <stddef.h>
@@ -983,7 +978,7 @@ TEST_P(ThreadPoolImplTest, FileDescriptorWatcherNoOpsAfterShutdown) {
 }
 #endif  // BUILDFLAG(IS_POSIX)
 
-#if BUILDFLAG(IS_POSIX) && !BUILDFLAG(IS_NACL)
+#if BUILDFLAG(IS_POSIX)
 
 // Verify that FileDescriptorWatcher::WatchReadable() can be called from task
 // running on a task_runner with GetExecutionMode() without a crash.

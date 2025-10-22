@@ -100,11 +100,11 @@ export class VerticalButton extends LitElement {
     `;
 
   /** @export */
-  selected: boolean;
+  declare selected: boolean;
   /** @export */
-  disabled: boolean;
+  declare disabled: boolean;
   /** @export */
-  label: string;
+  declare label: string;
   /** @export */
   /*
    * Variation in height is driven by number of rows to display for the label.
@@ -115,7 +115,7 @@ export class VerticalButton extends LitElement {
    * vertical-button as a number of rows equal to some other button in a group,
    * rather than due to content in this particular button.
    */
-  labelRows: number;
+  declare labelRows: number;
 
   /** @nocollapse */
   static override properties = {

@@ -29,6 +29,7 @@
 #include "third_party/blink/renderer/core/core_export.h"
 #include "third_party/blink/renderer/core/css/color_scheme_flags.h"
 #include "third_party/blink/renderer/core/css/css_position_try_rule.h"
+#include "third_party/blink/renderer/core/css/css_to_length_conversion_data.h"
 #include "third_party/blink/renderer/core/css/element_rule_collector.h"
 #include "third_party/blink/renderer/core/css/resolver/matched_properties_cache.h"
 #include "third_party/blink/renderer/core/css/resolver/style_builder.h"
@@ -55,6 +56,7 @@ class PageMarginsStyle;
 class PropertyHandle;
 class StyleCascade;
 class StyleRecalcContext;
+class StyleResolverState;
 class StyleRuleUsageTracker;
 
 // This class selects a ComputedStyle for a given element in a document based on
@@ -195,7 +197,7 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
       const AtomicString& view_transition_name,
       unsigned rules_to_include = kAllCSSRules);
   // Note that StyleRulesForElement will behave as if all links are
-  // unvisited; the :visited pseudo class will never match.
+  // unvisited; the :visited pseudo-class will never match.
   StyleRuleList* StyleRulesForElement(Element*, unsigned rules_to_include);
   HeapHashMap<CSSPropertyName, Member<const CSSValue>> CascadedValuesForElement(
       Element*,
@@ -222,7 +224,13 @@ class CORE_EXPORT StyleResolver final : public GarbageCollected<StyleResolver> {
   // Return a computed value for the passed-in property:value pair in the
   // context of the current ComputedStyle of the 'element'.
   // Returns nullptr for custom property values that are IACVT.
-  static const CSSValue* ComputeValue(Element* element,
+  static const CSSValue* ComputeValue(Element*,
+                                      const CSSPropertyName&,
+                                      const CSSValue&,
+                                      CSSToLengthConversionData::Flags&);
+  // A wrapper for the function above when not interested in the conversion
+  // flags.
+  static const CSSValue* ComputeValue(Element*,
                                       const CSSPropertyName&,
                                       const CSSValue&);
   // Resolves a single CSSValue in the context of some element's computed style.

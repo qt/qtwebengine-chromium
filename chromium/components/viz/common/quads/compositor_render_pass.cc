@@ -87,7 +87,7 @@ void CompositorRenderPass::SetAll(
     const gfx::Transform& transform_to_root_target,
     const cc::FilterOperations& filters,
     const cc::FilterOperations& backdrop_filters,
-    const std::optional<gfx::RRectF>& backdrop_filter_bounds,
+    const std::optional<SkPath>& backdrop_filter_bounds,
     SubtreeCaptureId capture_id,
     gfx::Size subtree_capture_size,
     ViewTransitionElementResourceId resource_id,
@@ -125,9 +125,11 @@ void CompositorRenderPass::AsValueInto(
   value->SetString("subtree_capture_id", subtree_capture_id.ToString());
   cc::MathUtil::AddToTracedValue("subtree_size", subtree_size, value);
 
+  // id.value() is a 64-bit uint even on 32-bit architectures, so
+  // using reinterpret_cast for the intentional conversion to a TracedValue::Id.
   TracedValue::MakeDictIntoImplicitSnapshotWithCategory(
       TRACE_DISABLED_BY_DEFAULT("viz.quads"), value, "CompositorRenderPass",
-      reinterpret_cast<void*>(static_cast<uint64_t>(id)));
+      TracedValue::Id(reinterpret_cast<void*>(id.value())));
 }
 
 CompositorRenderPassDrawQuad*

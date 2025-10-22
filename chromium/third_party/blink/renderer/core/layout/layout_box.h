@@ -28,6 +28,7 @@
 #include "base/check_op.h"
 #include "base/dcheck_is_on.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/stack_allocated.h"
 #include "base/notreached.h"
 #include "third_party/blink/public/mojom/scroll/scroll_into_view_params.mojom-blink-forward.h"
 #include "third_party/blink/renderer/core/core_export.h"
@@ -38,10 +39,10 @@
 #include "third_party/blink/renderer/core/layout/min_max_sizes_cache.h"
 #include "third_party/blink/renderer/core/layout/overflow_model.h"
 #include "third_party/blink/renderer/core/paint/paint_layer_scrollable_area.h"
-#include "third_party/blink/renderer/core/scroll/scrollbar_theme.h"
 #include "third_party/blink/renderer/core/style/style_overflow_clip_margin.h"
 #include "third_party/blink/renderer/platform/graphics/overlay_scrollbar_clip_behavior.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_hash_set.h"
+#include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 
 namespace blink {
 
@@ -212,25 +213,30 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     return false;
   }
 
+  // Return true if changes to transforms may require layout.
+  //
+  // This is the case for anchors that are affected by transforms, as that may
+  // affect anything that is anchored to it.
+  bool TransformsChangeMayRequireLayout() const;
+
   // Use this with caution! No type checking is done!
   LayoutBox* FirstChildBox() const;
   LayoutBox* LastChildBox() const;
 
-  LayoutUnit LogicalLeft() const;
-  LayoutUnit LogicalRight() const {
-    NOT_DESTROYED();
-    return LogicalLeft() + LogicalWidth();
-  }
-  LayoutUnit LogicalTop() const;
-  LayoutUnit LogicalBottom() const {
-    NOT_DESTROYED();
-    return LogicalTop() + LogicalHeight();
-  }
+  // Returns the LogicalRect of this box for LocationContainer()'s writing-mode.
+  // The coordinate origin is the border corner of the LocationContainer().
+  // This function doesn't take into account of TextDirection.
+  LogicalRect LogicalRectInContainer() const;
+
+  // Returns the inline-size for this box's writing-mode.  It might be
+  // different from container's writing-mode.
   LayoutUnit LogicalWidth() const {
     NOT_DESTROYED();
     PhysicalSize size = Size();
     return StyleRef().IsHorizontalWritingMode() ? size.width : size.height;
   }
+  // Returns the block-size for this box's writing-mode.  It might be
+  // different from container's writing-mode.
   LayoutUnit LogicalHeight() const {
     NOT_DESTROYED();
     PhysicalSize size = Size();
@@ -244,12 +250,23 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   virtual PhysicalSize Size() const;
 
-  void SetLocation(const DeprecatedLayoutPoint& location) {
+  void SetLocation(PhysicalOffset location) {
     NOT_DESTROYED();
-    if (location == frame_location_) {
+    DCHECK(RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
+    if (location == frame_location_.physical_offset) {
       return;
     }
-    frame_location_ = location;
+    frame_location_.physical_offset = location;
+    LocationChanged();
+  }
+
+  void SetLocation(const DeprecatedLayoutPoint& location) {
+    NOT_DESTROYED();
+    DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
+    if (location == frame_location_.layout_point) {
+      return;
+    }
+    frame_location_.layout_point = location;
     LocationChanged();
   }
 
@@ -439,19 +456,14 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   // Returns element-native intrinsic size. Returns kIndefiniteSize if no such
   // size.
   LayoutUnit DefaultIntrinsicContentInlineSize() const;
-  LayoutUnit DefaultIntrinsicContentBlockSize() const;
+  LayoutUnit DefaultIntrinsicContentBlockSize(
+      bool children_have_geometry) const;
 
   // IE extensions. Used to calculate offsetWidth/Height. Overridden by inlines
   // (LayoutFlow) to return the remaining width on a given line (and the height
   // of a single line).
-  LayoutUnit OffsetWidth() const final {
-    NOT_DESTROYED();
-    return Size().width;
-  }
-  LayoutUnit OffsetHeight() const final {
-    NOT_DESTROYED();
-    return Size().height;
-  }
+  LayoutUnit OffsetWidth() const final;
+  LayoutUnit OffsetHeight() const final;
 
   bool UsesOverlayScrollbars() const;
 
@@ -662,7 +674,10 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     wtf_size_t IndexOf(const PhysicalBoxFragment& fragment) const;
     bool Contains(const PhysicalBoxFragment& fragment) const;
 
+    // Note: We can't use std::views.  It's banned in Chromium.
     class CORE_EXPORT Iterator {
+      STACK_ALLOCATED();
+
      public:
       using iterator_category = std::forward_iterator_tag;
       using value_type = PhysicalBoxFragment;
@@ -676,14 +691,15 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
       const PhysicalBoxFragment& operator*() const;
 
-      Iterator& operator++() {
-        // TODO(crbug.com/351564777): Resolve a buffer safety issue.
-        UNSAFE_TODO(++iterator_);
+      UNSAFE_BUFFER_USAGE Iterator& operator++() {
+        // SAFETY: This is not safe. We should not use this operator directly.
+        UNSAFE_BUFFERS(++iterator_);
         return *this;
       }
-      Iterator operator++(int) {
+      UNSAFE_BUFFER_USAGE Iterator operator++(int) {
         Iterator copy = *this;
-        ++*this;
+        // SAFETY: This is not safe. We should not use this operator directly.
+        UNSAFE_BUFFERS(++*this);
         return copy;
       }
 
@@ -736,6 +752,15 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
     NOT_DESTROYED();
     return rare_data_ ? rare_data_->spanner_placeholder_.Get() : nullptr;
   }
+
+  bool IsValidColumnSpanner() const final {
+    NOT_DESTROYED();
+    return IsValidColumnSpanner(StyleRef());
+  }
+
+  // Provide a ComputedStyle argument, so that this function may be used
+  // reliably during style changes.
+  bool IsValidColumnSpanner(const ComputedStyle&) const;
 
   bool MapToVisualRectInAncestorSpaceInternal(
       const LayoutBoxModelObject* ancestor,
@@ -828,7 +853,8 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   bool HasUnsplittableScrollingOverflow() const;
 
-  PhysicalRect LocalCaretRect(int caret_offset) const override;
+  PhysicalRect LocalCaretRect(int caret_offset,
+                              CaretShape caret_shape) const override;
 
   // Returns the intersection of all overflow clips which apply.
   virtual PhysicalRect OverflowClipRect(
@@ -841,7 +867,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   PhysicalRect ClippingRect(const PhysicalOffset& location) const;
 
   void ImageChanged(WrappedImagePtr, CanDeferInvalidation) override;
-  ResourcePriority ComputeResourcePriority() const final;
+  ResourcePriority ComputeResourcePriority() const override;
 
   PositionWithAffinity PositionForPointInFragments(const PhysicalOffset&) const;
 
@@ -899,12 +925,12 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
 
   // Passing |location_container| causes flipped-block flipping w.r.t.
   // that container, or LocationContainer() otherwise.
-  PhysicalOffset PhysicalLocation(
-      const LayoutBox* location_container = nullptr) const {
-    NOT_DESTROYED();
-    return PhysicalLocationInternal(location_container ? location_container
-                                                       : LocationContainer());
-  }
+  //
+  // TODO(crbug.com/40855022): Get rid of the parameter.
+  virtual PhysicalOffset PhysicalLocation(
+      const LayoutBox* location_container = nullptr) const;
+
+  PhysicalRect BoundingBoxRelativeToFirstFragment() const override;
 
   bool HasSelfVisualOverflow() const {
     NOT_DESTROYED();
@@ -927,7 +953,7 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   bool IsReadingFlowContainer() const;
   // Returns the nodes corresponding to this LayoutBox's layout children,
   // sorted in reading flow if IsReadingFlowContainer().
-  const HeapVector<Member<Node>>& ReadingFlowNodes() const;
+  const GCedHeapVector<Member<Node>>& ReadingFlowNodes() const;
 
   // See README.md for an explanation of scroll origin.
   gfx::Vector2d OriginAdjustmentForScrollbars() const;
@@ -1244,16 +1270,14 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   void StyleWillChange(StyleDifference,
                        const ComputedStyle& new_style) override;
   void StyleDidChange(StyleDifference, const ComputedStyle* old_style) override;
+  virtual bool ShouldBeHandledAsFloating(const ComputedStyle& style) const;
+  bool ShouldBeHandledAsFloating() const {
+    NOT_DESTROYED();
+    return ShouldBeHandledAsFloating(StyleRef());
+  }
   void UpdateFromStyle() override;
 
   void InLayoutNGInlineFormattingContextWillChange(bool) final;
-
-  virtual ItemPosition SelfAlignmentNormalBehavior(
-      const LayoutBox* child = nullptr) const {
-    NOT_DESTROYED();
-    DCHECK(!child);
-    return ItemPosition::kStretch;
-  }
 
   PhysicalRect BackgroundPaintedExtent() const;
   virtual bool ForegroundIsKnownToBeOpaqueInRect(
@@ -1277,12 +1301,12 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
   LayoutUnit ContainingBlockLogicalHeightForPositioned(
       const LayoutBoxModelObject* containing_block) const;
 
-  virtual DeprecatedLayoutPoint LocationInternal() const {
+  virtual DeprecatedLayoutPoint DeprecatedLocationInternal() const {
     NOT_DESTROYED();
-    return frame_location_;
+    return frame_location_.layout_point;
   }
-  // Allow LayoutMultiColumnSpannerPlaceholder to call LocationInternal() of
-  // other instances.
+  // Allow LayoutMultiColumnSpannerPlaceholder to call
+  // DeprecatedLocationInternal() of other instances.
   friend class LayoutMultiColumnSpannerPlaceholder;
 
   PhysicalOffset OffsetFromContainerInternal(
@@ -1366,11 +1390,12 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
       OverlayScrollbarClipBehavior = kIgnoreOverlayScrollbarSize,
       ShouldIncludeScrollbarGutter = kIncludeScrollbarGutter) const;
 
-  PhysicalOffset PhysicalLocationInternal(
+  PhysicalOffset DeprecatedPhysicalLocationInternal(
       const LayoutBox* container_box) const {
     NOT_DESTROYED();
+    DCHECK(!RuntimeEnabledFeatures::LayoutBoxVisualLocationEnabled());
     DCHECK_EQ(container_box, LocationContainer());
-    DeprecatedLayoutPoint location = LocationInternal();
+    DeprecatedLayoutPoint location = DeprecatedLocationInternal();
     if (!container_box || !container_box->HasFlippedBlocksWritingMode())
         [[likely]] {
       return PhysicalOffset(location);
@@ -1395,13 +1420,15 @@ class CORE_EXPORT LayoutBox : public LayoutBoxModelObject {
  protected:
   // The CSS border box rect for this box.
   //
-  // The rectangle is in LocationContainer's physical coordinates in flipped
-  // block-flow direction of LocationContainer (see the COORDINATE SYSTEMS
-  // section in LayoutBoxModelObject). The location is the distance from this
-  // object's border edge to the LocationContainer's border edge. Thus it
-  // includes any logical top/left along with this box's margins. It doesn't
-  // include transforms, relative position offsets etc.
-  DeprecatedLayoutPoint frame_location_;
+  // The location is the distance from the border edge of the first fragment of
+  // this object, to the border edge of the first fragment of
+  // LocationContainer(). It doesn't include transforms, relative position
+  // offsets etc.
+  union Location {
+    Location() : physical_offset(PhysicalOffset()) {}
+    DeprecatedLayoutPoint layout_point;
+    PhysicalOffset physical_offset;
+  } frame_location_;
 
   // TODO(crbug.com/1353190): Remove frame_size_.
   PhysicalSize frame_size_;

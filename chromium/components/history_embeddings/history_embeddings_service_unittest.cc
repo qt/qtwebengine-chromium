@@ -32,9 +32,9 @@
 #include "components/history_embeddings/mock_answerer.h"
 #include "components/history_embeddings/mock_intent_classifier.h"
 #include "components/history_embeddings/vector_database.h"
-#include "components/optimization_guide/core/test_model_info_builder.h"
-#include "components/optimization_guide/core/test_optimization_guide_decider.h"
-#include "components/optimization_guide/core/test_optimization_guide_model_provider.h"
+#include "components/optimization_guide/core/delivery/test_model_info_builder.h"
+#include "components/optimization_guide/core/delivery/test_optimization_guide_model_provider.h"
+#include "components/optimization_guide/core/hints/test_optimization_guide_decider.h"
 #include "components/os_crypt/async/browser/test_utils.h"
 #include "components/page_content_annotations/core/test_page_content_annotations_service.h"
 #include "components/page_content_annotations/core/test_page_content_annotator.h"
@@ -188,10 +188,10 @@ class HistoryEmbeddingsServiceTest : public testing::Test {
       url_passages.passages.add_passages(passage);
       url_passages.embeddings.emplace_back(std::vector<float>{});
     }
-    service_->OnPassagesEmbeddingsComputed(
-        std::move(url_passages), std::move(passages),
-        std::move(passages_embeddings),
-        passage_embeddings::Embedder::kInvalidTaskId, status);
+    service_->OnPassagesEmbeddingsComputed(std::move(url_passages),
+                                           std::move(passages),
+                                           std::move(passages_embeddings),
+                                           /*task_id=*/0, status);
   }
 
   void SetMetadataScoreThreshold(double threshold) {

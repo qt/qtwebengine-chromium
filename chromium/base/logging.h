@@ -21,9 +21,6 @@
 #include "base/logging/log_severity.h"
 #include "base/strings/utf_ostream_operators.h"
 #include "build/build_config.h"
-// TODO(crbug.com/354842935): Remove this include once other files don't
-// accidentally (transitively) depend on it anymore.
-#include "build/chromeos_buildflags.h"
 
 #if BUILDFLAG(IS_CHROMEOS)
 #include <cstdio>
@@ -201,7 +198,7 @@ enum : uint32_t {
 // On POSIX platforms, where it may not even be possible to locate the
 // executable on disk, use stderr.
 // On Fuchsia, use the Fuchsia logging service.
-#if BUILDFLAG(IS_FUCHSIA) || BUILDFLAG(IS_NACL)
+#if BUILDFLAG(IS_FUCHSIA)
   LOG_DEFAULT = LOG_TO_SYSTEM_DEBUG_LOG,
 #elif BUILDFLAG(IS_WIN)
   LOG_DEFAULT = LOG_TO_FILE,

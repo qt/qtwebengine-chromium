@@ -13,12 +13,13 @@ from typing_extensions import override
 
 from crossbench import path as pth
 from crossbench.browsers.splash_screen import SplashScreenData
-from crossbench.cli.config.secrets import Secrets
-from crossbench.env import ValidationError
+from crossbench.cli import ui
+from crossbench.cli.config.env import ValidationMode
+from crossbench.env.run_env import RunEnv
+from crossbench.env.runner_env import ValidationError
 from crossbench.exception import Annotator, TInfoStack
 from crossbench.helper.cwd import ChangeCWD
 from crossbench.helper.durations import Durations
-from crossbench.helper.spinner import Spinner
 from crossbench.helper.state import State, StateMachine
 from crossbench.probes.probe_context import ProbeContext
 from crossbench.probes.results import ProbeResultDict
@@ -27,21 +28,22 @@ from crossbench.runner.exception import StopStoryException
 from crossbench.runner.probe_context_manager import ProbeContextManager
 from crossbench.runner.result_origin import ResultOrigin
 from crossbench.runner.run_annotation import RunAnnotation
-from crossbench.runner.timing import Timing
 from crossbench.str_enum_with_help import StrEnumWithHelp
 
 if TYPE_CHECKING:
   from selenium.webdriver.common.options import ArgOptions
 
+  from crossbench.action_runner.base import ActionRunner
   from crossbench.benchmarks.base import Benchmark
   from crossbench.browsers.browser import Browser
-  from crossbench.env import HostEnvironment
+  from crossbench.cli.config.secrets import Secrets
+  from crossbench.env.runner_env import RunnerEnv
   from crossbench.helper.wait import WaitRange
   from crossbench.probes.probe import Probe, ProbeT
   from crossbench.results_db.db import ResultsDB
   from crossbench.runner.groups.session import BrowserSessionRunGroup
   from crossbench.runner.runner import Runner
-  from crossbench.runner.timing import AnyTimeUnit
+  from crossbench.runner.timing import AnyTimeUnit, Timing
   from crossbench.stories.story import Story
   from crossbench.types import JsonDict
 
@@ -55,24 +57,30 @@ class Temperature(StrEnumWithHelp):
 
 class Run(ResultOrigin):
 
-  def __init__(self,
-               runner: Runner,
-               browser_session: BrowserSessionRunGroup,
-               story: Story,
-               repetition: int,
-               is_warmup: bool,
-               temperature: str,
-               index: int,
-               name: Optional[str] = None,
-               timeout: dt.timedelta = dt.timedelta(),
-               throw: bool = False) -> None:
+  def __init__(
+      self,
+      runner: Runner,
+      browser_session: BrowserSessionRunGroup,
+      story: Story,
+      action_runner: ActionRunner,
+      repetition: int,
+      is_warmup: bool,
+      temperature: str,
+      index: int,
+      name: Optional[str] = None,
+      timeout: dt.timedelta = dt.timedelta(),
+      throw: bool = False,
+      env_validation_mode: ValidationMode = ValidationMode.THROW) -> None:
     super().__init__()
     self._state = StateMachine(State.INITIAL)
     self._runner = runner
     self._browser_session = browser_session
     self._browser: Browser = browser_session.browser
     browser_session.append(self)
+    self._env = RunEnv(self, self._browser.settings.env_config,
+                       env_validation_mode)
     self._story = story
+    self._action_runner = action_runner
     assert repetition >= 0
     self._repetition = repetition
     self._is_warmup = is_warmup
@@ -110,9 +118,11 @@ class Run(ResultOrigin):
               measure: bool = True) -> Actions:
     return Actions(name, self, verbose=verbose, measure=measure)
 
-  def wait_range(self, min_wait: AnyTimeUnit, timeout: AnyTimeUnit,
-                 delay: AnyTimeUnit) -> WaitRange:
-    return self.runner.wait_range(min_wait, timeout, delay)
+  def wait_range(self,
+                 min_interval: AnyTimeUnit,
+                 timeout: AnyTimeUnit,
+                 delay: AnyTimeUnit = 0) -> WaitRange:
+    return self.runner.wait_range(min_interval, timeout, delay)
 
   @property
   def info_stack(self) -> TInfoStack:
@@ -205,6 +215,10 @@ class Run(ResultOrigin):
     return self._runner
 
   @property
+  def action_runner(self) -> ActionRunner:
+    return self._action_runner
+
+  @property
   def results_db(self) -> ResultsDB:
     return self.runner.results_db
 
@@ -222,7 +236,7 @@ class Run(ResultOrigin):
     return self._browser
 
   @property
-  def environment(self) -> HostEnvironment:
+  def environment(self) -> RunnerEnv:
     # TODO: replace with custom BrowserEnvironment
     return self.runner.env
 
@@ -293,7 +307,7 @@ class Run(ResultOrigin):
     assert not file.exists(), f"Probe results file exists already. file={file}"
     return file
 
-  def validate_env(self, env: HostEnvironment) -> None:
+  def validate_env(self, env: RunnerEnv) -> None:
     """Called before starting a browser / browser session to perform
     a pre-run checklist."""
 
@@ -369,12 +383,13 @@ class Run(ResultOrigin):
 
   def _run(self, is_dry_run: bool) -> None:
     self._state.transition(State.READY, to=State.RUN)
-    self._run_splashscreen()
+    if not is_dry_run:
+      self._run_splashscreen()
     with self._probe_context_manager.open(is_dry_run):
       logging.info("RUNNING STORY")
       self._state.expect(State.RUN)
       try:
-        with self.measure("run"), Spinner(), self.exceptions.capture():
+        with self.measure("run"), ui.spinner(), self.exceptions.capture():
           if not is_dry_run:
             self._run_story()
       except TimeoutError as e:
@@ -425,10 +440,16 @@ class Run(ResultOrigin):
 
   def teardown(self, is_dry_run: bool) -> None:
     self._state.transition(State.RUN, to=State.DONE)
-    self._teardown_browser(is_dry_run)
-    self._probe_context_manager.teardown(is_dry_run)
-    if not is_dry_run:
-      self._rm_browser_tmp_dir()
+    try:
+      self._teardown_browser(is_dry_run)
+      self._probe_context_manager.teardown(is_dry_run)
+      if not is_dry_run:
+        self._rm_browser_tmp_dir()
+    finally:
+      self.teardown_write_results_db()
+
+  def teardown_write_results_db(self) -> None:
+    self.results_db.teardown_run(self)
 
   def _teardown_browser(self, is_dry_run: bool) -> None:
     if is_dry_run:

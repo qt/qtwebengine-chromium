@@ -1,6 +1,6 @@
-/* Copyright (c) 2024 The Khronos Group Inc.
- * Copyright (c) 2024 Valve Corporation
- * Copyright (c) 2024 LunarG, Inc.
+/* Copyright (c) 2024-2025 The Khronos Group Inc.
+ * Copyright (c) 2024-2025 Valve Corporation
+ * Copyright (c) 2024-2025 LunarG, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -57,14 +57,13 @@ enum class CopyError {
 
     SrcImage1D_00146,
     DstImage1D_00152,
+    DstImage1D_10908,
     SrcImage1D_01785,
     DstImage1D_01786,
+    DstImage1D_10907,
     SrcOffset_01728,
     SrcOffset_01729,
     SrcOffset_01730,
-    DstOffset_01732,
-    DstOffset_01733,
-    DstOffset_01734,
     SrcImageContiguous_07966,
     DstImageContiguous_07966,
     SrcImageSubsampled_07969,
@@ -93,6 +92,7 @@ enum class CopyError {
 const std::string &GetCopyBufferImageDeviceVUID(const Location &loc, CopyError error);
 // contains Host Image Copy
 const std::string &GetCopyBufferImageVUID(const Location &loc, CopyError error);
+// When copying between images
 const std::string &GetCopyImageVUID(const Location &loc, CopyError error);
 const std::string &GetImageMipLevelVUID(const Location &loc);
 const std::string &GetImageArrayLayerRangeVUID(const Location &loc);
@@ -103,6 +103,9 @@ enum class SubresourceRangeError {
     MipCount_01724,
     BaseLayer_01488,
     LayerCount_01725,
+    BaseLayer_02724_10798,
+    LayerCount_02725_10800,
+    LevelCount_10799,
 };
 const std::string &GetSubresourceRangeVUID(const Location &loc, SubresourceRangeError error);
 

@@ -13,6 +13,7 @@
 #include "services/network/public/mojom/ip_address_space.mojom-blink.h"
 #include "services/network/public/mojom/trust_tokens.mojom-blink.h"
 #include "third_party/blink/public/common/blob/blob_utils.h"
+#include "third_party/blink/public/common/features.h"
 #include "third_party/blink/public/mojom/fetch/fetch_api_request.mojom-blink.h"
 #include "third_party/blink/public/platform/web_url_request.h"
 #include "third_party/blink/renderer/bindings/core/v8/dictionary.h"
@@ -30,6 +31,7 @@
 #include "third_party/blink/renderer/bindings/core/v8/v8_request_init.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_request_mode.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_request_redirect.h"
+#include "third_party/blink/renderer/bindings/core/v8/v8_retry_options.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_union_request_usvstring.h"
 #include "third_party/blink/renderer/bindings/core/v8/v8_url_search_params.h"
 #include "third_party/blink/renderer/core/dom/abort_signal.h"
@@ -64,6 +66,7 @@
 #include "third_party/blink/renderer/platform/weborigin/referrer.h"
 #include "third_party/blink/renderer/platform/weborigin/security_origin.h"
 #include "third_party/blink/renderer/platform/weborigin/security_policy.h"
+#include "third_party/blink/renderer/platform/wtf/text/strcat.h"
 
 namespace blink {
 
@@ -182,6 +185,9 @@ FetchRequestData* CreateCopyOfFetchRequestDataForFetch(
   request->SetAttributionReportingSupport(original->AttributionSupport());
   request->SetServiceWorkerRaceNetworkRequestToken(
       original->ServiceWorkerRaceNetworkRequestToken());
+  if (original->HasRetryOptions()) {
+    request->SetRetryOptions(original->RetryOptions().value());
+  }
 
   // When a new request is created from another the destination is always reset
   // to be `kEmpty`.  In order to facilitate some later checks when a service
@@ -205,7 +211,8 @@ static bool AreAnyMembersPresent(const RequestInit* init) {
          init->hasKeepalive() || init->hasBrowsingTopics() ||
          init->hasAdAuctionHeaders() || init->hasSharedStorageWritable() ||
          init->hasPriority() || init->hasSignal() || init->hasDuplex() ||
-         init->hasPrivateToken() || init->hasAttributionReporting();
+         init->hasPrivateToken() || init->hasAttributionReporting() ||
+         init->hasRetryOptions();
 }
 
 static BodyStreamBuffer* ExtractBody(ScriptState* script_state,
@@ -582,10 +589,16 @@ Request* Request::CreateRequestWithRequestOrString(
   // - "Let |targetAddressSpace| be |init|'s targetAddressSpace member if it is
   // present, and |unknown| otherwise."
   if (init->hasTargetAddressSpace()) {
-    if (init->targetAddressSpace() == "local") {
+    // 'private' is kept as an alias to 'local'; the previous PNA spec had
+    // 'private' for what LNA considers to be 'local'.
+    if (init->targetAddressSpace() == "loopback") {
+      request->SetTargetAddressSpace(network::mojom::IPAddressSpace::kLoopback);
+    } else if (init->targetAddressSpace() == "local") {
       request->SetTargetAddressSpace(network::mojom::IPAddressSpace::kLocal);
     } else if (init->targetAddressSpace() == "private") {
-      request->SetTargetAddressSpace(network::mojom::IPAddressSpace::kPrivate);
+      UseCounter::Count(execution_context,
+                        WebFeature::kLocalNetworkAccessPrivateAliasUse);
+      request->SetTargetAddressSpace(network::mojom::IPAddressSpace::kLocal);
     } else if (init->targetAddressSpace() == "public") {
       request->SetTargetAddressSpace(network::mojom::IPAddressSpace::kPublic);
     } else if (init->targetAddressSpace() == "unknown") {
@@ -641,6 +654,28 @@ Request* Request::CreateRequestWithRequestOrString(
 
   if (init->hasKeepalive())
     request->SetKeepalive(init->keepalive());
+
+  if (init->hasRetryOptions()) {
+    UseCounter::Count(execution_context, WebFeature::kFetchRetry);
+    network::FetchRetryOptions options;
+    RetryOptions* retry_options = init->retryOptions();
+    options.max_attempts = retry_options->maxAttempts();
+    if (retry_options->hasInitialDelay()) {
+      options.initial_delay =
+          base::Milliseconds(retry_options->initialDelay().value());
+    }
+    if (retry_options->hasBackoffFactor()) {
+      options.backoff_factor = retry_options->backoffFactor();
+    }
+    if (retry_options->hasMaxAge()) {
+      options.max_age = base::Milliseconds(retry_options->maxAge());
+    }
+    options.retry_after_unload = retry_options->retryAfterUnload();
+    options.retry_non_idempotent = retry_options->retryNonIdempotent();
+    options.retry_only_if_server_unreached =
+        retry_options->retryOnlyIfServerUnreached();
+    request->SetRetryOptions(options);
+  }
 
   if (init->hasBrowsingTopics()) {
     if (!execution_context->IsSecureContext()) {
@@ -1022,6 +1057,21 @@ Request::Request(ScriptState* script_state,
               Headers::Create(request->HeaderList()),
               signal) {
   headers_->SetGuard(Headers::kRequestGuard);
+
+  // This is currently only meant to allow certain contexts to bypass request
+  // forbidden header setting in the renderer. For example in Chromium:
+  // extension
+  // (https://www.chromium.org/developers/design-documents/extensions/) script
+  // contexts are an example of a context depending on their configuration.
+  if (base::FeatureList::IsEnabled(
+          features::kBypassRequestForbiddenHeadersCheck)) {
+    bool bypass_forbidden_fetch_request_headers =
+        SecurityPolicy::IsOriginAccessToURLAllowed(
+            ExecutionContext::From(script_state)->GetSecurityOrigin(),
+            request_->Url());
+    headers_->SetBypassRequestForbiddenHeaderCheck(
+        bypass_forbidden_fetch_request_headers);
+  }
 }
 
 String Request::method() const {
@@ -1155,10 +1205,10 @@ bool Request::keepalive() const {
 
 V8IPAddressSpace Request::targetAddressSpace() const {
   switch (request_->TargetAddressSpace()) {
+    case network::mojom::IPAddressSpace::kLoopback:
+      return V8IPAddressSpace(V8IPAddressSpace::Enum::kLoopback);
     case network::mojom::IPAddressSpace::kLocal:
       return V8IPAddressSpace(V8IPAddressSpace::Enum::kLocal);
-    case network::mojom::IPAddressSpace::kPrivate:
-      return V8IPAddressSpace(V8IPAddressSpace::Enum::kPrivate);
     case network::mojom::IPAddressSpace::kPublic:
       return V8IPAddressSpace(V8IPAddressSpace::Enum::kPublic);
     case network::mojom::IPAddressSpace::kUnknown:
@@ -1228,7 +1278,7 @@ mojom::blink::FetchAPIRequestPtr Request::CreateFetchAPIRequest() const {
     HTTPHeaderMap::AddResult result = headers.Add(key, value);
     if (!result.is_new_entry) {
       result.stored_value->value =
-          result.stored_value->value + ", " + String(value);
+          AtomicString(StrCat({result.stored_value->value, ", ", value}));
     }
   }
   for (const auto& pair : headers)

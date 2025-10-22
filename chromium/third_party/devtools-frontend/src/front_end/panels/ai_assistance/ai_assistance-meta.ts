@@ -4,7 +4,8 @@
 
 import * as Common from '../../core/common/common.js';
 import * as i18n from '../../core/i18n/i18n.js';
-import type * as Root from '../../core/root/root.js';
+import type * as Platform from '../../core/platform/platform.js';
+import * as Root from '../../core/root/root.js';
 import * as UI from '../../ui/legacy/legacy.js';
 
 import type * as AiAssistance from './ai_assistance.js';
@@ -33,6 +34,11 @@ const UIStrings = {
    * the current element as context
    */
   askAi: 'Ask AI',
+  /**
+   *@description Text of a context menu item to redirect to the AI assistance panel with
+   * the current context
+   */
+  debugWithAi: 'Debug with AI',
   /**
    * @description Message shown to the user if the DevTools locale is not
    * supported.
@@ -102,6 +108,14 @@ function isAnyFeatureAvailable(config?: Root.Runtime.HostConfig): boolean {
       isPerformanceAgentFeatureAvailable(config) || isFileAgentFeatureAvailable(config);
 }
 
+function titleForAiAssistanceActions(): Platform.UIString.LocalizedString {
+  if (Root.Runtime.hostConfig.devToolsAiDebugWithAi?.enabled ||
+      Root.Runtime.hostConfig.devToolsAiSubmenuPrompts?.enabled) {
+    return i18nLazyString(UIStrings.debugWithAi)();
+  }
+  return i18nLazyString(UIStrings.askAi)();
+}
+
 UI.ViewManager.registerViewExtension({
   location: UI.ViewManager.ViewLocationValues.DRAWER_VIEW,
   id: 'freestyler',
@@ -109,6 +123,7 @@ UI.ViewManager.registerViewExtension({
   title: i18nLazyString(UIStrings.aiAssistance),
   order: 10,
   isPreviewFeature: true,
+  featurePromotionId: 'ai-assistance',
   persistence: UI.ViewManager.ViewPersistence.CLOSEABLE,
   hasToolbar: false,
   condition: config => isAnyFeatureAvailable(config) && !isPolicyRestricted(config),
@@ -127,7 +142,7 @@ Common.Settings.registerSettingExtension({
   reloadRequired: false,
   condition: isAnyFeatureAvailable,
   disabledCondition: config => {
-    const reasons = [];
+    const reasons: Platform.UIString.LocalizedString[] = [];
     if (isGeoRestricted(config)) {
       reasons.push(i18nString(UIStrings.geoRestricted));
     }
@@ -150,12 +165,13 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isStylingAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config =>
+      isStylingAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -164,12 +180,13 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isStylingAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config =>
+      isStylingAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -178,12 +195,13 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isNetworkAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config =>
+      isNetworkAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -192,12 +210,13 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isNetworkAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config =>
+      isNetworkAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -206,12 +225,13 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isPerformanceAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config =>
+      isPerformanceAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -220,13 +240,14 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
   condition: config => {
-    return isPerformanceInsightsAgentFeatureAvailable(config) && !isPolicyRestricted(config);
+    return isPerformanceInsightsAgentFeatureAvailable(config) && !isPolicyRestricted(config) &&
+        !isGeoRestricted(config);
   }
 });
 
@@ -236,12 +257,12 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isFileAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config => isFileAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });
 
 UI.ActionRegistration.registerActionExtension({
@@ -250,10 +271,10 @@ UI.ActionRegistration.registerActionExtension({
     return [];
   },
   category: UI.ActionRegistration.ActionCategory.GLOBAL,
-  title: i18nLazyString(UIStrings.askAi),
+  title: () => titleForAiAssistanceActions(),
   async loadActionDelegate() {
     const AiAssistance = await loadAiAssistanceModule();
     return new AiAssistance.ActionDelegate();
   },
-  condition: config => isFileAgentFeatureAvailable(config) && !isPolicyRestricted(config),
+  condition: config => isFileAgentFeatureAvailable(config) && !isPolicyRestricted(config) && !isGeoRestricted(config),
 });

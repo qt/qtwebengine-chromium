@@ -4,25 +4,28 @@
  * Use of this source code is governed by a BSD-style license that can be
  * found in the LICENSE file.
  */
-
 #ifndef skgpu_graphite_DrawList_DEFINED
 #define skgpu_graphite_DrawList_DEFINED
 
-#include "include/core/SkPaint.h"
-#include "src/base/SkTBlockList.h"
+#include "include/gpu/graphite/GraphiteTypes.h"
 
+#include "include/private/base/SkDebug.h"
+#include "src/base/SkBlockAllocator.h"
+#include "src/base/SkEnumBitMask.h"
+#include "src/base/SkTBlockList.h"
 #include "src/gpu/graphite/DrawOrder.h"
 #include "src/gpu/graphite/DrawParams.h"
 #include "src/gpu/graphite/PaintParams.h"
-#include "src/gpu/graphite/geom/Geometry.h"
 #include "src/gpu/graphite/geom/Rect.h"
 #include "src/gpu/graphite/geom/Transform.h"
 
+#include <cstdint>
 #include <limits>
 #include <optional>
 
 namespace skgpu::graphite {
 
+class Geometry;
 class Renderer;
 
 /**
@@ -86,8 +89,13 @@ public:
 
     int renderStepCount() const { return fRenderStepCount; }
 
-    // Bounds for a dst read required by this DrawList.
+    // Bounds for a dst read required by this DrawList. These bounds are only valid if drawsReadDst
+    // returns true.
     const Rect& dstReadBounds() const { return fDstReadBounds; }
+    bool drawsReadDst() const { return !fDstReadBounds.isEmptyNegativeOrNaN(); }
+    bool drawsRequireMSAA() const { return fRequiresMSAA; }
+    SkEnumBitMask<DepthStencilFlags> depthStencilFlags() const { return fDepthStencilFlags; }
+
 
     SkDEBUGCODE(bool hasCoverageMaskDraws() const { return fCoverageMaskShapeDrawCount > 0; })
 
@@ -128,6 +136,9 @@ private:
     // Tracked for all paints that read from the dst. If it is later determined that the
     // DstReadStrategy is not kTextureCopy, this value can simply be ignored.
     Rect fDstReadBounds = Rect::InfiniteInverted();
+    // Other properties of draws contained within this DrawList
+    bool fRequiresMSAA = false;
+    SkEnumBitMask<DepthStencilFlags> fDepthStencilFlags = DepthStencilFlags::kNone;
 };
 
 } // namespace skgpu::graphite

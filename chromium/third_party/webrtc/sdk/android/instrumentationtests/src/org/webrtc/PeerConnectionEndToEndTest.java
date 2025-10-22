@@ -169,6 +169,11 @@ public class PeerConnectionEndToEndTest {
     // TODO(bugs.webrtc.org/8491): Remove NoSynchronizedMethodCheck suppression.
     @SuppressWarnings("NoSynchronizedMethodCheck")
     public synchronized void onSignalingChange(SignalingState newState) {
+      if (expectedSignalingChanges.isEmpty()) {
+        Logging.d(TAG, name + "Got an unexpected signaling state change " + newState);
+        return;
+      }
+
       assertEquals(newState, expectedSignalingChanges.remove());
     }
 
@@ -261,6 +266,7 @@ public class PeerConnectionEndToEndTest {
       }
       if (expectedIceGatheringChanges.isEmpty()) {
         Logging.d(TAG, name + "Got an unexpected ICE gathering change " + newState);
+        return;
       }
       assertEquals(newState, expectedIceGatheringChanges.remove());
     }
@@ -1123,6 +1129,143 @@ public class PeerConnectionEndToEndTest {
     System.gc();
   }
 
+  @Test
+  @MediumTest
+  public void testSetConfigurationUnchangedAfterSetLocalDescription() throws Exception {
+    PeerConnectionFactory factory = PeerConnectionFactory.builder().createPeerConnectionFactory();
+
+    List<PeerConnection.IceServer> iceServers = new ArrayList<>();
+    iceServers.add(
+        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
+
+    PeerConnection.RTCConfiguration rtcConfig = new PeerConnection.RTCConfiguration(iceServers);
+    rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+
+    ObserverExpectations offeringExpectations = new ObserverExpectations("PCTest:offerer");
+    PeerConnection offeringPC = factory.createPeerConnection(rtcConfig, offeringExpectations);
+    assertNotNull(offeringPC);
+
+    // Create a data channel and set local description to kick off the ICE candidate gathering.
+    offeringExpectations.expectRenegotiationNeeded();
+    DataChannel offeringDC = offeringPC.createDataChannel("offeringDC", new DataChannel.Init());
+    assertEquals("offeringDC", offeringDC.label());
+
+    offeringExpectations.setDataChannel(offeringDC);
+    SdpObserverLatch sdpLatch = new SdpObserverLatch();
+    offeringPC.createOffer(sdpLatch, new MediaConstraints());
+    assertTrue(sdpLatch.await());
+    SessionDescription offerSdp = sdpLatch.getSdp();
+    assertEquals(offerSdp.type, SessionDescription.Type.OFFER);
+    assertFalse(offerSdp.description.isEmpty());
+
+    sdpLatch = new SdpObserverLatch();
+    offeringExpectations.expectSignalingChange(SignalingState.HAVE_LOCAL_OFFER);
+    offeringPC.setLocalDescription(sdpLatch, offerSdp);
+    assertTrue(sdpLatch.await());
+    assertNull(sdpLatch.getSdp());
+
+    assertEquals(offeringPC.getLocalDescription().type, offerSdp.type);
+
+    // Wait until we satisfy all expectations in the setup.
+    assertTrue(offeringExpectations.waitForAllExpectationsToBeSatisfied(DEFAULT_TIMEOUT_SECONDS));
+
+    // Setting the unchanged configuration after setting local offer should work.
+    assertTrue(offeringPC.setConfiguration(rtcConfig));
+  }
+
+  @Test
+  @MediumTest
+  public void testSurfaceIceCandidatesBeforeIceGatheringStateComplete() throws Exception {
+    // Allow loopback interfaces too since our Android devices often don't
+    // have those.
+    PeerConnectionFactory.Options options = new PeerConnectionFactory.Options();
+    options.networkIgnoreMask = 0;
+    PeerConnectionFactory factory =
+        PeerConnectionFactory.builder().setOptions(options).createPeerConnectionFactory();
+
+    List<PeerConnection.IceServer> iceServers = new ArrayList<>();
+    iceServers.add(
+        PeerConnection.IceServer.builder("stun:stun.l.google.com:19302").createIceServer());
+
+    PeerConnection.RTCConfiguration rtcConfig = new PeerConnection.RTCConfiguration(iceServers);
+    rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+
+    ObserverExpectations offeringExpectations = new ObserverExpectations("PCTest:offerer");
+    PeerConnection offeringPC = factory.createPeerConnection(rtcConfig, offeringExpectations);
+    assertNotNull(offeringPC);
+
+    offeringExpectations.expectRenegotiationNeeded();
+    DataChannel offeringDC = offeringPC.createDataChannel("offeringDC", new DataChannel.Init());
+
+    offeringExpectations.expectIceCandidates(2);
+
+    SdpObserverLatch sdpLatch = new SdpObserverLatch();
+    offeringPC.createOffer(sdpLatch, new MediaConstraints());
+    assertTrue(sdpLatch.await());
+    SessionDescription offerSdp = sdpLatch.getSdp();
+
+    sdpLatch = new SdpObserverLatch();
+    offeringPC.setLocalDescription(sdpLatch, offerSdp);
+
+    assertTrue(offeringExpectations.waitForAllExpectationsToBeSatisfied(DEFAULT_TIMEOUT_SECONDS));
+    assertEquals(IceGatheringState.GATHERING, offeringPC.iceGatheringState());
+
+    ObserverExpectations answeringExpectations = new ObserverExpectations("PCTest:answerer");
+    PeerConnection answeringPC = factory.createPeerConnection(rtcConfig, answeringExpectations);
+    assertNotNull(answeringPC);
+
+    sdpLatch = new SdpObserverLatch();
+    answeringPC.setRemoteDescription(sdpLatch, offerSdp);
+    assertTrue(sdpLatch.await());
+
+    sdpLatch = new SdpObserverLatch();
+    answeringPC.createAnswer(sdpLatch, new MediaConstraints());
+    assertTrue(sdpLatch.await());
+    SessionDescription answerSdp = sdpLatch.getSdp();
+
+    answeringExpectations.expectIceCandidates(2);
+
+    sdpLatch = new SdpObserverLatch();
+    answeringPC.setLocalDescription(sdpLatch, answerSdp);
+    assertTrue(sdpLatch.await());
+
+    assertTrue(answeringExpectations.waitForAllExpectationsToBeSatisfied(DEFAULT_TIMEOUT_SECONDS));
+    assertEquals(IceGatheringState.GATHERING, answeringPC.iceGatheringState());
+
+    sdpLatch = new SdpObserverLatch();
+    offeringPC.setRemoteDescription(sdpLatch, answerSdp);
+    assertTrue(sdpLatch.await());
+
+    assertTrue(offeringExpectations.waitForAllExpectationsToBeSatisfied(DEFAULT_TIMEOUT_SECONDS));
+    assertEquals(IceGatheringState.GATHERING, offeringPC.iceGatheringState());
+
+    // SCTP DataChannels are announced via OPEN messages over the established
+    // connection (not via SDP), so answeringExpectations can only register
+    // expecting the channel during ICE.
+    answeringExpectations.expectDataChannel("offeringDC");
+    answeringExpectations.expectStateChange(DataChannel.State.OPEN);
+
+    offeringExpectations.expectIceGatheringChange(IceGatheringState.COMPLETE);
+    answeringExpectations.expectIceGatheringChange(IceGatheringState.COMPLETE);
+
+    // Wait for at least one ice candidate from the offering PC and forward them to
+    // the answering PC.
+    for (IceCandidate candidate : offeringExpectations.getAtLeastOneIceCandidate()) {
+      answeringPC.addIceCandidate(candidate);
+    }
+    // Wait for at least one ice candidate from the answering PC and forward them to
+    // the offering PC.
+    for (IceCandidate candidate : answeringExpectations.getAtLeastOneIceCandidate()) {
+      offeringPC.addIceCandidate(candidate);
+    }
+
+    assertTrue(offeringExpectations.waitForAllExpectationsToBeSatisfied(DEFAULT_TIMEOUT_SECONDS));
+    assertTrue(answeringExpectations.waitForAllExpectationsToBeSatisfied(DEFAULT_TIMEOUT_SECONDS));
+
+    assertEquals(IceGatheringState.COMPLETE, offeringPC.iceGatheringState());
+    assertEquals(IceGatheringState.COMPLETE, answeringPC.iceGatheringState());
+  }
+
   // Tests that ICE candidates that are not allowed by an ICE transport type, thus not being
   // signaled to the gathering PeerConnection, can be surfaced via configuration if allowed by the
   // new ICE transport type, when RTCConfiguration.surfaceIceCandidatesOnIceTransportTypeChanged is
@@ -1143,6 +1286,7 @@ public class PeerConnectionEndToEndTest {
     PeerConnection.RTCConfiguration rtcConfig =
         new PeerConnection.RTCConfiguration(Collections.emptyList());
     rtcConfig.sdpSemantics = PeerConnection.SdpSemantics.UNIFIED_PLAN;
+    rtcConfig.cryptoOptions = CryptoOptions.builder().createCryptoOptions();
     // NONE would prevent any candidate being signaled to the PC.
     rtcConfig.iceTransportsType = PeerConnection.IceTransportsType.NONE;
     // We must have the continual gathering enabled to allow the surfacing of candidates on the ICE

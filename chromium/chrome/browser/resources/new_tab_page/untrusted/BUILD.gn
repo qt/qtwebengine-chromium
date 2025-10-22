@@ -16,11 +16,12 @@ build_webui("build") {
     "one_google_bar.html",
   ]
 
-  non_web_component_files = [
+  ts_files = [
     "background_image.ts",
     "microsoft_auth.ts",
     "microsoft_auth_proxy.ts",
     "msal_browser.ts",
+    "one_google_bar_api.ts",
     "one_google_bar.ts",
   ]
 

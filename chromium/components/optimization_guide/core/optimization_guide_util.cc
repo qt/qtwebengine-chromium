@@ -8,8 +8,8 @@
 #include "base/notreached.h"
 #include "base/strings/string_number_conversions.h"
 #include "build/build_config.h"
+#include "components/optimization_guide/core/hints/optimization_guide_decision.h"
 #include "components/optimization_guide/core/model_execution/feature_keys.h"
-#include "components/optimization_guide/core/optimization_guide_decision.h"
 #include "components/optimization_guide/core/optimization_guide_enums.h"
 #include "components/optimization_guide/core/optimization_guide_features.h"
 #include "components/optimization_guide/core/optimization_guide_logger.h"
@@ -90,12 +90,6 @@ std::string_view GetStringNameForModelExecutionFeature(
         MODEL_EXECUTION_FEATURE_FORMS_CLASSIFICATIONS:
       return "FormsClassifications";
     case proto::ModelExecutionFeature::
-        MODEL_EXECUTION_FEATURE_FORMS_PREDICTIONS:
-      return "FormsPredictions";
-    case proto::ModelExecutionFeature::
-        MODEL_EXECUTION_FEATURE_FORMS_ANNOTATIONS:
-      return "FormsAnnotations";
-    case proto::ModelExecutionFeature::
         MODEL_EXECUTION_FEATURE_BLING_PROTOTYPING:
       return "BlingPrototyping";
     case proto::ModelExecutionFeature::
@@ -114,6 +108,8 @@ std::string_view GetStringNameForModelExecutionFeature(
     case proto::ModelExecutionFeature::
         MODEL_EXECUTION_FEATURE_ZERO_STATE_SUGGESTIONS:
       return "ZeroStateSuggestions";
+    case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_PROOFREADER_API:
+      return "ProofreaderApi";
     case proto::ModelExecutionFeature::MODEL_EXECUTION_FEATURE_UNSPECIFIED:
       return "Unknown";
       // Must be in sync with the ModelExecutionFeature variant in
@@ -165,12 +161,6 @@ void LogFeatureFlagsInfo(OptimizationGuideLogger* optimization_guide_logger,
         optimization_guide_common::mojom::LogSource::SERVICE_AND_SETTINGS,
         optimization_guide_logger, "FEATURE_FLAG Hints component disabled");
   }
-  if (!optimization_guide::features::IsRemoteFetchingEnabled()) {
-    OPTIMIZATION_GUIDE_LOG(
-        optimization_guide_common::mojom::LogSource::SERVICE_AND_SETTINGS,
-        optimization_guide_logger,
-        "FEATURE_FLAG remote fetching feature disabled");
-  }
   if (!optimization_guide::IsUserPermittedToFetchFromRemoteOptimizationGuide(
           is_off_the_record, pref_service)) {
     OPTIMIZATION_GUIDE_LOG(
@@ -183,12 +173,6 @@ void LogFeatureFlagsInfo(OptimizationGuideLogger* optimization_guide_logger,
         optimization_guide_common::mojom::LogSource::SERVICE_AND_SETTINGS,
         optimization_guide_logger,
         "FEATURE_FLAG remote push notification feature disabled");
-  }
-  if (!optimization_guide::features::IsModelDownloadingEnabled()) {
-    OPTIMIZATION_GUIDE_LOG(
-        optimization_guide_common::mojom::LogSource::SERVICE_AND_SETTINGS,
-        optimization_guide_logger,
-        "FEATURE_FLAG model downloading feature disabled");
   }
 }
 

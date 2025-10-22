@@ -7,6 +7,7 @@
 #include <memory>
 
 #include "base/memory/ptr_util.h"
+#include "third_party/blink/renderer/core/animation/underlying_value_owner.h"
 #include "third_party/blink/renderer/core/css/css_identifier_value_mappings.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver.h"
 #include "third_party/blink/renderer/core/css/resolver/style_resolver_state.h"
@@ -137,7 +138,7 @@ InterpolationValue CSSDisplayInterpolationType::MaybeConvertInherit(
 
 InterpolationValue CSSDisplayInterpolationType::MaybeConvertValue(
     const CSSValue& value,
-    const StyleResolverState*,
+    const StyleResolverState&,
     ConversionCheckers& conversion_checkers) const {
   const auto* identifier_value = DynamicTo<CSSIdentifierValue>(value);
   if (!identifier_value) {
@@ -157,6 +158,7 @@ InterpolationValue CSSDisplayInterpolationType::MaybeConvertValue(
     case CSSValueID::kInlineFlex:
     case CSSValueID::kInlineGrid:
     case CSSValueID::kListItem:
+    case CSSValueID::kMasonry:
     case CSSValueID::kNone:
     case CSSValueID::kTable:
     case CSSValueID::kTableRow:
@@ -192,7 +194,7 @@ void CSSDisplayInterpolationType::Composite(
     double underlying_fraction,
     const InterpolationValue& value,
     double interpolation_fraction) const {
-  underlying_value_owner.Set(*this, value);
+  underlying_value_owner.Set(this, value);
 }
 
 void CSSDisplayInterpolationType::ApplyStandardPropertyValue(

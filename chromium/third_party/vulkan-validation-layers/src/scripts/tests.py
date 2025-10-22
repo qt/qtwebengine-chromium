@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright (c) 2020-2024 Valve Corporation
-# Copyright (c) 2020-2024 LunarG, Inc.
+# Copyright (c) 2020-2025 Valve Corporation
+# Copyright (c) 2020-2025 LunarG, Inc.
 
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -90,31 +90,6 @@ def BuildLoader():
     common_ci.RunShellCmd(install_cmd)
 
 #
-# Prepare Mock ICD for use with Layer Validation Tests
-def BuildMockICD(mockAndroid):
-    SRC_DIR = f'{CI_EXTERNAL_DIR}/Vulkan-Tools'
-    BUILD_DIR = f'{SRC_DIR}/build'
-
-    if not os.path.exists(SRC_DIR):
-        print("Unable to find Vulkan-Tools")
-        sys.exit(1)
-
-    print("Configure Mock ICD")
-    cmake_cmd = f'cmake -S {SRC_DIR} -B {BUILD_DIR} -D CMAKE_BUILD_TYPE=Release '
-    cmake_cmd += '-DBUILD_CUBE=NO -DBUILD_VULKANINFO=NO -D INSTALL_ICD=ON -D UPDATE_DEPS=ON'
-    if mockAndroid:
-        cmake_cmd += ' -DBUILD_MOCK_ANDROID_SUPPORT=ON'
-    common_ci.RunShellCmd(cmake_cmd)
-
-    print("Build Mock ICD")
-    build_cmd = f'cmake --build {BUILD_DIR} --target VkICD_mock_icd'
-    common_ci.RunShellCmd(build_cmd)
-
-    print("Install Mock ICD")
-    install_cmd = f'cmake --install {BUILD_DIR} --prefix {CI_INSTALL_DIR}'
-    common_ci.RunShellCmd(install_cmd)
-
-#
 # Prepare Profile Layer for use with Layer Validation Tests
 def BuildProfileLayer(mockAndroid):
     SRC_DIR = f'{CI_EXTERNAL_DIR}/Vulkan-Profiles'
@@ -156,9 +131,6 @@ def Build(args):
         BuildVVL(config = config, cmake_args = args.cmake, build_tests = "ON", mock_android = args.mockAndroid)
         BuildLoader()
         BuildProfileLayer(args.mockAndroid)
-        if (args.mockAndroid):
-            # Currently use MockICD from Vulkan-Tools for Mock Android tests
-            BuildMockICD(args.mockAndroid)
 
     except subprocess.CalledProcessError as proc_error:
         print('Command "%s" failed with return code %s' % (' '.join(proc_error.cmd), proc_error.returncode))
@@ -184,11 +156,6 @@ def RunVVLTests(args):
     if common_ci.IsWindows():
         lvt_env['VK_LAYER_PATH'] = os.path.join(CI_INSTALL_DIR, 'bin')
         lvt_env['VK_DRIVER_FILES'] = os.path.join(CI_INSTALL_DIR, 'bin\\VVL_Test_ICD.json')
-    elif args.mockAndroid:
-        lvt_env['LD_LIBRARY_PATH'] = os.path.join(CI_INSTALL_DIR, 'lib')
-        lvt_env['DYLD_LIBRARY_PATH'] = os.path.join(CI_INSTALL_DIR, 'lib')
-        lvt_env['VK_LAYER_PATH'] = os.path.join(CI_INSTALL_DIR, 'share/vulkan/explicit_layer.d')
-        lvt_env['VK_DRIVER_FILES'] = os.path.join(CI_INSTALL_DIR, 'share/vulkan/icd.d/VkICD_mock_icd.json')
     else:
         lvt_env['LD_LIBRARY_PATH'] = os.path.join(CI_INSTALL_DIR, 'lib')
         lvt_env['DYLD_LIBRARY_PATH'] = os.path.join(CI_INSTALL_DIR, 'lib')
@@ -214,6 +181,7 @@ def RunVVLTests(args):
         lvt_env['VK_KHRONOS_PROFILES_EMULATE_PORTABILITY'] = 'false'
 
     lvt_env['VK_KHRONOS_PROFILES_DEBUG_REPORTS'] = 'DEBUG_REPORT_ERROR_BIT'
+    lvt_env['VK_KHRONOS_PROFILES_UNKNOWN_FEATURE_VALUES'] = 'UNKNOWN_FEATURE_VALUES_DEVICE'
 
     lvt_cmd = os.path.join(CI_INSTALL_DIR, 'bin', 'vk_layer_validation_tests')
 
@@ -222,14 +190,32 @@ def RunVVLTests(args):
         # a manual vkCreateDevice call and need to investigate more why
         common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*AndroidHardwareBuffer.*:*AndroidExternalResolve.*", env=lvt_env)
         return
+    if args.tsan and args.wsi:
+        # Combo of both below
+        common_ci.RunShellCmd(f'xvfb-run --auto-servernum {lvt_cmd} --gtest_filter=*Wsi.*', env=lvt_env)
+        return
     if args.tsan:
         # These are tests we have decided are worth using Thread Sanitize as it will take about 9x longer to run a test
         # We have also seen TSAN turn bug out and make each test incrementally take longer
         # (https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/8931)
-        common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*SyncVal.*:*Threading.*:*SyncObject.*:*Wsi.*:-*Video*", env=lvt_env)
+        common_ci.RunShellCmd(lvt_cmd + " --gtest_filter=*SyncVal.*:*Threading.*:*SyncObject.*:-*Video*", env=lvt_env)
+        return
+    if args.wsi:
+        # We need to use xvfb to get github action runners to be able to create a surface context
+        # Adding to other tests is a slow, unnecessary, overheader
+        common_ci.RunShellCmd(f'xvfb-run --auto-servernum {lvt_cmd} --gtest_filter=*Wsi.*', env=lvt_env)
         return
 
-    common_ci.RunShellCmd(lvt_cmd, env=lvt_env)
+    # these will 100% be skipped by default on CI machine, save time filtering them out first
+    skip_list = [
+        # AHB as it is ran separately
+        '*AndroidHardwareBuffer.*',
+        '*AndroidExternalResolve.*',
+        # WSI as it is ran separately
+        '*Wsi.*'
+    ]
+    # The "default" run
+    common_ci.RunShellCmd(f'{lvt_cmd} --gtest_filter=-{":".join(skip_list)}', env=lvt_env)
 
     print("Re-Running syncval tests with core validation disabled (--syncval-disable-core)")
     common_ci.RunShellCmd(lvt_cmd + ' --gtest_filter=*SyncVal* --syncval-disable-core', env=lvt_env)
@@ -278,6 +264,9 @@ if __name__ == '__main__':
     parser.add_argument(
         '--tsan', dest='tsan',
         action='store_true', help='Filter out tests for TSAN')
+    parser.add_argument(
+        '--wsi', dest='wsi',
+        action='store_true', help='Filter out tests for WSI (which uses xvfb and will slow down other tests)')
 
     args = parser.parse_args()
 

@@ -14,13 +14,14 @@
 #include "net/cookies/cookie_access_result.h"
 #include "net/cookies/cookie_constants.h"
 #include "net/cookies/cookie_options.h"
-#include "net/cookies/unique_cookie_key.h"
+#include "net/cookies/cookie_partition_key.h"
 
 class GURL;
 
 namespace net {
 
-class CookiePartitionKey;
+class RefUniqueCookieKey;
+class UniqueCookieKey;
 
 struct CookieAccessParams;
 struct CookieAccessResult;
@@ -86,7 +87,7 @@ class NET_EXPORT CookieBase {
   // DomainWithoutDot().
   const std::string& Domain() const { return domain_; }
   const std::string& Path() const { return path_; }
-  const base::Time& CreationDate() const { return creation_date_; }
+  base::Time CreationDate() const { return creation_date_; }
   bool SecureAttribute() const { return secure_; }
   bool IsHttpOnly() const { return httponly_; }
   CookieSameSite SameSite() const { return same_site_; }
@@ -134,11 +135,7 @@ class NET_EXPORT CookieBase {
 
   // StrictlyUniqueKey always includes the cookie's source scheme and source
   // port.
-  UniqueCookieKey StrictlyUniqueKey() const {
-    return UniqueCookieKey::Strict(base::PassKey<CookieBase>(), partition_key_,
-                                   name_, domain_, path_, source_scheme_,
-                                   source_port_);
-  }
+  UniqueCookieKey StrictlyUniqueKey() const;
 
   // Returns a key such that two cookies with the same UniqueKey() are
   // guaranteed to be equivalent in the sense of IsEquivalent().
@@ -147,6 +144,16 @@ class NET_EXPORT CookieBase {
   // The source_scheme and source_port fields depend on whether or not their
   // associated features are enabled.
   UniqueCookieKey UniqueKey() const;
+
+  // Returns a non-owning key such that two cookies with the same RefUniqueKey()
+  // are guaranteed to be equivalent in the sense of IsEquivalent().
+  // The `partition_key_` field will always be nullopt when partitioned cookies
+  // are not enabled.
+  // The source_scheme and source_port fields depend on whether or not their
+  // associated features are enabled.
+  // A RefUniqueKey keeps references that point to data in the CookieBase, so it
+  // must not be stored beyond the lifetime of the CookieBase.
+  RefUniqueCookieKey RefUniqueKey() const;
 
   // Same as UniqueKey() except it does not contain a source_port or
   // source_scheme field. For use for determining aliasing cookies, which do not
@@ -161,7 +168,7 @@ class NET_EXPORT CookieBase {
   // url::PORT_INVALID if value isn't in [0,65535] or url::PORT_UNSPECIFIED.
   void SetSourcePort(int port);
 
-  void SetCreationDate(const base::Time& date) { creation_date_ = date; }
+  void SetCreationDate(base::Time date) { creation_date_ = date; }
 
  protected:
   CookieBase();

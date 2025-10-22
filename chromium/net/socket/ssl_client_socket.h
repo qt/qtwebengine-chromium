@@ -47,7 +47,23 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
       bool is_ech_capable,
       bool ech_enabled,
       const std::optional<std::vector<uint8_t>>& ech_retry_configs,
+      bool trust_anchor_ids_from_dns,
+      bool retried_with_trust_anchor_ids,
       const LoadTimingInfo::ConnectTiming& connect_timing);
+
+  // These values are persisted to logs. Entries should not be renumbered
+  // and numeric values should never be reused.
+  enum class TrustAnchorIDsResult {
+    // The connection succeeded on the initial connection.
+    kSuccessInitial = 0,
+    // The connection failed on the initial connection, without retrying.
+    kErrorInitial = 1,
+    // The connection succeeded after retrying with fresh Trust Anchor IDs.
+    kSuccessRetry = 2,
+    // The connection failed after retrying with fresh Trust Anchor IDs.
+    kErrorRetry = 3,
+    kMaxValue = kErrorRetry,
+  };
 
   SSLClientSocket();
 
@@ -59,6 +75,15 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   // connection can be retried with ECH disabled.
   virtual std::vector<uint8_t> GetECHRetryConfigs() = 0;
 
+  // Called in response to a connection error in Connect(), when the client
+  // advertised the TLS Trust Anchor IDs extension. If this method returns a
+  // non-empty set, it is the Trust Anchor IDs (in binary representation) that
+  // the server provided in the handshake. The connection can be retried with
+  // these new Trust Anchor IDs, overriding the Trust Anchor IDs that the server
+  // advertised in DNS.
+  virtual std::vector<std::vector<uint8_t>>
+  GetServerTrustAnchorIDsForRetry() = 0;
+
   // Log SSL key material to |logger|. Must be called before any
   // SSLClientSockets are created.
   //
@@ -66,33 +91,10 @@ class NET_EXPORT SSLClientSocket : public SSLSocket {
   // once https://crbug.com/458365 is resolved.
   static void SetSSLKeyLogger(std::unique_ptr<SSLKeyLogger> logger);
 
- protected:
-  void set_signed_cert_timestamps_received(
-      bool signed_cert_timestamps_received) {
-    signed_cert_timestamps_received_ = signed_cert_timestamps_received;
-  }
-
-  void set_stapled_ocsp_response_received(bool stapled_ocsp_response_received) {
-    stapled_ocsp_response_received_ = stapled_ocsp_response_received;
-  }
-
   // Serialize |next_protos| in the wire format for ALPN: protocols are listed
   // in order, each prefixed by a one-byte length.
   static std::vector<uint8_t> SerializeNextProtos(
       const NextProtoVector& next_protos);
-
- private:
-  FRIEND_TEST_ALL_PREFIXES(SSLClientSocket, SerializeNextProtos);
-  // For signed_cert_timestamps_received_ and stapled_ocsp_response_received_.
-  FRIEND_TEST_ALL_PREFIXES(SSLClientSocketVersionTest,
-                           ConnectSignedCertTimestampsTLSExtension);
-  FRIEND_TEST_ALL_PREFIXES(SSLClientSocketVersionTest,
-                           ConnectSignedCertTimestampsEnablesOCSP);
-
-  // True if SCTs were received via a TLS extension.
-  bool signed_cert_timestamps_received_ = false;
-  // True if a stapled OCSP response was received.
-  bool stapled_ocsp_response_received_ = false;
 };
 
 // Shared state and configuration across multiple SSLClientSockets.

@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifndef PARTITION_ALLOC_PARTITION_LOCK_H_
 #define PARTITION_ALLOC_PARTITION_LOCK_H_
 
@@ -123,6 +128,10 @@ class PA_LOCKABLE Lock {
         // PA_BUILDFLAG(ENABLE_PARTITION_LOCK_REENTRANCY_CHECK)
     lock_.Reinit();
   }
+
+#if PA_BUILDFLAG(ENABLE_PARTITION_LOCK_PRIORITY_INHERITANCE)
+  bool HasWaitersForTesting() const { return lock_.HasWaitersForTesting(); }
+#endif
 
  private:
   [[noreturn]] PA_NOINLINE PA_NOT_TAIL_CALLED void ReentrancyIssueDetected() {

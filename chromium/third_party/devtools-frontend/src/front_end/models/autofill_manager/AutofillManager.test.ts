@@ -38,7 +38,7 @@ describeWithMockConnection('AutofillManager', () => {
       model.dispatchEventToListeners(
           SDK.AutofillModel.Events.ADDRESS_FORM_FILLED, {autofillModel: model, event: inEvent});
       await new Promise(resolve => setTimeout(resolve, 0));
-      assert.isTrue(showViewStub.calledOnceWithExactly('autofill-view'));
+      sinon.assert.calledOnceWithExactly(showViewStub, 'autofill-view');
       assert.deepEqual(dispatchedAutofillEvents, [outEvent]);
     };
 
@@ -71,7 +71,6 @@ describeWithMockConnection('AutofillManager', () => {
         address: 'Crocodile Dundee',
         filledFields,
         matches: [{startIndex: 0, endIndex: 9, filledFieldIndex: 0}],
-        autofillModel: model,
       };
       await assertAutofillManagerEvent(inEvent, outEvent);
     });
@@ -118,7 +117,6 @@ describeWithMockConnection('AutofillManager', () => {
           {startIndex: 0, endIndex: 9, filledFieldIndex: 0},
           {startIndex: 10, endIndex: 16, filledFieldIndex: 1},
         ],
-        autofillModel: model,
       };
       await assertAutofillManagerEvent(inEvent, outEvent);
     });
@@ -152,7 +150,6 @@ describeWithMockConnection('AutofillManager', () => {
         address: 'Outback Road 1\nMelbourne',
         filledFields,
         matches: [{startIndex: 0, endIndex: 24, filledFieldIndex: 0}],
-        autofillModel: model,
       };
       await assertAutofillManagerEvent(inEvent, outEvent);
     });
@@ -186,7 +183,6 @@ describeWithMockConnection('AutofillManager', () => {
         address: 'Outback Road 1, Melbourne',
         filledFields,
         matches: [{startIndex: 0, endIndex: 25, filledFieldIndex: 0}],
-        autofillModel: model,
       };
       await assertAutofillManagerEvent(inEvent, outEvent);
     });
@@ -220,7 +216,6 @@ describeWithMockConnection('AutofillManager', () => {
         address: '+1234567890',
         filledFields,
         matches: [{startIndex: 0, endIndex: 11, filledFieldIndex: 0}],
-        autofillModel: model,
       };
       await assertAutofillManagerEvent(inEvent, outEvent);
     });
@@ -264,7 +259,6 @@ describeWithMockConnection('AutofillManager', () => {
         address: 'Crocodile Dundee',
         filledFields,
         matches: [{startIndex: 0, endIndex: 9, filledFieldIndex: 0}],
-        autofillModel: model,
       };
       await assertAutofillManagerEvent(inEvent, outEvent);
     });

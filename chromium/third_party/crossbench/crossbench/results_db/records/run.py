@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from typing import TYPE_CHECKING, Self
 
 from sqlalchemy import orm
@@ -42,3 +43,13 @@ class RunRecord(BaseRecord):
   browser: Mapped[BrowserRecord] = orm.relationship()
 
   story: Mapped[str] = orm.mapped_column(orm_types.String())
+
+  error_count: Mapped[int] = orm.mapped_column(
+      orm_types.Integer(), nullable=True)
+  errors: Mapped[orm_types.JSON] = orm.mapped_column(
+      orm_types.JSON(), nullable=True)
+
+  start_datetime: Mapped[dt.datetime] = orm.mapped_column(
+      orm_types.DateTime(), nullable=True)
+  durations: Mapped[orm_types.JSON] = orm.mapped_column(
+      orm_types.JSON(), nullable=True)

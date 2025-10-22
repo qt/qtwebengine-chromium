@@ -104,7 +104,7 @@ ScriptWrappable* V8ScriptValueDeserializerForModules::ReadDOMObject(
           std::make_unique<RTCCertificateGenerator>();
       if (!certificate_generator)
         return nullptr;
-      rtc::scoped_refptr<rtc::RTCCertificate> certificate =
+      webrtc::scoped_refptr<webrtc::RTCCertificate> certificate =
           certificate_generator->FromPEM(pem_private_key, pem_certificate);
       if (!certificate)
         return nullptr;
@@ -337,8 +337,6 @@ CryptoKey* V8ScriptValueDeserializerForModules::ReadCryptoKey() {
     }
     case kEd25519KeyTag:
     case kX25519KeyTag: {
-      if (!RuntimeEnabledFeatures::WebCryptoCurve25519Enabled())
-        break;
       uint32_t raw_id;
       WebCryptoAlgorithmId id;
       uint32_t raw_key_type;
@@ -475,7 +473,7 @@ RTCDataChannel* V8ScriptValueDeserializerForModules::ReadRTCDataChannel() {
   }
 
   using NativeDataChannelVector =
-      Vector<rtc::scoped_refptr<webrtc::DataChannelInterface>>;
+      Vector<webrtc::scoped_refptr<webrtc::DataChannelInterface>>;
 
   const NativeDataChannelVector& channels = attachment->DataChannels();
   if (index >= attachment->size() || !channels[index]) {

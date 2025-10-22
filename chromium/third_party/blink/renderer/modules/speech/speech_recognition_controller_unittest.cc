@@ -4,9 +4,13 @@
 
 #include "third_party/blink/renderer/modules/speech/speech_recognition_controller.h"
 
+#include "third_party/blink/renderer/bindings/modules/v8/v8_observable_array_speech_recognition_phrase.h"
+#include "third_party/blink/renderer/core/frame/local_dom_window.h"
 #include "third_party/blink/renderer/core/frame/local_frame.h"
 #include "third_party/blink/renderer/core/testing/page_test_base.h"
 #include "third_party/blink/renderer/modules/speech/speech_grammar_list.h"
+#include "third_party/blink/renderer/modules/speech/speech_recognition.h"
+#include "third_party/blink/renderer/modules/speech/speech_recognition_phrase.h"
 
 namespace blink {
 
@@ -21,12 +25,15 @@ class SpeechRecognitionControllerTest : public PageTestBase {
 
   void SetUp() override {
     PageTestBase::SetUp();
-    context_ = MakeGarbageCollected<SpeechRecognitionContext>(nullptr);
-    controller_ = SpeechRecognitionController::From(*GetFrame().DomWindow());
+    LocalDOMWindow* window = GetDocument().GetFrame()->DomWindow();
+    speech_recognition_ = SpeechRecognition::Create(window);
+    phrases_ = speech_recognition_->phrases();
+    controller_ = SpeechRecognitionController::From(*window);
   }
 
   void TearDown() override {
-    context_ = nullptr;
+    phrases_ = nullptr;
+    speech_recognition_ = nullptr;
     controller_ = nullptr;
     PageTestBase::TearDown();
   }
@@ -35,20 +42,20 @@ class SpeechRecognitionControllerTest : public PageTestBase {
     SpeechGrammarList* grammars = MakeGarbageCollected<SpeechGrammarList>();
     return controller_->BuildStartSpeechRecognitionRequestParams(
         remote_.InitWithNewPipeAndPassReceiver(),
-        receiver_.InitWithNewPipeAndPassRemote(), *grammars, context_, "en-US",
+        receiver_.InitWithNewPipeAndPassRemote(), *grammars, phrases_.Get(),
+        "en-US",
         /*continuous=*/true, /*interim_results=*/true, /*max_alternatives=*/5,
         /*on_device=*/true, /*allow_cloud_fallback=*/true);
   }
 
-  void SetSpeechRecognitionContext() {
-    SpeechRecognitionPhraseList* list =
-        MakeGarbageCollected<SpeechRecognitionPhraseList>();
-    list->addItem(MakeGarbageCollected<SpeechRecognitionPhrase>("text", 2.0));
-    context_->setPhrases(list);
+  void SetSpeechRecognitionPhrases() {
+    phrases_->push_back(
+        MakeGarbageCollected<SpeechRecognitionPhrase>("text", 2.0));
   }
 
  private:
-  Persistent<SpeechRecognitionContext> context_;
+  Persistent<V8ObservableArraySpeechRecognitionPhrase> phrases_;
+  Persistent<SpeechRecognition> speech_recognition_;
   Persistent<SpeechRecognitionController> controller_;
   mojo::PendingRemote<media::mojom::blink::SpeechRecognitionSession> remote_;
   mojo::PendingReceiver<media::mojom::blink::SpeechRecognitionSessionClient>
@@ -70,8 +77,8 @@ TEST_F(SpeechRecognitionControllerTest, BuildParams) {
 }
 
 TEST_F(SpeechRecognitionControllerTest,
-       BuildParamsWithSpeechRecognitionContext) {
-  SetSpeechRecognitionContext();
+       BuildParamsWithSpeechRecognitionPhrases) {
+  SetSpeechRecognitionPhrases();
   auto params = BuildParams();
   EXPECT_FALSE(params->recognition_context.is_null());
   EXPECT_EQ(params->recognition_context->phrases.size(), (unsigned int)1);

@@ -106,15 +106,15 @@ RenderStep::RenderStepID variant_id(PrimitiveType type, bool hasColor, bool hasT
 
 VerticesRenderStep::VerticesRenderStep(PrimitiveType type, bool hasColor, bool hasTexCoords)
         : RenderStep(variant_id(type, hasColor, hasTexCoords),
-                     hasColor ? Flags::kEmitsPrimitiveColor | Flags::kPerformsShading
-                              : Flags::kPerformsShading,
+                     (hasColor ? Flags::kEmitsPrimitiveColor : Flags::kNone) |
+                     Flags::kPerformsShading | Flags::kAppendVertices,
                      /*uniforms=*/{{"localToDevice", SkSLType::kFloat4x4},
                                    {"depth", SkSLType::kFloat}},
                      type,
                      kDirectDepthGEqualPass,
-                     /*vertexAttrs=*/  kAttributes[2*hasTexCoords + hasColor],
-                     /*instanceAttrs=*/{},
-                     /*varyings=*/     kVaryings[hasColor])
+                     /*staticAttrs=*/ {},
+                     /*appendAttrs=*/kAttributes[2*hasTexCoords + hasColor],
+                     /*varyings=*/   kVaryings[hasColor])
         , fHasColor(hasColor)
         , fHasTexCoords(hasTexCoords) {}
 
@@ -208,6 +208,7 @@ void VerticesRenderStep::writeUniformsAndTextures(const DrawParams& params,
                                                   PipelineDataGatherer* gatherer) const {
     // Vertices are transformed on the GPU. Store PaintDepth as a uniform to avoid copying the
     // same depth for each vertex.
+    SkDEBUGCODE(gatherer->checkRewind());
     SkDEBUGCODE(UniformExpectationsValidator uev(gatherer, this->uniforms());)
     gatherer->write(params.transform().matrix());
     gatherer->write(params.order().depthAsFloat());

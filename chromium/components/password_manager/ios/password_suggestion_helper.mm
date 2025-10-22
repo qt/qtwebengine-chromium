@@ -4,6 +4,7 @@
 
 #import "components/password_manager/ios/password_suggestion_helper.h"
 
+#import <algorithm>
 #import <utility>
 
 #import "base/feature_list.h"
@@ -18,7 +19,6 @@
 #import "components/password_manager/core/browser/features/password_features.h"
 #import "components/password_manager/core/browser/password_manager_interface.h"
 #import "components/password_manager/core/browser/password_ui_utils.h"
-#import "components/password_manager/core/common/password_manager_features.h"
 #import "components/password_manager/ios/account_select_fill_data.h"
 #import "components/password_manager/ios/features.h"
 #import "components/password_manager/ios/ios_password_manager_driver_factory.h"
@@ -223,21 +223,25 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
         realm = SysUTF8ToNSString(password_manager::GetShownOrigin(origin));
       }
 
+      autofill::SuggestionType suggestionType =
+          usernameAndRealm.is_backup_credential
+              ? autofill::SuggestionType::kBackupPasswordEntry
+              : autofill::SuggestionType::kPasswordEntry;
+
       FormSuggestionMetadata metadata;
       metadata.is_single_username_form = is_single_username_form;
       metadata.likely_from_real_password_field = isPasswordField;
+
       [results
-          addObject:
-              [FormSuggestion
-                         suggestionWithValue:username
-                          displayDescription:realm
-                                        icon:nil
-                                        type:autofill::SuggestionType::
-                                                 kPasswordEntry
-                                     payload:autofill::Suggestion::Payload()
-                              requiresReauth:YES
-                  acceptanceA11yAnnouncement:nil
-                                    metadata:std::move(metadata)]];
+          addObject:[FormSuggestion suggestionWithValue:username
+                                     displayDescription:realm
+                                                   icon:nil
+                                                   type:suggestionType
+                                                payload:autofill::Suggestion::
+                                                            Payload()
+                                         requiresReauth:YES
+                             acceptanceA11yAnnouncement:nil
+                                               metadata:std::move(metadata)]];
     }
   }
 
@@ -315,6 +319,7 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
 
 - (password_manager::FillDataRetrievalResult)
     passwordFillDataForUsername:(NSString*)username
+             isBackupCredential:(BOOL)isBackupCredential
         likelyRealPasswordField:(bool)passwordField
                  formIdentifier:(autofill::FormRendererId)formId
                 fieldIdentifier:(autofill::FieldRendererId)fieldId
@@ -329,12 +334,14 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
     return base::unexpected(
         password_manager::FillDataRetrievalStatus::kNoFrame);
   }
-  return fill_data->GetFillData(SysNSStringToUTF16(username), formId, fieldId,
+  return fill_data->GetFillData(SysNSStringToUTF16(username),
+                                isBackupCredential, formId, fieldId,
                                 passwordField);
 }
 
 - (password_manager::FillDataRetrievalResult)
     passwordFillDataForUsername:(NSString*)username
+             isBackupCredential:(BOOL)isBackupCredential
                      forFrameId:(const std::string&)frameId {
   auto [fill_data, is_new] = [self fillDataForFrameId:frameId];
   if (is_new) {
@@ -346,7 +353,8 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
     return base::unexpected(
         password_manager::FillDataRetrievalStatus::kNoFrame);
   }
-  return fill_data->GetFillData(SysNSStringToUTF16(username));
+  return fill_data->GetFillData(SysNSStringToUTF16(username),
+                                isBackupCredential);
 }
 
 - (void)resetForNewPage {
@@ -384,7 +392,7 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
 
 - (BOOL)isPasswordFieldOnForm:(FormSuggestionProviderQuery*)formQuery
                      webFrame:(web::WebFrame*)webFrame {
-  if (![formQuery.fieldType isEqual:kObfuscatedFieldType]) {
+  if (![formQuery.fieldType isEqualToString:kObfuscatedFieldType]) {
     return NO;
   }
 
@@ -394,15 +402,11 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
     return YES;
   }
 
-  bool useNewDetection = base::FeatureList::IsEnabled(
-      password_manager::features::kIOSImprovePasswordFieldDetectionForFilling);
-
   // If the new approach to detect password fields is enabled, first
   // check if the Password Manager thinks it is a password field, then fallback
   // to using Autofill if the Password Manager verdict is negative.
-  return (useNewDetection &&
-          [self isPasswordFieldFromPasswordManagerPerspective:formQuery
-                                                     webFrame:webFrame]) ||
+  return [self isPasswordFieldFromPasswordManagerPerspective:formQuery
+                                                    webFrame:webFrame] ||
          [self isPasswordFieldFromAutofillPerspective:formQuery
                                              webFrame:webFrame];
 }
@@ -437,25 +441,33 @@ base::TimeDelta GetCleanupTaskPeriodMs() {
     return YES;
   }
 
-  autofill::FieldType fieldType = (*it)->Type().GetStorableType();
-  switch (GroupTypeOfFieldType(fieldType)) {
-    case autofill::FieldTypeGroup::kPasswordField:
-    case autofill::FieldTypeGroup::kNoGroup:
-      return YES;  // May be a password field.
-    case autofill::FieldTypeGroup::kName:
-    case autofill::FieldTypeGroup::kEmail:
-    case autofill::FieldTypeGroup::kCompany:
-    case autofill::FieldTypeGroup::kAddress:
-    case autofill::FieldTypeGroup::kPhone:
-    case autofill::FieldTypeGroup::kCreditCard:
-    case autofill::FieldTypeGroup::kTransaction:
-    case autofill::FieldTypeGroup::kUsernameField:
-    case autofill::FieldTypeGroup::kUnfillable:
-    case autofill::FieldTypeGroup::kIban:
-    case autofill::FieldTypeGroup::kStandaloneCvcField:
-    case autofill::FieldTypeGroup::kAutofillAi:
-      return NO;
-  }
+  return std::ranges::any_of(
+             (*it)->Type().GetTypes(),
+             [](autofill::FieldType fieldType) {
+               switch (GroupTypeOfFieldType(fieldType)) {
+                 case autofill::FieldTypeGroup::kPasswordField:
+                 case autofill::FieldTypeGroup::kNoGroup:
+                   return true;  // May be a password field.
+                 case autofill::FieldTypeGroup::kName:
+                 case autofill::FieldTypeGroup::kEmail:
+                 case autofill::FieldTypeGroup::kCompany:
+                 case autofill::FieldTypeGroup::kAddress:
+                 case autofill::FieldTypeGroup::kPhone:
+                 case autofill::FieldTypeGroup::kCreditCard:
+                 case autofill::FieldTypeGroup::kTransaction:
+                 case autofill::FieldTypeGroup::kUsernameField:
+                 case autofill::FieldTypeGroup::kUnfillable:
+                 case autofill::FieldTypeGroup::kIban:
+                 case autofill::FieldTypeGroup::kStandaloneCvcField:
+                 case autofill::FieldTypeGroup::kAutofillAi:
+                 case autofill::FieldTypeGroup::kLoyaltyCard:
+                 case autofill::FieldTypeGroup::kOneTimePassword:
+                   return false;
+               }
+               NOTREACHED();
+             })
+             ? YES
+             : NO;
 }
 
 #pragma mark - FillDataProvider

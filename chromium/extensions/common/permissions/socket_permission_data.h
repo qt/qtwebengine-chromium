@@ -10,13 +10,6 @@
 #include "extensions/common/permissions/socket_permission_entry.h"
 #include "ipc/ipc_param_traits.h"
 
-namespace ipc_fuzzer {
-template <class T>
-struct FuzzTraits;
-template <class T>
-struct GenerateTraits;
-}  // namespace ipc_fuzzer
-
 namespace extensions {
 
 // A pattern that can be used to match socket permission.
@@ -54,14 +47,14 @@ class SocketPermissionData {
     return a.entry_ == b.entry_;
   }
 
-  // Check if |param| (which must be a SocketPermissionData::CheckParam)
-  // matches the spec of |this|.
+  // Check if `param` (which must be a SocketPermissionData::CheckParam)
+  // matches the spec of `this`.
   bool Check(const APIPermission::CheckParam* param) const;
 
-  // Convert |this| into a base::Value.
+  // Convert `this` into a base::Value.
   std::unique_ptr<base::Value> ToValue() const;
 
-  // Populate |this| from a base::Value.
+  // Populate `this` from a base::Value.
   bool FromValue(const base::Value* value);
 
   // TODO(bryeung): SocketPermissionData should be encoded as a base::Value
@@ -75,8 +68,6 @@ class SocketPermissionData {
  private:
   // Friend so ParamTraits can serialize us.
   friend struct IPC::ParamTraits<SocketPermissionData>;
-  friend struct ipc_fuzzer::FuzzTraits<SocketPermissionData>;
-  friend struct ipc_fuzzer::GenerateTraits<SocketPermissionData>;
 
   SocketPermissionEntry& entry();
 

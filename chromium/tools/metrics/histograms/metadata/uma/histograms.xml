@@ -123,6 +123,23 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="UMA.CheckForClonedInstallDuration" units="microseconds"
+    expires_after="2026-02-28">
+  <owner>dgn@chromium.org</owner>
+  <owner>mpearson@chromium.org</owner>
+  <owner>src/base/metrics/OWNERS</owner>
+  <summary>
+    Records the total duration of the CheckForClonedInstall() call that happens
+    during startup when trying to determine whether the current client is
+    running on a cloned install. This call is asynchronous, runs as a
+    best-effort task, and could potentially take a while.
+
+    The metric is reported for only clients with high-resolution clocks (a
+    subset of Windows clients won't report it, see the
+    Windows.HasHighResolutionTimeTicks histogram).
+  </summary>
+</histogram>
+
 <histogram name="UMA.ChildProcess.Ping.{Source}" enum="UmaChildPingStatus"
     expires_after="2026-02-28">
   <owner>lucnguyen@google.com</owner>
@@ -216,7 +233,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="UMA.CrosPerUser.DaemonStoreWriteFailed"
     enum="PerUserDaemonStoreFail" expires_after="2023-04-16">
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>
     Records the status of writing the per-user metrics state to daemon-store (or
@@ -227,7 +244,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="UMA.CrosPerUser.IdReset" enum="PerUserIdType"
     expires_after="2024-02-04">
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>asvitkine@chromium.org</owner>
   <summary>
     Counts the number of times an ID was reset. The client ID is reset when a
@@ -239,7 +256,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="UMA.CrosPerUser.UserLogStoreState" enum="PerUserLogStoreState"
     expires_after="2023-04-16">
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>asvitkine@chromium.org</owner>
   <summary>
     Records the state that metrics service is in when user log store was set or
@@ -265,8 +282,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.DriveIs{Attribute}Result" enum="OptionalBoolRecord"
-    expires_after="2025-08-31">
-  <owner>spvw@chromium.org</owner>
+    expires_after="2026-01-04">
+  <owner>spvm@chromium.org</owner>
   <owner>catan-team@chromium.org</owner>
   <summary>
     Whether the hard drive containing either the user profile or chrome binary
@@ -323,6 +340,17 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="UMA.FileMetricsProvider.FRELimitResult"
+    enum="FileMetricsProviderFRELimitResult" expires_after="2026-02-28">
+  <owner>rcanoaparicio@google.com</owner>
+  <owner>src/base/metrics/OWNERS</owner>
+  <summary>
+    Records how the number of files in the metrics directory relates to the FRE
+    amount of files limit. This is used to determine whether the metrics
+    directory is being polluted with too many files on FRE.
+  </summary>
+</histogram>
+
 <histogram name="UMA.FileMetricsProvider.InitialAccessResult"
     enum="FileMetricsProviderAccessResult" expires_after="2026-02-28">
   <owner>asvitkine@chromium.org</owner>
@@ -347,6 +375,22 @@ chromium-metrics-reviews@google.com.
     <variant name="PlatformExperienceHelperMetrics"/>
     <variant name="SetupMetrics"/>
   </token>
+</histogram>
+
+<histogram name="UMA.GetMachineIdDuration" units="microseconds"
+    expires_after="2026-02-28">
+  <owner>dgn@chromium.org</owner>
+  <owner>mpearson@chromium.org</owner>
+  <owner>src/base/metrics/OWNERS</owner>
+  <summary>
+    Records the duration of the GetMachineId() call that happens during startup
+    when trying to determine whether the current client is running on a cloned
+    install.
+
+    The metric is reported for only clients with high-resolution clocks (a
+    subset of Windows clients won't report it, see the
+    Windows.HasHighResolutionTimeTicks histogram).
+  </summary>
 </histogram>
 
 <histogram name="UMA.InitialStabilityRecordBeacon" enum="Boolean"
@@ -645,8 +689,20 @@ chromium-metrics-reviews@google.com.
   </summary>
 </histogram>
 
+<histogram name="UMA.PersistentHistograms.MountExistingCountsStorage"
+    enum="MountExistingCountsStorageResult" expires_after="2026-02-28">
+  <owner>rogerm@chromium.org</owner>
+  <owner>src/base/metrics/OWNERS</owner>
+  <summary>
+    Counts the success/failure outcomes of reading data from a persistent sample
+    vector.
+
+    https://issues.chromium.org/410544723
+  </summary>
+</histogram>
+
 <histogram name="UMA.PrimaryUserType" enum="UserType"
-    expires_after="2025-09-14">
+    expires_after="2026-01-18">
   <owner>michaelpg@chromium.org</owner>
   <owner>yilkal@chromium.org</owner>
   <owner>src/base/metrics/OWNERS</owner>
@@ -811,7 +867,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="UMA.StructuredMetrics.EventFileSize" units="KB"
     expires_after="2024-02-01">
   <owner>tby@chromium.org</owner>
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <summary>
     File size of events recorded outside of Chrome. This metric is recorded for
     every file processed by an external metrics scan, which reads the events
@@ -822,7 +878,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="UMA.StructuredMetrics.EventRecordingState2"
     enum="StructuredMetricsEventRecordingState2" expires_after="2024-02-01">
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>tby@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>asvitkine@chromium.org</owner>
@@ -836,7 +892,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="UMA.StructuredMetrics.EventSerializedSize" units="bytes"
     expires_after="2024-04-28">
   <owner>andrewbregger@google.com</owner>
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <summary>
     The serialized size in bytes of a Structured Metrics event. This is the size
     the event uses when serialized to be uploaded.
@@ -845,7 +901,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="UMA.StructuredMetrics.EventsRecordedBeforeInit" units="scans"
     expires_after="2024-04-28">
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>tby@chromium.org</owner>
   <summary>
     Number of events recorded before private keys are initialized to hash
@@ -856,7 +912,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="UMA.StructuredMetrics.ExternalMetricScansPerUpload"
     units="count" expires_after="2024-04-28">
   <owner>andrewbregger@google.com</owner>
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <summary>
     The number of external metric scans from platform2 were performed since the
     last Structured Metric upload. An external metric scan collects events that
@@ -866,8 +922,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.StructuredMetrics.InternalError2"
-    enum="StructuredMetricsInternalError2" expires_after="2025-09-14">
-  <owner>jongahn@chromium.org</owner>
+    enum="StructuredMetricsInternalError2" expires_after="2025-11-16">
+  <owner>troywang@google.com</owner>
   <owner>tby@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>asvitkine@chromium.org</owner>
@@ -879,7 +935,7 @@ chromium-metrics-reviews@google.com.
 
 <histogram name="UMA.StructuredMetrics.KeyValidationState"
     enum="StructuredMetricsKeyValidationState" expires_after="2024-02-01">
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>tby@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>asvitkine@chromium.org</owner>
@@ -894,8 +950,8 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.StructuredMetrics.NumEventsInUpload" units="count"
-    expires_after="2025-09-14">
-  <owner>jongahn@chromium.org</owner>
+    expires_after="2026-01-18">
+  <owner>troywang@google.com</owner>
   <owner>tby@chromium.org</owner>
   <owner>rkaplow@chromium.org</owner>
   <owner>asvitkine@chromium.org</owner>
@@ -906,9 +962,9 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.StructuredMetrics.NumFilesPerExternalMetricsScan"
-    units="count" expires_after="2025-09-14">
+    units="count" expires_after="2026-01-18">
   <owner>tby@chromium.org</owner>
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <summary>
     How many files in the external Structured metrics directory before an
     external metrics scan is triggered. The external metrics scan will read the
@@ -919,7 +975,7 @@ chromium-metrics-reviews@google.com.
 <histogram name="UMA.StructuredMetrics.UploadSize" units="bytes"
     expires_after="2024-02-01">
   <owner>andrewbregger@google.com</owner>
-  <owner>jongahn@chromium.org</owner>
+  <owner>troywang@google.com</owner>
   <owner>tby@chromium.org</owner>
   <summary>
     The serialized size in bytes of the Structured Metrics payload attached to
@@ -929,7 +985,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.TPMMetricsProvider.ReadSuccess" enum="Boolean"
-    expires_after="2025-08-31">
+    expires_after="2026-01-18">
   <owner>psarouthakis@google.com</owner>
   <owner>kristianm@google.com</owner>
   <summary>
@@ -939,7 +995,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.TPMMetricsProvider.UnknownID" enum="Boolean"
-    expires_after="2025-08-31">
+    expires_after="2026-01-18">
   <owner>psarouthakis@google.com</owner>
   <owner>kristianm@google.com</owner>
   <summary>
@@ -1072,7 +1128,7 @@ chromium-metrics-reviews@google.com.
 </histogram>
 
 <histogram name="UMA.UserDemographics.Status" enum="UserDemographicsStatus"
-    expires_after="2025-08-31">
+    expires_after="2026-01-04">
   <owner>rogerm@google.com</owner>
   <owner>src/base/metrics/OWNERS</owner>
   <summary>

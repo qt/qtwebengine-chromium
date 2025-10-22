@@ -105,7 +105,7 @@ void ImageLayerBridge::SetImage(scoped_refptr<StaticBitmapImage> image) {
 
   image_ = std::move(image);
   if (image_) {
-    const bool image_is_opaque = image_->CurrentFrameKnownToBeOpaque();
+    const bool image_is_opaque = image_->IsOpaque();
     if (is_opaque_) {
       // If we in opaque mode but image might have transparency we need to
       // ensure its opacity is not used.
@@ -159,18 +159,6 @@ bool ImageLayerBridge::PrepareTransferableResource(
 
   const bool gpu_compositing = SharedGpuContext::IsGpuCompositingEnabled();
 
-  if (!gpu_compositing) {
-    // Readback if needed and retain the readback in image_ to prevent future
-    // readbacks.
-    // Note: Switching to unaccelerated may change the value of
-    // image_->IsOriginTopLeft(), so it is important to make the switch before
-    // calling IsOriginTopLeft().
-    image_ = image_->MakeUnaccelerated();
-    if (!image_) {
-      return false;
-    }
-  }
-
   if (gpu_compositing) {
     scoped_refptr<StaticBitmapImage> image_for_compositor =
         MakeAccelerated(image_, SharedGpuContext::ContextProviderWrapper());
@@ -187,26 +175,26 @@ bool ImageLayerBridge::PrepareTransferableResource(
       return false;
     }
 
-    const gfx::Size size(image_for_compositor->width(),
-                         image_for_compositor->height());
+    viz::TransferableResource::MetadataOverride overrides = {
+        .color_space = gfx::ColorSpace(),
+        .alpha_type = kPremul_SkAlphaType,
+    };
 
-    bool is_overlay_candidate =
-        shared_image->usage().Has(gpu::SHARED_IMAGE_USAGE_SCANOUT);
-
-    *out_resource = viz::TransferableResource::MakeGpu(
-        shared_image, shared_image->GetTextureTarget(),
-        image_for_compositor->GetSyncToken(), size,
-        image_for_compositor->GetSharedImageFormat(), is_overlay_candidate,
-        viz::TransferableResource::ResourceSource::kImageLayerBridge);
-    out_resource->origin = image_for_compositor->IsOriginTopLeft()
-                               ? kTopLeft_GrSurfaceOrigin
-                               : kBottomLeft_GrSurfaceOrigin;
+    *out_resource = viz::TransferableResource::Make(
+        shared_image,
+        viz::TransferableResource::ResourceSource::kImageLayerBridge,
+        image_for_compositor->GetSyncToken(), overrides);
 
     auto func = WTF::BindOnce(&ImageLayerBridge::ResourceReleasedGpu,
                               WrapWeakPersistent(this),
                               std::move(image_for_compositor));
     *out_release_callback = std::move(func);
   } else {
+    image_ = image_->MakeUnaccelerated();
+    if (!image_) {
+      return false;
+    }
+
     sk_sp<SkImage> sk_image =
         image_->PaintImageForCurrentFrame().GetSwSkImage();
     if (!sk_image)
@@ -214,24 +202,15 @@ bool ImageLayerBridge::PrepareTransferableResource(
 
     const gfx::Size size(image_->width(), image_->height());
 
-    // Always convert to N32 format.  This is a constraint of the software
-    // compositor.
-    constexpr SkColorType dst_color_type = kN32_SkColorType;
-    // TODO(vasilyt): this used to be
-    // viz::SkColorTypeToResourceFormat(dst_color_type), but on some platforms
-    // (including Mac), kN32_SkColorType is BGRA8888 which is disallowed as a
-    // bitmap format. Deeper refactorings are needed to fix this properly; in
-    // the meantime, force the use of viz::SinglePlaneFormat::kRGBA_8888 as the
-    // resource format. This addresses assertion failures when serializing these
-    // bitmaps to the GPU process.
-    viz::SharedImageFormat format = viz::SinglePlaneFormat::kBGRA_8888;
-    SoftwareResource resource = CreateOrRecycleSoftwareResource(size, format);
+    SoftwareResource resource =
+        CreateOrRecycleSoftwareResource(size, image_->GetColorSpace());
     if (!resource.shared_image) {
       return false;
     }
 
     SkImageInfo dst_info =
-        SkImageInfo::Make(size.width(), size.height(), dst_color_type,
+        SkImageInfo::Make(size.width(), size.height(),
+                          ToClosestSkColorType(resource.shared_image->format()),
                           kPremul_SkAlphaType, sk_image->refColorSpace());
 
     // Copy from SkImage into SharedMemory owned by |resource|.
@@ -242,15 +221,10 @@ bool ImageLayerBridge::PrepareTransferableResource(
       return false;
     }
 
-    *out_resource = viz::TransferableResource::MakeSoftwareSharedImage(
-        resource.shared_image, resource.sync_token, size, format,
-        viz::TransferableResource::ResourceSource::kImageLayerBridge);
-    out_resource->origin = image_->IsOriginTopLeft()
-                               ? kTopLeft_GrSurfaceOrigin
-                               : kBottomLeft_GrSurfaceOrigin;
-    out_resource->color_space = sk_image->colorSpace()
-                                    ? gfx::ColorSpace(*sk_image->colorSpace())
-                                    : gfx::ColorSpace::CreateSRGB();
+    *out_resource = viz::TransferableResource::Make(
+        resource.shared_image,
+        viz::TransferableResource::ResourceSource::kImageLayerBridge,
+        resource.sync_token);
     auto func = WTF::BindOnce(&ImageLayerBridge::ResourceReleasedSoftware,
                               WrapWeakPersistent(this), std::move(resource));
     *out_release_callback = std::move(func);
@@ -262,15 +236,17 @@ bool ImageLayerBridge::PrepareTransferableResource(
 ImageLayerBridge::SoftwareResource
 ImageLayerBridge::CreateOrRecycleSoftwareResource(
     const gfx::Size& size,
-    viz::SharedImageFormat format) {
+    const gfx::ColorSpace& color_space) {
   // Must call SharedImageInterfaceProvider() first so all base::WeakPtr
   // restored in |resource.sii_provider| is updated.
   auto* sii_provider = SharedGpuContext::SharedImageInterfaceProvider();
   DCHECK(sii_provider);
   auto it = std::remove_if(
       recycled_software_resources_.begin(), recycled_software_resources_.end(),
-      [&size](const SoftwareResource& resource) {
-        return resource.shared_image->size() != size || !resource.sii_provider;
+      [&size, &color_space](const SoftwareResource& resource) {
+        return resource.shared_image->size() != size ||
+               resource.shared_image->color_space() != color_space ||
+               !resource.sii_provider;
       });
 
   recycled_software_resources_.Shrink(
@@ -290,7 +266,7 @@ ImageLayerBridge::CreateOrRecycleSoftwareResource(
   }
   resource.shared_image =
       shared_image_interface->CreateSharedImageForSoftwareCompositor(
-          {format, size, gfx::ColorSpace(),
+          {viz::SinglePlaneFormat::kBGRA_8888, size, color_space,
            gpu::SHARED_IMAGE_USAGE_CPU_WRITE_ONLY, "ImageLayerBridgeBitmap"});
 
   resource.sii_provider = sii_provider->GetWeakPtr();

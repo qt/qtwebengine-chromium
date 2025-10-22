@@ -163,7 +163,9 @@ bool HasWaylandDisplay(base::Environment* env);
 
 namespace android_webview {
 class AwBrowserContext;
+class AwBrowserContextStore;
 class AwFormDatabaseService;
+class AwMetricsServiceClient;
 class CookieManager;
 class JsSandboxIsolate;
 class OverlayProcessorWebView;
@@ -281,15 +283,17 @@ namespace enterprise_connectors {
 class LinuxKeyRotationCommand;
 }  // namespace enterprise_connectors
 namespace extensions {
-// TODO(https://crbug.com/356905053): Remove DesktopAndroidExtensionSystem
-// from here once ExtensionService is enabled for desktop android.
-class DesktopAndroidExtensionSystem;
 class InstalledLoader;
 class UnpackedInstaller;
 }  // namespace extensions
 namespace font_service::internal {
 class MappedFontFile;
 }
+
+namespace gfx {
+class WUCBackdrop;
+}
+
 namespace gl {
 struct GLImplementationParts;
 namespace init {
@@ -344,7 +348,6 @@ namespace memory_pressure {
 class UserLevelMemoryPressureSignalGenerator;
 }
 namespace metrics {
-class AndroidMetricsServiceClient;
 class CleanExitBeacon;
 }  // namespace metrics
 namespace midi {
@@ -444,12 +447,6 @@ class VrShell;
 namespace web {
 class WebMainLoop;
 }  // namespace web
-namespace weblayer {
-class BrowserContextImpl;
-class ContentBrowserClientImpl;
-class ProfileImpl;
-class WebLayerPathProvider;
-}  // namespace weblayer
 // NOTE: Please do not append entries here. Put them in the list above and keep
 // the list sorted.
 
@@ -505,7 +502,7 @@ class Thread;
 
 // NaCL doesn't support stack capture.
 // Android can hang in stack capture (crbug.com/959139).
-#if BUILDFLAG(IS_NACL) || BUILDFLAG(IS_ANDROID)
+#if BUILDFLAG(IS_ANDROID)
 #define CAPTURE_THREAD_RESTRICTIONS_STACK_TRACES() false
 #else
 // Stack capture is slow. Only enable it in developer builds, to avoid user
@@ -580,6 +577,9 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class ::StartupTabProviderImpl;
   friend class ::WebEngineBrowserMainParts;
   friend class android_webview::AwBrowserContext;
+  friend class android_webview::AwBrowserContextStore;
+  friend class android_webview::AwMetricsServiceClient;
+  friend class android_webview::CookieManager;
   friend class android_webview::ScopedAllowInitGLBindings;
   friend class ash::LoginEventRecorder;
   friend class ash::StartupCustomizationDocument;  // http://crosbug.com/11103
@@ -613,7 +613,6 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class cronet::CronetPrefsManager;
   friend class crypto::ScopedAllowBlockingForNSS;  // http://crbug.com/59847
   friend class drive::FakeDriveService;
-  friend class extensions::DesktopAndroidExtensionSystem;
   friend class extensions::InstalledLoader;
   friend class extensions::UnpackedInstaller;
   friend class font_service::internal::MappedFontFile;
@@ -622,7 +621,6 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class media::FileVideoCaptureDeviceFactory;
   friend class memory_instrumentation::OSMetrics;
   friend class memory_pressure::UserLevelMemoryPressureSignalGenerator;
-  friend class metrics::AndroidMetricsServiceClient;
   friend class metrics::CleanExitBeacon;
   friend class module_installer::ScopedAllowModulePakLoad;
   friend class net::GSSAPISharedLibrary;    // http://crbug.com/66702
@@ -643,10 +641,6 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class ui::DrmDisplayHostManager;
   friend class ui::ScopedAllowBlockingForGbmSurface;
   friend class ui::SelectFileDialogLinux;
-  friend class weblayer::BrowserContextImpl;
-  friend class weblayer::ContentBrowserClientImpl;
-  friend class weblayer::ProfileImpl;
-  friend class weblayer::WebLayerPathProvider;
 #if BUILDFLAG(IS_MAC)
   friend class printing::PrintBackendServiceImpl;
 #endif
@@ -654,6 +648,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class base::win::OSInfo;
   friend class content::SlowWebPreferenceCache;  // http://crbug.com/1262162
   friend class media::GpuMojoMediaClientWin;     // https://crbug.com/360642944
+  friend class gfx::WUCBackdrop;
 #endif
 #if BUILDFLAG(IS_IOS)
   friend class ::BrowserStateDirectoryBuilder;

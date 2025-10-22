@@ -41,7 +41,6 @@
 #include "third_party/blink/renderer/platform/graphics/draw_looper_builder.h"
 #include "third_party/blink/renderer/platform/graphics/flush_reason.h"
 #include "third_party/blink/renderer/platform/graphics/image_orientation.h"
-#include "third_party/blink/renderer/platform/graphics/memory_managed_paint_canvas.h"  // IWYU pragma: keep (https://github.com/clangd/clangd/issues/2044)
 #include "third_party/blink/renderer/platform/graphics/memory_managed_paint_recorder.h"
 #include "third_party/blink/renderer/platform/graphics/paint/paint_filter.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -55,6 +54,9 @@
 #include "ui/gfx/geometry/size.h"
 
 namespace blink {
+
+class MemoryManagedPaintCanvas;
+
 namespace {
 
 using ::blink_testing::ParseFilter;
@@ -91,7 +93,7 @@ class TestRenderingContext2D final
   int Width() const override { return 300; }
   int Height() const override { return 300; }
 
-  bool CanCreateCanvas2dResourceProvider() const override { return false; }
+  bool CanCreateCanvas2dResourceProvider() override { return false; }
 
   RespectImageOrientationEnum RespectImageOrientation() const override {
     return kRespectImageOrientation;
@@ -99,7 +101,7 @@ class TestRenderingContext2D final
 
   Color GetCurrentColor() const override { return Color::kBlack; }
 
-  cc::PaintCanvas* GetOrCreatePaintCanvas() override {
+  MemoryManagedPaintCanvas* GetOrCreatePaintCanvas() override {
     // Context child classes uses `GetOrCreatePaintCanvas` to check for context
     // loss.
     if (isContextLost()) [[unlikely]] {
@@ -109,7 +111,7 @@ class TestRenderingContext2D final
     return &recorder_.getRecordingCanvas();
   }
   using BaseRenderingContext2D::GetPaintCanvas;  // Pull the non-const overload.
-  const cc::PaintCanvas* GetPaintCanvas() const override {
+  const MemoryManagedPaintCanvas* GetPaintCanvas() const override {
     return &recorder_.getRecordingCanvas();
   }
   void WillDraw(const SkIRect& dirty_rect,
@@ -169,12 +171,20 @@ class TestRenderingContext2D final
     return true;
   }
 
+  CanvasResourceProvider* GetResourceProviderForCanvas2D() const override {
+    return nullptr;
+  }
+
   CanvasResourceProvider* GetOrCreateCanvas2DResourceProvider() override {
     return nullptr;
   }
 
   // Implementing pure virtual functions from CanvasRenderingContext.
   scoped_refptr<StaticBitmapImage> GetImage(FlushReason) override {
+    return nullptr;
+  }
+  std::unique_ptr<CanvasResourceProvider> ReplaceResourceProviderForCanvas2D(
+      std::unique_ptr<CanvasResourceProvider>) override {
     return nullptr;
   }
 
@@ -248,66 +258,6 @@ TEST(BaseRenderingContextLayersCSSTests,
   EXPECT_THAT(context->FlushRecorder(),
               RecordedOpsAre(DrawRecordOpEq(PaintOpEq<SaveLayerOp>(flags),
                                             PaintOpEq<RestoreOp>())));
-}
-
-TEST(BaseRenderingContextPlaceElementTests, DrawsPlacedElement) {
-  test::TaskEnvironment task_environment;
-  V8TestingScope scope;
-  NonThrowableExceptionState exception_state;
-
-  auto* context = MakeGarbageCollected<TestRenderingContext2D>(scope);
-  auto* img = MakeGarbageCollected<HTMLImageElement>(scope.GetDocument());
-  context->HostAsHTMLCanvasElement()->appendChild(img);
-
-  context->placeElement(img, /*x=*/12, /*y=*/34, exception_state);
-
-  EXPECT_THAT(context->FlushRecorder(),
-              RecordedOpsAre(PaintOpIs<DrawImageOp>()));
-}
-
-TEST(BaseRenderingContextPlaceElementTests, PlaceElementThrowsForNonChildNode) {
-  test::TaskEnvironment task_environment;
-  V8TestingScope scope;
-
-  auto* context = MakeGarbageCollected<TestRenderingContext2D>(scope);
-  auto* img = MakeGarbageCollected<HTMLImageElement>(scope.GetDocument());
-  // `img` isn't a child of `host`.
-
-  context->placeElement(img, /*x=*/12, /*y=*/34, scope.GetExceptionState());
-
-  EXPECT_EQ(scope.GetExceptionState().CodeAs<ESErrorType>(),
-            ESErrorType::kTypeError);
-  EXPECT_THAT(context->FlushRecorder(), RecordedOpsAre());
-}
-
-TEST(BaseRenderingContextPlaceElementTests, PlaceElementThrowsForChildCanvas) {
-  test::TaskEnvironment task_environment;
-  V8TestingScope scope;
-
-  auto* context = MakeGarbageCollected<TestRenderingContext2D>(scope);
-  auto* canvas = MakeGarbageCollected<HTMLCanvasElement>(scope.GetDocument());
-  context->HostAsHTMLCanvasElement()->appendChild(canvas);
-
-  context->placeElement(canvas, /*x=*/12, /*y=*/34, scope.GetExceptionState());
-
-  EXPECT_EQ(scope.GetExceptionState().CodeAs<ESErrorType>(),
-            ESErrorType::kTypeError);
-  EXPECT_THAT(context->FlushRecorder(), RecordedOpsAre());
-}
-
-TEST(BaseRenderingContextPlaceElementTests, PlaceElementAbortsIfContextLost) {
-  test::TaskEnvironment task_environment;
-  V8TestingScope scope;
-  NonThrowableExceptionState exception_state;
-
-  auto* context = MakeGarbageCollected<TestRenderingContext2D>(scope);
-  auto* img = MakeGarbageCollected<HTMLImageElement>(scope.GetDocument());
-  context->HostAsHTMLCanvasElement()->appendChild(img);
-
-  context->SetContextLost(CanvasRenderingContext::kRealLostContext);
-  context->placeElement(img, /*x=*/12, /*y=*/34, exception_state);
-
-  EXPECT_THAT(context->FlushRecorder(), RecordedOpsAre());
 }
 
 }  // namespace

@@ -18,11 +18,13 @@
  */
 
 #include <vulkan/vk_enum_string_helper.h>
+#include <vulkan/utility/vk_format_utils.h>
 #include "core_validation.h"
 #include "state_tracker/image_state.h"
 #include "state_tracker/buffer_state.h"
 #include "state_tracker/fence_state.h"
 #include "state_tracker/semaphore_state.h"
+#include "state_tracker/cmd_buffer_state.h"
 #include "generated/dispatch_functions.h"
 
 bool CoreChecks::CanSemaphoreExportFromImported(VkExternalSemaphoreHandleTypeFlagBits export_type,
@@ -52,7 +54,8 @@ bool CoreChecks::PreCallValidateGetMemoryFdKHR(VkDevice device, const VkMemoryGe
         if (!export_info) {
             skip |= LogError("VUID-VkMemoryGetFdInfoKHR-handleType-00671", pGetFdInfo->memory,
                              error_obj.location.dot(Field::pGetFdInfo).dot(Field::memory),
-                             "pNext chain does not contain an instance of VkExportMemoryAllocateInfo.");
+                             "pNext chain does not contain an instance of VkExportMemoryAllocateInfo.\n%s",
+                             PrintPNextChain(Struct::VkMemoryAllocateInfo, memory_state->allocate_info.pNext).c_str());
         } else if ((export_info->handleTypes & pGetFdInfo->handleType) == 0) {
             skip |= LogError("VUID-VkMemoryGetFdInfoKHR-handleType-00671", pGetFdInfo->memory,
                              error_obj.location.dot(Field::pGetFdInfo).dot(Field::memory),
@@ -89,7 +92,7 @@ bool CoreChecks::PreCallValidateImportSemaphoreFdKHR(VkDevice device, const VkIm
     }
 
     if (pImportSemaphoreFdInfo->handleType == VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_OPAQUE_FD_BIT) {
-        if (const auto payload_info = GetOpaqueInfoFromFdHandle(pImportSemaphoreFdInfo->fd)) {
+        if (const auto payload_info = device_state->GetOpaqueInfoFromFdHandle(pImportSemaphoreFdInfo->fd)) {
             if (sem_state->flags != payload_info->semaphore_flags) {
                 // would use string_VkSemaphoreCreateFlags but no valid flags yet
                 skip |= LogError("VUID-VkImportSemaphoreFdInfoKHR-handleType-03263", device, info_loc.dot(Field::semaphore),
@@ -203,7 +206,8 @@ bool CoreChecks::PreCallValidateGetMemoryWin32HandleKHR(VkDevice device, const V
         if (!export_info) {
             skip |= LogError("VUID-VkMemoryGetWin32HandleInfoKHR-handleType-00662", pGetWin32HandleInfo->memory,
                              error_obj.location.dot(Field::pGetWin32HandleInfo).dot(Field::memory),
-                             "pNext chain does not contain an instance of VkExportMemoryAllocateInfo.");
+                             "pNext chain does not contain an instance of VkExportMemoryAllocateInfo.\n%s",
+                             PrintPNextChain(Struct::VkMemoryAllocateInfo, memory_state->allocate_info.pNext).c_str());
         } else if ((export_info->handleTypes & pGetWin32HandleInfo->handleType) == 0) {
             skip |= LogError("VUID-VkMemoryGetWin32HandleInfoKHR-handleType-00662", pGetWin32HandleInfo->memory,
                              error_obj.location.dot(Field::pGetWin32HandleInfo).dot(Field::memory),
@@ -312,7 +316,9 @@ bool CoreChecks::PreCallValidateImportSemaphoreZirconHandleFUCHSIA(
 void CoreChecks::PostCallRecordImportSemaphoreZirconHandleFUCHSIA(
     VkDevice device, const VkImportSemaphoreZirconHandleInfoFUCHSIA *pImportSemaphoreZirconHandleInfo,
     const RecordObject &record_obj) {
-    if (VK_SUCCESS != record_obj.result) return;
+    if (record_obj.result != VK_SUCCESS) {
+        return;
+    }
     RecordImportSemaphoreState(pImportSemaphoreZirconHandleInfo->semaphore, pImportSemaphoreZirconHandleInfo->handleType,
                                pImportSemaphoreZirconHandleInfo->flags);
 }
@@ -320,7 +326,9 @@ void CoreChecks::PostCallRecordImportSemaphoreZirconHandleFUCHSIA(
 void CoreChecks::PostCallRecordGetSemaphoreZirconHandleFUCHSIA(VkDevice device,
                                                                const VkSemaphoreGetZirconHandleInfoFUCHSIA *pGetZirconHandleInfo,
                                                                zx_handle_t *pZirconHandle, const RecordObject &record_obj) {
-    if (VK_SUCCESS != record_obj.result) return;
+    if (record_obj.result != VK_SUCCESS) {
+        return;
+    }
     auto semaphore_state = Get<vvl::Semaphore>(pGetZirconHandleInfo->semaphore);
     RecordGetExternalSemaphoreState(*semaphore_state, pGetZirconHandleInfo->handleType);
 }

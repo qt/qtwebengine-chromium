@@ -9,7 +9,7 @@ import dataclasses
 import enum
 import functools
 import re
-from typing import Any, Final, Iterable, Optional, Self, Tuple
+from typing import Any, Final, Iterable, Optional, Self
 
 from typing_extensions import override
 
@@ -56,7 +56,11 @@ class BrowserVersionParseError(ValueError):
 
 
 class PartialBrowserVersionError(ValueError):
-  pass
+
+  def __init__(self, version: BrowserVersion):
+    self.version = version
+    msg = f"Got partial browser version: {repr(version)}"
+    super().__init__(msg)
 
 
 class BrowserVersionNoChannelError(ValueError):
@@ -71,7 +75,7 @@ class BrowserVersion(abc.ABC):
 
   _MAX_PART_VALUE: Final[int] = 0xFFFF
 
-  _parts: Tuple[int, ...]
+  _parts: tuple[int, ...]
   _channel: BrowserVersionChannel
   _version_str: str
 
@@ -94,7 +98,7 @@ class BrowserVersion(abc.ABC):
     return cls(parts, channel or parsed_channel, version_str)
 
   @classmethod
-  def _validate_parts(cls, parts: Iterable[int], value: str) -> Tuple[int, ...]:
+  def _validate_parts(cls, parts: Iterable[int], value: str) -> tuple[int, ...]:
     if parts is None:
       raise cls.parse_error("Invalid version format", value)
     parts_tpl = tuple(parts)
@@ -115,7 +119,7 @@ class BrowserVersion(abc.ABC):
   @abc.abstractmethod
   def _parse(
       cls,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     pass
 
   @classmethod
@@ -155,7 +159,7 @@ class BrowserVersion(abc.ABC):
     self._version_str = version_str
 
   @property
-  def parts(self) -> Tuple[int, ...]:
+  def parts(self) -> tuple[int, ...]:
     return self._parts
 
   @property
@@ -166,7 +170,7 @@ class BrowserVersion(abc.ABC):
   def parts_str(self) -> str:
     return ".".join(map(str, self._parts))
 
-  def comparable_parts(self, padded_len) -> Tuple[int, ...]:
+  def comparable_parts(self, padded_len) -> tuple[int, ...]:
     if self.is_complete:
       return self._parts
     padding = (self._MAX_PART_VALUE,) * (padded_len - len(self._parts))
@@ -193,13 +197,13 @@ class BrowserVersion(abc.ABC):
   @property
   def major(self) -> int:
     if not self._parts:
-      raise PartialBrowserVersionError()
+      raise PartialBrowserVersionError(self)
     return self._parts[0]
 
   @property
   def minor(self) -> int:
     if len(self._parts) <= 1:
-      raise PartialBrowserVersionError()
+      raise PartialBrowserVersionError(self)
     return self._parts[1]
 
   @property
@@ -247,7 +251,7 @@ class BrowserVersion(abc.ABC):
     pass
 
   @property
-  def key(self) -> Tuple[Tuple[int, ...], BrowserVersionChannel]:
+  def key(self) -> tuple[tuple[int, ...], BrowserVersionChannel]:
     return (self._parts, self._channel)
 
   def with_channel(self, channel: BrowserVersionChannel) -> Self:
@@ -311,7 +315,7 @@ class UnknownBrowserVersion(BrowserVersion):
   knowing which exact browser/version is used."""
 
   def __init__(self,
-               parts: Tuple[int, ...] = (),
+               parts: tuple[int, ...] = (),
                channel: BrowserVersionChannel = BrowserVersionChannel.ANY,
                version_str: str = "unknown") -> None:
     super().__init__(parts, BrowserVersionChannel.ANY, version_str)
@@ -320,7 +324,7 @@ class UnknownBrowserVersion(BrowserVersion):
   @override
   def _parse(
       cls,
-      full_version: str) -> Tuple[Tuple[int, ...], BrowserVersionChannel, str]:
+      full_version: str) -> tuple[tuple[int, ...], BrowserVersionChannel, str]:
     raise RuntimeError("UnknownBrowserVersion does not support parsing")
 
   @override

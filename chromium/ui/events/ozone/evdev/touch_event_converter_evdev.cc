@@ -2,10 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifdef UNSAFE_BUFFERS_BUILD
-// TODO(crbug.com/351564777): Remove this and convert code to safer constructs.
-#pragma allow_unsafe_buffers
-#endif
 
 #include "ui/events/ozone/evdev/touch_event_converter_evdev.h"
 
@@ -16,6 +12,7 @@
 #include <stdio.h>
 #include <unistd.h>
 
+#include <array>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -29,6 +26,7 @@
 #include "base/functional/callback.h"
 #include "base/logging.h"
 #include "base/metrics/histogram_macros.h"
+#include "base/notimplemented.h"
 #include "base/strings/strcat.h"
 #include "base/strings/string_number_conversions.h"
 #include "base/strings/string_split.h"
@@ -215,10 +213,8 @@ TouchEventConverterEvdev::TouchEventConverterEvdev(
           CreatePalmDetectionFilter(devinfo, shared_palm_state)),
       heatmap_palm_detection_filter_(
           CreateHeatmapPalmDetectionFilter(devinfo, shared_palm_state)),
-      palm_on_touch_major_max_(
-          base::FeatureList::IsEnabled(kEnablePalmOnMaxTouchMajor)),
-      palm_on_tool_type_palm_(
-          base::FeatureList::IsEnabled(kEnablePalmOnToolTypePalm)),
+      palm_on_touch_major_max_(true),
+      palm_on_tool_type_palm_(true),
       shared_palm_state_(shared_palm_state) {
   if (base::FeatureList::IsEnabled(kEnableNeuralPalmDetectionFilter) &&
       NeuralStylusPalmDetectionFilter::
@@ -456,8 +452,10 @@ void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
                "TouchEventConverterEvdev::OnFileCanReadWithoutBlocking", "fd",
                fd);
 
-  input_event inputs[kNumTouchEvdevSlots * 6 + 1];
-  ssize_t read_size = read(fd, inputs, sizeof(inputs));
+  std::array<input_event, kNumTouchEvdevSlots * 6 + 1> inputs;
+  ssize_t read_size =
+      read(fd, inputs.data(),
+           (inputs.size() * sizeof(decltype(inputs)::value_type)));
   if (read_size < 0) {
     if (errno == EINTR || errno == EAGAIN)
       return;
@@ -467,7 +465,7 @@ void TouchEventConverterEvdev::OnFileCanReadWithoutBlocking(int fd) {
     return;
   }
 
-  for (unsigned i = 0; i < read_size / sizeof(*inputs); i++) {
+  for (unsigned i = 0; i < read_size / sizeof(inputs[0]); i++) {
     if (!has_mt_) {
       // Emulate the device as an MT device with only 1 slot by inserting extra
       // MT protocol events in the stream.
@@ -687,8 +685,9 @@ void TouchEventConverterEvdev::ReportTouchEvent(
                              /* twist */ 0, event.tilt_x, event.tilt_y);
   int flags = event.stylus_button ? ui::EF_LEFT_MOUSE_BUTTON : 0;
   dispatcher_->DispatchTouchEvent(TouchEventParams(
-      input_device_.id, event.slot, event_type, gfx::PointF(event.x, event.y),
-      details, timestamp, flags));
+      input_device_.id, event.slot, event_type,
+      gfx::PointF(event.x - x_min_tuxels_, event.y - y_min_tuxels_), details,
+      timestamp, flags));
 }
 
 bool TouchEventConverterEvdev::MaybeCancelAllTouches() {

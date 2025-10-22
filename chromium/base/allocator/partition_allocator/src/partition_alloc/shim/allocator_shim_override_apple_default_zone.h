@@ -2,6 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#ifdef UNSAFE_BUFFERS_BUILD
+// TODO(crbug.com/40284755): Remove this and spanify to fix the errors.
+#pragma allow_unsafe_buffers
+#endif
+
 #ifdef PARTITION_ALLOC_SHIM_ALLOCATOR_SHIM_OVERRIDE_APPLE_DEFAULT_ZONE_H_
 #error This header is meant to be included only once by allocator_shim.cc
 #endif
@@ -177,7 +182,7 @@ void* MallocZoneMemalign(malloc_zone_t* zone, size_t alignment, size_t size) {
 }
 
 void MallocZoneFreeDefiniteSize(malloc_zone_t* zone, void* ptr, size_t size) {
-  return ShimFreeDefiniteSize(ptr, size, nullptr);
+  return ShimFreeWithSize(ptr, size, nullptr);
 }
 
 unsigned MallocZoneBatchMalloc(malloc_zone_t* zone,

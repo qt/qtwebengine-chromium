@@ -16,7 +16,6 @@
 #import "base/apple/foundation_util.h"
 #import "base/check_op.h"
 #import "base/containers/to_vector.h"
-#import "base/debug/crash_logging.h"
 #import "base/feature_list.h"
 #import "base/functional/bind.h"
 #import "base/memory/raw_ptr.h"
@@ -25,13 +24,13 @@
 #import "base/scoped_multi_source_observation.h"
 #import "base/strings/sys_string_conversions.h"
 #import "base/strings/utf_string_conversions.h"
-#include "base/types/expected_macros.h"
+#import "base/types/expected_macros.h"
 #import "base/values.h"
 #import "components/autofill/core/browser/filling/filling_product.h"
 #import "components/autofill/core/browser/form_structure.h"
 #import "components/autofill/core/browser/suggestions/suggestion_type.h"
 #import "components/autofill/core/common/autofill_features.h"
-#include "components/autofill/core/common/field_data_manager.h"
+#import "components/autofill/core/common/field_data_manager.h"
 #import "components/autofill/core/common/form_data.h"
 #import "components/autofill/core/common/password_form_fill_data.h"
 #import "components/autofill/core/common/password_form_generation_data.h"
@@ -153,8 +152,6 @@ AcceptedGeneratedPasswordSourceType DetermineGeneratedPasswordSource(
 }
 
 }  // namespace
-
-NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
 
 @interface SharedPasswordController ()
 
@@ -462,12 +459,6 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
                        forForm:(FormGlobalId)formId
                     fromSource:
                         (AutofillManager::Observer::FieldTypeSource)source {
-  if (source != AutofillManager::Observer::FieldTypeSource::kAutofillServer &&
-      !base::FeatureList::IsEnabled(
-          password_manager::features::kPasswordFormClientsideClassifier)) {
-    return;
-  }
-
   autofill::FormStructure* form_structure = manager.FindCachedFormById(formId);
   if (!form_structure) {
     return;
@@ -557,8 +548,8 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
                        }];
 
   if (self.isPasswordGenerated &&
-      ([formQuery.type isEqual:@"input"] ||
-       [formQuery.type isEqual:@"keyup"]) &&
+      ([formQuery.type isEqualToString:@"input"] ||
+       [formQuery.type isEqualToString:@"keyup"]) &&
       formQuery.fieldRendererID == self.passwordGeneratedIdentifier) {
     // On other platforms, when the user clicks on generation field, we show
     // password in clear text. And the user has the possibility to edit it. On
@@ -587,8 +578,8 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
     _lastTypedfieldIdentifier = formQuery.fieldRendererID;
     _lastTypedValue = formQuery.typedValue;
 
-    if ([formQuery.type isEqual:@"input"] ||
-        [formQuery.type isEqual:@"keyup"]) {
+    if ([formQuery.type isEqualToString:@"input"] ||
+        [formQuery.type isEqualToString:@"keyup"]) {
       [self.formHelper updateFieldDataOnUserInput:formQuery.fieldRendererID
                                           inFrame:frame
                                        inputValue:formQuery.typedValue];
@@ -638,10 +629,8 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
       continue;
     }
     DCHECK(self.delegate.passwordManagerClient);
-    NSString* value = [rawSuggestion.value
-        stringByAppendingString:kPasswordFormSuggestionSuffix];
     FormSuggestion* suggestion =
-        [FormSuggestion suggestionWithValue:value
+        [FormSuggestion suggestionWithValue:rawSuggestion.value
                          displayDescription:rawSuggestion.displayDescription
                                        icon:nil
                                        type:rawSuggestion.type
@@ -723,18 +712,18 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
           password_manager::metrics_util::PasswordDropdownSelectedOption::
               kPassword,
           [self IsOffTheRecord]);
-      DCHECK([suggestion.value hasSuffix:kPasswordFormSuggestionSuffix]);
-      NSString* username = [suggestion.value
-          substringToIndex:suggestion.value.length -
-                           kPasswordFormSuggestionSuffix.length];
+      NSString* username = suggestion.value;
       bool stateless = base::FeatureList::IsEnabled(
           password_manager::features::kIOSStatelessFillDataFlow);
+      bool isBackupCredential =
+          suggestion.type == autofill::SuggestionType::kBackupPasswordEntry;
 
       ASSIGN_OR_RETURN(
           password_manager::FillDataRetrievalResult fill_data_result,
           stateless
               ? [self.suggestionHelper
                     passwordFillDataForUsername:username
+                             isBackupCredential:isBackupCredential
                         likelyRealPasswordField:
                             suggestion.metadata.likely_from_real_password_field
                                  formIdentifier:suggestion.params
@@ -742,13 +731,12 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
                                 fieldIdentifier:suggestion.params
                                                     ->field_renderer_id
                                         frameId:suggestion.params->frame_id]
-              : [self.suggestionHelper passwordFillDataForUsername:username
-                                                        forFrameId:frameId],
+              : [self.suggestionHelper
+                    passwordFillDataForUsername:username
+                             isBackupCredential:isBackupCredential
+                                     forFrameId:frameId],
           [completion](auto e) {
             base::UmaHistogramEnumeration(kFillDataRetrievalStatusHistogram, e);
-            SCOPED_CRASH_KEY_NUMBER("Bug6401794", "fill_data_status",
-                                    static_cast<int>(e));
-            DUMP_WILL_BE_NOTREACHED();
             completion();
             return;
           });
@@ -909,7 +897,7 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
           /*log_debug_data*/ true)) {
     return NO;
   }
-  if (![fieldType isEqual:kObfuscatedFieldType]) {
+  if (![fieldType isEqualToString:kObfuscatedFieldType]) {
     return NO;
   }
   const PasswordFormGenerationData* generationData =
@@ -1176,16 +1164,21 @@ NSString* const kPasswordFormSuggestionSuffix = @" ••••••••";
       base::ToVector(form.fields(), &autofill::FormFieldData::global_id);
   switch (source) {
     case AutofillManager::Observer::FieldTypeSource::kAutofillServer:
+    case AutofillManager::Observer::FieldTypeSource::kAutofillAiModel:
       _passwordManager->ProcessAutofillPredictions(
           driver, form,
           manager.GetServerPredictionsForForm(globalFormId, field_ids));
       break;
     case AutofillManager::Observer::FieldTypeSource::kHeuristicsOrAutocomplete:
-      _passwordManager->ProcessClassificationModelPredictions(
-          driver, form,
-          manager.GetHeursticPredictionForForm(
-              autofill::HeuristicSource::kPasswordManagerMachineLearning,
-              globalFormId, field_ids));
+      if (base::FeatureList::IsEnabled(
+              password_manager::features::
+                  kApplyClientsideModelPredictionsForPasswordTypes)) {
+        _passwordManager->ProcessClassificationModelPredictions(
+            driver, form,
+            manager.GetHeursticPredictionForForm(
+                autofill::HeuristicSource::kPasswordManagerMachineLearning,
+                globalFormId, field_ids));
+      }
       break;
   }
 }
