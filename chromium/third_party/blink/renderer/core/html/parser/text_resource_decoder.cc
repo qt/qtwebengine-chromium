@@ -394,7 +394,7 @@ void TextResourceDecoder::AutoDetectEncodingIfAllowed(
   if (DetectTextEncoding(data.data(), base::checked_cast<uint32_t>(data.size()),
                          options_.HintEncoding(), options_.HintURL(),
                          options_.HintLanguage(), &detected_encoding)) {
-    if (base::EqualsCaseInsensitiveASCII(detected_encoding.GetName(), "ISO-2022-JP") &&
+    if (WTF::EqualIgnoringASCIICase(detected_encoding.GetName(), "ISO-2022-JP") &&
           RuntimeEnabledFeatures::
               RemoveCharsetAutoDetectionForISO2022JPEnabled()) {
       return;
