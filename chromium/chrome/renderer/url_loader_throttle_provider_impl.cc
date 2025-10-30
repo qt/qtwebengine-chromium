@@ -179,11 +179,10 @@ URLLoaderThrottleProviderImpl::CreateThrottles(
 #if BUILDFLAG(ENABLE_EXTENSIONS)
     auto throttle = std::make_unique<safe_browsing::RendererURLLoaderThrottle>(
         safe_browsing_.get(), local_frame_token,
-        extension_web_request_reporter_.get());
+        CloneExtensionWebRequestReporterPendingRemote());
 #else
     auto throttle = std::make_unique<safe_browsing::RendererURLLoaderThrottle>(
-        safe_browsing_.get(), local_frame_token,
-        CloneExtensionWebRequestReporterPendingRemote());
+        safe_browsing_.get(), local_frame_token);
 #endif  // BUILDFLAG(ENABLE_EXTENSIONS)
     throttles.emplace_back(std::move(throttle));
   }
