@@ -186,6 +186,10 @@ class COMPONENT_EXPORT(VIZ_SHARED_IMAGE_FORMAT) SharedImageFormat final {
   // NOTE: Supported only for true single-plane formats.
   int BitsPerPixel() const;
 
+  // NOTE: Supported only for true single-plane formats that have a fixed number
+  // of bytes per pixel, eg. not ETC1.
+  int BytesPerPixel() const;
+
   bool operator==(const SharedImageFormat& o) const;
   std::weak_ordering operator<=>(const SharedImageFormat& o) const;
 
