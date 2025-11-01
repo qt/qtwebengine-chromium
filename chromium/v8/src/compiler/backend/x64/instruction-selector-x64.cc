@@ -2159,9 +2159,9 @@ bool TryMatchLoadWord64AndShiftRight(
         if (!inputs[input_count - 1].IsImmediate()) return false;
         int32_t displacement;
         if (base::bits::SignedAddOverflow32(
-                static_cast<int32_t>(g.GetImmediateIntegerValue(mleft.displacement())),
+                                     g.GetImmediateIntegerValue(mleft.displacement()),
                                      4, &displacement) ||
-            !ValueFitsIntoImmediate(displacement)) {
+            !g.ValueFitsIntoImmediate(displacement)) {
           return false;
         }
         inputs[input_count - 1] =
