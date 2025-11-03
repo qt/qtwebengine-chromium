@@ -20,6 +20,7 @@
 
 #include <string.h> /* for memset() only ! */
 #include <stddef.h>
+#include <stdint.h>
 #include <limits.h>
 #include <ctype.h>
 #include <stdlib.h>
