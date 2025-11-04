@@ -4530,6 +4530,11 @@
       },
     },
     {
+      // Fix for https://crbug.com/454639396
+      name: "UseBoundedSelectionOffsetsInEditContextDeleteOperations",
+      status: "stable"
+    },
+    {
       // Android currently uses low-quality interpolation, while other platforms
       // default to medium-quality. This flag is for experimenting with changing
       // the value on Android. See: https://crbug.com/374315986.

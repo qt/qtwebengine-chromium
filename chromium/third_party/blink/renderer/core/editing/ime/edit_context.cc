@@ -402,6 +402,22 @@ uint32_t EditContext::OrderedSelectionEnd() const {
   return std::max(selection_start_, selection_end_);
 }
 
+uint32_t EditContext::BoundedSelectionStart() const {
+  if (RuntimeEnabledFeatures::
+          UseBoundedSelectionOffsetsInEditContextDeleteOperationsEnabled()) {
+    return std::min(selection_start_, text_.length());
+  }
+  return selection_start_;
+}
+
+uint32_t EditContext::BoundedSelectionEnd() const {
+  if (RuntimeEnabledFeatures::
+          UseBoundedSelectionOffsetsInEditContextDeleteOperationsEnabled()) {
+    return std::min(selection_end_, text_.length());
+  }
+  return selection_end_;
+}
+
 bool EditContext::SetCompositionFromExistingText(
     int composition_start,
     int composition_end,
@@ -499,8 +515,8 @@ void EditContext::DeleteBackward() {
   // delete whole selection.
   if (selection_start_ == selection_end_) {
     SetSelection(FindNextBoundaryOffset<BackwardGraphemeBoundaryStateMachine>(
-                     text_, selection_start_),
-                 selection_end_);
+                     text_, BoundedSelectionStart()),
+                 BoundedSelectionEnd());
   }
 
   DeleteCurrentSelection();
@@ -510,7 +526,7 @@ void EditContext::DeleteForward() {
   if (selection_start_ == selection_end_) {
     SetSelection(selection_start_,
                  FindNextBoundaryOffset<ForwardGraphemeBoundaryStateMachine>(
-                     text_, selection_start_));
+                     text_, BoundedSelectionStart()));
   }
 
   DeleteCurrentSelection();
@@ -521,8 +537,8 @@ void EditContext::DeleteWordBackward() {
     String text16bit(text_);
     text16bit.Ensure16Bit();
     // TODO(shihken): implement platform behaviors when the spec is finalized.
-    SetSelection(FindNextWordBackward(text16bit.Span16(), selection_end_),
-                 selection_end_);
+    SetSelection(FindNextWordBackward(text16bit.Span16(), BoundedSelectionEnd()),
+                 BoundedSelectionEnd());
   }
 
   DeleteCurrentSelection();
@@ -533,8 +549,8 @@ void EditContext::DeleteWordForward() {
     String text16bit(text_);
     text16bit.Ensure16Bit();
     // TODO(shihken): implement platform behaviors when the spec is finalized.
-    SetSelection(selection_start_,
-                 FindNextWordForward(text16bit.Span16(), selection_start_));
+    SetSelection(BoundedSelectionStart(),
+                 FindNextWordForward(text16bit.Span16(), BoundedSelectionStart()));
   }
 
   DeleteCurrentSelection();
