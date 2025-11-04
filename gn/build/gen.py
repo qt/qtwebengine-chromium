@@ -459,10 +459,10 @@ def WriteGNNinja(path, platform, host, options, args_list):
   ldflags = []
   libflags = []
 
-  cc = options.cc
-  cxx = options.cxx
-  ld = options.ld
-  ar = options.ar
+  cc = '"' + options.cc + '"'
+  cxx = '"' + options.cxx + '"'
+  ld = '"' + options.ld + '"'
+  ar = '"' + options.ar +'"'
 
   if not ar:
      if platform.is_msvc():
@@ -498,8 +498,8 @@ def WriteGNNinja(path, platform, host, options, args_list):
         cflags.append('-g')
       ldflags.append('-O3')
       if platform.is_darwin() and options.isysroot:
-        cflags.append('-isysroot ' +  options.isysroot)
-        ldflags.append('-isysroot ' +  options.isysroot)
+        cflags.append('-isysroot "' +  options.isysroot + '"')
+        ldflags.append('-isysroot "' +  options.isysroot + '"')
 
       # Use -fdata-sections and -ffunction-sections to place each function
       # or data item into its own section so --gc-sections can eliminate any

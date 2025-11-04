@@ -144,10 +144,9 @@ void RspTargetWriter::Run() {
                                    settings->build_settings()->root_path_utf8(),
                                    ESCAPE_COMMAND);
         for (size_t i = 0; i < all_lib_dirs.size(); i++) {
-          out_ << " -L\"";
+          out_ << " -L";
           lib_path_output.WriteDir(out_, all_lib_dirs[i],
                                    PathOutput::DIR_NO_LAST_SLASH);
-          out_ << "\"";
         }
         out_.flush();
       }
