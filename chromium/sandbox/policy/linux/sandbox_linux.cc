@@ -697,7 +697,9 @@ void SandboxLinux::ReportLandlockStatus() {
     landlock_state = LandlockState::kEnabled;
   }
 
+#if !BUILDFLAG(IS_QTWEBENGINE) // clang-21
   UMA_HISTOGRAM_ENUMERATION("Security.Sandbox.LandlockState", landlock_state);
+#endif
 }
 
 }  // namespace policy
