@@ -29,9 +29,11 @@
 #include "common/utilities.h"
 #include "gpu_info_util/SystemInfo.h"
 #include "image_util/loadimage.h"
+#include "libANGLE/Constants.h"
 #include "libANGLE/Context.h"
 #include "libANGLE/Device.h"
 #include "libANGLE/EGLSync.h"
+#include "libANGLE/ErrorStrings.h"
 #include "libANGLE/Image.h"
 #include "libANGLE/ResourceManager.h"
 #include "libANGLE/Stream.h"
@@ -951,6 +953,9 @@ Display::Display(EGLenum platform, EGLNativeDisplayType displayId, Device *eglDe
       mMemoryShaderCache(mBlobCache),
       mGlobalTextureShareGroupUsers(0),
       mGlobalSemaphoreShareGroupUsers(0),
+      mImageHandleAllocator(gl::IMPLEMENTATION_MAX_OBJECT_HANDLES),
+      mSurfaceHandleAllocator(gl::IMPLEMENTATION_MAX_OBJECT_HANDLES),
+      mSyncHandleAllocator(gl::IMPLEMENTATION_MAX_OBJECT_HANDLES),
       mTerminatedByApi(false)
 {}
 
@@ -1404,7 +1409,12 @@ Error Display::createWindowSurface(const Config *configuration,
         ANGLE_TRY(restoreLostDevice());
     }
 
-    SurfaceID id = {mSurfaceHandleAllocator.allocate()};
+    SurfaceID id;
+    if (!mSurfaceHandleAllocator.allocate(&id.value))
+    {
+        return Error(EGL_BAD_ALLOC, gl::err::kHandleExhaustion);
+    }
+
     SurfacePointer surface(new WindowSurface(mImplementation, id, configuration, window, attribs,
                                              mFrontendFeatures.forceRobustResourceInit.enabled),
                            this);
@@ -1434,7 +1444,12 @@ Error Display::createPbufferSurface(const Config *configuration,
         ANGLE_TRY(restoreLostDevice());
     }
 
-    SurfaceID id = {mSurfaceHandleAllocator.allocate()};
+    SurfaceID id;
+    if (!mSurfaceHandleAllocator.allocate(&id.value))
+    {
+        return Error(EGL_BAD_ALLOC, gl::err::kHandleExhaustion);
+    }
+
     SurfacePointer surface(new PbufferSurface(mImplementation, id, configuration, attribs,
                                               mFrontendFeatures.forceRobustResourceInit.enabled),
                            this);
@@ -1460,7 +1475,12 @@ Error Display::createPbufferFromClientBuffer(const Config *configuration,
         ANGLE_TRY(restoreLostDevice());
     }
 
-    SurfaceID id = {mSurfaceHandleAllocator.allocate()};
+    SurfaceID id;
+    if (!mSurfaceHandleAllocator.allocate(&id.value))
+    {
+        return Error(EGL_BAD_ALLOC, gl::err::kHandleExhaustion);
+    }
+
     SurfacePointer surface(
         new PbufferSurface(mImplementation, id, configuration, buftype, clientBuffer, attribs,
                            mFrontendFeatures.forceRobustResourceInit.enabled),
@@ -1486,7 +1506,12 @@ Error Display::createPixmapSurface(const Config *configuration,
         ANGLE_TRY(restoreLostDevice());
     }
 
-    SurfaceID id = {mSurfaceHandleAllocator.allocate()};
+    SurfaceID id;
+    if (!mSurfaceHandleAllocator.allocate(&id.value))
+    {
+        return Error(EGL_BAD_ALLOC, gl::err::kHandleExhaustion);
+    }
+
     SurfacePointer surface(
         new PixmapSurface(mImplementation, id, configuration, nativePixmap, attribs,
                           mFrontendFeatures.forceRobustResourceInit.enabled),
@@ -1513,6 +1538,12 @@ Error Display::createImage(const gl::Context *context,
         ANGLE_TRY(restoreLostDevice());
     }
 
+    ImageID id;
+    if (!mImageHandleAllocator.allocate(&id.value))
+    {
+        return Error(EGL_BAD_ALLOC, gl::err::kHandleExhaustion);
+    }
+
     egl::ImageSibling *sibling = nullptr;
     if (IsTextureTarget(target))
     {
@@ -1535,7 +1566,6 @@ Error Display::createImage(const gl::Context *context,
     }
     ASSERT(sibling != nullptr);
 
-    ImageID id = {mImageHandleAllocator.allocate()};
     angle::UniqueObjectPointer<Image, Display> imagePtr(
         new Image(mImplementation, id, context, target, sibling, attribs), this);
     ANGLE_TRY(imagePtr->initialize(this, context));
@@ -1690,7 +1720,11 @@ Error Display::createSync(const gl::Context *currentContext,
 {
     ASSERT(isInitialized());
 
-    SyncID id = {mSyncHandleAllocator.allocate()};
+    SyncID id;
+    if (!mSyncHandleAllocator.allocate(&id.value))
+    {
+        return Error(EGL_BAD_ALLOC, gl::err::kHandleExhaustion);
+    }
 
     if (mImplementation->testDeviceLost())
     {
