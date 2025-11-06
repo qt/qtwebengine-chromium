@@ -212,6 +212,7 @@ MSG kGetImageExtensionNotEnabled = "GL_ANGLE_get_image extension not enabled.";
 MSG kGetImageCompressed = "Texture is compressed, call GetCompressedTexImage instead.";
 MSG kGetImageNotCompressed = "Texture is not compressed, call GetTexImage instead.";
 MSG kGLES1Only = "GLES1-only function.";
+MSG kHandleExhaustion = "Handle exhaustion.";
 MSG kImageSizeMustBeZero = "imageSize must be 0 if no texture data is provided.";
 MSG kImageSizeTooSmall = "imageSize is too small.";
 MSG kImmutableMemoryObject = "The memory object is immutable.";
