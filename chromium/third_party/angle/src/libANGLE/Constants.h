@@ -99,6 +99,9 @@ enum
     // ANGLE_shader_pixel_local_storage: keep the maximum number of supported planes reasonably
     // similar on all platforms.
     IMPLEMENTATION_MAX_PIXEL_LOCAL_STORAGE_PLANES = 8,
+
+    // Maximum simultaneous handles of an object type.
+    IMPLEMENTATION_MAX_OBJECT_HANDLES = 1 << 24,
 };
 
 namespace limits
