@@ -537,12 +537,12 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     egl::Error unMakeCurrent(const egl::Display *display);
 
     // These create and destroy methods pass through to ResourceManager, which owns these objects.
-    BufferID createBuffer();
-    TextureID createTexture();
-    RenderbufferID createRenderbuffer();
-    ProgramPipelineID createProgramPipeline();
-    MemoryObjectID createMemoryObject();
-    SemaphoreID createSemaphore();
+    bool createBuffer(BufferID *outBuffer);
+    bool createTexture(TextureID *outTexture);
+    bool createRenderbuffer(RenderbufferID *outRenderbuffer);
+    bool createProgramPipeline(ProgramPipelineID *outProgramPipeline);
+    bool createMemoryObject(MemoryObjectID *outMemoryObject);
+    bool createSemaphore(SemaphoreID *outSemaphore);
 
     void deleteBuffer(BufferID buffer);
     void deleteTexture(TextureID texture);
@@ -592,7 +592,7 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     void getVertexAttribivImpl(GLuint index, GLenum pname, GLint *params) const;
 
     // Framebuffers are owned by the Context, so these methods do not pass through
-    FramebufferID createFramebuffer();
+    bool createFramebuffer(FramebufferID *outFramebuffer);
     void deleteFramebuffer(FramebufferID framebuffer);
 
     bool hasActiveTransformFeedback(ShaderProgramID program) const;
@@ -689,6 +689,8 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
 
     ErrorSet *getMutableErrorSetForValidation() const { return &mErrors; }
 
+    void handleExhaustionError(angle::EntryPoint entryPoint);
+
     // Specific methods needed for validation.
     bool getQueryParameterInfo(GLenum pname, GLenum *type, unsigned int *numParams) const;
     bool getIndexedQueryParameterInfo(GLenum target, GLenum *type, unsigned int *numParams) const;
@@ -721,6 +723,15 @@ class Context final : public egl::LabeledObject, angle::NonCopyable, public angl
     bool isFramebufferGenerated(FramebufferID framebuffer) const;
     bool isProgramPipelineGenerated(ProgramPipelineID pipeline) const;
     bool isQueryGenerated(QueryID query) const;
+    bool allocateVertexID(VertexArrayID *outId)
+    {
+        if (!mVertexArrayHandleAllocator.allocate(&outId->value))
+        {
+            return false;
+        }
+        mVertexArrayMap.assign(*outId, nullptr);
+        return true;
+    }
 
     bool usingDisplayTextureShareGroup() const;
     bool usingDisplaySemaphoreShareGroup() const;
