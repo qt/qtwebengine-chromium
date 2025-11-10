@@ -30,6 +30,10 @@ PACKAGES_TO_CLEAN_BAD_URL = [
     'PSM (Private Set Membership) client side',
 ]
 
+# Command to find the first "Baseline" git commit in src/3rdparty
+FIND_BASELINE_COMMIT_GIT_COMMAND = \
+  ['git', 'rev-list', '-n1', '--first-parent', '--grep=^BASELINE: Update Chromium', 'HEAD', '--']
+
 # Hardcoded metadata for GN
 GN_BASE_METADATA = {
     'Id': 'GN',
@@ -124,7 +128,7 @@ class ExtendedSpdxJsonWriter(spdx_writer._SPDXJSONWriter):
 
 def GetDirectoryRevisionInfo(d):
   git_rev_list_result = subprocess.check_output(
-      ['git', 'rev-list', '-n1', '--first-parent', '--grep=BASELINE: Update Chromium', 'HEAD', '--', d],
+      FIND_BASELINE_COMMIT_GIT_COMMAND + [d],
       cwd=ROOT,
       text=True)
   commit_sha = git_rev_list_result.strip()
@@ -139,6 +143,14 @@ def GetDirectoryRevisionInfo(d):
   comment_text = f'{num_revisions} revision{plural} added by Qt'
   return comment_text
 
+def IsChromiumSubmoduleGitHistoryAvailable():
+  baseline_cmd_result = subprocess.run(
+      FIND_BASELINE_COMMIT_GIT_COMMAND + ['.'],
+      cwd=ROOT,
+      capture_output=True,
+      encoding='utf-8')
+  return baseline_cmd_result.returncode == 0 and baseline_cmd_result.stdout.strip()
+
 def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   optional_keys = list(CHROMIUM_TO_SPDX_KEY.keys()) + ['Short Name', 'CPEPrefix']
 
@@ -146,6 +158,12 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
   os.chdir(gn_out_dir)
   third_party_dirs = license_tools.FindThirdPartyDeps(gn_binary, gn_out_dir, gn_target, True, 'all')
   os.chdir(prev_cwd)
+
+  # If src/3rdparty is not a git repo, skip adding revision info since it would fail on trying
+  # to invoke git.
+  can_include_git_info = IsChromiumSubmoduleGitHistoryAvailable()
+  if not can_include_git_info:
+      logger.warning("Could not find git history for '%s', git revision info will be missing" % os.path.join(ROOT, '..'))
 
   metadatas = {}
   for d in third_party_dirs:
@@ -160,7 +178,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
       if not dir_metadata:
         print("Warning: Parsing '%s' returned nothing" % d)
       metadatas[d] = dir_metadata
-      git_revision_info = GetDirectoryRevisionInfo(d)
+      git_revision_info = GetDirectoryRevisionInfo(d) if can_include_git_info else None
       for dep_metadata in dir_metadata:
         num_licenses = len(dep_metadata['License File'])
         if num_licenses != 1:
