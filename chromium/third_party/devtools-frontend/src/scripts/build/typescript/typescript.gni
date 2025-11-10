@@ -180,12 +180,12 @@ template("ts_library") {
 
     if (devtools_skip_typecheck) {
       args += [ "--use-esbuild" ]
-      _esbuild = devtools_location_prepend + "third_party/esbuild/esbuild"
-      if (host_os == "win") {
-        inputs += [ _esbuild + ".exe" ]
-      } else {
-        inputs += [ _esbuild ]
-      }
+#      _esbuild = devtools_location_prepend + "third_party/esbuild/esbuild"
+#      if (host_os == "win") {
+#        inputs += [ _esbuild + ".exe" ]
+#      } else {
+#        inputs += [ _esbuild ]
+#      }
     }
 
     output_files = [ "$target_gen_dir/$target_name-tsconfig.json" ]

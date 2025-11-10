@@ -25,12 +25,12 @@ template("bundle") {
       devtools_location_prepend + "scripts/devtools_paths.js",
     ]
 
-    _esbuild = devtools_location_prepend + "third_party/esbuild/esbuild"
-    if (host_os == "win") {
-      inputs += [ _esbuild + ".exe" ]
-    } else {
-      inputs += [ _esbuild ]
-    }
+#    _esbuild = devtools_location_prepend + "third_party/esbuild/esbuild"
+#    if (host_os == "win") {
+#      inputs += [ _esbuild + ".exe" ]
+#    } else {
+#      inputs += [ _esbuild ]
+#    }
 
     args = [
       rebase_path(invoker.entrypoint, root_build_dir),
