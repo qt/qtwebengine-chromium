@@ -95,7 +95,11 @@ def hosted_mode_script_path():
 
 
 def esbuild_path():
-    return path.join(devtools_root_path(), 'third_party', 'esbuild', 'esbuild')
+    # Qt WebEngine: Expect esbuild to be installed in path.
+    if sys.platform == 'win32':
+        return 'esbuild.exe'
+    return 'esbuild'
+#    return path.join(devtools_root_path(), 'third_party', 'esbuild', 'esbuild')
 
 
 def autoninja_path():
