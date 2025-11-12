@@ -583,6 +583,8 @@ void IndexedDBBucketContext::OpenDatabase(
     database_ptr = database.get();
     AddDatabase(name, std::move(database));
   } else {
+    database_ptr = it->second.get();
+
     // The `Database` might have been forced closed by dev tools, in which case
     // no new connections should be added. The `Database` should be deleted
     // *soon* in this case, but the request can arrive while `RunTasks()` is
@@ -597,7 +599,6 @@ void IndexedDBBucketContext::OpenDatabase(
       connection->database_callbacks->OnForcedClose();
       return;
     }
-    database_ptr = it->second.get();
   }
 
   database_ptr->ScheduleOpenConnection(std::move(connection));
