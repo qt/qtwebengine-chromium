@@ -2466,8 +2466,8 @@ class GraphBuilderMGBP {
                                 const maglev::ProcessingState& state) {
     GET_FRAME_STATE_MAYBE_ABORT(frame_state, node->eager_deopt_info());
     SetMap(node, __ ExtendPropertiesBackingStore(
-                     Map(node->property_array_input()),
-                     Map(node->object_input()), node->old_length(), frame_state,
+                     Map(node->property_array_input()), Map(node->object_input()),
+                     node->old_map(), node->old_length(), frame_state,
                      node->eager_deopt_info()->feedback_to_update()));
     return maglev::ProcessResult::kContinue;
   }
