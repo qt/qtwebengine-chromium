@@ -5524,7 +5524,7 @@ ValueNode* MaglevGraphBuilder::BuildExtendPropertiesBackingStore(
   // potentially causing a sandbox violation. This CHECK defends against that.
   SBXCHECK_GE(length, 0);
   return AddNewNode<ExtendPropertiesBackingStore>({property_array, receiver},
-                                                  length);
+                                                  map, length);
 }
 
 MaybeReduceResult MaglevGraphBuilder::TryBuildStoreField(
