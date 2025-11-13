@@ -45,14 +45,14 @@ source_set("qr_code_generator") {
     ":error",
     "//base",
   ]
-  if (is_qtwebengine) {
+  if (!enable_rust) {
     deps -= [
      ":qr_code_generator_ffi_glue",
     ]
   }
 }
 
-if (!is_qtwebengine){
+if (enable_rust) {
   rust_static_library("qr_code_generator_ffi_glue") {
     allow_unsafe = true  # Needed for FFI that underpins the `cxx` crate.
     crate_root = "qr_code_generator_ffi_glue.rs"
