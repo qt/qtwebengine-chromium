@@ -3002,6 +3002,7 @@ buildflag_header("feature_buildflags") {
     ]
   } else {
     flags = [ "ENABLE_BANNED_BASE_FEATURE_PREFIX=false" ]
+    flags += [ "ENABLE_RUST=$enable_rust" ]
   }
 }
 

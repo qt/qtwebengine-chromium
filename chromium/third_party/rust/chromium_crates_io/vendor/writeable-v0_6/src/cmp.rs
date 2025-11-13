@@ -11,6 +11,15 @@ struct WriteComparator<'a> {
     result: Ordering,
 }
 
+#[inline]
+fn split_at_checked2<T>(v: &[T], mid: usize) -> Option<(&[T], &[T])> {
+    if mid <= v.len() {
+        Some(v.split_at(mid))
+    } else {
+        None
+    }
+}
+
 /// This is an infallible impl. Functions always return Ok, not Err.
 impl fmt::Write for WriteComparator<'_> {
     #[inline]
@@ -18,9 +27,7 @@ impl fmt::Write for WriteComparator<'_> {
         if self.result != Ordering::Equal {
             return Ok(());
         }
-        let (this, remainder) = self
-            .code_units
-            .split_at_checked(other.len())
+        let (this, remainder) = split_at_checked2(self.code_units, other.len())
             .unwrap_or((self.code_units, &[]));
         self.code_units = remainder;
         self.result = this.cmp(other.as_bytes());

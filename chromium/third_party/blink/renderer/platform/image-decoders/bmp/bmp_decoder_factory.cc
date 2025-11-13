@@ -16,11 +16,13 @@ std::unique_ptr<ImageDecoder> CreateBmpImageDecoder(
     ColorBehavior color_behavior,
     wtf_size_t max_decoded_bytes,
     wtf_size_t offset) {
+#if BUILDFLAG(ENABLE_RUST)
   if (IsRustyBmpEnabled()) {
     return std::make_unique<BmpRustImageDecoder>(
         alpha_option, color_behavior, max_decoded_bytes, offset,
         high_bit_depth_decoding_option);
   }
+#endif
 
   return std::make_unique<BMPImageDecoder>(alpha_option, color_behavior,
                                            max_decoded_bytes);

@@ -157,6 +157,15 @@ impl<K: Ord, V> StoreBulkMut<K, V> for Vec<(K, V)> {
     }
 }
 
+#[inline]
+fn split_at_mut_checked2<T>(v: &mut [T], mid: usize) -> Option<(&mut [T], &mut [T])> {
+    if mid <= v.len() {
+        Some(v.split_at_mut(mid))
+    } else {
+        None
+    }
+}
+
 /// Moves all but the _last_ of consecutive elements to the end of the slice satisfying
 /// equality on K.
 ///
@@ -232,7 +241,7 @@ fn partition_dedup_by<K: Eq, V>(v: &mut [(K, V)]) -> (&mut [(K, V)], &mut [(K, V
     let mut read_idx: usize = 1;
     let mut write_idx: usize = 1;
 
-    while let Some((before_read, [read, ..])) = v.split_at_mut_checked(read_idx) {
+    while let Some((before_read, [read, ..])) = split_at_mut_checked2(v, read_idx) {
         // First, `read_idx >= write_idx` is always true as `read_idx` is always incremented
         // whereas `write_idx` is only incremented when a distinct element is found.
         // Second, before_read is always at least 1 length due to read_idx being initialized to 1.

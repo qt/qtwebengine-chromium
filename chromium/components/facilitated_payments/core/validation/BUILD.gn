@@ -5,6 +5,7 @@
 import("//build/rust/rust_static_library.gni")
 import("//testing/test.gni")
 
+if (enable_rust) {
 rust_static_library("pix_validator_rs") {
   crate_root = "pix_validator.rs"
   sources = [ "pix_validator.rs" ]
@@ -25,6 +26,7 @@ rust_static_library("pix_validator_rs_ffi_glue") {
   cxx_bindings = [ "pix_validator_cxx.rs" ]
 
   deps = [ ":pix_validator_rs" ]
+}
 }
 
 static_library("validation") {
@@ -56,7 +58,7 @@ source_set("unit_tests") {
 
   deps = [
     ":fuzzer_util",
-    ":pix_validator_rs_ffi_glue",
+#    ":pix_validator_rs_ffi_glue",
     ":validation",
     "//testing/gtest",
     "//third_party/re2",

@@ -22,6 +22,7 @@
 
 #include <memory>
 
+#include "base/feature_list.h"
 #include "third_party/blink/renderer/core/css/counters_attachment_context.h"
 #include "third_party/blink/renderer/core/css/css_style_sheet.h"
 #include "third_party/blink/renderer/core/css/media_list.h"
@@ -41,7 +42,9 @@
 #include "third_party/blink/renderer/core/svg/graphics/svg_image_chrome_client.h"
 #include "third_party/blink/renderer/core/xml/document_xslt.h"
 #include "third_party/blink/renderer/core/xml/parser/xml_document_parser.h"  // for parseAttributes()
+#if BUILDFLAG(ENABLE_RUST)
 #include "third_party/blink/renderer/core/xml/parser/xml_document_parser_rs.h"  // for parseAttributesRust()
+#endif
 #include "third_party/blink/renderer/core/xml/xsl_style_sheet.h"
 #include "third_party/blink/renderer/core/xml/xslt_processor.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
@@ -161,11 +164,15 @@ void ProcessingInstruction::ProcessAttributesIfNeeded() {
   // ### make sure this gets called when adding from javascript
   bool attrs_ok;
   HashMap<String, String> attrs;
+#if BUILDFLAG(ENABLE_RUST)
   if (RuntimeEnabledFeatures::XMLParsingRustEnabled()) {
     attrs = blink::ParseAttributesRust(data_, attrs_ok);
   } else {
+#endif
     attrs = blink::ParseAttributes(data_, attrs_ok);
+#if BUILDFLAG(ENABLE_RUST)
   }
+#endif
   if (!attrs_ok) {
     return;
   }

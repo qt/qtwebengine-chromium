@@ -20,6 +20,10 @@ import("//build/config/coverage/coverage.gni")
 import("//build/config/rust.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 
+declare_args() {
+  use_adler2 = true
+}
+
 if (toolchain_has_rust) {
   # List of Rust stdlib rlibs which are present in the official Rust toolchain
   # we are using from the Android team. This is usually a version or two behind
@@ -48,13 +52,17 @@ if (toolchain_has_rust) {
     # These are no longer present in the Windows toolchain.
     stdlib_files += [
       "addr2line",
-      "adler2",
       "gimli",
       "libc",
       "memchr",
       "miniz_oxide",
       "object",
     ]
+    if (use_adler2) {
+      stdlib_files += [ "adler2" ]
+    } else {
+      stdlib_files += [ "adler" ]
+    }
   }
 
   if (toolchain_for_rust_host_build_tools) {
@@ -342,7 +350,7 @@ if (toolchain_has_rust) {
 
     config("prebuilt_stdlib_libs") {
       ldflags = []
-      lib_dir = rebase_path("$prebuilt_rustc_sysroot/$sysroot_lib_subdir",
+      lib_dir = "$root_build_dir/" + rebase_path("$prebuilt_rustc_sysroot/$sysroot_lib_subdir",
                             root_build_dir)
 
       # We're unable to make these files regular gn dependencies because
