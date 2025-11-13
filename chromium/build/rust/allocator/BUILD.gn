@@ -51,6 +51,11 @@ if (toolchain_has_rust) {
   rust_static_library("allocator") {
     sources = [ "lib.rs" ]
     crate_root = "lib.rs"
+    # See also //build/rust/allocator/lib.rs comments.
+    # 'staticlib' seems to force rustc to emit the necessary allocator symbols,
+    # which resolves the issue where they're missing when linking with a C++
+    # linker.
+    crate_type = "staticlib"
 
     rustflags = []
     deps = [ ":alloc_error_handler_impl_ffi" ]

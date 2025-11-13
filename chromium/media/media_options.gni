@@ -7,6 +7,7 @@ import("//build/config/chrome_build.gni")
 import("//build/config/chromeos/args.gni")
 import("//build/config/features.gni")
 import("//build/config/jumbo.gni")
+import("//build/config/rust.gni")
 import("//build/config/ui.gni")
 import("//media/gpu/args.gni")
 import("//testing/libfuzzer/fuzzer_test.gni")
@@ -47,7 +48,7 @@ declare_args() {
 
   # Enable usage of Symphonia within the media library. Used experimentally
   # for software decoding. Currently only enabled on linux builds.
-  media_use_symphonia = is_linux
+  media_use_symphonia = is_linux && enable_rust_cxx
 
   # Enable usage of libvpx within the media library. Used for software based
   # decoding of VP9 and VP8A type content.

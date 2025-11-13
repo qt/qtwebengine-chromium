@@ -160,8 +160,6 @@ template("rust_bindgen_generator") {
       rebase_path(depfile, root_build_dir),
       "--output",
       rebase_path(output_file, root_build_dir),
-      "--libclang-path",
-      rebase_path(_libclang_path, root_build_dir),
     ]
 
     if (_wrap_static_fns) {
@@ -232,6 +230,15 @@ template("rust_bindgen_generator") {
       "-resource-dir",
       clang_resource_dir,
     ]
+
+    if (is_linux && is_qtwebengine) {
+      # We need to pass the path to the libstdc++ headers to bindgen so that it
+      # can find them when parsing C++ headers.
+      args += [
+        "-I",
+        rebase_path(clang_resource_dir + "/include/", root_build_dir),
+      ]
+    }
 
     if (is_win) {
       # On Windows we fall back to using system headers from a sysroot from

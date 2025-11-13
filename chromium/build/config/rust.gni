@@ -55,9 +55,7 @@ declare_args() {
   # specify a globally unique `crate_name` in their rust library GN rules
   # instead. Note that using a `crate_name` is strongly discouraged inside
   # Chromium, and is also discouraged for downstream projects when possible.
-  #
-  # We do not support disabling this flag in Chromium code.
-  enable_chromium_prelude = build_with_chromium && !is_qtwebengine
+  enable_chromium_prelude = build_with_chromium && enable_rust
 
   # Chromium provides a Rust toolchain in //third_party/rust-toolchain.
   #

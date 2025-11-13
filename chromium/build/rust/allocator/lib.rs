@@ -18,13 +18,13 @@
 //
 // TODO(https://crbug.com/410596442): Stop using unstable features here.
 // https://github.com/rust-lang/rust/issues/29603 tracks stabilization of the `linkage` feature.
-#![feature(linkage)]
+// #![feature(linkage)]
 // Required to apply `#[rustc_std_internal_symbol]` to our alloc error handler
 // so the name is correctly mangled as rustc expects.
 //
 // TODO(https://crbug.com/410596442): Stop using internal features here.
-#![allow(internal_features)]
-#![feature(rustc_attrs)]
+// #![allow(internal_features)]
+// #![feature(rustc_attrs)]
 
 /// Module that provides `#[global_allocator]` / `GlobalAlloc` interface for
 /// using an allocator from C++.
@@ -81,6 +81,7 @@ mod rust_allocator {
 ///
 /// TODO(https://crbug.com/410596442): Stop using internal features here.
 mod both_allocators {
+/*
     use alloc_error_handler_impl_ffi::rust_allocator_internal as ffi;
 
     /// As part of rustc's contract for using `#[global_allocator]` without
@@ -105,4 +106,5 @@ mod both_allocators {
         // (Not really _needed_, but it could simplify code a little bit.)
         unsafe { ffi::alloc_error_handler_impl() }
     }
+*/
 }
