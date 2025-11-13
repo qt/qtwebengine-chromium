@@ -168,8 +168,6 @@ template("rust_bindgen_generator") {
       rebase_path(depfile, root_build_dir),
       "--output",
       rebase_path(output_file, root_build_dir),
-      "--libclang-path",
-      rebase_path(_libclang_path, root_build_dir),
     ]
 
     if (_wrap_static_fns) {
@@ -225,21 +223,19 @@ template("rust_bindgen_generator") {
       args += [ "{{cflags_c}}" ]
     }
 
-    # libclang will run the system `clang` to find the "resource dir" which it
-    # places before the directory specified in `-isysroot`.
-    # https://github.com/llvm/llvm-project/blob/699e0bed4bfead826e210025bf33e5a1997c018b/clang/lib/Tooling/Tooling.cpp#L499-L510
-    #
-    # This means include files are pulled from the wrong place if the `clang`
-    # says the wrong thing. We point it to our clang's resource dir which will
-    # make it behave consistently with our other command line flags and allows
-    # system headers to be found.
-    clang_resource_dir =
-        rebase_path(clang_base_path + "/lib/clang/" + clang_version,
-                    root_build_dir)
     args += [
       "-resource-dir",
       clang_resource_dir,
     ]
+
+    if (is_linux && is_qtwebengine) {
+      # We need to pass the path to the libstdc++ headers to bindgen so that it
+      # can find them when parsing C++ headers.
+      args += [
+        "-I",
+        rebase_path(clang_resource_dir + "/include/", root_build_dir),
+      ]
+    }
 
     if (is_win) {
       # On Windows we fall back to using system headers from a sysroot from

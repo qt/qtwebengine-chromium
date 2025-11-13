@@ -42,7 +42,7 @@ use crate::CodecChoice;
 #[cfg(feature = "encoder")]
 use crate::encoder::*;
 
-use std::num::NonZero;
+use std::num::NonZeroU32;
 
 // Not all fields of this struct are used in all the configurations.
 #[allow(dead_code)]
@@ -54,7 +54,7 @@ pub(crate) struct DecoderConfig {
     pub height: u32,
     pub depth: u8,
     pub max_threads: u32,
-    pub image_size_limit: Option<NonZero<u32>>,
+    pub image_size_limit: Option<NonZeroU32>,
     pub max_input_size: usize,
     pub codec_config: CodecConfiguration,
     pub category: Category,

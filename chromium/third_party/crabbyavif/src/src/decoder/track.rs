@@ -17,7 +17,7 @@ use crate::parser::mp4box::ItemProperty;
 use crate::parser::mp4box::MetaBox;
 use crate::*;
 
-use std::num::NonZero;
+use std::num::NonZeroU32;
 
 #[derive(Debug, Default)]
 pub struct Track {
@@ -40,8 +40,8 @@ pub struct Track {
 impl Track {
     pub(crate) fn check_limits(
         &self,
-        size_limit: Option<NonZero<u32>>,
-        dimension_limit: Option<NonZero<u32>>,
+        size_limit: Option<NonZeroU32>,
+        dimension_limit: Option<NonZeroU32>,
     ) -> bool {
         check_limits(self.width, self.height, size_limit, dimension_limit)
     }

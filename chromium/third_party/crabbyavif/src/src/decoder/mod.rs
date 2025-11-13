@@ -49,7 +49,7 @@ use crate::*;
 
 use std::cmp::max;
 use std::cmp::min;
-use std::num::NonZero;
+use std::num::NonZeroU32;
 
 pub trait IO {
     fn read(&mut self, offset: u64, max_read_size: usize) -> AvifResult<&[u8]>;
@@ -152,9 +152,9 @@ pub struct Settings {
     pub allow_incremental: bool,
     pub image_content_to_decode: ImageContentType,
     pub codec_choice: CodecChoice,
-    pub image_size_limit: Option<NonZero<u32>>,
-    pub image_dimension_limit: Option<NonZero<u32>>,
-    pub image_count_limit: Option<NonZero<u32>>,
+    pub image_size_limit: Option<NonZeroU32>,
+    pub image_dimension_limit: Option<NonZeroU32>,
+    pub image_count_limit: Option<NonZeroU32>,
     pub max_threads: u32,
     pub android_mediacodec_output_color_format: AndroidMediaCodecOutputColorFormat,
     pub allow_sample_transform: bool,
@@ -171,9 +171,9 @@ impl Default for Settings {
             allow_incremental: false,
             image_content_to_decode: ImageContentType::ColorAndAlpha,
             codec_choice: Default::default(),
-            image_size_limit: NonZero::new(DEFAULT_IMAGE_SIZE_LIMIT),
-            image_dimension_limit: NonZero::new(DEFAULT_IMAGE_DIMENSION_LIMIT),
-            image_count_limit: NonZero::new(DEFAULT_IMAGE_COUNT_LIMIT),
+            image_size_limit: NonZeroU32::new(DEFAULT_IMAGE_SIZE_LIMIT),
+            image_dimension_limit: NonZeroU32::new(DEFAULT_IMAGE_DIMENSION_LIMIT),
+            image_count_limit: NonZeroU32::new(DEFAULT_IMAGE_COUNT_LIMIT),
             max_threads: 1,
             android_mediacodec_output_color_format: AndroidMediaCodecOutputColorFormat::default(),
             allow_sample_transform: false,
@@ -912,9 +912,10 @@ impl Decoder {
             .grpl
             .iter()
             .find(|g| g.grouping_type == "altr" && g.entity_ids.contains(&item_id));
+        let vecitem = vec![item_id];
         let item_ids = match altr_group {
             Some(altr_group) => &altr_group.entity_ids,
-            None => &vec![item_id],
+            None => &vecitem,
         };
         for item_id in item_ids {
             if let Some(item) = self.items.get(item_id) {

@@ -19,7 +19,7 @@ use crate::utils::pixels::ChannelIdc;
 use crate::*;
 
 use std::collections::BTreeMap;
-use std::num::NonZero;
+use std::num::NonZeroU32;
 
 #[derive(Debug, Default)]
 pub struct Item {
@@ -97,8 +97,8 @@ impl Item {
     fn validate_derived_image_dimensions(
         width: u32,
         height: u32,
-        size_limit: Option<NonZero<u32>>,
-        dimension_limit: Option<NonZero<u32>>,
+        size_limit: Option<NonZeroU32>,
+        dimension_limit: Option<NonZeroU32>,
     ) -> AvifResult<()> {
         if width == 0 || height == 0 || !check_limits(width, height, size_limit, dimension_limit) {
             return AvifError::invalid_image_grid("invalid derived image dimensions");
@@ -110,8 +110,8 @@ impl Item {
         &mut self,
         io: &mut GenericIO,
         tile_info: &mut TileInfo,
-        size_limit: Option<NonZero<u32>>,
-        dimension_limit: Option<NonZero<u32>>,
+        size_limit: Option<NonZeroU32>,
+        dimension_limit: Option<NonZeroU32>,
     ) -> AvifResult<()> {
         if self.is_grid_item() {
             let grid = &mut tile_info.grid;
@@ -215,8 +215,8 @@ impl Item {
     pub(crate) fn harvest_ispe(
         &mut self,
         alpha_ispe_required: bool,
-        size_limit: Option<NonZero<u32>>,
-        dimension_limit: Option<NonZero<u32>>,
+        size_limit: Option<NonZeroU32>,
+        dimension_limit: Option<NonZeroU32>,
     ) -> AvifResult<()> {
         if self.should_skip() {
             return Ok(());
