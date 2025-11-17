@@ -19,6 +19,7 @@
 #include "net/base/net_export.h"
 #include "net/base/network_anonymization_key.h"
 #include "net/base/privacy_mode.h"
+#include "net/base/proxy_chain.h"
 #include "net/base/request_priority.h"
 #include "net/dns/host_resolver.h"
 #include "net/dns/public/secure_dns_policy.h"
@@ -368,7 +369,8 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
   static void set_used_idle_socket_timeout(base::TimeDelta timeout);
 
  protected:
-  ClientSocketPool(bool is_for_websockets,
+  ClientSocketPool(const ProxyChain& proxy_chain,
+                   bool is_for_websockets,
                    const CommonConnectJobParams* common_connect_job_params,
                    std::unique_ptr<ConnectJobFactory> connect_job_factory);
 
@@ -381,13 +383,15 @@ class NET_EXPORT ClientSocketPool : public LowerLayeredPool {
   std::unique_ptr<ConnectJob> CreateConnectJob(
       GroupId group_id,
       scoped_refptr<SocketParams> socket_params,
-      const ProxyChain& proxy_chain,
       const std::optional<NetworkTrafficAnnotationTag>& proxy_annotation_tag,
       RequestPriority request_priority,
       SocketTag socket_tag,
       ConnectJob::Delegate* delegate);
 
+  const ProxyChain& GetProxyChain() const { return proxy_chain_; }
+
  private:
+  const ProxyChain proxy_chain_;
   const bool is_for_websockets_;
   const raw_ptr<const CommonConnectJobParams> common_connect_job_params_;
   const std::unique_ptr<ConnectJobFactory> connect_job_factory_;
