@@ -429,13 +429,13 @@ SpellcheckCustomDictionary::ProcessSyncChanges(
 base::WeakPtr<syncer::SyncableService> SpellcheckCustomDictionary::AsWeakPtr() {
   return weak_ptr_factory_.GetWeakPtr();
 }
-#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
 std::string SpellcheckCustomDictionary::GetClientTag(
     const syncer::EntityData& entity_data) const {
   DCHECK(entity_data.specifics.has_dictionary());
   return entity_data.specifics.dictionary().word();
 }
+#endif  // BUILDFLAG(IS_QTWEBENGINE)
 
 SpellcheckCustomDictionary::LoadFileResult::LoadFileResult()
     : is_valid_file(false) {}
