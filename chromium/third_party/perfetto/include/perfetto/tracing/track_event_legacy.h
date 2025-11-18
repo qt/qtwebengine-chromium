@@ -107,7 +107,7 @@ ConvertThreadId(const PerfettoLegacyCurrentThreadId&);
                                        thread_id, ...)                     \
   [&]() {                                                                  \
     using ::perfetto::internal::TrackEventInternal;                        \
-    PERFETTO_DCHECK(!(flags & TRACE_EVENT_FLAG_COPY));                     \
+    PERFETTO_DCHECK(!((flags) & TRACE_EVENT_FLAG_COPY));                     \
     /* First check the scope for instant events. */                        \
     if ((phase) == TRACE_EVENT_PHASE_INSTANT) {                            \
       /* Note: Avoids the need to set LegacyEvent::instant_event_scope. */ \
@@ -151,7 +151,7 @@ ConvertThreadId(const PerfettoLegacyCurrentThreadId&);
                                                thread_id, id, ...)           \
   [&]() {                                                                    \
     using ::perfetto::internal::TrackEventInternal;                          \
-    PERFETTO_DCHECK(!(flags & TRACE_EVENT_FLAG_COPY));                       \
+    PERFETTO_DCHECK(!((flags) & TRACE_EVENT_FLAG_COPY));                       \
     /* First check the scope for instant events. */                          \
     if ((phase) == TRACE_EVENT_PHASE_INSTANT) {                              \
       /* Note: Avoids the need to set LegacyEvent::instant_event_scope. */   \
@@ -269,15 +269,15 @@ ConvertThreadId(const PerfettoLegacyCurrentThreadId&);
 // Instant events.
 #define TRACE_EVENT_INSTANT0(category_group, name, scope)                   \
   INTERNAL_TRACE_EVENT_ADD(TRACE_EVENT_PHASE_INSTANT, category_group, name, \
-                           TRACE_EVENT_FLAG_NONE | scope)
+                           TRACE_EVENT_FLAG_NONE | (scope))
 #define TRACE_EVENT_INSTANT1(category_group, name, scope, arg1_name, arg1_val) \
   INTERNAL_TRACE_EVENT_ADD(TRACE_EVENT_PHASE_INSTANT, category_group, name,    \
-                           TRACE_EVENT_FLAG_NONE | scope, arg1_name,           \
+                           TRACE_EVENT_FLAG_NONE | (scope), arg1_name,           \
                            ::perfetto::internal::PossiblyNull(arg1_val))
 #define TRACE_EVENT_INSTANT2(category_group, name, scope, arg1_name, arg1_val, \
                              arg2_name, arg2_val)                              \
   INTERNAL_TRACE_EVENT_ADD(TRACE_EVENT_PHASE_INSTANT, category_group, name,    \
-                           TRACE_EVENT_FLAG_NONE | scope, arg1_name,           \
+                           TRACE_EVENT_FLAG_NONE | (scope), arg1_name,           \
                            ::perfetto::internal::PossiblyNull(arg1_val),       \
                            arg2_name,                                          \
                            ::perfetto::internal::PossiblyNull(arg2_val))

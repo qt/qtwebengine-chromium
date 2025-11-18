@@ -279,7 +279,8 @@ assert(!(llvm_force_head_revision && use_remoteexec && host_os != "linux"),
 # warnings to enable, store it in a separate variable here.
 use_clang_warning_suppression_file =
     default_toolchain != "//build/toolchain/cros:target" &&
-    !llvm_android_mainline && is_clang && clang_warning_suppression_file != ""
+    !llvm_android_mainline && is_clang && clang_warning_suppression_file != "" &&
+    !is_qtwebengine
 
 # default_include_dirs ---------------------------------------------------------
 #
@@ -478,6 +479,7 @@ config("compiler") {
         "-Wno-ignored-attributes",
         "-Wno-predefined-identifier-outside-function",
         "-Wno-self-assign",
+        "-Wno-gnu-line-marker",
       ]
       cflags_cc += [
         "-Wno-parentheses-equality",
@@ -511,7 +513,7 @@ config("compiler") {
     }
   }
 
-  if (is_clang && is_qtwebengine)) {
+  if (is_clang && is_qtwebengine) {
     # Allow comparing the address of references and 'this' against 0
     # in debug builds. Technically, these can never be null in
     # well-defined C/C++ and Clang can optimize such checks away in

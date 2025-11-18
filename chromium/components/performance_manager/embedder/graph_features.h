@@ -32,7 +32,7 @@ class GraphFeatures {
 
   // Returns a configuration with the default set of graph features shipped
   // with a full-featured Chromium browser.
-  static constexpr GraphFeatures WithDefault() {
+  static GraphFeatures WithDefault() {
     return GraphFeatures().EnableDefault();
   }
 
