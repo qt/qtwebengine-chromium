@@ -367,7 +367,7 @@ fn find_conversion_function(
     }
 }
 
-#[cfg_attr(feature = "disable_cfi", no_sanitize(cfi))]
+// #[cfg_attr(feature = "disable_cfi", no_sanitize(cfi))]
 pub(crate) fn yuv_to_rgb(image: &image::Image, rgb: &mut rgb::Image) -> AvifResult<bool> {
     if (rgb.depth != 8 && rgb.depth != 10) || !image.depth_valid() {
         return Err(AvifError::NotImplemented);
@@ -823,7 +823,7 @@ fn rgb_to_yuv_conversion_function(
     }
 }
 
-#[cfg_attr(feature = "disable_cfi", no_sanitize(cfi))]
+// #[cfg_attr(feature = "disable_cfi", no_sanitize(cfi))]
 pub(crate) fn rgb_to_yuv(rgb: &rgb::Image, image: &mut image::Image) -> AvifResult<()> {
     let conversion_function = rgb_to_yuv_conversion_function(rgb, image)?;
     let plane_u8 = image.plane_ptrs_mut();

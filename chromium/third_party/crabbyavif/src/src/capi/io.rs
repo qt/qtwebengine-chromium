@@ -207,7 +207,7 @@ impl Drop for avifIOWrapper {
 }
 
 impl crate::decoder::IO for avifIOWrapper {
-    #[cfg_attr(feature = "disable_cfi", no_sanitize(cfi))]
+    // #[cfg_attr(feature = "disable_cfi", no_sanitize(cfi))]
     fn read(&mut self, offset: u64, size: usize) -> AvifResult<&[u8]> {
         // SAFETY: Calling into a C function.
         let res = unsafe {

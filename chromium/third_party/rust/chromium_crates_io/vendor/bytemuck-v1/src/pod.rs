@@ -143,42 +143,42 @@ impl_unsafe_marker_for_simd!(
   }
 );
 
-#[cfg(feature = "nightly_portable_simd")]
-#[cfg_attr(
-  feature = "nightly_docs",
-  doc(cfg(feature = "nightly_portable_simd"))
-)]
-unsafe impl<T, const N: usize> Pod for core::simd::Simd<T, N>
-where
-  T: core::simd::SimdElement + Pod,
-  core::simd::LaneCount<N>: core::simd::SupportedLaneCount,
-{
-}
-
-impl_unsafe_marker_for_simd!(
-  #[cfg(all(target_arch = "x86", any(feature = "nightly_stdsimd", feature = "avx512_simd")))]
-  unsafe impl Pod for x86::{
-    __m512, __m512d, __m512i
-  }
-);
-
-impl_unsafe_marker_for_simd!(
-  #[cfg(all(target_arch = "x86_64", any(feature = "nightly_stdsimd", feature = "avx512_simd")))]
-  unsafe impl Pod for x86_64::{
-    __m512, __m512d, __m512i
-  }
-);
-
-impl_unsafe_marker_for_simd!(
-  #[cfg(all(target_arch = "x86", feature = "nightly_stdsimd"))]
-  unsafe impl Pod for x86::{
-    __m128bh, __m256bh, __m512bh
-  }
-);
-
-impl_unsafe_marker_for_simd!(
-  #[cfg(all(target_arch = "x86_64", feature = "nightly_stdsimd"))]
-  unsafe impl Pod for x86_64::{
-    __m128bh, __m256bh, __m512bh
-  }
-);
+// #[cfg(feature = "nightly_portable_simd")]
+// #[cfg_attr(
+//   feature = "nightly_docs",
+//   doc(cfg(feature = "nightly_portable_simd"))
+// )]
+// unsafe impl<T, const N: usize> Pod for core::simd::Simd<T, N>
+// where
+//   T: core::simd::SimdElement + Pod,
+//   core::simd::LaneCount<N>: core::simd::SupportedLaneCount,
+// {
+// }
+//
+// impl_unsafe_marker_for_simd!(
+//   #[cfg(all(target_arch = "x86", any(feature = "nightly_stdsimd", feature = "avx512_simd")))]
+//   unsafe impl Pod for x86::{
+//     __m512, __m512d, __m512i
+//   }
+// );
+//
+// impl_unsafe_marker_for_simd!(
+//   #[cfg(all(target_arch = "x86_64", any(feature = "nightly_stdsimd", feature = "avx512_simd")))]
+//   unsafe impl Pod for x86_64::{
+//     __m512, __m512d, __m512i
+//   }
+// );
+//
+// impl_unsafe_marker_for_simd!(
+//   #[cfg(all(target_arch = "x86", feature = "nightly_stdsimd"))]
+//   unsafe impl Pod for x86::{
+//     __m128bh, __m256bh, __m512bh
+//   }
+// );
+//
+// impl_unsafe_marker_for_simd!(
+//   #[cfg(all(target_arch = "x86_64", feature = "nightly_stdsimd"))]
+//   unsafe impl Pod for x86_64::{
+//     __m128bh, __m256bh, __m512bh
+//   }
+// );

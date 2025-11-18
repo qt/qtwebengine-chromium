@@ -39,6 +39,11 @@ declare_args() {
   #
   # We do not support disabling this flag in Chromium code.
   enable_rust_cxx = build_with_chromium && !is_qtwebengine
+}
+
+declare_args() {
+  # Are we using an bleeding-edge rust?
+  enable_tetanus = enable_rust
 
   # The chromium prelude crate provides the `chromium::import!` macro which
   # is needed to depend on first-party rust libraries. Third-party libraries

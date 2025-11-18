@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #![deny(unsafe_op_in_unsafe_fn)]
-#![cfg_attr(feature = "disable_cfi", feature(no_sanitize))]
+// #![cfg_attr(feature = "disable_cfi", feature(no_sanitize))]
 
 #[macro_use]
 mod internal_utils;
