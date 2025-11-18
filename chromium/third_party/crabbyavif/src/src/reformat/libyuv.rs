@@ -372,7 +372,7 @@ fn find_conversion_function(
 // Returns Ok(Some(false)) if only YUV was converted and alpha
 // needs to be imported separately.
 // Returns Ok(None) if the conversion is not implemented.
-#[cfg_attr(feature = "disable_cfi", sanitize(cfi = "off"))]
+// #[cfg_attr(feature = "disable_cfi", sanitize(cfi = "off"))]
 pub(crate) fn yuv_to_rgb(image: &image::Image, rgb: &mut rgb::Image) -> AvifResult<Option<bool>> {
     if (rgb.depth != 8 && rgb.depth != 10) || !image.depth_valid() {
         return Ok(None); // Not implemented.
@@ -833,7 +833,7 @@ fn rgb_to_yuv_conversion_function(
     }
 }
 
-#[cfg_attr(feature = "disable_cfi", sanitize(cfi = "off"))]
+// #[cfg_attr(feature = "disable_cfi", sanitize(cfi = "off"))]
 pub(crate) fn rgb_to_yuv(rgb: &rgb::Image, image: &mut image::Image) -> AvifResult<Option<()>> {
     let conversion_function = match rgb_to_yuv_conversion_function(rgb, image) {
         Some(conversion_function) => conversion_function,

@@ -6,9 +6,9 @@
 #![allow(clippy::result_unit_err)]
 #![allow(clippy::type_complexity)]
 #![allow(clippy::manual_is_multiple_of)]
-#![cfg_attr(feature = "nightly_docs", feature(doc_cfg))]
-#![cfg_attr(feature = "nightly_portable_simd", feature(portable_simd))]
-#![cfg_attr(feature = "nightly_float", feature(f16, f128))]
+// #![cfg_attr(feature = "nightly_docs", feature(doc_cfg))]
+// #![cfg_attr(feature = "nightly_portable_simd", feature(portable_simd))]
+// #![cfg_attr(feature = "nightly_float", feature(f16, f128))]
 
 //! This crate gives small utilities for casting between plain data types.
 //!

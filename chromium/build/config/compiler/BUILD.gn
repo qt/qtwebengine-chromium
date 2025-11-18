@@ -1215,21 +1215,23 @@ config("compiler") {
     "-Cdefault-linker-libraries",
   ]
 
-  rustflags += [
-    # To make Rust .d files compatible with ninja
-    "-Zdep-info-omit-d-target",
+  if (enable_tetanus) {
+   rustflags += [
+      # To make Rust .d files compatible with ninja
+      "-Zdep-info-omit-d-target",
 
-    # If a macro panics during compilation, show which macro and where it is
-    # defined.
-    "-Zmacro-backtrace",
+      # If a macro panics during compilation, show which macro and where it is
+      # defined.
+      "-Zmacro-backtrace",
 
-    # For deterministic builds, keep the local machine's current working
-    # directory from appearing in build outputs.
-    "-Zremap-cwd-prefix=.",
+      # For deterministic builds, keep the local machine's current working
+      # directory from appearing in build outputs.
+      "-Zremap-cwd-prefix=.",
 
-    # We use clang-rt sanitizer runtimes.
-    "-Zexternal-clangrt",
-  ]
+      # We use clang-rt sanitizer runtimes.
+      "-Zexternal-clangrt",
+    ]
+  }
 
   if (!is_win || force_rustc_color_output) {
     # Colorize error output. The analogous flag is passed for clang. This must
@@ -1252,7 +1254,7 @@ config("compiler") {
   if (is_official_build) {
     rustflags += [ "-Ccodegen-units=1" ]
   }
-  if (!rust_prebuilt_stdlib) {
+  if (!rust_prebuilt_stdlib && enable_tetanus) {
     # When building against the Chromium Rust stdlib (which we compile) always
     # abort instead of unwinding when panic occurs. In official builds, panics
     # abort immediately (this is configured in the stdlib) to keep binary size
@@ -1290,7 +1292,9 @@ config("compiler") {
 # Don't allow unstable features to be enabled by `#![feature()]` without
 # additional command line flags.
 config("disallow_unstable_features") {
-  rustflags = [ "-Zallow-features=" ]
+  if (enable_tetanus) {
+    rustflags = [ "-Zallow-features=" ]
+  }
 }
 
 # The BUILDCONFIG file sets this config on targets by default, which means when
@@ -3385,7 +3389,9 @@ config("symbols") {
     if (current_os != "aix" && current_os != "zos") {
       if (use_dwarf5) {
         cflags += [ "-gdwarf-5" ]
-        rustflags += [ "-Zdwarf-version=5" ]
+        if (enable_tetanus) {
+          rustflags += [ "-Zdwarf-version=5" ]
+        }
       } else {
         # Recent clang versions default to DWARF5 on Linux, and Android is about
         # to switch. TODO: Adopt that in controlled way. For now, keep DWARF4.
@@ -3397,7 +3403,9 @@ config("symbols") {
 
         # On Apple, rustc defaults to DWARF2 so it needs to be told how to
         # match clang.
-        rustflags += [ "-Zdwarf-version=4" ]
+        if (enable_tetanus) {
+          rustflags += [ "-Zdwarf-version=4" ]
+        }
       }
     }
 
@@ -3528,18 +3536,24 @@ config("minimal_symbols") {
       # at least 10.11.
       # TODO(thakis): Remove this once mac_deployment_target is 10.11.
       cflags += [ "-gdwarf-4" ]
-      rustflags += [ "-Zdwarf-version=4" ]
+      if (enable_tetanus) {
+        rustflags += [ "-Zdwarf-version=4" ]
+      }
     } else if (!use_dwarf5 && current_os != "aix") {
       # On aix -gdwarf causes linker failures due to thread_local variables.
       # Recent clang versions default to DWARF5 on Linux, and Android is about
       # to switch. TODO: Adopt that in controlled way.
       cflags += [ "-gdwarf-4" ]
-      rustflags += [ "-Zdwarf-version=4" ]
+      if (enable_tetanus) {
+        rustflags += [ "-Zdwarf-version=4" ]
+      }
     }
 
     if (use_dwarf5) {
       cflags += [ "-gdwarf-5" ]
-      rustflags += [ "-Zdwarf-version=5" ]
+      if (enable_tetanus) {
+        rustflags += [ "-Zdwarf-version=5" ]
+      }
     }
 
     cflags += [ "-g1" ]
