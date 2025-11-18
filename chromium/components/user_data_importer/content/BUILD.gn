@@ -2,6 +2,8 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/rust.gni")
+
 source_set("content") {
   sources = [
     "content_bookmark_parser.cc",
@@ -31,6 +33,10 @@ source_set("content") {
     "//net",
     "//url",
   ]
+
+  if (!enable_rust) {
+    deps -= ["//components/user_data_importer/utility:zip_ffi_glue"]
+  }
 }
 
 source_set("test_support") {
@@ -77,4 +83,8 @@ source_set("unit_tests") {
   # TODO(crbug.com/40031409): Fix code that adds exit-time destructors and
   # enable the diagnostic by removing this line.
   configs += [ "//build/config/compiler:no_exit_time_destructors" ]
+
+  if (!enable_rust) {
+    deps -= ["//components/user_data_importer/utility:zip_ffi_glue"]
+  }
 }
