@@ -43,7 +43,7 @@
 
 namespace blink {
 
-const ExceptionContext ExceptionState::kEmptyContext;
+const ExceptionContext ExceptionState::kEmptyContext = {};
 
 ExceptionState::CreateDOMExceptionFunction
     ExceptionState::s_create_dom_exception_func_ = nullptr;
