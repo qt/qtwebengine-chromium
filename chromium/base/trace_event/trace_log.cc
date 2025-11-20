@@ -585,8 +585,10 @@ void TraceLog::AddEnabledStateObserver(EnabledStateObserver* listener) {
 
 void TraceLog::RemoveEnabledStateObserver(EnabledStateObserver* listener) {
   AutoLock lock(observers_lock_);
-  auto removed = std::ranges::remove(enabled_state_observers_, listener);
-  enabled_state_observers_.erase(removed.begin(), removed.end());
+  // auto removed = std::ranges::remove(enabled_state_observers_, listener);
+  // enabled_state_observers_.erase(removed.begin(), removed.end());
+  auto removed = std::remove(enabled_state_observers_.begin(), enabled_state_observers_.end(), listener);
+  enabled_state_observers_.erase(removed, enabled_state_observers_.end());
 }
 
 void TraceLog::AddOwnedEnabledStateObserver(

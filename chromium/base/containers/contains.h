@@ -30,13 +30,15 @@ constexpr bool Contains(const Container& container, const Value& value) {
     return container.find(value) != Container::npos;
   } else if constexpr (requires { container.find(value) != container.end(); }) {
     return container.find(value) != container.end();
+  } else if constexpr (requires { std::find(container.begin(), container.end(), value); }) {
+    return std::find(container.begin(), container.end(), value) != container.end();
   } else {
     static_assert(
         !requires { typename Container::key_type; },
         "Error: About to perform linear search on an associative container. "
         "Either use a more generic comparator (e.g. std::less<>) or, if a "
         "linear search is desired, provide an explicit projection parameter.");
-    return std::ranges::find(container, value) != std::ranges::end(container);
+    return std::ranges::find(std::ranges::begin(container), std::ranges::end(container), value) != std::ranges::end(container);
   }
 }
 
