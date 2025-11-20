@@ -425,9 +425,10 @@ void GestureRecognizerImpl::AddGestureEventHelper(GestureEventHelper* helper) {
 
 void GestureRecognizerImpl::RemoveGestureEventHelper(
     GestureEventHelper* helper) {
-  auto it = std::ranges::find_if(helpers_, [helper](const auto& weak_helper) {
-    return weak_helper.get() == helper;
-  });
+  auto it = std::find_if(helpers_.begin(), helpers_.end(),
+                         [helper](const auto& weak_helper) {
+                           return weak_helper.get() == helper;
+                         });
   if (it != helpers_.end())
     helpers_.erase(it);
 }

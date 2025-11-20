@@ -125,7 +125,7 @@ void NetLog::RemoveObserver(NetLog::ThreadSafeObserver* observer) {
 
   DCHECK_EQ(this, observer->net_log_);
 
-  auto it = std::ranges::find(observers_, observer);
+  auto it = std::find(observers_.begin(), observers_.end(), observer);
   CHECK(it != observers_.end());
   observers_.erase(it);
 
@@ -153,7 +153,7 @@ void NetLog::RemoveCaptureModeObserver(
   DCHECK_EQ(this, observer->net_log_);
   DCHECK(HasCaptureModeObserver(observer));
 
-  auto it = std::ranges::find(capture_mode_observers_, observer);
+  auto it = std::find(capture_mode_observers_.begin(), capture_mode_observers_.end(),  observer);
   CHECK(it != capture_mode_observers_.end());
   capture_mode_observers_.erase(it);
 
