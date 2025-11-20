@@ -1385,7 +1385,7 @@ int QuicChromiumClientSession::TryCreateStream(StreamRequest* request) {
 void QuicChromiumClientSession::CancelRequest(StreamRequest* request) {
   // Remove |request| from the queue while preserving the order of the
   // other elements.
-  auto it = std::ranges::find(stream_requests_, request);
+  auto it = std::find(stream_requests_.begin(), stream_requests_.end(), request);
   if (it != stream_requests_.end()) {
     it = stream_requests_.erase(it);
   }

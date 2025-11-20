@@ -1208,7 +1208,7 @@ void HttpCache::DoneWithEntry(scoped_refptr<ActiveEntry>& entry,
   }
 
   // Transaction is waiting in the done_headers_queue.
-  auto it = std::ranges::find(entry->done_headers_queue(), transaction);
+  auto it = std::find(entry->done_headers_queue().begin(), entry->done_headers_queue().end(), transaction);
   if (it != entry->done_headers_queue().end()) {
     entry->done_headers_queue().erase(it);
 

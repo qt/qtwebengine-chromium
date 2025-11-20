@@ -1568,7 +1568,7 @@ std::unique_ptr<ConnectJob> TransportClientSocketPool::Group::RemoveUnboundJob(
   CHECK(it != jobs_.end());
 
   // Check if |job| is in the unassigned jobs list. If so, remove it.
-  auto it2 = std::ranges::find(unassigned_jobs_, job);
+  auto it2 = std::find(unassigned_jobs_.begin(), unassigned_jobs_.end(), job);
   if (it2 != unassigned_jobs_.end()) {
     unassigned_jobs_.erase(it2);
   } else {
