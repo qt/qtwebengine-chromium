@@ -2202,14 +2202,17 @@ angle::Result FramebufferVk::invalidateImpl(ContextVk *contextVk,
     // Shouldn't try to issue deferred clears if invalidating sub framebuffer.
     ASSERT(mDeferredClears.empty() || !isSubInvalidate);
 
-    // Remove deferred clears for the invalidated attachments.
-    if (invalidateDepthBuffer)
+    if (contextVk->getFeatures().dropDepthStencilClearOnInvalidate.enabled)
     {
-        mDeferredClears.reset(vk::kUnpackedDepthIndex);
-    }
-    if (invalidateStencilBuffer)
-    {
-        mDeferredClears.reset(vk::kUnpackedStencilIndex);
+        // Remove deferred clears for the invalidated attachments.
+        if (invalidateDepthBuffer)
+        {
+            mDeferredClears.reset(vk::kUnpackedDepthIndex);
+        }
+        if (invalidateStencilBuffer)
+        {
+            mDeferredClears.reset(vk::kUnpackedStencilIndex);
+        }
     }
     for (size_t colorIndexGL : mState.getEnabledDrawBuffers())
     {

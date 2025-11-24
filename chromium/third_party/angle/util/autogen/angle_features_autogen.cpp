@@ -118,6 +118,7 @@ constexpr PackedEnumMap<Feature, const char *> kFeatureNames = {{
     {Feature::DontUseLoopsToInitializeVariables, "dontUseLoopsToInitializeVariables"},
     {Feature::DoubleClearForRobustInit, "doubleClearForRobustInit"},
     {Feature::DoubleDepthBiasConstantFactor, "doubleDepthBiasConstantFactor"},
+    {Feature::DropDepthStencilClearOnInvalidate, "dropDepthStencilClearOnInvalidate"},
     {Feature::DumpShaderSource, "dumpShaderSource"},
     {Feature::DumpTranslatedShaders, "dumpTranslatedShaders"},
     {Feature::EglColorspaceAttributePassthrough, "eglColorspaceAttributePassthrough"},
