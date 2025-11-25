@@ -1026,7 +1026,7 @@ void Parser::ParseFunction(Isolate* isolate, ParseInfo* info,
 
   FunctionKind function_kind = flags().function_kind();
   FunctionLiteral* result;
-  if (V8_UNLIKELY(IsClassMembersInitializerFunction(function_kind))) {
+  if (V8_UNLIKELY(IsClassInitializerFunction(function_kind))) {
     // Reparsing of class member initializer functions has to be handled
     // specially because they require reparsing of the whole class body,
     // function start/end positions correspond to the class literal body
@@ -1075,9 +1075,7 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
   DCHECK(ast_value_factory());
   fni_.PushEnclosingName(raw_name);
 
-  ResetInfoId();
-  DCHECK_LT(0, function_literal_id);
-  SkipInfos(function_literal_id - 1);
+  ResetInfoId(function_literal_id - 1);
 
   ParsingModeScope parsing_mode(this, PARSE_EAGERLY);
 
@@ -1191,7 +1189,7 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
 }
 
 FunctionLiteral* Parser::ParseClassForMemberInitialization(
-    FunctionKind initalizer_kind, int initializer_pos, int initializer_id,
+    FunctionKind initializer_kind, int initializer_pos, int initializer_id,
     int initializer_end_pos, const AstRawString* class_name) {
   // When the function is a class members initializer function, we record the
   // source range of the entire class body as its positions in its SFI, so at
@@ -1202,10 +1200,6 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
   DeclarationScope* nearest_decl_scope = original_scope_->GetDeclarationScope();
   DCHECK_NOT_NULL(nearest_decl_scope);
   FunctionState function_state(&function_state_, &scope_, nearest_decl_scope);
-
-  // We will reindex the function literals later.
-  ResetInfoId();
-  SkipInfos(initializer_id - 1);
 
   // We preparse the class members that are not fields with initializers
   // in order to collect the function literal ids.
@@ -1251,9 +1245,43 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
     scope()->MarkReparsingForClassInitializer();
 #endif
 
+    // Class members for instance and static fields can be intertwined. For
+    // example, in `class { a; static {}; b; static {} }` (where `a` and `b` are
+    // instance fields, and `static {}` are static initialization blocks), the
+    // initial parse might assign function literal IDs as follows:
+    //   - Instance members initializer (for `a` and `b`): ID 1
+    //   - Static members initializer (for `static {}` blocks): ID 2
+    //
+    // When we reparse a specific initializer (e.g., the static members
+    // initializer, ID 2), we must ensure that the scope for the "other" kind of
+    // initializer (e.g., the instance members initializer, ID 1) is
+    // pre-allocated if it lexically precedes the current one.
+    //
+    // If the instance scope (ID 1) is not pre-allocated:
+    // 1. The parser processes the first `static {}` block. It allocates the
+    //    static scope with the correct ID (ID 2), as that is the next available
+    //    ID after skipping.
+    // 2. The parser continues and encounters `b`. Since no instance scope
+    //    exists yet, it lazily allocates one.
+    // 3. This new instance scope takes the *next* available ID, which is ID 3.
+    //    However, ID 3 might not exist (overrunning the range) or might belong
+    //    to a subsequent function, causing a shift/mismatch.
+    //
+    // Pre-allocating the preceding scope (ID 1) ensures it exists before the
+    // parser encounters `b`, preventing the incorrect allocation of a new ID.
+
+    if (initializer_kind ==
+        FunctionKind::kClassMembersInitializerFunctionPrecededByStatic) {
+      class_info.EnsureStaticElementsScope(this, kNoSourcePosition, -1);
+    } else if (initializer_kind ==
+               FunctionKind::kClassStaticInitializerFunctionPrecededByMember) {
+      class_info.EnsureInstanceMembersScope(this, kNoSourcePosition, -1);
+    }
+    ResetInfoId(initializer_id - 1);
+
     ParseClassLiteralBody(class_info, class_name, class_token_pos, Token::kEos);
 
-    if (initalizer_kind == FunctionKind::kClassMembersInitializerFunction) {
+    if (IsClassInstanceInitializerFunction(initializer_kind)) {
       DCHECK_EQ(class_info.instance_members_function_id, initializer_id);
       initializer = CreateInstanceMembersInitializer(class_name, &class_info);
     } else {
@@ -1265,11 +1293,11 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
 
   if (has_error()) return nullptr;
 
-  DCHECK(IsClassMembersInitializerFunction(initalizer_kind));
+  DCHECK(IsClassInitializerFunction(initializer_kind));
 
   no_expression_scope.ValidateExpression();
 
-  DCHECK_EQ(initializer->kind(), initalizer_kind);
+  DCHECK_EQ(initializer->kind(), initializer_kind);
   DCHECK_EQ(initializer->function_literal_id(), initializer_id);
   DCHECK_EQ(initializer->end_position(), initializer_end_pos);
 
@@ -3363,7 +3391,7 @@ void Parser::AddClassStaticBlock(Block* block, ClassInfo* class_info) {
 FunctionLiteral* Parser::CreateInitializerFunction(
     const AstRawString* class_name, DeclarationScope* scope,
     int function_literal_id, Statement* initializer_stmt) {
-  DCHECK(IsClassMembersInitializerFunction(scope->function_kind()));
+  DCHECK(IsClassInitializerFunction(scope->function_kind()));
   // function() { .. class fields initializer .. }
   ScopedPtrList<Statement> statements(pointer_buffer());
   statements.Add(initializer_stmt);
