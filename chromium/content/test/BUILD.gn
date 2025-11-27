@@ -984,6 +984,9 @@ group("telemetry_gpu_common_data") {
     # For WebGPU CTS tests.
     "//third_party/dawn/webgpu-cts",
   ]
+  if (is_qtwebengine) {
+    data_deps = []
+  }
 }
 
 group("telemetry_gpu_unittest_data") {
