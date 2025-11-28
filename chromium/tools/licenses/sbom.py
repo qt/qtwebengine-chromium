@@ -44,6 +44,7 @@ PACKAGES_TO_CLEAN_BAD_URL = [
 OVERRIDE_LICENSE_FILE_METADATA_KEY = "Override License File"
 PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID = [
     'libdrm',
+    'mini_chromium',
 ]
 
 # Command to find the first "Baseline" git commit in src/3rdparty
@@ -67,14 +68,10 @@ DIRECTORIES_TO_SKIP_BECAUSE_THEY_HAVE_VARIOUS_PARSING_ISSUES = [
     os.path.join('third_party', 'catapult'),
     os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'lss'),
     os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'zlib'),
-    os.path.join('third_party', 'crashpad', 'crashpad', 'third_party', 'mini_chromium'),
     os.path.join('third_party', 'devtools-frontend', 'src', 'front_end', 'third_party', 'chromium'),
     os.path.join('third_party', 'perfetto', 'protos', 'third_party', 'chromium'),
-
-    # Missing URL (no homepage)
-    os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'g711'),
-    os.path.join('third_party', 'webrtc', 'modules', 'third_party', 'g722'),
-    os.path.join('third_party', 'webrtc', 'rtc_base', 'third_party', 'base64'),
+    os.path.join('third_party', 'rust'),
+    os.path.join('third_party', 'tflite'),
 ]
 
 # Wrappers for Chromium's package and SPDX writer tools
