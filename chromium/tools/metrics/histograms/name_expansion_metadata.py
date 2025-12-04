@@ -7,7 +7,7 @@ See here for specifications:
 https://source.chromium.org/chromium/chromium/src/+/main:tools/metrics/histograms/histogram_configuration_model.py
 """
 
-from typing import TypedDict
+from typing import List, Dict, TypedDict
 
 
 class Variant(TypedDict, total=False):
@@ -41,7 +41,7 @@ class Variant(TypedDict, total=False):
   name: str
   summary: str
   obsolete: str | None
-  owners: list[str]
+  owners: List[str]
 
 
 class Token(TypedDict, total=False):
@@ -73,8 +73,8 @@ class Token(TypedDict, total=False):
     variants: The variants whose names are substituted for '{key}'.
   """
   key: str
-  variants: list[Variant]
+  variants: List[Variant]
 
 
 # Assignment of a variant for each token in a patterned histogram.
-TokenAssignment = dict[str, Variant]
+TokenAssignment = Dict[str, Variant]

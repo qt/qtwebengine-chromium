@@ -70,6 +70,7 @@ import os
 import re
 import sys
 import xml.dom.minidom
+from typing import List
 
 import histogram_configuration_model
 
@@ -88,7 +89,7 @@ class Error(Exception):
   pass
 
 
-class ExtractionErrors(list[str]):
+class ExtractionErrors(List[str]):
   """A list of error strings, with new entries also logged."""
 
   def AppendAndLog(self, error: str) -> None:
