@@ -258,6 +258,7 @@ _protoc_gen_ts_runtime_deps = [
   "//third_party/node/node_modules/ts-proto/protoc-gen-ts_proto",
 ]
 
+if (!is_qtwebengine) {
 # When use_remoteexec=true, node actions may run on remote
 # Linux worker. So it should include linux node binary in inputs.
 if (is_linux || is_chromeos || use_remoteexec) {
@@ -275,6 +276,7 @@ if (is_mac && host_os == "mac") {
     _protoc_gen_ts_runtime_deps +=
         [ "//third_party/node/mac/node-darwin-x64/bin/node" ]
   }
+}
 }
 
 template("proto_library") {
