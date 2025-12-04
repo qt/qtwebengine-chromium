@@ -8,6 +8,8 @@ see histograms.xml; example path:
 tools/metrics/histograms/metadata/uma/histograms.xml
 """
 
+from __future__ import annotations
+
 import bisect
 import copy
 import datetime
@@ -16,6 +18,7 @@ import logging
 import re
 from typing import Optional, TypedDict
 import xml.dom.minidom
+from typing import List
 
 import setup_modules  # pylint: disable=unused-import
 
@@ -43,7 +46,7 @@ class Error(Exception):
   pass
 
 
-class ExtractionErrors(list[str]):
+class ExtractionErrors(List[str]):
   """A list of error strings, with new entries also logged."""
 
   def AppendAndLog(self, error: str) -> None:

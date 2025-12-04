@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import Dict, List, Optional, Tuple
 
 
 class AggregationKind(Enum):
@@ -19,14 +19,14 @@ class AggregationDetails:
   kind: AggregationKind
   name: Optional[str]
   export_items: bool
-  elements: dict[str, str]
+  elements: Dict[str, str]
   map_key_type: Optional[str]
 
-  def GetSortedArrayElements(self) -> list[str]:
+  def GetSortedArrayElements(self) -> List[str]:
     """Returns sorted list of names of all elements."""
     return sorted(self.elements.keys())
 
-  def GetSortedMapElements(self) -> list[tuple[str, str]]:
+  def GetSortedMapElements(self) -> List[Tuple[str, str]]:
     """Returns sorted mapping of all elements, including aliases."""
     keys = sorted(self.elements.keys())
     return [(key, self.elements[key]) for key in keys]
