@@ -11,8 +11,7 @@ import os.path
 import re
 import sys
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, NamedTuple, Union
-from collections import OrderedDict
+from typing import Dict, List, OrderedDict, Optional, NamedTuple, Union
 
 # This file is a peer to json_schema.py and idl_schema.py. Each of these files
 # understands a certain format describing APIs (either JSON, old extensions IDL

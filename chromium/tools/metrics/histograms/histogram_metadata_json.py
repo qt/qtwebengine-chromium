@@ -30,7 +30,7 @@ For example:
 }
 """
 
-from typing import Literal, TypedDict
+from typing import List, Literal, TypedDict
 
 
 class Description(TypedDict):
@@ -67,7 +67,7 @@ class EnumDetails(TypedDict, total=False):
     name: Name for this enum.
     summary: Description of this enum.
   """
-  buckets: list[BucketMetadata]
+  buckets: List[BucketMetadata]
   name: str
   summary: str
 
@@ -104,12 +104,12 @@ class HistogramMetadataJSON(TypedDict, total=False):
   """
   histogramName: str
   nameHash: int
-  descriptions: list[Description]
+  descriptions: List[Description]
   enumDetails: EnumDetails
-  owners: list[Owner]
+  owners: List[Owner]
   units: str
   obsoletionMessage: str
   expiresAfter: str
   estimatedExpiryDate: str
-  components: list[str]
+  components: List[str]
   improvement: ImprovementDirection

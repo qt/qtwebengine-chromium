@@ -18,6 +18,7 @@ import re
 import sys
 from typing import Optional, TypedDict
 import xml.dom.minidom
+from typing import List
 
 sys.path.append(os.path.join(os.path.dirname(__file__), '..', 'common'))
 import xml_utils
@@ -43,7 +44,7 @@ class Error(Exception):
   pass
 
 
-class ExtractionErrors(list[str]):
+class ExtractionErrors(List[str]):
   """A list of error strings, with new entries also logged."""
 
   def AppendAndLog(self, error: str) -> None:
