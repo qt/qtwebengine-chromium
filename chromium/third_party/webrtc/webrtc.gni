@@ -340,6 +340,8 @@ declare_args() {
 
   # Enable gRPC used for negotiation in multiprocess tests
   rtc_enable_grpc = rtc_enable_protobuf && (is_linux || is_mac)
+
+  webrtc_symbol_level = -1
 }
 
 # Make it possible to provide custom locations for some libraries (move these
@@ -396,6 +398,17 @@ if (!build_with_chromium && is_clang) {
 rtc_add_configs = rtc_common_configs
 rtc_prod_configs = [ webrtc_root + ":rtc_prod_config" ]
 rtc_library_impl_config = [ webrtc_root + ":library_impl_config" ]
+
+rtc_remove_configs += [ "//build/config/compiler:default_symbols" ]
+if (webrtc_symbol_level == 2) {
+  rtc_add_configs += [ "//build/config/compiler:symbols" ]
+} else if (webrtc_symbol_level == 1) {
+  rtc_add_configs += [ "//build/config/compiler:minimal_symbols" ]
+} else if (webrtc_symbol_level == 0) {
+  rtc_add_configs += [ "//build/config/compiler:no_symbols" ]
+} else {
+  rtc_add_configs += [ "//build/config/compiler:default_symbols" ]
+}
 
 set_defaults("rtc_test") {
   configs = rtc_add_configs
