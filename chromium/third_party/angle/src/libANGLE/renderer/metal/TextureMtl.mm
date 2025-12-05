@@ -1991,9 +1991,9 @@ angle::Result TextureMtl::setPerSliceSubImage(const gl::Context *context,
                 ANGLE_MTL_CHECK(contextMtl, offset <= std::numeric_limits<uint32_t>::max(),
                                 GL_INVALID_OPERATION);
 
+                size_t imageSize = pixelsRowPitch * mtlArea.size.height;
                 mtl::BufferRef stagingBuffer;
-                ANGLE_TRY(
-                    mtl::Buffer::MakeBuffer(contextMtl, pixelsDepthPitch, nullptr, &stagingBuffer));
+                ANGLE_TRY(mtl::Buffer::MakeBuffer(contextMtl, imageSize, nullptr, &stagingBuffer));
 
                 ASSERT(pixelsAngleFormat.pixelBytes == 4 && offset % 4 == 0);
                 ANGLE_TRY(SaturateDepth(contextMtl, sourceBuffer, stagingBuffer,
@@ -2004,10 +2004,12 @@ angle::Result TextureMtl::setPerSliceSubImage(const gl::Context *context,
                 offset       = 0;
             }
 
+            size_t srcBytesPerImage = mtlArea.size.depth > 1 ? pixelsDepthPitch : 0;
+
             // Use blit encoder to copy
             mtl::BlitCommandEncoder *blitEncoder = contextMtl->getBlitCommandEncoder();
             blitEncoder->copyBufferToTexture(
-                sourceBuffer, offset, pixelsRowPitch, pixelsDepthPitch, mtlArea.size, image, slice,
+                sourceBuffer, offset, pixelsRowPitch, srcBytesPerImag, mtlArea.size, image, slice,
                 mtl::kZeroNativeMipLevel, mtlArea.origin,
                 mFormat.isPVRTC() ? mtl::kBlitOptionRowLinearPVRTC : MTLBlitOptionNone);
         }
