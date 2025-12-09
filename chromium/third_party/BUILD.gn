@@ -19,7 +19,7 @@ if (use_system_libjpeg) {
     packages = [ "libjpeg" ]
   }
   shim_headers("libjpeg_shim") {
-    root_path = "libjpeg_turbo"
+    root_path = "libjpeg_turbo/src"
     headers = [
       "jpeglib.h"
     ]
@@ -87,7 +87,7 @@ component("freetype_harfbuzz") {
     } else if (use_qt_freetype) {
       public_configs += [ qt_freetype_config ]
     } else {
-      public_deps += [ "//third_party/freetype:freetype_source" ]
+      public_deps += [ "//build/config/freetype" ]
     }
   }
   if (use_system_harfbuzz) {
@@ -95,8 +95,9 @@ component("freetype_harfbuzz") {
   } else if (use_qt_harfbuzz) {
     public_configs += [ qt_harfbuzz_config ]
   } else {
-    public_deps += [ "//third_party/harfbuzz-ng:harfbuzz_source" ]
+    public_deps += [ "//third_party/harfbuzz-ng" ]
   }
+  public_deps += [ ":freetype_buildflags" ]
 }
 
 buildflag_header("freetype_buildflags") {

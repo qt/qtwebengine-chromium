@@ -18,6 +18,7 @@ if (use_system_freetype) {
     visibility = [
       "//build/config/freetype:freetype",
       "//third_party:freetype_harfbuzz",
+      "//third_party/harfbuzz-ng:harfbuzz-ng",
       "//third_party/harfbuzz-ng:harfbuzz_source",
     ]
     packages = [ "freetype2" ]
