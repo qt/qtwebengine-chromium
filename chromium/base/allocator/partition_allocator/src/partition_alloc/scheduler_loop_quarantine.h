@@ -234,7 +234,7 @@ class SchedulerLoopQuarantineBranch {
     // index to slot size is more lightweight compared to its reverse look-up.
     size_t bucket_index = 0;
   };
-  std::vector<QuarantineSlot, InternalAllocator<QuarantineSlot>> slots_
+  std::vector<QuarantineSlot> slots_
       PA_GUARDED_BY(lock_);
   size_t branch_size_in_bytes_ PA_GUARDED_BY(lock_) = 0;
   // Using `std::atomic` here so that other threads can update this value.
