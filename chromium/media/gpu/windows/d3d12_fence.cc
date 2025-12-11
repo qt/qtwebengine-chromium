@@ -47,8 +47,8 @@ D3D11Status::Or<uint64_t> D3D12Fence::Signal(
   uint64_t next_value = fence_value_ + 1;
   HRESULT hr = command_queue.Signal(fence_.Get(), next_value);
   if (FAILED(hr)) {
-    return D3D11Status{D3D11StatusCode::kFenceSignalFailed,
-                       "ID3D12CommandQueue failed to signal fence", hr};
+    return D3D11Status(D3D11StatusCode::kFenceSignalFailed,
+                       "ID3D12CommandQueue failed to signal fence", hr);
   }
   fence_value_ = next_value;
   return fence_value_;
@@ -62,8 +62,8 @@ D3D11Status D3D12Fence::WaitCPU(uint64_t fence_value) const {
       nullptr, /*bManualReset=*/TRUE, /*bInitialState=*/FALSE, nullptr)};
   HRESULT hr = fence_->SetEventOnCompletion(fence_value, fence_event.get());
   if (FAILED(hr)) {
-    return D3D11Status{D3D11StatusCode::kWaitForFenceFailed,
-                       "Failed to SetEventOnCompletion", hr};
+    return D3D11Status(D3D11StatusCode::kWaitForFenceFailed,
+                       "Failed to SetEventOnCompletion", hr);
   }
 
   return WaitForSingleObject(fence_event.Get(), INFINITE) == WAIT_OBJECT_0

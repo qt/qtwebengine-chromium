@@ -65,7 +65,7 @@ concept TypedStatusImplTraits =
 template <typename T, typename F>
 concept TypedStatusConstructableFrom = requires(T* t, F f) {
   { T::Traits::OnCreateFrom(t, f) } -> std::same_as<void>;
-} && TypedStatusImplTraits<typename T::Traits>;
+};
 
 namespace internal {
 
@@ -105,7 +105,7 @@ struct MEDIA_EXPORT StatusData {
 };
 
 // Helper class to allow traits with no default enum.
-template <TypedStatusImplTraits T>
+template <typename T>
 struct StatusTraitsHelper {
   // If T defines OkEnumValue(), then return it. Otherwise, return an
   // T::Codes::kOk if that's defined, or std::nullopt if its not.
@@ -191,7 +191,7 @@ struct MEDIA_EXPORT StatusConstants {
 };
 
 // See media/base/status.md for details and instructions for using TypedStatus.
-template <TypedStatusImplTraits T>
+template <typename T>
 class MEDIA_EXPORT TypedStatus {
  public:
   // Required for some of the helper concepts that are declared above.
@@ -251,7 +251,7 @@ class MEDIA_EXPORT TypedStatus {
   }
 
   // Used to allow returning {TypedStatus::Codes::kValue, cause}
-  template <TypedStatusImplTraits O>
+  template <typename O>
     requires(!std::is_same_v<O, T>)
   TypedStatus(NonOkCode code,
               TypedStatus<O>&& cause,
@@ -261,7 +261,7 @@ class MEDIA_EXPORT TypedStatus {
   }
 
   // Used to allow returning {TypedStatus::Codes::kValue, "message", cause}
-  template <TypedStatusImplTraits O>
+  template <typename O>
   TypedStatus(NonOkCode code,
               std::string message,
               TypedStatus<O>&& cause,
@@ -354,14 +354,14 @@ class MEDIA_EXPORT TypedStatus {
   }
 
   // Add |cause| as the error that triggered this one.
-  template <TypedStatusImplTraits AnyTraitsType>
+  template <typename AnyTraitsType>
   TypedStatus<T>&& AddCause(TypedStatus<AnyTraitsType>&& cause) && {
     AddCause(std::move(cause));
     return std::move(*this);
   }
 
   // Add |cause| as the error that triggered this one.
-  template <TypedStatusImplTraits AnyTraitsType>
+  template <typename AnyTraitsType>
   void AddCause(TypedStatus<AnyTraitsType>&& cause) & {
     DCHECK(data_ && cause.data_);
     data_->cause = std::move(cause.data_);
@@ -559,7 +559,7 @@ class MEDIA_EXPORT TypedStatus {
   friend struct internal::MediaSerializerDebug<TypedStatus<T>>;
 
   // Allow AddCause.
-  template <TypedStatusImplTraits O>
+  template <typename O>
   friend class TypedStatus;
 
   void LogInternal() const {
