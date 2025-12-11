@@ -35,16 +35,16 @@ struct MOJO_CPP_SYSTEM_EXPORT HandleSignalsState final
            satisfiable_signals == other.satisfiable_signals;
   }
 
-  bool satisfies_any(MojoHandleSignals signals) const {
-    return !!(satisfied_signals & signals);
+  bool satisfies_any(MojoHandleSignals _signals) const {
+    return !!(satisfied_signals & _signals);
   }
 
-  bool satisfies_all(MojoHandleSignals signals) const {
-    return (satisfied_signals & signals) == signals;
+  bool satisfies_all(MojoHandleSignals _signals) const {
+    return (satisfied_signals & _signals) == _signals;
   }
 
-  bool can_satisfy_any(MojoHandleSignals signals) const {
-    return !!(satisfiable_signals & signals);
+  bool can_satisfy_any(MojoHandleSignals _signals) const {
+    return !!(satisfiable_signals & _signals);
   }
 
   // The handle is currently readable. May apply to a message pipe handle or
