@@ -1023,10 +1023,10 @@ ReduceResult MaglevGraphBuilder::BuildInt32Min(ValueNode* a, ValueNode* b) {
       [&]() -> ReduceResult { return a; }, [&]() -> ReduceResult { return b; });
 }
 
-ReduceResult MaglevGraphBuilder::Select(
-    base::FunctionRef<BranchResult(BranchBuilder&)> cond,
-    base::FunctionRef<ReduceResult()> if_true,
-    base::FunctionRef<ReduceResult()> if_false) {
+template <typename FCond, typename FTrue, typename FFalse>
+ReduceResult MaglevGraphBuilder::Select(FCond cond,
+                                        FTrue if_true,
+                                        FFalse if_false) {
   MaglevSubGraphBuilder subgraph(this, 1);
   MaglevSubGraphBuilder::Label else_branch(&subgraph, 1);
   BranchBuilder builder(this, &subgraph, BranchType::kBranchIfFalse,
@@ -8773,7 +8773,7 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceArrayForEach(
   auto get_lazy_deopt_scope =
       [this](compiler::JSFunctionRef target, ValueNode* receiver,
              ValueNode* callback, ValueNode* this_arg, ValueNode* index_int32,
-             ValueNode* next_index_int32, ValueNode* original_length) {
+             ValueNode* next_index_int32, ValueNode* original_length) -> LazyDeoptFrameScope {
         return LazyDeoptFrameScope(
             this, Builtin::kArrayForEachLoopLazyDeoptContinuation, target,
             base::VectorOf<ValueNode*>({receiver, callback, this_arg,
@@ -8783,7 +8783,7 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceArrayForEach(
   auto get_eager_deopt_scope =
       [this](compiler::JSFunctionRef target, ValueNode* receiver,
              ValueNode* callback, ValueNode* this_arg, ValueNode* index_int32,
-             ValueNode* next_index_int32, ValueNode* original_length) {
+             ValueNode* next_index_int32, ValueNode* original_length) -> EagerDeoptFrameScope {
         return EagerDeoptFrameScope(
             this, Builtin::kArrayForEachLoopEagerDeoptContinuation, target,
             base::VectorOf<ValueNode*>({receiver, callback, this_arg,
@@ -8883,7 +8883,7 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceArrayMap(
 
   MaybeReduceResult builtin_result = TryReduceArrayIteratingBuiltin(
       "Array.prototype.map", target, args, get_eager_deopt_scope,
-      get_lazy_deopt_scope, initial_callback, process_element_callback);
+      get_lazy_deopt_scope, std::make_optional(initial_callback), std::make_optional(process_element_callback));
   if (builtin_result.IsFail() || builtin_result.IsDoneWithAbort()) {
     return builtin_result;
   }
@@ -8895,12 +8895,14 @@ MaybeReduceResult MaglevGraphBuilder::TryReduceArrayMap(
   return result_array;
 }
 
+template<typename GetEagerDeoptScopeCallbackT, typename GetLazyDeoptScopeCallbackT,
+         typename InitialCallbackT, typename ProcessElementCallbackT>
 MaybeReduceResult MaglevGraphBuilder::TryReduceArrayIteratingBuiltin(
     const char* name, compiler::JSFunctionRef target, CallArguments& args,
-    GetEagerDeoptScopeCallback get_eager_deopt_scope,
-    GetLazyDeoptScopeCallback get_lazy_deopt_scope,
-    const std::optional<InitialCallback>& initial_callback,
-    const std::optional<ProcessElementCallback>& process_element_callback) {
+    GetEagerDeoptScopeCallbackT get_eager_deopt_scope,
+    GetLazyDeoptScopeCallbackT get_lazy_deopt_scope,
+    const std::optional<InitialCallbackT>& initial_callback,
+    const std::optional<ProcessElementCallbackT>& process_element_callback) {
   DCHECK_EQ(initial_callback.has_value(), process_element_callback.has_value());
 
   if (!CanSpeculateCall()) return {};

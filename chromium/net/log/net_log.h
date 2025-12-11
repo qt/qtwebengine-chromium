@@ -328,7 +328,7 @@ class NET_EXPORT NetLog {
       NetLogEventType type,
       const NetLogSource& source,
       NetLogEventPhase phase,
-      base::FunctionRef<base::DictValue(NetLogCaptureMode)> get_params);
+      absl::FunctionRef<base::DictValue(NetLogCaptureMode)> get_params);
 
   // Returns the set of all capture modes being observed.
   NetLogCaptureModeSet GetObserverCaptureModes() const {

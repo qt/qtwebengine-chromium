@@ -913,12 +913,14 @@ class MaglevGraphBuilder {
   // initial_callback will be called to generate code before starting the
   // iteration, and process_element_callback will be called to generate code for
   // each result element.
+  template<typename GetEagerDeoptScopeCallbackT, typename GetLazyDeoptScopeCallbackT,
+           typename InitialCallbackT = InitialCallback, typename ProcessElementCallbackT = ProcessElementCallback>
   MaybeReduceResult TryReduceArrayIteratingBuiltin(
       const char* name, compiler::JSFunctionRef target, CallArguments& args,
-      GetEagerDeoptScopeCallback get_eager_deopt_scope,
-      GetLazyDeoptScopeCallback get_lazy_deopt_scope,
-      const std::optional<InitialCallback>& initial_callback = {},
-      const std::optional<ProcessElementCallback>& process_element_callback =
+      GetEagerDeoptScopeCallbackT get_eager_deopt_scope,
+      GetLazyDeoptScopeCallbackT get_lazy_deopt_scope,
+      const std::optional<InitialCallbackT>& initial_callback = {},
+      const std::optional<ProcessElementCallbackT>& process_element_callback =
           {});
 
   // OOB StringAt access behaves differently for elements (needs the elements
@@ -1797,9 +1799,8 @@ class MaglevGraphBuilder {
   ReduceResult BuildInt32Max(ValueNode* a, ValueNode* b);
   ReduceResult BuildInt32Min(ValueNode* a, ValueNode* b);
 
-  ReduceResult Select(base::FunctionRef<BranchResult(BranchBuilder&)> cond,
-                      base::FunctionRef<ReduceResult()> if_true,
-                      base::FunctionRef<ReduceResult()> if_false);
+  template <typename FCond, typename FTrue, typename FFalse>
+  ReduceResult Select(FCond cond, FTrue if_true, FFalse if_false);
 
   void MarkBranchDeadAndJumpIfNeeded(bool is_jump_taken);
 
