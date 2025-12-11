@@ -70,17 +70,18 @@ concept HasNonOverloadedCallOp = requires { &Functor::operator(); };
 // Do not decay `Functor` before testing this, lest it give an incorrect result
 // for overloads with different ref-qualifiers.
 template <typename Functor, typename... BoundArgs>
-concept HasOverloadedCallOp = requires {
+concept FunctorIsInvocable = requires(Functor&& f, BoundArgs&&... args) {
+  std::forward<Functor>(f)(std::forward<BoundArgs>(args)...);
+};
+template <typename Functor, typename... BoundArgs>
+concept HasOverloadedCallOp =
   // The functor must be invocable with the bound args.
-  requires requires(Functor&& f, BoundArgs&&... args) {
-    std::forward<Functor>(f)(std::forward<BoundArgs>(args)...);
-  };
+  FunctorIsInvocable<Functor, BoundArgs...> &&
   // Now exclude invocables that are not cases of overloaded `operator()()`s:
   // * `operator()()` exists, but isn't overloaded
-  requires !HasNonOverloadedCallOp<std::decay_t<Functor>>;
+  !HasNonOverloadedCallOp<std::decay_t<Functor>> &&
   // * Function pointer (doesn't have `operator()()`)
-  requires !std::is_pointer_v<std::decay_t<Functor>>;
-};
+  !std::is_pointer_v<std::decay_t<Functor>>;
 
 // Implements `ExtractArgs` and `ExtractReturnType`.
 template <typename Signature>

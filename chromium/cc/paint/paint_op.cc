@@ -643,11 +643,11 @@ void DrawVerticesOp::Serialize(PaintOpWriter& writer,
 
 namespace {
 
-template <typename T>
+template <typename T, typename ValueSerializer>
 void SerializeSkottieMap(
     const base::flat_map<SkottieResourceIdHash, T>& map,
     PaintOpWriter& writer,
-    base::FunctionRef<void(const T&, PaintOpWriter&)> value_serializer) {
+    ValueSerializer&& value_serializer) {
   // Write the size of the map first so that we know how many entries to read
   // from the buffer during deserialization.
   writer.WriteSize(map.size());

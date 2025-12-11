@@ -115,6 +115,8 @@ class FunctionRef<R(Args...)> {
   // NOLINTNEXTLINE(google-explicit-constructor)
   FunctionRef(Func* func) : wrapped_func_ref_(func) {}
 
+  FunctionRef(const absl::FunctionRef<R(Args...)> &func V8_LIFETIME_BOUND) : wrapped_func_ref_(func) {}
+
   // Null FunctionRefs are not allowed.
   FunctionRef() = delete;
 
