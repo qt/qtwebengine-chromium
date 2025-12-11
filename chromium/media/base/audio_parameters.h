@@ -57,9 +57,17 @@ struct MEDIA_EXPORT alignas(kParametersAlignment) AudioOutputBufferParameters {
   // atomically accumulated on the AudioService side, and are differentiated on
   // the Renderer side to produce AudioGlitchInfo.
   int64_t cumulative_glitch_duration_us;  // base::TimeDelta in microseconds.
+#if __cpp_lib_atomic_ref >= 201806L
   static_assert(std::atomic_ref<int64_t>::is_always_lock_free);
+#else
+  static_assert(__atomic_always_lock_free(sizeof(int64_t), nullptr));
+#endif
   uint64_t cumulative_glitch_count;
+#if __cpp_lib_atomic_ref >= 201806L
   static_assert(std::atomic_ref<uint64_t>::is_always_lock_free);
+#else
+  static_assert(__atomic_always_lock_free(sizeof(uint64_t), nullptr));
+#endif
 
   uint32_t bitstream_data_size;
   uint32_t bitstream_frames;

@@ -783,8 +783,12 @@ void AtomicUint8ArrayToHexSlow(const char* bytes, size_t length,
   // from it.
   char* mutable_bytes = const_cast<char*>(bytes);
   for (size_t i = 0; i < length; i++) {
+#if __cpp_lib_atomic_ref >= 201806L
     uint8_t byte =
         std::atomic_ref<char>(mutable_bytes[i]).load(std::memory_order_relaxed);
+#else
+    uint8_t byte = __atomic_load_n(&mutable_bytes[i], __ATOMIC_RELAXED);
+#endif
     PerformNibbleToHexAndWriteIntoStringOutPut(byte, index, string_output);
     index += 2;
   }
@@ -1389,8 +1393,12 @@ bool ArrayBufferFromHex(const base::Vector<T>& input_vector,
     result = HandleRemainingHexValues(input_vector, i);
     if (result.has_value()) {
       if (is_shared) {
+#if __cpp_lib_atomic_ref >= 201806L
         std::atomic_ref<uint8_t>(buffer[index++])
             .store(result.value(), std::memory_order_relaxed);
+#else
+        __atomic_store_n(&buffer[index++], result.value(), __ATOMIC_RELAXED);
+#endif
       } else {
         buffer[index++] = result.value();
       }
