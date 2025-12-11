@@ -505,12 +505,15 @@ simdutf::result ArrayBufferSetFromBase64(
     DirectHandle<JSTypedArray> typed_array, size_t& output_length) {
   output_length = array_length;
   simdutf::result simd_result;
+#if SIMDUTF_ATOMIC_REF
   if (typed_array->buffer()->is_shared()) {
     simd_result = simdutf::atomic_base64_to_binary_safe(
         reinterpret_cast<const T>(input_vector), input_length,
         reinterpret_cast<char*>(typed_array->DataPtr()), output_length,
         alphabet, last_chunk_handling, /*decode_up_to_bad_char*/ true);
-  } else {
+  } else
+#endif
+  {
     simd_result = simdutf::base64_to_binary_safe(
         reinterpret_cast<const T>(input_vector), input_length,
         reinterpret_cast<char*>(typed_array->DataPtr()), output_length,
@@ -837,11 +840,14 @@ BUILTIN(Uint8ArrayPrototypeToBase64) {
     size_t simd_result_size;
     const char* backing_store;
     std::memcpy(&backing_store, uint8array->DataPtr(), sizeof(backing_store));
+#if SIMDUTF_ATOMIC_REF
     if (uint8array->buffer()->is_shared()) {
       simd_result_size = simdutf::atomic_binary_to_base64(
           backing_store, length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
-    } else {
+    } else
+#endif
+    {
       simd_result_size = simdutf::binary_to_base64(
           backing_store, length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
@@ -1082,7 +1088,14 @@ BUILTIN(Uint8ArrayPrototypeToHex) {
   //    b. Set hex to StringPad(hex, 2, "0", start).
   //    c. Set out to the string-concatenation of out and hex.
   //  6. Return out.
+#if SIMDUTF_ATOMIC_REF
   return Uint8ArrayToHex(std::bit_cast<const char*>(uint8array->DataPtr()),
+#else
+  const char* ptr;
+  const auto* dataptr = uint8array->DataPtr();
+  memcpy(&ptr, &dataptr, sizeof(ptr));
+  return Uint8ArrayToHex(ptr,
+#endif
                          length, uint8array->buffer()->is_shared(), output);
 }
 

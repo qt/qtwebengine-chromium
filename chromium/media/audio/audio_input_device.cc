@@ -499,8 +499,12 @@ void AudioInputDevice::AudioThreadCallback::Process(uint32_t pending_data) {
     // callback_capture_->Capture() doesn't get moved to after has_unread_data
     // has been changed, which would risk that the other side overwrites the
     // memory while being used in Capture().
+#if __cpp_lib_atomic_ref >= 201806L
     std::atomic_ref<uint32_t> has_unread_data(buffer->params.has_unread_data);
     has_unread_data.store(0, std::memory_order_release);
+#else
+    buffer->params.has_unread_data = 0;
+#endif
   }
 
   if (++current_segment_id_ >= total_segments_)
