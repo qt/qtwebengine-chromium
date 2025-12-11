@@ -253,7 +253,7 @@ class ScopedD3D11DecoderBuffer : public ScopedD3DBuffer {
           NOTREACHED();
       }
       media_log_->NotifyError(
-          D3D11Status{status_code, "D3D11 GetDecoderBuffer failed", hr});
+          D3D11Status(status_code, "D3D11 GetDecoderBuffer failed", hr));
       return;
     }
 
@@ -295,7 +295,7 @@ class ScopedD3D11DecoderBuffer : public ScopedD3DBuffer {
           NOTREACHED();
       }
       media_log_->NotifyError(
-          D3D11Status{status_code, "D3D11 ReleaseDecoderBuffer failed", hr});
+          D3D11Status(status_code, "D3D11 ReleaseDecoderBuffer failed", hr));
       return false;
     }
 

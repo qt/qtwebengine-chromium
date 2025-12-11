@@ -46,7 +46,7 @@ D3D11Status CopyingTexture2DWrapper::ProcessTexture(
   HRESULT hr = video_processor_->CreateVideoProcessorOutputView(
       output_texture_.Get(), &output_view_desc, &output_view);
   if (!SUCCEEDED(hr)) {
-    return {D3D11Status::Codes::kCreateVideoProcessorOutputViewFailed, hr};
+    return D3D11Status(D3D11Status::Codes::kCreateVideoProcessorOutputViewFailed, hr);
   }
 
   D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC input_view_desc = {0};
@@ -57,7 +57,7 @@ D3D11Status CopyingTexture2DWrapper::ProcessTexture(
   hr = video_processor_->CreateVideoProcessorInputView(
       texture_.Get(), &input_view_desc, &input_view);
   if (!SUCCEEDED(hr)) {
-    return {D3D11Status::Codes::kCreateVideoProcessorInputViewFailed};
+    return D3D11Status(D3D11Status::Codes::kCreateVideoProcessorInputViewFailed);
   }
 
   D3D11_VIDEO_PROCESSOR_STREAM streams = {0};
@@ -76,7 +76,7 @@ D3D11Status CopyingTexture2DWrapper::ProcessTexture(
                                            1,  // stream_count
                                            &streams);
   if (!SUCCEEDED(hr)) {
-    return {D3D11Status::Codes::kVideoProcessorBltFailed, hr};
+    return D3D11Status(D3D11Status::Codes::kVideoProcessorBltFailed, hr);
   }
 
   return output_texture_wrapper_->ProcessTexture(output_color_space_,
