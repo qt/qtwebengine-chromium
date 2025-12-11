@@ -245,7 +245,7 @@ MojoCreateTrap(MojoTrapEventHandler handler,
 MOJO_SYSTEM_EXPORT MojoResult
 MojoAddTrigger(MojoHandle trap_handle,
                MojoHandle handle,
-               MojoHandleSignals signals,
+               MojoHandleSignals _signals,
                MojoTriggerCondition condition,
                uintptr_t context,
                const struct MojoAddTriggerOptions* options);
