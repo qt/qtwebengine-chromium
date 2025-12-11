@@ -445,15 +445,15 @@ void MaglevReducer<BaseT>::UpdateRange(NodeT* node) {
     switch (Node::opcode_of<NodeT>) {
       case Opcode::kFloat64Add:
         result =
-            RangeType::Join([](double x, double y) { return x + y; }, r1, r2);
+            RangeType::Join(absl::FunctionRef<double(double, double)>([](double x, double y) { return x + y; }), r1, r2);
         break;
       case Opcode::kFloat64Subtract:
         result =
-            RangeType::Join([](double x, double y) { return x - y; }, r1, r2);
+            RangeType::Join(absl::FunctionRef<double(double, double)>([](double x, double y) { return x - y; }), r1, r2);
         break;
       case Opcode::kFloat64Multiply:
         result =
-            RangeType::Join([](double x, double y) { return x * y; }, r1, r2);
+            RangeType::Join(absl::FunctionRef<double(double, double)>([](double x, double y) { return x * y; }), r1, r2);
         break;
       case Opcode::kFloat64Divide:
         result = {};

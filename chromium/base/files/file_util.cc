@@ -62,10 +62,11 @@ void RunAndReply(OnceCallback<bool()> action_callback,
 
 #endif  // !BUILDFLAG(IS_WIN)
 
+template<typename T>
 bool ReadStreamToSpanWithMaxSize(
     FILE* stream,
     size_t max_size,
-    FunctionRef<span<uint8_t>(size_t)> resize_span) {
+    T&& resize_span) {
   if (!stream) {
     return false;
   }

@@ -258,7 +258,7 @@ void NetLog::AddEntryInternal(
     NetLogEventType type,
     const NetLogSource& source,
     NetLogEventPhase phase,
-    base::FunctionRef<base::Value::Dict(NetLogCaptureMode)> get_params) {
+    absl::FunctionRef<base::Value::Dict(NetLogCaptureMode)> get_params) {
   NetLogCaptureModeSet observer_capture_modes = GetObserverCaptureModes();
 
   for (int i = 0; i <= static_cast<int>(NetLogCaptureMode::kLast); ++i) {

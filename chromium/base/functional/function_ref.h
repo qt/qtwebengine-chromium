@@ -11,11 +11,19 @@
 
 #include "base/compiler_specific.h"
 #include "base/functional/bind_internal.h"
-#include "base/types/is_instantiation.h"
 #include "third_party/abseil-cpp/absl/functional/function_ref.h"
 
 namespace base {
 
+#if defined(_MSC_VER)
+template <typename R, typename... Args>
+class FunctionRef<R(Args...)> : public absl::FunctionRef<R(Args...)>
+{
+ public:
+  using absl::FunctionRef<R(Args...)>::FunctionRef;
+};
+
+#else
 template <typename Signature>
 class FunctionRef;
 
@@ -73,27 +81,7 @@ class FunctionRef<R(Args...)> {
   // `LIFETIME_BOUND` is important; since `FunctionRef` retains
   // only a reference to `functor`, `functor` must outlive `this`.
   template <typename Functor>
-    requires kCompatibleFunctor<Functor> &&
-             // Prevent this constructor from participating in overload
-             // resolution if the callable is itself an instantiation of the
-             // `FunctionRef` template.
-             //
-             // If the callable is a `FunctionRef` with exactly the same
-             // signature as us, then the copy constructor will be used instead,
-             // so this has no effect. (Note that if the constructor argument
-             // were `Functor&&`, this exclusion would be necessary to force the
-             // choice of the copy constructor over this one for non-const ref
-             // args; see https://stackoverflow.com/q/57909923.)
-             //
-             // If the callable is a `FunctionRef` with some other signature
-             // then we choose not to support binding to it at all. Conceivably
-             // we could teach our trampoline to deal with this, but this may be
-             // the sign of an object lifetime bug, and again it's not clear
-             // that this isn't just a mistake on the part of the user.
-             (!is_instantiation<std::decay_t<Functor>, FunctionRef>) &&
-             // For the same reason as the second case above, prevent
-             // construction from `absl::FunctionRef`.
-             (!is_instantiation<std::decay_t<Functor>, absl::FunctionRef>)
+    requires kCompatibleFunctor<Functor>
   // NOLINTNEXTLINE(google-explicit-constructor)
   FunctionRef(const Functor& functor LIFETIME_BOUND)
       : wrapped_func_ref_(functor) {}
@@ -111,6 +99,10 @@ class FunctionRef<R(Args...)> {
   // NOLINTNEXTLINE(google-explicit-constructor)
   FunctionRef(Func* func) : wrapped_func_ref_(func) {}
 
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  FunctionRef(const absl::FunctionRef<R(Args...)>& func LIFETIME_BOUND)
+      : wrapped_func_ref_(func) {}
+
   // Null FunctionRefs are not allowed.
   FunctionRef() = delete;
 
@@ -125,7 +117,7 @@ class FunctionRef<R(Args...)> {
  private:
   absl::FunctionRef<R(Args...)> wrapped_func_ref_;
 };
-
+#endif
 }  // namespace base
 
 #endif  // BASE_FUNCTIONAL_FUNCTION_REF_H_
