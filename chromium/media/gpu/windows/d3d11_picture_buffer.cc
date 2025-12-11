@@ -62,7 +62,7 @@ D3D11Status D3D11PictureBuffer::Init(
 
   if (!SUCCEEDED(hr)) {
     MEDIA_LOG(ERROR, media_log_) << "Failed to CreateVideoDecoderOutputView";
-    return {D3D11Status::Codes::kCreateDecoderOutputViewFailed, hr};
+    return D3D11Status(D3D11Status::Codes::kCreateDecoderOutputViewFailed, hr);
   }
 
   return D3D11Status::Codes::kOk;

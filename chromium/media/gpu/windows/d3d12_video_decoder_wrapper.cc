@@ -26,7 +26,7 @@
 #define RETURN_IF_FAILED(message, status_code, hr)                            \
   do {                                                                        \
     if (FAILED(hr)) {                                                         \
-      media_log_->NotifyError<D3D11StatusTraits>({status_code, message, hr}); \
+      media_log_->NotifyError<D3D11StatusTraits>(D3D11Status(status_code, message, hr)); \
       return false;                                                           \
     }                                                                         \
   } while (0)

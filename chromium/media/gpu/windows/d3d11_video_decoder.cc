@@ -274,8 +274,8 @@ D3D11VideoDecoder::CreateD3DVideoDecoderWrapper(
     MEDIA_LOG(INFO, media_log_) << "D3D11VideoDecoder is using D3D12 backend";
     ComUnknown d3d_device = get_d3d_device_cb_.Run(D3DVersion::kD3D12);
     if (!d3d_device) {
-      NotifyError({D3D11StatusCode::kUnsupportedFeatureLevel,
-                   "Cannot create D3D12Device"});
+      NotifyError(D3D11Status(D3D11StatusCode::kUnsupportedFeatureLevel,
+                   "Cannot create D3D12Device"));
       return nullptr;
     }
 
@@ -285,8 +285,8 @@ D3D11VideoDecoder::CreateD3DVideoDecoderWrapper(
     ComD3D12VideoDevice video_device;
     HRESULT hr = device.As(&video_device);
     if (FAILED(hr)) {
-      NotifyError({D3D11StatusCode::kFailedToGetVideoDevice,
-                   "Cannot create D3D12VideoDevice", hr});
+      NotifyError(D3D11Status(D3D11StatusCode::kFailedToGetVideoDevice,
+                   "Cannot create D3D12VideoDevice", hr));
       return nullptr;
     }
 
@@ -302,15 +302,15 @@ D3D11VideoDecoder::CreateD3DVideoDecoderWrapper(
   }
 
   if (!video_decoder_wrapper) {
-    NotifyError({D3D11StatusCode::kDecoderCreationFailed,
-                 "D3DVideoDecoderWrapper is not created"});
+    NotifyError(D3D11Status(D3D11StatusCode::kDecoderCreationFailed,
+                 "D3DVideoDecoderWrapper is not created"));
     return nullptr;
   }
 
   auto use_single_texture = video_decoder_wrapper->UseSingleTexture();
   if (!use_single_texture.has_value()) {
-    NotifyError({D3D11StatusCode::kGetDecoderConfigFailed,
-                 "GetSingleTextureRecommended failed"});
+    NotifyError(D3D11Status(D3D11StatusCode::kGetDecoderConfigFailed,
+                            "GetSingleTextureRecommended failed"));
     return nullptr;
   }
   use_single_video_decoder_texture_ =
@@ -403,7 +403,7 @@ void D3D11VideoDecoder::Initialize(const VideoDecoderConfig& config,
 
   auto hr = device_.As(&video_device_);
   if (FAILED(hr))
-    return NotifyError({D3D11Status::Codes::kFailedToGetVideoDevice, hr});
+    return NotifyError(D3D11Status(D3D11Status::Codes::kFailedToGetVideoDevice, hr));
 
   if (!InitializeAcceleratedDecoder(config_)) {
     return;
