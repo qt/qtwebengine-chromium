@@ -521,12 +521,15 @@ simdutf::result ArrayBufferSetFromBase64(
     DirectHandle<JSTypedArray> typed_array, size_t& output_length) {
   output_length = array_length;
   simdutf::result simd_result;
+#if SIMDUTF_ATOMIC_REF
   if (typed_array->buffer()->is_shared()) {
     simd_result = simdutf::atomic_base64_to_binary_safe(
         reinterpret_cast<const T>(input_vector), input_length,
         reinterpret_cast<char*>(typed_array->DataPtr()), output_length,
         alphabet, last_chunk_handling, /*decode_up_to_bad_char*/ true);
-  } else {
+  } else
+#endif
+  {
     simd_result = simdutf::base64_to_binary_safe(
         reinterpret_cast<const T>(input_vector), input_length,
         reinterpret_cast<char*>(typed_array->DataPtr()), output_length,
@@ -857,11 +860,14 @@ BUILTIN(Uint8ArrayPrototypeToBase64) {
     // 11. Return CodePointsToString(outAscii).
 
     size_t simd_result_size;
+#if SIMDUTF_ATOMIC_REF
     if (uint8array->buffer()->is_shared()) {
       simd_result_size = simdutf::atomic_binary_to_base64(
           reinterpret_cast<const char*>(uint8array->DataPtr()), length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);
-    } else {
+    } else
+#endif
+    {
       simd_result_size = simdutf::binary_to_base64(
           reinterpret_cast<const char*>(uint8array->DataPtr()), length,
           reinterpret_cast<char*>(output->GetChars(no_gc)), alphabet);

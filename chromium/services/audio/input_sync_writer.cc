@@ -359,8 +359,12 @@ bool InputSyncWriter::WriteDataToCurrentSegment(
 
   // We will not write more data to this buffer until the consumer side has set
   // this flag back to 0.
+#if __cpp_lib_atomic_ref >= 201806L
   std::atomic_ref<uint32_t> has_unread_data(buffer->params.has_unread_data);
   has_unread_data.store(1, std::memory_order_relaxed);
+#else
+  buffer->params.has_unread_data = 1;
+#endif
 
   // Copy data into shared memory using pre-allocated audio buses.
   data.CopyTo(audio_buses_[current_segment_id_].get());
