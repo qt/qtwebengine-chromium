@@ -7,16 +7,21 @@
 #ifndef COMMON_MEMORYBUFFER_H_
 #define COMMON_MEMORYBUFFER_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
 #include "common/Optional.h"
 #include "common/angleutils.h"
 #include "common/debug.h"
 
-#include <stdint.h>
-#include <cstddef>
+#include "common/span.h"
+#include "common/unsafe_buffers.h"
 
 namespace angle
 {
 
+// MemoryBuffers are used in place of std::vector<uint8_t> when an uninitialized buffer
+// as would be obtained via malloc is required.
 class MemoryBuffer final : NonCopyable
 {
   public:
@@ -37,11 +42,6 @@ class MemoryBuffer final : NonCopyable
 
     // Updates mCapacity iff newSize > mCapacity
     [[nodiscard]] bool reserve(size_t newSize);
-
-    // Appends content from "other" MemoryBuffer
-    [[nodiscard]] bool append(const MemoryBuffer &other);
-    // Appends content from "[buffer, buffer + bufferSize)"
-    [[nodiscard]] bool appendRaw(const uint8_t *buffer, const size_t bufferSize);
 
     // Sets size bound by capacity.
     void setSize(size_t size)
@@ -65,15 +65,39 @@ class MemoryBuffer final : NonCopyable
         return mData;
     }
 
+    // Access entire buffer, although MemoryBuffer should be implicitly convertible to
+    // any span implementation because it has both data() and size() methods.
+    angle::Span<uint8_t> span()
+    {
+        // SAFETY: `mData` is valid for `mSize` bytes.
+        return ANGLE_UNSAFE_BUFFERS(angle::Span<uint8_t>(mData, mSize));
+    }
+    angle::Span<const uint8_t> span() const
+    {
+        // SAFETY: `mData` is valid for `mSize` bytes.
+        return ANGLE_UNSAFE_BUFFERS(angle::Span<const uint8_t>(mData, mSize));
+    }
+
+    // Convenience methods for accessing portions of the buffer.
+    angle::Span<uint8_t> first(size_t count) { return span().first(count); }
+    angle::Span<uint8_t> last(size_t count) { return span().last(count); }
+    angle::Span<uint8_t> subspan(size_t offset) { return span().subspan(offset, mSize - offset); }
+    angle::Span<uint8_t> subspan(size_t offset, size_t count)
+    {
+        return span().subspan(offset, count);
+    }
+
     uint8_t &operator[](size_t pos)
     {
         ASSERT(mData && pos < mSize);
-        return mData[pos];
+        // SAFETY: assert on previous line.
+        return ANGLE_UNSAFE_BUFFERS(mData[pos]);
     }
     const uint8_t &operator[](size_t pos) const
     {
         ASSERT(mData && pos < mSize);
-        return mData[pos];
+        // SAFETY: assert on previous line.
+        return ANGLE_UNSAFE_BUFFERS(mData[pos]);
     }
 
     void fill(uint8_t datum);
