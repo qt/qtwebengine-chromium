@@ -43,6 +43,7 @@ void ClipboardHostImpl::GetPlatformPermissionState(
   blink::mojom::PlatformClipboardPermissionState state =
       blink::mojom::PlatformClipboardPermissionState::kAsk;
 
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150400
   if (@available(macOS 15.4, *)) {
     NSPasteboardAccessBehavior access_behavior =
         [NSPasteboard generalPasteboard].accessBehavior;
@@ -63,7 +64,9 @@ void ClipboardHostImpl::GetPlatformPermissionState(
         state = blink::mojom::PlatformClipboardPermissionState::kAsk;
         break;
     }
-  } else {
+  } else
+#endif
+  {
     // The behavior of older macOS versions is effectively kAllow.
     state = blink::mojom::PlatformClipboardPermissionState::kAllow;
   }
