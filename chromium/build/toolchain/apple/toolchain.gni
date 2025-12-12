@@ -160,8 +160,8 @@ template("single_apple_toolchain") {
     }
 
     prefix = rebase_path("$clang_base_path/bin/", root_build_dir)
-    _cc = "${prefix}clang"
-    _cxx = "${prefix}clang++"
+    _cc = "\"${prefix}clang\""
+    _cxx = "\"${prefix}clang++\""
 
     swiftmodule_switch = "-Wl,-add_ast_path,"
 
@@ -189,7 +189,7 @@ template("single_apple_toolchain") {
     # binary.
     bin_flag = ""
     if (!toolchain_uses_lld) {
-      bin_flag = "-B " + invoker.bin_path
+      bin_flag = "-B \"" + invoker.bin_path + "\""
     }
 
     coverage_wrapper = ""
@@ -214,12 +214,12 @@ template("single_apple_toolchain") {
     linker_driver_env = "TOOL_VERSION=${tool_versions.linker_driver}"
     linker_driver =
         rebase_path("//build/toolchain/apple/linker_driver.py", root_build_dir)
-    linker_driver_args = "-Wcrl,driver,$ld"
+    linker_driver_args = "-Wcrl,driver,\"$ld\""
 
     # Specify an explicit path for the strip binary.
     _strippath = "${prefix}llvm-strip"
     _installnametoolpath = "${prefix}llvm-install-name-tool"
-    linker_driver_args += " -Wcrl,strippath,${_strippath} -Wcrl,installnametoolpath,${_installnametoolpath}"
+    linker_driver_args += " -Wcrl,strippath,\"${_strippath}\" -Wcrl,installnametoolpath,\"${_installnametoolpath}\""
     _enable_dsyms = enable_dsyms
     _save_unstripped_output = save_unstripped_output
 
@@ -571,7 +571,7 @@ template("single_apple_toolchain") {
                              root_build_dir)
 
         # Specify explicit path for libtool.
-        libtool = invoker.bin_path + "libtool"
+        libtool = "\"" + invoker.bin_path + "libtool\""
 
         # Apple's libtool fails if the response file is empty (e.g., for empty
         # targets). We work around this by writing a dummy archive with the ar
@@ -617,7 +617,7 @@ template("single_apple_toolchain") {
       otool = "${prefix}llvm-otool"
 
       link_command = "$linker_driver_env $linker_driver"
-      link_command += " -Wcrl,otoolpath,$otool -Wcrl,nmpath,$nm"
+      link_command += " -Wcrl,otoolpath,\"$otool\" -Wcrl,nmpath,\"$nm\""
       link_command += " -Wcrl,tocname,\"$tocname\""
       link_command += " $linker_driver_args -shared "
       if (toolchain_is_component_build) {
