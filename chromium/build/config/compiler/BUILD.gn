@@ -1108,6 +1108,11 @@ config("compiler") {
     ]
   }
 
+  # Disable PCH timestamps to fix sccache breakage on CI
+  if (is_clang && is_qtwebengine) {
+    cflags += [ "-Xclang", "-fno-pch-timestamp" ]
+  }
+
   # Normally, this would be defined in the `runtime_library` config but NaCl
   # saigo libc++ does not use the custom hermetic libc++. Unfortunately, there
   # isn't really a better config to add this define for the define to
