@@ -1259,6 +1259,11 @@ config("compiler") {
   if (current_cpu == "arm64") {
     defines += [ "__ARM_NEON__=1" ]
   }
+
+  # Disable PCH timestamps to fix sccache breakage on CI
+  if (is_clang && is_qtwebengine && enable_precompiled_headers && cc_wrapper != "") {
+    cflags += [ "-Xclang", "-fno-pch-timestamp" ]
+  }
 }
 
 # Don't allow unstable features to be enabled by `#![feature()]` without
