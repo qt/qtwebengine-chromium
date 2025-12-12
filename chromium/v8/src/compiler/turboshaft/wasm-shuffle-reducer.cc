@@ -335,7 +335,7 @@ void WasmShuffleAnalyzer::ProcessShuffleOfLoads(const Simd128ShuffleOp& shuffle,
 
   if (!DemandedByteLanes(&shuffle)) {
     // Full width shuffles.
-    wasm::SimdShuffle::ShuffleArray shuffle_bytes;
+    wasm::SimdShuffle::ShuffleArray<kSimd128Size> shuffle_bytes;
     std::copy_n(shuffle.shuffle, kSimd128Size, shuffle_bytes.begin());
     auto canonical = wasm::SimdShuffle::TryMatchCanonical(shuffle_bytes);
     switch (canonical) {

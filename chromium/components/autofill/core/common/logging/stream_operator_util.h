@@ -32,6 +32,7 @@ struct PrintWrapper {
 
  public:
   const T& x;
+  PrintWrapper(const T& x) : x(x) {};
 };
 
 template <typename T>
