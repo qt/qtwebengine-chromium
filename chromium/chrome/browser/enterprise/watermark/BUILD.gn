@@ -45,8 +45,8 @@ executable("watermark_app") {
     "//ui/gfx",
     "//ui/resources:ui_test_pak",
     "//ui/views",
-    "//ui/views/examples:views_examples_lib",
-    "//ui/views/examples:views_examples_proc",
+ #   "//ui/views/examples:views_examples_lib",
+ #   "//ui/views/examples:views_examples_proc",
   ]
 
   if (is_win) {

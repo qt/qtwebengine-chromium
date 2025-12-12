@@ -79,7 +79,7 @@ config("runtime_library") {
   #
   # TODO(https://crbug.com/423933062): Remove this once the macOS 26 SDK is in
   # use.
-  ldflags += [ "-Wl,-platform_version,macos,$mac_deployment_target,26.0" ]
+  # ldflags += [ "-Wl,-platform_version,macos,$mac_deployment_target,26.0" ]
 }
 
 # On Mac, this is used for everything except static libraries.
