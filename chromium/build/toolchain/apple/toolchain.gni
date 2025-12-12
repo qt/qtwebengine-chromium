@@ -157,8 +157,8 @@ template("single_apple_toolchain") {
     }
 
     prefix = rebase_path("$clang_base_path/bin/", root_build_dir)
-    _cc = "${prefix}clang"
-    _cxx = "${prefix}clang++"
+    _cc = "\"${prefix}clang\""
+    _cxx = "\"${prefix}clang++\""
 
     swiftmodule_switch = "-Wl,-add_ast_path,"
 
@@ -181,12 +181,6 @@ template("single_apple_toolchain") {
     cc = compiler_prefix + _cc
     cxx = compiler_prefix + _cxx
     ld = _cxx
-
-    # Set the explicit search path for clang++ so it uses the right linker
-    # binary.
-    if (!toolchain_uses_lld) {
-      ld += " -B " + invoker.bin_path
-    }
 
     coverage_wrapper = ""
     if (defined(toolchain_args.coverage_instrumentation_input_file)) {
@@ -211,12 +205,18 @@ template("single_apple_toolchain") {
     linker_driver =
         python_path + " " +
         rebase_path("//build/toolchain/apple/linker_driver.py", root_build_dir)
-    linker_driver_args = "-Wcrl,driver,$ld"
+    linker_driver_args = "-Wcrl,driver,\"$ld\""
+
+    # Set the explicit search path for clang++ so it uses the right linker
+    # binary.
+    if (!toolchain_uses_lld) {
+      linker_driver_args += " -B \"" + invoker.bin_path + "\""
+    }
 
     # Specify an explicit path for the strip binary.
     _strippath = "${prefix}llvm-strip"
     _installnametoolpath = "${prefix}llvm-install-name-tool"
-    linker_driver_args += " -Wcrl,strippath,${_strippath} -Wcrl,installnametoolpath,${_installnametoolpath}"
+    linker_driver_args += " -Wcrl,strippath,\"${_strippath}\" -Wcrl,installnametoolpath,\"${_installnametoolpath}\""
     _enable_dsyms = enable_dsyms
     _save_unstripped_output = save_unstripped_output
 
@@ -461,7 +461,7 @@ template("single_apple_toolchain") {
                              root_build_dir)
 
         # Specify explicit path for libtool.
-        libtool = invoker.bin_path + "libtool"
+        libtool = "\"" + invoker.bin_path + "libtool\""
         command = "rm -f {{output}} && TOOL_VERSION=${tool_versions.filter_libtool} $python_path $script $libtool -static -D {{arflags}} -o {{output}} @$rspfile"
         description = "LIBTOOL-STATIC {{output}}"
       } else {
@@ -503,7 +503,7 @@ template("single_apple_toolchain") {
       otool = "${prefix}llvm-otool"
 
       link_command = "$linker_driver_env $linker_driver"
-      link_command += " -Wcrl,otoolpath,$otool -Wcrl,nmpath,$nm"
+      link_command += " -Wcrl,otoolpath,\"$otool\" -Wcrl,nmpath,\"$nm\""
       link_command += " -Wcrl,tocname,\"$tocname\""
       link_command += " $linker_driver_args -shared "
       if (toolchain_is_component_build) {
