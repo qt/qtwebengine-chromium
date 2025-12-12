@@ -46,7 +46,7 @@ source_set("unit_tests") {
     "//components/user_prefs/test:test_support",
     "//content/test:test_support",
     "//testing/gtest",
-    "//third_party/mediapipe",
+#    "//third_party/mediapipe",
   ]
 
   if (enable_video_effects) {

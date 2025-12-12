@@ -1810,7 +1810,6 @@ static_library("browser") {
 
     # Circular dependency due to SystemNetworkContextManager.
     "//chrome/browser/image_fetcher",
-    "//chrome/browser/profiling_host",
 
     # TODO(crbug.com/40228447): break this dep when favicon is in its own target
     "//chrome/browser/share",
@@ -7791,6 +7790,10 @@ static_library("browser") {
       "//google_apis/common",
       "//google_apis/drive",
     ]
+    allow_circular_includes_from += [
+      "//chrome/browser/profiling_host",
+    ]
+
     if (is_chromeos) {
       sources += [
         "accessibility/accessibility_extension_api_ash.cc",
