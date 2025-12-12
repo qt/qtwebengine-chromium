@@ -10,7 +10,7 @@ import("//chrome/common/features.gni")
 import("//content/public/common/features.gni")
 import("//third_party/webrtc/webrtc.gni")
 
-assert(enable_webrtc)
+#assert(enable_webrtc)
 
 source_set("webrtc") {
   sources = [
@@ -91,6 +91,7 @@ source_set("webrtc") {
     "window_icon_util.h",
   ]
 
+  if (enable_webrtc) {
   public_deps = [
     "//base",
     "//build:android_buildflags",
@@ -172,6 +173,10 @@ source_set("webrtc") {
     "//ui/gfx:color_utils",
     "//ui/snapshot",
   ]
+  } else {
+    public_deps = []
+    deps = []
+  }
 
   if (!is_android) {
     sources += [

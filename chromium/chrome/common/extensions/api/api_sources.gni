@@ -4,6 +4,7 @@
 
 import("//build/config/features.gni")
 import("//chrome/common/features.gni")
+import("//media/media_options.gni")
 import("//pdf/features.gni")
 
 assert(enable_extensions_core)
@@ -168,8 +169,12 @@ if (is_qtwebengine) {
   schema_sources_ = [ ]
   schema_sources_ = [
     "enterprise_hardware_platform.idl",
-    "webrtc_logging_private.idl",
   ]
+  if (enable_webrtc) {
+    schema_sources_ += [
+      "webrtc_logging_private.idl",
+    ]
+  }
 
   uncompiled_sources_ = [ ]
 }
