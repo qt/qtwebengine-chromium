@@ -40,12 +40,15 @@ bool IsActiveApplication() {
 }
 
 bool PasteMightBlockWithPrivacyAlert() {
+#if __MAC_OS_X_VERSION_MAX_ALLOWED >= 150400
   if (@available(macOS 15.4, *)) {
-    NSPasteboardAccessBehavior behavior =
-        NSPasteboard.generalPasteboard.accessBehavior;
-    return behavior == NSPasteboardAccessBehaviorDefault ||
-           behavior == NSPasteboardAccessBehaviorAsk;
-  } else {
+     NSPasteboardAccessBehavior behavior =
+         NSPasteboard.generalPasteboard.accessBehavior;
+     return behavior == NSPasteboardAccessBehaviorDefault ||
+            behavior == NSPasteboardAccessBehaviorAsk;
+  } else
+#endif
+  {
     return false;
   }
 }
