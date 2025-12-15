@@ -371,6 +371,13 @@ static constexpr ToggleEnumAndInfoList kToggleNameAndInfoList = {{
       "subresource are completely initialized, and StoreOp::Discard is always translated as a "
       "Store.",
       "https://crbug.com/dawn/838", ToggleStage::Device}},
+    {Toggle::VulkanPolyfillF32Negation,
+     {"spirv_polyfill_f32_negation",
+      "Polyfill f32 negation with bit manipulation in SPIR-V writer.",
+      "https://crbug.com/448294721", ToggleStage::Device}},
+    {Toggle::VulkanPolyfillF32Abs,
+     {"spirv_polyfill_f32_abs", "Polyfill f32 abs with bit manipulation in SPIR-V writer.",
+      "https://crbug.com/448294721", ToggleStage::Device}},
     {Toggle::MetalFillEmptyOcclusionQueriesWithZero,
      {"metal_fill_empty_occlusion_queries_with_zero",
       "Apple GPUs leave stale results in the visibility result buffer instead of writing zero if "

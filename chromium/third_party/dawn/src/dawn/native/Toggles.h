@@ -99,6 +99,8 @@ enum class Toggle {
     MetalUseCombinedDepthStencilFormatForStencil8,
     MetalUseBothDepthAndStencilAttachmentsForCombinedDepthStencilFormats,
     MetalKeepMultisubresourceDepthStencilTexturesInitialized,
+    VulkanPolyfillF32Negation,
+    VulkanPolyfillF32Abs,
     MetalFillEmptyOcclusionQueriesWithZero,
     UseBlitForBufferToDepthTextureCopy,
     UseBlitForBufferToStencilTextureCopy,

@@ -718,6 +718,16 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::AlwaysResolveIntoZeroLevelAndLayer, true);
     }
 
+    // AMD mesa front end optimizer bug for unary negation and abs.
+    // Fixed in 25.3 - See crbug.com/448294721
+    if (IsAmdMesa()) {
+        const gpu_info::DriverVersion kGoodMesaDriver = {25, 3, 0, 0};
+        if (CompareIntelMesaDriverVersion(GetDriverVersion(), kGoodMesaDriver) < 0) {
+            deviceToggles->Default(Toggle::VulkanPolyfillF32Abs, true);
+            deviceToggles->Default(Toggle::VulkanPolyfillF32Negation, true);
+        }
+    }
+
     if (IsAndroidARM()) {
         // dawn:1550: Resolving multiple color targets in a single pass fails on ARM GPUs. To
         // work around the issue, passes that resolve to multiple color targets will instead be
@@ -882,6 +892,13 @@ FeatureValidationResult PhysicalDevice::ValidateFeatureSupportedWithTogglesImpl(
     wgpu::FeatureName feature,
     const TogglesState& toggles) const {
     return {};
+}
+
+bool PhysicalDevice::IsAmdMesa() const {
+    if (mDeviceInfo.HasExt(DeviceExt::DriverProperties)) {
+        return mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_MESA_RADV_KHR;
+    }
+    return false;
 }
 
 // Android devices with Qualcomm GPUs have a myriad of known issues. (dawn:1549)

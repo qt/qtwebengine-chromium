@@ -58,6 +58,7 @@
 #include "src/tint/lang/spirv/writer/raise/remove_unreachable_in_loop_continuing.h"
 #include "src/tint/lang/spirv/writer/raise/shader_io.h"
 #include "src/tint/lang/spirv/writer/raise/var_for_dynamic_index.h"
+#include "src/tint/lang/spirv/writer/raise/unary_polyfill.h"
 
 namespace tint::spirv::writer {
 
@@ -168,6 +169,16 @@ Result<SuccessType> Raise(core::ir::Module& module, const Options& options) {
 
     RUN_TRANSFORM(raise::BuiltinPolyfill, module, options.use_vulkan_memory_model);
     RUN_TRANSFORM(raise::ExpandImplicitSplats, module);
+
+
+    // AMD mesa front end optimizer bug for unary negation and abs.
+    // Fixed in 25.3 - See crbug.com/448294721
+    raise::UnaryPolyfillConfig unary_polyfill_cfg = {
+        .polyfill_f32_negation = options.polyfill_unary_f32_negation,
+        .polyfill_f32_abs = options.polyfill_f32_abs};
+    RUN_TRANSFORM(raise::UnaryPolyfill, module, unary_polyfill_cfg);
+
+
     RUN_TRANSFORM(raise::HandleMatrixArithmetic, module);
     RUN_TRANSFORM(raise::MergeReturn, module);
     RUN_TRANSFORM(raise::RemoveUnreachableInLoopContinuing, module);
