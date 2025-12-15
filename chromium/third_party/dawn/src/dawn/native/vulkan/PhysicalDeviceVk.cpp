@@ -890,6 +890,16 @@ void PhysicalDevice::SetupBackendDeviceToggles(dawn::platform::Platform* platfor
         deviceToggles->Default(Toggle::VulkanDirectVariableAccessTransformHandle, true);
     }
 
+    // AMD mesa front end optimizer bug for unary negation and abs.
+    // Fixed in 25.3 - See crbug.com/448294721
+    if (IsAmdMesa()) {
+        const gpu_info::DriverVersion kGoodMesaDriver = {25, 3, 0, 0};
+        if (CompareIntelMesaDriverVersion(GetDriverVersion(), kGoodMesaDriver) < 0) {
+            deviceToggles->Default(Toggle::VulkanPolyfillF32Abs, true);
+            deviceToggles->Default(Toggle::VulkanPolyfillF32Negation, true);
+        }
+    }
+
     if (IsAndroidARM()) {
         // dawn:1550: Resolving multiple color targets in a single pass fails on ARM GPUs. To
         // work around the issue, passes that resolve to multiple color targets will instead be
@@ -1120,6 +1130,13 @@ bool PhysicalDevice::IsAndroidHuawei() const {
 bool PhysicalDevice::IsIntelMesa() const {
     if (mDeviceInfo.HasExt(DeviceExt::DriverProperties)) {
         return mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA_KHR;
+    }
+    return false;
+}
+
+bool PhysicalDevice::IsAmdMesa() const {
+    if (mDeviceInfo.HasExt(DeviceExt::DriverProperties)) {
+        return mDeviceInfo.driverProperties.driverID == VK_DRIVER_ID_MESA_RADV_KHR;
     }
     return false;
 }
