@@ -193,11 +193,21 @@ void ReportingContext::SendToReportingAPI(Report* report,
     return;
   }
 
+  KURL url = KURL(report->url());
+  // CSP Hash report is not a LocationReportBody.
+  if (type == ReportType::kCSPHash) {
+    const CSPHashReportBody* body =
+        static_cast<CSPHashReportBody*>(report->body());
+    GetReportingService()->QueueCSPHashReport(
+        url, endpoint, body->subresourceURL(), body->hash(), body->type(),
+        body->destination());
+    return;
+  }
+
   const LocationReportBody* location_body =
       static_cast<LocationReportBody*>(report->body());
   int line_number = location_body->lineNumber().value_or(0);
   int column_number = location_body->columnNumber().value_or(0);
-  KURL url = KURL(report->url());
 
   if (type == ReportType::kCSPViolation) {
     // Send the CSP violation report.
@@ -210,12 +220,6 @@ void ReportingContext::SendToReportingAPI(Report* report,
         body->originalPolicy() ? body->originalPolicy() : "",
         body->sourceFile(), body->sample(), body->disposition().AsString(),
         body->statusCode(), line_number, column_number);
-  } else if (type == ReportType::kCSPHash) {
-    const CSPHashReportBody* body =
-        static_cast<CSPHashReportBody*>(report->body());
-    GetReportingService()->QueueCSPHashReport(
-        url, endpoint, body->subresourceURL(), body->hash(), body->type(),
-        body->destination());
   } else if (type == ReportType::kDeprecation) {
     // Send the deprecation report.
     const DeprecationReportBody* body =
