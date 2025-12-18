@@ -15,12 +15,12 @@ using GamepadHardwareBuffer = SharedMemorySeqLockBuffer<Gamepads>;
 
 }  // namespace device
 
-#if defined(COMPILER_MSVC)
+#if defined(COMPILER_MSVC) && !defined(__clang__)
 SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(device::GamepadHardwareBuffer)
 #else
 // GamepadHardwareBuffer is used in shared memory, so it must be trivially
 // copyable.
 static_assert(std::is_trivially_copyable_v<device::GamepadHardwareBuffer>);
-#endif  // defined(COMPILER_MSVC)
+#endif  // defined(COMPILER_MSVC) && !defined(__clang__)
 
 #endif  // DEVICE_GAMEPAD_PUBLIC_MOJOM_GAMEPAD_HARDWARE_BUFFER_H_

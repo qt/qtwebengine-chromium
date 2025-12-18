@@ -5,6 +5,7 @@
 #ifndef CC_METRICS_UKM_DROPPED_FRAMES_DATA_H_
 #define CC_METRICS_UKM_DROPPED_FRAMES_DATA_H_
 
+#include "base/memory/shared_memory_safety_checker.h"
 #include "base/time/time.h"
 #include "cc/cc_export.h"
 #include "cc/metrics/shared_metrics_buffer.h"
@@ -22,5 +23,9 @@ struct CC_EXPORT UkmDroppedFramesData {
 using UkmDroppedFramesDataShared = SharedMetricsBuffer<UkmDroppedFramesData>;
 
 }  // namespace cc
+
+#if defined(COMPILER_MSVC) && !defined(__clang__)
+SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(cc::UkmDroppedFramesDataShared)
+#endif
 
 #endif  // CC_METRICS_UKM_DROPPED_FRAMES_DATA_H_

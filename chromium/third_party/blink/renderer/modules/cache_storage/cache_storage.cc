@@ -189,6 +189,11 @@ void DeleteComplete(mojom::blink::CacheStorageError result,
   }
 }
 
+void KeysComplete(const Vector<String>& keys,
+                  ScriptPromiseResolver<IDLSequence<IDLString>>* resolver) {
+  resolver->Resolve(keys);
+}
+
 void MatchComplete(int64_t trace_id,
                    mojom::blink::CacheStorage::MatchResult result,
                    CacheStorageBlobClientList* blob_client_list,
@@ -598,11 +603,7 @@ void CacheStorage::KeysImpl(
                 CacheStorageTracedValue(keys));
 
             auto complete = resolver->WrapCallbackInScriptScope(WTF::BindOnce(
-                [](const Vector<String>& keys,
-                   ScriptPromiseResolver<IDLSequence<IDLString>>* resolver) {
-                  resolver->Resolve(keys);
-                },
-                keys));
+                &KeysComplete, keys));
             ProcessCompletion(std::move(complete), start_time,
                               resolver->GetExecutionContext(), "Keys");
           },

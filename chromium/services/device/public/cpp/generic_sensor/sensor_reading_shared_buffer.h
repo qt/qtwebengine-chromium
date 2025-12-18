@@ -32,13 +32,13 @@ uint64_t GetSensorReadingSharedBufferOffset(mojom::SensorType type);
 
 }  // namespace device
 
-#if defined(COMPILER_MSVC)
+#if defined(COMPILER_MSVC) && !defined(__clang__)
 SKIP_SHARED_MEMORY_SAFETY_CHECK_FOR(device::SensorReadingSharedBuffer)
 SKIP_BYTE_SPAN_SAFETY_CHECK_FOR(device::SensorReadingSharedBuffer)
 #else
 // SensorReadingSharedBuffer is used in shared memory, so it must be trivially
 // copyable.
 static_assert(std::is_trivially_copyable_v<device::SensorReadingSharedBuffer>);
-#endif
+#endif  // defined(COMPILER_MSVC) && !defined(__clang__)
 
 #endif  // SERVICES_DEVICE_PUBLIC_CPP_GENERIC_SENSOR_SENSOR_READING_SHARED_BUFFER_H_

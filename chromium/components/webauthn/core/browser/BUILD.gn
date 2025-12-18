@@ -31,7 +31,7 @@ source_set("browser") {
     ]
   }
 
-  if (!is_android) {
+  if (!is_android && !is_qtwebengine) {
     sources += [
       "passkey_sync_bridge.cc",
       "passkey_sync_bridge.h",

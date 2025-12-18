@@ -72,23 +72,31 @@ std::tuple<int, double> OscillatorHandler::ProcessKRateVector(
   const float32x4_t v_incr = vdupq_n_f32(4 * incr);
 
   float virtual_read_index_flt = virtual_read_index;
+#if defined(_MSC_VER) && !defined(__clang__)
+  float32x4_t v_virt_index;
+  vsetq_lane_f32(virtual_read_index_flt + 0 * incr, v_virt_index, 0);
+  vsetq_lane_f32(virtual_read_index_flt + 1 * incr, v_virt_index, 1);
+  vsetq_lane_f32(virtual_read_index_flt + 2 * incr, v_virt_index, 2);
+  vsetq_lane_f32(virtual_read_index_flt + 3 * incr, v_virt_index, 3);
+#else
   float32x4_t v_virt_index = {
       virtual_read_index_flt + 0 * incr, virtual_read_index_flt + 1 * incr,
       virtual_read_index_flt + 2 * incr, virtual_read_index_flt + 3 * incr};
+#endif
 
   // Temporary arrsys to hold the read indices so we can access them
   // individually to get the samples needed for interpolation.
-  uint32_t r0[4] __attribute__((aligned(16)));
-  uint32_t r1[4] __attribute__((aligned(16)));
+  alignas(16) uint32_t r0[4];
+  alignas(16) uint32_t r1[4];
 
   // Temporary arrays where we can gather up the wave data we need for
   // interpolation.  Align these for best efficiency on older CPUs where aligned
   // access is much faster than unaliged.  TODO(rtoy): Is there a faster way to
   // do this?
-  float sample1_lower[4] __attribute__((aligned(16)));
-  float sample2_lower[4] __attribute__((aligned(16)));
-  float sample1_higher[4] __attribute__((aligned(16)));
-  float sample2_higher[4] __attribute__((aligned(16)));
+  alignas(16) float sample1_lower[4];
+  alignas(16) float sample2_lower[4];
+  alignas(16) float sample1_higher[4];
+  alignas(16) float sample2_higher[4];
 
   // It's possible that adding the incr above exceeded the bounds, so wrap them
   // if needed.
@@ -187,10 +195,18 @@ double OscillatorHandler::ProcessARateVectorKernel(
   virt_index[3] = WrapVirtualIndex(virtual_read_index + incr_sum[2],
                                    periodic_wave_size, inv_periodic_wave_size);
 
+#if defined(_MSC_VER) && !defined(__clang__)
+  float32x4_t v_virt_index;
+  vsetq_lane_f32(virt_index[0], v_virt_index, 0);
+  vsetq_lane_f32(virt_index[1], v_virt_index, 1);
+  vsetq_lane_f32(virt_index[2], v_virt_index, 2);
+  vsetq_lane_f32(virt_index[3], v_virt_index, 3);
+#else
   // The virtual indices we're working with now.
   const float32x4_t v_virt_index = {
       static_cast<float>(virt_index[0]), static_cast<float>(virt_index[1]),
       static_cast<float>(virt_index[2]), static_cast<float>(virt_index[3])};
+#endif
 
   // Convert virtual index to actual index into wave data, wrap the index
   // around if needed.
@@ -201,13 +217,13 @@ double OscillatorHandler::ProcessARateVectorKernel(
   const uint32x4_t v_read1 = vandq_u32(vaddq_u32(v_read0, vdupq_n_u32(1)),
                                        vdupq_n_u32(read_index_mask));
 
-  float sample1_lower[4] __attribute__((aligned(16)));
-  float sample2_lower[4] __attribute__((aligned(16)));
-  float sample1_higher[4] __attribute__((aligned(16)));
-  float sample2_higher[4] __attribute__((aligned(16)));
+  alignas(16) float sample1_lower[4];
+  alignas(16) float sample2_lower[4];
+  alignas(16) float sample1_higher[4];
+  alignas(16) float sample2_higher[4];
 
-  uint32_t read0[4] __attribute__((aligned(16)));
-  uint32_t read1[4] __attribute__((aligned(16)));
+  alignas(16) uint32_t read0[4];
+  alignas(16) uint32_t read1[4];
 
   vst1q_u32(read0, v_read0);
   vst1q_u32(read1, v_read1);

@@ -368,7 +368,7 @@ static_library("libjpeg") {
     ":simd",
   ]
 
-  if (current_cpu == "x86" || current_cpu == "x64") {
+  if ((!is_msvc || is_clang) && (current_cpu == "x86" || current_cpu == "x64")) {
     # Avoid the 64K jpeg_nbits table.
     # Note: USE_CLZ_INTRINSIC is enabled by default for Arm (jpeg_nbits.h)
     defines += [ "USE_CLZ_INTRINSIC" ]

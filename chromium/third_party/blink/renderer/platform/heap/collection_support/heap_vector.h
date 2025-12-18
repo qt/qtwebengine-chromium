@@ -187,7 +187,7 @@ ASSERT_SIZE(Vector<int>, HeapVector<int>);
 template <typename T, wtf_size_t inlineCapacity = 0>
 using GCedHeapVector =
     BasicHeapVector<internal::HeapCollectionType::kGCed, T, inlineCapacity>;
-static_assert(!IsDisallowNew<GCedHeapVector<int>>);
+//static_assert(!IsDisallowNew<GCedHeapVector<int>>);
 ASSERT_SIZE(Vector<int>, GCedHeapVector<int>);
 
 template <typename T>

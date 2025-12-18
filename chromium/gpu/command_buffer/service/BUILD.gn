@@ -363,7 +363,9 @@ target(link_target_type, "gles2_sources") {
 
   # This target pulls in angle headers that can't be built with this
   # warning active: crbug.com/430317494
-  cflags_cc = [ "-Wno-thread-safety" ]
+  if (!is_msvc) {
+    cflags_cc = [ "-Wno-thread-safety" ]
+  }
 
   public_deps = [
     "//base",

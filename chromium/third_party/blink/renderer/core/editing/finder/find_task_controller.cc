@@ -218,8 +218,8 @@ void FindTaskController::StartRequest(
     const String& search_text,
     const mojom::blink::FindOptions& options) {
   TRACE_EVENT_NESTABLE_ASYNC_BEGIN0(
-      "blink", "FindInPageRequest",
-      TRACE_ID_WITH_SCOPE("FindInPageRequest", identifier));
+       "blink", "FindInPageRequest",
+       TRACE_ID_WITH_SCOPE("FindInPageRequest", identifier));
   DCHECK(!finding_in_progress_);
   DCHECK_EQ(current_find_identifier_, kInvalidFindIdentifier);
   // This is a brand new search, so we need to reset everything.

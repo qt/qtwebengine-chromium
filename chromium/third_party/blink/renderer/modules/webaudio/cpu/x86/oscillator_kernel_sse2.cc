@@ -127,10 +127,10 @@ std::tuple<int, double> OscillatorHandler::ProcessKRateVector(
   // Temporary arrays where we can gather up the wave data we need for
   // interpolation.  Align these for best efficiency on older CPUs where aligned
   // access is much faster than unaliged.
-  std::array<float, 4> sample1_lower __attribute__((aligned(16)));
-  std::array<float, 4> sample2_lower __attribute__((aligned(16)));
-  std::array<float, 4> sample1_higher __attribute__((aligned(16)));
-  std::array<float, 4> sample2_higher __attribute__((aligned(16)));
+  alignas(16) std::array<float, 4> sample1_lower;
+  alignas(16) std::array<float, 4> sample2_lower;
+  alignas(16) std::array<float, 4> sample1_higher;
+  alignas(16) std::array<float, 4> sample2_higher;
 
   int k = 0;
   int n_loops = n / 4;
@@ -248,10 +248,10 @@ double OscillatorHandler::ProcessARateVectorKernel(
     v_read1 = _mm_and_si128(v_read1, v_mask);
   }
 
-  std::array<float, 4> sample1_lower __attribute__((aligned(16)));
-  std::array<float, 4> sample2_lower __attribute__((aligned(16)));
-  std::array<float, 4> sample1_higher __attribute__((aligned(16)));
-  std::array<float, 4> sample2_higher __attribute__((aligned(16)));
+  alignas(16) std::array<float, 4> sample1_lower;
+  alignas(16) std::array<float, 4> sample2_lower;
+  alignas(16) std::array<float, 4> sample1_higher;
+  alignas(16) std::array<float, 4> sample2_higher;
 
   const unsigned* read0 = reinterpret_cast<const unsigned*>(&v_read0);
   const unsigned* read1 = reinterpret_cast<const unsigned*>(&v_read1);

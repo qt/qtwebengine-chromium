@@ -214,7 +214,8 @@ AnimationTrigger::CalculateTriggerBoundaries() {
     // Return values that indicate that the a trigger with the document timeline
     // is always tripped.
     // return std::nullopt;
-    return std::make_optional<TriggerBoundaries>(
+    return std::make_optional<AnimationTrigger::TriggerBoundaries>(
+        AnimationTrigger::TriggerBoundaries
         {.start = -std::numeric_limits<double>::infinity(),
          .end = std::numeric_limits<double>::infinity(),
          .current_offset = 0});

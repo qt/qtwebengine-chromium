@@ -72,7 +72,9 @@ eslint_ts("lint") {
 # since they are not proper WebUI pages and therefore are not backed up by any
 # WebUIDataSource.  Use `optimize_webui` only to decide whether to also minify.
 group("bundle_js") {
-  deps = [ ":lint" ]
+  if (!is_win) {
+    deps = [ ":lint" ]
+  }
   if (optimize_webui) {
     public_deps = [ ":minify_js" ]
   } else {

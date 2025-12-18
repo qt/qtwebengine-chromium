@@ -105,7 +105,7 @@ void FCLAMP(base::span<const float> src, base::span<float> dest) {
   CHECK(base::IsAligned(src.data(), kRequiredAlignment));
   CHECK(base::IsAligned(dest.data(), kRequiredAlignment));
   static const auto fclamp_func = [] {
-#if defined(ARCH_CPU_X86_FAMILY)
+#if defined(ARCH_CPU_X86_FAMILY) && (!defined(_MSC_VER) || defined(__clang__))
     base::CPU cpu;
     if (cpu.has_avx())
       return FCLAMP_AVX;

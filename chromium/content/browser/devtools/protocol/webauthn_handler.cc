@@ -25,9 +25,11 @@
 #include "device/fido/virtual_u2f_device.h"
 
 // This should be after all other #includes.
-#if defined(_WINDOWS_)  // Detect whether windows.h was included.
-#include "base/win/windows_h_disallowed.h"
-#endif  // defined(_WINDOWS_)
+//#if defined(_WINDOWS_)  // Detect whether windows.h was included.
+//#include "base/win/windows_h_disallowed.h"
+//#endif  // defined(_WINDOWS_)
+
+#undef GetUserName
 
 namespace content::protocol {
 

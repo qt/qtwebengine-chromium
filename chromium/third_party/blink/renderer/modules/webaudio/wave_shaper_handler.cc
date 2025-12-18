@@ -530,8 +530,8 @@ void WaveShaperHandler::WaveShaperCurveValues(float* destination,
 
       // Save index1/2 so we can get the individual parts.  Aligned to
       // 16 bytes for vst1q instruction.
-      int32_t i1[4] __attribute__((aligned(16)));
-      int32_t i2[4] __attribute__((aligned(16)));
+      alignas(16) int32_t i1[4];
+      alignas(16) int32_t i2[4];
       vst1q_s32(i1, index1);
       vst1q_s32(i2, index2);
 

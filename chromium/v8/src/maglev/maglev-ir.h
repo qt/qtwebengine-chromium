@@ -716,7 +716,7 @@ inline constexpr bool IsSafeInteger(int64_t value) {
   return value >= kMinSafeInteger && value <= kMaxSafeInteger;
 }
 
-inline constexpr bool IsSafeInteger(double value) {
+inline const bool IsSafeInteger(double value) {
   if (!std::isfinite(value)) return false;
   if (value != std::trunc(value)) return false;
   double max = static_cast<double>(kMaxSafeInteger);

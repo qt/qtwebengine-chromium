@@ -251,7 +251,7 @@ void InsertNodeForTask(TaskGraph* graph,
                        uint16_t priority,
                        size_t dependencies,
                        bool has_external_dependency = false) {
-  TRACE_EVENT("cc", __PRETTY_FUNCTION__, "category", category, "deps",
+  TRACE_EVENT("cc", PRETTY_FUNCTION, "category", category, "deps",
               dependencies);
   DCHECK(!base::Contains(graph->nodes, task, &TaskGraph::Node::task));
   graph->nodes.emplace_back(task, category, priority, dependencies,

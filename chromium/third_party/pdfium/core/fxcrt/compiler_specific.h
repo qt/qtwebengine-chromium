@@ -113,9 +113,13 @@
 //     return S(p).Get();
 //   }
 // ```
+#if defined(__clang__)
 #if HAS_CPP_ATTRIBUTE(clang::lifetimebound)
 #define LIFETIME_BOUND [[clang::lifetimebound]]
-#else
+#endif
+#endif
+
+#ifndef LIFETIME_BOUND
 #define LIFETIME_BOUND
 #endif
 

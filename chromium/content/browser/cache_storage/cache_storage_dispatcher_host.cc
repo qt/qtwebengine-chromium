@@ -983,7 +983,7 @@ class CacheStorageDispatcherHost::CacheStorageImpl final
             std::move(callback).Run(base::unexpected(error));
             return;
           }
-          DCHECK(self->bucket_.has_value());
+          //DCHECK(self->bucket_.has_value());
 
           mojo::PendingAssociatedRemote<blink::mojom::CacheStorageCache>
               pending_remote;

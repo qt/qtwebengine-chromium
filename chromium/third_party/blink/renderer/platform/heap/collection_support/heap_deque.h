@@ -72,16 +72,20 @@ class BasicHeapDeque final
 template <typename T>
 using HeapDeque = BasicHeapDeque<internal::HeapCollectionType::kDisallowNew, T>;
 
+#if !defined(COMPILER_MSVC)
 static_assert(IsDisallowNew<HeapDeque<int>>);
 ASSERT_SIZE(Deque<int>, HeapDeque<int>);
+#endif
 
 // GCed version of blink::Deque for referring to GarbageCollected or
 // DISALLOW_NEW() objects with Trace() methods.
 template <typename T>
 using GCedHeapDeque = BasicHeapDeque<internal::HeapCollectionType::kGCed, T>;
 
+#if !defined(COMPILER_MSVC)
 static_assert(!IsDisallowNew<GCedHeapDeque<int>>);
 ASSERT_SIZE(Deque<int>, GCedHeapDeque<int>);
+#endif
 
 template <typename T>
 struct VectorTraits<HeapDeque<T>> : VectorTraitsBase<HeapDeque<T>> {

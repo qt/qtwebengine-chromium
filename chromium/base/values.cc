@@ -947,6 +947,7 @@ bool operator==(const DictValue& lhs, const DictValue& rhs) {
                             deref_2nd);
 }
 
+#if !defined(COMPILER_MSVC)
 std::partial_ordering operator<=>(const DictValue& lhs, const DictValue& rhs) {
   return std::lexicographical_compare_three_way(
       lhs.storage_.begin(), lhs.storage_.end(), rhs.storage_.begin(),
@@ -954,6 +955,29 @@ std::partial_ordering operator<=>(const DictValue& lhs, const DictValue& rhs) {
         return std::tie(a.first, *a.second) <=> std::tie(b.first, *b.second);
       });
 }
+#else
+bool operator!=(const DictValue& lhs, const DictValue& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const DictValue& lhs, const DictValue& rhs) {
+  auto deref_2nd = [](const auto& p) { return std::tie(p.first, *p.second); };
+  return std::ranges::lexicographical_compare(lhs.storage_, rhs.storage_, {},
+                                              deref_2nd, deref_2nd);
+}
+
+bool operator>(const DictValue& lhs, const DictValue& rhs) {
+  return rhs < lhs;
+}
+
+bool operator<=(const DictValue& lhs, const DictValue& rhs) {
+  return !(rhs < lhs);
+}
+
+bool operator>=(const DictValue& lhs, const DictValue& rhs) {
+  return !(lhs < rhs);
+}
+#endif
 
 // static
 ListValue ListValue::with_capacity(size_t capacity) {
@@ -1289,11 +1313,38 @@ ListValue::ListValue(const std::vector<Value>& storage) {
   }
 }
 
+#if !defined(COMPILER_MSVC)
 // This can't be declared in the header because of a circular dependency between
 // ListValue::operator<=> and Value::operator<=>.
 std::partial_ordering operator<=>(const ListValue& lhs,
                                   const ListValue& rhs) = default;
+#else
+bool operator==(const ListValue& lhs, const ListValue& rhs) {
+  return lhs.storage_ == rhs.storage_;
+}
 
+bool operator!=(const ListValue& lhs, const ListValue& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const ListValue& lhs, const ListValue& rhs) {
+  return lhs.storage_ < rhs.storage_;
+}
+
+bool operator>(const ListValue& lhs, const ListValue& rhs) {
+  return rhs < lhs;
+}
+
+bool operator<=(const ListValue& lhs, const ListValue& rhs) {
+  return !(rhs < lhs);
+}
+
+bool operator>=(const ListValue& lhs, const ListValue& rhs) {
+  return !(lhs < rhs);
+}
+#endif
+
+#if !defined(COMPILER_MSVC)
 bool Value::operator==(bool rhs) const {
   return is_bool() && GetBool() == rhs;
 }
@@ -1317,6 +1368,55 @@ bool Value::operator==(const DictValue& rhs) const {
 bool Value::operator==(const ListValue& rhs) const {
   return is_list() && GetList() == rhs;
 }
+#else
+bool operator==(const Value& lhs, const Value& rhs) {
+  return lhs.data_ == rhs.data_;
+}
+
+bool operator!=(const Value& lhs, const Value& rhs) {
+  return !(lhs == rhs);
+}
+
+bool operator<(const Value& lhs, const Value& rhs) {
+  return lhs.data_ < rhs.data_;
+}
+
+bool operator>(const Value& lhs, const Value& rhs) {
+  return rhs < lhs;
+}
+
+bool operator<=(const Value& lhs, const Value& rhs) {
+  return !(rhs < lhs);
+}
+
+bool operator>=(const Value& lhs, const Value& rhs) {
+  return !(lhs < rhs);
+}
+
+bool operator==(const Value& lhs, bool rhs) {
+  return lhs.is_bool() && lhs.GetBool() == rhs;
+}
+
+bool operator==(const Value& lhs, int rhs) {
+  return lhs.is_int() && lhs.GetInt() == rhs;
+}
+
+bool operator==(const Value& lhs, double rhs) {
+  return lhs.is_double() && lhs.GetDouble() == rhs;
+}
+
+bool operator==(const Value& lhs, std::string_view rhs) {
+  return lhs.is_string() && lhs.GetString() == rhs;
+}
+
+bool operator==(const Value& lhs, const DictValue& rhs) {
+  return lhs.is_dict() && lhs.GetDict() == rhs;
+}
+
+bool operator==(const Value& lhs, const ListValue& rhs) {
+  return lhs.is_list() && lhs.GetList() == rhs;
+}
+#endif
 
 size_t Value::EstimateMemoryUsage() const {
   switch (type()) {

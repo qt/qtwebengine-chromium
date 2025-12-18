@@ -113,12 +113,12 @@ Transform Transform::ColMajor(base::span<const double, 16> a) {
 
 // static
 Transform Transform::ColMajorF(const float a[16]) {
-  if (AllTrue(Float4{UNSAFE_TODO(a[1]), UNSAFE_TODO(a[2]), UNSAFE_TODO(a[3]),
-                     UNSAFE_TODO(a[4])} == Float4{0, 0, 0, 0} &
-              Float4{UNSAFE_TODO(a[6]), UNSAFE_TODO(a[7]), UNSAFE_TODO(a[8]),
-                     UNSAFE_TODO(a[9])} == Float4{0, 0, 0, 0} &
-              Float4{UNSAFE_TODO(a[10]), UNSAFE_TODO(a[11]), UNSAFE_TODO(a[14]),
-                     UNSAFE_TODO(a[15])} == Float4{1, 0, 0, 1})) {
+  if (AllTrue(Double4{UNSAFE_TODO(a[1]), UNSAFE_TODO(a[2]), UNSAFE_TODO(a[3]),
+                     UNSAFE_TODO(a[4])} == Double4{0, 0, 0, 0} &
+              Double4{UNSAFE_TODO(a[6]), UNSAFE_TODO(a[7]), UNSAFE_TODO(a[8]),
+                     UNSAFE_TODO(a[9])} == Double4{0, 0, 0, 0} &
+              Double4{UNSAFE_TODO(a[10]), UNSAFE_TODO(a[11]), UNSAFE_TODO(a[14]),
+                     UNSAFE_TODO(a[15])} == Double4{1, 0, 0, 1})) {
     return Transform(a[0], UNSAFE_TODO(a[5]), UNSAFE_TODO(a[12]),
                      UNSAFE_TODO(a[13]));
   }

@@ -335,6 +335,11 @@ if (!is_cronet_build || is_ios) {
     } else {
       sources += [ "machine_id_provider_nonwin.cc" ]
     }
+    if (is_qtwebengine) {
+      deps -= [
+        "//components/variations/field_trial_config",
+      ]
+    }
 
     if (is_win || is_linux) {
       sources += [

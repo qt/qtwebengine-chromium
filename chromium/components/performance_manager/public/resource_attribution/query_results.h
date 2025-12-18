@@ -107,8 +107,13 @@ struct QueryResults {
 
   friend constexpr auto operator<=>(const QueryResults&,
                                     const QueryResults&) = default;
-  friend constexpr bool operator==(const QueryResults&,
-                                   const QueryResults&) = default;
+  friend constexpr bool operator==(const QueryResults& a,
+                                   const QueryResults& b) {
+    return a.cpu_time_result.has_value() == b.cpu_time_result.has_value() &&
+        a.memory_summary_result.has_value() == b.memory_summary_result.has_value() &&
+        (!a.cpu_time_result.has_value() || a.cpu_time_result.value() == b.cpu_time_result.value()) &&
+        (!a.memory_summary_result.has_value() || a.memory_summary_result.value() == b.memory_summary_result.value());
+  }
 };
 
 // A map from a ResourceContext to all query results received for that context.

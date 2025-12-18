@@ -1743,6 +1743,7 @@ group("chromium_builder_perf") {
     ]
     if (is_qtwebengine) {
       data_deps -= [
+        "//chrome/installer/mini_installer",
         "//third_party/angle/src/tests:angle_perftests",
       ]
     }
