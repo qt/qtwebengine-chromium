@@ -1109,7 +1109,7 @@ config("compiler") {
   }
 
   # Disable PCH timestamps to fix sccache breakage on CI
-  if (is_clang && is_qtwebengine) {
+  if (is_clang && is_qtwebengine && enable_precompiled_headers && cc_wrapper != "") {
     cflags += [ "-Xclang", "-fno-pch-timestamp" ]
   }
 
