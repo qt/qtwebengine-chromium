@@ -10,7 +10,7 @@ template("bundle") {
   assert(defined(invoker.entrypoint),
          "You must define the 'entrypoint' for a bundle target")
 
-  _fast_bundle = is_debug || devtools_skip_typecheck
+  _fast_bundle = (is_debug || devtools_skip_typecheck) && !is_qtwebengine
   assert(!is_official_build || !_fast_bundle,
          "Fast bundling is disallowed for official builds.")
 
