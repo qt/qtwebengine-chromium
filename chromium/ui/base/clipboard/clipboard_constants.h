@@ -21,6 +21,7 @@ namespace ui {
 inline constexpr char kMimeTypePlainText[] = "text/plain";
 inline constexpr char16_t kMimeTypePlainText16[] = u"text/plain";
 inline constexpr char kMimeTypeUtf8PlainText[] = "text/plain;charset=utf-8";
+inline constexpr char16_t kMimeTypeUtf8PlainText16[] = u"text/plain;charset=utf-8";
 inline constexpr char kMimeTypeUriList[] = "text/uri-list";
 inline constexpr char16_t kMimeTypeUriList16[] = u"text/uri-list";
 // Non-standard type for downloading files after drop events. Only works on
