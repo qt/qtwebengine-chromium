@@ -3077,8 +3077,12 @@ config("symbols") {
         # prevent some types of non-determinism.
         "-gno-codeview-command-line",
       ]
-    } else {
-      cflags = [ "/Zi" ]  # Produce PDB file, no edit and continue.
+    } else {    # Debug info in the PDB file
+      if (cc_wrapper == "") {
+        cflags = [ "/Zi" ]
+      } else {
+        cflags = [ "/Z7" ]    # sccache has problems with /Zi
+      }
     }
 
     if (is_clang && use_lld && use_ghash) {
