@@ -75,7 +75,7 @@ template("msvc_toolchain") {
       } else {
         cl_prefix = ""
       }
-    } else if (toolchain_cc_wrapper != "" && toolchain_is_clang) {
+    } else if (toolchain_cc_wrapper != "") {
       cl_prefix = toolchain_cc_wrapper + " "
     } else {
       cl_prefix = ""
