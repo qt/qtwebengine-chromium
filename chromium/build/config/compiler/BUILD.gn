@@ -3284,8 +3284,12 @@ config("symbols") {
       ]
 
       rustflags = [ "-Cllvm-args=-pick-merged-source-locations" ]
-    } else {
-      cflags = [ "/Zi" ]  # Produce PDB file, no edit and continue.
+    } else {    # Debug info in the PDB file
+      if (cc_wrapper == "") {
+        cflags = [ "/Zi" ]
+      } else {
+        cflags = [ "/Z7" ]    # sccache has problems with /Zi
+      }
     }
 
     if (is_clang && use_lld && use_ghash) {
