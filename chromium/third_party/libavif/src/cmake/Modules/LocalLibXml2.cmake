@@ -1,4 +1,4 @@
-set(AVIF_LIBXML_GIT_TAG "v2.13.5")
+set(AVIF_LIBXML_GIT_TAG "v2.14.0")
 
 set(LIB_FILENAME "${AVIF_SOURCE_DIR}/ext/libxml2/install.libavif/lib/${AVIF_LIBRARY_PREFIX}xml2${CMAKE_STATIC_LIBRARY_SUFFIX}")
 if(EXISTS "${LIB_FILENAME}")
@@ -12,9 +12,9 @@ else()
     if(EXISTS "${AVIF_SOURCE_DIR}/ext/libxml2")
         message(STATUS "libavif(AVIF_LIBXML2=LOCAL): ext/libxml2 found; using as FetchContent SOURCE_DIR")
         set(FETCHCONTENT_SOURCE_DIR_LIBXML2 "${AVIF_SOURCE_DIR}/ext/libxml2")
-        message(CHECK_START "libavif(AVIF_LIBXML2): configuring libxml2")
+        message(CHECK_START "libavif(AVIF_LIBXML2=LOCAL): configuring libxml2")
     else()
-        message(CHECK_START "libavif(AVIF_LIBXML2): fetching and configuring libxml2")
+        message(CHECK_START "libavif(AVIF_LIBXML2=LOCAL): fetching and configuring libxml2")
     endif()
 
     set(LIBXML2_WITH_PYTHON OFF CACHE INTERNAL "-")
