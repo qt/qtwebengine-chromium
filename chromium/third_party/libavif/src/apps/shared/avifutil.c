@@ -101,14 +101,14 @@ static void avifImageDumpInternal(const avifImage * avif, uint32_t gridCols, uin
             avifCropRect cropRect;
             avifDiagnostics diag;
             avifDiagnosticsClearError(&diag);
-            avifBool validClap =
-                avifCropRectConvertCleanApertureBox(&cropRect, &avif->clap, avif->width, avif->height, avif->yuvFormat, &diag);
+            avifBool validClap = avifCropRectFromCleanApertureBox(&cropRect, &avif->clap, avif->width, avif->height, &diag);
             if (validClap) {
-                printf("      * Valid, derived crop rect: X: %d, Y: %d, W: %d, H: %d\n",
+                printf("      * Valid, derived crop rect: X: %d, Y: %d, W: %d, H: %d%s\n",
                        cropRect.x,
                        cropRect.y,
                        cropRect.width,
-                       cropRect.height);
+                       cropRect.height,
+                       avifCropRectRequiresUpsampling(&cropRect, avif->yuvFormat) ? " (upsample before cropping)" : "");
             } else {
                 printf("      * Invalid: %s\n", diag.error);
             }
@@ -416,7 +416,7 @@ int avifQueryCPUCount(void)
 
 #include <sys/sysctl.h>
 
-int avifQueryCPUCount()
+int avifQueryCPUCount(void)
 {
     int mib[4];
     int numCPU;
@@ -442,7 +442,7 @@ int avifQueryCPUCount()
 
 // Emscripten
 
-int avifQueryCPUCount()
+int avifQueryCPUCount(void)
 {
     return 1;
 }
@@ -453,7 +453,7 @@ int avifQueryCPUCount()
 
 #include <unistd.h>
 
-int avifQueryCPUCount()
+int avifQueryCPUCount(void)
 {
     int numCPU = (int)sysconf(_SC_NPROCESSORS_ONLN);
     return (numCPU > 0) ? numCPU : 1;
