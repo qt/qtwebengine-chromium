@@ -23,8 +23,9 @@ An opaque blue circle on a transparent green background.
 
 It is of color type 2 (PNG_COLOR_TYPE_RGB) and has a tRNS chunk before a PLTE
 chunk. Since the PNG specification version 1.2 says "the tRNS chunk [...] must
-follow the PLTE chunk, if any", libpng considers the tRNS chunk as invalid and
-ignores it.
+follow the PLTE chunk, if any", libpng 1.6.46 or older considers the tRNS chunk
+as invalid and ignores it. The behavior changed starting with libpng 1.6.47.
+See https://github.com/pnggroup/libpng/blob/libpng16/CHANGES#L6243-L6246.
 
 ### File [circle_custom_properties.avif](circle_custom_properties.avif)
 
@@ -34,6 +35,27 @@ License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LIC
 
 Source: `avifenc circle-trns-after-plte.png` with custom properties added in
 `avifRWStreamWriteProperties()`: FullBox `1234`, Box `abcd` and Box `uuid`.
+
+### File [clap_irot_imir_non_essential.avif](clap_irot_imir_non_essential.avif)
+
+![](clap_irot_imir_non_essential.avif)
+
+License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
+
+Source: File generated with `TransformTest.ClapIrotImir` from
+`aviftransformtest.cc`, where `clap`, `irot` and `imir` are tagged as
+non-essential.
+
+### File [clop_irot_imor.avif](clop_irot_imor.avif)
+
+![](clop_irot_imor.avif)
+
+License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
+
+Source: File generated with `TransformTest.ClapIrotImir` from
+`aviftransformtest.cc`, where essential `clap` property was replaced by made-up
+non-essential `clop` property and essential `imir` property was replaced by
+made-up non-essential `imor` property.
 
 ### File [draw_points.png](draw_points.png)
 
@@ -50,6 +72,14 @@ Source: Generated with ImageMagick's `convert` command:
 ```
 
 It is of color type 3 (PNG_COLOR_TYPE_PALETTE) and has a tRNS chunk.
+
+### File [extended_pixi.avif](extended_pixi.avif)
+
+![](extended_pixi.avif)
+
+License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
+
+Source: Generated with `avifpixitest` (4:2:0, vertical chroma sample position).
 
 ### File [white_1x1.avif](white_1x1.avif)
 
@@ -663,6 +693,18 @@ Source : same as seine_sdr_gainmap_srgb.avif before commit 10b7232
 An image with a `tmap` item (i.e. a gain map) but no 'tmap' brand in the `ftyp` box.
 The gain map should be ignored by the decoder since the `tmap` brand is missing.
 
+### File [seine_hdr_gainmap_wrongaltr.avif](seine_hdr_gainmap_wrongaltr.avif)
+
+![](seine_hdr_gainmap_wrongaltr.avif)
+
+License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
+
+Source : same as seine_hdr_gainmap_wrongaltr.avif but edited with a hex editor
+to swap the two entity ids inside the 'altr' box.
+
+An image with a `tmap` item (i.e. a gain map) but the `altr` box does not show
+it as being preferred over the primary image item so it should be ignored.
+
 ### File [seine_sdr_gainmap_gammazero.avif](seine_sdr_gainmap_gammazero.avif)
 
 ![](seine_sdr_gainmap_gammazero.avif)
@@ -801,6 +843,21 @@ An animated AVIF image file with the following attributes:
 * Repetition Count: 0
 * Frame count: 5
 
+### File [colors-animated-8bpc-audio.avif](colors-animated-8bpc-audio.avif)
+
+![](colors-animated-8bpc-audio.avif)
+
+License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
+
+Same as `colors-animated-8bpc.avif` but with an audio track added using MP4Box:
+
+`MP4Box -add audio.aac colors-animated-8bpc-audio.avif`
+
+audio.aac was recorded with QuickTime and converted/truncated to the same length as the
+image sequence with ffmpeg:
+
+`ffmpeg -i audio.m4a -t 0.17 audio.aac`
+
 ### File [colors-animated-8bpc-alpha-exif-xmp.avif](colors-animated-8bpc-alpha-exif-xmp.avif)
 
 ![](colors-animated-8bpc-alpha-exif-xmp.avif)
@@ -810,6 +867,15 @@ License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LIC
 Source: `colors-animated-8bpc.avif` but translucent and with the Exif/XMP chunks of
 `paris_exif_xmp_icc.jpg`. The repetition is infinite.
 
+### File [colors-animated-8bpc-depth-exif-xmp.avif](colors-animated-8bpc-depth-exif-xmp.avif)
+
+![](colors-animated-8bpc-depth-exif-xmp.avif)
+
+License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
+
+Source: `colors-animated-8bpc-alpha-exif-xmp.avif` but with the alpha URI manually
+changed to depth using a hex editor.
+
 ### File [colors-animated-12bpc-keyframes-0-2-3.avif](colors-animated-12bpc-keyframes-0-2-3.avif)
 
 ![](colors-animated-12bpc-keyframes-0-2-3.avif)
@@ -817,6 +883,18 @@ Source: `colors-animated-8bpc.avif` but translucent and with the Exif/XMP chunks
 License: [same as libavif](https://github.com/AOMediaCodec/libavif/blob/main/LICENSE)
 
 Source: Random frames generated with libavif.
+
+### File [webp_logo_animated.y4m](webp_logo_animated.y4m)
+
+![](webp_logo_animated.y4m)
+
+License: [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/),
+[Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
+
+Attribution: Google LLC
+
+Source: https://en.wikipedia.org/wiki/File:WebPLogo.svg with text stripped and
+animated effects.
 
 # Other Test Files
 

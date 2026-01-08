@@ -78,9 +78,9 @@ extern "C" {
 // downstream projects to do greater-than preprocessor checks on AVIF_VERSION
 // to leverage in-development code without breaking their stable builds.
 #define AVIF_VERSION_MAJOR 1
-#define AVIF_VERSION_MINOR 1
-#define AVIF_VERSION_PATCH 1
-#define AVIF_VERSION_DEVEL 1
+#define AVIF_VERSION_MINOR 3
+#define AVIF_VERSION_PATCH 0
+#define AVIF_VERSION_DEVEL 0
 #define AVIF_VERSION \
     ((AVIF_VERSION_MAJOR * 1000000) + (AVIF_VERSION_MINOR * 10000) + (AVIF_VERSION_PATCH * 100) + AVIF_VERSION_DEVEL)
 
@@ -101,9 +101,9 @@ typedef int avifBool;
 #define AVIF_DEFAULT_IMAGE_COUNT_LIMIT (12 * 3600 * 60)
 
 #define AVIF_QUALITY_DEFAULT -1
-#define AVIF_QUALITY_LOSSLESS 100
 #define AVIF_QUALITY_WORST 0
 #define AVIF_QUALITY_BEST 100
+#define AVIF_QUALITY_LOSSLESS 100
 
 #define AVIF_QUANTIZER_LOSSLESS 0
 #define AVIF_QUANTIZER_BEST_QUALITY 0
@@ -210,17 +210,29 @@ AVIF_API const char * avifResultToString(avifResult result);
 // ---------------------------------------------------------------------------
 // avifHeaderFormat
 
+// Bit flag for selecting container strategies when encoding an image.
 typedef enum avifHeaderFormat
 {
-    // AVIF file with an "avif" brand, a MetaBox and all its required boxes for maximum compatibility.
-    AVIF_HEADER_FULL,
+    AVIF_HEADER_DEFAULT = 0x0,
 #if defined(AVIF_ENABLE_EXPERIMENTAL_MINI)
     // AVIF file with a "mif3" brand and a MinimizedImageBox to reduce the encoded file size.
     // This is based on the w24144 "Low-overhead image file format" MPEG proposal for HEIF.
     // WARNING: Experimental feature. Produces files that are incompatible with older decoders.
-    AVIF_HEADER_REDUCED,
+    // If this flag is omitted or if MinimizedImageBox cannot be used at encoding, falls back to an
+    // AVIF file with an "avif" brand, a MetaBox and all its required boxes for maximum compatibility.
+    AVIF_HEADER_MINI = 0x1,
 #endif
+#if defined(AVIF_ENABLE_EXPERIMENTAL_EXTENDED_PIXI)
+    // Use the full syntax of the PixelInformationProperty from HEIF 3rd edition Amendment 2.
+    // WARNING: Experimental feature. Produces files that may be incompatible with older decoders.
+    // Only relevant if a MetaBox is used. No effect if a MinimizedImageBox is used.
+    AVIF_HEADER_EXTENDED_PIXI = 0x2,
+#endif
+
+    // Deprecated.
+    AVIF_HEADER_FULL = AVIF_HEADER_DEFAULT,
 } avifHeaderFormat;
+typedef int avifHeaderFormatFlags;
 
 // ---------------------------------------------------------------------------
 // avifROData/avifRWData: Generic raw memory storage
@@ -397,10 +409,8 @@ enum
     AVIF_MATRIX_COEFFICIENTS_CHROMA_DERIVED_NCL = 12,
     AVIF_MATRIX_COEFFICIENTS_CHROMA_DERIVED_CL = 13,
     AVIF_MATRIX_COEFFICIENTS_ICTCP = 14,
-#if defined(AVIF_ENABLE_EXPERIMENTAL_YCGCO_R)
-    AVIF_MATRIX_COEFFICIENTS_YCGCO_RE = 16,
-    AVIF_MATRIX_COEFFICIENTS_YCGCO_RO = 17,
-#endif
+    AVIF_MATRIX_COEFFICIENTS_YCGCO_RE = 16, // Added to libavif in Feb 2025
+    AVIF_MATRIX_COEFFICIENTS_YCGCO_RO = 17, // Added to libavif in Feb 2025
     AVIF_MATRIX_COEFFICIENTS_LAST
 };
 typedef uint16_t avifMatrixCoefficients; // AVIF_MATRIX_COEFFICIENTS_*
@@ -484,6 +494,10 @@ typedef struct avifPixelAspectRatioBox
 typedef struct avifCleanApertureBox
 {
     // 'clap' from ISO/IEC 14496-12:2022 12.1.4.3
+    // Note that ISO/IEC 23000-22:2024 7.3.6.7 requires the decoded image to be upsampled to 4:4:4 before
+    // clean aperture is applied if a clean aperture size or offset is odd in a subsampled dimension.
+    // However, AV1 supports odd dimensions with chroma subsampling in those directions, so only apply the
+    // requirements to offsets.
 
     // a fractional number which defines the width of the clean aperture image
     uint32_t widthN;
@@ -542,18 +556,27 @@ typedef struct avifCropRect
 
 // These will return AVIF_FALSE if the resultant values violate any standards, and if so, the output
 // values are not guaranteed to be complete or correct and should not be used.
-AVIF_NODISCARD AVIF_API avifBool avifCropRectConvertCleanApertureBox(avifCropRect * cropRect,
-                                                                     const avifCleanApertureBox * clap,
-                                                                     uint32_t imageW,
-                                                                     uint32_t imageH,
-                                                                     avifPixelFormat yuvFormat,
-                                                                     avifDiagnostics * diag);
-AVIF_NODISCARD AVIF_API avifBool avifCleanApertureBoxConvertCropRect(avifCleanApertureBox * clap,
-                                                                     const avifCropRect * cropRect,
-                                                                     uint32_t imageW,
-                                                                     uint32_t imageH,
-                                                                     avifPixelFormat yuvFormat,
-                                                                     avifDiagnostics * diag);
+AVIF_NODISCARD AVIF_API avifBool avifCropRectFromCleanApertureBox(avifCropRect * cropRect,
+                                                                  const avifCleanApertureBox * clap,
+                                                                  uint32_t imageW,
+                                                                  uint32_t imageH,
+                                                                  avifDiagnostics * diag);
+AVIF_NODISCARD AVIF_API avifBool avifCleanApertureBoxFromCropRect(avifCleanApertureBox * clap,
+                                                                  const avifCropRect * cropRect,
+                                                                  uint32_t imageW,
+                                                                  uint32_t imageH,
+                                                                  avifDiagnostics * diag);
+// If this function returns true, the image must be upsampled from 4:2:0 or 4:2:2 to 4:4:4 before
+// Clean Aperture values are applied. This can be done by converting the avifImage to RGB using
+// avifImageYUVToRGB() and only using the cropRect region of the avifRGBImage.
+AVIF_NODISCARD AVIF_API avifBool avifCropRectRequiresUpsampling(const avifCropRect * cropRect, avifPixelFormat yuvFormat);
+
+// Deprecated. Use avifCropRectFromCleanApertureBox() instead.
+AVIF_NODISCARD AVIF_API avifBool
+avifCropRectConvertCleanApertureBox(avifCropRect *, const avifCleanApertureBox *, uint32_t, uint32_t, avifPixelFormat, avifDiagnostics *);
+// Deprecated. Use avifCleanApertureBoxFromCropRect() instead.
+AVIF_NODISCARD AVIF_API avifBool
+avifCleanApertureBoxConvertCropRect(avifCleanApertureBox *, const avifCropRect *, uint32_t, uint32_t, avifPixelFormat, avifDiagnostics *);
 
 // ---------------------------------------------------------------------------
 // avifContentLightLevelInformationBox
@@ -608,7 +631,9 @@ typedef struct avifContentLightLevelInformationBox
 struct avifImage;
 
 // Gain map image and associated metadata.
-// Must be allocated by calling avifGainMapCreate().
+//
+// NOTE: The avifGainMap struct may be extended in a future release. Code outside the libavif
+// library must allocate avifGainMap by calling the avifGainMapCreate() function.
 typedef struct avifGainMap
 {
     // Gain map pixels.
@@ -689,6 +714,8 @@ typedef struct avifGainMap
     // Optimal viewing conditions of the alternate image ('clli' box content
     // of the alternate image that the gain map was created from).
     avifContentLightLevelInformationBox altCLLI;
+
+    // Version 1.2.0 ends here. Add any new members after this line.
 } avifGainMap;
 
 // Allocates a gain map. Returns NULL if a memory allocation failed.
@@ -815,7 +842,7 @@ typedef struct avifImage
                      // byte sequence, can be retrieved by calling avifGetExifTiffHeaderOffset(avifImage.exif).
     avifRWData xmp;
 
-    // Version 1.0.0 ends here. Add any new members after this line.
+    // Version 1.0.0 ends here.
 
     // Other properties attached to this image item (primary or gainmap).
     // At decoding: Forwarded here as opaque byte sequences by the avifDecoder.
@@ -828,6 +855,8 @@ typedef struct avifImage
     // Owned by the avifImage and gets freed when calling avifImageDestroy().
     // gainMap->image->transformFlags is always AVIF_TRANSFORM_NONE.
     avifGainMap * gainMap;
+
+    // Version 1.2.0 ends here. Add any new members after this line.
 } avifImage;
 
 // avifImageCreate() and avifImageCreateEmpty() return NULL if arguments are invalid or if a memory allocation failed.
@@ -943,10 +972,14 @@ typedef enum avifRGBFormat
     // This format is only supported for YUV -> RGB conversion and when
     // avifRGBImage.depth is set to 8.
     AVIF_RGB_FORMAT_RGB_565,
+    AVIF_RGB_FORMAT_GRAY,
+    AVIF_RGB_FORMAT_GRAYA,
+    AVIF_RGB_FORMAT_AGRAY,
     AVIF_RGB_FORMAT_COUNT
 } avifRGBFormat;
 AVIF_API uint32_t avifRGBFormatChannelCount(avifRGBFormat format);
 AVIF_API avifBool avifRGBFormatHasAlpha(avifRGBFormat format);
+AVIF_API avifBool avifRGBFormatIsGray(avifRGBFormat format);
 
 typedef enum avifChromaUpsampling
 {
@@ -1124,7 +1157,7 @@ typedef enum avifStrictFlag
     AVIF_STRICT_PIXI_REQUIRED = (1 << 0),
 
     // This demands that the values surfaced in the clap box are valid, determined by attempting to
-    // convert the clap box to a crop rect using avifCropRectConvertCleanApertureBox(). If this
+    // convert the clap box to a crop rect using avifCropRectFromCleanApertureBox(). If this
     // function returns AVIF_FALSE and this strict flag is set, the decode will fail.
     AVIF_STRICT_CLAP_VALID = (1 << 1),
 
@@ -1297,6 +1330,10 @@ typedef struct avifDecoder
     // legal to call avifImageYUVToRGB() on this in between calls to avifDecoderNextImage(), but use
     // avifImageCopy() if you want to make a complete, permanent copy of this image's YUV content or
     // metadata.
+    //
+    // For each field among clap, irot and imir, if the corresponding avifTransformFlag is set, the
+    // transform must be applied before rendering or converting the image, or forwarded along as
+    // attached metadata.
     avifImage * image;
 
     // Counts and timing for the current image in an image sequence. Uninteresting for single image files.
@@ -1341,11 +1378,14 @@ typedef struct avifDecoder
     // to the appropriate source.
     avifBool imageSequenceTrackPresent; // Output data field.
 
-    // Version 1.1.0 ends here. Add any new members after this line.
+    // Version 1.1.0 ends here.
     // --------------------------------------------------------------------------------------------
 
     // Image content to decode (if present). Defaults to AVIF_IMAGE_CONTENT_DECODE_DEFAULT.
     avifImageContentTypeFlags imageContentToDecode; // Changeable decoder setting.
+
+    // Version 1.2.0 ends here. Add any new members after this line.
+    // --------------------------------------------------------------------------------------------
 } avifDecoder;
 
 // Creates a decoder initialized with default settings values.
@@ -1511,7 +1551,7 @@ typedef struct avifEncoder
     int minQuantizerAlpha; // Deprecated, use `qualityAlpha` instead.
     int maxQuantizerAlpha; // Deprecated, use `qualityAlpha` instead.
 
-    // Tiling splits the image into a grid of smaller images (tiles), allowing parralelization of
+    // Tiling splits the image into a grid of smaller images (tiles), allowing parallelization of
     // encoding/decoding and/or incremental decoding. Tiling also allows encoding larger images.
     // To enable tiling, set tileRowsLog2 > 0 and/or tileColsLog2 > 0, or set autoTiling to AVIF_TRUE.
     // Range: [0-6], where the value indicates a request for 2^n tiles in that dimension.
@@ -1542,14 +1582,17 @@ typedef struct avifEncoder
     // Version 1.0.0 ends here.
     // --------------------------------------------------------------------------------------------
 
-    // Defaults to AVIF_HEADER_FULL
-    avifHeaderFormat headerFormat; // Changeable encoder setting.
+    // Defaults to AVIF_HEADER_DEFAULT
+    avifHeaderFormatFlags headerFormat; // Changeable encoder setting.
 
-    // Version 1.1.0 ends here. Add any new members after this line.
+    // Version 1.1.0 ends here.
     // --------------------------------------------------------------------------------------------
 
     // Encode quality for the gain map image if present, in [AVIF_QUALITY_WORST - AVIF_QUALITY_BEST].
     int qualityGainMap; // Changeable encoder setting.
+
+    // Version 1.2.0 ends here. Add any new members after this line.
+    // --------------------------------------------------------------------------------------------
 
 #if defined(AVIF_ENABLE_EXPERIMENTAL_SAMPLE_TRANSFORM)
     // Perform extra steps at encoding and decoding to extend AV1 features using bundled additional image items.

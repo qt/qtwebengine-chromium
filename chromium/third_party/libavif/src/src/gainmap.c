@@ -363,7 +363,7 @@ avifResult avifFindMinMaxWithoutOutliers(const float * gainMapF, int numPixels, 
 
     float min = gainMapF[0];
     float max = gainMapF[0];
-    for (int i = 0; i < numPixels; ++i) {
+    for (int i = 1; i < numPixels; ++i) {
         min = AVIF_MIN(min, gainMapF[i]);
         max = AVIF_MAX(max, gainMapF[i]);
     }
@@ -420,6 +420,11 @@ avifResult avifGainMapValidateMetadata(const avifGainMap * gainMap, avifDiagnost
             avifDiagnosticsPrintf(diag, "Per-channel denominator is 0 in gain map metadata");
             return AVIF_RESULT_INVALID_ARGUMENT;
         }
+        if ((int64_t)gainMap->gainMapMax[i].n * gainMap->gainMapMin[i].d <
+            (int64_t)gainMap->gainMapMin[i].n * gainMap->gainMapMax[i].d) {
+            avifDiagnosticsPrintf(diag, "Per-channel max is less than per-channel min in gain map metadata");
+            return AVIF_RESULT_INVALID_ARGUMENT;
+        }
         if (gainMap->gainMapGamma[i].n == 0) {
             avifDiagnosticsPrintf(diag, "Per-channel gamma is 0 in gain map metadata");
             return AVIF_RESULT_INVALID_ARGUMENT;
@@ -434,6 +439,35 @@ avifResult avifGainMapValidateMetadata(const avifGainMap * gainMap, avifDiagnost
         return AVIF_RESULT_INVALID_ARGUMENT;
     }
     return AVIF_RESULT_OK;
+}
+
+avifBool avifSameGainMapMetadata(const avifGainMap * a, const avifGainMap * b)
+{
+    if (a->baseHdrHeadroom.n != b->baseHdrHeadroom.n || a->baseHdrHeadroom.d != b->baseHdrHeadroom.d ||
+        a->alternateHdrHeadroom.n != b->alternateHdrHeadroom.n || a->alternateHdrHeadroom.d != b->alternateHdrHeadroom.d) {
+        return AVIF_FALSE;
+    }
+    for (int c = 0; c < 3; ++c) {
+        if (a->gainMapMin[c].n != b->gainMapMin[c].n || a->gainMapMin[c].d != b->gainMapMin[c].d ||
+            a->gainMapMax[c].n != b->gainMapMax[c].n || a->gainMapMax[c].d != b->gainMapMax[c].d ||
+            a->gainMapGamma[c].n != b->gainMapGamma[c].n || a->gainMapGamma[c].d != b->gainMapGamma[c].d ||
+            a->baseOffset[c].n != b->baseOffset[c].n || a->baseOffset[c].d != b->baseOffset[c].d ||
+            a->alternateOffset[c].n != b->alternateOffset[c].n || a->alternateOffset[c].d != b->alternateOffset[c].d) {
+            return AVIF_FALSE;
+        }
+    }
+    return AVIF_TRUE;
+}
+
+avifBool avifSameGainMapAltMetadata(const avifGainMap * a, const avifGainMap * b)
+{
+    if (a->altICC.size != b->altICC.size || memcmp(a->altICC.data, b->altICC.data, a->altICC.size) != 0 ||
+        a->altColorPrimaries != b->altColorPrimaries || a->altTransferCharacteristics != b->altTransferCharacteristics ||
+        a->altMatrixCoefficients != b->altMatrixCoefficients || a->altYUVRange != b->altYUVRange || a->altDepth != b->altDepth ||
+        a->altPlaneCount != b->altPlaneCount || a->altCLLI.maxCLL != b->altCLLI.maxCLL || a->altCLLI.maxPALL != b->altCLLI.maxPALL) {
+        return AVIF_FALSE;
+    }
+    return AVIF_TRUE;
 }
 
 static const float kEpsilon = 1e-10f;
@@ -704,17 +738,26 @@ avifResult avifRGBImageComputeGainMap(const avifRGBImage * baseRgbImage,
 
     // Scale the gain map values to map [min, max] range to [0, 1].
     for (int c = 0; c < numGainMapChannels; ++c) {
-        const float range = gainMapMaxLog2[c] - gainMapMinLog2[c];
-        if (range <= 0.0f) {
-            continue;
-        }
-        const float gainMapGamma = avifUnsignedFractionToFloat(gainMap->gainMapGamma[c]);
+        const float range = AVIF_MAX(gainMapMaxLog2[c] - gainMapMinLog2[c], 0.0f);
 
-        for (int j = 0; j < height; ++j) {
-            for (int i = 0; i < width; ++i) {
-                // Remap [min; max] range to [0; 1]
-                const float v = AVIF_CLAMP(gainMapF[c][j * width + i], gainMapMinLog2[c], gainMapMaxLog2[c]);
-                gainMapF[c][j * width + i] = powf((v - gainMapMinLog2[c]) / range, gainMapGamma);
+        if (range == 0.0f) {
+            for (int j = 0; j < height; ++j) {
+                for (int i = 0; i < width; ++i) {
+                    // If the range is 0, the gain map values will be multiplied by zero when tonemapping so the values
+                    // don't matter, but we still need to make sure that gainMapF is in [0,1].
+                    gainMapF[c][j * width + i] = 0.0f;
+                }
+            }
+        } else {
+            // Remap [min; max] range to [0; 1]
+            const float gainMapGamma = avifUnsignedFractionToFloat(gainMap->gainMapGamma[c]);
+            for (int j = 0; j < height; ++j) {
+                for (int i = 0; i < width; ++i) {
+                    float v = gainMapF[c][j * width + i];
+                    v = AVIF_CLAMP(v, gainMapMinLog2[c], gainMapMaxLog2[c]);
+                    v = powf((v - gainMapMinLog2[c]) / range, gainMapGamma);
+                    gainMapF[c][j * width + i] = AVIF_CLAMP(v, 0.0f, 1.0f);
+                }
             }
         }
     }
