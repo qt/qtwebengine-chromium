@@ -1,7 +1,7 @@
 <!-- mdformat off(generated) -->
 <!-- mdlint off(generated) -->
 # Chrome Root Store
-Version: 27
+Version: 29
 
 [TOC]
 
