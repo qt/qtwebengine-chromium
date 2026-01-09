@@ -219,6 +219,7 @@ class TraceableCounter : public TraceableVariable {
     return *this;
   }
 
+#if BUILDFLAG(IS_QTWEBENGINE)
   const T operator-() const {
     return -value();
   }
@@ -240,6 +241,7 @@ class TraceableCounter : public TraceableVariable {
     value_ = val + 1;
     return val;
   }
+#endif
 
   const T& value() const { return value_; }
   const T* operator->() const { return &value_; }
@@ -259,6 +261,7 @@ class TraceableCounter : public TraceableVariable {
 };
 
 // Add operators when it's needed.
+#if !BUILDFLAG(IS_QTWEBENGINE)
 template <typename T, TracingCategory category>
 constexpr T operator-(const TraceableCounter<T, category>& counter) {
   return -counter.value();
@@ -312,6 +315,7 @@ constexpr T operator--(TraceableCounter<T, category>& counter, int) {
   counter = value - 1;
   return value;
 }
+#endif
 
 }  // namespace scheduler
 }  // namespace blink
