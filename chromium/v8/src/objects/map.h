@@ -984,6 +984,12 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
                                             MaybeHandle<Name> maybe_name,
                                             const char* reason,
                                             SimpleTransitionFlag simple_flag);
+  template <typename InitMapCb>
+  static Handle<Map> CopyReplaceDescriptors(
+      Isolate* isolate, DirectHandle<Map> map,
+      DirectHandle<DescriptorArray> descriptors, TransitionFlag flag,
+      const InitMapCb& InitMap, MaybeDirectHandle<Name> maybe_name,
+      const char* reason, SimpleTransitionFlag simple_flag);
 
   static Handle<Map> CopyReplaceDescriptor(Isolate* isolate, Handle<Map> map,
                                            Handle<DescriptorArray> descriptors,
@@ -994,6 +1000,7 @@ class Map : public TorqueGeneratedMap<Map, HeapObject> {
                                     PropertyNormalizationMode mode);
 
   void DeprecateTransitionTree(Isolate* isolate);
+  void DeprecateTransitionTreeImpl(Isolate* isolate);
 
   void ReplaceDescriptors(Isolate* isolate,
                           Tagged<DescriptorArray> new_descriptors);
