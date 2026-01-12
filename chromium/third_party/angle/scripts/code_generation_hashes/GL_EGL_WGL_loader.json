@@ -4,7 +4,7 @@
   "scripts/generate_loader.py":
     "93c78a8d11323fa311fed5118fbcf083",
   "scripts/gl_angle_ext.xml":
-    "ef111314bcf6e8c9cdc1a391080f1d80",
+    "676627eae49a3ccadeafc3adbd7dba8d",
   "scripts/registry_xml.py":
     "b4b40cf6f60ec0b2e8ef27dae59cfd91",
   "src/libEGL/egl_loader_autogen.cpp":
