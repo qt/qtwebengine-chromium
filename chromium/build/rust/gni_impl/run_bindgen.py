@@ -71,9 +71,9 @@ def main():
   # if it's set. In practice we've seen a case where someone had the value set
   # in their build environment with no intention of it reaching bindgen, leading
   # to a hard-to-debug build error.
-  if 'TARGET' in os.environ:
-    sys.exit('ERROR: saw TARGET in environment, remove to avoid bindgen'
-             ' failures')
+#  if 'TARGET' in os.environ:
+#    sys.exit('ERROR: saw TARGET in environment, remove to avoid bindgen'
+#             ' failures')
 
   with contextlib.ExitStack() as stack:
     # Args passed to the actual bindgen cli
@@ -113,6 +113,9 @@ def main():
     genargs.append('--')
     genargs.extend(filter_clang_args(args.clangargs))
     env = os.environ
+    if 'TARGET' in env:
+      del env['TARGET']
+
     if args.ld_library_path:
       if sys.platform == 'darwin':
         env["DYLD_LIBRARY_PATH"] = args.ld_library_path
