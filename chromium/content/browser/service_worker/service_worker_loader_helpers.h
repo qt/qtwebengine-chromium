@@ -100,6 +100,10 @@ CONTENT_EXPORT bool IsEligibleForSyntheticResponseForTesting(
     const GURL& client_url,
     const std::string& allowed_urls);
 
+storage::mojom::ServiceWorkerFindRegistrationResultPtr
+CreateSyntheticRegistration(const GURL& client_url, 
+                            const blink::StorageKey& key);
+
 }  // namespace service_worker_loader_helpers
 
 }  // namespace content
