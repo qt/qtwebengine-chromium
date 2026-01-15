@@ -472,6 +472,10 @@ BLINK_COMMON_EXPORT extern const base::FeatureParam<std::string>
 // URLs.
 BLINK_COMMON_EXPORT extern const base::FeatureParam<std::string>
     kFledgeBiddingAndAuctionKeyConfig;
+
+// Block partial responses (206, 416) for requests without a Range header.
+BLINK_COMMON_EXPORT BASE_DECLARE_FEATURE(kBlockPartialResponseWithoutRange);
+
 // Configures FLEDGE to consider k-anononymity. If both
 // kFledgeConsiderKAnonymity and kFledgeEnforceKAnonymity are on it will be
 // enforced; if only kFledgeConsiderKAnonymity is on it will be simulated.
