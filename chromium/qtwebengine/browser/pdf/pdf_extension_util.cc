@@ -220,15 +220,6 @@ static void AddPdfViewerStrings(base::Value::Dict* dict) {
                                  dict);
 }
 
-#if BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(ENABLE_PDF_INK2)
-bool IsPdfAnnotationsEnabledByPolicy(content::BrowserContext* context) {
-  PrefService* prefs =
-      context ? Profile::FromBrowserContext(context)->GetPrefs() : nullptr;
-  return !prefs || !prefs->IsManagedPreference(prefs::kPdfAnnotationsEnabled) ||
-         prefs->GetBoolean(prefs::kPdfAnnotationsEnabled);
-}
-#endif  // BUILDFLAG(IS_CHROMEOS) || BUILDFLAG(ENABLE_PDF_INK2)
-
 } // namespace
 
 void AddStrings(PdfViewerContext context, base::Value::Dict* dict) {
