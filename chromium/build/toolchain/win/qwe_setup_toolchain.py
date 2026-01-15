@@ -11,6 +11,9 @@ import re
 import subprocess
 import sys
 
+sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir, os.pardir))
+import gn_helpers
+
 SCRIPT_DIR = os.path.dirname(__file__)
 
 def _LoadEnvFromBat(args):
@@ -95,9 +98,28 @@ def main():
 
   # Extract environment variables for subprocesses.
   env = _LoadToolchainEnv(target_cpu, visual_studio_path, win_sdk_path)
+
+  def relflag(s):  # Make s relative to builddir when cwd and sdk on same drive.
+    try:
+      return os.path.relpath(s).replace('\\', '/')
+    except ValueError:
+      return s
+
+  def q(s):  # Quote s if it contains spaces or other weird characters.
+    return s if re.match(r'^[a-zA-Z0-9._/\\:-]*$', s) else '"' + s + '"'
+
+  include = [p.replace('"', r'\"') for p in env['INCLUDE'].split(';') if p]
+  include = list(map(relflag, include))
+  include_imsvc = ['-imsvc' + i for i in include]
+
   env_block = _FormatAsEnvironmentBlock(env)
   with open(environment_block_name, 'w', encoding='utf8') as f:
     f.write(env_block)
+
+  def ListToArgList(x):
+    return f'[{", ".join(gn_helpers.ToGNString(i) for i in x)}]'
+
+  print(f'include_flags_imsvc_list = {ListToArgList(include_imsvc)}')
 
 if __name__ == '__main__':
   main()
