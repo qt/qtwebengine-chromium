@@ -412,7 +412,6 @@ bool Linkage::NeedsFrameStateInput(Runtime::FunctionId function) {
     case Runtime::kInlineIncBlockCounter:
     case Runtime::kInlineGeneratorClose:
     case Runtime::kInlineGeneratorGetResumeMode:
-    case Runtime::kInlineCreateJSGeneratorObject:
       return false;
 
     default:
