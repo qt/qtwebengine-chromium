@@ -5,6 +5,7 @@
 import("//build/config/apple/symbols.gni")
 import("//build/config/c++/c++.gni")
 import("//build/config/mac/mac_sdk.gni")
+import("//build/config/rust.gni")
 import("//build/config/sysroot.gni")
 import("//build/toolchain/rbe.gni")
 import("//build/toolchain/siso.gni")
@@ -49,6 +50,10 @@ config("compiler") {
 
   if (export_libcxxabi_from_executables) {
     ldflags += [ "-Wl,-undefined,dynamic_lookup" ]
+  }
+
+  if (enable_rust) {
+    ldflags += [ "-Wl,-no_compact_unwind" ]
   }
 }
 
