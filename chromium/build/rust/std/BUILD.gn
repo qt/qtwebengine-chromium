@@ -20,6 +20,10 @@ import("//build/config/coverage/coverage.gni")
 import("//build/config/rust.gni")
 import("//build/config/sanitizers/sanitizers.gni")
 
+declare_args() {
+  use_adler2 = true
+}
+
 if (toolchain_has_rust) {
   # List of Rust stdlib rlibs which are present in the official Rust toolchain
   # we are using from the Android team. This is usually a version or two behind
@@ -49,14 +53,17 @@ if (toolchain_has_rust) {
     # These are no longer present in the Windows toolchain.
     stdlib_files += [
       "addr2line",
-#      "adler",
-      "adler2",
       "gimli",
       "libc",
       "memchr",
       "miniz_oxide",
       "object",
     ]
+    if (use_adler2) {
+      stdlib_files += [ "adler2" ]
+    } else {
+      stdlib_files += [ "adler" ]
+    }
   }
 
   if (toolchain_for_rust_host_build_tools) {

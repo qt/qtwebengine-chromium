@@ -15,7 +15,7 @@
 use crate::decoder::*;
 use crate::*;
 
-use std::num::NonZero;
+use std::num::NonZeroU32;
 
 #[derive(Debug, Default)]
 pub struct DecodeSample {
@@ -183,7 +183,7 @@ impl Tile {
     pub(crate) fn create_from_item(
         item: &mut Item,
         allow_progressive: bool,
-        image_count_limit: Option<NonZero<u32>>,
+        image_count_limit: Option<NonZeroU32>,
         size_hint: u64,
     ) -> AvifResult<Tile> {
         if size_hint != 0 && item.size as u64 > size_hint {
@@ -317,7 +317,7 @@ impl Tile {
 
     pub(crate) fn create_from_track(
         track: &Track,
-        image_count_limit: Option<NonZero<u32>>,
+        image_count_limit: Option<NonZeroU32>,
         size_hint: u64,
         decoding_item: DecodingItem,
     ) -> AvifResult<Tile> {

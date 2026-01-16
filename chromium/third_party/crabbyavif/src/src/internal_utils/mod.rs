@@ -19,7 +19,7 @@ use crate::parser::mp4box::*;
 use crate::utils::*;
 use crate::*;
 
-use std::num::NonZero;
+use std::num::NonZeroU32;
 use std::ops::Range;
 
 macro_rules! conversion_function {
@@ -133,8 +133,8 @@ pub(crate) fn find_icc(properties: &[ItemProperty]) -> AvifResult<Option<&Vec<u8
 pub(crate) fn check_limits(
     width: u32,
     height: u32,
-    size_limit: Option<NonZero<u32>>,
-    dimension_limit: Option<NonZero<u32>>,
+    size_limit: Option<NonZeroU32>,
+    dimension_limit: Option<NonZeroU32>,
 ) -> bool {
     if height == 0 {
         return false;
