@@ -721,13 +721,15 @@ int GetSourcePosition(const WasmModule* module, uint32_t func_index,
 }
 
 size_t WasmModule::EstimateStoredSize() const {
-  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
 #if V8_ENABLE_DRUMBRAKE
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
                             824
-#else   // V8_ENABLE_DRUMBRAKE
-                            792
-#endif  // V8_ENABLE_DRUMBRAKE
   );
+#else   // V8_ENABLE_DRUMBRAKE
+  UPDATE_WHEN_CLASS_CHANGES(WasmModule,
+                            792
+  );
+#endif  // V8_ENABLE_DRUMBRAKE
   return sizeof(WasmModule) +                            // --
          signature_zone.allocation_size_for_tracing() +  // --
          ContentSize(types) +                            // --
