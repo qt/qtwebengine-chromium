@@ -118,7 +118,7 @@ impl Dav1dDataWrapper {
             dav1d_data_wrap(
                 self.mut_ptr(),
                 payload.as_ptr(),
-                payload.len(),
+                payload.len().try_into().unwrap(),
                 Some(avif_dav1d_free_callback),
                 /*cookie=*/ std::ptr::null_mut(),
             )

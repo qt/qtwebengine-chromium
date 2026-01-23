@@ -913,9 +913,10 @@ impl Decoder {
             .grpl
             .iter()
             .find(|g| g.grouping_type == "altr" && g.entity_ids.contains(&item_id));
+        let vecitem = vec![item_id];
         let item_ids = match altr_group {
             Some(altr_group) => &altr_group.entity_ids,
-            None => &vec![item_id],
+            None => &vecitem,
         };
         for item_id in item_ids {
             if let Some(item) = self.items.get(item_id) {
