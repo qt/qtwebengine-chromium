@@ -59,6 +59,8 @@ TEST_F(RspTargetWriterTest, WriteRspInfo) {
   shared_lib_target.public_deps().push_back(
       LabelTargetPair(&static_lib_target2));
   shared_lib_target.config_values().ldflags().push_back("-fooBAR");
+  shared_lib_target.config_values().ldflags().push_back(
+      "--sysroot=/foo/../bar");
   shared_lib_target.config_values().ldflags().push_back("/INCREMENTAL:NO");
   shared_lib_target.SetToolchain(setup.toolchain());
   ASSERT_TRUE(shared_lib_target.OnResolved(&err));
@@ -84,7 +86,7 @@ TEST_F(RspTargetWriterTest, WriteRspInfo) {
       " obj/foo1/foo1.input1.o obj/foo1/foo1.input2.o obj/foo5/libbar.a "
       "obj/foo6/libbar.a"
       " ../../foo/libfoo3.a || obj/foo1/foo1.stamp\n"
-      "  ldflags = -fooBAR /INCREMENTAL$:NO -L../../foo/bar\n"
+      "  ldflags = -fooBAR /INCREMENTAL:NO -L../../foo/bar\n"
       "  libs = ../../foo/libfoo3.a -lfoo4\n"
       "  frameworks =\n"
       "  swiftmodules =\n"
@@ -108,8 +110,8 @@ TEST_F(RspTargetWriterTest, WriteRspInfo) {
   std::ostringstream lflags_out;
   RspTargetWriter rsp_lflags_writer(&writer, &shared_lib_target,
                                     RspTargetWriter::LFLAGS, lflags_out);
+  rsp_lflags_writer.set_lflags_remove_pattern("(--sysroot=)(/\\S*?\\s)");
   rsp_lflags_writer.Run();
-
   const char lflags_expected[] = " -fooBAR /INCREMENTAL:NO";
 
   EXPECT_EQ(lflags_expected, lflags_out.str());
@@ -119,7 +121,7 @@ TEST_F(RspTargetWriterTest, WriteRspInfo) {
                                     RspTargetWriter::LDIR, ldir_out);
   rsp_ldir_writer.Run();
 
-  const char ldir_expected[] = " -L\"../../foo/bar\"";
+  const char ldir_expected[] = " -L../../foo/bar";
 
   EXPECT_EQ(ldir_expected, ldir_out.str());
 

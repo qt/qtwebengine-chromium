@@ -58,6 +58,9 @@ void TargetGenerator::Run() {
   if (!FillTestonly())
     return;
 
+  if (!FillLFlagsRemovePattern())
+    return;
+
   if (!FillRspTypes())
     return;
 
@@ -313,6 +316,16 @@ bool TargetGenerator::FillTestonly() {
       return false;
     target_->set_testonly(value->boolean_value());
   }
+  return true;
+}
+
+bool TargetGenerator::FillLFlagsRemovePattern() {
+  const Value* value = scope_->GetValue(variables::kLFlagsRemovePattern, true);
+  if (!value)
+    return true;
+  if (!value->VerifyTypeIs(Value::STRING, err_))
+    return false;
+  target_->set_lflags_remove_pattern(value->string_value());
   return true;
 }
 

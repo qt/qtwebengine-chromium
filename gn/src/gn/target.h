@@ -191,6 +191,7 @@ class Target : public Item {
     std::vector<std::string> data_keys_;
     std::vector<std::string> walk_keys_;
     std::vector<std::string> rsp_types_;
+    std::string lflags_remove_pattern_;
   };
   const GeneratedFile& generated_file() const;
   GeneratedFile& generated_file();
@@ -218,6 +219,13 @@ class Target : public Item {
 
   std::vector<std::string>& rsp_types() { return generated_file().rsp_types_; }
   const std::vector<std::string>& rsp_types() const { return generated_file().rsp_types_; }
+
+  const std::string& lflags_remove_pattern() const {
+    return generated_file().lflags_remove_pattern_;
+  }
+  void set_lflags_remove_pattern(const std::string& str) {
+    generated_file().lflags_remove_pattern_ = str;
+  }
 
   OutputFile write_runtime_deps_output() const {
     return write_runtime_deps_output_;

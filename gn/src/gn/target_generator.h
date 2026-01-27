@@ -70,6 +70,7 @@ class TargetGenerator {
   bool FillDependencies();  // Includes data dependencies.
   bool FillMetadata();
   bool FillTestonly();
+  bool FillLFlagsRemovePattern();
   bool FillRspTypes();
   bool FillAssertNoDeps();
   bool FillWriteRuntimeDeps();

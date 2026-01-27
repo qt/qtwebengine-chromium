@@ -334,6 +334,10 @@ extern const char kTestonly[];
 extern const char kTestonly_HelpShort[];
 extern const char kTestonly_Help[];
 
+extern const char kLFlagsRemovePattern[];
+extern const char kLFlagsRemovePattern_HelpShort[];
+extern const char kLFlagsRemovePattern_Help[];
+
 extern const char kRspTypes[];
 extern const char kRspTypes_HelpShort[];
 extern const char kRspTypes_Help[];

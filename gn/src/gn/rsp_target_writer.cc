@@ -17,6 +17,8 @@
 #include "gn/settings.h"
 #include "gn/target.h"
 
+#include <regex>
+
 RspTargetWriter::RspTargetWriter(const NinjaCBinaryTargetWriter* writer,
                                  const Target* target,
                                  Type type,
@@ -120,10 +122,18 @@ void RspTargetWriter::Run() {
     case LFLAGS: {
       EscapeOptions opts;
       opts.mode = ESCAPE_COMMAND;
-      // First the ldflags from the target and its config.
-      RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
-                                           target_, &ConfigValues::ldflags,
-                                           opts, out_);
+      if (lflags_remove_pattern_.length() > 0) {
+        std::ostringstream out;
+        RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
+                                             target_, &ConfigValues::ldflags,
+                                             opts, out);
+        out_ << std::regex_replace(out.str(),
+                                   std::regex(lflags_remove_pattern_), "");
+      } else {
+        RecursiveTargetConfigStringsToStream(kRecursiveWriterKeepDuplicates,
+                                             target_, &ConfigValues::ldflags,
+                                             opts, out_);
+      }
       out_.flush();
     } break;
     case LDIR: {

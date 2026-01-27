@@ -23,11 +23,15 @@ class RspTargetWriter {
   void Run();
   static Type strToType(const std::string& str);
   const ResolvedTargetData& resolved() const;
+  void set_lflags_remove_pattern(const std::string& str) {
+    lflags_remove_pattern_ = str;
+  }
 
  private:
   Type type_;
   const Target* target_;
   const NinjaCBinaryTargetWriter* nwriter_;
+  std::string lflags_remove_pattern_;
   std::ostream& out_;
   mutable std::unique_ptr<ResolvedTargetData> resolved_;
 };

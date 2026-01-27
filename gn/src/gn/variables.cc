@@ -2201,6 +2201,11 @@ Example
   }
 )";
 
+const char kLFlagsRemovePattern[] = "lflags_remove";
+const char kLFlagsRemovePattern_HelpShort[] =
+    "lflags_remove: [string] A pattern to filter out from lflags from rsp file";
+const char kLFlagsRemovePattern_Help[] = "";
+
 const char kRspTypes[] = "rsp_types";
 const char kRspTypes_HelpShort[] =
     "rsp_types: [string list] A list of rsp files to create wih linker "
