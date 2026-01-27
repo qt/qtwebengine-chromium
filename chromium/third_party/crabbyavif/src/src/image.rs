@@ -386,13 +386,6 @@ impl Image {
             let plane_index = plane.as_usize();
             let width = round2_usize(self.width(plane));
             let plane_size = checked_mul!(width, round2_usize(self.height(plane)))?;
-            if self.planes[plane_index].is_some()
-                && self.planes[plane_index].unwrap_ref().size() == plane_size
-                && (self.planes[plane_index].unwrap_ref().pixel_bit_size() == 0
-                    || self.planes[plane_index].unwrap_ref().pixel_bit_size() == pixel_size * 8)
-            {
-                continue;
-            }
             self.planes[plane_index] = Some(if self.depth == 8 {
                 Pixels::Buffer(Vec::new())
             } else {
