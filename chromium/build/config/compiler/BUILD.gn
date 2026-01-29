@@ -3603,6 +3603,19 @@ config("no_symbols") {
   }
 }
 
+# Needed for WebEngine MSVC builds using Rust. Fully suppresses PDB file generation
+config("no_symbols_or_function_names") {
+  if (is_win && !is_mingw) {
+    ldflags = [ "/DEBUG:NONE" ]
+
+    # All configs using /DEBUG should include this:
+    configs = [ ":win_pdbaltpath" ]
+  } else {
+    cflags = [ "-g0" ]
+    asmflags = cflags
+  }
+}
+
 # Default symbols.
 config("default_symbols") {
   if (symbol_level == 0) {

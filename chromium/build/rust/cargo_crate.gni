@@ -99,6 +99,10 @@ import("//build/rust/rust_static_library.gni")
 #    uses clap `crate_version!` or `crate_authors!` macros (fairly common in
 #    command line tool help)
 
+declare_args() {
+  rust_symbol_level = -1
+}
+
 template("cargo_crate") {
   _orig_target_name = target_name
 
@@ -327,6 +331,20 @@ template("cargo_crate") {
         allow_unsafe = invoker.allow_unsafe
       }
       configs += [ "//build/rust/gni_impl:allow_all_warnings" ]
+
+      # Optionally disable symbols for all crate targets. Useful on Windows, where our PDB can get too large
+      configs -= [ "//build/config/compiler:default_symbols" ]
+      if (rust_symbol_level == 9) {
+        configs += [ "//build/config/compiler:no_symbols_or_function_names" ]
+      } else if (rust_symbol_level == 2) {
+        configs += [ "//build/config/compiler:symbols" ]
+      } else if (rust_symbol_level == 1) {
+        configs += [ "//build/config/compiler:minimal_symbols" ]
+      } else if (rust_symbol_level == 0) {
+        configs += [ "//build/config/compiler:no_symbols" ]
+      } else {
+        configs += [ "//build/config/compiler:default_symbols" ]
+      }
 
       if (!defined(build_native_rust_unit_tests)) {
         build_native_rust_unit_tests = _crate_type != "proc-macro"
