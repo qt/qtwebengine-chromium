@@ -112,6 +112,11 @@ declare_args() {
   # but nothing depends on tham and therefore Clippy will only be invoked
   # in a full build (i.e. when building all targets).
   enable_rust_clippy_eager = true
+
+  if(is_qtwebengine) {
+    # The path to libclang, as passed from CMake
+    libclang_path = ""
+  }
 }
 
 declare_args() {
@@ -433,8 +438,10 @@ rustc_wrapper_inputs = [
   "//build/rust/gni_impl/rustc_wrapper.py",
 ]
 
-if (host_os == "win") {
-  rustc_wrapper_inputs += [ "//third_party/rust-toolchain/bin/rustc.exe" ]
-} else {
-  rustc_wrapper_inputs += [ "//third_party/rust-toolchain/bin/rustc" ]
+if (use_chromium_rust_toolchain) {
+  if (host_os == "win") {
+    rustc_wrapper_inputs += [ "//third_party/rust-toolchain/bin/rustc.exe" ]
+  } else {
+    rustc_wrapper_inputs += [ "//third_party/rust-toolchain/bin/rustc" ]
+  }
 }
