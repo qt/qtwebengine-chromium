@@ -351,6 +351,10 @@ if (toolchain_has_rust) {
       # ourselves, which is what we'll use in production.
       foreach(lib, stdlib_files) {
         this_file = "$lib_dir/lib$lib.rlib"
+        if (is_win) {
+          # Remove the leading slash that appears in paths on Windows (e.g. "/C:/path..." to "C:/path...")
+          this_file = rebase_path(this_file)
+        }
         ldflags += [ this_file ]
       }
       visibility = [ ":*" ]
