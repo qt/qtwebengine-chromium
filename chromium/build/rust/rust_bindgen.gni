@@ -17,13 +17,17 @@ if (host_os == "win") {
   _bindgen_path = "${_bindgen_path}.exe"
 }
 
-# On Windows, the libclang.dll is beside the bindgen.exe, otherwise it is in
-# ../lib.
-_libclang_path = rust_bindgen_root
-if (host_os == "win") {
-  _libclang_path += "/bin"
+if (is_qtwebengine) {
+  _libclang_path = libclang_path
 } else {
-  _libclang_path += "/lib"
+  # On Windows, the libclang.dll is beside the bindgen.exe, otherwise it is in
+  # ../lib.
+  _libclang_path = rust_bindgen_root
+  if (host_os == "win") {
+    _libclang_path += "/bin"
+  } else {
+    _libclang_path += "/lib"
+  }
 }
 
 # Template to build Rust/C bindings with bindgen.

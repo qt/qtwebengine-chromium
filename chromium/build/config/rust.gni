@@ -94,6 +94,11 @@ declare_args() {
   # a platform. Mostly applicable to Windows, where new versions can handle ANSI
   # escape sequences but it's not reliable in general.
   force_rustc_color_output = false
+
+  if(is_qtwebengine) {
+    # The path to libclang, as passed from CMake
+    libclang_path = ""
+  }
 }
 
 declare_args() {
