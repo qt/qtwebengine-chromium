@@ -24,16 +24,18 @@ if (!use_chromium_rust_toolchain &&
   _rustfmt_path = "${_rustfmt_path}.exe"
 }
 
-# On Windows, the libclang.dll is beside the bindgen.exe, otherwise it is in
-# ../lib.
-_libclang_path = rust_bindgen_root
-if (!use_chromium_rust_toolchain &&
-    (host_cpu == "ppc64" || host_cpu == "s390x")) {
-  _libclang_path = rust_sysroot_absolute + "/lib64"
-} else if (host_os == "win") {
-  _libclang_path += "/bin"
+if (is_qtwebengine) {
+  _libclang_path = libclang_path
 } else {
-  _libclang_path += "/lib"
+  # On Windows, the libclang.dll is beside the bindgen.exe, otherwise it is in
+  # ../lib.
+  _libclang_path = rust_bindgen_root
+  if (!use_chromium_rust_toolchain &&
+      (host_cpu == "ppc64" || host_cpu == "s390x")) {
+    _libclang_path = rust_sysroot_absolute + "/lib64"
+  } else if (host_os == "win") {
+    _libclang_path += "/bin"
+  }
 }
 
 # Template to build Rust/C bindings with bindgen.
@@ -168,6 +170,8 @@ template("rust_bindgen_generator") {
       rebase_path(depfile, root_build_dir),
       "--output",
       rebase_path(output_file, root_build_dir),
+      "--libclang-path",
+      _libclang_path,
     ]
 
     if (_wrap_static_fns) {

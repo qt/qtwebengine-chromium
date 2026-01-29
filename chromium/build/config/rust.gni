@@ -124,6 +124,11 @@ declare_args() {
   # `fail_hard=False` when invoking `build_crubit.py` from
   # `tools/rust/build_rust.py`).
   enable_cpp_api_from_rust = false
+
+  if(is_qtwebengine) {
+    # The path to libclang, as passed from CMake
+    libclang_path = ""
+  }
 }
 
 declare_args() {
