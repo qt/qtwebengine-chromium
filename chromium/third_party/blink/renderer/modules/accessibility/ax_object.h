@@ -1369,7 +1369,7 @@ class MODULES_EXPORT AXObject : public GarbageCollected<AXObject> {
   // returns that node.
   //
   // To call this function, you will need to include ax_object-inl.h.
-  ALWAYS_INLINE Node* GetClosestNode() const;
+  inline Node* GetClosestNode() const;
   // Looks for the first ancestor AXObject (inclusive) that has an element, and
   // returns that element.
   Element* GetClosestElement() const;
