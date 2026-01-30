@@ -86,7 +86,7 @@ void RenderFrameMetadataObserverImpl::OnRenderFrameSubmission(
   // value to all the observers.
   if (send_metadata && render_frame_metadata_observer_client_) {
     auto metadata_copy = render_frame_metadata;
-#if !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
+#if !BUILDFLAG(IS_QTWEBENGINE) && !BUILDFLAG(IS_ANDROID) && !BUILDFLAG(IS_IOS)
     // On non-Android, sending |root_scroll_offset| outside of tests would
     // leave the browser process with out of date information. It is an
     // optional parameter which we clear here.
@@ -180,6 +180,9 @@ bool RenderFrameMetadataObserverImpl::ShouldSendRenderFrameMetadata(
     bool* needs_activation_notification) const {
   if (rfm1.root_background_color != rfm2.root_background_color ||
       rfm1.is_scroll_offset_at_top != rfm2.is_scroll_offset_at_top ||
+#if BUILDFLAG(IS_QTWEBENGINE)
+      rfm1.root_scroll_offset != rfm2.root_scroll_offset ||
+#endif
       rfm1.selection != rfm2.selection ||
       rfm1.page_scale_factor != rfm2.page_scale_factor ||
       rfm1.external_page_scale_factor != rfm2.external_page_scale_factor ||
