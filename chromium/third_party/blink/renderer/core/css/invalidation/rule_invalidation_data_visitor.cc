@@ -1592,266 +1592,268 @@ void RuleInvalidationDataVisitor<VisitorType>::
   }
 }
 #if !defined(COIN_WORKAROUND)
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetForSimpleSelector(
-    const CSSSelector& selector,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  if (selector.Match() == CSSSelector::kClass) {
-    if (type == InvalidationType::kInvalidateDescendants &&
-        position == kSubject && !in_nth_child &&
-        InsertIntoSelfInvalidationBloomFilter(
-            selector.Value(), RuleInvalidationData::kClassSalt)) {
-      // Do not insert self-invalidation sets for classes;
-      // see comment on class_invalidation_sets_.
-      return nullptr;
-    }
-    return EnsureClassInvalidationSet(selector.Value(), type, position,
-                                      in_nth_child);
-  }
-  if (selector.IsAttributeSelector()) {
-    return EnsureAttributeInvalidationSet(selector.Attribute().LocalName(),
-                                          type, position, in_nth_child);
-  }
-  if (selector.Match() == CSSSelector::kId) {
-    if (type == InvalidationType::kInvalidateDescendants &&
-        position == kSubject &&
-        InsertIntoSelfInvalidationBloomFilter(selector.Value(),
-                                              RuleInvalidationData::kIdSalt)) {
-      // Do not insert self-invalidation sets for IDs;
-      // see comment on class_invalidation_sets_.
-      return nullptr;
-    }
-    return EnsureIdInvalidationSet(selector.Value(), type, position,
-                                   in_nth_child);
-  }
-  if (selector.Match() == CSSSelector::kPseudoClass) {
-    switch (selector.GetPseudoType()) {
-      case CSSSelector::kPseudoEmpty:
-      case CSSSelector::kPseudoFirstChild:
-      case CSSSelector::kPseudoLastChild:
-      case CSSSelector::kPseudoOnlyChild:
-      case CSSSelector::kPseudoLink:
-      case CSSSelector::kPseudoVisited:
-      case CSSSelector::kPseudoWebkitAnyLink:
-      case CSSSelector::kPseudoAnyLink:
-      case CSSSelector::kPseudoAutofill:
-      case CSSSelector::kPseudoWebKitAutofill:
-      case CSSSelector::kPseudoAutofillPreviewed:
-      case CSSSelector::kPseudoAutofillSelected:
-      case CSSSelector::kPseudoHover:
-      case CSSSelector::kPseudoDrag:
-      case CSSSelector::kPseudoFocus:
-      case CSSSelector::kPseudoFocusVisible:
-      case CSSSelector::kPseudoFocusWithin:
-      case CSSSelector::kPseudoActive:
-      case CSSSelector::kPseudoChecked:
-      case CSSSelector::kPseudoEnabled:
-      case CSSSelector::kPseudoDefault:
-      case CSSSelector::kPseudoDisabled:
-      case CSSSelector::kPseudoOptional:
-      case CSSSelector::kPseudoPlaceholderShown:
-      case CSSSelector::kPseudoRequired:
-      case CSSSelector::kPseudoReadOnly:
-      case CSSSelector::kPseudoReadWrite:
-      case CSSSelector::kPseudoState:
-      case CSSSelector::kPseudoUserInvalid:
-      case CSSSelector::kPseudoUserValid:
-      case CSSSelector::kPseudoValid:
-      case CSSSelector::kPseudoInvalid:
-      case CSSSelector::kPseudoIndeterminate:
-      case CSSSelector::kPseudoTarget:
-      case CSSSelector::kPseudoTargetCurrent:
-      case CSSSelector::kPseudoLang:
-      case CSSSelector::kPseudoDir:
-      case CSSSelector::kPseudoFullScreen:
-      case CSSSelector::kPseudoFullScreenAncestor:
-      case CSSSelector::kPseudoFullscreen:
-      case CSSSelector::kPseudoPaused:
-      case CSSSelector::kPseudoPermissionElementInvalidStyle:
-      case CSSSelector::kPseudoPermissionElementOccluded:
-      case CSSSelector::kPseudoPermissionGranted:
-      case CSSSelector::kPseudoPictureInPicture:
-      case CSSSelector::kPseudoPlaying:
-      case CSSSelector::kPseudoInRange:
-      case CSSSelector::kPseudoOutOfRange:
-      case CSSSelector::kPseudoDefined:
-      case CSSSelector::kPseudoOpen:
-      case CSSSelector::kPseudoPopoverOpen:
-      case CSSSelector::kPseudoVideoPersistent:
-      case CSSSelector::kPseudoVideoPersistentAncestor:
-      case CSSSelector::kPseudoXrOverlay:
-      case CSSSelector::kPseudoHasDatalist:
-      case CSSSelector::kPseudoMultiSelectFocus:
-      case CSSSelector::kPseudoModal:
-      case CSSSelector::kPseudoSelectorFragmentAnchor:
-      case CSSSelector::kPseudoActiveViewTransition:
-      case CSSSelector::kPseudoActiveViewTransitionType:
-      case CSSSelector::kPseudoHasInterest:
-      case CSSSelector::kPseudoTargetOfInterest:
-      case CSSSelector::kPseudoHasSlotted:
-        return EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
-                                           position, in_nth_child);
-      case CSSSelector::kPseudoFirstOfType:
-      case CSSSelector::kPseudoLastOfType:
-      case CSSSelector::kPseudoOnlyOfType:
-      case CSSSelector::kPseudoNthChild:
-      case CSSSelector::kPseudoNthOfType:
-      case CSSSelector::kPseudoNthLastChild:
-      case CSSSelector::kPseudoNthLastOfType:
-        return EnsureNthInvalidationSet();
-      case CSSSelector::kPseudoHas:
-        return position == kAncestor
-                   ? EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
-                                                 position, in_nth_child)
-                   : nullptr;
-      case CSSSelector::kPseudoPart:
-      default:
-        break;
-    }
-  }
-  return nullptr;
-}
-
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsureClassInvalidationSet(
-    const AtomicString& class_name,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  CHECK(!class_name.empty());
-  return EnsureInvalidationSet(rule_invalidation_data_.class_invalidation_sets,
-                               class_name, type, position, in_nth_child);
-}
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsureAttributeInvalidationSet(
-    const AtomicString& attribute_name,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  CHECK(!attribute_name.empty());
-  return EnsureInvalidationSet(
-      rule_invalidation_data_.attribute_invalidation_sets, attribute_name, type,
-      position, in_nth_child);
-}
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsureIdInvalidationSet(
-    const AtomicString& id,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  CHECK(!id.empty());
-  return EnsureInvalidationSet(rule_invalidation_data_.id_invalidation_sets, id,
-                               type, position, in_nth_child);
-}
-
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsurePseudoInvalidationSet(
-    CSSSelector::PseudoType pseudo_type,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  CHECK_NE(pseudo_type, CSSSelector::kPseudoUnknown);
-  return EnsureInvalidationSet(rule_invalidation_data_.pseudo_invalidation_sets,
-                               pseudo_type, type, position, in_nth_child);
-}
-
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsureInvalidationSet(
-    InvalidationSetMapType& map,
-    const AtomicString& key,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  if constexpr (is_builder()) {
-    scoped_refptr<InvalidationSet>& invalidation_set =
-        map.insert(key, nullptr).stored_value->value;
-    return &EnsureMutableInvalidationSet(type, position, in_nth_child,
-                                         invalidation_set);
-  } else {
-    auto it = map.find(key);
-    if (it != map.end()) {
-      const InvalidationSet* invalidation_set = it->value.get();
-      if (invalidation_set->GetType() == type) {
-        return invalidation_set;
-      } else if (type == InvalidationType::kInvalidateDescendants) {
-        // The caller wanted descendant and we found sibling+descendant.
-        return To<SiblingInvalidationSet>(invalidation_set)->Descendants();
-      }
-    }
-    // It is possible for the Tracer not to find an InvalidationSet we expect to
-    // be there. One case where this can happen is when, at the time we run the
-    // Tracer, a rule has been added to a stylesheet but not yet indexed. In
-    // such a case, we'll pick up information about the new rule as it gets
-    // indexed on the next document lifecycle update.
-    return nullptr;
-  }
-}
-
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsureInvalidationSet(
-    PseudoTypeInvalidationSetMapType& map,
-    CSSSelector::PseudoType key,
-    InvalidationType type,
-    PositionType position,
-    bool in_nth_child) {
-  if constexpr (is_builder()) {
-    scoped_refptr<InvalidationSet>& invalidation_set =
-        map.insert(key, nullptr).stored_value->value;
-    return &EnsureMutableInvalidationSet(type, position, in_nth_child,
-                                         invalidation_set);
-  } else {
-    auto it = map.find(key);
-    if (it != map.end()) {
-      const InvalidationSet* invalidation_set = it->value.get();
-      if (invalidation_set->GetType() == type) {
-        return invalidation_set;
-      } else if (type == InvalidationType::kInvalidateDescendants) {
-        // The caller wanted descendant and we found sibling+descendant.
-        return To<SiblingInvalidationSet>(invalidation_set)->Descendants();
-      }
-    }
-    // It is possible for the Tracer not to find an InvalidationSet we expect to
-    // be there. One case where this can happen is when, at the time we run the
-    // Tracer, a rule has been added to a stylesheet but not yet indexed. In
-    // such a case, we'll pick up information about the new rule as it gets
-    // indexed on the next document lifecycle update.
-    return nullptr;
-  }
-}
-
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::SiblingInvalidationSetType*
-RuleInvalidationDataVisitor<
-    VisitorType>::EnsureUniversalSiblingInvalidationSet() {
-  if constexpr (is_builder()) {
-    if (!rule_invalidation_data_.universal_sibling_invalidation_set) {
-      rule_invalidation_data_.universal_sibling_invalidation_set =
-          SiblingInvalidationSet::Create(nullptr);
-    }
-  }
-  return rule_invalidation_data_.universal_sibling_invalidation_set.get();
-}
-
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::SiblingInvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::EnsureNthInvalidationSet() {
-  if constexpr (is_builder()) {
-    if (!rule_invalidation_data_.nth_invalidation_set) {
-      rule_invalidation_data_.nth_invalidation_set =
-          NthSiblingInvalidationSet::Create();
-    }
-  }
-  return rule_invalidation_data_.nth_invalidation_set.get();
-}
+// FIXME: If the following lines cause a merge conflict, make sure to update the
+// inline copies in rule_invalidation_data_visitor.h
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetForSimpleSelector(
+/**/    const CSSSelector& selector,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  if (selector.Match() == CSSSelector::kClass) {
+/**/    if (type == InvalidationType::kInvalidateDescendants &&
+/**/        position == kSubject && !in_nth_child &&
+/**/        InsertIntoSelfInvalidationBloomFilter(
+/**/            selector.Value(), RuleInvalidationData::kClassSalt)) {
+/**/      // Do not insert self-invalidation sets for classes;
+/**/      // see comment on class_invalidation_sets_.
+/**/      return nullptr;
+/**/    }
+/**/    return EnsureClassInvalidationSet(selector.Value(), type, position,
+/**/                                      in_nth_child);
+/**/  }
+/**/  if (selector.IsAttributeSelector()) {
+/**/    return EnsureAttributeInvalidationSet(selector.Attribute().LocalName(),
+/**/                                          type, position, in_nth_child);
+/**/  }
+/**/  if (selector.Match() == CSSSelector::kId) {
+/**/    if (type == InvalidationType::kInvalidateDescendants &&
+/**/        position == kSubject &&
+/**/        InsertIntoSelfInvalidationBloomFilter(selector.Value(),
+/**/                                              RuleInvalidationData::kIdSalt)) {
+/**/      // Do not insert self-invalidation sets for IDs;
+/**/      // see comment on class_invalidation_sets_.
+/**/      return nullptr;
+/**/    }
+/**/    return EnsureIdInvalidationSet(selector.Value(), type, position,
+/**/                                   in_nth_child);
+/**/  }
+/**/  if (selector.Match() == CSSSelector::kPseudoClass) {
+/**/    switch (selector.GetPseudoType()) {
+/**/      case CSSSelector::kPseudoEmpty:
+/**/      case CSSSelector::kPseudoFirstChild:
+/**/      case CSSSelector::kPseudoLastChild:
+/**/      case CSSSelector::kPseudoOnlyChild:
+/**/      case CSSSelector::kPseudoLink:
+/**/      case CSSSelector::kPseudoVisited:
+/**/      case CSSSelector::kPseudoWebkitAnyLink:
+/**/      case CSSSelector::kPseudoAnyLink:
+/**/      case CSSSelector::kPseudoAutofill:
+/**/      case CSSSelector::kPseudoWebKitAutofill:
+/**/      case CSSSelector::kPseudoAutofillPreviewed:
+/**/      case CSSSelector::kPseudoAutofillSelected:
+/**/      case CSSSelector::kPseudoHover:
+/**/      case CSSSelector::kPseudoDrag:
+/**/      case CSSSelector::kPseudoFocus:
+/**/      case CSSSelector::kPseudoFocusVisible:
+/**/      case CSSSelector::kPseudoFocusWithin:
+/**/      case CSSSelector::kPseudoActive:
+/**/      case CSSSelector::kPseudoChecked:
+/**/      case CSSSelector::kPseudoEnabled:
+/**/      case CSSSelector::kPseudoDefault:
+/**/      case CSSSelector::kPseudoDisabled:
+/**/      case CSSSelector::kPseudoOptional:
+/**/      case CSSSelector::kPseudoPlaceholderShown:
+/**/      case CSSSelector::kPseudoRequired:
+/**/      case CSSSelector::kPseudoReadOnly:
+/**/      case CSSSelector::kPseudoReadWrite:
+/**/      case CSSSelector::kPseudoState:
+/**/      case CSSSelector::kPseudoUserInvalid:
+/**/      case CSSSelector::kPseudoUserValid:
+/**/      case CSSSelector::kPseudoValid:
+/**/      case CSSSelector::kPseudoInvalid:
+/**/      case CSSSelector::kPseudoIndeterminate:
+/**/      case CSSSelector::kPseudoTarget:
+/**/      case CSSSelector::kPseudoTargetCurrent:
+/**/      case CSSSelector::kPseudoLang:
+/**/      case CSSSelector::kPseudoDir:
+/**/      case CSSSelector::kPseudoFullScreen:
+/**/      case CSSSelector::kPseudoFullScreenAncestor:
+/**/      case CSSSelector::kPseudoFullscreen:
+/**/      case CSSSelector::kPseudoPaused:
+/**/      case CSSSelector::kPseudoPermissionElementInvalidStyle:
+/**/      case CSSSelector::kPseudoPermissionElementOccluded:
+/**/      case CSSSelector::kPseudoPermissionGranted:
+/**/      case CSSSelector::kPseudoPictureInPicture:
+/**/      case CSSSelector::kPseudoPlaying:
+/**/      case CSSSelector::kPseudoInRange:
+/**/      case CSSSelector::kPseudoOutOfRange:
+/**/      case CSSSelector::kPseudoDefined:
+/**/      case CSSSelector::kPseudoOpen:
+/**/      case CSSSelector::kPseudoPopoverOpen:
+/**/      case CSSSelector::kPseudoVideoPersistent:
+/**/      case CSSSelector::kPseudoVideoPersistentAncestor:
+/**/      case CSSSelector::kPseudoXrOverlay:
+/**/      case CSSSelector::kPseudoHasDatalist:
+/**/      case CSSSelector::kPseudoMultiSelectFocus:
+/**/      case CSSSelector::kPseudoModal:
+/**/      case CSSSelector::kPseudoSelectorFragmentAnchor:
+/**/      case CSSSelector::kPseudoActiveViewTransition:
+/**/      case CSSSelector::kPseudoActiveViewTransitionType:
+/**/      case CSSSelector::kPseudoHasInterest:
+/**/      case CSSSelector::kPseudoTargetOfInterest:
+/**/      case CSSSelector::kPseudoHasSlotted:
+/**/        return EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
+/**/                                           position, in_nth_child);
+/**/      case CSSSelector::kPseudoFirstOfType:
+/**/      case CSSSelector::kPseudoLastOfType:
+/**/      case CSSSelector::kPseudoOnlyOfType:
+/**/      case CSSSelector::kPseudoNthChild:
+/**/      case CSSSelector::kPseudoNthOfType:
+/**/      case CSSSelector::kPseudoNthLastChild:
+/**/      case CSSSelector::kPseudoNthLastOfType:
+/**/        return EnsureNthInvalidationSet();
+/**/      case CSSSelector::kPseudoHas:
+/**/        return position == kAncestor
+/**/                   ? EnsurePseudoInvalidationSet(selector.GetPseudoType(), type,
+/**/                                                 position, in_nth_child)
+/**/                   : nullptr;
+/**/      case CSSSelector::kPseudoPart:
+/**/      default:
+/**/        break;
+/**/    }
+/**/  }
+/**/  return nullptr;
+/**/}
+/**/
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsureClassInvalidationSet(
+/**/    const AtomicString& class_name,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  CHECK(!class_name.empty());
+/**/  return EnsureInvalidationSet(rule_invalidation_data_.class_invalidation_sets,
+/**/                               class_name, type, position, in_nth_child);
+/**/}
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsureAttributeInvalidationSet(
+/**/    const AtomicString& attribute_name,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  CHECK(!attribute_name.empty());
+/**/  return EnsureInvalidationSet(
+/**/      rule_invalidation_data_.attribute_invalidation_sets, attribute_name, type,
+/**/      position, in_nth_child);
+/**/}
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsureIdInvalidationSet(
+/**/    const AtomicString& id,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  CHECK(!id.empty());
+/**/  return EnsureInvalidationSet(rule_invalidation_data_.id_invalidation_sets, id,
+/**/                               type, position, in_nth_child);
+/**/}
+/**/
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsurePseudoInvalidationSet(
+/**/    CSSSelector::PseudoType pseudo_type,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  CHECK_NE(pseudo_type, CSSSelector::kPseudoUnknown);
+/**/  return EnsureInvalidationSet(rule_invalidation_data_.pseudo_invalidation_sets,
+/**/                               pseudo_type, type, position, in_nth_child);
+/**/}
+/**/
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsureInvalidationSet(
+/**/    InvalidationSetMapType& map,
+/**/    const AtomicString& key,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  if constexpr (is_builder()) {
+/**/    scoped_refptr<InvalidationSet>& invalidation_set =
+/**/        map.insert(key, nullptr).stored_value->value;
+/**/    return &EnsureMutableInvalidationSet(type, position, in_nth_child,
+/**/                                         invalidation_set);
+/**/  } else {
+/**/    auto it = map.find(key);
+/**/    if (it != map.end()) {
+/**/      const InvalidationSet* invalidation_set = it->value.get();
+/**/      if (invalidation_set->GetType() == type) {
+/**/        return invalidation_set;
+/**/      } else if (type == InvalidationType::kInvalidateDescendants) {
+/**/        // The caller wanted descendant and we found sibling+descendant.
+/**/        return To<SiblingInvalidationSet>(invalidation_set)->Descendants();
+/**/      }
+/**/    }
+/**/    // It is possible for the Tracer not to find an InvalidationSet we expect to
+/**/    // be there. One case where this can happen is when, at the time we run the
+/**/    // Tracer, a rule has been added to a stylesheet but not yet indexed. In
+/**/    // such a case, we'll pick up information about the new rule as it gets
+/**/    // indexed on the next document lifecycle update.
+/**/    return nullptr;
+/**/  }
+/**/}
+/**/
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsureInvalidationSet(
+/**/    PseudoTypeInvalidationSetMapType& map,
+/**/    CSSSelector::PseudoType key,
+/**/    InvalidationType type,
+/**/    PositionType position,
+/**/    bool in_nth_child) {
+/**/  if constexpr (is_builder()) {
+/**/    scoped_refptr<InvalidationSet>& invalidation_set =
+/**/        map.insert(key, nullptr).stored_value->value;
+/**/    return &EnsureMutableInvalidationSet(type, position, in_nth_child,
+/**/                                         invalidation_set);
+/**/  } else {
+/**/    auto it = map.find(key);
+/**/    if (it != map.end()) {
+/**/      const InvalidationSet* invalidation_set = it->value.get();
+/**/      if (invalidation_set->GetType() == type) {
+/**/        return invalidation_set;
+/**/      } else if (type == InvalidationType::kInvalidateDescendants) {
+/**/        // The caller wanted descendant and we found sibling+descendant.
+/**/        return To<SiblingInvalidationSet>(invalidation_set)->Descendants();
+/**/      }
+/**/    }
+/**/    // It is possible for the Tracer not to find an InvalidationSet we expect to
+/**/    // be there. One case where this can happen is when, at the time we run the
+/**/    // Tracer, a rule has been added to a stylesheet but not yet indexed. In
+/**/    // such a case, we'll pick up information about the new rule as it gets
+/**/    // indexed on the next document lifecycle update.
+/**/    return nullptr;
+/**/  }
+/**/}
+/**/
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::SiblingInvalidationSetType*
+/**/RuleInvalidationDataVisitor<
+/**/    VisitorType>::EnsureUniversalSiblingInvalidationSet() {
+/**/  if constexpr (is_builder()) {
+/**/    if (!rule_invalidation_data_.universal_sibling_invalidation_set) {
+/**/      rule_invalidation_data_.universal_sibling_invalidation_set =
+/**/          SiblingInvalidationSet::Create(nullptr);
+/**/    }
+/**/  }
+/**/  return rule_invalidation_data_.universal_sibling_invalidation_set.get();
+/**/}
+/**/
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::SiblingInvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::EnsureNthInvalidationSet() {
+/**/  if constexpr (is_builder()) {
+/**/    if (!rule_invalidation_data_.nth_invalidation_set) {
+/**/      rule_invalidation_data_.nth_invalidation_set =
+/**/          NthSiblingInvalidationSet::Create();
+/**/    }
+/**/  }
+/**/  return rule_invalidation_data_.nth_invalidation_set.get();
+/**/}
 #endif
 // Add features extracted from the rightmost compound selector to descendant
 // invalidation sets for features found in other compound selectors.
@@ -2011,17 +2013,19 @@ bool RuleInvalidationDataVisitor<VisitorType>::
   }
 }
 #if !defined(COIN_WORKAROUND)
-template <RuleInvalidationDataVisitorType VisitorType>
-RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
-RuleInvalidationDataVisitor<VisitorType>::
-    EnsureSiblingDescendantInvalidationSet(
-        SiblingInvalidationSetType* invalidation_set) {
-  if constexpr (is_builder()) {
-    return &invalidation_set->EnsureSiblingDescendants();
-  } else {
-    return invalidation_set->SiblingDescendants();
-  }
-}
+// FIXME: If the following lines cause a merge conflict, make sure to update the
+// inline copies in rule_invalidation_data_visitor.h
+/**/template <RuleInvalidationDataVisitorType VisitorType>
+/**/RuleInvalidationDataVisitor<VisitorType>::InvalidationSetType*
+/**/RuleInvalidationDataVisitor<VisitorType>::
+/**/    EnsureSiblingDescendantInvalidationSet(
+/**/        SiblingInvalidationSetType* invalidation_set) {
+/**/  if constexpr (is_builder()) {
+/**/    return &invalidation_set->EnsureSiblingDescendants();
+/**/  } else {
+/**/    return invalidation_set->SiblingDescendants();
+/**/  }
+/**/}
 #endif
 template <RuleInvalidationDataVisitorType VisitorType>
 InvalidationSet&
