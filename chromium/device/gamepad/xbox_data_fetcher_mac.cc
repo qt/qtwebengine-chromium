@@ -178,7 +178,7 @@ void XboxDataFetcher::PendingServiceBecameAvailable(io_service_t service) {
 bool XboxDataFetcher::TryOpenDevice(io_service_t service) {
   auto controller = std::make_unique<XboxControllerMac>(this);
   XboxControllerMac::OpenDeviceResult result = controller->OpenDevice(service);
-  if (result == XboxControllerMac::OpenDeviceResult::OPEN_SUCCEEDED) {
+  if (result == XboxControllerMac::OpenDeviceResult::kOpenSucceeded) {
     AddController(controller.release());
     return true;
   }
