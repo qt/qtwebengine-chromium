@@ -36,7 +36,7 @@ CANONICAL_HOMEPAGE_STRING = "This is the canonical"
 
 # Packages that have bad homepages that don't start with CANONICAL_HOMEPAGE_STRING
 PACKAGES_TO_CLEAN_BAD_URL = [
-    'PSM (Private Set Membership) client side',
+    'psm (private set membership) client side',
 ]
 
 # Some packages don't have a license file, but their license is a known SPDX
@@ -229,6 +229,7 @@ def GetTargetMetadatas(gn_binary: str, gn_out_dir: str, gn_target: str):
         # be quite long.
         if 'Short Name' in dep_metadata:
           dep_metadata['Name'] = dep_metadata['Short Name']
+        dep_metadata['Name'] = dep_metadata['Name'].lower()
         if dep_metadata['Name'] in PACKAGES_TO_CLEAN_BAD_URL or CANONICAL_HOMEPAGE_STRING in dep_metadata['URL']:
           logger.info("Cleaning bad URL from package: %s" % dep_metadata['Name'])
           del dep_metadata['URL']
@@ -271,10 +272,11 @@ def CreateSpdxText(targets_and_metadatas, package_id: str, doc_namespace: str, g
           continue
 
         child_pkg_name = make_pkg_name(dep_metadata.pop('Name'))
-        if child_pkg_name not in already_added_packages:
+        child_pkg_key = directory + ':' + child_pkg_name
+        if child_pkg_key not in already_added_packages:
           child_pkg_id = writer.add_package(ExtendedPackage(child_pkg_name, license_file, dep_metadata))
-          already_added_packages[child_pkg_name] = child_pkg_id
-        writer.add_dependency(top_level_pkg_id, already_added_packages[child_pkg_name])
+          already_added_packages[child_pkg_key] = child_pkg_id
+        writer.add_dependency(top_level_pkg_id, already_added_packages[child_pkg_key])
 
 
   # Manually add GN package
