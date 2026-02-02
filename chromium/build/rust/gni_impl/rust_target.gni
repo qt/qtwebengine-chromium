@@ -130,6 +130,9 @@ template("rust_target") {
   }
 
   _rustflags = []
+  if (is_qtwebengine && is_win && !is_clang) {
+    _rustflags += [ "-Csymbol-mangling-version=v0" ]
+  }
   if (defined(invoker.rustflags)) {
     _rustflags += invoker.rustflags
   }
