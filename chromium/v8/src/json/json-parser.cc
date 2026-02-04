@@ -1882,8 +1882,9 @@ MaybeHandle<Object> JsonParser<Char>::ParseJsonValue() {
             }
           }
           value = BuildJsonObject<should_track_json_source>(cont, feedback);
-          EXPECT_NEXT_RETURN_ON_ERROR(JsonToken::RBRACE,
-                 MessageTemplate::kJsonParseExpectedCommaOrRBrace, {});
+          EXPECT_RETURN_ON_ERROR(
+              JsonToken::RBRACE,
+              MessageTemplate::kJsonParseExpectedCommaOrRBrace, {});
           // Return the object.
           if constexpr (should_track_json_source) {
             size_t start = cont.index;
