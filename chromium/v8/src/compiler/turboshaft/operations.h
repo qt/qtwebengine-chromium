@@ -2068,7 +2068,12 @@ struct PhiOp : OperationT<PhiOp> {
   static constexpr size_t kLoopPhiBackEdgeIndex = 1;
 
   explicit PhiOp(base::Vector<const OpIndex> inputs, RegisterRepresentation rep)
-      : Base(inputs), rep(rep) {}
+      : Base(inputs), rep(rep) {
+    // We add an additional CHECK specifically for Phi, to prevent Wasm from
+    // passing too many inputs, e.g. as part of a br_table operation.
+    CHECK_LE(inputs.size(),
+             std::numeric_limits<decltype(this->input_count)>::max());
+  }
 
   void Validate(const Graph& graph) const { DCHECK_GT(input_count, 0); }
   auto options() const { return std::tuple{rep}; }
