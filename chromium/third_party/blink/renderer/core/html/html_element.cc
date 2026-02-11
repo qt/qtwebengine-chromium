@@ -463,7 +463,7 @@ void HTMLElement::CollectStyleForPresentationAttribute(
 const AttributeTriggers* HTMLElement::TriggersForAttributeName(
     const QualifiedName& attr_name) {
   const AtomicString& kNoEvent = g_null_atom;
-  static const auto attribute_triggers = std::to_array<AttributeTriggers>({
+  static const std::array<AttributeTriggers,176> attribute_triggers = {{
       {html_names::kDirAttr, kNoWebFeature, kNoEvent,
        &HTMLElement::OnDirAttrChanged},
       {html_names::kFormAttr, kNoWebFeature, kNoEvent,
@@ -820,7 +820,7 @@ const AttributeTriggers* HTMLElement::TriggersForAttributeName(
        WebFeature::kHTMLElementWritingSuggestions, kNoEvent, nullptr},
       {html_names::kRoleAttr, kNoWebFeature, kNoEvent,
        &HTMLElement::OnRoleAttrChanged},
-  });
+  }};
 
   static bool registered_triggers = false;
   if (!registered_triggers) {
