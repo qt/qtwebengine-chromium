@@ -633,7 +633,7 @@ bool ContainsEncodedBytes(std::string_view escaped_text,
 std::u16string UnescapeForHTML(std::u16string_view input) {
   struct EscapeToChars {
     const char* ampersand_code;
-    const char16_t replacement;
+    char16_t replacement;
   };
   static const auto kEscapeToChars = std::to_array<EscapeToChars>({
       {"&lt;", '<'},
