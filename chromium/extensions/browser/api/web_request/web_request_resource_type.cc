@@ -24,7 +24,7 @@ struct ResourceTypes {
   const char* const name;
   const WebRequestResourceType type;
 };
-constexpr auto kResourceTypes = std::to_array<ResourceTypes>({
+constexpr std::array<ResourceTypes, 15> kResourceTypes{{
     {"main_frame", WebRequestResourceType::MAIN_FRAME},
     {"sub_frame", WebRequestResourceType::SUB_FRAME},
     {"stylesheet", WebRequestResourceType::STYLESHEET},
@@ -40,7 +40,7 @@ constexpr auto kResourceTypes = std::to_array<ResourceTypes>({
     {"webtransport", WebRequestResourceType::WEB_TRANSPORT},
     {"webbundle", WebRequestResourceType::WEBBUNDLE},
     {"other", WebRequestResourceType::OTHER},
-});
+}};
 
 constexpr size_t kResourceTypesLength = std::size(kResourceTypes);
 
