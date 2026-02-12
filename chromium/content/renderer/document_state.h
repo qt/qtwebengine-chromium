@@ -7,6 +7,7 @@
 
 #include <memory>
 
+#include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "net/http/http_response_info.h"
 #include "third_party/blink/public/web/web_document_loader.h"
@@ -72,12 +73,17 @@ class CONTENT_EXPORT DocumentState
   void set_navigation_state(std::unique_ptr<NavigationState> navigation_state);
   void clear_navigation_state() { navigation_state_.reset(); }
 
+  base::WeakPtr<DocumentState> GetWeakPtr() {
+    return weak_factory_.GetWeakPtr();
+  }
+
  private:
   bool was_load_data_with_base_url_request_ = false;
   GURL data_url_;
   bool is_overriding_user_agent_ = false;
   int request_id_ = -1;
   std::unique_ptr<NavigationState> navigation_state_;
+  base::WeakPtrFactory<DocumentState> weak_factory_{this};
 };
 
 }  // namespace content
