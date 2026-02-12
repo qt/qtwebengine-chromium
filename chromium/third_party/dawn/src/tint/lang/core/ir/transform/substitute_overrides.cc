@@ -28,6 +28,7 @@
 #include "src/tint/lang/core/ir/transform/substitute_overrides.h"
 
 #include <functional>
+#include <limits>
 
 #include "src/tint/lang/core/ir/builder.h"
 #include "src/tint/lang/core/ir/evaluator.h"
@@ -176,8 +177,17 @@ struct State {
 
             uint32_t num_elements = new_value.Get()->Value()->ValueAs<uint32_t>();
             auto* new_cnt = ty.Get<core::type::ConstantArrayCount>(num_elements);
+            uint64_t new_ary_size = uint64_t{num_elements} * old_ty->Stride();
+            if (new_ary_size > std::numeric_limits<uint32_t>::max()) {
+                diag::Diagnostic error{};
+                error.severity = diag::Severity::Error;
+                error.source = ir.SourceOf(cnt->value);
+                error << "array size (" << new_ary_size << ") is too large";
+                return diag::Failure(error);
+            }
+
             auto* new_ty = ty.Get<core::type::Array>(old_ty->ElemType(), new_cnt, old_ty->Align(),
-                                                     num_elements * old_ty->Stride(),
+                                                     static_cast<uint32_t>(new_ary_size),
                                                      old_ty->Stride(), old_ty->ImplicitStride());
 
             auto* new_ptr = ty.ptr(old_ptr->AddressSpace(), new_ty, old_ptr->Access());
