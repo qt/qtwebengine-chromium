@@ -1,20 +1,22 @@
+/* libpng 1.6.22 CUSTOM API DEFINITION */
+
 /* pnglibconf.h - library build configuration */
 
-/* libpng version 1.6.52 */
+/* Libpng version 1.6.22 - May 29, 2016 */
 
-/* Copyright (c) 2018-2025 Cosmin Truta */
-/* Copyright (c) 1998-2002,2004,2006-2018 Glenn Randers-Pehrson */
+/* Copyright (c) 1998-2015 Glenn Randers-Pehrson */
 
 /* This code is released under the libpng license. */
 /* For conditions of distribution and use, see the disclaimer */
 /* and license in png.h */
 
 /* pnglibconf.h */
-/* Machine generated file: DO NOT EDIT */
 /* Derived from: scripts/pnglibconf.dfa */
 #ifndef PNGLCONF_H
 #define PNGLCONF_H
-/* options */
+
+/* default options */
+/* These are PNG options that match the default in scripts/pnglibconf.dfa */
 #define PNG_16BIT_SUPPORTED
 #define PNG_ALIGNED_MEMORY_SUPPORTED
 /*#undef PNG_ARM_NEON_API_SUPPORTED*/
@@ -23,7 +25,6 @@
 #define PNG_BENIGN_READ_ERRORS_SUPPORTED
 /*#undef PNG_BENIGN_WRITE_ERRORS_SUPPORTED*/
 #define PNG_COLORSPACE_SUPPORTED
-/*#undef PNG_DISABLE_ADLER32_CHECK_SUPPORTED*/
 #define PNG_EASY_ACCESS_SUPPORTED
 /*#undef PNG_ERROR_NUMBERS_SUPPORTED*/
 #define PNG_ERROR_TEXT_SUPPORTED
@@ -35,13 +36,7 @@
 #define PNG_GAMMA_SUPPORTED
 #define PNG_HANDLE_AS_UNKNOWN_SUPPORTED
 #define PNG_INFO_IMAGE_SUPPORTED
-/*#undef PNG_MIPS_MMI_API_SUPPORTED*/
-/*#undef PNG_MIPS_MMI_CHECK_SUPPORTED*/
-/*#undef PNG_MIPS_MSA_API_SUPPORTED*/
-/*#undef PNG_MIPS_MSA_CHECK_SUPPORTED*/
 #define PNG_POINTER_INDEXING_SUPPORTED
-/*#undef PNG_POWERPC_VSX_API_SUPPORTED*/
-/*#undef PNG_POWERPC_VSX_CHECK_SUPPORTED*/
 #define PNG_PROGRESSIVE_READ_SUPPORTED
 #define PNG_READ_16BIT_SUPPORTED
 #define PNG_READ_ALPHA_MODE_SUPPORTED
@@ -54,7 +49,6 @@
 #define PNG_READ_EXPAND_SUPPORTED
 #define PNG_READ_FILLER_SUPPORTED
 #define PNG_READ_GAMMA_SUPPORTED
-#define PNG_READ_GET_PALETTE_MAX_SUPPORTED
 #define PNG_READ_GRAY_TO_RGB_SUPPORTED
 #define PNG_READ_INTERLACING_SUPPORTED
 #define PNG_READ_INT_FUNCTIONS_SUPPORTED
@@ -74,12 +68,9 @@
 #define PNG_READ_USER_CHUNKS_SUPPORTED
 #define PNG_READ_USER_TRANSFORM_SUPPORTED
 #define PNG_READ_cHRM_SUPPORTED
-#define PNG_READ_cICP_SUPPORTED
-#define PNG_READ_cLLI_SUPPORTED
 #define PNG_READ_eXIf_SUPPORTED
 #define PNG_READ_gAMA_SUPPORTED
 #define PNG_READ_iCCP_SUPPORTED
-#define PNG_READ_mDCV_SUPPORTED
 #define PNG_READ_sRGB_SUPPORTED
 #define PNG_READ_tEXt_SUPPORTED
 #define PNG_READ_tRNS_SUPPORTED
@@ -130,23 +121,16 @@
 #define PNG_WRITE_USER_TRANSFORM_SUPPORTED
 #define PNG_WRITE_WEIGHTED_FILTER_SUPPORTED
 #define PNG_WRITE_cHRM_SUPPORTED
-#define PNG_WRITE_cICP_SUPPORTED
-#define PNG_WRITE_cLLI_SUPPORTED
-#define PNG_WRITE_eXIf_SUPPORTED
 #define PNG_WRITE_gAMA_SUPPORTED
 #define PNG_WRITE_iCCP_SUPPORTED
-#define PNG_WRITE_mDCV_SUPPORTED
 #define PNG_WRITE_sRGB_SUPPORTED
 #define PNG_WRITE_tEXt_SUPPORTED
 #define PNG_WRITE_tRNS_SUPPORTED
 #define PNG_WRITE_zTXt_SUPPORTED
 #define PNG_cHRM_SUPPORTED
-#define PNG_cICP_SUPPORTED
-#define PNG_cLLI_SUPPORTED
 #define PNG_eXIf_SUPPORTED
 #define PNG_gAMA_SUPPORTED
 #define PNG_iCCP_SUPPORTED
-#define PNG_mDCV_SUPPORTED
 #define PNG_sBIT_SUPPORTED
 #define PNG_sRGB_SUPPORTED
 #define PNG_tEXt_SUPPORTED
@@ -208,7 +192,8 @@
 /*#undef PNG_tIME_SUPPORTED*/
 /* end of chromium options */
 
-/* settings */
+/* default settings */
+/* These are PNG settings that match the default in scripts/pnglibconf.dfa */
 #define PNG_API_RULE 0
 #define PNG_DEFAULT_READ_MACROS 1
 #define PNG_GAMMA_THRESHOLD_FIXED 5000
@@ -233,7 +218,7 @@
 #define PNG_Z_DEFAULT_STRATEGY 1
 #define PNG_sCAL_PRECISION 5
 #define PNG_sRGB_PROFILE_CHECKS 2
-/* end of settings */
+/* end of default settings */
 
 /* chromium settings */
 /* These are PNG setting that chromium has modified */
@@ -241,7 +226,5 @@
 #define PNG_USER_CHUNK_CACHE_MAX 128
 #define PNG_USER_CHUNK_MALLOC_MAX 4000000L
 /* end of chromium settings */
-
-
 
 #endif /* PNGLCONF_H */
