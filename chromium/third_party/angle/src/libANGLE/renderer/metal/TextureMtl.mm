@@ -2009,7 +2009,7 @@ angle::Result TextureMtl::setPerSliceSubImage(const gl::Context *context,
             // Use blit encoder to copy
             mtl::BlitCommandEncoder *blitEncoder = contextMtl->getBlitCommandEncoder();
             blitEncoder->copyBufferToTexture(
-                sourceBuffer, offset, pixelsRowPitch, srcBytesPerImag, mtlArea.size, image, slice,
+                sourceBuffer, offset, pixelsRowPitch, srcBytesPerImage, mtlArea.size, image, slice,
                 mtl::kZeroNativeMipLevel, mtlArea.origin,
                 mFormat.isPVRTC() ? mtl::kBlitOptionRowLinearPVRTC : MTLBlitOptionNone);
         }
