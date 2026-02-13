@@ -356,7 +356,7 @@ H265Parser::Result H265Parser::ParseVPS(int* vps_id) {
   READ_BOOL_OR_RETURN(&vps->vps_base_layer_internal_flag);
   READ_BOOL_OR_RETURN(&vps->vps_base_layer_available_flag);
   READ_BITS_OR_RETURN(6, &vps->vps_max_layers_minus1);
-  IN_RANGE_OR_RETURN(vps->vps_max_layers_minus1, 0, 63);
+  IN_RANGE_OR_RETURN(vps->vps_max_layers_minus1, 0, 62);
   READ_BITS_OR_RETURN(3, &vps->vps_max_sub_layers_minus1);
   IN_RANGE_OR_RETURN(vps->vps_max_sub_layers_minus1, 0, 7);
   READ_BOOL_OR_RETURN(&vps->vps_temporal_id_nesting_flag);
@@ -399,7 +399,7 @@ H265Parser::Result H265Parser::ParseVPS(int* vps_id) {
   }
 
   READ_BITS_OR_RETURN(6, &vps->vps_max_layer_id);
-  IN_RANGE_OR_RETURN(vps->vps_max_layer_id, 0, 63);
+  IN_RANGE_OR_RETURN(vps->vps_max_layer_id, 0, 62);
   READ_UE_OR_RETURN(&vps->vps_num_layer_sets_minus1);
   IN_RANGE_OR_RETURN(vps->vps_num_layer_sets_minus1, 0, 1023);
   for (int i = 1; i <= vps->vps_num_layer_sets_minus1; ++i) {
@@ -1215,6 +1215,7 @@ H265Parser::Result H265Parser::ParseSliceHeader(const H265NALU& nalu,
     // slice_reserved_flag
     SKIP_BITS_OR_RETURN(pps->num_extra_slice_header_bits);
     READ_UE_OR_RETURN(&shdr->slice_type);
+    IN_RANGE_OR_RETURN(shdr->slice_type, 0, 2);
     if ((shdr->irap_pic ||
          sps->sps_max_dec_pic_buffering_minus1[clamped_temporal_id] == 0) &&
         nalu.nuh_layer_id == 0) {
@@ -2177,6 +2178,8 @@ H265Parser::Result H265Parser::ParseSEI(H265SEI* sei) {
           READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
               3, &sei_msg.alpha_channel_info.alpha_channel_use_idc,
               &num_bits_remain);
+          IN_RANGE_OR_RETURN(sei_msg.alpha_channel_info.alpha_channel_use_idc,
+                             0, 2);
           READ_BITS_AND_MINUS_BITS_READ_OR_RETURN(
               3, &sei_msg.alpha_channel_info.alpha_channel_bit_depth_minus8,
               &num_bits_remain);
