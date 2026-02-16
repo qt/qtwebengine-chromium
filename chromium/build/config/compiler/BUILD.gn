@@ -3354,11 +3354,11 @@ config("symbols") {
         # source line numbers to avoid line 0 debug info when multiple
         # instructions are merged.
         # See https://crbug.com/415272777.
-        "-mllvm",
-        "-pick-merged-source-locations",
+        #"-mllvm",
+        #"-pick-merged-source-locations",
       ]
 
-      rustflags = [ "-Cllvm-args=-pick-merged-source-locations" ]
+      #rustflags = [ "-Cllvm-args=-pick-merged-source-locations" ]
     } else {    # Debug info in the PDB file
       if (cc_wrapper == "") {
         cflags = [ "/Zi" ]
