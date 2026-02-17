@@ -1117,7 +1117,7 @@ Response V8DebuggerAgentImpl::searchInContent(
     return Response::ServerError("No script for id: " + scriptId.utf8());
 
   *results = std::make_unique<protocol::Array<protocol::Debugger::SearchMatch>>(
-      searchInTextByLinesImpl(m_session, it->second->source(0), query,
+      searchInTextByLinesImpl(m_inspector, it->second->source(0), query,
                               optionalCaseSensitive.value_or(false),
                               optionalIsRegex.value_or(false)));
   return Response::Success();
