@@ -3757,6 +3757,13 @@ bool ValidateBufferData(const Context *context,
         return false;
     }
 
+    const Limitations &limitations = context->getLimitations();
+    if (size > limitations.bufferSizeLimit)
+    {
+        ANGLE_VALIDATION_ERROR(GL_INVALID_OPERATION, kBufferSizeLimitation);
+        return false;
+    }
+
     switch (usage)
     {
         case BufferUsage::StreamDraw:

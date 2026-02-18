@@ -178,6 +178,10 @@ struct Limitations
     // EXT_base_instance is emulated and should only be exposed to WebGL. Emulated by default in
     // shared renderer code.
     bool baseInstanceEmulated = true;
+
+    // Size limit for buffers. GL_INVALID_OPERATION should be generated if trying to allocate a
+    // buffer larger than this limit.
+    GLsizeiptr bufferSizeLimit = std::numeric_limits<GLsizeiptr>::max();
 };
 
 struct TypePrecision
