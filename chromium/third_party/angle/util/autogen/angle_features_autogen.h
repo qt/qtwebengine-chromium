@@ -217,6 +217,7 @@ enum class Feature
     InjectAsmStatementIntoLoopBodies,
     KeepBufferShadowCopy,
     LimitMax3dArrayTextureSizeTo1024,
+    LimitMaxBufferSizeTo1gb,
     LimitMaxColorTargetBitsForTesting,
     LimitMaxDrawBuffersForTesting,
     LimitMaxMSAASamplesTo4,

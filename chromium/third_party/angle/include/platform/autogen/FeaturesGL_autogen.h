@@ -638,6 +638,12 @@ struct FeaturesGL : FeatureSetBase
         &members,
     };
 
+    FeatureInfo limitMaxBufferSizeTo1gb = {
+        "limitMaxBufferSizeTo1gb",
+        FeatureCategory::OpenGLWorkarounds,
+        &members,
+    };
+
 };
 
 inline FeaturesGL::FeaturesGL()  = default;
