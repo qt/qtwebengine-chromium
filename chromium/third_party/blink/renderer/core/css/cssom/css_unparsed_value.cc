@@ -17,9 +17,13 @@ namespace blink {
 
 namespace {
 
-StringView FindVariableName(CSSParserTokenRange& range) {
+String FindVariableName(CSSParserTokenRange& range) {
   range.ConsumeWhitespace();
-  return range.Consume().Value();
+  if (range.Peek().GetType() == CSSParserTokenType::kIdentToken) {
+    return range.Consume().Value().ToString();
+  } else {
+    return {};
+  }
 }
 
 V8CSSUnparsedSegment* VariableReferenceValue(
@@ -35,6 +39,11 @@ V8CSSUnparsedSegment* VariableReferenceValue(
   CSSStyleVariableReferenceValue* variable_reference =
       CSSStyleVariableReferenceValue::Create(variable_name.ToString(),
                                              unparsed_value);
+  if (!variable_reference) {
+    // TODO(sesse): Plumb the ExceptionState here so that we can use
+    // the Create() variant that properly throws an exception.
+    return nullptr;
+  }
   return MakeGarbageCollected<V8CSSUnparsedSegment>(variable_reference);
 }
 
@@ -50,13 +59,17 @@ HeapVector<Member<V8CSSUnparsedSegment>> ParserTokenRangeToTokens(
             builder.ReleaseString()));
       }
       CSSParserTokenRange block = range.ConsumeBlock();
-      StringView variable_name = FindVariableName(block);
+      String variable_name = FindVariableName(block);
       block.ConsumeWhitespace();
       if (block.Peek().GetType() == CSSParserTokenType::kCommaToken) {
         block.Consume();
       }
-      tokens.push_back(VariableReferenceValue(variable_name,
-                                              ParserTokenRangeToTokens(block)));
+      V8CSSUnparsedSegment* ref = VariableReferenceValue(
+          variable_name, ParserTokenRangeToTokens(range));
+      if (!ref) {
+        break;
+      }
+      tokens.push_back(ref);
     } else {
       range.Consume().Serialize(builder);
     }
