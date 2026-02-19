@@ -20,7 +20,11 @@ namespace {
 
 String FindVariableName(CSSParserTokenStream& stream) {
   stream.ConsumeWhitespace();
-  return stream.Consume().Value().ToString();
+  if (stream.Peek().GetType() == CSSParserTokenType::kIdentToken) {
+    return stream.Consume().Value().ToString();
+  } else {
+    return {};
+  }
 }
 
 V8CSSUnparsedSegment* VariableReferenceValue(
@@ -36,6 +40,11 @@ V8CSSUnparsedSegment* VariableReferenceValue(
   CSSStyleVariableReferenceValue* variable_reference =
       CSSStyleVariableReferenceValue::Create(variable_name.ToString(),
                                              unparsed_value);
+  if (!variable_reference) {
+    // TODO(sesse): Plumb the ExceptionState here so that we can use
+    // the Create() variant that properly throws an exception.
+    return nullptr;
+  }
   return MakeGarbageCollected<V8CSSUnparsedSegment>(variable_reference);
 }
 
@@ -58,8 +67,12 @@ HeapVector<Member<V8CSSUnparsedSegment>> ParserTokenStreamToTokens(
       if (stream.Peek().GetType() == CSSParserTokenType::kCommaToken) {
         stream.Consume();
       }
-      tokens.push_back(VariableReferenceValue(
-          variable_name, ParserTokenStreamToTokens(stream)));
+      V8CSSUnparsedSegment* ref = VariableReferenceValue(
+          variable_name, ParserTokenStreamToTokens(stream));
+      if (!ref) {
+        break;
+      }
+      tokens.push_back(ref);
     } else {
       if (stream.Peek().GetBlockType() == CSSParserToken::kBlockStart) {
         ++nesting_level;
