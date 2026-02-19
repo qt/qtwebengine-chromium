@@ -1035,6 +1035,7 @@ FunctionLiteral* Parser::DoParseFunction(Isolate* isolate, ParseInfo* info,
             reindexer.Reindex(p->initializer());
           }
           if (reindexer.HasStackOverflow()) {
+            reindexer.ClearStackOverflow();
             set_stack_overflow();
             return nullptr;
           }
@@ -1159,6 +1160,11 @@ FunctionLiteral* Parser::ParseClassForMemberInitialization(
   AstFunctionLiteralIdReindexer reindexer(
       stack_limit_, initializer_id - initializer->function_literal_id());
   reindexer.Reindex(expr);
+  if (reindexer.HasStackOverflow()) {
+    reindexer.ClearStackOverflow();
+    set_stack_overflow();
+    return nullptr;
+  }
 
   no_expression_scope.ValidateExpression();
 
