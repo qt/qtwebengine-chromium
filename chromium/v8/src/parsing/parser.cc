@@ -2757,6 +2757,7 @@ void Parser::ReindexArrowFunctionFormalParameters(
       reindexer.Reindex(p->initializer());
     }
     if (reindexer.HasStackOverflow()) {
+      reindexer.ClearStackOverflow();
       set_stack_overflow();
       return;
     }
@@ -2768,6 +2769,11 @@ void Parser::ReindexComputedMemberName(Expression* computed_name) {
   // name.
   AstFunctionLiteralIdReindexer reindexer(stack_limit_, 1);
   reindexer.Reindex(computed_name);
+  if (reindexer.HasStackOverflow()) {
+    reindexer.ClearStackOverflow();
+    set_stack_overflow();
+    return;
+  }
 }
 
 void Parser::PrepareGeneratorVariables() {
