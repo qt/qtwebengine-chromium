@@ -6,6 +6,7 @@
  */
 
 #include "src/gpu/ganesh/ops/PathTessellateOp.h"
+#include <limits>
 
 #include "src/gpu/ganesh/GrAppliedClip.h"
 #include "src/gpu/ganesh/GrCaps.h"
@@ -46,10 +47,13 @@ GrDrawOp::CombineResult PathTessellateOp::onCombineIfPossible(GrOp* grOp,
                                                               SkArenaAlloc*,
                                                               const GrCaps&) {
     auto* op = grOp->cast<PathTessellateOp>();
+    bool verbCountOverflow = std::numeric_limits<int>::max() - fTotalCombinedPathVerbCnt <
+            op->fTotalCombinedPathVerbCnt;
     bool canMerge = fAAType == op->fAAType &&
                     fStencil == op->fStencil &&
                     fProcessors == op->fProcessors &&
-                    fShaderMatrix == op->fShaderMatrix;
+                    fShaderMatrix == op->fShaderMatrix &&
+                    !verbCountOverflow;
     if (canMerge) {
         fTotalCombinedPathVerbCnt += op->fTotalCombinedPathVerbCnt;
         fPatchAttribs |= op->fPatchAttribs;
