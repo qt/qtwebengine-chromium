@@ -186,7 +186,8 @@ void BackgroundReadback::ReadbackRGBTextureBackedFrameToMemory(
     ReadbackToFrameDoneCallback result_cb) {
   DCHECK(CanUseRgbReadback(*txt_frame));
 
-  SkImageInfo info = GetImageInfoForFrame(*txt_frame, txt_frame->coded_size());
+  SkImageInfo info =
+      GetImageInfoForFrame(*txt_frame, txt_frame->visible_rect().size());
   const auto format = media::VideoPixelFormatFromSkColorType(
       info.colorType(), media::IsOpaque(txt_frame->format()));
 
@@ -210,7 +211,7 @@ void BackgroundReadback::ReadbackRGBTextureBackedFrameToMemory(
   int rgba_stide = result->stride(media::VideoFrame::Plane::kARGB);
   DCHECK_GT(rgba_stide, 0);
 
-  gfx::Point src_point;
+  gfx::Point src_point = txt_frame->visible_rect().origin();
   auto shared_image = txt_frame->shared_image();
   auto origin = shared_image->surface_origin();
   ri->WaitSyncTokenCHROMIUM(txt_frame->acquire_sync_token().GetConstData());
@@ -271,9 +272,9 @@ void BackgroundReadback::ReadbackRGBTextureBackedFrameToBuffer(
   uint32_t offset = dest_layout.Offset(0);
   uint32_t stride = dest_layout.Stride(0);
 
-  uint8_t* dst_pixels = dest_buffer.data() + offset;
+  base::span<uint8_t> dst_pixels = dest_buffer.subspan(offset);
   size_t max_bytes_written = stride * src_rect.height();
-  if (stride <= 0 || max_bytes_written > dest_buffer.size()) {
+  if (stride <= 0 || max_bytes_written > dst_pixels.size()) {
     DLOG(ERROR) << "Buffer is not sufficiently large for readback";
     base::BindPostTaskToCurrentDefault(std::move(std::move(done_cb)))
         .Run(false);
@@ -294,7 +295,7 @@ void BackgroundReadback::ReadbackRGBTextureBackedFrameToBuffer(
   ri->ReadbackARGBPixelsAsync(
       shared_image->mailbox(), shared_image->GetTextureTarget(), origin,
       texture_size, src_point, info, base::saturated_cast<GLuint>(stride),
-      dst_pixels,
+      dst_pixels.data(),
       WTF::BindOnce(&BackgroundReadback::OnARGBPixelsBufferReadCompleted,
                     WrapWeakPersistent(this), std::move(txt_frame), src_rect,
                     dest_layout, dest_buffer, std::move(done_cb)));
