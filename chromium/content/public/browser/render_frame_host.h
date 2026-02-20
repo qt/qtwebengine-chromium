@@ -58,6 +58,7 @@ class GURL;
 namespace network {
 class PermissionsPolicy;
 }  // namespace network
+
 namespace base {
 class UnguessableToken;
 }  // namespace base
@@ -65,7 +66,6 @@ class UnguessableToken;
 namespace blink {
 class AssociatedInterfaceProvider;
 class StorageKey;
-
 namespace mojom {
 enum class AuthenticatorStatus;
 class MediaPlayerAction;
@@ -77,6 +77,10 @@ class Point;
 class Size;
 }  // namespace gfx
 
+namespace download {
+class DownloadUrlParameters;
+}  // namespace download
+
 namespace mojo {
 template <typename T>
 class PendingReceiver;
@@ -85,6 +89,7 @@ class PendingReceiver;
 namespace net {
 class IsolationInfo;
 class NetworkIsolationKey;
+struct NetworkTrafficAnnotationTag;
 }  // namespace net
 
 namespace network {
@@ -1179,6 +1184,12 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener {
   // access to unpartitioned cookies/storage.
   virtual void SetStorageAccessApiStatus(
       net::StorageAccessApiStatus status) = 0;
+
+  // Creates `DownloadUrlParameters` for downloads initiated by `this` frame.
+  virtual std::unique_ptr<download::DownloadUrlParameters>
+  CreateDownloadUrlParameters(
+      const GURL& url,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation) const = 0;
 
  private:
   // This interface should only be implemented inside content.
