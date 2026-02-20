@@ -2628,6 +2628,10 @@ class CONTENT_EXPORT RenderFrameHostImpl
       std::vector<blink::mojom::DraggableRegionPtr> regions) override;
   void NotifyDocumentInteractive() override;
   void OnFirstContentfulPaint() override;
+  std::unique_ptr<download::DownloadUrlParameters> CreateDownloadUrlParameters(
+      const GURL& url,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation)
+      const override;
 
   void ReportNoBinderForInterface(const std::string& error);
 

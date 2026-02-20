@@ -6379,9 +6379,7 @@ void WebContentsImpl::SaveFrameWithHeaders(
             "triggered by user request."
           policy_exception_justification: "Not implemented."
         })");
-  auto params = std::make_unique<download::DownloadUrlParameters>(
-      url, rfh->GetProcess()->GetDeprecatedID(), rfh->GetRoutingID(),
-      traffic_annotation);
+  auto params = rfh->CreateDownloadUrlParameters(url, traffic_annotation);
   params->set_referrer(referrer.url);
   params->set_referrer_policy(
       Referrer::ReferrerPolicyForUrlRequest(referrer.policy));
@@ -6409,6 +6407,7 @@ void WebContentsImpl::SaveFrameWithHeaders(
           .GetLastCommittedEntry()
           ->GetFrameEntry(frame_tree_node);
   if (frame_navigation_entry) {
+    // Replay the original initiator, rather than using the current frame origin
     params->set_initiator(frame_navigation_entry->initiator_origin());
   }
 

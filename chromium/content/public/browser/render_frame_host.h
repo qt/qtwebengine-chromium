@@ -62,7 +62,6 @@ namespace blink {
 class AssociatedInterfaceProvider;
 class PermissionsPolicy;
 class StorageKey;
-
 namespace mojom {
 enum class AuthenticatorStatus;
 enum class PermissionsPolicyFeature;
@@ -75,6 +74,10 @@ class Point;
 class Size;
 }  // namespace gfx
 
+namespace download {
+class DownloadUrlParameters;
+}  // namespace download
+
 namespace mojo {
 template <typename T>
 class PendingReceiver;
@@ -83,6 +86,7 @@ class PendingReceiver;
 namespace net {
 class IsolationInfo;
 class NetworkIsolationKey;
+struct NetworkTrafficAnnotationTag;
 }  // namespace net
 
 namespace network {
@@ -1153,6 +1157,12 @@ class CONTENT_EXPORT RenderFrameHost : public IPC::Listener,
   // `HasPolicyContainerHost()` can be used to check if it is non-null.
   virtual const network::CrossOriginEmbedderPolicy&
   GetCrossOriginEmbedderPolicy() const = 0;
+
+  // Creates `DownloadUrlParameters` for downloads initiated by `this` frame.
+  virtual std::unique_ptr<download::DownloadUrlParameters>
+  CreateDownloadUrlParameters(
+      const GURL& url,
+      const net::NetworkTrafficAnnotationTag& traffic_annotation) const = 0;
 
  private:
   // This interface should only be implemented inside content.
