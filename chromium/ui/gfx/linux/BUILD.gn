@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import("//build/config/linux/pkg_config.gni")
 import("//build/config/ozone.gni")
 import("//build/config/ui.gni")
 
@@ -18,6 +19,19 @@ source_set("drm") {
     "//build/config/linux/libdrm",
     "//ui/gfx:buffer_types",
   ]
+}
+
+pkg_config("gbm_config") {
+  packages = [ "gbm" ]
+  gbm_atleast_version = exec_script(pkg_config_script,
+                                    common_pkg_config_args + pkg_config_args + [
+                                          "gbm",
+                                          "--atleast-version=21.1.0",
+                                        ],
+                                    "value")
+  if (gbm_atleast_version) {
+    defines = [ "HAVE_GBM_BO_GET_FD_FOR_PLANE" ]
+  }
 }
 
 source_set("gbm") {
@@ -43,6 +57,8 @@ source_set("gbm") {
     "//ui/gfx:memory_buffer",
     "//ui/gfx/geometry",
   ]
+
+  configs += [ ":gbm_config" ]
 }
 
 if (ozone_platform_x11) {

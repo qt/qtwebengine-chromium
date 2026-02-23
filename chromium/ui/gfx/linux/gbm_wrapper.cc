@@ -85,7 +85,7 @@ base::ScopedFD GetPlaneFdForBo(gbm_bo* bo, size_t plane) {
     PLOG_IF(WARNING, ret != 0) << "Failed to get fd for plane even without DRM_RDWR.";
   }
 
-#if BUILDFLAG(IS_QTWEBENGINE)
+#if BUILDFLAG(IS_QTWEBENGINE) && defined(HAVE_GBM_BO_GET_FD_FOR_PLANE)
   // drmPrimeHandleToFD() does not work with legacy radeon driver. Fallback to
   // gbm_bo_get_fd_for_plane() which does provide fds per plane basis.
   if (ret) {
