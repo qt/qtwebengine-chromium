@@ -44,7 +44,6 @@ namespace net {
 class IOBuffer;
 class IsolationInfo;
 class SSLInfo;
-class SiteForCookies;
 class WebSocketChannel;
 }  // namespace net
 
@@ -62,7 +61,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket : public mojom::WebSocket {
       WebSocketFactory* factory,
       const GURL& url,
       const std::vector<std::string>& requested_protocols,
-      const net::SiteForCookies& site_for_cookies,
       net::StorageAccessApiStatus storage_access_api_status,
       const net::IsolationInfo& isolation_info,
       std::vector<mojom::HttpHeaderPtr> additional_headers,
@@ -152,7 +150,6 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket : public mojom::WebSocket {
   void OnConnectionError(const base::Location& set_from);
   void AddChannel(const GURL& socket_url,
                   const std::vector<std::string>& requested_protocols,
-                  const net::SiteForCookies& site_for_cookies,
                   net::StorageAccessApiStatus storage_access_api_status,
                   const net::IsolationInfo& isolation_info,
                   std::vector<mojom::HttpHeaderPtr> additional_headers);
@@ -230,10 +227,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) WebSocket : public mojom::WebSocket {
   // The web origin to use for the WebSocket.
   const url::Origin origin_;
 
-  // For 3rd-party cookie permission checking.
-  net::SiteForCookies site_for_cookies_;
-
-  // Used by RevokeIfNonceMatches() for handling network revocation.
+  // For 3rd-party cookie permission checking. Also used by
+  // RevokeIfNonceMatches() for handling network revocation.
   const net::IsolationInfo isolation_info_;
 
   bool handshake_succeeded_ = false;
