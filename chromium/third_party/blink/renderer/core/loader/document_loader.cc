@@ -452,6 +452,7 @@ struct SameSizeAsDocumentLoader
       HashMap<mojom::blink::PermissionName, mojom::blink::PermissionStatus>>
       initial_permission_statuses;
   bool force_new_document_sequence_number;
+  TaskHandle cross_origin_parent_load_event_task;
 };
 
 // Asserts size of DocumentLoader, so that whenever a new attribute is added to
@@ -1835,7 +1836,21 @@ void DocumentLoader::CommitSameDocumentNavigationInternal(
     // load event to detect whether the navigation was same- or cross-document,
     // and can therefore try to guess the url of a cross-origin iframe. Fire the
     // iframe's onload to prevent this technique. https://crbug.com/1248444
-    frame_->Owner()->DispatchLoad();
+    // Fire the event on a delayed timer so that we only fire one load event for
+    // repeated same-document navigations. This allows us to fire roughly the
+    // same number of load events as if the navigation were cross-document in
+    // the repeated-navigation case, because each successive cross-document
+    // navigation would cancel the previous pending navigation.
+    if (cross_origin_parent_load_event_task_.IsActive()) {
+      cross_origin_parent_load_event_task_.Cancel();
+    }
+    constexpr static const base::TimeDelta cross_origin_load_event_delay =
+        base::Milliseconds(100);
+    cross_origin_parent_load_event_task_ = PostDelayedCancellableTask(
+        *frame_->GetTaskRunner(TaskType::kInternalLoading), FROM_HERE,
+        BindOnce([](FrameOwner* owner) { owner->DispatchLoad(); },
+                 WrapWeakPersistent(frame_->Owner())),
+        cross_origin_load_event_delay);
   }
 
   auto scroll_behavior = has_ua_visual_transition
