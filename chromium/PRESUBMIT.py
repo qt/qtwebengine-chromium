@@ -836,6 +836,7 @@ _BANNED_CPP_FUNCTIONS: Sequence[BanRule] = (
             '^third_party/blink/renderer/core/typed_arrays/dom_array_buffer\.cc',
             '^third_party/blink/renderer/bindings/core/v8/' +
             'v8_wasm_response_extensions.cc',
+            '^third_party/blink/renderer/bindings/core/v8/pass_as_span.h',
             '^gin/array_buffer\.(cc|h)',
             '^gin/per_isolate_data\.(cc|h)',
             '^chrome/services/sharing/nearby/',

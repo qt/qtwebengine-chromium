@@ -103,7 +103,7 @@ namespace bindings::internal {
 
 base::span<const uint8_t> GetViewData(
     v8::Local<v8::ArrayBufferView> view,
-    base::span<uint8_t, ByteSpanWithInlineStorage::kInlineStorageSize>
+    base::span<uint8_t, ByteSpanWithInlineStorage<true>::kInlineStorageSize>
         inline_storage) {
   const size_t length = view->ByteLength();
   if (!view->HasBuffer() && length < inline_storage.size_bytes()) {
@@ -111,17 +111,6 @@ base::span<const uint8_t> GetViewData(
     return base::make_span(inline_storage.data(), length);
   }
   return GetArrayData(view->Buffer()).subspan(view->ByteOffset(), length);
-}
-
-ByteSpanWithInlineStorage& ByteSpanWithInlineStorage::operator=(
-    const ByteSpanWithInlineStorage& r) {
-  if (r.span_.data() == r.inline_storage_) {
-    memcpy(inline_storage_, r.inline_storage_, sizeof inline_storage_);
-    span_ = base::make_span(inline_storage_, r.span_.size());
-  } else {
-    span_ = r.span_;
-  }
-  return *this;
 }
 
 }  // namespace bindings::internal
