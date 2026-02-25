@@ -70,7 +70,8 @@ class ScopedPixelUnpackBufferOverride {
 
 bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
                                  GLenum depth_texture_internal_format,
-                                 GLenum depth_stencil_texture_internal_format) {
+                                 GLenum depth_stencil_texture_internal_format,
+                                 GLuint complete_fbo_for_workarounds) {
   // This is called after we make sure GL_EXT_draw_buffers is supported.
   GLint max_draw_buffers = 0;
   GLint max_color_attachments = 0;
@@ -87,6 +88,9 @@ bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
 
   GLuint fbo;
   glGenFramebuffersEXT(1, &fbo);
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, fbo);
 
   GLuint depth_stencil_texture = 0;
@@ -163,6 +167,9 @@ bool IsWebGLDrawBuffersSupported(bool webglCompatibilityContext,
     }
   }
 
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, static_cast<GLuint>(fb_binding));
   glDeleteFramebuffersEXT(1, &fbo);
 
@@ -239,6 +246,17 @@ void FeatureInfo::Initialize(ContextType context_type,
                              bool is_passthrough_cmd_decoder,
                              const DisallowedFeatures& disallowed_features,
                              bool force_reinitialize) {
+  InitializeWithCompleteFramebufferForWorkarounds(
+      context_type, is_passthrough_cmd_decoder, disallowed_features, 0,
+      force_reinitialize);
+}
+
+void FeatureInfo::InitializeWithCompleteFramebufferForWorkarounds(
+    ContextType context_type,
+    bool is_passthrough_cmd_decoder,
+    const DisallowedFeatures& disallowed_features,
+    unsigned complete_fbo_for_workarounds,
+    bool force_reinitialize) {
   if (initialized_) {
     DCHECK_EQ(context_type, context_type_);
     DCHECK_EQ(is_passthrough_cmd_decoder, is_passthrough_cmd_decoder_);
@@ -250,7 +268,8 @@ void FeatureInfo::Initialize(ContextType context_type,
   disallowed_features_ = disallowed_features;
   context_type_ = context_type;
   is_passthrough_cmd_decoder_ = is_passthrough_cmd_decoder;
-  InitializeFeatures();
+  InitializeFeatures(complete_fbo_for_workarounds);
+
   initialized_ = true;
 }
 
@@ -273,7 +292,7 @@ void FeatureInfo::InitializeForTesting(ContextType context_type) {
              DisallowedFeatures());
 }
 
-bool IsGL_REDSupportedOnFBOs() {
+bool IsGL_REDSupportedOnFBOs(uint32_t complete_fbo_for_workarounds) {
 #if BUILDFLAG(IS_MAC)
   // The glTexImage2D call below can hang on Mac so skip this since it's only
   // really needed to workaround a Mesa issue. See https://crbug.com/1158744.
@@ -307,6 +326,9 @@ bool IsGL_REDSupportedOnFBOs() {
                GL_UNSIGNED_BYTE, nullptr);
   GLuint textureFBOID = 0;
   glGenFramebuffersEXT(1, &textureFBOID);
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, textureFBOID);
   glFramebufferTexture2DEXT(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D,
                             textureId, 0);
@@ -315,6 +337,9 @@ bool IsGL_REDSupportedOnFBOs() {
   glDeleteFramebuffersEXT(1, &textureFBOID);
   glDeleteTextures(1, &textureId);
 
+  if (complete_fbo_for_workarounds) {
+    glBindFramebufferEXT(GL_FRAMEBUFFER, complete_fbo_for_workarounds);
+  }
   glBindFramebufferEXT(GL_FRAMEBUFFER, static_cast<GLuint>(fb_binding));
   glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(tex_binding));
 
@@ -472,7 +497,7 @@ void FeatureInfo::EnableWEBGLMultiDrawIfPossible(
   }
 }
 
-void FeatureInfo::InitializeFeatures() {
+void FeatureInfo::InitializeFeatures(uint32_t complete_fbo_for_workarounds) {
   // Figure out what extensions to turn on.
   std::string extensions_string(gl::GetGLExtensionsFromCurrentContext());
   gfx::ExtensionSet extensions(gfx::MakeExtensionSet(extensions_string));
@@ -1261,9 +1286,9 @@ void FeatureInfo::InitializeFeatures() {
        can_emulate_es2_draw_buffers_on_es3_nv) &&
       (context_type_ == CONTEXT_TYPE_OPENGLES2 ||
        (context_type_ == CONTEXT_TYPE_WEBGL1 &&
-        IsWebGLDrawBuffersSupported(is_webgl_compatibility_context,
-                                    depth_texture_format,
-                                    depth_stencil_texture_format)));
+        IsWebGLDrawBuffersSupported(
+            is_webgl_compatibility_context, depth_texture_format,
+            depth_stencil_texture_format, complete_fbo_for_workarounds)));
   if (have_es2_draw_buffers) {
     AddExtensionString("GL_EXT_draw_buffers");
     feature_flags_.ext_draw_buffers = true;
@@ -1384,7 +1409,7 @@ void FeatureInfo::InitializeFeatures() {
 
   if ((gl_version_info_->is_es3 ||
        gfx::HasExtension(extensions, "GL_EXT_texture_rg")) &&
-      IsGL_REDSupportedOnFBOs()) {
+      IsGL_REDSupportedOnFBOs(complete_fbo_for_workarounds)) {
     feature_flags_.ext_texture_rg = true;
     AddExtensionString("GL_EXT_texture_rg");
 

@@ -164,6 +164,15 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
                   const DisallowedFeatures& disallowed_features,
                   bool force_reinitialize = false);
 
+  // Same as initialize but with a provided `complete_fbo_for_workarounds` to
+  // use with the ensure_previous_framebuffer_not_deleted driver bug workaround.
+  void InitializeWithCompleteFramebufferForWorkarounds(
+      ContextType context_type,
+      bool is_passthrough_cmd_decoder,
+      const DisallowedFeatures& disallowed_features,
+      uint32_t complete_fbo_for_workarounds,
+      bool force_reinitialize = false);
+
   // Helper that defaults to no disallowed features and a GLES2 context.
   void InitializeForTesting();
   // Helper that defaults to no disallowed Features.
@@ -248,7 +257,7 @@ class GPU_GLES2_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
 
   void AddExtensionString(std::string_view s);
   void InitializeBasicState(const base::CommandLine* command_line);
-  void InitializeFeatures();
+  void InitializeFeatures(uint32_t complete_fbo_for_workarounds);
   void InitializeFloatAndHalfFloatFeatures(const gfx::ExtensionSet& extensions);
 
   void EnableANGLEInstancedArrayIfPossible(const gfx::ExtensionSet& extensions);
