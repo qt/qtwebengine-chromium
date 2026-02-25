@@ -4954,7 +4954,11 @@ bool MaglevGraphBuilder::CanElideWriteBarrier(ValueNode* object,
                                               ValueNode* value) {
   if (value->Is<RootConstant>()) return true;
   if (CheckType(value, NodeType::kSmi)) {
-    RecordUseReprHintIfPhi(value, UseRepresentation::kTagged);
+    if constexpr (SmiValuesAre31Bits()) {
+      if (Phi* value_as_phi = value->TryCast<Phi>()) {
+        value_as_phi->SetUseRequires31BitValue();
+      }
+    }
     return true;
   }
 
