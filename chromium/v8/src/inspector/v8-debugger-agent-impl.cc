@@ -896,7 +896,8 @@ Response V8DebuggerAgentImpl::getPossibleBreakpoints(
   {
     v8::HandleScope handleScope(m_isolate);
     int contextId = it->second->executionContextId();
-    InspectedContext* inspected = m_inspector->getContext(contextId);
+    std::shared_ptr<InspectedContext> inspected =
+        m_inspector->getContext(contextId);
     if (!inspected) {
       return Response::ServerError("Cannot retrive script context");
     }
@@ -941,7 +942,8 @@ Response V8DebuggerAgentImpl::continueToLocation(
   }
   V8DebuggerScript* script = it->second.get();
   int contextId = script->executionContextId();
-  InspectedContext* inspected = m_inspector->getContext(contextId);
+  std::shared_ptr<InspectedContext> inspected =
+      m_inspector->getContext(contextId);
   if (!inspected)
     return Response::ServerError("Cannot continue to specified location");
   v8::HandleScope handleScope(m_isolate);
@@ -1000,7 +1002,8 @@ bool V8DebuggerAgentImpl::isFunctionBlackboxed(const String16& scriptId,
   }
   if (!m_blackboxedExecutionContexts.empty()) {
     int contextId = it->second->executionContextId();
-    InspectedContext* inspected = m_inspector->getContext(contextId);
+    std::shared_ptr<InspectedContext> inspected =
+        m_inspector->getContext(contextId);
     if (inspected && m_blackboxedExecutionContexts.count(
                          inspected->uniqueId().toString()) > 0) {
       return true;
@@ -1072,7 +1075,8 @@ V8DebuggerAgentImpl::setBreakpointImpl(const String16& breakpointId,
   v8::debug::BreakpointId debuggerBreakpointId;
   v8::debug::Location location(lineNumber, columnNumber);
   int contextId = script->executionContextId();
-  InspectedContext* inspected = m_inspector->getContext(contextId);
+  std::shared_ptr<InspectedContext> inspected =
+      m_inspector->getContext(contextId);
   if (!inspected) return nullptr;
 
   {
@@ -1160,7 +1164,8 @@ Response V8DebuggerAgentImpl::setScriptSource(
     return Response::ServerError("No script with given id found");
   }
   int contextId = it->second->executionContextId();
-  InspectedContext* inspected = m_inspector->getContext(contextId);
+  std::shared_ptr<InspectedContext> inspected =
+      m_inspector->getContext(contextId);
   if (!inspected) {
     return Response::InternalError();
   }
@@ -1951,7 +1956,7 @@ void V8DebuggerAgentImpl::didParseSource(
 
   int contextId = script->executionContextId();
   int contextGroupId = m_inspector->contextGroupId(contextId);
-  InspectedContext* inspected =
+  std::shared_ptr<InspectedContext> inspected =
       m_inspector->getContext(contextGroupId, contextId);
   std::unique_ptr<protocol::DictionaryValue> executionContextAuxData;
   if (inspected) {
