@@ -61,9 +61,9 @@ class GlobalObjectNameResolver final
              .ToLocal(&creationContext)) {
       return "";
     }
-    InspectedContext* context = m_session->inspector()->getContext(
-        m_session->contextGroupId(),
-        InspectedContext::contextId(creationContext));
+    std::shared_ptr<InspectedContext> context =
+        m_session->inspector()->getContext(
+            m_session->contextGroupId(), InspectedContext::contextId(creationContext));
     if (!context) return "";
     String16 name = context->origin();
     size_t length = name.length();
