@@ -1158,16 +1158,20 @@ class ElementsAccessorBase : public InternalElementsAccessor {
   Maybe<bool> CollectValuesOrEntries(Isolate* isolate,
                                      DirectHandle<JSObject> object,
                                      DirectHandle<FixedArray> values_or_entries,
-                                     bool get_entries, int* nof_items,
+                                     uint32_t max_nof_items, bool get_entries,
+                                     int* nof_items,
                                      PropertyFilter filter) override {
-    return Subclass::CollectValuesOrEntriesImpl(
-        isolate, object, values_or_entries, get_entries, nof_items, filter);
+   auto to_return = Subclass::CollectValuesOrEntriesImpl(
+        isolate, object, values_or_entries, max_nof_items, get_entries,
+        nof_items, filter);
+   CHECK_LE(*nof_items, max_nof_items);
+   return to_return;
   }
 
   static Maybe<bool> CollectValuesOrEntriesImpl(
       Isolate* isolate, DirectHandle<JSObject> object,
-      DirectHandle<FixedArray> values_or_entries, bool get_entries,
-      int* nof_items, PropertyFilter filter) {
+      DirectHandle<FixedArray> values_or_entries, uint32_t max_nof_items,
+      bool get_entries, int* nof_items, PropertyFilter filter) {
     DCHECK_EQ(*nof_items, 0);
     KeyAccumulator accumulator(isolate, KeyCollectionMode::kOwnOnly,
                                ALL_PROPERTIES);
@@ -2730,8 +2734,8 @@ class FastSmiOrObjectElementsAccessor
 
   static Maybe<bool> CollectValuesOrEntriesImpl(
       Isolate* isolate, DirectHandle<JSObject> object,
-      DirectHandle<FixedArray> values_or_entries, bool get_entries,
-      int* nof_items, PropertyFilter filter) {
+      DirectHandle<FixedArray> values_or_entries, uint32_t max_nof_items,
+      bool get_entries, int* nof_items, PropertyFilter filter) {
     int count = 0;
     if (get_entries) {
       // Collecting entries needs to allocate, so this code must be handlified.
@@ -3205,8 +3209,8 @@ class FastDoubleElementsAccessor
 
   static Maybe<bool> CollectValuesOrEntriesImpl(
       Isolate* isolate, DirectHandle<JSObject> object,
-      DirectHandle<FixedArray> values_or_entries, bool get_entries,
-      int* nof_items, PropertyFilter filter) {
+      DirectHandle<FixedArray> values_or_entries, uint32_t max_nof_items,
+      bool get_entries, int* nof_items, PropertyFilter filter) {
     DirectHandle<FixedDoubleArray> elements(
         Cast<FixedDoubleArray>(object->elements()), isolate);
     int count = 0;
@@ -3518,12 +3522,17 @@ class TypedElementsAccessor
 
   static Maybe<bool> CollectValuesOrEntriesImpl(
       Isolate* isolate, DirectHandle<JSObject> object,
-      DirectHandle<FixedArray> values_or_entries, bool get_entries,
-      int* nof_items, PropertyFilter filter) {
+      DirectHandle<FixedArray> values_or_entries, uint32_t max_nof_items,
+      bool get_entries, int* nof_items, PropertyFilter filter) {
     int count = 0;
     if ((filter & ONLY_CONFIGURABLE) == 0) {
       DirectHandle<FixedArrayBase> elements(object->elements(), isolate);
       size_t length = AccessorClass::GetCapacityImpl(*object, *elements);
+      // The TypedArray might have been grown by a background thread. Handle it
+      // gracefully.
+      if (length > max_nof_items) {
+        length = max_nof_items;
+      }
       for (size_t index = 0; index < length; ++index) {
         DirectHandle<Object> value = AccessorClass::GetInternalImpl(
             isolate, object, InternalIndex(index));
