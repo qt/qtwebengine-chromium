@@ -31,10 +31,12 @@
 #include <utility>
 
 #include "base/auto_reset.h"
+#include "base/containers/span.h"
 #include "base/debug/crash_logging.h"
 #include "base/feature_list.h"
 #include "base/memory/ptr_util.h"
 #include "base/metrics/histogram_functions.h"
+#include "base/numerics/safe_conversions.h"
 #include "base/not_fatal_until.h"
 #include "base/strings/to_string.h"
 #include "base/synchronization/lock.h"
@@ -4685,11 +4687,13 @@ void HTMLMediaElement::AudioSourceProviderImpl::ProvideInput(
     return;
   }
 
-  // Wrap the AudioBus channel data using std::vector.
+  // Wrap the AudioBus channel data using span.
   unsigned n = bus->NumberOfChannels();
-  std::vector<float*> web_audio_data(n);
-  for (unsigned i = 0; i < n; ++i)
-    web_audio_data[i] = bus->Channel(i)->MutableData();
+  std::vector<base::span<float>> web_audio_data(n);
+  for (unsigned i = 0; i < n; ++i) {
+    web_audio_data[i] = bus->Channel(i)->MutableSpan().first(
+        base::checked_cast<size_t>(frames_to_process));
+  }
 
   web_audio_source_provider_->ProvideInput(web_audio_data, frames_to_process);
 }
