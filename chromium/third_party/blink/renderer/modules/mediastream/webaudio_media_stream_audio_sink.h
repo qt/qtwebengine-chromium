@@ -8,8 +8,8 @@
 #include <stddef.h>
 
 #include <memory>
-#include <vector>
 
+#include "base/containers/span.h"
 #include "base/synchronization/lock.h"
 #include "base/time/time.h"
 #include "media/base/audio_converter.h"
@@ -65,7 +65,7 @@ class MODULES_EXPORT WebAudioMediaStreamAudioSink
 
   // WebAudioSourceProvider implementation.
   void SetClient(WebAudioSourceProviderClient* client) override;
-  void ProvideInput(const std::vector<float*>& audio_data,
+  void ProvideInput(base::span<const base::span<float>> audio_data,
                     int number_of_frames) override;
 
  private:
@@ -94,7 +94,7 @@ class MODULES_EXPORT WebAudioMediaStreamAudioSink
   // Protects the above variables.
   base::Lock lock_;
 
-  // No lock protection needed since only accessed in std::vector version of
+  // No lock protection needed since only accessed in span version of
   // ProvideInput().
   std::unique_ptr<media::AudioBus> output_wrapper_;
 
