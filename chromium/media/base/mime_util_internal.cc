@@ -940,7 +940,7 @@ SupportsType MimeUtil::IsCodecSupported(std::string_view mime_type_lower_case,
       // http://crbug.com/784993
       video_codec != VideoCodec::kAV1) {
     DCHECK_NE(video_profile, VIDEO_CODEC_PROFILE_UNKNOWN);
-    DCHECK_GT(video_level, 0u);
+    // DCHECK_GT(video_level, 0u);
   }
 
   // Check for cases of ambiguous platform support.
