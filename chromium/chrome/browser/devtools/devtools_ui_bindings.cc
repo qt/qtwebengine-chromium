@@ -1568,12 +1568,12 @@ void DevToolsUIBindings::SendPortForwardingStatus(base::Value status) {
 }
 
 void DevToolsUIBindings::SetDevicesUpdatesEnabled(bool enabled) {
-#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_QTWEBENGINE)
-  NOTIMPLEMENTED();
-#else
   if (devices_updates_enabled_ == enabled) {
     return;
   }
+#if BUILDFLAG(IS_ANDROID) || BUILDFLAG(IS_QTWEBENGINE)
+  NOTIMPLEMENTED();
+#else
   devices_updates_enabled_ = enabled;
   if (enabled) {
     remote_targets_handler_ = DevToolsTargetsUIHandler::CreateForAdb(
@@ -2830,7 +2830,9 @@ void DevToolsUIBindings::FrontendLoaded() {
     CallClientMethod("DevToolsAPI", "setInitialTargetId",
                      base::Value(initial_target_id_));
   }
+#if !BUILDFLAG(IS_QTWEBENGINE)
   AddDevToolsExtensionsToClient();
+#endif
 }
 
 DevToolsUIBindings::DevToolsUIBindingsList&
