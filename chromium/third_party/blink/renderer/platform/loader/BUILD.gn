@@ -3,6 +3,7 @@
 # found in the LICENSE file.
 
 import("//build/config/jumbo.gni")
+import("//testing/libfuzzer/fuzzer_test.gni")
 import("//testing/test.gni")
 import("//third_party/blink/renderer/build/scripts/scripts.gni")
 import("//third_party/blink/renderer/platform/platform.gni")
@@ -70,6 +71,8 @@ blink_platform_sources("loader") {
     "fetch/memory_cache.h",
     "fetch/null_resource_fetcher_properties.cc",
     "fetch/null_resource_fetcher_properties.h",
+    "fetch/policy_container_utils.cc",
+    "fetch/policy_container_utils.h",
     "fetch/preload_key.h",
     "fetch/raw_resource.cc",
     "fetch/raw_resource.h",
@@ -240,6 +243,7 @@ jumbo_source_set("unit_tests") {
     "fetch/fetch_utils_test.cc",
     "fetch/memory_cache_correctness_test.cc",
     "fetch/memory_cache_test.cc",
+    "fetch/policy_container_utils_test.cc",
     "fetch/raw_resource_test.cc",
     "fetch/resource_fetcher_properties_test.cc",
     "fetch/resource_fetcher_test.cc",
@@ -329,4 +333,16 @@ jumbo_source_set("test_support") {
     "//third_party/blink/renderer/platform/scheduler:test_support",
     "//third_party/icu",
   ]
+}
+
+fuzzer_test("policy_container_utils_fuzzer") {
+  sources = [ "fetch/policy_container_utils_fuzzer.cc" ]
+  deps = [
+    "//chromium/third_party/blink/renderer/core:testing",
+    "//chromium/third_party/blink/renderer/platform",
+    "//chromium/third_party/blink/renderer/platform:blink_fuzzer_test_support",
+  ]
+  dict = "//testing/libfuzzer/fuzzers/dicts/content_security_policy.dict"
+  seed_corpus = "//testing/libfuzzer/fuzzers/content_security_policy_corpus"
+  additional_configs = [ "//chromium/third_party/blink/renderer:inside_blink" ]
 }
