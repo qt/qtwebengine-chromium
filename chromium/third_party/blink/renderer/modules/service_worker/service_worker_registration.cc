@@ -281,7 +281,7 @@ ScriptPromise<ServiceWorkerRegistration> ServiceWorkerRegistration::update(
           ->GetProperties()
           .GetFetchClientSettingsObject();
   auto mojom_settings_object = mojom::blink::FetchClientSettingsObject::New(
-      settings_object.GetReferrerPolicy(),
+      settings_object.GetPolicyContainerPolicies().Clone(),
       KURL(settings_object.GetOutgoingReferrer()),
       (settings_object.GetInsecureRequestsPolicy() &
        mojom::blink::InsecureRequestPolicy::kUpgradeInsecureRequests) !=
