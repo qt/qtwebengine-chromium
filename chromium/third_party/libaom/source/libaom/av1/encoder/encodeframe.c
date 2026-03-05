@@ -1556,9 +1556,8 @@ static inline void encode_tiles(AV1_COMP *cpi) {
   int tile_col, tile_row;
 
   MACROBLOCK *const mb = &cpi->td.mb;
-  assert(IMPLIES(cpi->tile_data == NULL,
-                 cpi->allocated_tiles < tile_cols * tile_rows));
-  if (cpi->allocated_tiles < tile_cols * tile_rows) av1_alloc_tile_data(cpi);
+  assert(IMPLIES(cpi->tile_data == NULL, cpi->allocated_tiles == 0));
+  if (cpi->allocated_tiles != tile_cols * tile_rows) av1_alloc_tile_data(cpi);
 
   av1_init_tile_data(cpi);
   av1_alloc_mb_data(cpi, mb);
