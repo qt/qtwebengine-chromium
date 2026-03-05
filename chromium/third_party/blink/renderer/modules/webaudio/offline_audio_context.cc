@@ -106,6 +106,12 @@ OfflineAudioContext* OfflineAudioContext::Create(
       MakeGarbageCollected<OfflineAudioContext>(window, number_of_channels,
                                                 number_of_frames, sample_rate,
                                                 exception_state);
+  if (audio_context->HasAllocationFailed()) {
+    exception_state.ThrowDOMException(
+        DOMExceptionCode::kNotSupportedError,
+        "The audio context could not be created due to memory limitations.");
+    return nullptr;
+  }
   audio_context->UpdateStateIfNeeded();
 
 #if DEBUG_AUDIONODE_REFERENCES

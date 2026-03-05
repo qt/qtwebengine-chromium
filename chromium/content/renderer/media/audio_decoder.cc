@@ -63,8 +63,10 @@ bool DecodeAudioFileData(blink::WebAudioBus* destination_bus,
 
   // Allocate and configure the output audio channel data and then
   // copy the decoded data to the destination.
-  destination_bus->Initialize(number_of_channels, number_of_frames,
-                              file_sample_rate);
+  if (!destination_bus->TryInitialize(number_of_channels, number_of_frames,
+                                      file_sample_rate)) {
+    return false;
+  }
 
   std::vector<base::SpanWriter<float>> dest_channels;
   dest_channels.reserve(number_of_channels);
