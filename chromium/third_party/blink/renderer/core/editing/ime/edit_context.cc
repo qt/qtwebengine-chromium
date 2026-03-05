@@ -402,22 +402,6 @@ uint32_t EditContext::OrderedSelectionEnd() const {
   return std::max(selection_start_, selection_end_);
 }
 
-uint32_t EditContext::BoundedSelectionStart() const {
-  if (RuntimeEnabledFeatures::
-          UseBoundedSelectionOffsetsInEditContextDeleteOperationsEnabled()) {
-    return std::min(selection_start_, text_.length());
-  }
-  return selection_start_;
-}
-
-uint32_t EditContext::BoundedSelectionEnd() const {
-  if (RuntimeEnabledFeatures::
-          UseBoundedSelectionOffsetsInEditContextDeleteOperationsEnabled()) {
-    return std::min(selection_end_, text_.length());
-  }
-  return selection_end_;
-}
-
 bool EditContext::SetCompositionFromExistingText(
     int composition_start,
     int composition_end,
@@ -492,6 +476,8 @@ bool EditContext::InsertText(const WebString& text) {
 }
 
 void EditContext::DeleteCurrentSelection() {
+  CHECK_LE(selection_start_, text_.length());
+  CHECK_LE(selection_end_, text_.length());
   if (selection_start_ == selection_end_)
     return;
 
@@ -510,47 +496,60 @@ void EditContext::DeleteCurrentSelection() {
 template <typename StateMachine>
 int FindNextBoundaryOffset(const String& str, int current);
 
+void EditContext::EnsureSelectionWithinTextBounds() {
+  if (!RuntimeEnabledFeatures::
+          UseBoundedSelectionOffsetsInEditContextDeleteOperationsEnabled()) {
+    return;
+  }
+  SetSelection(std::min(selection_start_, text_.length()),
+               std::min(selection_end_, text_.length()));
+}
+
 void EditContext::DeleteBackward() {
+  EnsureSelectionWithinTextBounds();
   // If the current selection is collapsed, delete one grapheme, otherwise,
   // delete whole selection.
   if (selection_start_ == selection_end_) {
     SetSelection(FindNextBoundaryOffset<BackwardGraphemeBoundaryStateMachine>(
-                     text_, BoundedSelectionStart()),
-                 BoundedSelectionEnd());
+                     text_, selection_start_),
+                 selection_end_);
   }
 
   DeleteCurrentSelection();
 }
 
 void EditContext::DeleteForward() {
+  EnsureSelectionWithinTextBounds();
   if (selection_start_ == selection_end_) {
     SetSelection(selection_start_,
                  FindNextBoundaryOffset<ForwardGraphemeBoundaryStateMachine>(
-                     text_, BoundedSelectionStart()));
+                     text_, selection_start_));
   }
 
   DeleteCurrentSelection();
 }
 
 void EditContext::DeleteWordBackward() {
+  EnsureSelectionWithinTextBounds();
   if (selection_start_ == selection_end_) {
     String text16bit(text_);
     text16bit.Ensure16Bit();
     // TODO(shihken): implement platform behaviors when the spec is finalized.
-    SetSelection(FindNextWordBackward(text16bit.Span16(), BoundedSelectionEnd()),
-                 BoundedSelectionEnd());
+    SetSelection(FindNextWordBackward(text16bit.Span16(), selection_end_),
+                 selection_end_);
   }
 
   DeleteCurrentSelection();
 }
 
 void EditContext::DeleteWordForward() {
+  EnsureSelectionWithinTextBounds();
   if (selection_start_ == selection_end_) {
     String text16bit(text_);
     text16bit.Ensure16Bit();
     // TODO(shihken): implement platform behaviors when the spec is finalized.
-    SetSelection(BoundedSelectionStart(),
-                 FindNextWordForward(text16bit.Span16(), BoundedSelectionStart()));
+    SetSelection(selection_start_,
+                 FindNextWordForward(text16bit.Span16(), selection_start_));
   }
 
   DeleteCurrentSelection();
