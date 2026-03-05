@@ -803,7 +803,7 @@ BASE_FEATURE(kAcceleratedVideoDecodeLinux,
 
 BASE_FEATURE(kAcceleratedVideoDecodeLinuxGL,
              "AcceleratedVideoDecodeLinuxGL",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 BASE_FEATURE(kAcceleratedVideoEncodeLinux,
              "AcceleratedVideoEncoder",

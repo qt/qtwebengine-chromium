@@ -23,7 +23,7 @@ namespace {
 
 BASE_FEATURE(kAcceleratedVideoDecodeLinuxZeroCopyGL,
              "AcceleratedVideoDecodeLinuxZeroCopyGL",
-             base::FEATURE_DISABLED_BY_DEFAULT);
+             base::FEATURE_ENABLED_BY_DEFAULT);
 
 VideoDecoderType GetPreferredLinuxDecoderImplementation() {
   // VaapiVideoDecoder flag is required for VaapiVideoDecoder.
