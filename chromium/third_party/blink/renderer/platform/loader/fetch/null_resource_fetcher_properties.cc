@@ -21,7 +21,12 @@ NullResourceFetcherProperties::NullResourceFetcherProperties()
               KURL(),
               KURL(),
               nullptr /* security_origin */,
-              network::mojom::ReferrerPolicy::kDefault,
+              []() {
+                auto policies = mojom::blink::PolicyContainerPolicies::New();
+                policies->referrer_policy =
+                    network::mojom::ReferrerPolicy::kDefault;
+                return policies;
+              }(),
               String(),
               HttpsState::kNone,
               AllowedByNosniff::MimeTypeCheck::kStrict,
