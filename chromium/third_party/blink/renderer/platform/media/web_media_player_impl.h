@@ -165,6 +165,8 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   WebMediaPlayerImpl& operator=(const WebMediaPlayerImpl&) = delete;
   ~WebMediaPlayerImpl() override;
 
+  void Shutdown() override;
+
   // WebSurfaceLayerBridgeObserver implementation.
   void OnWebLayerUpdated() override;
   void RegisterContentsLayer(cc::Layer* layer) override;
@@ -739,7 +741,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // Notifies the `client_` and the `delegate_` about metadata change.
   void DidMediaMetadataChange();
 
-  const raw_ptr<WebLocalFrame> frame_;
+  raw_ptr<WebLocalFrame> frame_ = nullptr;
 
   WebMediaPlayer::NetworkState network_state_ =
       WebMediaPlayer::kNetworkStateEmpty;
@@ -833,8 +835,8 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // Whether the current decoder requires a restart on overlay transitions.
   bool decoder_requires_restart_for_overlay_ = false;
 
-  const raw_ptr<MediaPlayerClient> client_;
-  const raw_ptr<WebMediaPlayerEncryptedMediaClient> encrypted_client_;
+  raw_ptr<MediaPlayerClient> client_ = nullptr;
+  raw_ptr<WebMediaPlayerEncryptedMediaClient> encrypted_client_ = nullptr;
 
   // WebMediaPlayer notifies the |delegate_| of playback state changes using
   // |delegate_id_|; an id provided after registering with the delegate.  The
@@ -847,7 +849,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // before the frame is destroyed). RenderFrameImpl owns |delegate_| and is
   // guaranteed to outlive |this|; thus it is safe to store |delegate_| as a raw
   // pointer.
-  raw_ptr<WebMediaPlayerDelegate> delegate_;
+  raw_ptr<WebMediaPlayerDelegate> delegate_ = nullptr;
   int delegate_id_ = 0;
 
   // The playback state last reported to |delegate_|, to avoid setting duplicate
@@ -863,7 +865,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   // Members for notifying upstream clients about internal memory usage.  The
   // |adjust_allocated_memory_cb_| must only be called on |main_task_runner_|.
   base::RepeatingTimer memory_usage_reporting_timer_;
-  raw_ptr<v8::Isolate> isolate_;
+  raw_ptr<v8::Isolate> isolate_ = nullptr;
   NO_UNIQUE_ADDRESS V8ExternalMemoryAccounterBase external_memory_accounter_;
   int64_t last_reported_memory_usage_ = 0;
   std::unique_ptr<media::MemoryDumpProviderProxy> main_thread_mem_dumper_;
@@ -878,7 +880,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
   raw_ptr<const base::TickClock> tick_clock_ = nullptr;
 
   std::unique_ptr<BufferedDataSourceHostImpl> buffered_data_source_host_;
-  const raw_ptr<UrlIndex> url_index_;
+  raw_ptr<UrlIndex> url_index_ = nullptr;
   scoped_refptr<viz::RasterContextProvider> raster_context_provider_;
 
   // Video rendering members.

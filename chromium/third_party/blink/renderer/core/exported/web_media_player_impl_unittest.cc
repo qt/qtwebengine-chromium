@@ -390,6 +390,7 @@ class WebMediaPlayerImplTest
     //
     // NOTE: This should be done before any other member variables are
     // destructed since WMPI may reference them during destruction.
+    wmpi_->Shutdown();
     wmpi_.reset();
 
     CycleThreads();
@@ -456,6 +457,7 @@ class WebMediaPlayerImplTest
         media_thread_.task_runner());
     compositor_ = compositor.get();
 
+    CHECK(!wmpi_);
     wmpi_ = std::make_unique<WebMediaPlayerImpl>(
         GetWebLocalFrame(), &client_, &encrypted_client_, &delegate_,
         std::move(factory_selector), url_index_.get(), std::move(compositor),
@@ -2703,6 +2705,7 @@ TEST_F(WebMediaPlayerImplTest, MemDumpProvidersRegistration) {
   EXPECT_TRUE(dump_manager->IsDumpProviderRegisteredForTesting(media_dumper));
   CycleThreads();
 
+  wmpi_->Shutdown();
   wmpi_.reset();
   CycleThreads();
 
