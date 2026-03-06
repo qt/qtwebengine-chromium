@@ -265,6 +265,8 @@ static void row_mt_mem_alloc(AV1_COMP *cpi, int max_rows, int max_cols,
       }
     }
   }
+  enc_row_mt->allocated_tile_cols = tile_cols;
+  enc_row_mt->allocated_tile_rows = tile_rows;
   const int sb_rows = get_sb_rows_in_frame(cm);
   CHECK_MEM_ERROR(
       cm, enc_row_mt->num_tile_cols_done,
@@ -295,6 +297,8 @@ void av1_row_mt_mem_dealloc(AV1_COMP *cpi) {
       }
     }
   }
+  enc_row_mt->allocated_tile_cols = 0;
+  enc_row_mt->allocated_tile_rows = 0;
   aom_free(enc_row_mt->num_tile_cols_done);
   enc_row_mt->num_tile_cols_done = NULL;
   enc_row_mt->allocated_rows = 0;
