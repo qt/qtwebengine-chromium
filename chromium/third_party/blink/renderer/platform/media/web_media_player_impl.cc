@@ -590,6 +590,11 @@ WebMediaPlayerImpl::WebMediaPlayerImpl(
 }
 
 WebMediaPlayerImpl::~WebMediaPlayerImpl() {
+  // Ensure Shutdown() has been called.
+  CHECK(!client_);
+}
+
+void WebMediaPlayerImpl::Shutdown() {
   DVLOG(1) << __func__;
   DCHECK(main_task_runner_->BelongsToCurrentThread());
 
@@ -668,6 +673,13 @@ WebMediaPlayerImpl::~WebMediaPlayerImpl() {
   // before `pipeline_controller_`, which holds a VideoRendererSink
   // in MediaFoundationRendererClient.
   pipeline_controller_.reset();
+
+  client_ = nullptr;
+  encrypted_client_ = nullptr;
+  frame_ = nullptr;
+  url_index_ = nullptr;
+
+  weak_factory_.InvalidateWeakPtrs();
 
   // Handle destruction of things that need to be destructed after the pipeline
   // completes stopping on the media thread.
