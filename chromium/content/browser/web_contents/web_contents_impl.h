@@ -1038,6 +1038,8 @@ class CONTENT_EXPORT WebContentsImpl
       NavigationHandle* navigation_handle) override;
   void DidNavigateMainFramePreCommit(NavigationHandle* navigation_handle,
                                      bool navigation_is_within_page) override;
+  void DidNavigateAnyFramePreCommit(NavigationHandle* navigation_handle,
+                                    bool navigation_is_within_page) override;
   void DidNavigateMainFramePostCommit(
       RenderFrameHostImpl* render_frame_host,
       const LoadCommittedDetails& details) override;
@@ -1564,6 +1566,15 @@ class CONTENT_EXPORT WebContentsImpl
     return pointer_lock_widget_;
   }
 
+  const std::set<raw_ptr<RenderFrameHostImpl, SetExperimental>>&
+  fullscreen_frames_for_testing() const {
+    return fullscreen_frames_;
+  }
+
+  GlobalRenderFrameHostId current_fullscreen_frame_id_for_testing() const {
+    return current_fullscreen_frame_id_;
+  }
+
   ui::mojom::VirtualKeyboardMode GetVirtualKeyboardMode() const;
 
   const std::optional<base::Location>& ownership_location() const {
@@ -1630,8 +1641,6 @@ class CONTENT_EXPORT WebContentsImpl
                            NotifyFullscreenAcquired);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            NotifyFullscreenAcquired_Navigate);
-  FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
-                           NotifyFullscreenAcquired_SameOrigin);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
                            PropagateFullscreenOptions);
   FRIEND_TEST_ALL_PREFIXES(WebContentsImplBrowserTest,
