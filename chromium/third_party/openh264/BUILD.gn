@@ -226,6 +226,16 @@ source_set("decoder") {
 }
 
 if (use_system_openh264) {
+  config("encoder_cfi_flags") {
+    cflags = []
+    if (current_toolchain == default_toolchain && is_clang) {
+      openh264_cfi_ignorelist_path =
+          rebase_path("//build/linux/unbundle/openh264_encoder_cfi_ignores.txt",
+                    root_build_dir)
+      cflags += [ "-fsanitize-ignorelist=$openh264_cfi_ignorelist_path" ]
+    }
+  }
+
   pkg_config("system_openh264") {
     packages = [ "openh264" ]
   }
@@ -233,7 +243,7 @@ if (use_system_openh264) {
 
 shim_headers("openh264_shim") {
   prefix = "wels/"
-  root_path = "src/codec/api/svc"
+  root_path = "src/codec/api/wels"
   headers = [
     "codec_api.h",
     "codec_app_def.h",
@@ -263,7 +273,10 @@ group("processing") {
 group("encoder") {
   if (use_system_openh264) {
     deps = [ ":openh264_shim" ]
-    public_configs = [ ":system_openh264" ]
+    public_configs = [
+      ":system_openh264",
+      ":encoder_cfi_flags",
+    ]
   } else {
     public_deps = [ ":bundled_encoder" ]
   }
