@@ -3442,6 +3442,8 @@ class CONTENT_EXPORT RenderFrameHostImpl
                            AttemptDuplicateRenderWidgetHost);
   FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
                            BindToWebUIFromWebViaMojo);
+  FRIEND_TEST_ALL_PREFIXES(SecurityExploitBrowserTest,
+                           CreateNewWindowWithInaccessibleFile);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
                            RenderViewHostIsNotReusedAfterDelayedUnloadACK);
   FRIEND_TEST_ALL_PREFIXES(SitePerProcessBrowserTest,
