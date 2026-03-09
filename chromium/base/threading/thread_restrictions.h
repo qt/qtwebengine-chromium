@@ -455,6 +455,7 @@ class DevToolsFrontendQt;
 class PrefServiceAdapter;
 class ProfileAdapter;
 class PermissionManagerQt;
+class WebContentsAdapter;
 }
 
 namespace base {
@@ -665,6 +666,7 @@ class BASE_EXPORT ScopedAllowBlocking {
   friend class QtWebEngineCore::PrefServiceAdapter;
   friend class QtWebEngineCore::ProfileAdapter;
   friend class QtWebEngineCore::PermissionManagerQt;
+  friend class QtWebEngineCore::WebContentsAdapter;
 
   // Sorted by function name (with namespace), ignoring the return type.
   friend Profile* ::GetLastProfileMac();  // http://crbug.com/1176734
