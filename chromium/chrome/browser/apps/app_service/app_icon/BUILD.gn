@@ -111,7 +111,6 @@ source_set("unit_tests") {
     "//chrome/app/theme:chrome_unscaled_resources_grit",
     "//chrome/browser/apps:icon_standardizer",
     "//chrome/browser/apps/app_service",
-    "//chrome/browser/resources:component_extension_resources_grit",
     "//chrome/browser/web_applications",
     "//chrome/browser/web_applications:web_applications_test_support",
     "//chrome/common:non_code_constants",
@@ -129,7 +128,10 @@ source_set("unit_tests") {
   ]
 
   if (enable_extensions) {
-    deps += [ "//chrome/browser/extensions" ]
+    deps += [
+      "//chrome/browser/extensions",
+      "//chrome/browser/resources:component_extension_resources_grit",
+    ]
   }
 
   if (is_chromeos) {
