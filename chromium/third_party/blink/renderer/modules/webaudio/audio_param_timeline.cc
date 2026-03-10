@@ -1535,10 +1535,7 @@ std::tuple<size_t, float, unsigned> AudioParamTimeline::ProcessLinearRamp(
 
     // Process 4 loop steps.
     for (; write_index < fill_to_frame_trunc; write_index += 4) {
-      // SAFETY: DCHECK previously checked that `fill_to_frame_trunc <
-      // values.size()`. In the for loop, `write_index < fill_to_frame_trunc` so
-      // this is safe.
-      _mm_storeu_ps(UNSAFE_BUFFERS(values.data() + write_index), v_value);
+      _mm_storeu_ps(values.subspan(write_index, 4u).data(), v_value);
       v_value = _mm_add_ps(v_value, v_inc);
     }
   }
@@ -1724,10 +1721,7 @@ std::tuple<size_t, float, unsigned> AudioParamTimeline::ProcessSetTarget(
         v_value = _mm_set_ps1(value);
 
         v_result = _mm_add_ps(v_value, _mm_mul_ps(v_delta, v_c));
-        // SAFETY: DCHECK previously checked that `fill_to_frame_trunc <
-        // values.size()`. In the for loop, `write_index < fill_to_frame_trunc`
-        // so this is safe.
-        _mm_storeu_ps(UNSAFE_BUFFERS(values.data() + write_index), v_result);
+        _mm_storeu_ps(values.subspan(write_index, 4u).data(), v_result);
 
         // Update value for next iteration.
         value += delta * c3;
@@ -1887,10 +1881,7 @@ std::tuple<size_t, float, unsigned> AudioParamTimeline::ProcessSetValueCurve(
       __m128 v_value =
           _mm_add_ps(v_c0, _mm_mul_ps(_mm_sub_ps(v_c1, v_c0), v_delta));
 
-      // SAFETY: DCHECK previously checked that `fill_to_frame_trunc <
-      // values.size()`. In the for loop, `write_index < fill_to_frame_trunc` so
-      // this is safe.
-      _mm_storeu_ps(UNSAFE_BUFFERS(values.data() + write_index), v_value);
+      _mm_storeu_ps(values.subspan(write_index, 4u).data(), v_value);
     }
     // Pass along k to the serial loop.
     k = truncated_steps;
