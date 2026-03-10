@@ -3161,8 +3161,6 @@ source_set("browser") {
       "//chrome/browser/indigo:impl",
       "//chrome/browser/indigo/onboarding",
       "//chrome/browser/lens/region_search",
-      "//chrome/browser/media/router:mojo_impl",
-      "//chrome/browser/media/router:providers_wired_display_impl",
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
       "//chrome/browser/metrics/critical_user_journeys",
       "//chrome/browser/metrics/critical_user_journeys:impl",
@@ -4400,6 +4398,8 @@ source_set("browser") {
       "//extensions/browser",
     ]
     deps += [
+      "//chrome/browser/media/router:mojo_impl",
+      "//chrome/browser/media/router:providers_wired_display_impl",
       "//chrome/browser/enterprise/incognito",
       "//chrome/browser/extensions/api/browsing_data",
       "//chrome/browser/resources:component_extension_resources",
