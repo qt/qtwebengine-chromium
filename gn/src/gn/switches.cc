@@ -109,6 +109,19 @@ const char kNinjaExecutable_Help[] =
   post-processing on the generated files for more consistent builds.
 )";
 
+const char kIgnoreAsserts[] = "ignore-asserts";
+const char kIgnoreAsserts_HelpShort[] =
+    "Set the list of identifiers to ignore in single-identifier asserts.";
+const char kIgonreAsserts_Help[] =
+    R"(--ignore-asserts: Set the list of asserts to ignore.
+
+  In same cases  it is convenient to ignore asserts as
+  they are evaluated on generate step and not on actual build step,
+  meaning they can be triggered even though build target does not
+  require their evaluation. The list is a list of identifiers from
+  assert expression 'assert(identifier [, message])'
+)";
+
 const char kScriptExecutable[] = "script-executable";
 const char kScriptExecutable_HelpShort[] =
     "--script-executable: Set the executable used to execute scripts.";

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <memory>
+#include <regex>
 #include <sstream>
 #include <utility>
 
@@ -475,6 +476,8 @@ bool Setup::DoSetupWithErr(const std::string& build_dir,
   }
   if (!FillPythonPath(cmdline, err))
     return false;
+  if (!FillIgnoreAssertList(cmdline, err))
+    return false;
 
   // Check for unused variables in the .gn file.
   if (!dotfile_scope_.CheckForUnusedVars(err)) {
@@ -822,6 +825,24 @@ base::FilePath ProcessFileExtensions(base::FilePath script_executable) {
   script_executable = script_executable.NormalizePathSeparatorsTo('/');
 #endif
   return script_executable;
+}
+
+bool Setup::FillIgnoreAssertList(const base::CommandLine& cmdline, Err* err) {
+  if (cmdline.HasSwitch(switches::kIgnoreAsserts)) {
+    const std::string& switch_value =
+        cmdline.GetSwitchValueString(switches::kIgnoreAsserts);
+
+    std::regex d(",");
+    std::sregex_token_iterator it(switch_value.begin(), switch_value.end(), d,
+                                  -1);
+    std::sregex_token_iterator end;
+    std::vector<std::string> tokens;
+    while (it != end) {
+      tokens.push_back(*it++);
+    }
+    build_settings_.set_ignore_assert_list(tokens);
+  }
+  return true;
 }
 
 bool Setup::FillPythonPath(const base::CommandLine& cmdline, Err* err) {

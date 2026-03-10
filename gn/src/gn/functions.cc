@@ -252,6 +252,20 @@ Value RunAssert(Scope* scope,
     return Value();
   }
 
+  const IdentifierNode* identifier =
+      args[0].origin() ? args[0].origin()->AsIdentifier() : nullptr;
+
+  if (identifier) {
+    std::string_view assertion_name = identifier->value().value();
+
+    const std::vector<std::string>& ignore_list =
+        scope->settings()->build_settings()->ignore_assert_list();
+
+    if (std::find(ignore_list.begin(), ignore_list.end(), assertion_name) !=
+        ignore_list.end()) {
+      return Value();
+    }
+  }
   // Assertion passed: there is nothing to do, so return an empty value.
   if (assertion_passed) {
     return Value();
