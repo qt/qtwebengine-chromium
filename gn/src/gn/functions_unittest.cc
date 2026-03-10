@@ -49,6 +49,42 @@ TEST(Functions, Assert) {
     ASSERT_EQ(err.help_text(), "What failed");
   }
 
+  // Verify case where the assertion fails, but it is on ignore list
+  {
+    std::vector<std::string> ignore{"foo"};
+    setup.build_settings()->set_ignore_assert_list(ignore);
+    TestParseInput input(R"(
+      declare_args() {
+        foo = false
+      }
+      assert(foo)
+      )");
+
+    ASSERT_FALSE(input.has_error());
+    Err err;
+    input.parsed()->Execute(setup.scope(), &err);
+    ASSERT_FALSE(err.has_error());
+  }
+
+  // Verify case where ignore list is set, and other asserts do work
+  {
+    std::vector<std::string> ignore{"foo"};
+    setup.build_settings()->set_ignore_assert_list(ignore);
+    TestParseInput input(R"(
+      declare_args() {
+        bar = false
+      }
+      assert(bar, "Bar has failed")
+      )");
+
+    ASSERT_FALSE(input.has_error());
+    Err err;
+    input.parsed()->Execute(setup.scope(), &err);
+    ASSERT_TRUE(err.has_error());
+    ASSERT_EQ(err.message(), "Assertion failed.");
+    ASSERT_EQ(err.help_text(), "Bar has failed");
+  }
+
   // Verify usage errors are detected.
   std::vector<std::string> bad_usage_examples = {
       // Number of arguments.
