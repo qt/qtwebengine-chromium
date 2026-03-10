@@ -153,6 +153,13 @@ class BuildSettings {
     expand_directory_allowlist_ = std::move(list);
   }
 
+  void set_ignore_assert_list(std::vector<std::string> ignore_assert_list) {
+    ignore_assert_list_ = std::move(ignore_assert_list);
+  }
+  const std::vector<std::string>& ignore_assert_list() const {
+    return ignore_assert_list_;
+  }
+
  private:
   Label root_target_label_;
   std::vector<LabelPattern> root_patterns_;
@@ -179,6 +186,7 @@ class BuildSettings {
   std::unique_ptr<SourceFileSet> expand_directory_allowlist_ =
       std::make_unique<SourceFileSet>();
 
+  std::vector<std::string> ignore_assert_list_;
   BuildSettings& operator=(const BuildSettings&) = delete;
 };
 
