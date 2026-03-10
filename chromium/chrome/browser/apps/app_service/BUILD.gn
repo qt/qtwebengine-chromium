@@ -399,7 +399,6 @@ source_set("unit_tests") {
     "//chrome/browser/apps/app_service/app_icon:util",
     "//chrome/browser/apps/link_capturing:test_support",
     "//chrome/browser/profiles:profile",
-    "//chrome/browser/resources:component_extension_resources",
     "//chrome/browser/ui",
     "//chrome/browser/web_applications",
     "//chrome/browser/web_applications:web_applications_test_support",
@@ -433,6 +432,7 @@ source_set("unit_tests") {
   if (enable_extensions) {
     deps += [
       "//chrome/browser/extensions",
+      "//chrome/browser/resources:component_extension_resources",
       "//extensions:test_support",
       "//extensions/common",
     ]

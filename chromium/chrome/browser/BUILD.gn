@@ -4356,8 +4356,6 @@ static_library("browser") {
       "//chrome/browser/importer",
       "//chrome/browser/importer:impl",
       "//chrome/browser/lens/region_search",
-      "//chrome/browser/media/router:mojo_impl",
-      "//chrome/browser/media/router:providers_wired_display_impl",
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
       "//chrome/browser/metrics/desktop_session_duration",
       "//chrome/browser/new_tab_page/chrome_colors",
@@ -4566,7 +4564,6 @@ static_library("browser") {
 
       # TODO(b/220386256): Remove circular dependency from the browser.
       "//chrome/browser/media/router/discovery/access_code:access_code_sink_service",
-      "//chrome/browser/media/router:mojo_impl",
 
       # TODO(crbug.com/40761673): Remove cycles and simplify all dependencies.
       "//chrome/browser/web_applications",
@@ -7560,6 +7557,7 @@ static_library("browser") {
 
       # Has dependencies on notification code in //chrome/browser.
       "//chrome/browser/extensions/api/notifications",
+      "//chrome/browser/media/router:mojo_impl",
     ]
     public_deps += [
       "//chrome/browser/extensions:chrome_extensions_browser_client",
@@ -7569,6 +7567,8 @@ static_library("browser") {
       "//extensions/browser",
     ]
     deps += [
+      "//chrome/browser/media/router:mojo_impl",
+      "//chrome/browser/media/router:providers_wired_display_impl",
       "//chrome/browser/enterprise/incognito",
       "//chrome/browser/extensions/api/browsing_data",
       "//chrome/browser/resources:component_extension_resources",
