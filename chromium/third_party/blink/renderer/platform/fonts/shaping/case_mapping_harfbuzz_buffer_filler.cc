@@ -80,7 +80,7 @@ void CaseMappingHarfBuzzBufferFiller::FillSlowCase(
   for (unsigned char_index = start_index;
        char_index < start_index + num_characters;) {
     unsigned new_char_index = char_index;
-    U16_FWD_1(buffer.data(), new_char_index, num_characters);
+    U16_FWD_1(buffer.data(), new_char_index, buffer.size());
     String char_by_char(
         buffer.subspan(char_index, new_char_index - char_index));
     String case_mapped_char;
