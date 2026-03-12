@@ -352,7 +352,7 @@ enum BadMessageReason {
   MDDH_SET_PREFERRED_SINK_ID_WITHOUT_FEATURE = 323,
   RFH_CREATE_NEW_WINDOW_FROM_SANDBOXED_FRAME = 324,
   DT_DUPLICATE_CHILD_TARGET_CREATED = 325,
-
+  RFH_MODAL_DIALOG_FROM_SANDBOXED_FRAME = 326,
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the
   // reason. After making changes, you MUST update histograms.xml by running:
