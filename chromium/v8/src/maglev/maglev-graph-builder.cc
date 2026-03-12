@@ -4568,7 +4568,7 @@ ValueNode* MaglevGraphBuilder::BuildNumberOrOddballToFloat64(
 
 ReduceResult MaglevGraphBuilder::BuildCheckSmi(ValueNode* object,
                                                bool elidable) {
-  if (CheckStaticType(object, NodeType::kSmi)) return object;
+  if (CheckStaticType(object, NodeType::kSmi) && elidable) return object;
   if (CheckType(object, NodeType::kAnyHeapObject)) {
     return EmitUnconditionalDeopt(DeoptimizeReason::kNotASmi);
   }
