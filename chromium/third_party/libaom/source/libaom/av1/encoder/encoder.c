@@ -3146,20 +3146,24 @@ static int encode_without_recode(AV1_COMP *cpi) {
 
   // This is for rtc temporal filtering case.
   if (is_psnr_calc_enabled(cpi) && cpi->sf.rt_sf.use_rtc_tf) {
-    const SequenceHeader *seq_params = cm->seq_params;
-
     if (cpi->orig_source.buffer_alloc_sz == 0 ||
-        cpi->rc.prev_coded_width != cpi->oxcf.frm_dim_cfg.width ||
-        cpi->rc.prev_coded_height != cpi->oxcf.frm_dim_cfg.height) {
-      // Allocate a source buffer to store the true source for psnr calculation.
-      if (aom_alloc_frame_buffer(
-              &cpi->orig_source, cpi->oxcf.frm_dim_cfg.width,
-              cpi->oxcf.frm_dim_cfg.height, seq_params->subsampling_x,
-              seq_params->subsampling_y, seq_params->use_highbitdepth,
-              cpi->oxcf.border_in_pixels, cm->features.byte_alignment, false,
-              0))
+        cpi->orig_source.y_crop_width != cpi->source->y_crop_width ||
+        cpi->orig_source.y_crop_height != cpi->source->y_crop_height ||
+        cpi->orig_source.subsampling_x != cpi->source->subsampling_x ||
+        cpi->orig_source.subsampling_y != cpi->source->subsampling_y ||
+        cpi->orig_source.flags != cpi->source->flags) {
+      // Allocate a source buffer to store the original source for psnr
+      // calculation.
+      const int use_highbitdepth =
+          (cpi->source->flags & YV12_FLAG_HIGHBITDEPTH) != 0;
+      if (aom_alloc_frame_buffer(&cpi->orig_source, cpi->source->y_crop_width,
+                                 cpi->source->y_crop_height,
+                                 cpi->source->subsampling_x,
+                                 cpi->source->subsampling_y, use_highbitdepth,
+                                 cpi->oxcf.border_in_pixels,
+                                 cm->features.byte_alignment, false, 0))
         aom_internal_error(cm->error, AOM_CODEC_MEM_ERROR,
-                           "Failed to allocate scaled buffer");
+                           "Failed to allocate cpi->orig_source buffer");
     }
 
     aom_yv12_copy_y(cpi->source, &cpi->orig_source, 1);
