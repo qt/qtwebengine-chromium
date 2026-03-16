@@ -3228,7 +3228,7 @@ void BytecodeGenerator::VisitDebuggerStatement(DebuggerStatement* stmt) {
 void BytecodeGenerator::VisitFunctionLiteral(FunctionLiteral* expr) {
   CHECK_LT(info_->literal()->function_literal_id(),
            expr->function_literal_id());
-  DCHECK_EQ(expr->scope()->outer_scope(), current_scope());
+  CHECK_EQ(expr->scope()->outer_scope(), current_scope());
   uint8_t flags = CreateClosureFlags::Encode(
       expr->pretenure(), closure_scope()->is_function_scope(),
       info()->flags().might_always_turbofan());
@@ -8143,7 +8143,7 @@ void BytecodeGenerator::VisitNaryNullishExpression(NaryOperation* expr) {
 void BytecodeGenerator::BuildNewLocalActivationContext() {
   ValueResultScope value_execution_result(this);
   Scope* scope = closure_scope();
-  DCHECK_EQ(current_scope(), closure_scope());
+  CHECK_EQ(current_scope(), closure_scope());
 
   // Create the appropriate context.
   DCHECK(scope->is_function_scope() || scope->is_eval_scope());
