@@ -41,7 +41,7 @@ class StackStringViewAllocator {
 }  // namespace
 
 StringView::StringView(const UChar* chars)
-    // SAFETY: It's safe if `chars` points to a NUL-terminated string.
+    // SAFETY: length of `chars` determined by walking NUL-terminated string.
     : StringView(UNSAFE_BUFFERS(
           base::span(chars, chars ? LengthOfNullTerminatedString(chars) : 0))) {
 }
@@ -293,7 +293,6 @@ StringView StringView::LowerASCIIMaybeUsingBuffer(
 }
 
 UChar32 StringView::CodepointAt(unsigned i) const {
-  SECURITY_DCHECK(i < length());
   if (Is8Bit())
     return (*this)[i];
   return CodePointAt(Span16(), i);

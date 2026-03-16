@@ -362,7 +362,8 @@ class WTF_EXPORT StringImpl {
                                       wtf_size_t len = UINT_MAX) const;
 
   UChar operator[](wtf_size_t i) const {
-    SECURITY_DCHECK(i < length_);
+    CHECK(i < length_);
+    // SAFETY: Checked that i < length above.
     if (Is8Bit())
       return Characters8()[i];
     return Characters16()[i];
