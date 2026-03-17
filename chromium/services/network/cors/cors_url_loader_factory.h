@@ -143,6 +143,8 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
   // Cancels all requests matching `nonce` associated with this factory, unless
   // exempted by a url in `exemptions`. Used to cancel in-progress requests
   // when network revocation is triggered.
+  //
+  // Note that this may delete `this`.
   void CancelRequestsIfNonceMatchesAndUrlNotExempted(
       const base::UnguessableToken& nonce,
       const std::set<GURL>& exemptions);
@@ -239,6 +241,22 @@ class COMPONENT_EXPORT(NETWORK_SERVICE) CorsURLLoaderFactory final
   static bool allow_external_preflights_for_testing_;
 
   base::MetricsSubSampler metrics_subsampler_;
+
+  // Prevents DeleteIfNeeded() from deleting `this`. Useful for aggregate
+  // operations that walk through all URLLoaders and may delete more than one of
+  // them.
+  //
+  // To use:
+  // * Set to true.
+  // * Walk through loaders, deleting as needed.
+  // * Set to false.
+  // * Call DeleteIfNeeded(), which may delete `this` if all loaders were
+  // deleted.
+  //
+  // If more consumers use this pattern, we could make a helper class that works
+  // like base::AutoReset which sets it to true on construction, and then sets
+  // it to false and calls DeleteIfNeeded() in its destructor.
+  bool prevent_self_deletion_ = false;
 };
 
 }  // namespace cors
