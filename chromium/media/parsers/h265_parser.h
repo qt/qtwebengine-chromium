@@ -387,6 +387,7 @@ struct MEDIA_EXPORT H265SliceHeader {
   int slice_pic_parameter_set_id;
   bool dependent_slice_segment_flag;
   int slice_segment_address;
+  int nuh_layer_id = 0;
   // Do not move any of the above fields below or vice-versa, everything after
   // this is copied as a block.
   int slice_type;
