@@ -1491,7 +1491,8 @@ void LiftoffAssembler::MoveStackValue(uint32_t dst_offset, uint32_t src_offset,
   Str(scratch, liftoff::GetStackSlot(dst_offset));
 }
 
-void LiftoffAssembler::Move(Register dst, Register src, ValueKind kind) {
+template <>
+inline void LiftoffAssembler::Move(Register dst, Register src, ValueKind kind) {
   if (kind == kI32) {
     Mov(dst.W(), src.W());
   } else {
@@ -1500,8 +1501,9 @@ void LiftoffAssembler::Move(Register dst, Register src, ValueKind kind) {
   }
 }
 
-void LiftoffAssembler::Move(DoubleRegister dst, DoubleRegister src,
-                            ValueKind kind) {
+template <>
+inline void LiftoffAssembler::Move(DoubleRegister dst, DoubleRegister src,
+                                   ValueKind kind) {
   if (kind == kF32) {
     Fmov(dst.S(), src.S());
   } else if (kind == kF64) {

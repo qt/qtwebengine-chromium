@@ -1161,6 +1161,10 @@ FrameDescription* Deoptimizer::DoComputeWasmLiftoffFrame(
             default:
               UNIMPLEMENTED();
           }
+        } else if (liftoff_iter->is_simd128_reg()) {
+          DCHECK_EQ(TranslatedValue::Kind::kSimd128, value.kind());
+          output_frame->SetSimd128Register(liftoff_iter->reg().simd128().code(),
+                                           value.simd_value());
         } else if (!Is64() && liftoff_iter->is_gp_reg_pair()) {
           intptr_t reg_value = kZapValue;
           switch (value.kind()) {

@@ -166,9 +166,11 @@ class ParallelMove {
       // - others must match exactly.
       DCHECK_EQ(is_object_reference(register_move(dst)->kind),
                 is_object_reference(kind));
-      DCHECK_EQ(dst.is_fp(), register_move(dst)->kind == kF32 ||
-                                 register_move(dst)->kind == kF64 ||
-                                 register_move(dst)->kind == kS128);
+      DCHECK(!dst.is_simd128() || register_move(dst)->kind == kS128);
+      DCHECK_EQ(dst.is_fp(),
+                register_move(dst)->kind == kF32 ||
+                    register_move(dst)->kind == kF64 ||
+                    (!dst.is_simd128() && register_move(dst)->kind == kS128));
       if (!is_object_reference(kind) && !dst.is_fp()) {
         DCHECK_EQ(register_move(dst)->kind, kind);
       }
