@@ -6,7 +6,7 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2021-2024 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2021-2025 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2024      Dag-Erling Smørgrav <des@des.dev>
 # Licensed under the MIT license:
 #
@@ -41,8 +41,11 @@ for xml_context_bytes in 0 1024; do
             --error-exitcode=1
             --force
             --check-level=exhaustive
-            --suppress=objectIndex
-            --suppress=unknownMacro
+            --inline-suppr
+            '-D__has_attribute(x)=1'
+            '-D__has_feature(x)=1'
+            '-DEXPAT_FMT_SIZE_T(x)=%llu'
+            '-DEXPAT_FMT_ULL(x)=%llu'
             -DXML_CONTEXT_BYTES=${xml_context_bytes}
             -DXML_GE=${xml_ge}
         )

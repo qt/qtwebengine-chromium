@@ -6,9 +6,10 @@
 #                      \___/_/\_\ .__/ \__,_|\__|
 #                               |_| XML parser
 #
-# Copyright (c) 2017-2024 Sebastian Pipping <sebastian@pipping.org>
+# Copyright (c) 2017-2025 Sebastian Pipping <sebastian@pipping.org>
 # Copyright (c) 2018      Marco Maggi <marco.maggi-ipsu@poste.it>
 # Copyright (c) 2019      Mohammed Khajapasha <mohammed.khajapasha@intel.com>
+# Copyright (c) 2026      Rosen Penev <rosenp@gmail.com>
 # Licensed under the MIT license:
 #
 # Permission is  hereby granted,  free of charge,  to any  person obtaining
@@ -39,11 +40,6 @@ _get_source_dir() {
 
 
 _get_build_dir() {
-    local libbsd_part=
-    if ${with_libbsd}; then
-        libbsd_part=__libbsd
-    fi
-
     local mingw_part=
     if ${with_mingw}; then
         mingw_part=__windows
@@ -78,7 +74,7 @@ _get_build_dir() {
         dtd_part=__dtd
     fi
 
-    echo "build__${version}__xml_context_${xml_context}${libbsd_part}${mingw_part}${char_part}${ge_part}${dtd_part}${xml_attr_part}${m32_part}"
+    echo "build__${version}__xml_context_${xml_context}${mingw_part}${char_part}${ge_part}${dtd_part}${xml_attr_part}${m32_part}"
 }
 
 
@@ -102,7 +98,6 @@ _call_cmake() {
         cmake_args+=( -DEXPAT_CONTEXT_BYTES=${xml_context} )
     fi
 
-    ${with_libbsd} && cmake_args+=( -DEXPAT_WITH_LIBBSD=ON )
     ${with_mingw} && cmake_args+=( -DCMAKE_TOOLCHAIN_FILE="${abs_source_dir}"/cmake/mingw-toolchain.cmake )
     ${with_m32} && cmake_args+=( -D_EXPAT_M32=ON )
     ${with_ge} || cmake_args+=( -DEXPAT_GE=OFF )
@@ -195,10 +190,17 @@ _run() {
             done
         fi
 
+        # NOTE: This is meant to mitigate Wine crashing randomly in CI
+        if ${with_mingw} && [[ ${CI} = true ]]; then
+            local retry='retry --times 5 --'
+        else
+            local retry=
+        fi
+
         set -x
         make CTEST_OUTPUT_ON_FAILURE=1 test
         if ${with_dtd}; then
-            make run-xmltest
+            ${retry} make run-xmltest
         fi
 
         lcov -c -d "${capture_dir}" -o "${coverage_info}-test" &>> run.log
@@ -304,7 +306,6 @@ _main() {
 
     # All combinations:
     with_unsigned_char=false
-    with_libbsd=false
     with_m32=false
     with_dtd=true
     with_ge=true
@@ -323,7 +324,6 @@ _main() {
     done
 
     # Single cases:
-    with_libbsd=true _build_case
     with_unsigned_char=true _build_case
     with_m32=true _build_case
     with_dtd=false with_ge=true _build_case
