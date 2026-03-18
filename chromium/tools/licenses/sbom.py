@@ -45,6 +45,10 @@ OVERRIDE_LICENSE_FILE_METADATA_KEY = "Override License File"
 PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID = [
     'libdrm',
     'mini_chromium',
+    'temporal_rs',
+    'temporal_capi',
+    'timezone_provider',
+    'unicode-ident',
 ]
 
 # Command to find the first "Baseline" git commit in src/3rdparty
@@ -161,7 +165,14 @@ def GetDirectoryRevisionInfo(d):
 
 def CleanupLicenseMetadata(dep_metadata):
   num_licenses = len(dep_metadata['License File'])
-  if num_licenses == 2 and dep_metadata['License'].endswith(", Patent"):
+  if dep_metadata['Name'] in PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID:
+    logger.info("Using known license ID and ignoring license file(s) for package %s" % (dep_metadata['Name']))
+
+    dep_metadata['License File'] = dep_metadata['License']
+    dep_metadata[OVERRIDE_LICENSE_FILE_METADATA_KEY] = True
+  elif num_licenses == 1:
+    dep_metadata['License File'] = dep_metadata['License File'][0]
+  elif num_licenses == 2 and dep_metadata['License'].endswith(", Patent"):
     # Handle cases like libaom, libwebp: We don't want to include the patent file
     former_license = dep_metadata['License']
     updated_license = dep_metadata['License'][:-len(", Patent")]
@@ -169,16 +180,9 @@ def CleanupLicenseMetadata(dep_metadata):
     dep_metadata['License'] = updated_license
 
     dep_metadata['License File'] = dep_metadata['License File'][0]
-  elif num_licenses == 0 and dep_metadata['Name'] in PACKAGES_TO_OVERRIDE_LICENSE_FILE_WITH_ID:
-    logger.info("Allowing known license ID without file for package %s" % (dep_metadata['Name']))
-
-    dep_metadata['License File'] = dep_metadata['License']
-    dep_metadata[OVERRIDE_LICENSE_FILE_METADATA_KEY] = True
-  elif num_licenses != 1:
+  else:
     dep_metadata['License File'] = None
     raise license_tools.LicenseError("Dependency has %d licenses, expected exactly 1" % num_licenses)
-  else:
-    dep_metadata['License File'] = dep_metadata['License File'][0]
 
 def IsChromiumSubmoduleGitHistoryAvailable():
   baseline_cmd_result = subprocess.run(
