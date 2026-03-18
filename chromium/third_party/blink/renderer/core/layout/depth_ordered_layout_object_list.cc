@@ -94,6 +94,10 @@ unsigned LayoutObjectWithDepth::DetermineDepth(LayoutObject* object) {
   return depth;
 }
 
+bool DepthOrderedLayoutObjectList::Contains(LayoutObject& object) const {
+  return Unordered().Contains(&object);
+}
+
 const HeapHashSet<Member<LayoutObject>>&
 DepthOrderedLayoutObjectList::Unordered() const {
   return data_->objects();
