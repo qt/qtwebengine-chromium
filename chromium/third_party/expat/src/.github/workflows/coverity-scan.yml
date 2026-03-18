@@ -48,7 +48,7 @@ jobs:
     if: ${{ github.repository == 'libexpat/libexpat' }}
     runs-on: ubuntu-24.04
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       with:
         # The next two lines ensure clean and public-only submissions
         repository: libexpat/libexpat
@@ -63,18 +63,18 @@ jobs:
         tee    "${GITHUB_OUTPUT}" <<< "version=$(git describe --tags | sed -e 's,^R_,,' -e 's,_,.,g')"
         tee -a "${GITHUB_OUTPUT}" <<< "git_commit=$(git rev-parse HEAD)"
 
-    - name: Install Clang 19
+    - name: Install Clang 21
       run: |-
         set -x
         source /etc/os-release
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-19 main"
+        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-21 main"
         sudo apt-get update  # due to new repository
         sudo apt-get install --yes --no-install-recommends -V \
-            clang-19 \
-            libclang-rt-19-dev \
-            llvm-19
-        echo /usr/lib/llvm-19/bin >>"${GITHUB_PATH}"
+            clang-21 \
+            libclang-rt-21-dev \
+            llvm-21
+        echo /usr/lib/llvm-21/bin >>"${GITHUB_PATH}"
 
     - name: Install build dependencies
       run: |-
@@ -118,7 +118,7 @@ jobs:
         description: "coverity-scan-action libexpat/libexpat / ${{ steps.determine_version.outputs.git_commit }}"
 
     - name: Offer analysis tarball for inspection
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
       with:
         name: expat_coverity_scan_upload_${{ github.sha }}
         path: expat/cov-int.tgz

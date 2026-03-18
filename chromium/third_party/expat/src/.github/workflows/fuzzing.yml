@@ -52,20 +52,20 @@ jobs:
     env:
       fuzzer: ${{ matrix.fuzzer }}
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
-    - name: Install Clang 19
+    - name: Install Clang 21
       run: |-
         set -x
         source /etc/os-release
         wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-19 main"
+        sudo add-apt-repository "deb https://apt.llvm.org/${UBUNTU_CODENAME}/ llvm-toolchain-${UBUNTU_CODENAME}-21 main"
         sudo apt-get update  # due to new repository
         sudo apt-get install --yes --no-install-recommends -V \
-            clang-19 \
-            libclang-rt-19-dev \
-            llvm-19
-        echo /usr/lib/llvm-19/bin >>"${GITHUB_PATH}"
+            clang-21 \
+            libclang-rt-21-dev \
+            llvm-21
+        echo /usr/lib/llvm-21/bin >>"${GITHUB_PATH}"
 
     - name: Install build dependencies
       run: |-
@@ -140,13 +140,20 @@ jobs:
         set -x -o pipefail
         cd expat/build/
 
+        # Configure UBSan to show (non-default) stack traces for runtime errors
+        # NOTE: "halt_on_error=1" we don't need to add because of the
+        #       -fno-sanitize-recover=all for CFLAGS further up.
+        # NOTE: "abort_on_error=1" we don't need here because to CI,
+        #       a non-zero exit code is all that matters.
+        export UBSAN_OPTIONS='print_stacktrace=1'
+
         mkdir coverage/
         export LLVM_PROFILE_FILE=coverage/expat-%p.profraw
 
         find corpus/ -type f | sort | xargs "fuzz/${fuzzer}" "${fuzz_args[@]}"
 
     - name: Store fuzzing logs of last batch
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
       with:
         name: ${{ matrix.fuzzer }}_${{ github.sha }}_logs_last
         path: expat/build/fuzz-*.log
@@ -166,7 +173,7 @@ jobs:
         llvm-cov report fuzz/${fuzzer} -instr-profile=coverage/expat.profdata                 -sources ../lib/ | tee coverage/report_files.txt
 
     - name: Store coverage report
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
       with:
         name: ${{ matrix.fuzzer }}_${{ github.sha }}_coverage
         path: expat/build/coverage/

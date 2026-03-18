@@ -46,16 +46,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runs-on: windows-2019
+          - runs-on: windows-2022
             cmake_build_type: Debug
-            cmake_generator: Visual Studio 16 2019
+            cmake_generator: Visual Studio 17 2022
             cmake_platform: Win32
             expat_char_type: char
             expat_dll: libexpatd.dll
             expat_platform: win32
-          - runs-on: windows-2019
+          - runs-on: windows-2022
             cmake_build_type: Debug
-            cmake_generator: Visual Studio 16 2019
+            cmake_generator: Visual Studio 17 2022
             cmake_platform: x64
             expat_char_type: wchar_t
             expat_dll: libexpatwd.dll
@@ -65,7 +65,7 @@ jobs:
         shell: bash
     runs-on: "${{ matrix.runs-on }}"
     steps:
-    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2
+    - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
 
     - uses: microsoft/setup-msbuild@6fb02220983dee41ce7ae257b6f4d8f9bf5ed4ce  # v2
 
@@ -114,7 +114,7 @@ jobs:
         ! grep 'win32\\bin' win64/expat.iss  # i.e. assert success
         grep win32 win64/expat.iss  # purely informational
     
-    - name: Build installer
+    - name: Build installer (and the Expat binaries that go into it)
       env:
         expat_platform: ${{ matrix.expat_platform }}
       run: |-
@@ -130,7 +130,7 @@ jobs:
       env:
         expat_platform: ${{ matrix.expat_platform }}
       run: |-
-        export PATH="${PATH}:/c/msys64/usr/bin"  # for zip
+        export PATH="${PATH}:/c/Program Files/7-Zip"
         set -x
 
         cd "expat/${expat_platform}"
@@ -148,10 +148,10 @@ jobs:
 
         ls -lh app/Bin/
 
-        ( cd app && zip -9 -r ../"${zip_name}" . )
+        ( cd app && 7z a -tzip -mx=9 ../"${zip_name}" . )
 
     - name: Offer binaries for download
-      uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+      uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f  # v7.0.0
       with:
         name: expat_${{ matrix.expat_platform }}_${{ github.sha }}
         path: expat/${{ matrix.expat_platform }}/expat-win*bin-*.*.*.*
