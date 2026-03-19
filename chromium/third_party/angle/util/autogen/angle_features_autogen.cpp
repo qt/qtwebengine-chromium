@@ -264,6 +264,7 @@ constexpr PackedEnumMap<Feature, const char *> kFeatureNames = {{
     {Feature::QueryCounterBitsGeneratesErrors, "queryCounterBitsGeneratesErrors"},
     {Feature::ReadPixelsUsingImplementationColorReadFormatForNorm16, "readPixelsUsingImplementationColorReadFormatForNorm16"},
     {Feature::ReapplyUBOBindingsAfterUsingBinaryProgram, "reapplyUBOBindingsAfterUsingBinaryProgram"},
+    {Feature::RecreateMipmapLevelsBeforeGenerate, "recreateMipmapLevelsBeforeGenerate"},
     {Feature::RegenerateStructNames, "regenerateStructNames"},
     {Feature::RejectWebglShadersWithUndefinedBehavior, "rejectWebglShadersWithUndefinedBehavior"},
     {Feature::RemoveDynamicIndexingOfSwizzledVector, "removeDynamicIndexingOfSwizzledVector"},
