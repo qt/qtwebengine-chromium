@@ -207,6 +207,11 @@ GLint FramebufferAttachment::layer() const
     return (index.has3DLayer() ? index.getLayerIndex() : 0);
 }
 
+bool FramebufferAttachment::hasLayer() const
+{
+    return mTarget.textureIndex().hasLayer();
+}
+
 bool FramebufferAttachment::isLayered() const
 {
     return mTarget.textureIndex().isLayered();
