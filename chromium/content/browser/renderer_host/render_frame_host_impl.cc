@@ -11202,6 +11202,10 @@ void RenderFrameHostImpl::BeginNavigation(
     return;
   }
 
+  if (!VerifyNavigationHeaders(GetProcess(), begin_params->headers)) {
+    return;
+  }
+
   // BeginNavigation() should only be triggered when the navigation is
   // initiated by a document in the same process.
   int initiator_process_id = GetProcess()->GetDeprecatedID();

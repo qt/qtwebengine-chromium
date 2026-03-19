@@ -57,6 +57,7 @@ const char HttpRequestHeaders::kConnection[] = "Connection";
 const char HttpRequestHeaders::kContentLength[] = "Content-Length";
 const char HttpRequestHeaders::kContentType[] = "Content-Type";
 const char HttpRequestHeaders::kCookie[] = "Cookie";
+const char HttpRequestHeaders::kDNT[] = "DNT";
 const char HttpRequestHeaders::kHost[] = "Host";
 const char HttpRequestHeaders::kIfMatch[] = "If-Match";
 const char HttpRequestHeaders::kIfModifiedSince[] = "If-Modified-Since";
@@ -70,7 +71,9 @@ const char HttpRequestHeaders::kProxyAuthorization[] = "Proxy-Authorization";
 const char HttpRequestHeaders::kProxyConnection[] = "Proxy-Connection";
 const char HttpRequestHeaders::kRange[] = "Range";
 const char HttpRequestHeaders::kReferer[] = "Referer";
+const char HttpRequestHeaders::kSecPurpose[] = "Sec-Purpose";
 const char HttpRequestHeaders::kTransferEncoding[] = "Transfer-Encoding";
+const char HttpRequestHeaders::kUpgradeInsecureRequests[] = "Upgrade-Insecure-Requests";
 const char HttpRequestHeaders::kUserAgent[] = "User-Agent";
 
 HttpRequestHeaders::HeaderKeyValuePair::HeaderKeyValuePair() = default;
