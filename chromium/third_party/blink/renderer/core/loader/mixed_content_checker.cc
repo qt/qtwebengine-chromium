@@ -490,8 +490,6 @@ bool MixedContentChecker::ShouldBlockFetch(
   auto& local_frame_host = frame->GetLocalFrameHostRemote();
   WebContentSettingsClient* content_settings_client =
       frame->GetContentSettingsClient();
-  const SecurityOrigin* security_origin =
-      mixed_frame->GetSecurityContext()->GetSecurityOrigin();
   bool allowed = false;
 
   // If we're in strict mode, we'll automagically fail everything, and
@@ -566,8 +564,13 @@ bool MixedContentChecker::ShouldBlockFetch(
         // Only notify embedder about loads that would create CSP reports (i.e.
         // filter out preloads).
         if (reporting_disposition == ReportingDisposition::kReport) {
-          notifier.NotifyInsecureContentRan(KURL(security_origin->ToString()),
-                                            url);
+          auto origin_type = (mixed_frame == &frame->Tree().Top())
+                                 ? mojom::blink::ContentSecurityNotifier::
+                                       InsecureContentOrigin::kTopFrame
+                                 : mojom::blink::ContentSecurityNotifier::
+                                       InsecureContentOrigin::kCurrentFrame;
+
+          notifier.NotifyInsecureContentRan(url, origin_type);
         }
         UseCounter::Count(frame->GetDocument(),
                           WebFeature::kMixedContentBlockableAllowed);
@@ -685,10 +688,9 @@ bool MixedContentChecker::ShouldBlockFetchOnWorker(
                   settings->GetAllowRunningOfInsecureContent(), url);
     if (allowed) {
       worker_fetch_context.GetContentSecurityNotifier()
-          .NotifyInsecureContentRan(
-              KURL(
-                  fetch_client_settings_object.GetSecurityOrigin()->ToString()),
-              url);
+          .NotifyInsecureContentRan(url,
+                                    mojom::blink::ContentSecurityNotifier::
+                                        InsecureContentOrigin::kCurrentFrame);
       worker_fetch_context.CountUsage(
           WebFeature::kMixedContentBlockableAllowed);
     }
@@ -739,7 +741,6 @@ bool MixedContentChecker::IsWebSocketAllowed(
   WebContentSettingsClient* content_settings_client =
       frame->GetContentSettingsClient();
   const SecurityContext* security_context = mixed_frame->GetSecurityContext();
-  const SecurityOrigin* security_origin = security_context->GetSecurityOrigin();
 
   if (ContentSecurityPolicy* policy =
           frame->DomWindow()->GetContentSecurityPolicy()) {
@@ -755,7 +756,11 @@ bool MixedContentChecker::IsWebSocketAllowed(
 
   if (allowed) {
     frame_fetch_context.GetContentSecurityNotifier().NotifyInsecureContentRan(
-        KURL(security_origin->ToString()), url);
+        url, (mixed_frame == &frame->Tree().Top())
+                 ? mojom::blink::ContentSecurityNotifier::
+                       InsecureContentOrigin::kTopFrame
+                 : mojom::blink::ContentSecurityNotifier::
+                       InsecureContentOrigin::kCurrentFrame);
   }
 
   frame->GetDocument()->AddConsoleMessage(CreateConsoleMessageAboutWebSocket(
@@ -782,8 +787,6 @@ bool MixedContentChecker::IsWebSocketAllowed(
   }
 
   WorkerSettings* settings = worker_fetch_context.GetWorkerSettings();
-  const SecurityOrigin* security_origin =
-      fetch_client_settings_object.GetSecurityOrigin();
 
   bool allowed =
       IsWebSocketAllowedInWorker(worker_fetch_context, settings, url);
@@ -791,7 +794,8 @@ bool MixedContentChecker::IsWebSocketAllowed(
 
   if (allowed) {
     worker_fetch_context.GetContentSecurityNotifier().NotifyInsecureContentRan(
-        KURL(security_origin->ToString()), url);
+        url, mojom::blink::ContentSecurityNotifier::InsecureContentOrigin::
+                 kCurrentFrame);
   }
 
   worker_fetch_context.GetDetachableConsoleLogger().AddConsoleMessage(
