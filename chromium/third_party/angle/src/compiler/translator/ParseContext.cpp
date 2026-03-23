@@ -6695,6 +6695,21 @@ TIntermSwitch *TParseContext::addSwitch(TIntermTyped *init,
         return nullptr;
     }
 
+    const size_t statementCount = statementList->getChildCount();
+
+    // In case the last statement isn't already a branch, add |break| automatically.  Some AST
+    // transformations may dead-code-eliminate the contents of the last |case| and leave the switch
+    // statements ending in a case (which is what the check above forbids).  Most generators do not
+    // handle this unexpected situation.
+    //
+    // Note that a branch may be present inside a nested block, but that's ok, the extra branch
+    // added here gets eliminated in |PruneNoOps|.
+    if (statementCount > 0 &&
+        statementList->getChildNode(statementCount - 1)->getAsBranchNode() == nullptr)
+    {
+        statementList->appendStatement(new TIntermBranch(EOpBreak, nullptr));
+    }
+
     ASSERT(statementList);
     if (!ValidateSwitchStatementList(switchType, mDiagnostics, statementList, loc))
     {
