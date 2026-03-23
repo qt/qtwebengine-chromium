@@ -444,7 +444,7 @@ void V8DebuggerAgentImpl::enableImpl() {
   std::vector<std::unique_ptr<V8DebuggerScript>> compiledScripts =
       m_debugger->getCompiledScripts(m_session->contextGroupId(), this);
   for (auto& script : compiledScripts) {
-    didParseSource(std::move(script), true);
+    didParseSource(std::move(script));
   }
 
   m_breakpointsActive = m_state->booleanProperty(
@@ -1071,6 +1071,7 @@ V8DebuggerAgentImpl::setBreakpointImpl(const String16& breakpointId,
   ScriptsMap::iterator scriptIterator = m_scripts.find(scriptId);
   if (scriptIterator == m_scripts.end()) return nullptr;
   V8DebuggerScript* script = scriptIterator->second.get();
+  if (script->hadCompileError()) return nullptr;
 
   v8::debug::BreakpointId debuggerBreakpointId;
   v8::debug::Location location(lineNumber, columnNumber);
@@ -1081,6 +1082,7 @@ V8DebuggerAgentImpl::setBreakpointImpl(const String16& breakpointId,
 
   {
     v8::Context::Scope contextScope(inspected->context());
+    v8::TryCatch tryCatch(m_isolate);
     if (!script->setBreakpoint(condition, &location, &debuggerBreakpointId)) {
       return nullptr;
     }
@@ -1946,9 +1948,9 @@ class DeferredMakeWeakScope {
 }  // namespace
 
 void V8DebuggerAgentImpl::didParseSource(
-    std::unique_ptr<V8DebuggerScript> script, bool success) {
+    std::unique_ptr<V8DebuggerScript> script) {
   v8::HandleScope handles(m_isolate);
-  if (!success) {
+  if (script->hadCompileError()) {
     String16 scriptSource = script->source(0);
     script->setSourceURL(findSourceURL(scriptSource, false));
     script->setSourceMappingURL(findSourceMapURL(scriptSource, false));
@@ -2014,7 +2016,7 @@ void V8DebuggerAgentImpl::didParseSource(
           ? stack->buildInspectorObjectImpl(m_debugger, 0)
           : nullptr;
 
-  if (!success) {
+  if (scriptRef->hadCompileError()) {
     m_frontend.scriptFailedToParse(
         scriptId, scriptURL, scriptRef->startLine(), scriptRef->startColumn(),
         scriptRef->endLine(), scriptRef->endColumn(), contextId,

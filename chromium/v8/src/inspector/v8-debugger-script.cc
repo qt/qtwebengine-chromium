@@ -43,16 +43,18 @@ class ActualScript : public V8DebuggerScript {
 
  public:
   ActualScript(v8::Isolate* isolate, v8::Local<v8::debug::Script> script,
-               bool isLiveEdit, V8DebuggerAgentImpl* agent,
-               V8InspectorClient* client)
+               bool hadCompileError, bool isLiveEdit,
+               V8DebuggerAgentImpl* agent, V8InspectorClient* client)
       : V8DebuggerScript(isolate, String16::fromInteger(script->Id()),
                          GetScriptURL(isolate, script, client),
                          GetScriptName(isolate, script, client)),
         m_agent(agent),
+        m_hadCompileError(hadCompileError),
         m_isLiveEdit(isLiveEdit) {
     Initialize(script);
   }
 
+  bool hadCompileError() const override { return m_hadCompileError; }
   bool isLiveEdit() const override { return m_isLiveEdit; }
   bool isModule() const override { return m_isModule; }
 
@@ -317,6 +319,7 @@ class ActualScript : public V8DebuggerScript {
   V8DebuggerAgentImpl* m_agent;
   String16 m_sourceMappingURL;
   Language m_language;
+  bool m_hadCompileError = false;
   bool m_isLiveEdit = false;
   bool m_isModule = false;
   mutable String16 m_hash;
@@ -332,9 +335,10 @@ class ActualScript : public V8DebuggerScript {
 
 std::unique_ptr<V8DebuggerScript> V8DebuggerScript::Create(
     v8::Isolate* isolate, v8::Local<v8::debug::Script> scriptObj,
-    bool isLiveEdit, V8DebuggerAgentImpl* agent, V8InspectorClient* client) {
-  return std::make_unique<ActualScript>(isolate, scriptObj, isLiveEdit, agent,
-                                        client);
+    bool hadCompileError, bool isLiveEdit, V8DebuggerAgentImpl* agent,
+    V8InspectorClient* client) {
+  return std::make_unique<ActualScript>(isolate, scriptObj, hadCompileError,
+                                        isLiveEdit, agent, client);
 }
 
 V8DebuggerScript::V8DebuggerScript(v8::Isolate* isolate, String16 id,

@@ -175,8 +175,8 @@ std::vector<std::unique_ptr<V8DebuggerScript>> V8Debugger::getCompiledScripts(
       if (!script->ContextId().To(&contextId)) continue;
       if (m_inspector->contextGroupId(contextId) != contextGroupId) continue;
     }
-    result.push_back(V8DebuggerScript::Create(m_isolate, script, false, agent,
-                                              m_inspector->client()));
+    result.push_back(V8DebuggerScript::Create(m_isolate, script, false, false,
+                                              agent, m_inspector->client()));
   }
   return result;
 }
@@ -612,9 +612,8 @@ void V8Debugger::ScriptCompiled(v8::Local<v8::debug::Script> script,
         auto agent = session->debuggerAgent();
         if (!agent->enabled()) return;
         agent->didParseSource(
-            V8DebuggerScript::Create(isolate, script, is_live_edited, agent,
-                                     client),
-            !has_compile_error);
+            V8DebuggerScript::Create(isolate, script, has_compile_error,
+                                     is_live_edited, agent, client));
       });
 }
 

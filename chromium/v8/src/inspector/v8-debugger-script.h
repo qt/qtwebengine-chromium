@@ -53,7 +53,8 @@ class V8DebuggerScript {
   enum class Language { JavaScript, WebAssembly };
   static std::unique_ptr<V8DebuggerScript> Create(
       v8::Isolate* isolate, v8::Local<v8::debug::Script> script,
-      bool isLiveEdit, V8DebuggerAgentImpl* agent, V8InspectorClient* client);
+      bool hadCompileError, bool isLiveEdit, V8DebuggerAgentImpl* agent,
+      V8InspectorClient* client);
 
   virtual ~V8DebuggerScript();
   V8DebuggerScript(const V8DebuggerScript&) = delete;
@@ -76,6 +77,7 @@ class V8DebuggerScript {
   virtual int endColumn() const = 0;
   virtual int codeOffset() const = 0;
   int executionContextId() const { return m_executionContextId; }
+  virtual bool hadCompileError() const = 0;
   virtual bool isLiveEdit() const = 0;
   virtual bool isModule() const = 0;
   virtual int length() const = 0;
