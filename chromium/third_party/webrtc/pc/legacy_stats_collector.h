@@ -109,6 +109,11 @@ class LegacyStatsCollector : public LegacyStatsCollectorInterface {
 
   bool UseStandardBytesStats() const { return use_standard_bytes_stats_; }
 
+  StatsReport* AddCertificateReportsForTest(
+      std::unique_ptr<SSLCertificateStats> cert_stats) {
+    return AddCertificateReports(std::move(cert_stats));
+  }
+
  private:
   friend class LegacyStatsCollectorTest;
 
