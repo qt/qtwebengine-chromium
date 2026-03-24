@@ -162,6 +162,9 @@ def main():
       env["RUST_BACKTRACE"] = os.environ.get("RUST_BACKTRACE")
     if os.environ.get("RUST_LOG"):
       env["RUST_LOG"] = os.environ.get("RUST_LOG")
+    # Pass through rustup home so a rustc from custom rustup home will work
+    if os.environ.get("RUSTUP_HOME"):
+      env["RUSTUP_HOME"] = os.environ.get("RUSTUP_HOME")
 
     # In the future we should, set all the variables listed here:
     # https://doc.rust-lang.org/cargo/reference/environment-variables.html#environment-variables-cargo-sets-for-build-scripts
