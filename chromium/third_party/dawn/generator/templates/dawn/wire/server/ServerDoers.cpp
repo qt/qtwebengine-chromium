@@ -88,9 +88,12 @@ namespace dawn::wire::server {
                     if (obj->state == AllocationState::Allocated) {
                         DAWN_ASSERT(obj->handle != nullptr);
                         {% if type.name.get() == "device" %}
-                            //* Deregisters uncaptured error and device lost callbacks since
-                            //* they should not be forwarded if the device no longer exists on the wire.
-                            ClearDeviceCallbacks(obj->handle);
+                            //* Destroy the device to ensure that the spontaneous callbacks, i.e.
+                            //* the uncaptured error and logging callbacks, are cleared, and the
+                            //* device lost callback is fired. This is important because once we
+                            //* deallocate the ObjectData, those callbacks reference freed memory.
+                            mProcs.deviceDestroy(obj->handle);
+
                         {% endif %}
                         Release(mProcs, obj->handle);
                     }
