@@ -60,7 +60,7 @@ void HandleNaNValues(base::span<float> values, float default_value) {
     // Replace NaN parts with default.
     __m128 result = _mm_and_ps(isnan, defaults);
     // Merge in the parts that aren't NaN
-    result = _mm_or_ps(_mm_andnot_ps(isnan0, v), result);
+    result = _mm_or_ps(_mm_andnot_ps(isnan, v), result);
     // SAFETY: The for loop condition has been checked k < values.size().
     _mm_storeu_ps(values.subspan(k, 4u).data(), result);
   }
