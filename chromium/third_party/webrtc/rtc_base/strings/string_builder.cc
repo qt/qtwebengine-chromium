@@ -24,7 +24,7 @@ namespace rtc {
 SimpleStringBuilder::SimpleStringBuilder(rtc::ArrayView<char> buffer)
     : buffer_(buffer) {
   buffer_[0] = '\0';
-  RTC_DCHECK(IsConsistent());
+  RTC_CHECK(IsConsistent());
 }
 
 SimpleStringBuilder& SimpleStringBuilder::operator<<(char ch) {
@@ -39,7 +39,7 @@ SimpleStringBuilder& SimpleStringBuilder::operator<<(absl::string_view str) {
   memcpy(&buffer_[size_], str.data(), chars_added);
   size_ += chars_added;
   buffer_[size_] = '\0';
-  RTC_DCHECK(IsConsistent());
+  RTC_CHECK(IsConsistent());
   return *this;
 }
 
@@ -99,7 +99,7 @@ SimpleStringBuilder& SimpleStringBuilder::AppendFormat(const char* fmt, ...) {
   if (len >= 0) {
     const size_t chars_added = rtc::SafeMin(len, buffer_.size() - 1 - size_);
     size_ += chars_added;
-    RTC_DCHECK_EQ(len, chars_added) << "Buffer size was insufficient";
+    RTC_CHECK_EQ(len, chars_added) << "Buffer size was insufficient";
   } else {
     // This should never happen, but we're paranoid, so re-write the
     // terminator in case vsnprintf() overwrote it.
@@ -107,7 +107,7 @@ SimpleStringBuilder& SimpleStringBuilder::AppendFormat(const char* fmt, ...) {
     buffer_[size_] = '\0';
   }
   va_end(args);
-  RTC_DCHECK(IsConsistent());
+  RTC_CHECK(IsConsistent());
   return *this;
 }
 
