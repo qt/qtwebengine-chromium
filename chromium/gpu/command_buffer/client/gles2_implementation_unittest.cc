@@ -465,6 +465,12 @@ class GLES2ImplementationTest : public testing::Test {
     return gl_->max_extra_transfer_buffer_size_ > 0;
   }
 
+  void SetQueryProcessCount(QueryTracker::Query* q, int32_t count) {
+    q->info_.sync->process_count = count;
+  }
+
+  MappedMemoryManager* mapped_memory() { return gl_->mapped_memory_.get(); }
+
   static SharedMemoryLimits SharedMemoryLimitsForTesting() {
     SharedMemoryLimits limits;
     limits.command_buffer_size = kCommandBufferSizeBytes;

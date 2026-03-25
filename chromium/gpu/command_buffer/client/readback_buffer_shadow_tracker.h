@@ -9,6 +9,7 @@
 #include "base/containers/flat_map.h"
 #include "base/memory/raw_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "gles2_impl_export.h"
 
 namespace gpu {
 
@@ -18,9 +19,9 @@ namespace gles2 {
 
 class GLES2CmdHelper;
 
-class ReadbackBufferShadowTracker {
+class GLES2_IMPL_EXPORT ReadbackBufferShadowTracker {
  public:
-  class Buffer final {
+  class GLES2_IMPL_EXPORT Buffer final {
    public:
     explicit Buffer(GLuint buffer_id,
                     MappedMemoryManager* mapped_memory,
