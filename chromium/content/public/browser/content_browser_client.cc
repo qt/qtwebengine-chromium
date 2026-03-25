@@ -858,6 +858,11 @@ FeatureObserverClient* ContentBrowserClient::GetFeatureObserverClient() {
   return nullptr;
 }
 
+bool ContentBrowserClient::IsPopupBypassAllowed(
+    RenderFrameHost* render_frame_host) {
+  return false;
+}
+
 bool ContentBrowserClient::CanCreateWindow(
     RenderFrameHost* opener,
     const GURL& opener_url,
