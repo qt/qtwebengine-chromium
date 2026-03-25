@@ -282,7 +282,7 @@ bool GLTextureHolder::UploadFromMemory(const SkPixmap& pixmap) {
   bool result = gles2::GLES2Util::ComputeImageDataSizes(
       size_.width(), size_.height(), /*depth=*/1, gl_format, gl_type,
       gl_unpack_alignment, &expected_total_bytes, nullptr, &expected_stride);
-  DCHECK(result);
+  CHECK(result);
   DCHECK_GE(src_total_bytes, expected_total_bytes);
   DCHECK_GE(src_stride, expected_stride);
 
@@ -391,7 +391,7 @@ bool GLTextureHolder::ReadbackToMemory(const SkPixmap& pixmap) {
   bool result = gles2::GLES2Util::ComputeImageDataSizes(
       size_.width(), size_.height(), /*depth=*/1, gl_format, gl_type,
       gl_pack_alignment, &expected_total_bytes, nullptr, &expected_stride);
-  DCHECK(result);
+  CHECK(result);
   DCHECK_GE(pixmap.computeByteSize(), expected_total_bytes);
   DCHECK_GE(dst_stride, expected_stride);
 
