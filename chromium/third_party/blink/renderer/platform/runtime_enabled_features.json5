@@ -3873,6 +3873,11 @@
       name: "ReadableStreamBYOBReaderReadMinOption",
       status: "stable",
     },
+    {
+      // Shipping in M148, so should be removed around M150.
+      name: "RecheckParentDuringNodeVectorInsertion",
+      status: "stable",
+    },
     // If enabled, both Accept-Language HTTP header and JavaScript getter will
     // be reduced.
     {
