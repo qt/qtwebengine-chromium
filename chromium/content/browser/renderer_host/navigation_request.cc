@@ -6537,6 +6537,18 @@ void NavigationRequest::CommitNavigation() {
   SendDeferredConsoleMessages();
 }
 
+void NavigationRequest::UpdateViewTransitionStateForDestinationOrigin(
+    const url::Origin& origin) {
+  if (!commit_params().view_transition_state && !view_transition_resources_) {
+    return;
+  }
+  // Disallow cross origin view transitions.
+  if (!view_transition_source_origin_.IsSameOriginWith(origin)) {
+    commit_params_->view_transition_state.reset();
+    view_transition_resources_.reset();
+  }
+}
+
 void NavigationRequest::CommitPageActivation() {
   TRACE_EVENT_WITH_FLOW0("navigation",
                          "NavigationRequest::CommitPageActivation",
@@ -6618,6 +6630,11 @@ void NavigationRequest::CommitPageActivation() {
     if (!weak_self)
       return;
 
+    // Make sure to update the view transition state before passing the state to
+    // `activated_entry`. This may need to clear the state if the origin
+    // changed.
+    UpdateViewTransitionStateForDestinationOrigin(GetOriginToCommit().value());
+
     // Use std::exchange instead of move, so that we clear out the optional on
     // the commit_params.
     activated_entry->SetViewTransitionState(
@@ -6673,6 +6690,11 @@ void NavigationRequest::CommitPageActivation() {
     // NavigationRequest to be destroyed. Return if this is the case.
     if (!weak_self)
       return;
+
+    // Make sure to update the view transition state before passing the state to
+    // `stored_page`. This may need to clear the state if the origin
+    // changed.
+    UpdateViewTransitionStateForDestinationOrigin(GetOriginToCommit().value());
 
     // Use std::exchange instead of move, so that we clear out the optional on
     // the commit_params.
@@ -10646,11 +10668,13 @@ NavigationRequest::GetJavaNavigationHandle() {
 #endif
 
 void NavigationRequest::SetViewTransitionState(
+    const url::Origin& source_origin,
     std::unique_ptr<ScopedViewTransitionResources> resources,
     blink::ViewTransitionState view_transition_state) {
   commit_params_->view_transition_state = std::move(view_transition_state);
   CHECK(resources);
   view_transition_resources_ = std::move(resources);
+  view_transition_source_origin_ = source_origin;
 }
 
 void NavigationRequest::ResetViewTransitionState() {

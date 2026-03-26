@@ -208,11 +208,11 @@ void ViewTransitionCommitDeferringCondition::OnSnapshotAckFromRenderer(
 
   base::ScopedClosureRunner runner(std::move(resume_navigation_));
 
-  if (view_transition_state.HasSubframeSnapshot()) {
-    if (!old_rfh_) {
-      return;
-    }
+  if (!old_rfh_) {
+    return;
+  }
 
+  if (view_transition_state.HasSubframeSnapshot()) {
     // The subframe snapshot is only used for in-process iframes which don't own
     // a widget.
     if (old_rfh_->is_local_root()) {
@@ -234,7 +234,8 @@ void ViewTransitionCommitDeferringCondition::OnSnapshotAckFromRenderer(
 
   if (view_transition_state.IsValid()) {
     NavigationRequest::From(&GetNavigationHandle())
-        ->SetViewTransitionState(std::move(resources_),
+        ->SetViewTransitionState(old_rfh_->GetLastCommittedOrigin(),
+                                 std::move(resources_),
                                  std::move(view_transition_state));
   }
 }
