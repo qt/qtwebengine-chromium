@@ -4596,8 +4596,24 @@ ReduceResult MaglevGraphBuilder::BuildCheckSmi(ValueNode* object,
   return object;
 }
 
+using NodeTypeInt = std::underlying_type_t<NodeType>;
 void MaglevGraphBuilder::BuildCheckHeapObject(ValueNode* object) {
   if (EnsureType(object, NodeType::kAnyHeapObject)) return;
+  NodeType initial_type = GetType(object);
+  NodeTypeInt right = static_cast<NodeTypeInt>(NodeType::kSmi);
+  const bool nodeTypeCanBe =
+      (static_cast<NodeTypeInt>(initial_type) & (right)) != 0;
+  if (object->Is<Phi>() && nodeTypeCanBe) {
+    // If {initial_type} contains kSmi, then phi untagging could widen this to a
+    // HeapNumber. Since the `EnsureType(.. kAnyHeapObject)` above just removed
+    // `kSmi` from the type, we need to make sure that still don't forget that
+    // HeapNumber is actually still a possibility.
+    // TODO(dmercadier): this is only a small band-aid: actually, any
+    // GetType(phi) could return Smi when the actual type ends up being
+    // HeapNumber.
+    NodeInfo* info = GetOrCreateInfoFor(object);
+    info->CombineType(NodeType::kHeapNumber);
+  }
   AddNewNode<CheckHeapObject>({object});
 }
 
