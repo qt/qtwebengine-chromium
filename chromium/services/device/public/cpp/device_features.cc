@@ -33,6 +33,13 @@ BASE_FEATURE(kWebUsbBlocklist,
              "WebUSBBlocklist",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// When enabled, WebUSB control transfers are blocked if they target a
+// protected interface class, even if the recipient is not set to interface
+// or endpoint. This protects devices which ignore this field.
+BASE_FEATURE(kWebUsbProtectedClassControlTransferBlock,
+             "WebUsbProtectedClassControlTransferBlock",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 #if BUILDFLAG(IS_WIN)
 // Enable integration with the Windows system-level location permission.
 BASE_FEATURE(kWinSystemLocationPermission,
