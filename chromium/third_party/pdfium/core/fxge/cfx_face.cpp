@@ -553,7 +553,8 @@ std::unique_ptr<CFX_GlyphBitmap> CFX_Face::RenderGlyph(const CFX_Font* pFont,
       }
     }
   } else {
-    std::ranges::fill(dest_span.first(dest_pitch * bitmap.rows), 0);
+    std::fill(dest_span.begin(), dest_span.begin() + dest_pitch * bitmap.rows,
+              0);
     int rowbytes = std::min(abs(bitmap.pitch), dest_pitch);
     for (unsigned int row = 0; row < bitmap.rows; row++) {
       fxcrt::spancpy(dest_span.subspan(row * dest_pitch),
