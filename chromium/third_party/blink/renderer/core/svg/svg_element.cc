@@ -1208,8 +1208,8 @@ void SVGElement::SynchronizeAttributeInShadowInstances(
     const QualifiedName& name,
     const AtomicString& value) {
   if (RuntimeEnabledFeatures::SvgUseInstancesAttributeSyncEnabled()) {
-    const HeapHashSet<WeakMember<SVGElement>>& set = InstancesForElement();
-    for (SVGElement* instance : set) {
+    HeapHashSet<WeakMember<SVGElement>> instances = InstancesForElement();
+    for (SVGElement* instance : instances) {
       instance->SetAttributeWithoutValidation(name, value);
     }
   } else {
