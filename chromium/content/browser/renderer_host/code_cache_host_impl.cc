@@ -420,7 +420,15 @@ std::optional<GURL> CodeCacheHostImpl::GetSecondaryKeyForCodeCache(
     return std::nullopt;
   }
 
-  // Case 3: process_lock_url is used to enfore site-isolation in code caches.
+  // Case 3: PDF processes and origin-restricted sandboxed iframes should not
+  // have access to the code cache of their hosting origins. PDF processes are
+  // less trusted, and sandboxed iframes should be treated as having opaque
+  // origins.
+  if (process_lock.is_pdf() || process_lock.is_sandboxed()) {
+    return std::nullopt;
+  }
+
+  // Case 4: process_lock_url is used to enfore site-isolation in code caches.
   // Http/https/chrome schemes are safe to be used as a secondary key. Other
   // schemes could be enabled if they are known to be safe and if it is
   // required to cache code from those origins.
