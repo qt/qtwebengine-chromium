@@ -68,7 +68,7 @@ static_library("utils") {
     "${dawn_root}/src/dawn:proc",
     "${dawn_root}/src/dawn/common",
     "${dawn_root}/src/dawn/native:headers",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:static",
   ]
 
   libs = []

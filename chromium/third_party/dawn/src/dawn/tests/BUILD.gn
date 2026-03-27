@@ -295,7 +295,8 @@ dawn_test("dawn_unittests") {
     "${dawn_root}/src/dawn/native:static",
     "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     "${dawn_root}/src/dawn/utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:sources",
+    "${dawn_root}/src/dawn/wire:static",
   ]
 
   # Add internal dawn native config for internal unittests.
@@ -510,7 +511,6 @@ source_set("test_infra_sources") {
     "${dawn_root}/src/dawn/native:sources",
     "${dawn_root}/src/dawn/native:static",
     "${dawn_root}/src/dawn/utils",
-    "${dawn_root}/src/dawn/wire",
   ]
 
   public = [
@@ -573,7 +573,7 @@ source_set("end2end_tests_sources") {
     "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     "${dawn_root}/src/dawn/platform",
     "${dawn_root}/src/dawn/utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:headers",
   ]
 
   sources = [
@@ -765,7 +765,8 @@ source_set("white_box_tests_sources") {
     "${dawn_root}/src/dawn/native:sources",
     "${dawn_root}/src/dawn/native:static",
     "${dawn_root}/src/dawn/utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:sources",
+    "${dawn_root}/src/dawn/wire:static",
   ]
 
   sources = [
@@ -901,7 +902,6 @@ dawn_test("dawn_perf_tests") {
     "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
     "${dawn_root}/src/dawn/platform",
     "${dawn_root}/src/dawn/utils",
-    "${dawn_root}/src/dawn/wire",
   ]
 
   sources = [
