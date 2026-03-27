@@ -92,7 +92,7 @@ static_library("test_utils") {
     "${dawn_root}/src/dawn/common",
     "${dawn_root}/src/dawn/native:headers",
     "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:static",
   ]
 }
 

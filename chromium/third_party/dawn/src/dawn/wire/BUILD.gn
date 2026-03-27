@@ -50,7 +50,7 @@ dawn_json_generator("gen") {
     "src/dawn/wire/WireCmd_autogen.h",
     "src/dawn/wire/WireCmd_autogen.cpp",
     "src/dawn/wire/client/ApiObjects_autogen.h",
-    "src/dawn/wire/client/ApiProcs_autogen.cpp",
+    "src/dawn/wire/client/ApiProcs_autogen.cpp.inc",
     "src/dawn/wire/client/ClientBase_autogen.h",
     "src/dawn/wire/client/ClientHandlers_autogen.cpp",
     "src/dawn/wire/client/ClientPrototypes_autogen.inc",
@@ -77,16 +77,14 @@ group("abseil") {
   }
 }
 
-dawn_component("wire") {
-  DEFINE_PREFIX = "DAWN_WIRE"
-
+source_set("sources") {
   deps = [
     ":gen",
     "${dawn_root}/src/dawn/common",
     "${dawn_root}/src/tint/lang/wgsl",
   ]
 
-  configs = [ "${dawn_root}/src/dawn/common:internal_config" ]
+  configs += [ "${dawn_root}/src/dawn/common:internal_config" ]
   sources = get_target_outputs(":gen")
   sources += [
     "BufferConsumer.h",
@@ -99,12 +97,9 @@ dawn_component("wire") {
     "ObjectHandle.h",
     "SupportedFeatures.cpp",
     "SupportedFeatures.h",
-    "Wire.cpp",
-    "WireClient.cpp",
     "WireDeserializeAllocator.cpp",
     "WireDeserializeAllocator.h",
     "WireResult.h",
-    "WireServer.cpp",
     "client/Adapter.cpp",
     "client/Adapter.h",
     "client/ApiObjects.h",
@@ -156,10 +151,31 @@ dawn_component("wire") {
     "server/ServerSurface.cpp",
   ]
 
-  # Make headers publicly visible
   public_deps = [
     ":abseil",
     ":headers",
     "${dawn_root}/src/dawn/partition_alloc:raw_ptr",
   ]
 }
+
+# The static and shared libraries for dawn::wire. Most of the files are
+# already compiled in :sources, but we still need to compile
+# files defining exported symbols.
+dawn_component("wire") {
+  DEFINE_PREFIX = "DAWN_WIRE"
+
+  configs = [ "${dawn_root}/src/dawn/common:internal_config" ]
+  sources = [
+    "Wire.cpp",
+    "WireClient.cpp",
+    "WireServer.cpp",
+  ]
+  deps = [
+    ":sources",
+    "${dawn_root}/src/dawn/common",
+  ]
+
+  # Make headers publicly visible
+  public_deps = [ ":headers" ]
+}
+

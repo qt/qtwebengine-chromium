@@ -292,7 +292,8 @@ dawn_test("dawn_unittests") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:sources",
+    "${dawn_root}/src/dawn/wire:static",
     "${dawn_root}/src/utils/chromium_test_compat",
   ]
 
@@ -515,7 +516,6 @@ source_set("test_infra_sources") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
   ]
 
   public = [
@@ -580,7 +580,7 @@ source_set("end2end_tests_sources") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:headers",
   ]
 
   sources = [
@@ -791,7 +791,8 @@ source_set("white_box_tests_sources") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
+    "${dawn_root}/src/dawn/wire:sources",
+    "${dawn_root}/src/dawn/wire:static",
   ]
 
   sources = [
@@ -931,7 +932,6 @@ dawn_test("dawn_perf_tests") {
     "${dawn_root}/src/dawn/utils:system_utils",
     "${dawn_root}/src/dawn/utils:test_utils",
     "${dawn_root}/src/dawn/utils:wgpu_utils",
-    "${dawn_root}/src/dawn/wire",
     "${dawn_root}/src/utils/chromium_test_compat",
   ]
 

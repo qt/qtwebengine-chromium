@@ -1516,7 +1516,7 @@ class MultiGeneratorFromDawnJSON(Generator):
                            wire_params))
             renders.append(
                 FileRender('dawn/wire/client/ApiProcs.cpp',
-                           'src/dawn/wire/client/ApiProcs_autogen.cpp',
+                           'src/dawn/wire/client/ApiProcs_autogen.cpp.inc',
                            wire_params))
             renders.append(
                 FileRender('dawn/wire/client/ClientBase.h',
