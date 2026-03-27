@@ -391,8 +391,8 @@ private:
 
     sk_sp<SharedContext> fSharedContext;
     std::unique_ptr<ResourceProvider> fResourceProvider;
-    std::unique_ptr<QueueManager> fQueueManager;
     std::unique_ptr<ClientMappedBufferManager> fMappedBufferManager;
+    std::unique_ptr<QueueManager> fQueueManager;
     std::unique_ptr<const skcpu::ContextImpl> fCPUContext;
 
     // In debug builds we guard against improper thread handling. This guard is passed to the
