@@ -3400,6 +3400,7 @@ void av1_nonrd_pick_inter_mode_sb(AV1_COMP *cpi, TileDataEnc *tile_data,
       !x->force_zeromv_skip_for_blk &&
       x->content_state_sb.source_sad_nonrd != kZeroSad &&
       x->source_variance == 0 && bsize < cm->seq_params->sb_size &&
+      (cpi->ref_frame_flags & AOM_LAST_FLAG) &&
       search_state.yv12_mb[LAST_FRAME][0].width == cm->width &&
       search_state.yv12_mb[LAST_FRAME][0].height == cm->height) {
     set_block_source_sad(cpi, x, bsize, &search_state.yv12_mb[LAST_FRAME][0]);
