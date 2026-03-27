@@ -10663,7 +10663,8 @@ void Element::CloneAttributesFrom(const Element& other) {
     element_data_ = other.element_data_->MakeUniqueCopy();
   }
 
-  for (const Attribute& attr : element_data_->Attributes()) {
+  for (wtf_size_t i = 0; i < element_data_->Attributes().size(); ++i) {
+    const Attribute& attr = element_data_->Attributes().at(i);
     AttributeChanged(
         AttributeModificationParams(attr.GetName(), g_null_atom, attr.Value(),
                                     AttributeModificationReason::kByCloning));
