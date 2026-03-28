@@ -85,6 +85,10 @@ void WireClient::Disconnect() {
     mImpl->Disconnect();
 }
 
+client::Client* WireClient::GetImplForTesting() {
+    return mImpl.get();
+}
+
 namespace client {
 MemoryTransferService::MemoryTransferService() = default;
 
