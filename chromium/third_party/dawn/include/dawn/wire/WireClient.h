@@ -96,6 +96,8 @@ class DAWN_WIRE_EXPORT WireClient : public CommandHandler {
     // Commands allocated after this point will not be sent.
     void Disconnect();
 
+    client::Client* GetImplForTesting();
+
   private:
     std::unique_ptr<client::Client> mImpl;
 };
