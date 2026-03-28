@@ -665,6 +665,12 @@ class CONTENT_EXPORT RenderFrameHostManager {
   void PrepareForInnerDelegateAttach(
       RenderFrameHost::PrepareForInnerWebContentsAttachCallback callback);
 
+  // Returns true if an inner delegate has been fully attached.
+  bool is_inner_delegate_attached() const {
+    return attach_to_inner_delegate_state_ ==
+           AttachToInnerDelegateState::ATTACHED;
+  }
+
   // When true the FrameTreeNode is preparing a RenderFrameHost for attaching an
   // inner Delegate. During this phase new navigation requests are ignored.
   bool is_attaching_inner_delegate() const {
