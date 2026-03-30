@@ -200,19 +200,21 @@ void RTree<T>::Build(size_t item_count,
     node->num_children = 1;
     node->children[0] = std::move(branches[0]);
   } else if (num_data_elements_ > 1u) {
-    // Determine a reasonable upper bound on the number of nodes to prevent
-    // reallocations. This is basically (n**d - 1) / (n - 1), which is the
-    // number of nodes in a complete tree with n branches at each node. In the
-    // code n = |branch_count|, d = |depth|. However, we normally would have
-    // kMaxChildren branch factor, but that can be broken if some children
-    // don't have enough nodes. That can happen for at most kMinChildren nodes
-    // (since otherwise, we'd create a new node).
-    size_t branch_count = kMaxChildren;
-    double depth = log(branches.size()) / log(branch_count);
-    size_t node_count =
-        static_cast<size_t>((std::pow(branch_count, depth) - 1) /
-                            (branch_count - 1)) +
-        kMinChildren;
+    // Determine a precise upper bound on the number of nodes to prevent
+    // reallocations. This is a bottom-up calculation that determines the number
+    // of nodes required at each level of the tree.
+    //
+    // The total node count is the sum of a geometric series that converges to
+    // N / (kMaxChildren - 1). Since N is the size of a vector, and each element
+    // is at least 24 bytes, the sum will never overflow SIZE_MAX.
+    //
+    // If this calculation is ever wrong, the CHECK_GT in AllocateNodeAtLevel
+    // will catch it before a reallocation invalidates node pointers.
+    size_t node_count = 0;
+    for (size_t n = num_data_elements_; n > 1;) {
+      n = (n + kMaxChildren - 1) / kMaxChildren;
+      node_count += n;
+    }
     nodes_.reserve(node_count);
     root_ = BuildRecursive(&branches, 0);
   }
