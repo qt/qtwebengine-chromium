@@ -72,7 +72,7 @@ V8_INLINE bool ValidateAssumeTrue(bool condition, const char* message) {
   }                                                                          \
   this->detected_->add_##feat()
 
-static constexpr LoadType GetLoadType(WasmOpcode opcode) {
+inline constexpr LoadType GetLoadType(WasmOpcode opcode) {
   // Hard-code the list of load types. The opcodes are highly unlikely to
   // ever change, and we have some checks here to guard against that.
   static_assert(sizeof(LoadType) == sizeof(uint8_t), "LoadType is compact");
@@ -90,7 +90,7 @@ static constexpr LoadType GetLoadType(WasmOpcode opcode) {
   return kLoadTypes[opcode - kMinOpcode];
 }
 
-static constexpr StoreType GetStoreType(WasmOpcode opcode) {
+inline constexpr StoreType GetStoreType(WasmOpcode opcode) {
   // Hard-code the list of store types. The opcodes are highly unlikely to
   // ever change, and we have some checks here to guard against that.
   static_assert(sizeof(StoreType) == sizeof(uint8_t), "StoreType is compact");
