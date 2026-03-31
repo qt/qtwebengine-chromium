@@ -196,6 +196,7 @@ class CONTENT_EXPORT TtsControllerImpl
 
   // WebContentsObserver methods
   void WebContentsDestroyed() override;
+  void PrimaryPageChanged(Page& page) override;
   void OnVisibilityChanged(Visibility visibility) override;
 
   // net::NetworkChangeNotifier::NetworkChangeObserver
