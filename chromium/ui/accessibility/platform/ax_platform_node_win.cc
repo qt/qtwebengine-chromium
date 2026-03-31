@@ -4179,7 +4179,7 @@ IFACEMETHODIMP AXPlatformNodeWin::get_columnHeaderCells(
     }
   }
 
-  *n_column_header_cells = static_cast<LONG>(column_header_ids.size());
+  *n_column_header_cells = static_cast<LONG>(index);
   return S_OK;
 }
 
@@ -4232,7 +4232,7 @@ IFACEMETHODIMP AXPlatformNodeWin::get_rowHeaderCells(
     }
   }
 
-  *n_row_header_cells = static_cast<LONG>(row_header_ids.size());
+  *n_row_header_cells = static_cast<LONG>(index);
   return S_OK;
 }
 
