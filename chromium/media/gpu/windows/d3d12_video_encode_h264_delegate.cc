@@ -348,6 +348,19 @@ D3D12VideoEncodeH264Delegate::EncodeImpl(
     destroy_buffer = destroy_buffer.value() + 1;
   }
 
+    for (uint8_t ref_idx : options.reference_buffers) {
+      if (ref_idx >= GetMaxNumOfManualRefBuffers()) {
+        return {EncoderStatus::Codes::kBadReferenceBuffer,
+                "Manual reference buffer index exceeds that is supported by "
+                "encoder"};
+      }
+    }
+    if (options.reference_buffers.size() > list0_reference_frames_.size()) {
+      return {EncoderStatus::Codes::kBadReferenceBuffer,
+              "Number of manual reference buffers exceeds that is supported by "
+              "encoder"};
+    }
+
   if (disable_non_reference_frames_) {
     // Currently it is not supported by some hardware to set current frame
     // not-referenced. So we use slot 1 for non-referenced frame and let other
