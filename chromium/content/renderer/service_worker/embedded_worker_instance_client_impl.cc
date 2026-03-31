@@ -95,10 +95,6 @@ void EmbeddedWorkerInstanceClientImpl::StartWorker(
   start_data->policy_container =
       ToWebPolicyContainer(std::move(params->policy_container));
 
-  for (const auto& feature : params->forced_enabled_runtime_features) {
-    blink::WebRuntimeFeatures::EnableFeatureFromString(feature, true);
-  }
-
   // `cache_storage` may be null if COEP is not enabled, we cannot bind
   // eagerly in that case.
   mojo::PendingRemote<blink::mojom::CacheStorage> cache_storage =
