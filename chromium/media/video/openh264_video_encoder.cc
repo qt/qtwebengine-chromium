@@ -147,6 +147,18 @@ void SetUpOpenH264Params(VideoCodecProfile profile,
   }
 }
 
+// OpenH264 silently fails during preprocessing when a frame's area
+// exceeds its internal macroblock limit (MAX_MBS_PER_FRAME in
+// third_party/openh264). We must manually resize such frames.
+// MAX_MBS_PER_FRAME is 36864.
+constexpr int kOpenH264MaxMBs = 36864;
+
+bool IsFrameSizeTooLarge(const gfx::Size& frame_size) {
+  int mb_width = (frame_size.width() + 15) / 16;
+  int mb_height = (frame_size.height() + 15) / 16;
+  return mb_width * mb_height > kOpenH264MaxMBs;
+}
+
 }  // namespace
 
 OpenH264VideoEncoder::ISVCEncoderDeleter::ISVCEncoderDeleter() = default;
@@ -232,6 +244,14 @@ void OpenH264VideoEncoder::Initialize(VideoCodecProfile profile,
                       "Unsupported frame size which is less than 16"));
     return;
   }
+
+  if (IsFrameSizeTooLarge(options.frame_size)) {
+    std::move(done_cb).Run(EncoderStatus(
+        EncoderStatus::Codes::kEncoderUnsupportedConfig,
+        "Configured frame size exceeds OpenH264 max macroblocks"));
+    return;
+  }
+
   SetUpOpenH264Params(
       profile_, options,
       VideoColorSpace::FromGfxColorSpace(last_frame_color_space_), &params);
@@ -491,6 +511,20 @@ void OpenH264VideoEncoder::ChangeOptions(const Options& options,
   if (!codec_) {
     std::move(done_cb).Run(
         EncoderStatus::Codes::kEncoderInitializeNeverCompleted);
+    return;
+  }
+
+  if (options.frame_size.width() < 16 || options.frame_size.height() < 16) {
+    std::move(done_cb).Run(
+        EncoderStatus(EncoderStatus::Codes::kEncoderUnsupportedConfig,
+                      "Unsupported frame size which is less than 16"));
+    return;
+  }
+
+  if (IsFrameSizeTooLarge(options.frame_size)) {
+    std::move(done_cb).Run(EncoderStatus(
+        EncoderStatus::Codes::kEncoderUnsupportedConfig,
+        "Configured frame size exceeds OpenH264 max macroblocks"));
     return;
   }
 
