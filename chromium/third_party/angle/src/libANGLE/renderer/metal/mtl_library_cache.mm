@@ -37,15 +37,15 @@ AutoObjCPtr<id<MTLLibrary>> LibraryCache::get(const std::shared_ptr<const std::s
                                               bool usesInvariance)
 {
     ASSERT(source != nullptr);
-    LibraryCache::LibraryCacheEntry &entry =
+    std::shared_ptr<LibraryCache::LibraryCacheEntry> entry =
         getCacheEntry(LibraryKey(source, macros, disableFastMath, usesInvariance));
 
     // Try to lock the entry and return the library if it exists. If we can't lock then it means
     // another thread is currently compiling.
-    std::unique_lock<std::mutex> entryLockGuard(entry.lock, std::try_to_lock);
+    std::unique_lock<std::mutex> entryLockGuard(entry->lock, std::try_to_lock);
     if (entryLockGuard)
     {
-        return entry.library;
+        return entry->library;
     }
     else
     {
@@ -117,15 +117,15 @@ AutoObjCPtr<id<MTLLibrary>> LibraryCache::getOrCompileShaderLibrary(
     }
 
     ASSERT(source != nullptr);
-    LibraryCache::LibraryCacheEntry &entry =
+    std::shared_ptr<LibraryCache::LibraryCacheEntry> entry =
         getCacheEntry(LibraryKey(source, macros, disableFastMath, usesInvariance));
 
     // Lock this cache entry while compiling the shader. This causes other threads calling this
     // function to wait and not duplicate the compilation.
-    std::lock_guard<std::mutex> entryLockGuard(entry.lock);
-    if (entry.library)
+    std::lock_guard<std::mutex> entryLockGuard(entry->lock);
+    if (entry->library)
     {
-        return entry.library;
+        return entry->library;
     }
 
     if (features.printMetalShaders.enabled)
@@ -151,12 +151,12 @@ AutoObjCPtr<id<MTLLibrary>> LibraryCache::getOrCompileShaderLibrary(
             CompileShaderLibraryToFile(*source, macros, disableFastMath, usesInvariance);
         angle::MemoryBuffer memory_buffer = ReadMetallibFromFile(metallib_filename);
         AutoObjCPtr<NSError *> error;
-        entry.library = CreateShaderLibraryFromBinary(metalDevice, memory_buffer.data(),
-                                                      memory_buffer.size(), &error);
+        entry->library = CreateShaderLibraryFromBinary(metalDevice, memory_buffer.data(),
+                                                       memory_buffer.size(), &error);
         auto cache_key =
             GenerateBlobCacheKeyForShaderLibrary(source, macros, disableFastMath, usesInvariance);
         displayMtl->getBlobCache()->put(nullptr, cache_key, std::move(memory_buffer));
-        return entry.library;
+        return entry->library;
     }
 
     if (features.loadMetalShadersFromBlobCache.enabled)
@@ -168,23 +168,23 @@ AutoObjCPtr<id<MTLLibrary>> LibraryCache::getOrCompileShaderLibrary(
         if (displayMtl->getBlobCache()->get(nullptr, &scratch_buffer, cache_key, &value))
         {
             AutoObjCPtr<NSError *> error;
-            entry.library =
+            entry->library =
                 CreateShaderLibraryFromBinary(metalDevice, value.data(), value.size(), &error);
         }
-        ANGLE_HISTOGRAM_BOOLEAN("GPU.ANGLE.MetalShaderInBlobCache", entry.library);
-        ANGLEPlatformCurrent()->recordShaderCacheUse(entry.library);
-        if (entry.library)
+        ANGLE_HISTOGRAM_BOOLEAN("GPU.ANGLE.MetalShaderInBlobCache", entry->library);
+        ANGLEPlatformCurrent()->recordShaderCacheUse(entry->library);
+        if (entry->library)
         {
-            return entry.library;
+            return entry->library;
         }
     }
 
-    entry.library = CreateShaderLibrary(metalDevice, *source, macros, disableFastMath,
-                                        usesInvariance, errorOut);
-    return entry.library;
+    entry->library = CreateShaderLibrary(metalDevice, *source, macros, disableFastMath,
+                                         usesInvariance, errorOut);
+    return entry->library;
 }
 
-LibraryCache::LibraryCacheEntry &LibraryCache::getCacheEntry(LibraryKey &&key)
+std::shared_ptr<LibraryCache::LibraryCacheEntry> LibraryCache::getCacheEntry(LibraryKey &&key)
 {
     // Lock while searching or adding new items to the cache.
     std::lock_guard<std::mutex> cacheLockGuard(mCacheLock);
@@ -197,7 +197,7 @@ LibraryCache::LibraryCacheEntry &LibraryCache::getCacheEntry(LibraryKey &&key)
 
     angle::TrimCache(kMaxCachedLibraries, kGCLimit, "metal library", &mCache);
 
-    iter = mCache.Put(std::move(key), LibraryCacheEntry());
+    iter = mCache.Put(std::move(key), std::make_shared<LibraryCacheEntry>());
     return iter->second;
 }
 
