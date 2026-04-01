@@ -2163,7 +2163,7 @@ RenderFrameHostImpl* RenderFrameHostImpl::FromFrameToken(
 
 // static
 RenderFrameHostImpl* RenderFrameHostImpl::FromDocumentToken(
-    int process_id,
+    ChildProcessId process_id,
     const blink::DocumentToken& document_token,
     mojo::ReportBadMessageCallback* process_mismatch_callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::UI);
@@ -2172,7 +2172,7 @@ RenderFrameHostImpl* RenderFrameHostImpl::FromDocumentToken(
     return nullptr;
   }
 
-  if (rfh->GetProcess()->GetDeprecatedID() != process_id) {
+  if (rfh->GetProcess()->GetID() != process_id) {
     if (process_mismatch_callback) {
       SYSLOG(WARNING)
           << "Denying illegal RenderFrameHost::FromDocumentToken request.";
@@ -2183,6 +2183,16 @@ RenderFrameHostImpl* RenderFrameHostImpl::FromDocumentToken(
   }
 
   return rfh;
+}
+
+// static
+RenderFrameHostImpl* RenderFrameHostImpl::FromDocumentToken(
+    int process_id,
+    const blink::DocumentToken& document_token,
+    mojo::ReportBadMessageCallback* process_mismatch_callback) {
+  return RenderFrameHostImpl::FromDocumentToken(
+      ChildProcessId::FromUnsafeValue(process_id), document_token,
+      process_mismatch_callback);
 }
 
 // static
@@ -10959,16 +10969,15 @@ void RenderFrameHostImpl::StartDragging(
   RenderWidgetHostViewBase* view = (widget) ? widget->GetView() : nullptr;
   if (view && view->IsTouchSequencePotentiallyActiveOnViz()) {
     view->RequestInputBackForDragAndDrop(
-        std::move(drag_data), GetLastCommittedOrigin(), drag_operations_mask,
+        GetWeakDocumentPtr(), std::move(drag_data), drag_operations_mask,
         unsafe_bitmap, cursor_offset_in_dip, drag_obj_rect_in_dip,
         std::move(event_info));
     return;
   }
 #endif
   GetRenderWidgetHost()->StartDragging(
-      std::move(drag_data), GetLastCommittedOrigin(), drag_operations_mask,
-      unsafe_bitmap, cursor_offset_in_dip, drag_obj_rect_in_dip,
-      std::move(event_info));
+      *this, std::move(drag_data), drag_operations_mask, unsafe_bitmap,
+      cursor_offset_in_dip, drag_obj_rect_in_dip, std::move(event_info));
 }
 
 void RenderFrameHostImpl::IssueKeepAliveHandle(
