@@ -13,14 +13,17 @@
 
 #include <string_view>
 
+#include "base/debug/leak_annotations.h"
 #include "base/feature_list.h"
 #include "base/functional/bind.h"
 #include "base/functional/callback.h"
 #include "base/logging.h"
+#include "base/memory/raw_ptr_exclusion.h"
 #include "base/metrics/histogram_functions.h"
 #include "base/strings/string_util.h"
 #include "base/strings/stringprintf.h"
 #include "base/strings/sys_string_conversions.h"
+#include "base/synchronization/lock.h"
 #include "base/timer/elapsed_timer.h"
 #include "base/trace_event/trace_event.h"
 #include "media/audio/mac/audio_loopback_input_mac.h"
@@ -29,6 +32,36 @@
 #include "media/base/audio_timestamp_helper.h"
 
 namespace media {
+// Acts as a thread-safe bridge between the CoreAudio IOProc and the
+// CatapAudioInputStreamSource. If teardown fails, this object is intentionally
+// leaked to give the orphaned OS thread a valid memory address to read.
+class API_AVAILABLE(macos(14.2)) CatapIoProcProxy {
+ public:
+  CatapIoProcProxy(raw_ptr<CatapAudioInputStreamSource> source)
+      : source_(source) {}
+
+  // Called from the main sequence during teardown.
+  void Detach() {
+    base::AutoLock auto_lock(lock_);
+    source_ = nullptr;
+  }
+
+  // Called by the CoreAudio high-priority thread.
+  void ForwardSample(const AudioBuffer* input_buffer,
+                     const AudioTimeStamp* input_time) {
+    base::AutoLock auto_lock(lock_);
+    if (source_) {
+      source_->OnCatapSample(input_buffer, input_time);
+    }
+  }
+
+ private:
+  // Lock to protect access to source_ and to ensure that ForwardSample()
+  // finishes before Detach() returns.
+  base::Lock lock_;
+  raw_ptr<CatapAudioInputStreamSource> source_ GUARDED_BY(lock_);
+};
+
 namespace {
 const char kCatapAudioInputStreamUmaBaseName[] =
     "Media.Audio.Mac.CatapAudioInputStream";
@@ -75,15 +108,14 @@ OSStatus DeviceIoProc(AudioDeviceID,
                       AudioBufferList* output_data,
                       const AudioTimeStamp* output_time,
                       void* client_data) {
-  CatapAudioInputStream* catap_input_stream =
-      (CatapAudioInputStream*)client_data;
-  CHECK(catap_input_stream != nullptr);
+  CatapIoProcProxy* proxy = reinterpret_cast<CatapIoProcProxy*>(client_data);
+  CHECK(proxy != nullptr);
   // SAFETY: The type of inputData cannot be changed since it's received from
   // the OS. Wrap it immediately using its specified size.
   base::span UNSAFE_BUFFERS(
       input_buffers(input_data->mBuffers, input_data->mNumberBuffers));
 
-  catap_input_stream->OnCatapSample(input_buffers, input_time);
+  proxy->ForwardSample(input_data->mBuffers, input_time);
 
   return noErr;
 }
@@ -362,8 +394,9 @@ AudioInputStream::OpenOutcome CatapAudioInputStream::Open() {
 
   // Initialization: Step 3.
   // Attach callback to the aggregate device.
+  io_proc_proxy_ = std::make_unique<CatapIoProcProxy>(this);
   status = catap_api_->AudioDeviceCreateIOProcID(
-      aggregate_device_id_, DeviceIoProc, this, &tap_io_proc_id_);
+      aggregate_device_id_, DeviceIoProc, io_proc_proxy_.get(), &tap_io_proc_id_);
   if (status != noErr) {
     ReportOpenStatus(OpenStatus::kErrorCreatingIOProcID, timer.Elapsed());
     SendLogMessage("%s => Error calling AudioDeviceCreateIOProcID.", __func__);
@@ -411,6 +444,14 @@ void CatapAudioInputStream::Stop() {
   TRACE_EVENT0("audio", "CatapAudioInputStream::Stop");
   SendLogMessage("%s()", __func__);
   base::ElapsedTimer timer;
+
+  // Instantly fence off the CoreAudio thread.
+  // If the OS thread is currently in the callback, this blocks until it
+  // finishes.
+  if (io_proc_proxy_) {
+    io_proc_proxy_->Detach();
+  }
+
   if (!sink_) {
     return;
   }
@@ -419,12 +460,15 @@ void CatapAudioInputStream::Stop() {
   CHECK_NE(tap_io_proc_id_, nullptr);
 
   // Reversing Step 4.
-  // The call to AudioDeviceStop is synchronous. It will not return until any
-  // current callbacks have finished executing. The call to AudioDeviceStop()
-  // succeeds even though AudioDeviceStart() has not been called.
+  // AudioDeviceStop is synchronous when it succeeds, but may not be if it
+  // fails. The lock above mitigates the failure case by acting as a synchronous
+  // fence, ensuring that no callbacks are actively executing before we proceed.
+  // Note: The call to AudioDeviceStop() will succeed even if AudioDeviceStart()
+  // has not been called.
   OSStatus status =
       catap_api_->AudioDeviceStop(aggregate_device_id_, tap_io_proc_id_);
   if (status != noErr) {
+    stop_failed_ = true;
     ReportStopStatus(false, timer.Elapsed());
     SendLogMessage("%s => Error stopping the device.", __func__);
   }
@@ -444,6 +488,7 @@ void CatapAudioInputStream::Close() {
   Stop();
 
   is_device_open_ = false;
+  bool destroy_failed = false;
 
   if (aggregate_device_id_ != kAudioObjectUnknown &&
       tap_io_proc_id_ != nullptr) {
@@ -451,6 +496,7 @@ void CatapAudioInputStream::Close() {
     OSStatus status = catap_api_->AudioDeviceDestroyIOProcID(
         aggregate_device_id_, tap_io_proc_id_);
     if (status != noErr) {
+      destroy_failed = true;
       ReportCloseStatus(CloseStatus::kErrorDestroyingIOProcID, timer.Elapsed());
       SendLogMessage("%s => Error destroying device IO process ID.", __func__);
     }
@@ -482,6 +528,20 @@ void CatapAudioInputStream::Close() {
 
   if (tap_description_ != nil) {
     tap_description_ = nil;
+  }
+
+  if (io_proc_proxy_) {
+    if (stop_failed_ || destroy_failed) {
+      // INTENTIONAL LEAK
+      // The OS failed to release the IOProc. The CoreAudio thread might still
+      // fire. We leak the proxy so the OS thread reads valid memory instead of
+      // triggering a Use-After-Free.
+      ANNOTATE_LEAKING_OBJECT_PTR(io_proc_proxy_.get());
+      io_proc_proxy_.release();
+    } else {
+      // Safe to delete, the OS has definitively relinquished the pointer.
+      io_proc_proxy_.reset();
+    }
   }
 
   ReportCloseStatus(CloseStatus::kOk, timer.Elapsed());

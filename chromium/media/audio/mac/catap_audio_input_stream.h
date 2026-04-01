@@ -21,6 +21,7 @@
 namespace media {
 
 class CatapApi;
+class CatapIoProcProxy;
 
 // Implementation of AudioInputStream using the CoreAudio API for macOS 14.2
 // and later. The current implementation supports mono and stereo capture system
@@ -181,6 +182,12 @@ class MEDIA_EXPORT API_AVAILABLE(macos(14.2)) CatapAudioInputStream
       kAudioObjectUnknown;
   CATapDescription* __strong tap_description_
       GUARDED_BY_CONTEXT(sequence_checker_) = nil;
+  // Tracks if the synchronous fences failed during teardown.
+  bool stop_failed_ = false;
+
+  // The proxy passed to CoreAudio.
+  std::unique_ptr<CatapIoProcProxy> io_proc_proxy_
+      GUARDED_BY_CONTEXT(sequence_checker_);
   bool is_device_open_ GUARDED_BY_CONTEXT(sequence_checker_) = false;
 
   SEQUENCE_CHECKER(sequence_checker_);
