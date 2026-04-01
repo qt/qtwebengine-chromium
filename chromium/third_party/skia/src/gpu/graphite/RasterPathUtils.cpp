@@ -145,7 +145,7 @@ skgpu::UniqueKey GeneratePathMaskKey(const Shape& shape,
     skgpu::UniqueKey maskKey;
     {
         static const skgpu::UniqueKey::Domain kDomain = skgpu::UniqueKey::GenerateDomain();
-        int styleKeySize = 7;
+        uint16_t styleKeySize = 7;
         if (!strokeRec.isHairlineStyle() && !strokeRec.isFillStyle()) {
             // Add space for width and miter if needed
             styleKeySize += 2;
@@ -190,26 +190,30 @@ skgpu::UniqueKey GenerateClipMaskKey(uint32_t stackRecordID,
             skgpu::UniqueKey::Builder builder(&maskKey, kDomain, 1, "Clip Path Mask");
             builder[0] = stackRecordID;
         } else {
-            int xformKeySize = 5;
-            int keySize = 0;
+            static constexpr int kXformKeySize = 5;
+            uint16_t keySize = 0;
+            // Iterate through to get key size; given kMaxShapeCountForKey and Shape's own key size
+            // limitations, this should always fit safely within a 16-bit number
             for (int i = 0; i < elementsForMask->size(); ++i) {
-                keySize += xformKeySize + (*elementsForMask)[i]->fShape.keySize();
+                keySize += kXformKeySize + (*elementsForMask)[i]->fShape.keySize();
             }
             skgpu::UniqueKey::Builder builder(&maskKey, kDomain, keySize,
                                               "Clip Path Mask");
             int elementKeyIndex = 0;
             for (int i = 0; i < elementsForMask->size(); ++i) {
+                const ClipStack::Element* element = (*elementsForMask)[i];
+
                 // Add transform key and get packed fractional translation bits
                 uint32_t fracBits = add_transform_key(&builder,
                                                       elementKeyIndex,
-                                                      (*elementsForMask)[i]->fLocalToDevice);
-                uint32_t opBits = static_cast<uint32_t>((*elementsForMask)[i]->fOp);
+                                                      element->fLocalToDevice);
+                uint32_t opBits = static_cast<uint32_t>(element->fOp);
                 builder[elementKeyIndex + 4] = fracBits | (opBits << 16);
 
-                const Shape& shape = (*elementsForMask)[i]->fShape;
-                shape.writeKey(&builder[elementKeyIndex + xformKeySize], /*includeInverted=*/true);
+                const Shape& shape = element->fShape;
+                shape.writeKey(&builder[elementKeyIndex + kXformKeySize], /*includeInverted=*/true);
 
-                elementKeyIndex += xformKeySize + shape.keySize();
+                elementKeyIndex += kXformKeySize + shape.keySize();
             }
         }
 

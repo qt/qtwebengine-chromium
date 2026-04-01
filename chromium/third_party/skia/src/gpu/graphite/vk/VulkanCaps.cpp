@@ -1512,7 +1512,7 @@ UniqueKey VulkanCaps::makeGraphicsPipelineKey(const GraphicsPipelineDesc& pipeli
         VulkanRenderPass::VulkanRenderPassMetaData rpMetaData {renderPassDesc};
 
         // Reserve 3 uint32s for the render step id, paint id, and write swizzle.
-        static constexpr int kUint32sNeededForPipelineInfo = 3;
+        static constexpr uint16_t kUint32sNeededForPipelineInfo = 3;
         // The uint32s needed for a RenderPass is variable number, so consult rpMetaData to
         // determine how many to reserve.
         UniqueKey::Builder builder(&pipelineKey,
@@ -1566,10 +1566,10 @@ void VulkanCaps::buildKeyForTexture(SkISize dimensions,
     SkASSERT(vkSpec.fImageUsageFlags            < (1u << 12)); // imageUsageFlags are bits 20-32
 
     // We need two uint32_ts for dimensions, 1 for format, and 2 for the rest of the information.
-    static constexpr int kNum32DataCntNoYcbcr =  2 + 1 + 2;
+    static constexpr uint16_t kNum32DataCntNoYcbcr =  2 + 1 + 2;
     // YCbCr conversion needs 1 int for non-format flags, and a 64-bit format (external or regular).
-    static constexpr int kNum32DataCntYcbcr = 3;
-    int num32DataCnt = kNum32DataCntNoYcbcr;
+    static constexpr uint16_t kNum32DataCntYcbcr = 3;
+    uint16_t num32DataCnt = kNum32DataCntNoYcbcr;
 
     // If a texture w/ an external format is being used, that information must also be appended.
     const VulkanYcbcrConversionInfo& ycbcrInfo = TextureInfos::GetVulkanYcbcrConversionInfo(info);
