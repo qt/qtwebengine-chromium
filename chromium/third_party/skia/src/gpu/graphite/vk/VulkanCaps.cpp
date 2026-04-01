@@ -1796,7 +1796,7 @@ std::pair<SkColorType, bool /*isRGBFormat*/> VulkanCaps::supportedReadPixelsColo
 
 // 4 uint32s for the render step id, paint id, compatible render pass description, and write
 // swizzle.
-static constexpr int kPipelineKeyData32Count = 4;
+static constexpr uint16_t kPipelineKeyData32Count = 4;
 
 static constexpr int kPipelineKeyRenderStepIDIndex = 0;
 static constexpr int kPipelineKeyPaintParamsIDIndex = 1;
@@ -1883,10 +1883,10 @@ void VulkanCaps::buildKeyForTexture(SkISize dimensions,
     SkASSERT(vkInfo.fImageUsageFlags            < (1u << 12)); // imageUsageFlags are bits 20-32
 
     // We need two uint32_ts for dimensions, 1 for format, and 2 for the rest of the information.
-    static constexpr int kNum32DataCntNoYcbcr =  2 + 1 + 2;
+    static constexpr uint16_t kNum32DataCntNoYcbcr =  2 + 1 + 2;
     // YCbCr conversion needs 1 int for non-format flags, and a 64-bit format (external or regular).
-    static constexpr int kNum32DataCntYcbcr = 3;
-    int num32DataCnt = kNum32DataCntNoYcbcr;
+    static constexpr uint16_t kNum32DataCntYcbcr = 3;
+    uint16_t num32DataCnt = kNum32DataCntNoYcbcr;
 
     // If a texture w/ an external format is being used, that information must also be appended.
     const VulkanYcbcrConversionInfo& ycbcrInfo = vkInfo.fYcbcrConversionInfo;
