@@ -6388,6 +6388,9 @@ shown properly on the user-facing crash UI.
     The browser process navigated a frame to an error page based on behavior in
     the currently committed page.
   </int>
+  <int value="43" label="kDidChangeOpener">
+    A request was received to change window.opener to a frame in BFCache.
+  </int>
 </enum>
 
 <enum name="IncidentType">
