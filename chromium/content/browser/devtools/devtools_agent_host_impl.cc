@@ -513,7 +513,7 @@ std::string DevToolsAgentHostImpl::GetSubtype() {
 }
 
 void DevToolsAgentHostImpl::NotifyCreated() {
-  DCHECK(!base::Contains(GetDevtoolsInstances(), id_));
+  CHECK(!base::Contains(GetDevtoolsInstances(), id_));
   GetDevtoolsInstances()[id_] = this;
   for (auto& observer : GetDevtoolsObservers())
     observer.DevToolsAgentHostCreated(this);
