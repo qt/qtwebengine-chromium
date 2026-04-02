@@ -180,6 +180,7 @@ class PLATFORM_EXPORT WebMediaPlayerImpl
 
   // Playback controls.
   void Play() override;
+  void UnlockBackgroundPlayback() override;
   void Pause() override;
   void Seek(double seconds) override;
   void SetRate(double rate) override;

@@ -40,7 +40,7 @@ void PepperPlayerDelegate::OnSuspend(int player_id) {
   SetVolume(player_id, kDuckVolume);
 }
 
-void PepperPlayerDelegate::OnResume(int player_id) {
+void PepperPlayerDelegate::OnResume(int player_id, bool triggered_by_user) {
   if (!base::FeatureList::IsEnabled(media::kAudioFocusDuckFlash))
     return;
 
