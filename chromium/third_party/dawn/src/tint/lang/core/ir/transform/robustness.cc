@@ -369,6 +369,14 @@ struct State {
                 b.Call(ty.u32(), core::BuiltinFn::kMin, CastToU32(args[idx]), limit)->Result());
         };
 
+        // Helper for clamping the sample index.
+        auto clamp_sample_index = [&](uint32_t idx) {
+            auto* num_samples = b.Call(ty.u32(), core::BuiltinFn::kTextureNumSamples, args[0]);
+            auto* limit = b.Subtract(num_samples, 1_u);
+            call->SetOperand(CoreBuiltinCall::kArgsOperandOffset + idx,
+                             b.Min(CastToU32(args[idx]), limit)->Result());
+        };
+
         // Select which arguments to clamp based on the function overload.
         switch (call->Func()) {
             case core::BuiltinFn::kTextureDimensions: {
@@ -384,6 +392,9 @@ struct State {
                 }
                 if (texture->IsAnyOf<type::SampledTexture, type::DepthTexture>()) {
                     clamp_level(next_arg++);
+                }
+                if (texture->IsAnyOf<type::MultisampledTexture, type::DepthMultisampledTexture>()) {
+                    clamp_sample_index(next_arg++);
                 }
                 clamp_coords(1u);  // Must run after clamp_level
                 break;

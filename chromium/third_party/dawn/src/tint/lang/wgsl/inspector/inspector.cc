@@ -570,6 +570,7 @@ const Inspector::EntryPointTextureMetadata& Inspector::ComputeTextureMetadata(
         }
 
         bool uses_num_levels = false;
+        bool uses_num_samples = false;
         switch (builtin->Fn()) {
             case wgsl::BuiltinFn::kTextureNumLevels:
                 uses_num_levels = true;
@@ -587,6 +588,8 @@ const Inspector::EntryPointTextureMetadata& Inspector::ComputeTextureMetadata(
                 uses_num_levels = !texture_type->IsAnyOf<core::type::MultisampledTexture,
                                                          core::type::DepthMultisampledTexture,
                                                          core::type::ExternalTexture>();
+                uses_num_samples = texture_type->IsAnyOf<core::type::MultisampledTexture,
+                                                         core::type::DepthMultisampledTexture>();
                 metadata.has_texture_load_with_depth_texture |=
                     texture_type
                         ->IsAnyOf<core::type::DepthTexture, core::type::DepthMultisampledTexture>();
@@ -601,10 +604,7 @@ const Inspector::EntryPointTextureMetadata& Inspector::ComputeTextureMetadata(
                 break;
 
             case wgsl::BuiltinFn::kTextureNumSamples:
-                for (const auto* texture : textures) {
-                    auto texture_binding_point = texture->Attributes().binding_point.value();
-                    metadata.textures_with_num_samples.insert(texture_binding_point);
-                }
+                uses_num_samples = true;
                 break;
 
             default:
@@ -615,6 +615,12 @@ const Inspector::EntryPointTextureMetadata& Inspector::ComputeTextureMetadata(
             for (const auto* texture : textures) {
                 auto texture_binding_point = texture->Attributes().binding_point.value();
                 metadata.textures_with_num_levels.insert(texture_binding_point);
+            }
+        }
+        if (uses_num_samples) {
+            for (const auto* texture : textures) {
+                auto texture_binding_point = texture->Attributes().binding_point.value();
+                metadata.textures_with_num_samples.insert(texture_binding_point);
             }
         }
     };
