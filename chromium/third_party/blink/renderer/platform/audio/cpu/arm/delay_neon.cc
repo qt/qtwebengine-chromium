@@ -77,13 +77,13 @@ std::tuple<size_t, size_t> Delay::ProcessARateVector(
   const int32x4_t v_incr = vdupq_n_s32(4);
 
   // Temp arrays for storing the samples needed for interpolation
-  std::array<float, 4> sample1 __attribute((aligned(16)));
-  std::array<float, 4> sample2 __attribute((aligned(16)));
+  alignas(16) std::array<float, 4> sample1;
+  alignas(16) std::array<float, 4> sample2;
 
   // Temp array for holding the indices so we can access them
   // individually.
-  std::array<int, 4> read_index1 __attribute((aligned(16)));
-  std::array<int, 4> read_index2 __attribute((aligned(16)));
+  alignas(16) std::array<int, 4> read_index1;
+  alignas(16) std::array<int, 4> read_index2;
 
   // Initialize the write index vector, and  wrap the values if needed.
 #if defined(_MSC_VER) && !defined(__clang__)
