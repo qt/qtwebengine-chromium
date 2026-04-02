@@ -35,6 +35,11 @@ void SanitizerAPI::SanitizeSafeInternal(ContainerNode* element,
             : Sanitizer::Create(options->sanitizer()->GetAsSanitizerConfig(),
                                 exception_state);
   }
+
+  if (exception_state.HadException()) {
+    element->setTextContent("");
+    return;
+  }
   if (!sanitizer) {
     sanitizer = SanitizerBuiltins::GetDefaultSafe();
   }

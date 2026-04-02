@@ -9469,8 +9469,12 @@ Document* Document::parseHTMLUnsafe(ExecutionContext* context,
                                     const String& html,
                                     ExceptionState& exception_state) {
   UseCounter::Count(context, WebFeature::kHTMLUnsafeMethods);
-  return parseHTMLInternal(context, html, /*options=*/nullptr, /*safe=*/false,
+  Document* doc = parseHTMLInternal(context, html, /*options=*/nullptr, /*safe=*/false,
                            exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  return doc;
 }
 
 // static
@@ -9480,8 +9484,12 @@ Document* Document::parseHTMLUnsafe(ExecutionContext* context,
                                     ExceptionState& exception_state) {
   UseCounter::Count(context, WebFeature::kHTMLUnsafeMethods);
   CHECK(RuntimeEnabledFeatures::SanitizerAPIEnabled());
-  return parseHTMLInternal(context, html, options, /*safe=*/false,
-                           exception_state);
+  Document* doc = parseHTMLInternal(context, html, options, /*safe=*/false,
+                                    exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  return doc;
 }
 
 // static
@@ -9490,8 +9498,12 @@ Document* Document::parseHTML(ExecutionContext* context,
                               SetHTMLOptions* options,
                               ExceptionState& exception_state) {
   CHECK(RuntimeEnabledFeatures::SanitizerAPIEnabled());
-  return parseHTMLInternal(context, html, options, /*safe=*/true,
-                           exception_state);
+  Document* doc = parseHTMLInternal(context, html, options, /*safe=*/true,
+                                    exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+  return doc;
 }
 
 void Document::SetOverrideSiteForCookiesForCSPMedia(bool value) {
