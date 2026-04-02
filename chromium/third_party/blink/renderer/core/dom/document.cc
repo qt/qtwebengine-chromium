@@ -9997,6 +9997,9 @@ Document* Document::parseHTMLUnsafe(ExecutionContext* context,
   }
   Document* doc = parseHTMLInternal(context, compliant_html, exception_state);
   SanitizerAPI::SanitizeUnsafeInternal(doc, options, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
   return doc;
 }
 
@@ -10008,6 +10011,9 @@ Document* Document::parseHTML(ExecutionContext* context,
   CHECK(RuntimeEnabledFeatures::SanitizerAPIEnabled());
   Document* doc = parseHTMLInternal(context, html, exception_state);
   SanitizerAPI::SanitizeSafeInternal(doc, options, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
   return doc;
 }
 

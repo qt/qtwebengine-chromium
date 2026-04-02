@@ -62,6 +62,7 @@ void SanitizerAPI::SanitizeSafeInternal(ContainerNode* element,
   }
 
   if (exception_state.HadException()) {
+    element->setTextContent("");
     return;
   }
 

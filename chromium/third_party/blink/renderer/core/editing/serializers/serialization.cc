@@ -805,6 +805,10 @@ DocumentFragment* CreateContextualFragment(
       markup, element, parser_content_policy,
       Element::ParseDeclarativeShadowRoots::kDontParse,
       Element::ForceHtml::kDontForce, exception_state);
+  if (exception_state.HadException()) {
+    return nullptr;
+  }
+
   if (!fragment)
     return nullptr;
 
