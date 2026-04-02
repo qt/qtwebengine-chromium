@@ -195,7 +195,7 @@ static int combined_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
                                   int *rate_mv, int64_t best_rd_sofar,
                                   int use_base_mv) {
   MACROBLOCKD *xd = &x->e_mbd;
-  AV1_COMMON *cm = &cpi->common;
+  const AV1_COMMON *cm = &cpi->common;
   const SPEED_FEATURES *sf = &cpi->sf;
   MB_MODE_INFO *mi = xd->mi[0];
   int step_param = (sf->rt_sf.fullpel_search_step_param)
@@ -210,7 +210,7 @@ static int combined_motion_search(AV1_COMP *cpi, MACROBLOCK *x,
   int cost_list[5];
   int search_subpel = 1;
 
-  if (av1_is_scaled(get_ref_scale_factors(cm, ref))) {
+  if (av1_is_scaled(get_ref_scale_factors_const(cm, ref))) {
     const YV12_BUFFER_CONFIG *scaled_ref = av1_get_scaled_ref_frame(cpi, ref);
     (void)scaled_ref;
     assert(scaled_ref != NULL);
