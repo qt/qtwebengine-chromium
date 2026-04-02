@@ -437,6 +437,13 @@ BASE_FEATURE(kServiceWorkerStaticRouterRaceRequestFix,
              "kServiceWorkerStaticRouterRaceRequestFix",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// crbug.com/495999481: When this is enabled, the navigation request should be
+// blocked when it receives an opaque response from the service worker static
+// router.
+BASE_FEATURE(kServiceWorkerStaticRouterOpaqueCheck,
+             "ServiceWorkerStaticRouterOpaqueCheck",
+             base::FEATURE_DISABLED_BY_DEFAULT);
+
 // (crbug.com/1371756): When enabled, the static routing API starts
 // ServiceWorker when the routing result of a main resource request was network
 // fallback.
