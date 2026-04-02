@@ -36,7 +36,9 @@
 #include "net/cookies/site_for_cookies.h"
 #include "net/http/http_request_headers.h"
 #include "net/traffic_annotation/network_traffic_annotation.h"
+#include "services/network/public/cpp/data_element.h"
 #include "services/network/public/cpp/resource_request.h"
+#include "services/network/public/cpp/resource_request_body.h"
 #include "services/network/public/mojom/cookie_manager.mojom-shared.h"
 #include "services/network/public/mojom/url_loader_factory.mojom.h"
 #include "third_party/blink/public/common/features.h"
@@ -161,6 +163,26 @@ void AuctionURLLoaderFactoryProxy::CreateLoaderAndStart(
               maybe_subresource_info->info_from_renderer.bundle_url,
               /*token=*/maybe_subresource_info->info_from_renderer.token,
               /*render_process_id=*/*renderer_process_id_);
+    }
+  }
+
+  if (url_request.method != net::HttpRequestHeaders::kGetMethod) {
+    // If the request is not a GET and not a trusted signals POST, disallow the
+    // request.
+    if (url_request.method != net::HttpRequestHeaders::kPostMethod ||
+        !is_trusted_signals_request) {
+      is_request_allowed = false;
+    } else {
+      // For trusted signals POSTs only allow request bodies that contain a
+      // single byte element, since that's all the auction worklet code should
+      // produce. The most important thing here is to disallow attempts to
+      // upload files.
+      if (url_request.request_body &&
+          (url_request.request_body->elements()->size() != 1u ||
+           url_request.request_body->elements()->front().type() !=
+               network::DataElement::Tag::kBytes)) {
+        is_request_allowed = false;
+      }
     }
   }
 
