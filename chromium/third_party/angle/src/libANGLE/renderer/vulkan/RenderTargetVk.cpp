@@ -33,7 +33,6 @@ RenderTargetVk::RenderTargetVk(RenderTargetVk &&other)
       mImageViews(other.mImageViews),
       mResolveImage(other.mResolveImage),
       mResolveImageViews(other.mResolveImageViews),
-      mImageSiblingSerial(other.mImageSiblingSerial),
       mLevelIndexGL(other.mLevelIndexGL),
       mLayerIndex(other.mLayerIndex),
       mLayerCount(other.mLayerCount),
@@ -46,7 +45,6 @@ void RenderTargetVk::init(vk::ImageHelper *image,
                           vk::ImageViewHelper *imageViews,
                           vk::ImageHelper *resolveImage,
                           vk::ImageViewHelper *resolveImageViews,
-                          UniqueSerial imageSiblingSerial,
                           gl::LevelIndex levelIndexGL,
                           uint32_t layerIndex,
                           uint32_t layerCount,
@@ -56,7 +54,6 @@ void RenderTargetVk::init(vk::ImageHelper *image,
     mImageViews         = imageViews;
     mResolveImage       = resolveImage;
     mResolveImageViews  = resolveImageViews;
-    mImageSiblingSerial = imageSiblingSerial;
     mLevelIndexGL       = levelIndexGL;
     mLayerIndex         = layerIndex;
     mLayerCount         = layerCount;
@@ -70,7 +67,6 @@ void RenderTargetVk::reset()
     mImageViews         = nullptr;
     mResolveImage       = nullptr;
     mResolveImageViews  = nullptr;
-    mImageSiblingSerial = {};
     mLevelIndexGL       = gl::LevelIndex(0);
     mLayerIndex         = 0;
     mLayerCount         = 0;
@@ -107,7 +103,7 @@ void RenderTargetVk::onColorDraw(ContextVk *contextVk,
     ASSERT(framebufferLayerCount <= mLayerCount);
 
     contextVk->onColorDraw(mLevelIndexGL, mLayerIndex, framebufferLayerCount, mImage, mResolveImage,
-                           mImageSiblingSerial, packedAttachmentIndex);
+                           packedAttachmentIndex);
 
     // Multisampled render to texture framebuffers cannot be layered.
     ASSERT(mResolveImage == nullptr || framebufferLayerCount == 1);
@@ -126,7 +122,7 @@ void RenderTargetVk::onColorResolve(ContextVk *contextVk,
     // render target.  Ask the context to add this image as the resolve attachment to the read
     // framebuffer's render pass, at the given color index.
     contextVk->onColorResolve(mLevelIndexGL, mLayerIndex, framebufferLayerCount, mImage,
-                              view.getHandle(), mImageSiblingSerial, readColorIndexGL);
+                              view.getHandle(), readColorIndexGL);
 }
 
 void RenderTargetVk::onDepthStencilDraw(ContextVk *contextVk, uint32_t framebufferLayerCount)
@@ -136,7 +132,7 @@ void RenderTargetVk::onDepthStencilDraw(ContextVk *contextVk, uint32_t framebuff
     ASSERT(framebufferLayerCount <= mLayerCount);
 
     contextVk->onDepthStencilDraw(mLevelIndexGL, mLayerIndex, framebufferLayerCount, mImage,
-                                  mResolveImage, mImageSiblingSerial);
+                                  mResolveImage);
 }
 
 void RenderTargetVk::onDepthStencilResolve(ContextVk *contextVk,
@@ -149,7 +145,7 @@ void RenderTargetVk::onDepthStencilResolve(ContextVk *contextVk,
     ASSERT(mResolveImage == nullptr);
 
     contextVk->onDepthStencilResolve(mLevelIndexGL, mLayerIndex, framebufferLayerCount, aspects,
-                                     mImage, view.getHandle(), mImageSiblingSerial);
+                                     mImage, view.getHandle());
 }
 
 vk::ImageHelper &RenderTargetVk::getImageForRenderPass()
@@ -357,7 +353,6 @@ void RenderTargetVk::updateSwapchainImage(vk::ImageHelper *image,
                                           vk::ImageViewHelper *resolveImageViews)
 {
     ASSERT(image && image->valid() && imageViews);
-    ASSERT(!mImageSiblingSerial.valid());
     ASSERT(mLevelIndexGL == gl::LevelIndex(0));
     ASSERT(mLayerIndex == 0);
     mImage             = image;

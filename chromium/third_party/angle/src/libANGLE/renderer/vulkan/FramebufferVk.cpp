@@ -464,6 +464,8 @@ void FramebufferVk::destroy(const gl::Context *context)
 
     if (mFragmentShadingRateImage.valid())
     {
+        contextVk->finalizeImageLayout(&mFragmentShadingRateImage);
+
         vk::Renderer *renderer = contextVk->getRenderer();
         mFragmentShadingRateImageView.release(renderer, mFragmentShadingRateImage.getResourceUse());
         mFragmentShadingRateImage.releaseImage(renderer);
@@ -3418,6 +3420,7 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk,
         if (clears->getColorMask().test(colorIndexGL))
         {
             if (renderPassCommands->hasAnyColorAccess(colorIndexVk) ||
+                renderPassCommands->hasColorAttachmentFinalized(colorIndexVk) ||
                 renderPassCommands->getRenderPassDesc().hasColorUnresolveAttachment(colorIndexGL) ||
                 !optimizeWithLoadOp)
             {
@@ -3453,6 +3456,7 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk,
     dsClearValue.depthStencil.stencil = clears->getStencilValue();
     if (clears->testDepth() &&
         (renderPassCommands->hasAnyDepthAccess() ||
+         renderPassCommands->hasDepthAttachmentFinalized() ||
          renderPassCommands->getRenderPassDesc().hasDepthUnresolveAttachment() ||
          !optimizeWithLoadOp))
     {
@@ -3465,6 +3469,7 @@ void FramebufferVk::clearWithCommand(ContextVk *contextVk,
 
     if (clears->testStencil() &&
         (renderPassCommands->hasAnyStencilAccess() ||
+         renderPassCommands->hasStencilAttachmentFinalized() ||
          renderPassCommands->getRenderPassDesc().hasStencilUnresolveAttachment() ||
          !optimizeWithLoadOp))
     {

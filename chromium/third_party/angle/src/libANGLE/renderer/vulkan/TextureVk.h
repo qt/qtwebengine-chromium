@@ -390,8 +390,7 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                         gl::TextureType imageType,
                         uint32_t imageLevelOffset,
                         uint32_t imageLayerOffset,
-                        bool selfOwned,
-                        UniqueSerial siblingSerial);
+                        bool selfOwned);
 
     vk::ImageViewHelper &getImageViews() { return mImageView; }
     const vk::ImageViewHelper &getImageViews() const { return mImageView; }
@@ -647,8 +646,6 @@ class TextureVk : public TextureImpl, public angle::ObserverInterface
                                  const vk::Format &format);
 
     bool mOwnsImage;
-    // Generated from ImageVk if EGLImage target, or from throw-away generator if Surface target.
-    UniqueSerial mImageSiblingSerial;
 
     bool mRequiresMutableStorage;
     vk::ImageAccess mRequiredImageAccess;

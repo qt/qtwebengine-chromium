@@ -104,6 +104,8 @@ class ShareGroupVk : public ShareGroupImpl
     void onFramebufferBoundary();
     uint32_t getCurrentFrameCount() const { return mCurrentFrameCount; }
 
+    void finalizeImageLayoutInAllSharedContexts(vk::ImageHelper *image);
+
   private:
     angle::Result updateContextsPriority(ContextVk *contextVk, egl::ContextPriority newPriority);
 

@@ -75,7 +75,6 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
     {
         mImage              = new vk::ImageHelper();
         mOwnsImage          = true;
-        mImageSiblingSerial = {};
         mImageObserverBinding.bind(mImage);
         mImageViews.init(renderer);
     }
@@ -148,12 +147,11 @@ angle::Result RenderbufferVk::setStorageImpl(const gl::Context *context,
             *mImage, mImage->getExtents(), robustInit));
 
         mRenderTarget.init(&mMultisampledImage, &mMultisampledImageViews, mImage, &mImageViews,
-                           mImageSiblingSerial, gl::LevelIndex(0), 0, 1,
-                           RenderTargetTransience::MultisampledTransient);
+                           gl::LevelIndex(0), 0, 1, RenderTargetTransience::MultisampledTransient);
     }
     else
     {
-        mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr, mImageSiblingSerial,
+        mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr,
                            gl::LevelIndex(0), 0, 1, RenderTargetTransience::Default);
     }
 
@@ -194,7 +192,6 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
     ImageVk *imageVk    = vk::GetImpl(image);
     mImage              = imageVk->getImage();
     mOwnsImage          = false;
-    mImageSiblingSerial = imageVk->generateSiblingSerial();
     mImageObserverBinding.bind(mImage);
     mImageViews.init(renderer);
 
@@ -209,9 +206,8 @@ angle::Result RenderbufferVk::setStorageEGLImageTarget(const gl::Context *contex
         mImageViews.updateEglImageColorspace(*mImage, imageColorspace);
     }
 
-    mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr, mImageSiblingSerial,
-                       imageVk->getImageLevel(), imageVk->getImageLayer(), 1,
-                       RenderTargetTransience::Default);
+    mRenderTarget.init(mImage, &mImageViews, nullptr, nullptr, imageVk->getImageLevel(),
+                       imageVk->getImageLayer(), 1, RenderTargetTransience::Default);
 
     return angle::Result::Continue;
 }
@@ -291,8 +287,6 @@ void RenderbufferVk::releaseOwnershipOfImage(const gl::Context *context)
 {
     ContextVk *contextVk = vk::GetImpl(context);
 
-    ASSERT(!mImageSiblingSerial.valid());
-
     mOwnsImage = false;
     releaseAndDeleteImage(contextVk);
 }
@@ -307,6 +301,8 @@ void RenderbufferVk::releaseAndDeleteImage(ContextVk *contextVk)
 void RenderbufferVk::releaseImage(ContextVk *contextVk)
 {
     vk::Renderer *renderer = contextVk->getRenderer();
+    ShareGroupVk *shareGroupVk = contextVk->getShareGroup();
+
     if (mImage == nullptr)
     {
         ASSERT(mImageViews.isImageViewGarbageEmpty() &&
@@ -319,24 +315,24 @@ void RenderbufferVk::releaseImage(ContextVk *contextVk)
         mMultisampledImageViews.release(renderer, mImage->getResourceUse());
     }
 
-    if (mImage && mOwnsImage)
+    if (mImage)
     {
-        mImage->releaseImageFromShareContexts(renderer, contextVk, mImageSiblingSerial);
-        mImage->releaseStagedUpdates(renderer);
-    }
-    else
-    {
-        if (mImage)
+        if (mOwnsImage)
         {
-            mImage->finalizeImageLayoutInShareContexts(renderer, contextVk, mImageSiblingSerial);
+            mImage->releaseImage(contextVk);
+            mImage->releaseStagedUpdates(renderer);
         }
-        mImage = nullptr;
-        mImageObserverBinding.bind(nullptr);
+        else
+        {
+            mImageObserverBinding.bind(nullptr);
+            mImage = nullptr;
+        }
     }
 
     if (mMultisampledImage.valid())
     {
-        mMultisampledImage.releaseImageFromShareContexts(renderer, contextVk, mImageSiblingSerial);
+        shareGroupVk->finalizeImageLayoutInAllSharedContexts(&mMultisampledImage);
+        mMultisampledImage.releaseImage(contextVk);
     }
 }
 

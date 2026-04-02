@@ -386,18 +386,17 @@ bool IsStencilSamplerBinding(const gl::ProgramExecutable &executable, size_t tex
     return isStencilTexture;
 }
 
-vk::ImageLayout GetDepthStencilAttachmentImageReadLayout(const vk::ImageHelper &image,
-                                                         gl::ShaderType firstShader)
-{
-    const bool isDepthTexture =
-        image.hasRenderPassUsageFlag(vk::RenderPassUsage::DepthTextureSampler);
-    const bool isStencilTexture =
-        image.hasRenderPassUsageFlag(vk::RenderPassUsage::StencilTextureSampler);
+vk::ImageLayout GetDepthStencilAttachmentImageReadLayout(
+    const vk::RenderPassUsageFlags renderPassUsageFlags,
+    gl::ShaderType firstShader)
+ {
+    const bool isDepthTexture   = renderPassUsageFlags[vk::RenderPassUsage::DepthTextureSampler];
+    const bool isStencilTexture = renderPassUsageFlags[vk::RenderPassUsage::StencilTextureSampler];
 
     const bool isDepthReadOnlyAttachment =
-        image.hasRenderPassUsageFlag(vk::RenderPassUsage::DepthReadOnlyAttachment);
+        renderPassUsageFlags[vk::RenderPassUsage::DepthReadOnlyAttachment];
     const bool isStencilReadOnlyAttachment =
-        image.hasRenderPassUsageFlag(vk::RenderPassUsage::StencilReadOnlyAttachment);
+        renderPassUsageFlags[vk::RenderPassUsage::StencilReadOnlyAttachment];
 
     const bool isFS = firstShader == gl::ShaderType::Fragment;
 
@@ -445,7 +444,8 @@ vk::ImageLayout GetDepthStencilAttachmentImageReadLayout(const vk::ImageHelper &
     }
 }
 
-vk::ImageLayout GetImageReadLayout(TextureVk *textureVk,
+vk::ImageLayout GetImageReadLayout(vk::RenderPassCommandBufferHelper *renderPassCommands,
+                                   TextureVk *textureVk,
                                    const gl::ProgramExecutable &executable,
                                    size_t textureUnit,
                                    PipelineType pipelineType)
@@ -474,7 +474,9 @@ vk::ImageLayout GetImageReadLayout(TextureVk *textureVk,
         ASSERT(remainingShaderBits.none() && lastShader == firstShader);
     }
 
-    if (image.hasRenderPassUsageFlag(vk::RenderPassUsage::RenderTargetAttachment))
+    vk::RenderPassUsageFlags &renderPassUsageFlags =
+        image.getRenderPassUsage().flags(renderPassCommands);
+    if (renderPassUsageFlags[vk::RenderPassUsage::RenderTargetAttachment])
     {
         // Right now we set the *TextureSampler flag only when RenderTargetAttachment is set since
         // we do not track all textures in the render pass.
@@ -483,17 +485,17 @@ vk::ImageLayout GetImageReadLayout(TextureVk *textureVk,
         {
             if (IsStencilSamplerBinding(executable, textureUnit))
             {
-                image.setRenderPassUsageFlag(vk::RenderPassUsage::StencilTextureSampler);
+                renderPassUsageFlags.set(vk::RenderPassUsage::StencilTextureSampler);
             }
             else
             {
-                image.setRenderPassUsageFlag(vk::RenderPassUsage::DepthTextureSampler);
+                renderPassUsageFlags.set(vk::RenderPassUsage::DepthTextureSampler);
             }
 
-            return GetDepthStencilAttachmentImageReadLayout(image, firstShader);
+            return GetDepthStencilAttachmentImageReadLayout(renderPassUsageFlags, firstShader);
         }
 
-        image.setRenderPassUsageFlag(vk::RenderPassUsage::ColorTextureSampler);
+        renderPassUsageFlags.set(vk::RenderPassUsage::ColorTextureSampler);
 
         return isFragmentShaderOnly ? vk::ImageLayout::ColorWriteFragmentShaderFeedback
                                     : vk::ImageLayout::ColorWriteAllShadersFeedback;
@@ -2531,8 +2533,8 @@ ANGLE_INLINE angle::Result ContextVk::handleDirtyTexturesImpl(
         // layers. Therefore we can't verify it has no staged updates right here.
         vk::ImageHelper &image = textureVk->getImage();
 
-        const vk::ImageLayout imageLayout =
-            GetImageReadLayout(textureVk, *executable, textureUnit, pipelineType);
+        const vk::ImageLayout imageLayout = GetImageReadLayout(
+            mRenderPassCommands, textureVk, *executable, textureUnit, pipelineType);
 
         // Ensure the image is in the desired layout
         commandBufferHelper->imageRead(this, image.getAspectFlags(), imageLayout, &image);
@@ -4563,7 +4565,7 @@ angle::Result ContextVk::optimizeRenderPassForPresent(vk::ImageViewHelper *color
                                                              0, &resolveImageView));
 
         mRenderPassCommands->addColorResolveAttachment(0, colorImage, resolveImageView->getHandle(),
-                                                       gl::LevelIndex(0), 0, 1, {});
+                                                       gl::LevelIndex(0), 0, 1);
         onImageRenderPassWrite(gl::LevelIndex(0), 0, 1, VK_IMAGE_ASPECT_COLOR_BIT,
                                vk::ImageLayout::ColorWrite, colorImage);
 
@@ -7962,25 +7964,6 @@ angle::Result ContextVk::onImageReleaseToExternal(const vk::ImageHelper &image)
     return angle::Result::Continue;
 }
 
-void ContextVk::finalizeImageLayout(vk::ImageHelper *image, UniqueSerial imageSiblingSerial)
-{
-    if (mRenderPassCommands->started())
-    {
-        mRenderPassCommands->finalizeImageLayout(this, image, imageSiblingSerial);
-    }
-
-    if (image->isForeignImage() && !image->isReleasedToForeign())
-    {
-        // Note: Foreign images may be shared between different textures.  If another texture starts
-        // to use the image while the barrier-to-foreign is cached in the context, it will attempt
-        // to acquire the image from foreign while the release is still cached.  A submission is
-        // made to finalize the queue family ownership transfer back to foreign.
-        (void)flushAndSubmitCommands(nullptr, nullptr,
-                                     RenderPassClosureReason::ForeignImageRelease);
-        ASSERT(!hasForeignImagesToTransition());
-    }
-}
-
 angle::Result ContextVk::beginNewRenderPass(
     vk::RenderPassFramebuffer &&framebuffer,
     const gl::Rectangle &renderArea,
@@ -8753,12 +8736,15 @@ angle::Result ContextVk::switchToReadOnlyDepthStencilMode(gl::Texture *texture,
     // pending through a deferred clear.
     if (hasActiveRenderPass())
     {
-        const vk::RenderPassUsage readOnlyAttachmentUsage =
-            isStencilTexture ? vk::RenderPassUsage::StencilReadOnlyAttachment
-                             : vk::RenderPassUsage::DepthReadOnlyAttachment;
         TextureVk *textureVk = vk::GetImpl(texture);
 
-        if (!textureVk->getImage().hasRenderPassUsageFlag(readOnlyAttachmentUsage))
+        const vk::RenderPassUsageFlags imageRenderPassUsageFlags =
+            textureVk->getImage().getRenderPassUsage().getFlags(mRenderPassCommands);
+        bool readOnlyAttachment =
+            isStencilTexture
+                ? imageRenderPassUsageFlags[vk::RenderPassUsage::StencilReadOnlyAttachment]
+                : imageRenderPassUsageFlags[vk::RenderPassUsage::DepthReadOnlyAttachment];
+        if (!readOnlyAttachment)
         {
             // If the render pass has written to this aspect, it needs to be closed.
             if ((!isStencilTexture && getStartedRenderPassCommands().hasDepthWriteOrClear()) ||
@@ -9026,9 +9012,11 @@ angle::Result ContextVk::endRenderPassIfComputeAccessAfterGraphicsImageAccess()
         // Similar to flushCommandBuffersIfNecessary(), but using textures currently bound and used
         // by the current (compute) program.  This is to handle read-after-write hazards where the
         // write originates from a framebuffer attachment.
-        if (image.hasRenderPassUsageFlag(vk::RenderPassUsage::RenderTargetAttachment) &&
-            isRenderPassStartedAndUsesImage(image))
+        const vk::RenderPassUsageFlags imageRenderPassUsageFlags =
+            image.getRenderPassUsage().getFlags(mRenderPassCommands);
+        if (imageRenderPassUsageFlags[vk::RenderPassUsage::RenderTargetAttachment])
         {
+            ASSERT(isRenderPassStartedAndUsesImage(image));
             return flushCommandsAndEndRenderPass(
                 RenderPassClosureReason::ImageAttachmentThenComputeRead);
         }
