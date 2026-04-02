@@ -249,7 +249,8 @@ bool VideoPictureInPictureWindowControllerImpl::PlayInternal() {
     return false /* still paused */;
   }
 
-  active_session_->GetMediaPlayerRemote()->RequestPlay();
+  active_session_->GetMediaPlayerRemote()->RequestPlay(
+      /*triggered_by_user=*/true);
   return true /* playing */;
 }
 
