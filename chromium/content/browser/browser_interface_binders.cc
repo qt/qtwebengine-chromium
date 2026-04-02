@@ -1201,6 +1201,21 @@ void PopulateBinderMapWithContext(
       &EmptyBinderForFrame<blink::mojom::CredentialManager>);
   map->Add<blink::mojom::LCPCriticalPathPredictorHost>(
       &EmptyBinderForFrame<blink::mojom::LCPCriticalPathPredictorHost>);
+
+  // Currently defined in content/shell/common/shell_switches.h which we cannot
+  // have a DEPS on.
+  constexpr char kExposeInternalsForTesting[] = "expose-internals-for-testing";
+  if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+          kExposeInternalsForTesting)) {
+    map->Add<blink::mojom::FrameWidgetHost>(base::BindRepeating(
+        [](RenderFrameHost* host,
+           mojo::PendingReceiver<blink::mojom::FrameWidgetHost> receiver) {
+          static_cast<RenderFrameHostImpl*>(host)
+              ->GetRenderWidgetHost()
+              ->BindFrameWidgetHostReceiver(std::move(receiver));
+        }));
+  }
+
   if (base::FeatureList::IsEnabled(network::features::kBrowsingTopics) &&
       base::FeatureList::IsEnabled(
           blink::features::kBrowsingTopicsDocumentAPI)) {
