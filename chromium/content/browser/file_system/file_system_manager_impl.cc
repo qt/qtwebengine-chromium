@@ -19,6 +19,7 @@
 #include "content/browser/blob_storage/chrome_blob_storage_context.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/browser/file_system/browser_file_system_helper.h"
+#include "content/common/features.h"
 #include "content/public/browser/browser_thread.h"
 #include "mojo/public/cpp/bindings/pending_remote.h"
 #include "mojo/public/cpp/bindings/receiver_set.h"
@@ -211,20 +212,25 @@ void FileSystemManagerImpl::Open(const url::Origin& origin,
                                  OpenCallback callback) {
   DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
+  url::Origin origin_to_check = origin;
+  if (base::FeatureList::IsEnabled(
+          features::kEnforceFileSystemManagerOpenOrigin)) {
+    origin_to_check = receivers_.current_context().origin();
+  }
+
   GetUIThreadTaskRunner({})->PostTaskAndReplyWithResult(
       FROM_HERE,
       base::BindOnce(
           &ChildProcessSecurityPolicyImpl::CanAccessDataForOrigin,
           base::Unretained(ChildProcessSecurityPolicyImpl::GetInstance()),
-          process_id_, origin),
+          process_id_, origin_to_check),
       base::BindOnce(&FileSystemManagerImpl::ContinueOpen,
-                     weak_factory_.GetWeakPtr(), origin, file_system_type,
+                     weak_factory_.GetWeakPtr(), file_system_type,
                      receivers_.GetBadMessageCallback(), std::move(callback),
                      receivers_.current_context()));
 }
 
 void FileSystemManagerImpl::ContinueOpen(
-    const url::Origin& origin,
     blink::mojom::FileSystemType file_system_type,
     mojo::ReportBadMessageCallback bad_message_callback,
     OpenCallback callback,
