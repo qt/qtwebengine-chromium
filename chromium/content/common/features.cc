@@ -139,6 +139,14 @@ BASE_FEATURE(kEnableDevToolsJsErrorReporting,
              base::FEATURE_DISABLED_BY_DEFAULT);
 #endif  // BUILDFLAG(IS_LINUX) || BUILDFLAG(IS_CHROMEOS)
 
+// Enforces the use of the browser-authoritative origin from the Mojo receiver
+// context instead of the renderer-supplied origin in FileSystemManager::Open.
+// TODO(crbug.com/497254383): Remove this flag and the origin parameter from
+// the Mojo interface.
+BASE_FEATURE(kEnforceFileSystemManagerOpenOrigin,
+             "EnforceFileSystemManagerOpenOrigin",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Content counterpart of ExperimentalContentSecurityPolicyFeatures in
 // third_party/blink/renderer/platform/runtime_enabled_features.json5. Enables
 // experimental Content Security Policy features ('navigate-to').
