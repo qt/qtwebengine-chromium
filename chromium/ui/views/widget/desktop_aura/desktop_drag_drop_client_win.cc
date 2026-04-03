@@ -44,6 +44,7 @@ ui::mojom::DragOperation DesktopDragDropClientWin::StartDragAndDrop(
     const gfx::Point& screen_location,
     int allowed_operations,
     ui::mojom::DragEventSource source) {
+  CHECK(!drag_drop_in_progress_);
   gfx::Point touch_screen_point;
   if (source == ui::mojom::DragEventSource::kTouch) {
     display::Screen* screen = display::Screen::GetScreen();
