@@ -111,7 +111,6 @@
 
 #if BUILDFLAG(ENABLE_HLS_DEMUXER)
 #include "media/filters/hls_data_source_provider_impl.h"
-#include "third_party/blink/renderer/platform/media/multi_buffer_data_source_factory.h"
 #endif  // BUILDFLAG(ENABLE_HLS_DEMUXER)
 
 #if BUILDFLAG(IS_ANDROID)
@@ -1739,7 +1738,7 @@ base::SequenceBound<media::HlsDataSourceProvider>
 WebMediaPlayerImpl::GetHlsDataSourceProvider() {
   DCHECK(main_task_runner_->BelongsToCurrentThread());
   return base::SequenceBound<media::HlsDataSourceProviderImpl>(
-      main_task_runner_, std::make_unique<MultiBufferDataSourceFactory>(
+      main_task_runner_, std::make_unique<MultiBufferDataSource::Factory>(
                              media_log_.get(),
                              WTF::BindRepeating(&WebMediaPlayerImpl::GetUrlData,
                                                 weak_factory_.GetWeakPtr()),
