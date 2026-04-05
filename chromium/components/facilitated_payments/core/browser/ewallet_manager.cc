@@ -55,6 +55,9 @@ EwalletManager::~EwalletManager() {
 void EwalletManager::TriggerEwalletPushPayment(const GURL& payment_link_url,
                                                const GURL& page_url,
                                                ukm::SourceId ukm_source_id) {
+  if (ui_state_ != UiState::kHidden) {
+    return;
+  }
   payment_flow_triggered_timestamp_ = base::TimeTicks::Now();
   ukm_source_id_ = ukm_source_id;
   LogPaymentLinkDetected(ukm_source_id_);
