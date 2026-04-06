@@ -858,7 +858,9 @@ bool ServiceWorkerVersion::FinishRequestWithFetchCount(int request_id,
   TRACE_EVENT_NESTABLE_ASYNC_END1(
       "ServiceWorker", "ServiceWorkerVersion::Request", TRACE_ID_LOCAL(request),
       "Handled", was_handled);
-  request_timeouts_.erase(request->timeout_iter);
+  if (request->timeout_iter.has_value()) {
+    request_timeouts_.erase(*request->timeout_iter);
+  }
   inflight_requests_.Remove(request_id);
   // TODO(crbug.com/40864997): remove the following DCHECK when the cause
   // identified.
@@ -2588,6 +2590,11 @@ void ServiceWorkerVersion::OnTimeoutTimer() {
       break;
     }
     timed_out_infos.push_back(*it);
+    // Erase the entry from `request_timeouts_` and update `InflightRequest`
+    // accordingly.
+    InflightRequest* request = inflight_requests_.Lookup(it->id);
+    CHECK(request);
+    request->timeout_iter = std::nullopt;
     it = request_timeouts_.erase(it);
   }
 
