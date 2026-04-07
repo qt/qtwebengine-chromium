@@ -620,8 +620,16 @@ bool CFX_PSRenderer::DrawDIBits(RetainPtr<const CFX_DIBBase> bitmap,
         encoder_iface_->pJpegEncodeFunc(bitmap, &output_buf, &output_size)) {
       filter = "/DCTDecode filter ";
     } else {
-      int src_pitch = width * bytes_per_pixel;
-      output_size = height * src_pitch;
+      FX_SAFE_UINT32 safe_pitch = bytes_per_pixel;
+      safe_pitch *= width;
+      FX_SAFE_UINT32 safe_output_size = safe_pitch;
+      safe_output_size *= height;
+      if (!safe_output_size.IsValid()) {
+        WriteString("\nQ\n");
+        return false;
+      }
+      uint32_t src_pitch = safe_pitch.ValueOrDie();
+      output_size = safe_output_size.ValueOrDie();
       output_buf = FX_Alloc(uint8_t, output_size);
       for (int row = 0; row < height; row++) {
         const uint8_t* src_scan = bitmap->GetScanline(row).data();
