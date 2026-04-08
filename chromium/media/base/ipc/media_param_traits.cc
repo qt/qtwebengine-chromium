@@ -8,7 +8,6 @@
 #include "ipc/ipc_message_utils.h"
 #include "media/base/audio_parameters.h"
 #include "media/base/audio_point.h"
-#include "media/base/encryption_pattern.h"
 #include "media/base/encryption_scheme.h"
 #include "media/base/limits.h"
 #include "media/base/media_switches.h"
@@ -120,31 +119,6 @@ void ParamTraits<AudioParameters::HardwareCapabilities>::Log(
     std::string* l) {
   l->append(base::StringPrintf("<AudioParameters::HardwareCapabilities>"));
 }
-
-void ParamTraits<media::EncryptionPattern>::Write(base::Pickle* m,
-                                                  const param_type& p) {
-  WriteParam(m, p.crypt_byte_block());
-  WriteParam(m, p.skip_byte_block());
-}
-
-bool ParamTraits<media::EncryptionPattern>::Read(const base::Pickle* m,
-                                                 base::PickleIterator* iter,
-                                                 param_type* r) {
-  uint32_t crypt_byte_block, skip_byte_block;
-  if (!ReadParam(m, iter, &crypt_byte_block) ||
-      !ReadParam(m, iter, &skip_byte_block)) {
-    return false;
-  }
-
-  *r = media::EncryptionPattern(crypt_byte_block, skip_byte_block);
-  return true;
-}
-
-void ParamTraits<media::EncryptionPattern>::Log(const param_type& p,
-                                                std::string* l) {
-  l->append(base::StringPrintf("<EncryptionPattern>"));
-}
-
 }  // namespace IPC
 
 // Generate param traits write methods.
