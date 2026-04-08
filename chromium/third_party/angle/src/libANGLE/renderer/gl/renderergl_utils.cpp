@@ -2240,7 +2240,7 @@ void GenerateCaps(const FunctionsGL *functions,
 
     if (features.limitMaxBufferSizeTo1gb.enabled)
     {
-        limitations->bufferSizeLimit = 1 << 30;
+        limitations->maxBufferBytes = 1 << 30;
     }
 }
 

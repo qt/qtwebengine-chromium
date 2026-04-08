@@ -248,6 +248,20 @@
             "description": [
                 "Set Texture's InitState to MayNeedInit inside invalidateFramebuffer or discardFramebuffer."
             ]
+        },
+        {
+            "name": "limit_max_buffer_bytes_to_1MB",
+            "category": "Features",
+            "description": [
+                "Force a max buffer size of 1MB for testing."
+            ]
+        },
+        {
+            "name": "limit_max_texture_bytes_to_1MB",
+            "category": "Features",
+            "description": [
+                "Force a max image size of 1MB for testing."
+            ]
         }
     ]
 }

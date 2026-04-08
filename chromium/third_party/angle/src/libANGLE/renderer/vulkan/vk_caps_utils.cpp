@@ -1464,6 +1464,10 @@ void Renderer::ensureCapsInitialized() const
             mFragmentShadingRateProperties.fragmentShadingRateNonTrivialCombinerOps);
     }
 
+    // Limits for texture and buffer allocations
+    mNativeLimitations.maxBufferBytes  = static_cast<size_t>(mMaxMemoryAllocationSize);
+    mNativeLimitations.maxTextureBytes = static_cast<size_t>(mMaxMemoryAllocationSize);
+
     // Log any missing extensions required for GLES 3.2.
     LogMissingExtensionsForGLES32(mNativeExtensions);
 }
