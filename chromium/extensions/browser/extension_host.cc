@@ -170,9 +170,9 @@ ExtensionHost::ExtensionHost(const Extension* extension,
 
   // Create password reuse detection manager when new extension web contents are
   // created.
-  ExtensionsBrowserClient::Get()
-      ->GetSafeBrowsingDelegate()
-      ->CreatePasswordReuseDetectionManager(host_contents_.get());
+  if (auto safe_browsing_delegate = ExtensionsBrowserClient::Get()
+      ->GetSafeBrowsingDelegate())
+    safe_browsing_delegate->CreatePasswordReuseDetectionManager(host_contents_.get());
 
   ExtensionHostRegistry::Get(browser_context_)->ExtensionHostCreated(this);
 }

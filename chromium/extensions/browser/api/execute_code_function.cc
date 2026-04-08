@@ -178,8 +178,9 @@ ExtensionFunction::ResponseAction ExecuteCodeFunction::Run() {
 
   if (details_->code) {
     if (!IsWebView() && extension()) {
-      ExtensionsBrowserClient::Get()
-          ->GetSafeBrowsingDelegate()
+      if (auto safe_browsing_delegate = ExtensionsBrowserClient::Get()
+          ->GetSafeBrowsingDelegate())
+        safe_browsing_delegate
           ->NotifyExtensionApiTabExecuteScript(browser_context(),
                                                extension_id(), *details_->code);
     }

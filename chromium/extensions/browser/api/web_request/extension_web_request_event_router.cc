@@ -1024,8 +1024,9 @@ int WebRequestEventRouter::OnBeforeRequest(
           *new_url = GetNewUrl(action.redirect_url.value(), browser_context);
           // Collect redirect action data for the Extension Telemetry Service.
           if (action.type == DNRRequestAction::Type::REDIRECT) {
-            ExtensionsBrowserClient::Get()
-                ->GetSafeBrowsingDelegate()
+            if (auto safe_browsing_delegate = ExtensionsBrowserClient::Get()
+                ->GetSafeBrowsingDelegate())
+              safe_browsing_delegate
                 ->NotifyExtensionDeclarativeNetRequestRedirectAction(
                     browser_context, action.extension_id, request->url,
                     action.redirect_url.value());

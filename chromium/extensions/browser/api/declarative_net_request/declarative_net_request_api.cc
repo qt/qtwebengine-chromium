@@ -137,8 +137,9 @@ DeclarativeNetRequestUpdateDynamicRulesFunction::Run() {
 
   // Collect rules to add in the Extension Telemetry Service.
   if (!rules_to_add.empty()) {
-    ExtensionsBrowserClient::Get()
-        ->GetSafeBrowsingDelegate()
+    if (auto safe_browsing_delegate = ExtensionsBrowserClient::Get()
+        ->GetSafeBrowsingDelegate())
+      safe_browsing_delegate
         ->NotifyExtensionApiDeclarativeNetRequest(browser_context(),
                                                   extension_id(), rules_to_add);
   }
