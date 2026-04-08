@@ -415,6 +415,10 @@ bool PasswordFormManager::IsBlocklisted() const {
   return form_fetcher_->IsBlocklisted() || newly_blocklisted_;
 }
 
+bool PasswordFormManager::IsFetchCompleted() const {
+  return form_fetcher_->GetState() != FormFetcher::State::WAITING;
+}
+
 bool PasswordFormManager::IsMovableToAccountStore() const {
   if (!client_->GetPasswordFeatureManager()->IsAccountStorageEnabled()) {
     return false;

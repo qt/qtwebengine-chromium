@@ -872,8 +872,7 @@ bool PasswordManager::HaveFormManagersReceivedData(
   }
   for (const auto& form_manager : password_form_cache_.GetFormManagers()) {
     if (form_manager->GetDriver().get() == driver &&
-        form_manager->GetFormFetcher()->GetState() ==
-            FormFetcher::State::WAITING) {
+        !form_manager->IsFetchCompleted()) {
       return false;
     }
   }
@@ -1006,8 +1005,7 @@ PasswordFormManager* PasswordManager::ProvisionallySaveForm(
     matched_manager = CreateFormManager(driver, submitted_form);
   }
 
-  if (is_manual_fallback && matched_manager->GetFormFetcher()->GetState() ==
-                                FormFetcher::State::WAITING) {
+  if (is_manual_fallback && !matched_manager->IsFetchCompleted()) {
     // In case of manual fallback, the form manager has to be ready for saving.
     return nullptr;
   }
@@ -1260,8 +1258,7 @@ bool PasswordManager::IsAutomaticSavePromptAvailable(
     return false;
   }
 
-  if (submitted_manager->GetFormFetcher()->GetState() ==
-      FormFetcher::State::WAITING) {
+  if (!submitted_manager->IsFetchCompleted()) {
     // We have a provisional save manager, but it didn't finish matching yet.
     // We just give up.
     RecordProvisionalSaveFailure(
@@ -1733,6 +1730,10 @@ void PasswordManager::ShowManualFallbackForSaving(
   // `form_manager` will become nullptr.
   if (!form_manager) {
     HideManualFallbackForSaving();
+    return;
+  }
+
+  if (!form_manager->IsFetchCompleted()) {
     return;
   }
 

@@ -136,8 +136,7 @@ void HttpAuthManagerImpl::OnLoginSuccesfull() {
     return;
   }
 
-  if (form_manager_->GetFormFetcher()->GetState() ==
-      FormFetcher::State::WAITING) {
+  if (!form_manager_->IsFetchCompleted()) {
     // We have a provisional save manager, but it didn't finish matching yet.
     // We just give up.
     return;
