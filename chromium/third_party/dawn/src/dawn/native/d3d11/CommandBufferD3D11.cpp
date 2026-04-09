@@ -643,10 +643,19 @@ MaybeError CommandBuffer::ExecuteRenderPass(
         // Skip the clear as it will be handled by the workaround.
         colorAttachment.loadOp = wgpu::LoadOp::Load;
         // Mark the resource as initialized to avoid the lazy clear.
-        SubresourceRange range = colorAttachment.view->GetSubresourceRange();
-        colorAttachment.view->GetTexture()->SetIsSubresourceContentInitialized(true, range);
+        // For 3D textures, the view range covers the entire mip level (all depth slices), but
+        // the workaround only clears a single slice. So we must not mark it as initialized
+        // here, and let LazyClearRenderPassAttachments handle the initialization of the
+        // other slices.
+        if (colorAttachment.view->GetTexture()->GetDimension() != wgpu::TextureDimension::e3D) {
+            SubresourceRange range = colorAttachment.view->GetSubresourceRange();
+            colorAttachment.view->GetTexture()->SetIsSubresourceContentInitialized(true, range);
+        }
     }
-    LazyClearRenderPassAttachments(renderPass);
+    DAWN_TRY(LazyClearRenderPassAttachments(
+        GetDevice(), renderPass, [&](TextureBase* texture, const SubresourceRange& range) {
+            return ToBackend(texture)->EnsureSubresourceContentInitialized(commandContext, range);
+        }));
 
     auto* d3d11DeviceContext = commandContext->GetD3D11DeviceContext3();
     // Hold ID3D11RenderTargetView ComPtr to make attachments alive.

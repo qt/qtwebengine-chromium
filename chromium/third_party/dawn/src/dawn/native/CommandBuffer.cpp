@@ -155,7 +155,13 @@ SubresourceRange GetSubresourcesAffectedByCopy(const TextureCopy& copy, const Ex
     DAWN_UNREACHABLE();
 }
 
-void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
+MaybeError LazyClearRenderPassAttachments(DeviceBase* device,
+                                          BeginRenderPassCmd* renderPass,
+                                          LazyClearTexture3DHelper clearTexture3D) {
+    if (!device->IsToggleEnabled(Toggle::LazyClearResourceOnFirstUse)) {
+        return {};
+    }
+
     for (auto i : renderPass->attachmentState->GetColorAttachmentsMask()) {
         auto& attachmentInfo = renderPass->colorAttachments[i];
         TextureViewBase* view = attachmentInfo.view.Get();
@@ -164,12 +170,22 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
         DAWN_ASSERT(view->GetLayerCount() == 1);
         DAWN_ASSERT(view->GetLevelCount() == 1);
         SubresourceRange range = view->GetSubresourceRange();
+        TextureBase* texture = view->GetTexture();
 
         // If the loadOp is Load, but the subresource is not initialized, use Clear instead.
         if (attachmentInfo.loadOp == wgpu::LoadOp::Load &&
-            !view->GetTexture()->IsSubresourceContentInitialized(range)) {
+            !texture->IsSubresourceContentInitialized(range)) {
             attachmentInfo.loadOp = wgpu::LoadOp::Clear;
             attachmentInfo.clearColor = {0.f, 0.f, 0.f, 0.f};
+        }
+
+        // For 3D textures, rendering to a single depthSlice marks the entire mip level as
+        // initialized. If it wasn't already initialized, we must clear the other slices
+        // before the render pass starts.
+        // TODO(500975625): Optimize this.
+        if (texture->GetDimension() == wgpu::TextureDimension::e3D &&
+            !texture->IsSubresourceContentInitialized(range)) {
+            DAWN_TRY(clearTexture3D(texture, range));
         }
 
         if (hasResolveTarget) {
@@ -266,6 +282,7 @@ void LazyClearRenderPassAttachments(BeginRenderPassCmd* renderPass) {
             }
         }
     }
+    return {};
 }
 
 bool IsFullBufferOverwrittenInTextureToBufferCopy(const CopyTextureToBufferCmd* copy) {

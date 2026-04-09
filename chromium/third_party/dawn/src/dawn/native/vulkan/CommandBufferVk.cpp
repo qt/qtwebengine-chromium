@@ -866,7 +866,11 @@ MaybeError CommandBuffer::RecordCommands(CommandRecordingContext* recordingConte
                     device, recordingContext,
                     GetResourceUsages().renderPasses[nextRenderPassNumber]));
 
-                LazyClearRenderPassAttachments(cmd);
+                DAWN_TRY(LazyClearRenderPassAttachments(
+                    device, cmd, [&](TextureBase* texture, const SubresourceRange& range) {
+                        return ToBackend(texture)->EnsureSubresourceContentInitialized(
+                            recordingContext, range);
+                    }));
                 DAWN_TRY(RecordRenderPass(recordingContext, cmd));
 
                 recordingContext->hasRecordedRenderPass = true;
