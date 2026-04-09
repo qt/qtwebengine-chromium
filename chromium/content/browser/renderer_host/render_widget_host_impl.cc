@@ -140,6 +140,7 @@
 #include "ui/events/event.h"
 #include "ui/events/keycodes/dom/dom_code.h"
 #include "ui/gfx/color_space.h"
+#include "ui/gfx/geometry/rect.h"
 #include "ui/gfx/geometry/size_conversions.h"
 #include "ui/gfx/geometry/vector2d_conversions.h"
 #include "ui/gfx/geometry/vector2d_f.h"
@@ -3951,6 +3952,13 @@ void RenderWidgetHostImpl::AnimateDoubleTapZoomInMainFrame(
     return;
   }
 
+  gfx::Rect view_local_bounds(view_->GetViewBounds().size());
+  if (!view_local_bounds.IsEmpty() &&
+      (!view_local_bounds.Contains(point) ||
+       !view_local_bounds.Intersects(rect_to_zoom))) {
+    return;
+  }
+
   auto* root_view = view_->GetRootView();
   gfx::Point transformed_point(point);
   gfx::Rect transformed_rect_to_zoom(rect_to_zoom);
@@ -3960,13 +3968,23 @@ void RenderWidgetHostImpl::AnimateDoubleTapZoomInMainFrame(
     return;
   }
 
-  auto* root_rvhi = RenderViewHostImpl::From(root_view->GetRenderWidgetHost());
-  root_rvhi->AnimateDoubleTapZoom(transformed_point, transformed_rect_to_zoom);
+  auto* root_rwhi =
+      RenderWidgetHostImpl::From(root_view->GetRenderWidgetHost());
+  if (root_rwhi && root_rwhi->owner_delegate()) {
+    root_rwhi->owner_delegate()->AnimateDoubleTapZoom(transformed_point,
+                                                      transformed_rect_to_zoom);
+  }
 }
 
 void RenderWidgetHostImpl::ZoomToFindInPageRectInMainFrame(
     const gfx::Rect& rect_to_zoom) {
   if (!view_) {
+    return;
+  }
+
+  gfx::Rect view_local_bounds(view_->GetViewBounds().size());
+  if (!view_local_bounds.IsEmpty() &&
+      !view_local_bounds.Intersects(rect_to_zoom)) {
     return;
   }
 
@@ -3977,8 +3995,11 @@ void RenderWidgetHostImpl::ZoomToFindInPageRectInMainFrame(
     return;
   }
 
-  auto* root_rvhi = RenderViewHostImpl::From(root_view->GetRenderWidgetHost());
-  root_rvhi->ZoomToFindInPageRect(transformed_rect_to_zoom);
+  auto* root_rwhi =
+      RenderWidgetHostImpl::From(root_view->GetRenderWidgetHost());
+  if (root_rwhi && root_rwhi->owner_delegate()) {
+    root_rwhi->owner_delegate()->ZoomToFindInPageRect(transformed_rect_to_zoom);
+  }
 }
 
 void RenderWidgetHostImpl::SetHasTouchEventConsumers(
