@@ -940,7 +940,13 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     commandContext->EndCompute();
                 }
 
-                LazyClearRenderPassAttachments(cmd);
+                Device* device = ToBackend(GetDevice());
+                DAWN_TRY(LazyClearRenderPassAttachments(
+                    device, cmd, [&](TextureBase* texture, const SubresourceRange& range) {
+                        return ToBackend(texture)->EnsureSubresourceContentInitialized(
+                            commandContext, range);
+                    }));
+
                 if (cmd->attachmentState->HasDepthStencilAttachment() &&
                     ToBackend(cmd->depthStencilAttachment.view->GetTexture())
                         ->ShouldKeepInitialized()) {
@@ -950,7 +956,6 @@ MaybeError CommandBuffer::FillCommands(CommandRecordingContext* commandContext) 
                     cmd->depthStencilAttachment.depthStoreOp = wgpu::StoreOp::Store;
                     cmd->depthStencilAttachment.stencilStoreOp = wgpu::StoreOp::Store;
                 }
-                Device* device = ToBackend(GetDevice());
                 NSRef<MTLRenderPassDescriptor> descriptor = CreateMTLRenderPassDescriptor(
                     device, cmd, device->UseCounterSamplingAtStageBoundary());
 
