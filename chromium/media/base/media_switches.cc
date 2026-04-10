@@ -1746,6 +1746,12 @@ BASE_FEATURE(kVideoDecodeBatching,
              "VideoDecodeBatching",
              base::FEATURE_ENABLED_BY_DEFAULT);
 
+// Validates that the EncryptionPattern parameters are within the bounds
+// specified by ISO/IEC 23001-7:2016.
+BASE_FEATURE(kValidateEncryptionPatternSize,
+             "ValidateEncryptionPatternSize",
+             base::FEATURE_ENABLED_BY_DEFAULT);
+
 // Safety switch to allow us to revert to the previous behavior of using the
 // cached bounds when the permission prompt is visible. If this feature is
 // enabled (the default), we will clear the cached bounds, whenever the

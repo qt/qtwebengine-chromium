@@ -516,6 +516,8 @@ MEDIA_EXPORT BASE_DECLARE_FEATURE(kFuchsiaMediacodecVideoEncoder);
 
 MEDIA_EXPORT BASE_DECLARE_FEATURE(kVideoDecodeBatching);
 
+MEDIA_EXPORT BASE_DECLARE_FEATURE(kValidateEncryptionPatternSize);
+
 MEDIA_EXPORT BASE_DECLARE_FEATURE(
     kClearPipCachedBoundsWhenPermissionPromptVisible);
 
