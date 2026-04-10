@@ -498,6 +498,7 @@ Called by update_bad_message_reasons.py.-->
   <int value="330" label="RFH_CRASH_REPORT_STORAGE_SIZE_TOO_LARGE"/>
   <int value="331" label="RFH_CRASH_REPORT_STORAGE_ALREADY_INITIALIZED"/>
   <int value="332" label="RFH_CREATE_NEW_WINDOW_FROM_SANDBOXED_FRAME"/>
+  <int value="333" label="DT_DUPLICATE_CHILD_TARGET_CREATED"/>
 </enum>
 
 <enum name="BadMessageReasonExtensions">
