@@ -819,6 +819,10 @@ if (is_clang_or_gcc || is_msvc || is_mingw) {
       public_deps += [ "//third_party/fuchsia-sdk/sdk/pkg/fit" ]
     }
 
+    if (is_android && !use_custom_libcxx) {
+      deps += [ "//buildtools/third_party/libunwind" ]
+    }
+
     frameworks = []
     if (is_apple) {
       frameworks += [

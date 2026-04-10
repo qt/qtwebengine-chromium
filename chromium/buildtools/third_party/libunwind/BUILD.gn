@@ -23,7 +23,9 @@ config("libunwind_config") {
 source_set("libunwind") {
   visibility = [ "//buildtools/third_party/libc++abi" ]
   if (is_android) {
-    visibility += [ "//services/tracing/public/cpp" ]
+    visibility += [ "//services/tracing/public/cpp",
+                    "//base/allocator/partition_allocator/src/partition_alloc:allocator_base",
+    ]
   }
   if (!is_component_build) {
     defines = [ "_LIBUNWIND_DISABLE_VISIBILITY_ANNOTATIONS" ]
