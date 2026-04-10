@@ -351,6 +351,7 @@ enum BadMessageReason {
   MDDH_SELECT_AUDIO_OUTPUT_WITHOUT_FEATURE = 322,
   MDDH_SET_PREFERRED_SINK_ID_WITHOUT_FEATURE = 323,
   RFH_CREATE_NEW_WINDOW_FROM_SANDBOXED_FRAME = 324,
+  DT_DUPLICATE_CHILD_TARGET_CREATED = 325,
 
   // Please add new elements here. The naming convention is abbreviated class
   // name (e.g. RenderFrameHost becomes RFH) plus a unique description of the

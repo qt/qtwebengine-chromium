@@ -15,7 +15,7 @@ namespace content {
 // This is a base class for dedicated (but not shared or service) workers and
 // for common worklets. See DedicatedWorkerDevToolsAgentHost and
 // WorkletDevToolsAgentHost for concrete implementation.
-class WorkerOrWorkletDevToolsAgentHost : public DevToolsAgentHostImpl {
+class CONTENT_EXPORT WorkerOrWorkletDevToolsAgentHost : public DevToolsAgentHostImpl {
  public:
   WorkerOrWorkletDevToolsAgentHost(
       const WorkerOrWorkletDevToolsAgentHost&) = delete;
@@ -69,6 +69,7 @@ class WorkerOrWorkletDevToolsAgentHost : public DevToolsAgentHostImpl {
   GURL url_;
   std::string name_;
   base::OnceCallback<void(DevToolsAgentHostImpl*)> destroyed_callback_;
+  scoped_refptr<WorkerOrWorkletDevToolsAgentHost> self_keepalive_;
 };
 
 }  // namespace content
