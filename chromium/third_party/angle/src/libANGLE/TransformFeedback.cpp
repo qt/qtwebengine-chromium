@@ -7,6 +7,7 @@
 #include "libANGLE/TransformFeedback.h"
 
 #include "common/mathutil.h"
+#include "common/unsafe_buffers.h"
 #include "libANGLE/Buffer.h"
 #include "libANGLE/Caps.h"
 #include "libANGLE/Context.h"
@@ -269,10 +270,17 @@ void TransformFeedback::bindPPOPrograms(ProgramPipeline *programPipeline)
 }
 
 
-bool TransformFeedback::checkBufferSpaceForDraw(GLsizei count, GLsizei primcount) const
+bool TransformFeedback::checkBufferSpaceForDraw(const GLsizei *counts,
+                                                const GLsizei *primcounts,
+                                                GLsizei drawcount) const
 {
-    auto vertices =
-        mState.mVerticesDrawn + GetVerticesNeededForDraw(mState.mPrimitiveMode, count, primcount);
+    auto vertices = angle::CheckedNumeric<GLsizeiptr>(mState.mVerticesDrawn);
+    for (GLsizei drawID = 0; drawID < drawcount; ++drawID)
+    {
+        GLsizei primcount = ANGLE_UNSAFE_BUFFERS(primcounts ? primcounts[drawID] : 1);
+        GLsizei count     = ANGLE_UNSAFE_BUFFERS(counts[drawID]);
+        vertices += GetVerticesNeededForDraw(mState.mPrimitiveMode, count, primcount);
+    }
     return vertices.IsValid() && vertices.ValueOrDie() <= mState.mVertexCapacity;
 }
 
