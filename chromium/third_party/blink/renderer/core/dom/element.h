@@ -1369,6 +1369,7 @@ class CORE_EXPORT Element : public ContainerNode, public Animatable {
 
   virtual bool MatchesDefaultPseudoClass() const { return false; }
   virtual bool MatchesEnabledPseudoClass() const { return false; }
+  virtual bool MatchesDisabledPseudoClass() const { return false; }
   virtual bool MatchesReadOnlyPseudoClass() const { return false; }
   virtual bool MatchesReadWritePseudoClass() const { return false; }
   virtual bool MatchesValidityPseudoClasses() const { return false; }
