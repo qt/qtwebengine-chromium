@@ -533,9 +533,16 @@ void Navigator::DidNavigate(
             *navigation_request, /*did_receive_commit_ack=*/true);
   }
 
+  base::WeakPtr<RenderFrameHostImpl> weak_rfh = render_frame_host->GetWeakPtr();
   // Run tasks that must execute just before the commit.
   delegate_->DidNavigateAnyFramePreCommit(navigation_request.get(),
                                           was_within_same_document);
+
+  // NOTE: the pre commit tasks may result in the destruction of the render
+  // frame host, in which case we should exit this method early.
+  if (!weak_rfh) {
+    return;
+  }
 
   if (ui::PageTransitionIsMainFrame(params.transition)) {
     // Run tasks that must execute just before the commit.
