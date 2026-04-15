@@ -3185,6 +3185,7 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
       unscaled_src == NULL || unscaled_last_src == NULL) {
     aom_free(cpi->src_sad_blk_64x64);
     cpi->src_sad_blk_64x64 = NULL;
+    cpi->src_sad_blk_alloc_size = 0;
   }
   if (unscaled_src == NULL || unscaled_last_src == NULL) return;
   src_y = unscaled_src->y_buffer;
@@ -3198,6 +3199,7 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
   if (src_width != last_src_width || src_height != last_src_height) {
     aom_free(cpi->src_sad_blk_64x64);
     cpi->src_sad_blk_64x64 = NULL;
+    cpi->src_sad_blk_alloc_size = 0;
     return;
   }
   rc->high_source_sad = 0;
@@ -3249,10 +3251,12 @@ static void rc_scene_detection_onepass_rt(AV1_COMP *cpi,
   // Store blkwise SAD for later use. Disable for spatial layers for now.
   if (width == cm->render_width && height == cm->render_height &&
       cpi->svc.number_spatial_layers == 1) {
-    if (cpi->src_sad_blk_64x64 == NULL) {
+    if (cpi->src_sad_blk_alloc_size != sb_cols * sb_rows) {
+      aom_free(cpi->src_sad_blk_64x64);
       CHECK_MEM_ERROR(cm, cpi->src_sad_blk_64x64,
                       (uint64_t *)aom_calloc(sb_cols * sb_rows,
                                              sizeof(*cpi->src_sad_blk_64x64)));
+      cpi->src_sad_blk_alloc_size = sb_cols * sb_rows;
     }
   }
   const CommonModeInfoParams *const mi_params = &cpi->common.mi_params;
@@ -3795,6 +3799,7 @@ void av1_get_one_pass_rt_params(AV1_COMP *cpi, FRAME_TYPE *const frame_type,
     } else {
       aom_free(cpi->src_sad_blk_64x64);
       cpi->src_sad_blk_64x64 = NULL;
+      cpi->src_sad_blk_alloc_size = 0;
     }
   }
   if (((*frame_type == KEY_FRAME && cpi->sf.rt_sf.rc_adjust_keyframe) ||
