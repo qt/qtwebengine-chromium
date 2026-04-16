@@ -66,7 +66,7 @@
 #        include "libANGLE/renderer/gl/cgl/DisplayCGL.h"
 #    elif defined(ANGLE_PLATFORM_LINUX)
 #        include "libANGLE/renderer/gl/egl/DisplayEGL.h"
-#        if defined(ANGLE_USE_X11)
+#        if defined(ANGLE_USE_X11) && defined(ANGLE_USE_X11_GLX)
 #            include "libANGLE/renderer/gl/glx/DisplayGLX_api.h"
 #        endif
 #    elif defined(ANGLE_PLATFORM_ANDROID)
@@ -445,10 +445,17 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
                 impl = new rx::DisplayEGL(state);
                 break;
             }
-#        if defined(ANGLE_USE_X11)
+#        if defined(ANGLE_USE_X11) && defined(ANGLE_USE_X11_GLX)
             if (platformType == EGL_PLATFORM_X11_EXT)
             {
                 impl = rx::CreateGLXDisplay(state);
+                break;
+            }
+#        endif
+#        if defined(ANGLE_USE_X11)
+            if (platformType == EGL_PLATFORM_X11_EXT)
+            {
+                impl = new rx::DisplayEGL(state);
                 break;
             }
 #        endif
@@ -498,10 +505,17 @@ rx::DisplayImpl *CreateDisplayFromAttribs(EGLAttrib displayType,
             }
             else
             {
-#        if defined(ANGLE_USE_X11)
+#        if defined(ANGLE_USE_X11) && defined(ANGLE_USE_X11_GLX)
                 if (platformType == EGL_PLATFORM_X11_EXT)
                 {
                     impl = rx::CreateGLXDisplay(state);
+                    break;
+                }
+#        endif
+#        if defined(ANGLE_USE_X11)
+                if (platformType == EGL_PLATFORM_X11_EXT)
+                {
+                    impl = new rx::DisplayEGL(state);
                     break;
                 }
 #        endif
