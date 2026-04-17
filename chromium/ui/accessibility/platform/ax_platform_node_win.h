@@ -1208,6 +1208,12 @@ class COMPONENT_EXPORT(AX_PLATFORM)
   // See the comments in ax_platform_node_win.cc for descriptions of 2-4.
   static std::tuple<size_t, size_t, size_t, size_t> GetCounts();
 
+  // Returns the size of the process-global alert targets set.
+  static size_t GetAlertTargetCountForTesting();
+
+  // Test-only wrapper around AddAlertTarget().
+  void AddAlertTargetForTesting();
+
   // Resets the global instance counts to zero and returns the previous counts;
   // see above.
   static std::tuple<size_t, size_t, size_t, size_t> ResetCountsForTesting();
