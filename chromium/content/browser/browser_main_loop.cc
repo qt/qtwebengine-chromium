@@ -428,7 +428,7 @@ class OopDataDecoder : public data_decoder::ServiceProvider {
 };
 
 void BindHidManager(mojo::PendingReceiver<device::mojom::HidManager> receiver) {
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && (!BUILDFLAG(IS_LINUX) || defined(USE_UDEV))
   if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
     GetUIThreadTaskRunner({})->PostTask(
         FROM_HERE, base::BindOnce(&BindHidManager, std::move(receiver)));
@@ -1402,7 +1402,7 @@ void BrowserMainLoop::PostCreateThreadsImpl() {
     TRACE_EVENT0("startup", "PostCreateThreads::Subsystem:Devices");
     device::GamepadService::GetInstance()->StartUp(
         base::BindRepeating(&BindHidManager));
-#if !BUILDFLAG(IS_ANDROID)
+#if !BUILDFLAG(IS_ANDROID) && (!BUILDFLAG(IS_LINUX) || defined(USE_UDEV))
     device::FidoHidDiscovery::SetHidManagerBinder(
         base::BindRepeating(&BindHidManager));
 #endif
