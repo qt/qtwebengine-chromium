@@ -90,14 +90,17 @@
 #include "third_party/blink/renderer/core/timing/performance_paint_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_timing.h"
 #include "third_party/blink/renderer/core/timing/performance_timing_for_reporting.h"
+#include "third_party/blink/renderer/core/timing/preload_data.h"
 #include "third_party/blink/renderer/core/timing/responsiveness_metrics.h"
 #include "third_party/blink/renderer/core/timing/soft_navigation_entry.h"
+#include "third_party/blink/renderer/core/timing/speculation_data.h"
 #include "third_party/blink/renderer/core/timing/visibility_state_entry.h"
 #include "third_party/blink/renderer/platform/heap/collection_support/heap_deque.h"
 #include "third_party/blink/renderer/platform/heap/forward.h"
 #include "third_party/blink/renderer/platform/heap/garbage_collected.h"
 #include "third_party/blink/renderer/platform/heap/persistent.h"
 #include "third_party/blink/renderer/platform/instrumentation/use_counter.h"
+#include "third_party/blink/renderer/platform/loader/fetch/resource_fetcher.h"
 #include "third_party/blink/renderer/platform/runtime_enabled_features.h"
 #include "third_party/blink/renderer/platform/scheduler/public/thread_scheduler.h"
 #include "third_party/blink/renderer/platform/wtf/cross_thread_functional.h"
@@ -1495,6 +1498,26 @@ EventCounts* WindowPerformance::eventCounts() {
     event_counts_ = MakeGarbageCollected<EventCounts>();
   }
   return event_counts_.Get();
+}
+
+SpeculationData* WindowPerformance::getSpeculations() {
+  LocalDOMWindow* window = DomWindow();
+  if (!window || !window->document() || !window->document()->Fetcher()) {
+    return MakeGarbageCollected<SpeculationData>(
+        HeapVector<Member<PreloadData>>());
+  }
+
+  HeapVector<Member<PreloadData>> preloads;
+  const auto& preload_records =
+      window->document()->Fetcher()->GetPreloadRecords();
+  for (const auto& [url, info] : preload_records) {
+    preloads.push_back(MakeGarbageCollected<PreloadData>(
+        url, info.resource_type,
+        info.crossorigin.value_or(kCrossOriginAttributeNotSet),
+        info.used_time));
+  }
+
+  return MakeGarbageCollected<SpeculationData>(std::move(preloads));
 }
 
 uint64_t WindowPerformance::interactionCount() const {

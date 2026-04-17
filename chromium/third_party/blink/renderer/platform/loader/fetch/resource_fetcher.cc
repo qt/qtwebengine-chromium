@@ -1806,6 +1806,14 @@ Resource* ResourceFetcher::MatchPreload(
   resource->MatchPreload(params);
   preloads_.erase(it);
   matched_preloads_.push_back(resource);
+
+  if (RuntimeEnabledFeatures::SpeculationMeasurementEnabled()) {
+    auto record_it = preload_records_.find(resource->Url());
+    if (record_it != preload_records_.end()) {
+      record_it->value.used_time = base::TimeTicks::Now();
+    }
+  }
+
   return resource;
 }
 
@@ -1890,6 +1898,20 @@ void ResourceFetcher::InsertAsPreloadIfNecessary(Resource* resource,
   resource->MarkAsPreload();
   if (preloaded_urls_for_test_) {
     preloaded_urls_for_test_->insert(resource->Url().GetString());
+  }
+
+  // Only track <link rel=preload> in `preload_records_` for the
+  // SpeculationMeasurement API. Speculative preloads from the HTML parser
+  // are not developer-initiated and should not be reported.
+  if (RuntimeEnabledFeatures::SpeculationMeasurementEnabled() &&
+      params.IsLinkPreload()) {
+    const KURL& url = resource->Url();
+    if (!preload_records_.Contains(url)) {
+      PreloadInfo info;
+      info.resource_type = resource->GetType();
+      info.crossorigin = params.GetCrossOriginAttributeValue();
+      preload_records_.insert(url, std::move(info));
+    }
   }
 }
 
