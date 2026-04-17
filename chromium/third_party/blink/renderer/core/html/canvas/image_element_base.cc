@@ -96,7 +96,7 @@ scoped_refptr<Image> ImageElementBase::GetSourceImageForCanvas(
 }
 
 bool ImageElementBase::WouldTaintOrigin() const {
-  return CachedImage() && !CachedImage()->IsAccessAllowed();
+  return CachedImage() && !CachedImage()->IsCorsSameOrigin();
 }
 
 gfx::SizeF ImageElementBase::ElementSize(

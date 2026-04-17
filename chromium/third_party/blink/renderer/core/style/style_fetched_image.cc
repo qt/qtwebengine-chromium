@@ -124,7 +124,7 @@ bool StyleFetchedImage::ErrorOccurred() const {
 
 bool StyleFetchedImage::IsAccessAllowed(String& failing_url) const {
   DCHECK(image_->IsLoaded());
-  if (image_->IsAccessAllowed()) {
+  if (image_->IsCorsSameOrigin()) {
     return true;
   }
   failing_url = image_->Url().ElidedString();
@@ -274,7 +274,7 @@ RespectImageOrientationEnum StyleFetchedImage::ForceOrientationIfNecessary(
   }
   // Cross-origin images must always respect orientation to prevent
   // potentially private data leakage.
-  if (!image_->IsAccessAllowed()) {
+  if (!image_->IsCorsSameOrigin()) {
     return kRespectImageOrientation;
   }
   return default_orientation;
