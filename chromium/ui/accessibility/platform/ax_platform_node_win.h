@@ -1215,6 +1215,12 @@ class COMPONENT_EXPORT(AX_PLATFORM) __declspec(
   static std::optional<PROPERTYID> MojoEventToUIAProperty(
       ax::mojom::Event event);
 
+  // Returns the size of the process-global alert targets set.
+  static size_t GetAlertTargetCountForTesting();
+
+  // Test-only wrapper around AddAlertTarget().
+  void AddAlertTargetForTesting();
+
  protected:
   AXPlatformNodeWin();
 
